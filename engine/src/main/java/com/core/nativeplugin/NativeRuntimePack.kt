@@ -60,6 +60,9 @@ object NativeRuntimePack {
     /** `libcmvs_android.so`：CMVS NativeActivity 引擎，由 `cmvs_loader` 从私有目录 dlopen。 */
     const val PACK_CMVS = "cmvs"
 
+    /** `libsystemnnn.so`：SystemNNN 播放与存档快照校验共用。 */
+    const val PACK_SYSTEMNNN = "systemnnn"
+
     /**
      * 幂等：运行库已按当前 APK 版本解压则直接返回 true，否则从 assets 重新解压。
      *

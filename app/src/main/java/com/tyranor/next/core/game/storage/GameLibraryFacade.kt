@@ -4,9 +4,13 @@ import android.content.Context
 import android.net.Uri
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.scan.GameRootMatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 
 /**
  * 游戏库门面：对 UI / 启动编排暴露同步的内存缓存读与「缓存先行、FIFO 落库」写。
@@ -24,6 +28,7 @@ object GameLibraryFacade {
     // 主页面会在 Tab 动画中反复进入组合。将已解析的数据保留在进程内，避免每次切页都在
     // 主线程重新读库、解析并构造完整游戏列表。
     private val cacheLock = Any()
+    private val gameWrites = GameLibraryWriteGate()
     @Volatile
     private var gamesCache: List<ScanGame>? = null
     @Volatile
@@ -84,6 +89,7 @@ object GameLibraryFacade {
             loadGamesLocked(context)
         }
 
+    /** Use [registerGames] when adding URI references. Existing entries can be edited or removed here. */
     fun updateGames(context: Context, transform: (List<ScanGame>) -> List<ScanGame>): List<ScanGame> =
         synchronized(cacheLock) {
             val current = loadGamesLocked(context)
@@ -95,6 +101,30 @@ object GameLibraryFacade {
             }
             updated
         }
+
+    internal suspend fun registerGames(context: Context, transform: (List<ScanGame>) -> List<ScanGame>): List<ScanGame> =
+        withContext(Dispatchers.IO) {
+            val coroutine = currentCoroutineContext()
+            gameWrites.update {
+                coroutine.ensureActive()
+                updateGames(context, transform)
+            }
+        }
+
+    /** The caller has already obtained any save-sync admission. The callback only evicts resources. */
+    internal fun evictUnusedSystemNnnCopy(
+        context: Context,
+        sourceId: String,
+        excludingUri: String? = null,
+        evict: () -> Boolean,
+    ): Boolean = gameWrites.evictIfUnused(
+        referenced = {
+            loadGames(context).any { game ->
+                game.uri != excludingUri && SystemNnnGameDirectory.sourceIdentity(game.uri) == sourceId
+            }
+        },
+        evict = evict,
+    )
 
     private fun loadGamesLocked(context: Context): List<ScanGame> =
         gamesCache ?: GameLibraryRepository.readBlocking(context) { GameLibraryRepository.loadGames(it) }
@@ -280,23 +310,24 @@ object GameLibraryFacade {
         }
     }
 
-    fun removeRootAndGames(context: Context, uri: Uri) {
+    fun removeRootAndGames(context: Context, uri: Uri): List<ScanGame> {
         removeRoot(context, uri)
         val root = uri.toString()
-        var removedUris = emptySet<String>()
+        var removed = emptyList<ScanGame>()
         updateGames(context) { games ->
-            removedUris = games
-                .filter { isGameUnderRoot(root, it.uri) }
-                .mapTo(HashSet()) { it.uri }
+            removed = games.filter { isGameUnderRoot(root, it.uri) }
+            val removedUris = removed.mapTo(HashSet()) { it.uri }
             games.filterNot { it.uri in removedUris }
         }
-        if (removedUris.isEmpty()) return
+        if (removed.isEmpty()) return emptyList()
+        val removedUris = removed.mapTo(HashSet()) { it.uri }
         // 最近打开/快捷启动的 DB 行已随游戏行删除（派生视图 + 级联），这里只需同步内存缓存。
         synchronized(cacheLock) {
             recentGamesCache = recentGamesCache?.filterNot { it.uri in removedUris }
         }
         updateQuickLaunch(context) { list -> list.filterNot { it.uri in removedUris } }
         _libraryRevision.value++
+        return removed
     }
 
     /** 外部逻辑（如运行时模块降级）直接改库后通知 UI 重新读取派生列表。 */

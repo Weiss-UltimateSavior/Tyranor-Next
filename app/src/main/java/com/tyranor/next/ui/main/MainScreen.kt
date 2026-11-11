@@ -32,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -621,82 +622,86 @@ private fun ColumnScope.MainTabPages(
         // 中间 Tab 的 alpha 在任意状态均为 0，因此跨页时只显示起点和终点的直接水平动画。
         // 关闭首页时不再组合首页（下标 0），游戏页成为第一个可见页。
         val visiblePages = if (homePageEnabled) tabItems.indices.toList() else tabItems.indices.drop(1)
+        // key(page)：页面身份按 Tab 下标固定。可见集合变化（如关闭/恢复首页）时，
+        // 未变化页面的组合槽位与 pageOffset/pageAlpha 动画状态不会被错位复用而闪现。
         visiblePages.forEach { page ->
-          val pageOffset by pageTransition.animateFloat(
-            transitionSpec = { tween(durationMillis = if (onboarding) 80 else 200) },
-            label = "mainTabOffset$page",
-          ) { activePage ->
-            when {
-              page < activePage -> -1f
-              page > activePage -> 1f
-              else -> 0f
-            }
-          }
-          val pageAlpha by pageTransition.animateFloat(
-            transitionSpec = { tween(durationMillis = if (onboarding) 80 else 160) },
-            label = "mainTabAlpha$page",
-          ) { activePage -> if (page == activePage) 1f else 0f }
-          val pageActive = page == selectedIndex && !pageTransition.isRunning
-          val pageInteractive = pageActive
-          Box(
-            Modifier
-              .fillMaxSize()
-              .zIndex(if (page == selectedIndex) 1f else 0f)
-              .graphicsLayer {
-                translationX = pageOffset * size.width
-                alpha = pageAlpha
+          key(page) {
+            val pageOffset by pageTransition.animateFloat(
+              transitionSpec = { tween(durationMillis = if (onboarding) 80 else 200) },
+              label = "mainTabOffset$page",
+            ) { activePage ->
+              when {
+                page < activePage -> -1f
+                page > activePage -> 1f
+                else -> 0f
               }
-              .then(
-                if (pageInteractive) {
-                  Modifier
-                } else {
-                  Modifier
-                    .clearAndSetSemantics { }
-                    .pointerInput(page) {
-                      awaitPointerEventScope {
-                        while (true) {
-                          awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+            }
+            val pageAlpha by pageTransition.animateFloat(
+              transitionSpec = { tween(durationMillis = if (onboarding) 80 else 160) },
+              label = "mainTabAlpha$page",
+            ) { activePage -> if (page == activePage) 1f else 0f }
+            val pageActive = page == selectedIndex && !pageTransition.isRunning
+            val pageInteractive = pageActive
+            Box(
+              Modifier
+                .fillMaxSize()
+                .zIndex(if (page == selectedIndex) 1f else 0f)
+                .graphicsLayer {
+                  translationX = pageOffset * size.width
+                  alpha = pageAlpha
+                }
+                .then(
+                  if (pageInteractive) {
+                    Modifier
+                  } else {
+                    Modifier
+                      .clearAndSetSemantics { }
+                      .pointerInput(page) {
+                        awaitPointerEventScope {
+                          while (true) {
+                            awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                          }
                         }
                       }
-                    }
-                },
-              ),
-          ) {
-            when (page) {
-              0 -> HomeScreen(
-                modifier = Modifier.fillMaxSize(),
-                libraryState = libraryState,
-                onGameUpdated = libraryViewModel::replaceGame,
-                onGameDeleted = libraryViewModel::deleteGame,
-                onRecentRemoved = libraryViewModel::removeRecentGame,
-                onQuickLaunchToggle = libraryViewModel::toggleQuickLaunch,
-                onCoachAnchorChanged = { onCoachAnchorChanged(CoachAnchor.HOME, it) },
-                isActive = pageActive,
-              )
-              1 -> GameScreen(
-                modifier = Modifier.fillMaxSize(),
-                libraryState = libraryState,
-                onGameUpdated = libraryViewModel::replaceGame,
-                onGameDeleted = libraryViewModel::deleteGame,
-                onQuickLaunchToggle = libraryViewModel::toggleQuickLaunch,
-                onScanLibrary = libraryViewModel::scanLibrary,
-                onScrapeEventShown = libraryViewModel::acknowledgeScrapeEvent,
-                onSearchQueryChanged = libraryViewModel::onSearchQueryChanged,
-                onAddManualGame = libraryViewModel::addManualGame,
-                onCoachAnchorChanged = onCoachAnchorChanged,
-                isActive = pageActive,
-              )
-              2 -> EngineScreen(
-                Modifier.fillMaxSize(),
-                onCoachAnchorChanged = { onCoachAnchorChanged(CoachAnchor.ENGINE, it) },
-                isActive = pageActive,
-                gameCount = libraryState.games.size,
-              )
-              3 -> SettingsScreen(
-                Modifier.fillMaxSize(),
-                onCoachAnchorChanged = { onCoachAnchorChanged(CoachAnchor.SETTINGS, it) },
-                isActive = pageActive,
-              )
+                  },
+                ),
+            ) {
+              when (page) {
+                0 -> HomeScreen(
+                  modifier = Modifier.fillMaxSize(),
+                  libraryState = libraryState,
+                  onGameUpdated = libraryViewModel::replaceGame,
+                  onGameDeleted = libraryViewModel::deleteGame,
+                  onRecentRemoved = libraryViewModel::removeRecentGame,
+                  onQuickLaunchToggle = libraryViewModel::toggleQuickLaunch,
+                  onCoachAnchorChanged = { onCoachAnchorChanged(CoachAnchor.HOME, it) },
+                  isActive = pageActive,
+                )
+                1 -> GameScreen(
+                  modifier = Modifier.fillMaxSize(),
+                  libraryState = libraryState,
+                  onGameUpdated = libraryViewModel::replaceGame,
+                  onGameDeleted = libraryViewModel::deleteGame,
+                  onQuickLaunchToggle = libraryViewModel::toggleQuickLaunch,
+                  onScanLibrary = libraryViewModel::scanLibrary,
+                  onScrapeEventShown = libraryViewModel::acknowledgeScrapeEvent,
+                  onSearchQueryChanged = libraryViewModel::onSearchQueryChanged,
+                  onAddManualGame = libraryViewModel::addManualGame,
+                  onCoachAnchorChanged = onCoachAnchorChanged,
+                  isActive = pageActive,
+                )
+                2 -> EngineScreen(
+                  Modifier.fillMaxSize(),
+                  onCoachAnchorChanged = { onCoachAnchorChanged(CoachAnchor.ENGINE, it) },
+                  isActive = pageActive,
+                  gameCount = libraryState.games.size,
+                )
+                3 -> SettingsScreen(
+                  Modifier.fillMaxSize(),
+                  onCoachAnchorChanged = { onCoachAnchorChanged(CoachAnchor.SETTINGS, it) },
+                  isActive = pageActive,
+                )
+              }
             }
           }
         }

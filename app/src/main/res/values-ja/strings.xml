@@ -24,6 +24,12 @@
     <string name="nav_floating_collapse">ナビゲーションを折りたたむ</string>
 
     <string name="settings_app_title">アプリ設定</string>
+    <string name="settings_about_app">アプリについて</string>
+    <string name="about_project_url">プロジェクト URL</string>
+    <string name="about_app_version">Tyranor NEXT %1$s</string>
+    <string name="about_acknowledgements">謝辞</string>
+    <string name="about_disclaimer">免責事項</string>
+    <string name="about_disclaimer_body">本アプリはゲーム実行環境の起動・設定・管理機能のみを提供するものであり、ゲーム本体、商業素材、破解（クラック）リソースを同梱・配布・提供するものではありません。\n\n本アプリで使用するエミュレータおよび互換実行レイヤー（第三者製コンポーネントを含む）はそれぞれ独立したプロジェクトであり、著作権は各作者に帰属します。使用前に、対象ゲームを適法に保有し実行する権利があることを確認し、当該ゲームおよびエミュレータのライセンスに従ってください。\n\n本アプリを使用してゲームを実行したことに起因するセーブデータの破損、データ損失、端末の不具合、アカウント停止、その他の直接的・間接的損害は、すべて利用者の責任で負担するものとします。開発者は、ゲームの互換性・安定性・動作結果について一切保証しません。\n\n本アプリを著作権侵害、海賊版の拡散、または現地の法令に違反する用途に使用しないでください。</string>
     <string name="settings_language_title">言語</string>
     <string name="settings_language_system">システムに従う</string>
     <string name="settings_language_zh">简体中文</string>
@@ -56,6 +62,8 @@
     <string name="settings_nav_bar_desc_rail">タブレットではサイドレールで表示</string>
     <string name="settings_show_home_page">ホームを表示</string>
     <string name="settings_show_home_page_summary">オフにするとホームとナビゲーションのホーム項目が非表示になり、ゲームページが最初のページになります</string>
+    <string name="settings_classic_icon">クラシックアプリアイコン</string>
+    <string name="settings_classic_icon_summary">オンにすると旧バージョンのアプリアイコン、オフにすると現在の新しいアイコンを使用します</string>
     <string name="settings_home_style">ホームスタイル</string>
     <string name="settings_home_style_native">デフォルト</string>
     <string name="settings_home_style_web">Web</string>
@@ -98,9 +106,13 @@
     <string name="settings_join_group">コミュニティに参加</string>
     <string name="settings_game_dirs_title">ゲームフォルダ</string>
     <string name="settings_no_game_dirs">ゲームフォルダはありません</string>
+    <string name="settings_systemnnn_copy_cleanup_done">SystemNNN のコピー %1$d 件からゲームデータを削除しました</string>
+    <string name="settings_systemnnn_copy_cleanup_empty">削除できる SystemNNN ゲームデータのコピーはありません</string>
+    <string name="settings_systemnnn_copy_cleanup_incomplete">%1$d 件を削除しました。%2$d 件は削除できませんでした。実行中のゲームを終了して再試行してください。</string>
+    <string name="settings_systemnnn_copy_cleanup_running">SystemNNN のゲームデータを削除しています…</string>
+    <string name="settings_systemnnn_copy_cleanup_pending">一部の SystemNNN ゲームデータを削除できませんでした。再試行できます。</string>
     <string name="settings_invalid_suffix">無効</string>
     <string name="settings_add_dir">フォルダを追加</string>
-    <string name="settings_done">完了</string>
     <string name="settings_input_path">パスを入力</string>
     <string name="settings_input_dir_title">フォルダのパスを入力</string>
     <string name="settings_path_invalid">パスが存在しないか、フォルダではありません</string>
@@ -215,10 +227,10 @@
     <string name="game_launch_action">ゲームを起動</string>
     <string name="game_launch_file">起動ファイル</string>
     <string name="game_launch_file_auto_summary">自動 - 問題がある場合は手動で起動ファイルを選択</string>
-    <string name="game_remove_quick_launch">クイック起動から削除</string>
-    <string name="game_add_quick_launch">クイック起動に追加</string>
+    <string name="game_remove_quick_launch">ホームから削除</string>
+    <string name="game_add_quick_launch">ホームに追加</string>
     <string name="game_quick_launch_full">ホームのクイック起動は最大 3 件までです</string>
-    <string name="game_add_desktop_shortcut">ホーム画面に追加</string>
+    <string name="game_add_desktop_shortcut">デスクトップに追加</string>
     <string name="game_desktop_shortcut_requested">システムダイアログで追加を確認してください</string>
     <string name="game_desktop_shortcut_updated">ホーム画面ショートカットを更新しました</string>
     <string name="game_desktop_shortcut_unsupported">現在のランチャーは固定ショートカットに対応していません</string>
@@ -258,7 +270,7 @@
     <string name="game_launch_file_empty">フォルダ内に xp3 または exe ファイルが見つかりません</string>
 
     <string name="home_recent_empty">最近開いたゲームはありません</string>
-    <string name="home_quick_launch">クイック起動</string>
+    <string name="home_quick_launch">ホームに追加</string>
     <string name="home_empty_slot_content_description">空きスロット</string>
 
     <string name="engine_settings_save_content_description">設定を保存</string>
@@ -786,6 +798,8 @@
     <string name="launch_failed">起動に失敗しました</string>
     <string name="launch_all_files_access_request">システム設定で「すべてのファイルの管理」を許可し、戻ってから再度ゲームを起動してください</string>
     <string name="launch_all_files_access_missing">「すべてのファイルの管理」権限がないため、ネイティブエンジンがゲームフォルダを読み取れません</string>
+    <string name="launch_storage_access_request">システム設定でストレージへのアクセスを許可し、戻ってからゲームを起動してください</string>
+    <string name="launch_storage_access_missing">システム設定で Tyranor-Next にストレージへのアクセスを許可してください</string>
     <string name="launch_krkr_save_path_not_dir">KRKR セーブパスは存在しますがフォルダではありません：%1$s</string>
     <string name="launch_create_krkr_scoped_save_failed">KRKR アプリ個別セーブフォルダを作成できません：%1$s</string>
     <string name="launch_create_krkr_save_failed">KRKR セーブフォルダを作成できません：%1$s</string>
@@ -1022,6 +1036,7 @@
     <string name="engine_module_management_disable_confirm">無効化</string>
     <string name="engine_module_management_load_failed">モジュール一覧の読み込みに失敗しました</string>
     <string name="engine_settings_runtime_module_hint">このゲームはサードパーティのランタイムモジュールで動作します。モジュールの設定とセーブデータはモジュール側で管理されます。</string>
+    <string name="engine_settings_systemnnn_hint">SystemNNN の設定はゲーム内の環境設定から変更できます。</string>
     <string name="engine_desc_runtime_module">サードパーティ APK ランタイムモジュール。スキャンと実行はモジュールが行い、本体アプリは検出・有効化・フォルダーパスの受け渡しのみを担当します。</string>
     <string name="launch_runtime_module_missing">ランタイムモジュールを利用できません。ゲームは不明に降格されました。再スキャンしてください</string>
     <string name="launch_runtime_module_disabled">ランタイムモジュールが有効になっていません。ゲームは不明に降格されました。「エンジンモジュール管理」で有効化してから再スキャンしてください</string>
@@ -1047,4 +1062,13 @@
     <string name="launch_cmvs_unregistered">CMVS は登録済み 19 作品のみ対応しています。このゲームは未登録です</string>
     <string name="launch_cmvs_audio_unavailable">CMVS のオーディオ初期化に失敗しました</string>
     <string name="launch_cmvs_init_failed">CMVS エンジンの起動に失敗しました</string>
+    <string name="launch_systemnnn_storage_restricted">このゲームフォルダーを直接読み取れません。SystemNNN は元のフォルダーでゲームと sav を読み書きします。フォルダーへのアクセスを許可するか、アクセス可能な保存先へ移動してから再登録してください。</string>
+    <string name="launch_systemnnn_invalid_source">選択したフォルダーに読み取れる spt/sys.spt がありません。ゲームが完全に展開されているか確認し、フォルダーを選択し直してください。</string>
+    <string name="launch_systemnnn_source_busy">ゲームまたはセーブの処理中です。起動中のプレイヤーを終了してから再試行してください。</string>
+    <string name="launch_systemnnn_corrupt_copy">旧バージョンが作成したゲームコピーを利用できません。セーブ管理でバックアップしたうえでゲームを削除し、アクセス可能な元フォルダーから再登録してください。フォルダーは自動で切り替わりません。</string>
+    <string name="launch_systemnnn_save_not_writable">ゲームの sav フォルダーに書き込めません。権限、保存先の状態、空き容量を確認して再試行してください。</string>
+    <string name="launch_systemnnn_source_missing">ゲームフォルダーが見つかりません。spt/sys.spt を含むフォルダーを選び直してください。</string>
+    <string name="save_systemnnn_clear_resources">取り込んだゲームデータを削除</string>
+    <string name="save_systemnnn_clear_resources_message">アプリ内のコピーからゲームデータを削除して空き容量を増やします。元のゲームフォルダーとコピー内のすべてのセーブデータは残ります。次回の起動時に元のフォルダーからゲームデータを取り込み直します。</string>
+    <string name="save_systemnnn_clear_resources_done">取り込んだゲームデータを削除しました</string>
 </resources>

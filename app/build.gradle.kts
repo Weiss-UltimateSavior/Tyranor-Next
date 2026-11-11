@@ -45,7 +45,7 @@ fun String.asBuildConfigString(): String =
  * 应用版本名：发版唯一需要手改的版本字段（issue #79）。
  * versionCode 由它推导，杜绝“只改 versionName、忘记递增 versionCode”。
  */
-val appVersionName = "1.64"
+val appVersionName = "1.65"
 
 /**
  * versionName -> versionCode 映射：major*1_000_000 + minor*1_000 + patch。
@@ -108,6 +108,7 @@ val bundledEngineRuntimePacks = linkedMapOf(
     "ijk" to listOf("libijkffmpeg.so", "libijksdl.so", "libijkplayer.so"),
     "xsystem" to listOf("libxsystem35.so", "libxsystem4.so", "libSDL2x.so"),
     "cmvs" to listOf("libcmvs_android.so"),
+    "systemnnn" to listOf("libsystemnnn.so"),
 )
 val engineAssetSourceDir = rootProject.layout.projectDirectory.dir("engine/src/main/assets")
 val sharedEngineAssetNames = listOf(

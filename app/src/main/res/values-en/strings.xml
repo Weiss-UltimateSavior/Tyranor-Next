@@ -24,6 +24,12 @@
     <string name="nav_floating_collapse">Collapse navigation</string>
 
     <string name="settings_app_title">App settings</string>
+    <string name="settings_about_app">About app</string>
+    <string name="about_project_url">Project URL</string>
+    <string name="about_app_version">Tyranor NEXT %1$s</string>
+    <string name="about_acknowledgements">Acknowledgements</string>
+    <string name="about_disclaimer">Disclaimer</string>
+    <string name="about_disclaimer_body">This app only provides launching, configuration, and management of game runtime environments. It does not include, host, or distribute any game data, commercial assets, or cracked resources.\n\nThe emulators and compatibility runtimes used by this app (including third-party components) are independent projects, and their copyrights belong to their respective authors. Before use, make sure you legally own and are entitled to run the games concerned, and comply with the licenses of both the games and the emulators.\n\nAny save corruption, data loss, device malfunction, account suspension, or other direct or indirect damages arising from running games with this app are borne solely by the user. The developers make no guarantee regarding game compatibility, stability, or results.\n\nDo not use this app for copyright infringement, piracy, or any purpose that violates applicable laws and regulations.</string>
     <string name="settings_language_title">Language</string>
     <string name="settings_language_system">Follow system</string>
     <string name="settings_language_zh">简体中文</string>
@@ -56,6 +62,8 @@
     <string name="settings_nav_bar_desc_rail">Shown as a side rail on tablets</string>
     <string name="settings_show_home_page">Show home page</string>
     <string name="settings_show_home_page_summary">When off, the home page and its navigation item are hidden; the games page becomes the first page</string>
+    <string name="settings_classic_icon">Classic app icon</string>
+    <string name="settings_classic_icon_summary">Use the previous app icon; turn off to use the current new icon</string>
     <string name="settings_home_style">Home style</string>
     <string name="settings_home_style_native">Default</string>
     <string name="settings_home_style_web">Web</string>
@@ -98,9 +106,13 @@
     <string name="settings_join_group">Join community</string>
     <string name="settings_game_dirs_title">Game folders</string>
     <string name="settings_no_game_dirs">No game folders yet</string>
+    <string name="settings_systemnnn_copy_cleanup_done">Cleared resources from %1$d SystemNNN copies</string>
+    <string name="settings_systemnnn_copy_cleanup_empty">No SystemNNN copy resources to clear</string>
+    <string name="settings_systemnnn_copy_cleanup_incomplete">Cleared %1$d copies. Could not clear %2$d copies. Close any running games and try again.</string>
+    <string name="settings_systemnnn_copy_cleanup_running">Clearing SystemNNN resources…</string>
+    <string name="settings_systemnnn_copy_cleanup_pending">Some SystemNNN resources could not be cleared. You can try again.</string>
     <string name="settings_invalid_suffix">invalid</string>
     <string name="settings_add_dir">Add folder</string>
-    <string name="settings_done">Done</string>
     <string name="settings_input_path">Enter path</string>
     <string name="settings_input_dir_title">Enter folder path</string>
     <string name="settings_path_invalid">Path does not exist or is not a folder</string>
@@ -215,10 +227,10 @@
     <string name="game_launch_action">Launch game</string>
     <string name="game_launch_file">Launch file</string>
     <string name="game_launch_file_auto_summary">Auto - choose a launch file manually if startup fails</string>
-    <string name="game_remove_quick_launch">Remove from quick launch</string>
-    <string name="game_add_quick_launch">Add to quick launch</string>
+    <string name="game_remove_quick_launch">Remove from Home</string>
+    <string name="game_add_quick_launch">Add to Home</string>
     <string name="game_quick_launch_full">Home quick launch is full (max 3)</string>
-    <string name="game_add_desktop_shortcut">Add to Home screen</string>
+    <string name="game_add_desktop_shortcut">Add to desktop</string>
     <string name="game_desktop_shortcut_requested">Confirm the shortcut in the system dialog</string>
     <string name="game_desktop_shortcut_updated">Home screen shortcut updated</string>
     <string name="game_desktop_shortcut_unsupported">The current launcher does not support pinned shortcuts</string>
@@ -258,7 +270,7 @@
     <string name="game_launch_file_empty">No xp3 or exe files found in this folder</string>
 
     <string name="home_recent_empty">No recently opened games</string>
-    <string name="home_quick_launch">Quick launch</string>
+    <string name="home_quick_launch">Add to Home</string>
     <string name="home_empty_slot_content_description">Empty slot</string>
 
     <string name="engine_settings_save_content_description">Save settings</string>
@@ -786,6 +798,8 @@
     <string name="launch_failed">Launch failed</string>
     <string name="launch_all_files_access_request">Allow “Manage all files” on the system page, then return and launch the game again</string>
     <string name="launch_all_files_access_missing">Missing “Manage all files” permission, so the native engine cannot read the game directory</string>
+    <string name="launch_storage_access_request">Allow storage access in the system app permissions, then return and launch the game again</string>
+    <string name="launch_storage_access_missing">Allow Tyranor-Next to access storage in system settings</string>
     <string name="launch_krkr_save_path_not_dir">KRKR save path exists but is not a directory: %1$s</string>
     <string name="launch_create_krkr_scoped_save_failed">Unable to create the KRKR app-specific save directory: %1$s</string>
     <string name="launch_create_krkr_save_failed">Unable to create the KRKR save directory: %1$s</string>
@@ -1022,6 +1036,7 @@
     <string name="engine_module_management_disable_confirm">Disable</string>
     <string name="engine_module_management_load_failed">Failed to load the module list</string>
     <string name="engine_settings_runtime_module_hint">This game runs in a third-party runtime module; the module manages its own settings and saves.</string>
+    <string name="engine_settings_systemnnn_hint">Change SystemNNN settings from the game’s settings screen.</string>
     <string name="engine_desc_runtime_module">Third-party APK runtime module. The module scans and runs its own games; the main app only discovers, enables, and passes the folder path.</string>
     <string name="launch_runtime_module_missing">The runtime module is unavailable. The game was downgraded to unknown; scan again</string>
     <string name="launch_runtime_module_disabled">The runtime module is not enabled. The game was downgraded to unknown; enable it in “Engine modules” and scan again</string>
@@ -1047,4 +1062,13 @@
     <string name="launch_cmvs_unregistered">CMVS only supports the 19 registered titles; this game is not registered</string>
     <string name="launch_cmvs_audio_unavailable">CMVS audio initialization failed</string>
     <string name="launch_cmvs_init_failed">CMVS engine failed to start</string>
+    <string name="launch_systemnnn_storage_restricted">This game folder cannot be read directly. SystemNNN reads the game and writes sav in the original folder; grant access to it, or move the game to accessible storage and add it again.</string>
+    <string name="launch_systemnnn_invalid_source">The selected folder has no readable spt/sys.spt. Check that the game was fully extracted and select the folder again.</string>
+    <string name="launch_systemnnn_source_busy">The game or a save operation is still running. Close the player and try again.</string>
+    <string name="launch_systemnnn_corrupt_copy">A game copy created by an older version is unusable. Back it up through save management, delete the game, then add it again from an accessible original folder; the folder is not switched automatically.</string>
+    <string name="launch_systemnnn_save_not_writable">The sav folder for the game is not writable. Check the folder permission, storage availability and free space, then try again.</string>
+    <string name="launch_systemnnn_source_missing">The game directory no longer exists. Select the game folder containing spt/sys.spt again.</string>
+    <string name="save_systemnnn_clear_resources">Clear imported game resources</string>
+    <string name="save_systemnnn_clear_resources_message">Free space by clearing resources from the imported copy. The original game folder and all saves in the copy will be kept. The next launch imports the resources again from the original folder.</string>
+    <string name="save_systemnnn_clear_resources_done">Imported game resources cleared</string>
 </resources>

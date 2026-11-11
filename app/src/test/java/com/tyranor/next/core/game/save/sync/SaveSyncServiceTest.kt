@@ -2,6 +2,10 @@ package com.tyranor.next.core.game.save.sync
 
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.save.GameSaveException
+import com.tyranor.next.core.game.save.SaveErrorCode
+import com.tyranor.next.core.game.save.SystemNnnSaveStore
+import com.tyranor.runtime.systemnnn.SystemNnnHost
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
@@ -33,6 +37,159 @@ import java.util.zip.ZipOutputStream
 class SaveSyncServiceTest {
     @get:Rule
     val temp = TemporaryFolder()
+
+    @Test
+    fun systemNnnSaveLockRetriesExitUpload() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("systemnnn-locked", EngineType.SYSTEMNNN)
+        harness.identify(game)
+        harness.setActive(game, "local")
+        harness.world.onExport = { throw GameSaveException(SaveErrorCode.ENGINE_RUNNING) }
+
+        val busy = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        assertEquals(1, busy.busy)
+        assertTrue(busy.failures.isEmpty())
+        assertEquals(SaveSyncWorkOutcome.RETRY, SaveSyncWorkPolicy.outcome(busy, fallback = true))
+
+        harness.world.onExport = { throw SaveSyncException(SaveSyncError.GAME_RUNNING) }
+        val failure = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        assertEquals(0, failure.busy)
+        assertEquals(SaveSyncError.GAME_RUNNING, failure.failures.single().error)
+
+        harness.world.onExport = null
+        assertEquals(1, harness.service.syncGame(game, SaveSyncDirection.UPLOAD).uploaded)
+    }
+
+    @Test
+    fun systemNnnSaveLockRetriesPendingActivationWithItsOriginalOwner() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("systemnnn-activation-locked", EngineType.SYSTEMNNN)
+        harness.identify(game)
+        val selected = prepareMetadataPendingActivation(harness, game, "before", "selected", 1_700_000_000_000L)
+        val key = harness.key(game)
+        val pending = checkNotNull(harness.journal.load(key))
+        val directories = SaveDirectoryActivationStore(harness.root)
+        val owner = directories.owned(game.uri).single()
+        assertEquals(pending.token, owner.token)
+        harness.world.onCompleteImport = { throw GameSaveException(SaveErrorCode.ENGINE_RUNNING) }
+
+        val busy = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+
+        assertEquals(1, busy.busy)
+        assertTrue(busy.failures.isEmpty())
+        assertEquals(SaveSyncWorkOutcome.RETRY, SaveSyncWorkPolicy.outcome(busy, fallback = true))
+        assertEquals(pending, harness.journal.load(key))
+        assertEquals(owner, directories.owned(game.uri).single())
+        assertEquals(selected.contentHash, harness.world.activeHash(game))
+        assertEquals(1, harness.world.importCount(game))
+
+        harness.world.onCompleteImport = null
+        val retry = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+
+        assertEquals(0, retry.busy)
+        assertTrue(retry.failures.isEmpty())
+        assertNull(harness.journal.load(key))
+        assertTrue(directories.owned(game.uri).isEmpty())
+        assertEquals(selected.contentHash, harness.world.activeHash(game))
+        assertEquals(1, harness.world.importCount(game))
+    }
+
+    @Test
+    fun flushPendingRetriesWhenSystemNnnSaveLockBlocksSnapshot() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("systemnnn-exit", EngineType.SYSTEMNNN)
+        harness.identify(game)
+        val before = harness.setActive(game, "before")
+        val gameDirectory = temp.newFolder("systemnnn").canonicalFile
+        val saveDirectory = File(gameDirectory, "sav").apply { mkdir() }
+        val save = File(saveDirectory, "emberfall.sav").apply { writeText("progress after exit") }
+        val archive = temp.newFile("systemnnn-progress.zip")
+        ZipOutputStream(archive.outputStream()).use { output ->
+            output.putNextEntry(ZipEntry(save.name))
+            output.write(save.readBytes())
+            output.closeEntry()
+        }
+        harness.world.setActive(game, archive)
+        val progress = SaveContentHash.archive(archive)
+        val directoryKey = saveDirectoryIdentity(game) { saveDirectory }
+        harness.world.directoryKey = directoryKey
+        val key = harness.key(game)
+        val session = JSONObject().put("token", "pending-exit").put("uri", game.uri)
+            .put("activeKey", directoryKey).put("baseline", before)
+        harness.sessions.save(key, session)
+        val saves = SystemNnnSaveStore(gameDirectory, saveDirectory, validateSnapshot = { _, incoming, existing, _ ->
+            SystemNnnHost.canReplaceSaveSnapshot(incoming, existing)
+        })
+        var attemptedCapture = false
+        suspend fun flush() = SaveSyncRuntime.flushPending(harness.root, harness.world) { target, activeKey ->
+            assertEquals(game, target)
+            assertEquals(directoryKey, activeKey)
+            attemptedCapture = true
+            saves.access {
+                val files = saves.files().values.toList()
+                SaveSyncRuntime.SaveTreeSnapshot(
+                    SaveContentHash.files(saveDirectory, files),
+                    SaveSyncMetadataFingerprint.fingerprint(saveDirectory, files),
+                )
+            }
+        }
+
+        val busy = SystemNnnHost.lockSaveDirectory(gameDirectory).use { flush() }
+        assertTrue(attemptedCapture)
+        assertEquals(1, busy.busy)
+        assertTrue(busy.failures.isEmpty())
+        assertEquals(0, harness.world.exportCount())
+        assertEquals(session.toString(), harness.sessions.load(key).toString())
+        assertEquals(SaveSyncWorkOutcome.RETRY, SaveSyncWorkPolicy.outcome(busy, fallback = true))
+
+        val retry = flush()
+        assertEquals(1, retry.uploaded)
+        assertEquals(0, retry.busy)
+        assertTrue(retry.failures.isEmpty())
+        assertEquals(progress, harness.transport.versions(harness.remoteGame(game)).single().contentHash)
+        assertFalse(harness.sessions.load(key).has("token"))
+        assertEquals(progress, harness.baselines.load(key).getString("contentHash"))
+    }
+
+    @Test
+    fun flushPendingRetainsSessionWhenSystemNnnLocksAfterUpload() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("systemnnn-reopened-after-upload", EngineType.SYSTEMNNN)
+        harness.identify(game)
+        val before = harness.setActive(game, "before")
+        val progress = harness.setActive(game, "after")
+        val metadata = SaveContentHash.text("progress-metadata")
+        val directoryKey = harness.world.activeKey(game)
+        val key = harness.key(game)
+        val session = JSONObject().put("token", "pending-exit").put("uri", game.uri)
+            .put("activeKey", directoryKey).put("baseline", before)
+        harness.sessions.save(key, session)
+
+        var lockAfterUpload = true
+        suspend fun flush() = SaveSyncRuntime.flushPending(harness.root, harness.world) { target, activeKey ->
+            assertEquals(game, target)
+            assertEquals(directoryKey, activeKey)
+            if (lockAfterUpload && harness.transport.uploadCount(progress) == 1) {
+                throw GameSaveException(SaveErrorCode.ENGINE_RUNNING)
+            }
+            SaveSyncRuntime.SaveTreeSnapshot(progress, metadata)
+        }
+
+        val busy = flush()
+        assertEquals(1, busy.uploaded)
+        assertEquals(1, busy.busy)
+        assertTrue(busy.failures.isEmpty())
+        assertEquals(SaveSyncWorkOutcome.RETRY, SaveSyncWorkPolicy.outcome(busy, fallback = true))
+        assertEquals(session.toString(), harness.sessions.load(key).toString())
+
+        lockAfterUpload = false
+        val retry = flush()
+        assertEquals(0, retry.busy)
+        assertEquals(emptyList<SaveSyncFailure>(), retry.failures)
+        assertEquals(1, harness.transport.uploadCount(progress))
+        assertFalse(harness.sessions.load(key).has("token"))
+        assertEquals(progress, harness.baselines.load(key).getString("contentHash"))
+    }
 
     @Test
     fun excludedGameIsSkippedByUriWhileSameTitleGameStillUploads() = runBlocking {
@@ -2640,6 +2797,65 @@ class SaveSyncServiceTest {
     }
 
     @Test
+    fun rebindingSystemNnnCopyPreservesCompletedPromotionAndUploadsNewProgress() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("systemnnn-saf-copy", EngineType.SYSTEMNNN)
+        harness.identify(game)
+        harness.world.directoryKey = "save-directory:/games/systemnnn/sav"
+        val source = harness.world.activeKey(game)
+        harness.setActive(game, "before")
+        val selected = harness.addSnapshot(game, "selected", 1_700_000_000_000L)
+        assertEquals(SaveActivationResult.APPLIED, harness.service.activateVersion(game, selected.id))
+
+        val copy = "save-directory:/app/systemnnn-imports/copy/game/sav"
+        harness.world.directoryKey = copy
+        repeat(2) { harness.service.rebindSystemNnnPromotion(game, harness.world.config(), source, copy) }
+        assertEquals(copy, harness.states.load(harness.key(game)).getString("promotionActiveKey"))
+        assertTrue(harness.service.hasPendingPromotion(game, harness.world.config()))
+
+        val next = harness.setActive(game, "after-copy")
+        val report = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        assertTrue(report.failures.isEmpty())
+        assertEquals(1, report.uploaded)
+        val uploaded = harness.transport.versions(harness.remoteGame(game)).single()
+        assertEquals(next, uploaded.contentHash)
+        assertEquals(selected.createdAt, uploaded.previousCreatedAt)
+    }
+
+    @Test
+    fun uploadedUnchangedSystemNnnRestoreCanRebindWithoutALaunchSession() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("systemnnn-restored-before-copy", EngineType.SYSTEMNNN)
+        harness.identify(game)
+        val source = temp.newFolder("systemnnn-source")
+        val sourceKey = SAVE_DIRECTORY_KEY_PREFIX + File(source, "sav").canonicalPath
+        val copiedSaves = temp.newFolder("systemnnn-copy", "sav")
+        val copyKey = SAVE_DIRECTORY_KEY_PREFIX + copiedSaves.canonicalPath
+        harness.world.directoryKey = sourceKey
+        harness.setActive(game, "before")
+        val selected = harness.addSnapshot(game, "selected", 1_700_000_000_000L)
+        assertEquals(SaveActivationResult.APPLIED, harness.service.activateVersion(game, selected.id))
+
+        val initialUpload = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        assertTrue(initialUpload.failures.toString(), initialUpload.failures.isEmpty())
+        assertEquals(1, initialUpload.uploaded)
+        assertFalse(harness.service.hasPendingPromotion(game, harness.world.config()))
+
+        harness.world.directoryKey = copyKey
+        val originalKey = requireNotNull(harness.service.boundPromotionDirectory(game, harness.world.config()))
+        assertEquals(sourceKey, originalKey)
+        assertTrue(matchesImportedSystemNnnSaves(originalKey, copyKey, source, copiedSaves))
+        harness.service.rebindSystemNnnPromotion(game, harness.world.config(), originalKey, copyKey)
+
+        val next = harness.setActive(game, "after-copy")
+        val report = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        assertTrue(report.failures.toString(), report.failures.isEmpty())
+        assertEquals(1, report.uploaded)
+        assertTrue(harness.transport.versions(harness.remoteGame(game)).any { it.contentHash == next })
+        assertNull(harness.service.boundPromotionDirectory(game, harness.world.config()))
+    }
+
+    @Test
     fun metadataPendingActivationFencesAliasUploadWithDifferentIdentityAtSameDirectory() = runBlocking {
         val harness = Harness(temp)
         val activationGame = harness.addGame("activation-A")
@@ -3466,11 +3682,11 @@ class SaveSyncServiceTest {
         val baselines = SaveSyncStateStore(File(root, "baselines"))
         private var archiveIndex = 0
 
-        fun addGame(label: String): ScanGame {
+        fun addGame(label: String, engine: EngineType = EngineType.ONS): ScanGame {
             val game = ScanGame(
                 title = label,
                 uri = "file:///library/$label-${UUID.randomUUID()}",
-                engine = EngineType.ONS,
+                engine = engine,
                 launchTarget = "__game_dir__",
             )
             world.addGame(game)
@@ -3587,6 +3803,7 @@ class SaveSyncServiceTest {
         @Volatile var externalRunning = false
         var onCleanupAppData: (suspend () -> Unit)? = null
         var onExport: (suspend (ScanGame) -> Unit)? = null
+        var onCompleteImport: (() -> Unit)? = null
         @Volatile
         var recoveryNeeded = false
         @Volatile var directoryKey: String? = null
@@ -3639,6 +3856,7 @@ class SaveSyncServiceTest {
         }
 
         override fun completeImport(game: ScanGame) {
+            onCompleteImport?.invoke()
             synchronized(lock) { completeImports++ }
         }
         override fun needsManualRecovery(game: ScanGame): Boolean = recoveryNeeded

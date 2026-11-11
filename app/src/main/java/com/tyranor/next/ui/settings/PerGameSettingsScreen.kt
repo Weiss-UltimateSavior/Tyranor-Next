@@ -67,6 +67,7 @@ import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentCornerRadius
+import com.tyranor.next.ui.save.description
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.NoIndication
 import com.tyranor.next.ui.common.DialogTextButton
@@ -827,8 +828,14 @@ fun PerGameSettingsScreen(game: ScanGame) {
                         item {
                             SectionCard(stringResource(R.string.engine_settings_render)) {
                                 if (!isSdl3) {
-                                    OverrideSwitch(stringResource(R.string.engine_settings_opengl_accurate_render), globalAccurate, krRender[PerGameSettingsStore.F_OGL_ACCURATE_RENDER]!!.value == "1") { b ->
-                                        krRender[PerGameSettingsStore.F_OGL_ACCURATE_RENDER]!!.value = when (b) { null -> ""; true -> "1"; false -> "0" }
+                                    // 覆盖存储为三态：null=跟随全局（不下发游戏级覆盖，内核按全局回落）、
+                                    // "1"/"0"=显式值；直接 `== "1"` 会把跟随全局坍缩显示成「关」（issue #109 反馈入口）
+                                    OverrideSwitch(
+                                        stringResource(R.string.engine_settings_opengl_accurate_render),
+                                        globalAccurate,
+                                        krRender[PerGameSettingsStore.F_OGL_ACCURATE_RENDER]!!.value?.takeIf { it.isNotEmpty() }?.let { it == "1" },
+                                    ) { b ->
+                                        krRender[PerGameSettingsStore.F_OGL_ACCURATE_RENDER]!!.value = when (b) { null -> null; true -> "1"; false -> "0" }
                                     }
                                     OverrideChoice(stringResource(R.string.engine_settings_memory_usage), krMemMap, globalMem, krRender[PerGameSettingsStore.F_MEM_USAGE]!!.value, emptyLabel = engineDefault) {
                                         krRender[PerGameSettingsStore.F_MEM_USAGE]!!.value = it
@@ -1181,7 +1188,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             // 当前生效存档路径（与存档管理同源）：独立存档 = 应用外部存档目录，关闭 = 游戏目录 save/
                             saveLocation?.let { location ->
                                 Text(
-                                    location.description,
+                                    location.description(game.engine.displayName),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
@@ -1242,7 +1249,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             // 当前生效存档路径（与存档管理同源）：独立存档 = 应用外部存档目录，关闭 = 游戏根 SaveFolder
                             saveLocation?.let { location ->
                                 Text(
-                                    location.description,
+                                    location.description(game.engine.displayName),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
@@ -1386,6 +1393,16 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                     inputProfileOverride = id
                                     inputProfileDirty = true
                                 },
+                            )
+                        }
+                    }
+                    EngineType.SYSTEMNNN -> item {
+                        SectionCard(game.engine.displayName) {
+                            Text(
+                                stringResource(R.string.engine_settings_systemnnn_hint),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
                             )
                         }
                     }
@@ -1770,9 +1787,10 @@ internal fun OverrideChoice(
     }
     val keys = options.keys.toList()
     val dangling = override != null && override !in options
-    // 悬空引用的首项取**真实的全局值**：此时 override 已不在 options 里，labelOf 查不到映射会
-    // 回显原始方案 id（第八轮复审）——用户读不懂的内部标识，且它早已不是选中项
-    val followValue = if (dangling) global else override ?: global
+    // 首项「跟随全局」始终取**真实的全局值**：选中它回落的就是全局值，显示成覆盖值会与实际
+    // 生效不符；悬空引用时同理——override 已不在 options 里，labelOf 查不到映射会回显原始
+    // 方案 id（第八轮复审）——用户读不懂的内部标识，且它早已不是选中项
+    val followValue = global
     val labels = buildList {
         add(stringResource(R.string.engine_settings_follow_global_with_value, labelOf(followValue, options, emptyLabel)))
         addAll(keys.map { options[it] ?: it })

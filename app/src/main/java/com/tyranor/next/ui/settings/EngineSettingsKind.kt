@@ -26,7 +26,7 @@ enum class EngineSettingsKind(@param:StringRes val titleRes: Int) {
 
 /**
  * 引擎页条目对应的全局引擎设置页；返回 null 表示该引擎没有全局设置入口
- * （Switch / 第三方运行时模块 / 安卓游戏 / 未知引擎）。
+ * （SystemNNN / Switch / 第三方运行时模块 / 安卓游戏 / 未知引擎）。
  */
 internal fun engineSettingsKindOf(engine: EngineType): EngineSettingsKind? = when (engine) {
     EngineType.KIRIKIRI -> EngineSettingsKind.KRKR
@@ -45,6 +45,7 @@ internal fun engineSettingsKindOf(engine: EngineType): EngineSettingsKind? = whe
     EngineType.XSYS4 -> EngineSettingsKind.XSYS4
     EngineType.PSP -> EngineSettingsKind.PPSSPP
     EngineType.YURIS, EngineType.CATSYSTEM2, EngineType.PC -> EngineSettingsKind.WINLATOR
+    EngineType.SYSTEMNNN,
     EngineType.NINTENDO_SWITCH,
     EngineType.RUNTIME_MODULE,
     EngineType.ANDROID_APP,

@@ -22,42 +22,42 @@ object KrRenderPrefs {
         KrRenderPref(
             EngineSettingsStore.KEY_KR_RENDERER,
             PerGameSettingsStore.F_RENDERER,
-            EngineSettingsStore.KEY_KR_RENDERER,
+            EngineSettingsStore.ENGINE_RENDERER,
         ),
         KrRenderPref(
             EngineSettingsStore.KEY_KR_SOFTWARE_DRAW_THREAD,
             PerGameSettingsStore.F_SOFTWARE_DRAW_THREAD,
-            EngineSettingsStore.KEY_KR_SOFTWARE_DRAW_THREAD,
+            EngineSettingsStore.ENGINE_SOFTWARE_DRAW_THREAD,
         ),
         KrRenderPref(
             EngineSettingsStore.KEY_KR_SOFTWARE_COMPRESS_TEX,
             PerGameSettingsStore.F_SOFTWARE_COMPRESS_TEX,
-            EngineSettingsStore.KEY_KR_SOFTWARE_COMPRESS_TEX,
+            EngineSettingsStore.ENGINE_SOFTWARE_COMPRESS_TEX,
         ),
         KrRenderPref(
             EngineSettingsStore.KEY_KR_OGL_COMPRESS_TEX,
             PerGameSettingsStore.F_OGL_COMPRESS_TEX,
-            EngineSettingsStore.KEY_KR_OGL_COMPRESS_TEX,
+            EngineSettingsStore.ENGINE_OGL_COMPRESS_TEX,
         ),
         KrRenderPref(
             EngineSettingsStore.KEY_KR_MEM_USAGE,
             PerGameSettingsStore.F_MEM_USAGE,
-            EngineSettingsStore.KEY_KR_MEM_USAGE,
+            EngineSettingsStore.ENGINE_MEM_USAGE,
         ),
         KrRenderPref(
             EngineSettingsStore.KEY_KR_OGL_MAX_TEXSIZE,
             PerGameSettingsStore.F_OGL_MAX_TEXSIZE,
-            EngineSettingsStore.KEY_KR_OGL_MAX_TEXSIZE,
+            EngineSettingsStore.ENGINE_OGL_MAX_TEXSIZE,
         ),
         KrRenderPref(
             EngineSettingsStore.KEY_KR_OGL_ACCURATE_RENDER,
             PerGameSettingsStore.F_OGL_ACCURATE_RENDER,
-            EngineSettingsStore.KEY_KR_OGL_ACCURATE_RENDER,
+            EngineSettingsStore.ENGINE_OGL_ACCURATE_RENDER,
         ),
         KrRenderPref(
             EngineSettingsStore.KEY_KR_FPS_LIMIT,
             PerGameSettingsStore.F_FPS_LIMIT,
-            EngineSettingsStore.KEY_KR_FPS_LIMIT,
+            EngineSettingsStore.ENGINE_FPS_LIMIT,
         ),
         KrRenderPref(
             EngineSettingsStore.KEY_KR_VCURSOR_SCALE,

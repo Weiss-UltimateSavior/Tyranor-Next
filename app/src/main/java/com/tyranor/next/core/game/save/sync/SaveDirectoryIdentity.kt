@@ -36,13 +36,13 @@ internal sealed interface SaveSyncLaunchAdmission {
     data object Disabled : SaveSyncLaunchAdmission
     data object Unmanaged : SaveSyncLaunchAdmission
     data object Unresolved : SaveSyncLaunchAdmission
-    data class Directory(val key: String) : SaveSyncLaunchAdmission
+    data class Directory(val key: String, val exclusiveMutation: Boolean = false) : SaveSyncLaunchAdmission
 }
 
 /** Re-admit after waiting; every managed launch shares the save-replacement fence. */
 internal suspend fun <T> withSaveSyncLaunchAdmission(
     resolve: () -> SaveSyncLaunchAdmission,
-    managed: suspend (String?) -> T,
+    managed: suspend (SaveSyncLaunchAdmission.Directory?) -> T,
     unmanaged: suspend () -> T,
 ): T {
     class Completed(val value: T)
@@ -52,10 +52,13 @@ internal suspend fun <T> withSaveSyncLaunchAdmission(
         if (admission == SaveSyncLaunchAdmission.Unmanaged) return unmanaged()
         suspend fun admitted(): Completed? {
             if (resolve() != admission) return null
-            return Completed(managed((admission as? SaveSyncLaunchAdmission.Directory)?.key))
+            return Completed(managed(admission as? SaveSyncLaunchAdmission.Directory))
         }
         val completed = if (admission is SaveSyncLaunchAdmission.Directory) {
-            SaveSyncLocks.active(admission.key) { SaveSyncLocks.mutation(admission.key) { admitted() } }
+            SaveSyncLocks.active(admission.key) {
+                if (admission.exclusiveMutation) SaveSyncLocks.mutation { admitted() }
+                else SaveSyncLocks.mutation(admission.key) { admitted() }
+            }
         } else SaveSyncLocks.mutation { admitted() }
         if (completed != null) return completed.value
     }

@@ -50,6 +50,10 @@ class MainActivity : ComponentActivity() {
     super.onCreate(savedInstanceState)
     observeSaveSyncFeedback()
 
+    // 「显示首页」决定主导航条目与可见页集合，必须在首帧组合前同步加载：
+    // 留到 MainScreen 的异步 init 会让冷启动先按默认值（开）绘制、随后再纠正，产生闪动。
+    AppSettingsStore.initHomePageEnabled(this)
+
     enableEdgeToEdge(
       statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
       navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),

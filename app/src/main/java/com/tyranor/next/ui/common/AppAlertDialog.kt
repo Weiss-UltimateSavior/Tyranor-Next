@@ -13,9 +13,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -43,6 +45,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -58,6 +61,12 @@ import kotlinx.coroutines.launch
 
 /** 统一弹窗最大宽度：与游戏操作抽屉（ModalBottomSheet 的 SheetMaxWidth）一致，避免横屏/大屏拉伸过宽。 */
 internal val AppDialogMaxWidth = 640.dp
+
+/** 弹窗正文的水平内边距：超框内容（[AppAlertDialog] 的 topOverhang）按同一值对齐。 */
+internal val AppDialogContentHorizontalPadding = 18.dp
+
+/** 弹窗正文的垂直内边距：弹窗标题与正文共用。 */
+internal val AppDialogContentVerticalPadding = 16.dp
 
 /**
  * Miuix 风格弹窗：小屏底部弹入 + 窗口变暗 + 标题居中。
@@ -75,10 +84,21 @@ internal fun AppAlertDialog(
     // Opt in only for plain text bodies; wrapping a self-scrolling list would pass infinite height constraints.
     textScrollEnabled: Boolean = false,
     dismissEnabled: Boolean = true,
+    /**
+     * 位于卡片上沿外侧、不参与卡片自身测量的内容（如超出面板顶部的游戏封面）。
+     * 内容从卡片顶部上方 [topOverhangHeight] 处开始绘制；水平方向与正文内边距对齐。
+     * 卡片会整体下移 [topOverhangHeight]，为超框内容留出空间。
+     */
+    topOverhang: (@Composable () -> Unit)? = null,
+    topOverhangHeight: Dp = 0.dp,
+    /** 是否展示底部按钮行；纯条目式弹窗可从遮罩/返回键关闭，不显示额外按钮。 */
+    showButtonRow: Boolean = true,
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
+    // 键盘可见时 IME 区域已包含底部导航栏，底部避让必须二选一（见下方 imePadding/navigationBarsPadding）
+    val imeVisible = WindowInsets.ime.getBottom(density) > 0
     val windowHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
     // 正文区域高度上限随屏幕自适应：固定 420dp 会在长列表（如 Artemis 全版本）末条截断
     val textMaxHeight = (configuration.screenHeightDp * 0.62f).dp.coerceIn(280.dp, 560.dp)
@@ -103,7 +123,10 @@ internal fun AppAlertDialog(
 
     Dialog(
         onDismissRequest = { dismiss() },
+        // decorFitsSystemWindows = false：insets 统一由 Compose 处理。保留默认 true 时平台会先把
+        // 弹窗窗口避让到键盘之上，Compose 仍上报完整 IME inset，imePadding 会再抬一次（离键盘过远）。
         properties = DialogProperties(usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
             dismissOnBackPress = currentDismissEnabled, dismissOnClickOutside = currentDismissEnabled),
     ) {
         // 窗口变暗遮罩，点击关闭
@@ -119,72 +142,101 @@ internal fun AppAlertDialog(
                     onClick = { dismiss() },
                 ),
         ) {
-            // 弹窗卡片：底部对齐，从屏底弹入
-            Card(
+            // 弹窗整体（卡片 + 可选的超框内容）：底部对齐，从屏底弹入
+            Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .imePadding()
-                    .padding(horizontal = 12.dp, vertical = 12.dp)
+                    // 键盘可见时只用 imePadding（IME inset 已含导航栏）；收起时用 navigationBarsPadding。
+                    // 两者串联会多垫一档导航栏高度，表现就是卡片离键盘顶部过远。
+                    .then(if (imeVisible) Modifier.imePadding() else Modifier.navigationBarsPadding())
+                    .padding(12.dp)
                     .widthIn(max = AppDialogMaxWidth)
                     .fillMaxWidth()
                     .graphicsLayer {
                         translationY = slideFraction.value * windowHeightPx
                     }
-                    // 消费卡片区域点击，避免穿透到遮罩
+                    // 消费弹窗区域点击（含超框内容），避免穿透到遮罩
                     .pointerInput(Unit) { detectTapGestures { } }
-                    .then(if (dismissing.value) Modifier.clearAndSetSemantics {} else Modifier)
-                    .glassBorder(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                colors = CardDefaults.cardColors(
-                    // 复古玻璃用高不透明度深色面板；白雾玻璃用页面底图 + 白纱的面板层
-                    containerColor = when {
-                        AppThemeColors.isGlass -> GlassPanel
-                        AppThemeColors.isMilkGlass -> Color.Transparent
-                        else -> NavWhite
-                    },
-                    contentColor = TextColor,
-                ),
-                shape = AppComponentShape,
+                    .then(if (dismissing.value) Modifier.clearAndSetSemantics {} else Modifier),
             ) {
-                Box(Modifier.fillMaxWidth().clip(AppComponentShape)) {
-                    if (AppThemeColors.isMilkGlass) {
-                        MilkGlassPanelBackground(Modifier.matchParentSize())
-                    }
-                    // 仅为弹窗子组件提供取色上下文，使输入框与标签指示器和面板形成反差；
-                    // 不把弹窗条目色扩展到页内组件，也不由页面调用方覆盖公共组件颜色。
-                    CompositionLocalProvider(LocalAppDialogContent provides true) {
-                        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
-                            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                title()
-                            }
-                            Box(
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        // 为超框内容留出卡片上沿空间；padding 在 Card 背景之外，表面仍从下方开始
+                        .padding(top = topOverhangHeight)
+                        .glassBorder(),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    colors = CardDefaults.cardColors(
+                        // 复古玻璃用高不透明度深色面板；白雾玻璃用页面底图 + 白纱的面板层
+                        containerColor = when {
+                            AppThemeColors.isGlass -> GlassPanel
+                            AppThemeColors.isMilkGlass -> Color.Transparent
+                            else -> NavWhite
+                        },
+                        contentColor = TextColor,
+                    ),
+                    shape = AppComponentShape,
+                ) {
+                    Box(Modifier.fillMaxWidth().clip(AppComponentShape)) {
+                        if (AppThemeColors.isMilkGlass) {
+                            MilkGlassPanelBackground(Modifier.matchParentSize())
+                        }
+                        // 仅为弹窗子组件提供取色上下文，使输入框与标签指示器和面板形成反差；
+                        // 不把弹窗条目色扩展到页内组件，也不由页面调用方覆盖公共组件颜色。
+                        CompositionLocalProvider(LocalAppDialogContent provides true) {
+                            Column(
                                 Modifier
                                     .fillMaxWidth()
-                                    // Measure the title/actions first so long text cannot consume
-                                    // their space in landscape or with a large system font.
-                                    .then(if (textScrollEnabled) Modifier.weight(1f, fill = false) else Modifier)
-                                    .heightIn(max = textMaxHeight)
-                                    .then(
-                                        if (textScrollEnabled) {
-                                            Modifier.verticalScroll(textScrollState)
-                                        } else {
-                                            Modifier
-                                        },
-                                    )
-                                    .padding(top = 14.dp),
+                                    .padding(
+                                        horizontal = AppDialogContentHorizontalPadding,
+                                        vertical = AppDialogContentVerticalPadding,
+                                    ),
                             ) {
-                                text()
-                            }
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
-                                horizontalArrangement = buttonArrangement,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                dismissButton?.invoke()
-                                confirmButton()
+                                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                    title()
+                                }
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        // Measure the title/actions first so long text cannot consume
+                                        // their space in landscape or with a large system font.
+                                        .then(if (textScrollEnabled) Modifier.weight(1f, fill = false) else Modifier)
+                                        .heightIn(max = textMaxHeight)
+                                        .then(
+                                            if (textScrollEnabled) {
+                                                Modifier.verticalScroll(textScrollState)
+                                            } else {
+                                                Modifier
+                                            },
+                                        )
+                                        .padding(top = 14.dp),
+                                ) {
+                                    text()
+                                }
+                                if (showButtonRow) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+                                        horizontalArrangement = buttonArrangement,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        dismissButton?.invoke()
+                                        confirmButton()
+                                    }
+                                }
                             }
                         }
+                    }
+                }
+
+                if (topOverhang != null) {
+                    // 超框内容按自然尺寸布局；卡片通常更高，因此不会改变弹窗整体高度。
+                    // 保留真实测量尺寸而不是按 0x0 上报，确保封面等内容的点击区域可命中。
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(horizontal = AppDialogContentHorizontalPadding),
+                    ) {
+                        topOverhang()
                     }
                 }
             }

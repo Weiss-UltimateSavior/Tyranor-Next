@@ -24,6 +24,12 @@
     <string name="nav_floating_collapse">收起导航</string>
 
     <string name="settings_app_title">应用设置</string>
+    <string name="settings_about_app">关于应用</string>
+    <string name="about_project_url">项目地址</string>
+    <string name="about_app_version">Tyranor NEXT %1$s</string>
+    <string name="about_acknowledgements">致谢说明</string>
+    <string name="about_disclaimer">免责声明</string>
+    <string name="about_disclaimer_body">本应用仅提供游戏运行环境的启动、配置与管理功能，不包含、不提供下载，也不分发任何游戏本体、商业素材或破解资源。\n\n应用内使用的模拟器与兼容运行层（含第三方组件）均为独立项目，版权归各自作者所有。使用前请确认你已合法持有并有权运行相关游戏，并遵守对应游戏与模拟器的许可协议。\n\n因使用本应用运行游戏而导致的存档损坏、数据丢失、设备异常、账号封禁或其他直接或间接损失，由使用者自行承担；开发者不对任何游戏的兼容性、稳定性与运行结果作出保证。\n\n请勿将本应用用于侵犯版权、传播盗版或违反当地法律法规的用途。</string>
     <string name="settings_language_title">语言</string>
     <string name="settings_language_system">跟随系统</string>
     <string name="settings_language_zh">简体中文</string>
@@ -56,6 +62,8 @@
     <string name="settings_nav_bar_desc_rail">平板上以侧栏显示</string>
     <string name="settings_show_home_page">显示首页</string>
     <string name="settings_show_home_page_summary">关闭后隐藏首页与导航栏首页入口，游戏页作为第一页</string>
+    <string name="settings_classic_icon">经典应用图标</string>
+    <string name="settings_classic_icon_summary">开启后使用旧版应用图标，关闭后使用当前新图标</string>
     <string name="settings_home_style">首页样式切换</string>
     <string name="settings_home_style_native">默认</string>
     <string name="settings_home_style_web">网页</string>
@@ -98,9 +106,13 @@
     <string name="settings_join_group">加入群聊</string>
     <string name="settings_game_dirs_title">游戏目录</string>
     <string name="settings_no_game_dirs">暂无游戏目录</string>
+    <string name="settings_systemnnn_copy_cleanup_done">已清理 %1$d 份 SystemNNN 副本中的资源</string>
+    <string name="settings_systemnnn_copy_cleanup_empty">没有可清理的 SystemNNN 资源副本</string>
+    <string name="settings_systemnnn_copy_cleanup_incomplete">已清理 %1$d 份，%2$d 份暂时无法清理。请关闭运行中的游戏后重试。</string>
+    <string name="settings_systemnnn_copy_cleanup_running">正在清理 SystemNNN 资源…</string>
+    <string name="settings_systemnnn_copy_cleanup_pending">部分 SystemNNN 资源尚未清理，可重试。</string>
     <string name="settings_invalid_suffix">已失效</string>
     <string name="settings_add_dir">添加目录</string>
-    <string name="settings_done">完成</string>
     <string name="settings_input_path">输入路径</string>
     <string name="settings_input_dir_title">输入文件夹路径</string>
     <string name="settings_path_invalid">路径不存在或不是文件夹</string>
@@ -215,10 +227,10 @@
     <string name="game_launch_action">启动游戏</string>
     <string name="game_launch_file">启动文件</string>
     <string name="game_launch_file_auto_summary">自动 - 如有错误请手动选择启动文件</string>
-    <string name="game_remove_quick_launch">移除快捷启动</string>
-    <string name="game_add_quick_launch">添加快捷启动</string>
+    <string name="game_remove_quick_launch">移除首页</string>
+    <string name="game_add_quick_launch">添加首页</string>
     <string name="game_quick_launch_full">首页快捷启动已满（最多 3 个）</string>
-    <string name="game_add_desktop_shortcut">添加到桌面</string>
+    <string name="game_add_desktop_shortcut">添加桌面</string>
     <string name="game_desktop_shortcut_requested">请在系统弹窗中确认添加</string>
     <string name="game_desktop_shortcut_updated">桌面快捷方式已更新</string>
     <string name="game_desktop_shortcut_unsupported">当前桌面不支持固定快捷方式</string>
@@ -258,7 +270,7 @@
     <string name="game_launch_file_empty">目录中未找到 xp3 或 exe 文件</string>
 
     <string name="home_recent_empty">暂无最近打开的游戏</string>
-    <string name="home_quick_launch">快捷启动</string>
+    <string name="home_quick_launch">添加首页</string>
     <string name="home_empty_slot_content_description">空槽位</string>
 
     <string name="engine_settings_save_content_description">保存设置</string>
@@ -786,6 +798,8 @@
     <string name="launch_failed">启动失败</string>
     <string name="launch_all_files_access_request">请在系统页面允许“管理所有文件”，返回后再次启动游戏</string>
     <string name="launch_all_files_access_missing">缺少“管理所有文件”权限，无法让原生引擎读取游戏目录</string>
+    <string name="launch_storage_access_request">请在系统的应用权限中允许存储访问，返回后再次启动游戏</string>
+    <string name="launch_storage_access_missing">缺少存储访问权限，请在系统设置中为 Tyranor-Next 授权</string>
     <string name="launch_krkr_save_path_not_dir">KRKR 存档路径已存在但不是目录：%1$s</string>
     <string name="launch_create_krkr_scoped_save_failed">无法创建 KRKR 应用独立存档目录：%1$s</string>
     <string name="launch_create_krkr_save_failed">无法创建 KRKR 存档目录：%1$s</string>
@@ -1022,6 +1036,7 @@
     <string name="engine_module_management_disable_confirm">禁用</string>
     <string name="engine_module_management_load_failed">模块列表加载失败</string>
     <string name="engine_settings_runtime_module_hint">该游戏由第三方运行时模块运行；模块设置与存档由模块自身管理。</string>
+    <string name="engine_settings_systemnnn_hint">请在游戏的环境设定中调整 SystemNNN 设置。</string>
     <string name="engine_desc_runtime_module">第三方 APK 运行时模块；由模块自行扫描与运行，主 App 只负责发现、启用和传入文件夹路径。</string>
     <string name="launch_runtime_module_missing">运行时模块不可用，游戏已降级为未知，请重新扫描</string>
     <string name="launch_runtime_module_disabled">运行时模块未启用，游戏已降级为未知；请到「引擎模块管理」启用后重新扫描</string>
@@ -1047,4 +1062,13 @@
     <string name="launch_cmvs_unregistered">CMVS 仅支持 19 部登记作品，当前游戏未登记</string>
     <string name="launch_cmvs_audio_unavailable">CMVS 音频初始化失败</string>
     <string name="launch_cmvs_init_failed">CMVS 引擎启动失败</string>
+    <string name="launch_systemnnn_storage_restricted">无法直接读取这个游戏目录。SystemNNN 需要在原目录读写游戏与 sav 存档；请授予该目录访问权限，或把游戏移动到可访问的存储后重新添加。</string>
+    <string name="launch_systemnnn_invalid_source">所选目录没有可读取的 spt/sys.spt。请检查游戏是否完整解压并重新选择游戏文件夹。</string>
+    <string name="launch_systemnnn_source_busy">游戏或存档操作正在进行。请返回现有播放器并退出后重试。</string>
+    <string name="launch_systemnnn_corrupt_copy">旧版本创建的游戏副本不可用。请通过存档管理备份后删除该游戏，再从可访问的原目录重新添加；不会自动回切目录。</string>
+    <string name="launch_systemnnn_save_not_writable">游戏的 sav 目录无法写入。请检查目录权限、存储是否可用及剩余空间，然后重试。</string>
+    <string name="launch_systemnnn_source_missing">游戏目录已不存在。请重新选择包含 spt/sys.spt 的游戏目录。</string>
+    <string name="save_systemnnn_clear_resources">清理导入的游戏资源</string>
+    <string name="save_systemnnn_clear_resources_message">清理应用内副本的游戏资源可以释放空间，原游戏目录和副本中的全部存档都会保留。下次启动时需要从原目录重新导入资源。</string>
+    <string name="save_systemnnn_clear_resources_done">已清理导入的游戏资源</string>
 </resources>

@@ -9,7 +9,7 @@ Tyranor Next 是面向 Android 的多引擎视觉小说（Galgame）聚合启动
 _Avoid_: 游戏类型、格式
 
 **内置引擎**:
-随 App 分发、无需外置安装的引擎运行时（Kirikiroid2 / krkrsdl3、ONScripter、Artemis、Siglus（siglus_rs Rust 运行时）、RealLive / AVG32 / UK2（siglus_rs game_launcher 软渲染运行时）、FVP（rfvp Rust 运行时）、System35（xsystem35）、System4（xsystem4，与 System35 共用 libSDL2x）、Ethornell / BGI（实验接入，兼容性未验收）、CMVS（cmvs-rs Rust 运行时，NativeActivity + loader）、Tyrano 网页壳）。RPG Maker MV/MZ 由内置 Web 运行环境承载。
+随 App 分发、无需外置安装的引擎运行时（Kirikiroid2 / krkrsdl3、ONScripter、Artemis、Siglus（siglus_rs Rust 运行时）、RealLive / AVG32 / UK2（siglus_rs game_launcher 软渲染运行时）、FVP（rfvp Rust 运行时）、System35（xsystem35）、System4（xsystem4，与 System35 共用 libSDL2x）、SystemNNN、Ethornell / BGI（实验接入，兼容性未验收）、CMVS（cmvs-rs Rust 运行时，NativeActivity + loader）、Tyrano 网页壳）。RPG Maker MV/MZ 由内置 Web 运行环境承载。
 _Avoid_: 预制引擎、捆绑引擎
 
 **引擎运行库包（Runtime Pack）**:
@@ -23,6 +23,10 @@ _Avoid_: Winlator BGI 插件、完整 BGI 支持
 **System3.x / System4（XSYS35 / XSYS4）**:
 AliceSoft 的两代引擎，各为独立的引擎类型（XSYS35 对应 System 3.x，XSYS4 对应 System 4）：目录特征、启动参数与设置互不相同，不合并为一类。
 _Avoid_: System3/4、AliceSoft 引擎
+
+**SystemNNN（SYSTEMNNN）**:
+由 tinyan 开发的视觉小说引擎家族。Tyranor Next 的内置实现由 Emberfall 承载。
+_Avoid_: Emberfall 独立播放器、第三方运行时模块
 
 **视觉小说引擎组（Framebuffer 引擎）**:
 Siglus 之外由 game_launcher 运行库承载的三个软件渲染引擎（RealLive、AVG32、UK2）的统称：引擎逐帧输出 RGBA 帧缓冲，宿主 `FramebufferGameActivity` 拷进 Bitmap 呈现并转发指针/键盘/文本输入；文本编码（NLS）按全局/单游戏设置。

@@ -1,8 +1,11 @@
 package com.tyranor.next.core.game.save.sync
 
 import android.content.Context
+import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.save.GameSaveException
+import com.tyranor.next.core.game.save.SaveErrorCode
 import com.tyranor.next.core.game.save.SavePathSafety
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -46,7 +49,9 @@ class SaveSyncService internal constructor(
     }
 
     /** A portable identity is independent of storage volume, absolute path and renamed title. */
-    fun identity(game: ScanGame): String = states.load(localKey(game)).optString("identity")
+    fun identity(game: ScanGame): String = identity(game, states.load(localKey(game)))
+
+    private fun identity(game: ScanGame, state: JSONObject): String = state.optString("identity")
         .ifBlank { defaultIdentity(game) }
 
     suspend fun setIdentity(game: ScanGame, identity: String) = withContext(Dispatchers.IO) {
@@ -480,6 +485,11 @@ class SaveSyncService internal constructor(
             finishActivation(game, pending, directoryKey)
         } catch (cancelled: CancellationException) {
             throw cancelled
+        } catch (failure: GameSaveException) {
+            if (game.engine == EngineType.SYSTEMNNN && failure.code == SaveErrorCode.ENGINE_RUNNING) {
+                throw failure
+            }
+            SaveActivationResult.METADATA_PENDING
         } catch (_: Exception) {
             SaveActivationResult.METADATA_PENDING
         }
@@ -1019,8 +1029,11 @@ class SaveSyncService internal constructor(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            SaveSyncReport(uploaded = uploaded, downloaded = downloaded, busy = busy,
-                failures = listOf(SaveSyncFailure(game.title, errorCode(failure), game.uri)), cleanupPending = cleanupPending,
+            val saveLocked = game.engine == EngineType.SYSTEMNNN &&
+                failure is GameSaveException && failure.code == SaveErrorCode.ENGINE_RUNNING
+            SaveSyncReport(uploaded = uploaded, downloaded = downloaded, busy = if (saveLocked) busy + 1 else busy,
+                failures = if (saveLocked) emptyList() else listOf(SaveSyncFailure(game.title, errorCode(failure), game.uri)),
+                cleanupPending = cleanupPending,
                 cleanupPendingGames = if (cleanupPending > 0) setOf(game.uri) else emptySet())
         } finally {
             uploadArchive?.let(SaveSyncTemporaryFiles::release)
@@ -1042,8 +1055,43 @@ class SaveSyncService internal constructor(
             checkpoint.optBoolean("needsPrune")
     }
 
-    private fun requirePromotionDirectory(state: org.json.JSONObject, promotedAt: Long, directoryKey: String) {
-        if (state.optBoolean("promotionAwaitingChange") || state.optLong("promotionAt") > promotedAt) {
+    /** Inspect without repairing checkpoint files during launch admission. */
+    internal fun boundPromotionDirectory(game: ScanGame, config: WebDavConfig): String? {
+        val state = states.inspect(localKey(game))
+        val directoryKey = state.optString("promotionActiveKey").takeIf { it.isNotBlank() } ?: return null
+        val remoteKey = remoteKey(game, identity(game, state))
+        val promotedAt = states.inspect(checkpointKey(game, config, remoteKey)).optLong("promotedAt")
+        return directoryKey.takeIf { promotionRequiresDirectory(state, promotedAt) }
+    }
+
+    /** The launch holds versions and exclusive mutation and has verified the committed copy's source. */
+    internal fun rebindSystemNnnPromotion(game: ScanGame, config: WebDavConfig, originalKey: String, directoryKey: String) {
+        require(game.engine == EngineType.SYSTEMNNN)
+        requireSameSaveDirectory(directoryKey, environment.activeKey(game))
+        directoryActivations.requireAvailable(originalKey)
+        directoryActivations.requireAvailable(directoryKey)
+        val key = localKey(game)
+        if (activations.load(key) != null || directoryActivations.owned(game.uri).isNotEmpty()) {
+            throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
+        }
+        val state = states.load(key)
+        val promotedAt = states.load(checkpointKey(game, config)).optLong("promotedAt")
+        if (!promotionRequiresDirectory(state, promotedAt)) return
+        // A retry may find that the promotion moved before the session write completed.
+        if (state.optString("promotionActiveKey") == directoryKey) {
+            requirePromotionDirectory(state, promotedAt, directoryKey)
+            return
+        }
+        requirePromotionDirectory(state, promotedAt, originalKey)
+        states.save(key, state.put("promotionActiveKey", directoryKey)
+            .put("promotionDirectoryRevision", directoryActivations.revision(directoryKey)))
+    }
+
+    private fun promotionRequiresDirectory(state: JSONObject, promotedAt: Long): Boolean =
+        state.optBoolean("promotionAwaitingChange") || state.optLong("promotionAt") > promotedAt
+
+    private fun requirePromotionDirectory(state: JSONObject, promotedAt: Long, directoryKey: String) {
+        if (promotionRequiresDirectory(state, promotedAt)) {
             requireSameSaveDirectory(state.optString("promotionActiveKey"), directoryKey)
             if (state.optString("promotionDirectoryRevision") != directoryActivations.revision(directoryKey)) {
                 throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
@@ -1161,7 +1209,8 @@ class SaveSyncService internal constructor(
         return Normalizer.normalize(folder, Normalizer.Form.NFC).lowercase(Locale.ROOT)
     }
 
-    private fun remoteKey(game: ScanGame) = SaveContentHash.text(game.engine.name + "\n" + identity(game))
+    private fun remoteKey(game: ScanGame, portableIdentity: String = identity(game)) =
+        SaveContentHash.text(game.engine.name + "\n" + portableIdentity)
     private fun remoteKeyForConflict(game: ScanGame): String? = try {
         remoteKey(game)
     } catch (failure: SaveSyncException) {
@@ -1182,6 +1231,7 @@ class SaveSyncService internal constructor(
             is SaveSyncException -> failure.code
             is com.tyranor.next.core.game.save.GameSaveException -> when (failure.code) {
                 com.tyranor.next.core.game.save.SaveErrorCode.SAVE_SELECTION_INCOMPLETE -> SaveSyncError.SELECTION_INCOMPLETE
+                com.tyranor.next.core.game.save.SaveErrorCode.ENGINE_RUNNING -> SaveSyncError.GAME_RUNNING
                 com.tyranor.next.core.game.save.SaveErrorCode.RESOLVE_SAVE_DIR_FAILED,
                 com.tyranor.next.core.game.save.SaveErrorCode.SAVE_DIR_UNAVAILABLE,
                 com.tyranor.next.core.game.save.SaveErrorCode.NO_EXPORTABLE_FILES -> SaveSyncError.SAVE_UNAVAILABLE

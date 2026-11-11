@@ -18,7 +18,7 @@ data class ScanGame(
     val externalModuleAlias: String? = null,
     /** 扫描阶段探测到的 Ren'Py 版本建议（EngineSettingsStore.RENPY_*）；null 表示未知或非 Ren'Py。 */
     val detectedRenpyVersion: String? = null,
-    /** 绑定的第三方 APK 运行时模块包名；null 表示非本体系。模块卸载/禁用后引擎降级为 UNKNOWN，但保留该最后已知包名用于重扫恢复。 */
+    /** 第三方 APK 运行时模块包名。模块不可用时保留最后已知包名，供重扫从 UNKNOWN 或内置 SystemNNN 回退恢复。 */
     val runtimeModulePackage: String? = null,
     /** 用户通过“启动文件”手动指定的启动入口文件名（相对游戏目录）；null 表示自动。 */
     val launchFile: String? = null,

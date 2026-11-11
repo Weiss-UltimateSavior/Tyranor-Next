@@ -109,11 +109,14 @@ private fun SaveManagementScreen(game: ScanGame) {
     // 会话运行中/启动中：手动同步被拒绝的提示
     val saveBusyEngineRunningMessage = stringResource(R.string.save_busy_engine_running)
     val externalExitDoneMessage = stringResource(R.string.save_external_exit_done)
+    val clearImportedResourcesDone = stringResource(R.string.save_systemnnn_clear_resources_done)
     val manager = remember { GameSaveManager(context) }
     var location by remember { mutableStateOf<GameSaveManager.SaveLocation?>(null) }
     var fileCount by remember { mutableStateOf(0) }
     var refreshError by remember { mutableStateOf<String?>(null) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var hasImportedResources by remember { mutableStateOf(false) }
+    var showClearImportedResources by remember { mutableStateOf(false) }
     var showExportFormatPicker by remember { mutableStateOf(false) }
     // CreateDocument 系统页期间进程重建后仍按用户所选格式导出。
     var exportFormat by rememberSaveable { mutableStateOf(GameSaveManager.ExportFormat.TYRANOR) }
@@ -131,11 +134,10 @@ private fun SaveManagementScreen(game: ScanGame) {
     // 目录解析与文件递归遍历均为磁盘 IO：统一切到 IO 线程，避免组合期/主线程卡顿
     suspend fun refresh() {
         try {
-            val snapshot = withContext(Dispatchers.IO) {
-                manager.resolveSaveLocation(game) to manager.listSaveFiles(game).size
-            }
-            location = snapshot.first
-            fileCount = snapshot.second
+            val snapshot = withContext(Dispatchers.IO) { manager.inspectSaves(game) }
+            location = snapshot.location
+            fileCount = snapshot.fileCount
+            hasImportedResources = snapshot.hasImportedResources
             refreshError = null
             versionsRevision++
         } catch (cancelled: CancellationException) {
@@ -143,6 +145,7 @@ private fun SaveManagementScreen(game: ScanGame) {
         } catch (failure: Exception) {
             location = null
             fileCount = 0
+            hasImportedResources = false
             refreshError = failure.toSaveErrorMessage(context, saveOperationFailedMessage)
         }
     }
@@ -243,7 +246,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                             Text(game.title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             location?.let { loadedLocation ->
                                 Text(
-                                    loadedLocation.description,
+                                    loadedLocation.description(game.engine.displayName),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(top = 8.dp),
@@ -345,6 +348,15 @@ private fun SaveManagementScreen(game: ScanGame) {
                                 drawSurface = false,
                                 onClick = if (taskRunning) null else ({ showDeleteConfirm = true }),
                             )
+                            if (hasImportedResources) {
+                                AppNavItem(
+                                    title = stringResource(R.string.save_systemnnn_clear_resources),
+                                    showLeadingIcon = false,
+                                    showArrow = false,
+                                    drawSurface = false,
+                                    onClick = if (taskRunning) null else ({ showClearImportedResources = true }),
+                                )
+                            }
                         }
                     }
                 }
@@ -423,6 +435,29 @@ private fun SaveManagementScreen(game: ScanGame) {
                 }
             },
             confirmButton = {},
+        )
+    }
+
+    if (showClearImportedResources) {
+        AppAlertDialog(
+            onDismissRequest = { showClearImportedResources = false },
+            title = { Text(stringResource(R.string.save_systemnnn_clear_resources), style = MaterialTheme.typography.titleMedium) },
+            text = { Text(stringResource(R.string.save_systemnnn_clear_resources_message), style = MaterialTheme.typography.bodyMedium) },
+            confirmButton = {
+                DialogTextButton(
+                    text = stringResource(R.string.common_confirm),
+                    enabled = !taskRunning,
+                    onClick = {
+                        showClearImportedResources = false
+                        runSaveTask {
+                            if (manager.clearImportedSystemNnnResources(game)) clearImportedResourcesDone else null
+                        }
+                    },
+                )
+            },
+            dismissButton = {
+                DialogTextButton(text = stringResource(R.string.common_cancel), onClick = { showClearImportedResources = false })
+            },
         )
     }
 

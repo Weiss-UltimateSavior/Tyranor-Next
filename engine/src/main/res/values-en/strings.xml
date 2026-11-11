@@ -123,6 +123,8 @@
     <string name="engine_input_binding_empty">Not bound</string>
     <string name="engine_input_delete">Delete</string>
     <string name="engine_input_reset">Reset</string>
+    <string name="engine_systemnnn_reading_default">%1$s (default)</string>
+    <string name="engine_systemnnn_reading_original">%1$s (original)</string>
     <string name="engine_input_save">Save</string>
     <string name="engine_input_cancel">Cancel</string>
     <string name="engine_input_confirm">OK</string>
