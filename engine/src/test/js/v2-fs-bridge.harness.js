@@ -469,6 +469,28 @@ check(
     })(),
 );
 check(
+    '旧会话刷盘让位给已写过同一文件的新会话',
+    (() => {
+        // 模拟「同一游戏快速重启」：新会话已经把该 .dat 写成新值，旧会话此刻才刷盘。
+        // 旧值必须被跳过，否则会把新值覆盖回去。
+        const key = 'ConfigManager.data';
+        const target = nodePath.join(storeDir, '436f6e6669674d616e616765722e64617461.dat');
+        fs.writeFileSync(target, '{"volume":10}');   // 新会话写入的新值
+        const s = Object.create(global.Storage.prototype);
+        s.setItem(key, '{"volume":80}');             // 旧会话的待写旧值
+        const bridgeFs = global.TyranorFs;
+        const orig = bridgeFs.isSuperseded;
+        bridgeFs.isSuperseded = function (p) { return nodePath.resolve(p) === nodePath.resolve(target); };
+        try {
+            window.__tyranorLocalStorageFlushAll();
+        } finally {
+            bridgeFs.isSuperseded = orig;
+        }
+        // 盘上必须仍是新值，且旧会话的内存待写项已被丢弃（不再重试覆盖）
+        return fs.readFileSync(target, 'utf8') === '{"volume":10}' && s.getItem(key) === '{"volume":10}';
+    })(),
+);
+check(
     'length/key 走内存键集合',
     (() => {
         const s = Object.create(global.Storage.prototype);

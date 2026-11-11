@@ -35,6 +35,13 @@ internal class RpgMakerFsBridge(
      * 新文件后会出现「XHR 404、`fs.existsSync` 为真」的分裂（仅在 mtime 同刻度时）。
      */
     private val dirIndex: RpgMakerDirIndex = RpgMakerDirIndex(),
+    /**
+     * 本桥所属的会话期号（`RpgMakerSessionOwnership`）。
+     *
+     * 用于写入记录：同一游戏的旧会话可能在新会话之后才把 localStorage 刷到磁盘，
+     * 旧会话刷盘前会问 [isSuperseded]，发现该路径已被更高期号写过就让位。
+     */
+    private val session: Long = 0L,
 ) {
     private val root: File = gameRoot.canonicalFile
 
@@ -140,6 +147,19 @@ internal class RpgMakerFsBridge(
     /** NW.js 的 App.dataPath 语义：游戏目录下的 AppData（可写，供插件存自己的配置）。 */
     @JavascriptInterface
     fun dataDir(): String = File(root, "AppData").absolutePath
+
+    /**
+     * 该路径是否已被**更新的会话**写过。
+     *
+     * 只给 localStorage 退出刷盘用：同一游戏快速重启时，旧 WebView 的异步刷盘可能晚于
+     * 新会话写入同一个 `.dat`（两个会话共用 `<gameDir>/AppData`）。旧会话据此跳过，
+     * 否则会把新值覆盖成旧值。新会话还没写过的键返回 false，照常落盘。
+     */
+    @JavascriptInterface
+    fun isSuperseded(path: String?): Boolean {
+        val file = resolve(path) ?: return false
+        return RpgMakerStorageWriteLedger.isSuperseded(file.path, session)
+    }
 
     @JavascriptInterface
     fun exists(path: String?): Boolean {
@@ -479,6 +499,8 @@ internal class RpgMakerFsBridge(
             tmp = null
             // 目录条目已变：只失效这一层；若刚补建了整条路径（上级目录也变了）则整体失效
             if (parentExisted) dirIndex.invalidate(parent) else dirIndex.invalidateAll()
+            // 记账：让更早的会话在退出刷盘时不要覆盖这次写入
+            RpgMakerStorageWriteLedger.record(file.path, session)
             true
         } catch (error: Throwable) {
             Log.w(TAG, "fs write failed: ${file.path}", error)

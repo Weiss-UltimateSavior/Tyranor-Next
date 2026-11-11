@@ -860,6 +860,12 @@
 
         var realFs = {
             existsSync: function (p) { try { return bridge.exists(p) === true; } catch (e) { return false; } },
+            // 该路径是否已被更新的会话写过（只有 v2 桥提供；旧桥/桩返回 false）。
+            // localStorage 退出刷盘据此让位，避免旧值覆盖新值（两个会话共用 AppData）。
+            isSuperseded: function (p) {
+                try { return typeof bridge.isSuperseded === "function" && bridge.isSuperseded(p) === true; }
+                catch (e) { return false; }
+            },
             exists: function (p, cb) { if (typeof cb === "function") setTimeout(function () { cb(realFs.existsSync(p)); }, 0); },
             readFileSync: function (p, enc) {
                 // Node 语义：无编码 → Buffer；有编码 → 字符串（与 JoiPlay 的 "\b\b\b" 抛错等价）
@@ -3458,13 +3464,23 @@
              */
             function writeBatch(keys) {
                 var failed = [];
+                var superseded = 0;
                 try {
                     try { if (!realFs.existsSync(STORE_DIR)) realFs.mkdirSync(STORE_DIR); } catch (eDir) {}
                     for (var i = 0; i < keys.length; i++) {
                         var key = keys[i];
                         if (!hasOwn(values, key)) continue;
+                        var target = pathFor(key);
+                        // 同一游戏快速重启：旧会话在 onDestroy 才异步刷盘，而新会话可能已经
+                        // 写过同一个 .dat（共用 AppData）。旧值必须让位，否则会覆盖成旧值。
+                        // 这不是丢数据：该键的最新值已经在盘上。
+                        if (realFs.isSuperseded(target)) {
+                            delete values[key];
+                            superseded++;
+                            continue;
+                        }
                         try {
-                            realFs.writeFileSync(pathFor(key), values[key]);
+                            realFs.writeFileSync(target, values[key]);
                             rememberKey(key);
                             // 已落盘：回到「按需读」，避免整份存档/数据表常驻内存
                             delete values[key];
@@ -3474,6 +3490,9 @@
                     }
                 } catch (eOuter) {
                     for (var j = 0; j < keys.length; j++) if (hasOwn(values, keys[j])) failed.push(keys[j]);
+                }
+                if (superseded > 0) {
+                    console.warn("[nw-polyfill-v2] localStorage skipped " + superseded + " key(s) already written by a newer session");
                 }
                 return failed;
             }

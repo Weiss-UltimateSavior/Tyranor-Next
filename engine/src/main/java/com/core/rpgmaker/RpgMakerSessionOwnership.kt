@@ -18,7 +18,12 @@ internal class RpgMakerSessionOwnership {
     private val epoch = AtomicLong(0L)
 
     /** 新会话接管进程，返回它的期号。 */
-    fun beginSession(): Long = epoch.incrementAndGet()
+    fun beginSession(): Long {
+        val current = epoch.incrementAndGet()
+        // 只保留「上一期」的写入记录：更早的会话不可能还有待写数据在飞
+        RpgMakerStorageWriteLedger.pruneBelow(current - 1)
+        return current
+    }
 
     /** 该期会话是否仍拥有进程（期号未被后来者推进）。 */
     fun isOwner(session: Long): Boolean = epoch.get() == session

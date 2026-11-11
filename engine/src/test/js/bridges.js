@@ -56,6 +56,8 @@ function createBridges(gameRoot, contentRoot) {
         dataDir: () => nodePath.join(gameRoot, 'AppData'),
         // Kotlin: resolve(path)?.exists() == true —— 会查磁盘
         exists: (p) => { const f = inside(p); return f !== null && fs.existsSync(f); },
+        // 默认「没有更新会话写过」；用例可临时覆盖以验证旧会话让位
+        isSuperseded: () => false,
         isFile: (p) => { const f = inside(p); return f !== null && fs.existsSync(f) && fs.statSync(f).isFile(); },
         isDir: (p) => { const f = inside(p); return f !== null && fs.existsSync(f) && fs.statSync(f).isDirectory(); },
         readText: (p) => {

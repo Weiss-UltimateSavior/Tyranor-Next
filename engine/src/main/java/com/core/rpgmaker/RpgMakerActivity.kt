@@ -409,8 +409,9 @@ class RpgMakerActivity : Activity() {
                 browser.addJavascriptInterface(
                     // asar 会话传入压缩包：游戏资源在包内、磁盘上不存在，
                     // 桥采用与本地 HTTP 服务器一致的「磁盘优先、asar 兜底」覆盖层语义；
-                    // dirIndex 与服务器共享，写操作会同时失效两边的宽松名缓存
-                    RpgMakerFsBridge(File(dir), bundle.contentRoot, asarArchive, rpgDirIndex),
+                    // dirIndex 与服务器共享，写操作会同时失效两边的宽松名缓存；
+                    // session 用于写入记录，让更早会话的退出刷盘不会覆盖本次写入
+                    RpgMakerFsBridge(File(dir), bundle.contentRoot, asarArchive, rpgDirIndex, sessionEpochAtCreate),
                     RPG_MAKER_FS_BRIDGE_NAME,
                 )
             }
