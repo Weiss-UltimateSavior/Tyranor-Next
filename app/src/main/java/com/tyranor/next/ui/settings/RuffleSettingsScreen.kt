@@ -1,5 +1,12 @@
 package com.tyranor.next.ui.settings
 
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.ExpandVisibility
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
+import com.tyranor.next.ui.common.motion.staggeredEntrance
+import androidx.compose.foundation.layout.Box
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -42,8 +49,9 @@ import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.NoRippleTextButton
 import com.tyranor.next.ui.common.TopBarIcon
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.preference.SwitchPreference
+import com.tyranor.next.ui.common.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.tyranor.next.ui.common.notice.AppNotice
 
 /** Ruffle 外置模块全局设置：模块安装状态 + SWF 渲染参数，由顶部保存按钮统一落盘。 */
 @Composable
@@ -61,6 +69,7 @@ internal fun RuffleSettingsScreen() {
 
     MiuixSettingsTheme {
         Scaffold(
+            modifier = Modifier.skipEntranceOnDrag(),
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
@@ -75,7 +84,7 @@ internal fun RuffleSettingsScreen() {
                             MiuixTheme.colorScheme.primary,
                         ) {
                             EngineSettingsStore.saveRuffle(context, settings)
-                            Toast.makeText(context, R.string.engine_settings_saved, Toast.LENGTH_SHORT).show()
+                            AppNotice.makeText(context, R.string.engine_settings_saved, Toast.LENGTH_SHORT).show()
                         }
                     },
                 )
@@ -88,6 +97,8 @@ internal fun RuffleSettingsScreen() {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
+                    // 设置卡片随页面入场弹入（与其他引擎设置页的卡片同一节奏）
+                    Box(Modifier.staggeredEntrance(0)) {
                     EngineCard(stringResource(R.string.engine_settings_ruffle_card)) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -98,36 +109,40 @@ internal fun RuffleSettingsScreen() {
                                     stringResource(R.string.engine_settings_ruffle_module_status),
                                     style = MaterialTheme.typography.titleMedium,
                                 )
-                                Text(
-                                    stringResource(
-                                        if (moduleInstalled) {
-                                            R.string.engine_module_installed
-                                        } else {
-                                            R.string.engine_module_not_installed
-                                        },
-                                    ),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                BlurCrossfade(moduleInstalled) { installed ->
+                                    Text(
+                                        stringResource(
+                                            if (installed) {
+                                                R.string.engine_module_installed
+                                            } else {
+                                                R.string.engine_module_not_installed
+                                            },
+                                        ),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                    )
+                                }
+                            }
+                            BlurCrossfade(moduleInstalled) { installed ->
+                                Icon(
+                                    imageVector = if (installed) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(22.dp),
+                                    tint = if (installed) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.error
+                                    },
                                 )
                             }
-                            Icon(
-                                imageVector = if (moduleInstalled) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
-                                contentDescription = null,
-                                modifier = Modifier.size(22.dp),
-                                tint = if (moduleInstalled) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.error
-                                },
-                            )
                         }
-                        if (!moduleInstalled) {
+                        ExpandVisibility(!moduleInstalled) {
                             NoRippleTextButton(
                                 text = stringResource(R.string.engine_settings_ruffle_module_get),
                                 modifier = Modifier.padding(horizontal = 8.dp),
                                 onClick = {
                                     if (!ExternalEngineLauncher.openInstallPage(context, RuffleExternalEngineModule)) {
-                                        Toast.makeText(
+                                        AppNotice.makeText(
                                             context,
                                             R.string.engine_open_download_failed,
                                             Toast.LENGTH_SHORT,
@@ -152,6 +167,7 @@ internal fun RuffleSettingsScreen() {
                             settings.scaleMode,
                         ) { settings = settings.copy(scaleMode = it) }
                         SwitchPreference(
+                            modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
                             title = stringResource(R.string.engine_settings_ruffle_letterbox),
                             checked = EngineSettingsStore.normalizeRuffleLetterbox(settings.letterbox) ==
                                 EngineSettingsStore.RUFFLE_LETTERBOX_ON,
@@ -185,6 +201,7 @@ internal fun RuffleSettingsScreen() {
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                         )
+                    }
                     }
                 }
             }

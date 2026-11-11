@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.tyranor.next.ui.common.notice.AppNotice
 
 /** Shows automatic save-sync feedback only while an Activity is resumed. */
 internal fun ComponentActivity.observeSaveSyncFeedback() {
@@ -21,7 +22,7 @@ internal fun ComponentActivity.observeSaveSyncFeedback() {
                 if (SaveSyncFeedback.consume(notice) && enabled) {
                     val message = notice.report.toSaveSyncMessage(activity.applicationContext)
                     withContext(Dispatchers.Main.immediate) {
-                        Toast.makeText(activity, message, Toast.LENGTH_SHORT).show()
+                        AppNotice.makeText(activity, message, Toast.LENGTH_SHORT, AppNotice.Kind.Info).show()
                     }
                 }
             }

@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
@@ -60,6 +61,15 @@ import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.ExpandVisibility
+import com.tyranor.next.ui.common.motion.listItemMotion
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.RollingNumberText
+import com.tyranor.next.ui.common.motion.rememberLastNonNull
+import com.tyranor.next.ui.common.motion.pressSquishGroup
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.common.toSaveSyncMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -68,6 +78,7 @@ import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.tyranor.next.ui.common.notice.AppNotice
 
 class SaveManagementActivity : AppScreenActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -92,6 +103,10 @@ class SaveManagementActivity : AppScreenActivity() {
     }
 }
 
+/**
+ * Shows one game's save location and serializes import, export, deletion, and synchronization tasks.
+ * Refreshes file counts and version panels after an operation while preserving typed failure messages.
+ */
 @Composable
 private fun SaveManagementScreen(game: ScanGame) {
     val context = LocalContext.current
@@ -188,7 +203,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                 refresh()
                 if (message != null) {
                     val duration = if (shortFeedback) Toast.LENGTH_SHORT else Toast.LENGTH_LONG
-                    Toast.makeText(context, message, duration).show()
+                    AppNotice.makeText(context, message, duration, AppNotice.Kind.Info).show()
                 }
             } finally {
                 taskRunning = false
@@ -216,8 +231,9 @@ private fun SaveManagementScreen(game: ScanGame) {
     }
 
     MiuixSettingsTheme {
+        ProvideEntrance {
         MiuixScaffold(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
             containerColor = ComposeColor.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
@@ -237,42 +253,58 @@ private fun SaveManagementScreen(game: ScanGame) {
             ) {
                 item {
                     Card(
-                        modifier = Modifier.fillMaxWidth().glassBorder(),
+                        modifier = Modifier.staggeredEntrance(0).fillMaxWidth().glassBorder(),
                         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                         colors = CardDefaults.cardColors(containerColor = NavWhite, contentColor = TextColor),
                         shape = AppComponentShape,
                     ) {
                         Column(Modifier.fillMaxWidth().padding(16.dp)) {
                             Text(game.title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            location?.let { loadedLocation ->
-                                Text(
-                                    loadedLocation.description(game.engine.displayName),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 8.dp),
-                                )
-                                if (loadedLocation.mirrorForced) {
+                            BlurCrossfade(targetState = location) { loadedLocation ->
+                                if (loadedLocation != null) Column {
                                     Text(
-                                        stringResource(R.string.krkr_mirror_save_import_hint),
+                                        loadedLocation.description(game.engine.displayName),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(top = 4.dp),
+                                        modifier = Modifier.padding(top = 8.dp),
+                                    )
+                                    if (loadedLocation.mirrorForced) {
+                                        Text(
+                                            stringResource(R.string.krkr_mirror_save_import_hint),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(top = 4.dp),
+                                        )
+                                    }
+                                    if (loadedLocation.available) {
+                                        // 导入 / 导出 / 删除后文件数逐位滚动到新值（静止时就是同一段文字）
+                                        RollingNumberText(
+                                            stringResource(R.string.save_file_count, fileCount),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(top = 4.dp),
+                                        )
+                                    } else {
+                                        Text(
+                                            stringResource(R.string.save_unmanageable),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(top = 4.dp),
+                                        )
+                                    }
+                                }
+                            }
+                            // 刷新失败提示：原位展开 / 收回，收起过程中保留最后一条文案
+                            val shownRefreshError = rememberLastNonNull(refreshError)
+                            ExpandVisibility(visible = refreshError != null, label = "saveRefreshError") {
+                                shownRefreshError?.let { error ->
+                                    Text(
+                                        error,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.padding(top = 8.dp),
                                     )
                                 }
-                                Text(
-                                    if (loadedLocation.available) stringResource(R.string.save_file_count, fileCount) else stringResource(R.string.save_unmanageable),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 4.dp),
-                                )
-                            }
-                            refreshError?.let { error ->
-                                Text(
-                                    error,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.padding(top = 8.dp),
-                                )
                             }
                         }
                     }
@@ -280,7 +312,7 @@ private fun SaveManagementScreen(game: ScanGame) {
 
                 item {
                     MiuixCard(
-                        modifier = Modifier.fillMaxWidth().glassBorder(),
+                        modifier = Modifier.pressSquishGroup().staggeredEntrance(1).fillMaxWidth().glassBorder(),
                         cornerRadius = AppComponentCornerRadius,
                     ) {
                         Column(Modifier.padding(vertical = 4.dp)) {
@@ -313,7 +345,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                                     }
                                 }),
                             )
-                            if (rpgWebGame && saveInteropEnabled) {
+                            ExpandVisibility(visible = rpgWebGame && saveInteropEnabled) {
                                 AppNavItem(
                                     title = stringResource(R.string.save_sync_now),
                                     showLeadingIcon = false,
@@ -348,27 +380,33 @@ private fun SaveManagementScreen(game: ScanGame) {
                                 drawSurface = false,
                                 onClick = if (taskRunning) null else ({ showDeleteConfirm = true }),
                             )
-                            if (hasImportedResources) {
+                            ExpandVisibility(visible = hasImportedResources) {
                                 AppNavItem(
                                     title = stringResource(R.string.save_systemnnn_clear_resources),
                                     showLeadingIcon = false,
                                     showArrow = false,
                                     drawSurface = false,
-                                    onClick = if (taskRunning) null else ({ showClearImportedResources = true }),
+                                    onClick = if (taskRunning || !hasImportedResources) null else ({ showClearImportedResources = true }),
                                 )
                             }
                         }
                     }
                 }
                 if (location?.available == true) {
-                    item {
-                        SaveVersionsPanel(game, taskRunning, versionsRevision) { block ->
-                            runSaveTask(block = block, shortFeedback = true)
+                    // 稳定 key：版本面板随存档位置可用而出现时淡入，下方留白平滑让位
+                    item(key = "saveVersions") {
+                        Column(
+                            listItemMotion().staggeredEntrance(2),
+                        ) {
+                            SaveVersionsPanel(game, taskRunning, versionsRevision) { block ->
+                                runSaveTask(block = block, shortFeedback = true)
+                            }
                         }
                     }
                 }
-                item { BottomInsetSpacer() }
+                item(key = "saveBottomInset") { BottomInsetSpacer() }
             }
+        }
         }
     }
 
@@ -406,8 +444,10 @@ private fun SaveManagementScreen(game: ScanGame) {
             title = { Text(stringResource(R.string.save_export_format_title), style = MaterialTheme.typography.titleMedium) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // 两个格式条目在弹窗正文里再错开一拍升起（停稳后与原样一致）
                     AppNavItem(
                         title = stringResource(R.string.save_export_format_standard),
+                        modifier = Modifier.staggeredEntrance(2, distance = 10.dp, stepMillis = 45L),
                         summary = stringResource(R.string.save_export_format_standard_summary),
                         leadingIcon = R.drawable.ic_save_export_format,
                         containerColor = DialogItemSurface,
@@ -421,6 +461,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                     )
                     AppNavItem(
                         title = stringResource(R.string.save_export_format_tyranor),
+                        modifier = Modifier.staggeredEntrance(3, distance = 10.dp, stepMillis = 45L),
                         summary = stringResource(R.string.save_export_format_tyranor_summary),
                         leadingIcon = R.drawable.ic_save_export_format,
                         containerColor = DialogItemSurface,

@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -50,14 +50,24 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.TopBarIcon
+import com.tyranor.next.ui.common.motion.listItemMotion
+import com.tyranor.next.ui.common.motion.animateContentSizeSpring
+import com.tyranor.next.ui.common.motion.bounceOnChange
+import com.tyranor.next.ui.common.motion.breathing
+import com.tyranor.next.ui.common.motion.shakeOnTrigger
+import com.tyranor.next.ui.common.motion.pressSquishGroup
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
-import top.yukonga.miuix.kmp.preference.SwitchPreference
+import com.tyranor.next.ui.common.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.tyranor.next.ui.common.notice.AppNotice
+import com.tyranor.next.ui.common.motion.DelayedProgress
 
 /**
  * 引擎模块管理页：展示已发现的第三方运行时模块（包名前缀 + LAUNCH action），并维护启用开关。
@@ -86,6 +96,11 @@ internal fun EngineModuleManagementScreen() {
     var pendingDisableCount by remember { mutableIntStateOf(0) }
     // 首次组合由 LaunchedEffect 刷新；observer 注册时重放的首个 ON_RESUME 跳过，避免重复查询。
     var resumeAfterFirst by remember { mutableStateOf(false) }
+    // 动效反馈计数（只作触发值，不参与业务）：手动刷新完成 → 刷新图标弹一下；
+    // 发现失败 → 刷新图标与错误卡抖一下；某模块开关提交失败 → 该模块卡片抖一下。
+    var manualRefreshDone by remember { mutableIntStateOf(0) }
+    var loadFailures by remember { mutableIntStateOf(0) }
+    var toggleFailures by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
 
     suspend fun loadGameCounts() {
         val counts = withContext(Dispatchers.IO) {
@@ -102,23 +117,26 @@ internal fun EngineModuleManagementScreen() {
         countsLoaded = true
     }
 
-    suspend fun refreshModules() {
+    suspend fun refreshModules(manual: Boolean = false) {
         refreshing = true
         try {
             RuntimeModuleRegistry.refresh(context)
+            if (manual && RuntimeModuleRegistry.state.value.lastError != null) loadFailures++
             // 管理页刷新时同步核对绑定：模块在页面打开期间被卸载/禁用也能及时降级。
             RuntimeModuleBindings.reconcile(context)
             loadGameCounts()
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Throwable) {
-            Toast.makeText(
+            if (manual) loadFailures++
+            AppNotice.makeText(
                 context,
                 R.string.engine_module_management_operation_failed,
                 Toast.LENGTH_SHORT,
             ).show()
         } finally {
             refreshing = false
+            if (manual) manualRefreshDone++
         }
     }
 
@@ -129,26 +147,27 @@ internal fun EngineModuleManagementScreen() {
             try {
                 val degraded = RuntimeModuleRegistry.setEnabled(context, module.packageName, enabled)
                 if (enabled) {
-                    Toast.makeText(
+                    AppNotice.makeText(
                         context,
                         if (module.scan == null) {
                             R.string.engine_module_management_enabled_no_scan_toast
                         } else {
                             R.string.engine_module_management_enabled_toast
                         },
-                        Toast.LENGTH_SHORT,
+                        Toast.LENGTH_SHORT, AppNotice.Kind.Success,
                     ).show()
                 } else if (degraded > 0) {
-                    Toast.makeText(
+                    AppNotice.makeText(
                         context,
                         String.format(java.util.Locale.getDefault(), disabledToastPattern, degraded),
-                        Toast.LENGTH_SHORT,
+                        Toast.LENGTH_SHORT, AppNotice.Kind.Info,
                     ).show()
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
-                Toast.makeText(
+                toggleFailures = toggleFailures + (module.packageName to ((toggleFailures[module.packageName] ?: 0) + 1))
+                AppNotice.makeText(
                     context,
                     R.string.engine_module_management_operation_failed,
                     Toast.LENGTH_SHORT,
@@ -174,7 +193,7 @@ internal fun EngineModuleManagementScreen() {
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Throwable) {
-                    Toast.makeText(
+                    AppNotice.makeText(
                         context,
                         R.string.engine_module_management_operation_failed,
                         Toast.LENGTH_SHORT,
@@ -206,7 +225,7 @@ internal fun EngineModuleManagementScreen() {
 
     MiuixSettingsTheme {
         MiuixScaffold(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
@@ -215,12 +234,21 @@ internal fun EngineModuleManagementScreen() {
                     background = Color.Transparent,
                     contentColor = PageTextColor,
                     trailing = {
-                        TopBarIcon(
-                            painterResource(R.drawable.ic_game_scan),
-                            stringResource(R.string.engine_module_management_refresh),
-                            MiuixTheme.colorScheme.primary,
+                        // 刷新中图标缓缓明灭；手动刷新完成弹一下；发现失败抖一下（包裹层只改图层，尺寸随图标）
+                        Box(
+                            Modifier
+                                .shakeOnTrigger(loadFailures, amplitude = 4.dp)
+                                .bounceOnChange(manualRefreshDone)
+                                .breathing(refreshing),
                         ) {
-                            scope.launch { refreshModules() }
+                            TopBarIcon(
+                                painterResource(R.drawable.ic_game_scan),
+                                stringResource(R.string.engine_module_management_refresh),
+                                MiuixTheme.colorScheme.primary,
+                                spin = true,
+                            ) {
+                                scope.launch { refreshModules(manual = true) }
+                            }
                         }
                     },
                 )
@@ -239,7 +267,13 @@ internal fun EngineModuleManagementScreen() {
                 if (lastError != null) {
                     item(key = "load_error") {
                         MiuixCard(
-                            modifier = Modifier.fillMaxWidth().glassBorder(),
+                            modifier = Modifier
+                                .then(listItemMotion())
+                                .staggeredEntrance(0)
+                                // 再次刷新仍失败：错误卡水平抖一下（首次出现只淡入，不抖）
+                                .shakeOnTrigger(loadFailures)
+                                .fillMaxWidth()
+                                .glassBorder(),
                             cornerRadius = AppComponentCornerRadius,
                         ) {
                             Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -256,10 +290,15 @@ internal fun EngineModuleManagementScreen() {
                 if (refreshing && snapshot.modules.isEmpty() && lastError == null) {
                     item(key = "loading") {
                         Box(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                            modifier = Modifier
+                                .then(listItemMotion())
+                                // 首屏加载指示与列表同一节拍升起
+                                .staggeredEntrance(0)
+                                .fillMaxWidth()
+                                .padding(vertical = 32.dp),
                             contentAlignment = Alignment.Center,
                         ) {
-                            CircularProgressIndicator()
+                            DelayedProgress { CircularProgressIndicator() }
                         }
                     }
                 }
@@ -267,35 +306,50 @@ internal fun EngineModuleManagementScreen() {
                 if (!refreshing && snapshot.modules.isEmpty() && lastError == null) {
                     item(key = "empty") {
                         Box(
-                            modifier = Modifier.fillParentMaxHeight().fillMaxWidth().padding(horizontal = 24.dp),
+                            modifier = Modifier
+                                .then(listItemMotion())
+                                .staggeredEntrance(0)
+                                .fillParentMaxHeight()
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                // 空态内部再错开：图标先、说明文字后（随整块入场叠加，停稳即原样）
                                 Icon(
                                     painter = painterResource(R.drawable.ic_module),
                                     contentDescription = null,
                                     tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                    modifier = Modifier.size(40.dp),
+                                    modifier = Modifier
+                                        .staggeredEntrance(1, distance = 14.dp, stepMillis = 45L)
+                                        .size(40.dp),
                                 )
                                 Text(
                                     stringResource(R.string.engine_module_management_empty),
                                     style = MaterialTheme.typography.titleMedium,
                                     textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                                    modifier = Modifier
+                                        .staggeredEntrance(2, distance = 14.dp, stepMillis = 45L)
+                                        .fillMaxWidth()
+                                        .padding(top = 12.dp),
                                 )
                             }
                         }
                     }
                 }
 
-                items(
+                itemsIndexed(
                     items = snapshot.modules,
-                    key = { module -> module.packageName },
-                ) { module ->
+                    key = { _, module -> module.packageName },
+                ) { index, module ->
                     EngineModuleCard(
+                        modifier = Modifier
+                            .staggeredEntrance(index + 1)
+                            .then(listItemMotion()),
                         module = module,
                         gameCount = gameCounts[module.packageName] ?: 0,
                         toggleEnabled = module.packageName !in togglingPackages,
+                        toggleFailures = toggleFailures[module.packageName] ?: 0,
                         onEnabledChange = { enabled -> requestEnabledChange(module, enabled) },
                     )
                 }
@@ -346,6 +400,8 @@ private fun EngineModuleCard(
     gameCount: Int,
     toggleEnabled: Boolean,
     onEnabledChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    toggleFailures: Int = 0,
 ) {
     val version = module.versionName
         ?.takeIf { it.isNotBlank() }
@@ -368,7 +424,14 @@ private fun EngineModuleCard(
     )
 
     MiuixCard(
-        modifier = Modifier.fillMaxWidth().glassBorder(),
+        modifier = modifier
+            .pressSquishGroup()
+            // 开关提交失败（开关随快照退回原位）：整张卡片水平抖一下
+            .shakeOnTrigger(toggleFailures)
+            // 绑定数量等摘要变化导致换行数改变时，卡片高度弹簧过渡而不是跳变
+            .animateContentSizeSpring()
+            .fillMaxWidth()
+            .glassBorder(),
         cornerRadius = AppComponentCornerRadius,
     ) {
         Column(Modifier.padding(vertical = 4.dp)) {

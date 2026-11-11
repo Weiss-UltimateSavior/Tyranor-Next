@@ -7,6 +7,11 @@ import android.os.StatFs
 import android.provider.DocumentsContract
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.runtime.key
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -29,7 +34,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -39,13 +44,21 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.State
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -59,7 +72,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -93,9 +108,29 @@ import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.ByteFormats
 import com.tyranor.next.ui.common.SlidingTabRow
+import com.tyranor.next.ui.common.tabDragSelect
+import com.tyranor.next.ui.common.TabPagerState
+import com.tyranor.next.ui.common.rememberTabPagerState
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.coachAnchor
 import com.tyranor.next.ui.common.isWideScreen
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.ExpandVisibility
+import com.tyranor.next.ui.common.motion.breathing
+import com.tyranor.next.ui.common.motion.rememberScrollJellyState
+import com.tyranor.next.ui.common.motion.scrollJelly
+import com.tyranor.next.ui.common.motion.scrollJellyHost
+import kotlinx.coroutines.delay
+import com.tyranor.next.ui.common.motion.MotionMode
+import com.tyranor.next.ui.common.motion.HiddenPageAlpha
+import com.tyranor.next.ui.common.motion.skipDrawWhenHidden
+import com.tyranor.next.ui.common.motion.tabPageTransform
+import com.tyranor.next.ui.common.motion.listItemMotion
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.RollingNumberText
+import com.tyranor.next.ui.common.motion.bounceOnChange
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.game.startActivityWithPageTransition
 import com.tyranor.next.ui.settings.EngineSettingsActivity
 import com.tyranor.next.ui.settings.artVersionOptions
@@ -103,11 +138,14 @@ import com.tyranor.next.ui.settings.engineSettingsKindOf
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import androidx.compose.ui.graphics.Color
 import android.widget.Toast
+import com.tyranor.next.ui.common.collectSettingAsState
+import com.tyranor.next.ui.common.notice.AppNotice
 
 /** 引擎页：列表行展示已集成的游戏引擎。 */
 @Composable
@@ -122,20 +160,17 @@ fun EngineScreen(
     val engineOpenDownloadFailedMessage = stringResource(R.string.engine_open_download_failed)
     val engines = EngineLauncher.supportedEngines
     // 应用设置「显示引擎卡片图标」：关闭后条目只显示引擎名与状态图标
-    val showEngineCardIcon by AppSettingsStore.engineCardIconState.collectAsState()
-    var externalInstallStates by remember {
-        mutableStateOf(refreshExternalInstallStates(context, engines))
-    }
-    var moduleStates by remember {
-        mutableStateOf(refreshModuleStates(context))
+    val showEngineCardIcon by AppSettingsStore.engineCardIconState.collectSettingAsState()
+    var externalModules by remember {
+        mutableStateOf(readExternalModuleStatus(context))
     }
     var emulatorInstallStates by remember {
         mutableStateOf(refreshEmulatorInstallStates(context))
     }
     var ppssppVersion by remember { mutableStateOf(EngineSettingsStore.getPpssppVersion(context)) }
-    var moduleDialogEngine by remember { mutableStateOf<EngineType?>(null) }
+    var moduleDialogEngine by rememberSaveable { mutableStateOf<EngineType?>(null) }
     // YU-RIS 等「引擎专属外置运行时」弹窗：只列该引擎的目标（如 Winlator），标题与内置版本弹窗同构
-    var emulatorDialogEngine by remember { mutableStateOf<EngineType?>(null) }
+    var emulatorDialogEngine by rememberSaveable { mutableStateOf<EngineType?>(null) }
     // 内部存储读取是常数级开销，先同步显示；游戏目录大小在后台用批量查询补齐，
     // 避免首次进入时卡片长时间停在加载态。
     val internalStorage = remember { readInternalStorage() }
@@ -150,20 +185,47 @@ fun EngineScreen(
         freeBytes = internalStorage.freeBytes,
     )
 
+    // 安装状态刷新：PackageManager.getPackageInfo 逐项查询放到 IO 线程，回主线程后一次性写入 Compose 状态。
+    // 结果到达前沿用旧值；若期间又发起了更新的一轮刷新，旧一轮的结果丢弃（以免用旧快照覆盖新快照）。
+    val refreshScope = rememberCoroutineScope()
+    val refreshToken = remember { IntArray(1) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        externalInstallStates = refreshExternalInstallStates(context, engines)
-        moduleStates = refreshModuleStates(context)
-        emulatorInstallStates = refreshEmulatorInstallStates(context)
+        val token = ++refreshToken[0]
+        refreshScope.launch {
+            val appContext = context.applicationContext
+            val fresh = withContext(Dispatchers.IO) {
+                readExternalModuleStatus(appContext) to refreshEmulatorInstallStates(appContext)
+            }
+            if (token == refreshToken[0]) {
+                externalModules = fresh.first
+                emulatorInstallStates = fresh.second
+            }
+        }
         ppssppVersion = EngineSettingsStore.getPpssppVersion(context)
     }
 
     Column(modifier.fillMaxSize()) {
-        AppTopBar(title = stringResource(R.string.nav_engine))
-
+        // 顶栏标题的页面入场由 AppTopBar 自带
+        var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+        // 分类栏与分页内容共用的状态：点选时指示器弹过去、分页只在旧页和新页之间切换；长按分类栏 / 标题区唤出玻璃透镜选择
+        val pager = rememberTabPagerState({ selectedTab }, EngineTab.entries.size)
+        val onTabSelected: (Int) -> Unit = { selectedTab = it }
         // 顶部分页（可在应用设置中关闭）：关闭时平铺展示全部引擎项
-        val categorizeEngines by AppSettingsStore.engineTabsState.collectAsState()
-        var selectedTab by remember { mutableIntStateOf(0) }
-        if (categorizeEngines) {
+        // 随生命周期订阅：设置页盖在上面、本页不可见时不在后台重组（后台组合 / 销毁四个分页会占满主线程，
+        // 让设置页开关的动画卡顿）；返回本页后再用最新值组合，分类栏弹簧展开 / 收起。
+        val categorizeEngines by AppSettingsStore.engineTabsState.collectSettingAsState()
+        // 标题区也可以长按唤出透镜来选分类（与分类栏同一个手势，共用 pager）
+        AppTopBar(
+            title = stringResource(R.string.nav_engine),
+            modifier = Modifier.tabDragSelect(
+                state = pager,
+                enabled = categorizeEngines && MotionMode.enhanced,
+                selectedIndex = { selectedTab },
+                onSelect = onTabSelected,
+            ),
+        )
+        // 分页开关在应用设置中切换后返回本页：分类栏弹簧展开 / 收起，下方列表被平滑推开
+        ExpandVisibility(visible = categorizeEngines) {
             val tabs = listOf(
                 stringResource(R.string.engine_tab_gal),
                 stringResource(R.string.engine_tab_rpgm),
@@ -172,44 +234,67 @@ fun EngineScreen(
             )
             MiuixSettingsTheme {
                 val tabModifier = Modifier
+                    // 分类栏紧随顶栏入场（次序 1）
+                    .staggeredEntrance(1, distance = 14.dp)
                     .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 4.dp)
-                if (AppThemeColors.isGlass || AppThemeColors.isMilkGlass) {
-                    // 玻璃外观：Miuix TabRow 不支持指示器描边，改用统一标签栏组件
-                    // （亮卡指示器 + 滑动动画 + 0.5dp 发丝描边，见 AGENTS.md「标签栏统一规范」）
-                    // 玻璃/白雾外观：Miuix TabRow 的选中文字取 onBackground，会在亮指示器上
-                    // 变成浅色；改用统一标签栏组件（自带亮底深字/深底浅字分派）。
-                    SlidingTabRow(
-                        tabs = tabs,
-                        selectedIndex = selectedTab,
-                        onTabSelected = { selectedTab = it },
-                        modifier = tabModifier,
-                    )
-                } else {
-                    TabRow(
-                        tabs = tabs,
-                        selectedTabIndex = selectedTab,
-                        onTabSelected = { selectedTab = it },
-                        // 圆角与组件统一入口同源：取「应用圆角调整」值
-                        cornerRadius = AppComponentCornerRadius,
-                        // 容器背景透明（只保留选中指示器）：Miuix 默认取 surface，深色下呈不透明黑块
-                        colors = TabRowDefaults.tabRowColors(backgroundColor = Color.Transparent),
-                        modifier = tabModifier,
-                    )
-                }
+                // 统一用标签栏组件：静止外观与原 Miuix TabRow 一致（白色胶囊指示器、42dp 高、6dp 间距），
+                // 切换时的 Q 弹「蠕动」指示器 / 文字弹一下 / 前后沿拉伸见 SlidingTabRow；玻璃系外观额外有描边。
+                SlidingTabRow(
+                    tabs = tabs,
+                    selectedIndex = selectedTab,
+                    onTabSelected = onTabSelected,
+                    pager = pager,
+                    modifier = tabModifier.tabDragSelect(
+                        state = pager,
+                        enabled = MotionMode.enhanced,
+                        selectedIndex = { selectedTab },
+                        onSelect = onTabSelected,
+                        grabImmediately = true,
+                    ),
+                )
             }
         }
 
-        val tabEngines = (if (categorizeEngines) {
-            engines.filter { engineTabOf(it) == EngineTab.entries[selectedTab] }
-        } else {
-            engines
-        }).distinctBy { engineDisplayName(it) }
+        // 每个分页各自的引擎列表（页面切换时新旧两页同时存在，所以按页取，不再共用一个）
+        val enginesFor: (Int) -> List<EngineType> = { tab ->
+            (if (categorizeEngines && tab >= 0) {
+                engines.filter { engineTabOf(it) == EngineTab.entries[tab] }
+            } else {
+                engines
+            }).distinctBy { engineDisplayName(it) }
+        }
+        // 当前页只通过这个 State 对象传递，顶层作用域本身不读 selectedTab：切页时只有真正读它的小作用域重组，
+        // 不会把标题 / 分类栏 / 四个分页的网格一起重新执行（实测切页那一帧重组由 25ms 降到个位数）
+        val activePageState = remember(categorizeEngines) { derivedStateOf { if (categorizeEngines) selectedTab else -1 } }
+        val latestCoachTarget = remember(categorizeEngines, engines) { derivedStateOf { enginesFor(activePageState.value).firstOrNull() } }
 
         // 引擎列表：竖屏单列；横屏/大屏一行两个
         val engineColumns = if (isWideScreen()) 2 else 1
+        // 分页切换：各分页提前组合好并常驻（与主界面四个 Tab 同一思路），切换时只对各页的图层做位移 / 透明度弹簧动画，
+        // 完全没有现场组合、解码的开销，所以不会卡；旧页朝反方向滑走并淡出，新页带弹性滑入并淡入，方向与指示器一致。
+        val pageKeys: List<Int> = if (categorizeEngines) EngineTab.entries.indices.toList() else listOf(-1)
+        // 当前页立刻组合；其余分页在稍后空闲时提前组合（避免拖慢进入本页的首帧）
+        var composedPages by remember { mutableStateOf(setOf(Snapshot.withoutReadObservation { activePageState.value })) }
+        LaunchedEffect(activePageState) { snapshotFlow { activePageState.value }.collect { composedPages = composedPages + it } }
+        LaunchedEffect(categorizeEngines) {
+            delay(700)
+            composedPages = composedPages + pageKeys
+        }
+        // 列表内容里不能直接捕获当前页的值：它一变，四个分页里所有条目都会跟着重组（切换那一帧的主要开销）；
+        // 只捕获 activePageState 这个 State 对象，仅引导高亮那一个条目读它的值
+        Box(Modifier.fillMaxSize().clipToBounds()) {
+        pageKeys.forEach { pageTab ->
+        if (pageTab !in composedPages) return@forEach
+        key(pageTab) {
+        EnginePageHost(pageTab = pageTab, pager = pager, activePage = activePageState) {
+        // 每页的列表固定下来（按 engines / 分页开关 / 页号为 key）：不固定的话每次重组都会生成一个内容相同的新 List，
+        // 切换分页时顶层重组会把四个分页的网格都当成「内容变了」重新执行（实测切页那一帧重组 25ms）
+        val tabEngines = remember(engines, categorizeEngines, pageTab) { enginesFor(pageTab) }
+        // 滚动果冻：快速滚动时卡片沿滚动方向轻微拉长，停下 Q 弹复原（「普通」档不挂）
+        val scrollJellyState = rememberScrollJellyState()
         LazyVerticalGrid(
             columns = GridCells.Fixed(engineColumns),
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().scrollJellyHost(scrollJellyState),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp + glassNavBottomInset()),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -225,25 +310,29 @@ fun EngineScreen(
                     engineCount = engines.distinctBy { engineDisplayName(it) }.size,
                     stats = storageStats,
                     gameBytesLoading = gameDirsBytes == null,
+                    modifier = Modifier.scrollJelly(scrollJellyState).staggeredEntrance(0),
                 )
             }
-            gridItems(
+            gridItemsIndexed(
                 items = tabEngines,
-                key = { it.name },
-                contentType = { "engine" },
-            ) { engine ->
+                key = { _, it -> it.name },
+                contentType = { _, _ -> "engine" },
+            ) { engineIndex, engine ->
                 val isCoachTarget = engine == tabEngines.firstOrNull()
                 if (isCoachTarget) {
                     DisposableEffect(engine) {
                         onDispose {
-                            latestOnCoachAnchorChanged.value(Rect.Zero)
+                            // A replaced row must not clear the bounds reported by its new owner.
+                            if (latestCoachTarget.value == engine || latestCoachTarget.value == null) {
+                                latestOnCoachAnchorChanged.value(Rect.Zero)
+                            }
                         }
                     }
                 }
-                val module = ExternalEngineModuleRegistry.moduleForEngine(engine)
+                val module = ExternalEngineModuleRegistry.resolveModule(engine, externalModules.renpyVersion)
                 val emulator = ExternalEmulatorRegistry.forEngine(engine)
                 val installed = when {
-                    module != null -> externalInstallStates[engine] == true
+                    module != null -> externalModules.installed[module.id] == true
                     emulator != null -> {
                         // PSP 的安装态跟随「PPSSPP 版本」生效值（标准版/黄金版）
                         val pkg = if (emulator.supports(EngineType.PSP)) {
@@ -268,13 +357,17 @@ fun EngineScreen(
                     engine = engine,
                     statusTextRes = statusRes,
                     installed = installed,
-                    modifier = Modifier.coachAnchor(
-                        enabled = engine == tabEngines.firstOrNull() && isActive,
-                        onBounds = onCoachAnchorChanged,
-                    ),
                     // 外置模块 / 外置模拟器 / Tyrano/WebOther/VN/Artemis（内置版本条目）：点击弹窗
                     enabled = module != null || emulator != null || engine in dialogOnlyEngines,
                     compact = engineColumns > 1,
+                    modifier = Modifier
+                        .scrollJelly(scrollJellyState)
+                        .staggeredEntrance(engineIndex + 1)
+                        .coachAnchor(
+                            enabled = isCoachTarget && isActive && pageTab == activePageState.value,
+                            onBounds = onCoachAnchorChanged,
+                        )
+                        .then(listItemMotion()),
                     showIcon = showEngineCardIcon,
                     onClick = {
                         when {
@@ -285,6 +378,10 @@ fun EngineScreen(
                     },
                 )
             }
+        }
+        }
+        }
+        }
         }
     }
 
@@ -309,9 +406,11 @@ fun EngineScreen(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    engineDialogEntries(context, moduleStates, dialogEngine).forEach { entry ->
+                    engineDialogEntries(context, externalModules.installed, dialogEngine).forEachIndexed { index, entry ->
                         AppNavItem(
                             title = entry.title,
+                            // 弹窗正文内的条目在正文升起后再逐条落位（只改图层，停稳即原样）
+                            modifier = Modifier.dialogEntryEntrance(index),
                             summary = stringResource(entry.summaryRes),
                             leadingIcon = R.drawable.ic_engine_chip,
                             containerColor = DialogItemSurface,
@@ -319,7 +418,7 @@ fun EngineScreen(
                             if (!entry.installed && entry.installUrl != null) {
                                 val opened = ExternalEngineLauncher.openInstallPage(context, entry.installUrl)
                                 if (!opened) {
-                                    Toast.makeText(context, engineOpenDownloadFailedMessage, Toast.LENGTH_SHORT).show()
+                                    AppNotice.makeText(context, engineOpenDownloadFailedMessage, Toast.LENGTH_SHORT, AppNotice.Kind.Failure).show()
                                 }
                             }
                             moduleDialogEngine = null
@@ -354,10 +453,11 @@ fun EngineScreen(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    entries.forEach { target ->
+                    entries.forEachIndexed { index, target ->
                         val installed = emulatorInstallStates[target.packageName] == true
                         AppNavItem(
                             title = stringResource(target.displayNameRes),
+                            modifier = Modifier.dialogEntryEntrance(index),
                             summary = stringResource(
                                 if (installed) R.string.engine_emulator_installed else R.string.engine_emulator_not_installed,
                             ),
@@ -367,7 +467,7 @@ fun EngineScreen(
                             if (installed) {
                                 ExternalEmulatorLauncher.openHome(context, target)
                             } else if (!ExternalEngineLauncher.openInstallPage(context, target.installUrl)) {
-                                Toast.makeText(context, engineOpenDownloadFailedMessage, Toast.LENGTH_SHORT).show()
+                                AppNotice.makeText(context, engineOpenDownloadFailedMessage, Toast.LENGTH_SHORT, AppNotice.Kind.Failure).show()
                             }
                             emulatorDialogEngine = null
                         }
@@ -446,29 +546,44 @@ private fun StorageOverviewCard(
                     )
                 }
                 Spacer(Modifier.height(8.dp))
-                Text(
-                    stringResource(
+                // 数值变化（加载完成、剩余空间、数量）时整句模糊替换
+                BlurCrossfade(
+                    targetState = stringResource(
                         R.string.engine_storage_game_usage,
                         if (gameBytesLoading) "…" else ByteFormats.formatBinarySize(stats.gameBytes),
                     ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    stringResource(
+                ) { usageText ->
+                    Text(
+                        usageText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        // 游戏目录大小统计中：这一行缓缓明灭，算完随模糊替换停在原样
+                        modifier = Modifier.breathing(gameBytesLoading),
+                    )
+                }
+                BlurCrossfade(
+                    targetState = stringResource(
                         R.string.engine_storage_remaining,
                         ByteFormats.formatBinarySize(stats.freeBytes),
                     ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 2.dp),
-                )
-                Text(
-                    stringResource(R.string.engine_storage_counts, gameCount, engineCount),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                ) { remainingText ->
+                    Text(
+                        remainingText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                BlurCrossfade(
+                    targetState = stringResource(R.string.engine_storage_counts, gameCount, engineCount),
                     modifier = Modifier.padding(top = 2.dp),
-                )
+                ) { countsText ->
+                    Text(
+                        countsText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             StorageRing(
                 ratio = stats.ratio,
@@ -479,6 +594,10 @@ private fun StorageOverviewCard(
     }
 }
 
+/**
+ * Shows bounded storage usage, retaining the last settled sweep across lazy-item recreation.
+ * Enhanced mode animates the sweep; ordinary mode draws the latest ratio immediately.
+ */
 @Composable
 private fun StorageRing(
     ratio: Float,
@@ -488,8 +607,10 @@ private fun StorageRing(
     val safeRatio = ratio.coerceIn(0f, 1f)
     val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
     val progressColor = MaterialTheme.colorScheme.primary
+    val sweep = rememberStorageSweep(if (loading) 0f else safeRatio)
     Box(modifier.size(92.dp), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.fillMaxSize()) {
+        // 统计中只画轨道：轨道与「…」一起缓缓明灭，算完后进度弧再从 0 扫过去
+        Canvas(Modifier.fillMaxSize().breathing(loading)) {
             val stroke = 10.dp.toPx()
             val inset = stroke / 2f
             val arcSize = Size(size.width - stroke, size.height - stroke)
@@ -507,7 +628,7 @@ private fun StorageRing(
                 drawArc(
                     color = progressColor,
                     startAngle = -90f,
-                    sweepAngle = 360f * safeRatio,
+                    sweepAngle = 360f * sweep().coerceIn(0f, 1f),
                     useCenter = false,
                     topLeft = topLeft,
                     size = arcSize,
@@ -516,10 +637,10 @@ private fun StorageRing(
             }
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
+            RollingNumberText(
                 if (loading) "…" else "${(safeRatio * 100).roundToInt()}%",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
+                modifier = Modifier.breathing(loading),
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
@@ -530,6 +651,13 @@ private fun StorageRing(
         }
     }
 }
+
+/**
+ * 弹窗正文内的条目：标题(0) / 正文(1) 之后按次序逐条轻轻升起（距离短于页面卡片）。
+ * 依赖 AppAlertDialog 自带的入场节拍；没有节拍或「普通」档时与原样完全一致。
+ */
+private fun Modifier.dialogEntryEntrance(index: Int): Modifier =
+    this.staggeredEntrance(index + 2, distance = 10.dp, stepMillis = 45L)
 
 private data class InternalStorage(
     val totalBytes: Long,
@@ -628,14 +756,15 @@ private fun treeSizeBytes(context: Context, treeUri: Uri): Long {
     return total
 }
 
+/** Resolves an engine's icon and label, forwarding the caller's installation status and click behavior. */
 @Composable
 private fun EngineRow(
     engine: EngineType,
     @StringRes statusTextRes: Int,
     installed: Boolean,
-    modifier: Modifier = Modifier,
     enabled: Boolean,
     compact: Boolean = false,
+    modifier: Modifier = Modifier,
     showIcon: Boolean = true,
     onClick: () -> Unit,
 ) {
@@ -658,7 +787,6 @@ private fun EngineRow(
  */
 @Composable
 private fun EngineRowCard(
-    modifier: Modifier = Modifier,
     @DrawableRes iconRes: Int,
     title: String,
     @StringRes statusTextRes: Int,
@@ -667,6 +795,7 @@ private fun EngineRowCard(
     compact: Boolean,
     showIcon: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val bannerWidth = if (compact) 88.dp else 120.dp
     val fadeWidth = minOf(47.dp, bannerWidth * 0.5f)
@@ -676,6 +805,7 @@ private fun EngineRowCard(
     val useImageFadeMask = AppThemeColors.isMilkGlass || AppThemeColors.isGlass
     Card(
         modifier = modifier
+            .pressSquish(enabled = enabled, scale = PressSquishDefaults.CardScale, refuse = true)
             .fillMaxWidth()
             .clickable(enabled = enabled, onClick = onClick)
             .glassBorder(),
@@ -754,18 +884,26 @@ private fun EngineRowCard(
                     .weight(1f)
                     .padding(start = if (showIcon) 12.dp else 16.dp, end = 8.dp),
             )
-            Icon(
-                if (installed) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
-                contentDescription = stringResource(statusTextRes),
-                tint = if (installed) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.error
-                },
+            BlurCrossfade(
+                targetState = installed,
                 modifier = Modifier
                     .padding(start = 8.dp, end = 16.dp)
+                    // 安装状态变化时整个图标位弹一下（放在替换容器上，新旧图标都随之形变）
+                    .bounceOnChange(installed)
                     .size(20.dp),
-            )
+                contentAlignment = Alignment.Center,
+            ) { isInstalled ->
+                Icon(
+                    if (isInstalled) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
+                    contentDescription = stringResource(statusTextRes),
+                    tint = if (isInstalled) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
     }
 }
@@ -799,6 +937,56 @@ private fun engineIconRes(engine: EngineType): Int = when (engine) {
 }
 
 /** 引擎页顶部分页（顺序即展示顺序）：GAL / RPGM / 主机 / 网页。 */
+/**
+ * 一个分页的外壳：只改图层的位移 / 透明度（读 [TabPagerState.pageOffset]），非当前页屏蔽触摸与无障碍。
+ * 单独成函数是为了让「当前页」这个会在切页时变化的值只在这里被读取——切页时只有这四个小外壳重组，
+ * 里面的网格内容（[content]）参数不变，被整体跳过。
+ */
+@Composable
+private fun EnginePageHost(
+    pageTab: Int,
+    pager: TabPagerState,
+    activePage: State<Int>,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    // 隐藏分页不把内容画进显示列表（见 skipDrawWhenHidden）：只在显隐边界翻转，不读逐帧变化的 alpha
+    val shown by remember(pager, pageTab) { derivedStateOf { pageTab >= 0 && pager.pageAlpha(pageTab) > HiddenPageAlpha } }
+    Box(
+        Modifier
+            .fillMaxSize()
+            // 当前页必须在最上层：几个分页叠在同一个 Box 里，命中测试从最上层的兄弟开始，
+            // 排在后面的「非当前页」挡触摸层会把压在它下面的当前页的触摸整片吃掉（列表滑不动、卡片点不了）
+            .zIndex(if (pageTab == activePage.value) 1f else 0f)
+            // 与主界面底栏切页相同的效果：整宽水平弹簧位移 + 淡入淡出弹簧 + 景深缩放（停稳时全部恒等）。
+            // 偏移 / 透明度只读 TabPagerState 里「这一页」自己的值：选中变化时只有旧页（退场）和新页（入场）在动，
+            // 跨几个标签也不会让中间的分页闪过。不用离屏图层合成透明度：逐元素调制 alpha（modulateAlpha）
+            .tabPageTransform(
+                key = pager to pageTab,
+                offset = { if (pageTab >= 0) pager.pageOffset(pageTab) else 0f },
+                alpha = { if (pageTab >= 0) pager.pageAlpha(pageTab) else 1f },
+                modulateAlpha = true,
+            )
+            .then(
+                if (MotionMode.enhanced) Modifier.skipDrawWhenHidden { shown || pageTab == activePage.value } else Modifier,
+            )
+            .then(
+                if (pageTab != activePage.value) {
+                    // 非当前页：保持组合但不接收触摸、不进无障碍树
+                    Modifier
+                        .clearAndSetSemantics { }
+                        .pointerInput(Unit) {
+                            awaitPointerEventScope {
+                                while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                            }
+                        }
+                } else {
+                    Modifier
+                },
+            ),
+        content = content,
+    )
+}
+
 private enum class EngineTab { GAL, RPGM, CONSOLE, WEB }
 
 private fun engineTabOf(engine: EngineType): EngineTab = when (engine) {
@@ -824,19 +1012,6 @@ private fun engineDisplayName(engine: EngineType): String = when (engine) {
     EngineType.WEB_OTHER, EngineType.VN -> "WebOther/VN"
     else -> engine.displayName
 }
-
-private fun refreshExternalInstallStates(
-    context: android.content.Context,
-    engines: List<EngineType>,
-): Map<EngineType, Boolean> =
-    engines.mapNotNull { engine ->
-        // 安装状态与下载/启动一致：Ren'Py 按全局版本解析目标模块（而非「任一版本已装」）
-        val module = ExternalEngineModuleRegistry.resolveModule(
-            engine,
-            EngineSettingsStore.getRenpyVersion(context),
-        ) ?: return@mapNotNull null
-        engine to ExternalEngineLauncher.isPackageInstalled(context, module)
-    }.toMap()
 
 /** 内置 Tyranor 引擎版本名（Tyrano / WebOther/VN / RPG Maker MV/MZ 的网页壳共用）。 */
 private const val TYRANOR_BUILTIN_VERSION = "Tyranor-2.3.4"
@@ -960,11 +1135,15 @@ private fun artemisDialogEntries(): List<EngineDialogEntry> =
 private fun artemisDialogTitle(label: String): String =
     Regex("""^[vV]\d+（(.+)）$""").find(label)?.groupValues?.get(1) ?: label
 
-/** 各外置模块的独立安装状态（按 module id，与行图标的全局版本解析互不影响）。 */
-private fun refreshModuleStates(context: android.content.Context): Map<String, Boolean> =
+/** 列表和版本弹窗共用这一次刷新的安装结果，Ren'Py 列表行只看当前配置的版本。 */
+private data class ExternalModuleStatus(val renpyVersion: String, val installed: Map<String, Boolean>)
+
+private fun readExternalModuleStatus(context: Context) = ExternalModuleStatus(
+    EngineSettingsStore.getRenpyVersion(context),
     ExternalEngineModuleRegistry.modules.associate { module ->
         module.id to ExternalEngineLauncher.isPackageInstalled(context, module)
-    }
+    },
+)
 
 /** 外置主机模拟器安装状态（按包名）。 */
 private fun refreshEmulatorInstallStates(context: android.content.Context): Map<String, Boolean> =

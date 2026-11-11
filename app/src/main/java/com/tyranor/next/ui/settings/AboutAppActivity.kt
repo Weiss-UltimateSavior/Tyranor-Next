@@ -43,6 +43,8 @@ import com.tyranor.next.ui.common.SettingsEntryCard
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 
 /** 项目仓库地址：关于应用页「项目地址」条目打开的系统浏览器目标。 */
 private const val PROJECT_URL = "https://github.com/Weiss-UltimateSavior/Tyranor-Next"
@@ -74,6 +76,8 @@ internal fun AboutAppScreen() {
     var showDisclaimer by rememberSaveable { mutableStateOf(false) }
     val appLabel = stringResource(R.string.app_name)
     val versionLabel = stringResource(R.string.about_app_version, BuildConfig.VERSION_NAME)
+    // 页面入场：顶栏标题、图标版本行与三个入口卡依次弹入
+    ProvideEntrance {
     Column(Modifier.fillMaxSize()) {
         AppTopBar(title = stringResource(R.string.settings_about_app))
         Column(
@@ -86,6 +90,7 @@ internal fun AboutAppScreen() {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(
+                modifier = Modifier.staggeredEntrance(0),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center,
             ) {
@@ -115,6 +120,7 @@ internal fun AboutAppScreen() {
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     SettingsEntryCard(
+                        modifier = Modifier.staggeredEntrance(1),
                         title = stringResource(R.string.about_project_url),
                         iconRes = R.drawable.ic_update_github,
                         onClick = {
@@ -126,11 +132,13 @@ internal fun AboutAppScreen() {
                     )
                     // 点击行为待接入：暂为空实现，先保持条目正常外观
                     SettingsEntryCard(
+                        modifier = Modifier.staggeredEntrance(2),
                         title = stringResource(R.string.about_acknowledgements),
                         iconRes = R.drawable.ic_about_acknowledgements,
                         onClick = {},
                     )
                     SettingsEntryCard(
+                        modifier = Modifier.staggeredEntrance(3),
                         title = stringResource(R.string.about_disclaimer),
                         iconRes = R.drawable.ic_about_disclaimer,
                         onClick = { showDisclaimer = true },
@@ -138,6 +146,7 @@ internal fun AboutAppScreen() {
                 }
             }
         }
+    }
     }
 
     if (showDisclaimer) {

@@ -1,6 +1,7 @@
 package com.tyranor.next
 
 import android.Manifest
+import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.result.contract.ActivityResultContracts
@@ -8,17 +9,18 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.OnboardingWriteResult
+import com.tyranor.next.ui.onboarding.CoachOverlayVisibility
 import com.tyranor.next.ui.onboarding.OnboardingCoachOverlay
 import com.tyranor.next.ui.common.CoachAnchor
 import androidx.compose.foundation.layout.Box
@@ -30,7 +32,12 @@ import kotlinx.coroutines.withContext
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 import com.tyranor.next.ui.common.ProvideAppLocale
 import com.tyranor.next.theme.AppThemeColors
-import com.tyranor.next.theme.GlassBackground
+import com.tyranor.next.ui.common.PageTransitionBackground
+import com.tyranor.next.ui.common.collectSettingAsState
+import com.tyranor.next.ui.common.motion.LocalPageDepth
+import com.tyranor.next.ui.common.motion.ProvideMotionEnvironment
+import com.tyranor.next.ui.common.motion.SystemThemeSync
+import com.tyranor.next.ui.common.motion.rememberPageDepth
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.core.updater.UpdateNotificationManager
 import com.tyranor.next.ui.common.observeSaveSyncFeedback
@@ -46,9 +53,18 @@ class MainActivity : ComponentActivity() {
   private val notificationPermissionLauncher =
     registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
+  private lateinit var systemThemeSync: SystemThemeSync
+
+  override fun onConfigurationChanged(newConfig: Configuration) {
+    // 先截下旧主题，再让 Compose 接收新配置。
+    systemThemeSync.onConfigurationChanged(newConfig)
+    super.onConfigurationChanged(newConfig)
+  }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     observeSaveSyncFeedback()
+    systemThemeSync = SystemThemeSync(this)
 
     // 「显示首页」决定主导航条目与可见页集合，必须在首帧组合前同步加载：
     // 留到 MainScreen 的异步 init 会让冷启动先按默认值（开）绘制、随后再纠正，产生闪动。
@@ -67,7 +83,7 @@ class MainActivity : ComponentActivity() {
           // 系统栏图标跟随实际背景：深色模式/深色底图用浅色图标（SystemBarStyle.dark）
           val activity = this@MainActivity
           val dark = AppThemeColors.isDark || AppThemeColors.hasDarkBackdrop
-          SideEffect {
+          DisposableEffect(dark) {
             if (dark) {
               activity.enableEdgeToEdge(
                 statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
@@ -79,8 +95,14 @@ class MainActivity : ComponentActivity() {
                 navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
               )
             }
+            onDispose { }
           }
-          GlassBackground { AppEntry() }
+          ProvideMotionEnvironment {
+            val depth = rememberPageDepth()
+            CompositionLocalProvider(LocalPageDepth provides depth) {
+              PageTransitionBackground(depth) { AppEntry() }
+            }
+          }
         }
       }
     }
@@ -96,7 +118,7 @@ class MainActivity : ComponentActivity() {
     }
     var completed by remember { mutableStateOf(AppSettingsStore.isOnboardingCompleted(this)) }
     var coachStep by rememberSaveable { mutableStateOf(0) }
-    val homeStyle by AppSettingsStore.homeStyleState.collectAsState()
+    val homeStyle by AppSettingsStore.homeStyleState.collectSettingAsState()
     var saving by remember { mutableStateOf(false) }
     var saveFailed by rememberSaveable { mutableStateOf(false) }
     var saveRequest by rememberSaveable { mutableStateOf(0) }
@@ -145,7 +167,7 @@ class MainActivity : ComponentActivity() {
         coachPage = if (completed) null else coachPage,
         onCoachAnchorChanged = if (completed) { _, _ -> } else reportCoachAnchor,
       )
-      if (!completed) {
+      CoachOverlayVisibility(visible = !completed) {
         OnboardingCoachOverlay(
           step = safeCoachStep,
           homeStyle = homeStyle,

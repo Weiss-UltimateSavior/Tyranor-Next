@@ -9,6 +9,7 @@ import android.os.VibratorManager
 import android.util.Log
 import android.view.HapticFeedbackConstants
 import android.view.ViewConfiguration
+import androidx.annotation.RequiresApi
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
@@ -157,11 +158,11 @@ fun EnhancedLiquidGlassNavigationBar(
      *
      * 不再有「到位后补震」与「松手重震」两套物理触觉，避免同一次操作震两下或反馈滞后。
      */
-    val pressTick = remember(hapticView, hapticSupported) {
-        if (hapticSupported) {
-            { hapticView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY) }
-        } else {
-            {}
+    val pressTick: () -> Unit = remember(hapticView, hapticSupported) {
+        {
+            if (hapticSupported && hapticView.isAttachedToWindow) {
+                hapticView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            }
         }
     }
     // 同一次反馈既服务于物理 DOWN，也服务于无障碍语义激活（TalkBack / 键盘没有物理 DOWN，
@@ -496,7 +497,7 @@ fun EnhancedLiquidGlassNavigationBar(
     }
 
     // 按压光斑：中心直接取透镜位置（栏体局部坐标，含 4dp 内边距；整栏偏移由图层负责）
-    val pressGlow = if (refractionEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    val pressGlowModifier = if (refractionEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         // key 不含宽度：中心点在绘制期读取 updated-state，首帧/旋转无需重建 shader
         remember(controller, spec, colors, paddingPx) {
             PressGlowHighlight(
@@ -511,10 +512,10 @@ fun EnhancedLiquidGlassNavigationBar(
                 veilAlpha = spec.pressVeilAlpha,
                 glowAlpha = spec.pressGlowAlpha,
                 tint = colors.edgeHighlight,
-            )
+            ).modifier
         }
     } else {
-        null
+        Modifier
     }
 
     Box(
@@ -638,7 +639,7 @@ fun EnhancedLiquidGlassNavigationBar(
                     onDrawSurface = barSurface,
                 )
                 .then(edgeStroke)
-                .then(pressGlow?.modifier ?: Modifier)
+                .then(pressGlowModifier)
                 .height(spec.barHeight)
                 .padding(spec.barInnerPadding),
             verticalAlignment = Alignment.CenterVertically,
@@ -853,41 +854,23 @@ fun EnhancedLiquidGlassNavigationBar(
 
         // 唯一图标行：着色边界用输出坐标，折射采样用同一份图标轮廓。
         // shader 创建失败只在本组件回到普通选中着色，不改其他底栏共用的能力标记。
-        val iconShader = remember(refractionEnabled) {
-            if (refractionEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                try {
-                    RuntimeShader(LensIconShader)
-                } catch (error: Exception) {
-                    Log.w("GlassLens", "Icon refraction unavailable for this navigation bar", error)
-                    null
-                }
-            } else {
-                null
-            }
+        val effectCache = if (refractionEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            rememberLensIconEffectCache(spec, colors, paddingPx, tabs)
+        } else {
+            null
         }
         val iconLayer: GraphicsLayerScope.() -> Unit = remember(
-            iconShader, controller, density, spec, colors, pressDeltaPx, pressDeltaMax,
+            effectCache, controller, density, spec, colors, pressDeltaPx, pressDeltaMax,
             paddingPx, tabs, lensMaxWidthPx,
         ) {
-            val effectCache = iconShader?.let { shader ->
-                LensIconEffectCache(
-                    shader = shader,
-                    lensHeightPx = with(density) { spec.lensHeight.roundToPx().toFloat() },
-                    paddingPx = paddingPx,
-                    tabs = tabs.toFloat(),
-                    seamWidthPx = with(density) { 1.5.dp.toPx() },
-                    dispersion = if (spec.movingLensChromatic) 1f else 0f,
-                    baseTint = colors.unselectedIcon.toArgb(),
-                    lensTint = colors.lensContentTint.toArgb(),
-                    fringeSurface = colors.surfaceTint.toArgb(),
-                )
-            }
             val iconScaleOnPress = spec.iconScaleOnPress
                 .safeMotionValue(1f, 3f, GlassBottomBarSpec.Default.iconScaleOnPress)
             val refractionHeightPx = with(density) { pressedRefractionHeight.toPx() }
             val refractionAmountPx = with(density) { pressedRefractionAmount.toPx() }
             val layer: GraphicsLayerScope.() -> Unit = {
-                if (effectCache != null && currentTabWidthPx > 0f && size.width > 0f) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    effectCache != null && currentTabWidthPx > 0f && size.width > 0f
+                ) {
                     val pressure = controller.pressure.coerceIn(0f, 1f)
                     val barScale = lerp(
                         1f,
@@ -939,7 +922,7 @@ fun EnhancedLiquidGlassNavigationBar(
                     item = item,
                     selected = index == selectedIndex,
                     tint = when {
-                        iconShader != null && tabWidthPx > 0f -> Color.White // 单一轮廓源。
+                        effectCache != null && tabWidthPx > 0f -> Color.White // 单一轮廓源。
                         index == selectedIndex -> colors.selectedIcon
                         else -> colors.unselectedIcon
                     },
@@ -1008,10 +991,43 @@ private fun TabIcon(
     )
 }
 
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
+@Composable
+private fun rememberLensIconEffectCache(
+    spec: GlassBottomBarSpec,
+    colors: GlassBottomBarColors,
+    paddingPx: Float,
+    tabs: Int,
+): LensIconEffectCache? {
+    val shader = remember {
+        try {
+            RuntimeShader(LensIconShader)
+        } catch (error: Exception) {
+            Log.w("GlassLens", "Icon refraction unavailable for this navigation bar", error)
+            null
+        }
+    } ?: return null
+    val density = LocalDensity.current
+    return remember(shader, density, spec, colors, paddingPx, tabs) {
+        LensIconEffectCache(
+            shader = shader,
+            lensHeightPx = with(density) { spec.lensHeight.roundToPx().toFloat() },
+            paddingPx = paddingPx,
+            tabs = tabs.toFloat(),
+            seamWidthPx = with(density) { 1.5.dp.toPx() },
+            dispersion = if (spec.movingLensChromatic) 1f else 0f,
+            baseTint = colors.unselectedIcon.toArgb(),
+            lensTint = colors.lensContentTint.toArgb(),
+            fringeSurface = colors.surfaceTint.toArgb(),
+        )
+    }
+}
+
 /**
  * RuntimeShader effect 可能保存创建时的 uniform 快照：动态阶段保持逐次提交与重建。
  * 仅在交互和动画均已闲置、全部 uniform 相同的帧之间复用；静态参数由 remember 的 key 管理。
  */
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
 private class LensIconEffectCache(
     private val shader: RuntimeShader,
     private val lensHeightPx: Float,

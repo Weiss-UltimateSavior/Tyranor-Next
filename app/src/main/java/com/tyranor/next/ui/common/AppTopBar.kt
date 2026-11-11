@@ -17,6 +17,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.theme.PageTextColor
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.staggeredEntrance
+import androidx.compose.ui.unit.Dp
+
+/**
+ * 顶部栏元素（标题、[TopBarIcon]）的入场升起距离：比正文卡片（默认 22dp）短，
+ * 顶栏是页面的「锚」，只轻轻升起，层次上先于正文到位。
+ */
+internal val TopBarEntranceDistance: Dp = 10.dp
 
 /**
  * 页面顶部栏统一组件（AGENTS.md「页面顶部栏统一规范」的唯一入口）。
@@ -62,15 +71,22 @@ fun AppTopBar(
                 modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = contentColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
+                // 标题变化（如多选计数、切换分类）时模糊过渡；静态标题无动画。
+                // 页面入场：标题作为本屏第一个元素从下方轻轻弹入（仅当页面提供了入场节拍时生效，
+                // 切回标签页的快速入场同样适用；停稳后与原样一致）
+                BlurCrossfade(
+                    targetState = title,
+                    modifier = Modifier.weight(1f).staggeredEntrance(0, distance = TopBarEntranceDistance),
+                ) { currentTitle ->
+                    Text(
+                        currentTitle,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = contentColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 trailing?.invoke()
             }
             underTitle?.invoke()

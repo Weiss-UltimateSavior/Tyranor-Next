@@ -31,6 +31,7 @@ import com.tyranor.next.ui.common.TopBarIcon
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.tyranor.next.ui.common.notice.AppNotice
 
 @Composable
 internal fun CmvsSettingsScreen() {
@@ -47,7 +48,7 @@ internal fun CmvsSettingsScreen() {
                     if (imported != null) {
                         font = imported
                     } else {
-                        Toast.makeText(context, R.string.launch_cmvs_font_unavailable, Toast.LENGTH_SHORT).show()
+                        AppNotice.makeText(context, R.string.launch_cmvs_font_unavailable, Toast.LENGTH_SHORT).show()
                     }
                 } finally {
                     importing = false
@@ -71,7 +72,7 @@ internal fun CmvsSettingsScreen() {
                             MiuixTheme.colorScheme.primary,
                         ) {
                             EngineSettingsStore.setCmvsFont(context, font)
-                            Toast.makeText(context, R.string.engine_settings_saved, Toast.LENGTH_SHORT).show()
+                            AppNotice.makeText(context, R.string.engine_settings_saved, Toast.LENGTH_SHORT).show()
                         }
                     },
                 )

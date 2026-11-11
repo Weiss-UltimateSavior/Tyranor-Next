@@ -37,6 +37,16 @@ flowchart TD
 
 主线程负责 UI。扫描、持久化和启动准备通常转入 IO；现有同步兼容门面仍可能阻塞，不能将本仓库描述为完全没有主线程 I/O。
 
+### 界面动效与窗口交接
+
+页面提供状态、稳定身份和业务动作。共享效果由 `ui/common/motion/` 或公共控件实现；只有单一领域理解的效果由该领域持有，例如引擎容量环和归档步骤。动效档位持久化于 `AppSettingsStore`，Activity 根部通过 `ProvideMotionEnvironment` 同步 `MotionMode`。普通档回退由每个效果决定，不另建普通版页面。
+
+- 常驻主标签与引擎分类共享 `TabPageMotion` 规格和 `tabPageTransform`；各自保留交互时钟。整页位移、缩放和翻折在绘制阶段应用，显隐、命中测试与无障碍由页面宿主控制。独立 Activity 的窗口转场由 `PageTransitions` 和 `AppScreenActivity` 管理，Compose 只处理内容层的景深与遮罩。
+- `MotionSheetController` 管理抽屉的拖动、收起与重入；`SheetBackdrop` 汇总浮层进度，多个来源不在页面上反复叠加缩放。稳定 key 的懒列表、网格和瀑布流共享 `listItemMotion`，逐项入场、删除消散和滚动形变仍是独立效果。
+- `AppNotice` 是提示入口。`NoticeCenter` 持有身份、队列和驻留截止时间；各窗口的 `NoticeHost` 按生命周期登记，由当前绘制者更新动画进度。旧窗口的动画完成回调不能关掉或改写新提示；抽屉等没有可绘制宿主的场景保留 Toast 回退。
+
+具体入口、普通档例外和评审规则见 [AGENTS.md](AGENTS.md#动效与视觉反馈的实现边界强制)，离线检查的覆盖边界见[门禁说明](tools/motion-boundaries.md)。
+
 ## 3. 游戏库与持久化
 
 [GameLibraryDatabase.kt](app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryDatabase.kt) 定义主进程专用 Room 数据库 `game_library.db`，当前 schema v3：

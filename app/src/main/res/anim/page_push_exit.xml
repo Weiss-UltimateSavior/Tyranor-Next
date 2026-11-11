@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 推入：上一级向左让开 30%（压暗与翻折景深由 PageDepth 在 Compose 里绘制） -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@interpolator/page_push"
+    android:shareInterpolator="true"
+    android:zAdjustment="normal">
+    <translate
+        android:duration="420"
+        android:fromXDelta="0%"
+        android:toXDelta="-30%" />
+</set>
