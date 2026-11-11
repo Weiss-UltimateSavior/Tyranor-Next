@@ -29,7 +29,8 @@
 | `python3 engine/impacto/generate-profiles-java.py --check` | 已通过；8 个固定 profile 的 Java 投影一致。 |
 | `python3 tools/impacto/test-native-adapter.py --source "$IMPACTO_BUILD_ROOT/source"` | 25 项通过；主机上的启动参数/路径边界测试，不运行 Android。 |
 | `python3 tools/impacto/verify-java.py --source "$IMPACTO_BUILD_ROOT/source"` | 已通过；私有 SDL Java 可由固定来源和补丁重现。最终 13 份 Java 文件已重新验证。 |
-| `python3 tools/impacto/verify-artifacts.py --ndk "$ANDROID_NDK_HOME"` | 已通过 ELF、499 项资源、8 个 profile、54 份源码归档及 Debug / Release APK 内容一致性检查。发布时须保持源码快照、索引和原生产物匹配。 |
+| `python3 tools/impacto/verify-artifacts.py --ndk "$ANDROID_NDK_HOME"` | 已通过 ELF、499 项资源、8 个 profile、54 份源码归档检查。发布时须保持源码快照、索引和原生产物匹配。 |
+| `python3 tools/impacto/verify-artifacts.py --ndk "$ANDROID_NDK_HOME" --apk app/build/outputs/apk/debug/app-debug.apk` | 已通过实际 Debug APK 的运行库分片、资源字节与不重复打入 `lib/` 检查；Android CI 在构建后执行同一命令，失败会阻止该 job 上传 APK。Release 内容一致性仍是本地验收，不宣称由此覆盖 R8 或设备运行。 |
 | `./gradlew testDebugUnitTest --no-daemon` | 第一次完整运行受环境 `JAVA_TOOL_OPTIONS` 启动提示影响，一个既有子 JVM 测试失败。移除对子 JVM 的提示污染后，冻结后的最终源码 App 1466 项 / engine 681 项结果无失败，共 2147 项，其中 2146 项执行成功；1 项要求大小写不敏感文件系统的既有测试跳过。包含 42 项 impacto 宿主测试。 |
 | `./gradlew :app:lintReportDebug :engine:lintReportDebug --no-daemon` | 全仓报告 83 个错误（App 29 / engine 54），不能写成全仓 lint 通过；已核实 engine 错误文件均未改动。最终改动行差异检查为 0，两个模块所有新增源码文件也均为 0 个错误。 |
 | `python3 tools/impacto/test-patch-boundary.py --source "$IMPACTO_BUILD_ROOT/source"` | 16 项通过；编译并执行真实补丁选择函数的宿主/上游分支，验证旧补丁配置不会触发宿主错误。 |

@@ -96,7 +96,7 @@
     "libmediandk.so",
     "libvulkan.so"
   ],
-  "sourceIndexSha256": "465da240b96b81daa5279cbab49467af3a00ace1f7293366a774c99cc66518db",
+  "sourceIndexSha256": "4c9716157007fde1f7571e5190f3757d9a50db51c705f39d4d65a1944ba20242",
   "buildTools": {
     "ndk": "Pkg.Desc = Android NDK\nPkg.Revision = 28.0.13004108\nPkg.BaseRevision = 28.0.13004108\nPkg.ReleaseName = r28",
     "topLevelCmake": "cmake version 3.31.1",

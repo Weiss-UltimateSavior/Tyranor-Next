@@ -159,6 +159,12 @@ jobs:
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --no-daemon
 
+      - name: Check packaged Impacto runtime and resources
+        run: |
+          python3 tools/impacto/verify-artifacts.py \
+            --ndk "$ANDROID_HOME/ndk/28.0.13004108" \
+            --apk app/build/outputs/apk/debug/app-debug.apk
+
       - name: Check packaged SystemNNN runtime
         run: python3 tools/check-systemnnn-runtime.py --apk app/build/outputs/apk/debug/app-debug.apk
 
