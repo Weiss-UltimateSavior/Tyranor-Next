@@ -62,6 +62,8 @@
     <string name="settings_nav_bar_desc_rail">Shown as a side rail on tablets</string>
     <string name="settings_show_home_page">Show home page</string>
     <string name="settings_show_home_page_summary">When off, the home page and its navigation item are hidden; the games page becomes the first page</string>
+    <string name="settings_classic_icon">Classic app icon</string>
+    <string name="settings_classic_icon_summary">Use the previous app icon; turn off to use the current new icon</string>
     <string name="settings_home_style">Home style</string>
     <string name="settings_home_style_native">Default</string>
     <string name="settings_home_style_web">Web</string>

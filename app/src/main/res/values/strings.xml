@@ -62,6 +62,8 @@
     <string name="settings_nav_bar_desc_rail">平板上以侧栏显示</string>
     <string name="settings_show_home_page">显示首页</string>
     <string name="settings_show_home_page_summary">关闭后隐藏首页与导航栏首页入口，游戏页作为第一页</string>
+    <string name="settings_classic_icon">经典应用图标</string>
+    <string name="settings_classic_icon_summary">开启后使用旧版应用图标，关闭后使用当前新图标</string>
     <string name="settings_home_style">首页样式切换</string>
     <string name="settings_home_style_native">默认</string>
     <string name="settings_home_style_web">网页</string>

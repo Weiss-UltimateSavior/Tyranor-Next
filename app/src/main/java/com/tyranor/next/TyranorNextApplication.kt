@@ -14,6 +14,7 @@ import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.process.AppProcess
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
 import com.tyranor.next.core.settings.EngineSettingsStore
+import com.tyranor.next.core.settings.AppIconSwitcher
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.PrefsRenameMigration
 import com.tyranor.next.core.updater.BackgroundUpdateWorker
@@ -57,6 +58,8 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
             // commit 失败时 OnboardingPreferences 保留基于旧数据的内存快照：存量用户仍直接进入主界面，
             // 新安装用户仍显示引导；下一次启动或完成引导时会再次尝试落盘。
             AppSettingsStore.initializeOnboarding(this)
+            // 启动器图标别名与设置对齐（升级、清除数据或上次切换失败时兜底）；幂等，无变化不写。
+            AppIconSwitcher.apply(this, AppSettingsStore.isClassicIconEnabled(this))
         }
         // 共享 prefs 文件更名（yukihub_prefs → tyranor_prefs）：所有进程（含引擎子进程）
         // 启动最早时机一次性迁移，必须先于任何 EngineSettingsStore/引擎偏好读取。

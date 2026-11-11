@@ -62,6 +62,8 @@
     <string name="settings_nav_bar_desc_rail">タブレットではサイドレールで表示</string>
     <string name="settings_show_home_page">ホームを表示</string>
     <string name="settings_show_home_page_summary">オフにするとホームとナビゲーションのホーム項目が非表示になり、ゲームページが最初のページになります</string>
+    <string name="settings_classic_icon">クラシックアプリアイコン</string>
+    <string name="settings_classic_icon_summary">オンにすると旧バージョンのアプリアイコン、オフにすると現在の新しいアイコンを使用します</string>
     <string name="settings_home_style">ホームスタイル</string>
     <string name="settings_home_style_native">デフォルト</string>
     <string name="settings_home_style_web">Web</string>

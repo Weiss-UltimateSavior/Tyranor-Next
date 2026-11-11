@@ -53,6 +53,7 @@ import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
+import com.tyranor.next.core.settings.AppIconSwitcher
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.AppearanceStyle
 import com.tyranor.next.core.settings.HomeWebUrls
@@ -104,6 +105,7 @@ internal fun AppSettingsScreen() {
     val gameCardBadge by AppSettingsStore.gameCardBadgeState.collectAsState()
     val homeStyle by AppSettingsStore.homeStyleState.collectAsState()
     val homePageEnabled by AppSettingsStore.homePageEnabledState.collectAsState()
+    val classicIcon by AppSettingsStore.classicIconEnabledState.collectAsState()
     val homeWebUrl by AppSettingsStore.homeWebUrlState.collectAsState()
     val fixedPalette = AppThemeColors.hasFixedContentPalette
     // 平板/大窗口 + 侧边栏开关开启：导航以侧栏显示（液态玻璃两档不参与侧栏适配）
@@ -123,6 +125,7 @@ internal fun AppSettingsScreen() {
             AppSettingsStore.initGameCardBadge(ctx)
             AppSettingsStore.initHomeStyle(ctx)
             AppSettingsStore.initHomePageEnabled(ctx)
+            AppSettingsStore.initClassicIcon(ctx)
         }
     }
 
@@ -403,6 +406,22 @@ internal fun AppSettingsScreen() {
                                     )
                                 },
                                 onClick = { showHomeWebUrlDialog = true },
+                            )
+                        }
+                    }
+                }
+                item {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                        Column(Modifier.padding(vertical = 4.dp)) {
+                            // 经典应用图标：开启后启用旧图标别名，关闭恢复当前新图标（默认关）
+                            SwitchPreference(
+                                title = stringResource(R.string.settings_classic_icon),
+                                summary = stringResource(R.string.settings_classic_icon_summary),
+                                checked = classicIcon,
+                                onCheckedChange = { checked ->
+                                    AppSettingsStore.setClassicIconEnabled(ctx, checked)
+                                    AppIconSwitcher.apply(ctx, checked)
+                                },
                             )
                         }
                     }

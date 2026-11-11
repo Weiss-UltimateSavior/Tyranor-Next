@@ -88,6 +88,9 @@ object AppSettingsStore {
     /** 显示首页：关闭后首页与导航栏首页入口隐藏，游戏页作为第一页；默认开。 */
     const val KEY_HOME_PAGE_ENABLED = "home_page_enabled"
 
+    /** 经典应用图标：开启后启动器显示旧版图标；默认关。 */
+    const val KEY_CLASSIC_ICON = "classic_icon_enabled"
+
     /** Web 首页展示的地址。 */
     const val KEY_HOME_WEB_URL = "home_web_url"
 
@@ -226,6 +229,9 @@ object AppSettingsStore {
     /** 显示首页默认值：开。 */
     const val DEFAULT_HOME_PAGE_ENABLED = true
 
+    /** 经典应用图标默认值：关（使用当前新图标）。 */
+    const val DEFAULT_CLASSIC_ICON = false
+
     /** Web 首页预设：鲲Gal。 */
     const val HOME_WEB_URL_KUNGAL = "https://www.kungal.com"
 
@@ -278,6 +284,9 @@ object AppSettingsStore {
 
     /** 首页显示内存态：设置页切换后主导航即时隐藏/恢复首页入口。 */
     val homePageEnabledState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_HOME_PAGE_ENABLED)
+
+    /** 经典应用图标内存态：设置页切换后由 [AppIconSwitcher] 同步启动器别名。 */
+    val classicIconEnabledState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_CLASSIC_ICON)
 
     /** Web 首页地址内存态：设置页修改后网页首页即时加载新地址。 */
     val homeWebUrlState: MutableStateFlow<String> = MutableStateFlow(DEFAULT_HOME_WEB_URL)
@@ -527,6 +536,11 @@ object AppSettingsStore {
         homePageEnabledState.value = isHomePageEnabled(c)
     }
 
+    /** 启动/设置页读取时把经典应用图标开关同步到内存态（幂等）。 */
+    fun initClassicIcon(c: Context) {
+        classicIconEnabledState.value = isClassicIconEnabled(c)
+    }
+
     /**
      * 首页样式归一：仅 web 精确接受，其余（含空/未知/历史值 "category"）回退原生
      * （纯函数，便于单测）。
@@ -554,6 +568,15 @@ object AppSettingsStore {
     fun setHomePageEnabled(c: Context, enabled: Boolean) {
         prefs(c).edit().putBoolean(KEY_HOME_PAGE_ENABLED, enabled).apply()
         homePageEnabledState.value = enabled
+    }
+
+    /** 是否使用经典应用图标（旧版图标）；启动器别名状态由 [AppIconSwitcher] 负责。 */
+    fun isClassicIconEnabled(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_CLASSIC_ICON, DEFAULT_CLASSIC_ICON)
+
+    fun setClassicIconEnabled(c: Context, enabled: Boolean) {
+        prefs(c).edit().putBoolean(KEY_CLASSIC_ICON, enabled).apply()
+        classicIconEnabledState.value = enabled
     }
 
     /** 当前 Web 首页地址；磁盘值非法/为空时回退默认（一起萌）。 */
