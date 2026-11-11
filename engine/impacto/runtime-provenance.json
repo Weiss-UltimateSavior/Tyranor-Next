@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "library": "libimpacto.so",
+  "size": 35497544,
+  "sha256": "75ac723fd351fd85cf7bd8ed3e5a14a8910f0f93a349ac97b50b49032ba9e7f4",
+  "unstrippedSha256": "42218228dc94b166d0d96155fa8c7d922be4d2138a8da06d2feda0b5a4050b4a",
+  "resourceGeneration": "e5c7f32333cd65da63c22bb22a59347b7dd205c5f09d35c7c55f7475a428515d",
+  "sourceLock": {
+    "version": 1,
+    "impacto": {
+      "url": "https://github.com/CommitteeOfZero/impacto.git",
+      "revision": "ba0b6e0884b9016fcd7dfd3e50024c5af1e8aef7"
+    },
+    "vcpkg": {
+      "url": "https://github.com/microsoft/vcpkg.git",
+      "revision": "fa9a5b330aed997a68310ed56418617b87a3b83d"
+    },
+    "libatrac9": {
+      "url": "https://github.com/Thealexbarney/LibAtrac9.git",
+      "revision": "efca2e3af35562a09a9bb6deed90e45b4b824dc4"
+    },
+    "imgui": {
+      "url": "https://github.com/ocornut/imgui.git",
+      "revision": "b48d1afbe8ee8b238e2961dc363a949dd7304e23",
+      "annotatedTagObject": "9acdfbf46810c0c74ab281ce04122c4149ae8bd1"
+    },
+    "magic_enum": {
+      "url": "https://github.com/Neargye/magic_enum.git",
+      "revision": "591b64351ea8442f8b8fa044ff335d6943e8e6e0"
+    },
+    "sdl": {
+      "version": "3.4.10",
+      "vcpkgPortVersion": 1,
+      "sourceSha512": "10a9c1fa4d6891c7387fa694b786a168f86b6e5447c6c522f85b739e33720e106ee879dfa9e6e537d5521b983cfbd4908927c555c4d3412735129a4231e16fe6",
+      "javaPackage": "org.libsdl.impacto"
+    },
+    "android": {
+      "abi": "arm64-v8a",
+      "api": 28,
+      "ndk": "28.0.13004108",
+      "cmake": "3.31.1",
+      "pageSize": 16384
+    }
+  },
+  "patches": {
+    "impacto-tyranor-launch.patch": "6b3a7592f73236c48d46c6871f4018d3a17244ba5dd140a17589495e3bae82be",
+    "sdl-java-private-host.patch": "f2b77c69ae7289e8ff0dca6739503ea1701cc0afabd432627da5052349768701",
+    "sdl-private-namespace.patch": "6cec78d9107ae8b01cf7197baee25631ec94e837848326598463afd520b12d04"
+  },
+  "validation": {
+    "aarch64": true,
+    "privateSdlNamespace": true,
+    "elfLoadAlignment": 16384,
+    "devicePlaybackTested": false,
+    "replacementRelinkTested": true
+  },
+  "relinkReportSha256": "31e33a18f2fa5ed9ae062ee9cc9c643269fc424f7af8df5cff39ccfc73119fde",
+  "profilesSha256": "dce603f69f5d4e3ea1ac60f3ca1dc88966d990af21de15529de36c0288a2ffb5",
+  "javaSources": {
+    "HIDBluetoothAccess.java": "1c4d2a0af5d2a265b32095e1e7d74b334c0fbaad4951a9268d1643ea2041bd8b",
+    "HIDDevice.java": "cf088018c4b3818c176f1d54a105fedb51f93d6de633c6f7e04ca55663b4944e",
+    "HIDDeviceBLESteamController.java": "17d51c215b4c506edfdb59dacff2b10fcc1fce0cf4ae9bea81135b4da925e218",
+    "HIDDeviceManager.java": "953192a5e9bb463ccfe87add4020432d300a8304b547e58015b4759302b35881",
+    "HIDDeviceUSB.java": "6d25ce7b37e8fa24bc19c78370796759fef2fe2dfedb39ed1d00c0e82ba49893",
+    "SDL.java": "242f1473ff4dcbc75468a52d8a56926e8fabb8ebd23b05d5be63180daa4f8cf8",
+    "SDLActivity.java": "613222437995c440b3fb3f3f4435551071114d03c9612fdc804cc2fd83bb702f",
+    "SDLAudioManager.java": "626d8a665a96499806ab5cc710e25d29871d2300fbfe7a241873309509cc981f",
+    "SDLControllerManager.java": "d5771572148833378f6a0830be4cfe4f1f652e8bc75593c41432924c0fe06b02",
+    "SDLDummyEdit.java": "9cd757f8d6d4d0c2424e64e7727a02298ed17e663c27dc6666b31d4f7c930472",
+    "SDLInputConnection.java": "4b3114a5cff57464eb79aa5a69095c1a3e99f50270b656a067b63a51aeced8af",
+    "SDLSensorManager.java": "5610d767256b95e6299f865d2fc2700ec7469fe7e214747fc976ffd4088f4977",
+    "SDLSurface.java": "23aa31b83e3186040dbcdbbda748fe927cc7295a6c4b6abe52e67f4baaa8c582"
+  },
+  "buildInputs": {
+    "tools/impacto/package-runtime.py": "d93197912b358c1cb6abfbfb6ea53c95929e7083a7a2e94105aa3f347121d937",
+    "tools/impacto/package-sources.py": "15e6cd32eb5430bcff5fe86226b316498a441bc1ada9530a0ae45fa02c883381",
+    "tools/impacto/test-native-adapter.py": "f86d0b6e7fccf274c420b2082b876079a81f60741af75bf6354118fdd91d36b3",
+    "tools/impacto/test-patch-boundary.py": "89eeb07ed2f61a9a2e1cb3028aa6aee11e3690edc230410fe162df952127bdfd",
+    "tools/impacto/test-relink.py": "a7c843c4229192d31fe3b838bb7deb66ac928177a369464b755b343b0b4e6f04",
+    "tools/impacto/verify-artifacts.py": "9c29949d6810e363883cd650b807a7ea183d4bf0292861cb83c5add3a05fcb37",
+    "tools/impacto/verify-java.py": "41af1ed36902192a4bfe86f3cce52dccb1a703296eb970a8d1f6642a2139bb06",
+    "tools/impacto/build-native.sh": "94be96c9e297b64f7c4de2cef23eb6fa74a0580ee7dd278682d96cfae7ecd5d1",
+    "tools/impacto/build-tools.sh": "5b76b4220c5a4678eb82b39aa51b41ad4243ccefe8b40eed8ffc5d8746b47957",
+    "tools/impacto/test-build-tools.sh": "a63f638f36f5ad84b3e464bad63c6c01892564f8e619c663008e3a9f382615e2",
+    "engine/impacto/triplets/arm64-android-impacto.cmake": "5b0004ddaf57c3e644b86598bf66fe92c35080463506557c2f5a7465059d1e82"
+  },
+  "neededSystemLibraries": [
+    "libEGL.so",
+    "libGLESv3.so",
+    "libOpenSLES.so",
+    "libandroid.so",
+    "libc.so",
+    "libdl.so",
+    "liblog.so",
+    "libm.so",
+    "libmediandk.so",
+    "libvulkan.so"
+  ],
+  "sourceIndexSha256": "465da240b96b81daa5279cbab49467af3a00ace1f7293366a774c99cc66518db",
+  "buildTools": {
+    "ndk": "Pkg.Desc = Android NDK\nPkg.Revision = 28.0.13004108\nPkg.BaseRevision = 28.0.13004108\nPkg.ReleaseName = r28",
+    "topLevelCmake": "cmake version 3.31.1",
+    "vcpkgCmake": [
+      "cmake version 4.3.2"
+    ]
+  }
+}

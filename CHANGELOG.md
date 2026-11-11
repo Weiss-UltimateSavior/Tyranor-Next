@@ -4,6 +4,8 @@
 
 ### 新增
 
+- 新增实验性 impacto / MAGES. 接入：严格 `impacto.json` profile 声明、独立 `:impacto` 进程与 SDL 3.4.10 命名空间、按游戏隔离的私有配置/存档和校验后原子安装的运行资源；API 28 / ARM64 / GLES 3.2 单独门禁。未扩大为通用 MAGES.、完整游戏、统一存档管理或图形滤镜支持，真实设备/游戏验收仍单独记录。
+
 - 应用设置新增「经典应用图标」开关（默认关）：开启后启动器恢复旧版应用图标，关闭使用当前新图标。通过 manifest 的 `LauncherDefault` / `LauncherClassic` 两个 activity-alias 切换（Android 不支持运行时直接替换图标），启动时按设置兜底同步；部分 OEM 桌面切换后可能短暂重排或需刷新桌面。
 - 设置页新增「关于应用」入口（灯泡图标 `ic_settings_about`），进入 `AboutAppActivity`：页面以「应用图标（56dp）+ Tyranor NEXT 版本号」一行居中展示，下方为「项目地址 / 致谢说明 / 免责声明」三个条目（复用设置页单条入口卡样式）；整组内容自顶栏下方 60dp 开始；「项目地址」点击打开系统浏览器访问 GitHub 仓库，「免责声明」点击弹出模拟器免责声明弹窗，「致谢说明」点击行为暂未接入。
 - 新增 CMVS 引擎（Purple SOFTWARE，cmvs-rs）接入：NativeActivity + `libcmvs_loader.so`，真实运行库 `libcmvs_android.so` 走 `engine-runtime/cmvs` 分片首启解压；仅支持 19 部登记作品，字体由用户自选，要求 Vulkan，仅触摸输入；独立存档位于 App 私有 `files/cmvs/users/<hash>`，不写游戏目录。

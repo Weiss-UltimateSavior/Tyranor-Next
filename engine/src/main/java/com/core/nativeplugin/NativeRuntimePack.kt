@@ -51,6 +51,9 @@ object NativeRuntimePack {
     /** `libkrkrsdl3.so`：KiriKiri 的 SDL3 内核（`libSDL3.so` 仍随 `lib/`）。 */
     const val PACK_KRKRSDL3 = "krkrsdl3"
 
+    /** `libimpacto.so`: statically linked private SDL 3.4.10; never shares libSDL3.so. */
+    const val PACK_IMPACTO = "impacto"
+
     /** `libxsystem35.so` / `libxsystem4.so` / `libSDL2x.so`：System3.x 与 System4 共用 SDL2x。 */
     const val PACK_XSYSTEM = "xsystem"
 

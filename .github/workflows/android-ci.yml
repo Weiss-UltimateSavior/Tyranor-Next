@@ -88,6 +88,11 @@ jobs:
           python3 tools/check-hardcoded-ui-strings.py
           python3 tools/test-hardcoded-ui-strings.py
 
+      - name: Check Impacto runtime provenance and corresponding source
+        run: |
+          tools/impacto/test-build-tools.sh
+          python3 tools/impacto/verify-artifacts.py --ndk "$ANDROID_HOME/ndk/28.0.13004108"
+
       - name: Check bundled SystemNNN runtime
         run: python3 tools/check-systemnnn-runtime.py
 

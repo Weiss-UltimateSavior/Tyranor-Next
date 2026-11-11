@@ -878,8 +878,8 @@ internal fun GameActionsSheet(
                                 ),
                             )
                         }
-                        // 第三方运行时模块没有主 App 侧设置；未知引擎也不展示设置。
-                        if (game.engine != EngineType.RUNTIME_MODULE && game.engine != EngineType.UNKNOWN) {
+                        // No launcher settings exist for runtime modules or impacto; unknown engines also have none.
+                        if (game.engine !in setOf(EngineType.IMPACTO, EngineType.RUNTIME_MODULE, EngineType.UNKNOWN)) {
                             add(
                                 DrawerAction(
                                     key = "engine_settings",
@@ -2097,7 +2097,7 @@ internal fun EngineType.coverColor(): Color = when (this) {
     EngineType.RUNTIME_MODULE -> Color(0xFF5C6BC0)
     EngineType.PSP -> Color(0xFF6D4C9F)
     EngineType.NINTENDO_SWITCH -> Color(0xFFD32F2F)
-    EngineType.SYSTEMNNN, EngineType.UNKNOWN -> Color(0xFF607D8B)
+    EngineType.IMPACTO, EngineType.SYSTEMNNN, EngineType.UNKNOWN -> Color(0xFF607D8B)
 }
 
 internal fun shouldShowSaveManagement(engine: EngineType): Boolean =
@@ -2105,6 +2105,7 @@ internal fun shouldShowSaveManagement(engine: EngineType): Boolean =
     // 手动添加的类型（PC / 安卓游戏）无统一存档接口，显式排除。
     engine == EngineType.YURIS ||
         (!engine.isManual &&
+            engine != EngineType.IMPACTO &&
             engine != EngineType.RUNTIME_MODULE &&
             engine != EngineType.UNKNOWN &&
             (engine != EngineType.ETHORNELL ||

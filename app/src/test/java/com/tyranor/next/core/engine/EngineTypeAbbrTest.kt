@@ -33,6 +33,7 @@ class EngineTypeAbbrTest {
         assertEquals("AVG", EngineType.AVG32.abbr)
         assertEquals("UK", EngineType.UK2.abbr)
         assertEquals("FVP", EngineType.FVP.abbr)
+        assertEquals("IMP", EngineType.IMPACTO.abbr)
         assertEquals("S3X", EngineType.XSYS35.abbr)
         assertEquals("S4X", EngineType.XSYS4.abbr)
         assertEquals("NS", EngineType.NINTENDO_SWITCH.abbr)

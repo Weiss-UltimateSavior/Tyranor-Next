@@ -92,6 +92,14 @@ Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并�
 
 WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano` 保留历史默认目录，`:rpgmaker` 自设后缀。更改 profile 或本地 HTTP 端口会影响历史网页存储作用域，须同时评估存档兼容。
 
+### impacto 宿主边界
+
+`IMPACTO` 通过 App core 的严格描述文件解析和硬件/路径预检，调用 engine 层 `ImpactoLaunchPreparation` 准备资源与独立会话配置；UI 只通过 core 门面获知真实运行库是否随包。游戏身份仍按枚举名称持久化，不新增 Room 字段。
+
+`ImpactoActivity` 是非导出的独立 `:impacto` SDL 宿主，绝对路径加载 `libimpacto.so`。静态链接的私有 SDL 3.4.10 对应 `org.libsdl.impacto`，不使用或替换既有 SDL3 3.4.12。上游会直接退出进程，因此会话锁必须覆盖真实原生写入寿命，不能把 Activity 销毁视为写入完成。
+
+原生 `.so` 仍使用 `NativeRuntimePack`；独立 `impacto-runtime/` 资源包使用带大小/SHA-256 清单的版本化原子安装器，不复用仅 `.so` 的提取器。可信配置只运行随包 profile，精确重映射 VFS 的 `Path`/`Order` 与存档字段。补丁显式设置可信资源 CWD，并关闭缺失参数时向无关 Lua 的回退。用户配置与存档不在资源升级目录内。来源、构建及验收门槛见 [impacto 接入说明](docs/impacto-engine.md)。
+
 ## 6. 资源与原生构建链
 
 | 源头 | 生成/消费方式 |

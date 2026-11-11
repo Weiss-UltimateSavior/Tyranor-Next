@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "result": "passed",
+  "library": "vendored mspack (LGPL-2.1)",
+  "method": "Compiled source-modified system.c, replaced that member in a copied static archive, and relinked a separate runtime using existing application objects.",
+  "probeSymbol": "impacto_lgpl_relink_probe",
+  "originalUnstrippedRuntimeSha256": "42218228dc94b166d0d96155fa8c7d922be4d2138a8da06d2feda0b5a4050b4a",
+  "modifiedRuntimeSha256": "e3a271835874339997791c4b3144645c2e28fff2ee4e8684a2a1024d2b3db946",
+  "originalArtifactsUnchanged": true,
+  "freshOfflineRebuild": false,
+  "androidExecutionTested": false
+}

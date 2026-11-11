@@ -26,6 +26,7 @@ enum class EngineType(val displayName: String, val abbr: String, val isManual: B
     UK2("UK2", "UK"),
     FVP("FVP", "FVP"),
     ETHORNELL("Ethornell / BGI", "BGI"),
+    IMPACTO("impacto", "IMP"),
     RENPY("Ren'Py", "RPY"),
     RUFFLE("Ruffle", "SWF"),
     RUNTIME_MODULE("Plugin", "RT"),

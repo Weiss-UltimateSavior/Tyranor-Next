@@ -1,0 +1,1130 @@
+{
+  "archives": [
+    {
+      "bytes": 42920,
+      "entries": 56,
+      "file": "dependency-licenses.tar.xz",
+      "sha256": "0fdd0e97e0dad6122e360c7a621c211449573d5ccf5f53a3c015219eb47571a5"
+    },
+    {
+      "bytes": 1496452,
+      "component": "imgui",
+      "entries": 285,
+      "excludedFiles": [],
+      "file": "imgui.tar.xz",
+      "revision": "b48d1afbe8ee8b238e2961dc363a949dd7304e23",
+      "sha256": "f14e59572aff4a1a9da5ff8137fc124bb4de2df5656c04125bb3f26f47830d9b"
+    },
+    {
+      "bytes": 1259116,
+      "component": "impacto",
+      "entries": 1350,
+      "excludedFiles": [
+        {
+          "file": "android/gradle/wrapper/gradle-wrapper.jar",
+          "sha256": "d3b261c2820e9e3d8d639ed084900f11f4a86050a8f83342ade7b6bc9b0d2bdd"
+        },
+        {
+          "file": "resources/cc/.gitkeep",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "file": "resources/cc/font-lb/foreground.png",
+          "sha256": "25c0b0c118c9c99c97346ec917dc77928c40238ee24a49220d73ec1285c415e2"
+        },
+        {
+          "file": "resources/cc/font-lb/outline.png",
+          "sha256": "54f7c098d368b5dccf8f690f265926f72d0d87f32512269f3110765f9f20f352"
+        },
+        {
+          "file": "resources/cc/font-lb/widths.bin",
+          "sha256": "c5ead75ebe95ecd17ca3661185c982eb081109726196f00dad517512e108b54d"
+        },
+        {
+          "file": "resources/cclcc-switch/icondata/icon.icns",
+          "sha256": "1bc1a2c00c8a48599c9174110b602fe341e66c08acc511e49ae7663c6e9484c1"
+        },
+        {
+          "file": "resources/cclcc-switch/icondata/icon.ico",
+          "sha256": "d2e6ec559fac318068efe8bc7392ab7a88a7df2bd2314024c32f58153cdb7b21"
+        },
+        {
+          "file": "resources/cclcc-switch/icondata/icon.png",
+          "sha256": "f87943e64c5ebcfa5e7fc0d1d10bcef09d069de61f79cc8e09e39b436b03dc55"
+        },
+        {
+          "file": "resources/cclcc/font-lb-italic/foreground.png",
+          "sha256": "13343d4fd370f61320f1adcaeb8fe89293448b76f6e77c25490159b0379cfa3c"
+        },
+        {
+          "file": "resources/cclcc/font-lb-italic/outline.png",
+          "sha256": "bc60b22d4575a9dacba9871fc7a9de2bd2a4586b0770c1fcc60adeede20a60c6"
+        },
+        {
+          "file": "resources/cclcc/font-lb-italic/widths.bin",
+          "sha256": "96461d5019674da2ccfc1a452ff6765b221ac485d85356f9d86e0b4e67780a65"
+        },
+        {
+          "file": "resources/cclcc/icondata/cursor_arrow.png",
+          "sha256": "032e1a32d537e597c4ccc3492904699243a98657c5412e5f28a610ff3006ae9b"
+        },
+        {
+          "file": "resources/cclcc/icondata/cursor_pointer.png",
+          "sha256": "4b188f289033fd73ff35adb813d3aa49bd5b019364f978b7cd7356ad56300f88"
+        },
+        {
+          "file": "resources/cclcc/icondata/icon.icns",
+          "sha256": "1bc1a2c00c8a48599c9174110b602fe341e66c08acc511e49ae7663c6e9484c1"
+        },
+        {
+          "file": "resources/cclcc/icondata/icon.ico",
+          "sha256": "d2e6ec559fac318068efe8bc7392ab7a88a7df2bd2314024c32f58153cdb7b21"
+        },
+        {
+          "file": "resources/cclcc/icondata/icon.png",
+          "sha256": "f87943e64c5ebcfa5e7fc0d1d10bcef09d069de61f79cc8e09e39b436b03dc55"
+        },
+        {
+          "file": "resources/chlcc/.gitkeep",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "file": "resources/chlcc/font-lb/foreground.png",
+          "sha256": "34aec21e5ddd629f345b858518e95e8fdba961cf0034b300075426c42271ee62"
+        },
+        {
+          "file": "resources/chlcc/font-lb/outline.png",
+          "sha256": "69b0835a6f56f8ccede482df67fb3405d4a0f6e3500a34d1a6e0a97ee26976fc"
+        },
+        {
+          "file": "resources/chlcc/font-lb/widths.bin",
+          "sha256": "e7827a83e80fe19f67dc970179374c0d72311be5b58bda1cf04549722e7f2774"
+        },
+        {
+          "file": "resources/chlcc/icondata/cursor_arrow.png",
+          "sha256": "f7121590e46b0a43b2853dba9e2836c02eb4f74d204cda27ce74f8cb36790460"
+        },
+        {
+          "file": "resources/chlcc/icondata/cursor_pointer.png",
+          "sha256": "ecb38cef8273acced05cf29d60e9e39a992389ed07e638a4934c4a4b7d26eb03"
+        },
+        {
+          "file": "resources/chlcc/icondata/icon.icns",
+          "sha256": "c7389a3d3ed231e4144fe530df6344c6d276f8302bbf5490f31e406e24fcddf0"
+        },
+        {
+          "file": "resources/chlcc/icondata/icon.ico",
+          "sha256": "cb7821c2829177cc9d4c49a04445a0dd6107c7f34f46f618bb3aaec1b2cbe00a"
+        },
+        {
+          "file": "resources/chlcc/icondata/icon.png",
+          "sha256": "6e90b55cf10ac6cc520f2fb78e9b624ccf5a86543eee1b3bb5399bdc140176c6"
+        },
+        {
+          "file": "resources/common/achievementnotification.png",
+          "sha256": "d3d21f9fd95a6a635e24cb6ef5c0103830167e17778980edf94ecb31918f2138"
+        },
+        {
+          "file": "resources/common/font/NotoSansCJKjp-Bold.otf",
+          "sha256": "e53dcb0dcb2922e45d01aae1ebd2f382bb81d4229b18b6b883bd170678af1f76"
+        },
+        {
+          "file": "resources/common/font/NotoSansCJKjp-Regular.otf",
+          "sha256": "68a3fc98800b2a27b371f2fb79991daf3633bd89309d4ffaa6946fd587f375b5"
+        },
+        {
+          "file": "resources/common/icons/icon.icns",
+          "sha256": "029d027edad229f9dfcea720c47f995f7823a13b1448bccbd66e644306a0c97d"
+        },
+        {
+          "file": "resources/common/icons/icon.ico",
+          "sha256": "847b142ab81f98cc9ae66064db9766539e7eea1b1d18e818e90b9de05ea0990a"
+        },
+        {
+          "file": "resources/common/icons/icon.jpg",
+          "sha256": "abff0e93a5a70ee9518780e569e7305c6b59760134cd5576a7183027dfb0c5f1"
+        },
+        {
+          "file": "resources/common/icons/icon.png",
+          "sha256": "daf89b4e0bdd51e02c47aaa12a320416fa2daad8a63a1ed21b1a630915d43306"
+        },
+        {
+          "file": "resources/common/icons/icon.svg",
+          "sha256": "4e53840decc6e34a90af0c99c11fcaf5c43e25c947ba7a7ca703686fb4f500cf"
+        },
+        {
+          "file": "resources/rne/.gitkeep",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "file": "resources/rne/font-lb/foreground.png",
+          "sha256": "ff460c0ff61beb315a586dfb7248fffec0ad6280e6f662eb691d1049f8b391f3"
+        },
+        {
+          "file": "resources/rne/font-lb/outline.png",
+          "sha256": "a1b76bed3332684a4f42a905b65261fb1c9357643d42b98b6727476d8b854e7c"
+        },
+        {
+          "file": "resources/rne/font-lb/widths.bin",
+          "sha256": "e368b7e49339a5382e173da735a1dadf10df7cc44281c088d518a424709cbf81"
+        },
+        {
+          "file": "resources/sg0/.gitkeep",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "file": "resources/sg0/font-lb/foreground.png",
+          "sha256": "bac12a05133d53b2f2cf507ef55f607fe506e5b9da1640f9b650b34204d4d48c"
+        },
+        {
+          "file": "resources/sg0/font-lb/outline.png",
+          "sha256": "289ad28b637841accda3b434e1f8749ee0343e6de46220285ef2664890aaef7b"
+        },
+        {
+          "file": "resources/sg0/font-lb/widths.bin",
+          "sha256": "1adf14880aa7a019d5755ed2abdad32df0a185e3857fddaea96cd9faad55dacb"
+        }
+      ],
+      "file": "impacto.tar.xz",
+      "revision": "ba0b6e0884b9016fcd7dfd3e50024c5af1e8aef7",
+      "sha256": "06c9237d8abf9b5318ae6f9a45e3fc49fa1ebec2e0e4831320d9bd7c467f4a8b"
+    },
+    {
+      "bytes": 42672,
+      "component": "libatrac9",
+      "entries": 64,
+      "excludedFiles": [],
+      "file": "libatrac9.tar.xz",
+      "revision": "efca2e3af35562a09a9bb6deed90e45b4b824dc4",
+      "sha256": "fb711a609a73fb2fea0c25b8673c6749fec36a404c4cf8f351d5efecac245f13"
+    },
+    {
+      "bytes": 122004,
+      "component": "magic_enum",
+      "entries": 82,
+      "excludedFiles": [],
+      "file": "magic_enum.tar.xz",
+      "revision": "591b64351ea8442f8b8fa044ff335d6943e8e6e0",
+      "sha256": "a41ab8647070d6ac6a30443ed83e9d0121a1d24e10095d8151854aca6805027c"
+    },
+    {
+      "bytes": 28737624,
+      "component": "Tyranor integration and application source",
+      "entries": 1619,
+      "file": "tyranor-integration.tar.xz",
+      "scope": "Repository source and resources at packaging time; unrelated prebuilt engines and Gradle wrapper JAR are excluded and listed inside.",
+      "sha256": "3edd67c26ba94b045f13ee0b5646dbb598c7b5df081dc9bcc1f2eb3ce77f7f94"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 174792,
+      "component": "avcpp",
+      "entries": 9,
+      "file": "vcpkg-avcpp-arm64-android-impacto.tar.xz",
+      "license": "(LGPL-2.1-only OR BSD-3-Clause)",
+      "role": "target dependency",
+      "sha256": "5e3629afb870704021041121c4512e284a68cf9d80f230a29135007d5acb4ac2",
+      "upstream": [
+        {
+          "file": "h4tr3d-avcpp-6bf8c76b120cf2cc448d706ea22f112017803605.tar.gz",
+          "location": "git+https://github.com/h4tr3d/avcpp@6bf8c76b120cf2cc448d706ea22f112017803605",
+          "name": "h4tr3d/avcpp",
+          "sha512": "037fc9f0f0307e94ef5c75ae8dd3b069e86e2918fa2a479e9a35a2f76842bf7201002eb91970514f2aa612d72a605e4a86b21703f764b8f1876b5b0b2c86a1ba"
+        }
+      ],
+      "version": "3.0.1.0"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 24684,
+      "component": "boost-assert",
+      "entries": 8,
+      "file": "vcpkg-boost-assert-arm64-android-impacto.tar.xz",
+      "license": "BSL-1.0",
+      "role": "target dependency",
+      "sha256": "83236ae09b4b3d38ce1504b06b57a4d0cadffac6f32fd6d1fd54e069f34450e2",
+      "upstream": [
+        {
+          "file": "boostorg-assert-boost-1.91.0.tar.gz",
+          "location": "git+https://github.com/boostorg/assert@boost-1.91.0",
+          "name": "boostorg/assert",
+          "sha512": "6938da97de7d223c1459c038824148b467a53ce385b29e7f56df7788b5af0bb504598a042f9662d8d4a8337eb71365d47062b078783570a089263ae4b9400c02"
+        }
+      ],
+      "version": "1.91.0"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 123200,
+      "component": "boost-circular-buffer",
+      "entries": 8,
+      "file": "vcpkg-boost-circular-buffer-arm64-android-impacto.tar.xz",
+      "license": "BSL-1.0",
+      "role": "target dependency",
+      "sha256": "4e6c122ed2804a82a05a2432a8d515df883bf6d94e0966362dc252e88ec05eaa",
+      "upstream": [
+        {
+          "file": "boostorg-circular_buffer-boost-1.91.0.tar.gz",
+          "location": "git+https://github.com/boostorg/circular_buffer@boost-1.91.0",
+          "name": "boostorg/circular_buffer",
+          "sha512": "4d49acff5e1c906c30c09bc8dcf5d45c1abf39d8c412394480d7ee208588813e178762adef620141e8886cf312f33794845cf3df2e72076679daf0307c66f639"
+        }
+      ],
+      "version": "1.91.0"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 47940,
+      "component": "boost-cmake",
+      "entries": 14,
+      "file": "vcpkg-boost-cmake-arm64-android-impacto.tar.xz",
+      "license": "BSL-1.0",
+      "role": "target dependency",
+      "sha256": "e2cd2d974fb26886aed809077822895292981647d67c2ce075db31c09606d379",
+      "upstream": [
+        {
+          "file": "boostorg-cmake-boost-1.91.0.tar.gz",
+          "location": "git+https://github.com/boostorg/cmake@boost-1.91.0",
+          "name": "boostorg/cmake",
+          "sha512": "ad642f211916c51365fd2ca9bf6c40d940a57390b6da1eb3932cd945aeaa984a42e31a9297ecc0a302ed1c42a48945867ecd3f4a18a327dfe1e1765bfd7dbcb5"
+        },
+        {
+          "file": "boost-1.91.0-LICENSE_1_0.txt",
+          "location": "https://raw.githubusercontent.com/boostorg/boost/refs/tags/boost-1.91.0/LICENSE_1_0.txt",
+          "name": "boost-1.91.0-LICENSE_1_0.txt",
+          "sha512": "d6078467835dba8932314c1c1e945569a64b065474d7aced27c9a7acc391d52e9f234138ed9f1aa9cd576f25f12f557e0b733c14891d42c16ecdc4a7bd4d60b8"
+        }
+      ],
+      "version": "1.91.0"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 58548,
+      "component": "boost-concept-check",
+      "entries": 8,
+      "file": "vcpkg-boost-concept-check-arm64-android-impacto.tar.xz",
+      "license": "BSL-1.0",
+      "role": "target dependency",
+      "sha256": "223a55cba5f4ff1db6913ad31cd79387de3b949cb3fba6f22fb7e60db846b652",
+      "upstream": [
+        {
+          "file": "boostorg-concept_check-boost-1.91.0.tar.gz",
+          "location": "git+https://github.com/boostorg/concept_check@boost-1.91.0",
+          "name": "boostorg/concept_check",
+          "sha512": "cbad88af522b9b8915a9178a24175d44f14dadd9c7bc372193863b5b810a4abb24df917c25242a649ae72dc60e852d1f8116e503008097529d7e19ab0bf18a2d"
+        }
+      ],
+      "version": "1.91.0"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 413760,
+      "component": "boost-config",
+      "entries": 8,
+      "file": "vcpkg-boost-config-arm64-android-impacto.tar.xz",
+      "license": "BSL-1.0",
+      "role": "target dependency",
+      "sha256": "764836906e7232dd5c32a40e7520fc3a47acb5684d721e91c10c4b9d4b258f69",
+      "upstream": [
+        {
+          "file": "boostorg-config-boost-1.91.0.tar.gz",
+          "location": "git+https://github.com/boostorg/config@boost-1.91.0",
+          "name": "boostorg/config",
+          "sha512": "e2f264e3986000656a1c46930e2ce6a83ab07d09a88c286ce0b2509e56760549a1dcffd6c0f81d2edb019fdb632b7ec0ccaa9948e29d8b4b6f67dfc18e804c11"
+        }
+      ],
+      "version": "1.91.0"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 185212,
+      "component": "boost-core",
+      "entries": 8,
+      "file": "vcpkg-boost-core-arm64-android-impacto.tar.xz",
+      "license": "BSL-1.0",
+      "role": "target dependency",
+      "sha256": "46e388c4b1b728c741f235c38cb9887586ef611cb42184e2df90cf69f195a9ea",
+      "upstream": [
+        {
+          "file": "boostorg-core-boost-1.91.0.tar.gz",
+          "location": "git+https://github.com/boostorg/core@boost-1.91.0",
+          "name": "boostorg/core",
+          "sha512": "30899f6cb4a9ee4de422f6f7308f6fb6f556e8ed512065734551dc46032ae2055a86f0d042c022a531bcd1b6eded7ce37ca29a76934d19bcf6cc5c7f4b4796a4"
+        }
+      ],
+      "version": "1.91.0"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 5136,
+      "component": "boost-headers",
+      "entries": 8,
+      "file": "vcpkg-boost-headers-arm64-android-impacto.tar.xz",
+      "license": "BSL-1.0",
+      "role": "target dependency",
+      "sha256": "cd72f57bd438d16ec2feb8037b7efc95af827480a1f44e475a95759acc9c903e",
+      "upstream": [
+        {
+          "file": "boostorg-headers-boost-1.91.0.tar.gz",
+          "location": "git+https://github.com/boostorg/headers@boost-1.91.0",
+          "name": "boostorg/headers",
+          "sha512": "c5fa2cd72f6e6666b7963b97bc359c75284b8fb540c30f3629a028b85270c9bc66c8a051383964f2bd4c1e005a4691593d15696e7ef39ea87cf6cff9e5691fb2"
+        }
+      ],
+      "version": "1.91.0"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 142240,
+      "component": "boost-move",
+      "entries": 8,
+      "file": "vcpkg-boost-move-arm64-android-impacto.tar.xz",
+      "license": "BSL-1.0",
+      "role": "target dependency",
+      "sha256": "78609b3b515ca953d8840cc643bc04c4f00dd119cbb0b5e2cd275976f75b1d49",
+      "upstream": [
+        {
+          "file": "boostorg-move-boost-1.91.0.tar.gz",
+          "location": "git+https://github.com/boostorg/move@boost-1.91.0",
+          "name": "boostorg/move",
+          "sha512": "8d0db64e06529f32114aa6228089baa148e48d37c211334827b2c4d66d34ad839e1652f7b0a667db9885f66bcc739d039c670e3f061a37d8a65bc5dca554d495"
+        }
+      ],
+      "version": "1.91.0"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 522696,
+      "component": "boost-preprocessor",
+      "entries": 8,
+      "file": "vcpkg-boost-preprocessor-arm64-android-impacto.tar.xz",
+      "license": "BSL-1.0",
+      "role": "target dependency",
+      "sha256": "4dc296ad09954eb95d4adccf2aa928f1b578b70562b1c4f2570d86732873397d",
+      "upstream": [
+        {
+          "file": "boostorg-preprocessor-boost-1.91.0.tar.gz",
+          "location": "git+https://github.com/boostorg/preprocessor@boost-1.91.0",
+          "name": "boostorg/preprocessor",
+          "sha512": "41efb9740abfeed698679c2ca191effc76c58da1d6253e53b33308e81dbf59269c228819fa101dba78c363dbde9123ad709a136a391afb44ad6673efc2e7e08b"
+        }
+      ],
+      "version": "1.91.0"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 23868,
+      "component": "boost-throw-exception",
+      "entries": 8,
+      "file": "vcpkg-boost-throw-exception-arm64-android-impacto.tar.xz",
+      "license": "BSL-1.0",
+      "role": "target dependency",
+      "sha256": "8415d05f3b9918003a80ecd4eac2079ea76483c88bc12bb77c3d2282740aa2db",
+      "upstream": [
+        {
+          "file": "boostorg-throw_exception-boost-1.91.0.tar.gz",
+          "location": "git+https://github.com/boostorg/throw_exception@boost-1.91.0",
+          "name": "boostorg/throw_exception",
+          "sha512": "176b334133df8bc914113eca31c0885a356bf891df9a825705a34b2c29be6a139b43f791d86c734856a6014ed85a723e6e35a24ebed4dfb2724b90e725566a0d"
+        }
+      ],
+      "version": "1.91.0"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 410788,
+      "component": "boost-type-traits",
+      "entries": 8,
+      "file": "vcpkg-boost-type-traits-arm64-android-impacto.tar.xz",
+      "license": "BSL-1.0",
+      "role": "target dependency",
+      "sha256": "16d9fc05cc00a264c26c704b2822e5d8ca0769a2db269b301dd9e7b651957c1f",
+      "upstream": [
+        {
+          "file": "boostorg-type_traits-boost-1.91.0.tar.gz",
+          "location": "git+https://github.com/boostorg/type_traits@boost-1.91.0",
+          "name": "boostorg/type_traits",
+          "sha512": "5dfcda2f41dff736a6821b71eb14f86d17956853363cfd86611bf8e5be9a1e0648a671425b6aea095b74d07c7be2a31c35cb528f903fd91e751ee9dad9314125"
+        }
+      ],
+      "version": "1.91.0"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 2712,
+      "component": "boost-uninstall",
+      "entries": 8,
+      "file": "vcpkg-boost-uninstall-arm64-android-impacto.tar.xz",
+      "license": "MIT",
+      "role": "target dependency",
+      "sha256": "1656211f2604c8cb7bef14aabdaab92818a8044bcb830326b3d80bbdefd541c3",
+      "upstream": [],
+      "version": "1.91.0"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 649852,
+      "component": "brotli",
+      "entries": 11,
+      "file": "vcpkg-brotli-arm64-android-impacto.tar.xz",
+      "license": "MIT",
+      "role": "target dependency",
+      "sha256": "05281625c567658e1569af6fdcf880a30549d8050703e951ab131688080e6bfc",
+      "upstream": [
+        {
+          "file": "google-brotli-v1.2.0.tar.gz",
+          "location": "git+https://github.com/google/brotli@v1.2.0",
+          "name": "google/brotli",
+          "sha512": "f94542afd2ecd96cc41fd21a805a3da314281ae558c10650f3e6d9ca732b8425bba8fde312823f0a564c7de3993bdaab5b43378edab65ebb798cefb6fd702256"
+        }
+      ],
+      "version": "1.2.0"
+    },
+    {
+      "bytes": 302368,
+      "component": "vcpkg build scripts and tool bootstrap",
+      "entries": 903,
+      "file": "vcpkg-build-support.tar.xz",
+      "revision": "fa9a5b330aed997a68310ed56418617b87a3b83d",
+      "scope": "Build scripts, triplets and bootstrap metadata; exact used ports are in each dependency archive.",
+      "sha256": "5e135f12646a343ec42f8a9e508e18c0455a0321240468501f225ef134a876bb"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 814880,
+      "component": "bzip2",
+      "entries": 12,
+      "file": "vcpkg-bzip2-arm64-android-impacto.tar.xz",
+      "license": "bzip2-1.0.6",
+      "role": "target dependency",
+      "sha256": "abe24638eff526b96503370f8f9f11c90c9ee6b48955400729172d271cd5c8fc",
+      "upstream": [
+        {
+          "file": "bzip2-1.0.8.tar.gz",
+          "location": "https://sourceware.org/pub/bzip2/bzip2-1.0.8.tar.gz",
+          "name": "bzip2-1.0.8.tar.gz",
+          "sha512": "083f5e675d73f3233c7930ebe20425a533feedeaaa9d8cc86831312a6581cefbe6ed0d08d2fa89be81082f2a5abdabca8b3c080bf97218a1bd59dc118a30b9f3"
+        }
+      ],
+      "version": "1.0.8#6"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 1479112,
+      "component": "concurrentqueue",
+      "entries": 9,
+      "file": "vcpkg-concurrentqueue-arm64-android-impacto.tar.xz",
+      "license": "(BSD-2-Clause OR BSL-1.0)",
+      "role": "target dependency",
+      "sha256": "87a44f530862e77c58a8b6bc1cb047c744626d40e4ebd06608761b383f0105ce",
+      "upstream": [
+        {
+          "file": "cameron314-concurrentqueue-v1.0.5.tar.gz",
+          "location": "git+https://github.com/cameron314/concurrentqueue@v1.0.5",
+          "name": "cameron314/concurrentqueue",
+          "sha512": "7a58f237a38b3faed778fbe8508eadd9e5b282bd38ef4a0f40118498cf578fe96f1d4272c0b839bd290150e6ff25c6d44fe7362e3fc046b04d44ade8edd091ea"
+        }
+      ],
+      "version": "1.0.5"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 1717368,
+      "component": "dav1d",
+      "entries": 9,
+      "file": "vcpkg-dav1d-arm64-android-impacto.tar.xz",
+      "license": "BSD-2-Clause",
+      "role": "target dependency",
+      "sha256": "1d90268c154c71c3a8e7b229c48c946175d352f56c74d67d7ef91f380533e0cd",
+      "upstream": [
+        {
+          "file": "videolan-dav1d-1.5.3.tar.gz",
+          "location": "git+https://github.com/videolan/dav1d@1.5.3",
+          "name": "videolan/dav1d",
+          "sha512": "8d976b93135213d41385c20205475269a6826a68ebfd716c4d9a7a3ff2a79703e8df0573e43207c81b5db44807d2721db18ec84c0fc6bef98efab86a2cccb6cc"
+        }
+      ],
+      "version": "1.5.3"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 15859036,
+      "component": "ffmpeg",
+      "entries": 28,
+      "file": "vcpkg-ffmpeg-arm64-android-impacto.tar.xz",
+      "license": "LicenseRef-vcpkg-null",
+      "role": "target dependency",
+      "sha256": "3c366265dd127f4c832d91c4489f321177ff9706e9b2171b876fe4a72a8a5c92",
+      "upstream": [
+        {
+          "file": "ffmpeg-ffmpeg-n7.1.2.tar.gz",
+          "location": "git+https://github.com/ffmpeg/ffmpeg@n7.1.2",
+          "name": "ffmpeg/ffmpeg",
+          "sha512": "8411c45f71d2d61184b11e2a786137044a80d9b979a7e2e8513efc5e716b3360bff4533a13875dd4bca492b97b97f0384f7fb4f3d796802e81981b0857d18a2b"
+        }
+      ],
+      "version": "7.1.2#5"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 717216,
+      "component": "fmt",
+      "entries": 9,
+      "file": "vcpkg-fmt-arm64-android-impacto.tar.xz",
+      "license": "MIT",
+      "role": "target dependency",
+      "sha256": "f4855724c70ed355dab8fc0817fa3737e29c76239174b168d26c6eaa1fc2d880",
+      "upstream": [
+        {
+          "file": "fmtlib-fmt-12.1.0.tar.gz",
+          "location": "git+https://github.com/fmtlib/fmt@12.1.0",
+          "name": "fmtlib/fmt",
+          "sha512": "f0da82c545b01692e9fd30fdfb613dbb8dd9716983dcd0ff19ac2a8d36f74beb5540ef38072fdecc1e34191b3682a8542ecbf3a61ef287dbba0a2679d4e023f2"
+        }
+      ],
+      "version": "12.1.0"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 2535340,
+      "component": "freetype",
+      "entries": 15,
+      "file": "vcpkg-freetype-arm64-android-impacto.tar.xz",
+      "license": "(FTL OR GPL-2.0-or-later)",
+      "role": "target dependency",
+      "sha256": "a9383f39e3d9fcbac1bf590c1c47c0fef44ec17c3459f7f5b71cd743effb7c68",
+      "upstream": [
+        {
+          "file": "freetype-freetype-VER-2-14-3.tar.gz",
+          "location": "git+https://gitlab.freedesktop.org//freetype/freetype@VER-${VERSION_HYPHEN}",
+          "name": "freetype/freetype",
+          "sha512": "c3b6b0cc4b428c9c647ab2148386901dfd315273b68051940e8fea6010d46fdd2913467c3ef58be0d499b8e2ef5a0f1a4cc5e739756155587f4f7dff08ef9695"
+        }
+      ],
+      "version": "2.14.3"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 1698204,
+      "component": "fribidi",
+      "entries": 9,
+      "file": "vcpkg-fribidi-arm64-android-impacto.tar.xz",
+      "license": "LGPL-2.1-or-later",
+      "role": "target dependency",
+      "sha256": "b27f5972f208ef033887503a0c427bd18a574231e72a480505424a45b25a9c00",
+      "upstream": [
+        {
+          "file": "fribidi-fribidi-v1.0.16.tar.gz",
+          "location": "git+https://github.com/fribidi/fribidi@v1.0.16",
+          "name": "fribidi/fribidi",
+          "sha512": "13d7104f80e1b480d65a4c47fd694f5930222f3db843b8b6c1b6af58c43ee74b08635ce6166d005451498d060e549e4c666aa30c46d4df003d9ad63dba1d854a"
+        }
+      ],
+      "version": "1.0.16"
+    },
+    {
+      "architecture": "x64-linux",
+      "bytes": 1698612,
+      "component": "fribidi",
+      "entries": 9,
+      "file": "vcpkg-fribidi-x64-linux.tar.xz",
+      "license": "LGPL-2.1-or-later",
+      "role": "build dependency",
+      "sha256": "0ec55d368779f50cfbfa7294526a16eed8049e9462a18f2343fd9064e125b3ae",
+      "upstream": [
+        {
+          "file": "fribidi-fribidi-v1.0.16.tar.gz",
+          "location": "git+https://github.com/fribidi/fribidi@v1.0.16",
+          "name": "fribidi/fribidi",
+          "sha512": "13d7104f80e1b480d65a4c47fd694f5930222f3db843b8b6c1b6af58c43ee74b08635ce6166d005451498d060e549e4c666aa30c46d4df003d9ad63dba1d854a"
+        }
+      ],
+      "version": "1.0.16"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 4584696,
+      "component": "glm",
+      "entries": 9,
+      "file": "vcpkg-glm-arm64-android-impacto.tar.xz",
+      "license": "MIT",
+      "role": "target dependency",
+      "sha256": "86c524311a4eed6008a23a4cfa62ff2ba664234d35448d3fe6020b6c6005f45b",
+      "upstream": [
+        {
+          "file": "g-truc-glm-1.0.3.tar.gz",
+          "location": "git+https://github.com/g-truc/glm@1.0.3",
+          "name": "g-truc/glm",
+          "sha512": "0a490f0c79cd4a8ba54f37358f8917cef961dab9e61417c84ae0959c61bc860e5b83f4fb7f27169fb3d08eef1d84131bddde23d60876922310205c901b1273aa"
+        }
+      ],
+      "version": "1.0.3"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 36340788,
+      "component": "harfbuzz",
+      "entries": 10,
+      "file": "vcpkg-harfbuzz-arm64-android-impacto.tar.xz",
+      "license": "MIT-Modern-Variant",
+      "role": "target dependency",
+      "sha256": "a77af0f89b72682905befcd66f44c311eed2116faa3c765e40211e25beef14d7",
+      "upstream": [
+        {
+          "file": "harfbuzz-harfbuzz-14.2.0.tar.gz",
+          "location": "git+https://github.com/harfbuzz/harfbuzz@14.2.0",
+          "name": "harfbuzz/harfbuzz",
+          "sha512": "649521b69d5d7328245cabca8b769448f695b0b7e3bf16208ddb1635b29165dfd363a06b1b2831229f6ff722d0e8212fd82054e6b64992552a6a21af238c5cb3"
+        }
+      ],
+      "version": "14.2.0#2"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 347888,
+      "component": "libass",
+      "entries": 11,
+      "file": "vcpkg-libass-arm64-android-impacto.tar.xz",
+      "license": "ISC",
+      "role": "target dependency",
+      "sha256": "4d1c20d1bc3733b34d7a9d35bdee1bd33859494921185d6f6ffa9530de090f6d",
+      "upstream": [
+        {
+          "file": "libass-libass-0.17.4.tar.gz",
+          "location": "git+https://github.com/libass/libass@0.17.4",
+          "name": "libass/libass",
+          "sha512": "08762623dd09e3034699ba9d11b70d1f6cc6b2e3b38aa897b07efef1364e76141df484e70ed27888cf3595b77d072cdb5e8abbbfa560e33ca21f87872e24df8d"
+        }
+      ],
+      "version": "0.17.4"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 258772,
+      "component": "libogg",
+      "entries": 8,
+      "file": "vcpkg-libogg-arm64-android-impacto.tar.xz",
+      "license": "BSD-3-Clause",
+      "role": "target dependency",
+      "sha256": "bee5fa13546dc505a216996e02e41be44c5f111fbe80c9cbd77ee1a27bbaa8b6",
+      "upstream": [
+        {
+          "file": "xiph-ogg-v1.3.6.tar.gz",
+          "location": "git+https://github.com/xiph/ogg@v1.3.6",
+          "name": "xiph/ogg",
+          "sha512": "c247e1da8b12f8b33272fafb6d7c171a1a2687c3632977439fa60b96ccc2ad751d88a2931bb3e18e1ddf2eea2e82cdd0aab087b2ec5393a9228c703476fa0167"
+        }
+      ],
+      "version": "1.3.6#1"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 1601440,
+      "component": "libpng",
+      "entries": 12,
+      "file": "vcpkg-libpng-arm64-android-impacto.tar.xz",
+      "license": "libpng-2.0",
+      "role": "target dependency",
+      "sha256": "8ba3ec78ee55903ece206a9c3aec357842d509a2c84eec822c560b73daa2abaf",
+      "upstream": [
+        {
+          "file": "pnggroup-libpng-v1.6.58.tar.gz",
+          "location": "git+https://github.com/pnggroup/libpng@v1.6.58",
+          "name": "pnggroup/libpng",
+          "sha512": "65f54d805e1f7c46a5fc335b984e4cbd4f934e0f02fbf6673c13800b49a4c11fbeb4098eebfb33079527a56c3d933e97631f91ab68dbb31442982784f9241ace"
+        }
+      ],
+      "version": "1.6.58"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 1237304,
+      "component": "libvorbis",
+      "entries": 13,
+      "file": "vcpkg-libvorbis-arm64-android-impacto.tar.xz",
+      "license": "BSD-3-Clause",
+      "role": "target dependency",
+      "sha256": "d385b6308a981a7728c6499d274a1151ddd22be495844802288a0c7171aeff93",
+      "upstream": [
+        {
+          "file": "xiph-vorbis-v1.3.7.tar.gz",
+          "location": "git+https://github.com/xiph/vorbis@v1.3.7",
+          "name": "xiph/vorbis",
+          "sha512": "bfb6f5dbfd49ed38b2b08b3667c06d02e68f649068a050f21a3cc7e1e56b27afd546aaa3199c4f6448f03f6e66a82f9a9dc2241c826d3d1d4acbd38339b9e9fb"
+        }
+      ],
+      "version": "1.3.7#4"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 2597304,
+      "component": "libwebp",
+      "entries": 13,
+      "file": "vcpkg-libwebp-arm64-android-impacto.tar.xz",
+      "license": "BSD-3-Clause",
+      "role": "target dependency",
+      "sha256": "e193fdc9b74d57c435143523ae83b0febcbf561a2d93d2e97beb4d191307758c",
+      "upstream": [
+        {
+          "file": "webmproject-libwebp-v1.6.0.tar.gz",
+          "location": "git+https://github.com/webmproject/libwebp@v1.6.0",
+          "name": "webmproject/libwebp",
+          "sha512": "298e0ad4c09392213baf5abb69d330c6203b618800073fe2df91d01d35034197c5d3e29a74573b06971473c52c74514f0e6e0f6c8162f923e2dd15cb1a692aef"
+        }
+      ],
+      "version": "1.6.0#2"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 1385628,
+      "component": "openal-soft",
+      "entries": 10,
+      "file": "vcpkg-openal-soft-arm64-android-impacto.tar.xz",
+      "license": "LGPL-2.0-or-later",
+      "role": "target dependency",
+      "sha256": "3f4440ec7662f32daa1e6fa4f93d063a00591a35ac0ea9d5cb458b9776f856a4",
+      "upstream": [
+        {
+          "file": "kcat-openal-soft-1.25.1.tar.gz",
+          "location": "git+https://github.com/kcat/openal-soft@1.25.1",
+          "name": "kcat/openal-soft",
+          "sha512": "47eccb317ed6040c549f2b51d2d45afcdcd03d56d8cb0ea9ef8a98d2c61c9629ffad39596cffa2ad848dd3b65a227a6591406dc483ebd3a3e03bb0a4d0f112b1"
+        }
+      ],
+      "version": "1.25.1"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 4189152,
+      "component": "opus",
+      "entries": 9,
+      "file": "vcpkg-opus-arm64-android-impacto.tar.xz",
+      "license": "BSD-3-Clause",
+      "role": "target dependency",
+      "sha256": "ddbbe1372b35b77190b64a3152877d1e1218955b72b255678b3b3329e9b27e59",
+      "upstream": [
+        {
+          "file": "xiph-opus-v1.5.2.tar.gz",
+          "location": "git+https://github.com/xiph/opus@v1.5.2",
+          "name": "xiph/opus",
+          "sha512": "4ffefd9c035671024f9720c5129bfe395dea04f0d6b730041c2804e89b1db6e4d19633ad1ae58855afc355034233537361e707f26dc53adac916554830038fab"
+        }
+      ],
+      "version": "1.5.2#1"
+    },
+    {
+      "architecture": "x64-linux",
+      "bytes": 138984,
+      "component": "pkgconf",
+      "entries": 9,
+      "file": "vcpkg-pkgconf-x64-linux.tar.xz",
+      "license": "LicenseRef-vcpkg-null",
+      "role": "build dependency",
+      "sha256": "b4cbbe9228be39d18ecd6b1073b6c042217324ba3d96647df5ca794695466d68",
+      "upstream": [
+        {
+          "file": "pkgconf-pkgconf-pkgconf-2.5.1.tar.gz",
+          "location": "git+https://github.com/pkgconf/pkgconf@pkgconf-2.5.1",
+          "name": "pkgconf/pkgconf",
+          "sha512": "53244f372ea21125a1d97c5b89a84299740b55a66165782e807ed23adab3a07408a1547f1f40156e3060359660d07f49846c8b4893beef10ac9440ab7e8611cc"
+        }
+      ],
+      "version": "2.5.1#4"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 587660,
+      "component": "pugixml",
+      "entries": 8,
+      "file": "vcpkg-pugixml-arm64-android-impacto.tar.xz",
+      "license": "MIT",
+      "role": "target dependency",
+      "sha256": "3c23855c1c308d9e1ec651011ff61e0396db41ebef090fd44743b6e0098c73c1",
+      "upstream": [
+        {
+          "file": "zeux-pugixml-v1.15.tar.gz",
+          "location": "git+https://github.com/zeux/pugixml@v1.15",
+          "name": "zeux/pugixml",
+          "sha512": "b8a70f1f230b0902b719346ce0a551eafe534f81262280dceeb92d5ad90ea4e635173e08e225bf66eb5f4724ac4568bd40dc923f184571f02502dac49bc0b7f5"
+        }
+      ],
+      "version": "1.15#1"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 45732,
+      "component": "readerwriterqueue",
+      "entries": 8,
+      "file": "vcpkg-readerwriterqueue-arm64-android-impacto.tar.xz",
+      "license": "NOASSERTION",
+      "role": "target dependency",
+      "sha256": "529027c56c4b310b8ad17cc36d68db9afd6ae9fe83d7ef783bd5e284839f9472",
+      "upstream": [
+        {
+          "file": "cameron314-readerwriterqueue-v1.0.7.tar.gz",
+          "location": "git+https://github.com/cameron314/readerwriterqueue@v1.0.7",
+          "name": "cameron314/readerwriterqueue",
+          "sha512": "adabc72f94dd9d9fedda9d1123bc1496c19e667c911b17058407718c79337a2532f7510abbcc1b6d69fb4bf54df8765b6ac64925929ef676912a5285eacc07c5"
+        }
+      ],
+      "version": "1.0.7"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 15752552,
+      "component": "sdl3",
+      "entries": 11,
+      "file": "vcpkg-sdl3-arm64-android-impacto.tar.xz",
+      "license": "Apache-2.0 AND MIT AND Zlib",
+      "role": "target dependency",
+      "sha256": "41a65fd146e82f80d2807b686841486ce540ee36f1d91d794354616d74408382",
+      "upstream": [
+        {
+          "file": "libsdl-org-SDL-release-3.4.10.tar.gz",
+          "location": "git+https://github.com/libsdl-org/SDL@release-3.4.10",
+          "name": "libsdl-org/SDL",
+          "sha512": "10a9c1fa4d6891c7387fa694b786a168f86b6e5447c6c522f85b739e33720e106ee879dfa9e6e537d5521b983cfbd4908927c555c4d3412735129a4231e16fe6"
+        }
+      ],
+      "version": "3.4.10#1"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 363980,
+      "component": "toml11",
+      "entries": 8,
+      "file": "vcpkg-toml11-arm64-android-impacto.tar.xz",
+      "license": "MIT",
+      "role": "target dependency",
+      "sha256": "90cef545d0534e5583b2bde326060e969f3686faf46b85663e62aefc72cf3184",
+      "upstream": [
+        {
+          "file": "ToruNiina-toml11-v4.4.0.tar.gz",
+          "location": "git+https://github.com/ToruNiina/toml11@v4.4.0",
+          "name": "ToruNiina/toml11",
+          "sha512": "1779c6b21a0a4000f49e5bf3a8b1288989622eb4a4e365cd6c49d9a8cc859ad18514b94dca63bd8a49f554aa7387882a1a089fadde267cebdf2a8aa49aacd11b"
+        }
+      ],
+      "version": "4.4.0"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 919044,
+      "component": "unordered-dense",
+      "entries": 8,
+      "file": "vcpkg-unordered-dense-arm64-android-impacto.tar.xz",
+      "license": "MIT",
+      "role": "target dependency",
+      "sha256": "003bf540f13d563230ec951073562200ddebc615c0b800eae9f276206f5b0d71",
+      "upstream": [
+        {
+          "file": "martinus-unordered_dense-v4.8.1.tar.gz",
+          "location": "git+https://github.com/martinus/unordered_dense@v4.8.1",
+          "name": "martinus/unordered_dense",
+          "sha512": "b98b5d4d96f8e0081b184d6c4c1181fae4e41723b54bed4296717d7f417348b48fad0bbcc664cac142b8c8a47e95aa57c1eb1cf6caa855fd782fad3e3ab99e5e"
+        }
+      ],
+      "version": "4.8.1"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 40696,
+      "component": "utfcpp",
+      "entries": 8,
+      "file": "vcpkg-utfcpp-arm64-android-impacto.tar.xz",
+      "license": "BSL-1.0",
+      "role": "target dependency",
+      "sha256": "08a2639e9034cb70b1fe2d7a4ba8f1f248ed229bf42d3da2e39b2ed10ec6fba6",
+      "upstream": [
+        {
+          "file": "nemtrif-utfcpp-v4.1.1.tar.gz",
+          "location": "git+https://github.com/nemtrif/utfcpp@v4.1.1",
+          "name": "nemtrif/utfcpp",
+          "sha512": "72061902812b3f5b27afb32c513fc337db4149b8a6e51cbfe497109f88145751484093990bb1b20b4eec2b9f621406690030401b2a51c9368eb481f00225cd24"
+        }
+      ],
+      "version": "4.1.1"
+    },
+    {
+      "architecture": "x64-linux",
+      "bytes": 4252,
+      "component": "vcpkg-boost",
+      "entries": 10,
+      "file": "vcpkg-vcpkg-boost-x64-linux.tar.xz",
+      "license": "MIT",
+      "role": "build dependency",
+      "sha256": "9652d46e9ad1dccfe4b6cda0faf6175b9579482ebdedb2e680b770622fed3553",
+      "upstream": [],
+      "version": "2025-03-29"
+    },
+    {
+      "architecture": "x64-linux",
+      "bytes": 5992,
+      "component": "vcpkg-cmake-config",
+      "entries": 10,
+      "file": "vcpkg-vcpkg-cmake-config-x64-linux.tar.xz",
+      "license": "MIT",
+      "role": "build dependency",
+      "sha256": "80b53c5d5d02918fdb396846678e5edf6088c50acbcfe82db235316e35156588",
+      "upstream": [],
+      "version": "2024-05-23"
+    },
+    {
+      "architecture": "x64-linux",
+      "bytes": 5952,
+      "component": "vcpkg-cmake-get-vars",
+      "entries": 11,
+      "file": "vcpkg-vcpkg-cmake-get-vars-x64-linux.tar.xz",
+      "license": "MIT",
+      "role": "build dependency",
+      "sha256": "64c7ed365de60e2a10c72690ef36ea7161707e05ea20599f8ba19d31fbe6eb42",
+      "upstream": [],
+      "version": "2025-05-29"
+    },
+    {
+      "architecture": "x64-linux",
+      "bytes": 7304,
+      "component": "vcpkg-cmake",
+      "entries": 11,
+      "file": "vcpkg-vcpkg-cmake-x64-linux.tar.xz",
+      "license": "MIT",
+      "role": "build dependency",
+      "sha256": "9d6ed24ca441f6e771bc8ad57858455fe3408ae40ea93d0b93523fa59edd6552",
+      "upstream": [],
+      "version": "2024-04-23"
+    },
+    {
+      "architecture": "x64-linux",
+      "bytes": 3708,
+      "component": "vcpkg-pkgconfig-get-modules",
+      "entries": 9,
+      "file": "vcpkg-vcpkg-pkgconfig-get-modules-x64-linux.tar.xz",
+      "license": "MIT",
+      "role": "build dependency",
+      "sha256": "021aa68ce5bdeffc08c071b7518d61de39706556ecf1f8836aae23d95444e691",
+      "upstream": [],
+      "version": "2024-04-03"
+    },
+    {
+      "architecture": "x64-linux",
+      "bytes": 4937792,
+      "component": "vcpkg-tool-meson",
+      "entries": 18,
+      "file": "vcpkg-vcpkg-tool-meson-x64-linux.tar.xz",
+      "license": "Apache-2.0",
+      "role": "build dependency",
+      "sha256": "f15c0d817e7744e4469c25c0b1058097a8273ef391290b611d9a26f3002ee715",
+      "upstream": [
+        {
+          "file": "meson-1.9.0.tar.gz",
+          "location": "${download_urls}",
+          "name": "${download_filename}",
+          "sha512": "ecd69b6734be14c467f7db67dd88c0e57ebfad83ce3ddada131ff3e43ac964523e1083d7c7f3803033a9a76adbc32ad26dd2e3aca69884269000ca64130bde07"
+        }
+      ],
+      "version": "1.9.0#8"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 3112,
+      "component": "vulkan",
+      "entries": 10,
+      "file": "vcpkg-vulkan-arm64-android-impacto.tar.xz",
+      "license": "LicenseRef-vcpkg-null",
+      "role": "target dependency",
+      "sha256": "e835d89ebc18cf94e8c83fa0893ad15bb8d997014b269eea2c316465c256dea8",
+      "upstream": [],
+      "version": "2023-12-17"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 3221976,
+      "component": "vulkan-headers",
+      "entries": 9,
+      "file": "vcpkg-vulkan-headers-arm64-android-impacto.tar.xz",
+      "license": "(Apache-2.0 OR MIT)",
+      "role": "target dependency",
+      "sha256": "77ba843a01924c38b44f615e67d9097eef052e42d1802aea216b7abc66ebb438",
+      "upstream": [
+        {
+          "file": "KhronosGroup-Vulkan-Headers-vulkan-sdk-1.4.350.0.tar.gz",
+          "location": "git+https://github.com/KhronosGroup/Vulkan-Headers@vulkan-sdk-1.4.350.0",
+          "name": "KhronosGroup/Vulkan-Headers",
+          "sha512": "b7987072292d81bae34d28878b3cc12845db0a51710b4d5c21cf804d7c593b1db9ee736f10b8d7696150a25d9e8e2d3d1e17e670c6cca029858de027d5df08ea"
+        }
+      ],
+      "version": "1.4.350.0"
+    },
+    {
+      "architecture": "arm64-android-impacto",
+      "bytes": 1577040,
+      "component": "zlib",
+      "entries": 13,
+      "file": "vcpkg-zlib-arm64-android-impacto.tar.xz",
+      "license": "Zlib",
+      "role": "target dependency",
+      "sha256": "5e0409f3b832d53840fc286e99b16ea1aa7c49f8a7f9a8fa1e6f9cec249af31d",
+      "upstream": [
+        {
+          "file": "madler-zlib-v1.3.1.tar.gz",
+          "location": "git+https://github.com/madler/zlib@v1.3.1",
+          "name": "madler/zlib",
+          "sha512": "8c9642495bafd6fad4ab9fb67f09b268c69ff9af0f4f20cf15dfc18852ff1f312bd8ca41de761b3f8d8e90e77d79f2ccacd3d4c5b19e475ecf09d021fdfe9088"
+        }
+      ],
+      "version": "1.3.1"
+    }
+  ],
+  "distribution": "Distribute every listed archive and SOURCE-DISTRIBUTION.md with the corresponding runtime. No written offer or external URL replaces these source files.",
+  "licenseConditions": {
+    "ffmpeg": "LGPL-2.1-or-later; CONFIG_GPL=CONFIG_VERSION3=CONFIG_NONFREE=0 verified",
+    "mspack": "LGPL-2.1-only, per bundled source headers"
+  },
+  "schemaVersion": 1,
+  "scope": "Impacto native runtime, complete linked application source, target dependency closure, build recipes and Tyranor integration snapshot",
+  "sourceLock": {
+    "android": {
+      "abi": "arm64-v8a",
+      "api": 28,
+      "cmake": "3.31.1",
+      "ndk": "28.0.13004108",
+      "pageSize": 16384
+    },
+    "imgui": {
+      "annotatedTagObject": "9acdfbf46810c0c74ab281ce04122c4149ae8bd1",
+      "revision": "b48d1afbe8ee8b238e2961dc363a949dd7304e23",
+      "url": "https://github.com/ocornut/imgui.git"
+    },
+    "impacto": {
+      "revision": "ba0b6e0884b9016fcd7dfd3e50024c5af1e8aef7",
+      "url": "https://github.com/CommitteeOfZero/impacto.git"
+    },
+    "libatrac9": {
+      "revision": "efca2e3af35562a09a9bb6deed90e45b4b824dc4",
+      "url": "https://github.com/Thealexbarney/LibAtrac9.git"
+    },
+    "magic_enum": {
+      "revision": "591b64351ea8442f8b8fa044ff335d6943e8e6e0",
+      "url": "https://github.com/Neargye/magic_enum.git"
+    },
+    "sdl": {
+      "javaPackage": "org.libsdl.impacto",
+      "sourceSha512": "10a9c1fa4d6891c7387fa694b786a168f86b6e5447c6c522f85b739e33720e106ee879dfa9e6e537d5521b983cfbd4908927c555c4d3412735129a4231e16fe6",
+      "vcpkgPortVersion": 1,
+      "version": "3.4.10"
+    },
+    "vcpkg": {
+      "revision": "fa9a5b330aed997a68310ed56418617b87a3b83d",
+      "url": "https://github.com/microsoft/vcpkg.git"
+    },
+    "version": 1
+  },
+  "systemPrerequisites": [
+    "Android NDK 28.0.13004108",
+    "CMake and Ninja",
+    "Python 3, Git and host build utilities",
+    "JDK and Android SDK for rebuilding the APK"
+  ],
+  "triplet": "arm64-android-impacto",
+  "unstrippedRuntimeSha256": "42218228dc94b166d0d96155fa8c7d922be4d2138a8da06d2feda0b5a4050b4a"
+}

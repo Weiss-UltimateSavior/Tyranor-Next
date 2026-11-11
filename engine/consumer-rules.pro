@@ -33,3 +33,7 @@
 
 # CMVS NativeActivity bridge methods are resolved from native code.
 -keep class com.core.cmvs.** { *; }
+
+# Impacto has its own statically linked SDL 3.4.10 and string-resolved JNI callbacks.
+-keep class org.libsdl.impacto.** { *; }
+-keep class com.core.impacto.ImpactoActivity { *; }

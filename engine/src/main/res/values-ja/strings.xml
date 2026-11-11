@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="engine_impacto_init_failed">Impacto を起動できません。ランタイム、リソース、または起動設定を利用できません。ゲームライブラリに戻って再試行してください。</string>
     <string name="engine_ethornell_invalid_config">Ethornell の起動設定が無効です。ローカルのゲームフォルダを選択し直してください。</string>
     <string name="engine_ethornell_failed">Ethornell の実行に失敗しました。ゲームデータ、フォント、現在の対応範囲を確認してください。</string>
     <string name="engine_ethornell_game_menu">ゲームメニュー（右クリック）</string>

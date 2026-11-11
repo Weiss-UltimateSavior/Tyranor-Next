@@ -48,3 +48,8 @@ captures/
 
 # ===== Rust 构建中间产物（engine/rust 源码入库，target 不入库） =====
 /engine/rust/target/
+
+# Isolated Impacto native builds and Python tooling caches
+/.impacto-build/
+/tools/impacto/__pycache__/
+/engine/impacto/__pycache__/

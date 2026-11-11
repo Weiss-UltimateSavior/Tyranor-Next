@@ -1071,4 +1071,19 @@
     <string name="save_systemnnn_clear_resources">取り込んだゲームデータを削除</string>
     <string name="save_systemnnn_clear_resources_message">アプリ内のコピーからゲームデータを削除して空き容量を増やします。元のゲームフォルダーとコピー内のすべてのセーブデータは残ります。次回の起動時に元のフォルダーからゲームデータを取り込み直します。</string>
     <string name="save_systemnnn_clear_resources_done">取り込んだゲームデータを削除しました</string>
+
+    <!-- Experimental impacto integration -->
+    <string name="impacto_experimental">実験的</string>
+    <string name="impacto_experimental_details">impacto は実験的な MAGES. ランタイムです。ゲームフォルダーの impacto.json で同梱のゲームプロファイルを指定してください。完全な互換性は保証されません。ランチャーのセーブ管理と画質補正には未対応です。</string>
+    <string name="impacto_runtime_not_bundled">このビルドには必要な impacto ランタイムとリソースが含まれていません。</string>
+    <string name="impacto_error_android">impacto には Android 9 以降が必要です。</string>
+    <string name="impacto_error_abi">impacto には ARM64 デバイスが必要です。</string>
+    <string name="impacto_error_gles">impacto に必要な OpenGL ES 3.2 の対応を確認できませんでした。</string>
+    <string name="impacto_error_descriptor">impacto.json が見つからないか無効です。version が 1 で、version と対応する profile のみを指定してください。</string>
+    <string name="impacto_error_profile">選択された impacto ゲームプロファイルはこのビルドに含まれていません。</string>
+    <string name="impacto_error_game_layout">この impacto プロファイルに必要な元のゲームファイルを読み込めません。ゲームの版、ファイル構成、アクセス権を確認してください。</string>
+    <string name="impacto_error_resources">impacto のリソースが不足しているか準備に失敗しました。インストールとストレージの空き容量を確認してください。</string>
+    <string name="impacto_error_user_data">impacto 専用の設定とセーブフォルダーを準備できませんでした。</string>
+    <string name="impacto_error_busy">impacto のゲームが起動中または実行中です。先にそのゲームを終了してください。</string>
+    <string name="impacto_error_preparation">impacto の起動準備に失敗しました。ゲームは起動していません。</string>
 </resources>

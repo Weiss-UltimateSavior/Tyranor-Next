@@ -1071,4 +1071,19 @@
     <string name="save_systemnnn_clear_resources">清理导入的游戏资源</string>
     <string name="save_systemnnn_clear_resources_message">清理应用内副本的游戏资源可以释放空间，原游戏目录和副本中的全部存档都会保留。下次启动时需要从原目录重新导入资源。</string>
     <string name="save_systemnnn_clear_resources_done">已清理导入的游戏资源</string>
+
+    <!-- Experimental impacto integration -->
+    <string name="impacto_experimental">实验性</string>
+    <string name="impacto_experimental_details">impacto 为实验性 MAGES. 运行时。游戏目录须包含有效的 impacto.json，选择随包提供的游戏配置；不保证完整兼容，暂不提供启动器存档管理或图形增强。</string>
+    <string name="impacto_runtime_not_bundled">此构建未包含可用的 impacto 运行时与资源。</string>
+    <string name="impacto_error_android">impacto 需要 Android 9 或更高版本。</string>
+    <string name="impacto_error_abi">impacto 需要 ARM64 设备。</string>
+    <string name="impacto_error_gles">无法确认设备支持 impacto 所需的 OpenGL ES 3.2。</string>
+    <string name="impacto_error_descriptor">impacto.json 缺失或无效。请使用版本 1，并仅填写 version 与受支持的 profile。</string>
+    <string name="impacto_error_profile">此构建未提供所选的 impacto 游戏配置。</string>
+    <string name="impacto_error_game_layout">无法读取所选 impacto 配置所需的原始游戏文件。请检查游戏版本、文件布局和访问权限。</string>
+    <string name="impacto_error_resources">impacto 运行资源缺失或准备失败。请检查安装包与可用存储空间。</string>
+    <string name="impacto_error_user_data">无法准备 impacto 的独立配置与存档目录。</string>
+    <string name="impacto_error_busy">已有 impacto 游戏正在启动或运行，请先退出该游戏。</string>
+    <string name="impacto_error_preparation">impacto 启动准备失败，游戏尚未启动。</string>
 </resources>

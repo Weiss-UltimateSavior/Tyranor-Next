@@ -1071,4 +1071,19 @@
     <string name="save_systemnnn_clear_resources">Clear imported game resources</string>
     <string name="save_systemnnn_clear_resources_message">Free space by clearing resources from the imported copy. The original game folder and all saves in the copy will be kept. The next launch imports the resources again from the original folder.</string>
     <string name="save_systemnnn_clear_resources_done">Imported game resources cleared</string>
+
+    <!-- Experimental impacto integration -->
+    <string name="impacto_experimental">Experimental</string>
+    <string name="impacto_experimental_details">impacto is an experimental MAGES. runtime. The game directory needs a valid impacto.json selecting a bundled game profile. Full compatibility is not guaranteed. Launcher save management and graphics enhancement are not available.</string>
+    <string name="impacto_runtime_not_bundled">This build does not include the required impacto runtime and resources.</string>
+    <string name="impacto_error_android">impacto requires Android 9 or later.</string>
+    <string name="impacto_error_abi">impacto requires an ARM64 device.</string>
+    <string name="impacto_error_gles">OpenGL ES 3.2 support required by impacto could not be confirmed.</string>
+    <string name="impacto_error_descriptor">impacto.json is missing or invalid. Use version 1 with only version and a supported profile.</string>
+    <string name="impacto_error_profile">The selected impacto game profile is not included in this build.</string>
+    <string name="impacto_error_game_layout">The original game files required by this impacto profile could not be read. Check the game edition, file layout and access permissions.</string>
+    <string name="impacto_error_resources">impacto resources are missing or could not be prepared. Check this installation and available storage.</string>
+    <string name="impacto_error_user_data">The private impacto configuration and save directory could not be prepared.</string>
+    <string name="impacto_error_busy">An impacto game is starting or running. Exit that game first.</string>
+    <string name="impacto_error_preparation">impacto launch preparation failed. The game has not started.</string>
 </resources>

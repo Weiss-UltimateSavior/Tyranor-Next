@@ -72,6 +72,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.ImpactoRuntimeAvailability
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
 import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
@@ -132,6 +133,7 @@ fun EngineScreen(
     var emulatorInstallStates by remember {
         mutableStateOf(refreshEmulatorInstallStates(context))
     }
+    var impactoBundled by remember { mutableStateOf(ImpactoRuntimeAvailability.isBundled(context)) }
     var ppssppVersion by remember { mutableStateOf(EngineSettingsStore.getPpssppVersion(context)) }
     var moduleDialogEngine by remember { mutableStateOf<EngineType?>(null) }
     // YU-RIS 等「引擎专属外置运行时」弹窗：只列该引擎的目标（如 Winlator），标题与内置版本弹窗同构
@@ -155,6 +157,7 @@ fun EngineScreen(
         moduleStates = refreshModuleStates(context)
         emulatorInstallStates = refreshEmulatorInstallStates(context)
         ppssppVersion = EngineSettingsStore.getPpssppVersion(context)
+        impactoBundled = ImpactoRuntimeAvailability.isBundled(context)
     }
 
     Column(modifier.fillMaxSize()) {
@@ -243,6 +246,7 @@ fun EngineScreen(
                 val module = ExternalEngineModuleRegistry.moduleForEngine(engine)
                 val emulator = ExternalEmulatorRegistry.forEngine(engine)
                 val installed = when {
+                    engine == EngineType.IMPACTO -> impactoBundled
                     module != null -> externalInstallStates[engine] == true
                     emulator != null -> {
                         // PSP 的安装态跟随「PPSSPP 版本」生效值（标准版/黄金版）
@@ -256,6 +260,8 @@ fun EngineScreen(
                     else -> true
                 }
                 val statusRes = when {
+                    engine == EngineType.IMPACTO ->
+                        if (installed) R.string.impacto_experimental else R.string.impacto_runtime_not_bundled
                     module != null ->
                         if (installed) R.string.engine_module_installed else R.string.engine_module_not_installed
 
@@ -315,6 +321,7 @@ fun EngineScreen(
                             summary = stringResource(entry.summaryRes),
                             leadingIcon = R.drawable.ic_engine_chip,
                             containerColor = DialogItemSurface,
+                            indication = null,
                         ) {
                             if (!entry.installed && entry.installUrl != null) {
                                 val opened = ExternalEngineLauncher.openInstallPage(context, entry.installUrl)
@@ -363,6 +370,7 @@ fun EngineScreen(
                             ),
                             leadingIcon = R.drawable.ic_engine_chip,
                             containerColor = DialogItemSurface,
+                            indication = null,
                         ) {
                             if (installed) {
                                 ExternalEmulatorLauncher.openHome(context, target)
@@ -795,7 +803,7 @@ private fun engineIconRes(engine: EngineType): Int = when (engine) {
     EngineType.PC -> R.drawable.ic_engine_card_pc
     EngineType.PSP -> R.drawable.ic_engine_card_psp
     EngineType.NINTENDO_SWITCH -> R.drawable.ic_engine_card_switch
-    EngineType.SYSTEMNNN, EngineType.ANDROID_APP, EngineType.RUNTIME_MODULE, EngineType.UNKNOWN -> R.drawable.ic_engine_icon
+    EngineType.IMPACTO, EngineType.SYSTEMNNN, EngineType.ANDROID_APP, EngineType.RUNTIME_MODULE, EngineType.UNKNOWN -> R.drawable.ic_engine_icon
 }
 
 /** 引擎页顶部分页（顺序即展示顺序）：GAL / RPGM / 主机 / 网页。 */
@@ -805,7 +813,7 @@ private fun engineTabOf(engine: EngineType): EngineTab = when (engine) {
     EngineType.RPGMAKER, EngineType.RPG_MV, EngineType.RPG_MZ -> EngineTab.RPGM
     EngineType.KIRIKIRI, EngineType.ONS, EngineType.ARTEMIS, EngineType.SIGLUS,
     EngineType.REALLIVE, EngineType.AVG32, EngineType.XSYS35, EngineType.XSYS4, EngineType.UK2, EngineType.FVP,
-    EngineType.ETHORNELL, EngineType.CMVS, EngineType.SYSTEMNNN,
+    EngineType.IMPACTO, EngineType.ETHORNELL, EngineType.CMVS, EngineType.SYSTEMNNN,
     EngineType.RENPY, EngineType.YURIS, EngineType.CATSYSTEM2 -> EngineTab.GAL
     // PC（手动添加，经 Winlator 运行）与主机模拟器同属「主机」分类
     EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.PC -> EngineTab.CONSOLE
@@ -898,7 +906,7 @@ private val builtinDialogEntries: Map<EngineType, List<EngineDialogEntry>> = map
 )
 
 /** 无外置模块、但点击仍展示「版本条目」弹窗的引擎（Artemis 的版本列表来自引擎设置）。 */
-private val dialogOnlyEngines: Set<EngineType> = builtinDialogEntries.keys + EngineType.ARTEMIS
+private val dialogOnlyEngines: Set<EngineType> = builtinDialogEntries.keys + setOf(EngineType.ARTEMIS, EngineType.IMPACTO)
 
 /** 弹窗条目：标题 + 状态文案 + 可选下载地址。 */
 private data class EngineDialogEntry(
@@ -930,6 +938,15 @@ private fun engineDialogEntries(
         }
     }
     return when {
+        engine == EngineType.IMPACTO -> {
+            val bundled = ImpactoRuntimeAvailability.isBundled(context)
+            listOf(EngineDialogEntry(
+                id = "internal.impacto",
+                title = "impacto (MAGES.)",
+                summaryRes = if (bundled) R.string.impacto_experimental_details else R.string.impacto_runtime_not_bundled,
+                installed = bundled,
+            ))
+        }
         engine == EngineType.ARTEMIS -> artemisDialogEntries()
         engine in builtinDialogEntries -> builtinDialogEntries[engine].orEmpty()
         else -> emptyList()

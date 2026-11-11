@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="engine_impacto_init_failed">Impacto 启动失败：运行库、资源或启动配置不可用，请返回游戏库后重试。</string>
     <string name="engine_ethornell_invalid_config">Ethornell 启动配置无效，请重新选择本地游戏目录</string>
     <string name="engine_ethornell_failed">Ethornell 运行失败；请检查游戏资源、字体与当前支持范围</string>
     <string name="engine_ethornell_game_menu">打开游戏菜单（右键）</string>

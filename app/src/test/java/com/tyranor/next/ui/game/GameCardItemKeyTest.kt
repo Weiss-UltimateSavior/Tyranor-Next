@@ -32,6 +32,7 @@ class GameCardItemKeyTest {
     @Test
     fun hidesSaveManagementForExternalApkEngines() {
         assertEquals(false, shouldShowSaveManagement(EngineType.RENPY))
+        assertEquals(false, shouldShowSaveManagement(EngineType.IMPACTO))
         // Ethornell 入口跟随验收门禁，capability 翻转时无需再改本断言。
         assertEquals(EthornellSaveCapability.available, shouldShowSaveManagement(EngineType.ETHORNELL))
         assertEquals(false, shouldShowSaveManagement(EngineType.RPGMAKER))

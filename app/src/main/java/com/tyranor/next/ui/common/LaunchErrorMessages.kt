@@ -6,6 +6,7 @@ import com.tyranor.next.core.engine.external.ExternalEngineErrorCode
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 import com.tyranor.next.core.engine.runtime.RuntimeModuleLaunchResult
 import com.tyranor.next.core.game.launch.LaunchResult
+import com.tyranor.next.core.game.launch.ImpactoPrepareError
 import com.tyranor.next.core.game.launch.EthornellPrepareError
 import com.tyranor.next.core.game.launch.SystemNnnResourceError
 import com.tyranor.next.core.game.launch.MirrorPrepareStage
@@ -37,6 +38,20 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
             SystemNnnResourceError.SOURCE_BUSY -> R.string.launch_systemnnn_source_busy
             SystemNnnResourceError.CORRUPT_COPY -> R.string.launch_systemnnn_corrupt_copy
             SystemNnnResourceError.SAVE_NOT_WRITABLE -> R.string.launch_systemnnn_save_not_writable
+        })
+
+        is LaunchResult.Failure.ImpactoPrepareFailed -> localized.getString(when (error) {
+            ImpactoPrepareError.ANDROID_VERSION -> R.string.impacto_error_android
+            ImpactoPrepareError.ABI -> R.string.impacto_error_abi
+            ImpactoPrepareError.GLES -> R.string.impacto_error_gles
+            ImpactoPrepareError.DESCRIPTOR -> R.string.impacto_error_descriptor
+            ImpactoPrepareError.PROFILE -> R.string.impacto_error_profile
+            ImpactoPrepareError.GAME_LAYOUT -> R.string.impacto_error_game_layout
+            ImpactoPrepareError.RESOURCES -> R.string.impacto_error_resources
+            ImpactoPrepareError.USER_DATA -> R.string.impacto_error_user_data
+            ImpactoPrepareError.SESSION_BUSY -> R.string.impacto_error_busy
+            ImpactoPrepareError.PREPARATION -> R.string.impacto_error_preparation
+            ImpactoPrepareError.RUNTIME -> R.string.impacto_runtime_not_bundled
         })
 
         is LaunchResult.Failure.EthornellPrepareFailed -> localized.getString(when (error) {

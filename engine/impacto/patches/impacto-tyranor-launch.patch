@@ -1,0 +1,307 @@
+--- a/src/tyranor_paths.h
++++ b/src/tyranor_paths.h
+@@ -0,0 +1,66 @@
++#pragma once
++
++// Tyranor host adapter. Only app-generated paths may be passed here.
++// The Android host performs identity, private-root containment and manifest
++// validation; these checks also fail closed before changing CWD or running Lua.
++#include <filesystem>
++#include <fstream>
++#include <stdexcept>
++#include <string>
++#include <string_view>
++
++namespace Impacto::Tyranor {
++inline std::string RequiredArgument(int argc, char* argv[], std::string_view key) {
++  std::string value;
++  bool found = false;
++  for (int i = 1; i < argc; ++i) {
++    if (std::string_view(argv[i]) != key) continue;
++    if (found || i + 1 >= argc || argv[i + 1][0] == '\0') {
++      throw std::invalid_argument("Missing or duplicate Tyranor launch argument");
++    }
++    found = true;
++    value = argv[++i];
++  }
++  if (!found) throw std::invalid_argument("Missing Tyranor launch argument");
++  return value;
++}
++
++inline void RequireReadableFile(std::filesystem::path const& path) {
++  if (!path.is_absolute() || !std::filesystem::is_regular_file(path) ||
++      !std::ifstream(path, std::ios::binary).good()) {
++    throw std::invalid_argument("Tyranor configuration must be an absolute readable file");
++  }
++}
++
++inline std::filesystem::path ValidateLaunch(int argc, char* argv[]) {
++  // The host contract is a closed set of flag/value pairs. In particular,
++  // standalone --patch/-p and configuration aliases cannot bypass validation.
++  for (int i = 1; i < argc; i += 2) {
++    std::string_view key = argv[i];
++    if ((key != "--tyranor-resource-root" && key != "-bp" && key != "-gc" &&
++         key != "-uc" && key != "-g") || i + 1 >= argc ||
++        argv[i + 1][0] == '\0' || argv[i + 1][0] == '-') {
++      throw std::invalid_argument("Unsupported Tyranor launch argument");
++    }
++  }
++  std::filesystem::path root = RequiredArgument(argc, argv, "--tyranor-resource-root");
++  if (!root.is_absolute() || !std::filesystem::is_directory(root) ||
++      std::filesystem::canonical(root) != root.lexically_normal()) {
++    throw std::invalid_argument("Invalid Tyranor resource generation root");
++  }
++  for (auto const* directory : {"profiles", "resources", "shaders"}) {
++    if (!std::filesystem::is_directory(root / directory)) {
++      throw std::invalid_argument("Incomplete Tyranor resource generation");
++    }
++  }
++  RequireReadableFile(RequiredArgument(argc, argv, "-bp"));
++  RequireReadableFile(RequiredArgument(argc, argv, "-gc"));
++  std::filesystem::path config = RequiredArgument(argc, argv, "-uc");
++  if (!config.is_absolute() || !std::filesystem::is_directory(config.parent_path())) {
++    throw std::invalid_argument("Invalid Tyranor user configuration path");
++  }
++  if (std::filesystem::exists(config)) RequireReadableFile(config);
++  RequiredArgument(argc, argv, "-g");
++  return root;
++}
++}  // namespace Impacto::Tyranor
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -865,7 +865,7 @@
+ 
+ FetchContent_Declare(
+     libatrac9
+-    GIT_TAG "master"
++    GIT_TAG "efca2e3af35562a09a9bb6deed90e45b4b824dc4"
+     GIT_REPOSITORY "https://github.com/Thealexbarney/LibAtrac9.git"
+     PATCH_COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/vendor/patches/LibAtrac9/CMakeLists.txt <SOURCE_DIR>/CMakeLists.txt
+     SYSTEM
+@@ -899,7 +899,7 @@
+     FetchContent_Declare(
+             ImGui
+             GIT_REPOSITORY "https://github.com/ocornut/imgui.git"
+-            GIT_TAG "v1.92.9b-docking"
++            GIT_TAG "b48d1afbe8ee8b238e2961dc363a949dd7304e23"
+     )
+     FetchContent_MakeAvailable(ImGui)
+ endif ()
+--- a/src/io/filemeta.cpp
++++ b/src/io/filemeta.cpp
+@@ -104,7 +104,7 @@
+   return path;
+ }
+ 
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) && !defined(IMPACTO_TYRANOR_HOST)
+ std::string GetAndroidChosenDir() {
+   std::string result;
+   JNIEnv* env = (JNIEnv*)SDL_GetAndroidJNIEnv();
+--- a/src/io/fsfolderarchive.cpp
++++ b/src/io/fsfolderarchive.cpp
+@@ -21,6 +21,9 @@
+ struct TextMetaEntry : FileMeta {
+   std::string FullPath;
+ };
++
++// The vector element must be complete when libc++ instantiates destruction.
++FSFolderArchive::~FSFolderArchive() = default;
+ 
+ IoError FSFolderArchive::Open(FileMeta* file, Stream** outStream) {
+   TextMetaEntry* entry = (TextMetaEntry*)file;
+--- a/src/io/fsfolderarchive.h
++++ b/src/io/fsfolderarchive.h
+@@ -16,6 +16,7 @@
+ 
+ class FSFolderArchive : public VfsArchive {
+  public:
++  ~FSFolderArchive() override;
+   IoError Open(FileMeta* file, Stream** outStream) override;
+   IoError GetCurrentSize(FileMeta* file, int64_t& outSize) override;
+ 
+--- a/src/log.cpp
++++ b/src/log.cpp
+@@ -141,6 +141,10 @@
+ }
+ 
+ std::string GetDefaultLogFile() {
++#ifdef IMPACTO_TYRANOR_HOST
++  // The host supplies a per-game private log path in its persistent TOML.
++  return {};
++#else
+   constexpr std::string_view logFileName = "Impacto_Log.txt";
+   std::filesystem::path result;
+ #if defined(__SWITCH__)
+@@ -162,6 +166,7 @@
+   }
+   return (result / logFileName).string();
+ #endif
++#endif
+ }
+ 
+ #ifndef IMPACTO_DISABLE_OPENGL
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -14,6 +14,9 @@
+ #include "util.h"
+ 
+ #include "profile/profile.h"
++#ifdef IMPACTO_TYRANOR_HOST
++#include "tyranor_paths.h"
++#endif
+ #include "userconfig.h"
+ #include "io/physicalfilestream.h"
+ #include "io/filemeta.h"
+@@ -178,7 +181,15 @@
+   }
+ #endif
+ 
+-#if defined(__ANDROID__)
++#if defined(IMPACTO_TYRANOR_HOST)
++  try {
++    std::filesystem::current_path(Tyranor::ValidateLaunch(argc, argv));
++    Profile::RequireExplicitPaths = true;
++  } catch (std::exception const& error) {
++    fprintf(stderr, "Tyranor launch rejected: %s\n", error.what());
++    return 2;
++  }
++#elif defined(__ANDROID__)
+   if (const char* const basePath = SDL_GetAndroidInternalStoragePath())
+     std::filesystem::current_path(basePath);
+ #elif !defined(__SWITCH__)
+--- a/src/overlay/overlay.cpp
++++ b/src/overlay/overlay.cpp
+@@ -39,7 +39,7 @@
+ };
+ static ankerl::unordered_dense::map<std::string, ImgData> iconTextureMap;
+ 
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) && !defined(IMPACTO_TYRANOR_HOST)
+ static void ShowDirectoryPicker() {
+   JNIEnv* env = (JNIEnv*)SDL_GetAndroidJNIEnv();
+   jobject activity = (jobject)SDL_GetAndroidActivity();
+@@ -218,6 +218,11 @@
+ 
+ void SetupFonts() {
+   ImGuiIO& io = ImGui::GetIO();
++#ifdef IMPACTO_TYRANOR_HOST
++  // Resource generations are immutable; user settings use the host TOML.
++  io.IniFilename = nullptr;
++  io.LogFilename = nullptr;
++#endif
+   constexpr const char* fontPath =
+       "resources/common/font/NotoSansCJKjp-Bold.otf";
+   ImFont* font =
+@@ -373,7 +378,7 @@
+     if (ImGui::BeginChild("Overlay##DockArea", windowSize, ImGuiChildFlags_None,
+                           innerWindowFlags)) {
+       bool isReady = true;
+-#ifdef __ANDROID__
++#if defined(__ANDROID__) && !defined(IMPACTO_TYRANOR_HOST)
+       if (!Profile::Game::HasInit) ShowDirectoryPickerButton();
+       isReady = !Io::GetAndroidChosenDir().empty();
+ #endif
+--- a/src/overlay/settingspage.cpp
++++ b/src/overlay/settingspage.cpp
+@@ -148,6 +148,7 @@
+   return wasUpdated;
+ }
+ 
++#ifndef IMPACTO_TYRANOR_HOST
+ static void ShowPatchSettings(std::string const& selectedGame) {
+   const float comboWidth = 200.0f * Window->DpiScale;
+ 
+@@ -181,6 +182,8 @@
+     ImGui::EndDisabled();
+   }
+ }
++
++#endif
+ 
+ void ShowSettingsPage(std::string const& selectedGame) {
+   const float footerHeight = ImGui::GetStyle().ItemSpacing.y +
+@@ -197,7 +200,9 @@
+       ImGui::Spacing();
+ #endif
+ 
++#ifndef IMPACTO_TYRANOR_HOST
+       ShowPatchSettings(selectedGame);
++#endif
+     }
+     ImGui::ScrollWhenDraggingOnVoid(ImVec2{0.0f, -ImGui::GetIO().MouseDelta.y},
+                                     ImGuiMouseButton_Left);
+--- a/src/profile/profile.cpp
++++ b/src/profile/profile.cpp
+@@ -1,4 +1,7 @@
+ #include "profile.h"
++#ifdef IMPACTO_TYRANOR_HOST
++#include "../tyranor_paths.h"
++#endif
+ 
+ #include <algorithm>
+ #include <ranges>
+@@ -123,6 +126,10 @@
+ }
+ 
+ static int LuaGetPatchProfile(lua_State* ctx) {
++#ifdef IMPACTO_TYRANOR_HOST
++  lua_pushstring(ctx, "");
++  return 1;
++#else
+   if (UserConfig::GameSettings.empty()) {
+     ImpLog(LogLevel::Error, LogChannel::Profile,
+            "getPatchProfile called in profile before ready, returning empty "
+@@ -133,6 +140,7 @@
+   auto const& patchProfile = UserConfig::ActiveGameSettings().PatchProfile;
+   lua_pushstring(ctx, patchProfile.c_str());
+   return 1;
++#endif
+ }
+ 
+ template <typename Enum>
+@@ -233,6 +241,12 @@
+ void Configure() {
+   const auto setupScriptPath = [](std::string const& fileName,
+                                   std::string& path) {
++#ifdef IMPACTO_TYRANOR_HOST
++    if (RequireExplicitPaths) {
++      Tyranor::RequireReadableFile(path);
++      return;
++    }
++#endif
+     // Override
+     if (!path.empty()) {
+       if (Io::PathExists(path) == IoError_OK) return;
+--- a/src/profile/profile.h
++++ b/src/profile/profile.h
+@@ -2,6 +2,7 @@
+ 
+ namespace Impacto {
+ namespace Profile {
++inline bool RequireExplicitPaths = false;
+ 
+ inline std::string BasePathsPath;
+ inline std::string GameDefinitionsPath;
+--- a/src/userconfig.cpp
++++ b/src/userconfig.cpp
+@@ -314,6 +314,11 @@
+ }
+ 
+ std::optional<std::string_view> GetPatchProfile() {
++#ifdef IMPACTO_TYRANOR_HOST
++  // Tyranor exposes only bundled base profiles. Preserve saved settings, but
++  // never activate standalone patch paths from TOML or a CLI override.
++  return std::nullopt;
++#else
+   if (!PatchProfileOverride.empty()) {
+     return PatchProfileOverride;
+   }
+@@ -324,6 +329,7 @@
+   }
+ 
+   return std::nullopt;
++#endif
+ }
+ 
+ void WriteUserConfig() {

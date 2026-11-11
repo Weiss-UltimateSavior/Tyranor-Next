@@ -1,0 +1,39 @@
+--- a/src/core/android/SDL_android.c
++++ b/src/core/android/SDL_android.c
+@@ -46,7 +46,7 @@
+ #include <dlfcn.h>
+ #include <time.h>
+ 
+-#define SDL_JAVA_PREFIX                               org_libsdl_app
++#define SDL_JAVA_PREFIX                               org_libsdl_impacto
+ #define CONCAT1(prefix, class, function)              CONCAT2(prefix, class, function)
+ #define CONCAT2(prefix, class, function)              Java_##prefix##_##class##_##function
+ #define SDL_JAVA_INTERFACE(function)                  CONCAT1(SDL_JAVA_PREFIX, SDLActivity, function)
+@@ -586,11 +586,11 @@
+         return JNI_VERSION_1_4;
+     }
+ 
+-    register_methods(env, "org/libsdl/app/SDLActivity", SDLActivity_tab, SDL_arraysize(SDLActivity_tab));
+-    register_methods(env, "org/libsdl/app/SDLInputConnection", SDLInputConnection_tab, SDL_arraysize(SDLInputConnection_tab));
+-    register_methods(env, "org/libsdl/app/SDLAudioManager", SDLAudioManager_tab, SDL_arraysize(SDLAudioManager_tab));
+-    register_methods(env, "org/libsdl/app/SDLControllerManager", SDLControllerManager_tab, SDL_arraysize(SDLControllerManager_tab));
+-    register_methods(env, "org/libsdl/app/HIDDeviceManager", HIDDeviceManager_tab, SDL_arraysize(HIDDeviceManager_tab));
++    register_methods(env, "org/libsdl/impacto/SDLActivity", SDLActivity_tab, SDL_arraysize(SDLActivity_tab));
++    register_methods(env, "org/libsdl/impacto/SDLInputConnection", SDLInputConnection_tab, SDL_arraysize(SDLInputConnection_tab));
++    register_methods(env, "org/libsdl/impacto/SDLAudioManager", SDLAudioManager_tab, SDL_arraysize(SDLAudioManager_tab));
++    register_methods(env, "org/libsdl/impacto/SDLControllerManager", SDLControllerManager_tab, SDL_arraysize(SDLControllerManager_tab));
++    register_methods(env, "org/libsdl/impacto/HIDDeviceManager", HIDDeviceManager_tab, SDL_arraysize(HIDDeviceManager_tab));
+ 
+     return JNI_VERSION_1_4;
+ }
+--- a/src/hidapi/android/hid.cpp
++++ b/src/hidapi/android/hid.cpp
+@@ -43,7 +43,7 @@
+ #define LOGD(...)
+ #endif
+ 
+-#define SDL_JAVA_PREFIX                                 org_libsdl_app
++#define SDL_JAVA_PREFIX                                 org_libsdl_impacto
+ #define CONCAT1(prefix, class, function)                CONCAT2(prefix, class, function)
+ #define CONCAT2(prefix, class, function)                Java_ ## prefix ## _ ## class ## _ ## function
+ #define HID_DEVICE_MANAGER_JAVA_INTERFACE(function)     CONCAT1(SDL_JAVA_PREFIX, HIDDeviceManager, function)

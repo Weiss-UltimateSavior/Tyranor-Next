@@ -1,0 +1,622 @@
+--- a/android/app/src/main/java/org/libsdl/app/HIDBluetoothAccess.java
++++ b/android/app/src/main/java/org/libsdl/app/HIDBluetoothAccess.java
+@@ -0,0 +1,95 @@
++package org.libsdl.impacto;
++
++import android.bluetooth.BluetoothDevice;
++import android.bluetooth.BluetoothGatt;
++import android.bluetooth.BluetoothGattCallback;
++import android.bluetooth.BluetoothGattCharacteristic;
++import android.bluetooth.BluetoothGattDescriptor;
++import android.bluetooth.BluetoothManager;
++import android.bluetooth.BluetoothProfile;
++import android.content.Context;
++import android.util.Log;
++
++import java.util.Collections;
++import java.util.List;
++
++/** Permission can be revoked between discovery and a later GATT callback. */
++final class HIDBluetoothAccess {
++    private HIDBluetoothAccess() {}
++
++    private static void denied(SecurityException error) {
++        Log.w("hidapi", "Bluetooth permission unavailable", error);
++    }
++
++    static boolean read(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
++        try { return gatt != null && gatt.readCharacteristic(characteristic); }
++        catch (SecurityException error) { denied(error); return false; }
++    }
++
++    static boolean write(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
++        try { return gatt != null && gatt.writeCharacteristic(characteristic); }
++        catch (SecurityException error) { denied(error); return false; }
++    }
++
++    static boolean notify(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, boolean enabled) {
++        try { return gatt != null && gatt.setCharacteristicNotification(characteristic, enabled); }
++        catch (SecurityException error) { denied(error); return false; }
++    }
++
++    static boolean writeDescriptor(BluetoothGatt gatt, BluetoothGattDescriptor descriptor) {
++        try { return gatt != null && gatt.writeDescriptor(descriptor); }
++        catch (SecurityException error) { denied(error); return false; }
++    }
++
++    static BluetoothGatt connect(BluetoothDevice device, Context context, boolean managed,
++                                 BluetoothGattCallback callback, int transport) {
++        try { return device.connectGatt(context, managed, callback, transport); }
++        catch (SecurityException error) { denied(error); return null; }
++    }
++
++    static BluetoothGatt connect(BluetoothDevice device, Context context, boolean managed,
++                                 BluetoothGattCallback callback) {
++        try { return device.connectGatt(context, managed, callback); }
++        catch (SecurityException error) { denied(error); return null; }
++    }
++
++    static int connectionState(BluetoothManager manager, BluetoothDevice device, int profile) {
++        try { return manager.getConnectionState(device, profile); }
++        catch (SecurityException error) { denied(error); return BluetoothProfile.STATE_DISCONNECTED; }
++    }
++
++    static List<BluetoothDevice> connectedDevices(BluetoothManager manager, int profile) {
++        try { return manager.getConnectedDevices(profile); }
++        catch (SecurityException error) { denied(error); return Collections.emptyList(); }
++    }
++
++    static void disconnect(BluetoothGatt gatt) {
++        try { if (gatt != null) gatt.disconnect(); }
++        catch (SecurityException error) { denied(error); }
++    }
++
++    static void close(BluetoothGatt gatt) {
++        try { if (gatt != null) gatt.close(); }
++        catch (SecurityException error) { denied(error); }
++    }
++
++    static boolean discover(BluetoothGatt gatt) {
++        try { return gatt != null && gatt.discoverServices(); }
++        catch (SecurityException error) { denied(error); return false; }
++    }
++
++    static boolean requestMtu(BluetoothGatt gatt, int size) {
++        try { return gatt != null && gatt.requestMtu(size); }
++        catch (SecurityException error) { denied(error); return false; }
++    }
++
++    static String name(BluetoothDevice device) {
++        try { String name = device.getName(); return name == null ? "" : name; }
++        catch (SecurityException error) { denied(error); return ""; }
++    }
++
++    static int type(BluetoothDevice device) {
++        try { return device.getType(); }
++        catch (SecurityException error) { denied(error); return BluetoothDevice.DEVICE_TYPE_UNKNOWN; }
++    }
++}
+--- a/android/app/src/main/java/org/libsdl/app/HIDDevice.java
++++ b/android/app/src/main/java/org/libsdl/app/HIDDevice.java
+@@ -1,4 +1,4 @@
+-package org.libsdl.app;
++package org.libsdl.impacto;
+ 
+ import android.hardware.usb.UsbDevice;
+ 
+--- a/android/app/src/main/java/org/libsdl/app/HIDDeviceBLESteamController.java
++++ b/android/app/src/main/java/org/libsdl/app/HIDDeviceBLESteamController.java
+@@ -1,4 +1,4 @@
+-package org.libsdl.app;
++package org.libsdl.impacto;
+ 
+ import android.content.Context;
+ import android.bluetooth.BluetoothDevice;
+@@ -115,8 +115,9 @@
+             switch (mOp) {
+                 case CHR_READ:
+                     chr = getCharacteristic(mUuid);
++                    if (chr == null) { mResult = false; return; }
+                     //Log.v(TAG, "Reading characteristic " + chr.getUuid());
+-                    if (!mGatt.readCharacteristic(chr)) {
++                    if (!HIDBluetoothAccess.read(mGatt, chr)) {
+                         Log.e(TAG, "Unable to read characteristic " + mUuid.toString());
+                         mResult = false;
+                         break;
+@@ -125,9 +126,10 @@
+                     break;
+                 case CHR_WRITE:
+                     chr = getCharacteristic(mUuid);
++                    if (chr == null) { mResult = false; return; }
+                     //Log.v(TAG, "Writing characteristic " + chr.getUuid() + " value=" + HexDump.toHexString(value));
+                     chr.setValue(mValue);
+-                    if (!mGatt.writeCharacteristic(chr)) {
++                    if (!HIDBluetoothAccess.write(mGatt, chr)) {
+                         Log.e(TAG, "Unable to write characteristic " + mUuid.toString());
+                         mResult = false;
+                         break;
+@@ -136,6 +138,7 @@
+                     break;
+                 case ENABLE_NOTIFICATION:
+                     chr = getCharacteristic(mUuid);
++                    if (chr == null) { mResult = false; return; }
+                     //Log.v(TAG, "Writing descriptor of " + chr.getUuid());
+                     if (chr != null) {
+                         BluetoothGattDescriptor cccd = chr.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"));
+@@ -152,9 +155,9 @@
+                                 return;
+                             }
+ 
+-                            mGatt.setCharacteristicNotification(chr, true);
++                            HIDBluetoothAccess.notify(mGatt, chr, true);
+                             cccd.setValue(value);
+-                            if (!mGatt.writeDescriptor(cccd)) {
++                            if (!HIDBluetoothAccess.writeDescriptor(mGatt, cccd)) {
+                                 Log.e(TAG, "Unable to write descriptor " + mUuid.toString());
+                                 mResult = false;
+                                 return;
+@@ -172,6 +175,7 @@
+         public int getDelayMs() { return mDelayMs; }
+ 
+         private BluetoothGattCharacteristic getCharacteristic(UUID uuid) {
++            if (mGatt == null) return null;
+             BluetoothGattService valveService = mGatt.getService(steamControllerService);
+             if (valveService == null)
+                 return null;
+@@ -229,12 +233,12 @@
+     private BluetoothGatt connectGatt(boolean managed) {
+         if (Build.VERSION.SDK_INT >= 23 /* Android 6.0 (M) */) {
+             try {
+-                return mDevice.connectGatt(mManager.getContext(), managed, this, TRANSPORT_LE);
++                return HIDBluetoothAccess.connect(mDevice, mManager.getContext(), managed, this, TRANSPORT_LE);
+             } catch (Exception e) {
+-                return mDevice.connectGatt(mManager.getContext(), managed, this);
++                return HIDBluetoothAccess.connect(mDevice, mManager.getContext(), managed, this);
+             }
+         } else {
+-            return mDevice.connectGatt(mManager.getContext(), managed, this);
++            return HIDBluetoothAccess.connect(mDevice, mManager.getContext(), managed, this);
+         }
+     }
+ 
+@@ -257,13 +261,13 @@
+             return BluetoothProfile.STATE_DISCONNECTED;
+         }
+ 
+-        return btManager.getConnectionState(mDevice, BluetoothProfile.GATT);
++        return HIDBluetoothAccess.connectionState(btManager, mDevice, BluetoothProfile.GATT);
+     }
+ 
+     void reconnect() {
+ 
+         if (getConnectionState() != BluetoothProfile.STATE_CONNECTED) {
+-            mGatt.disconnect();
++            HIDBluetoothAccess.disconnect(mGatt);
+             mGatt = connectGatt();
+         }
+ 
+@@ -285,7 +289,7 @@
+                     // to try to recover.
+                     Log.v(TAG, "Chromebook: We are in a very bad state; the controller shows as connected in the underlying Bluetooth layer, but we never received a callback.  Forcing a reconnect.");
+                     mIsReconnecting = true;
+-                    mGatt.disconnect();
++                    HIDBluetoothAccess.disconnect(mGatt);
+                     mGatt = connectGatt(false);
+                     break;
+                 }
+@@ -297,7 +301,7 @@
+                     else {
+                         Log.v(TAG, "Chromebook: We are connected to a controller, but never discovered services.  Trying to recover.");
+                         mIsReconnecting = true;
+-                        mGatt.disconnect();
++                        HIDBluetoothAccess.disconnect(mGatt);
+                         mGatt = connectGatt(false);
+                         break;
+                     }
+@@ -312,7 +316,7 @@
+                 Log.v(TAG, "Chromebook: We have either been disconnected, or the Chromebook BtGatt.ContextMap bug has bitten us.  Attempting a disconnect/reconnect, but we may not be able to recover.");
+ 
+                 mIsReconnecting = true;
+-                mGatt.disconnect();
++                HIDBluetoothAccess.disconnect(mGatt);
+                 mGatt = connectGatt(false);
+                 break;
+ 
+@@ -409,7 +413,7 @@
+             Log.e(TAG, "Chromebook: Discovered services were empty; this almost certainly means the BtGatt.ContextMap bug has bitten us.");
+             mIsConnected = false;
+             mIsReconnecting = true;
+-            mGatt.disconnect();
++            HIDBluetoothAccess.disconnect(mGatt);
+             mGatt = connectGatt(false);
+         }
+ 
+@@ -544,7 +548,7 @@
+                 mHandler.post(new Runnable() {
+                     @Override
+                     public void run() {
+-                        mGatt.discoverServices();
++                        HIDBluetoothAccess.discover(mGatt);
+                     }
+                 });
+             }
+@@ -564,7 +568,7 @@
+                 Log.v(TAG, "onServicesDiscovered returned zero services; something has gone horribly wrong down in Android's Bluetooth stack.");
+                 mIsReconnecting = true;
+                 mIsConnected = false;
+-                gatt.disconnect();
++                HIDBluetoothAccess.disconnect(gatt);
+                 mGatt = connectGatt(false);
+             } else {
+                 if (getProductId() == TRITON_BLE_PID) {
+@@ -573,7 +577,7 @@
+                     //
+                     // 517 is basically a "magic number" as far as Android's bluetooth code is concerned, so do not change
+                     // this value. It is functionally "please enable data length extensions" on some Android builds.
+-                    mGatt.requestMtu(517);
++                    HIDBluetoothAccess.requestMtu(mGatt, 517);
+                 }
+ 
+                 probeService(this);
+@@ -641,7 +645,7 @@
+                 // For the original controller, we need to manually enter Valve mode.
+                 Log.v(TAG, "Writing report characteristic to enter valve mode");
+                 reportChr.setValue(enterValveMode);
+-                mGatt.writeCharacteristic(reportChr);
++                HIDBluetoothAccess.write(mGatt, reportChr);
+             }
+         }
+     }
+@@ -697,7 +701,7 @@
+             return mProductId;
+         }
+ 
+-        if (mDevice.getName().startsWith("Steam Ctrl")) {
++        if (HIDBluetoothAccess.name(mDevice).startsWith("Steam Ctrl")) {
+             // We're a newer Triton device
+             mProductId = TRITON_BLE_PID;
+         } else {
+@@ -815,8 +819,8 @@
+ 
+         BluetoothGatt g = mGatt;
+         if (g != null) {
+-            g.disconnect();
+-            g.close();
++            HIDBluetoothAccess.disconnect(g);
++            HIDBluetoothAccess.close(g);
+             mGatt = null;
+         }
+         mManager = null;
+--- a/android/app/src/main/java/org/libsdl/app/HIDDeviceManager.java
++++ b/android/app/src/main/java/org/libsdl/app/HIDDeviceManager.java
+@@ -1,4 +1,4 @@
+-package org.libsdl.app;
++package org.libsdl.impacto;
+ 
+ import android.app.Activity;
+ import android.app.AlertDialog;
+@@ -27,7 +27,7 @@
+ 
+ public class HIDDeviceManager {
+     private static final String TAG = "hidapi";
+-    private static final String ACTION_USB_PERMISSION = "org.libsdl.app.USB_PERMISSION";
++    private static final String ACTION_USB_PERMISSION = "org.libsdl.impacto.USB_PERMISSION";
+ 
+     private static HIDDeviceManager sManager;
+     private static int sManagerRefCount = 0;
+@@ -193,11 +193,9 @@
+         filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
+         filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
+         filter.addAction(HIDDeviceManager.ACTION_USB_PERMISSION);
+-        if (Build.VERSION.SDK_INT >= 33) { /* Android 13.0 (TIRAMISU) */
+-            mContext.registerReceiver(mUsbBroadcast, filter, Context.RECEIVER_EXPORTED);
+-        } else {
+-            mContext.registerReceiver(mUsbBroadcast, filter);
+-        }
++        // USB system broadcasts and our own permission PendingIntent only.
++        androidx.core.content.ContextCompat.registerReceiver(mContext, mUsbBroadcast,
++                filter, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED);
+ 
+         for (UsbDevice usbDevice : mUsbManager.getDeviceList().values()) {
+             handleUsbDeviceAttached(usbDevice);
+@@ -453,7 +451,7 @@
+         ArrayList<BluetoothDevice> disconnected = new ArrayList<BluetoothDevice>();
+         ArrayList<BluetoothDevice> connected = new ArrayList<BluetoothDevice>();
+ 
+-        List<BluetoothDevice> currentConnected = mBluetoothManager.getConnectedDevices(BluetoothProfile.GATT);
++        List<BluetoothDevice> currentConnected = HIDBluetoothAccess.connectedDevices(mBluetoothManager, BluetoothProfile.GATT);
+ 
+         for (BluetoothDevice bluetoothDevice : currentConnected) {
+             if (!mLastBluetoothDevices.contains(bluetoothDevice)) {
+@@ -526,17 +524,17 @@
+         }
+ 
+         // If the device has no local name, we really don't want to try an equality check against it.
+-        if (bluetoothDevice.getName() == null) {
++        if (HIDBluetoothAccess.name(bluetoothDevice) == null) {
+             return false;
+         }
+ 
+         // Steam Controllers will always support Bluetooth Low Energy
+-        if ((bluetoothDevice.getType() & BluetoothDevice.DEVICE_TYPE_LE) == 0) {
++        if ((HIDBluetoothAccess.type(bluetoothDevice) & BluetoothDevice.DEVICE_TYPE_LE) == 0) {
+             return false;
+         }
+ 
+         // Match on the name either the original Steam Controller or the new second-generation one advertise with.
+-        return bluetoothDevice.getName().equals("SteamController") || bluetoothDevice.getName().startsWith("Steam Ctrl");
++        return HIDBluetoothAccess.name(bluetoothDevice).equals("SteamController") || HIDBluetoothAccess.name(bluetoothDevice).startsWith("Steam Ctrl");
+     }
+ 
+     private void close() {
+--- a/android/app/src/main/java/org/libsdl/app/HIDDeviceUSB.java
++++ b/android/app/src/main/java/org/libsdl/app/HIDDeviceUSB.java
+@@ -1,4 +1,4 @@
+-package org.libsdl.app;
++package org.libsdl.impacto;
+ 
+ import android.hardware.usb.*;
+ import android.os.Build;
+--- a/android/app/src/main/java/org/libsdl/app/SDL.java
++++ b/android/app/src/main/java/org/libsdl/app/SDL.java
+@@ -1,4 +1,4 @@
+-package org.libsdl.app;
++package org.libsdl.impacto;
+ 
+ import android.app.Activity;
+ import android.content.Context;
+--- a/android/app/src/main/java/org/libsdl/app/SDLActivity.java
++++ b/android/app/src/main/java/org/libsdl/app/SDLActivity.java
+@@ -1,4 +1,4 @@
+-package org.libsdl.app;
++package org.libsdl.impacto;
+ 
+ import android.app.Activity;
+ import android.app.AlertDialog;
+@@ -343,6 +343,18 @@
+         return new SDLSurface(context);
+     }
+ 
++    // Tyranor subclasses supply localized load failure UI without modifying
++    // the existing SDL runtimes used by other engines.
++    protected String getBrokenLibrariesMessage(String detail) {
++        return "Unable to start the runtime.\n\n" + detail;
++    }
++
++    protected String getBrokenLibrariesTitle() { return "SDL Error"; }
++    protected String getBrokenLibrariesExitLabel() { return "Exit"; }
++
++    private boolean mSDLCreateReturned;
++    private boolean mSDLStarted;
++
+     // Setup
+     @Override
+     protected void onCreate(Bundle savedInstanceState) {
+@@ -351,13 +363,30 @@
+         Log.v(TAG, "Model: " + Build.MODEL);
+         Log.v(TAG, "onCreate()");
+         super.onCreate(savedInstanceState);
++        onSDLCreate();
++        mSDLCreateReturned = true;
++    }
++
++    // Hosts may validate their immutable launch files off the UI thread first.
++    protected void onSDLCreate() {
++        startSDL();
++    }
++
++    // Call once, on the UI thread, after host preparation finishes.
++    protected final void startSDL() {
++        if (mSDLStarted || isFinishing() || isDestroyed()) return;
++        mSDLStarted = true;
++        boolean deferred = mSDLCreateReturned;
++        boolean resumedBeforeStart = mIsResumedCalled;
++        boolean focusedBeforeStart = mHasFocus;
++        NativeState stateBeforeStart = mNextNativeState;
+ 
+         if (Build.VERSION.SDK_INT >= 30 /* Android 11 (R) */) {
+             getWindow().setDecorFitsSystemWindows(false);
+         }
+ 
+         /* Control activity re-creation */
+-        if (mSDLMainFinished || mActivityCreated) {
++        if ((mSDLMainFinished || mActivityCreated) && !mBrokenLibraries) {
+               boolean allow_recreate = SDLActivity.nativeAllowRecreateActivity();
+               if (mSDLMainFinished) {
+                   Log.v(TAG, "SDL main() finished");
+@@ -395,25 +424,27 @@
+         }
+ 
+         if (!mBrokenLibraries) {
+-            String expected_version = String.valueOf(SDL_MAJOR_VERSION) + "." +
+-                                      String.valueOf(SDL_MINOR_VERSION) + "." +
+-                                      String.valueOf(SDL_MICRO_VERSION);
+-            String version = nativeGetVersion();
+-            if (!version.equals(expected_version)) {
++            try {
++                String expected_version = String.valueOf(SDL_MAJOR_VERSION) + "." +
++                                          String.valueOf(SDL_MINOR_VERSION) + "." +
++                                          String.valueOf(SDL_MICRO_VERSION);
++                String version = nativeGetVersion();
++                if (!version.equals(expected_version)) {
++                    mBrokenLibraries = true;
++                    errorMsgBrokenLib = "SDL C/Java version mismatch (expected " + expected_version + ", got " + version + ")";
++                }
++            } catch (LinkageError error) {
+                 mBrokenLibraries = true;
+-                errorMsgBrokenLib = "SDL C/Java version mismatch (expected " + expected_version + ", got " + version + ")";
++                errorMsgBrokenLib = error.getMessage();
+             }
+         }
+ 
+         if (mBrokenLibraries) {
+             mSingleton = this;
+             AlertDialog.Builder dlgAlert  = new AlertDialog.Builder(this);
+-            dlgAlert.setMessage("An error occurred while trying to start the application. Please try again and/or reinstall."
+-                  + System.getProperty("line.separator")
+-                  + System.getProperty("line.separator")
+-                  + "Error: " + errorMsgBrokenLib);
+-            dlgAlert.setTitle("SDL Error");
+-            dlgAlert.setPositiveButton("Exit",
++            dlgAlert.setMessage(getBrokenLibrariesMessage(errorMsgBrokenLib));
++            dlgAlert.setTitle(getBrokenLibrariesTitle());
++            dlgAlert.setPositiveButton(getBrokenLibrariesExitLabel(),
+                 new DialogInterface.OnClickListener() {
+                     @Override
+                     public void onClick(DialogInterface dialog,int id) {
+@@ -450,6 +481,11 @@
+ 
+         // Initialize state
+         SDL.initialize();
++        if (deferred) {
++            mIsResumedCalled = resumedBeforeStart;
++            mHasFocus = focusedBeforeStart;
++            mNextNativeState = stateBeforeStart;
++        }
+ 
+         // So we can call stuff from static callbacks
+         mSingleton = this;
+@@ -621,6 +657,11 @@
+         super.onWindowFocusChanged(hasFocus);
+         Log.v(TAG, "onWindowFocusChanged(): " + hasFocus);
+ 
++        // Record focus while a deferred host startup is still validating.
++        mHasFocus = hasFocus;
++        // Tyranor: a failed load may still receive Android focus callbacks.
++        if (SDLActivity.mBrokenLibraries) return;
++
+         // If we are gaining focus, we can always try to restore our USB devices. If we are losing focus,
+         // only try to relinquish them if we don't have background events allowed (for multi-window Android setups).
+         if (hasFocus || !SDLActivity.nativeGetHintBoolean("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", false)) {
+@@ -702,30 +743,36 @@
+            return;
+         }
+ 
+-        if (SDLActivity.mSDLThread != null) {
+-
+-            // Send Quit event to "SDLThread" thread
+-            SDLActivity.nativeSendQuit();
+-
+-            // Wait for "SDLThread" thread to end
+-            try {
+-                // Use a timeout because:
+-                // C SDLmain() thread might have started (mSDLThread.start() called)
+-                // while the SDL_Init() might not have been called yet,
+-                // and so the previous QUIT event will be discarded by SDL_Init() and app is running, not exiting.
+-                SDLActivity.mSDLThread.join(1000);
+-            } catch(Exception e) {
+-                Log.v(TAG, "Problem stopping SDLThread: " + e);
+-            }
+-        }
+-
+-        SDLActivity.nativeQuit();
+-
+-        super.onDestroy();
++        Thread nativeThread = SDLActivity.mSDLThread;
++        try {
++            if (nativeThread != null) {
++                // Preserve the pending DESTROY until SDL_main can pump it. Asset loading may
++                // take longer than the UI-thread grace, especially before SDL_Init completes.
++                SDLActivity.nativeSendQuit();
++                try {
++                    nativeThread.join(1000);
++                } catch (InterruptedException interrupted) {
++                    Thread.currentThread().interrupt();
++                }
++            }
++            // nativeQuit clears lifecycle events and destroys their semaphore. Calling it while
++            // SDL_main lives can discard the sole quit request and strand the session forever.
++            // The Impacto host owns the remaining bounded wait and isolated-process teardown.
++            if (com.core.impacto.ImpactoShutdownPolicy.mayQuitNative(nativeThread)) {
++                SDLActivity.nativeQuit();
++            }
++        } finally {
++            super.onDestroy();
++        }
++
+     }
+ 
+     @Override
+     public void onBackPressed() {
++        if (SDLActivity.mBrokenLibraries) {
++            finish();
++            return;
++        }
+         // Check if we want to block the back button in case of mouse right click.
+         //
+         // If we do, the normal hardware back button will no longer work and people have to use home,
+@@ -746,6 +793,7 @@
+     @Override
+     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+         super.onActivityResult(requestCode, resultCode, data);
++        if (SDLActivity.mBrokenLibraries) return;
+ 
+         if (mFileDialogState != null && mFileDialogState.requestCode == requestCode) {
+             /* This is our file dialog */
+@@ -1986,6 +2034,8 @@
+ 
+     @Override
+     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
++        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
++        if (SDLActivity.mBrokenLibraries) return;
+         boolean result = (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED);
+         nativePermissionResult(requestCode, result);
+     }
+--- a/android/app/src/main/java/org/libsdl/app/SDLAudioManager.java
++++ b/android/app/src/main/java/org/libsdl/app/SDLAudioManager.java
+@@ -1,4 +1,4 @@
+-package org.libsdl.app;
++package org.libsdl.impacto;
+ 
+ import android.content.Context;
+ import android.media.AudioDeviceCallback;
+--- a/android/app/src/main/java/org/libsdl/app/SDLControllerManager.java
++++ b/android/app/src/main/java/org/libsdl/app/SDLControllerManager.java
+@@ -1,4 +1,4 @@
+-package org.libsdl.app;
++package org.libsdl.impacto;
+ 
+ import java.util.ArrayList;
+ import java.util.Collections;
+@@ -989,6 +989,9 @@
+             return SDL_PEN_DEVICE_TYPE_UNKNOWN;
+         }
+ 
++        if (Build.VERSION.SDK_INT < 29) {
++            return super.getPenDeviceType(penDevice);
++        }
+         return penDevice.isExternal() ? SDL_PEN_DEVICE_TYPE_INDIRECT : SDL_PEN_DEVICE_TYPE_DIRECT;
+     }
+ }
+--- a/android/app/src/main/java/org/libsdl/app/SDLDummyEdit.java
++++ b/android/app/src/main/java/org/libsdl/app/SDLDummyEdit.java
+@@ -1,4 +1,4 @@
+-package org.libsdl.app;
++package org.libsdl.impacto;
+ 
+ import android.content.*;
+ import android.text.InputType;
+--- a/android/app/src/main/java/org/libsdl/app/SDLInputConnection.java
++++ b/android/app/src/main/java/org/libsdl/app/SDLInputConnection.java
+@@ -1,4 +1,4 @@
+-package org.libsdl.app;
++package org.libsdl.impacto;
+ 
+ import android.content.*;
+ import android.os.Build;
+--- a/android/app/src/main/java/org/libsdl/app/SDLSensorManager.java
++++ b/android/app/src/main/java/org/libsdl/app/SDLSensorManager.java
+@@ -1,4 +1,4 @@
+-package org.libsdl.app;
++package org.libsdl.impacto;
+ 
+ import android.hardware.Sensor;
+ import android.hardware.SensorEventListener;
+--- a/android/app/src/main/java/org/libsdl/app/SDLSurface.java
++++ b/android/app/src/main/java/org/libsdl/app/SDLSurface.java
+@@ -1,4 +1,4 @@
+-package org.libsdl.app;
++package org.libsdl.impacto;
+ 
+ 
+ import android.content.Context;

@@ -1,0 +1,550 @@
+{
+  "version": 1,
+  "upstreamRevision": "ba0b6e0884b9016fcd7dfd3e50024c5af1e8aef7",
+  "profiles": [
+    {
+      "id": "chlcc",
+      "name": "CHAOS;HEAD Love Chu☆Chu!",
+      "hidden": false,
+      "compatibility": "experimental-unverified",
+      "lua": "profiles/chlcc/game.lua",
+      "gamePrefix": "chlcc",
+      "saveFields": {
+        "SaveFilePath": "SYSTEM.DAT",
+        "ThumbnailFilePath": "THUMNAIL.DAT"
+      },
+      "achievementField": null,
+      "required": [
+        {
+          "path": "BG.CPK",
+          "type": "file"
+        },
+        {
+          "path": "BGM.CPK",
+          "type": "file"
+        },
+        {
+          "path": "CHARA.CPK",
+          "type": "file"
+        },
+        {
+          "path": "MASK.CPK",
+          "type": "file"
+        },
+        {
+          "path": "MOVIE.CPK",
+          "type": "file"
+        },
+        {
+          "path": "SCRIPT.CPK",
+          "type": "file"
+        },
+        {
+          "path": "SE.CPK",
+          "type": "file"
+        },
+        {
+          "path": "SYSTEM.CPK",
+          "type": "file"
+        },
+        {
+          "path": "VOICE.CPK",
+          "type": "file"
+        }
+      ],
+      "sourceHashes": {
+        "profiles/chlcc/game.lua": "acfc765db7f22dbe37a78e48eca7b4e7bd9bd34aaceca3f1b176e04d37fbe059",
+        "profiles/chlcc/vfs.lua": "a5d6058c53ea278180c51f6118a6fab720b0f69fefe11782a899d8e3f32f45bc"
+      }
+    },
+    {
+      "id": "chlcc-switch",
+      "name": "CHAOS;HEAD Love Chu☆Chu! (Switch)",
+      "hidden": true,
+      "compatibility": "experimental-unverified",
+      "lua": "profiles/chlcc-switch/game.lua",
+      "gamePrefix": "chlcc-switch",
+      "saveFields": {
+        "SaveFilePath": "SYSTEM.DAT",
+        "ThumbnailFilePath": "THUMNAIL.DAT"
+      },
+      "achievementField": null,
+      "required": [
+        {
+          "path": "bg_webp.mpk",
+          "type": "file"
+        },
+        {
+          "path": "bgm_ninopus.mpk",
+          "type": "file"
+        },
+        {
+          "path": "chara_webp.mpk",
+          "type": "file"
+        },
+        {
+          "path": "chara2_webp.mpk",
+          "type": "file"
+        },
+        {
+          "path": "mask.mpk",
+          "type": "file"
+        },
+        {
+          "path": "script/mes00",
+          "type": "directory"
+        },
+        {
+          "path": "script.cls",
+          "type": "file"
+        },
+        {
+          "path": "movie",
+          "type": "directory"
+        },
+        {
+          "path": "movie.cls",
+          "type": "file"
+        },
+        {
+          "path": "script",
+          "type": "directory"
+        },
+        {
+          "path": "se_ninopus.mpk",
+          "type": "file"
+        },
+        {
+          "path": "sysse_ninopus.mpk",
+          "type": "file"
+        },
+        {
+          "path": "system_swi.mpk",
+          "type": "file"
+        },
+        {
+          "path": "voice_ninopus.mpk",
+          "type": "file"
+        }
+      ],
+      "sourceHashes": {
+        "profiles/chlcc-switch/game.lua": "73db7ebf97d824c839d559d712d07ff0e0ae0da5ec5c68d12090e8be67d9971a",
+        "profiles/chlcc-switch/vfs.lua": "3c303c9b5482836caa3571d1a76848507a2a2e70cea4d3a3d1ea31fcc9c0f7e4"
+      }
+    },
+    {
+      "id": "cclcc",
+      "name": "CHAOS;CHILD Love Chu☆Chu!! (PS4)",
+      "hidden": false,
+      "compatibility": "experimental-unverified",
+      "lua": "profiles/cclcc/game.lua",
+      "gamePrefix": "cclcc",
+      "saveFields": {
+        "SaveFilePath": "SAVEDATA.DAT"
+      },
+      "achievementField": null,
+      "required": [
+        {
+          "path": "bg.mpk",
+          "type": "file"
+        },
+        {
+          "path": "bgeffect.mpk",
+          "type": "file"
+        },
+        {
+          "path": "bgm.mpk",
+          "type": "file"
+        },
+        {
+          "path": "chara.mpk",
+          "type": "file"
+        },
+        {
+          "path": "manual.mpk",
+          "type": "file"
+        },
+        {
+          "path": "mask.mpk",
+          "type": "file"
+        },
+        {
+          "path": "movie",
+          "type": "directory"
+        },
+        {
+          "path": "script",
+          "type": "directory"
+        },
+        {
+          "path": "se.mpk",
+          "type": "file"
+        },
+        {
+          "path": "sysse.mpk",
+          "type": "file"
+        },
+        {
+          "path": "system.mpk",
+          "type": "file"
+        },
+        {
+          "path": "voice.mpk",
+          "type": "file"
+        }
+      ],
+      "sourceHashes": {
+        "profiles/cclcc/game.lua": "f1e623c87cb743378b21f8e6884c3090cb1fec9c02105fce830472798cb9c968",
+        "profiles/cclcc/vfs.lua": "8aaf121f030c654ed3dda6f2832a2930265c6f82fd773b6e2cf8d537837384e3"
+      }
+    },
+    {
+      "id": "cclcc-switch",
+      "name": "CHAOS;CHILD Love Chu☆Chu!! (Switch)",
+      "hidden": false,
+      "compatibility": "experimental-unverified",
+      "lua": "profiles/cclcc-switch/game.lua",
+      "gamePrefix": "cclcc-switch",
+      "saveFields": {
+        "SaveFilePath": "SAVEDATA_CC.DAT",
+        "SystemDataPath": "SYSTEMDATA_CC.DAT",
+        "QuickDataPath": "MDATA_CC.DAT"
+      },
+      "achievementField": null,
+      "required": [
+        {
+          "path": "bg_webp.mpk",
+          "type": "file"
+        },
+        {
+          "path": "bgm_ninopus.mpk",
+          "type": "file"
+        },
+        {
+          "path": "chara_webp.mpk",
+          "type": "file"
+        },
+        {
+          "path": "mask.mpk",
+          "type": "file"
+        },
+        {
+          "path": "script/mes00",
+          "type": "directory"
+        },
+        {
+          "path": "script.cls",
+          "type": "file"
+        },
+        {
+          "path": "movie",
+          "type": "directory"
+        },
+        {
+          "path": "script",
+          "type": "directory"
+        },
+        {
+          "path": "se_ninopus.mpk",
+          "type": "file"
+        },
+        {
+          "path": "sysse_ninopus.mpk",
+          "type": "file"
+        },
+        {
+          "path": "system_swi.mpk",
+          "type": "file"
+        },
+        {
+          "path": "voice_ninopus.mpk",
+          "type": "file"
+        }
+      ],
+      "sourceHashes": {
+        "profiles/cclcc-switch/game.lua": "de70ad70456b48c44825c4308b89ffcdb61c181ef3ab8f1927defa2c0249c6ed",
+        "profiles/cclcc-switch/vfs.lua": "5735dcf8165d016a991f3d5298631c5a02b6322059b7933d71d056bd2f1a043f"
+      }
+    },
+    {
+      "id": "mo6tw",
+      "name": "Memories Off 6 ~T-Wave~",
+      "hidden": true,
+      "compatibility": "experimental-unverified",
+      "lua": "profiles/mo6tw/game.lua",
+      "gamePrefix": "mo6tw",
+      "saveFields": {
+        "SaveFilePath": "SYSTEM.DAT"
+      },
+      "achievementField": null,
+      "required": [
+        {
+          "path": "BG.CPK",
+          "type": "file"
+        },
+        {
+          "path": "BGM.CPK",
+          "type": "file"
+        },
+        {
+          "path": "CHARA.CPK",
+          "type": "file"
+        },
+        {
+          "path": "MASK.CPK",
+          "type": "file"
+        },
+        {
+          "path": "MOVIE.CPK",
+          "type": "file"
+        },
+        {
+          "path": "SCRIPT.cls",
+          "type": "file"
+        },
+        {
+          "path": "SCRIPT",
+          "type": "directory"
+        },
+        {
+          "path": "SE.CPK",
+          "type": "file"
+        },
+        {
+          "path": "SYSTEM.CPK",
+          "type": "file"
+        },
+        {
+          "path": "VOICE.CPK",
+          "type": "file"
+        }
+      ],
+      "sourceHashes": {
+        "profiles/mo6tw/game.lua": "806e354fcd6b81471c602be5fcf29e49dd5864893d13c76752a863d57fb112e2",
+        "profiles/mo6tw/vfs.lua": "43c6f8aefb648ffa39764ba3054194f7436ba0ab44e7535a4278343b1df8ba1e"
+      }
+    },
+    {
+      "id": "darling",
+      "name": "STEINS;GATE: My Darling’s Embrace",
+      "hidden": true,
+      "compatibility": "experimental-unverified",
+      "lua": "profiles/darling/game.lua",
+      "gamePrefix": "darling",
+      "saveFields": {
+        "SaveFilePath": "SYSTEM.DAT"
+      },
+      "achievementField": null,
+      "required": [
+        {
+          "path": "script.cls",
+          "type": "file"
+        },
+        {
+          "path": "script",
+          "type": "directory"
+        },
+        {
+          "path": "system.cpk",
+          "type": "file"
+        },
+        {
+          "path": "bgm.cpk",
+          "type": "file"
+        },
+        {
+          "path": "se.cpk",
+          "type": "file"
+        },
+        {
+          "path": "voice.cpk",
+          "type": "file"
+        },
+        {
+          "path": "bg.cpk",
+          "type": "file"
+        },
+        {
+          "path": "chara.cpk",
+          "type": "file"
+        },
+        {
+          "path": "mask.cpk",
+          "type": "file"
+        },
+        {
+          "path": "movie.cpk",
+          "type": "file"
+        }
+      ],
+      "sourceHashes": {
+        "profiles/darling/game.lua": "0dcfa3ea315157f4488d6c5183c0ef5e9eb527a09d6a43582eeb7f9093b42e39",
+        "profiles/darling/vfs.lua": "dc98fbcb9c9047c8dc63e5f4817a552849f6df43be5831cbc6eaccfd061d1727"
+      }
+    },
+    {
+      "id": "dash",
+      "name": "ROBOTICS;NOTES DaSH",
+      "hidden": true,
+      "compatibility": "experimental-unverified",
+      "lua": "profiles/dash/game.lua",
+      "gamePrefix": "dash",
+      "saveFields": {
+        "SaveFilePath": "SYSTEM.DAT"
+      },
+      "achievementField": null,
+      "required": [
+        {
+          "path": "script.cls",
+          "type": "file"
+        },
+        {
+          "path": "script",
+          "type": "directory"
+        },
+        {
+          "path": "system.cls",
+          "type": "file"
+        },
+        {
+          "path": "system",
+          "type": "directory"
+        },
+        {
+          "path": "bgm.cls",
+          "type": "file"
+        },
+        {
+          "path": "bgm",
+          "type": "directory"
+        },
+        {
+          "path": "se.cls",
+          "type": "file"
+        },
+        {
+          "path": "se",
+          "type": "directory"
+        },
+        {
+          "path": "sysse.cls",
+          "type": "file"
+        },
+        {
+          "path": "sysse",
+          "type": "directory"
+        },
+        {
+          "path": "voice.cls",
+          "type": "file"
+        },
+        {
+          "path": "voice",
+          "type": "directory"
+        },
+        {
+          "path": "model.cls",
+          "type": "file"
+        },
+        {
+          "path": "model",
+          "type": "directory"
+        },
+        {
+          "path": "motion.cls",
+          "type": "file"
+        },
+        {
+          "path": "motion",
+          "type": "directory"
+        },
+        {
+          "path": "bg.cls",
+          "type": "file"
+        },
+        {
+          "path": "bg",
+          "type": "directory"
+        },
+        {
+          "path": "mask.cls",
+          "type": "file"
+        },
+        {
+          "path": "mask",
+          "type": "directory"
+        },
+        {
+          "path": "movie.cls",
+          "type": "file"
+        },
+        {
+          "path": "movie",
+          "type": "directory"
+        }
+      ],
+      "sourceHashes": {
+        "profiles/dash/game.lua": "2ac55d372af7358f85742eca89626ea06e9560628dd0d847d6d540f84a108e56",
+        "profiles/dash/vfs.lua": "a35adadfd450ae1d2b40abe5d4814810f99b8c3d501be312e583924baa696b3f"
+      }
+    },
+    {
+      "id": "rne",
+      "name": "ROBOTICS;NOTES ELITE",
+      "hidden": true,
+      "compatibility": "experimental-unverified",
+      "lua": "profiles/rne/game.lua",
+      "gamePrefix": "rne",
+      "saveFields": {
+        "SaveFilePath": "SYSTEM.DAT"
+      },
+      "achievementField": null,
+      "required": [
+        {
+          "path": "script.cls",
+          "type": "file"
+        },
+        {
+          "path": "script",
+          "type": "directory"
+        },
+        {
+          "path": "system.cpk",
+          "type": "file"
+        },
+        {
+          "path": "bgm.cpk",
+          "type": "file"
+        },
+        {
+          "path": "se.cpk",
+          "type": "file"
+        },
+        {
+          "path": "sysse.dat",
+          "type": "file"
+        },
+        {
+          "path": "voice.cpk",
+          "type": "file"
+        },
+        {
+          "path": "model.cpk",
+          "type": "file"
+        },
+        {
+          "path": "bg.cpk",
+          "type": "file"
+        },
+        {
+          "path": "mask.cpk",
+          "type": "file"
+        }
+      ],
+      "sourceHashes": {
+        "profiles/rne/game.lua": "15fab0939a391dab3c018ade353faa25f471582e1dfc5b1d5dec8d25d2e9afb6",
+        "profiles/rne/vfs.lua": "763db10e417f37175dce1cab431dbbed179f3abadb8ddabc9cb71f41c9ba6081"
+      }
+    }
+  ]
+}

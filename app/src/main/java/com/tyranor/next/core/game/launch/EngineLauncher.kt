@@ -29,6 +29,9 @@ import com.tyranor.next.core.engine.external.EmulatorLaunchStyle
 import com.tyranor.next.core.engine.external.EmulatorTarget as ExternalEmulatorTarget
 import com.core.fvp.FvpActivity
 import com.core.games.FramebufferGameActivity
+import com.core.impacto.ImpactoActivity
+import com.core.impacto.ImpactoLaunchPreparation
+import com.core.impacto.ImpactoPreparationException
 import com.core.krkrsdl3.Krkrsdl3Activity
 import com.core.nativeplugin.NativePluginConstants
 import com.core.nativeplugin.NativeRuntimePack
@@ -59,6 +62,7 @@ import com.tyranor.next.core.game.manual.AndroidAppGames
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.EthornellPaths
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.scan.ImpactoDescriptor
 import com.tyranor.next.core.game.storage.SystemNnnCopyStore
 import com.tyranor.next.core.game.storage.SystemNnnGameDirectory
 import com.tyranor.runtime.systemnnn.SystemNnnHost
@@ -158,6 +162,7 @@ object EngineLauncher {
         EngineType.UK2,
         EngineType.FVP,
         EngineType.ETHORNELL,
+        EngineType.IMPACTO,
         EngineType.CMVS,
         EngineType.RENPY,
         EngineType.RUFFLE,
@@ -344,6 +349,9 @@ object EngineLauncher {
     private suspend fun launchInternalChecked(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice?, onDispatched: () -> Unit): LaunchResult {
         // 未知引擎（含第三方运行时模块卸载/禁用后的降级条目）不再落入 Tyrano 宿主兜底；请用户重新扫描。
         if (game.engine == EngineType.UNKNOWN) return LaunchResult.Failure.EngineUnknown
+        if (game.engine == EngineType.IMPACTO) {
+            impactoEnvironmentFailure(context)?.let { return LaunchResult.Failure.ImpactoPrepareFailed(it) }
+        }
         if (game.engine == EngineType.ETHORNELL) {
             currentCoroutineContext().ensureActive()
             val live = EngineSessionRegistry.currentLiveGame(context, EngineSessionRegistry.HOST_ETHORNELL)
@@ -443,6 +451,9 @@ object EngineLauncher {
         }
         // SystemNNN already admitted its selected root; an app-private imported copy needs no broad grant.
         if (game.engine != EngineType.SYSTEMNNN) requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
+        if (game.engine == EngineType.IMPACTO) {
+            return launchImpacto(context, game, path, settings, onDispatched)
+        }
         if (game.engine == EngineType.ETHORNELL) {
             prepareEthornell(context, game, path, settings)?.let { return it }
         }
@@ -1175,6 +1186,7 @@ object EngineLauncher {
             EngineType.FVP -> add(NativeRuntimePack.PACK_FVP)
 
             EngineType.ETHORNELL -> add(NativeRuntimePack.PACK_ETHORNELL)
+            EngineType.IMPACTO -> add(NativeRuntimePack.PACK_IMPACTO)
 
             EngineType.CMVS -> add(NativeRuntimePack.PACK_CMVS)
             EngineType.SYSTEMNNN -> add(NativeRuntimePack.PACK_SYSTEMNNN)
@@ -1207,6 +1219,7 @@ object EngineLauncher {
         patchChoice: ArtemisPatchChoice? = null,
         krSafMirror: KrSafMirror.Prepared? = null,
         settings: ResolvedEngineSettings,
+        impacto: ImpactoLaunchPreparation.PreparedLaunch? = null,
     ): Intent {
         val intent = when (engine) {
             EngineType.KIRIKIRI ->
@@ -1279,6 +1292,15 @@ object EngineLauncher {
 
             EngineType.FVP -> buildFvpIntent(context, path, game, settings)
             EngineType.ETHORNELL -> buildEthornellIntent(context, path, game, settings)
+            EngineType.IMPACTO -> {
+                val prepared = requireNotNull(impacto) { "impacto requires a prepared private launch" }
+                Intent(context, ImpactoActivity::class.java).apply {
+                    putExtra(LaunchContract.PATH, path)
+                    putExtra(LaunchContract.ROOT_URI, game.uri)
+                    putExtra(LaunchContract.IMPACTO_PROFILE, prepared.profileId)
+                    putExtra(LaunchContract.IMPACTO_LAUNCH_DIR, prepared.launchDirectory.absolutePath)
+                }
+            }
             EngineType.CMVS -> buildCmvsIntent(context, path, game)
 
             EngineType.RPGMAKER,
@@ -1324,6 +1346,75 @@ object EngineLauncher {
         intent.putExtra(LaunchContract.THEME_COLOR_TEXT, theme.textArgb)
         intent.putExtra(LaunchContract.THEME_COLOR_TEXT_MUTED, theme.mutedArgb)
         return intent
+    }
+
+    /** Reject unsupported hardware and source-only builds before requesting game storage access. */
+    private fun impactoEnvironmentFailure(context: Context): ImpactoPrepareError? {
+        val gles = context.getSystemService(ActivityManager::class.java)?.deviceConfigurationInfo?.reqGlEsVersion
+        ImpactoPreflight.check(Build.VERSION.SDK_INT, Build.SUPPORTED_ABIS.toList(), gles)?.let { return it }
+        return if (ImpactoLaunchPreparation.isRuntimeBundled(context)) null else ImpactoPrepareError.RUNTIME
+    }
+
+    /** Resource installation and private launch admission never modify the original game directory. */
+    private suspend fun launchImpacto(
+        context: Context,
+        game: ScanGame,
+        path: String,
+        settings: ResolvedEngineSettings,
+        onDispatched: () -> Unit,
+    ): LaunchResult {
+        val descriptor = ImpactoDescriptor.read(File(path))
+            ?: return LaunchResult.Failure.ImpactoPrepareFailed(ImpactoPrepareError.DESCRIPTOR)
+        val prepared = try {
+            prepareImpactoAfterRuntime(
+                ensureRuntime = {
+                    NativeRuntimePack.ensure(context.applicationContext, NativeRuntimePack.PACK_IMPACTO)
+                },
+                prepare = {
+                    ImpactoLaunchPreparation.prepare(context, File(path).canonicalFile, game.uri, descriptor.profile)
+                },
+            ) ?: return LaunchResult.Failure.EngineLibraryPackFailed(NativeRuntimePack.PACK_IMPACTO)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: ImpactoPreparationException) {
+            val reason = when (failure.reason) {
+                ImpactoPreparationException.Reason.INVALID_PROFILE -> ImpactoPrepareError.PROFILE
+                ImpactoPreparationException.Reason.GAME_LAYOUT -> ImpactoPrepareError.GAME_LAYOUT
+                ImpactoPreparationException.Reason.RESOURCES -> ImpactoPrepareError.RESOURCES
+                ImpactoPreparationException.Reason.USER_DATA -> ImpactoPrepareError.USER_DATA
+                ImpactoPreparationException.Reason.SESSION_BUSY -> ImpactoPrepareError.SESSION_BUSY
+                ImpactoPreparationException.Reason.PREPARATION -> ImpactoPrepareError.PREPARATION
+            }
+            Log.w(TAG, "impacto preparation failed reason=$reason", failure)
+            return LaunchResult.Failure.ImpactoPrepareFailed(reason)
+        } catch (failure: Exception) {
+            Log.w(TAG, "impacto preparation failed", failure)
+            return LaunchResult.Failure.ImpactoPrepareFailed(ImpactoPrepareError.PREPARATION)
+        }
+        try {
+            currentCoroutineContext().ensureActive()
+            // Slow installation is already complete; keep the remaining leased handoff bounded.
+            // Do not dispatch a different profile if the declaration changed during preparation.
+            if (ImpactoDescriptor.read(File(path)) != descriptor) {
+                return LaunchResult.Failure.ImpactoPrepareFailed(ImpactoPrepareError.DESCRIPTOR)
+            }
+            val intent = buildIntent(
+                context, EngineType.IMPACTO, File(path).canonicalPath, game,
+                settings = settings, impacto = prepared,
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            currentCoroutineContext().ensureActive()
+            context.startActivity(intent)
+            prepared.markDispatched()
+            return completeLaunch(context, game, onDispatched)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            Log.w(TAG, "impacto dispatch failed", failure)
+            return LaunchResult.Failure.StartFailed(null)
+        } finally {
+            // Revokes only an unclaimed, undispatched preparation. A dispatched host owns its lease.
+            runCatching { prepared.close() }.onFailure { Log.w(TAG, "impacto launch cleanup failed", it) }
+        }
     }
 
     /**

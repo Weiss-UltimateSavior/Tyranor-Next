@@ -1,0 +1,3 @@
+This is a stub package. Copyright and license information
+is provided with Vulkan headers and loader.
+For Android, the loader is provided by the NDK.

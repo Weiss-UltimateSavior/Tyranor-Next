@@ -1143,6 +1143,8 @@ object EngineScanner {
         var cmvsStartCount = 0
         var hasCmvsStartHeader = false
         var hasCmvsExe = false
+        var impactoDescriptor: T? = null
+        var impactoDescriptorCount = 0
 
         fun collect(entry: T, rel: String) {
             if (Thread.currentThread().isInterrupted) throw java.util.concurrent.CancellationException()
@@ -1225,6 +1227,10 @@ object EngineScanner {
                 return
             }
             when {
+                rel.isEmpty() && nameOf(entry) == ImpactoDescriptor.FILE_NAME -> {
+                    impactoDescriptor = entry
+                    impactoDescriptorCount++
+                }
                 rel.isEmpty() && lower in setOf("cmvs.exe", "cmvs32.exe", "cmvs64.exe") -> {
                     hasCmvsExe = true
                 }
@@ -1533,6 +1539,15 @@ object EngineScanner {
         }
         if (hasCmvsExe) {
             return Detection(EngineType.CMVS, 82, LAUNCH_TARGET_GAME_DIR)
+        }
+        // Explicit declarations cannot steal any existing engine signature. Only a complete,
+        // bounded descriptor selecting a shipped upstream profile admits this experimental engine.
+        val descriptor = impactoDescriptor
+        if (impactoDescriptorCount == 1 && descriptor != null &&
+            (sizeOf(descriptor) ?: 0L) <= ImpactoDescriptor.MAX_BYTES &&
+            headOf(descriptor)?.let { ImpactoDescriptor.parse(it) } != null
+        ) {
+            return Detection(EngineType.IMPACTO, 100, LAUNCH_TARGET_GAME_DIR)
         }
         return UNKNOWN_DETECTION
     }

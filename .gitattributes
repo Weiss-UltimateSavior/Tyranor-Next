@@ -1,0 +1,10 @@
+# Preserve upstream notice bytes, unified-diff blank context lines and raw tool output.
+# Only trailing/EOF blank checks are relaxed; space-before-tab remains checked.
+engine/impacto/licenses/** whitespace=-blank-at-eol,-blank-at-eof
+engine/impacto/patches/*.patch whitespace=-blank-at-eol,-blank-at-eof
+engine/impacto/elf-report.txt whitespace=-blank-at-eol,-blank-at-eof
+
+# SDL is imported from the pinned upstream source and reproduced by its host patch.
+engine/src/main/java/org/libsdl/impacto/*.java whitespace=-blank-at-eol,-blank-at-eof
+# This helper is Tyranor-owned rather than imported SDL source.
+engine/src/main/java/org/libsdl/impacto/HIDBluetoothAccess.java whitespace=blank-at-eol,blank-at-eof,space-before-tab

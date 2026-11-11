@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="engine_impacto_init_failed">Impacto could not start. The runtime, resources or launch configuration are unavailable. Return to the game library and try again.</string>
     <string name="engine_ethornell_invalid_config">Invalid Ethornell configuration. Please select a local game directory again.</string>
     <string name="engine_ethornell_failed">Ethornell failed. Check game resources, fonts and the currently supported features.</string>
     <string name="engine_ethornell_game_menu">Open game menu (right click)</string>

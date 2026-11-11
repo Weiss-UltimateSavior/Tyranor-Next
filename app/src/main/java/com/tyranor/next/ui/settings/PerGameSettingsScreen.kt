@@ -1396,6 +1396,16 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             )
                         }
                     }
+                    EngineType.IMPACTO -> item {
+                        SectionCard(game.engine.displayName) {
+                            Text(
+                                stringResource(R.string.impacto_experimental_details),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
                     EngineType.SYSTEMNNN -> item {
                         SectionCard(game.engine.displayName) {
                             Text(

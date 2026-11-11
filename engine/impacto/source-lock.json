@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "impacto": {
+    "url": "https://github.com/CommitteeOfZero/impacto.git",
+    "revision": "ba0b6e0884b9016fcd7dfd3e50024c5af1e8aef7"
+  },
+  "vcpkg": {
+    "url": "https://github.com/microsoft/vcpkg.git",
+    "revision": "fa9a5b330aed997a68310ed56418617b87a3b83d"
+  },
+  "libatrac9": {
+    "url": "https://github.com/Thealexbarney/LibAtrac9.git",
+    "revision": "efca2e3af35562a09a9bb6deed90e45b4b824dc4"
+  },
+  "imgui": {
+    "url": "https://github.com/ocornut/imgui.git",
+    "revision": "b48d1afbe8ee8b238e2961dc363a949dd7304e23",
+    "annotatedTagObject": "9acdfbf46810c0c74ab281ce04122c4149ae8bd1"
+  },
+  "magic_enum": {
+    "url": "https://github.com/Neargye/magic_enum.git",
+    "revision": "591b64351ea8442f8b8fa044ff335d6943e8e6e0"
+  },
+  "sdl": {
+    "version": "3.4.10",
+    "vcpkgPortVersion": 1,
+    "sourceSha512": "10a9c1fa4d6891c7387fa694b786a168f86b6e5447c6c522f85b739e33720e106ee879dfa9e6e537d5521b983cfbd4908927c555c4d3412735129a4231e16fe6",
+    "javaPackage": "org.libsdl.impacto"
+  },
+  "android": {
+    "abi": "arm64-v8a",
+    "api": 28,
+    "ndk": "28.0.13004108",
+    "cmake": "3.31.1",
+    "pageSize": 16384
+  }
+}

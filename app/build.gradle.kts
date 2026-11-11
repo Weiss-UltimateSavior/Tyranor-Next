@@ -105,6 +105,7 @@ val bundledEngineRuntimePacks = linkedMapOf(
     "fvp" to listOf("librfvp.so"),
     "ethornell" to listOf("libethornell.so"),
     "krkrsdl3" to listOf("libkrkrsdl3.so"),
+    "impacto" to listOf("libimpacto.so"),
     "ijk" to listOf("libijkffmpeg.so", "libijksdl.so", "libijkplayer.so"),
     "xsystem" to listOf("libxsystem35.so", "libxsystem4.so", "libSDL2x.so"),
     "cmvs" to listOf("libcmvs_android.so"),

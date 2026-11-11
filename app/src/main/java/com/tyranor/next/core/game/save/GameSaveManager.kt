@@ -178,6 +178,8 @@ class GameSaveManager(private val context: Context) {
             EngineType.RUNTIME_MODULE,
             // ETHORNELL returns its exact private user root above; exhaustive fallback only.
             EngineType.ETHORNELL,
+            // Impacto keeps profile-specific saves private; generic save management is unavailable.
+            EngineType.IMPACTO,
             EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.CATSYSTEM2, EngineType.PC,
             // ANDROID_APP 在函数开头已提前返回（无文件存档接口），此分支仅为 when 完备性
             EngineType.ANDROID_APP ->

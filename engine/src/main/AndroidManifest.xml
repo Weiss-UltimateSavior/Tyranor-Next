@@ -40,6 +40,17 @@
             android:screenOrientation="sensorLandscape"
             android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
 
+        <!-- Impacto owns a private SDL namespace and one native session in its own process. -->
+        <activity
+            android:name="com.core.impacto.ImpactoActivity"
+            android:exported="false"
+            android:process=":impacto"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.core.Impacto"
+            android:screenOrientation="sensorLandscape"
+            android:windowSoftInputMode="adjustPan"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
+
         <!-- Tyrano（ty）WebView 宿主 -->
         <activity
             android:name="com.core.tyrano.TyranoActivity"

@@ -20,6 +20,10 @@ _Avoid_: 运行时模块、内置引擎、原生插件
 以 ethornell-rs 重实现承载的内置引擎家族，已接入扫描、启动、设置与上游 `0cfff1d` 的 ABI v1 宿主（15 导出、kind 5 输入对话框）；目前仍属实验运行时、兼容性未验收，不能据此声明全家族可玩。App 存档管理已开放但范围仅限 App 私有 user-root 的备份/恢复/删除，不能把该范围与商业游戏内槽位、游戏资源根 `UserData` 或 PC 存档互通等同。
 _Avoid_: Winlator BGI 插件、完整 BGI 支持
 
+**impacto / MAGES.（IMPACTO）**:
+复用 CommitteeOfZero/impacto 的实验性内置运行时，通过根目录 `impacto.json` 显式选择固定上游 profile，在独立进程和私有 SDL 命名空间内运行；profile 存在不等于相应游戏已完整兼容。私有存档按游戏原始 URI 隔离，当前不接入统一存档管理。
+_Avoid_: 通用 MAGES. 支持、完整 SciADV 支持、第三方 APK 模块
+
 **System3.x / System4（XSYS35 / XSYS4）**:
 AliceSoft 的两代引擎，各为独立的引擎类型（XSYS35 对应 System 3.x，XSYS4 对应 System 4）：目录特征、启动参数与设置互不相同，不合并为一类。
 _Avoid_: System3/4、AliceSoft 引擎

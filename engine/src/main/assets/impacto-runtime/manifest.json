@@ -1,0 +1,2507 @@
+{
+  "version": 1,
+  "generation": "e5c7f32333cd65da63c22bb22a59347b7dd205c5f09d35c7c55f7475a428515d",
+  "upstreamRevision": "ba0b6e0884b9016fcd7dfd3e50024c5af1e8aef7",
+  "archive": {
+    "name": "resources.zip.xz",
+    "size": 79268492,
+    "sha256": "38295bfbeca1a40e3445e257a78c00b193d2546bae3deff85eb834c71ff1cecf"
+  },
+  "files": [
+    {
+      "path": "licenses/IMPACTO-ISC.txt",
+      "size": 752,
+      "sha256": "29bada6a2f0e4eb72278e29497646ee2f05b628c60c5fa88e6fcc5f52cab1688"
+    },
+    {
+      "path": "licenses/IMPACTO-THIRDPARTY.md",
+      "size": 102202,
+      "sha256": "3d3d8e3c5d6daaa870c30c39ed3a0c415ccc75cac38d29c7ad062c494cfa2d9c"
+    },
+    {
+      "path": "licenses/LGPL-2.1.txt",
+      "size": 26419,
+      "sha256": "20e50fe7aae3e56378ebf0417d9de904f55a0e61e4df315333e632a4d3555d95"
+    },
+    {
+      "path": "licenses/NOTO-OFL.txt",
+      "size": 4545,
+      "sha256": "9334788f8e7272734f3f1473d62de117e44c3ac251b5bcec9e097205952896b9"
+    },
+    {
+      "path": "licenses/dependencies/avcpp/arm64-android-impacto-copyright.txt",
+      "size": 28542,
+      "sha256": "ca74b2811cc8d576eeea0389395eefb32ca699631f0672aa66d740d2b4399630"
+    },
+    {
+      "path": "licenses/dependencies/boost-assert/arm64-android-impacto-copyright.txt",
+      "size": 1338,
+      "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566"
+    },
+    {
+      "path": "licenses/dependencies/boost-circular-buffer/arm64-android-impacto-copyright.txt",
+      "size": 1338,
+      "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566"
+    },
+    {
+      "path": "licenses/dependencies/boost-cmake/arm64-android-impacto-copyright.txt",
+      "size": 1338,
+      "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566"
+    },
+    {
+      "path": "licenses/dependencies/boost-concept-check/arm64-android-impacto-copyright.txt",
+      "size": 1338,
+      "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566"
+    },
+    {
+      "path": "licenses/dependencies/boost-config/arm64-android-impacto-copyright.txt",
+      "size": 1338,
+      "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566"
+    },
+    {
+      "path": "licenses/dependencies/boost-core/arm64-android-impacto-copyright.txt",
+      "size": 1338,
+      "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566"
+    },
+    {
+      "path": "licenses/dependencies/boost-headers/arm64-android-impacto-copyright.txt",
+      "size": 1338,
+      "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566"
+    },
+    {
+      "path": "licenses/dependencies/boost-move/arm64-android-impacto-copyright.txt",
+      "size": 1338,
+      "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566"
+    },
+    {
+      "path": "licenses/dependencies/boost-preprocessor/arm64-android-impacto-copyright.txt",
+      "size": 1338,
+      "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566"
+    },
+    {
+      "path": "licenses/dependencies/boost-throw-exception/arm64-android-impacto-copyright.txt",
+      "size": 1338,
+      "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566"
+    },
+    {
+      "path": "licenses/dependencies/boost-type-traits/arm64-android-impacto-copyright.txt",
+      "size": 1338,
+      "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566"
+    },
+    {
+      "path": "licenses/dependencies/boost-uninstall/arm64-android-impacto-copyright.txt",
+      "size": 1073,
+      "sha256": "1ee376fc340e0aa6ad6a3581c94126e741468705096ac92263048a21daa86460"
+    },
+    {
+      "path": "licenses/dependencies/brotli/arm64-android-impacto-copyright.txt",
+      "size": 1084,
+      "sha256": "3d180008e36922a4e8daec11c34c7af264fed5962d07924aea928c38e8663c94"
+    },
+    {
+      "path": "licenses/dependencies/bzip2/arm64-android-impacto-copyright.txt",
+      "size": 1896,
+      "sha256": "c6dbbf828498be844a89eaa3b84adbab3199e342eb5cb2ed2f0d4ba7ec0f38a3"
+    },
+    {
+      "path": "licenses/dependencies/concurrentqueue/arm64-android-impacto-copyright.txt",
+      "size": 3266,
+      "sha256": "22331571e5e3dbe4c79ad715e23127bdf3beabd75052c953ddabf191ef799e14"
+    },
+    {
+      "path": "licenses/dependencies/dav1d/arm64-android-impacto-copyright.txt",
+      "size": 1317,
+      "sha256": "dd92c3c2247c5651606fc23a5e2d6a1ebc5ace9a3e49cbde0e12f05ad1cb1ee5"
+    },
+    {
+      "path": "licenses/dependencies/ffmpeg/arm64-android-impacto-copyright.txt",
+      "size": 26526,
+      "sha256": "b634ab5640e258563c536e658cad87080553df6f34f62269a21d554844e58bfe"
+    },
+    {
+      "path": "licenses/dependencies/fmt/arm64-android-impacto-copyright.txt",
+      "size": 1431,
+      "sha256": "07580f2a3b35709ce703d523f447b242f6dfec7582a8c0df102c7fa2849375f8"
+    },
+    {
+      "path": "licenses/dependencies/freetype/arm64-android-impacto-copyright.txt",
+      "size": 26928,
+      "sha256": "4a306736bcff9a5a3972e906df70cfe931f8ee36ec408a33507bc5becf891009"
+    },
+    {
+      "path": "licenses/dependencies/fribidi/arm64-android-impacto-copyright.txt",
+      "size": 26440,
+      "sha256": "32434afcc8666ba060e111d715bfdb6c2d5dd8a35fa4d3ab8ad67d8f850d2f2b"
+    },
+    {
+      "path": "licenses/dependencies/fribidi/x64-linux-copyright.txt",
+      "size": 26440,
+      "sha256": "32434afcc8666ba060e111d715bfdb6c2d5dd8a35fa4d3ab8ad67d8f850d2f2b"
+    },
+    {
+      "path": "licenses/dependencies/glm/arm64-android-impacto-copyright.txt",
+      "size": 2865,
+      "sha256": "62d2d642c7d054d4fb4c9b42faad617d6c88fcd91e317f8035aa9f277cc159c3"
+    },
+    {
+      "path": "licenses/dependencies/harfbuzz/arm64-android-impacto-copyright.txt",
+      "size": 1971,
+      "sha256": "ba8f810f2455c2f08e2d56bb49b72f37fcf68f1f4fade38977cfd7372050ad64"
+    },
+    {
+      "path": "licenses/dependencies/imgui/LICENSE.txt",
+      "size": 1083,
+      "sha256": "173506a2d6f7fb67990d257fb2507f188690eca39060c39469ae7bef43aae2a3"
+    },
+    {
+      "path": "licenses/dependencies/imgui/examples/libs/glfw/COPYING.txt",
+      "size": 934,
+      "sha256": "da2fb2c802537710cdebe8881b55356d07b88a6dbd7e4b912ac3091f8e6b5f6a"
+    },
+    {
+      "path": "licenses/dependencies/impacto/LICENSE.txt",
+      "size": 752,
+      "sha256": "29bada6a2f0e4eb72278e29497646ee2f05b628c60c5fa88e6fcc5f52cab1688"
+    },
+    {
+      "path": "licenses/dependencies/impacto/THIRDPARTY-upstream.md",
+      "size": 102202,
+      "sha256": "3d3d8e3c5d6daaa870c30c39ed3a0c415ccc75cac38d29c7ad062c494cfa2d9c"
+    },
+    {
+      "path": "licenses/dependencies/libass/arm64-android-impacto-copyright.txt",
+      "size": 755,
+      "sha256": "f7e30699d02798351e7f839e3d3bfeb29ce65e44efa7735c225464c4fd7dfe9c"
+    },
+    {
+      "path": "licenses/dependencies/libatrac9/LICENSE",
+      "size": 1068,
+      "sha256": "cdb280ff931233bdefef0dfdd1d884217d97cb24a96530a41ce7848790df86f7"
+    },
+    {
+      "path": "licenses/dependencies/libogg/arm64-android-impacto-copyright.txt",
+      "size": 1466,
+      "sha256": "d2ab5758336489da61c12cc5bb757da5339c4ae9001f9bb0562b4370249af814"
+    },
+    {
+      "path": "licenses/dependencies/libpng/arm64-android-impacto-copyright.txt",
+      "size": 5345,
+      "sha256": "bdb0a645ea18c60507d0368379b1ac5474b92255fcc2d115e07486a7672ba526"
+    },
+    {
+      "path": "licenses/dependencies/libvorbis/arm64-android-impacto-copyright.txt",
+      "size": 1470,
+      "sha256": "ec1815db59fcd302846df949d7424876cb2e2dc5ed1606c5fb0b36787b1cf43a"
+    },
+    {
+      "path": "licenses/dependencies/libwebp/arm64-android-impacto-copyright.txt",
+      "size": 2956,
+      "sha256": "7806e0de568ec6ca764d6e52a3765fb81ee838ca190ad7c5263ac45be782f6eb"
+    },
+    {
+      "path": "licenses/dependencies/magic_enum/LICENSE",
+      "size": 1080,
+      "sha256": "7240d196079161cabea66b2b4e52d83d0946ab74900ea4dacd5e50d6bcac4510"
+    },
+    {
+      "path": "licenses/dependencies/magic_enum/test/3rdparty/doctest/LICENSE.txt",
+      "size": 1086,
+      "sha256": "0fe0b331fa1513dcce8604ff1fa925f32d1cea17d8aeb1c2471fad40d291adc5"
+    },
+    {
+      "path": "licenses/dependencies/mspack/COPYING.LIB",
+      "size": 26419,
+      "sha256": "20e50fe7aae3e56378ebf0417d9de904f55a0e61e4df315333e632a4d3555d95"
+    },
+    {
+      "path": "licenses/dependencies/mspack/NOTICE.txt",
+      "size": 259,
+      "sha256": "9eed9e8abe914d055ce569ec154ac5379045c90831b8c7e39f820e741b2c3a95"
+    },
+    {
+      "path": "licenses/dependencies/openal-soft/arm64-android-impacto-copyright.txt",
+      "size": 25682,
+      "sha256": "205f12dc474e3acf525c9892697300b3a00ebdead452b129d347f472999f184b"
+    },
+    {
+      "path": "licenses/dependencies/opus/arm64-android-impacto-copyright.txt",
+      "size": 1945,
+      "sha256": "01e1167d54a096d123cf6dfbbeb19587278845c6481d2d66d545669846079551"
+    },
+    {
+      "path": "licenses/dependencies/pkgconf/x64-linux-copyright.txt",
+      "size": 509,
+      "sha256": "07ee94b50a41ee3fc4e13a9b9c60b26fc28488494c465639f7e5f07a3952ec04"
+    },
+    {
+      "path": "licenses/dependencies/pugixml/arm64-android-impacto-copyright.txt",
+      "size": 1079,
+      "sha256": "0d0b3772af2fa45628a548a3b34583707ebcc68bb6f83ec48ca273aab4a510f1"
+    },
+    {
+      "path": "licenses/dependencies/readerwriterqueue/arm64-android-impacto-copyright.txt",
+      "size": 1615,
+      "sha256": "018fb474bdf10bc068f5e3f2c61e18df8326d60b46db3eb017b4411eda189afc"
+    },
+    {
+      "path": "licenses/dependencies/sdl3/arm64-android-impacto-copyright.txt",
+      "size": 966,
+      "sha256": "2e6ae9daa5e796f5a03ef5a52e6efc5d3363dfbba2b220665256e20de162f7ec"
+    },
+    {
+      "path": "licenses/dependencies/toml11/arm64-android-impacto-copyright.txt",
+      "size": 1077,
+      "sha256": "b547d41695cdfbc1d054b5044578e476a0e9d756849f1e0cb3864cfc83e50a9e"
+    },
+    {
+      "path": "licenses/dependencies/unordered-dense/arm64-android-impacto-copyright.txt",
+      "size": 1078,
+      "sha256": "4f5a62734899ec0ba85d3e8264a7ed1fcb4bcb8f0b4359c0afd627b6314ae599"
+    },
+    {
+      "path": "licenses/dependencies/utfcpp/arm64-android-impacto-copyright.txt",
+      "size": 1338,
+      "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566"
+    },
+    {
+      "path": "licenses/dependencies/vcpkg-boost/x64-linux-copyright.txt",
+      "size": 1073,
+      "sha256": "1ee376fc340e0aa6ad6a3581c94126e741468705096ac92263048a21daa86460"
+    },
+    {
+      "path": "licenses/dependencies/vcpkg-cmake-config/x64-linux-copyright.txt",
+      "size": 1096,
+      "sha256": "04b60f99a43bfd7fefdc8364b24aac704a2160cef969b75ba6a38b62dc4c4b70"
+    },
+    {
+      "path": "licenses/dependencies/vcpkg-cmake-get-vars/x64-linux-copyright.txt",
+      "size": 1073,
+      "sha256": "1ee376fc340e0aa6ad6a3581c94126e741468705096ac92263048a21daa86460"
+    },
+    {
+      "path": "licenses/dependencies/vcpkg-cmake/x64-linux-copyright.txt",
+      "size": 1073,
+      "sha256": "1ee376fc340e0aa6ad6a3581c94126e741468705096ac92263048a21daa86460"
+    },
+    {
+      "path": "licenses/dependencies/vcpkg-pkgconfig-get-modules/x64-linux-copyright.txt",
+      "size": 1073,
+      "sha256": "1ee376fc340e0aa6ad6a3581c94126e741468705096ac92263048a21daa86460"
+    },
+    {
+      "path": "licenses/dependencies/vcpkg-tool-meson/x64-linux-copyright.txt",
+      "size": 1073,
+      "sha256": "1ee376fc340e0aa6ad6a3581c94126e741468705096ac92263048a21daa86460"
+    },
+    {
+      "path": "licenses/dependencies/vulkan-headers/arm64-android-impacto-copyright.txt",
+      "size": 458,
+      "sha256": "ac24e5ea920e4318e4d02c4086ae51f53cfb03feed06c18df1019e7ada1ec7bc"
+    },
+    {
+      "path": "licenses/dependencies/vulkan/arm64-android-impacto-copyright.txt",
+      "size": 150,
+      "sha256": "5151d2d63e0d2109f1c4b09fbd8d9462dc59746a299aa7c2aee4ec5fae8808a1"
+    },
+    {
+      "path": "licenses/dependencies/zlib/arm64-android-impacto-copyright.txt",
+      "size": 1002,
+      "sha256": "845efc77857d485d91fb3e0b884aaa929368c717ae8186b66fe1ed2495753243"
+    },
+    {
+      "path": "profiles/cc/charset.lua",
+      "size": 1352,
+      "sha256": "a24fe0b8de00dadeb604f63361e5d9cb0adeec1eea8868490cd9ca131b40523b"
+    },
+    {
+      "path": "profiles/cc/dialogue.lua",
+      "size": 5378,
+      "sha256": "c098a7d0f8805faceccdd34622a79ffba285249456619ce236cc188b865adfd0"
+    },
+    {
+      "path": "profiles/cc/font.lua",
+      "size": 3634,
+      "sha256": "bf2bb17b1ca94da0c190df8bf525695f915c8535fa0e82d8845257ab00d74b6c"
+    },
+    {
+      "path": "profiles/cc/game.lua",
+      "size": 2724,
+      "sha256": "d3ad7e04441bfd2655ae7808ec02de13cc33228ac82555736afac9db494df349"
+    },
+    {
+      "path": "profiles/cc/hud/backlogmenu.lua",
+      "size": 2113,
+      "sha256": "cfa81c32aab9c1afca1eb8184f172061592810a68802aacbb6e3083dd32265d6"
+    },
+    {
+      "path": "profiles/cc/hud/datedisplay.lua",
+      "size": 4186,
+      "sha256": "c13bc2a0895fcf4d5b969b3908bc2a307b5a1b4f6d2e4d407fcf488f09a290a8"
+    },
+    {
+      "path": "profiles/cc/hud/loadingdisplay.lua",
+      "size": 1795,
+      "sha256": "7a4b11c95c02058925b959e6bbb27e1e47f05823df4e55ba3bc8f152ea7194de"
+    },
+    {
+      "path": "profiles/cc/hud/saveicon.lua",
+      "size": 688,
+      "sha256": "fb36ac2dcd82c5ebad39b1b9d3320ad77fdb351f14a85518c7198acdcc83a822"
+    },
+    {
+      "path": "profiles/cc/hud/selectiondisplay.lua",
+      "size": 2434,
+      "sha256": "e4650ac43a92d6bb383659bd300562de3c643579b785b2adc77c723db63f0931"
+    },
+    {
+      "path": "profiles/cc/hud/sysmesboxdisplay.lua",
+      "size": 3259,
+      "sha256": "60c49ae36808d729bccd44237796716a628dc333ec474c8c0c1ed30db1719911"
+    },
+    {
+      "path": "profiles/cc/hud/systemmenu.lua",
+      "size": 3353,
+      "sha256": "1e49d00b5a3d9e118b2e5d86ea56812d0d3dccb039ed431955f5ce512f07dbf6"
+    },
+    {
+      "path": "profiles/cc/hud/tipsmenu.lua",
+      "size": 50,
+      "sha256": "a1904c9c3c11e5d2ca3d1d059feeb887bb9132821e0933e2d6aa7ce841b13c1a"
+    },
+    {
+      "path": "profiles/cc/hud/tipsnotification.lua",
+      "size": 67,
+      "sha256": "33a78081680c3a2ba80efd7b3cc41c677166aa6f4ad54b6b8cf94b9356e366e2"
+    },
+    {
+      "path": "profiles/cc/hud/titlemenu.lua",
+      "size": 5631,
+      "sha256": "3ba9854911d171e41e8c9527cc8a55a4a9ce93662b8035e53fba780c7edb2f15"
+    },
+    {
+      "path": "profiles/cc/savedata.lua",
+      "size": 122,
+      "sha256": "8fbaa2864ba220adce1d1811592b98e4e96c532a3c03eb04229db32f1f613bca"
+    },
+    {
+      "path": "profiles/cc/scriptvars.lua",
+      "size": 543,
+      "sha256": "3188e438ab6aa959e7fa09acc5a23f186c3f5bd8f64fc98d3987f518be6c47cb"
+    },
+    {
+      "path": "profiles/cc/sprites.lua",
+      "size": 1454,
+      "sha256": "c2d45c147fe771e6f09f27f756c91c3c355d242ade5a5f93ef42e4d97fbdfcca"
+    },
+    {
+      "path": "profiles/cc/tipssystem.lua",
+      "size": 54,
+      "sha256": "aceb5023a3d46a0da944da44a1b834a9fad15cb6e3ea8180ef62a5ab3daa5709"
+    },
+    {
+      "path": "profiles/cc/vfs.lua",
+      "size": 751,
+      "sha256": "f4987a6fa3559560dfe192bc1392992f061e371397b06b3ab84ee4614f3e6573"
+    },
+    {
+      "path": "profiles/cc/waveeffects.lua",
+      "size": 88,
+      "sha256": "bf6a19170ff5905ca3ed83149ed95946cb73e3b0e7e8b3e8073b1dc2f4557e1d"
+    },
+    {
+      "path": "profiles/cclcc-switch/bgeff.lua",
+      "size": 115,
+      "sha256": "e9e07fc020890ae42ae3773979571797e9bf33ec1f1a83b3df2c32a2eb127f57"
+    },
+    {
+      "path": "profiles/cclcc-switch/dialogue.lua",
+      "size": 114,
+      "sha256": "f5443a89b4a350fdcdae973e202a75ae33fb8f4f8a00a9d0bcf94c16be4dd72d"
+    },
+    {
+      "path": "profiles/cclcc-switch/font.lua",
+      "size": 639,
+      "sha256": "8c4ed85b1d39fae2e845d9a3c719f903cf829070878263dea2490b394e730009"
+    },
+    {
+      "path": "profiles/cclcc-switch/game.lua",
+      "size": 4357,
+      "sha256": "de70ad70456b48c44825c4308b89ffcdb61c181ef3ab8f1927defa2c0249c6ed"
+    },
+    {
+      "path": "profiles/cclcc-switch/hud/extramenus.lua",
+      "size": 168,
+      "sha256": "3834cbe9e4e75c3b8b660c09d5a096f6fa5cf81438056a420f6d65077e4c0457"
+    },
+    {
+      "path": "profiles/cclcc-switch/hud/helpmenu.lua",
+      "size": 433,
+      "sha256": "3da6a1beceb67b85c48bbdb9365c434710d4abd6bee3e0e651205d4f5fa8da9c"
+    },
+    {
+      "path": "profiles/cclcc-switch/hud/saveicon.lua",
+      "size": 751,
+      "sha256": "51cec8cb70fd7069745fae4d039041353403f14ffc73c43016f461dc8bf04777"
+    },
+    {
+      "path": "profiles/cclcc-switch/hud/tipsmenu.lua",
+      "size": 275,
+      "sha256": "5bfff8539a560ee5243a8346b79f4c6e74d93b12dfdc033d165772f7b8bb8c4d"
+    },
+    {
+      "path": "profiles/cclcc-switch/hud/tipsnotification.lua",
+      "size": 117,
+      "sha256": "3993b1b39de2688f1684b3994e96775efa0506aab5b42e041e8e5f113c2ebbb8"
+    },
+    {
+      "path": "profiles/cclcc-switch/hud/titlemenu.lua",
+      "size": 318,
+      "sha256": "105b5daed1c7001bde36cb607397b66fe3aae524c2d54ea60503bbac0844db4c"
+    },
+    {
+      "path": "profiles/cclcc-switch/savedata.lua",
+      "size": 1925,
+      "sha256": "4f92e739029b9657ec345abba10c0c2d7d8e39a06a71349d853a395eef711b3a"
+    },
+    {
+      "path": "profiles/cclcc-switch/scriptvars.lua",
+      "size": 1614,
+      "sha256": "c7de3380e90b0bcd81dcd53ab4270ee2d90781b1779d2db84ed928f37c6cfb67"
+    },
+    {
+      "path": "profiles/cclcc-switch/sprites.lua",
+      "size": 4115,
+      "sha256": "d75f37700aa1c2584ed7efe6b1ee438e0c1b46ac23bcbead191603f0a219841c"
+    },
+    {
+      "path": "profiles/cclcc-switch/vfs.lua",
+      "size": 1473,
+      "sha256": "5735dcf8165d016a991f3d5298631c5a02b6322059b7933d71d056bd2f1a043f"
+    },
+    {
+      "path": "profiles/cclcc/bgeff.lua",
+      "size": 60333,
+      "sha256": "0846572196bd3f60e04f761776ed1844206559e2405b9a10fbc1ea672c82e9f7"
+    },
+    {
+      "path": "profiles/cclcc/charset.lua",
+      "size": 23785,
+      "sha256": "7967cd302b894308906499c24cb3f97cde57a75c79a83853797c328ea37a9d72"
+    },
+    {
+      "path": "profiles/cclcc/configsystem.lua",
+      "size": 598,
+      "sha256": "52d9c38f9f142805dd90c1b29ed5e4daf56ad60cce4cff9d72db436e21ddcbe0"
+    },
+    {
+      "path": "profiles/cclcc/dialogue.lua",
+      "size": 6343,
+      "sha256": "76ac083e4cc9262e48a93ddacf09a7d8efad9a7983d9d5292798a869d598dc6e"
+    },
+    {
+      "path": "profiles/cclcc/equivalentlines.lua",
+      "size": 418,
+      "sha256": "925f02556a170066f6b1ae675d1040b9337845aab0096fd01b3fa14797fd287d"
+    },
+    {
+      "path": "profiles/cclcc/font.lua",
+      "size": 1720,
+      "sha256": "18547eabf75578e579547ddded085b985e2aa35fffccf4b903f13c37d106025c"
+    },
+    {
+      "path": "profiles/cclcc/game.lua",
+      "size": 3590,
+      "sha256": "f1e623c87cb743378b21f8e6884c3090cb1fec9c02105fce830472798cb9c968"
+    },
+    {
+      "path": "profiles/cclcc/gamespecific.lua",
+      "size": 643,
+      "sha256": "b13ce0b86c8772010024d822bbdb4f240bc4b18ce4d9136b8b779879b9984746"
+    },
+    {
+      "path": "profiles/cclcc/hud/backlogmenu.lua",
+      "size": 2115,
+      "sha256": "5ec0382aeeb600f7b254914ecb126b2a948a19d37cfd0396fb740e7cb7577462"
+    },
+    {
+      "path": "profiles/cclcc/hud/datedisplay.lua",
+      "size": 4186,
+      "sha256": "c13bc2a0895fcf4d5b969b3908bc2a307b5a1b4f6d2e4d407fcf488f09a290a8"
+    },
+    {
+      "path": "profiles/cclcc/hud/delusiontrigger.lua",
+      "size": 49,
+      "sha256": "e150f44e91908cc0fda07b0bea9f1a5f8dd3944d1b176a2f387e9aa72c5caf23"
+    },
+    {
+      "path": "profiles/cclcc/hud/extramenus.lua",
+      "size": 17454,
+      "sha256": "261bcdd1635ca79fe063196d84a0a74413eac996de325d636ec7dcf20779df1f"
+    },
+    {
+      "path": "profiles/cclcc/hud/helpmenu.lua",
+      "size": 524,
+      "sha256": "b8877855f154174ff532590a707a8ba324a8fe6c7a9f367f0501fa3dc95c6ff7"
+    },
+    {
+      "path": "profiles/cclcc/hud/loadingdisplay.lua",
+      "size": 1795,
+      "sha256": "7a4b11c95c02058925b959e6bbb27e1e47f05823df4e55ba3bc8f152ea7194de"
+    },
+    {
+      "path": "profiles/cclcc/hud/optionsmenu.lua",
+      "size": 7039,
+      "sha256": "19b076bc941bb3080d3fa69ef75aa095d77f03e6ea4cc7ce909507df24268bb3"
+    },
+    {
+      "path": "profiles/cclcc/hud/saveicon.lua",
+      "size": 749,
+      "sha256": "3262615d4f0fd0ef23ce0fd34e83b05f0dc47871150e0cb80808b8781c387d1c"
+    },
+    {
+      "path": "profiles/cclcc/hud/savemenu.lua",
+      "size": 4111,
+      "sha256": "5d897689b29ea7641bc370a9a08356a4720f66ba0af56fc1c582a1c7bf5d714d"
+    },
+    {
+      "path": "profiles/cclcc/hud/selectiondisplay.lua",
+      "size": 2434,
+      "sha256": "e4650ac43a92d6bb383659bd300562de3c643579b785b2adc77c723db63f0931"
+    },
+    {
+      "path": "profiles/cclcc/hud/sysmesboxdisplay.lua",
+      "size": 3259,
+      "sha256": "bc000b1fe4a2757bc5fb651697982532bc8a66256193f843b53a88f3467d1fdc"
+    },
+    {
+      "path": "profiles/cclcc/hud/systemmenu.lua",
+      "size": 5678,
+      "sha256": "d64424b087a35cb056959cb9da4666c94c41b6a6225deb773ba0fd63b9b006ce"
+    },
+    {
+      "path": "profiles/cclcc/hud/tipsmenu.lua",
+      "size": 2464,
+      "sha256": "6af2303da82319c31531f70d4f2a15404ddad7f61a85e8896486d91a8a6cab71"
+    },
+    {
+      "path": "profiles/cclcc/hud/tipsnotification.lua",
+      "size": 721,
+      "sha256": "898baa6398a1dc221ec973f5b8acce9e4d7383d347649e95334233646d183576"
+    },
+    {
+      "path": "profiles/cclcc/hud/titlemenu.lua",
+      "size": 5308,
+      "sha256": "303872b81c65fa6c59918b964c5b89edaefdfde625d2f22480094e5d3639280a"
+    },
+    {
+      "path": "profiles/cclcc/mapsystem.lua",
+      "size": 2458,
+      "sha256": "da0d24624f2f37a77b20e818fa9693019e0bed2ae2a990baaa7042a0c6acb26f"
+    },
+    {
+      "path": "profiles/cclcc/savedata.lua",
+      "size": 5084,
+      "sha256": "a83cc9bb952e90157c350adbef198a925134762e15730e662c169c9aa93a9ae4"
+    },
+    {
+      "path": "profiles/cclcc/scriptinput.lua",
+      "size": 22,
+      "sha256": "3ebe9073629314a3dbe9cf230e0bd7e59d1a9eebc5d5392e5f78e7e726cc8766"
+    },
+    {
+      "path": "profiles/cclcc/scriptvars.lua",
+      "size": 1779,
+      "sha256": "e0a51226e047a68c15e7d054ba3710273e44f7d2985e0961b706f7ad9538a8af"
+    },
+    {
+      "path": "profiles/cclcc/sprites.lua",
+      "size": 4518,
+      "sha256": "5ecd7eeb99ae14f9fcbb6e03c138ad37813b4ae3612a4c1484a80aca3e20091c"
+    },
+    {
+      "path": "profiles/cclcc/tipssystem.lua",
+      "size": 135,
+      "sha256": "d9f60229b7522a0ca4f19f15d88e8335862214b73d795346667770a0e0fea8b4"
+    },
+    {
+      "path": "profiles/cclcc/vfs.lua",
+      "size": 1155,
+      "sha256": "8aaf121f030c654ed3dda6f2832a2930265c6f82fd773b6e2cf8d537837384e3"
+    },
+    {
+      "path": "profiles/cclcc/waveeffects.lua",
+      "size": 88,
+      "sha256": "bf6a19170ff5905ca3ed83149ed95946cb73e3b0e7e8b3e8073b1dc2f4557e1d"
+    },
+    {
+      "path": "profiles/cclcc/yesnotrigger.lua",
+      "size": 6641,
+      "sha256": "c1067e886c74055dfd0c3a468c778ee16804092d8c48c86626399550c76cea28"
+    },
+    {
+      "path": "profiles/characterviewer/game.lua",
+      "size": 215,
+      "sha256": "7054402905b9e8ead17a5477dabdcef76fb9da90cc06a6ffd17099ebc70d0f5f"
+    },
+    {
+      "path": "profiles/chlcc-switch/font.lua",
+      "size": 280,
+      "sha256": "06e4e0f2df8646a11835f1f1b10ebf2698d6a9a5a42cd7c8a16a9e607ba9942d"
+    },
+    {
+      "path": "profiles/chlcc-switch/game.lua",
+      "size": 4119,
+      "sha256": "73db7ebf97d824c839d559d712d07ff0e0ae0da5ec5c68d12090e8be67d9971a"
+    },
+    {
+      "path": "profiles/chlcc-switch/hud/saveicon.lua",
+      "size": 132,
+      "sha256": "42f430f4ddd967aae6180f3a85641d029f16af178acf7785f3b7ba402dc25a4c"
+    },
+    {
+      "path": "profiles/chlcc-switch/hud/sysmesboxdisplay.lua",
+      "size": 342,
+      "sha256": "737aa1f1628240eee11d7d5a484e6535f9b092b1c9fd6db15e845375ec956eae"
+    },
+    {
+      "path": "profiles/chlcc-switch/hud/titlemenu.lua",
+      "size": 4700,
+      "sha256": "fbd50adc75ea4ec765ba654fa3bceaeebad94efbc300a7177061753493c11d47"
+    },
+    {
+      "path": "profiles/chlcc-switch/scriptvars.lua",
+      "size": 925,
+      "sha256": "ed2861364c4a319f5b0d0b64006488127ea88d51645e5414f8f1fc8da4d3c943"
+    },
+    {
+      "path": "profiles/chlcc-switch/sprites.lua",
+      "size": 3045,
+      "sha256": "eba92b0d1332616448da860cb64b16724f84bebac59a16bd19a1c379f53e75fa"
+    },
+    {
+      "path": "profiles/chlcc-switch/vfs.lua",
+      "size": 1094,
+      "sha256": "3c303c9b5482836caa3571d1a76848507a2a2e70cea4d3a3d1ea31fcc9c0f7e4"
+    },
+    {
+      "path": "profiles/chlcc/charset.lua",
+      "size": 7025,
+      "sha256": "5630683bb426085dc9529e5750f6eb674a13da3e7c71d66dd72f55b26b1aa920"
+    },
+    {
+      "path": "profiles/chlcc/dialogue.lua",
+      "size": 4761,
+      "sha256": "315306b1862937b717be6db3372f42517b53df40a4a4224388eaeb00da187036"
+    },
+    {
+      "path": "profiles/chlcc/equivalentlines.lua",
+      "size": 25931,
+      "sha256": "d4d25051fd5947c86726a3a2d1d406a41eaf417e05a6a6c3974bfdb53422c121"
+    },
+    {
+      "path": "profiles/chlcc/font.lua",
+      "size": 3055,
+      "sha256": "d961f585da3d6dcb01e4c74ba1ecf4f49684f62a7859a182a77cb1f3e1e1466a"
+    },
+    {
+      "path": "profiles/chlcc/game.lua",
+      "size": 3468,
+      "sha256": "acfc765db7f22dbe37a78e48eca7b4e7bd9bd34aaceca3f1b176e04d37fbe059"
+    },
+    {
+      "path": "profiles/chlcc/gamespecific.lua",
+      "size": 1270,
+      "sha256": "ec804e3c05f5c674dfbae5f32fd1f3ae6871d5e83797a7ce62133cbf8aac1ed6"
+    },
+    {
+      "path": "profiles/chlcc/hud/backlogmenu.lua",
+      "size": 2289,
+      "sha256": "6eff86a71fe5ebac165ff1044f40d19247f0077171763e81f536122e06bcd95b"
+    },
+    {
+      "path": "profiles/chlcc/hud/commonmenu.lua",
+      "size": 1466,
+      "sha256": "bab1c2bde6fc8d3875cf4cf1515a52668dceb8cbf5a642ba0a997ca4be72328e"
+    },
+    {
+      "path": "profiles/chlcc/hud/datedisplay.lua",
+      "size": 4140,
+      "sha256": "dc95848530d327eb89b84110b8bf5c373ccaa6db63edbcbf296598a2ecc526de"
+    },
+    {
+      "path": "profiles/chlcc/hud/delusiontrigger.lua",
+      "size": 1292,
+      "sha256": "44caf8ddf9bdfe6839895bf481c76dd695a582d6dbe70c43782a5353b4962164"
+    },
+    {
+      "path": "profiles/chlcc/hud/extramenus.lua",
+      "size": 20455,
+      "sha256": "e5cc8a5fda0b6fb9b240cc5ef5d3213081b0271ae7f4e2d0b851f7d5689da0d5"
+    },
+    {
+      "path": "profiles/chlcc/hud/loadingdisplay.lua",
+      "size": 1795,
+      "sha256": "7a4b11c95c02058925b959e6bbb27e1e47f05823df4e55ba3bc8f152ea7194de"
+    },
+    {
+      "path": "profiles/chlcc/hud/optionsmenu.lua",
+      "size": 8200,
+      "sha256": "72a2ea0971e7dbdea7289de94c8744855c78483d9507b93c53f82bb2a2cf6ddb"
+    },
+    {
+      "path": "profiles/chlcc/hud/saveicon.lua",
+      "size": 550,
+      "sha256": "e7ea5eacc34e0c79dacc1c10ea9aa2204e3f066326fed4f0f2acf142cdb0f528"
+    },
+    {
+      "path": "profiles/chlcc/hud/savemenu.lua",
+      "size": 5783,
+      "sha256": "d40b19974dbd5b6bab1ce36f76520fbf2384003198650bb735418c3559096bac"
+    },
+    {
+      "path": "profiles/chlcc/hud/selectiondisplay.lua",
+      "size": 2434,
+      "sha256": "e4650ac43a92d6bb383659bd300562de3c643579b785b2adc77c723db63f0931"
+    },
+    {
+      "path": "profiles/chlcc/hud/sysmesboxdisplay.lua",
+      "size": 2101,
+      "sha256": "b86e3b42351fa60d7f43e2220555aeeea8d615f0d227bb2bb1712621cde066f5"
+    },
+    {
+      "path": "profiles/chlcc/hud/systemmenu.lua",
+      "size": 6543,
+      "sha256": "be6fd411892defee3616b28344c519c1ef3a3ac13e16c9427b2ebff38b91b8e3"
+    },
+    {
+      "path": "profiles/chlcc/hud/tipsmenu.lua",
+      "size": 6539,
+      "sha256": "d132534b4a3fe43854975817e61ac4fe1da820e71608e68fe71f019069dad15a"
+    },
+    {
+      "path": "profiles/chlcc/hud/tipsnotification.lua",
+      "size": 679,
+      "sha256": "b96f0f3a168faaf5d06d4b4a994390dfc4c2f90e30cfd5f9e82a367db1160cc5"
+    },
+    {
+      "path": "profiles/chlcc/hud/titlemenu.lua",
+      "size": 14266,
+      "sha256": "fb4397263d48e57277b231195e60a1b3cf6d1ed9962d070d6941ae22bf060db4"
+    },
+    {
+      "path": "profiles/chlcc/hud/trophymenu.lua",
+      "size": 3926,
+      "sha256": "2374f15f87088dce2545149cf0bb0bdc41727fa11e12caf881b8d32499af18f1"
+    },
+    {
+      "path": "profiles/chlcc/savedata.lua",
+      "size": 4869,
+      "sha256": "73cb485ea8f30fc3c17544c2a45618862fc59b1893d95aad6dab95f89a651319"
+    },
+    {
+      "path": "profiles/chlcc/scriptinput.lua",
+      "size": 1460,
+      "sha256": "530da3701bb4a85aff49500e56154818a3d9ffbc5eb022269611ec55a13598ef"
+    },
+    {
+      "path": "profiles/chlcc/scriptvars.lua",
+      "size": 4918,
+      "sha256": "0ec44a58bbe96dbb01e244e6aa0fd6a63a58ab9976f579b961a3a2da7763b237"
+    },
+    {
+      "path": "profiles/chlcc/sprites.lua",
+      "size": 3027,
+      "sha256": "9149461ca7bfcde998e52b23f09dc6dd1fdbb1dd1f6404fc93c5903365576e15"
+    },
+    {
+      "path": "profiles/chlcc/tipssystem.lua",
+      "size": 1159,
+      "sha256": "2d9f5ab9b5cba428d61b1186562a058068b70196d3545b117589c996b1b234a0"
+    },
+    {
+      "path": "profiles/chlcc/vfs.lua",
+      "size": 705,
+      "sha256": "a5d6058c53ea278180c51f6118a6fab720b0f69fefe11782a899d8e3f32f45bc"
+    },
+    {
+      "path": "profiles/chlcc/waveeffects.lua",
+      "size": 88,
+      "sha256": "4d032c971db786eff8cbb2769060475754413208672ea1ae888bb1ac15d50b79"
+    },
+    {
+      "path": "profiles/chn/charset.lua",
+      "size": 1352,
+      "sha256": "a24fe0b8de00dadeb604f63361e5d9cb0adeec1eea8868490cd9ca131b40523b"
+    },
+    {
+      "path": "profiles/chn/dialogue.lua",
+      "size": 3171,
+      "sha256": "1998bdaa349538b753d1075b95e7a7e446efd0474b1bcb17dd65e0852e092202"
+    },
+    {
+      "path": "profiles/chn/font.lua",
+      "size": 3636,
+      "sha256": "6d7dd5db156939b0a85a7f840fa1bbc04a4460d63657dbd9d1e854394a951e85"
+    },
+    {
+      "path": "profiles/chn/game.lua",
+      "size": 2564,
+      "sha256": "ecfe1fb259d55a1c2d1f65b67c8371b7a4c52c6578e2ebf804338a34dd13f83e"
+    },
+    {
+      "path": "profiles/chn/hud/backlogmenu.lua",
+      "size": 1186,
+      "sha256": "d51393cffec3b9102849200a8056509f9efcf78ca7a31dc477c8cbb6819c5e49"
+    },
+    {
+      "path": "profiles/chn/hud/datedisplay.lua",
+      "size": 4186,
+      "sha256": "c13bc2a0895fcf4d5b969b3908bc2a307b5a1b4f6d2e4d407fcf488f09a290a8"
+    },
+    {
+      "path": "profiles/chn/hud/loadingdisplay.lua",
+      "size": 1795,
+      "sha256": "7a4b11c95c02058925b959e6bbb27e1e47f05823df4e55ba3bc8f152ea7194de"
+    },
+    {
+      "path": "profiles/chn/hud/saveicon.lua",
+      "size": 705,
+      "sha256": "26cf8970d25fd5dbd2fc81c58a637b5fecd16646fecf4fccc0c9947cd4423f83"
+    },
+    {
+      "path": "profiles/chn/hud/selectiondisplay.lua",
+      "size": 2434,
+      "sha256": "e4650ac43a92d6bb383659bd300562de3c643579b785b2adc77c723db63f0931"
+    },
+    {
+      "path": "profiles/chn/hud/sysmesboxdisplay.lua",
+      "size": 2930,
+      "sha256": "d33f06587cd7d9adf15e29c63510bfa0c0ae00a27aedd3b1813c280a98d822b4"
+    },
+    {
+      "path": "profiles/chn/hud/systemmenu.lua",
+      "size": 3353,
+      "sha256": "1e49d00b5a3d9e118b2e5d86ea56812d0d3dccb039ed431955f5ce512f07dbf6"
+    },
+    {
+      "path": "profiles/chn/hud/tipsmenu.lua",
+      "size": 50,
+      "sha256": "a1904c9c3c11e5d2ca3d1d059feeb887bb9132821e0933e2d6aa7ce841b13c1a"
+    },
+    {
+      "path": "profiles/chn/hud/tipsnotification.lua",
+      "size": 64,
+      "sha256": "7f15561bc764323a9bdfe704ae7d2ece7fc7fc9585e91920befbe4fe82e6ccdd"
+    },
+    {
+      "path": "profiles/chn/hud/titlemenu.lua",
+      "size": 5631,
+      "sha256": "3ba9854911d171e41e8c9527cc8a55a4a9ce93662b8035e53fba780c7edb2f15"
+    },
+    {
+      "path": "profiles/chn/savedata.lua",
+      "size": 122,
+      "sha256": "8fbaa2864ba220adce1d1811592b98e4e96c532a3c03eb04229db32f1f613bca"
+    },
+    {
+      "path": "profiles/chn/scriptvars.lua",
+      "size": 449,
+      "sha256": "d7b841bc4e0269279e34b40ec67479ee3b0465911d72f4748c78157c2dc06f98"
+    },
+    {
+      "path": "profiles/chn/sprites.lua",
+      "size": 1192,
+      "sha256": "4802b997e99e73bd745e8173ffa3893d36bcd82f3526c457ae0723d955c8908b"
+    },
+    {
+      "path": "profiles/chn/tipssystem.lua",
+      "size": 54,
+      "sha256": "aceb5023a3d46a0da944da44a1b834a9fad15cb6e3ea8180ef62a5ab3daa5709"
+    },
+    {
+      "path": "profiles/chn/vfs.lua",
+      "size": 833,
+      "sha256": "18475ead5467b2f0410d651e06779ba0af55bec04bc1ba43ecc2e9be10ea0bba"
+    },
+    {
+      "path": "profiles/common/achievementnotification.lua",
+      "size": 487,
+      "sha256": "fedd365c2407a3ef2c95bbfe07e45cccc6c4e501c16abd9b67e46138d1d6d234"
+    },
+    {
+      "path": "profiles/common/animation.lua",
+      "size": 3157,
+      "sha256": "6a2e224c798937990852e40464b9ac41dd27ad44ec14c45d4a29c8de856d650a"
+    },
+    {
+      "path": "profiles/common/charset.lua",
+      "size": 2132,
+      "sha256": "5f7d82d6cc557ba39aec0314ce99922252aa69e97eeb6dc713e03b8bafa1a4a9"
+    },
+    {
+      "path": "profiles/common/scriptinput.lua",
+      "size": 9005,
+      "sha256": "f62ec2591ac569ec1f505d64dc1b0679b99ca4e4f74099ab183e2b5379ea68cc"
+    },
+    {
+      "path": "profiles/common/scriptvars-switch.lua",
+      "size": 8585,
+      "sha256": "c02fb34a15dc5fe6f9b2b2e5eb42b7cbc0b37c21ebe50036fcd8566c2e350af7"
+    },
+    {
+      "path": "profiles/common/scriptvars.lua",
+      "size": 11942,
+      "sha256": "ad2b1bdb7d25dbf417967d209e7ded870ee241f9e97b6e8bb60d94f797a1b7d5"
+    },
+    {
+      "path": "profiles/darling/charset.lua",
+      "size": 1388,
+      "sha256": "13e85a9e5c70e9d6329e714288357a22bcd0afd059c0dca930ede5b91ece0674"
+    },
+    {
+      "path": "profiles/darling/dialogue.lua",
+      "size": 3312,
+      "sha256": "31810983240131492614df2d87b607da865014e10781f3bdf262a0c911bd3291"
+    },
+    {
+      "path": "profiles/darling/font.lua",
+      "size": 2940,
+      "sha256": "ac95bd3545c6abe5e29ba3ae4d41b1aacebc91c5b6f63976d7fad341c138f947"
+    },
+    {
+      "path": "profiles/darling/game.lua",
+      "size": 2588,
+      "sha256": "0dcfa3ea315157f4488d6c5183c0ef5e9eb527a09d6a43582eeb7f9093b42e39"
+    },
+    {
+      "path": "profiles/darling/hud/backlogmenu.lua",
+      "size": 1187,
+      "sha256": "b0b1ec3ae91a79509b9493a32def3f9e8e705824a8e98fe5118287d3e123f258"
+    },
+    {
+      "path": "profiles/darling/hud/datedisplay.lua",
+      "size": 4140,
+      "sha256": "dc95848530d327eb89b84110b8bf5c373ccaa6db63edbcbf296598a2ecc526de"
+    },
+    {
+      "path": "profiles/darling/hud/loadingdisplay.lua",
+      "size": 1795,
+      "sha256": "7a4b11c95c02058925b959e6bbb27e1e47f05823df4e55ba3bc8f152ea7194de"
+    },
+    {
+      "path": "profiles/darling/hud/saveicon.lua",
+      "size": 684,
+      "sha256": "8f757d116e9c00752566ef5512efeb71ec17149044917823992dcb9deba364ec"
+    },
+    {
+      "path": "profiles/darling/hud/selectiondisplay.lua",
+      "size": 2434,
+      "sha256": "e4650ac43a92d6bb383659bd300562de3c643579b785b2adc77c723db63f0931"
+    },
+    {
+      "path": "profiles/darling/hud/sysmesboxdisplay.lua",
+      "size": 1681,
+      "sha256": "f48636a70662cc60d17e4fad16c60447ed4e5d1a6c358c9dfc9a72aa2522a650"
+    },
+    {
+      "path": "profiles/darling/hud/systemmenu.lua",
+      "size": 2016,
+      "sha256": "52e3fef982852d9b1a4d86a93f2766ceef43a87414351272d445a6753901877f"
+    },
+    {
+      "path": "profiles/darling/hud/tipsmenu.lua",
+      "size": 50,
+      "sha256": "a1904c9c3c11e5d2ca3d1d059feeb887bb9132821e0933e2d6aa7ce841b13c1a"
+    },
+    {
+      "path": "profiles/darling/hud/tipsnotification.lua",
+      "size": 67,
+      "sha256": "33a78081680c3a2ba80efd7b3cc41c677166aa6f4ad54b6b8cf94b9356e366e2"
+    },
+    {
+      "path": "profiles/darling/hud/titlemenu.lua",
+      "size": 9758,
+      "sha256": "0450d8b668be98e254a02bd1684d7a7a93fed165f8da674a4495cf4ab3b4efaa"
+    },
+    {
+      "path": "profiles/darling/savedata.lua",
+      "size": 127,
+      "sha256": "07af167897cc0eb379e84e3a4ac7581d03b5a1cb5273fc3fc8f60273bd74c688"
+    },
+    {
+      "path": "profiles/darling/scriptvars.lua",
+      "size": 482,
+      "sha256": "a22b00278def35905011cd261a84515325ad309a1ab15eda3bdaae2b81380f08"
+    },
+    {
+      "path": "profiles/darling/sprites.lua",
+      "size": 931,
+      "sha256": "b705d69a3407fa8a2df8e6ce3c2e0fafc05a0288e38df886a02ee522d3b5500e"
+    },
+    {
+      "path": "profiles/darling/tipssystem.lua",
+      "size": 54,
+      "sha256": "aceb5023a3d46a0da944da44a1b834a9fad15cb6e3ea8180ef62a5ab3daa5709"
+    },
+    {
+      "path": "profiles/darling/vfs.lua",
+      "size": 723,
+      "sha256": "dc98fbcb9c9047c8dc63e5f4817a552849f6df43be5831cbc6eaccfd061d1727"
+    },
+    {
+      "path": "profiles/dash/charset.lua",
+      "size": 1351,
+      "sha256": "78de4aa07a2ad0f4fe03675f2f0f9a877d6e529a83f5e219f13b955c7360f13c"
+    },
+    {
+      "path": "profiles/dash/dialogue.lua",
+      "size": 3914,
+      "sha256": "40d007adef638fced0cd4ff989d2a57a86267eb5d30906d6c35f4080e7283553"
+    },
+    {
+      "path": "profiles/dash/font.lua",
+      "size": 3635,
+      "sha256": "0fdd8cc9cd49e09210104190b773c7c60a3432a717ef4101524ca4f982537c3b"
+    },
+    {
+      "path": "profiles/dash/game.lua",
+      "size": 2665,
+      "sha256": "2ac55d372af7358f85742eca89626ea06e9560628dd0d847d6d540f84a108e56"
+    },
+    {
+      "path": "profiles/dash/gamespecific.lua",
+      "size": 54,
+      "sha256": "5cc674dd45bf50e6d0011e37d51c1ce21abf73feded122dfe3844fe2e09fec84"
+    },
+    {
+      "path": "profiles/dash/hud/backlogmenu.lua",
+      "size": 1187,
+      "sha256": "b0b1ec3ae91a79509b9493a32def3f9e8e705824a8e98fe5118287d3e123f258"
+    },
+    {
+      "path": "profiles/dash/hud/datedisplay.lua",
+      "size": 4186,
+      "sha256": "c13bc2a0895fcf4d5b969b3908bc2a307b5a1b4f6d2e4d407fcf488f09a290a8"
+    },
+    {
+      "path": "profiles/dash/hud/loadingdisplay.lua",
+      "size": 1795,
+      "sha256": "7a4b11c95c02058925b959e6bbb27e1e47f05823df4e55ba3bc8f152ea7194de"
+    },
+    {
+      "path": "profiles/dash/hud/saveicon.lua",
+      "size": 705,
+      "sha256": "26cf8970d25fd5dbd2fc81c58a637b5fecd16646fecf4fccc0c9947cd4423f83"
+    },
+    {
+      "path": "profiles/dash/hud/selectiondisplay.lua",
+      "size": 2434,
+      "sha256": "e4650ac43a92d6bb383659bd300562de3c643579b785b2adc77c723db63f0931"
+    },
+    {
+      "path": "profiles/dash/hud/sysmesboxdisplay.lua",
+      "size": 4180,
+      "sha256": "4621b5e6fa3426ba06c91ec9b5489137c0abd9068ea04142b06787c7a562c088"
+    },
+    {
+      "path": "profiles/dash/hud/systemmenu.lua",
+      "size": 3402,
+      "sha256": "8380d52c4f22ee7811a208e7be9919189d1e78cf8bfdb9d6138bd115aee2ffbf"
+    },
+    {
+      "path": "profiles/dash/hud/tipsmenu.lua",
+      "size": 50,
+      "sha256": "a1904c9c3c11e5d2ca3d1d059feeb887bb9132821e0933e2d6aa7ce841b13c1a"
+    },
+    {
+      "path": "profiles/dash/hud/tipsnotification.lua",
+      "size": 67,
+      "sha256": "33a78081680c3a2ba80efd7b3cc41c677166aa6f4ad54b6b8cf94b9356e366e2"
+    },
+    {
+      "path": "profiles/dash/hud/titlemenu.lua",
+      "size": 592,
+      "sha256": "e8a1b420f325937af4f88c981ffb007f2a75eb55e24885bb87b06df14225d553"
+    },
+    {
+      "path": "profiles/dash/savedata.lua",
+      "size": 124,
+      "sha256": "75a0d64c08baf422bd1b31786f76d0b9027ebc6cb8e4302a7d6e1e2c48cccd72"
+    },
+    {
+      "path": "profiles/dash/scene3d/characters.lua",
+      "size": 14909,
+      "sha256": "c7993116984c02ad44c87763af04e2f96315484cce1a67660d06a77634716640"
+    },
+    {
+      "path": "profiles/dash/scene3d/scene3d.lua",
+      "size": 469,
+      "sha256": "8fa423954e637d846b0ada14629aebff7102295cbc142999c9b4e047c887ec50"
+    },
+    {
+      "path": "profiles/dash/scriptvars.lua",
+      "size": 136,
+      "sha256": "caa26bd17abf246dc0443f98cf5ddabd01a915b6a4d8e5a1265b51d3661707a5"
+    },
+    {
+      "path": "profiles/dash/sprites.lua",
+      "size": 801,
+      "sha256": "e0b450169819b52c576ee5f5f1dbe82198c8a93e95037a8f05a5e46535781cda"
+    },
+    {
+      "path": "profiles/dash/tipssystem.lua",
+      "size": 54,
+      "sha256": "aceb5023a3d46a0da944da44a1b834a9fad15cb6e3ea8180ef62a5ab3daa5709"
+    },
+    {
+      "path": "profiles/dash/vfs.lua",
+      "size": 848,
+      "sha256": "a35adadfd450ae1d2b40abe5d4814810f99b8c3d501be312e583924baa696b3f"
+    },
+    {
+      "path": "profiles/mo6tw/charset.lua",
+      "size": 2783,
+      "sha256": "72340242983e4891aed34091bc93e8b346de8320ca816707e681a3e03a90765d"
+    },
+    {
+      "path": "profiles/mo6tw/dialogue.lua",
+      "size": 4255,
+      "sha256": "3a8fc38b6829f4a315e3b05826c6e2c5d25addc6cdece819fc879cd3681a42b2"
+    },
+    {
+      "path": "profiles/mo6tw/font.lua",
+      "size": 2940,
+      "sha256": "b3154e60df061670d34012e763a84d87903989ad6c8e22848027f29b52c09a63"
+    },
+    {
+      "path": "profiles/mo6tw/game.lua",
+      "size": 2741,
+      "sha256": "806e354fcd6b81471c602be5fcf29e49dd5864893d13c76752a863d57fb112e2"
+    },
+    {
+      "path": "profiles/mo6tw/hud/backlogmenu.lua",
+      "size": 1505,
+      "sha256": "f0eb955257d4e472e5788a48a6db5174a6ad35996d6e65b9fee8117214050570"
+    },
+    {
+      "path": "profiles/mo6tw/hud/datedisplay.lua",
+      "size": 4140,
+      "sha256": "dc95848530d327eb89b84110b8bf5c373ccaa6db63edbcbf296598a2ecc526de"
+    },
+    {
+      "path": "profiles/mo6tw/hud/extramenus.lua",
+      "size": 24315,
+      "sha256": "4ed7f9c7be1be41ce64efae0a44801ec9c3467139b17d1d88d30bd0ef0cf6a68"
+    },
+    {
+      "path": "profiles/mo6tw/hud/loadingdisplay.lua",
+      "size": 1795,
+      "sha256": "7a4b11c95c02058925b959e6bbb27e1e47f05823df4e55ba3bc8f152ea7194de"
+    },
+    {
+      "path": "profiles/mo6tw/hud/optionsmenu.lua",
+      "size": 4638,
+      "sha256": "dc49ae80b4947bc0d2ff8188c2e2f41020aec1a4323512e1d38d64973604b640"
+    },
+    {
+      "path": "profiles/mo6tw/hud/saveicon.lua",
+      "size": 686,
+      "sha256": "a36aaa16b8c745fa59ddc5d86e00729c42216171e36c94b844ba956a63603b06"
+    },
+    {
+      "path": "profiles/mo6tw/hud/savemenu.lua",
+      "size": 2110,
+      "sha256": "fa701eeca1e5f77081a751f6f6a424f1e69bd0b07a4d2fbcaad0647e6d91f35f"
+    },
+    {
+      "path": "profiles/mo6tw/hud/selectiondisplay.lua",
+      "size": 2434,
+      "sha256": "e4650ac43a92d6bb383659bd300562de3c643579b785b2adc77c723db63f0931"
+    },
+    {
+      "path": "profiles/mo6tw/hud/sysmesboxdisplay.lua",
+      "size": 1712,
+      "sha256": "836a211d91b474ab2b44afff1dc95e33f538af7c24bca8d52b0fb0cbfc33570c"
+    },
+    {
+      "path": "profiles/mo6tw/hud/systemmenu.lua",
+      "size": 1144,
+      "sha256": "0a419a84c0d7082ea53bb81d15418bbe67bf7c0177b1bd3af1c8c66d744ad496"
+    },
+    {
+      "path": "profiles/mo6tw/hud/tipsmenu.lua",
+      "size": 2429,
+      "sha256": "7327290d2f9553aa4fc4166b87ae415564297ca3755e00ebf3b792086c4a6e8e"
+    },
+    {
+      "path": "profiles/mo6tw/hud/tipsnotification.lua",
+      "size": 620,
+      "sha256": "9ae8f85c9c963004071d0d8a69c361b3b522e894d87a3c1151fa12b0b39833a8"
+    },
+    {
+      "path": "profiles/mo6tw/hud/titlemenu.lua",
+      "size": 2711,
+      "sha256": "118b9295a9b33dd228dcb833884d4248dfd7a770d3951e1c4572d47c7fb474e1"
+    },
+    {
+      "path": "profiles/mo6tw/savedata.lua",
+      "size": 9460,
+      "sha256": "15725214f3cc82498c2a42900845bd1dad88b35b48a4bcb58f850ccbf34b319c"
+    },
+    {
+      "path": "profiles/mo6tw/scriptinput.lua",
+      "size": 3208,
+      "sha256": "e934f1f51706a92ce582ce1169f8bef0ae32dc0ab30a841dea830db14aa83bc3"
+    },
+    {
+      "path": "profiles/mo6tw/scriptvars.lua",
+      "size": 3681,
+      "sha256": "555217345e446c7a2f1dfd3fe01dcf1b74d4b3b4bccfffb320524bee6ca6ad3a"
+    },
+    {
+      "path": "profiles/mo6tw/sprites.lua",
+      "size": 2775,
+      "sha256": "d74dea234b21bb29c2724e713a5bf548977de9a843a8b2e8f6edb2ca6a0ef413"
+    },
+    {
+      "path": "profiles/mo6tw/tipssystem.lua",
+      "size": 75,
+      "sha256": "fc3b2855aa0edef24bc1f4a17a10a21a50e087689571915c6d39b1aea47c44c9"
+    },
+    {
+      "path": "profiles/mo6tw/vfs.lua",
+      "size": 685,
+      "sha256": "43c6f8aefb648ffa39764ba3054194f7436ba0ab44e7535a4278343b1df8ba1e"
+    },
+    {
+      "path": "profiles/mo7/charset.lua",
+      "size": 1388,
+      "sha256": "13e85a9e5c70e9d6329e714288357a22bcd0afd059c0dca930ede5b91ece0674"
+    },
+    {
+      "path": "profiles/mo7/dialogue.lua",
+      "size": 3320,
+      "sha256": "4a3b038bac7ae5f4c6b7f40bb2b6dc89541fda0de28f302605c8a4c88b16bb74"
+    },
+    {
+      "path": "profiles/mo7/font.lua",
+      "size": 2940,
+      "sha256": "19841398baf59b412fd26914c71a6bf1e711a6a54278db2dbcf3c3b8e3db227e"
+    },
+    {
+      "path": "profiles/mo7/game.lua",
+      "size": 2547,
+      "sha256": "0902fca2fc2fc8998ca9988dd98454110b54a325c524232b588119f725fb4e9a"
+    },
+    {
+      "path": "profiles/mo7/hud/backlogmenu.lua",
+      "size": 1187,
+      "sha256": "b0b1ec3ae91a79509b9493a32def3f9e8e705824a8e98fe5118287d3e123f258"
+    },
+    {
+      "path": "profiles/mo7/hud/datedisplay.lua",
+      "size": 4140,
+      "sha256": "dc95848530d327eb89b84110b8bf5c373ccaa6db63edbcbf296598a2ecc526de"
+    },
+    {
+      "path": "profiles/mo7/hud/loadingdisplay.lua",
+      "size": 1795,
+      "sha256": "7a4b11c95c02058925b959e6bbb27e1e47f05823df4e55ba3bc8f152ea7194de"
+    },
+    {
+      "path": "profiles/mo7/hud/saveicon.lua",
+      "size": 686,
+      "sha256": "a36aaa16b8c745fa59ddc5d86e00729c42216171e36c94b844ba956a63603b06"
+    },
+    {
+      "path": "profiles/mo7/hud/selectiondisplay.lua",
+      "size": 2434,
+      "sha256": "e4650ac43a92d6bb383659bd300562de3c643579b785b2adc77c723db63f0931"
+    },
+    {
+      "path": "profiles/mo7/hud/sysmesboxdisplay.lua",
+      "size": 1803,
+      "sha256": "6acca14ed8b2b97c8cce8fc2ab354e357dd74d887fbd86ae7aa165db774ee1c1"
+    },
+    {
+      "path": "profiles/mo7/hud/tipsmenu.lua",
+      "size": 50,
+      "sha256": "a1904c9c3c11e5d2ca3d1d059feeb887bb9132821e0933e2d6aa7ce841b13c1a"
+    },
+    {
+      "path": "profiles/mo7/hud/tipsnotification.lua",
+      "size": 67,
+      "sha256": "33a78081680c3a2ba80efd7b3cc41c677166aa6f4ad54b6b8cf94b9356e366e2"
+    },
+    {
+      "path": "profiles/mo7/savedata.lua",
+      "size": 123,
+      "sha256": "3befe51091383963a42e96d1a3c150c083dfa34a90bfabe164dfe43059e1840b"
+    },
+    {
+      "path": "profiles/mo7/scriptvars.lua",
+      "size": 482,
+      "sha256": "a22b00278def35905011cd261a84515325ad309a1ab15eda3bdaae2b81380f08"
+    },
+    {
+      "path": "profiles/mo7/sprites.lua",
+      "size": 931,
+      "sha256": "8123e6cd7f9bf8dec40a8e4f901e78aa554ff0cb638a3b7e6ae446c7bf05f1d8"
+    },
+    {
+      "path": "profiles/mo7/tipssystem.lua",
+      "size": 54,
+      "sha256": "aceb5023a3d46a0da944da44a1b834a9fad15cb6e3ea8180ef62a5ab3daa5709"
+    },
+    {
+      "path": "profiles/mo7/vfs.lua",
+      "size": 687,
+      "sha256": "cd750ed0a2dc29f08c978cc3e15854f273b475cb7443c947e5c21c0aaa4cbe86"
+    },
+    {
+      "path": "profiles/mo8/charset.lua",
+      "size": 1352,
+      "sha256": "7a6dfce741aab604de8e5f02b885600fc1f3ec6876fc8aa1fd630196781261b5"
+    },
+    {
+      "path": "profiles/mo8/dialogue.lua",
+      "size": 5048,
+      "sha256": "1ce543d0c9a6f4ad29b84afbe125e80980919ef993d7ac81249aaa8b93053e44"
+    },
+    {
+      "path": "profiles/mo8/font.lua",
+      "size": 3614,
+      "sha256": "0f9ff1a4b983301589ad2e110c61f2292de0e75fde9f83121f326b2ace09b0e1"
+    },
+    {
+      "path": "profiles/mo8/game.lua",
+      "size": 2662,
+      "sha256": "fcd3fabacf7ec493c624e030fcc8bf4f2e2c5b628793e00994aaa49889cc1448"
+    },
+    {
+      "path": "profiles/mo8/hud/backlogmenu.lua",
+      "size": 1189,
+      "sha256": "7a0cbe5c599aacbcda9a1fa72e2fc249c5d7276695eddc416d2c730fbc591375"
+    },
+    {
+      "path": "profiles/mo8/hud/datedisplay.lua",
+      "size": 4186,
+      "sha256": "c13bc2a0895fcf4d5b969b3908bc2a307b5a1b4f6d2e4d407fcf488f09a290a8"
+    },
+    {
+      "path": "profiles/mo8/hud/loadingdisplay.lua",
+      "size": 1795,
+      "sha256": "7a4b11c95c02058925b959e6bbb27e1e47f05823df4e55ba3bc8f152ea7194de"
+    },
+    {
+      "path": "profiles/mo8/hud/optionsmenu.lua",
+      "size": 15409,
+      "sha256": "9c5b00bc66ae262885dccc0920f9f31b77b6eb98d9452c085a83ae5466524d7b"
+    },
+    {
+      "path": "profiles/mo8/hud/saveicon.lua",
+      "size": 692,
+      "sha256": "a43755fdca6521061df090624a45d9d595210fbe34e4726798efef5cd09040c9"
+    },
+    {
+      "path": "profiles/mo8/hud/savemenu.lua",
+      "size": 1949,
+      "sha256": "f1c1d24f37d48ced4bdf54239044b89bf51dd8ec5652a8982f9865eddb9dd3ff"
+    },
+    {
+      "path": "profiles/mo8/hud/selectiondisplay.lua",
+      "size": 2488,
+      "sha256": "b83e5ed03c9a735a17b4be1dc3600544963969bf7729b04bd72b3d27d92490d9"
+    },
+    {
+      "path": "profiles/mo8/hud/sysmesboxdisplay.lua",
+      "size": 1804,
+      "sha256": "044baf2ba4bd552eaa2dbc58a17304466368feb1a665aaf1515231a4e0e6b5a3"
+    },
+    {
+      "path": "profiles/mo8/hud/systemmenu.lua",
+      "size": 7702,
+      "sha256": "42fea25b5bf61d8cbec00a1f8906666501bb01fbc63480fae0c5ff4ae3a26908"
+    },
+    {
+      "path": "profiles/mo8/hud/tipsmenu.lua",
+      "size": 50,
+      "sha256": "a1904c9c3c11e5d2ca3d1d059feeb887bb9132821e0933e2d6aa7ce841b13c1a"
+    },
+    {
+      "path": "profiles/mo8/hud/tipsnotification.lua",
+      "size": 67,
+      "sha256": "33a78081680c3a2ba80efd7b3cc41c677166aa6f4ad54b6b8cf94b9356e366e2"
+    },
+    {
+      "path": "profiles/mo8/hud/titlemenu.lua",
+      "size": 2171,
+      "sha256": "abef231a5a3fc8f285e821fe9925f4fa2439932625d895fa3c3c745969acc4a4"
+    },
+    {
+      "path": "profiles/mo8/savedata.lua",
+      "size": 123,
+      "sha256": "eb1eef5e37ef7e77aaeb3dad5f91a827ada03849b6df5404b3e42ff8a2678869"
+    },
+    {
+      "path": "profiles/mo8/scriptvars.lua",
+      "size": 474,
+      "sha256": "177695565c0eaa56eda4660ad3fef447bf637473de31fd9d70d127d186e1d83e"
+    },
+    {
+      "path": "profiles/mo8/sprites.lua",
+      "size": 1312,
+      "sha256": "82a2c4701bf84a71b739ec2b684b184853ba6b6a1c433089c11fe917436b94d4"
+    },
+    {
+      "path": "profiles/mo8/tipssystem.lua",
+      "size": 54,
+      "sha256": "aceb5023a3d46a0da944da44a1b834a9fad15cb6e3ea8180ef62a5ab3daa5709"
+    },
+    {
+      "path": "profiles/mo8/vfs.lua",
+      "size": 833,
+      "sha256": "5cf90f1fbb8102a9e06e4a95a8384e838267308915e0122df68accec33edbfc8"
+    },
+    {
+      "path": "profiles/modelviewer-dash/game.lua",
+      "size": 208,
+      "sha256": "fb3f5dd90d2a6401b14bddcdfee06e0d9efae23fc076d357942ae6d664db5e28"
+    },
+    {
+      "path": "profiles/modelviewer/game.lua",
+      "size": 208,
+      "sha256": "da75b24db946d734475daf1043186f6e069ecc009c2e10e4e5d051b738026685"
+    },
+    {
+      "path": "profiles/rne/charset.lua",
+      "size": 1351,
+      "sha256": "78de4aa07a2ad0f4fe03675f2f0f9a877d6e529a83f5e219f13b955c7360f13c"
+    },
+    {
+      "path": "profiles/rne/dialogue.lua",
+      "size": 3799,
+      "sha256": "ed5f0b60eb0f5b73db591a54bb89ad78d85c32bd4eb3518c7628f123bf305546"
+    },
+    {
+      "path": "profiles/rne/font.lua",
+      "size": 3635,
+      "sha256": "0fdd8cc9cd49e09210104190b773c7c60a3432a717ef4101524ca4f982537c3b"
+    },
+    {
+      "path": "profiles/rne/game.lua",
+      "size": 2502,
+      "sha256": "15fab0939a391dab3c018ade353faa25f471582e1dfc5b1d5dec8d25d2e9afb6"
+    },
+    {
+      "path": "profiles/rne/gamespecific.lua",
+      "size": 53,
+      "sha256": "8823d47f3ece6aacf3aee31caf9af9c579e0841c271c5c1aae64ea00028666e2"
+    },
+    {
+      "path": "profiles/rne/hud/backlogmenu.lua",
+      "size": 1187,
+      "sha256": "b0b1ec3ae91a79509b9493a32def3f9e8e705824a8e98fe5118287d3e123f258"
+    },
+    {
+      "path": "profiles/rne/hud/datedisplay.lua",
+      "size": 4140,
+      "sha256": "dc95848530d327eb89b84110b8bf5c373ccaa6db63edbcbf296598a2ecc526de"
+    },
+    {
+      "path": "profiles/rne/hud/loadingdisplay.lua",
+      "size": 1795,
+      "sha256": "7a4b11c95c02058925b959e6bbb27e1e47f05823df4e55ba3bc8f152ea7194de"
+    },
+    {
+      "path": "profiles/rne/hud/saveicon.lua",
+      "size": 684,
+      "sha256": "8f757d116e9c00752566ef5512efeb71ec17149044917823992dcb9deba364ec"
+    },
+    {
+      "path": "profiles/rne/hud/selectiondisplay.lua",
+      "size": 2434,
+      "sha256": "e4650ac43a92d6bb383659bd300562de3c643579b785b2adc77c723db63f0931"
+    },
+    {
+      "path": "profiles/rne/hud/sysmesboxdisplay.lua",
+      "size": 3972,
+      "sha256": "a2d9935b1de2c79219c09f2de17162eb685877570956916ecc5d571518647ca5"
+    },
+    {
+      "path": "profiles/rne/hud/systemmenu.lua",
+      "size": 3403,
+      "sha256": "f8fa1a6fbd12d419cc8bf81518f1775e7ac065281c02722de4d7a264b325224c"
+    },
+    {
+      "path": "profiles/rne/hud/tipsmenu.lua",
+      "size": 50,
+      "sha256": "a1904c9c3c11e5d2ca3d1d059feeb887bb9132821e0933e2d6aa7ce841b13c1a"
+    },
+    {
+      "path": "profiles/rne/hud/tipsnotification.lua",
+      "size": 67,
+      "sha256": "33a78081680c3a2ba80efd7b3cc41c677166aa6f4ad54b6b8cf94b9356e366e2"
+    },
+    {
+      "path": "profiles/rne/hud/titlemenu.lua",
+      "size": 2156,
+      "sha256": "590622f787eae6840cd6b657ab2522502ca6bb7bd3f9c476c6b56a0692d2d6e3"
+    },
+    {
+      "path": "profiles/rne/savedata.lua",
+      "size": 123,
+      "sha256": "606de44a9ac4ac39742e772d2c595c4bbd81e1f11f19699d4a3cd5ed44bd90f4"
+    },
+    {
+      "path": "profiles/rne/scene3d/characters.lua",
+      "size": 14885,
+      "sha256": "1479a1817ba14e155143c4d58fff3b532928a4edfe49e1997b4dd4757da99060"
+    },
+    {
+      "path": "profiles/rne/scene3d/scene3d.lua",
+      "size": 596,
+      "sha256": "37e6288e0518a7cc161f56310bd06d652dccd4c7244e798d60244d7e5d8e6a3c"
+    },
+    {
+      "path": "profiles/rne/sprites.lua",
+      "size": 804,
+      "sha256": "b381ccb30118aee0478a8a67feacf69625499df55405b632a948becb1666128b"
+    },
+    {
+      "path": "profiles/rne/tipssystem.lua",
+      "size": 54,
+      "sha256": "aceb5023a3d46a0da944da44a1b834a9fad15cb6e3ea8180ef62a5ab3daa5709"
+    },
+    {
+      "path": "profiles/rne/vfs.lua",
+      "size": 687,
+      "sha256": "763db10e417f37175dce1cab431dbbed179f3abadb8ddabc9cb71f41c9ba6081"
+    },
+    {
+      "path": "profiles/sgps3/charset.lua",
+      "size": 1388,
+      "sha256": "49a9579ecdbf8d327c8fbd6951fa70a44b00123211a2d2608be71884af0b4e97"
+    },
+    {
+      "path": "profiles/sgps3/dialogue.lua",
+      "size": 3311,
+      "sha256": "28317e999100b5ad3fc2064821a4d5a4b9d3d0dc945082168e2cb0811eaf09bb"
+    },
+    {
+      "path": "profiles/sgps3/font.lua",
+      "size": 2940,
+      "sha256": "87f66d49e6caaeb07fb6437c803fa04bbce35faf341043f519951ebbf22df6aa"
+    },
+    {
+      "path": "profiles/sgps3/game.lua",
+      "size": 2394,
+      "sha256": "7572a5647f5d4d851bab9d6d5141e927e9ae3521d28176702b2cc89223b2fe95"
+    },
+    {
+      "path": "profiles/sgps3/hud/backlogmenu.lua",
+      "size": 1187,
+      "sha256": "b0b1ec3ae91a79509b9493a32def3f9e8e705824a8e98fe5118287d3e123f258"
+    },
+    {
+      "path": "profiles/sgps3/hud/datedisplay.lua",
+      "size": 4140,
+      "sha256": "dc95848530d327eb89b84110b8bf5c373ccaa6db63edbcbf296598a2ecc526de"
+    },
+    {
+      "path": "profiles/sgps3/hud/loadingdisplay.lua",
+      "size": 1795,
+      "sha256": "7a4b11c95c02058925b959e6bbb27e1e47f05823df4e55ba3bc8f152ea7194de"
+    },
+    {
+      "path": "profiles/sgps3/hud/saveicon.lua",
+      "size": 684,
+      "sha256": "8f757d116e9c00752566ef5512efeb71ec17149044917823992dcb9deba364ec"
+    },
+    {
+      "path": "profiles/sgps3/hud/selectiondisplay.lua",
+      "size": 2434,
+      "sha256": "e4650ac43a92d6bb383659bd300562de3c643579b785b2adc77c723db63f0931"
+    },
+    {
+      "path": "profiles/sgps3/hud/sysmesboxdisplay.lua",
+      "size": 1803,
+      "sha256": "fee52c888e18e0ad459b131a34840ec49df0ce758727d9a4cdf62236367757cc"
+    },
+    {
+      "path": "profiles/sgps3/hud/systemmenu.lua",
+      "size": 3403,
+      "sha256": "f8fa1a6fbd12d419cc8bf81518f1775e7ac065281c02722de4d7a264b325224c"
+    },
+    {
+      "path": "profiles/sgps3/hud/tipsmenu.lua",
+      "size": 50,
+      "sha256": "a1904c9c3c11e5d2ca3d1d059feeb887bb9132821e0933e2d6aa7ce841b13c1a"
+    },
+    {
+      "path": "profiles/sgps3/hud/tipsnotification.lua",
+      "size": 67,
+      "sha256": "33a78081680c3a2ba80efd7b3cc41c677166aa6f4ad54b6b8cf94b9356e366e2"
+    },
+    {
+      "path": "profiles/sgps3/hud/titlemenu.lua",
+      "size": 9758,
+      "sha256": "0450d8b668be98e254a02bd1684d7a7a93fed165f8da674a4495cf4ab3b4efaa"
+    },
+    {
+      "path": "profiles/sgps3/savedata.lua",
+      "size": 125,
+      "sha256": "f9b76e75b6392d90543a37a6d56f1860bf678f3be70be8ca8e703edd28d79e05"
+    },
+    {
+      "path": "profiles/sgps3/scriptvars.lua",
+      "size": 2272,
+      "sha256": "377e92c75f3ba2366d983b6c09f91ce348ac479c644bdcbff0fa3c2725144c3a"
+    },
+    {
+      "path": "profiles/sgps3/sprites.lua",
+      "size": 929,
+      "sha256": "5f1689f4f8967d084dd3ccf40ea79ff375a450b498b7ba3208aaa039e6039ff1"
+    },
+    {
+      "path": "profiles/sgps3/tipssystem.lua",
+      "size": 54,
+      "sha256": "aceb5023a3d46a0da944da44a1b834a9fad15cb6e3ea8180ef62a5ab3daa5709"
+    },
+    {
+      "path": "profiles/sgps3/vfs.lua",
+      "size": 708,
+      "sha256": "9f927ee9f7394615e12d44f0df9e1e291120c5ece25982165ebaca83a226bfc2"
+    },
+    {
+      "path": "resources/cc/.gitkeep",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "resources/cc/font-lb/foreground.png",
+      "size": 2534315,
+      "sha256": "25c0b0c118c9c99c97346ec917dc77928c40238ee24a49220d73ec1285c415e2"
+    },
+    {
+      "path": "resources/cc/font-lb/outline.png",
+      "size": 8929774,
+      "sha256": "54f7c098d368b5dccf8f690f265926f72d0d87f32512269f3110765f9f20f352"
+    },
+    {
+      "path": "resources/cc/font-lb/widths.bin",
+      "size": 8000,
+      "sha256": "c5ead75ebe95ecd17ca3661185c982eb081109726196f00dad517512e108b54d"
+    },
+    {
+      "path": "resources/cclcc-switch/icondata/icon.icns",
+      "size": 1882000,
+      "sha256": "1bc1a2c00c8a48599c9174110b602fe341e66c08acc511e49ae7663c6e9484c1"
+    },
+    {
+      "path": "resources/cclcc-switch/icondata/icon.ico",
+      "size": 130087,
+      "sha256": "d2e6ec559fac318068efe8bc7392ab7a88a7df2bd2314024c32f58153cdb7b21"
+    },
+    {
+      "path": "resources/cclcc-switch/icondata/icon.png",
+      "size": 152632,
+      "sha256": "f87943e64c5ebcfa5e7fc0d1d10bcef09d069de61f79cc8e09e39b436b03dc55"
+    },
+    {
+      "path": "resources/cclcc/font-lb-italic/foreground.png",
+      "size": 5868973,
+      "sha256": "13343d4fd370f61320f1adcaeb8fe89293448b76f6e77c25490159b0379cfa3c"
+    },
+    {
+      "path": "resources/cclcc/font-lb-italic/outline.png",
+      "size": 11060212,
+      "sha256": "bc60b22d4575a9dacba9871fc7a9de2bd2a4586b0770c1fcc60adeede20a60c6"
+    },
+    {
+      "path": "resources/cclcc/font-lb-italic/widths.bin",
+      "size": 8000,
+      "sha256": "96461d5019674da2ccfc1a452ff6765b221ac485d85356f9d86e0b4e67780a65"
+    },
+    {
+      "path": "resources/cclcc/icondata/cursor_arrow.png",
+      "size": 4227,
+      "sha256": "032e1a32d537e597c4ccc3492904699243a98657c5412e5f28a610ff3006ae9b"
+    },
+    {
+      "path": "resources/cclcc/icondata/cursor_pointer.png",
+      "size": 4218,
+      "sha256": "4b188f289033fd73ff35adb813d3aa49bd5b019364f978b7cd7356ad56300f88"
+    },
+    {
+      "path": "resources/cclcc/icondata/icon.icns",
+      "size": 1882000,
+      "sha256": "1bc1a2c00c8a48599c9174110b602fe341e66c08acc511e49ae7663c6e9484c1"
+    },
+    {
+      "path": "resources/cclcc/icondata/icon.ico",
+      "size": 130087,
+      "sha256": "d2e6ec559fac318068efe8bc7392ab7a88a7df2bd2314024c32f58153cdb7b21"
+    },
+    {
+      "path": "resources/cclcc/icondata/icon.png",
+      "size": 152632,
+      "sha256": "f87943e64c5ebcfa5e7fc0d1d10bcef09d069de61f79cc8e09e39b436b03dc55"
+    },
+    {
+      "path": "resources/chlcc/.gitkeep",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "resources/chlcc/font-lb/foreground.png",
+      "size": 1926359,
+      "sha256": "34aec21e5ddd629f345b858518e95e8fdba961cf0034b300075426c42271ee62"
+    },
+    {
+      "path": "resources/chlcc/font-lb/outline.png",
+      "size": 3943869,
+      "sha256": "69b0835a6f56f8ccede482df67fb3405d4a0f6e3500a34d1a6e0a97ee26976fc"
+    },
+    {
+      "path": "resources/chlcc/font-lb/widths.bin",
+      "size": 2496,
+      "sha256": "e7827a83e80fe19f67dc970179374c0d72311be5b58bda1cf04549722e7f2774"
+    },
+    {
+      "path": "resources/chlcc/icondata/cursor_arrow.png",
+      "size": 4278,
+      "sha256": "f7121590e46b0a43b2853dba9e2836c02eb4f74d204cda27ce74f8cb36790460"
+    },
+    {
+      "path": "resources/chlcc/icondata/cursor_pointer.png",
+      "size": 1542,
+      "sha256": "ecb38cef8273acced05cf29d60e9e39a992389ed07e638a4934c4a4b7d26eb03"
+    },
+    {
+      "path": "resources/chlcc/icondata/icon.icns",
+      "size": 2067793,
+      "sha256": "c7389a3d3ed231e4144fe530df6344c6d276f8302bbf5490f31e406e24fcddf0"
+    },
+    {
+      "path": "resources/chlcc/icondata/icon.ico",
+      "size": 139572,
+      "sha256": "cb7821c2829177cc9d4c49a04445a0dd6107c7f34f46f618bb3aaec1b2cbe00a"
+    },
+    {
+      "path": "resources/chlcc/icondata/icon.png",
+      "size": 150742,
+      "sha256": "6e90b55cf10ac6cc520f2fb78e9b624ccf5a86543eee1b3bb5399bdc140176c6"
+    },
+    {
+      "path": "resources/common/achievementnotification.png",
+      "size": 5522,
+      "sha256": "d3d21f9fd95a6a635e24cb6ef5c0103830167e17778980edf94ecb31918f2138"
+    },
+    {
+      "path": "resources/common/font/NotoSansCJKjp-Bold.otf",
+      "size": 17032620,
+      "sha256": "e53dcb0dcb2922e45d01aae1ebd2f382bb81d4229b18b6b883bd170678af1f76"
+    },
+    {
+      "path": "resources/common/font/NotoSansCJKjp-Regular.otf",
+      "size": 16467736,
+      "sha256": "68a3fc98800b2a27b371f2fb79991daf3633bd89309d4ffaa6946fd587f375b5"
+    },
+    {
+      "path": "resources/common/icons/icon.icns",
+      "size": 157616,
+      "sha256": "029d027edad229f9dfcea720c47f995f7823a13b1448bccbd66e644306a0c97d"
+    },
+    {
+      "path": "resources/common/icons/icon.ico",
+      "size": 410598,
+      "sha256": "847b142ab81f98cc9ae66064db9766539e7eea1b1d18e818e90b9de05ea0990a"
+    },
+    {
+      "path": "resources/common/icons/icon.jpg",
+      "size": 11625,
+      "sha256": "abff0e93a5a70ee9518780e569e7305c6b59760134cd5576a7183027dfb0c5f1"
+    },
+    {
+      "path": "resources/common/icons/icon.png",
+      "size": 10247,
+      "sha256": "daf89b4e0bdd51e02c47aaa12a320416fa2daad8a63a1ed21b1a630915d43306"
+    },
+    {
+      "path": "resources/common/icons/icon.svg",
+      "size": 751,
+      "sha256": "4e53840decc6e34a90af0c99c11fcaf5c43e25c947ba7a7ca703686fb4f500cf"
+    },
+    {
+      "path": "resources/rne/.gitkeep",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "resources/rne/font-lb/foreground.png",
+      "size": 1618933,
+      "sha256": "ff460c0ff61beb315a586dfb7248fffec0ad6280e6f662eb691d1049f8b391f3"
+    },
+    {
+      "path": "resources/rne/font-lb/outline.png",
+      "size": 4549721,
+      "sha256": "a1b76bed3332684a4f42a905b65261fb1c9357643d42b98b6727476d8b854e7c"
+    },
+    {
+      "path": "resources/rne/font-lb/widths.bin",
+      "size": 3200,
+      "sha256": "e368b7e49339a5382e173da735a1dadf10df7cc44281c088d518a424709cbf81"
+    },
+    {
+      "path": "resources/sg0/.gitkeep",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "resources/sg0/font-lb/foreground.png",
+      "size": 2533181,
+      "sha256": "bac12a05133d53b2f2cf507ef55f607fe506e5b9da1640f9b650b34204d4d48c"
+    },
+    {
+      "path": "resources/sg0/font-lb/outline.png",
+      "size": 8925972,
+      "sha256": "289ad28b637841accda3b434e1f8749ee0343e6de46220285ef2664890aaef7b"
+    },
+    {
+      "path": "resources/sg0/font-lb/widths.bin",
+      "size": 8000,
+      "sha256": "1adf14880aa7a019d5755ed2abdad32df0a185e3857fddaea96cd9faad55dacb"
+    },
+    {
+      "path": "shaders/dx9/CCMessageBoxSprite_frag.hlsl",
+      "size": 728,
+      "sha256": "6fd1d134758deb05e9aa7974db19be8efd4526fd3c3951acc2bd6facd6cb6465"
+    },
+    {
+      "path": "shaders/dx9/CCMessageBoxSprite_vert.hlsl",
+      "size": 471,
+      "sha256": "0b18385323258366000780f89320795d428bcd6247fc05c6f5e5c62735c75093"
+    },
+    {
+      "path": "shaders/dx9/CHLCCMenuBackground_frag.hlsl",
+      "size": 724,
+      "sha256": "7caae5cb9e797c1e7abb7737dbe8a51dbd8af87b54067e96d035d2692b30d54c"
+    },
+    {
+      "path": "shaders/dx9/CHLCCMenuBackground_vert.hlsl",
+      "size": 471,
+      "sha256": "0b18385323258366000780f89320795d428bcd6247fc05c6f5e5c62735c75093"
+    },
+    {
+      "path": "shaders/dx9/MaskedSpriteNoAlpha_frag.hlsl",
+      "size": 795,
+      "sha256": "2ba4751a74953fdec1029c981ed3b8c1257443ba8a3585954974f8d9a0a8de05"
+    },
+    {
+      "path": "shaders/dx9/MaskedSpriteNoAlpha_vert.hlsl",
+      "size": 471,
+      "sha256": "0b18385323258366000780f89320795d428bcd6247fc05c6f5e5c62735c75093"
+    },
+    {
+      "path": "shaders/dx9/MaskedSprite_frag.hlsl",
+      "size": 681,
+      "sha256": "9df2995e028a98699fea5bb09ae746953328db5d8f69fa8bda1d195cfa24d3f1"
+    },
+    {
+      "path": "shaders/dx9/MaskedSprite_vert.hlsl",
+      "size": 471,
+      "sha256": "0b18385323258366000780f89320795d428bcd6247fc05c6f5e5c62735c75093"
+    },
+    {
+      "path": "shaders/dx9/NV12Frame_frag.hlsl",
+      "size": 917,
+      "sha256": "b889b7c5d6ffeaf77fb7e289cc19d82a9c7761d39468248fce0b813d40f964b1"
+    },
+    {
+      "path": "shaders/dx9/NV12Frame_vert.hlsl",
+      "size": 471,
+      "sha256": "0b18385323258366000780f89320795d428bcd6247fc05c6f5e5c62735c75093"
+    },
+    {
+      "path": "shaders/dx9/Renderable3D_Background_frag.hlsl",
+      "size": 157,
+      "sha256": "15d35fc3c6a84473a2542c5ea2c8109fd2ee05ecfc336f8e0c5ff4006ef49ff6"
+    },
+    {
+      "path": "shaders/dx9/Renderable3D_Background_vert.hlsl",
+      "size": 342,
+      "sha256": "31789306cad39a39b6634834b17bd4b2e1f2da1d90830ed164587938dab3aba0"
+    },
+    {
+      "path": "shaders/dx9/Renderable3D_Character_frag.hlsl",
+      "size": 3360,
+      "sha256": "3c05ad099a3af7ae7ee92a392d9240a666383fa161f5362fef729f0e046b66f9"
+    },
+    {
+      "path": "shaders/dx9/Renderable3D_Character_vert.hlsl",
+      "size": 1519,
+      "sha256": "7395608a7502f6490722448d4e59c1d9deb46aabac6c63ff48a92664beb3382f"
+    },
+    {
+      "path": "shaders/dx9/Renderable3D_Eye_frag.hlsl",
+      "size": 1584,
+      "sha256": "5b24e8195d10b554c6aca7349ad3133b35d347d4bf03cc7df3f664d4df75c8b8"
+    },
+    {
+      "path": "shaders/dx9/Renderable3D_Eye_vert.hlsl",
+      "size": 1294,
+      "sha256": "3aac58bc3133905a61beb163e18633657166f6c7a06d14172a9eb7f117113c84"
+    },
+    {
+      "path": "shaders/dx9/Renderable3D_Outline_frag.hlsl",
+      "size": 1299,
+      "sha256": "d3649c8de3b9e013c200ded526db8c10a82e7595ecf67ee390826e84722ec8a3"
+    },
+    {
+      "path": "shaders/dx9/Renderable3D_Outline_vert.hlsl",
+      "size": 1872,
+      "sha256": "af883c4b6ed78a52bf231639ee41e31f630539aaec2781ef2cc6fc41aea1cd37"
+    },
+    {
+      "path": "shaders/dx9/Sprite_frag.hlsl",
+      "size": 252,
+      "sha256": "bff18b117cb10f8a5302d6d01332b9039f9253165b9fc0799a01074fdb66d3b7"
+    },
+    {
+      "path": "shaders/dx9/Sprite_inverted_frag.hlsl",
+      "size": 357,
+      "sha256": "22074295f49b38ad897e5323f3d142bfb1d53d5bef82bc4f2f811197b21897ae"
+    },
+    {
+      "path": "shaders/dx9/Sprite_inverted_vert.hlsl",
+      "size": 471,
+      "sha256": "0b18385323258366000780f89320795d428bcd6247fc05c6f5e5c62735c75093"
+    },
+    {
+      "path": "shaders/dx9/Sprite_vert.hlsl",
+      "size": 471,
+      "sha256": "0b18385323258366000780f89320795d428bcd6247fc05c6f5e5c62735c75093"
+    },
+    {
+      "path": "shaders/dx9/YUVFrame_frag.hlsl",
+      "size": 973,
+      "sha256": "3713ec07f256d17364bf7568353dfd5698e51e1c4c9063aa99be14bc68e36376"
+    },
+    {
+      "path": "shaders/dx9/YUVFrame_vert.hlsl",
+      "size": 471,
+      "sha256": "0b18385323258366000780f89320795d428bcd6247fc05c6f5e5c62735c75093"
+    },
+    {
+      "path": "shaders/opengl/AdditiveMaskedSprite_frag.glsl",
+      "size": 387,
+      "sha256": "82191aa843334569cbd7e6fea7fefea527230147411846d0a99d67518856a566"
+    },
+    {
+      "path": "shaders/opengl/AdditiveMaskedSprite_vert.glsl",
+      "size": 498,
+      "sha256": "215a3dba2396762347b0f09a903dbf361d5d34681b3a82beff21880ad7d0b47d"
+    },
+    {
+      "path": "shaders/opengl/CCMessageBoxSprite_frag.glsl",
+      "size": 557,
+      "sha256": "f0aed6ef20bb1bb7008db4ee275d36140764b40bf0b069bc5eed88964dc38920"
+    },
+    {
+      "path": "shaders/opengl/CCMessageBoxSprite_vert.glsl",
+      "size": 333,
+      "sha256": "f207ad650b5f27368baac193d444a060bc9953d44b4ab9b142997d787db9c401"
+    },
+    {
+      "path": "shaders/opengl/CHLCCMenuBackground_frag.glsl",
+      "size": 607,
+      "sha256": "6e2c3997f3ee6e514c6f953aef5bdc52c783efe479bb6980ac0658eb83ba59c6"
+    },
+    {
+      "path": "shaders/opengl/CHLCCMenuBackground_vert.glsl",
+      "size": 277,
+      "sha256": "9738b7b418656c26b03f1ed94c2d1c2e3f95578becc5863f92f286f9124d6e66"
+    },
+    {
+      "path": "shaders/opengl/ColorBurnMaskedSprite_frag.glsl",
+      "size": 642,
+      "sha256": "ccbab21e9a2ad262416a1f4cc16ccbc0753249a586ce0a1a72956e6c3f149d4a"
+    },
+    {
+      "path": "shaders/opengl/ColorBurnMaskedSprite_vert.glsl",
+      "size": 498,
+      "sha256": "215a3dba2396762347b0f09a903dbf361d5d34681b3a82beff21880ad7d0b47d"
+    },
+    {
+      "path": "shaders/opengl/ColorDodgeMaskedSprite_frag.glsl",
+      "size": 513,
+      "sha256": "f3ea9ba77345b12135f07de921807fdec2540c3da36c30abd3352e3c825b3865"
+    },
+    {
+      "path": "shaders/opengl/ColorDodgeMaskedSprite_vert.glsl",
+      "size": 498,
+      "sha256": "215a3dba2396762347b0f09a903dbf361d5d34681b3a82beff21880ad7d0b47d"
+    },
+    {
+      "path": "shaders/opengl/ColorMaskedSprite_frag.glsl",
+      "size": 370,
+      "sha256": "37498c00a5639fda1bb52d7c577dde8d43010f65b1170faed7f8f391015db3de"
+    },
+    {
+      "path": "shaders/opengl/ColorMaskedSprite_vert.glsl",
+      "size": 498,
+      "sha256": "215a3dba2396762347b0f09a903dbf361d5d34681b3a82beff21880ad7d0b47d"
+    },
+    {
+      "path": "shaders/opengl/EdgeDetectedSingleSheetFont_frag.glsl",
+      "size": 1112,
+      "sha256": "36336340edab82b0535757b0995fb5f992b6bbbc728a2c567686fd02cb439293"
+    },
+    {
+      "path": "shaders/opengl/EdgeDetectedSingleSheetFont_vert.glsl",
+      "size": 468,
+      "sha256": "8eb0610563b0879593eb9317ff7e3878cfc57aad1ac105512d532eea76d1bbec"
+    },
+    {
+      "path": "shaders/opengl/GaussianBlur_frag.glsl",
+      "size": 1772,
+      "sha256": "db7507f7eac2e6e98e621978e2a900a89596b1987c44417863b6ce671ce8de2a"
+    },
+    {
+      "path": "shaders/opengl/GaussianBlur_vert.glsl",
+      "size": 306,
+      "sha256": "4e1be4999ad4bbb1923a5a8845fc46180f303015b86645c80bd163872d3788f0"
+    },
+    {
+      "path": "shaders/opengl/HardLightMaskedSprite_frag.glsl",
+      "size": 711,
+      "sha256": "a58384832caaea3ad88f34d37e1ed66a029fdc80704ffec2db48995fb7eb78a6"
+    },
+    {
+      "path": "shaders/opengl/HardLightMaskedSprite_vert.glsl",
+      "size": 498,
+      "sha256": "215a3dba2396762347b0f09a903dbf361d5d34681b3a82beff21880ad7d0b47d"
+    },
+    {
+      "path": "shaders/opengl/LinearBurnMaskedSprite_frag.glsl",
+      "size": 399,
+      "sha256": "5823494b90065d2cc25976d266a76ddaee260b966549fb0747cf45cd8bd16bb5"
+    },
+    {
+      "path": "shaders/opengl/LinearBurnMaskedSprite_vert.glsl",
+      "size": 498,
+      "sha256": "215a3dba2396762347b0f09a903dbf361d5d34681b3a82beff21880ad7d0b47d"
+    },
+    {
+      "path": "shaders/opengl/MaskedSpriteBinary_frag.glsl",
+      "size": 435,
+      "sha256": "73a8c248cae09ec4b1e994a14a129a64c9e11f41f140583845c1efe40dfd3a54"
+    },
+    {
+      "path": "shaders/opengl/MaskedSpriteBinary_vert.glsl",
+      "size": 592,
+      "sha256": "3b0c3b9cdd91283c291790791ce29138e27a0aebe7b83eebf0c2109ee29ddc0f"
+    },
+    {
+      "path": "shaders/opengl/MaskedSpriteNoAlpha_frag.glsl",
+      "size": 637,
+      "sha256": "52f0b28c7e51c059febce8d15cc6e4cab0b5b5b079af2b624cfb9404b523573a"
+    },
+    {
+      "path": "shaders/opengl/MaskedSpriteNoAlpha_vert.glsl",
+      "size": 467,
+      "sha256": "57109eb95cffa2b44f1818ee782fbd38c912f8ccf5e260ad1c8c78ad3998f622"
+    },
+    {
+      "path": "shaders/opengl/MaskedSprite_frag.glsl",
+      "size": 489,
+      "sha256": "3ee9a9c00f7c7b34534c2a3c8e7c88aa159f101cb02c61c550ca0f8c2eda5074"
+    },
+    {
+      "path": "shaders/opengl/MaskedSprite_vert.glsl",
+      "size": 467,
+      "sha256": "57109eb95cffa2b44f1818ee782fbd38c912f8ccf5e260ad1c8c78ad3998f622"
+    },
+    {
+      "path": "shaders/opengl/Mosaic_frag.glsl",
+      "size": 462,
+      "sha256": "ac5d4874d85b7244e124684014f9bdf9569a6caae061342b367c1cd09fa2f447"
+    },
+    {
+      "path": "shaders/opengl/Mosaic_vert.glsl",
+      "size": 313,
+      "sha256": "410b6358f3c783f5db2447429b68faabfea753c001292d98477a86c2113133e9"
+    },
+    {
+      "path": "shaders/opengl/NV12Frame_frag.glsl",
+      "size": 742,
+      "sha256": "eff1285deb32b8d4b604451de38e7d342a7f9912c6f05909377783538f8c0894"
+    },
+    {
+      "path": "shaders/opengl/NV12Frame_vert.glsl",
+      "size": 259,
+      "sha256": "458316705062c4178aa2c562b332cbef9cdfb40bb3cf0704315292230d47c718"
+    },
+    {
+      "path": "shaders/opengl/OverlayMaskedSprite_frag.glsl",
+      "size": 755,
+      "sha256": "ab78e630a3af5089d5aca37e6fdf0ea46139dc0cf2cb15dd2ee01ba32a63b190"
+    },
+    {
+      "path": "shaders/opengl/OverlayMaskedSprite_vert.glsl",
+      "size": 498,
+      "sha256": "215a3dba2396762347b0f09a903dbf361d5d34681b3a82beff21880ad7d0b47d"
+    },
+    {
+      "path": "shaders/opengl/Renderable3D_Background_frag.glsl",
+      "size": 105,
+      "sha256": "ff4a8577f4e7a43c4254d02f679fe3e33a37711778927ff183fd076145f5acb2"
+    },
+    {
+      "path": "shaders/opengl/Renderable3D_Background_vert.glsl",
+      "size": 175,
+      "sha256": "ac376441c080ebcb4b4a1bc2a83ebb39f1f36a6a92b8605d6deaac6da6e93090"
+    },
+    {
+      "path": "shaders/opengl/Renderable3D_Character_frag.glsl",
+      "size": 3189,
+      "sha256": "36457ef356ad64e1e9c815f97eb218eeee42d122a6a74d342425696cf6353d67"
+    },
+    {
+      "path": "shaders/opengl/Renderable3D_Character_vert.glsl",
+      "size": 1441,
+      "sha256": "1e6c667173442d2bccb531950a304e40e524e8b6920895013ec8ffa210f54f04"
+    },
+    {
+      "path": "shaders/opengl/Renderable3D_Eye_frag.glsl",
+      "size": 1557,
+      "sha256": "0b25a1e777c6d829b9e694e858d975e58bed1a1b94be7424487aeb8c20ad332c"
+    },
+    {
+      "path": "shaders/opengl/Renderable3D_Eye_vert.glsl",
+      "size": 1252,
+      "sha256": "c10da0d657c3eaa00afc882228dca15eda12ca24ff8b803f521315d7fc94aa8f"
+    },
+    {
+      "path": "shaders/opengl/Renderable3D_Outline_frag.glsl",
+      "size": 1306,
+      "sha256": "97931887a6033aa48ab07809a657ea26aa4ff85a2975988c5a59a767e6b590cf"
+    },
+    {
+      "path": "shaders/opengl/Renderable3D_Outline_vert.glsl",
+      "size": 1729,
+      "sha256": "52e8fe8de738dfaa25a0096fd87d1cdfd1b1fd5e602056174a3cc54472191e2a"
+    },
+    {
+      "path": "shaders/opengl/SceneToRT_frag.glsl",
+      "size": 759,
+      "sha256": "5420c0cb073c1d31c50b41667bd6b75b5898a605f4e51d2d0e0d1ca7fb00a69e"
+    },
+    {
+      "path": "shaders/opengl/SceneToRT_vert.glsl",
+      "size": 169,
+      "sha256": "695d4cf072eb60388b38a88e4458acf29fcded06eb6339e2122545ac02c79cc6"
+    },
+    {
+      "path": "shaders/opengl/ScreenMaskedSprite_frag.glsl",
+      "size": 410,
+      "sha256": "aa6f60dbcfa6bce936a834837f1e16e23d85e49e1cc96b43019fced04d5d3bf8"
+    },
+    {
+      "path": "shaders/opengl/ScreenMaskedSprite_vert.glsl",
+      "size": 498,
+      "sha256": "215a3dba2396762347b0f09a903dbf361d5d34681b3a82beff21880ad7d0b47d"
+    },
+    {
+      "path": "shaders/opengl/SoftLightMaskedSprite_frag.glsl",
+      "size": 937,
+      "sha256": "b337a06d21803be33d70ab607828c5bb26f667a8decda57d2edb9f0f4a7f011f"
+    },
+    {
+      "path": "shaders/opengl/SoftLightMaskedSprite_vert.glsl",
+      "size": 498,
+      "sha256": "215a3dba2396762347b0f09a903dbf361d5d34681b3a82beff21880ad7d0b47d"
+    },
+    {
+      "path": "shaders/opengl/SpriteInverted_frag.glsl",
+      "size": 175,
+      "sha256": "685e0f33bdaf29f4d56cfe155b5d49b5cae7776327c489eb20b314c3dd85cde5"
+    },
+    {
+      "path": "shaders/opengl/SpriteInverted_vert.glsl",
+      "size": 306,
+      "sha256": "4e3d9cf7e1f91071d012728e860d1a4e8c733e49e2bbfce3ef7987d55b9b1051"
+    },
+    {
+      "path": "shaders/opengl/Sprite_frag.glsl",
+      "size": 212,
+      "sha256": "b85e1500959f94863b8953b822a15b5d50858e21ea780dca51b39626bf87a393"
+    },
+    {
+      "path": "shaders/opengl/Sprite_vert.glsl",
+      "size": 306,
+      "sha256": "4e3d9cf7e1f91071d012728e860d1a4e8c733e49e2bbfce3ef7987d55b9b1051"
+    },
+    {
+      "path": "shaders/opengl/SubtitleGlyph_frag.glsl",
+      "size": 212,
+      "sha256": "04d49ef654c24236bd5b734773aa246f9449a152b14bee7ab8ac90321a437805"
+    },
+    {
+      "path": "shaders/opengl/SubtitleGlyph_vert.glsl",
+      "size": 306,
+      "sha256": "4e3d9cf7e1f91071d012728e860d1a4e8c733e49e2bbfce3ef7987d55b9b1051"
+    },
+    {
+      "path": "shaders/opengl/YUVFrame_frag.glsl",
+      "size": 747,
+      "sha256": "2b6181a31625842b3ffaa9aef35e21b2635fd0c9895bfdd567f4ffd65002b6bb"
+    },
+    {
+      "path": "shaders/opengl/YUVFrame_vert.glsl",
+      "size": 259,
+      "sha256": "458316705062c4178aa2c562b332cbef9cdfb40bb3cf0704315292230d47c718"
+    },
+    {
+      "path": "shaders/vulkan/CCMessageBoxSprite_frag.glsl",
+      "size": 806,
+      "sha256": "245af3d382469ee5de60bfc1a176aabe1b2ec14794dc18aeb0b0bb5d612e08f4"
+    },
+    {
+      "path": "shaders/vulkan/CCMessageBoxSprite_frag.spv",
+      "size": 2708,
+      "sha256": "9fdeb45bdc5c1da644c6f55a3c69cc8fb2376356332cc98549df996e760cdec2"
+    },
+    {
+      "path": "shaders/vulkan/CCMessageBoxSprite_vert.glsl",
+      "size": 414,
+      "sha256": "556a814c8196c011d232d167bc3a00393ba3efd641ce264c402e67380d5a75c0"
+    },
+    {
+      "path": "shaders/vulkan/CCMessageBoxSprite_vert.spv",
+      "size": 1364,
+      "sha256": "381152e44daadf507a29d9079a39779d004ba2edc42741b0db1aa80ef0dff803"
+    },
+    {
+      "path": "shaders/vulkan/CHLCCMenuBackground_frag.glsl",
+      "size": 766,
+      "sha256": "bdaa4e28bed5eb359f17f3b5e03e490bae1f15a727b77a25533996d431ec657d"
+    },
+    {
+      "path": "shaders/vulkan/CHLCCMenuBackground_frag.spv",
+      "size": 2392,
+      "sha256": "3b1afd69a1aa050f0a60b47de6ab1992b2a4386f3b1bbfc7c5d664d98063aca9"
+    },
+    {
+      "path": "shaders/vulkan/CHLCCMenuBackground_vert.glsl",
+      "size": 333,
+      "sha256": "e64caaaeac2d1268561869f5bb778550b1698c1c9026ffc51e264e1a1787720d"
+    },
+    {
+      "path": "shaders/vulkan/CHLCCMenuBackground_vert.spv",
+      "size": 1216,
+      "sha256": "b28f806791d2b6413a96d2cbad5975e5534ae337d6d4c30e2d31325a07178d48"
+    },
+    {
+      "path": "shaders/vulkan/MaskedSpriteNoAlpha_frag.glsl",
+      "size": 859,
+      "sha256": "6277874319dba44006a209f80505934c14fc9b484d5355d5c128acf4d386f83c"
+    },
+    {
+      "path": "shaders/vulkan/MaskedSpriteNoAlpha_frag.spv",
+      "size": 2708,
+      "sha256": "d3ec924536b9cde9fc1e4f914068df8f50a53f7cfc90246a4617ab62a4c8c474"
+    },
+    {
+      "path": "shaders/vulkan/MaskedSpriteNoAlpha_vert.glsl",
+      "size": 414,
+      "sha256": "556a814c8196c011d232d167bc3a00393ba3efd641ce264c402e67380d5a75c0"
+    },
+    {
+      "path": "shaders/vulkan/MaskedSpriteNoAlpha_vert.spv",
+      "size": 1364,
+      "sha256": "381152e44daadf507a29d9079a39779d004ba2edc42741b0db1aa80ef0dff803"
+    },
+    {
+      "path": "shaders/vulkan/MaskedSprite_frag.glsl",
+      "size": 722,
+      "sha256": "7fccc13afc12c0fd7e249112647ca483f7f7f56427a63e2a4a63f134a5d5d337"
+    },
+    {
+      "path": "shaders/vulkan/MaskedSprite_frag.spv",
+      "size": 2484,
+      "sha256": "f42a1c441144a160240a5825e382319fa74fd7bd3b5f13e414fbb455657d5e87"
+    },
+    {
+      "path": "shaders/vulkan/MaskedSprite_vert.glsl",
+      "size": 414,
+      "sha256": "556a814c8196c011d232d167bc3a00393ba3efd641ce264c402e67380d5a75c0"
+    },
+    {
+      "path": "shaders/vulkan/MaskedSprite_vert.spv",
+      "size": 1364,
+      "sha256": "381152e44daadf507a29d9079a39779d004ba2edc42741b0db1aa80ef0dff803"
+    },
+    {
+      "path": "shaders/vulkan/NV12Frame_frag.glsl",
+      "size": 890,
+      "sha256": "88da98acdb08197d32858eae23c4b665c8d6f7a5037ccaa91c19ee6380acfba2"
+    },
+    {
+      "path": "shaders/vulkan/NV12Frame_frag.spv",
+      "size": 2572,
+      "sha256": "7170ae20b6cd46cf0ba68af444640261dd19c90035211d2ee76866b8e0331dbd"
+    },
+    {
+      "path": "shaders/vulkan/NV12Frame_vert.glsl",
+      "size": 343,
+      "sha256": "ede8eb4e3be1e80aa4d26f809bbf7af5d56a70ecd558d7f6e2a3841fd0fff346"
+    },
+    {
+      "path": "shaders/vulkan/NV12Frame_vert.spv",
+      "size": 1164,
+      "sha256": "44c6fde0a6c6fe95b115daf16689d2121c20a25f896de10d5b4dff8d299ef6de"
+    },
+    {
+      "path": "shaders/vulkan/Renderable3D_Background_frag.glsl",
+      "size": 287,
+      "sha256": "8fd2df13c38d802bcfd9f3b298323f0a079d1f011e7173d6f66014bf172370d9"
+    },
+    {
+      "path": "shaders/vulkan/Renderable3D_Background_frag.spv",
+      "size": 780,
+      "sha256": "5ab33a9ce9501db5ca57b210ddb36dc928b8f7aa3117789e0005ed44a71fb2a4"
+    },
+    {
+      "path": "shaders/vulkan/Renderable3D_Background_vert.glsl",
+      "size": 370,
+      "sha256": "736a98975b0909ca1b5e88dc495b2abb861b49e42e16fbf3db279897aac1ac29"
+    },
+    {
+      "path": "shaders/vulkan/Renderable3D_Background_vert.spv",
+      "size": 1500,
+      "sha256": "abf080796199e509d9e814e4975a31a5a40ffbb00754bd8c0e34d788e3b58e0f"
+    },
+    {
+      "path": "shaders/vulkan/Renderable3D_Character_frag.glsl",
+      "size": 3264,
+      "sha256": "7fc31c448a53a039d2faf3daf3040564698d90cbd09bda18d662143c8472da9a"
+    },
+    {
+      "path": "shaders/vulkan/Renderable3D_Character_frag.spv",
+      "size": 7148,
+      "sha256": "954b09779dde137eca6919df35f353b08a6ac2f6911b58ff8f369d1458f9f0a3"
+    },
+    {
+      "path": "shaders/vulkan/Renderable3D_Character_vert.glsl",
+      "size": 1478,
+      "sha256": "9e5d440c4cfa722ec3f737f94f86d32700c05464e4989673a1aee2de8fce9e70"
+    },
+    {
+      "path": "shaders/vulkan/Renderable3D_Character_vert.spv",
+      "size": 4812,
+      "sha256": "12a51d8823b3983e91f7752ccb8095c46fc405265b7e710d8adf268a7c3a72ea"
+    },
+    {
+      "path": "shaders/vulkan/Renderable3D_Eye_frag.glsl",
+      "size": 1619,
+      "sha256": "c867ff71dda3ca14a079ab17bc6925d6e2fec985a088f915b35e55123a9ca2e4"
+    },
+    {
+      "path": "shaders/vulkan/Renderable3D_Eye_frag.spv",
+      "size": 4188,
+      "sha256": "2cd74f520815ffa408319ac1c7cc5d9e67facdbe5054b110ab357d448c10cb05"
+    },
+    {
+      "path": "shaders/vulkan/Renderable3D_Eye_vert.glsl",
+      "size": 1268,
+      "sha256": "09aec3dbc1653100c9dfd8bb93fc57d60c565af348ba6fe143b6a8b99bdb82f7"
+    },
+    {
+      "path": "shaders/vulkan/Renderable3D_Eye_vert.spv",
+      "size": 4272,
+      "sha256": "4dc1a4a0304939d7cdae632a06edfd8a310f0c9f292ce0324aed4e69c78bcb80"
+    },
+    {
+      "path": "shaders/vulkan/Renderable3D_Outline_frag.glsl",
+      "size": 1350,
+      "sha256": "1f1ce0cdd8e889e044772257b923a351200d2dedba51bbf4792c5c2b02e562a0"
+    },
+    {
+      "path": "shaders/vulkan/Renderable3D_Outline_frag.spv",
+      "size": 3872,
+      "sha256": "ee7134c44a4ed9566cf3c065b5d1953e4134c741fd02a99b01333608607c5539"
+    },
+    {
+      "path": "shaders/vulkan/Renderable3D_Outline_vert.glsl",
+      "size": 1837,
+      "sha256": "adb0251e01ec87e21ef91b81fa55b66460504b49e9d3c76817620cadf485a8f7"
+    },
+    {
+      "path": "shaders/vulkan/Renderable3D_Outline_vert.spv",
+      "size": 5588,
+      "sha256": "b80062069b9903ecb0939f5bd9a34a0406cb7ee25c1e1666be8d953d74149d7c"
+    },
+    {
+      "path": "shaders/vulkan/Sprite_frag.glsl",
+      "size": 254,
+      "sha256": "37117e7c69b7cd4085be748947c548828021536fa86447e70c3abb50e7f01495"
+    },
+    {
+      "path": "shaders/vulkan/Sprite_frag.spv",
+      "size": 728,
+      "sha256": "b4d61882770ecfd66ade58603b3d4f548e2546bb769196a0c47d6f08c043c0a4"
+    },
+    {
+      "path": "shaders/vulkan/Sprite_inverted_frag.glsl",
+      "size": 303,
+      "sha256": "63c7d5d80715ea4f27df58983da16496ea9f87160a6f98de85df68b805a5a47c"
+    },
+    {
+      "path": "shaders/vulkan/Sprite_inverted_frag.spv",
+      "size": 1116,
+      "sha256": "6bfac94e3e7530ba8a247a699200cfa5a0a951e02177f2409f9d594a1b5db5b8"
+    },
+    {
+      "path": "shaders/vulkan/Sprite_inverted_vert.glsl",
+      "size": 343,
+      "sha256": "ede8eb4e3be1e80aa4d26f809bbf7af5d56a70ecd558d7f6e2a3841fd0fff346"
+    },
+    {
+      "path": "shaders/vulkan/Sprite_inverted_vert.spv",
+      "size": 1236,
+      "sha256": "a453d638636726c4f470173c51dce3f26bd6fa3cfca9fd3df47d04dbcf42e38d"
+    },
+    {
+      "path": "shaders/vulkan/Sprite_vert.glsl",
+      "size": 343,
+      "sha256": "ede8eb4e3be1e80aa4d26f809bbf7af5d56a70ecd558d7f6e2a3841fd0fff346"
+    },
+    {
+      "path": "shaders/vulkan/Sprite_vert.spv",
+      "size": 1236,
+      "sha256": "a453d638636726c4f470173c51dce3f26bd6fa3cfca9fd3df47d04dbcf42e38d"
+    },
+    {
+      "path": "shaders/vulkan/YUVFrame_frag.glsl",
+      "size": 933,
+      "sha256": "7ee0e788f1a346da22231bddcc06b00c62d4f8545fb2d0763fab9b449e959b50"
+    },
+    {
+      "path": "shaders/vulkan/YUVFrame_frag.spv",
+      "size": 2704,
+      "sha256": "fd9d0722234c5cfd8b237683abfeab0de88283b23d6411ba5d9cd4a58caa523e"
+    },
+    {
+      "path": "shaders/vulkan/YUVFrame_vert.glsl",
+      "size": 343,
+      "sha256": "ede8eb4e3be1e80aa4d26f809bbf7af5d56a70ecd558d7f6e2a3841fd0fff346"
+    },
+    {
+      "path": "shaders/vulkan/YUVFrame_vert.spv",
+      "size": 1236,
+      "sha256": "a453d638636726c4f470173c51dce3f26bd6fa3cfca9fd3df47d04dbcf42e38d"
+    }
+  ]
+}

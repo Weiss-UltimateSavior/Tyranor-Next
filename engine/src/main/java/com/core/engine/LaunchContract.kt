@@ -118,6 +118,13 @@ object LaunchContract {
     /** 游戏根路径哈希（与 app 侧 `Integer.toHexString(path.hashCode())` 一致），标题回写定位用。 */
     const val SIGLUS_PATH_HASH = "siglus_path_hash"
 
+    // ---------- Impacto ----------
+
+    /** Allowlisted bundled profile ID. No user Lua or arbitrary command-line arguments. */
+    const val IMPACTO_PROFILE = "impactoProfile"
+    /** Canonical unique app-private generated configuration directory. */
+    const val IMPACTO_LAUNCH_DIR = "impactoLaunchDir"
+
     // ---------- FVP ----------
 
     /** 文本编码：`sjis`（默认）| `gbk` | `utf8`，创建引擎时固定。 */
@@ -207,6 +214,7 @@ object LaunchContract {
     const val LAUNCH_MODE_ONS = "internal.ons"
     const val LAUNCH_MODE_ARTEMIS = "internal.artemis"
     const val LAUNCH_MODE_SIGLUS = "internal.siglus"
+    const val LAUNCH_MODE_IMPACTO = "internal.impacto"
     const val LAUNCH_MODE_FVP = "internal.fvp"
     const val LAUNCH_MODE_ETHORNELL = "internal.ethornell"
     const val CMVS_LAUNCH_TOKEN = "cmvs_launch_token"
