@@ -94,6 +94,14 @@ class RpgMakerActivity : Activity() {
     private var v2Session = false
     private val processExitScheduled = AtomicBoolean(false)
 
+    /**
+     * 本实例创建时捕获的会话期号（见 [sessionOwnership]）。
+     *
+     * 用它判定「我还拥有这个进程的会话吗」：`finish()` 排队的退出任务与 `onDestroy()`
+     * 的登记清理都只在期号未被后来者推进时执行。
+     */
+    private var sessionEpochAtCreate = 0L
+
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(wrapContextForUiScale(newBase) ?: newBase)
     }
@@ -125,6 +133,10 @@ class RpgMakerActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 新会话接管 :rpgmaker 进程：推进期号，让上一个实例已排队的 killProcess 失效。
+        // 不推进的话，用户在旧会话退出后的延迟窗口内重开游戏，会被旧任务杀掉整个进程
+        // （该 Activity 是独立进程 + singleInstance，进程还活着就会被复用给新会话）。
+        sessionEpochAtCreate = sessionOwnership.beginSession()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enterFullscreen()
         // 多进程 WebView 数据目录隔离：:tyrano 与 :rpgmaker 都承载 WebView，API 28+
@@ -689,8 +701,15 @@ class RpgMakerActivity : Activity() {
     override fun finish() {
         super.finish()
         if (processExitScheduled.compareAndSet(false, true)) {
+            // 带着本会话的期号排队：延迟期间若有新会话 onCreate（期号自增），
+            // 这个任务就不再拥有该进程，必须放弃 killProcess
+            val epoch = sessionEpochAtCreate
             Handler(Looper.getMainLooper()).postDelayed({
-                runCatching { android.os.Process.killProcess(android.os.Process.myPid()) }
+                if (sessionOwnership.isOwner(epoch)) {
+                    runCatching { android.os.Process.killProcess(android.os.Process.myPid()) }
+                } else {
+                    Log.i(TAG, "skip process exit: a newer session took over")
+                }
             }, PROCESS_EXIT_DELAY_MS)
         }
     }
@@ -768,7 +787,11 @@ class RpgMakerActivity : Activity() {
     }
 
     override fun onDestroy() {
-        EngineSessionRegistry.clear(this, EngineSessionRegistry.HOST_RPGMAKER)
+        // 只有仍拥有会话的实例才能清理登记：旧实例的收尾晚于新实例 onCreate 时，
+        // 无条件 clear 会把新会话刚写入的游戏目录抹掉
+        if (sessionOwnership.isOwner(sessionEpochAtCreate)) {
+            EngineSessionRegistry.clear(this, EngineSessionRegistry.HOST_RPGMAKER)
+        }
         DoubleBackExit.clear(this)
         runCatching { inputRemap?.onDestroy() }
         inputRemap = null
@@ -1018,11 +1041,23 @@ class RpgMakerActivity : Activity() {
             "godMode", "oneHit", "alwaysCrit", "noclip", "eventSpeed", "msgSkip",
         )
         /**
+         * 进程级会话所有权：每次新会话 `onCreate` 推进期号（静态状态在 `:rpgmaker` 进程内共享）。
+         *
+         * `finish()` 排队的退出任务与 `onDestroy()` 的登记清理都带着自己创建时的期号，
+         * 执行前比对——期号已被推进就说明「进程已归新会话所有」，旧实例必须收手，
+         * 否则用户在延迟窗口内重开游戏会被旧任务连进程一起杀掉。
+         */
+        private val sessionOwnership = RpgMakerSessionOwnership()
+
+        /**
          * `finish()` 到 `killProcess` 的延迟。
          *
          * 必须**大于** [FLUSH_TEARDOWN_WATCHDOG_MS]，否则进程会在 localStorage 落盘完成前
          * 被杀掉（退出动画/界面早已不可见，多留 1 秒只是让收尾跑完，用户无感）。
          * 不变量：`PROCESS_EXIT_DELAY_MS > FLUSH_TEARDOWN_WATCHDOG_MS > FLUSH_ALL_BUDGET_MS`。
+         *
+         * 延迟越长，「旧会话的退出任务撞上新会话」的窗口越大，所以真正的保护是
+         * [sessionOwnership] 的期号比对，而不是这个数值本身。
          */
         private const val PROCESS_EXIT_DELAY_MS = 1_500L
         private const val MAX_ENTRY_SEARCH_DEPTH = 2
