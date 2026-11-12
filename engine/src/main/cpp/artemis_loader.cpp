@@ -121,16 +121,13 @@ void finishActivity(ANativeActivity* activity) {
 bool isAllowedEngineLibName(const std::string& name) {
     return name == "artemis"
         || name == "artemis-compatible"
-        || name == "artemis-compatible-v2"
-        || name == "artemis-v4"
-        || name == "artemis-v5"
         || name == "artemis-v6"
         || name == "artemis-clean";
 }
 
 // ----- CSoundTrack::Read 无进展自递归（音频线程爆栈闪退）运行时修复 -----
 //
-// 官方线 Artemis 内核（artemis / v4 / v5 / v6 / compatible-v2）的
+// 官方线 Artemis 内核（artemis / compatible / v6）的
 // artemis::CSoundTrack::Read 在「循环播放回绕」分支里经自身 vtable 槽 16
 // 递归调用自己；当循环 BGM 回绕（Rewind）后底层 Ogg 解码仍读不出数据时，
 // 该递归不收敛：AAudio 回调线程栈耗尽，SIGSEGV/SEGV_ACCERR 命中栈保护页。
@@ -143,7 +140,7 @@ bool isAllowedEngineLibName(const std::string& name) {
 // 只读即可，不触碰代码段，规避 Android 10+ 对 app 私有 so 代码段的 W^X /
 // execmod 限制。
 //
-// 每个 revision 的宿 Activity 各占独立进程，且 5 个官方插件 so 的 SONAME 同名，
+// 每个 revision 的宿 Activity 各占独立进程，且官方插件 so 的 SONAME 同名，
 // 同一进程只会存在一份 CSoundTrack vtable，故只需登记一个原函数指针。
 
 typedef int (*CsReadFn)(void*, unsigned char*, int);

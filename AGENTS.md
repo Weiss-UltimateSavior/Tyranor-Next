@@ -84,7 +84,7 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 - 规则：可以依赖 `engine` 模块；不得依赖 Compose（含 `androidx.compose.ui/foundation/material*` UI 组件，以及 `androidx.compose.runtime` 的状态原语与 `@Immutable` 注解）；不得把页面类作为普通业务依赖。
   全局可观察状态一律用 `kotlinx.coroutines.flow`（`StateFlow`）或纯数据载荷（`ThemeColorPayload` 模式）由 UI 层 `collectAsState` 订阅。
 
-- 新增功能按域放入 `core/game`、`core/engine`、`core/cover`、`core/patch`、`core/unpack`、`core/settings`、`core/auth`、`core/updater` 等包。
+- 新增功能按域放入 `core/game`、`core/engine`、`core/cover`、`core/patch`、`core/unpack`、`core/settings`、`core/auth`、`core/updater`、`core/process` 等包。
 
 ### 3. 界面 UI 交互层
 
@@ -94,7 +94,7 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 
 - 规则：只能调用功能抽象层；禁止直接 import `com.core`、`com.akira`、`com.yuri`、`org.tvp`、`org.libsdl`、`org.cocos2dx`、`bridge` 等底层引擎包。
 
-- 页面按功能域放入 `ui/home`、`ui/game`、`ui/engine`、`ui/settings`、`ui/cover`、`ui/patch`、`ui/save`、`ui/archive`、`ui/auth`，公共组件放入 `ui/common`。
+- 页面按功能域放入 `ui/home`、`ui/game`、`ui/engine`、`ui/settings`、`ui/cover`、`ui/patch`、`ui/save`、`ui/archive`、`ui/auth`、`ui/onboarding`，公共组件放入 `ui/common`。
 
 ### 4. 资源归属
 
@@ -105,7 +105,9 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 - `engine/src/main/nativeplugins`：共享 Native 插件 so 源头。
 - `app/src/main/nativeplugins`：插件 manifest 与 app-only 插件源头。
 
-- 插件 zip 生成到 `app/build/generated/assets/nativeplugins`。禁止在 app 与 engine 两边手工维护同一份二进制或共享脚本；插件源合并通过 `DuplicatesStrategy.FAIL` 拒绝重名，脚本单一源归属仍需评审检查。
+- 插件 zip 生成到 `app/build/generated/assets/nativeplugins`（未压缩 zip 容器再压成 `<engine>.zip.xz`，减小 APK 体积）。禁止在 app 与 engine 两边手工维护同一份二进制或共享脚本；插件源合并通过 `DuplicatesStrategy.FAIL` 拒绝重名，脚本单一源归属仍需评审检查。
+
+- 大体积引擎运行库（当前 `libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、IJK 三件套、System35/4 + `libSDL2x.so`）仍以 `engine/src/main/jniLibs` 为源头，但**不进 APK 的 `lib/`**：Gradle 打成 `app/build/generated/assets/engine-runtime/<pack>.zip.xz`，首次启动对应引擎时由 `com.core.nativeplugin.NativeRuntimePack` 解压到 `files/engine_runtime/<pack>/`，JNI 桥按绝对路径 dlopen（IJK 走 `IjkRuntime` 的 `IjkLibLoader`）。新增此类运行库时须同步 `NativeRuntimePack` 的分片常量与 `app/build.gradle.kts` 的 `bundledEngineRuntimePacks`（两处 id 与库名保持一致）；`packaging.jniLibs.excludes` 由该清单自动推导，不要再手写。
 
 - 原生运行库通常是已提交的预编译 `.so`；普通 Gradle 构建只编 JNI 桥，不重建全部运行时。更新运行库时必须同步固定来源、校验清单、许可证与设备验收证据，详见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
@@ -145,8 +147,8 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 - 页面顶部栏必须调用 `AppTopBar(title, ...)`；标题、结构、取色由组件兜底。
 - 参数约定：
   - Material 页面（默认）：不传 `background`/`contentColor`，组件默认 `Color.Transparent` / `colorScheme.onBackground`。
-  - Miuix 风格页面（设置类 MiuixScaffold 的 `topBar` 槽）：传 `background = Color.Transparent`（顶部栏背景恒为透明，交由根部背景层——`MiuixTheme.colorScheme.background` 实为 `PageGrey`，传它会盖住玻璃/渐变根背景）、`contentColor = MiuixTheme.colorScheme.onBackground`，并设 `contentWindowInsets = WindowInsets(0.dp)`。
-  - 需要「色调切换」参与文字取色的页面：保持 `background = Color.Transparent`，传 `contentColor = TextColor`，背景仍由页面根层提供。
+  - Miuix 风格页面（设置类 MiuixScaffold 的 `topBar` 槽）：传 `background = Color.Transparent`（顶部栏背景恒为透明，交由根部背景层——`MiuixTheme.colorScheme.background` 实为 `PageGrey`，传它会盖住玻璃/根部背景）、`contentColor = MiuixTheme.colorScheme.onBackground`，并设 `contentWindowInsets = WindowInsets(0.dp)`。
+  - 需要按页面背景取文字色的页面：保持 `background = Color.Transparent`，传 `contentColor = TextColor`，背景仍由页面根层提供。
   - 右侧图标用 `trailing` 槽传入 `TopBarIcon`；标题下方的折叠内容（如游戏页搜索框）用 `underTitle` 槽。
 - 新页面/组件禁止再书写「背景层 + statusBarsPadding + 64dp + titleLarge Bold」结构。
 
@@ -174,10 +176,10 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 
 ### 4. 背景色
 
-- 顶部栏背景**恒为透明**（`AppTopBar` 默认 `Color.Transparent`），露出页面根部背景层：默认外观风格为「纯色 + 主题色/近似色渐变（浅色含柔光+高斯模糊，深色为黑底对角渐变）」（`theme/DefaultPageBackground.kt`，可在应用设置「默认主题渐变」关闭，关闭后为纯色底），玻璃系风格为玻璃页面渐变。标题与图标统一使用 `colorScheme.onBackground`。
-- 页面根容器（`MiuixScaffold(containerColor = …)`、页面级 Box）同样**不得铺不透明背景色**（一律 `Color.Transparent`），背景由根部背景层负责；否则会把渐变背景整片盖掉。
+- 顶部栏背景**恒为透明**（`AppTopBar` 默认 `Color.Transparent`），露出页面根部背景层：默认外观风格为纯色底（`PageGrey`）+ 主题色粒子缓慢漂浮（`theme/DefaultPageBackground.kt`，约 30fps、仅在绘制阶段更新，系统关闭动画时静止），复古玻璃为玻璃页面渐变，白雾玻璃为模糊图片底图。标题与图标统一使用 `PageTextColor`（白雾玻璃为近白；Miuix 页须显式传入，不能依赖 `MiuixTheme.colorScheme.onBackground` 的深色卡片文字槽）。
+- 页面根容器（`MiuixScaffold(containerColor = …)`、页面级 Box）同样**不得铺不透明背景色**（一律 `Color.Transparent`），背景由根部背景层负责；否则会把根部背景整片盖掉。
 
-- **玻璃系外观风格（复古玻璃 / 高级玻璃）**：玻璃下页面背景透明，顶栏保持透明（露出渐变/色斑与环境光）。
+- **玻璃系外观风格（复古玻璃 / 白雾玻璃）**：页面背景透明，顶栏保持透明（露出渐变/图片/色斑与环境光）。
   因此**页面内容必须整体垫在顶栏下方**（用持久 `Modifier.padding(top = 顶栏高度)`，而不是滚动区的
   `contentPadding`），否则滚动内容会从顶栏下方穿过与标题重叠。设置类页面（MiuixScaffold）的
   `innerPadding` 顶部值一律加到列表 modifier 上，`contentPadding` 只保留额外的间距。
@@ -231,15 +233,13 @@ Column(fillMaxSize)                                // 页面根
 
 - 顶部栏下方禁止放置页面说明/描述文案；正文区域应直接展示该页面的实际内容或列表。
 
-- 页面切换动画必须保持统一：主 Screen 四个 Tab 间切换使用水平移动动画；其他独立 Activity 页面进入使用向上翻页动画，退出/返回使用向下翻页动画。
+- 页面切换动画必须保持统一：主 Screen 可见 Tab（首页可关闭；默认四页，关闭后三页）间切换使用水平移动动画；其他独立 Activity 页面进入使用向上翻页动画，退出/返回使用向下翻页动画。
 
-- 组件统一圆角数值为 **8dp**；列表项卡片、功能项卡片、弹窗等圆角组件统一引用 `theme/AppShapes.kt`：
-  `AppComponentShape`（默认 8dp / 玻璃外观风格与悬浮导航一致 32dp）、Miuix 组件用 `AppComponentCornerRadius`、
-  抽屉顶部用 `AppSheetTopShape`；禁止再散落圆角字面量。
+- 组件统一圆角由应用设置「应用圆角调整」控制（**5–50dp，十档：5/10/15/20/25/30/35/40/45/50，默认 15dp**），默认外观、复古玻璃与白雾玻璃共用该值；列表项卡片、功能项卡片、弹窗等圆角组件统一引用 `theme/AppShapes.kt`：
+  `AppComponentShape`、Miuix 组件用 `AppComponentCornerRadius`、
+  抽屉顶部用 `AppSheetTopShape`；禁止再散落圆角字面量。外观风格不得自带圆角默认值或按风格覆盖该设置。
 
-- **平板侧栏**：`isSideRailLayout()`（`isTabletScreen()` 命中且应用设置「平板侧边栏」开关开启，默认开）命中时主导航移到侧边（`ui/common/AppNavigationRail.kt`）：侧栏形态按外观风格取该主题「经典 MD 导航栏」（原「默认导航栏」）形态，液态玻璃两档与「悬浮按钮」不适配侧栏；侧栏占布局宽度，底部留白归零；高级玻璃侧栏采样单独的纯背景层（`railBackdrop`，不能采样内容层——坐标会越界）。选中态图标动画统一用 `ui/common/NavigationTabIcon.kt`。
-
-- **圆角豁免**：液态玻璃导航（`ui/common/LiquidGlassNavigation.kt`）的栏体与导航项胶囊使用 **16dp**（8dp 基础上加大 8dp），为有意设计，不受 8dp 条款约束；其余组件不得援引此豁免。
+- **平板侧栏**：`isSideRailLayout()`（`isTabletScreen()` 命中且应用设置「平板侧边栏」开关开启，默认开）命中时主导航移到侧边（`ui/common/AppNavigationRail.kt`）：侧栏形态按外观风格取该主题「经典 MD 导航栏」（原「默认导航栏」）形态（默认与白雾玻璃用 Material3 侧栏，复古玻璃用悬浮玻璃柱），液态玻璃两档与「悬浮按钮」不适配侧栏；侧栏占布局宽度，底部留白归零。选中态图标动画统一用 `ui/common/NavigationTabIcon.kt`。
 
 - **圆角豁免（液态玻璃 · 透镜底栏）**：应用设置「导航栏样式」选到「液态玻璃 · 透镜」后挂载的
   `ui/common/glass/EnhancedLiquidGlassNavigation.kt`（栏体 / 图标副本行 / 移动透镜三处）使用
@@ -249,7 +249,7 @@ Column(fillMaxSize)                                // 页面根
 - **圆角豁免（悬浮按钮导航）**：「导航栏样式 = 悬浮按钮」后挂载的 `ui/common/FloatingGlassNavButton.kt`
   主按钮与弧上导航项使用 `CircleShape`（圆形是本样式既定形态），为有意设计；该豁免仅限该组件，其余组件不得援引。
   **材质固定为液态玻璃的浅 / 深两档**（浅色 = 白玻璃、深色 = 深色玻璃），**只按 `AppThemeColors.isDark` 取档，
-  不随外观风格（默认 / 复古玻璃 / 高级玻璃）分档**（本样式自带固定观感，是 3.5 节「组件必须走动态常量」的豁免；
+  不随外观风格（默认 / 复古玻璃 / 白雾玻璃）分档**（本样式自带固定观感，是 3.5 节「组件必须走动态常量」的豁免；
   固定色取自 `theme/Color.kt` 的 `FloatingNavGlassSurface` / `FloatingNavGlassSurfaceDark` /
   `GlassUnselected` / `FloatingNavGlassUnselectedDark`，
   沿用原版图标，图标强调色与接近光效跟随主题色，触边使用半透明主题色玻璃覆盖），组件内不得引入 `AppThemeColors` 的**风格**判断（深浅取档是允许且必须的）。
@@ -262,7 +262,7 @@ Column(fillMaxSize)                                // 页面根
   触觉反馈保留展开/收起、确认选中、长按进入移动与实际落位；接近、移入或切换子控件候选时不得震动。
   悬浮按钮在平板也保持圆球导航，弧形半径与选项尺寸按安全区自适应；其它样式的平板侧栏规则不变。
 
-- 所有应用弹窗使用 `AppAlertDialog`，背景与圆角由动态主题常量决定：默认浅色通常为白底 8dp，深浅色/色调切换使用 `NavWhite`，玻璃风格使用对应面板材质与 32dp；统一引用 `AppComponentShape`，不得写死白色或 8dp。原生按键编辑器的明文豁免仍仅限该页与游戏内按键层。
+- 所有应用弹窗使用 `AppAlertDialog`，背景由动态主题常量决定、圆角统一取 `AppComponentShape`：默认浅色通常为白底，深色模式使用 `NavWhite`，玻璃风格使用对应面板材质；不得写死白色或圆角数值。原生按键编辑器的明文豁免仍仅限该页与游戏内按键层。
 
 ## 页面内容文字尺寸规范
 
@@ -281,7 +281,9 @@ Column(fillMaxSize)                                // 页面根
 
 - **明文豁免**：首页快捷启动卡（`ui/home/HomeScreen.kt` 的 QuickLaunchCard）以封面模糊图 + 黑色压暗遮罩为背景、白色文字展示，卡片内游戏名使用 `MaterialTheme.typography.titleLarge` Bold、引擎名使用 `MaterialTheme.typography.headlineSmall` Bold，均不受两档制限制；该卡片其余文字仍遵循两档制。
 
-- **明文豁免**：游戏页卡片左上角的引擎类型角标（`ui/game/GameScreen.kt` 的 `GameCard`，仅覆盖在封面上）使用 `MaterialTheme.typography.labelSmall`（11sp）——角标属封面上的小型标注，按两档制会过大；仅此一处豁免，其余正文仍遵循两档制。角标底色/文字色为**固定样式**（`theme/Color.kt` 的 `CoverBadgeBackground` / `CoverBadgeText`：半透明黑底 + 白字），**不随主题色、外观模式与色调切换变化**。
+- **明文豁免**：游戏页卡片左上角的引擎类型角标（`ui/game/GameScreen.kt` 的 `GameCoverEngineBadge`，`GameCard` 与 `UniformGameCard` 共用，仅覆盖在封面上）使用 `MaterialTheme.typography.labelSmall`（11sp）——角标属封面上的小型标注，按两档制会过大；仅此一处豁免，其余正文仍遵循两档制。角标底色/文字色为**固定样式**（`theme/Color.kt` 的 `CoverBadgeBackground` / `CoverBadgeText`：半透明黑底 + 白字），**不随主题色与外观模式变化**。
+
+- **明文豁免**：游戏页瀑布流卡片（`ui/game/GameScreen.kt` 的 `GameCard`）标题在 `bodyMedium` 基础上缩小 2sp（12sp），用于 3/6 列窄卡片；仅此一处豁免，其余正文仍遵循两档制。
 
 ***
 
@@ -294,8 +296,10 @@ Column(fillMaxSize)                                // 页面根
 
 ### 1. 组件形态（Miuix 风格，非展开内嵌式）
 
-- 组件内部固定为 `MiuixSettingsTheme + SearchBar + InputField` 模板，`expanded` 恒为
-  `false`（内嵌式），不使用 Miuix 的展开式全屏搜索页形态。
+- 组件内部固定为 `MiuixSettingsTheme + SearchBar` 模板，`expanded` 恒为
+  `false`（内嵌式），不使用 Miuix 的展开式全屏搜索页形态。默认参数组合走 `InputField`；
+  API 26/27 兼容、非恒等文本变换或显式键盘/IME/autofill 语义走组件内部
+  `EmbeddedSearchInputField`，页面不得自行复制该分支。
 
 - 前导图标固定 **26dp**，内边距固定 `SearchBarDefaults.LeadingIconStartPadding /
   LeadingIconEndPadding`，`tint` 统一取 `MiuixTheme.colorScheme.primary`——以上均由组件
@@ -308,10 +312,26 @@ Column(fillMaxSize)                                // 页面根
 - `onSearch`：键盘 IME 动作回调。本地即时过滤场景可不传（默认空实现）；
   需显式触发时传入（如网络请求、回车即保存）。
 
+- `imeAction`：键盘 IME 动作，默认 `ImeAction.Search`；普通搜索依赖默认值，用户名、URL、
+  密码及弹窗内其它非搜索身份输入显式传 `ImeAction.Done`。
+
+- `autofillContentType`：Compose autofill 内容类型，默认 `null`。用户名与现有密码按身份分别传
+  `ContentType.Username` / `ContentType.Password`；URL 等无对应语义的字段保持 `null`。
+  文本变换、键盘类型和 autofill 类型彼此独立，不得根据 `visualTransformation` 自动推断。
+
+- `keyboardType`：键盘类型，默认 `KeyboardType.Text`；URL 字段传 `KeyboardType.Uri`，密码字段传
+  `KeyboardType.Password`，用户名使用默认文本键盘。
+
+- `visualTransformation`：只控制文字显示变换，默认 `VisualTransformation.None`；密码掩码不代表
+  autofill 身份。密码字段必须另传 `keyboardType = KeyboardType.Password` 与
+  `autofillContentType = ContentType.Password`，内部按密码键盘/身份补充 `password()` 无障碍语义。
+  当前 API 没有 `secureInput` 参数；不得引用不存在的参数。
+
 - `leadingIcon`：drawable 资源（`R.drawable.ic_*`）。搜索语义用默认 `ic_game_search`；
   其他语义必须传对应图标（如名称修改用 `ic_sheet_rename`），禁止搜索图标滥用。
 
-- `iconContentDescription`：无障碍描述，跟随图标语义。
+- `iconContentDescription`：保留此参数名以兼容既有调用；实际同时作为输入框的无障碍 label，
+  文案跟随字段语义，并不只描述前导图标。
 
 - `modifier`：仅用于布局微调（如外边距），宽度由组件内部 `fillMaxWidth` 保证。
 
@@ -321,8 +341,14 @@ Column(fillMaxSize)                                // 页面根
 | ----------- | ---------------------------------- | ----------------- | --------------- |
 | 游戏库过滤       | `GameScreen.kt`（顶栏下方）              | `ic_game_search`  | 即时过滤，不传         |
 | VNDB 封面搜索   | `GameScreen.kt`（VndbSearchDialog）  | `ic_game_search`  | `search()` 网络请求 |
+| 安卓游戏选择过滤 | `AndroidGameAddDialog.kt`（已安装应用列表） | `ic_game_search` | 即时过滤，不传 |
 | krkr 在线补丁过滤 | `KrkrOnlinePatchActivity.kt`（列表首项） | `ic_game_search`  | 即时过滤，不传         |
-| 名称修改        | `GameScreen.kt`（RenameGameDialog）  | `ic_sheet_rename` | 内容有效即保存         |
+| 名称修改        | `GameQuickActionsDialog.kt`（RenameGameDialog） | `ic_sheet_rename` | Done，内容有效即保存 |
+| WebDAV 地址/用户名/密码 | `WebDavSettingsActivity.kt` | 对应字段语义图标 | Done，显式 Uri/Text/Password 与身份 autofill |
+| 云端游戏标识 | `SaveVersionsPanel.kt`（身份编辑） | `ic_sheet_rename` | Done，内容有效即保存 |
+| 图形倍率 | `GraphicsNodeParameters.kt` | `ic_graphics_parameters` | Done，Decimal 键盘 |
+| 输入目录 | `SettingsScreen.kt`（路径弹窗） | `ic_sheet_folder` | Done，内容有效即保存 |
+| 目录/方案名称/端口/自定义 URL | `SettingsScreen.kt`（通用文本弹窗）、`PerGameSettingsScreen.kt`（`OverrideText`）、`InputSettingsScreen.kt`、`AppSettingsActivity.kt` | 当前为 `ic_sheet_rename` | Done；URL 为 Uri，端口为 Number |
 
 ***
 
@@ -337,7 +363,8 @@ Column(fillMaxSize)                                // 页面根
 - 选中项为**独立背景指示器**（不是逐项背景），切换时以 200ms 线性动画滑到目标标签；滚动态标签宽度不齐时宽度同步动画。指示器圆角统一 `AppComponentShape`，玻璃系由组件内部调用 `glassBorder` 补 0.5dp 发丝描边。
 - 指示器底色与文字颜色由组件内部按外观风格分派，**调用方不得传色值**：
   默认风格指示器 `NavWhite`、选中文字 `TextColor`（不跟随主题色，加粗作选中标识）、未选中 `onSurfaceVariant`；
-  复古玻璃 `GlassSurfaceHigh` + `GlassText`/`GlassTextSecondary`；高级玻璃 `AdvancedGlassSurfaceHigh` + `GlassText`/`AdvancedGlassTextSecondary`。
+  复古玻璃 `GlassSurfaceHigh` + `GlassText`/`GlassTextSecondary`；
+  白雾玻璃指示器 `NavWhite`（白纱）、选中 `TextColor`（深色）、未选中 `PageSecondaryTextColor`（深底浅字）。
 - 标签高度统一 42dp，文字统一 `MaterialTheme.typography.titleMedium`，选中加粗；无障碍统一 `selectable(selected, role = Tab)`。
 - 参数：`tabs`（标签文案）、`selectedIndex`（越界自动收敛）、`onTabSelected`、`modifier`（仅外边距）、`scrollable`（形态开关，默认 false）。
 
@@ -351,9 +378,8 @@ Column(fillMaxSize)                                // 页面根
 | 场景 | 位置 | 形态 |
 | --- | --- | --- |
 | 引擎页顶部分页（玻璃外观） | `EngineScreen.kt` | 等分 |
-| 首页「分类仓库」分类栏（全部/快捷/最近/各引擎类型） | `CategoryWarehouse.kt` | 横向滚动 |
 
-> 例外：引擎页在默认外观风格下沿用 Miuix `TabRow`（等分分页的既有观感，含动画指示器），仅在玻璃外观下走本组件；新增场景（含默认风格）一律用本组件。
+> 例外：引擎页在默认外观风格下沿用 Miuix `TabRow`（等分分页的既有观感，含动画指示器），仅在复古玻璃与白雾玻璃下走本组件；新增场景（含默认风格）一律用本组件。
 
 ***
 
@@ -365,9 +391,13 @@ Column(fillMaxSize)                                // 页面根
 
 ### 1. 组件形态与参数
 
-- 排版固定：圆角 `AppComponentShape`（默认 8dp / 玻璃风格 32dp，见 `theme/AppShapes.kt`）+ 背景取 `theme/Color.kt` 常量 `NavWhite`（页面场景默认）+ 内边距（横向 16dp / 纵向 12dp）+ 左侧图标 24dp + 右侧指示箭头 `KeyboardArrowRight`。均由组件内部处理。
+- 排版固定：圆角 `AppComponentShape`（统一取「应用圆角调整」值，见 `theme/AppShapes.kt`）+ 背景取 `theme/Color.kt` 常量 `NavWhite`（页面场景默认）+ 内边距（横向 16dp / 纵向 12dp）+ 左侧图标 24dp + 右侧指示箭头 `BoldChevronRight`（统一加粗）。均由组件内部处理。
 
-- 背景色约定（与白底弹窗对偶，详细见 3.5）：**页面上的条目**默认 `NavWhite`（页面背景 `PageGrey` → 灰底白卡）；**弹窗内的条目**必须传 `containerColor = DialogItemSurface`（默认风格 = `PageGrey` 白底弹窗灰卡；玻璃风格 = 亮玻璃面），保证条目与弹窗背景反色、层次分明。「色调切换」开启时 `NavWhite`/`PageGrey` 同步互换，反差关系不变；玻璃风格下 `PageGrey` 透明、`NavWhite` 变为半透明玻璃面，`DialogItemSurface` 自动切换为亮玻璃面。
+- 背景色约定（与白底弹窗对偶，详细见 3.5）：**页面上的条目**默认 `NavWhite`（页面背景 `PageGrey` → 灰底白卡）；**弹窗内的条目**必须传 `containerColor = DialogItemSurface`（默认风格 = `PageGrey` 白底弹窗灰卡；玻璃风格 = 亮玻璃面），保证条目与弹窗背景反色、层次分明；玻璃风格下 `PageGrey` 透明、`NavWhite` 变为半透明玻璃面，`DialogItemSurface` 自动切换为亮玻璃面。
+
+- `drawSurface`：是否绘制条目自身的圆角背景与描边，默认 `true`。条目已位于
+  `MiuixCard` 等卡片表面时传 `drawSurface = false`，使用卡内平面样式，避免卡片套卡片；
+  点击、内边距、图标与文字排版保持不变。
 
 - 标题用 `MaterialTheme.typography.bodyMedium`、颜色取 `TextColor`；摘要可选，用 `bodySmall` + 半透明辅助色。均不依赖 `colorScheme.surface*`（遵循「组件背景色统一规范」）。
 
@@ -377,7 +407,9 @@ Column(fillMaxSize)                                // 页面根
 
 - `onClick`：点击回调；传 `null` 表示不可用（整条变灰且不可点击）。
 
-- 进入跳转的 icon 统一用 `KeyboardArrowRight`，组件内置，调用方不传。
+- 进入跳转的 icon 统一用共享的 `BoldChevronRight`（加粗），组件内置，调用方不传。
+
+- 设置类页面的 `ArrowPreference` 统一使用 `ui/common/ArrowPreference.kt`（Miuix 同名组件的加粗箭头版本），不要直接 import Miuix 的 `ArrowPreference`。
 
 - `showArrow`：是否显示右侧跳转箭头。**「进入下一级」的跳转条目必须 `true`（默认）**；「执行动作」的条目（如启动游戏、删除等不产生跳转的动作）传 `false` 隐藏箭头，避免误导为可跳转。
 
@@ -387,6 +419,8 @@ Column(fillMaxSize)                                // 页面根
 
 - 深色模式适配：左侧图标（PNG drawable）与右侧箭头在深色模式下自动染色为 `Color.White`，浅色模式保持原色不变；不可点击状态（`onClick = null`）保留 `contentAlpha` 衰减。这一适配由组件内部完成，调用方无需处理。
 
+- 设置页入口卡片（`SettingsScreen.kt` 的 `SettingsItemIcon`）左侧图标统一染 `MiuixTheme.colorScheme.primary`，跟随主题色调。
+
 - 颜色判断依赖全局 `AppThemeColors.isDark` 快照，切换外观模式自动重组刷新，与整体主题保持同步。
 
 ### 2. 侧边栏面板（AppSidePanel）内条目
@@ -395,6 +429,7 @@ Column(fillMaxSize)                                // 页面根
 
 - `containerColor = DialogItemSurface`（面板底色为 `NavWhite`，条目反色灰卡，与弹窗内条目为同一对偶关系）。
 - `leadingIcon` 必须传与功能语义对应的具体图标，不得使用组件默认占位图标，也不得隐藏图标位。
+- `leadingIconTint = MaterialTheme.colorScheme.primary`：左侧图标统一跟随主题色调。
 - `showArrow = true`（默认）：面板内条目统一保留右侧指示标，**「执行动作」条目（如启动 kr2 原生）同样不隐藏箭头**——本条优先于上文「执行动作传 `false`」条款。
 - 条目之间的纵向间距由 `AppSidePanel` 内部统一加（`SidePanelItemSpacing` = 8dp，与弹窗内条目列表一致），调用方不得自加外边距。
 
@@ -406,6 +441,7 @@ Column(fillMaxSize)                                // 页面根
 | 加入群聊（企鹅群聊/飞机频道） | `SettingsScreen.kt`（加入群聊弹窗）              | `ic_group_qq` / `ic_group_telegram` |
 | 妙妙工具面板（启动 kr2 原生） | `MainScreen.kt`（`AppSidePanel` 的 `content` 槽） | `ic_settings_engine` |
 | 妙妙工具面板（解封包工具） | `MainScreen.kt`（`AppSidePanel` 的 `content` 槽） | `ic_sheet_archive` |
+| 妙妙工具面板（WebDAV 存档同步） | `MainScreen.kt`（`AppSidePanel` 的 `content` 槽） | `ic_save_cloud` |
 | 妙妙工具面板（输入与手柄） | `MainScreen.kt`（`AppSidePanel` 的 `content` 槽） | `ic_input_gamepad` |
 
 ***
@@ -427,8 +463,9 @@ Column(fillMaxSize)                                // 页面根
 | 场景                                   | 位置                                                | 组件                 |
 | ------------------------------------ | ------------------------------------------------- | ------------------ |
 | 设置清单开关（KRKR/ONS/Artemis/RPG Maker 等） | `SettingsScreen.kt`                               | `SwitchPreference` |
-| 应用设置开关（色调切换等）                        | `AppSettingsActivity.kt`                          | `SwitchPreference` |
+| 应用设置开关（平板侧边栏等）                        | `AppSettingsActivity.kt`                          | `SwitchPreference` |
 | 应用设置「导航栏样式」四选一                      | `AppSettingsActivity.kt`                          | `OverlayDropdownPreference`（非布尔选择，见本节第 3 条例外） |
+| WebDAV 总开关与同步提示 | `WebDavSettingsActivity.kt` | `SwitchPreference` |
 | 封面来源启用开关（行内）                         | `CoverScraperSettingsActivity.kt`（CoverSourceRow） | `Switch`           |
 
 ### 3. 例外
@@ -500,17 +537,17 @@ Column(fillMaxSize)                                // 页面根
 
 ### 2. 页面如何获取主题色
 
-- **Material 页面**（首页/游戏/引擎等 Tab、存档管理、在线补丁等 Activity）：统一使用 `MaterialTheme.colorScheme.primary`（选中态图标/文字、按钮、开关、输入框聚焦指示等）。
+- **Material 页面**（首页/游戏/引擎等 Tab、在线补丁等 Activity）：统一使用 `MaterialTheme.colorScheme.primary`（选中态图标/文字、按钮、开关、输入框聚焦指示等）。
 
-- **Miuix 页面**（设置页/引擎设置/单游戏设置/应用设置等）：统一使用 `MiuixTheme.colorScheme.primary`（Preference 图标、Slider、Switch、下拉选中等）。
+- **Miuix 页面**（设置页/引擎设置/单游戏设置/应用设置/存档管理等）：统一使用 `MiuixTheme.colorScheme.primary`（Preference 图标、Slider、Switch、下拉选中等）。
 
 - 图标 tint、高亮文字、选中态等一切"强调色"位置只能从上述 colorScheme 获取，**禁止**在页面里硬编码 `Color(0x...)`、`#307DEF`、`Blue40` 或任何品牌蓝。
 
 ### 3. 中性色与语义色（非主题强调色）
 
-以下中性色/语义色不是主题强调色；它们包含随外观与色调计算的动态值，统一从 `theme/Color.kt` 引用，**禁止**在页面中直接写 `Color(0x...)`：
+以下中性色/语义色不是主题强调色；它们包含随外观与主题色计算的动态值，统一从 `theme/Color.kt` 引用，**禁止**在页面中直接写 `Color(0x...)`：
 
-- `PageGrey` 页面背景色、`NavWhite` 卡片/导航栏组件色；二者由应用设置「色调切换」控制是否互换。`TextColor` 正文深灰、`UnselectedGrey` 导航栏未选中灰。
+- `PageGrey` 页面背景色、`NavWhite` 卡片/导航栏组件色。`TextColor` 正文深灰、`UnselectedGrey` 导航栏未选中灰。
 
 - 语义色：`colorScheme.error`（错误/删除）、引擎封面色（`EngineType.coverColor()`）、封面占位白字等。
 
@@ -520,35 +557,48 @@ Column(fillMaxSize)                                // 页面根
 
 - 新增任何颜色先检查 `Color.kt` 是否已有现成常量；中性色必须统一收口到 `Color.kt`，不在页面内散落硬编码。
 
-### 3.5 组件容器/背景色的色调跟随
+### 3.5 组件容器/背景色的取色约定
 
 组件（卡片、列表项、弹窗内容项、设置项容器等）的背景色**不得依赖**
-`colorScheme.surface*` / `surfaceContainer` 等 scheme 颜色来自动跟随色调切换——这些 scheme
+`colorScheme.surface*` / `surfaceContainer` 等 scheme 颜色来自动跟随外观模式——这些 scheme
 颜色可能被主题函数固定写死（如 `MiuixSettingsTheme` 深浅色分支都设为 `NavWhite`），且弹窗等
-`Dialog` 组合可能不在目标 Miuix/Material 主题作用域内，导致背景色不随「外观模式 / 色调切换」变化。
+`Dialog` 组合可能不在目标 Miuix/Material 主题作用域内，导致背景色不随「外观模式」变化。
 
-统一做法：需要随「色调切换」变色的组件容器，**直接引用** **`theme/Color.kt`** **的计算常量**（`get()`
-读取 `AppThemeColors.isDark` / `toneSwitchEnabled` 的 snapshot state，变化即触发重组）：
+统一做法：需要随「外观模式」变色的组件容器，**直接引用** **`theme/Color.kt`** **的计算常量**（`get()`
+读取 `AppThemeColors.isDark` 的 snapshot state，变化即触发重组）：
 
 - 卡片/导航栏/组件容器（含弹窗背景） → `NavWhite`
 
 - 弹窗内的条目容器（如 `AppNavItem` 传 `containerColor = DialogItemSurface`、手写条目行用
   `DialogItemSurface`） → 与弹窗背景形成对偶反差
 
-- **玻璃系外观风格（应用设置 → 外观风格 = 复古玻璃 / 高级玻璃）**：页面背景固定深色画面
-  （复古 = 黑灰渐变 + 主题色对角环境光；高级 = 游戏封面拼贴的盒式模糊底图 + 压暗 + 暗角，
-  见 `ui/common/glass/AmbientBackdrop.kt` 与 `theme/AdvancedGlassStyle.kt`），
-  `PageGrey` 透明、`TextColor` 恒浅色；卡片/条目/弹窗/输入框统一 0.5dp 发丝描边（`Modifier.glassBorder()`，
-  高级玻璃为「上亮下暗」渐变描边并可在面板上叠 `Modifier.glassSpecular()` 顶边高光），
-  高级玻璃卡片为浅色磨砂膜（14% 白），弹窗/抽屉面板为 `rememberAdvancedGlassPanelSurface()` 从页面背景取色的渐变（不得写死灰色；抽屉渐变必须画在内容层，外层 modifier 会因 anchors 布局偏移而错位）。
-  此模式下「外观模式」
-  与「色调切换」不可用（置灰），色调轮盘保持可用（兜底色斑随主题色变化）。
-  高级玻璃的绘制是独立实现（`theme/AdvancedGlassStyle.kt`），复古玻璃的 `GlassStyle.kt` 不参与其材质；
+- **复古玻璃外观风格（应用设置 → 外观主题 = 复古玻璃）**：页面背景固定深色画面
+  （黑灰渐变 + 主题色对角环境光，见 `theme/GlassStyle.kt`），
+  `PageGrey` 透明、`TextColor` 恒浅色；卡片/条目/弹窗/输入框统一 0.5dp 发丝描边（`Modifier.glassBorder()`）。
+  此模式下「外观模式」不可用（置灰），色调轮盘保持可用（环境光随主题色变化）。
   新增组件必须走动态常量与 `glassBorder`，不得硬编码玻璃色值。真 backdrop 采样仅限白名单
-  （液态玻璃底栏、透镜底栏、高级玻璃悬浮默认导航条、悬浮按钮导航的主子按钮）；弹窗/抽屉是独立窗口，**无法**采样主窗口内容，
-  只能用背景取色渐变 + 遮罩 + 光学描边，不要为它们接 backdrop。
+  （液态玻璃底栏、透镜底栏、悬浮按钮导航的主子按钮）；弹窗/抽屉是独立窗口，**无法**采样主窗口内容，
+  只能用半透明面板 + 遮罩 + 光学描边，不要为它们接 backdrop。
 
-- **底部抽屉/面板（`ModalBottomSheet`）→ 按「页面灰底」处理**：`ModalBottomSheet` 的 `containerColor` 通常取 `colorScheme.background`（浅/深随色调切换，等同页面背景），因此抽屉内条目（`AppNavItem` 等）必须传 `NavWhite`（灰底白卡），**不要**套用「弹窗白底灰卡」用 `PageGrey`——否则 item 与抽屉背景同色融为一体（如游戏操作抽屉 GameActionsSheet）。
+- **白雾玻璃外观风格（应用设置 → 外观主题 = 白雾玻璃）**：页面背景为模糊图片底图
+  （`drawable-nodpi/bg_milk_glass.webp`，运行期 64dp 高斯模糊）+ 16% 白纱 + 38% 压暗 + 主题色低透明度环境光；
+  `PageGrey` 透明，页面级文字用 `PageTextColor`（近白），条目正文用 `TextColor`（深灰黑）。
+  `NavWhite` 为 70% 白纱（`MilkSurface`，目标 L≈211），条目直接叠在模糊底图上；弹窗/抽屉面板用
+  `MilkGlassPanelBackground`（同一张页面底图 + 50% 白纱），弹窗内条目用 `DialogItemSurface`
+  （`MilkItemOnPanel` = 45% 白纱；面板已有 50% 白纱，叠加后最终 L≈215，与页面条目视觉一致）。
+  白雾条目**不加**
+  `glassBorder`、不加投影；圆角仍只取「应用圆角调整」统一值（默认 15dp）。
+  Miuix 的 `onBackground` 在该风格下取深色（库内 preference 标题与卡片共用该色槽），
+  因此 Miuix 页顶栏必须使用 `PageTextColor`（`AppTopBar` 默认值已处理；不得再传
+  `MiuixTheme.colorScheme.onBackground`）。
+  此模式下「外观模式」不可用（置灰），色调轮盘保持可用。
+  底部导航保持默认「液态玻璃 · 经典」，不新增导航栏形态；仅做亮玻璃 + 主题色轻染的配色适配
+  （表面亮度高于页面 item，阴影同样减弱），主题色变化时导航栏同步换色。
+
+- **底部抽屉/面板（`ModalBottomSheet`）→ 按「页面灰底」处理**：`ModalBottomSheet` 的 `containerColor` 通常取 `colorScheme.background`（浅/深随外观模式，等同页面背景），因此抽屉内条目（`AppNavItem` 等）必须传 `NavWhite`（灰底白卡），**不要**套用「弹窗白底灰卡」用 `PageGrey`——否则 item 与抽屉背景同色融为一体（如游戏操作抽屉 GameActionsSheet）。
+  白雾玻璃是例外：抽屉面板用 `MilkGlassPanelBackground`（页面底图 + 白纱），条目用
+  `DialogItemSurface`（`MilkItemOnPanel` 45% 白纱；叠加在 50% 面板后与页面条目同亮度），
+  仍保持亮面板/亮条目的层级。
 
 - **游戏操作抽屉（`GameActionsSheet`）关闭拖拽手势**：统一传 `sheetGesturesEnabled = false`，只允许遮罩/返回键关闭。
   原因：M3 `ModalBottomSheet` 的关闭判定是「位移 > 56dp 或速度 > 125dp/s」任一命中即关闭（`BottomSheetDefaults`
@@ -561,9 +611,9 @@ Column(fillMaxSize)                                // 页面根
 - 文字 → `TextColor`
 
 通过 `MiuixTheme`/`MaterialTheme` 的 `colorScheme` 取容器背景属于**反例**（例：弹窗内项目用
-`MiuixTheme.colorScheme.surfaceContainer` 不会随色调切换变色，应改用 `theme/Color.kt` 对应容器常量——
+`MiuixTheme.colorScheme.surfaceContainer` 不会随外观模式变色，应改用 `theme/Color.kt` 对应容器常量——
 页面条目 `NavWhite`、弹窗内条目 `DialogItemSurface`）。
-仅当某 scheme 颜色确为实时计算且随色调切换变化时才允许引用。
+仅当某 scheme 颜色确为实时计算且随外观模式变化时才允许引用。
 
 ### 4. 层级要求
 
@@ -588,7 +638,7 @@ Column(fillMaxSize)                                // 页面根
 
 JVM 回归使用 JUnit 4，位于 app/engine 各自的 `src/test/`；覆盖扫描、设置解析、存档、输入、宿主生命周期与图形策略。测试聚焦行为和边界，不镜像实现，也不为纯文档修改新增业务测试。真机用例与 release R8 probe 的构建、安装和能力边界分别见 [androidTest](app/src/androidTest/README.md) 与 [releaseProbe](app/src/releaseProbe/README.md)；普通 Android CI 未自动运行设备验收。
 
-设备测试 JNI probe 的构建脚本当前只选择 Linux/macOS NDK host 路径，Windows 不能直接照搬这些测试 APK 构建命令；这不影响普通 App 构建与 JVM 测试命令的适用说明。
+设备测试 JNI probe 的构建脚本按 Windows/Linux/macOS 选择 NDK host 与编译器文件名；本机须安装上述 NDK。WebDAV 专用设备验收与不加载原生库的旧版系统验证边界见 [WebDAV 设备记录](docs/WebDAV-device-acceptance.md)，不得把框架测试当作游戏运行库验收。
 
 Room schema 变更须提交 `app/schemas/` 并添加显式 `Migration`；仅既有 v1→v2 与降级恢复保留破坏性重建策略，不扩大例外。
 

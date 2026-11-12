@@ -4,12 +4,16 @@ import android.app.Activity
 import android.app.ActivityOptions
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.net.Uri
 import android.util.LruCache
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -25,8 +29,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -48,14 +50,19 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.items as staggeredGridItems
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -73,14 +80,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -91,6 +98,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import top.yukonga.miuix.kmp.basic.RadioButton
@@ -104,54 +112,55 @@ import com.tyranor.next.core.cover.CoverScraperService
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.manual.AndroidAppGames
 import com.tyranor.next.core.game.storage.GameLibraryFacade
-import com.tyranor.next.core.game.shortcut.deleteShortcutCropBitmap
-import com.tyranor.next.core.game.shortcut.GameShortcutManager
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tyranor.next.core.engine.external.EmulatorLaunchStyle
 import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
-import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.RpgSaveFormat
-import com.tyranor.next.core.game.model.GameSortKeys
+import com.tyranor.next.core.game.save.sync.SaveSyncService
 import com.tyranor.next.core.game.model.GameTitleTags
 import com.tyranor.next.core.game.model.ScanGame
-import com.tyranor.next.core.cover.VndbCoverService
+import com.tyranor.next.core.game.model.filterGames
+import com.tyranor.next.core.game.model.GameSortKeys
+import com.tyranor.next.core.game.model.sortGames
 import com.tyranor.next.core.cover.persistentCoverDir
 import com.tyranor.next.core.cover.stableKey
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.auth.HikarinagiAuthStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
-import com.tyranor.next.theme.AdvancedGlassBorder
-import com.tyranor.next.theme.glassShadow
-import com.tyranor.next.theme.AdvancedGlassSurfaceHigh
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.DialogItemSurface
-import com.tyranor.next.theme.GlassBorder
 import com.tyranor.next.theme.GlassPanel
-import com.tyranor.next.theme.GlassPanelSolid
-import com.tyranor.next.theme.GlassSurfaceSolid
+import com.tyranor.next.theme.MilkGlassPanelBackground
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.NavWhiteOverlay
+import com.tyranor.next.theme.PageSecondaryTextColor
+import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
-import com.tyranor.next.theme.rememberAdvancedGlassPanelSurface
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.CoverBadgeText
 import com.tyranor.next.theme.CoverBadgeBackground
-import com.tyranor.next.theme.AppSheetTopShape
 import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.AppBottomSheet
+import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.TopBarIcon
+import com.tyranor.next.ui.common.CoachAnchor
+import com.tyranor.next.ui.common.coachAnchor
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.isWideScreen
 import com.tyranor.next.ui.common.LaunchErrorDialog
 import com.tyranor.next.ui.common.LaunchErrorState
+import com.tyranor.next.ui.common.toSaveSyncCleanupException
 import com.tyranor.next.ui.common.toErrorState
-import com.tyranor.next.ui.common.userMessage
 import com.tyranor.next.ui.cover.coverErrorMessage
 import com.tyranor.next.ui.cover.coverSourceTitle
 import com.tyranor.next.ui.main.MainLibraryUiState
@@ -161,6 +170,7 @@ import com.tyranor.next.ui.settings.PerGameSettingsActivity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -184,32 +194,29 @@ fun GameScreen(
     onScrapeEventShown: (Long) -> Unit,
     onSearchQueryChanged: (String) -> Unit,
     onAddManualGame: (ScanGame) -> Boolean,
+    onCoachAnchorChanged: (Int, Rect) -> Unit = { _, _ -> },
+    isActive: Boolean = true,
 ) {
     val context = LocalContext.current
     val batchScrapeRunningMessage = stringResource(R.string.game_batch_scraping_running)
-    val saveFormatConvertedFormat = stringResource(R.string.save_format_converted_count)
-    val saveFormatConvertedWithFailuresFormat = stringResource(R.string.save_format_converted_with_failures)
-    val saveFormatConvertFailedMessage = stringResource(R.string.save_format_convert_failed)
-    val saveBusyEngineRunningMessage = stringResource(R.string.save_busy_engine_running)
     val scope = rememberCoroutineScope()
     val games = libraryState.games
     var selectedGameUri by rememberSaveable { mutableStateOf<String?>(null) }
     val selectedGame = remember(games, selectedGameUri) {
         selectedGameUri?.let { uri -> games.firstOrNull { it.uri == uri } }
     }
-    var launchError by remember { mutableStateOf<LaunchErrorState?>(null) }
-    var patchLaunchTarget by remember { mutableStateOf<ScanGame?>(null) }
-    // 网格长按启动路径的 MV/MZ 存档格式确认状态（与抽屉内 sheet 的同名状态各自独立）
-    var longPressSaveTarget by remember { mutableStateOf<ScanGame?>(null) }
-    var longPressSaveDetection by remember { mutableStateOf<RpgSaveFormat.Detection?>(null) }
-    var longPressPatchChoice by remember { mutableStateOf<EngineLauncher.ArtemisPatchChoice?>(null) }
+    // 卡片长按的操作弹窗目标：只存 uri，每次从最新列表解析（改名/封面/启动文件更新后仍是新对象）
+    var quickActionsGameUri by rememberSaveable { mutableStateOf<String?>(null) }
+    val quickActionsGame = remember(games, quickActionsGameUri) {
+        quickActionsGameUri?.let { uri -> games.firstOrNull { it.uri == uri } }
+    }
 
-    val gridState = rememberLazyGridState()
     val scrapeTaskState by CoverScrapeTaskManager.state.collectAsState()
 
-    LaunchedEffect(libraryState.loaded, games, selectedGameUri) {
-        val uri = selectedGameUri ?: return@LaunchedEffect
-        if (libraryState.loaded && games.none { it.uri == uri }) selectedGameUri = null
+    LaunchedEffect(libraryState.loaded, games, selectedGameUri, quickActionsGameUri) {
+        if (!libraryState.loaded) return@LaunchedEffect
+        selectedGameUri?.let { uri -> if (games.none { it.uri == uri }) selectedGameUri = null }
+        quickActionsGameUri?.let { uri -> if (games.none { it.uri == uri }) quickActionsGameUri = null }
     }
 
     LaunchedEffect(libraryState.scrapeEventId, libraryState.scrapeMessage) {
@@ -224,26 +231,8 @@ fun GameScreen(
 
     fun deleteGame(target: ScanGame) {
         if (selectedGameUri == target.uri) selectedGameUri = null
+        if (quickActionsGameUri == target.uri) quickActionsGameUri = null
         onGameDeleted(target)
-    }
-
-    /** 网格长按启动的统一门：Artemis 选择（或无需补丁）后，再检查 MV/MZ 存档格式，最后拉起。
-     *  开启存档互通时跳过弹窗——启动前同步已覆盖其语义。 */
-    fun launchLongPress(game: ScanGame, patchChoice: EngineLauncher.ArtemisPatchChoice?) {
-        scope.launch {
-            if (EngineLauncher.isRpgSaveInteropEnabled(context, game)) {
-                launchError = EngineLauncher.launch(context, game, patchChoice).toErrorState(context)
-                return@launch
-            }
-            val pending = EngineLauncher.rpgSaveFormatPending(context, game)
-            if (pending != null) {
-                longPressSaveTarget = game
-                longPressSaveDetection = pending
-                longPressPatchChoice = patchChoice
-            } else {
-                launchError = EngineLauncher.launch(context, game, patchChoice).toErrorState(context)
-            }
-        }
     }
 
     fun syncMissingCovers() {
@@ -280,36 +269,28 @@ fun GameScreen(
         loaded = libraryState.loaded,
         scanning = libraryState.scanning,
         scrapingCovers = scrapeTaskState.running,
-        gridState = gridState,
         dirPickerLaunch = { dirPicker.launch(null) },
         syncMissingCovers = { syncMissingCovers() },
         refreshGames = { scanLibrary() },
         onGameClick = { selectedGameUri = it.uri },
-        onGameLongClick = { game ->
-            scope.launch {
-                if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
-                    patchLaunchTarget = game
-                } else {
-                    launchLongPress(game, null)
-                }
-            }
-        },
+        // 长按不再直接启动：打开统一操作弹窗（快捷启动 / 桌面快捷方式 / 改名 / 改封面 / 删除）
+        onGameLongClick = { game -> quickActionsGameUri = game.uri },
         dbSearchQuery = libraryState.searchQuery,
-        dbSearchResults = libraryState.searchResults,
+        dbSearchHitUris = libraryState.searchHitUris,
+        confirmedEngineTypes = libraryState.confirmedEngineTypes,
         onAddManualGame = onAddManualGame,
-                onSearchQueryChanged = onSearchQueryChanged,
+        onCoachAnchorChanged = onCoachAnchorChanged,
+        onSearchQueryChanged = onSearchQueryChanged,
+        isActive = isActive,
     )
 
-    // ===== 点击游戏卡片的底部抽屉栏 =====
+    // ===== 点击游戏卡片的底部抽屉栏（启动相关动作与设置/存档/补丁入口） =====
     selectedGame?.let { game ->
         key(game.uri) {
             GameActionsSheet(
                 game = game,
                 onDismiss = { selectedGameUri = null },
                 onGameUpdated = { replaceGame(it) },
-                onDeleteGame = { deleteGame(game) },
-                quickLaunched = libraryState.quickLaunch.any { it.uri == game.uri },
-                onQuickLaunchToggle = { onQuickLaunchToggle(game) },
                 onEngineSettings = {
                     startActivityWithPageTransition(context, PerGameSettingsActivity.createIntent(context, game))
                     selectedGameUri = null
@@ -318,118 +299,37 @@ fun GameScreen(
         }
     }
 
-    // ===== 长按游戏卡片：启动游戏；Artemis 按既有策略弹出补丁确认 =====
-    patchLaunchTarget?.let { game ->
-        AppAlertDialog(
-            onDismissRequest = { patchLaunchTarget = null },
-            title = {
-                Text(
-                    stringResource(R.string.game_auto_patch_title),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-            },
-            text = {
-                Text(
-                    stringResource(R.string.game_auto_patch_message, game.title),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            },
-            confirmButton = {
-                DialogTextButton(
-                    text = stringResource(R.string.game_patch_always),
-                    onClick = {
-                        val target = patchLaunchTarget
-                        patchLaunchTarget = null
-                        target?.let { launchLongPress(it, EngineLauncher.ArtemisPatchChoice.ALWAYS) }
-                    },
-                )
-            },
-            dismissButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    DialogTextButton(
-                        text = stringResource(R.string.game_patch_never),
-                        onClick = {
-                            val target = patchLaunchTarget
-                            patchLaunchTarget = null
-                            target?.let { launchLongPress(it, EngineLauncher.ArtemisPatchChoice.NEVER) }
-                        },
-                    )
-                    DialogTextButton(
-                        text = stringResource(R.string.game_patch_once),
-                        onClick = {
-                            val target = patchLaunchTarget
-                            patchLaunchTarget = null
-                            target?.let { launchLongPress(it, EngineLauncher.ArtemisPatchChoice.ONCE) }
-                        },
-                    )
-                }
-            },
+    // ===== 长按游戏卡片：统一操作弹窗（快捷启动 / 桌面快捷方式 / 改名 / 修改封面 / 删除） =====
+    quickActionsGame?.let { game ->
+        GameQuickActionsDialog(
+            game = game,
+            quickLaunched = libraryState.quickLaunch.any { it.uri == game.uri },
+            onDismiss = { quickActionsGameUri = null },
+            onGameUpdated = { replaceGame(it) },
+            onDeleteGame = { deleteGame(game) },
+            onQuickLaunchToggle = { onQuickLaunchToggle(game) },
         )
-    }
-
-    // 网格长按启动：MV/MZ 存档格式转化确认（标准 → Tyranor）
-    longPressSaveDetection?.let { detection ->
-        val (standardCount, hashedCount) = detection.dialogArgs()
-        RpgSaveFormatDialog(
-            standardCount = standardCount,
-            hashedCount = hashedCount,
-            onChoice = { convert ->
-                val target = longPressSaveTarget
-                val patchChoice = longPressPatchChoice
-                longPressSaveDetection = null
-                longPressSaveTarget = null
-                longPressPatchChoice = null
-                if (target != null) {
-                    scope.launch {
-                        if (convert) {
-                            val op = try {
-                                withContext(Dispatchers.IO) { EngineLauncher.convertRpgSaveFormat(context, target) }
-                            } catch (ce: CancellationException) {
-                                throw ce
-                            } catch (_: Throwable) {
-                                null
-                            }
-                            val message = rpgConvertResultMessage(
-                                op,
-                                saveFormatConvertedFormat,
-                                saveFormatConvertedWithFailuresFormat,
-                                saveFormatConvertFailedMessage,
-                                saveBusyEngineRunningMessage,
-                            )
-                            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
-                        }
-                        launchError = EngineLauncher.launch(context, target, patchChoice).toErrorState(context)
-                    }
-                }
-            },
-        )
-    }
-
-    launchError?.let { state ->
-        LaunchErrorDialog(state = state, onDismiss = { launchError = null })
     }
 }
 
-// 排序键与 Room 预计算列共用 GameSortKeys，保证 SQL 排序与内存排序结果一致（迁移方案阶段 3）。
-// internal：分类仓库首页复用同一排序（与游戏页展示顺序一致）。
-internal fun sortGames(games: List<ScanGame>, sortMode: String): List<ScanGame> {
-    return when (sortMode) {
-        AppSettingsStore.GAME_SORT_BRACKET_TAG -> games.sortedWith(
-            compareBy<ScanGame> { GameSortKeys.bracketTag(it.title).isBlank() }
-                .thenBy { GameSortKeys.tagKey(it.title) }
-                .thenBy { GameSortKeys.titleKey(it.title) },
-        )
-        else -> games.sortedBy { GameSortKeys.titleKey(it.title) }
+/**
+ * 清理应用内关联数据，不触碰游戏目录。等待存档门禁可取消且有时限；取得门禁后的存档清理及
+ * 后续设置清理不可取消。清理失败时调用方须保留游戏库条目，供用户重试。
+ */
+internal suspend fun cleanupDeletedGame(context: android.content.Context, target: ScanGame) {
+    try {
+        SaveSyncService(context).clearGame(target)
+        withContext(NonCancellable) {
+            PerGameSettingsStore.clear(context, target.uri)
+            GameLibraryFacade.removeRecentGame(context, target.uri)
+            GameLibraryFacade.removeQuickLaunch(context, target.uri)
+            deleteCoverFile(context, target.coverUri)
+        }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        throw failure.toSaveSyncCleanupException()
     }
-}
-
-/** 删除游戏后清理应用内关联数据（设置/最近记录/快捷启动/封面/存档镜像），绝不触碰游戏文件。 */
-internal fun cleanupDeletedGame(context: android.content.Context, target: ScanGame) {
-    PerGameSettingsStore.clear(context, target.uri)
-    GameLibraryFacade.removeRecentGame(context, target.uri)
-    GameLibraryFacade.removeQuickLaunch(context, target.uri)
-    deleteCoverFile(context, target.coverUri)
-    GameSaveManager(context).cleanupAppData(target)
 }
 
 private fun deleteCoverFile(context: android.content.Context, coverUri: String?) {
@@ -463,66 +363,136 @@ private fun GameLibraryContent(
     loaded: Boolean,
     scanning: Boolean,
     scrapingCovers: Boolean,
-    gridState: LazyGridState,
     dirPickerLaunch: () -> Unit,
     syncMissingCovers: () -> Unit,
     refreshGames: () -> Unit,
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
     dbSearchQuery: String,
-    dbSearchResults: List<ScanGame>?,
+    dbSearchHitUris: Set<String>?,
+    confirmedEngineTypes: Set<EngineType>?,
     onSearchQueryChanged: (String) -> Unit,
     onAddManualGame: (ScanGame) -> Boolean,
+    onCoachAnchorChanged: (Int, Rect) -> Unit,
+    isActive: Boolean,
 ) {
-    var showSearch by rememberSaveable { mutableStateOf(false) }
     // 「添加游戏」分支流程：null=关闭；CHOICE=分支弹窗，PC/ANDROID=对应二级添加弹窗
     var addGameStep by remember { mutableStateOf<AddGameStep?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
-    val gameSort by AppSettingsStore.gameSortState.collectAsState()
-    val sortedGames = remember(games, gameSort) { sortGames(games, gameSort) }
-    val fallbackFiltered = remember(sortedGames, query) {
-        val q = query.trim()
-        if (q.isEmpty()) sortedGames else sortedGames.filter { it.title.contains(q, ignoreCase = true) }
+    var showFilterSheet by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val conditions by AppSettingsStore.gameConditions.collectAsState()
+    // 条件变化时重新创建滚动状态，避免 Lazy 布局按旧首卡键锚定到排序后的其它位置。
+    val gridState = key(conditions) { rememberLazyStaggeredGridState() }
+    val uniformGridState = key(conditions) { rememberLazyGridState() }
+    val sortedGames = remember(games, conditions.sortMode) { sortGames(games, conditions.sortMode) }
+    LaunchedEffect(query) { onSearchQueryChanged(query) }
+    val hits = dbSearchHitUris.takeIf { dbSearchQuery == query }
+    val searchedGames = remember(sortedGames, hits, query) {
+        val term = query.trim()
+        val titleKey = GameSortKeys.titleKey(term)
+        when {
+            term.isEmpty() -> sortedGames
+            hits != null -> sortedGames.filter { it.uri in hits }
+            // 等待 Room 时使用相同的标题键，避免两条路径匹配结果不同。
+            else -> sortedGames.filter { it.title.contains(term) || GameSortKeys.titleKey(it.title).contains(titleKey) }
+        }
     }
-    // 搜索走 Room DAO（迁移方案阶段 3）：预计算排序键排序 + LIKE 转义；
-    // DB 结果未返回（防抖窗口内）时先用内存过滤兜底，行为与旧版一致。
-    // 已知差异：SQLite LIKE 仅对 ASCII 折叠大小写，全角拉丁/带音符字符的命中可能与
-    // 内存过滤（Unicode）略有出入；后续如需完全对齐可引入 FTS5（方案阶段 3 的预留路径）。
-    LaunchedEffect(query, gameSort) { onSearchQueryChanged(query) }
-    val dbResults = if (query.isNotBlank() && dbSearchQuery == query) dbSearchResults else null
-    val filteredGames = when {
-        query.isBlank() -> sortedGames
-        dbResults != null -> dbResults
-        else -> fallbackFiltered
+    val filteredGames = remember(searchedGames, conditions) {
+        filterGames(searchedGames, conditions.engineFilter, conditions.playedFilter)
     }
+    val availableEngines = remember(games) { games.map { it.engine }.distinct().sortedBy { it.ordinal } }
+    val selectedEngine = conditions.engineFilter
+    LaunchedEffect(loaded, scanning, confirmedEngineTypes, availableEngines, selectedEngine) {
+        if (loaded && !scanning &&
+            conditions.isEngineFilterMissing(availableEngines, confirmedEngineTypes) &&
+            AppSettingsStore.gameConditions.value.engineFilter == selectedEngine
+        ) {
+            AppSettingsStore.setGameFilterEngine(context, AppSettingsStore.GAME_FILTER_ENGINE_ALL)
+        }
+    }
+
     val scrapingCoversDescription = stringResource(R.string.game_scraping_covers_content_description)
+    val cardStyle by AppSettingsStore.gameCardStyleState.collectAsState()
+    // 搜索栏仅在列表顶部显示：离开顶部立即收起，向上滚动过程中不提前展开，滚回顶部才重新出现。
+    // 封面流无纵向滚动，始终显示。
+    var searchBarVisible by remember { mutableStateOf(true) }
+    val searchAndFilterVisible = searchBarVisible || (loaded && !scanning && filteredGames.isEmpty())
+    LaunchedEffect(cardStyle, gridState, uniformGridState) {
+        searchBarVisible = true
+        if (cardStyle == AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW) return@LaunchedEffect
+        val positions = when (cardStyle) {
+            AppSettingsStore.GAME_CARD_STYLE_GRID -> snapshotFlow {
+                uniformGridState.firstVisibleItemIndex to uniformGridState.firstVisibleItemScrollOffset
+            }
+            else -> snapshotFlow {
+                gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset
+            }
+        }
+        positions.collect { (index, offset) ->
+            searchBarVisible = index == 0 && offset == 0
+        }
+    }
 
     Column(modifier.fillMaxSize()) {
-        // ===== 顶部栏：统一 AppTopBar（标题居左 + 右侧图标 + 折叠搜索框） =====
+        // ===== 顶部栏：统一 AppTopBar（标题居左 + 可折叠搜索行） =====
         AppTopBar(
             title = stringResource(R.string.game_title),
             underTitle = {
-                if (showSearch) {
-                    AppSearchField(
-                        query = query,
-                        onQueryChange = { query = it },
-                        modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 10.dp),
-                    )
+                // 搜索栏仅在列表顶部显示；离开顶部收起，滚回顶部才展开
+                AnimatedVisibility(
+                    visible = searchAndFilterVisible,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut(),
+                ) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            // 筛选按钮固定在搜索栏右侧，并与顶栏刷新按钮右对齐。
+                            .padding(start = 4.dp, end = 16.dp, bottom = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .coachAnchor(isActive) {
+                                    onCoachAnchorChanged(CoachAnchor.GAME_SEARCH, it)
+                                },
+                        ) {
+                            AppSearchField(
+                                query = query,
+                                onQueryChange = { query = it },
+                                iconContentDescription = stringResource(R.string.game_search_content_description),
+                            )
+                        }
+                        GameFilterActionIcon(conditions.isActive) {
+                            focusManager.clearFocus()
+                            showFilterSheet = true
+                        }
+                    }
                 }
             },
             trailing = {
-                TopBarIcon(
-                    painterResource(R.drawable.ic_game_add),
-                    stringResource(R.string.game_add_content_description),
-                    MaterialTheme.colorScheme.primary,
-                ) { addGameStep = AddGameStep.CHOICE }
-                TopBarIcon(painterResource(R.drawable.ic_game_search), stringResource(R.string.game_search_content_description), MaterialTheme.colorScheme.primary) {
-                    showSearch = !showSearch
-                    if (!showSearch) query = ""
+                Box(
+                    Modifier.coachAnchor(isActive) {
+                        onCoachAnchorChanged(CoachAnchor.GAME_ADD, it)
+                    },
+                ) {
+                    TopBarIcon(
+                        painterResource(R.drawable.ic_game_add),
+                        stringResource(R.string.game_add_content_description),
+                        MaterialTheme.colorScheme.primary,
+                    ) { addGameStep = AddGameStep.CHOICE }
                 }
                 if (scrapingCovers) {
                     Box(
-                        modifier = Modifier.padding(start = 2.dp).size(34.dp),
+                        modifier = Modifier
+                            .padding(start = 2.dp)
+                            .size(34.dp)
+                            .coachAnchor(isActive) {
+                                onCoachAnchorChanged(CoachAnchor.GAME_COVER, it)
+                            },
                         contentAlignment = Alignment.Center,
                     ) {
                         CircularProgressIndicator(
@@ -534,12 +504,24 @@ private fun GameLibraryContent(
                         )
                     }
                 } else {
-                    TopBarIcon(painterResource(R.drawable.ic_game_cover), stringResource(R.string.game_scrape_covers_content_description), MaterialTheme.colorScheme.primary) {
-                        syncMissingCovers()
+                    Box(
+                        Modifier.coachAnchor(isActive) {
+                            onCoachAnchorChanged(CoachAnchor.GAME_COVER, it)
+                        },
+                    ) {
+                        TopBarIcon(painterResource(R.drawable.ic_game_cover), stringResource(R.string.game_scrape_covers_content_description), MaterialTheme.colorScheme.primary) {
+                            syncMissingCovers()
+                        }
                     }
                 }
-                TopBarIcon(painterResource(R.drawable.ic_game_scan), stringResource(R.string.game_scan_content_description), MaterialTheme.colorScheme.primary) {
-                    refreshGames()
+                Box(
+                    Modifier.coachAnchor(isActive) {
+                        onCoachAnchorChanged(CoachAnchor.GAME_SCAN, it)
+                    },
+                ) {
+                    TopBarIcon(painterResource(R.drawable.ic_game_scan), stringResource(R.string.game_scan_content_description), MaterialTheme.colorScheme.primary) {
+                        refreshGames()
+                    }
                 }
             },
         )
@@ -559,10 +541,10 @@ private fun GameLibraryContent(
                         Text(
                             stringResource(R.string.game_empty_message),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = PageSecondaryTextColor,
                             modifier = Modifier.padding(top = 8.dp),
                         )
-                        com.tyranor.next.ui.common.NoRippleButton(
+                        NoRippleButton(
                             text = stringResource(R.string.game_add_folder),
                             onClick = { dirPickerLaunch() },
                             modifier = Modifier.padding(top = 16.dp),
@@ -571,23 +553,45 @@ private fun GameLibraryContent(
                 }
                 else -> {
                     if (filteredGames.isEmpty()) {
-                        Text(
-                            stringResource(R.string.game_no_match),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.align(Alignment.Center),
-                        )
+                        Column(
+                            Modifier.align(Alignment.Center),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                stringResource(R.string.game_no_match),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = PageSecondaryTextColor,
+                            )
+                            if (query.isNotBlank() || conditions.isActive) {
+                                NoRippleButton(
+                                    text = stringResource(R.string.game_filter_reset),
+                                    onClick = {
+                                        query = ""
+                                        AppSettingsStore.resetGameConditions(context)
+                                    },
+                                    modifier = Modifier.padding(top = 12.dp),
+                                )
+                            }
+                        }
                     } else {
-                        val cardStyle by AppSettingsStore.gameCardStyleState.collectAsState()
-                        if (cardStyle == AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW) {
-                            // 「列表」风格：封面流横向轮播（列表/搜索/排序数据源相同）
-                            GameCoverFlow(
+                        when (cardStyle) {
+                            // 「列表」风格：封面流横向轮播
+                            AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW -> key(conditions) {
+                                GameCoverFlow(
+                                    games = filteredGames,
+                                    onGameClick = onGameClick,
+                                    onGameLongClick = onGameLongClick,
+                                )
+                            }
+                            // 「网格」风格：恢复瀑布流之前的等高网格
+                            AppSettingsStore.GAME_CARD_STYLE_GRID -> UniformGameGrid(
                                 games = filteredGames,
+                                gridState = uniformGridState,
                                 onGameClick = onGameClick,
                                 onGameLongClick = onGameLongClick,
                             )
-                        } else {
-                            GameGrid(
+                            // 「瀑布」风格（默认）
+                            else -> GameGrid(
                                 games = filteredGames,
                                 gridState = gridState,
                                 onGameClick = onGameClick,
@@ -621,6 +625,44 @@ private fun GameLibraryContent(
         null -> Unit
     }
 
+    if (showFilterSheet) {
+        GameFilterSheet(
+            sortMode = conditions.sortMode,
+            engineFilter = selectedEngine,
+            playedFilter = conditions.playedFilter,
+            availableEngines = availableEngines,
+            searchQuery = query,
+            onSortChange = { AppSettingsStore.setGameSort(context, it) },
+            onEngineChange = { AppSettingsStore.setGameFilterEngine(context, it) },
+            onPlayedChange = { AppSettingsStore.setGameFilterPlayed(context, it) },
+            onReset = { AppSettingsStore.resetGameConditions(context) },
+            onDismiss = { showFilterSheet = false },
+        )
+    }
+}
+
+@Composable
+private fun GameFilterActionIcon(
+    isActive: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(contentAlignment = Alignment.TopEnd) {
+        TopBarIcon(
+            painterResource(R.drawable.ic_game_filter),
+            stringResource(R.string.game_filter_content_description),
+            MaterialTheme.colorScheme.primary,
+            stateDescription = if (isActive) stringResource(R.string.game_filter_state_active) else null,
+            onClick = onClick,
+        )
+        if (isActive) {
+            Box(
+                Modifier
+                    .padding(top = 1.dp, end = 1.dp)
+                    .size(6.dp)
+                    .background(MaterialTheme.colorScheme.primary, AppComponentShape),
+            )
+        }
+    }
 }
 
 /** 「添加游戏」流程弹窗步骤（游戏页顶栏入口 → 分支 → 二级添加弹窗）。 */
@@ -633,7 +675,6 @@ private data class DrawerAction(
     val icon: Int,
     val showArrow: Boolean = false,
     val iconTint: Color? = null,
-    val titleColor: Color? = null,
     val onClick: () -> Unit,
 )
 
@@ -643,54 +684,45 @@ internal fun GameActionsSheet(
     game: ScanGame,
     onDismiss: () -> Unit,
     onGameUpdated: (ScanGame) -> Unit,
-    onDeleteGame: () -> Unit,
     onEngineSettings: () -> Unit,
-    quickLaunched: Boolean,
-    onQuickLaunchToggle: () -> Boolean,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var launchError by remember(game.uri) { mutableStateOf<LaunchErrorState?>(null) }
+    val systemNnnLaunch: SystemNnnLaunchViewModel = viewModel()
+    // The confirmation can arrive after the background launch checks have started.
+    fun launchingSystemNnnGame() = systemNnnLaunch.activeUri == game.uri
+    var launchJob by remember(game.uri) { mutableStateOf<Job?>(null) }
     var showCoverSourcePicker by rememberSaveable(game.uri) { mutableStateOf(false) }
     var coverSearchSource by rememberSaveable(game.uri) { mutableStateOf<String?>(null) }
     var coverBinding by remember { mutableStateOf(false) }
     var coverBindError by rememberSaveable(game.uri) { mutableStateOf<String?>(null) }
-    var showDeleteConfirm by rememberSaveable(game.uri) { mutableStateOf(false) }
     var showLaunchFilePicker by rememberSaveable(game.uri) { mutableStateOf(false) }
-    var showRenameDialog by rememberSaveable(game.uri) { mutableStateOf(false) }
     var showPatchConfirm by rememberSaveable(game.uri) { mutableStateOf(false) }
     // MV/MZ 存档格式转化确认：待转化检测结果 + 已选定的 Artemis 补丁策略（两弹窗串联时保留）
     var rpgSaveDetection by remember(game.uri) { mutableStateOf<RpgSaveFormat.Detection?>(null) }
     var pendingPatchChoice by remember(game.uri) { mutableStateOf<EngineLauncher.ArtemisPatchChoice?>(null) }
-    var shortcutRequestInFlight by remember(game.uri) { mutableStateOf(false) }
-    var shortcutCropUriText by rememberSaveable(game.uri) { mutableStateOf<String?>(null) }
-    var shortcutPickerForNoCover by rememberSaveable(game.uri) { mutableStateOf(false) }
     val batchScrapeRunningMessage = stringResource(R.string.game_batch_scraping_running)
-    val settingCoverMessage = stringResource(R.string.game_setting_cover)
-    val coverSetFailedMessage = stringResource(R.string.game_cover_set_failed)
-    val quickLaunchFullMessage = stringResource(R.string.game_quick_launch_full)
     val coverDownloadFailedMessage = stringResource(R.string.game_cover_download_failed)
-    val shortcutRequestedMessage = stringResource(R.string.game_desktop_shortcut_requested)
-    val shortcutUpdatedMessage = stringResource(R.string.game_desktop_shortcut_updated)
-    val shortcutUnsupportedMessage = stringResource(R.string.game_desktop_shortcut_unsupported)
-    // 抽屉「一行两个」动作条目的文案/颜色：buildList 的 lambda 内不允许 @Composable 调用，先在组合体取值
-    val drawerQuickLaunchTitle = if (quickLaunched) stringResource(R.string.game_remove_quick_launch)
-    else stringResource(R.string.game_add_quick_launch)
-    val drawerDesktopShortcutTitle = stringResource(R.string.game_add_desktop_shortcut)
+    // 抽屉动作条目的文案/颜色：buildList 的 lambda 内不允许 @Composable 调用，先在组合体取值
     val drawerSearchCoverTitle = stringResource(R.string.game_search_cover)
-    val drawerEditCoverTitle = stringResource(R.string.game_edit_cover)
-    val drawerRenameTitle = stringResource(R.string.game_rename)
     val drawerSaveManagementTitle = stringResource(R.string.game_save_management)
     val drawerOnlinePatchTitle = stringResource(R.string.game_online_patch)
     val drawerEngineSettingsTitle = stringResource(R.string.settings_engine_settings)
-    val drawerDeleteTitle = stringResource(R.string.game_delete_title)
     val drawerPrimaryColor = MaterialTheme.colorScheme.primary
-    val drawerDangerColor = MaterialTheme.colorScheme.error
-    val shortcutFailedMessage = stringResource(R.string.game_desktop_shortcut_failed)
     val saveFormatConvertedFormat = stringResource(R.string.save_format_converted_count)
     val saveFormatConvertedWithFailuresFormat = stringResource(R.string.save_format_converted_with_failures)
     val saveFormatConvertFailedMessage = stringResource(R.string.save_format_convert_failed)
     val saveBusyEngineRunningMessage = stringResource(R.string.save_busy_engine_running)
+
+    val completion = systemNnnLaunch.completion?.takeIf { it.uri == game.uri }
+    LaunchedEffect(completion) {
+        if (completion == null) return@LaunchedEffect
+        systemNnnLaunch.dismissCompletion(completion)
+        val result = completion.result ?: return@LaunchedEffect
+        launchError = result.toErrorState(context)
+        if (launchError == null) onDismiss()
+    }
 
     /** Blocks destructive cover/shortcut actions while a batch scrape is running. */
     fun isBatchScrapingActive(): Boolean {
@@ -702,8 +734,14 @@ internal fun GameActionsSheet(
     // 发起启动；Artemis 需要 PFS 基础补丁且策略为“启动时询问”时，先弹窗确认再带选择启动
     /** Launches the selected game, optionally applying an explicit Artemis policy. */
     fun startLaunch(patchChoice: EngineLauncher.ArtemisPatchChoice? = null) {
-        scope.launch {
-            launchError = EngineLauncher.launch(context, game, patchChoice).toErrorState(context)
+        if (RuntimeModuleBindings.builtInSystemNnn(game).engine == EngineType.SYSTEMNNN) {
+            systemNnnLaunch.launch(context, game)
+            return
+        }
+        if (launchJob?.isCompleted == false) return
+        launchJob = scope.launch {
+            launchError = EngineLauncher.launch(context, game, patchChoice)
+                .toErrorState(context)
             if (launchError == null) onDismiss()
         }
     }
@@ -728,6 +766,7 @@ internal fun GameActionsSheet(
 
     /** 启动前统一门：先 Artemis 补丁确认，再 MV/MZ 存档格式确认，最后才真正拉起。 */
     fun beginLaunch() {
+        if (launchJob?.isCompleted == false || launchingSystemNnnGame()) return
         scope.launch {
             if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
                 showPatchConfirm = true
@@ -765,363 +804,134 @@ internal fun GameActionsSheet(
         }
     }
 
-    /** Requests a new shortcut or updates the existing shortcut for this game. */
-    fun requestDesktopShortcut(customIconUri: android.net.Uri? = null) {
-        if (shortcutRequestInFlight) {
-            // 上一次请求（系统确认框）尚未结束：丢弃新生成的临时图标，避免孤儿文件
-            deleteShortcutCropBitmap(context.applicationContext, customIconUri)
-            return
-        }
-        shortcutRequestInFlight = true
-        scope.launch {
-            val result = try {
-                GameShortcutManager.requestPinShortcut(
-                    context = context,
-                    game = game,
-                    launchIntent = GameShortcutActivity.createIntent(context, game.uri),
-                    customIconUri = customIconUri,
-                )
-            } catch (error: Throwable) {
-                if (error is CancellationException) throw error
-                GameShortcutManager.RequestResult.FAILED
-            } finally {
-                shortcutRequestInFlight = false
-                deleteShortcutCropBitmap(context.applicationContext, customIconUri)
-            }
-            val message = when (result) {
-                GameShortcutManager.RequestResult.REQUESTED -> shortcutRequestedMessage
-                GameShortcutManager.RequestResult.UPDATED -> shortcutUpdatedMessage
-                GameShortcutManager.RequestResult.UNSUPPORTED -> shortcutUnsupportedMessage
-                GameShortcutManager.RequestResult.FAILED -> shortcutFailedMessage
-            }
-            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
-            if (result == GameShortcutManager.RequestResult.REQUESTED || result == GameShortcutManager.RequestResult.UPDATED) {
-                onDismiss()
-            }
-        }
-    }
-
-    val shortcutIconPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
-            shortcutPickerForNoCover = false
-            shortcutCropUriText = uri.toString()
-        } else if (shortcutPickerForNoCover) {
-            shortcutPickerForNoCover = false
-            requestDesktopShortcut()
-        }
-    }
-
-    /** Opens cover cropping, falling back to custom-image selection when no cover exists. */
-    fun openShortcutCrop() {
-        val coverUri = game.coverUri?.takeIf { it.isNotBlank() }
-        if (coverUri != null) {
-            shortcutCropUriText = coverUri
-        } else {
-            shortcutPickerForNoCover = true
-            shortcutIconPicker.launch("image/*")
-        }
-    }
-
-    // 打开相册选择自定义封面
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        if (isBatchScrapingActive()) return@rememberLauncherForActivityResult
-        scope.launch {
-            launchError = LaunchErrorState(settingCoverMessage)
-            val updated = withContext(Dispatchers.IO) {
-                try {
-                    VndbCoverService.saveCustomCover(context, game, uri)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Throwable) {
-                    null
-                }
-            }
-            if (updated != null) {
-                onGameUpdated(updated)
-                launchError = null
-                onDismiss()
-            } else {
-                launchError = LaunchErrorState(coverSetFailedMessage)
-            }
-        }
-    }
-
-    // 玻璃系风格抽屉：高级玻璃用页面背景取色渐变；复古玻璃用不透明色，任何一层都不透底
+    // 抽屉条目遵循页面灰底取色；白雾玻璃面板内改用与页面条目同亮度的面板条目色。
     val drawerItemSurface = when {
-        AppThemeColors.isAdvancedGlass -> AdvancedGlassSurfaceHigh
-        AppThemeColors.isGlass -> GlassSurfaceSolid
+        AppThemeColors.isMilkGlass -> DialogItemSurface
         else -> NavWhite
     }
-    // 高级玻璃：面板渐变从页面背景取色（独立窗口采不到 backdrop，用跨窗口取色替代）
-    val advancedPanelSurface = if (AppThemeColors.isAdvancedGlass) rememberAdvancedGlassPanelSurface() else null
 
-    ModalBottomSheet(
-        onDismissRequest = {
-            // 关闭抽屉时一并清除裁切弹窗状态，避免 rememberSaveable 在下一次打开时残留旧弹窗
-            shortcutCropUriText = null
-            shortcutPickerForNoCover = false
-            onDismiss()
-        },
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        // 关闭抽屉拖拽手势：M3 默认「位移 > 56dp 或速度 > 125dp/s」即关闭，用户快速滑动内容时
-        // 极易误关（列表到顶后的剩余手势/惯性会转交抽屉）。关闭后仅能通过遮罩/返回键关闭，
-        // 内容滚动与点击不受影响。参见 AGENTS.md「游戏操作抽屉」约定。
-        sheetGesturesEnabled = false,
-        // 高级玻璃面板底色透明，取色渐变画在内容层（不能挂 Surface 外层 modifier：
-        // 抽屉位置由内部 anchors 布局偏移决定，外层绘制会落在未偏移位置，与玻璃描边踩过同一个坑）；
-        // 复古玻璃用不透明面板色（GlassPanel 带 10% 透明度会透出底层内容）
-        containerColor = when {
-            AppThemeColors.isAdvancedGlass -> Color.Transparent
-            AppThemeColors.isGlass -> GlassPanelSolid
-            else -> MaterialTheme.colorScheme.background
-        },
-        // 玻璃系风格加深化背景，避免抽屉与底层内容混在一起被看成半透明
-        scrimColor = when {
-            AppThemeColors.isAdvancedGlass -> Color.Black.copy(alpha = 0.6f)
-            AppThemeColors.isGlass -> Color.Black.copy(alpha = 0.6f)
-            else -> Color.Black.copy(alpha = 0.32f)
-        },
-        contentWindowInsets = { WindowInsets(0.dp) },
-        // 顶部圆角与弹窗内条目圆角（AppNavItem 8dp）保持一致
-        shape = AppSheetTopShape,
-        // 玻璃描边只能画在抽屉真实顶边（dragHandle 槽首位）；不能挂 Surface 外层 modifier，
-        // 否则描边会按未偏移的布局位置落到背景里形成一条白线。
-        // 高级玻璃的把手条用面板渐变的顶端取色铺底，与下方内容层的渐变无缝衔接。
-        dragHandle = {
-            // Column 默认水平 Start 对齐会让把手贴左；需显式居中，描边线仍铺满整宽
-            Column(
+    AppBottomSheet(
+        onDismissRequest = { if (!launchingSystemNnnGame()) onDismiss() },
+        confirmValueChange = { it != SheetValue.Hidden || !launchingSystemNnnGame() },
+    ) {
+        Column(Modifier.fillMaxWidth().weight(1f, fill = false)) {
+            LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .then(
-                        if (advancedPanelSurface != null) {
-                            Modifier.background(advancedPanelSurface.topColor)
-                        } else {
-                            Modifier
-                        },
-                    ),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                if (AppThemeColors.isGlass) {
-                    Box(
-                        Modifier.fillMaxWidth().height(0.5.dp).background(
-                            if (AppThemeColors.isAdvancedGlass) AdvancedGlassBorder else GlassBorder,
-                        ),
-                    )
-                }
-                BottomSheetDefaults.DragHandle()
-            }
-        },
-    ) {
-        // 小平板横屏下屏幕高度可能 < 560dp，硬编码会导致抽屉填满屏幕，
-        // SwipeableState 无法区分滚动/收起，快速滑动时高速振荡（issue #27）。
-        val sheetMaxHeight = with(LocalConfiguration.current) {
-            val available = (screenHeightDp - 120).dp
-            available.coerceIn(200.dp, 560.dp)
-        }
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = sheetMaxHeight)
-                // 高级玻璃取色渐变画在内容层（随抽屉偏移一起移动）
-                .then(
-                    if (advancedPanelSurface != null) {
-                        Modifier.background(advancedPanelSurface.brush)
-                    } else {
-                        Modifier
-                    },
-                ),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            item {
-                Text(
-                    game.title,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
-                )
-            }
+                    // weight(false) 给固定启动按钮预留真实高度；横屏短窗会自动压缩列表并保留滚动。
+                    .weight(1f, fill = false),
+                    contentPadding = PaddingValues(start = 16.dp, top = 6.dp, end = 16.dp, bottom = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    item {
+                        Text(
+                            game.title,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(start = 4.dp, top = 4.dp, end = 4.dp, bottom = 8.dp),
+                        )
+                    }
 
-            item {
-                AppNavItem(
-                    title = stringResource(R.string.game_launch_action),
-                    leadingIcon = R.drawable.ic_sheet_launch,
-                    containerColor = drawerItemSurface,
-                        verticalPadding = 17.dp,
-                    showArrow = false,
-                    leadingIconTint = MaterialTheme.colorScheme.primary,
-                    onClick = { beginLaunch() },
-                )
-            }
-            // KRKR 与所有 Winlator 系引擎（YU-RIS / CatSystem2 / PC）支持启动文件切换
-            if (
-                game.engine == EngineType.KIRIKIRI ||
-                ExternalEmulatorRegistry.forEngine(game.engine)?.launchStyle == EmulatorLaunchStyle.WINLATOR_EXTERNAL
-            ) {
-                item {
-                    AppNavItem(
-                        title = stringResource(R.string.game_launch_file),
-                        summary = game.launchFile ?: stringResource(R.string.game_launch_file_auto_summary),
-                        leadingIcon = R.drawable.ic_sheet_launch_file,
-                        containerColor = drawerItemSurface,
-                        verticalPadding = 17.dp,
-                        showArrow = false,
-                        leadingIconTint = MaterialTheme.colorScheme.primary,
-                        onClick = { showLaunchFilePicker = true },
-                    )
-                }
-            }
-            // 「启动游戏 / 启动文件」保持整行；其余动作条目一行两个（末行单个保持半宽）。
-            val drawerActions = buildList {
-                add(
-                    DrawerAction(
-                        key = "quick_launch",
-                        title = drawerQuickLaunchTitle,
-                        icon = R.drawable.ic_home,
-                        iconTint = drawerPrimaryColor,
-                        onClick = {
-                            if (onQuickLaunchToggle()) {
-                                onDismiss()
-                            } else {
-                                android.widget.Toast.makeText(context, quickLaunchFullMessage, android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                    ),
-                )
-                add(
-                    DrawerAction(
-                        key = "desktop_shortcut",
-                        title = drawerDesktopShortcutTitle,
-                        icon = R.drawable.ic_sheet_desktop_shortcut,
-                        iconTint = drawerPrimaryColor,
-                        onClick = { if (!shortcutRequestInFlight) openShortcutCrop() },
-                    ),
-                )
-                add(
-                    DrawerAction(
-                        key = "search_cover",
-                        title = drawerSearchCoverTitle,
-                        icon = R.drawable.ic_sheet_search_cover,
-                        iconTint = drawerPrimaryColor,
-                        onClick = { if (!isBatchScrapingActive()) showCoverSourcePicker = true },
-                    ),
-                )
-                add(
-                    DrawerAction(
-                        key = "edit_cover",
-                        title = drawerEditCoverTitle,
-                        icon = R.drawable.ic_sheet_edit_cover,
-                        iconTint = drawerPrimaryColor,
-                        onClick = { if (!isBatchScrapingActive()) imagePicker.launch("image/*") },
-                    ),
-                )
-                add(
-                    DrawerAction(
-                        key = "rename",
-                        title = drawerRenameTitle,
-                        icon = R.drawable.ic_sheet_rename,
-                        iconTint = drawerPrimaryColor,
-                        onClick = { showRenameDialog = true },
-                    ),
-                )
-                if (shouldShowSaveManagement(game)) {
-                    add(
-                        DrawerAction(
-                            key = "save_management",
-                            title = drawerSaveManagementTitle,
-                            icon = R.drawable.ic_sheet_saves,
-                            showArrow = true,
-                            iconTint = drawerPrimaryColor,
-                            onClick = {
-                                startActivityWithPageTransition(context, SaveManagementActivity.createIntent(context, game))
-                                onDismiss()
-                            },
-                        ),
-                    )
-                }
-                if (game.engine == EngineType.KIRIKIRI) {
-                    add(
-                        DrawerAction(
-                            key = "online_patch",
-                            title = drawerOnlinePatchTitle,
-                            icon = R.drawable.ic_sheet_patch,
-                            showArrow = true,
-                            iconTint = drawerPrimaryColor,
-                            onClick = {
-                                startActivityWithPageTransition(context, KrkrOnlinePatchActivity.createIntent(context, game))
-                                onDismiss()
-                            },
-                        ),
-                    )
-                }
-                add(
-                    DrawerAction(
-                        key = "engine_settings",
-                        title = drawerEngineSettingsTitle,
-                        icon = R.drawable.ic_sheet_settings,
-                        showArrow = true,
-                        iconTint = drawerPrimaryColor,
-                        onClick = onEngineSettings,
-                    ),
-                )
-                add(
-                    DrawerAction(
-                        key = "delete",
-                        title = drawerDeleteTitle,
-                        icon = R.drawable.ic_sheet_delete,
-                        iconTint = drawerDangerColor,
-                        titleColor = drawerDangerColor,
-                        onClick = { showDeleteConfirm = true },
-                    ),
-                )
-            }
-            drawerActions.chunked(2).forEach { rowActions ->
-                item(key = "drawer_row:" + rowActions.first().key) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    // KRKR 与所有 Winlator 系引擎（YU-RIS / CatSystem2 / PC）支持启动文件切换
+                    if (
+                        game.engine == EngineType.KIRIKIRI ||
+                        ExternalEmulatorRegistry.forEngine(game.engine)?.launchStyle == EmulatorLaunchStyle.WINLATOR_EXTERNAL
                     ) {
-                        rowActions.forEach { action ->
+                        item {
+                            AppNavItem(
+                                title = stringResource(R.string.game_launch_file),
+                                summary = game.launchFile ?: stringResource(R.string.game_launch_file_auto_summary),
+                                leadingIcon = R.drawable.ic_sheet_launch_file,
+                                containerColor = drawerItemSurface,
+                                verticalPadding = 17.dp,
+                                showArrow = false,
+                                leadingIconTint = MaterialTheme.colorScheme.primary,
+                                onClick = { showLaunchFilePicker = true },
+                            )
+                        }
+                    }
+                    // 所有动作条目统一单个占满一行；卡片管理动作（快捷启动 / 桌面快捷方式 / 改名 /
+                    // 改封面 / 删除）已统一收口到长按操作弹窗，抽屉只保留启动相关动作与二级页面入口。
+                    val drawerActions = buildList {
+                        add(
+                            DrawerAction(
+                                key = "search_cover",
+                                title = drawerSearchCoverTitle,
+                                icon = R.drawable.ic_sheet_search_cover,
+                                iconTint = drawerPrimaryColor,
+                                onClick = { if (!isBatchScrapingActive()) showCoverSourcePicker = true },
+                            ),
+                        )
+                        if (shouldShowSaveManagement(game)) {
+                            add(
+                                DrawerAction(
+                                    key = "save_management",
+                                    title = drawerSaveManagementTitle,
+                                    icon = R.drawable.ic_sheet_saves,
+                                    showArrow = true,
+                                    iconTint = drawerPrimaryColor,
+                                    onClick = {
+                                        startActivityWithPageTransition(context, SaveManagementActivity.createIntent(context, game))
+                                        onDismiss()
+                                    },
+                                ),
+                            )
+                        }
+                        if (game.engine == EngineType.KIRIKIRI) {
+                            add(
+                                DrawerAction(
+                                    key = "online_patch",
+                                    title = drawerOnlinePatchTitle,
+                                    icon = R.drawable.ic_sheet_patch,
+                                    showArrow = true,
+                                    iconTint = drawerPrimaryColor,
+                                    onClick = {
+                                        startActivityWithPageTransition(context, KrkrOnlinePatchActivity.createIntent(context, game))
+                                        onDismiss()
+                                    },
+                                ),
+                            )
+                        }
+                        // 第三方运行时模块没有主 App 侧设置；未知引擎也不展示设置。
+                        if (game.engine != EngineType.RUNTIME_MODULE && game.engine != EngineType.UNKNOWN) {
+                            add(
+                                DrawerAction(
+                                    key = "engine_settings",
+                                    title = drawerEngineSettingsTitle,
+                                    icon = R.drawable.ic_sheet_settings,
+                                    showArrow = true,
+                                    iconTint = drawerPrimaryColor,
+                                    onClick = onEngineSettings,
+                                ),
+                            )
+                        }
+                    }
+                    drawerActions.forEach { action ->
+                        item(key = "drawer_row:" + action.key) {
                             AppNavItem(
                                 title = action.title,
-                                modifier = Modifier.weight(1f),
                                 leadingIcon = action.icon,
                                 containerColor = drawerItemSurface,
                                 verticalPadding = 17.dp,
                                 showArrow = action.showArrow,
                                 leadingIconTint = action.iconTint,
-                                titleColor = action.titleColor,
-                                onClick = action.onClick,
+                                onClick = {
+                                    if (!launchingSystemNnnGame()) action.onClick()
+                                }.takeUnless { launchingSystemNnnGame() },
                             )
                         }
-                        if (rowActions.size == 1) {
-                            Spacer(Modifier.weight(1f))
-                        }
                     }
-                }
             }
 
-            // 底部安全区留白
-            item { Box(Modifier.fillMaxWidth().navigationBarsPadding().height(16.dp)) }
+            // 主操作固定在抽屉底部：整行长按钮，「启动游戏」文案居中
+            NoRippleButton(
+                text = stringResource(R.string.game_launch_action),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 22.dp),
+                onClick = { beginLaunch() },
+            )
         }
-    }
-
-    shortcutCropUriText?.let { uriText ->
-        GameShortcutCropDialog(
-            imageUri = Uri.parse(uriText),
-            onDismiss = { shortcutCropUriText = null },
-            onPickImage = {
-                if (!shortcutRequestInFlight) {
-                    shortcutPickerForNoCover = false
-                    shortcutIconPicker.launch("image/*")
-                }
-            },
-            onConfirm = { croppedUri ->
-                shortcutCropUriText = null
-                requestDesktopShortcut(croppedUri)
-            },
-        )
     }
 
     // ===== Artemis 自动补丁确认：总是（记住 auto）/ 本次 / 不再（记住 off）；点遮罩取消 = 不启动 =====
@@ -1183,23 +993,12 @@ internal fun GameActionsSheet(
                         if (updated != null) {
                             onGameUpdated(updated)
                             coverSearchSource = null
-                            onDismiss()
+                            if (!launchingSystemNnnGame()) onDismiss()
                         } else {
                             coverBindError = coverDownloadFailedMessage
                         }
                     }
                 }
-            },
-        )
-    }
-
-    if (showRenameDialog) {
-        RenameGameDialog(
-            game = game,
-            onDismiss = { showRenameDialog = false },
-            onConfirm = { title ->
-                showRenameDialog = false
-                onGameUpdated(game.copy(title = title))
             },
         )
     }
@@ -1219,71 +1018,6 @@ internal fun GameActionsSheet(
         LaunchErrorDialog(state = state, onDismiss = { launchError = null })
     }
 
-    if (showDeleteConfirm) {
-        AppAlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = { Text(stringResource(R.string.game_delete_title), style = MaterialTheme.typography.titleMedium) },
-            text = {
-                Text(
-                    stringResource(R.string.game_delete_message, game.title),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            },
-            confirmButton = {
-                DialogTextButton(
-                    text = stringResource(R.string.common_delete),
-                    contentColor = MaterialTheme.colorScheme.error,
-                    onClick = {
-                        showDeleteConfirm = false
-                        onDeleteGame()
-                    },
-                )
-            },
-            dismissButton = {
-                DialogTextButton(
-                    text = stringResource(R.string.common_cancel),
-                    onClick = { showDeleteConfirm = false },
-                )
-            },
-        )
-    }
-}
-
-@Composable
-private fun RenameGameDialog(
-    game: ScanGame,
-    onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit,
-) {
-    var title by rememberSaveable(game.uri, game.title) { mutableStateOf(game.title) }
-    val normalizedTitle = title.trim()
-    val canConfirm = normalizedTitle.isNotEmpty() && normalizedTitle != game.title
-
-    AppAlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.game_rename), style = MaterialTheme.typography.titleMedium) },
-        text = {
-            // 统一 Miuix 风格输入框（AppSearchField）；键盘“搜索/完成”动作直接保存（内容有效时）
-            AppSearchField(
-                query = title,
-                onQueryChange = { title = it },
-                onSearch = { if (canConfirm) onConfirm(normalizedTitle) },
-                leadingIcon = painterResource(R.drawable.ic_sheet_rename),
-                iconContentDescription = stringResource(R.string.game_rename),
-                textStyle = MaterialTheme.typography.bodyMedium,
-            )
-        },
-        confirmButton = {
-            DialogTextButton(
-                text = stringResource(R.string.common_save),
-                enabled = canConfirm,
-                onClick = { onConfirm(normalizedTitle) },
-            )
-        },
-        dismissButton = {
-            DialogTextButton(onClick = onDismiss, text = stringResource(R.string.common_cancel))
-        },
-    )
 }
 
 @Composable
@@ -1317,6 +1051,8 @@ private fun CoverSourcePickerDialog(
                         summary = coverSourcePickerSummary(source, enabled, needsHikarinagiLogin),
                         onClick = if (selectable) ({ onSelect(source) }) else null,
                         leadingIcon = R.drawable.ic_cover_source,
+                        // 弹窗内条目必须与亮面板形成反差（AGENTS.md 弹窗条目约定）
+                        containerColor = DialogItemSurface,
                     )
                 }
             }
@@ -1352,8 +1088,6 @@ private fun CoverSearchDialog(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val imeVisible = WindowInsets.ime.getBottom(density) > 0
-    // 高级玻璃：面板渐变从页面背景取色（独立窗口采不到 backdrop，用跨窗口取色替代）
-    val advancedPanelSurface = if (AppThemeColors.isAdvancedGlass) rememberAdvancedGlassPanelSurface() else null
 
     /** 离开二级：取消在飞请求并清干净二级状态，避免残留状态或迟到写入影响一级。 */
     fun leaveDrillDown() {
@@ -1453,8 +1187,7 @@ private fun CoverSearchDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                // 高级玻璃面板为较高不透明度的灰玻璃膜，遮罩略加深即可
-                .background(Color.Black.copy(alpha = if (AppThemeColors.isAdvancedGlass) 0.6f else 0.5f)),
+                .background(Color.Black.copy(alpha = 0.5f)),
         ) {
             Box(
                 Modifier
@@ -1492,135 +1225,141 @@ private fun CoverSearchDialog(
                         .fillMaxWidth()
                         .widthIn(max = CoverSearchDialogMaxWidth)
                         .then(dialogHeightModifier)
-                        .glassShadow()
                         .clip(AppComponentShape)
-                        // 高级玻璃用页面背景取色渐变，其余玻璃档用高不透明度玻璃面板
-                        .then(
-                            if (advancedPanelSurface != null) {
-                                Modifier.background(advancedPanelSurface.brush)
-                            } else {
-                                Modifier.background(if (AppThemeColors.isGlass) GlassPanel else NavWhite)
+                        // 玻璃风格用高不透明度面板；白雾玻璃用页面底图 + 白纱的面板层
+                        .background(
+                            when {
+                                AppThemeColors.isGlass -> GlassPanel
+                                AppThemeColors.isMilkGlass -> Color.Transparent
+                                else -> NavWhite
                             },
                         )
                         .glassBorder()
                         .pointerInput(Unit) { detectTapGestures { } },
                 ) {
-                    Column(Modifier.fillMaxSize()) {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                drillDown?.let { stringResource(R.string.cover_multi_cover_title, it.title) }
-                                    ?: stringResource(R.string.game_cover_search_title, coverSourceTitle(source)),
-                                style = MaterialTheme.typography.titleMedium,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                textAlign = TextAlign.Center,
-                            )
-                        }
-                        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
-                            // 二级沿用一级关键词，不再展示输入框
-                            if (drillDown == null) {
-                                AppSearchField(
-                                    query = keyword,
-                                    onQueryChange = { keyword = it },
-                                    onSearch = { search() },
-                                    textStyle = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
-                            if (searching || loadingCovers) {
+                    if (AppThemeColors.isMilkGlass) {
+                        MilkGlassPanelBackground(Modifier.matchParentSize())
+                    }
+                    // 弹窗是自绘的亮面板，不在 AppAlertDialog 的 contentColor 上下文里；
+                    // 显式提供条目正文色，避免白雾面板上继承页面级白字。
+                    CompositionLocalProvider(LocalContentColor provides TextColor) {
+                        Column(Modifier.fillMaxSize()) {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
                                 Text(
-                                    stringResource(if (searching) R.string.game_cover_searching else R.string.common_loading),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 8.dp),
+                                    drillDown?.let { stringResource(R.string.cover_multi_cover_title, it.title) }
+                                        ?: stringResource(R.string.game_cover_search_title, coverSourceTitle(source)),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.Center,
                                 )
                             }
-                            if (drillDown != null) {
-                                // 归属要求：封面数据来自未萌 NextMoe（鲲 Galgame 论坛）
-                                Text(
-                                    stringResource(R.string.cover_nextmoe_attribution),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 8.dp),
-                                )
+                            Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
+                                // 二级沿用一级关键词，不再展示输入框
+                                if (drillDown == null) {
+                                    AppSearchField(
+                                        query = keyword,
+                                        onQueryChange = { keyword = it },
+                                        onSearch = { search() },
+                                        textStyle = MaterialTheme.typography.bodyMedium,
+                                    )
+                                }
+                                if (searching || loadingCovers) {
+                                    Text(
+                                        stringResource(if (searching) R.string.game_cover_searching else R.string.common_loading),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(top = 8.dp),
+                                    )
+                                }
+                                if (drillDown != null) {
+                                    // 归属要求：封面数据来自未萌 NextMoe（鲲 Galgame 论坛）
+                                    Text(
+                                        stringResource(R.string.cover_nextmoe_attribution),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(top = 8.dp),
+                                    )
+                                }
+                                if (binding) {
+                                    Text(
+                                        stringResource(R.string.game_cover_binding),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(top = 8.dp),
+                                    )
+                                }
+                                bindError?.let {
+                                    Text(
+                                        it,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.padding(top = 8.dp),
+                                    )
+                                }
+                                infoMessage?.let {
+                                    Text(
+                                        it,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.padding(top = 8.dp),
+                                    )
+                                }
                             }
-                            if (binding) {
-                                Text(
-                                    stringResource(R.string.game_cover_binding),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 8.dp),
-                                )
-                            }
-                            bindError?.let {
-                                Text(
-                                    it,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.padding(top = 8.dp),
-                                )
-                            }
-                            infoMessage?.let {
-                                Text(
-                                    it,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.padding(top = 8.dp),
-                                )
-                            }
-                        }
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f)
-                                .padding(horizontal = 18.dp, vertical = 12.dp),
-                        ) {
-                            if (visibleCandidates.isNotEmpty()) {
-                                LazyVerticalGrid(
-                                    columns = GridCells.Adaptive(CoverSearchCandidateMinWidth),
-                                    modifier = Modifier.fillMaxSize(),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                                ) {
-                                    gridItems(
-                                        items = visibleCandidates,
-                                        key = { "${it.source}:${it.id}:${it.coverUrl}" },
-                                        contentType = { "cover_candidate" },
-                                    ) { candidate ->
-                                        CoverCandidateCard(
-                                            candidate = candidate,
-                                            onClick = { onCandidateClick(candidate) },
-                                            // 二级：标注封面类型 / 尺寸 / 分级，便于区分同一作品的多张封面
-                                            caption = if (drillDown != null) candidate.detail else null,
-                                        )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f)
+                                    .padding(horizontal = 18.dp, vertical = 12.dp),
+                            ) {
+                                if (visibleCandidates.isNotEmpty()) {
+                                    LazyVerticalGrid(
+                                        columns = GridCells.Adaptive(CoverSearchCandidateMinWidth),
+                                        modifier = Modifier.fillMaxSize(),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                                    ) {
+                                        gridItems(
+                                            items = visibleCandidates,
+                                            key = { "${it.source}:${it.id}:${it.coverUrl}" },
+                                            contentType = { "cover_candidate" },
+                                        ) { candidate ->
+                                            CoverCandidateCard(
+                                                candidate = candidate,
+                                                onClick = { onCandidateClick(candidate) },
+                                                // 二级：标注封面类型 / 尺寸 / 分级，便于区分同一作品的多张封面
+                                                caption = if (drillDown != null) candidate.detail else null,
+                                            )
+                                        }
                                     }
                                 }
                             }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                            horizontalArrangement = if (drillDown != null) {
-                                Arrangement.SpaceBetween
-                            } else {
-                                Arrangement.spacedBy(8.dp, Alignment.End)
-                            },
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            if (drillDown != null) {
-                                DialogTextButton(
-                                    text = stringResource(R.string.common_back),
-                                    onClick = { leaveDrillDown() },
-                                )
-                            }
-                            DialogTextButton(text = stringResource(R.string.common_close), onClick = onDismiss)
-                            if (drillDown == null) {
-                                DialogTextButton(
-                                    text = if (searching) stringResource(R.string.game_searching) else stringResource(R.string.game_search),
-                                    enabled = canSearch,
-                                    onClick = { search() },
-                                )
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                                horizontalArrangement = if (drillDown != null) {
+                                    Arrangement.SpaceBetween
+                                } else {
+                                    Arrangement.spacedBy(8.dp, Alignment.End)
+                                },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (drillDown != null) {
+                                    DialogTextButton(
+                                        text = stringResource(R.string.common_back),
+                                        onClick = { leaveDrillDown() },
+                                    )
+                                }
+                                DialogTextButton(text = stringResource(R.string.common_close), onClick = onDismiss)
+                                if (drillDown == null) {
+                                    DialogTextButton(
+                                        text = if (searching) stringResource(R.string.game_searching) else stringResource(R.string.game_search),
+                                        enabled = canSearch,
+                                        onClick = { search() },
+                                    )
+                                }
                             }
                         }
                     }
@@ -1755,7 +1494,7 @@ private fun CoverCandidateOverlay(candidate: CoverSearchCandidate) {
                 maxLines = 1,
                 modifier = Modifier
                     .clip(AppComponentShape)
-                    .background(NavWhite.copy(alpha = 0.9f))
+                    .background(NavWhiteOverlay)
                     .padding(horizontal = 6.dp, vertical = 2.dp),
             )
             candidate.score?.takeIf { it > 0 }?.let { score ->
@@ -1883,12 +1622,12 @@ private fun LaunchFileDialog(
 }
 
 /**
- * 游戏页默认网格（internal：分类仓库首页复用，列数/滚动优化/卡片名称标签与角标设置均与游戏页一致）。
+ * 游戏页默认瀑布流（列数、封面加载优化、卡片名称标签与角标设置均按游戏页设置生效）。
  */
 @Composable
 internal fun GameGrid(
     games: List<ScanGame>,
-    gridState: LazyGridState,
+    gridState: LazyStaggeredGridState,
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
 ) {
@@ -1904,17 +1643,17 @@ internal fun GameGrid(
     // 滚动状态只以 provider 形式下发，由封面加载协程读取（见 rememberCoverBitmap）：
     // 若在 item 组合内直接读 gridState.isScrollInProgress，滑动开始/结束会让整屏卡片一并重组。
     val isScrolling = remember(gridState) { { gridState.isScrollInProgress } }
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(columns),
+    LazyVerticalStaggeredGrid(
+        columns = StaggeredGridCells.Fixed(columns),
         state = gridState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp + glassBottomInset),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalItemSpacing = 12.dp,
     ) {
-        gridItems(
+        staggeredGridItems(
             items = games,
-            // 封面批量任务逐项更新时强制重建对应卡片的封面状态；否则 LazyGrid 可能继续复用
+            // 封面批量任务逐项更新时强制重建对应卡片的封面状态；否则列表可能继续复用
             // 以 uri 为身份的旧 item，直到卡片滚出屏幕后才重新读取新的 coverUri。
             key = ::gameCardItemKey,
             contentType = { "game_card" },
@@ -1949,51 +1688,39 @@ internal fun GameCard(
     /** 左上角引擎类型角标（应用设置「卡片引擎角标」，默认关）。 */
     showEngineBadge: Boolean = false,
 ) {
-    Column(modifier) {
-        val engineName = when (game.engine) {
-            EngineType.UNKNOWN -> stringResource(R.string.engine_name_unknown)
-            // 无封面占位卡用短名「Switch」，避免「Nintendo Switch」过长
-            EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_name_switch)
-            else -> game.engine.displayName
-        }
-        val coverBitmap by rememberCoverBitmap(game.coverUri, isScrolling)
-        val pressModifier = if (onLongClick != null) {
-            Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
-        } else {
-            Modifier.clickable(onClick = onClick)
-        }
-        // 卡片 1:3（高:宽 = 4:3 立式封面，一行三列）
-        // 封面加载完成后从 0 渐显到 1；占位（引擎色 + 文字）始终在底层，加载前不可见差异
-        val bmp = coverBitmap
-        val coverAlpha by animateFloatAsState(
-            targetValue = if (bmp != null) 1f else 0f,
-            animationSpec = tween(durationMillis = 300),
-            label = "coverFadeIn",
-        )
+    val engineName = gameCardEngineName(game)
+    val coverBitmap by rememberCoverBitmap(game.coverUri, isScrolling)
+    val pressModifier = if (onLongClick != null) {
+        Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
+    // 瀑布流：按游戏 uri 稳定取 0.60–0.80 的封面宽高比，让卡片高低错落（列数不变）
+    val coverAspect = remember(game.uri) {
+        val hash = game.uri.hashCode().let { if (it == Int.MIN_VALUE) 0 else kotlin.math.abs(it) }
+        0.60f + (hash % 21) / 100f
+    }
+    val bmp = coverBitmap
+    val coverAlpha by animateFloatAsState(
+        targetValue = if (bmp != null) 1f else 0f,
+        animationSpec = tween(durationMillis = 300),
+        label = "coverFadeIn",
+    )
+    Column(
+        modifier
+            .clip(AppComponentShape)
+            .background(NavWhite)
+            .glassBorder()
+            .then(pressModifier),
+    ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(3f / 4f)
-                .glassShadow()
-                .clip(AppComponentShape)
-                .background(game.engine.coverColor())
-                .glassBorder()
-                .then(pressModifier),
+                .aspectRatio(coverAspect)
+                .background(game.engine.coverColor()),
             contentAlignment = Alignment.Center,
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    "Tyranor",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.7f),
-                )
-                Text(
-                    engineName,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
+            GameCoverPlaceholder(engineName)
             if (bmp != null) {
                 Image(
                     bitmap = bmp,
@@ -2001,34 +1728,195 @@ internal fun GameCard(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize().graphicsLayer { alpha = coverAlpha },
                 )
-                // 左上角引擎类型角标：开关开启且实际渲染封面的卡片才显示（无封面占位卡不显示）；
-                // 尺寸为标注规格（labelSmall 11sp + 边距减半，AGENTS.md 明文豁免）
-                if (showEngineBadge) Text(
-                    game.engine.abbr,
-                    style = MaterialTheme.typography.labelSmall,
-                    // 角标样式固定（半透明黑底 + 白字，见 theme/Color.kt），不随主题色/色调切换变化
-                    color = CoverBadgeText,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(3.dp)
-                        .graphicsLayer { alpha = coverAlpha }
-                        .clip(AppComponentShape)
-                        .background(CoverBadgeBackground)
-                        .padding(horizontal = 4.dp, vertical = 1.dp),
+                // 左上角引擎类型角标：开关开启且实际渲染封面的卡片才显示（无封面占位卡不显示）
+                if (showEngineBadge) GameCoverEngineBadge(
+                    engine = game.engine,
+                    alpha = coverAlpha,
+                    modifier = Modifier.align(Alignment.TopStart),
                 )
             }
         }
+        // 封面下方延伸的白色信息区（不覆盖封面）：最多两行标题，小号字体、水平居中；
+        // 字号缩小后同步收紧行高与纵向内边距，避免白色区域显得过高
+        Text(
+            if (hideTitleTag) GameTitleTags.stripAll(game.title) else game.title,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontSize = 12.sp,
+                lineHeight = 15.sp,
+            ),
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+        )
+    }
+}
+
+/**
+ * 游戏页「网格」卡片风格：恢复瀑布流之前的等高网格（3:4 封面 + 封面下方单行标题）。
+ * 列数、封面加载优化、名称标签与角标设置与瀑布流一致。
+ */
+@Composable
+internal fun UniformGameGrid(
+    games: List<ScanGame>,
+    gridState: LazyGridState,
+    onGameClick: (ScanGame) -> Unit,
+    onGameLongClick: (ScanGame) -> Unit,
+) {
+    // 液态玻璃导航悬浮时不占布局：列表底部预留导航高度（与瀑布流一致）
+    val glassBottomInset = glassNavBottomInset()
+    val hideTitleTag by AppSettingsStore.gameCardTitleTagState.collectAsState()
+    val showEngineBadge by AppSettingsStore.gameCardBadgeState.collectAsState()
+    // 大屏（横屏/平板）一行六个卡片，窄屏保持一行三个
+    val columns = if (isWideScreen()) 6 else 3
+    val isScrolling = remember(gridState) { { gridState.isScrollInProgress } }
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(columns),
+        state = gridState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp + glassBottomInset),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        gridItems(
+            items = games,
+            key = ::gameCardItemKey,
+            contentType = { "game_card" },
+        ) { game ->
+            UniformGameCard(
+                game = game,
+                onClick = { onGameClick(game) },
+                onLongClick = { onGameLongClick(game) },
+                isScrolling = isScrolling,
+                hideTitleTag = hideTitleTag,
+                showEngineBadge = showEngineBadge,
+            )
+        }
+    }
+}
+
+/**
+ * 「网格」卡片：3:4 封面卡片 + 封面下方单行标题（标题在卡片表面外，沿页面背景）；
+ * 点按/长按作用于整张卡片（封面 + 标题）。
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun UniformGameCard(
+    game: ScanGame,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+    /** 当前是否正在滑动/惯性滚动的只读查询；在 producer 协程内读取，避免组合期订阅滚动状态。 */
+    isScrolling: () -> Boolean = neverScrolling,
+    /** 卡片名称隐藏【】/[] 标签（应用设置「卡片隐藏名称标签」）。 */
+    hideTitleTag: Boolean = false,
+    /** 左上角引擎类型角标（应用设置「卡片引擎角标」，默认关）。 */
+    showEngineBadge: Boolean = false,
+) {
+    val engineName = gameCardEngineName(game)
+    val coverBitmap by rememberCoverBitmap(game.coverUri, isScrolling)
+    val pressModifier = if (onLongClick != null) {
+        Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
+    val bmp = coverBitmap
+    val coverAlpha by animateFloatAsState(
+        targetValue = if (bmp != null) 1f else 0f,
+        animationSpec = tween(durationMillis = 300),
+        label = "coverFadeIn",
+    )
+    // 整列参与点击：封面与下方标题都可打开操作抽屉 / 长按弹窗
+    Column(modifier.then(pressModifier)) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(3f / 4f)
+                .clip(AppComponentShape)
+                .background(game.engine.coverColor())
+                .glassBorder(),
+            contentAlignment = Alignment.Center,
+        ) {
+            GameCoverPlaceholder(engineName)
+            if (bmp != null) {
+                Image(
+                    bitmap = bmp,
+                    contentDescription = game.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().graphicsLayer { alpha = coverAlpha },
+                )
+                if (showEngineBadge) GameCoverEngineBadge(
+                    engine = game.engine,
+                    alpha = coverAlpha,
+                    modifier = Modifier.align(Alignment.TopStart),
+                )
+            }
+        }
+        // 旧网格风格：标题在封面下方单行显示，不使用白色信息区
         Text(
             if (hideTitleTag) GameTitleTags.stripAll(game.title) else game.title,
             style = MaterialTheme.typography.bodyMedium,
+            color = PageTextColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
         )
     }
+}
+
+/** 卡片无封面占位使用的引擎显示名：Switch / Plugin 等短名处理，两种卡片共用。 */
+@Composable
+private fun gameCardEngineName(game: ScanGame): String = when (game.engine) {
+    EngineType.UNKNOWN -> stringResource(R.string.engine_name_unknown)
+    // 无封面占位卡用短名「Switch」，避免「Nintendo Switch」过长
+    EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_name_switch)
+    // 第三方运行时游戏在游戏库中统一用 Plugin 表示引擎；模块名只在「引擎模块管理」页展示。
+    EngineType.RUNTIME_MODULE -> stringResource(R.string.engine_name_runtime_module)
+    else -> game.engine.displayName
+}
+
+/** 无封面占位（Tyranor + 引擎名）：瀑布流与网格两种卡片共用。 */
+@Composable
+private fun GameCoverPlaceholder(engineName: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            "Tyranor",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White.copy(alpha = 0.7f),
+        )
+        Text(
+            engineName,
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+}
+
+/** 封面左上角引擎类型角标：瀑布流与网格两种卡片共用（labelSmall 属 AGENTS.md 明文豁免）。 */
+@Composable
+private fun GameCoverEngineBadge(
+    engine: EngineType,
+    alpha: Float,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        engine.abbr,
+        style = MaterialTheme.typography.labelSmall,
+        // 角标样式固定（半透明黑底 + 白字，见 theme/Color.kt），不随主题色变化
+        color = CoverBadgeText,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier
+            .padding(3.dp)
+            .graphicsLayer { this.alpha = alpha }
+            .clip(AppComponentShape)
+            .background(CoverBadgeBackground)
+            .padding(horizontal = 4.dp, vertical = 1.dp),
+    )
 }
 
 /** 不感知滚动的默认查询（首页/封面流等非网格调用方复用，避免默认参数每次新建 lambda）。 */
@@ -2038,7 +1926,7 @@ private val neverScrolling: () -> Boolean = { false }
  * 读取游戏封面。
  *
  * [isScrolling] 为「是否正在滑动/惯性滚动」的只读查询，只在 producer 协程内读取：
- * 若在组合期读取（例如以 boolean 参数下发）会让每张卡片订阅 `LazyGridState.isScrollInProgress`，
+ * 若在组合期读取（例如以 boolean 参数下发）会让每张卡片订阅 `LazyStaggeredGridState.isScrollInProgress`，
  * 滑动开始/结束瞬间整屏 item 一起重组，这是滑动起止掉帧的直接来源。
  *
  * 时序：滑动中不启动新解码（保持 [EngineType.coverColor] 占位）→ 静止后解码 → 解码完成再经
@@ -2210,22 +2098,29 @@ internal fun EngineType.coverColor(): Color = when (this) {
     EngineType.XSYS4 -> Color(0xFF00A176)
     EngineType.UK2 -> Color(0xFF4E6E81)
     EngineType.FVP -> Color(0xFFB05A2A)
+    EngineType.CMVS -> Color(0xFF5B4B8A)
     EngineType.ETHORNELL -> com.tyranor.next.theme.EthornellCoverColor
     EngineType.YURIS -> Color(0xFF558B2F)
     EngineType.CATSYSTEM2 -> Color(0xFF6D4C41)
     EngineType.PC -> Color(0xFF455A64)
     EngineType.ANDROID_APP -> Color(0xFF2E7D32)
     EngineType.RENPY -> Color(0xFFE35B84)
+    EngineType.RUFFLE -> Color(0xFFC62828)
+    EngineType.RUNTIME_MODULE -> Color(0xFF5C6BC0)
     EngineType.PSP -> Color(0xFF6D4C9F)
     EngineType.NINTENDO_SWITCH -> Color(0xFFD32F2F)
-    EngineType.UNKNOWN -> Color(0xFF607D8B)
+    EngineType.SYSTEMNNN, EngineType.UNKNOWN -> Color(0xFF607D8B)
 }
 
-internal fun shouldShowSaveManagement(engine: EngineType): Boolean =
+internal fun shouldShowSaveManagement(engine: EngineType, sdkInt: Int = android.os.Build.VERSION.SDK_INT): Boolean =
     // YU-RIS 虽经外置 Winlator 启动，但存档落在游戏目录 save/，纳入统一存档管理；
     // 手动添加的类型（PC / 安卓游戏）无统一存档接口，显式排除。
     engine == EngineType.YURIS ||
+        (engine == EngineType.RENPY &&
+            com.tyranor.next.core.game.save.GameSaveManager.supportsFileSaves(engine, sdkInt)) ||
         (!engine.isManual &&
+            engine != EngineType.RUNTIME_MODULE &&
+            engine != EngineType.UNKNOWN &&
             (engine != EngineType.ETHORNELL ||
                 com.tyranor.next.core.game.save.EthornellSaveCapability.available) &&
             !ExternalEngineModuleRegistry.isExternalEngine(engine) &&

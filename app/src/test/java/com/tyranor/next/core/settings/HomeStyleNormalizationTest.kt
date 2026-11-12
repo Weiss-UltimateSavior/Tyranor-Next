@@ -4,7 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * 首页样式归一：web / category 精确接受，其余（含空/未知/大小写差异）回退原生。
+ * 首页样式归一：仅 web 精确接受，其余（含空/未知/大小写差异）回退原生；
+ * 历史持久化值 "category"（已删除的第三种首页样式）同样回退原生。
  */
 class HomeStyleNormalizationTest {
 
@@ -14,11 +15,8 @@ class HomeStyleNormalizationTest {
     }
 
     @Test
-    fun categoryIsAccepted() {
-        assertEquals(
-            AppSettingsStore.HOME_STYLE_CATEGORY,
-            AppSettingsStore.normalizeHomeStyle("category"),
-        )
+    fun legacyCategoryValueFallsBackToNative() {
+        assertEquals(AppSettingsStore.HOME_STYLE_NATIVE, AppSettingsStore.normalizeHomeStyle("category"))
     }
 
     @Test

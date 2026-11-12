@@ -4,8 +4,10 @@ import android.content.Context
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.external.ExternalEngineErrorCode
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
+import com.tyranor.next.core.engine.runtime.RuntimeModuleLaunchResult
 import com.tyranor.next.core.game.launch.LaunchResult
 import com.tyranor.next.core.game.launch.EthornellPrepareError
+import com.tyranor.next.core.game.launch.SystemNnnResourceError
 import com.tyranor.next.core.game.launch.MirrorPrepareStage
 import com.tyranor.next.core.i18n.AppLocaleController
 
@@ -26,6 +28,17 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
         LaunchResult.Failure.GameDirUnresolved ->
             localized.getString(R.string.launch_resolve_local_dir_failed)
 
+        is LaunchResult.Failure.SavePreparationFailed -> localized.getString(error.syncErrorResource())
+
+        is LaunchResult.Failure.SystemNnnResourcesFailed -> localized.getString(when (error) {
+            SystemNnnResourceError.SOURCE_MISSING -> R.string.launch_systemnnn_source_missing
+            SystemNnnResourceError.STORAGE_RESTRICTED -> R.string.launch_systemnnn_storage_restricted
+            SystemNnnResourceError.INVALID_SOURCE -> R.string.launch_systemnnn_invalid_source
+            SystemNnnResourceError.SOURCE_BUSY -> R.string.launch_systemnnn_source_busy
+            SystemNnnResourceError.CORRUPT_COPY -> R.string.launch_systemnnn_corrupt_copy
+            SystemNnnResourceError.SAVE_NOT_WRITABLE -> R.string.launch_systemnnn_save_not_writable
+        })
+
         is LaunchResult.Failure.EthornellPrepareFailed -> localized.getString(when (error) {
             EthornellPrepareError.RESOURCE_ROOT -> R.string.ethornell_error_root
             EthornellPrepareError.BOOTSTRAP -> R.string.ethornell_error_bootstrap
@@ -40,6 +53,12 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
         LaunchResult.Failure.AllFilesAccessMissing ->
             localized.getString(R.string.launch_all_files_access_missing)
 
+        LaunchResult.Failure.StorageAccessRequested ->
+            localized.getString(R.string.launch_storage_access_request)
+
+        LaunchResult.Failure.StorageAccessMissing ->
+            localized.getString(R.string.launch_storage_access_missing)
+
         is LaunchResult.Failure.PluginBootstrapFailed -> when (val reason = reason) {
             is EnginePluginBootstrap.Failure.UnknownEngine ->
                 localized.getString(R.string.plugin_unknown_engine, reason.engineId)
@@ -47,11 +66,17 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
                 localized.getString(R.string.plugin_install_failed)
         }
 
+        is LaunchResult.Failure.EngineLibraryPackFailed ->
+            localized.getString(R.string.launch_engine_library_pack_failed)
+
         // 镜像准备失败的文案按类型化阶段映射：底层异常 message 是日志线索，
         // 不同失败原因给用户的处置方式不同（重新授权 vs 清理存储空间）
         is LaunchResult.Failure.KrkrMirrorPrepareFailed -> when (stage) {
             MirrorPrepareStage.SOURCE_UNRESOLVED ->
                 localized.getString(R.string.launch_prepare_krkr_sd_mirror_failed)
+
+            MirrorPrepareStage.EMPTY_MIRROR ->
+                localized.getString(R.string.launch_empty_krkr_sd_mirror)
 
             MirrorPrepareStage.CREATE_FAILED -> localized.getString(
                 R.string.launch_create_krkr_mirror_failed,
@@ -108,6 +133,9 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
                 ExternalEngineErrorCode.PACKAGE_NOT_INSTALLED ->
                     localized.getString(R.string.external_engine_module_missing, moduleName)
 
+                ExternalEngineErrorCode.PACKAGE_OUTDATED ->
+                    localized.getString(R.string.external_engine_module_outdated, moduleName)
+
                 ExternalEngineErrorCode.PREPARE_FAILED ->
                     result.messageRes?.let { localized.getString(it) }
                         ?: result.detail
@@ -148,8 +176,66 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
         LaunchResult.Failure.YurisExeMissing ->
             localized.getString(R.string.launch_yuris_exe_missing)
 
+        // 第三方运行时模块：文案按模块层类型化结果映射；StartFailed 的 detail 仅在非空时优先。
+        is LaunchResult.Failure.RuntimeModuleFailed -> when (val outcome = result) {
+            RuntimeModuleLaunchResult.ModuleMissing ->
+                localized.getString(R.string.launch_runtime_module_missing)
+
+            RuntimeModuleLaunchResult.ModuleDisabled ->
+                localized.getString(R.string.launch_runtime_module_disabled)
+
+            RuntimeModuleLaunchResult.EntryMissing ->
+                localized.getString(R.string.launch_runtime_module_entry_missing)
+
+            RuntimeModuleLaunchResult.PathUnresolved ->
+                localized.getString(R.string.launch_runtime_module_path_unresolved)
+
+            RuntimeModuleLaunchResult.SecurityDenied ->
+                localized.getString(R.string.launch_runtime_module_denied)
+
+            is RuntimeModuleLaunchResult.StartFailed -> {
+                android.util.Log.w("LaunchErrorMessages", "runtime module start failed: ${outcome.detail.orEmpty()}")
+                localized.getString(R.string.launch_runtime_module_failed)
+            }
+
+            // Dispatched 不应作为失败出现：给通用失败文案兜底。
+            RuntimeModuleLaunchResult.Dispatched ->
+                localized.getString(R.string.launch_runtime_module_failed)
+        }
+
+        LaunchResult.Failure.CmvsGameLayoutInvalid ->
+            localized.getString(R.string.launch_cmvs_layout_invalid)
+
+        LaunchResult.Failure.CmvsUserDataDirUnavailable ->
+            localized.getString(R.string.launch_cmvs_user_data_unavailable)
+
+        LaunchResult.Failure.CmvsLaunchConfigUnavailable ->
+            localized.getString(R.string.launch_cmvs_launch_config_unavailable)
+
+        is LaunchResult.Failure.CmvsInitFailed -> localized.getString(
+            when ((this as LaunchResult.Failure.CmvsInitFailed).code) {
+                "unregistered" -> R.string.launch_cmvs_unregistered
+                "audio" -> R.string.launch_cmvs_audio_unavailable
+                "vulkan" -> R.string.launch_cmvs_vulkan_unavailable
+                "font" -> R.string.launch_cmvs_font_unavailable
+                else -> R.string.launch_cmvs_init_failed
+            },
+        )
+
+        LaunchResult.Failure.CmvsFontUnavailable ->
+            localized.getString(R.string.launch_cmvs_font_unavailable)
+
+        LaunchResult.Failure.CmvsVulkanUnavailable ->
+            localized.getString(R.string.launch_cmvs_vulkan_unavailable)
+
+        LaunchResult.Failure.CmvsAlreadyRunning ->
+            localized.getString(R.string.launch_cmvs_already_running)
+
         LaunchResult.Failure.AndroidAppMissing ->
             localized.getString(R.string.launch_android_app_missing)
+
+        LaunchResult.Failure.EngineUnknown ->
+            localized.getString(R.string.launch_engine_unknown)
 
         is LaunchResult.Failure.StartFailed ->
             detail ?: localized.getString(R.string.launch_failed)

@@ -4,8 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * 导航样式归一化的纯 JVM 测试：四态取值、缺省/未知值回退、以及「透镜档需要 Android 13+」的门槛。
- * 这层规则决定旧版本与从新版备份恢复的数据会不会落到降级画面，属于必须钉住的行为。
+ * 导航样式归一化的纯 JVM 测试：四态取值、缺省/未知值回退、透镜档的版本门槛，以及默认外观的
+ * 默认样式（液态玻璃 · 经典）。这层规则决定旧版本与从新版备份恢复的数据会不会落到降级画面。
  */
 class NavStyleNormalizationTest {
 
@@ -50,10 +50,10 @@ class NavStyleNormalizationTest {
     }
 
     @Test
-    fun automaticStyle_usesLensOnlyForDefaultAppearance() {
-        assertEquals(enhanced, AppSettingsStore.resolveNavStyle(auto, enhancedSupported = true, glassAppearance = false))
-        assertEquals(glass, AppSettingsStore.resolveNavStyle(auto, enhancedSupported = false, glassAppearance = false))
+    fun automaticStyle_usesClassicLiquidGlassForDefaultAppearance() {
+        // 默认外观的默认导航栏为图示的磨砂玻璃（液态玻璃 · 经典）；透镜需显式选择
         for (supported in listOf(true, false)) {
+            assertEquals(glass, AppSettingsStore.resolveNavStyle(auto, supported, glassAppearance = false))
             assertEquals(classicMd, AppSettingsStore.resolveNavStyle(auto, supported, glassAppearance = true))
         }
     }
@@ -73,7 +73,7 @@ class NavStyleNormalizationTest {
     @Test
     fun automaticStyle_followsAppearanceChangesWithoutBeingPinned() {
         for (supported in listOf(true, false)) {
-            val defaultAppearanceStyle = if (supported) enhanced else glass
+            val defaultAppearanceStyle = glass
             assertEquals(defaultAppearanceStyle, AppSettingsStore.resolveNavStyle(auto, supported, glassAppearance = false))
             assertEquals(classicMd, AppSettingsStore.resolveNavStyle(auto, supported, glassAppearance = true))
             assertEquals(defaultAppearanceStyle, AppSettingsStore.resolveNavStyle(auto, supported, glassAppearance = false))

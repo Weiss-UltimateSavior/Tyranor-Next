@@ -72,6 +72,10 @@ object EngineSettingsStore {
     const val KEY_FVP_TEXT_HIDPI = "fvp_text_hidpi"
     const val KEY_FVP_FONT = "fvp_font"
 
+    // CMVS（cmvs-rs）应用级字体；路径必须位于 App 私有 files/fonts/，face 为字体集合索引
+    const val KEY_CMVS_FONT = "cmvs_font"
+    const val KEY_CMVS_FACE = "cmvs_font_face"
+
     // System35（xsystem35）应用级默认（独立存档 / 渲染后端 / 整数倍缩放 / 失焦静音）
     const val KEY_XSYS35_SCOPED_SAVE_DIR = "xsys35_scoped_save_dir"
     const val KEY_XSYS35_RENDERER = "xsys35_renderer"
@@ -107,6 +111,15 @@ object EngineSettingsStore {
     const val KEY_RENPY_LESS_UPDATES = "renpy_less_updates"
     const val KEY_RENPY_DONT_USE_GL2 = "renpy_dont_use_gl2"
     const val KEY_RENPY_RECOMPILE = "renpy_recompile"
+
+    // Ruffle 外置模块的 App prefs 键（独立于插件 wire 键：插件 settings 节的键名是 backend/quality/
+    // scaleMode/letterbox/loadBehavior 与 app.screenTimeout，由 RuffleExternalEngineModule 组装）
+    const val KEY_RUFFLE_SCREEN_TIMEOUT = "ruffle_screen_timeout"
+    const val KEY_RUFFLE_BACKEND = "ruffle_backend"
+    const val KEY_RUFFLE_QUALITY = "ruffle_quality"
+    const val KEY_RUFFLE_SCALE_MODE = "ruffle_scale_mode"
+    const val KEY_RUFFLE_LETTERBOX = "ruffle_letterbox"
+    const val KEY_RUFFLE_LOAD_BEHAVIOR = "ruffle_load_behavior"
 
     // Tyrano 与 RPG Maker Web 共用同一套 WebView 宿主设置；启动链路按同一键读取。
     const val KEY_TYRANO_EXTERNAL_NETWORK = "tyrano_external_network"
@@ -145,10 +158,9 @@ object EngineSettingsStore {
     const val KR_AUTO = "auto"
     const val KR_139 = "1.3.9"
     const val KR_134 = "1.3.4"
-    const val KR_126 = "1.2.6"
     const val KERNEL_KIRIKIRI2 = "kirikiri2"
     const val KERNEL_KRKRSDL3 = "krkrsdl3"
-    val KR_VERSIONS = setOf(KR_AUTO, KR_139, KR_134, KR_126)
+    val KR_VERSIONS = setOf(KR_AUTO, KR_139, KR_134)
     val KR_KERNELS = setOf(KR_AUTO, KERNEL_KIRIKIRI2, KERNEL_KRKRSDL3)
     const val KR_PATCH_OVERLAY_AUTO = "auto"
     const val KR_PATCH_OVERLAY_FORCE = "force"
@@ -176,8 +188,18 @@ object EngineSettingsStore {
     const val RENDERER_SOFTWARE = "software"
     const val RENDERER_OPENGL = "opengl"
 
-    // 写入引擎 XML（Kirikiroid2Preference.xml/GlobalPreference.xml）的 Item 键名，
-    // 与 libgame.so 内 IndividualConfigManager 读取的键一致，键名不可改。
+    // 写入引擎 XML（GlobalPreference.xml/Kirikiroid2Preference.xml）的 Item 键名。
+    // 内核（libgame.so）按 Kirikiroid2 源码 PreferenceConfig.h 中各 tTVPPreferenceInfo*
+    // 构造参数的第二项（存储键）读取，并非 locale ID（preference_* 仅为界面文案 id）；
+    // 键名不可改。App 侧 prefs 键（kr_*）只是宿主自己的存储键，内核不认识。
+    const val ENGINE_RENDERER = "renderer"
+    const val ENGINE_SOFTWARE_DRAW_THREAD = "software_draw_thread"
+    const val ENGINE_SOFTWARE_COMPRESS_TEX = "software_compress_tex"
+    const val ENGINE_OGL_COMPRESS_TEX = "ogl_compress_tex"
+    const val ENGINE_MEM_USAGE = "memusage"
+    const val ENGINE_OGL_MAX_TEXSIZE = "ogl_max_texsize"
+    const val ENGINE_OGL_ACCURATE_RENDER = "ogl_accurate_render"
+    const val ENGINE_FPS_LIMIT = "fps_limit"
     const val ENGINE_VCURSOR_SCALE = "vcursor_scale"
     const val ENGINE_MENU_HANDLER_OPA = "menu_handler_opa"
     // 虚拟鼠标缩放比（0.01..1.50，引擎默认 1.00；0.50 与原版 Ty 一致，两位小数）
@@ -195,9 +217,6 @@ object EngineSettingsStore {
     const val ART_ENGINE_AUTO = "auto"
     const val ART_ENGINE_V1 = "1"
     const val ART_ENGINE_V2 = "2"
-    const val ART_ENGINE_V3 = "3"
-    const val ART_ENGINE_V4 = "4"
-    const val ART_ENGINE_V5 = "5"
     const val ART_ENGINE_V6 = "6"
     /** Artemis 内核：官方多 revision 运行库 / 自研 clean-room 兼容内核。 */
     const val ART_KERNEL_OFFICIAL = "official"
@@ -209,7 +228,7 @@ object EngineSettingsStore {
     /** 补丁策略默认值：关闭（不询问、不自动补丁；用户可在引擎设置/单游戏覆盖中改为询问或自动）。 */
     const val ART_PATCH_DEFAULT = AUTO_PATCH_OFF
     /** Artemis 引擎版本全量白名单，供单游戏覆盖值校验（非法持久化值回退全局）。 */
-    val ART_VERSIONS = setOf(ART_ENGINE_AUTO, ART_ENGINE_V1, ART_ENGINE_V2, ART_ENGINE_V3, ART_ENGINE_V4, ART_ENGINE_V5, ART_ENGINE_V6)
+    val ART_VERSIONS = setOf(ART_ENGINE_AUTO, ART_ENGINE_V1, ART_ENGINE_V2, ART_ENGINE_V6)
     /** Artemis 补丁策略全量白名单，供单游戏覆盖值校验（非法持久化值回退全局）。 */
     val ART_PATCHES = setOf(AUTO_PATCH_ASK, AUTO_PATCH_AUTO, AUTO_PATCH_OFF)
     const val ART_RESOLUTION_DEFAULT = ""
@@ -258,7 +277,26 @@ object EngineSettingsStore {
     // Ren'Py 版本取值常量
     const val RENPY_AUTO = "auto"
     const val RENPY_85 = "8.5"
+    const val RENPY_853 = "8.5.3"
     const val RENPY_77 = "7.7.1"
+
+    /** Migrates the former 8.5 selector value to the compatible upgraded 8.5.3 runtime. */
+    fun normalizeRenpyVersion(value: String?): String? =
+        if (value?.trim() == RENPY_85) RENPY_853 else value
+
+    // Ruffle 外置模块取值域（对齐插件 RuffleConfiguration 的默认值）
+    const val RUFFLE_SCREEN_TIMEOUT_DEFAULT = 0
+    const val RUFFLE_BACKEND_OPENGL = "opengl"
+    const val RUFFLE_QUALITY_HIGH = "high"
+    const val RUFFLE_SCALE_MODE_SHOW_ALL = "showall"
+    const val RUFFLE_LETTERBOX_ON = "on"
+    const val RUFFLE_LOAD_BEHAVIOR_STREAMING = "streaming"
+    val RUFFLE_SCREEN_TIMEOUTS: Set<Int> = linkedSetOf(0, 5, 10, 15, 30, 45, 60)
+    val RUFFLE_BACKENDS: Set<String> = linkedSetOf("auto", RUFFLE_BACKEND_OPENGL, "vulkan")
+    val RUFFLE_QUALITIES: Set<String> = linkedSetOf("low", "medium", RUFFLE_QUALITY_HIGH, "best")
+    val RUFFLE_SCALE_MODES: Set<String> = linkedSetOf("exactfit", "noborder", "noscale", RUFFLE_SCALE_MODE_SHOW_ALL)
+    val RUFFLE_LETTERBOXES: Set<String> = linkedSetOf(RUFFLE_LETTERBOX_ON, "off")
+    val RUFFLE_LOAD_BEHAVIORS: Set<String> = linkedSetOf(RUFFLE_LOAD_BEHAVIOR_STREAMING, "delayed", "blocking")
 
     // Siglus 语言取值常量（auto 不设置 SIGLUS_LANGUAGE，保持引擎默认 JP）
     const val SIGLUS_LANGUAGE_AUTO = "auto"
@@ -567,6 +605,9 @@ object EngineSettingsStore {
                     if (it.isEmpty()) it else normalizeVcursorScale(it)
                 }
                 KEY_KR_MENU_HANDLER_OPA -> override?.let { if (it.isEmpty() || it in KR_MENU_HANDLER_OPAS) it else null }
+                // 布尔开关没有「引擎默认」语义：存量 "" 是旧版「跟随全局」的写法，按 null
+                // （跟随全局）处理，避免游戏级空值删项压过全局 XML 的当前值（PR #155 审查）
+                KEY_KR_OGL_ACCURATE_RENDER -> override?.takeIf { it.isNotEmpty() }
                 else -> override
             }
             val globalRaw = prefs(c).getString(key, null).orEmpty().trim()
@@ -597,7 +638,6 @@ object EngineSettingsStore {
     private fun normalizeKr(v: String?): String = when (v?.trim()?.lowercase()) {
         KR_139 -> KR_139
         KR_134 -> KR_134
-        KR_126 -> KR_126
         else -> KR_AUTO
     }
 
@@ -661,9 +701,6 @@ object EngineSettingsStore {
         return if (
             v == ART_ENGINE_V1 ||
             v == ART_ENGINE_V2 ||
-            v == ART_ENGINE_V3 ||
-            v == ART_ENGINE_V4 ||
-            v == ART_ENGINE_V5 ||
             v == ART_ENGINE_V6
         ) v else ART_ENGINE_AUTO
     }
@@ -707,8 +744,9 @@ object EngineSettingsStore {
     // ---------- Ren'Py ----------
     fun getRenpyVersion(c: Context): String {
         val v = prefs(c).getString(KEY_RENPY_ENGINE_VERSION, RENPY_AUTO)
-        return when (v) {
-            RENPY_85, RENPY_77 -> v
+        return when (normalizeRenpyVersion(v)?.trim()) {
+            RENPY_853 -> RENPY_853
+            RENPY_77 -> RENPY_77
             else -> RENPY_AUTO
         }
     }
@@ -782,6 +820,12 @@ object EngineSettingsStore {
     fun setFvpFont(c: Context, v: String?) =
         prefs(c).edit().putString(KEY_FVP_FONT, normalizeFvpFont(v)).apply()
     fun normalizeFvpFont(v: String?): String = v?.trim().orEmpty()
+
+    // ---------- CMVS ----------
+    fun getCmvsFont(c: Context): String = prefs(c).getString(KEY_CMVS_FONT, "").orEmpty()
+    fun setCmvsFont(c: Context, v: String?) =
+        prefs(c).edit().putString(KEY_CMVS_FONT, v?.trim().orEmpty()).apply()
+    fun getCmvsFontFace(c: Context): Int = prefs(c).getInt(KEY_CMVS_FACE, 0).coerceIn(0, 1024)
 
     // ---------- System35（xsystem35） ----------
     fun isXs35ScopedSaveDir(c: Context): Boolean =
@@ -1164,4 +1208,78 @@ object EngineSettingsStore {
         RENPY_BOOL_KEYS.forEach(editor::remove)
         editor.apply()
     }
+
+    // ---------- Ruffle 外置模块 ----------
+
+    /**
+     * Ruffle 外置模块的配置节。默认值对齐插件 `RuffleConfiguration`：
+     * backend=opengl / quality=high / scaleMode=showall / letterbox=on /
+     * loadBehavior=streaming / screenTimeout=0（禁用）。
+     */
+    data class Ruffle(
+        var screenTimeout: Int = RUFFLE_SCREEN_TIMEOUT_DEFAULT,
+        var backend: String = RUFFLE_BACKEND_OPENGL,
+        var quality: String = RUFFLE_QUALITY_HIGH,
+        var scaleMode: String = RUFFLE_SCALE_MODE_SHOW_ALL,
+        var letterbox: String = RUFFLE_LETTERBOX_ON,
+        var loadBehavior: String = RUFFLE_LOAD_BEHAVIOR_STREAMING,
+    )
+
+    private val RUFFLE_STRING_KEYS = listOf(
+        KEY_RUFFLE_BACKEND, KEY_RUFFLE_QUALITY, KEY_RUFFLE_SCALE_MODE,
+        KEY_RUFFLE_LETTERBOX, KEY_RUFFLE_LOAD_BEHAVIOR,
+    )
+
+    fun loadRuffle(c: Context): Ruffle {
+        val p = prefs(c)
+        val d = Ruffle()
+        return Ruffle(
+            screenTimeout = normalizeRuffleScreenTimeout(p.getInt(KEY_RUFFLE_SCREEN_TIMEOUT, d.screenTimeout)),
+            backend = normalizeRuffleAllowed(p.getString(KEY_RUFFLE_BACKEND, null), RUFFLE_BACKENDS, d.backend),
+            quality = normalizeRuffleAllowed(p.getString(KEY_RUFFLE_QUALITY, null), RUFFLE_QUALITIES, d.quality),
+            scaleMode = normalizeRuffleAllowed(p.getString(KEY_RUFFLE_SCALE_MODE, null), RUFFLE_SCALE_MODES, d.scaleMode),
+            letterbox = normalizeRuffleAllowed(p.getString(KEY_RUFFLE_LETTERBOX, null), RUFFLE_LETTERBOXES, d.letterbox),
+            loadBehavior = normalizeRuffleAllowed(p.getString(KEY_RUFFLE_LOAD_BEHAVIOR, null), RUFFLE_LOAD_BEHAVIORS, d.loadBehavior),
+        )
+    }
+
+    fun saveRuffle(c: Context, r: Ruffle) {
+        prefs(c).edit().apply {
+            putInt(KEY_RUFFLE_SCREEN_TIMEOUT, normalizeRuffleScreenTimeout(r.screenTimeout))
+            putString(KEY_RUFFLE_BACKEND, normalizeRuffleBackend(r.backend))
+            putString(KEY_RUFFLE_QUALITY, normalizeRuffleQuality(r.quality))
+            putString(KEY_RUFFLE_SCALE_MODE, normalizeRuffleScaleMode(r.scaleMode))
+            putString(KEY_RUFFLE_LETTERBOX, normalizeRuffleLetterbox(r.letterbox))
+            putString(KEY_RUFFLE_LOAD_BEHAVIOR, normalizeRuffleLoadBehavior(r.loadBehavior))
+        }.apply()
+    }
+
+    /** 仅重置 ruffle 节，其余引擎设置不动。 */
+    fun resetRuffle(c: Context) {
+        val editor = prefs(c).edit()
+        editor.remove(KEY_RUFFLE_SCREEN_TIMEOUT)
+        RUFFLE_STRING_KEYS.forEach(editor::remove)
+        editor.apply()
+    }
+
+    fun normalizeRuffleScreenTimeout(v: Int?): Int =
+        v?.takeIf { it in RUFFLE_SCREEN_TIMEOUTS } ?: RUFFLE_SCREEN_TIMEOUT_DEFAULT
+
+    fun normalizeRuffleBackend(v: String?): String =
+        normalizeRuffleAllowed(v, RUFFLE_BACKENDS, RUFFLE_BACKEND_OPENGL)
+
+    fun normalizeRuffleQuality(v: String?): String =
+        normalizeRuffleAllowed(v, RUFFLE_QUALITIES, RUFFLE_QUALITY_HIGH)
+
+    fun normalizeRuffleScaleMode(v: String?): String =
+        normalizeRuffleAllowed(v, RUFFLE_SCALE_MODES, RUFFLE_SCALE_MODE_SHOW_ALL)
+
+    fun normalizeRuffleLetterbox(v: String?): String =
+        normalizeRuffleAllowed(v, RUFFLE_LETTERBOXES, RUFFLE_LETTERBOX_ON)
+
+    fun normalizeRuffleLoadBehavior(v: String?): String =
+        normalizeRuffleAllowed(v, RUFFLE_LOAD_BEHAVIORS, RUFFLE_LOAD_BEHAVIOR_STREAMING)
+
+    private fun normalizeRuffleAllowed(v: String?, allowed: Set<String>, fallback: String): String =
+        v?.trim()?.lowercase(java.util.Locale.ROOT)?.takeIf { it in allowed } ?: fallback
 }

@@ -1,6 +1,7 @@
 // Host-only adapter for the identified Kirikiroid2 Cocos binaries.
 // No private engine object offsets, instruction patches, or engine replacement.
 #include <jni.h>
+#include "texture_row_origin.h"
 #include <dlfcn.h>
 #include <link.h>
 #include <elf.h>
@@ -277,10 +278,12 @@ void initHook(void* command,float z,unsigned int texture,void* program,Blend ble
         valid=valid&&cornerMask==15&&indexMask==15&&sw>0&&sh>0&&
             near(u0*aw,std::round(u0*aw))&&near(u1*aw,std::round(u1*aw))&&
             near(v0*ah,std::round(v0*ah))&&near(v1*ah,std::round(v1*ah));
+        const int origin=valid?textureRowOrigin(triangles.vertices,u0,v0,u1,v1):-1;
+        valid=valid && origin>=0;
         if(valid) {
             used=true;
             output=static_cast<unsigned int>(frameEnv->CallStaticIntMethod(callbackClass,callbackMethod,
-                static_cast<jint>(texture),sw,sh,u0,v0,u1,v1,surfaceWidth,surfaceHeight));
+                static_cast<jint>(texture),sw,sh,u0,v0,u1,v1,surfaceWidth,surfaceHeight,origin==1?JNI_TRUE:JNI_FALSE));
             if(frameEnv->ExceptionCheck()) { frameEnv->ExceptionClear(); output=0; }
             // Resource deletion/reallocation can invalidate Cocos' texture-ID
             // cache even when the actual GL bindings were restored correctly.
@@ -297,10 +300,11 @@ void initHook(void* command,float z,unsigned int texture,void* program,Blend ble
 }
 
 
-// 1.2.6 calls TrianglesCommand::init directly, without an interposable PLT
-// entry. Lease a genuine engine-owned Texture2D through the public Sprite APIs
-// instead. The Sprite's vertices, content size, transform and hit testing stay
-// untouched; its UVs and original texture are restored after renderer flush.
+// The 1.2.6 bitmap path (libgame126.so, no longer bundled) calls
+// TrianglesCommand::init directly, without an interposable PLT entry. Lease a
+// genuine engine-owned Texture2D through the public Sprite APIs instead. The
+// Sprite's vertices, content size, transform and hit testing stay untouched;
+// its UVs and original texture are restored after renderer flush.
 thread_local void* leasedSprite=nullptr;
 thread_local void* leasedSource=nullptr;
 thread_local Rect leasedRect{};
@@ -767,7 +771,7 @@ InstallStage install(JNIEnv* env,jclass cls,const std::string& path) {
         }
     }
     if(!ok || (!bitmap126 && found==0))return InstallStage::Relocation;
-    callbackMethod=env->GetStaticMethodID(cls,bitmap126?"process126":"process",bitmap126?"(IIIFFFFII)J":"(IIIFFFFII)I");
+    callbackMethod=env->GetStaticMethodID(cls,bitmap126?"process126":"process",bitmap126?"(IIIFFFFII)J":"(IIIFFFFIIZ)I");
     if(callbackMethod&&!env->ExceptionCheck())callbackClass=static_cast<jclass>(env->NewGlobalRef(cls));
     if(!callbackMethod||!callbackClass||env->ExceptionCheck()) {
         if(callbackClass)env->DeleteGlobalRef(callbackClass);

@@ -102,15 +102,16 @@ public final class MpvHookShader {
     static String fragmentSource(Pass pass) {
         StringBuilder fragment = new StringBuilder();
         fragment.append("#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\nin vec2 vPos;\nout vec4 fragColor;\nuniform vec2 u_OUTPUT_size;\n#define OUTPUT_size u_OUTPUT_size\n");
+        fragment.append("uniform bool u_FLIP_Y;\nvec2 hookCoord(vec2 p) { return vec2(p.x, u_FLIP_Y ? 1.0-p.y : p.y); }\n");
         for (int i = 0; i < pass.binds.size(); i++) {
             String bind = pass.binds.get(i);
             fragment.append("uniform sampler2D u_").append(bind).append(";\n")
                     .append("uniform vec2 u_").append(bind).append("_size;\n")
                     .append("vec4 ").append(bind).append("_tex(vec2 pos) { return texture(u_")
-                    .append(bind).append(", pos); }\n")
+                    .append(bind).append(", hookCoord(pos)); }\n")
                     .append("vec4 ").append(bind).append("_texOff(vec2 off) { return ")
-                    .append(bind).append("_tex(vPos + off / u_").append(bind).append("_size); }\n")
-                    .append("#define ").append(bind).append("_pos vPos\n")
+                    .append(bind).append("_tex(hookCoord(vPos) + off / u_").append(bind).append("_size); }\n")
+                    .append("#define ").append(bind).append("_pos hookCoord(vPos)\n")
                     .append("#define ").append(bind).append("_size u_").append(bind).append("_size\n")
                     .append("#define ").append(bind).append("_pt (1.0 / u_").append(bind).append("_size)\n");
         }

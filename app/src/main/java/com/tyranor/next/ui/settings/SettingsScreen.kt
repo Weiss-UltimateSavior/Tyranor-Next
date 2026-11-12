@@ -12,6 +12,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,18 +23,17 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Folder
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -41,9 +42,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -51,36 +54,47 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tyranor.next.R
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.core.settings.AppearanceStyle
 import com.tyranor.next.core.settings.GraphicsCapabilities
 import com.tyranor.next.core.settings.GraphicsFamily
 import com.tyranor.next.core.settings.GraphicsSettings
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.theme.AppThemeColors
-import com.tyranor.next.theme.glassShadow
+import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.PageSecondaryTextColor
+import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.MiuixSettingsTheme
-import com.tyranor.next.theme.NoticeDotRed
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.AppBottomSheet
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.SettingsEntryCard
+import com.tyranor.next.ui.common.coachAnchor
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.ByteFormats
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
+import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.formatUiDecimal
 import com.tyranor.next.ui.common.glassNavBottomInset
@@ -104,7 +118,7 @@ import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.SliderDefaults
-import top.yukonga.miuix.kmp.preference.ArrowPreference
+import com.tyranor.next.ui.common.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -122,8 +136,13 @@ private sealed interface UpdateDownloadPhase {
 private fun formatUpdateBytes(bytes: Long): String = ByteFormats.formatBinarySize(bytes)
 
 /** 设置页：只展示各引擎全局设置入口，具体设置内容由独立 Activity 承载。列表项采用 Miuix Card + Preference 体系。 */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(modifier: Modifier = Modifier) {
+fun SettingsScreen(
+    modifier: Modifier = Modifier,
+    onCoachAnchorChanged: (Rect) -> Unit = {},
+    isActive: Boolean = true,
+) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     // 已知行为：以下更新弹窗状态均为 remember 持有，Activity 重建（旋转/语言切换）会丢失并静默取消下载；
@@ -135,13 +154,20 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var updateDownloadPhase by remember { mutableStateOf<UpdateDownloadPhase?>(null) }
     var updateDownloadJob by remember { mutableStateOf<Job?>(null) }
     var showGroupDialog by remember { mutableStateOf(false) }
-    var showScanDirs by remember { mutableStateOf(false) }
-    var scanDirs by remember { mutableStateOf(GameLibraryFacade.loadRoots(ctx)) }
+    var showScanDirs by rememberSaveable { mutableStateOf(false) }
+    var scanDirs by remember { mutableStateOf(emptyList<String>()) }
+    val resourceCleanup: SystemNnnCleanupViewModel = viewModel()
+    val cleanupState by resourceCleanup.state.collectAsStateWithLifecycle()
     var showPathDialog by remember { mutableStateOf(false) }
     var pathInput by remember { mutableStateOf("") }
     val settingsUpdateLatestMessage = stringResource(R.string.settings_update_latest)
     val settingsUpdateFailedFormat = stringResource(R.string.settings_update_failed)
+    // 锚点生命周期跟随页面，而不是 LazyColumn 首项；拖动时保留上一帧目标，避免立即退化为全屏拦截。
+    DisposableEffect(isActive) {
+        onDispose { onCoachAnchorChanged(Rect.Zero) }
+    }
     LaunchedEffect(Unit) {
+        scanDirs = withContext(Dispatchers.IO) { GameLibraryFacade.loadRoots(ctx) }
         GameLibraryFacade.rootsRevision.collect {
             scanDirs = withContext(Dispatchers.IO) { GameLibraryFacade.loadRoots(ctx) }
         }
@@ -264,7 +290,13 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .coachAnchor(isActive, onCoachAnchorChanged)
+                            .glassBorder(),
+                        cornerRadius = AppComponentCornerRadius,
+                    ) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_add_game_dir),
@@ -298,21 +330,24 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 hapticEffect = SliderDefaults.SliderHapticEffect.Step,
                                 modifier = Modifier.padding(horizontal = 16.dp),
                             )
-                            var gameSort by remember { mutableStateOf(AppSettingsStore.getGameSort(ctx)) }
-                            val gameSortModes = listOf(
-                                AppSettingsStore.GAME_SORT_ALPHA to stringResource(R.string.settings_sort_alpha),
-                                AppSettingsStore.GAME_SORT_BRACKET_TAG to stringResource(R.string.settings_sort_bracket_tag),
-                            )
-                            val sortIndex = gameSortModes.indexOfFirst { it.first == gameSort }
-                                .let { if (it < 0) 0 else it }
+                            val appearanceStyles = AppearanceStyle.entries
+                            val appearanceLabels = appearanceStyles.map { style ->
+                                stringResource(
+                                    when (style) {
+                                        AppearanceStyle.DEFAULT -> R.string.settings_appearance_style_default
+                                        AppearanceStyle.RETRO_GLASS -> R.string.settings_appearance_style_glass
+                                        AppearanceStyle.MILK_GLASS -> R.string.settings_appearance_style_milk
+                                    },
+                                )
+                            }
                             OverlayDropdownPreference(
-                                title = stringResource(R.string.settings_game_sort),
-                                items = gameSortModes.map { it.second },
-                                selectedIndex = sortIndex,
+                                title = stringResource(R.string.settings_appearance_style),
+                                items = appearanceLabels,
+                                selectedIndex = appearanceStyles.indexOf(AppThemeColors.appearanceStyle).coerceAtLeast(0),
                                 onSelectedIndexChange = { index ->
-                                    gameSortModes.getOrNull(index)?.first?.let { sort ->
-                                        gameSort = sort
-                                        AppSettingsStore.setGameSort(ctx, sort)
+                                    appearanceStyles.getOrNull(index)?.let { style ->
+                                        AppSettingsStore.setAppearanceStyle(ctx, style)
+                                        AppThemeColors.refresh(ctx)
                                     }
                                 },
                             )
@@ -320,48 +355,44 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     }
                 }
                 item {
-                    // 工具入口：引擎设置；输入与手柄、解包 / 封包入口已迁至侧边栏「妙妙工具」面板
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
-                        Column(Modifier.padding(vertical = 4.dp)) {
-                            ArrowPreference(
-                                title = stringResource(R.string.settings_engine_settings),
-                                startAction = { SettingsItemIcon(R.drawable.ic_engine_manage) },
-                                onClick = { startActivityWithPageTransition(ctx, EngineSettingsMenuActivity.createIntent(ctx)) },
-                            )
-                        }
-                    }
+                    SettingsEntryCard(
+                        title = stringResource(R.string.settings_app_title),
+                        iconRes = R.drawable.ic_settings_app,
+                        onClick = { startActivityWithPageTransition(ctx, AppSettingsActivity.createIntent(ctx)) },
+                    )
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
-                        Column(Modifier.padding(vertical = 4.dp)) {
-                            ArrowPreference(
-                                title = stringResource(R.string.settings_app_title),
-                                summary = stringResource(R.string.settings_app_summary),
-                                startAction = { SettingsItemIcon(R.drawable.ic_settings_app) },
-                                onClick = { startActivityWithPageTransition(ctx, AppSettingsActivity.createIntent(ctx)) },
-                            )
-                            ArrowPreference(
-                                title = stringResource(R.string.settings_cover_scraper),
-                                summary = stringResource(R.string.settings_cover_scraper_summary),
-                                startAction = { SettingsItemIcon(R.drawable.ic_game_cover) },
-                                onClick = { startActivityWithPageTransition(ctx, CoverScraperSettingsActivity.createIntent(ctx)) },
-                            )
-                            ArrowPreference(
-                                title = if (checkingUpdate) stringResource(R.string.settings_update_checking) else stringResource(R.string.settings_update_check),
-                                summary = stringResource(R.string.settings_update_check_summary),
-                                startAction = { SettingsItemIcon(R.drawable.ic_settings_update, showBadge = hasUpdate) },
-                                onClick = { checkUpdate() },
-                            )
-                            ArrowPreference(
-                                title = stringResource(R.string.settings_join_group),
-                                summary = stringResource(R.string.settings_join_group_summary),
-                                startAction = { SettingsItemIcon(R.drawable.ic_settings_group) },
-                                 onClick = {
-                                     showGroupDialog = true
-                                 },
-                             )
-                        }
-                    }
+                    SettingsEntryCard(
+                        title = stringResource(R.string.settings_cover_scraper),
+                        iconRes = R.drawable.ic_game_cover,
+                        onClick = { startActivityWithPageTransition(ctx, CoverScraperSettingsActivity.createIntent(ctx)) },
+                    )
+                }
+                item {
+                    SettingsEntryCard(
+                        title = if (checkingUpdate) {
+                            stringResource(R.string.settings_update_checking)
+                        } else {
+                            stringResource(R.string.settings_update_check)
+                        },
+                        iconRes = R.drawable.ic_settings_update,
+                        showBadge = hasUpdate,
+                        onClick = { checkUpdate() },
+                    )
+                }
+                item {
+                    SettingsEntryCard(
+                        title = stringResource(R.string.settings_join_group),
+                        iconRes = R.drawable.ic_settings_group,
+                        onClick = { showGroupDialog = true },
+                    )
+                }
+                item {
+                    SettingsEntryCard(
+                        title = stringResource(R.string.settings_about_app),
+                        iconRes = R.drawable.ic_settings_about,
+                        onClick = { startActivityWithPageTransition(ctx, AboutAppActivity.createIntent(ctx)) },
+                    )
                 }
                 item { BottomInsetSpacer() }
             }
@@ -369,83 +400,139 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     }
 
     if (showScanDirs) {
-        AppAlertDialog(
-            onDismissRequest = { showScanDirs = false },
-            title = { Text(stringResource(R.string.settings_game_dirs_title), style = MaterialTheme.typography.titleMedium) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (scanDirs.isEmpty()) {
-                        Text(
-                            stringResource(R.string.settings_no_game_dirs),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    scanDirs.forEach { dir ->
-                        // 目录被改名/删除或权限失效后标记为已失效，提示用户手动清理。
-                        // DocumentFile.isDirectory 可能触发 binder 调用，放到 IO 线程执行。
-                        val valid by produceState(initialValue = false, dir) {
-                            value = withContext(Dispatchers.IO) { isScanDirValid(ctx, dir) }
-                        }
-                        // Miuix 风格条目：圆角卡片 + 文件夹图标 + 目录名 + 删除按钮
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(AppComponentShape)
-                                // 弹窗内条目底色：玻璃风格用亮玻璃面
-                                .background(DialogItemSurface)
-                                .padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Folder,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp),
-                            )
+        // 抽屉内条目底色遵循页面灰底取色；白雾玻璃用面板内条目色。
+        val dirItemSurface = when {
+            AppThemeColors.isMilkGlass -> DialogItemSurface
+            else -> NavWhite
+        }
+        AppBottomSheet(onDismissRequest = { showScanDirs = false }) {
+            Column(Modifier.fillMaxWidth().weight(1f, fill = false)) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                        item {
                             Text(
-                                if (valid) scanDirName(ctx, dir) else "${scanDirName(ctx, dir)}（${stringResource(R.string.settings_invalid_suffix)}）",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = if (valid) {
-                                    MaterialTheme.colorScheme.onSurface
-                                } else {
-                                    MaterialTheme.colorScheme.error
-                                },
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
-                            )
-                            DialogTextButton(
-                                text = stringResource(R.string.common_delete),
-                                contentColor = MaterialTheme.colorScheme.error,
-                                onClick = {
-                                    GameLibraryFacade.removeRootAndGames(ctx, android.net.Uri.parse(dir))
-                                    scanDirs = GameLibraryFacade.loadRoots(ctx)
-                                },
+                                stringResource(R.string.settings_game_dirs_title),
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
                             )
                         }
-                    }
+                        if (scanDirs.isEmpty()) {
+                            item {
+                                Text(
+                                    stringResource(R.string.settings_no_game_dirs),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = PageSecondaryTextColor,
+                                )
+                            }
+                        }
+                        items(scanDirs, key = { it }) { dir ->
+                            // 目录被改名/删除或权限失效后标记为已失效，提示用户手动清理。
+                            // DocumentFile.isDirectory 可能触发 binder 调用，放到 IO 线程执行。
+                            val valid by produceState(initialValue = false, dir) {
+                                value = withContext(Dispatchers.IO) { isScanDirValid(ctx, dir) }
+                            }
+                            // 与游戏操作抽屉的 AppNavItem 同规格：约 58dp 高、16dp 左右视觉留白、
+                            // 24dp 左侧图标、标题 bodyMedium；删除动作以行尾图标按钮承载
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(AppComponentShape)
+                                    .background(dirItemSurface)
+                                    .glassBorder()
+                                    .padding(start = 16.dp, end = 8.dp, top = 11.dp, bottom = 11.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Image(
+                                    painter = painterResource(R.drawable.ic_settings_game_dir),
+                                    contentDescription = null,
+                                    colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
+                                    modifier = Modifier.size(24.dp),
+                                )
+                                Text(
+                                    if (valid) scanDirName(ctx, dir) else "${scanDirName(ctx, dir)}（${stringResource(R.string.settings_invalid_suffix)}）",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (valid) TextColor else MaterialTheme.colorScheme.error,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(AppComponentShape)
+                                        .clickable(
+                                            enabled = !cleanupState.running,
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null,
+                                            onClick = { resourceCleanup.removeRoot(dir) },
+                                        ),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    // 复用长按游戏卡片操作弹窗「删除游戏」的左侧图标
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_sheet_delete),
+                                        contentDescription = stringResource(R.string.common_delete),
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
+                            }
+                        }
+                        item {
+                            val result = cleanupState.result
+                            val message = when {
+                                cleanupState.running -> stringResource(R.string.settings_systemnnn_copy_cleanup_running)
+                                result != null && result.failed > 0 -> stringResource(
+                                    R.string.settings_systemnnn_copy_cleanup_incomplete,
+                                    result.cleared, result.failed,
+                                )
+                                cleanupState.canRetry -> stringResource(R.string.settings_systemnnn_copy_cleanup_pending)
+                                cleanupState.failed -> stringResource(R.string.save_operation_failed)
+                                result != null && result.cleared > 0 -> stringResource(
+                                    R.string.settings_systemnnn_copy_cleanup_done,
+                                    result.cleared,
+                                )
+                                result != null -> stringResource(R.string.settings_systemnnn_copy_cleanup_empty)
+                                else -> null
+                            }
+                            if (message != null) {
+                                Text(message, color = PageSecondaryTextColor, style = MaterialTheme.typography.bodyMedium)
+                            }
+                            if (cleanupState.canRetry && !cleanupState.running) {
+                                NoRippleButton(
+                                    text = stringResource(R.string.common_retry),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onClick = resourceCleanup::retry,
+                                )
+                            }
+                        }
                 }
-            },
-            confirmButton = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    DialogTextButton(
+
+                // 底部主操作：输入路径 / 添加目录改为两个长按钮；点击后抽屉保持展开。
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    NoRippleButton(
                         text = stringResource(R.string.settings_input_path),
-                        modifier = Modifier.padding(end = 8.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         onClick = { showPathDialog = true },
                     )
-                    DialogTextButton(
+                    NoRippleButton(
                         text = stringResource(R.string.settings_add_dir),
-                        modifier = Modifier.padding(end = 8.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         onClick = { dirPicker.launch(null) },
                     )
-                    DialogTextButton(
-                        text = stringResource(R.string.settings_done),
-                        onClick = { showScanDirs = false },
-                    )
                 }
-            },
-        )
+            }
+        }
     }
 
     if (showPathDialog) {
@@ -486,6 +573,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         onSearch = savePath,
                         leadingIcon = painterResource(R.drawable.ic_sheet_folder),
                         iconContentDescription = stringResource(R.string.settings_input_dir_title),
+                        imeAction = ImeAction.Done,
                         textStyle = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -704,6 +792,14 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EthornellSettingsScreen()
         return
     }
+    if (kind == EngineSettingsKind.RUFFLE) {
+        RuffleSettingsScreen()
+        return
+    }
+    if (kind == EngineSettingsKind.CMVS) {
+        CmvsSettingsScreen()
+        return
+    }
     val ctx = LocalContext.current
     val graphicsFamily = kind.graphicsFamily()
     var graphics by remember(kind) {
@@ -838,7 +934,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     }
 
     val isSdl3 = krKernel == EngineSettingsStore.KERNEL_KRKRSDL3
-    val krIs134126 = krVersion == EngineSettingsStore.KR_134 || krVersion == EngineSettingsStore.KR_126
+    val krIs134 = krVersion == EngineSettingsStore.KR_134
 
     // 编辑→保存模型：控件仅更新本地状态，点顶部保存按钮才统一写盘
     fun saveAll() {
@@ -910,7 +1006,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 AppTopBar(
                     title = engineSettingsKindTitle(kind),
                     background = Color.Transparent,
-                    contentColor = MiuixTheme.colorScheme.onBackground,
+                    contentColor = PageTextColor,
                     trailing = {
                         TopBarIcon(painterResource(R.drawable.ic_save), stringResource(R.string.engine_settings_save_content_description), MiuixTheme.colorScheme.primary) {
                             saveAll()
@@ -923,7 +1019,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
             LazyListPlaceholder(
                 kind,
                 krVersion, krKernel, krScoped, krSkipStartupDialogs, krFont, krForceFont, krRenderer, krDrawThread,
-                krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134126,
+                krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134,
                 krVCursorScale, krMenuOpa, krPatchOverlayMode,
                 ons, artKernel, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
                 artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, siglusLanguage, fbNls,
@@ -1005,36 +1101,13 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     }
 }
 
-@Composable
-private fun SettingsItemIcon(@DrawableRes iconRes: Int, showBadge: Boolean = false) {
-    Box(modifier = Modifier.padding(end = 6.dp).size(24.dp)) {
-        Image(
-            painter = painterResource(iconRes),
-            contentDescription = null,
-            // 深色模式下整体染白，保证低亮度背景上的可读性
-            colorFilter = if (AppThemeColors.isDark) ColorFilter.tint(Color.White) else null,
-            modifier = Modifier.fillMaxSize(),
-        )
-        if (showBadge) {
-            // 红点提醒：固定亮红，不随主题色变化
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = 5.dp, y = (-5).dp)
-                    .size(8.dp)
-                    .background(NoticeDotRed, CircleShape),
-            )
-        }
-    }
-}
-
 /** 顶部栏：统一复用 AppTopBar（Miuix 页面背景取色）。 */
 @Composable
 private fun SettingsTopBar(title: String) {
     AppTopBar(
         title = title,
         background = Color.Transparent,
-        contentColor = MiuixTheme.colorScheme.onBackground,
+        contentColor = PageTextColor,
     )
 }
 
@@ -1050,7 +1123,7 @@ private fun LazyListPlaceholder(
     krVersion: String, krKernel: String, krScoped: Boolean, krSkipStartupDialogs: Boolean,
     krFont: String, krForceFont: Boolean,
     krRenderer: String, krDrawThread: String, krSwCompress: String, krOglCompress: String,
-    krMem: String, krTexsize: String, krAccurate: String, krFps: String, isSdl3: Boolean, krIs134126: Boolean,
+    krMem: String, krTexsize: String, krAccurate: String, krFps: String, isSdl3: Boolean, krIs134: Boolean,
     krVCursorScale: String, krMenuOpa: String, krPatchOverlayMode: String,
     ons: EngineSettingsStore.Ons, artKernel: String, artVersion: String, artRotate: Boolean, artPatch: String,
     artResolution: String, artSideCut: String, artSurfaceCache: String, artFontCache: String,
@@ -1178,7 +1251,7 @@ private fun LazyListPlaceholder(
                     SliderRow(stringResource(R.string.engine_settings_software_draw_threads), krThreadMap, krDrawThread, onSelect = onKrDrawThread)
                     DropdownRow(stringResource(R.string.engine_settings_software_texture_compression), krSwCompressMap, krSwCompress, onKrSwCompress)
                 }
-                if (!isSdl3 && !krIs134126) {
+                if (!isSdl3 && !krIs134) {
                     SliderRow(stringResource(R.string.engine_settings_fps_limit), krFpsMap, krFps, onSelect = onKrFps)
                 }
                 if (!isSdl3 && (krRenderer == "" || krRenderer == EngineSettingsStore.RENDERER_OPENGL)) {
@@ -1197,15 +1270,13 @@ private fun LazyListPlaceholder(
                     onFollow = onResetKrFont,
                     onPick = { fontLauncher.launch("*/*") },
                 )
-                if (krVersion != EngineSettingsStore.KR_126) {
-                    SwitchPreference(title = stringResource(R.string.engine_settings_force_default_font), checked = krForceFont, onCheckedChange = onKrForceFont)
-                    Text(
-                        stringResource(R.string.engine_settings_force_font_hint),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MiuixTheme.colorScheme.onBackground,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    )
-                }
+                SwitchPreference(title = stringResource(R.string.engine_settings_force_default_font), checked = krForceFont, onCheckedChange = onKrForceFont)
+                Text(
+                    stringResource(R.string.engine_settings_force_font_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MiuixTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
             }
         }
 
@@ -1272,6 +1343,7 @@ private fun LazyListPlaceholder(
                     value = webShellPort.toString(),
                     sanitize = { it.filter { ch -> ch.isDigit() }.take(5) },
                     validate = { it.isNotEmpty() && (it.toIntOrNull()?.let { port -> port in 1..65535 } == true) },
+                    keyboardType = KeyboardType.Number,
                     onValueChange = { onWebShellPort(it.toInt()) },
                 )
             }
@@ -1501,6 +1573,7 @@ private fun LazyListPlaceholder(
                     summaryHint = stringResource(R.string.engine_settings_winlator_container_id_summary),
                     value = if (winlator.containerId > 0) winlator.containerId.toString() else "",
                     sanitize = { it.filter { ch -> ch.isDigit() }.take(6) },
+                    keyboardType = KeyboardType.Number,
                     onValueChange = { text ->
                         onWinlator(winlator.copy(containerId = text.toIntOrNull()?.coerceAtLeast(0) ?: 0))
                     },
@@ -1574,6 +1647,7 @@ private fun WinlatorValueRow(
     onValueChange: (String) -> Unit,
     sanitize: ((String) -> String)? = null,
     validate: (String) -> Boolean = { true },
+    keyboardType: KeyboardType = KeyboardType.Text,
 ) {
     var showDialog by remember { mutableStateOf(false) }
     ArrowPreference(
@@ -1588,6 +1662,7 @@ private fun WinlatorValueRow(
             initial = value,
             sanitize = sanitize,
             validate = validate,
+            keyboardType = keyboardType,
             onDismiss = { showDialog = false },
             onConfirm = {
                 onValueChange(it)
@@ -1604,6 +1679,7 @@ private fun WinlatorValueDialog(
     initial: String,
     sanitize: ((String) -> String)?,
     validate: (String) -> Boolean,
+    keyboardType: KeyboardType,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
@@ -1623,6 +1699,8 @@ private fun WinlatorValueDialog(
                         onSearch = { if (canConfirm) onConfirm(normalized) },
                         leadingIcon = painterResource(R.drawable.ic_sheet_rename),
                         iconContentDescription = title,
+                        imeAction = ImeAction.Done,
+                        keyboardType = keyboardType,
                         textStyle = MaterialTheme.typography.bodyMedium,
                     )
                     Text(
@@ -1653,7 +1731,7 @@ private fun WinlatorValueDialog(
 
 @Composable
 internal fun EngineCard(header: String, content: @Composable () -> Unit) {
-    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
         Column(Modifier.padding(vertical = 6.dp)) {
             Text(
                 header,

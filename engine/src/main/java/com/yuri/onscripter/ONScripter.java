@@ -32,6 +32,7 @@ import org.libsdl.app.SDLActivity;
 import com.core.engine.DoubleBackExit;
 import com.core.engine.LaunchContract;
 import com.core.engine.R;
+import com.core.nativeplugin.IjkRuntime;
 import com.core.ons.OnsLibLoader;
 import com.core.ons.OnsSettings;
 import com.core.ons.OnsVideoOverlay;
@@ -97,6 +98,8 @@ public class ONScripter extends SDLActivity {
         ignoreCutout = getIntent().getBooleanExtra(LaunchContract.IGNORE_CUTOUT, settings.ignoreCutout);
         // 提前加载/释放 assets：确保 libonsyuri 与内置 DroidSansFallback.ttf 在 SDLActivity 启动前可用。
         OnsLibLoader.load(this);
+        // IJK 三件套从运行库包按绝对路径加载；失败时视频覆盖层走既有失败收场路径。
+        IjkRuntime.load(this);
         ensureDefaultFont();
         super.onCreate(savedInstanceState);
         fixSurfaceCentering();  // 修复平板设备上画面不居中的问题
@@ -643,7 +646,9 @@ public class ONScripter extends SDLActivity {
         int colon = docId.indexOf(':');
         String volume = colon >= 0 ? docId.substring(0, colon) : docId;
         String rel = colon >= 0 ? docId.substring(colon + 1) : "";
-        if ("primary".equalsIgnoreCase(volume)) return "/storage/emulated/0" + (rel.isEmpty() ? "" : "/" + rel);
+        // document IDs come from the provider and are untrusted: reject traversal.
+        if (rel.indexOf('\\') >= 0 || java.util.Arrays.asList(rel.split("/")).contains("..")) return null;
+        if ("primary".equalsIgnoreCase(volume)) return bridge.PrimaryStorageRoot.get() + (rel.isEmpty() ? "" : "/" + rel);
         if (volume != null && !volume.isEmpty()) return "/storage/" + volume + (rel.isEmpty() ? "" : "/" + rel);
         return null;
     }

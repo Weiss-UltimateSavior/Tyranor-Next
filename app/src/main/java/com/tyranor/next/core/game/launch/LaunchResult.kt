@@ -3,11 +3,13 @@ package com.tyranor.next.core.game.launch
 import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
 import com.tyranor.next.core.engine.external.ExternalEngineLaunchResult
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
+import com.tyranor.next.core.engine.runtime.RuntimeModuleLaunchResult
+import com.tyranor.next.core.game.save.sync.SaveSyncError
 
 /**
  * KRKR 可移动存储镜像准备的失败阶段（app 侧视图模型）。
  *
- * 是 engine 侧 `KrSafMirror.Stage`（5 个细分阶段）按**用户处置方式**的收窄映射，
+ * 是 engine 侧 `KrSafMirror.Stage` 按**用户处置方式**的收窄映射，
  * 不复用其类型：ui 层按三层架构不得 import `bridge` 包，core 负责在这一层做映射
  * （见 `EngineLauncher`）。
  */
@@ -15,11 +17,15 @@ enum class MirrorPrepareStage {
     /** 无法解析 SD 卡/SAF 源目录（授权失效或目录已被移动）→ 需重新授权。 */
     SOURCE_UNRESOLVED,
 
+    /** SAF listing produced no usable game resources. */
+    EMPTY_MIRROR,
+
     /** 无法创建镜像根目录 / SAF 索引目录 / 镜像子项 → 需检查存储空间与权限。 */
     CREATE_FAILED,
 }
 
 enum class EthornellPrepareError { RESOURCE_ROOT, BOOTSTRAP, FONT, USER_DATA, SESSION_BUSY }
+enum class SystemNnnResourceError { SOURCE_MISSING, STORAGE_RESTRICTED, INVALID_SOURCE, SOURCE_BUSY, CORRUPT_COPY, SAVE_NOT_WRITABLE }
 
 /**
  * 引擎启动结果（P0-6 错误协议）：成功 / 失败两类，失败携带可程序化区分的类型，
@@ -36,6 +42,8 @@ sealed interface LaunchResult {
         /** 无法把游戏 URI 解析为本地目录路径。 */
         data object GameDirUnresolved : Failure
         data class EthornellPrepareFailed(val error: EthornellPrepareError) : Failure
+        data class SystemNnnResourcesFailed(val error: SystemNnnResourceError) : Failure
+        data class SavePreparationFailed(val error: SaveSyncError) : Failure
 
         /** 已打开「管理所有文件」系统授权页，用户返回后需再次启动。 */
         data object AllFilesAccessRequested : Failure
@@ -43,8 +51,15 @@ sealed interface LaunchResult {
         /** 无法打开授权页且缺少「管理所有文件」权限。 */
         data object AllFilesAccessMissing : Failure
 
+        /** Android 8–10 uses the app's legacy storage permissions. */
+        data object StorageAccessRequested : Failure
+        data object StorageAccessMissing : Failure
+
         /** 内置引擎原生插件保障失败。 */
         data class PluginBootstrapFailed(val reason: EnginePluginBootstrap.Failure) : Failure
+
+        /** 大体积引擎运行库包（assets/engine-runtime/<packId>.zip.xz）解压失败或安装包不完整。 */
+        data class EngineLibraryPackFailed(val packId: String) : Failure
 
         /** KRKR 可移动存储镜像准备失败；携带类型化阶段（文案由 UI 映射）。 */
         data class KrkrMirrorPrepareFailed(
@@ -76,6 +91,27 @@ sealed interface LaunchResult {
         /** System4 游戏根目录缺少入口 ini（System40.ini / AliceStart.ini，大小写不敏感）。 */
         data object Xs4IniMissing : Failure
 
+        /** CMVS 游戏根不符合布局（script.cpz / start / key.cfg 缺失或不唯一）。 */
+        data object CmvsGameLayoutInvalid : Failure
+
+        /** CMVS 私有 user 目录无法创建。 */
+        data object CmvsUserDataDirUnavailable : Failure
+
+        /** 顶层 launch.cfg 原子写入失败（权限/空间/rename）。 */
+        data object CmvsLaunchConfigUnavailable : Failure
+
+        /** 宿主进程启动失败；code 来自 launch-error.txt（unregistered/audio/vulkan/...）。 */
+        data class CmvsInitFailed(val code: String) : Failure
+
+        /** CMVS 字体缺失或不可读。 */
+        data object CmvsFontUnavailable : Failure
+
+        /** 设备没有 Vulkan 硬件支持。 */
+        data object CmvsVulkanUnavailable : Failure
+
+        /** 已有 `:cmvs` 游戏在运行，拒绝覆盖 launch.cfg。 */
+        data object CmvsAlreadyRunning : Failure
+
         /** 设备不支持 OpenGL ES 3.0（System4 引擎的渲染要求）。 */
         data object Xs4Gles3Required : Failure
 
@@ -84,6 +120,12 @@ sealed interface LaunchResult {
 
         /** 外置主机模拟器跳转失败（PPSSPP / Eden / Winlator）；携带目标与错误码，文案由 UI 映射。 */
         data class ExternalEmulatorFailed(val result: ExternalEmulatorLauncher.Result) : Failure
+
+        /** 第三方 APK 运行时模块启动失败；携带模块层类型化结果，文案由 UI 映射。 */
+        data class RuntimeModuleFailed(val result: RuntimeModuleLaunchResult) : Failure
+
+        /** 游戏引擎未知（含运行时模块卸载/禁用后降级的条目）；应重新扫描。 */
+        data object EngineUnknown : Failure
 
         /** YU-RIS：游戏目录内没有可启动的 .exe（可由单游戏「启动文件」手动指定）。 */
         data object YurisExeMissing : Failure

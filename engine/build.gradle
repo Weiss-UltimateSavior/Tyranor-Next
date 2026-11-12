@@ -59,6 +59,8 @@ dependencies {
     implementation libs.appcompat
     implementation libs.androidx.documentfile
     implementation libs.kotlin.stdlib
+    // NativeRuntimePack: 首启解压 assets/engine-runtime/<pack>.zip.xz（LZMA2）。
+    implementation libs.xz
     testImplementation libs.junit
     // 覆盖 android.jar 的 org.json stub（纯 JVM 单测需要真实现）：
     // - input 配置模型的解析测试；
@@ -66,6 +68,7 @@ dependencies {
     //   不初始化内部字段会抛 NPE，纯 JVM 单测无法覆盖这两条路径
     // （与 app 模块 GameOverridePartitionsTest 同一约定）
     testImplementation libs.json
+    testImplementation libs.kxml2
 }
 
 /**
@@ -112,7 +115,8 @@ def verifyGraphicsResources = tasks.register('verifyGraphicsResources', VerifyGr
     descriptorsDirectory.set(layout.projectDirectory.dir('src/main/graphicsfilters'))
     engineDirectory.set(layout.projectDirectory)
     artifacts.from(fileTree('src/main/assets') { include '**/*.glsl', '**/LICENSE*' })
-    artifacts.from(fileTree('patches') { include '**/*.patch', '**/previous-exports.txt' })
+    // Retained GLSL sources and pinned licenses must be inputs for verifyFile() membership and cache invalidation.
+    artifacts.from(fileTree('patches') { include '**/*.patch', '**/previous-exports.txt', '**/*.glsl', '**/LICENSE*' })
     artifacts.from(file('src/main/jniLibs/arm64-v8a/libsiglus.so'))
 }
 tasks.named('preBuild') { dependsOn verifyGraphicsResources }

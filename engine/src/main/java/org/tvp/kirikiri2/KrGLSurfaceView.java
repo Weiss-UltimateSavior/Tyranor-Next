@@ -17,11 +17,9 @@ public final class KrGLSurfaceView extends Cocos2dxGLSurfaceView {
             if (activity == null) return false;
             String version = activity.getIntent() == null ? null
                     : activity.getIntent().getStringExtra(LaunchContract.KR_ENGINE_VERSION);
-            // 1.2.6 与 1.3.4 走相同的旧版 KR2Activity JNI 触摸回调路径，需使用 Cocos 管线。
+            // 1.3.4 走旧版 KR2Activity JNI 触摸回调路径，需使用 Cocos 管线。
             return "1.3.4".equals(version)
-                    || "1.2.6".equals(version)
-                    || activity.getClass().getName().endsWith("Kirikiroid134")
-                    || activity.getClass().getName().endsWith("Kirikiroid126");
+                    || activity.getClass().getName().endsWith("Kirikiroid134");
         } catch (Throwable ignored) {
             return false;
         }

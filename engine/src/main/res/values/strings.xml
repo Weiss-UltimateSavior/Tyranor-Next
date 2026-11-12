@@ -5,6 +5,16 @@
     <string name="engine_ethornell_game_menu">打开游戏菜单（右键）</string>
     <string name="engine_ethornell_backlog">回看（向上滚动）</string>
     <string name="engine_ethornell_host_request">游戏确认</string>
+    <string name="engine_ethornell_dialog_unavailable">无法加载输入对话框</string>
+    <string name="engine_ethornell_dialog_unavailable_detail">游戏传来的输入内容不可用，只能取消本次输入。</string>
+    <string name="engine_ethornell_dialog_default_title">输入</string>
+    <string name="engine_ethornell_dialog_date_title">日期</string>
+    <string name="engine_ethornell_dialog_field">输入内容</string>
+    <string name="engine_ethornell_dialog_date_field">日期字段 %1$d</string>
+    <string name="engine_ethornell_dialog_segment">第 %1$d/%2$d 段</string>
+    <string name="engine_ethornell_dialog_month">月</string>
+    <string name="engine_ethornell_dialog_day">日</string>
+    <string name="engine_ethornell_dialog_empty_option">（空）</string>
     <string name="engine_game_loading">游戏加载中</string>
     <string name="engine_starting_game">正在启动游戏</string>
     <string name="engine_preparing_game">请稍候，正在准备游戏内容</string>
@@ -43,12 +53,16 @@
     <string name="engine_fvp_back_again_to_exit">再按一次返回键退出游戏</string>
     <string name="engine_xsys35_missing_game_dir">System35 启动失败：缺少游戏目录</string>
     <string name="engine_xsys35_init_failed">System35 引擎初始化失败：未找到场景档（S*.ALD）</string>
+    <string name="engine_xsys35_runtime_pack_missing">System35 引擎运行库未就绪，请重启应用或重新安装</string>
     <string name="engine_xsys35_back_again_to_exit">再按一次返回键退出游戏</string>
     <string name="engine_xsys4_missing_game_dir">System4 启动失败：缺少游戏目录</string>
     <string name="engine_xsys4_init_failed">System4 引擎初始化失败：未找到 System40.ini / AliceStart.ini</string>
+    <string name="engine_xsys4_runtime_pack_missing">System4 引擎运行库未就绪，请重启应用或重新安装</string>
     <string name="engine_xsys4_gles3_required">需要支持 OpenGL ES 3.0 的设备</string>
     <string name="engine_xsys4_back_again_to_exit">再按一次返回键退出游戏</string>
     <string name="engine_fb_missing_game_dir">启动失败：缺少游戏目录</string>
+    <string name="engine_krkrsdl3_init_failed">krkrsdl3 引擎初始化失败</string>
+    <string name="engine_krkrsdl3_runtime_pack_missing">krkrsdl3 引擎运行库未就绪，请重启应用或重新安装</string>
     <string name="engine_fb_init_failed">引擎初始化失败</string>
     <string name="engine_fb_back_again_to_exit">再按一次返回键退出游戏</string>
     <string name="engine_fb_ime_show">输入法</string>
@@ -109,6 +123,8 @@
     <string name="engine_input_binding_empty">未绑定</string>
     <string name="engine_input_delete">删除</string>
     <string name="engine_input_reset">恢复默认</string>
+    <string name="engine_systemnnn_reading_default">%1$s（默认）</string>
+    <string name="engine_systemnnn_reading_original">%1$s（原版）</string>
     <string name="engine_input_save">保存</string>
     <string name="engine_input_cancel">取消</string>
     <string name="engine_input_confirm">确定</string>
@@ -129,4 +145,13 @@
     <string name="engine_input_screenshot_saved_private">无法写入相册目录，截图已存到应用目录：%1$s</string>
     <string name="engine_input_action_screenshot">截屏</string>
     <string name="engine_input_group_actions">动作</string>
+    <string name="engine_cmvs_init_failed">CMVS 引擎初始化失败</string>
+    <string name="engine_cmvs_runtime_pack_missing">CMVS 引擎运行库未就绪，请重启应用或重新安装</string>
+    <string name="engine_cmvs_back_again_to_exit">再按一次返回键退出游戏</string>
+    <string name="engine_cmvs_unregistered">该作品未在 CMVS 登记列表中，暂不支持</string>
+    <string name="engine_cmvs_font_invalid">CMVS 字体不可用，请重新选择字体</string>
+    <string name="engine_cmvs_vulkan_unavailable">当前设备不支持 Vulkan，无法启动 CMVS</string>
+    <string name="engine_cmvs_audio_failed">CMVS 音频初始化失败</string>
+    <string name="engine_cmvs_font_index_title">字体集合索引</string>
+    <string name="engine_cmvs_font_index_message">普通字体请填 0</string>
 </resources>

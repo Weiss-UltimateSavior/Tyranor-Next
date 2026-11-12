@@ -2,6 +2,7 @@ package com.core.krkrsdl3
 
 import android.content.Context
 import android.content.pm.ActivityInfo
+import android.content.res.AssetManager
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
@@ -10,11 +11,15 @@ import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.view.WindowManager
+import android.widget.Toast
 import com.core.engine.EngineThemeColors
 import com.core.engine.LaunchContract
+import com.core.engine.R
 import com.core.gl.ArtemisPerformanceOverlay
+import com.core.nativeplugin.NativeRuntimePack
 import org.libsdl3.app.SDLActivity
 import org.tvp.krkrsdl3.KRKRActivity
+import java.io.File
 import java.util.Locale
 
 /**
@@ -44,11 +49,47 @@ class Krkrsdl3Activity : KRKRActivity() {
         // 先落方向锁再走 super：super 链中 KRKRActivity.onCreate → fullscreen() 会设置方向
         applyEngineRequestedOrientation()
         applyLauncherWindowTone()
-        graphics = Krkrsdl3Graphics(this, intent)
+        // 引擎主体由启动编排解压到私有目录；缺失说明安装包不完整、解压失败，
+        // 或应用升级后宿主从最近任务恢复而没有再经过 EngineLauncher.ensure。
+        val engineLibrary = NativeRuntimePack.libraryPath(
+            this,
+            NativeRuntimePack.PACK_KRKRSDL3,
+            "libkrkrsdl3.so",
+        )
+        if (engineLibrary == null) {
+            // 不能在此 finish：本类是 SDL 宿主，super.onCreate 才加载运行库，
+            // 未调用 super 就结束会抛 SuperNotCalledException。保留 null，交给
+            // KRKRActivity.loadLibraries 抛 UnsatisfiedLinkError，由 SDL 的
+            // mBrokenLibraries 错误路径收场。
+            Toast.makeText(this, getString(R.string.engine_krkrsdl3_runtime_pack_missing), Toast.LENGTH_LONG).show()
+            Log.w(TAG, "krkrsdl3 runtime pack not ready")
+        }
+        // 无条件注入（含 null）：静态字段可能保留上一实例的旧路径，必须清空才能让 loadLibraries 抛错。
+        setEngineLibraryPath(engineLibrary)
+        graphics = Krkrsdl3Graphics(this, intent).apply {
+            // 引擎库在私有目录、SDL3 仍在 lib/，都按绝对路径做 NOLOAD 查找。
+            setLibraryPaths(engineLibrary, sdlLibraryPath())
+        }
         super.onCreate(savedInstanceState)
-        graphics?.let { graphicsOverlay = ArtemisPerformanceOverlay(this, it) }
+        if (!SDLActivity.mBrokenLibraries) {
+            graphics?.let { graphicsOverlay = ArtemisPerformanceOverlay(this, it) }
+        }
         // 绝对超时兜底：即使原生窗口创建回调异常缺失，超时后也解除方向锁
         scheduleGuardRelease(GUARD_FALLBACK_RELEASE_MS)
+    }
+
+    /** `libSDL3.so` 仍随 APK 的 `lib/`，图形桥按该绝对路径做 NOLOAD 查找。 */
+    private fun sdlLibraryPath(): String =
+        File(applicationInfo.nativeLibraryDir, "libSDL3.so").absolutePath
+
+    /**
+     * SDL3 运行库加载失败时只弹错误框并返回，但 KRKRActivity.onCreate 之后仍会调用本 native
+     * 方法（实现在未加载的 libkrkrsdl3.so）。此处跳过，避免 UnsatisfiedLinkError 盖掉 SDL
+     * 错误路径；正常加载时转交原生实现。
+     */
+    override fun setNativeAssetManager(assetManager: AssetManager) {
+        if (SDLActivity.mBrokenLibraries) return
+        super.setNativeAssetManager(assetManager)
     }
 
     override fun onResume() {

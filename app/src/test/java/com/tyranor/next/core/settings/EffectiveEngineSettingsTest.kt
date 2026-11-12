@@ -311,6 +311,105 @@ class EffectiveEngineSettingsTest {
         assertTrue(merged.hwVideo)
         assertFalse(merged.lessMemory)
     }
+
+    @Test
+    fun mergeRuffleFollowsGlobalWhenNoOverride() {
+        val global = EngineSettingsStore.Ruffle(
+            screenTimeout = 30,
+            backend = "vulkan",
+            quality = "best",
+            scaleMode = "noborder",
+            letterbox = "off",
+            loadBehavior = "blocking",
+        )
+        assertEquals(global, EffectiveEngineSettings.mergeRuffle(global, null))
+        assertEquals(global, EffectiveEngineSettings.mergeRuffle(global, RuffleOverride()))
+    }
+
+    @Test
+    fun mergeRuffleAppliesFieldOverridesOnly() {
+        val global = EngineSettingsStore.Ruffle(
+            screenTimeout = 15,
+            backend = "opengl",
+            quality = "high",
+            scaleMode = "showall",
+            letterbox = "on",
+            loadBehavior = "streaming",
+        )
+        val merged = EffectiveEngineSettings.mergeRuffle(
+            global,
+            RuffleOverride(
+                screenTimeout = "45",
+                backend = "vulkan",
+                quality = "best",
+                scaleMode = "exactfit",
+                letterbox = "off",
+                loadBehavior = "blocking",
+            ),
+        )
+
+        assertEquals(45, merged.screenTimeout)
+        assertEquals("vulkan", merged.backend)
+        assertEquals("best", merged.quality)
+        assertEquals("exactfit", merged.scaleMode)
+        assertEquals("off", merged.letterbox)
+        assertEquals("blocking", merged.loadBehavior)
+        // 0 是有效的「不自动关闭」，不能被当作未覆盖而回落全局
+        assertEquals(
+            0,
+            EffectiveEngineSettings.mergeRuffle(global, RuffleOverride(screenTimeout = "0")).screenTimeout,
+        )
+    }
+
+    @Test
+    fun mergeRuffleRejectsInvalidOverrideAndNormalizesGlobal() {
+        val global = EngineSettingsStore.Ruffle(
+            screenTimeout = 30,
+            backend = " OpenGL ",
+            quality = "best",
+            scaleMode = "noborder",
+            letterbox = "off",
+            loadBehavior = "delayed",
+        )
+        val merged = EffectiveEngineSettings.mergeRuffle(
+            global,
+            RuffleOverride(
+                screenTimeout = "7",
+                backend = "bogus",
+                quality = "BEST",
+                scaleMode = "",
+                letterbox = "nope",
+                loadBehavior = "STREAMING",
+            ),
+        )
+
+        // 非法覆盖回退全局；大小写差异经归一后命中白名单
+        assertEquals(30, merged.screenTimeout)
+        assertEquals("opengl", merged.backend)
+        assertEquals("best", merged.quality)
+        assertEquals("noborder", merged.scaleMode)
+        assertEquals("off", merged.letterbox)
+        assertEquals("streaming", merged.loadBehavior)
+
+        val invalidGlobal = EffectiveEngineSettings.mergeRuffle(
+            EngineSettingsStore.Ruffle(
+                screenTimeout = 99,
+                backend = "bogus",
+                quality = "",
+                scaleMode = "bogus",
+                letterbox = "bogus",
+                loadBehavior = "bogus",
+            ),
+            RuffleOverride(),
+        )
+        assertEquals(0, invalidGlobal.screenTimeout)
+        assertEquals("opengl", invalidGlobal.backend)
+        assertEquals("high", invalidGlobal.quality)
+        assertEquals("showall", invalidGlobal.scaleMode)
+        assertEquals("on", invalidGlobal.letterbox)
+        assertEquals("streaming", invalidGlobal.loadBehavior)
+    }
+
     @Test
     fun artemisUiAndLaunchShareValidatedVersionFallback() {
         assertEquals(EngineSettingsStore.ART_ENGINE_V6,

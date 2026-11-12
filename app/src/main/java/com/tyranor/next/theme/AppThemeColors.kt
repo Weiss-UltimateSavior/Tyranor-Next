@@ -5,7 +5,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.AppearanceStyle
@@ -25,36 +24,35 @@ object AppThemeColors {
     var isDark by mutableStateOf(false)
         private set
 
-    /** 外观风格（默认 / 复古玻璃 / 高级玻璃）；变化时全 App 重组（背景/容器/文字随之切换）。 */
+    /** 外观风格（默认 / 复古玻璃 / 白雾玻璃）；变化时全 App 重组（背景/容器/文字随之切换）。 */
     var appearanceStyle by mutableStateOf(AppearanceStyle.DEFAULT)
         private set
 
     /**
-     * 是否处于玻璃系外观（复古 / 高级）：透明页面背景、玻璃面、禁用外观模式等规则共用。
+     * 应用统一圆角（dp，5..50 共十档）：风格无关，卡片/条目/弹窗/抽屉统一取本值。
+     * 变化时全 App 重组（`theme/AppShapes.kt` 的 getter 直接读取）。
+     */
+    var appCornerRadius by mutableStateOf(AppSettingsStore.DEFAULT_APP_CORNER_RADIUS)
+        private set
+
+    /**
+     * 是否处于复古玻璃外观：深色玻璃面、白色文字、禁用外观模式等规则共用。
      * 派生自 [appearanceStyle]，供既有调用点零改动沿用。
      */
     val isGlass: Boolean
         get() = appearanceStyle.isGlass
 
-    /** 是否为高级玻璃档（封面拼贴模糊背景 + 浅色磨砂膜 + 光学描边；真采样增强仅 API 31+）。 */
-    val isAdvancedGlass: Boolean
-        get() = appearanceStyle.isAdvancedGlass
+    /** 是否处于白雾玻璃外观：图片底图 + 白雾条目 + 深色正文。 */
+    val isMilkGlass: Boolean
+        get() = appearanceStyle.isMilkGlass
 
-    /**
-     * 高级玻璃的封面拼贴模糊底图；由 MainScreen 依游戏库封面生成后写入（见
-     * `ui/common/glass/AmbientBackdrop.kt`），离开高级玻璃时清空释放内存。
-     * 为 null 时背景退化为主题色软色斑（库内无封面 / 尚未生成）。
-     */
-    var ambientBackdrop by mutableStateOf<ImageBitmap?>(null)
-        private set
+    /** 页面背景是否为固定深色画面（复古玻璃 / 白雾玻璃），系统栏需浅色图标。 */
+    val hasDarkBackdrop: Boolean
+        get() = appearanceStyle.hasDarkBackdrop
 
-    fun updateAmbientBackdrop(image: ImageBitmap?) {
-        ambientBackdrop = image
-    }
-
-    /** 色调切换：控制页面背景色与组件色是否互换。 */
-    var toneSwitchEnabled by mutableStateOf(AppSettingsStore.DEFAULT_TONE_SWITCH_ENABLED)
-        private set
+    /** 是否使用固定配色（禁用「深浅色切换」）。 */
+    val hasFixedContentPalette: Boolean
+        get() = appearanceStyle.hasFixedContentPalette
 
     /** 当前主题色的 Android ARGB int，用于传给非 Compose 引擎壳。 */
     val primaryArgb: Int
@@ -70,36 +68,47 @@ object AppThemeColors {
     }
 
     /** 从存储重读主题色与外观风格并广播变更（system 模式按系统当前深/浅解析）。
-     *  玻璃系风格下强制深色、禁用色调切换（背景固定深色画面）。 */
+     *  复古玻璃固定深色；白雾玻璃固定浅色（条目为亮面黑字），两者都禁用深浅色切换。 */
     fun refresh(context: Context) {
         appearanceStyle = AppSettingsStore.getAppearanceStyle(context)
         primary = parseColorHex(AppSettingsStore.getThemeColorHex(context))
-        isDark = appearanceStyle.isGlass || AppSettingsStore.isDarkEffective(context)
-        toneSwitchEnabled = !appearanceStyle.isGlass && AppSettingsStore.isToneSwitchEnabled(context)
+        isDark = when {
+            appearanceStyle.isGlass -> true
+            appearanceStyle.isMilkGlass -> false
+            else -> AppSettingsStore.isDarkEffective(context)
+        }
+        appCornerRadius = AppSettingsStore.getAppCornerRadius(context)
         // 同步主题色快照给 core 启动编排（EngineLauncher 注入引擎 Intent 用），
         // 维持 core 层不反向依赖 theme 的依赖方向。
         ThemeColorPayloadStore.current = ThemeColorPayload(
+            // 引擎壳沿用内容配色：白雾玻璃是亮面深字，不能因为页面底图深就把引擎 UI 标成 dark。
             darkMode = isDark,
             primaryArgb = primaryArgb,
             onPrimaryArgb = 0xFFFFFFFF.toInt(),
             cardArgb = when {
-                // 引擎网页壳不支持磨砂膜，取高级玻璃膜在深底上的不透明合成色
-                appearanceStyle.isAdvancedGlass -> AdvancedGlassSurfaceSolid.toArgb()
                 appearanceStyle.isGlass -> GlassPanel.toArgb()
+                appearanceStyle.isMilkGlass -> MilkSurfaceHigh.toArgb()
                 isDark -> 0xFF1E1F1F.toInt()
                 else -> 0xFFFFFFFF.toInt()
             },
             textArgb = when {
                 appearanceStyle.isGlass -> GlassText.toArgb()
+                appearanceStyle.isMilkGlass -> MilkText.toArgb()
                 isDark -> 0xFFF0F0F0.toInt()
                 else -> 0xFF14221B.toInt()
             },
             mutedArgb = when {
                 appearanceStyle.isGlass -> GlassTextSecondary.toArgb()
+                appearanceStyle.isMilkGlass -> MilkTextSecondary.toArgb()
                 isDark -> 0xFF9A9A9A.toInt()
                 else -> 0xFF82908A.toInt()
             },
         )
+    }
+
+    /** 设置页调整圆角时的即时生效（仅内存；持久化由调用方 `setAppCornerRadius` 负责）。 */
+    fun applyAppCornerRadius(radius: Int) {
+        appCornerRadius = AppSettingsStore.normalizeAppCornerRadius(radius)
     }
 }
 

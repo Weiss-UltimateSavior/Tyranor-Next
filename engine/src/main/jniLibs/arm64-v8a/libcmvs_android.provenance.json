@@ -1,0 +1,20 @@
+{
+  "library": "libcmvs_android.so",
+  "upstream": "cmvs-rs",
+  "upstream_commit": "c073414b",
+  "source_state": "c073414b + tools/cmvs/patches/0001-absolute-launch-paths.patch (fork is sync-only; no committed changes)",
+  "dirty": true,
+  "patches": [
+    {
+      "path": "tools/cmvs/patches/0001-absolute-launch-paths.patch",
+      "sha256": "4da1957786c88fc64c1b571977a8f7197a518de8f4d5973472503ea925ea2ce3"
+    }
+  ],
+  "sha256": "ee6f0f618d3d2770898d445ebf709d2aa9a7317fe0d43d44cb628bb7a86f94fd",
+  "size": 9318864,
+  "api_level": 26,
+  "ndk": "28.0.13004108",
+  "build_command": "CARGO_TARGET_DIR=/tmp/cmvs-build-target ANDROID_NDK_HOME=/Users/weiss/Library/Android/sdk/ndk/28.0.13004108 cargo ndk -t arm64-v8a --platform 26 -o /tmp/cmvs-jni build --locked --release -p cmvs-android && llvm-strip --strip-unneeded /tmp/cmvs-jni/arm64-v8a/libcmvs_android.so",
+  "instrumentation": "local patch only; no engine repository changes",
+  "xz_size": 2620532
+}

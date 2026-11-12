@@ -25,16 +25,16 @@ fun isWideScreen(): Boolean {
 }
 
 /**
- * 平板/大窗口判定：以 **sw600dp 平板**（含竖屏）或宽度 ≥ 840dp 的大窗口为准。
+ * 平板/大窗口判定：以 **sw600dp 平板**（含竖屏）或宽高至少为 840×600dp 的大窗口为准。
  *
  * 与 [isWideScreen] 的区别：后者含「任何横屏」——横屏手机只有 360–420dp 高，
- * 放 4 项竖排侧栏会过挤，因此侧栏单独用更严格的平板判定。
+ * 即使宽度超过 840dp，也不能命中大窗口分支；放 4 项竖排侧栏会过挤。
  */
 @Composable
 fun isTabletScreen(): Boolean {
     val configuration = LocalConfiguration.current
     return configuration.smallestScreenWidthDp >= 600 ||
-        configuration.screenWidthDp >= 840
+        (configuration.screenWidthDp >= 840 && configuration.screenHeightDp >= 600)
 }
 
 /**

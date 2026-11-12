@@ -67,6 +67,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
     private AudioManager audio;
     private AudioFocusRequest focusRequest;
     private AlertDialog dialog;
+    private EthornellHostDialog inputDialog;
     private final ArrayDeque<EthornellSession.Event> requests = new ArrayDeque<>();
     private final Set<Long> uiPending = new HashSet<>();
     private Runnable pendingFocusAction;
@@ -188,6 +189,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
         noisyRegistered = true;
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override public void handleOnBackPressed() {
+                if (inputDialog != null) { inputDialog.cancel(); return; }
                 if (remap != null && remap.handleBack()) return;
                 showMenu();
             }
@@ -219,6 +221,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
                             || !chosen.canRead() || chosen.length() == 0 || chosen.length() > 64L * 1024 * 1024) throw new IOException("font policy");
                     font = chosen.getPath();
                 }
+                if (!NativeEthornell.prepareEngineLibrary(application)) throw new IOException("ethornell runtime pack");
                 NativeEthornell.load();
                 long handle = NativeEthornell.create(application, resource.getPath(), user.getPath(), font, config.nls.equals("gbk") ? 1 : 0);
                 if (handle != 0) EngineSessionRegistry.record(application, EngineSessionRegistry.HOST_ETHORNELL, config.identity);
@@ -230,7 +233,8 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
             @Override public void input(long h, EthornellSession.Input i) { NativeEthornell.input(h, i.kind, i.code, i.x, i.y, i.value); }
             @Override public void step(long h, long now) { NativeEthornell.step(h, now); }
             @Override public EthornellSession.Event poll(long h) { return NativeEthornell.pollEvent(h); }
-            @Override public void respond(long h, long id, int result) { NativeEthornell.completeRequest(h, id, result); }
+            @Override public String requestPayload(long h, long id) { return NativeEthornell.requestPayload(h, id); }
+            @Override public void respond(long h, long id, int result, String text) { NativeEthornell.completeRequest(h, id, result, text); }
             @Override public void requestClose(long h) { NativeEthornell.requestClose(h); }
             @Override public void destroy(long h) { lifecycle.destroy(() -> NativeEthornell.destroy(h)); }
         };
@@ -384,7 +388,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
     private boolean alive(long token) { return !destroyed && !isFinishing() && session != null && session.token() == token; }
     private void hostEvent(long token, EthornellSession.Event event) {
         if (!alive(token)) return;
-        if (event.kind == 2) {
+        if (event.kind == 2 || event.kind == 5) {
             if (!uiPending.add(event.requestId)) return;
             requests.add(event); showNextRequest();
         } else if (event.kind == 3) { dismissDialogs(); }
@@ -392,19 +396,68 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
         else if (event.kind == 1 && event.code < 0) toast(R.string.engine_ethornell_failed);
     }
     private void showNextRequest() {
-        if (dialog != null || requests.isEmpty() || destroyed) return;
+        if (dialog != null || inputDialog != null || requests.isEmpty() || destroyed
+                || isFinishing() || session == null) return;
         EthornellSession.Event request = requests.remove();
         final long token = session.token();
+        if (request.kind == 5) { showInputRequest(token, request); return; }
         showDialog(text(R.string.engine_ethornell_host_request), request.text,
                 new String[]{text(R.string.engine_yes), text(R.string.engine_no)}, new Runnable[]{
                     () -> answer(token, request.requestId, 1), () -> answer(token, request.requestId, 0)},
                 () -> answer(token, request.requestId, 0));
     }
+    private void showInputRequest(long token, EthornellSession.Event event) {
+        // The worker already fetched the bounded kind-5 JSON; the UI only parses the immutable string.
+        EthornellDialogProtocol.Request request = null;
+        String reason = "payload_unavailable";
+        if (event.payloadError != null && !event.payloadError.isEmpty()) {
+            reason = "payload_error";
+        } else if (event.payload == null) {
+            reason = "payload_missing";
+        } else {
+            try {
+                request = EthornellDialogProtocol.parse(event.payload);
+                if (event.text == null || !event.text.equals(request.type)) {
+                    request = null; reason = "type_mismatch";
+                }
+            } catch (EthornellDialogProtocol.ProtocolException | RuntimeException e) {
+                request = null; reason = "payload_invalid";
+            }
+        }
+        session.pause(EthornellSession.PAUSE_DIALOG, true); releaseInput();
+        EthornellHostDialog shown = request == null
+                ? EthornellHostDialog.unavailable(this) : EthornellHostDialog.forRequest(this, request);
+        if (request == null) android.util.Log.w("EthornellDialog", "kind5 " + reason);
+        final EthornellHostDialog host = shown;
+        host.setListener(new EthornellHostDialog.Listener() {
+            @Override public void onAnswer(String json) { answerJson(token, event.requestId, json); }
+            @Override public void onDismissed() {
+                if (inputDialog == host) inputDialog = null;
+                if (session != null && !destroyed) session.pause(EthornellSession.PAUSE_DIALOG, false);
+                showNextRequest();
+            }
+        });
+        inputDialog = host;
+        try { host.show(); }
+        catch (RuntimeException e) {
+            // A window that cannot be displayed must not strand the VM pending request.
+            android.util.Log.w("EthornellDialog", "kind5 dialog_show_failed");
+            if (inputDialog == host) inputDialog = null;
+            host.dismiss();
+            answerJson(token, event.requestId, EthornellDialogProtocol.cancel());
+            if (session != null && !destroyed) session.pause(EthornellSession.PAUSE_DIALOG, false);
+            showNextRequest();
+        }
+    }
     private void answer(long token, long requestId, int answer) {
-        if (uiPending.remove(requestId) && alive(token)) session.respond(token, requestId, answer);
+        if (uiPending.remove(requestId) && alive(token)) session.respond(token, requestId, answer, "");
+    }
+    private void answerJson(long token, long requestId, String json) {
+        if (json == null || json.isEmpty()) json = EthornellDialogProtocol.cancel();
+        if (uiPending.remove(requestId) && alive(token)) session.respond(token, requestId, 0, json);
     }
     private void showMenu() {
-        if (session == null || destroyed || dialog != null || !uiPending.isEmpty()) return;
+        if (session == null || destroyed || dialog != null || inputDialog != null || !uiPending.isEmpty()) return;
         showDialog(text(R.string.engine_prompt), "", new String[]{text(R.string.engine_ethornell_game_menu),
                         text(R.string.engine_ethornell_backlog), text(R.string.engine_exit_game), text(R.string.engine_cancel)},
                 new Runnable[]{() -> pulse(CanonicalKeys.MOUSE_RIGHT), () -> pulse(CanonicalKeys.SCROLL_UP),
@@ -459,6 +512,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
     private void dismissDialogs() {
         pendingFocusAction = null;
         uiPending.clear(); requests.clear();
+        if (inputDialog != null) { EthornellHostDialog old = inputDialog; inputDialog = null; old.dismiss(); }
         if (dialog != null) { AlertDialog old = dialog; dialog = null; old.setOnCancelListener(null); old.setOnDismissListener(null); old.dismiss(); }
     }
     private void immersive() {

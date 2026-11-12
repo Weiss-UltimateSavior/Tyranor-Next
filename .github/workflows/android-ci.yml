@@ -36,6 +36,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 2
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -67,15 +68,33 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Check texture row origin
+        run: clang++ -std=c++17 -fsyntax-only engine/src/test/cpp/texture_row_origin_test.cpp
+
+      - name: Check VN-SR reproducible exports and coordinates
+        run: |
+          python3 tools/generate-vnsr-filters.py --check
+          python3 tools/test-vnsr-coordinates.py
+          python3 tools/test-anime4k-coordinates.py
+          python3 tools/test-vnsr-generator.py
+
       - name: Check graphics resource ownership and provenance
         run: ./gradlew -p buildSrc graphicsResourcesRegression --no-daemon
 
-      # 硬编码界面文案门禁（三语言键齐平 + Kotlin CJK 字面量 + 豁免文件数量基线）：
+      # 硬编码界面文案门禁（三语言键齐平 + Kotlin 与 SystemNNN Java 的 CJK 字面量）：
       # 脚本此前只在本地手动跑，扩展 engine 扫描范围后必须有自动保障
       - name: Check hardcoded UI strings
-        run: python3 tools/check-hardcoded-ui-strings.py
+        run: |
+          python3 tools/check-hardcoded-ui-strings.py
+          python3 tools/test-hardcoded-ui-strings.py
+
+      - name: Check bundled SystemNNN runtime
+        run: python3 tools/check-systemnnn-runtime.py
 
       # 单元测试：输入内核（键位/配置/迁移/RTP 语义）等回归全靠它，此前 CI 只构建不测试
+      - name: Check KRKR mirror stdio semantics
+        run: python3 tools/test_krkr_mirror_stdio.py
+
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --no-daemon
 
@@ -86,6 +105,12 @@ jobs:
 
       - name: Run web compatibility harnesses
         run: ./gradlew :engine:jsHarness :engine:dkToolsHarness --no-daemon
+      - name: Check lint on PR changes
+        if: github.event_name == 'pull_request'
+        run: |
+          ./gradlew :app:lintReportDebug :engine:lintReportDebug --no-daemon
+          python3 tools/check-lint-diff.py --base HEAD^ \
+            app/build/reports/lint-results-debug.xml engine/build/reports/lint-results-debug.xml
 
   assemble-debug:
     name: Assemble Debug
@@ -135,6 +160,9 @@ jobs:
 
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --no-daemon
+
+      - name: Check packaged SystemNNN runtime
+        run: python3 tools/check-systemnnn-runtime.py --apk app/build/outputs/apk/debug/app-debug.apk
 
       - name: Verify actual debug APK Ethornell bytes and dependency closure
         run: |

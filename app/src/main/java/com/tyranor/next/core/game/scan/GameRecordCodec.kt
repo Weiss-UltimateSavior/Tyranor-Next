@@ -29,6 +29,7 @@ internal object GameRecordCodec {
             g.coverSource.orEmpty(),
             g.externalModuleAlias.orEmpty(),
             g.detectedRenpyVersion.orEmpty(),
+            g.runtimeModulePackage.orEmpty(),
         ).joinToString("\u0001")
     }
 
@@ -48,6 +49,7 @@ internal object GameRecordCodec {
             coverSource = p.getOrElse(9) { "" }.takeIf { it.isNotBlank() },
             externalModuleAlias = p.getOrElse(10) { "" }.takeIf { it.isNotBlank() },
             detectedRenpyVersion = p.getOrElse(11) { "" }.takeIf { it.isNotBlank() },
+            runtimeModulePackage = p.getOrElse(12) { "" }.takeIf { it.isNotBlank() },
         )
     }
 }

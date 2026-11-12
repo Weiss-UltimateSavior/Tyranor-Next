@@ -1,0 +1,126 @@
+diff --git a/crates/ethornell-app/src/file_policy.rs b/crates/ethornell-app/src/file_policy.rs
+index 340474f..5285124 100644
+--- a/crates/ethornell-app/src/file_policy.rs
++++ b/crates/ethornell-app/src/file_policy.rs
+@@ -88,10 +88,32 @@ fn relative(name: &str) -> Option<PathBuf> {
+ // arbitrary resource-root names remain read-only. It never denotes host IO in
+ // the resource directory and never imports original save bytes.
+ pub(crate) fn user_data_alias(name: &str) -> String {
+-    let normalized=name.replace('\\',"/");
++    let mut normalized=name.replace('\\',"/");
++    // A script can prepend the primary resource root to a name that already
++    // starts with it (`Sys80:32` resolves `bgi-resource\UserData\...` against
++    // `bgi-resource\`). Collapse exactly one duplicated prefix so the aliases
++    // below still match; every other resource name stays read-only and
++    // `relative()` continues to reject escapes.
++    if let Some(rest)=normalized.strip_prefix("bgi-resource/bgi-resource/") {
++        normalized=format!("bgi-resource/{rest}");
++    }
+     if let Some(rest)=normalized.strip_prefix("bgi-resource/") {
+         let first=rest.split('/').next().unwrap_or("");
+         if first.eq_ignore_ascii_case("UserData") {return format!("bgi-user/{rest}");}
++        // `Sys80:80/81` load and save global data as validated-root +
++        // `BGI.gdb`, and `Sys80:78/79` use validated-root + `BGI%04d.cad` for
++        // config slots. Once composed with the primary root those are explicit
++        // resource-root names. Alias only these exact top-level files; no
++        // other resource name, subdirectory, or traversal is writable.
++        if rest.eq_ignore_ascii_case("BGI.gdb") {return "bgi-user/BGI.gdb".to_string();}
++        let bytes=rest.as_bytes();
++        if bytes.len()==11
++            && bytes[..3].eq_ignore_ascii_case(b"BGI")
++            && bytes[3..7].iter().all(u8::is_ascii_digit)
++            && bytes[7..].eq_ignore_ascii_case(b".cad")
++        {
++            return format!("bgi-user/BGI{}.cad",&rest[3..7]);
++        }
+     }
+     normalized
+ }
+@@ -1023,6 +1045,87 @@ mod tests {
+         std::fs::remove_dir_all(base).unwrap();
+     }
+     #[test]
++    fn doubled_resource_prefix_only_aliases_the_conventional_userdata_subtree() {
++        let (base,p)=roots("userdata-double-prefix");
++        std::fs::create_dir_all(p.resource.join("UserData")).unwrap();
++        std::fs::write(p.resource.join("UserData/original.sud"),b"original").unwrap();
++        p.probe_writable("bgi-resource\\bgi-resource\\UserData").unwrap();
++        p.atomic_write("bgi-resource\\bgi-resource\\UserData/AmairoChocolate101.sud",b"slot").unwrap();
++        assert_eq!(p.read_user("bgi-user\\UserData/AmairoChocolate101.sud").unwrap(),b"slot");
++        assert_eq!(p.user_metadata("bgi-resource\\bgi-resource\\USERDATA/AmairoChocolate101.sud").unwrap().len(),4);
++        assert_eq!(p.read_user("bgi-resource\\bgi-resource\\UserData/AmairoChocolate101.sud").unwrap(),b"slot");
++        assert!(p.user_metadata("bgi-resource\\bgi-resource\\UserData").unwrap().is_dir());
++        assert!(!p.resource.join("UserData/AmairoChocolate101.sud").exists());
++        assert!(!p.resource.join("bgi-resource").exists());
++        assert_eq!(std::fs::read_dir(p.resource.join("UserData")).unwrap().count(),1);
++        for denied in ["bgi-resource/bgi-resource/story.arc",
++                       "bgi-resource/bgi-resource/UserData/../../story.arc",
++                       "bgi-resource/bgi-resource/UserDataX/slot",
++                       "bgi-resource/bgi-resource/bgi-resource/UserData/slot"] {
++            assert!(p.atomic_write(denied,b"bad").is_err(),"{denied}");
++            assert!(p.read_user(denied).is_err(),"{denied}");
++        }
++        assert!(p.user_metadata("bgi-resource\\bgi-resource\\story.arc").is_none());
++        assert!(!p.user.join("story.arc").exists());
++        assert!(!p.resource.join("story.arc").exists());
++        assert_eq!(std::fs::read(p.resource.join("UserData/original.sud")).unwrap(),b"original");
++        std::fs::remove_dir_all(base).unwrap();
++    }
++    #[test]
++    fn resource_root_global_data_aliases_to_private_user_root() {
++        let (base,p)=roots("bgi-global-data");
++        std::fs::write(p.resource.join("BGI.gdb"),b"resource gdb").unwrap();
++        std::fs::write(p.resource.join("BGI0001.cad"),b"resource slot").unwrap();
++        assert!(p.read_user("bgi-resource\\BGI.gdb").is_err());
++        assert!(p.user_metadata("bgi-resource\\BGI.gdb").is_none());
++        p.atomic_write("bgi-resource\\BGI.gdb",b"private gdb").unwrap();
++        p.atomic_write("bgi-resource\\bgi0001.CAD",b"private slot").unwrap();
++        p.atomic_write("bgi-resource\\BGI9999.cad",b"last slot").unwrap();
++        assert_eq!(p.read_user("bgi-resource\\BGI.gdb").unwrap(),b"private gdb");
++        assert_eq!(p.read_user("bgi-resource\\BGI0001.cad").unwrap(),b"private slot");
++        assert_eq!(p.read_user("bgi-resource\\BGI9999.cad").unwrap(),b"last slot");
++        assert_eq!(p.read_user("bgi-user\\BGI.gdb").unwrap(),b"private gdb");
++        assert_eq!(p.read_user("bgi-user\\bgi0001.cad").unwrap(),b"private slot");
++        assert_eq!(p.user_metadata("bgi-resource\\bgi.gdb").unwrap().len(),11);
++        assert_eq!(p.user_metadata("bgi-resource\\BGI9999.CAD").unwrap().len(),9);
++        assert_eq!(p.read_loose("bgi-resource\\BGI.gdb").unwrap(),b"resource gdb");
++        assert_eq!(p.read_loose("bgi-resource\\BGI0001.cad").unwrap(),b"resource slot");
++        assert_eq!(std::fs::read(p.resource.join("BGI.gdb")).unwrap(),b"resource gdb");
++        assert_eq!(std::fs::read(p.resource.join("BGI0001.cad")).unwrap(),b"resource slot");
++        assert!(!p.resource.join("BGI9999.cad").exists());
++        assert_eq!(std::fs::read(p.user.join("BGI.gdb")).unwrap(),b"private gdb");
++        assert_eq!(std::fs::read(p.user.join("BGI0001.cad")).unwrap(),b"private slot");
++        assert_eq!(std::fs::read(p.user.join("BGI9999.cad")).unwrap(),b"last slot");
++        std::fs::remove_dir_all(base).unwrap();
++    }
++    #[test]
++    fn resource_root_global_data_lookalikes_stay_read_only() {
++        let (base,p)=roots("bgi-global-data-denied");
++        std::fs::create_dir(p.resource.join("foo")).unwrap();
++        for denied in ["bgi-resource/BGI99999.cad",
++                       "bgi-resource/BGI123.cad",
++                       "bgi-resource/BGI00001.cad",
++                       "bgi-resource/BGI-001.cad",
++                       "bgi-resource/BGI0000.cadx",
++                       "bgi-resource/BGI.gdbx",
++                       "bgi-resource/BGI.gdb/child",
++                       "bgi-resource/foo/BGI.gdb",
++                       "bgi-resource/foo/BGI0001.cad",
++                       "bgi-resource/story.arc"] {
++            assert!(p.atomic_write(denied,b"bad").is_err(),"{denied}");
++            assert!(p.read_user(denied).is_err(),"{denied}");
++            assert!(p.delete(denied).is_err(),"{denied}");
++        }
++        assert!(!p.resource.join("BGI99999.cad").exists());
++        assert!(!p.resource.join("BGI.gdbx").exists());
++        assert!(!p.resource.join("story.arc").exists());
++        assert!(!p.user.join("BGI99999.cad").exists());
++        assert!(!p.user.join("BGI.gdbx").exists());
++        assert!(!p.user.join("story.arc").exists());
++        assert!(!p.user.join("foo").exists());
++        std::fs::remove_dir_all(base).unwrap();
++    }
++    #[test]
+     fn ambiguous_ascii_case_alias_does_not_select_arbitrary_directory_entry() {
+         let (base, p) = roots("case-ambiguity");
+         std::fs::write(p.user.join("Save"), b"first").unwrap();

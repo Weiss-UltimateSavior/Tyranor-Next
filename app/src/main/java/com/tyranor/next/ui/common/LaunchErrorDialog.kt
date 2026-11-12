@@ -16,12 +16,14 @@ import com.tyranor.next.core.game.launch.LaunchResult
 /**
  * 启动失败展示态：文案 + 可选的外置目标安装引导。
  *
- * 外置模拟器/运行时未安装（或版本不支持外置启动）时携带 [installTarget]，
- * UI 用 [LaunchErrorDialog] 渲染出「去下载」动作；其余失败只有确认按钮。
+ * 外置模拟器/运行时未安装（或版本不支持外置启动）时携带 [installTarget]；
+ * 外置 APK 引擎模块缺失/入口不兼容时携带 [installUrl]。UI 用 [LaunchErrorDialog]
+ * 渲染出「去下载」动作；其余失败只有确认按钮。
  */
 data class LaunchErrorState(
     val message: String,
     val installTarget: EmulatorTarget? = null,
+    val installUrl: String? = null,
 )
 
 /** 启动结果 → 展示态；成功返回 null。 */
@@ -39,7 +41,9 @@ fun LaunchResult.toErrorState(context: Context): LaunchErrorState? {
             }
         }
         ?.result?.target
-    return LaunchErrorState(message, installTarget)
+    val moduleInstallUrl = (this as? LaunchResult.Failure.ExternalModuleFailed)
+        ?.result?.installUrl
+    return LaunchErrorState(message, installTarget, moduleInstallUrl)
 }
 
 /** 统一启动失败弹窗：可在外置运行时缺失时一键前往下载/更新。 */
@@ -47,6 +51,7 @@ fun LaunchResult.toErrorState(context: Context): LaunchErrorState? {
 fun LaunchErrorDialog(state: LaunchErrorState, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val openDownloadFailedMessage = stringResource(R.string.engine_open_download_failed)
+    val installUrl = state.installUrl ?: state.installTarget?.installUrl
     AppAlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -57,13 +62,12 @@ fun LaunchErrorDialog(state: LaunchErrorState, onDismiss: () -> Unit) {
         },
         text = { Text(state.message, style = MaterialTheme.typography.bodyMedium) },
         confirmButton = {
-            val target = state.installTarget
-            if (target != null) {
+            if (installUrl != null) {
                 DialogTextButton(
                     text = stringResource(R.string.engine_module_download),
                     onClick = {
                         onDismiss()
-                        if (!ExternalEngineLauncher.openInstallPage(context, target.installUrl)) {
+                        if (!ExternalEngineLauncher.openInstallPage(context, installUrl)) {
                             Toast.makeText(context, openDownloadFailedMessage, Toast.LENGTH_SHORT).show()
                         }
                     },
@@ -72,7 +76,7 @@ fun LaunchErrorDialog(state: LaunchErrorState, onDismiss: () -> Unit) {
                 DialogTextButton(text = stringResource(R.string.common_confirm), onClick = onDismiss)
             }
         },
-        dismissButton = if (state.installTarget != null) {
+        dismissButton = if (installUrl != null) {
             {
                 DialogTextButton(text = stringResource(R.string.common_cancel), onClick = onDismiss)
             }

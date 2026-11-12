@@ -10,6 +10,7 @@ import android.os.SystemClock;
 import android.system.Os;
 import android.system.OsConstants;
 import android.util.Log;
+import com.core.nativeplugin.NativeRuntimePack;
 import java.io.File;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -26,6 +27,8 @@ import java.util.concurrent.TimeUnit;
 /** Test APK only; framework + Java APIs, no AndroidX/JUnit/Kotlin and no production class copies. */
 public final class EthornellReleaseInstrumentation extends Instrumentation {
     private static final String TAG = "EthornellReleaseProbe";
+    /** Schema-valid explicit cancel; this runner never fakes an accepted kind-5 answer. */
+    private static final String DIALOG_CANCEL = "{\"accepted\":false}";
     private static final int NUM_TESTS = 3;
     private Bundle arguments;
     private Class<?> transport;
@@ -114,10 +117,24 @@ public final class EthornellReleaseInstrumentation extends Instrumentation {
 
     private void rtldNowAbiBuildInfo() {
         releaseTargetIdentity();
+        // Extracted runtime pack, never APK lib/arm64-v8a: a fresh install/pm clear has no such entry.
+        String library = runtimeLibrary();
         System.loadLibrary("ethornell_test_probe");
-        String report = probe(new File(getTargetContext().getApplicationInfo().nativeLibraryDir, "libethornell.so").getPath());
-        require(report != null && report.startsWith("OK RTLD_NOW") && report.contains("build_info=ethornell"), report);
-        emit(0, "LOAD " + report, "rtldNowAbiBuildInfo", 2);
+        String report = probe(library);
+        require(report != null && report.startsWith("OK RTLD_NOW") && report.contains("symbols=15")
+                && report.contains("build_info=ethornell"), report);
+        emit(0, "LOAD " + report + " pack=ethornell path=" + library, "rtldNowAbiBuildInfo", 2);
+    }
+
+    /** Same extraction the launcher performs; a failure means "runtime pack not ready". */
+    private String runtimeLibrary() {
+        Context app = getTargetContext().getApplicationContext();
+        require(NativeRuntimePack.ensure(app, NativeRuntimePack.PACK_ETHORNELL),
+                "Ethornell runtime pack not ready: cannot extract assets/engine-runtime/ethornell.zip.xz");
+        String path = NativeRuntimePack.libraryPath(app, NativeRuntimePack.PACK_ETHORNELL, "libethornell.so");
+        require(path != null && new File(path).isFile() && new File(path).canRead(),
+                "Ethornell runtime pack not ready: libethornell.so missing under files/engine_runtime/ethornell");
+        return path;
     }
 
     private Object call(String name, Class<?>[] types, Object... args) throws Exception {
@@ -148,20 +165,42 @@ public final class EthornellReleaseInstrumentation extends Instrumentation {
         archive.put(entry).putInt(0).putInt(17).putInt(0).putInt(0);
         archive.putInt(16).putInt(1).putInt(0).putInt(0).put((byte) 0x17);
         File input = new File(resource, "system.arc"); Files.write(input.toPath(), archive.array());
-        call("load", new Class<?>[0]);
+        String library = runtimeLibrary();
+        // Production wiring: the bridge dlopens the extracted absolute path, not a plain SONAME.
+        require(Boolean.TRUE.equals(call("prepareEngineLibrary", new Class<?>[]{Context.class},
+                getTargetContext().getApplicationContext())),
+                "Ethornell runtime pack not ready: prepareEngineLibrary rejected " + library);
         long handle = ((Long) call("create", new Class<?>[]{Context.class, String.class, String.class, String.class, int.class},
                 getTargetContext().getApplicationContext(), resource.getPath(), user.getPath(), "", encoding.equals("gbk") ? 1 : 0));
         require(handle != 0, "Native create returned zero");
         int events = 0;
         try {
+            // Unknown dialog ids are a non-fatal null; id 0 is a rejected argument.
+            Object unknownPayload = call("requestPayload", new Class<?>[]{long.class, long.class},
+                    handle, Long.MAX_VALUE);
+            require(unknownPayload == null, "Unknown dialog id returned a payload");
+            call("completeRequest", new Class<?>[]{long.class, long.class, int.class, String.class},
+                    handle, Long.MAX_VALUE, 0, DIALOG_CANCEL); // stale id: no-op, not fatal
+            boolean zeroRejected = false;
+            try { call("requestPayload", new Class<?>[]{long.class, long.class}, handle, 0L); }
+            catch (IllegalStateException expected) { zeroRejected = true; }
+            require(zeroRejected, "Zero dialog request id accepted");
             long end = SystemClock.elapsedRealtime() + 1000;
             while (SystemClock.elapsedRealtime() < end && events < 64) {
                 Object event = call("pollEvent", new Class<?>[]{long.class}, handle);
                 if (event == null) break;
                 Class<?> type = event.getClass();
                 int kind = type.getField("kind").getInt(event), code = type.getField("code").getInt(event);
-                require(kind >= 1 && kind <= 4 && !(kind == 1 && code < 0), "Fatal/invalid event kind=" + kind + " code=" + code);
-                Log.i(TAG, "EVENT kind=" + kind + " code=" + code + " text=" + type.getField("text").get(event));
+                long id = type.getField("requestId").getLong(event);
+                require(kind >= 1 && kind <= 5 && !(kind == 1 && code < 0), "Fatal/invalid event kind=" + kind + " code=" + code);
+                Log.i(TAG, "EVENT kind=" + kind + " code=" + code + " id=" + id + " text=" + type.getField("text").get(event));
+                if (kind == 5) {
+                    Object payload = call("requestPayload", new Class<?>[]{long.class, long.class}, handle, id);
+                    require(payload instanceof String, "Pending dialog payload unavailable");
+                    Log.i(TAG, "DIALOG id=" + id + " payload=" + payload + " policy=explicit-cancel");
+                    call("completeRequest", new Class<?>[]{long.class, long.class, int.class, String.class},
+                            handle, id, 0, DIALOG_CANCEL);
+                }
                 events++;
             }
             require(events > 0 && events < 64, "Expected bounded bootstrap diagnostic event");
@@ -174,7 +213,11 @@ public final class EthornellReleaseInstrumentation extends Instrumentation {
         try { call("pollEvent", new Class<?>[]{long.class}, handle); }
         catch (IllegalStateException expected) { rejected = true; }
         require(rejected, "Destroyed token accepted");
-        Log.i(TAG, "CREATE_POLL_DESTROY events=" + events + " nonBMP=true data retained=" + base
+        rejected = false;
+        try { call("requestPayload", new Class<?>[]{long.class, long.class}, handle, 1L); }
+        catch (IllegalStateException expected) { rejected = true; }
+        require(rejected, "Destroyed token accepted requestPayload");
+        Log.i(TAG, "CREATE_POLL_DESTROY events=" + events + " lib=" + library + " nonBMP=true data retained=" + base
                 + " no Surface/step: NOT VM execution/GPU evidence");
     }
 

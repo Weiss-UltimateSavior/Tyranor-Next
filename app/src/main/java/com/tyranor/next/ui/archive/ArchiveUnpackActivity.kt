@@ -69,8 +69,9 @@ import com.tyranor.next.core.unpack.baseNameWithoutExtension
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.PageSecondaryTextColor
+import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
-import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
@@ -101,7 +102,7 @@ private const val TAG = "ArchiveUnpack"
 
 private const val MAX_LISTED_ENTRIES = 2000
 
-/** 目录展示名：优先映射真实路径（从 /storage/emulated/0 起），映射失败退回解码的文档 id 路径。 */
+/** 目录展示名：优先映射真实路径（从进程视角主存储挂载根起），映射失败退回解码的文档 id 路径。 */
 private fun dirLabelOf(uri: Uri): String =
     GamePathUtils.safUriToPath(uri.toString())
         ?: uri.lastPathSegment?.let { Uri.decode(it) }?.substringAfterLast(':')
@@ -370,7 +371,7 @@ private fun UnpackPane(vm: ArchiveViewModel, appContext: Context, onPickDir: () 
                             Text(
                                 stringResource(R.string.archive_empty_list),
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = PageSecondaryTextColor,
                             )
                         }
                     } else {
@@ -486,6 +487,7 @@ private fun DirStrip(
         Text(
             name.ifBlank { "-" },
             style = MaterialTheme.typography.bodyMedium,
+            color = TextColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
@@ -500,7 +502,7 @@ private fun PaneHeader(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = PageSecondaryTextColor,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -594,7 +596,7 @@ private fun StatusBar(vm: ArchiveViewModel) {
         Text(
             text,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = PageSecondaryTextColor,
             modifier = Modifier.padding(top = 2.dp),
         )
     }
@@ -669,9 +671,9 @@ private fun BigAction(label: String, onClick: () -> Unit, enabled: Boolean) {
 @Composable
 private fun ArchiveCard(title: String, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth().glassShadow(AppComponentShape).glassBorder(AppComponentShape),
+        modifier = Modifier.fillMaxWidth().glassBorder(AppComponentShape),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        colors = CardDefaults.cardColors(containerColor = NavWhite),
+        colors = CardDefaults.cardColors(containerColor = NavWhite, contentColor = TextColor),
         shape = AppComponentShape,
     ) {
         Column(Modifier.fillMaxWidth().padding(14.dp)) {

@@ -117,6 +117,13 @@ public final class FramebufferGameActivity extends AppCompatActivity
         engineId = getIntent().getStringExtra(LaunchContract.GAMES_ENGINE);
         nls = getIntent().getStringExtra(LaunchContract.GAMES_NLS);
 
+        // 运行库已由启动编排解压到应用私有目录；缺失说明安装包不完整或解压失败。
+        if (!NativeGames.prepareEngineLibrary(this)) {
+            Toast.makeText(this, uiString(R.string.engine_fb_init_failed), Toast.LENGTH_LONG).show();
+            finish();
+            return;
+        }
+
         applyImmersive();
         installBackHandling();
         // 音频后端（cpal/AAudio）依赖 ndk-context，且引擎日志也在此初始化。

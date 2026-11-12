@@ -7,7 +7,9 @@ No fetched source code, build script, or git hook is executed.
 """
 
 import argparse
+import io
 import json
+import lzma
 import os
 from pathlib import Path, PurePosixPath
 import re
@@ -212,6 +214,23 @@ def verify_source(root, manifest, app_root):
             "dirty": False, "inventory_policy": INVENTORY_POLICY, "files_verified": len(files)}
 
 
+# Runtime libraries moved out of APK lib/ ship as LZMA2 assets (see NativeRuntimePack).
+RUNTIME_PACK_ASSETS = {
+    "libethornell.so": "assets/engine-runtime/ethornell.zip.xz",
+}
+
+
+def extract_runtime_pack(archive, asset, name, temporary, bundled):
+    """Add the runtime from its compressed asset so byte and closure checks stay identical."""
+    require(bool(asset) and asset in {entry.filename for entry in archive.infolist()},
+            "runtime absent from selected package")
+    inner = zipfile.ZipFile(io.BytesIO(lzma.decompress(archive.read(asset))))
+    require(name in inner.namelist(), f"runtime absent from runtime pack: {name}")
+    path = Path(temporary) / name
+    path.write_bytes(inner.read(name))
+    bundled[name] = path
+
+
 def local_static(args):
     """Reuse native primitives without fabricating a --source-root for that CLI.
 
@@ -240,6 +259,10 @@ def local_static(args):
                     path = Path(temporary) / name
                     path.write_bytes(archive.read(entry))
                     bundled[name] = path
+                if args.library.name not in bundled:
+                    extract_runtime_pack(
+                        archive, RUNTIME_PACK_ASSETS.get(args.library.name, ""),
+                        args.library.name, temporary, bundled)
         else:
             bundled = {path.name: path for path in args.library.parent.glob("*.so") if path.is_file()}
         require(args.library.name in bundled, "runtime absent from selected package")

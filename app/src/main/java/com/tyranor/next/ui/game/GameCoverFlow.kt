@@ -1,8 +1,9 @@
 package com.tyranor.next.ui.game
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -28,7 +29,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -41,6 +41,7 @@ import com.tyranor.next.core.game.model.GameTitleTags
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AppComponentShape
+import com.tyranor.next.theme.PageSecondaryTextColor
 import com.tyranor.next.theme.glassBorder
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
@@ -62,10 +63,11 @@ internal fun GameCoverFlow(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
 
-    // 过滤/搜索导致列表缩短时收敛到最后一页
+    // 条件变化由调用方重置状态；同一条件下列表缩短时收敛到最后一页。
     LaunchedEffect(games.size) {
-        if (games.isEmpty()) return@LaunchedEffect
-        if (pagerState.currentPage > games.lastIndex) pagerState.scrollToPage(games.lastIndex)
+        if (games.isNotEmpty() && pagerState.currentPage > games.lastIndex) {
+            pagerState.scrollToPage(games.lastIndex)
+        }
     }
 
     // 背景随页面（不单独铺色）
@@ -100,6 +102,14 @@ internal fun GameCoverFlow(
                     key(game.uri) {
                         CoverFlowCard(
                             game = game,
+                            onClick = {
+                                if (page == pagerState.currentPage) {
+                                    onGameClick(game)
+                                } else {
+                                    scope.launch { pagerState.animateScrollToPage(page) }
+                                }
+                            },
+                            onLongClick = { onGameLongClick(game) },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .aspectRatio(3f / 4f)
@@ -111,18 +121,6 @@ internal fun GameCoverFlow(
                                     scaleX = scale
                                     scaleY = scale
                                     alpha = 1f - 0.45f * min(absOffset, 1f)
-                                }
-                                .pointerInput(page) {
-                                    detectTapGestures(
-                                        onTap = {
-                                            if (page == pagerState.currentPage) {
-                                                onGameClick(game)
-                                            } else {
-                                                scope.launch { pagerState.animateScrollToPage(page) }
-                                            }
-                                        },
-                                        onLongPress = { onGameLongClick(game) },
-                                    )
                                 },
                         )
                     }
@@ -139,9 +137,12 @@ internal fun GameCoverFlow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CoverFlowCard(
     game: ScanGame,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val cover by rememberCoverBitmap(game.coverUri)
@@ -149,7 +150,11 @@ private fun CoverFlowCard(
         modifier = modifier
             .clip(AppComponentShape)
             .background(game.engine.coverColor())
-            .glassBorder(),
+            .glassBorder()
+            // 点按：居中卡打开操作抽屉，侧卡先居中；长按：打开统一操作弹窗。
+            // 用 combinedClickable 而非 pointerInput，保证改名/封面更新后手势读取最新游戏对象，
+            // 并与瀑布流卡片共享长按触感与无障碍语义。
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         contentAlignment = Alignment.Center,
     ) {
         // 无封面：引擎色底 + 引擎名占位（与网格卡片一致）
@@ -184,7 +189,7 @@ private fun CoverFlowCaption(
     Text(
         stringResource(R.string.game_cover_flow_caption, game.engine.displayName, displayTitle),
         style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = PageSecondaryTextColor,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         textAlign = TextAlign.Center,

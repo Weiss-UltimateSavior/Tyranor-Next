@@ -3,6 +3,8 @@ package com.core.fvp;
 import android.content.Context;
 import android.view.Surface;
 
+import com.core.nativeplugin.NativeRuntimePack;
+
 /**
  * JNI 桥接：驱动 rfvp（FVP 引擎 Rust 运行时）的 Android host-driven C ABI。
  *
@@ -16,6 +18,22 @@ public final class NativeRfvp {
     }
 
     private NativeRfvp() {}
+
+    /** 引擎运行库绝对路径（首启从 assets 解压）；必须在其他 native 调用之前设置。 */
+    public static native void nativeSetEngineLibraryPath(String path);
+
+    /**
+     * 绑定已解压的 {@code librfvp.so}。返回 false 表示运行库未就绪，
+     * 调用方应提示引擎初始化失败并结束宿主。
+     */
+    public static boolean prepareEngineLibrary(Context context) {
+        String path = NativeRuntimePack.libraryPath(context, NativeRuntimePack.PACK_FVP, "librfvp.so");
+        if (path == null) {
+            return false;
+        }
+        nativeSetEngineLibraryPath(path);
+        return true;
+    }
 
     /**
      * 初始化 ndk-context（音频后端在 create 时依赖）。必须在 create 之前调用，可重复调用。

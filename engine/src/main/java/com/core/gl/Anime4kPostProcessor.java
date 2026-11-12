@@ -70,7 +70,7 @@ public final class Anime4kPostProcessor {
         final int program;
         final int[] samplerLoc;
         final int[] sizeLoc;
-        final int outputSizeLoc, sharpnessLoc, outputSizedLoc;
+        final int outputSizeLoc, sharpnessLoc, outputSizedLoc, flipYLoc;
 
         PassProgram(MpvHookShader.Pass pass, int program, int[] samplerLoc, int[] sizeLoc, int outputSizeLoc) {
             this.pass = pass;
@@ -78,6 +78,7 @@ public final class Anime4kPostProcessor {
             this.samplerLoc = samplerLoc;
             this.sizeLoc = sizeLoc;
             this.outputSizeLoc = outputSizeLoc;
+            flipYLoc = GLES30.glGetUniformLocation(program, "u_FLIP_Y");
             sharpnessLoc = GLES30.glGetUniformLocation(program, "u_SHARPNESS");
             outputSizedLoc = GLES30.glGetUniformLocation(program, "u_OUTPUT_SIZED");
         }
@@ -190,6 +191,15 @@ public final class Anime4kPostProcessor {
     private final int[] mDimensionQuery = new int[2];
     private AssetManager mAssets;
     private boolean mScaleOnly, mOutputSizedShader;
+    private boolean mTopLeftCoordinates, mInputTopLeft;
+
+    void setInputTopLeft(boolean value) { mInputTopLeft = value; }
+
+    /** u_FLIP_Y flips shader-logical sampling only when the declared row order and the host's physical rows disagree. */
+    static int flipYUniform(boolean declaredTopLeft, boolean inputTopLeft) {
+        return declaredTopLeft != inputTopLeft ? 1 : 0;
+    }
+
     private int mNativeScale = 1, mMaxOutputScale = 1, mHaloPerPass;
     private List<MpvHookShader.Pass> mParsedPasses;
     private int mPresentProgram, mPresentSamplerLoc;
@@ -230,15 +240,27 @@ public final class Anime4kPostProcessor {
     }
 
     private double mSharpness = 0.4;
+    private double mBicubicB = 0.33;
+    private double mBicubicC = 0.33;
+    private double mLanczosAntiRingingStrength = 0;
+    private LanczosScale.ResampleKernel mScaleKernel = LanczosScale.DEFAULT_KERNEL;
     static Anime4kPostProcessor forFilter(Context context, GraphicsFilterChain.Step step) {
         GraphicsFilterDefinition definition = GraphicsFilterDefinitions.find(step.id);
-        if (definition.shaderAsset == null) return forLanczos(context);
+        if (definition.shaderAsset == null) {
+            Anime4kPostProcessor processor = forLanczos(context);
+            processor.mScaleKernel = LanczosScale.kernelOf(definition.resampleKernel);
+            processor.mBicubicB = step.bicubicB;
+            processor.mBicubicC = step.bicubicC;
+            processor.mLanczosAntiRingingStrength = step.lanczosAntiRingingStrength;
+            return processor;
+        }
         Anime4kPostProcessor processor = new Anime4kPostProcessor(context, definition.shaderAsset);
+        processor.mTopLeftCoordinates = definition.topLeftCoordinates;
         processor.mNativeScale = definition.nativeScale;
         processor.mMaxOutputScale = definition.maxOutputScale;
         processor.mHaloPerPass = definition.haloPerPass;
         processor.mOutputSizedShader = definition.outputSized && !"none".equals(step.scaleMode);
-        processor.mSharpness = step.sharpness;
+        processor.mSharpness = step.casSharpness;
         return processor;
     }
 
@@ -461,7 +483,10 @@ public final class Anime4kPostProcessor {
                             + TARGET_MEMORY_BUDGET_BYTES, false));
         }
         LanczosScale.Plan scale = LanczosScale.resample(geometry.width, geometry.height, outWidth, outHeight);
-        if ((scale.horizontal || scale.vertical) && mScaleProgram == 0) buildScaleProgram();
+        // Identity passes are currently planned away for scale-only presets, but the program
+        // must exist if runScale is ever reached with unchanged sizes (drawing and uploading
+        // uniforms with program 0 would fail the node).
+        if ((mScaleOnly || scale.horizontal || scale.vertical) && mScaleProgram == 0) buildScaleProgram();
         if (mQuadVao[0] == 0) createQuad();
         releaseTargets();
         mWidth = width;
@@ -767,7 +792,8 @@ public final class Anime4kPostProcessor {
     }
 
     private void buildScaleProgram() {
-        int fragmentShader = compileShader(GLES30.GL_FRAGMENT_SHADER, LanczosScale.RESAMPLE_FRAGMENT_SHADER);
+        int fragmentShader = compileShader(GLES30.GL_FRAGMENT_SHADER,
+                LanczosScale.resampleFragmentShader(mScaleKernel, mBicubicB, mBicubicC, mLanczosAntiRingingStrength));
         int program = GLES30.glCreateProgram();
         try {
             requireName(program, "Lanczos program");
@@ -997,6 +1023,7 @@ public final class Anime4kPostProcessor {
             GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, target.fbo[0]);
             GLES30.glViewport(0, 0, target.width, target.height);
             GLES30.glUseProgram(pp.program);
+            if (pp.flipYLoc >= 0) GLES30.glUniform1i(pp.flipYLoc, flipYUniform(mTopLeftCoordinates, mInputTopLeft));
             if (pp.outputSizeLoc >= 0) GLES30.glUniform2f(pp.outputSizeLoc, target.width, target.height);
             if (pp.sharpnessLoc >= 0) GLES30.glUniform1f(pp.sharpnessLoc, (float) mSharpness);
             if (pp.outputSizedLoc >= 0) GLES30.glUniform1i(pp.outputSizedLoc, mOutputSizedShader ? 1 : 0);

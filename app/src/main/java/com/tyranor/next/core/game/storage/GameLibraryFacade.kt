@@ -4,16 +4,21 @@ import android.content.Context
 import android.net.Uri
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.scan.GameRootMatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.withContext
 
 /**
  * 游戏库门面：对 UI / 启动编排暴露同步的内存缓存读与「缓存先行、FIFO 落库」写。
  *
  * 从 EngineScanner 拆出（架构优化 P0-1），Scanner 只保留扫描与引擎识别；职责边界：
  * - 读命中内存缓存，未命中阻塞读库一次（Application 启动已 [prewarmCaches] 预热）；
- * - 写同步更新缓存并按发起顺序在仓库单线程写调度器上落库（失败仅记日志，不回滚缓存）；
+ * - 写同步更新缓存并按发起顺序在仓库单线程写调度器上落库，写失败后清除缓存并回源；
  * - 修订号广播（[libraryRevision] / [rootsRevision] / [quickLaunchRevision]）统一在本层维护。
  */
 object GameLibraryFacade {
@@ -24,6 +29,7 @@ object GameLibraryFacade {
     // 主页面会在 Tab 动画中反复进入组合。将已解析的数据保留在进程内，避免每次切页都在
     // 主线程重新读库、解析并构造完整游戏列表。
     private val cacheLock = Any()
+    private val gameWrites = GameLibraryWriteGate()
     @Volatile
     private var gamesCache: List<ScanGame>? = null
     @Volatile
@@ -56,8 +62,7 @@ object GameLibraryFacade {
     }
 
     /**
-     * 注册落库失败自愈回调：由 [prewarmCaches] 显式安装，替代原先 object init 块的
-     * 反向注册（P0-1），消除 object 间隐式加载顺序耦合。
+     * 注册落库失败自愈回调：预热或首次读库时显式安装，避免 object 间隐式加载顺序耦合。
      */
     private fun installPersistFailureListener() {
         if (persistFailureListenerInstalled) return
@@ -84,6 +89,7 @@ object GameLibraryFacade {
             loadGamesLocked(context)
         }
 
+    /** Use [registerGames] when adding URI references. Existing entries can be edited or removed here. */
     fun updateGames(context: Context, transform: (List<ScanGame>) -> List<ScanGame>): List<ScanGame> =
         synchronized(cacheLock) {
             val current = loadGamesLocked(context)
@@ -96,9 +102,35 @@ object GameLibraryFacade {
             updated
         }
 
-    private fun loadGamesLocked(context: Context): List<ScanGame> =
-        gamesCache ?: GameLibraryRepository.readBlocking(context) { GameLibraryRepository.loadGames(it) }
+    internal suspend fun registerGames(context: Context, transform: (List<ScanGame>) -> List<ScanGame>): List<ScanGame> =
+        withContext(Dispatchers.IO) {
+            val coroutine = currentCoroutineContext()
+            gameWrites.update {
+                coroutine.ensureActive()
+                updateGames(context, transform)
+            }
+        }
+
+    /** The caller has already obtained any save-sync admission. The callback only evicts resources. */
+    internal fun evictUnusedSystemNnnCopy(
+        context: Context,
+        sourceId: String,
+        excludingUri: String? = null,
+        evict: () -> Boolean,
+    ): Boolean = gameWrites.evictIfUnused(
+        referenced = {
+            loadGames(context).any { game ->
+                game.uri != excludingUri && SystemNnnGameDirectory.sourceIdentity(game.uri) == sourceId
+            }
+        },
+        evict = evict,
+    )
+
+    private fun loadGamesLocked(context: Context): List<ScanGame> {
+        installPersistFailureListener()
+        return gamesCache ?: GameLibraryRepository.readBlocking(context) { GameLibraryRepository.loadGames(it) }
             .also { gamesCache = it }
+    }
 
     /**
      * 封面元数据单行更新（迁移方案阶段 2）：DB 只 UPDATE 封面相关列，封面刮削等高频路径
@@ -139,16 +171,18 @@ object GameLibraryFacade {
     // ============ 最近打开 ============
 
     fun recordRecentGame(context: Context, game: ScanGame) {
-        val openTime = System.currentTimeMillis()
         synchronized(cacheLock) {
             // 同步回填主库缓存：applyDiff 全行 upsert 以缓存快照为准，不同步会让后续
             // 改名/重扫等整行写把 DB 的 last_opened_at 回滚到启动时的旧值（最近列表退化）。
-            gamesCache = gamesCache?.map { if (it.uri == game.uri) it.copy(openTime = openTime) else it }
+            val games = loadGamesLocked(context)
+            val recent = loadRecentGamesLocked(context)
+            val openTime = System.currentTimeMillis()
+            val touched = game.copy(openTime = openTime)
+            gamesCache = games.map { if (it.uri == game.uri) it.copy(openTime = openTime) else it }
+            recentGamesCache = (listOf(touched) + recent.filterNot { it.uri == game.uri }).take(GameLibraryDao.RECENT_LIMIT)
+            GameLibraryRepository.post(context) { GameLibraryRepository.restoreRecent(it, listOf(touched)) }
         }
-        val touched = game.copy(openTime = openTime)
-        updateRecentGames(context) { current ->
-            (listOf(touched) + current.filterNot { it.uri == game.uri }).take(GameLibraryDao.RECENT_LIMIT)
-        }
+        notifyGamesChanged()
     }
 
     fun loadRecentGames(context: Context): List<ScanGame> =
@@ -160,14 +194,17 @@ object GameLibraryFacade {
         recentGamesCache ?: GameLibraryRepository.readBlocking(context) { GameLibraryRepository.loadRecentGames(it) }
             .also { recentGamesCache = it }
 
-    /** 删除游戏时从最近打开列表移除（最近打开为 games.last_opened_at 的派生视图，写 0 即移除）。 */
-    fun removeRecentGame(context: Context, uri: String) {
+    /** 清除用户选中的打开记录；删除游戏时不传时间，清除该游戏的记录。 */
+    fun removeRecentGame(context: Context, uri: String, expectedOpenedAt: Long? = null) {
+        fun matches(game: ScanGame) = game.uri == uri && (expectedOpenedAt == null || game.openTime == expectedOpenedAt)
         synchronized(cacheLock) {
-            recentGamesCache = recentGamesCache?.filterNot { it.uri == uri }
+            val games = loadGamesLocked(context)
+            val recent = loadRecentGamesLocked(context)
+            recentGamesCache = recent.filterNot(::matches)
             // 主库缓存同步清零，避免后续整行 upsert 复活已移除的最近记录。
-            gamesCache = gamesCache?.map { if (it.uri == uri) it.copy(openTime = 0) else it }
+            gamesCache = games.map { if (matches(it)) it.copy(openTime = 0) else it }
+            GameLibraryRepository.post(context) { GameLibraryRepository.clearRecent(it, uri, expectedOpenedAt) }
         }
-        GameLibraryRepository.post(context) { GameLibraryRepository.clearRecent(it, uri) }
     }
 
     internal fun updateRecentGames(
@@ -280,23 +317,29 @@ object GameLibraryFacade {
         }
     }
 
-    fun removeRootAndGames(context: Context, uri: Uri) {
+    fun removeRootAndGames(context: Context, uri: Uri): List<ScanGame> {
         removeRoot(context, uri)
         val root = uri.toString()
-        var removedUris = emptySet<String>()
+        var removed = emptyList<ScanGame>()
         updateGames(context) { games ->
-            removedUris = games
-                .filter { isGameUnderRoot(root, it.uri) }
-                .mapTo(HashSet()) { it.uri }
+            removed = games.filter { isGameUnderRoot(root, it.uri) }
+            val removedUris = removed.mapTo(HashSet()) { it.uri }
             games.filterNot { it.uri in removedUris }
         }
-        if (removedUris.isEmpty()) return
+        if (removed.isEmpty()) return emptyList()
+        val removedUris = removed.mapTo(HashSet()) { it.uri }
         // 最近打开/快捷启动的 DB 行已随游戏行删除（派生视图 + 级联），这里只需同步内存缓存。
         synchronized(cacheLock) {
             recentGamesCache = recentGamesCache?.filterNot { it.uri in removedUris }
         }
         updateQuickLaunch(context) { list -> list.filterNot { it.uri in removedUris } }
-        _libraryRevision.value++
+        notifyGamesChanged()
+        return removed
+    }
+
+    /** 外部逻辑（如运行时模块降级）直接改库后通知 UI 重新读取派生列表。 */
+    fun notifyGamesChanged() {
+        _libraryRevision.update { it + 1 }
     }
 
     fun loadRoots(context: Context): List<String> =

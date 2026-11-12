@@ -224,6 +224,11 @@ object EngineSettingsResolver {
                 str(PerGameSettingsStore.F_ETHORNELL_FONT),
                 EngineSettingsStore.getEthornellFont(app),
             ),
+            cmvsFont = EffectiveEngineSettings.resolve(
+                str(PerGameSettingsStore.F_CMVS_FONT),
+                EngineSettingsStore.getCmvsFont(app),
+            ),
+            cmvsFontFace = EngineSettingsStore.getCmvsFontFace(app),
             fvpSystemFont = EffectiveEngineSettings.resolveBool(
                 bool(PerGameSettingsStore.F_FVP_SYSTEM_FONT),
                 EngineSettingsStore.isFvpSystemFont(app),
@@ -289,6 +294,10 @@ object EngineSettingsResolver {
             renpy = EffectiveEngineSettings.mergeRenPy(
                 EngineSettingsStore.loadRenPy(app),
                 PerGameSettingsStore.toRenPyOverride(override),
+            ),
+            ruffle = EffectiveEngineSettings.mergeRuffle(
+                EngineSettingsStore.loadRuffle(app),
+                PerGameSettingsStore.toRuffleOverride(override),
             ),
             winlator = run {
                 val global = EngineSettingsStore.loadWinlator(app)
@@ -356,6 +365,10 @@ data class ResolvedEngineSettings(
     val ethornellNls: String,
     /** Empty = engine fallback; nonempty paths must pass the private-font launch preflight. */
     val ethornellFont: String,
+    /** CMVS 字体绝对路径（空 = 未选择，启动预检失败）。 */
+    val cmvsFont: String,
+    /** CMVS 字体集合索引。 */
+    val cmvsFontFace: Int,
     /** FVP 生效系统字体回退开关。 */
     val fvpSystemFont: Boolean,
     /** FVP 生效文本高分辨率渲染开关。 */
@@ -386,6 +399,8 @@ data class ResolvedEngineSettings(
     val rpg: EngineSettingsStore.RpgMaker,
     /** Ren'Py 外置模块生效配置（三级合并结果，启动时经 settings extra 下发）。 */
     val renpy: EngineSettingsStore.RenPy,
+    /** Ruffle 外置模块生效配置（三级合并结果，启动时经 settings extra 下发）。 */
+    val ruffle: EngineSettingsStore.Ruffle,
     /** Winlator 外置启动下发参数（三级合并结果；跳转 YU-RIS / CatSystem2 / PC 时消费）。 */
     val winlator: EngineSettingsStore.Winlator,
 )

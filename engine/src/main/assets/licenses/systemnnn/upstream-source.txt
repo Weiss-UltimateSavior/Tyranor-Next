@@ -1,0 +1,9 @@
+SystemNNN is developed by tinyan.
+SystemNNN behavior and file format reference: https://github.com/tinyan/SystemNNN/tree/78a05053c78b3b80065a9a209c6685a7c60a2e83
+The Emberfall compatibility implementation is maintained by PorisRora (Rooboko).
+Emberfall generates the default shard mesh for its full-screen and layer effects.
+Copyright (c) 2026 PorisRora (Rooboko).
+Emberfall's original code in the bundled runtime is licensed under GPL-2.0-only.
+Corresponding native source: https://github.com/PorisRora/SystemNNN-Emberfall/tree/d0170741089e9f29de7329a5e0d4e37d06ff5c71
+License: Emberfall-GPL-2.0-only.txt
+License and third-party notices: https://github.com/PorisRora/SystemNNN-Emberfall/blob/338a5a17ae72b4051e5037641067b9c230178b02/THIRD_PARTY_NOTICES.md

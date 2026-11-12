@@ -8,16 +8,20 @@ import com.core.nativeplugin.NativePluginInstallState
 import com.core.nativeplugin.NativePluginManager
 import com.tyranor.next.core.engine.EngineType
 import org.json.JSONObject
+import org.tukaani.xz.XZInputStream
 import java.io.File
 import java.util.zip.ZipInputStream
 
 /**
- * 直接集成（非模块化）：把随 APK 打包在 assets 的引擎原生插件 zip，
+ * 直接集成（非模块化）：把随 APK 打包在 assets 的引擎原生插件（`.zip.xz`），
  * 首次启动时自动安装到 app 私有插件目录，并标记为已安装+已启用。
  *
  * 引擎加载器（NativeLibraryLoader/OnsLibLoader/Artemis 相关）从
  * filesDir/engine_plugins/<engine>/current/arm64-v8a/ 读取 .so；
- * 此处解压 assets/nativeplugins/<engine>.zip 到该目录，无需用户手动导入 zip。
+ * 此处解压 assets/nativeplugins/<engine>.zip.xz 到该目录，无需用户手动导入 zip。
+ *
+ * 外层是 LZMA2 流、内层是未压缩的 zip 容器：构建期 [CompressXzArchive] 让同一引擎家族的
+ * 多个近重复 .so 共享一份字典，APK 内因此只需约一半空间；运行时先解 xz 再走原有 zip 逻辑。
  *
  * 更新策略：仅按「必备 so 是否齐全」校验无法发现同名 .so 内容变化
  * （如自研内核与宿主 Java 桥成对更新），因此额外比对已装 `pluginVersion`
@@ -27,6 +31,7 @@ object EnginePluginBootstrap {
 
     private const val TAG = "EnginePluginBootstrap"
     private const val ASSET_PLUGIN_DIR = "nativeplugins"
+    private const val ASSET_PLUGIN_SUFFIX = ".zip.xz"
 
     private class EngineSpec(
         val engineId: String,
@@ -89,17 +94,21 @@ object EnginePluginBootstrap {
             EngineType.AVG32,
             EngineType.XSYS35,
             EngineType.XSYS4,
+            EngineType.SYSTEMNNN,
             EngineType.UK2,
             EngineType.FVP,
             EngineType.ETHORNELL,
+            EngineType.CMVS,
             EngineType.YURIS,
             EngineType.CATSYSTEM2,
             EngineType.PC,
             EngineType.ANDROID_APP,
             EngineType.RPGMAKER,
             EngineType.RENPY,
+            EngineType.RUFFLE,
             EngineType.PSP,
             EngineType.NINTENDO_SWITCH,
+            EngineType.RUNTIME_MODULE,
             EngineType.UNKNOWN -> return null
         }
         val app = context.applicationContext
@@ -154,22 +163,35 @@ object EnginePluginBootstrap {
         }
     }
 
+    /**
+     * 打开随包插件：LZMA2 流包住的未压缩 zip。调用方负责 close，会连带关闭底层 asset。
+     * 插件资产较大（Kirikiroid2 约 87 MiB 展开），全程流式解压，不整体读入内存。
+     */
+    private fun openBundledPluginZip(context: Context, engineId: String): ZipInputStream {
+        val asset = context.assets.open("$ASSET_PLUGIN_DIR/$engineId$ASSET_PLUGIN_SUFFIX")
+        return try {
+            ZipInputStream(XZInputStream(asset.buffered()))
+        } catch (t: Throwable) {
+            // XZInputStream 构造失败时 asset 流尚未交给 ZipInputStream，需要自己关闭。
+            runCatching { asset.close() }
+            throw t
+        }
+    }
+
     /** assets 内插件 zip 的 manifest.pluginVersion；缺失/读取失败返回 null（按不判定过期处理）。 */
     private fun bundledPluginVersion(app: Context, engineId: String): Int? =
         runCatching {
             var version: Int? = null
-            app.assets.open("$ASSET_PLUGIN_DIR/$engineId.zip").use { asset ->
-                ZipInputStream(asset.buffered()).use { zip ->
-                    var entry = zip.nextEntry
-                    while (entry != null) {
-                        if (entry.name == "manifest.json") {
-                            val text = zip.readBytes().toString(Charsets.UTF_8)
-                            version = JSONObject(text).optInt("pluginVersion", 0)
-                            break
-                        }
-                        zip.closeEntry()
-                        entry = zip.nextEntry
+            openBundledPluginZip(app, engineId).use { zip ->
+                var entry = zip.nextEntry
+                while (entry != null) {
+                    if (entry.name == "manifest.json") {
+                        val text = zip.readBytes().toString(Charsets.UTF_8)
+                        version = JSONObject(text).optInt("pluginVersion", 0)
+                        break
                     }
+                    zip.closeEntry()
+                    entry = zip.nextEntry
                 }
             }
             version
@@ -210,25 +232,23 @@ object EnginePluginBootstrap {
         val canonicalDest = destDir.canonicalFile
         val canonicalDestPath = canonicalDest.path + File.separator
         destDir.mkdirs()
-        context.assets.open("$ASSET_PLUGIN_DIR/$engineId.zip").use { asset ->
-            ZipInputStream(asset.buffered()).use { zip ->
-                while (true) {
-                    val entry = zip.nextEntry ?: break
-                    val out = File(destDir, entry.name)
-                    val canonicalOut = out.canonicalFile
-                    if (canonicalOut.path != canonicalDest.path &&
-                        !canonicalOut.path.startsWith(canonicalDestPath)
-                    ) {
-                        throw SecurityException("Invalid native plugin zip entry: ${entry.name}")
-                    }
-                    if (entry.isDirectory) {
-                        canonicalOut.mkdirs()
-                    } else {
-                        canonicalOut.parentFile?.mkdirs()
-                        canonicalOut.outputStream().use { output -> zip.copyTo(output) }
-                    }
-                    zip.closeEntry()
+        openBundledPluginZip(context, engineId).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                val out = File(destDir, entry.name)
+                val canonicalOut = out.canonicalFile
+                if (canonicalOut.path != canonicalDest.path &&
+                    !canonicalOut.path.startsWith(canonicalDestPath)
+                ) {
+                    throw SecurityException("Invalid native plugin zip entry: ${entry.name}")
                 }
+                if (entry.isDirectory) {
+                    canonicalOut.mkdirs()
+                } else {
+                    canonicalOut.parentFile?.mkdirs()
+                    canonicalOut.outputStream().use { output -> zip.copyTo(output) }
+                }
+                zip.closeEntry()
             }
         }
         require(destDir.isDirectory) {

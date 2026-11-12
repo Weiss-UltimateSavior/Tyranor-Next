@@ -17,7 +17,6 @@ internal fun krSelectOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.KR_AUTO to stringResource(R.string.common_auto),
     EngineSettingsStore.KR_139 to "1.3.9",
     EngineSettingsStore.KR_134 to "1.3.4",
-    EngineSettingsStore.KR_126 to "1.2.6",
 )
 
 @Composable
@@ -100,9 +99,6 @@ internal fun artVersionOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.ART_ENGINE_AUTO to stringResource(R.string.common_auto),
     EngineSettingsStore.ART_ENGINE_V2 to "v1（Tyranor/Rev.2762）",
     EngineSettingsStore.ART_ENGINE_V1 to "v2（Tyranor/Rev.3049/emote）",
-    EngineSettingsStore.ART_ENGINE_V3 to "v3（Tyranor/Rev.3201/emote）",
-    EngineSettingsStore.ART_ENGINE_V4 to "V1（TyranorNext/Rev.2958）",
-    EngineSettingsStore.ART_ENGINE_V5 to "V3（TyranorNext/Rev.3288）",
     EngineSettingsStore.ART_ENGINE_V6 to "V4（TyranorNext/Rev.3294/emote）",
 )
 
@@ -116,7 +112,7 @@ internal fun artKernelOptions(): List<Pair<String, String>> = listOf(
 @Composable
 internal fun renpyVersionOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.RENPY_AUTO to stringResource(R.string.common_auto),
-    EngineSettingsStore.RENPY_85 to "8.5",
+    EngineSettingsStore.RENPY_853 to "8.5.3",
     EngineSettingsStore.RENPY_77 to "7.7.1",
 )
 
@@ -430,6 +426,66 @@ internal fun artSurfaceCacheOptionsMap(): Map<String, String> = artSurfaceCacheO
 
 @Composable
 internal fun artFontCacheOptionsMap(): Map<String, String> = artFontCacheOptions().toMap()
+
+// ───────────────────────── Ruffle 外置模块 ─────────────────────────
+
+/** 渲染后端：auto 交由插件探测，opengl 为兼容默认，vulkan 试验性。 */
+@Composable
+internal fun ruffleBackendOptions(): List<Pair<String, String>> = listOf(
+    "auto" to stringResource(R.string.engine_settings_ruffle_backend_auto),
+    EngineSettingsStore.RUFFLE_BACKEND_OPENGL to stringResource(R.string.engine_settings_ruffle_backend_opengl),
+    "vulkan" to stringResource(R.string.engine_settings_ruffle_backend_vulkan),
+)
+
+@Composable
+internal fun ruffleQualityOptions(): List<Pair<String, String>> = listOf(
+    "low" to stringResource(R.string.engine_settings_ruffle_quality_low),
+    "medium" to stringResource(R.string.engine_settings_ruffle_quality_medium),
+    EngineSettingsStore.RUFFLE_QUALITY_HIGH to stringResource(R.string.engine_settings_ruffle_quality_high),
+    "best" to stringResource(R.string.engine_settings_ruffle_quality_best),
+)
+
+/** SWF 画面缩放：showall 保持比例并显示全部内容（插件默认）。 */
+@Composable
+internal fun ruffleScaleModeOptions(): List<Pair<String, String>> = listOf(
+    "exactfit" to stringResource(R.string.engine_settings_ruffle_scale_exactfit),
+    "noborder" to stringResource(R.string.engine_settings_ruffle_scale_noborder),
+    "noscale" to stringResource(R.string.engine_settings_ruffle_scale_noscale),
+    EngineSettingsStore.RUFFLE_SCALE_MODE_SHOW_ALL to stringResource(R.string.engine_settings_ruffle_scale_showall),
+)
+
+@Composable
+internal fun ruffleLoadBehaviorOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.RUFFLE_LOAD_BEHAVIOR_STREAMING to stringResource(R.string.engine_settings_ruffle_load_streaming),
+    "delayed" to stringResource(R.string.engine_settings_ruffle_load_delayed),
+    "blocking" to stringResource(R.string.engine_settings_ruffle_load_blocking),
+)
+
+/** 自动关闭分钟数：0 = 不自动关闭。 */
+@Composable
+internal fun ruffleScreenTimeoutOptions(): List<Pair<String, String>> =
+    EngineSettingsStore.RUFFLE_SCREEN_TIMEOUTS.map { minutes ->
+        minutes.toString() to if (minutes == 0) {
+            stringResource(R.string.engine_settings_ruffle_screen_timeout_off)
+        } else {
+            stringResource(R.string.engine_settings_ruffle_screen_timeout_minutes, minutes)
+        }
+    }
+
+@Composable
+internal fun ruffleBackendOptionsMap(): Map<String, String> = ruffleBackendOptions().toMap()
+
+@Composable
+internal fun ruffleQualityOptionsMap(): Map<String, String> = ruffleQualityOptions().toMap()
+
+@Composable
+internal fun ruffleScaleModeOptionsMap(): Map<String, String> = ruffleScaleModeOptions().toMap()
+
+@Composable
+internal fun ruffleLoadBehaviorOptionsMap(): Map<String, String> = ruffleLoadBehaviorOptions().toMap()
+
+@Composable
+internal fun ruffleScreenTimeoutOptionsMap(): Map<String, String> = ruffleScreenTimeoutOptions().toMap()
 
 // ───────────────────────── RPG Maker RGSS 外置模块 ─────────────────────────
 

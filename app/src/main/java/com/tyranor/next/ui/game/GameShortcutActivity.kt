@@ -6,15 +6,24 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.viewModels
+import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.lifecycleScope
 import com.tyranor.next.R
+import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.shortcut.GameShortcutManager
 import com.tyranor.next.core.i18n.AppLocaleController
+import com.tyranor.next.theme.TyranorNextTheme
+import com.tyranor.next.ui.common.ProvideAppLocale
 import com.tyranor.next.ui.common.userMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -27,6 +36,7 @@ import kotlinx.coroutines.withContext
  * 重新解析库内游戏并启动，必要时先做 Artemis 补丁确认。
  */
 class GameShortcutActivity : ComponentActivity() {
+    private val systemNnnLaunch: SystemNnnLaunchViewModel by viewModels()
     private val localizedContext: Context
         get() = AppLocaleController.wrap(this)
 
@@ -48,6 +58,23 @@ class GameShortcutActivity : ComponentActivity() {
                 }
                 if (game == null) {
                     showUnavailable()
+                    return@launch
+                }
+
+                if (RuntimeModuleBindings.builtInSystemNnn(game).engine == EngineType.SYSTEMNNN) {
+                    setContent {
+                        TyranorNextTheme {
+                            ProvideAppLocale {
+                            }
+                        }
+                    }
+                    if (systemNnnLaunch.activeUri != game.uri && systemNnnLaunch.completion?.uri != game.uri) {
+                        systemNnnLaunch.launch(applicationContext, game)
+                    }
+                    val done = snapshotFlow { systemNnnLaunch.completion }.filterNotNull().first { it.uri == game.uri }
+                    done.result?.userMessage(localizedContext)?.let {
+                        Toast.makeText(localizedContext, it, Toast.LENGTH_LONG).show()
+                    }
                     return@launch
                 }
 
@@ -89,8 +116,7 @@ class GameShortcutActivity : ComponentActivity() {
                     }
                 }
 
-                val error = EngineLauncher.launch(this@GameShortcutActivity, game, patchChoice)
-                    .userMessage(localizedContext)
+                val error = EngineLauncher.launch(this@GameShortcutActivity, game, patchChoice).userMessage(localizedContext)
                 if (error != null) {
                     Toast.makeText(localizedContext, error, Toast.LENGTH_LONG).show()
                 }
@@ -99,7 +125,7 @@ class GameShortcutActivity : ComponentActivity() {
             } catch (error: Throwable) {
                 showLaunchFailure(error)
             } finally {
-                finish()
+                if (!isChangingConfigurations) finish()
             }
         }
     }

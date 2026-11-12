@@ -3,9 +3,11 @@ package com.core.siglus;
 import android.content.Context;
 import android.view.Surface;
 
+import com.core.nativeplugin.NativeRuntimePack;
+
 /**
  * SiglusEngine（siglus_rs）宿主 JNI 桥：加载自研 shim {@code libsiglus_bridge.so}，
- * 由 shim 再 dlopen 官方引擎库 {@code libsiglus.so}（随 APK jniLibs 分发）。
+ * 由 shim 再 dlopen 官方引擎库 {@code libsiglus.so}（首启从 {@code assets/engine-runtime} 解压）。
  *
  * <p>函数签名与 {@code siglus_android_*} C ABI 对齐，禁止在此之外新增 JNI 入口。
  */
@@ -16,6 +18,22 @@ public final class NativeSiglus {
     }
 
     private NativeSiglus() {}
+
+    /** 引擎运行库绝对路径（首启从 assets 解压）；必须在其他 native 调用之前设置。 */
+    public static native void nativeSetEngineLibraryPath(String path);
+
+    /**
+     * 绑定已解压的 {@code libsiglus.so}。返回 false 表示运行库未就绪，
+     * 调用方应提示引擎初始化失败并结束宿主。
+     */
+    public static boolean prepareEngineLibrary(Context context) {
+        String path = NativeRuntimePack.libraryPath(context, NativeRuntimePack.PACK_SIGLUS, "libsiglus.so");
+        if (path == null) {
+            return false;
+        }
+        nativeSetEngineLibraryPath(path);
+        return true;
+    }
 
     /** 引擎线程回调的宿主实现（由 {@link SiglusActivity} 注册）。 */
     public interface MessageboxListener {

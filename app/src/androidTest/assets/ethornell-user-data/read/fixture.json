@@ -18,14 +18,14 @@
   ],
   "files": {
     "system.arc": {
-      "size": 435,
-      "sha256": "75c558c5fe797fb522d6d0baadeff0e9471fd13f67bc612e674dc8b8831f4ab0"
+      "size": 516,
+      "sha256": "a7a5494ca1e8a6e66f00e46c35a8d5a93920457d49a92ad75c82ad20c44e842c"
     }
   },
   "entries": {
     "ipl._bp": {
-      "size": 275,
-      "sha256": "e26fa5225923c5ebe01cf5f2dd16431823e1d6c1983bd1c0324e3a77e39a95d9"
+      "size": 356,
+      "sha256": "2919ccebe548019c85d072639430715ffc1316f19f70d99c35ed63689b448a45"
     },
     "checker.png": {
       "size": 80,
@@ -34,10 +34,10 @@
   },
   "bp": {
     "header_size": 16,
-    "module_size": 259,
-    "code_hex": "100020201180800408000a02040c000a020410000a020408000802028e00000015000420000040001080830420000802024247492d3002990000001501041c00080202534d4f4b3002990000001501041800080202452d5631300299000000150104140008020200a55a013002990000001501052d00806602a400000014053e00806602a400000014055800806602a4000000140001806880691000202111174554484f524e454c4c5f555345525f444154415f524541445f4f4b004554484f524e454c4c5f555345525f444154415f524541445f4c4f41445f4641494c4544004554484f524e454c4c5f555345525f444154415f524541445f4d49534d4154434800"
+    "module_size": 340,
+    "code_hex": "100020201105bd0080390227000000150005bb0080280404000a0205c300803902a0000000150180800408000a02040c000a020410000a02040800080202a000000015000420000040001080830420000802024247492d3002ab0000001501041c00080202534d4f4b3002ab0000001501041800080202452d56313002ab000000150104140008020200a55a013002ab0000001501055c00806602b600000014056d00806602b600000014058700806602b6000000140001806880691000202111176267692d757365725c006267692d757365725c5573657244617461006267692d757365725c55736572446174615c004554484f524e454c4c5f555345525f444154415f524541445f4f4b004554484f524e454c4c5f555345525f444154415f524541445f4c4f41445f4641494c4544004554484f524e454c4c5f555345525f444154415f524541445f4d49534d4154434800"
   },
-  "raw_bp_hex": "10000000030100000000000000000000100020201180800408000a02040c000a020410000a020408000802028e00000015000420000040001080830420000802024247492d3002990000001501041c00080202534d4f4b3002990000001501041800080202452d5631300299000000150104140008020200a55a013002990000001501052d00806602a400000014053e00806602a400000014055800806602a4000000140001806880691000202111174554484f524e454c4c5f555345525f444154415f524541445f4f4b004554484f524e454c4c5f555345525f444154415f524541445f4c4f41445f4641494c4544004554484f524e454c4c5f555345525f444154415f524541445f4d49534d4154434800",
+  "raw_bp_hex": "10000000540100000000000000000000100020201105bd0080390227000000150005bb0080280404000a0205c300803902a0000000150180800408000a02040c000a020410000a02040800080202a000000015000420000040001080830420000802024247492d3002ab0000001501041c00080202534d4f4b3002ab0000001501041800080202452d56313002ab000000150104140008020200a55a013002ab0000001501055c00806602b600000014056d00806602b600000014058700806602b6000000140001806880691000202111176267692d757365725c006267692d757365725c5573657244617461006267692d757365725c55736572446174615c004554484f524e454c4c5f555345525f444154415f524541445f4f4b004554484f524e454c4c5f555345525f444154415f524541445f4c4f41445f4641494c4544004554484f524e454c4c5f555345525f444154415f524541445f4d49534d4154434800",
   "user_data_expectation": {
     "verification_status": "source-contract-derived; real Rust VM serialization/reopen execution pending",
     "phase": "read",
@@ -45,6 +45,13 @@
     "loader": "VM Sys80:80 -> SysApi::read_user_file_bytes -> decode_sdc -> install_global_data",
     "guest_file": "BGI.gdb",
     "host_file": "<same HostConfig.user_root>/BGI.gdb",
+    "validated_file_root": {
+      "setter": "Sys80:39 before Sys80:80/81",
+      "primary": "bgi-user\\",
+      "fallback": "bgi-user\\UserData\\",
+      "fallback_creator": "Sys80:28 CreateDirectory",
+      "host_mapping": "file_policy user_data_alias -> HostConfig.user_root"
+    },
     "path_policy": "Unprefixed user-file hooks resolve under user_root (equivalent to bgi-user/BGI.gdb), NOT resource_root or bgi-resource/UserData",
     "marker_global_offset": 64,
     "marker_hex": "4247492d534d4f4b452d563100a55a01",
@@ -76,6 +83,8 @@
     "protocol": [
       "Use generated write/read roots as separate resources; one fresh dedicated user_root shared across both sessions; never point either profile at real user saves",
       "Generator creates system.arc/fixture.json ONLY; no BGI.gdb, no user_root, no synthesized persisted bytes",
+      "Both profiles call 80:39 SetValidatedFileRoot('bgi-user\\') before 80:80/81; that alias resolves to user_root under the restricted file policy",
+      "If 'bgi-user' is not a directory, the BP creates bgi-user\\UserData with 80:28 and validates 'bgi-user\\UserData\\' instead; BGI.gdb must still resolve under user_root, never resource_root",
       "Write profile first calls 80:80 and requires missing=1; status=0/2 refuses existing/invalid saves without writing; empty/unreadable files may also appear missing, so a fresh test-only root is mandatory",
       "Attach a real Surface, unpause; step(t0), step(t0+16000000ns); provide a valid system/user font; silent mode is appropriate",
       "Require exact WRITE_OK Title then Closed; absent title, wrong title or native error is failure even if Closed arrives",
@@ -87,11 +96,12 @@
     ],
     "evidence": [
       "ethornell-vm/src/lib.rs::{try_builtin_sys_with_api,execute_instruction,jump_target_index}",
-      "ethornell-vm/src/user_data.rs::{copy_to_global_data,save_global_user_data,load_global_user_data,copy_from_global_data}",
+      "ethornell-vm/src/lib.rs::try_builtin_sys_with_api (80:39 SetValidatedFileRoot, 80:28 CreateDirectory)",
+      "ethornell-vm/src/user_data.rs::{copy_to_global_data,save_global_user_data,load_global_user_data,copy_from_global_data,global_data_path}",
       "ethornell-vm/src/user_data.rs::{serialize_global_data,install_global_data,encode_sdc,decode_sdc}",
       "ethornell-vm/src/user_data.rs::tests::global_payload_round_trips_memory_names_and_flags",
       "ethornell-app/src/lib.rs::{write_file_bytes,read_user_file_bytes,call_sys}",
-      "ethornell-app/src/file_policy.rs::{parent,atomic_write,read_user}",
+      "ethornell-app/src/file_policy.rs::{parent,atomic_write,read_user,user_data_alias}",
       "ethornell-app/src/host_runtime.rs::{step_inner,request_close}"
     ]
   }

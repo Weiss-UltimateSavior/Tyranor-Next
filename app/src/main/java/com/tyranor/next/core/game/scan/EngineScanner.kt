@@ -8,11 +8,17 @@ import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
+import com.tyranor.next.core.engine.runtime.RuntimeModuleEntry
+import com.tyranor.next.core.engine.runtime.RuntimeModuleIndex
+import com.tyranor.next.core.engine.runtime.RuntimeModuleRegistry
+import com.tyranor.next.core.engine.runtime.RuntimeModuleSnapshot
 import com.tyranor.next.core.game.manual.AndroidAppGames
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.Xs4Ini
 import com.tyranor.next.core.game.storage.EngineDetectionRepository
+import com.tyranor.next.core.game.save.SystemNnnCleanupQueue
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.i18n.AppLocaleController
@@ -31,7 +37,7 @@ import java.util.Locale
 
 /**
  * 精简版游戏扫描器，识别逻辑移植自 RinneMobile 的 EngineDetector/GameScanner。
- * 支持引擎：Kirikiri、ONS、Tyrano、RPG Maker XP/VX/VX Ace、RPG Maker MV/MZ、VN、WebOther、Artemis、Ren'Py。
+ * 支持引擎：Kirikiri、ONS、Tyrano、RPG Maker XP/VX/VX Ace、RPG Maker MV/MZ、VN、WebOther、Artemis、Ren'Py、Ruffle（SWF）。
  *
  * 职责边界（架构优化 P0-1）：本类只负责「扫描 + 引擎识别」；游戏库 CRUD / 最近游玩 /
  * 快捷启动 / 扫描根等持久化门面职责见 [GameLibraryFacade]，路径工具见 [GamePathUtils]。
@@ -81,12 +87,18 @@ object EngineScanner {
         val startedAt = SystemClock.elapsedRealtime()
         val maxDepth = AppSettingsStore.getScanDepth(context)
         val roots = GameLibraryFacade.loadRoots(context)
+        // 扫描索引在开始时快照：启用/禁用模块不影响正在进行的扫描。
+        val runtimeModules = RuntimeModuleRegistry.scanIndex(context.applicationContext)
         // 多个存储卷可以并行扫描，但限制为 2，避免同时向 DocumentsProvider 发起过多查询。
         val gate = Semaphore(2)
         val all = coroutineScope {
             roots.map { root ->
                 async {
-                    gate.withPermit { runInterruptible { scanRootInternal(context.applicationContext, root, maxDepth) } }
+                    gate.withPermit {
+                        runInterruptible {
+                            scanRootInternal(context.applicationContext, root, maxDepth, runtimeModules)
+                        }
+                    }
                 }
             }.awaitAll().flatten()
         }
@@ -102,32 +114,37 @@ object EngineScanner {
 
     /** 全量刷新游戏库：以当前扫描结果为准，移除已删除/改名路径的旧缓存条目。 */
     suspend fun rescanLibrary(context: Context): List<ScanGame> = withContext(Dispatchers.IO) {
+        // 在合并扫描结果前核对旧绑定，并恢复已重新启用的原模块。
+        RuntimeModuleBindings.reconcile(context.applicationContext, restoreReenabled = true)
         val scanned = scanAll(context)
-        // 扫描可能耗时较长；提交结果前再次读取当前 roots，避免扫描期间设置页删除目录后，
-        // 旧 root 的扫描结果在任务结束时被重新写回游戏库。
-        val activeRoots = GameLibraryFacade.loadRoots(context)
-        val activeScanned = scanned.filter { game ->
-            activeRoots.any { root -> isGameUnderRoot(root, game.uri) }
-        }
-        val refreshed = GameLibraryFacade.updateGames(context) { currentGames ->
-            val existingByUri = currentGames.associateBy { it.uri }
-            val scanned = activeScanned.map { current ->
-                existingByUri[current.uri]?.let { previous ->
-                    current.copy(
-                        coverUri = previous.coverUri ?: current.coverUri,
-                        coverSource = previous.coverSource
-                            ?: current.coverSource?.takeIf {
-                                previous.coverUri == null || previous.coverUri == current.coverUri
-                            },
-                        vndbId = previous.vndbId,
-                        metadataTitle = previous.metadataTitle,
-                        externalModuleAlias = previous.externalModuleAlias ?: current.externalModuleAlias,
-                        launchFile = previous.launchFile,
-                        openTime = previous.openTime,
-                    )
-                } ?: current
+        val removedSystemNnn = ArrayList<String>()
+        val refreshed = GameLibraryFacade.registerGames(context) { currentGames ->
+            // 扫描或等待资源清理期间可能移除目录。只登记仍属于活动扫描根的结果。
+            val activeRoots = GameLibraryFacade.loadRoots(context)
+            val activeScanned = scanned.filter { game ->
+                activeRoots.any { root -> isGameUnderRoot(root, game.uri) }
             }
-            mergeScannedWithManual(currentGames, scanned)
+            // 读取落库时的发现结果与开关。注册等待清理期间，模块可能已被禁用。
+            val merged = mergeRescanResults(
+                currentGames, activeScanned, RuntimeModuleRegistry.state.value,
+                AppSettingsStore.getEnabledRuntimeModules(context),
+            )
+            // 模块暂时不可用时保留原绑定，扫描根移除后不再保留关联条目。
+            val kept = merged.filter { game ->
+                !game.isRuntimeModuleBound() ||
+                    activeRoots.any { root -> isGameUnderRoot(root, game.uri) }
+            }
+            // 被重扫丢弃的 SystemNNN 条目不再有机会触发删除清理，把副本回收排进应用侧队列。
+            val keptUris = kept.mapTo(HashSet()) { it.uri }
+            currentGames.asSequence()
+                .filter { it.uri !in keptUris }
+                .map(RuntimeModuleBindings::builtInSystemNnn)
+                .filter { it.engine == EngineType.SYSTEMNNN }
+                .mapTo(removedSystemNnn) { it.uri }
+            kept
+        }
+        if (removedSystemNnn.isNotEmpty()) {
+            SystemNnnCleanupQueue.add(context, removedSystemNnn)
         }
         val validUris = refreshed.mapTo(HashSet()) { it.uri }
         // 最近打开/快捷启动为 games 派生视图，消失的游戏行已随差量删除，这里同步内存缓存即可。
@@ -205,43 +222,117 @@ object EngineScanner {
     /**
      * 重扫合并：手动添加的条目（PC 游戏 / 安卓游戏，[EngineType.isManual]）不参与扫描（不依赖扫描根），
      * 重扫时必须原样保留；安卓条目额外按 uri 前缀识别，避免 engine 字段损坏（回退 UNKNOWN）时被丢弃。
+     *
+     * 运行时模块条目和保留了最后已知模块包名的回退条目同样保留：
+     * 模块描述暂时失效、发现查询失败或用户禁用期间，本次扫描可能识别不到它，但不应因此删除
+     * 游戏记录及其标题/封面/元数据。调用方（rescanLibrary）会再按活动扫描根过滤。
      * 同 uri 若被扫描命中则以扫描结果为准（避免重复条目）。
      */
     internal fun mergeScannedWithManual(current: List<ScanGame>, scanned: List<ScanGame>): List<ScanGame> {
         val scannedUris = scanned.mapTo(HashSet()) { it.uri }
         val manual = current.filter { game ->
-            (game.engine.isManual || AndroidAppGames.isAndroidApp(game)) &&
+            (game.engine.isManual || AndroidAppGames.isAndroidApp(game) || game.isRuntimeModuleBound()) &&
                 game.uri !in scannedUris
         }
         return manual + scanned
     }
 
+    internal fun mergeRescanResults(
+        savedGames: List<ScanGame>,
+        scannedGames: List<ScanGame>,
+        runtimeSnapshot: RuntimeModuleSnapshot,
+        enabledPackages: Set<String>,
+    ): List<ScanGame> {
+        val discoverySucceeded = runtimeSnapshot.lastError == null
+        val allowedModules = if (discoverySucceeded) {
+            runtimeSnapshot.modules.mapNotNullTo(HashSet()) { it.packageName.takeIf(enabledPackages::contains) }
+        } else {
+            // Existing enabled bindings survive a failed query. Restoring one requires discovery.
+            enabledPackages
+        }
+        val savedByUri = savedGames.associateBy { it.uri }
+        val merged = scannedGames.map { current ->
+            savedByUri[current.uri]?.let { mergeScannedGame(current, it, allowedModules, discoverySucceeded) } ?: current
+        }
+        return mergeScannedWithManual(savedGames, merged).map { game ->
+            if (game.engine == EngineType.RUNTIME_MODULE && game.runtimeModulePackage !in allowedModules) {
+                game.copy(engine = EngineType.UNKNOWN)
+            } else game
+        }
+    }
+
+    private fun mergeScannedGame(
+        current: ScanGame,
+        saved: ScanGame,
+        allowedModules: Set<String>,
+        discoverySucceeded: Boolean,
+    ): ScanGame {
+        val previous = RuntimeModuleBindings.builtInSystemNnn(saved)
+        val fallbackPackage = previous.runtimeModulePackage?.takeIf {
+            current.engine == EngineType.SYSTEMNNN && previous.isRuntimeModuleBound() && it.isNotBlank()
+        }
+        if (fallbackPackage != null && fallbackPackage in allowedModules) {
+            if (previous.engine == EngineType.RUNTIME_MODULE) return previous
+            if (discoverySucceeded) return previous.copy(engine = EngineType.RUNTIME_MODULE)
+        }
+        return current.copy(
+            coverUri = previous.coverUri ?: current.coverUri,
+            coverSource = previous.coverSource
+                ?: current.coverSource?.takeIf {
+                    previous.coverUri == null || previous.coverUri == current.coverUri
+                },
+            vndbId = previous.vndbId,
+            metadataTitle = previous.metadataTitle,
+            externalModuleAlias = previous.externalModuleAlias ?: current.externalModuleAlias,
+            runtimeModulePackage = if (current.engine == EngineType.RUNTIME_MODULE) {
+                previous.runtimeModulePackage?.takeIf { previous.engine == EngineType.RUNTIME_MODULE && it in allowedModules }
+                    ?: current.runtimeModulePackage
+            } else {
+                fallbackPackage
+            },
+            launchFile = previous.launchFile,
+            openTime = previous.openTime,
+        )
+    }
+
+    /** 运行时绑定条目包含保留最后已知模块包名的内置 SystemNNN 回退。 */
+    private fun ScanGame.isRuntimeModuleBound(): Boolean =
+        engine == EngineType.RUNTIME_MODULE ||
+            ((engine == EngineType.UNKNOWN || engine == EngineType.SYSTEMNNN) && !runtimeModulePackage.isNullOrBlank())
+
     /**
      * 增量扫描（游戏库已有数据时调用）：遍历根目录时对已识别游戏目录剪枝跳过，
      * 只发现新游戏；返回 现有游戏 + 新发现游戏（已删除游戏保留，不主动移除）。
      */
-    suspend fun incrementalScan(context: Context): List<ScanGame> = runInterruptible(Dispatchers.IO) {
-        val existing = GameLibraryFacade.loadGames(context)
-        val known = existing.mapTo(HashSet()) { it.uri }
-        val seen = HashSet<String>()
-        val found = mutableListOf<ScanGame>()
-        val maxDepth = AppSettingsStore.getScanDepth(context)
-        GameLibraryFacade.loadRoots(context).forEach { root ->
-            val beforeCount = found.size
-            val rootUri = Uri.parse(root)
-            val safSession = SafScanSession(context.applicationContext, rootUri)
-            val safRoot = safSession.root()
-            safRoot?.let { rootNode ->
-                scanRootIncremental(context, safSession, rootNode, 0, maxDepth, known, found)
-            }
-            // 只有 SAF 不可用时才走真实路径兜底；正常的“没有新游戏”不再重复扫描整棵目录树。
-            if (found.size == beforeCount && (safRoot == null || safSession.queryFailed)) {
-                GamePathUtils.safUriToPath(root)?.let { path ->
-                    scanRootIncrementalFile(context, FileScanSession(), File(path), 0, maxDepth, known, found)
+    suspend fun incrementalScan(context: Context): List<ScanGame> {
+        // 构建索引前先核对旧绑定，避免用过期绑定扫描出新结果。
+        RuntimeModuleBindings.reconcile(context.applicationContext)
+        val runtimeModules = RuntimeModuleRegistry.scanIndex(context.applicationContext)
+        return runInterruptible(Dispatchers.IO) {
+            val existing = GameLibraryFacade.loadGames(context)
+            val known = existing.mapTo(HashSet()) { it.uri }
+            val seen = HashSet<String>()
+            val found = mutableListOf<ScanGame>()
+            val maxDepth = AppSettingsStore.getScanDepth(context)
+            GameLibraryFacade.loadRoots(context).forEach { root ->
+                val beforeCount = found.size
+                val rootUri = Uri.parse(root)
+                val safSession = SafScanSession(context.applicationContext, rootUri)
+                val safRoot = safSession.root()
+                safRoot?.let { rootNode ->
+                    scanRootIncremental(context, safSession, rootNode, 0, maxDepth, known, found, runtimeModules)
+                }
+                // 只有 SAF 不可用时才走真实路径兜底；正常的“没有新游戏”不再重复扫描整棵目录树。
+                if (found.size == beforeCount && (safRoot == null || safSession.queryFailed)) {
+                    GamePathUtils.safUriToPath(root)?.let { path ->
+                        scanRootIncrementalFile(
+                            context, FileScanSession(), File(path), 0, maxDepth, known, found, runtimeModules,
+                        )
+                    }
                 }
             }
+            existing + found.filter { seen.add(it.uri) }
         }
-        existing + found.filter { seen.add(it.uri) }
     }
 
     /** 增量遍历：目录已在库中（已知游戏）→ 剪枝；识别为新游戏 → 记录并停止下钻。 */
@@ -253,21 +344,28 @@ object EngineScanner {
         maxDepth: Int,
         known: HashSet<String>,
         out: MutableList<ScanGame>,
+        runtimeModules: RuntimeModuleIndex = RuntimeModuleIndex.EMPTY,
     ) {
         if (level > maxDepth) return
         if (dir.uri.toString() in known) return
         val children = session.children(dir)
 
-        val detected = detectEngine(children, session::children, session::readHead)
+        val detected = detectEngine(
+            children,
+            session::children,
+            session::readHead,
+            if (level == 0) RuntimeModuleIndex.EMPTY else runtimeModules,
+        )
         if (detected.engine != EngineType.UNKNOWN) {
             val coverUri = findLocalCoverUri(children)
             out.add(
                 ScanGame(
-                    title = detected.titleHint ?: dir.name.takeIf { it.isNotBlank() } ?: localizedText(context, R.string.scan_unnamed_game),
+                    title = scanTitle(context, detected, dir.name),
                     uri = dir.uri.toString(),
                     engine = detected.engine,
                     launchTarget = detected.launchTarget,
                     externalModuleAlias = detected.externalModuleAlias,
+                    runtimeModulePackage = detected.runtimeModulePackage,
                     detectedRenpyVersion = detectRenpyVersionIfNeeded(detected, children, session),
                     coverUri = coverUri,
                     coverSource = if (coverUri.isNullOrBlank()) null else AppSettingsStore.COVER_SOURCE_LOCAL,
@@ -276,31 +374,41 @@ object EngineScanner {
             return
         }
         // 未识别引擎：按 ROM 文件逐条入库（已存在的 ROM uri 由 known 剪枝），再递归子目录
-        out.addAll(romGamesForSaf(children, findLocalCoverUri(children), known))
+        out.addAll(romGamesForSaf(children, findLocalCoverUri(children), known, dir.name))
         for (child in children) {
             if (child.isDirectory) {
-                scanRootIncremental(context, session, child, level + 1, maxDepth, known, out)
+                scanRootIncremental(context, session, child, level + 1, maxDepth, known, out, runtimeModules)
             }
         }
     }
 
-    suspend fun scanRoot(context: Context, rootUriStr: String, maxDepth: Int = 3): List<ScanGame> = runInterruptible(Dispatchers.IO) {
-        scanRootInternal(context.applicationContext, rootUriStr, maxDepth)
+    suspend fun scanRoot(context: Context, rootUriStr: String, maxDepth: Int = 3): List<ScanGame> {
+        // 扫描前先核对旧绑定并按最新模块集合构建索引（与全量扫描同口径）。
+        RuntimeModuleBindings.reconcile(context.applicationContext)
+        val runtimeModules = RuntimeModuleRegistry.scanIndex(context.applicationContext)
+        return runInterruptible(Dispatchers.IO) {
+            scanRootInternal(context.applicationContext, rootUriStr, maxDepth, runtimeModules)
+        }
     }
 
-    private fun scanRootInternal(context: Context, rootUriStr: String, maxDepth: Int): List<ScanGame> {
+    private fun scanRootInternal(
+        context: Context,
+        rootUriStr: String,
+        maxDepth: Int,
+        runtimeModules: RuntimeModuleIndex = RuntimeModuleIndex.EMPTY,
+    ): List<ScanGame> {
         val rootUri = Uri.parse(rootUriStr)
         val results = mutableListOf<ScanGame>()
         val safSession = SafScanSession(context, rootUri)
         val safRoot = safSession.root()
         safRoot?.let { root ->
-            traverseDirectories(context, safSession, root, 0, maxDepth, results)
+            traverseDirectories(context, safSession, root, 0, maxDepth, results, runtimeModules)
         }
         // SAF 成功但未发现游戏是正常结果，不重复用 File API 扫一遍。
         // 查询异常/权限失效时仍保留 SD 卡真实路径兼容兜底。
         if (results.isEmpty() && (safRoot == null || safSession.queryFailed)) {
             GamePathUtils.safUriToPath(rootUriStr)?.let { path ->
-                traverseFileDirectories(context, FileScanSession(), File(path), 0, maxDepth, results)
+                traverseFileDirectories(context, FileScanSession(), File(path), 0, maxDepth, results, runtimeModules)
             }
         }
         val seen = HashSet<String>()
@@ -314,21 +422,28 @@ object EngineScanner {
         level: Int,
         maxDepth: Int,
         out: MutableList<ScanGame>,
+        runtimeModules: RuntimeModuleIndex = RuntimeModuleIndex.EMPTY,
     ) {
         if (level > maxDepth) return
         val children = session.children(dir)
 
         // 1) 本级目录本身可能是游戏（含引擎特征文件）
-        val detected = detectEngine(children, session::children, session::readHead)
+        val detected = detectEngine(
+            children,
+            session::children,
+            session::readHead,
+            if (level == 0) RuntimeModuleIndex.EMPTY else runtimeModules,
+        )
         if (detected.engine != EngineType.UNKNOWN) {
             val coverUri = findLocalCoverUri(children)
             out.add(
                 ScanGame(
-                    title = detected.titleHint ?: dir.name.takeIf { it.isNotBlank() } ?: localizedText(context, R.string.scan_unnamed_game),
+                    title = scanTitle(context, detected, dir.name),
                     uri = dir.uri.toString(),
                     engine = detected.engine,
                     launchTarget = detected.launchTarget,
                     externalModuleAlias = detected.externalModuleAlias,
+                    runtimeModulePackage = detected.runtimeModulePackage,
                     detectedRenpyVersion = detectRenpyVersionIfNeeded(detected, children, session),
                     coverUri = coverUri,
                     coverSource = if (coverUri.isNullOrBlank()) null else AppSettingsStore.COVER_SOURCE_LOCAL,
@@ -339,12 +454,12 @@ object EngineScanner {
         }
 
         // 2) 未识别引擎：按 ROM 文件逐条入库（PSP / Switch），再递归子目录
-        out.addAll(romGamesForSaf(children, findLocalCoverUri(children)))
+        out.addAll(romGamesForSaf(children, findLocalCoverUri(children), directoryName = dir.name))
 
         // 3) 否则递归子目录
         for (child in children) {
             if (child.isDirectory) {
-                traverseDirectories(context, session, child, level + 1, maxDepth, out)
+                traverseDirectories(context, session, child, level + 1, maxDepth, out, runtimeModules)
             }
         }
     }
@@ -489,18 +604,26 @@ object EngineScanner {
         }
     }
 
-    // ============ ROM 文件型游戏（PSP / Nintendo Switch） ============
+    // ============ ROM 文件型游戏（PSP / Nintendo Switch / Ruffle SWF） ============
     // 一 ROM 一条游戏：uri = ROM 文件自身（SAF document URI / 真实路径），launchTarget = 文件名。
     // uri 作为游戏库主键天然唯一；目录归属由 GameRootMatcher 的 documentId 前缀匹配兜住。
+    // Ruffle 包装目录（根 index.html + 叶子目录 + 唯一 SWF）由 detectEngine 识别为目录型游戏；
+    // 散装 SWF（含无 index.html 的单文件目录）与其它 ROM 一样按文件逐条入库。
 
     private val PSP_ROM_EXTENSIONS = setOf("pbp", "cso", "iso", "chd")
     private val SWITCH_ROM_EXTENSIONS = setOf("nsp", "xci", "nca", "nro")
 
+    /** 目录内出现即视为「主机 ROM 目录」的引擎：Ruffle 包装判定必须让位，按 ROM 逐条入库。 */
+    private val CONSOLE_ROM_ENGINES = setOf(EngineType.PSP, EngineType.NINTENDO_SWITCH)
+
     internal fun romEngineOf(name: String): EngineType? {
+        // 隐藏文件（macOS 的 ._foo.swf、.nomedia 等）不是可启动 ROM。
+        if (name.startsWith(".")) return null
         val ext = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
         return when (ext) {
             in PSP_ROM_EXTENSIONS -> EngineType.PSP
             in SWITCH_ROM_EXTENSIONS -> EngineType.NINTENDO_SWITCH
+            "swf" -> EngineType.RUFFLE
             else -> null
         }
     }
@@ -539,24 +662,45 @@ object EngineScanner {
     private fun romTitle(name: String): String =
         name.substringBeforeLast('.').takeIf { it.isNotBlank() } ?: name
 
+    /** 扫描标题：识别期标题 > 目录名；Ruffle 包装目录在目录名缺失时回退 SWF 文件主名。 */
+    private fun scanTitle(context: Context, detected: Detection, dirName: String): String {
+        val ruffleFallback = if (detected.engine == EngineType.RUFFLE) {
+            romTitle(detected.launchTarget).takeIf { it.isNotBlank() }
+        } else {
+            null
+        }
+        return detected.titleHint
+            ?: dirName.takeIf { it.isNotBlank() }
+            ?: ruffleFallback
+            ?: localizedText(context, R.string.scan_unnamed_game)
+    }
+
     private fun romGamesForSaf(
         children: List<SafNode>,
         coverUri: String?,
         known: Set<String>? = null,
+        directoryName: String? = null,
     ): List<ScanGame> {
         val roms = children.filter { child ->
             !child.isDirectory &&
                 romEngineOf(child.name) != null &&
+                (romEngineOf(child.name) != EngineType.RUFFLE || child.size == null || child.size > 0L) &&
                 (known == null || child.uri.toString() !in known)
         }
         if (roms.isEmpty()) return emptyList()
-        val singleCover = if (roms.size == 1) coverUri else null
+        // 单封面按目录内 ROM 总数判定（含已入库条目），与标题策略保持同一口径。
+        val totalRoms = children.count { !it.isDirectory && romEngineOf(it.name) != null }
+        val singleCover = if (totalRoms == 1) coverUri else null
+        // 标题策略按目录内 SWF 总数判定（含已入库条目），增量扫描不会把多 SWF 误判为单入口
+        val singleSwf = children.count { !it.isDirectory && romEngineOf(it.name) == EngineType.RUFFLE } == 1
         return roms.map { node ->
+            val engine = romEngineOf(node.name)!!
             ScanGame(
-                title = romTitle(node.name),
+                title = romTitleFor(engine, node.name, singleSwf, directoryName),
                 uri = node.uri.toString(),
-                engine = romEngineOf(node.name)!!,
+                engine = engine,
                 launchTarget = node.name,
+                externalModuleAlias = romModuleAlias(engine),
                 coverUri = singleCover,
                 coverSource = if (singleCover.isNullOrBlank()) null else AppSettingsStore.COVER_SOURCE_LOCAL,
             )
@@ -567,25 +711,59 @@ object EngineScanner {
         children: Array<File>,
         coverUri: String?,
         known: Set<String>? = null,
+        directoryName: String? = null,
     ): List<ScanGame> {
         val roms = children.filter { child ->
             child.isFile &&
                 romEngineOf(child.name) != null &&
+                (romEngineOf(child.name) != EngineType.RUFFLE || child.length() > 0L) &&
                 (known == null || child.absolutePath !in known)
         }
         if (roms.isEmpty()) return emptyList()
-        val singleCover = if (roms.size == 1) coverUri else null
+        // 单封面按目录内 ROM 总数判定（含已入库条目），与标题策略保持同一口径。
+        val totalRoms = children.count { it.isFile && romEngineOf(it.name) != null }
+        val singleCover = if (totalRoms == 1) coverUri else null
+        // 标题策略按目录内 SWF 总数判定（含已入库条目），增量扫描不会把多 SWF 误判为单入口
+        val singleSwf = children.count { it.isFile && romEngineOf(it.name) == EngineType.RUFFLE } == 1
         return roms.map { rom ->
+            val engine = romEngineOf(rom.name)!!
             ScanGame(
-                title = romTitle(rom.name),
+                title = romTitleFor(engine, rom.name, singleSwf, directoryName),
                 uri = rom.absolutePath,
-                engine = romEngineOf(rom.name)!!,
+                engine = engine,
                 launchTarget = rom.name,
+                externalModuleAlias = romModuleAlias(engine),
                 coverUri = singleCover,
                 coverSource = if (singleCover.isNullOrBlank()) null else AppSettingsStore.COVER_SOURCE_LOCAL,
             )
         }
     }
+
+    /**
+     * 单个 Ruffle SWF 以父目录名作为标题（目录名缺失时回退文件主名）；
+     * 同目录多个 SWF 或其它 ROM 保持文件主名。
+     */
+    private fun romTitleFor(
+        engine: EngineType,
+        fileName: String,
+        singleSwf: Boolean,
+        directoryName: String?,
+    ): String =
+        if (engine == EngineType.RUFFLE && singleSwf) {
+            directoryName?.takeIf { it.isNotBlank() } ?: romTitle(fileName)
+        } else {
+            romTitle(fileName)
+        }
+
+    private fun romModuleAlias(engine: EngineType): String? =
+        if (engine == EngineType.RUFFLE) RUFFLE_MODULE_ALIAS else null
+
+    /**
+     * 扫描写入的 Ruffle 模块别名，与 `RuffleExternalEngineModule.defaultAlias` 保持同值。
+     * 扫描层不直接依赖 external 模块（避免 game-scan → engine-external 的耦合/循环），
+     * 两处如需改名必须同步。
+     */
+    private const val RUFFLE_MODULE_ALIAS = "internal.flash"
 
     private fun detectRenpyVersionIfNeeded(
         detection: Detection,
@@ -645,21 +823,27 @@ object EngineScanner {
         maxDepth: Int,
         known: HashSet<String>,
         out: MutableList<ScanGame>,
+        runtimeModules: RuntimeModuleIndex = RuntimeModuleIndex.EMPTY,
     ) {
         if (level > maxDepth || !dir.isDirectory) return
         if (dir.absolutePath in known) return
         val children = session.children(dir)
 
-        val detected = detectEngine(dir, session)
+        val detected = detectEngine(
+            dir,
+            session,
+            if (level == 0) RuntimeModuleIndex.EMPTY else runtimeModules,
+        )
         if (detected.engine != EngineType.UNKNOWN) {
             val coverUri = findLocalCoverUri(children)
             out.add(
                 ScanGame(
-                    title = detected.titleHint ?: dir.name.takeIf { it.isNotBlank() } ?: localizedText(context, R.string.scan_unnamed_game),
+                    title = scanTitle(context, detected, dir.name),
                     uri = dir.absolutePath,
                     engine = detected.engine,
                     launchTarget = detected.launchTarget,
                     externalModuleAlias = detected.externalModuleAlias,
+                    runtimeModulePackage = detected.runtimeModulePackage,
                     detectedRenpyVersion = detectRenpyVersionIfNeeded(detected, dir),
                     coverUri = coverUri,
                     coverSource = if (coverUri.isNullOrBlank()) null else AppSettingsStore.COVER_SOURCE_LOCAL,
@@ -667,9 +851,9 @@ object EngineScanner {
             )
             return
         }
-        out.addAll(romGamesForFile(children, findLocalCoverUri(children), known))
+        out.addAll(romGamesForFile(children, findLocalCoverUri(children), known, dir.name))
         children.filter { it.isDirectory }.forEach { child ->
-            scanRootIncrementalFile(context, session, child, level + 1, maxDepth, known, out)
+            scanRootIncrementalFile(context, session, child, level + 1, maxDepth, known, out, runtimeModules)
         }
     }
 
@@ -680,20 +864,26 @@ object EngineScanner {
         level: Int,
         maxDepth: Int,
         out: MutableList<ScanGame>,
+        runtimeModules: RuntimeModuleIndex = RuntimeModuleIndex.EMPTY,
     ) {
         if (level > maxDepth || !dir.isDirectory) return
         val children = session.children(dir)
 
-        val detected = detectEngine(dir, session)
+        val detected = detectEngine(
+            dir,
+            session,
+            if (level == 0) RuntimeModuleIndex.EMPTY else runtimeModules,
+        )
         if (detected.engine != EngineType.UNKNOWN) {
             val coverUri = findLocalCoverUri(children)
             out.add(
                 ScanGame(
-                    title = detected.titleHint ?: dir.name.takeIf { it.isNotBlank() } ?: localizedText(context, R.string.scan_unnamed_game),
+                    title = scanTitle(context, detected, dir.name),
                     uri = dir.absolutePath,
                     engine = detected.engine,
                     launchTarget = detected.launchTarget,
                     externalModuleAlias = detected.externalModuleAlias,
+                    runtimeModulePackage = detected.runtimeModulePackage,
                     detectedRenpyVersion = detectRenpyVersionIfNeeded(detected, dir),
                     coverUri = coverUri,
                     coverSource = if (coverUri.isNullOrBlank()) null else AppSettingsStore.COVER_SOURCE_LOCAL,
@@ -701,9 +891,9 @@ object EngineScanner {
             )
             return
         }
-        out.addAll(romGamesForFile(children, findLocalCoverUri(children)))
+        out.addAll(romGamesForFile(children, findLocalCoverUri(children), directoryName = dir.name))
         children.filter { it.isDirectory }.forEach { child ->
-            traverseFileDirectories(context, session, child, level + 1, maxDepth, out)
+            traverseFileDirectories(context, session, child, level + 1, maxDepth, out, runtimeModules)
         }
     }
 
@@ -733,12 +923,25 @@ object EngineScanner {
         val launchTarget: String,
         val externalModuleAlias: String? = null,
         val titleHint: String? = null,
+        /** 命中的第三方运行时模块包名；仅 [EngineType.RUNTIME_MODULE] 条目非空。 */
+        val runtimeModulePackage: String? = null,
     )
 
-    fun detectEngine(context: Context, dir: DocumentFile): Detection {
+    /**
+     * 目录识别（SAF 适配器）。[runtimeModules] 缺省空索引，保证既有调用/测试不必改签名。
+     *
+     * 内置强特征优先：只有内置结果为 [EngineType.UNKNOWN] / [EngineType.WEB_OTHER] 时才尝试
+     * 第三方模块声明的扫描特征；子项只取一次，匹配失败不会产生额外 SAF 往返。
+     */
+    fun detectEngine(
+        context: Context,
+        dir: DocumentFile,
+        runtimeModules: RuntimeModuleIndex = RuntimeModuleIndex.EMPTY,
+    ): Detection {
         if (!dir.isDirectory) return UNKNOWN_DETECTION
-        return detectEngine(
-            children = dir.listFiles().asIterable(),
+        val children = dir.listFiles()
+        val builtIn = detectEngine(
+            children = children.asIterable(),
             nameOf = { it.name.orEmpty() },
             isDirectory = { it.isDirectory },
             childrenOf = { it.listFiles().asIterable() },
@@ -755,34 +958,102 @@ object EngineScanner {
             },
             sizeOf = { it.length().takeIf { size -> size > 0 } },
         )
+        return applyRuntimeModules(
+            builtIn = builtIn,
+            entries = children.map { RuntimeModuleEntry(it.name.orEmpty(), it.isDirectory) },
+            childrenOf = { entry ->
+                children.firstOrNull { it.isDirectory && it.name.orEmpty() == entry.name }
+                    ?.listFiles()
+                    ?.map { RuntimeModuleEntry(it.name.orEmpty(), it.isDirectory) }
+                    .orEmpty()
+            },
+            runtimeModules = runtimeModules,
+        )
     }
 
-    fun detectEngine(dir: File): Detection {
+    /** 目录识别（真实路径）。[runtimeModules] 缺省空索引，仅弱结果（UNKNOWN/WEB_OTHER）才会被模块覆盖。 */
+    fun detectEngine(dir: File, runtimeModules: RuntimeModuleIndex = RuntimeModuleIndex.EMPTY): Detection {
         if (!dir.isDirectory) return UNKNOWN_DETECTION
-        return detectEngine(dir, FileScanSession())
+        return detectEngine(dir, FileScanSession(), runtimeModules)
     }
 
-    private fun detectEngine(dir: File, session: FileScanSession): Detection = detectEngine(
-        children = session.children(dir).asIterable(),
-        nameOf = { it.name },
-        isDirectory = { it.isDirectory },
-        childrenOf = { session.children(it).asIterable() },
-        headOf = { session.readHead(it) },
-        sizeOf = { it.length() },
-    )
+    private fun detectEngine(
+        dir: File,
+        session: FileScanSession,
+        runtimeModules: RuntimeModuleIndex = RuntimeModuleIndex.EMPTY,
+    ): Detection {
+        val children = session.children(dir)
+        val builtIn = detectEngine(
+            children = children.asIterable(),
+            nameOf = { it.name },
+            isDirectory = { it.isDirectory },
+            childrenOf = { session.children(it).asIterable() },
+            headOf = { session.readHead(it) },
+            sizeOf = { it.length() },
+        )
+        return applyRuntimeModules(
+            builtIn = builtIn,
+            entries = children.map { RuntimeModuleEntry(it.name, it.isDirectory) },
+            childrenOf = { entry ->
+                children.firstOrNull { it.isDirectory && it.name == entry.name }
+                    ?.let(session::children)
+                    ?.map { RuntimeModuleEntry(it.name, it.isDirectory) }
+                    .orEmpty()
+            },
+            runtimeModules = runtimeModules,
+        )
+    }
 
     private fun detectEngine(
         children: List<SafNode>,
         childrenOf: (SafNode) -> List<SafNode>,
         headOf: (SafNode) -> ByteArray?,
-    ): Detection = detectEngine(
-        children = children,
-        nameOf = { it.name },
-        isDirectory = { it.isDirectory },
-        childrenOf = childrenOf,
-        headOf = headOf,
-        sizeOf = { it.size },
-    )
+        runtimeModules: RuntimeModuleIndex = RuntimeModuleIndex.EMPTY,
+    ): Detection {
+        val builtIn = detectEngine(
+            children = children,
+            nameOf = { it.name },
+            isDirectory = { it.isDirectory },
+            childrenOf = childrenOf,
+            headOf = headOf,
+            sizeOf = { it.size },
+        )
+        return applyRuntimeModules(
+            builtIn = builtIn,
+            entries = children.map { RuntimeModuleEntry(it.name, it.isDirectory) },
+            childrenOf = { entry ->
+                children.firstOrNull { it.isDirectory && it.name == entry.name }
+                    ?.let(childrenOf)
+                    ?.map { RuntimeModuleEntry(it.name, it.isDirectory) }
+                    .orEmpty()
+            },
+            runtimeModules = runtimeModules,
+        )
+    }
+
+    /**
+     * 第三方运行时模块的弱结果分流：内置强特征（KRKR / ONS / RPGM / Ren'Py 等）不被覆盖，
+     * 只有 [EngineType.UNKNOWN] 与 [EngineType.WEB_OTHER] 才尝试模块声明的扫描特征。
+     * 命中时统一以 [EngineType.RUNTIME_MODULE] + 文件夹路径启动，并记录模块包名。
+     */
+    private fun applyRuntimeModules(
+        builtIn: Detection,
+        entries: List<RuntimeModuleEntry>,
+        childrenOf: (RuntimeModuleEntry) -> List<RuntimeModuleEntry>,
+        runtimeModules: RuntimeModuleIndex,
+    ): Detection {
+        if (runtimeModules.modules.isEmpty()) return builtIn
+        if (builtIn.engine != EngineType.UNKNOWN && builtIn.engine != EngineType.WEB_OTHER) return builtIn
+        // 主机 ROM / 散装 SWF 目录必须交给 romGamesForSaf/File 逐文件入库，不能被模块扩展名吞掉。
+        if (entries.any { !it.isDirectory && romEngineOf(it.name) != null }) return builtIn
+        val module = runtimeModules.match(entries, childrenOf) ?: return builtIn
+        return Detection(
+            engine = EngineType.RUNTIME_MODULE,
+            confidence = 80,
+            launchTarget = LAUNCH_TARGET_GAME_DIR,
+            runtimeModulePackage = module.packageName,
+        )
+    }
 
     internal fun <T> detectEngine(
         children: Iterable<T>,
@@ -797,6 +1068,8 @@ object EngineScanner {
         var hasStartupTjs = false
         var hasConfigTjs = false
         var hasIndex = false
+        var hasRootIndex = false
+        var hasChildDirectory = false
         var hasAppAsar = false
         var hasTyranoDir = false
         var hasRpgMvCore = false
@@ -840,6 +1113,8 @@ object EngineScanner {
         var firstRgssad: String? = null
         var firstRgss2a: String? = null
         var firstRgss3a: String? = null
+        var firstSwf: String? = null
+        var swfCount = 0
         var hasGameIni = false
         var hasRxdata = false
         var hasRvdata = false
@@ -847,6 +1122,7 @@ object EngineScanner {
         var hasMkxpZRubyRuntime = false
         var hasFvpScript = false
         var hasFvpPack = false
+        var hasSystemNnnEntry = false
         var hasAldScript = false
         var aldCount = 0
         var hasXs35Support = false
@@ -862,6 +1138,11 @@ object EngineScanner {
         var uk2MesNode: T? = null
         var ethornellSystemNode: T? = null
         var ambiguousEthornellSystem = false
+        var hasCmvsScript = false
+        var hasCmvsStart = false
+        var cmvsStartCount = 0
+        var hasCmvsStartHeader = false
+        var hasCmvsExe = false
 
         fun collect(entry: T, rel: String) {
             if (Thread.currentThread().isInterrupted) throw java.util.concurrent.CancellationException()
@@ -869,10 +1150,16 @@ object EngineScanner {
             if (lower.isEmpty()) return
             val childRel = if (rel.isEmpty()) lower else "$rel/$lower"
             if (isDirectory(entry)) {
+                hasChildDirectory = true
                 if (lower == "tyrano") hasTyranoDir = true
                 if (lower == "renpy") hasRenpyDir = true
                 if (lower == "game") hasGameDir = true
                 if (lower == "app.asar" || childRel.endsWith("/app.asar")) hasAppAsar = true
+                if (rel.isEmpty() && lower == "spt") {
+                    hasSystemNnnEntry = hasSystemNnnEntry || childrenOf(entry).any {
+                        !isDirectory(it) && nameOf(it).equals("sys.spt", ignoreCase = true)
+                    }
+                }
                 if (lower == "config") {
                     // CatSystem2：config/startup.xml 是高价值目录特征（不递归，只看该文件名）
                     childrenOf(entry).forEach { child ->
@@ -886,6 +1173,33 @@ object EngineScanner {
                         val childName = nameOf(child).lowercase(Locale.ROOT)
                         if (childName.endsWith(".ypf")) hasYpf = true
                         if (childName.endsWith(".ymv")) hasYmv = true
+                    }
+                }
+                if (rel.isEmpty() && lower == "data") {
+                    // CMVS: data/pack is intentionally outside the recursive whitelist.
+                    // The engine opens these paths case-sensitively, so only exact
+                    // lowercase names can be launched; don't claim Data/Pack as CMVS.
+                    childrenOf(entry).forEach { pack ->
+                        if (!isDirectory(pack) || nameOf(pack) != "pack") {
+                            return@forEach
+                        }
+                        childrenOf(pack).forEach { file ->
+                            if (isDirectory(file)) return@forEach
+                            when (nameOf(file)) {
+                                "script.cpz" -> hasCmvsScript = true
+                                "start.ps3", "start.ps2" -> {
+                                    hasCmvsStart = true
+                                    cmvsStartCount++
+                                    val head = headOf(file)
+                                    if (head != null && head.size >= 4 &&
+                                        head[0] == 0x50.toByte() && head[1] == 0x53.toByte() &&
+                                        head[2] == 0x32.toByte() && head[3] == 0x41.toByte()
+                                    ) {
+                                        hasCmvsStartHeader = true
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 if (rel.isEmpty() && lower == "gamedata") {
@@ -911,11 +1225,17 @@ object EngineScanner {
                 return
             }
             when {
+                rel.isEmpty() && lower in setOf("cmvs.exe", "cmvs32.exe", "cmvs64.exe") -> {
+                    hasCmvsExe = true
+                }
                 rel.isEmpty() && lower == "system.arc" -> {
                     if (ethornellSystemNode != null) ambiguousEthornellSystem = true
                     ethornellSystemNode = entry
                 }
-                lower == "index.html" || lower == "index.htm" -> hasIndex = true
+                lower == "index.html" || lower == "index.htm" -> {
+                    hasIndex = true
+                    if (rel.isEmpty()) hasRootIndex = true
+                }
                 childRel == "js/rpg_core.js" || childRel.endsWith("/js/rpg_core.js") -> hasRpgMvCore = true
                 childRel == "js/rmmz_core.js" || childRel.endsWith("/js/rmmz_core.js") -> hasRpgMzCore = true
                 lower == "globaldata.vndata" -> hasVnData = true
@@ -968,6 +1288,10 @@ object EngineScanner {
                 lower.endsWith(".rgssad") -> if (firstRgssad == null) firstRgssad = childRel
                 lower.endsWith(".rgss2a") -> if (firstRgss2a == null) firstRgss2a = childRel
                 lower.endsWith(".rgss3a") -> if (firstRgss3a == null) firstRgss3a = childRel
+                rel.isEmpty() && lower.endsWith(".swf") && !lower.startsWith(".") -> {
+                    swfCount++
+                    if (firstSwf == null) firstSwf = nameOf(entry)
+                }
                 rel.isEmpty() && lower.startsWith("x64-msvcrt-ruby") && lower.endsWith(".dll") ->
                     hasMkxpZRubyRuntime = true
                 childRel.startsWith("data/") && lower.endsWith(".rxdata") -> hasRxdata = true
@@ -1086,7 +1410,7 @@ object EngineScanner {
             return Detection(EngineType.CATSYSTEM2, cs2Score, LAUNCH_TARGET_GAME_DIR)
         }
         // System4（xsystem4）：根目录 System40.ini / AliceStart.ini 为硬特征，*.ain 为辅助。
-        // 判定规则放在本函数末尾（所有既有引擎与 ONS 之后），此处只计算 XSYS35 护栏用的 isSystem4。
+        // 判定规则放在本函数末尾（所有既有引擎与 ONS 之后），此处只计算 XSYS35 / Ruffle 护栏用的 isSystem4。
         // 护栏用 !hasSystem39Marker 而非 hasXs35Support：后者含 .alk，System 4 同样用 ALK 资源包。
         // 嵌套目录（data/System40.ini）不构成特征，见 collect 的 rel.isEmpty() 约束。
         val system4IniNode = system40IniNode ?: aliceStartIniNode
@@ -1159,7 +1483,24 @@ object EngineScanner {
             // Ren'Py 版本由单游戏设置选择，扫描不写死版本别名（避免误导为固定 8.5 模块）
             return Detection(EngineType.RENPY, confidence, LAUNCH_TARGET_GAME_DIR)
         }
-        if (hasIndex) {
+        // Flash 包装目录：根目录 index.html/htm + 叶子目录（无子目录）+ 唯一顶层 SWF。
+        // 必须排在通用 hasIndex -> WEB_OTHER 之前，但不得覆盖 Tyrano/RPGM/VN/Node 等既有判定，
+        // 也不得抢走其后才判定的 KRKR/ONS/XSYS4 或 PSP/Switch ROM：
+        // - 无根 index 的散装 SWF 由 romGamesForSaf/romGamesForFile 按文件入库；
+        // - 有子目录的扫描根不能再被当成一个包装游戏吞掉整棵目录。
+        val ruffleSwf = firstSwf
+        val hasConsoleRomChild = children.any { child ->
+            !isDirectory(child) && romEngineOf(nameOf(child)) in CONSOLE_ROM_ENGINES
+        }
+        if (
+            hasRootIndex && !hasChildDirectory && swfCount == 1 && ruffleSwf != null &&
+            !hasTyranoDir && !hasRpgMvCore && !hasRpgMzCore && !hasVnData && !hasAppAsar &&
+            xp3Files.isEmpty() && !hasStartupTjs && !hasConfigTjs &&
+            !hasOnsScript && !hasOnsArchive && !isSystem4 && !hasConsoleRomChild
+        ) {
+            return Detection(EngineType.RUFFLE, 88, ruffleSwf, RUFFLE_MODULE_ALIAS)
+        }
+        if (hasIndex && !hasSystemNnnEntry) {
             return Detection(EngineType.WEB_OTHER, 70, LAUNCH_TARGET_GAME_DIR)
         }
         if (xp3Files.isNotEmpty() || hasStartupTjs || hasConfigTjs) {
@@ -1179,6 +1520,19 @@ object EngineScanner {
         }
         if (isSystem4) {
             return Detection(EngineType.XSYS4, 90, LAUNCH_TARGET_GAME_DIR, titleHint = system4Title())
+        }
+        if (hasSystemNnnEntry) {
+            return Detection(EngineType.SYSTEMNNN, 96, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasCmvsScript && hasCmvsStart && cmvsStartCount == 1) {
+            return Detection(
+                EngineType.CMVS,
+                if (hasCmvsStartHeader) 96 else 92,
+                LAUNCH_TARGET_GAME_DIR,
+            )
+        }
+        if (hasCmvsExe) {
+            return Detection(EngineType.CMVS, 82, LAUNCH_TARGET_GAME_DIR)
         }
         return UNKNOWN_DETECTION
     }

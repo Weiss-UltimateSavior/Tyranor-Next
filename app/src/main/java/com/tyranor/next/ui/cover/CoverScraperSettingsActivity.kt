@@ -45,10 +45,9 @@ import com.tyranor.next.core.auth.HikarinagiAuthService
 import com.tyranor.next.core.auth.HikarinagiAuthStore
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.DialogItemSurface
-import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.MiuixSettingsTheme
-import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.PageGrey
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
@@ -136,8 +135,8 @@ internal fun CoverScraperSettingsScreen() {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
-                        Column(Modifier.background(NavWhite).padding(vertical = 4.dp)) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                        Column(Modifier.padding(vertical = 4.dp)) {
                             sources.forEachIndexed { index, source ->
                                 CoverSourceRow(
                                     index = index,
@@ -178,8 +177,8 @@ internal fun CoverScraperSettingsScreen() {
                 }
 
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
-                        Column(Modifier.background(NavWhite).padding(vertical = 4.dp)) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                        Column(Modifier.padding(vertical = 4.dp)) {
                             SwitchPreference(
                                 title = stringResource(R.string.cover_only_missing_title),
                                 summary = stringResource(R.string.cover_only_missing_summary),
@@ -203,9 +202,9 @@ internal fun CoverScraperSettingsScreen() {
                 }
 
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(
-                            modifier = Modifier.background(NavWhite).padding(16.dp),
+                            modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             Text(
@@ -249,7 +248,6 @@ private fun CoverSourceRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(NavWhite)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -319,7 +317,7 @@ private fun CoverScraperTopBar() {
     AppTopBar(
         title = stringResource(R.string.settings_cover_scraper),
         background = ComposeColor.Transparent,
-        contentColor = TextColor,
+        contentColor = PageTextColor,
     )
 }
 

@@ -2,9 +2,6 @@ package com.core.engine;
 
 import com.akira.tyranoemu.remote.ArtemisActivityV1;
 import com.akira.tyranoemu.remote.ArtemisActivityV2;
-import com.akira.tyranoemu.remote.ArtemisActivityV3;
-import com.akira.tyranoemu.remote.ArtemisActivityV4;
-import com.akira.tyranoemu.remote.ArtemisActivityV5;
 import com.akira.tyranoemu.remote.ArtemisActivityV6;
 import com.core.nativeplugin.NativePluginConstants;
 
@@ -12,9 +9,6 @@ import com.core.nativeplugin.NativePluginConstants;
 public enum ArtemisVersion {
     V1("1", "internal.artemis", NativePluginConstants.LIB_ARTEMIS, ArtemisActivityV1.class),
     V2("2", "internal.artemis.compat", NativePluginConstants.LIB_ARTEMIS_COMPATIBLE, ArtemisActivityV2.class),
-    V3("3", "internal.artemis.compat.v2", NativePluginConstants.LIB_ARTEMIS_COMPATIBLE_V2, ArtemisActivityV3.class),
-    V4("4", "internal.artemis.v4", NativePluginConstants.LIB_ARTEMIS_V4, ArtemisActivityV4.class),
-    V5("5", "internal.artemis.v5", NativePluginConstants.LIB_ARTEMIS_V5, ArtemisActivityV5.class),
     V6("6", "internal.artemis.v6", NativePluginConstants.LIB_ARTEMIS_V6, ArtemisActivityV6.class);
 
     public final String id;

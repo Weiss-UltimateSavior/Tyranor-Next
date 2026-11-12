@@ -29,16 +29,6 @@
             android:screenOrientation="sensorLandscape"
             android:windowSoftInputMode="adjustPan"
             android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
-        <activity
-            android:name="com.akira.tyranoemu.remote.Kirikiroid126"
-            android:exported="false"
-            android:process=":kirikiri2"
-            android:launchMode="singleInstance"
-            android:taskAffinity="com.core.Kirikiroid2"
-            android:screenOrientation="sensorLandscape"
-            android:windowSoftInputMode="adjustPan"
-            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
-
         <!-- krkrsdl3 引擎（SDL3 内核，独立入口/独立进程，与 :kirikiri2 隔离） -->
         <activity
             android:name="com.core.krkrsdl3.Krkrsdl3Activity"
@@ -94,39 +84,6 @@
             <meta-data android:name="android.app.lib_name" android:value="artemis_loader" />
         </activity>
         <activity
-            android:name="com.akira.tyranoemu.remote.ArtemisActivityV3"
-            android:exported="false"
-            android:process=":artemis.compat.v2"
-            android:launchMode="singleInstance"
-            android:taskAffinity="com.core.Artemis"
-            android:screenOrientation="sensorLandscape"
-            android:windowSoftInputMode="adjustPan"
-            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
-            <meta-data android:name="android.app.lib_name" android:value="artemis_loader" />
-        </activity>
-        <activity
-            android:name="com.akira.tyranoemu.remote.ArtemisActivityV4"
-            android:exported="false"
-            android:process=":artemis.v4"
-            android:launchMode="singleInstance"
-            android:taskAffinity="com.core.Artemis"
-            android:screenOrientation="sensorLandscape"
-            android:windowSoftInputMode="adjustPan"
-            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
-            <meta-data android:name="android.app.lib_name" android:value="artemis_loader" />
-        </activity>
-        <activity
-            android:name="com.akira.tyranoemu.remote.ArtemisActivityV5"
-            android:exported="false"
-            android:process=":artemis.v5"
-            android:launchMode="singleInstance"
-            android:taskAffinity="com.core.Artemis"
-            android:screenOrientation="sensorLandscape"
-            android:windowSoftInputMode="adjustPan"
-            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
-            <meta-data android:name="android.app.lib_name" android:value="artemis_loader" />
-        </activity>
-        <activity
             android:name="com.akira.tyranoemu.remote.ArtemisActivityV6"
             android:exported="false"
             android:process=":artemis.v6"
@@ -174,6 +131,20 @@
             android:theme="@style/Theme.Ethornell"
             android:windowSoftInputMode="adjustNothing"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
+
+        <!-- CMVS NativeActivity + loader: loader forwards only ANativeActivity_onCreate. -->
+        <activity
+            android:name="com.core.cmvs.CmvsActivity"
+            android:exported="false"
+            android:process=":cmvs"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.core.Cmvs"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.Cmvs"
+            android:windowSoftInputMode="adjustNothing"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|layoutDirection|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale">
+            <meta-data android:name="android.app.lib_name" android:value="cmvs_loader" />
+        </activity>
 
         <!-- FVPEngine（rfvp）宿主：Java SurfaceView + Choreographer 主循环驱动 Rust 引擎 -->
         <activity
@@ -231,6 +202,20 @@
             android:process=":xsys4"
             android:taskAffinity="com.core.Xsys4"
             android:theme="@style/Theme.Xsys4" />
+
+        <activity
+            android:name="com.tyranor.runtime.systemnnn.PlayerActivity"
+            android:exported="false"
+            android:process=":systemnnn"
+            android:taskAffinity="${applicationId}.systemnnn"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/SystemNnnPlayerTheme"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
+
+        <service
+            android:name="com.tyranor.runtime.systemnnn.SystemNnnSaveValidationService"
+            android:exported="false"
+            android:process=":systemnnn_validator" />
 
         <!-- ONS（ons）SDL2 宿主 -->
         <activity
