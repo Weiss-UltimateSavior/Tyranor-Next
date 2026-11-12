@@ -35,7 +35,7 @@
 
 8 个引擎字段仍映射到 `JOIPLAY_HW_VIDEO`、`JOIPLAY_AUTOSAVE`、`JOIPLAY_VARIANT_PHONE`、`RENPY_GL_VSYNC`、`RENPY_LESS_MEMORY`、`RENPY_LESS_UPDATES`、`RENPY_DONT_USE_GL2`、`RENPY_RECOMPILE`。前四项显式写入 `1/0`，后四项仅在开启时设置 `1`。`cheats` 用于 JoiPad 的金手指工具显隐，不是这些环境变量之一。
 
-存档路径由模块自己决定：Android 10 及以下且游戏不在主外部存储根下时，使用模块的 `getExternalFilesDir()/ <game.id>/saves`；其他情况使用 `<game.folder>/saves`。该行为不等于 TyranorNext 接入统一存档管理，本次也不新增该能力。
+存档路径由模块自己决定：Android 10 及以下且游戏不在主外部存储根下时，使用模块的 `getExternalFilesDir()/ <game.id>/saves`；其他情况使用 `<game.folder>/saves`。后续存档管理接入仅覆盖 Android 11 及以上的 `<game.folder>/saves`，Android 10 及以下保持不支持；手动文件操作与启动/同步共用目录门禁，并要求明确确认外置游戏已退出。
 
 ## 拆解证据定位
 
@@ -54,11 +54,11 @@
 - 设置界面显示“自动 / 8.5.3 / 7.7.1”。已有全局和单游戏 `8.5` 值继续映射到升级后的模块。
 - 自动选择的 8.x 和未知版本目标随该模块升级为 8.5.3；检测到 7.x 时仍选择 7.7.1。扫描缓存不需重写。
 - 新增最低 APK versionCode `10200` 检查。旧包即使同名已安装，也不能视为 8.5.3 已就绪；启动返回类型化的更新失败，提供新下载地址。其他外置模块默认不增加版本门槛。
-- 不打包外置 APK，不改动游戏 ID、游戏目录和配置协议，不接管外置模块的存档。
+- 不打包外置 APK，不改动游戏 ID、游戏目录和配置协议。Android 11 及以上的游戏目录 `saves/` 已纳入统一存档管理，模块专属目录不在管理范围内。
 
 静态协议检查不构成游戏兼容性验收。旧 8.5 与本样本的签名是否相同、设备上是否能直接覆盖安装、真实游戏运行和存档兼容性均未验证。
 
-## 本次验证结果
+## 模块升级验证结果
 
 - `./gradlew :app:testDebugUnitTest --tests 'com.tyranor.next.core.engine.external.*' --tests 'com.tyranor.next.core.settings.RenPySettingsKeysTest' --tests 'com.tyranor.next.core.game.scan.RenPyVersionDetectorTest' --tests 'com.tyranor.next.core.game.scan.EngineScannerRenPyTest' --no-daemon`：串行重跑成功，113 个测试、0 失败、0 错误，包含最低版本边界、历史版本值映射、配置协议与扫描回归。首轮并行 Gradle 写入结果目录冲突失败，不计作通过结果。
 - `python3 tools/check-hardcoded-ui-strings.py`：通过。
@@ -66,3 +66,11 @@
 - `./gradlew :app:lintDebug --no-daemon`：未通过，报告 29 个错误、371 个警告、10 个提示。错误集中在本次未改动的玻璃导航 API 兼容性逻辑和设置页既有 `LocalContextGetResourceValueCall` 用法；首项为 `EnhancedLiquidGlassNavigation.kt:641` 的 API 33 `getModifier`，不宣称全仓 lint 通过。
 - 两个独立子 agent 复核了协议、配置兼容、版本门槛与 UI 映射，未发现需返修问题。
 - 未进行设备安装、截图、UI 操作、旧 APK 签名对照或真实游戏验收；未生成发布 APK。
+
+## 统一存档管理接入验证
+
+- `./gradlew :app:testDebugUnitTest --tests 'com.tyranor.next.core.game.save.*' --tests 'com.tyranor.next.ui.game.GameCardItemKeyTest' --no-daemon`：通过，572 个测试、0 失败、0 错误。新增覆盖 API 29/30 边界、主共享存储与可移动存储的目录推导、未解析目录的失败状态、首次运行前不创建目录，以及替换/删除存档不影响 `game/` 和 `extras/`；另运行现有事务、外置运行标记与同步回归。
+- `python3 tools/check-hardcoded-ui-strings.py` 与 `git diff --check`：通过。
+- `./gradlew :app:lintDebug --no-daemon`：重跑仍为上述 29 个既有错误、371 个警告、10 个提示，首项仍为玻璃导航的 API 33 `getModifier`。
+- 两个独立子 agent 审查目录范围、API 门控、锁序、外置退出确认和 UI 文案，未发现需要返修的问题。
+- 未执行设备截图、实际模块存档读写或真实游戏验收；不能将 JVM 文件夹测试视为游戏存档兼容性验收。

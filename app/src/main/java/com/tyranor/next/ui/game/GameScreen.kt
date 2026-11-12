@@ -2100,10 +2100,12 @@ internal fun EngineType.coverColor(): Color = when (this) {
     EngineType.SYSTEMNNN, EngineType.UNKNOWN -> Color(0xFF607D8B)
 }
 
-internal fun shouldShowSaveManagement(engine: EngineType): Boolean =
+internal fun shouldShowSaveManagement(engine: EngineType, sdkInt: Int = android.os.Build.VERSION.SDK_INT): Boolean =
     // YU-RIS 虽经外置 Winlator 启动，但存档落在游戏目录 save/，纳入统一存档管理；
     // 手动添加的类型（PC / 安卓游戏）无统一存档接口，显式排除。
     engine == EngineType.YURIS ||
+        (engine == EngineType.RENPY &&
+            com.tyranor.next.core.game.save.GameSaveManager.supportsFileSaves(engine, sdkInt)) ||
         (!engine.isManual &&
             engine != EngineType.RUNTIME_MODULE &&
             engine != EngineType.UNKNOWN &&

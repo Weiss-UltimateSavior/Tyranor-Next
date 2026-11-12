@@ -76,6 +76,8 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | Nintendo Switch      | `.nsp`、`.xci`、`.nca`、`.nro`                                         | 外置 Eden 模拟器                   |
 
 
+Ren’Py 在 Android 11 及以上支持统一管理游戏根目录的 `saves/`（导入、导出、删除、存档版本与 WebDAV 同步）。退出外置播放器后，需在存档管理页确认已退出，再进行存档操作；Android 10 及以下不接入。
+
 ### 平台与文件要求
 
 - Android 8.0（API 26）及以上。

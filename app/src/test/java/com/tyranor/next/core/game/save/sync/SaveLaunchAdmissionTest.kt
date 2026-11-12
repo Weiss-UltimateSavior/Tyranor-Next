@@ -111,6 +111,9 @@ class SaveLaunchAdmissionTest {
         assertEquals(EthornellSaveCapability.available, supportsManagedSave(EngineType.ETHORNELL))
         assertTrue(supportsManagedSave(EngineType.KIRIKIRI))
         assertFalse(supportsManagedSave(EngineType.RUFFLE))
+        assertFalse(supportsManagedSave(EngineType.RENPY, sdkInt = 29))
+        assertTrue(supportsManagedSave(EngineType.RENPY, sdkInt = 30))
+        assertTrue(supportsManagedSave(EngineType.YURIS, sdkInt = 29))
     }
 
     @Test

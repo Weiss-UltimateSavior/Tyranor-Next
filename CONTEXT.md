@@ -33,7 +33,7 @@ Siglus 之外由 game_launcher 运行库承载的三个软件渲染引擎（Real
 _Avoid_: 软渲染引擎、game_fb 引擎
 
 **外置 APK 引擎模块（External Engine Module）**:
-以独立 Android 应用形式分发、由用户另行安装的引擎运行时，用于承载 Ren'Py、RPG Maker RGSS 与 Ruffle（SWF / Flash）等游戏；由固定包名与静态注册表（`core/engine/external`）管理，与按 action + 包名前缀动态发现的「第三方 APK 运行时模块」是两套体系。主 App 只负责扫描、安装状态与启动协议，运行与存档由模块自身负责。
+以独立 Android 应用形式分发、由用户另行安装的引擎运行时，用于承载 Ren'Py、RPG Maker RGSS 与 Ruffle（SWF / Flash）等游戏，由固定包名与静态注册表管理，与动态发现的「第三方 APK 运行时模块」是两套体系。游戏由模块运行，主 App 管理扫描、安装状态与启动协议，并对 Android 11 及以上 Ren’Py 的游戏目录存档提供统一管理。
 _Avoid_: 插件、引擎 DLC、第三方 APK 运行时模块（另一体系）
 
 **第三方 APK 运行时模块（Third-party APK Runtime Module）**:
