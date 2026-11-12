@@ -406,14 +406,22 @@ class RpgMakerActivity : Activity() {
         // 同时也避免给非 v2 会话的游戏脚本新增文件读取能力。
         if (v2Session) {
             gameDir?.let { dir ->
-                browser.addJavascriptInterface(
-                    // asar 会话传入压缩包：游戏资源在包内、磁盘上不存在，
-                    // 桥采用与本地 HTTP 服务器一致的「磁盘优先、asar 兜底」覆盖层语义；
-                    // dirIndex 与服务器共享，写操作会同时失效两边的宽松名缓存；
-                    // session 用于写入记录，让更早会话的退出刷盘不会覆盖本次写入
-                    RpgMakerFsBridge(File(dir), bundle.contentRoot, asarArchive, rpgDirIndex, sessionEpochAtCreate),
-                    RPG_MAKER_FS_BRIDGE_NAME,
+                // asar 会话传入压缩包：游戏资源在包内、磁盘上不存在，
+                // 桥采用与本地 HTTP 服务器一致的「磁盘优先、asar 兜底」覆盖层语义；
+                // dirIndex 与服务器共享，写操作会同时失效两边的宽松名缓存；
+                // session 用于写入记录，让更早会话的退出刷盘不会覆盖本次写入
+                val fsBridge = RpgMakerFsBridge(
+                    File(dir), bundle.contentRoot, asarArchive, rpgDirIndex, sessionEpochAtCreate,
                 )
+                browser.addJavascriptInterface(fsBridge, RPG_MAKER_FS_BRIDGE_NAME)
+                // 上次文档销毁/重载时没写完的 localStorage 值（恢复队列）必须在页面脚本
+                // 读取之前落地。队列可能积压（上次收尾时磁盘在失败），逐条落盘会 fsync
+                // 多次，因此放到工作线程；不在这里 join——UI 线程白等只会卡住首帧，而
+                // 页面内兼容层初始化会调用同一个桥方法（内部串行），拿到的是同一个已完成
+                // 的结果，晚于插件读取的情况由那一次兜住。
+                val replayer = Thread({ runCatching { fsBridge.replayPendingStorage() } }, "rpgmaker-pending-replay")
+                replayer.isDaemon = true
+                replayer.start()
             }
             // 原生「计算」能力：哈希/HMAC/随机数/KDF/AES/zlib（纯 JS 复刻要么不可行，
             // 要么容易写出静默错值），由 __nwjs_polyfill_v2.js 包装成 Node 模块
@@ -800,12 +808,19 @@ class RpgMakerActivity : Activity() {
         // 会让落盘脚本从未执行，200ms 合并窗口内的写入随之丢失。
         // 回调在 UI 线程投递，所以这里「回调触发销毁 + 看门狗兜底」：渲染进程已死时
         // evaluateJavascript 不会回调，看门狗负责把 WebView 销毁掉（避免泄漏）。
-        // 真正退出（isFinishing）时用 FINAL 脚本：放宽预算并把剩余键数回传，退出时
-        // 优先写完数据；recreate 之类页面还要用的场景仍走有预算的版本，避免卡住渲染线程。
+        //
+        // 退出与重建（`onNewIntent` 换游戏走 recreate()；普通配置变更已被 configChanges
+        // 接管，不会重建）走同一条收尾：两种情况下旧文档都会被销毁，定时器与内存镜像一起
+        // 消失，没有「页面还要继续用、可以慢点写」的情形。脚本内部先按 FLUSH_ALL_HARD_CAP_MS
+        // 抽干脏键，抽不干的连删除意图一起交给原生恢复队列（见 __nwjs_polyfill_v2.js 与
+        // RpgMakerStoragePendingJournal），下一次文档初始化时重放——因此回传的数字是
+        // 「既没落盘也没进恢复队列」的键数，只有它为 0 才真正安全；非 0 说明连队列都写不
+        // 进去（如磁盘满），只能记日志。
         val dying = webView
         webView = null
         if (dying != null) {
             val destroyed = java.util.concurrent.atomic.AtomicBoolean(false)
+            val flushReported = java.util.concurrent.atomic.AtomicBoolean(false)
             val teardown = Runnable {
                 if (destroyed.compareAndSet(false, true)) {
                     runCatching { dying.stopLoading() }
@@ -813,20 +828,28 @@ class RpgMakerActivity : Activity() {
                     runCatching { dying.destroy() }
                 }
             }
-            val finishing = isFinishing
-            Handler(Looper.getMainLooper()).postDelayed(teardown, FLUSH_TEARDOWN_WATCHDOG_MS)
+            Handler(Looper.getMainLooper()).postDelayed({
+                // 渲染进程已死时 evaluateJavascript 不会回调：这条路径同样拿不到落盘结果，
+                // 不能当成「0 个待写」，至少要在日志里留一条，否则数据丢了也无声
+                if (!flushReported.get()) {
+                    Log.w(TAG, "localStorage flush did not report before teardown")
+                }
+                teardown.run()
+            }, FLUSH_TEARDOWN_WATCHDOG_MS)
             runCatching {
-                dying.evaluateJavascript(
-                    if (finishing) FLUSH_LOCAL_STORAGE_FINAL_JS else FLUSH_LOCAL_STORAGE_JS,
-                ) { value ->
-                    if (finishing) {
-                        // 脚本可能根本没装（v0/v1 会话）或抛错：这两种情况都拿不到数字，
-                        // 不能当成「0 个待写」——那是把失败报成成功
-                        val reported = value?.trim()?.trim('"')
-                        val pending = reported?.toIntOrNull()
-                        when {
-                            pending == null -> Log.w(TAG, "localStorage flush reported no count: $reported")
-                            pending > 0 -> Log.w(TAG, "localStorage flush incomplete at exit: $pending key(s) pending")
+                dying.evaluateJavascript(FLUSH_LOCAL_STORAGE_FINAL_JS) { value ->
+                    flushReported.set(true)
+                    // 脚本可能根本没装（v0/v1 会话）或抛错：这两种情况都拿不到数字，
+                    // 不能当成「0 个待写」——那是把失败报成成功
+                    val reported = value?.trim()?.trim('"')
+                    when {
+                        reported.isNullOrEmpty() -> Log.w(TAG, "localStorage flush reported no count")
+                        reported == FLUSH_REPORT_MISSING || reported == FLUSH_REPORT_ERROR ->
+                            Log.i(TAG, "localStorage flush hook unavailable: $reported")
+                        else -> when (val pending = reported.toIntOrNull()) {
+                            null -> Log.w(TAG, "localStorage flush reported unexpected value: $reported")
+                            in 1..Int.MAX_VALUE ->
+                                Log.w(TAG, "localStorage flush incomplete at exit: $pending key(s) not persisted")
                         }
                     }
                     teardown.run()
@@ -989,23 +1012,31 @@ class RpgMakerActivity : Activity() {
             "try{if(window.__tyranorLocalStorageFlushAll){window.__tyranorLocalStorageFlushAll();}}" +
                 "catch(e){try{if(window.__tyranorLocalStorageFlush){window.__tyranorLocalStorageFlush();}}catch(e2){}}"
 
+        /** 兼容层未安装（v0/v1 会话）：拿不到待写数量，不能当成 0。 */
+        private const val FLUSH_REPORT_MISSING = "missing"
+
+        /** 兼容层抛错：同上，按「未确认」处理。 */
+        private const val FLUSH_REPORT_ERROR = "error"
+
         /**
-         * 真正退出时的落盘入口：`flushAll(true)` 放宽预算到 `FLUSH_ALL_HARD_CAP_MS`，
-         * 并把**仍未落盘**的键数作为字符串回传，让宿主能记录「这次退出还剩几个键」。
+         * 文档销毁（Activity 退出或重建）时的落盘入口：`flushAll(true)` 放宽预算到
+         * `FLUSH_ALL_HARD_CAP_MS`，抽不干的键交给原生恢复队列，并把**既没落盘也没进队列**
+         * 的键数作为字符串回传，让宿主能记录「这次收尾还剩几个键」。
          *
          * 只回传数字不回传布尔：脚本正常返回但数据没写完，与脚本压根没跑，是两种失败，
          * 之前的 `evaluateJavascript(..., null)` 把两者都当成了成功。
          */
         private const val FLUSH_LOCAL_STORAGE_FINAL_JS =
-            "try{var f=window.__tyranorLocalStorageFlushAll;String(f?f(true):'missing');}catch(e){'error'}"
+            "try{var f=window.__tyranorLocalStorageFlushAll;String(f?f(true):'$FLUSH_REPORT_MISSING');}" +
+                "catch(e){'$FLUSH_REPORT_ERROR'}"
 
         /**
          * 销毁时等待落盘回调的上限：渲染进程已死时 `evaluateJavascript` 不会回调，
          * 由看门狗兜底销毁 WebView（避免为了等一次落盘而泄漏 WebView）。
          *
-         * 必须**大于** JS 侧 `FLUSH_ALL_HARD_CAP_MS`（2000ms，真正退出时的兜底上限）
+         * 必须**大于** JS 侧 `FLUSH_ALL_HARD_CAP_MS`（2000ms，文档销毁时的兜底上限）
          * 加调度余量：慢存储上正常刷盘也可能超过几百毫秒，超时太短会在刷盘中途把页面
-         * 拆掉，那比不刷还糟（半批已写、剩余丢失且只剩一条 warn）。
+         * 拆掉；JS 侧在落盘前已把待写数据整体入队，因此即使被拆也不会丢值。
          */
         private const val FLUSH_TEARDOWN_WATCHDOG_MS = 2_500L
         private const val RPG_MZ_CORE_HOOK_ASSET = "__hook_rmmz_core.js"

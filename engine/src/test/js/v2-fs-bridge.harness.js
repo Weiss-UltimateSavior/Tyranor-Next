@@ -42,18 +42,34 @@ global.TyranorEnv = envBridge;
 // ---- 最小 DOM/window 桩 ----
 global.window = global;
 global.TyranorFs = bridge;
+// 事件监听注册表：兼容层会在 window 上挂 pagehide/pageshow/beforeunload、在 document 上
+// 挂 visibilitychange。真实 WebView 会派发这些事件，桩里必须能捕获并主动触发，否则
+// 「文档销毁前是否真的抽干了脏键」根本无法回归。
+const listeners = { window: {}, document: {} };
+function onWindow(type, fn) { (listeners.window[type] = listeners.window[type] || []).push(fn); }
+function onDocument(type, fn) { (listeners.document[type] = listeners.document[type] || []).push(fn); }
+function fireWindow(type, event) {
+    (listeners.window[type] || []).forEach((fn) => fn(event || {}));
+}
+function fireDocument(type, event) {
+    (listeners.document[type] || []).forEach((fn) => fn(event || {}));
+}
+function resetListeners() {
+    listeners.window = {};
+    listeners.document = {};
+}
 global.document = {
     readyState: 'loading',
     documentElement: { style: {} },
     createElement: () => ({ style: {}, getContext: () => null, addEventListener: () => {}, appendChild: () => {} }),
     getElementById: () => null,
-    addEventListener: () => {},
+    addEventListener: onDocument,
     fonts: undefined,
 };
 global.screen = {};
 global.navigator = global.navigator || { userAgent: 'stub' };
 // WebView 的 window 事件接口（兼容层会挂 load/pagehide）
-global.addEventListener = () => {};
+global.addEventListener = onWindow;
 global.removeEventListener = () => {};
 global.dispatchEvent = () => true;
 global.location = global.location || { href: 'http://localhost/index.html', reload: () => {} };
@@ -95,6 +111,16 @@ function newSession() {
     delete global.__tyranorLocalStorageFlush;
     delete global.__tyranorLocalStorageFlushAll;
     delete global.__tyranorLocalStorageMode;
+    // 基础层把 nw.gui 桩缓存在 window.nw 上（单例）：不删掉的话，新会话拿到的是上一
+    // 文档已经 patch 过的 winStub，reload 会去 flush 上一文档的空 dirty 表。
+    delete global.nw;
+    // 删除/清除意图的登记表是进程级替身状态，跨会话保留会让断言吃到旧记录
+    try {
+        global.TyranorFs.__recorded.deletes.clear();
+        global.TyranorFs.__recorded.clears.clear();
+    } catch (e) { /* 桥尚未创建 */ }
+    // 旧文档的事件监听随文档一起消失：不重置会让新会话的断言触发上一会话的闭包
+    resetListeners();
     installStorageStub();
     run(BASE_ASSET);
     run(V2_ASSET);
@@ -1376,34 +1402,32 @@ console.log('\n== localStorage 跨会话（模拟重启）==');
 
 console.log('\n== localStorage 退出刷盘的失败路径 ==');
 {
-    // 回归：预算耗尽时未尝试的键必须被计数、告警并排续写，而不是静默留在 dirty 里
-    check('预算耗尽：返回剩余键数、记 warn、排续写定时器', (() => {
+    // 回归（复审问题 1/5）：预算耗尽 / 单批被打断时，未尝试的键必须已经在恢复队列里，
+    // 宿主拿到的是「既未落盘也未入队」的真实丢失数。入队先于落盘，因此这里是 0。
+    check('预算耗尽：先整体入队，返回值只计真实丢失', (() => {
+        newSession();
         const s = Object.create(global.Storage.prototype);
         for (let i = 0; i < 64; i++) s.setItem('budget.key.' + i, 'v' + i);
+        const journal = nodePath.join(storeDir, '.tyranor-pending.json');
 
         const realNow = Date.now;
-        const origWarn = console.warn;
-        const origSetTimeout = global.setTimeout;
-        let warned = 0;
-        let timers = 0;
         let calls = 0;
         let remaining = -1;
-        console.warn = function (m) { if (String(m).indexOf('flushAll stopped with') >= 0) warned++; };
-        global.setTimeout = function (fn, ms) { timers++; return origSetTimeout(fn, ms); };
         try {
             // 前两次取时间用于算 deadline 与第一批的预算判定，之后直接跳到预算之外
             Date.now = function () { calls++; return calls <= 2 ? realNow() : realNow() + 10 * 60 * 1000; };
             remaining = window.__tyranorLocalStorageFlushAll();
         } finally {
             Date.now = realNow;
-            console.warn = origWarn;
-            global.setTimeout = origSetTimeout;
         }
-        // 64 个键 / 每批 32：第一批写完，剩 32 未尝试
-        return remaining === 32 && warned === 1 && timers >= 1;
+        const staged = fs.existsSync(journal)
+            ? Object.keys(JSON.parse(fs.readFileSync(journal, 'utf8')).entries || {}).length
+            : 0;
+        // 预算模式（onPause / 页面隐藏）同样先入队：切后台后被系统杀是最常见的丢值路径
+        return remaining === 0 && staged === 64;
     })(), (() => {
-        const s = Object.create(global.Storage.prototype);
-        return 'length=' + s.length;
+        const journal = nodePath.join(storeDir, '.tyranor-pending.json');
+        return 'journal=' + (fs.existsSync(journal) ? 'present' : 'absent');
     })());
 
     // 回归：removeItem 删除失败后同键重新 setItem，待删重试不得把新值删掉
@@ -1431,6 +1455,228 @@ console.log('\n== localStorage 退出刷盘的失败路径 ==');
     })(), (() => {
         const name = HostBuffer.from('recreate.after.failed.delete', 'utf8').toString('hex') + '.dat';
         const target = nodePath.join(storeDir, name);
+        return fs.existsSync(target) ? 'disk=' + fs.readFileSync(target, 'utf8') : 'disk=<missing>';
+    })());
+}
+
+console.log('\n== localStorage 文档销毁前的收尾（复审修复项）==');
+{
+    const journalPath = nodePath.join(storeDir, '.tyranor-pending.json');
+    const fileOf = (key) => nodePath.join(storeDir, HostBuffer.from(String(key), 'utf8').toString('hex') + '.dat');
+    const nameOf = (key) => HostBuffer.from(String(key), 'utf8').toString('hex') + '.dat';
+
+    // 回归 1（复审问题 2）：页面卸载不再依赖定时器。旧实现三个文档钩子都只调 flush()，
+    // 每批 32 个键、其余交给 setTimeout，文档销毁后定时器不执行 → 超过 32 个脏键就会丢。
+    check('页面卸载：pagehide 抽干全部脏键（不再只写 32 个）', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        for (let i = 0; i < 128; i++) s.setItem('unload.key.' + i, 'V' + i);
+        fireWindow('pagehide', { persisted: false });
+        let written = 0;
+        for (let i = 0; i < 128; i++) {
+            const p = fileOf('unload.key.' + i);
+            if (fs.existsSync(p) && fs.readFileSync(p, 'utf8') === 'V' + i) written++;
+        }
+        return written === 128;
+    })(), (() => {
+        let written = 0;
+        for (let i = 0; i < 128; i++) if (fs.existsSync(fileOf('unload.key.' + i))) written++;
+        return 'written=' + written;
+    })());
+
+    // 回归 1b（复审问题 2）：可控重载入口（nw.Window.get().reload）必须在导航前抽干脏键，
+    // 不能只依赖 pagehide 是否被触发。
+    check('nw.Window.reload 先完整收尾再导航', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        for (let i = 0; i < 40; i++) s.setItem('reload.entry.' + i, 'R' + i);
+        let navigated = false;
+        const origReload = global.location.reload;
+        global.location.reload = () => { navigated = true; };
+        try { global.nw.Window.get().reload(); } finally { global.location.reload = origReload; }
+        let written = 0;
+        for (let i = 0; i < 40; i++) if (fs.existsSync(fileOf('reload.entry.' + i))) written++;
+        return navigated && written === 40;
+    })(), (() => {
+        let written = 0;
+        for (let i = 0; i < 40; i++) if (fs.existsSync(fileOf('reload.entry.' + i))) written++;
+        return 'written=' + written;
+    })());
+
+    // 回归 2（复审问题 1）：预算耗尽后宿主要销毁 WebView 时，剩余值必须进原生恢复队列，
+    // 由下一次文档初始化重放；返回 0 表示「没有既未落盘也未进队列的键」。
+    check('预算耗尽：剩余键交给恢复队列，下次初始化重放', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        for (let i = 0; i < 64; i++) s.setItem('journal.key.' + i, 'J' + i);
+        const realNow = Date.now;
+        let calls = 0;
+        let remaining = -1;
+        Date.now = function () { calls++; return calls <= 2 ? realNow() : realNow() + 10 * 60 * 1000; };
+        try { remaining = window.__tyranorLocalStorageFlushAll(true); } finally { Date.now = realNow; }
+        const staged = fs.existsSync(journalPath)
+            ? Object.keys(JSON.parse(fs.readFileSync(journalPath, 'utf8')).entries || {}).length
+            : 0;
+        newSession();   // 下一次文档初始化 → 重放恢复队列
+        let written = 0;
+        for (let i = 0; i < 64; i++) {
+            const p = fileOf('journal.key.' + i);
+            if (fs.existsSync(p) && fs.readFileSync(p, 'utf8') === 'J' + i) written++;
+        }
+        // 入队要在落盘之前发生：即使落盘被预算打断，数据也已经在队列里（因此 staged 是
+        // 全部 64 个键，与批次大小无关）；返回值只统计「既没落盘也没进队列」的键，必须是 0
+        return remaining === 0 && staged === 64 && written === 64 && !fs.existsSync(journalPath);
+    })(), (() => {
+        let written = 0;
+        for (let i = 0; i < 64; i++) if (fs.existsSync(fileOf('journal.key.' + i))) written++;
+        return 'journal=' + (fs.existsSync(journalPath) ? 'left' : 'cleared') + ' written=' + written;
+    })());
+
+    // 回归 3（复审问题 3）：removeItem 必须对「磁盘上还没有文件」的键也登记删除意图，
+    // 否则旧会话随后的合并写会把已删的键写回来。
+    check('removeItem 对尚未落盘的键也登记删除墓碑', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        const key = 'pending.remove.tombstone';
+        s.setItem(key, 'X');
+        const target = fileOf(key);
+        s.removeItem(key);
+        const recorded = [...global.TyranorFs.__recorded.deletes]
+            .some((p) => nodePath.basename(p) === nameOf(key));
+        return !fs.existsSync(target) && recorded;
+    })());
+
+    // 回归 4（复审问题 3）：clear() 看不到旧会话尚未落盘的键，必须登记目录级清除版本。
+    check('clear() 登记目录级清除版本', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('clear.marker', '1');
+        window.__tyranorLocalStorageFlushAll();
+        s.clear();
+        const cleared = [...global.TyranorFs.__recorded.clears]
+            .some((p) => nodePath.normalize(p).replace(/[\\/]+$/, '') === nodePath.normalize(storeDir));
+        const left = fs.existsSync(storeDir) ? fs.readdirSync(storeDir).filter((n) => n.endsWith('.dat')) : [];
+        return cleared && left.length === 0;
+    })(), (() => {
+        const left = fs.existsSync(storeDir) ? fs.readdirSync(storeDir).filter((n) => n.endsWith('.dat')) : [];
+        return 'dat=' + left.length;
+    })());
+
+    // 回归 5（复审问题 4）：旧会话的删除重试必须遵守会话版本，不得删掉新会话已落盘的值。
+    check('旧会话的删除重试不删新会话的新值', (() => {
+        newSession();
+        const key = 'old.session.delete.retry';
+        const target = fileOf(key);
+        const s = Object.create(global.Storage.prototype);
+
+        s.setItem(key, 'OLD');
+        window.__tyranorLocalStorageFlushAll();
+        if (!fs.existsSync(target)) return false;
+
+        // 删除失败 → 留下抑制项（待删重试）。先证明「确实留下了待删项」：删不掉 + 队列
+        // 不可用时，flushAll 必须把它计为未完成；少了这一步，注掉 removeItem catch 里的
+        // 抑制登记后本用例依然 PASS（空过）。
+        const bridgeFs = global.TyranorFs;
+        const origRemove = bridgeFs.remove;
+        const origStage = bridgeFs.stagePendingStorage;
+        const origWarn = console.warn;
+        let queued = -1;
+        bridgeFs.remove = () => false;
+        bridgeFs.stagePendingStorage = () => false;
+        console.warn = () => {};
+        try {
+            s.removeItem(key);
+            queued = window.__tyranorLocalStorageFlushAll(true);
+        } finally {
+            bridgeFs.remove = origRemove;
+            bridgeFs.stagePendingStorage = origStage;
+            console.warn = origWarn;
+        }
+        if (!fs.existsSync(target)) return false;
+        if (queued !== 1) return false;
+
+        // 新会话把同一路径写成 NEW，账本随之表明「已被更新的会话写过」
+        fs.writeFileSync(target, 'NEW');
+        const origSuperseded = bridgeFs.isSuperseded;
+        bridgeFs.isSuperseded = (p) => nodePath.resolve(p) === nodePath.resolve(target);
+        // 计数：JS 侧必须先判定「已被更新会话写过」，根本不去调删除（原生侧也有兜底，
+        // 只断言「文件还在」会掩盖 JS 判定被删掉的情况）
+        const origRemoveAgain = bridgeFs.remove;
+        let removeCalls = 0;
+        bridgeFs.remove = function (p) { removeCalls++; return origRemoveAgain.apply(this, arguments); };
+        try { window.__tyranorLocalStorageFlushAll(true); } finally {
+            bridgeFs.remove = origRemoveAgain;
+            bridgeFs.isSuperseded = origSuperseded;
+        }
+
+        return removeCalls === 0 && fs.existsSync(target) && fs.readFileSync(target, 'utf8') === 'NEW';
+    })(), (() => {
+        const target = fileOf('old.session.delete.retry');
+        return fs.existsSync(target) ? 'disk=' + fs.readFileSync(target, 'utf8') : 'disk=<missing>';
+    })());
+
+    // 回归 6b：入队之后同一个键又被 removeItem，队列里的旧值必须作废——否则重放会
+    // 因为「目标文件仍不存在、快照照旧匹配」把已删的键写回来。队列里同时留另一个键，
+    // 用来区分「按名丢弃」与「整份清空」（后者会把别人的条目一起删掉）。
+    check('入队后被删除的键不会被重放复活（且不影响其它条目）', (() => {
+        newSession();
+        const key = 'staged.then.removed';
+        const kept = 'staged.then.kept';
+        const target = fileOf(key);
+        const s = Object.create(global.Storage.prototype);
+        const bridgeFs = global.TyranorFs;
+        const origWrite = bridgeFs.writeText;
+        let staged = false;
+        bridgeFs.writeText = () => false;   // 让落盘失败，迫使 pagehide 收尾时入队
+        try {
+            s.setItem(key, 'PENDING');
+            s.setItem(kept, 'KEPT');
+            fireWindow('pagehide', { persisted: false });
+            staged = fs.existsSync(journalPath);
+            s.removeItem(key);
+        } finally {
+            bridgeFs.writeText = origWrite;
+        }
+        newSession();
+        const fresh = Object.create(global.Storage.prototype);
+        return staged && !fs.existsSync(target) && fresh.getItem(key) === null &&
+            fresh.getItem(kept) === 'KEPT';
+    })(), (() => {
+        const fresh = Object.create(global.Storage.prototype);
+        return 'journal=' + (fs.existsSync(journalPath) ? 'left' : 'cleared') +
+            ' removed=' + String(fresh.getItem('staged.then.removed')) +
+            ' kept=' + String(fresh.getItem('staged.then.kept'));
+    })());
+
+    // 回归 6（复审问题 5）：删除尚未完成时 flushAll 不能报 0。恢复队列也不可用时，
+    // 必须把未完成的删除计入返回值，宿主的 incomplete 检测才不会漏报。
+    check('恢复队列不可用时，flushAll 返回值包含未完成的删除', (() => {
+        newSession();
+        const key = 'unfinished.delete';
+        const target = fileOf(key);
+        const s = Object.create(global.Storage.prototype);
+        s.setItem(key, 'KEEP');
+        window.__tyranorLocalStorageFlushAll();
+
+        const bridgeFs = global.TyranorFs;
+        const origRemove = bridgeFs.remove;
+        const origStage = bridgeFs.stagePendingStorage;
+        let remaining = -1;
+        const origWarn = console.warn;
+        bridgeFs.remove = () => false;
+        bridgeFs.stagePendingStorage = () => false;
+        console.warn = () => {};
+        try {
+            s.removeItem(key);
+            remaining = window.__tyranorLocalStorageFlushAll(true);
+        } finally {
+            bridgeFs.remove = origRemove;
+            bridgeFs.stagePendingStorage = origStage;
+            console.warn = origWarn;
+        }
+        return remaining === 1 && fs.existsSync(target);
+    })(), (() => {
+        const target = fileOf('unfinished.delete');
         return fs.existsSync(target) ? 'disk=' + fs.readFileSync(target, 'utf8') : 'disk=<missing>';
     })());
 }

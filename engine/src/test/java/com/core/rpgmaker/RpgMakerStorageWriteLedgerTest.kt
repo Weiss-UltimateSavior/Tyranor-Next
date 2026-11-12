@@ -62,6 +62,32 @@ class RpgMakerStorageWriteLedgerTest {
     }
 
     @Test
+    fun recordNeverDowngradesTheEpoch() {
+        RpgMakerStorageWriteLedger.record(keyA, 5L)
+        // 旧会话在删除失败/重试时晚到的记账：期号只增不减，不能被写回更小的值
+        RpgMakerStorageWriteLedger.record(keyA, 3L)
+        assertTrue("迟到的旧会话记账不能把记录改小", RpgMakerStorageWriteLedger.isSuperseded(keyA, 4L))
+        assertFalse(RpgMakerStorageWriteLedger.isSuperseded(keyA, 5L))
+    }
+
+    @Test
+    fun directoryClearTombstoneIsAlsoMonotonic() {
+        // 账本里的路径来自 resolve()，分隔符随平台（Android 是 `/`，Windows 测试宿主是 `\`）
+        val dir = listOf("game", "AppData", "Local Storage").joinToString(java.io.File.separator)
+        val child = dir + java.io.File.separator + "61.dat"
+        RpgMakerStorageWriteLedger.recordDirectory(dir, 5L)
+        RpgMakerStorageWriteLedger.recordDirectory(dir, 2L)
+        assertTrue(
+            "目录级墓碑同样只增不减",
+            RpgMakerStorageWriteLedger.isSuperseded(child, 4L),
+        )
+        assertFalse(
+            "发起清除的会话自己不受影响",
+            RpgMakerStorageWriteLedger.isSuperseded(child, 5L),
+        )
+    }
+
+    @Test
     fun beginSessionPrunesTheLedger() {
         val ownership = RpgMakerSessionOwnership()
         val first = ownership.beginSession()
