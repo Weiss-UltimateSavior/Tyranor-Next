@@ -404,12 +404,15 @@ class FixtureTests(unittest.TestCase):
             with self.subTest(size=size), self.assertRaises(ValueError):
                 fixture.make_checker_png(size)
 
-    def _trace_user_data_structure(self, phase, load_status=1, loaded_marker=None, save_ok=True):
+    def _trace_user_data_structure(self, phase, load_status=1, loaded_marker=None, save_ok=True,
+                                   validated_roots=("bgi-user\\",)):
         """Symbolic stack/branch audit ONLY, not a VM/SDC/persistence emulator.
 
         The load result is injected; no file is made or serialization claimed.
         Independent native counts, output order, pointer/copy and predicate
         decoding catch malformed BP and accidental success on error statuses.
+        `validated_roots` models Sys80:39 directory_exists results so the
+        bgi-user root and its UserData fallback both stay under user_root.
         """
         bp = fixture.make_bp("user-data-" + phase)
         end = bp.rindex(b"\x17") + 1
@@ -442,16 +445,18 @@ class FixtureTests(unittest.TestCase):
             instructions[offset] = (opcode, operand, pc)
         self.assertEqual(pc, end)
         self.assertEqual(instructions[end - 1][0], 0x17)
-        # Every branch target is a real instruction offset, not a data byte or
-        # code-relative value. Matches Rust's labels/jump_target_index contract.
+        # Jump operands are code-region offsets (file offset minus the 16-byte
+        # BP header); the VM adds the parser start back before matching labels.
+        # Every destination must therefore be a real instruction start.
         offsets = list(instructions)
         for index, offset in enumerate(offsets):
             opcode, operand, _ = instructions[offset]
             if opcode in (0x14, 0x15):
                 previous_op, target, _ = instructions[offsets[index - 1]]
                 self.assertEqual(previous_op, 0x02)
-                self.assertIn(target, instructions)
+                self.assertIn(16 + target, instructions)
         stack, memory, calls, titles, saved_blocks = [], {}, [], [], []
+        created_dirs, save_paths, load_paths, root = [], [], [], None
         base, pc, steps, close = 0, 16, 0, False
         # Symbolic global bytes, intentionally NOT a serialized .gdb file.
         global_bytes = bytearray(128)
@@ -499,17 +504,29 @@ class FixtureTests(unittest.TestCase):
                 destination, condition = stack.pop(), stack.pop()
                 self.assertIn(operand, (0, 1))
                 if (condition != 0 if operand == 0 else condition == 0):
-                    next_pc = destination
+                    next_pc = 16 + destination
             elif opcode == 0x14:
-                next_pc = stack.pop()
+                next_pc = 16 + stack.pop()
             elif opcode == 0x80:
-                argc = {0x80: 0, 0x81: 0, 0x82: 3, 0x83: 3,
+                argc = {0x28: 1, 0x39: 1, 0x80: 0, 0x81: 0, 0x82: 3, 0x83: 3,
                         0x66: 1, 0x68: 1, 0x69: 0}[operand]
                 args = [stack.pop() for _ in range(argc)][::-1]
                 calls.append((operand, args))
-                if operand == 0x80:
+                if operand == 0x39:
+                    valid = args[0] in validated_roots
+                    if valid:
+                        root = args[0]
+                    stack.append(int(valid))
+                elif operand == 0x28:
+                    created_dirs.append(args[0])
+                    stack.append(1)
+                elif operand == 0x80:
+                    self.assertIsNotNone(root, "BGI.gdb load before Sys80:39 root")
+                    load_paths.append(root + "BGI.gdb")
                     stack.extend([123, -456, load_status])  # x, y, status!
                 elif operand == 0x81:
+                    self.assertIsNotNone(root, "BGI.gdb save before Sys80:39 root")
+                    save_paths.append(root + "BGI.gdb")
                     saved_blocks.append(bytes(global_bytes[64:80]))
                     stack.append(int(save_ok))
                 elif operand == 0x82:
@@ -536,19 +553,25 @@ class FixtureTests(unittest.TestCase):
         self.assertEqual(len(titles), 1)
         self.assertEqual(struct.unpack("<i", bytes(memory[i] for i in range(16, 20)))[0], 123)
         self.assertEqual(struct.unpack("<i", bytes(memory[i] for i in range(20, 24)))[0], -456)
+        self.assertIsNotNone(root)
         return {"title": titles[0], "calls": calls, "saved_blocks": saved_blocks,
+                "root": root, "created_dirs": created_dirs,
+                "save_paths": save_paths, "load_paths": load_paths,
                 "instruction_opcodes": [row[1] for row in instructions.values() if row[0] == 0x80]}
 
     def test_user_data_write_uses_vm_save_and_checks_preexisting_and_failure(self):
         result = self._trace_user_data_structure("write")
         self.assertEqual(result["title"], "ETHORNELL_USER_DATA_WRITE_OK")
         self.assertEqual(result["saved_blocks"], [bytes.fromhex("4247492d534d4f4b452d563100a55a01")])
-        self.assertEqual([op for op, _ in result["calls"]], [0x80, 0x82, 0x81, 0x66, 0x68, 0x69])
+        self.assertEqual([op for op, _ in result["calls"]], [0x39, 0x80, 0x82, 0x81, 0x66, 0x68, 0x69])
+        self.assertEqual(result["root"], "bgi-user\\")
+        self.assertEqual(result["save_paths"], ["bgi-user\\BGI.gdb"])
         for status in (0, 2):
             with self.subTest(status=status):
                 refused = self._trace_user_data_structure("write", load_status=status)
                 self.assertEqual(refused["title"], "ETHORNELL_USER_DATA_WRITE_REFUSED_EXISTING")
                 self.assertEqual(refused["saved_blocks"], [])
+                self.assertEqual([op for op, _ in refused["calls"]], [0x39, 0x80, 0x66, 0x68, 0x69])
                 self.assertNotIn(0x81, [op for op, _ in refused["calls"]])
         failed = self._trace_user_data_structure("write", save_ok=False)
         self.assertEqual(failed["title"], "ETHORNELL_USER_DATA_WRITE_FAILED")
@@ -557,7 +580,9 @@ class FixtureTests(unittest.TestCase):
         marker = bytes.fromhex("4247492d534d4f4b452d563100a55a01")
         good = self._trace_user_data_structure("read", load_status=0, loaded_marker=marker)
         self.assertEqual(good["title"], "ETHORNELL_USER_DATA_READ_OK")
-        self.assertEqual([op for op, _ in good["calls"]], [0x80, 0x83, 0x66, 0x68, 0x69])
+        self.assertEqual([op for op, _ in good["calls"]], [0x39, 0x80, 0x83, 0x66, 0x68, 0x69])
+        self.assertEqual(good["root"], "bgi-user\\")
+        self.assertEqual(good["load_paths"], ["bgi-user\\BGI.gdb"])
         self.assertNotIn(0x81, good["instruction_opcodes"])
         self.assertNotIn(0x82, good["instruction_opcodes"])
         self.assertEqual(good["saved_blocks"], [])
@@ -573,6 +598,20 @@ class FixtureTests(unittest.TestCase):
                 self.assertEqual(result["title"], "ETHORNELL_USER_DATA_READ_LOAD_FAILED")
                 self.assertNotIn(0x83, [op for op, _ in result["calls"]])
 
+    def test_user_data_root_falls_back_to_user_data_subtree(self):
+        fallback = ("bgi-user\\UserData\\",)
+        write = self._trace_user_data_structure("write", validated_roots=fallback)
+        self.assertEqual(write["title"], "ETHORNELL_USER_DATA_WRITE_OK")
+        self.assertEqual(write["created_dirs"], ["bgi-user\\UserData"])
+        self.assertEqual(write["root"], "bgi-user\\UserData\\")
+        self.assertEqual(write["save_paths"], ["bgi-user\\UserData\\BGI.gdb"])
+        marker = bytes.fromhex("4247492d534d4f4b452d563100a55a01")
+        read = self._trace_user_data_structure(
+            "read", load_status=0, loaded_marker=marker, validated_roots=fallback)
+        self.assertEqual(read["title"], "ETHORNELL_USER_DATA_READ_OK")
+        self.assertEqual(read["root"], "bgi-user\\UserData\\")
+        self.assertEqual(read["load_paths"], ["bgi-user\\UserData\\BGI.gdb"])
+
     def test_user_data_generation_never_creates_or_packages_a_save(self):
         with tempfile.TemporaryDirectory() as tmp:
             for phase in ("write", "read"):
@@ -585,6 +624,9 @@ class FixtureTests(unittest.TestCase):
                 expected = manifest["user_data_expectation"]
                 self.assertEqual(expected["guest_file"], "BGI.gdb")
                 self.assertEqual(expected["host_file"], "<same HostConfig.user_root>/BGI.gdb")
+                self.assertEqual(expected["validated_file_root"]["primary"], "bgi-user\\")
+                self.assertEqual(expected["validated_file_root"]["fallback"], "bgi-user\\UserData\\")
+                self.assertTrue(any("80:39" in step for step in expected["protocol"]))
                 self.assertEqual(expected["marker_global_offset"], 64)
                 self.assertEqual(expected["save_content_expectation"]["decoded_marker_offset"], 0x464)
                 self.assertEqual(expected["success_events"][0]["text"], f"ETHORNELL_USER_DATA_{phase.upper()}_OK")

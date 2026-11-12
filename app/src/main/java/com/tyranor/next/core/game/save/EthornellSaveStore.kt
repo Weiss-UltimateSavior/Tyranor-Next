@@ -23,12 +23,17 @@ import java.util.zip.ZipOutputStream
  * holding EthornellOperationGate and after proving the whole host is stopped.
  * No resource path is accepted. Private app storage plus the stopped host are
  * the no-concurrent-mutator assumption; this is not an adversarial same-UID sandbox.
+ *
+ * The per-file limit is the upstream STORAGE 64 MiB atomic-write limit. The
+ * [maxBytes] budget is a separate import-only total ZIP limit and must not be
+ * read as the native single-write limit; export enforces the per-file limit only.
  */
 internal class EthornellSaveStore(
     private val filesDir: File,
     private val identity: String,
     private val maxFiles: Int = 20_000,
     private val maxBytes: Long = 1024L * 1024L * 1024L,
+    private val maxFileBytes: Long = MAX_FILE_BYTES,
     private val checkCancelled: () -> Unit = {},
     private val rename: (File, File) -> Boolean = { from, to -> from.renameTo(to) },
     private val maxNodes: Int = MAX_VISITED,
@@ -60,22 +65,37 @@ internal class EthornellSaveStore(
         return userFiles(root)
     }
 
-    /** Do not even open/truncate the provider destination for an empty export. */
+    /** Do not even open/truncate the provider destination for an empty or over-limit export. */
     fun export(openOutput: () -> OutputStream): Int {
         val files = listFiles()
         if (files.isEmpty()) throw GameSaveException(SaveErrorCode.NO_EXPORTABLE_FILES)
+        // Check before the provider destination is opened: an over-limit file
+        // must not leave a truncated backup that the importer will reject.
+        files.forEach { file ->
+            checkCancelled()
+            val relative = relativeName(file)
+            if (file.length() > maxFileBytes) {
+                throw GameSaveException(SaveErrorCode.SAVE_FILE_TOO_LARGE, relative)
+            }
+        }
         ZipOutputStream(openOutput()).use { zip ->
             files.forEach { file ->
                 checkCancelled()
-                val relative = root.toPath().relativize(file.toPath()).toString().replace(File.separatorChar, '/')
-                val name = safeName(relative)
+                val name = safeName(relativeName(file))
                 zip.putNextEntry(ZipEntry(name).apply { time = file.lastModified() })
                 FileInputStream(file).use { input ->
                     val buffer = ByteArray(16 * 1024)
+                    var fileBytes = 0L
                     while (true) {
                         checkCancelled()
                         val read = input.read(buffer)
                         if (read == -1) break
+                        fileBytes += read
+                        // Also bound the actual read in case the file grew
+                        // between the preflight and this stream.
+                        if (fileBytes > maxFileBytes) {
+                            throw GameSaveException(SaveErrorCode.SAVE_FILE_TOO_LARGE, name)
+                        }
                         zip.write(buffer, 0, read)
                     }
                 }
@@ -197,10 +217,15 @@ internal class EthornellSaveStore(
                     if (!output.parentFile!!.isDirectory && !output.parentFile!!.mkdirs()) unavailable()
                     if (exists(output)) illegal(name) // Directory/file alias, never overwrite.
                     FileOutputStream(output).use { out ->
+                        var fileBytes = 0L
                         while (true) {
                             checkCancelled()
                             val read = zip.read(buffer)
                             if (read == -1) break
+                            fileBytes += read
+                            if (fileBytes > maxFileBytes) {
+                                throw GameSaveException(SaveErrorCode.SAVE_FILE_TOO_LARGE, name)
+                            }
                             bytes += read
                             if (bytes > maxBytes) throw GameSaveException(SaveErrorCode.ZIP_TOO_LARGE)
                             out.write(buffer, 0, read)
@@ -215,6 +240,9 @@ internal class EthornellSaveStore(
             return count
         }
     }
+
+    private fun relativeName(file: File): String =
+        root.toPath().relativize(file.toPath()).toString().replace(File.separatorChar, '/')
 
     private fun safeName(raw: String): String {
         // Unlike the legacy importer, do not trim absolute names into relative
@@ -337,6 +365,7 @@ internal class EthornellSaveStore(
     companion object {
         private const val MAX_DEPTH = 64
         private const val MAX_VISITED = 100_000
+        private const val MAX_FILE_BYTES = 64L * 1024L * 1024L
     }
 }
 

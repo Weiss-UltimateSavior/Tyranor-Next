@@ -1,0 +1,103 @@
+{
+  "filters": [
+    {
+      "id": "vnsr_c08_x2",
+      "category": "VN-SR",
+      "categoryOrder": 35,
+      "order": 0,
+      "title": {
+        "zh": "VN-SR C08",
+        "en": "VN-SR C08",
+        "ja": "VN-SR C08"
+      },
+      "categoryTitle": {
+        "zh": "VN-SR",
+        "en": "VN-SR",
+        "ja": "VN-SR"
+      },
+      "shortName": "VNC08",
+      "color": "#FF7854AB",
+      "asset": "vnsr/vnsr-c08-x2.glsl",
+      "nativeScale": 2,
+      "haloPerPass": 1,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "none"
+      ],
+      "defaultScaleMode": "none",
+      "defaultSharpness": 0.4,
+      "outputSized": false,
+      "forceParameters": false,
+      "visible": true,
+      "migrationTarget": null,
+      "maxOutputScale": 2,
+      "topLeftCoordinates": true
+    },
+    {
+      "id": "vnsr_c12_x2",
+      "category": "VN-SR",
+      "categoryOrder": 35,
+      "order": 1,
+      "title": {
+        "zh": "VN-SR C12",
+        "en": "VN-SR C12",
+        "ja": "VN-SR C12"
+      },
+      "categoryTitle": {
+        "zh": "VN-SR",
+        "en": "VN-SR",
+        "ja": "VN-SR"
+      },
+      "shortName": "VNC12",
+      "color": "#FF7854AB",
+      "asset": "vnsr/vnsr-c12-x2.glsl",
+      "nativeScale": 2,
+      "haloPerPass": 1,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "none"
+      ],
+      "defaultScaleMode": "none",
+      "defaultSharpness": 0.4,
+      "outputSized": false,
+      "forceParameters": false,
+      "visible": true,
+      "migrationTarget": null,
+      "maxOutputScale": 2,
+      "topLeftCoordinates": true
+    },
+    {
+      "id": "vnsr_c16_x2",
+      "category": "VN-SR",
+      "categoryOrder": 35,
+      "order": 2,
+      "title": {
+        "zh": "VN-SR C16",
+        "en": "VN-SR C16",
+        "ja": "VN-SR C16"
+      },
+      "categoryTitle": {
+        "zh": "VN-SR",
+        "en": "VN-SR",
+        "ja": "VN-SR"
+      },
+      "shortName": "VNC16",
+      "color": "#FF7854AB",
+      "asset": "vnsr/vnsr-c16-x2.glsl",
+      "nativeScale": 2,
+      "haloPerPass": 1,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "none"
+      ],
+      "defaultScaleMode": "none",
+      "defaultSharpness": 0.4,
+      "outputSized": false,
+      "forceParameters": false,
+      "visible": true,
+      "migrationTarget": null,
+      "maxOutputScale": 2,
+      "topLeftCoordinates": true
+    }
+  ]
+}

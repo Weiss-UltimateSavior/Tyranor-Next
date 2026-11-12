@@ -74,7 +74,8 @@ public class EthornellProcessExitTest {
             @Override public void input(long h, EthornellSession.Input input) {}
             @Override public void step(long h, long time) {}
             @Override public EthornellSession.Event poll(long h) { return events.poll(); }
-            @Override public void respond(long h, long requestId, int answer) {}
+            @Override public String requestPayload(long h, long requestId) { return null; }
+            @Override public void respond(long h, long requestId, int answer, String text) {}
             @Override public void requestClose(long h) { requested.countDown(); }
             @Override public void destroy(long h) { destroyed.set(true); }
         };

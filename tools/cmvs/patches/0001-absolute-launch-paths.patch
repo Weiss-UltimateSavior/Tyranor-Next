@@ -1,0 +1,134 @@
+diff --git a/platforms/android/native/src/app.rs b/platforms/android/native/src/app.rs
+index 09e9396..4b118d9 100644
+--- a/platforms/android/native/src/app.rs
++++ b/platforms/android/native/src/app.rs
+@@ -270,6 +270,17 @@ impl Player<'_> {
+         Ok(())
+     }
+     fn input_event(&mut self, event: &InputEvent<'_>) -> InputStatus {
++        // TyranorNext build-time patch: the Java NativeActivity subclass never sees
++        // hardware Back while the native input queue is attached, so map it here.
++        if let InputEvent::KeyEvent(key) = event {
++            if key.action() == android_activity::input::KeyAction::Down
++                && key.key_code() == android_activity::input::Keycode::Back
++            {
++                let _ = self.persist();
++                self.exit = true;
++                return InputStatus::Handled;
++            }
++        }
+         let InputEvent::MotionEvent(motion) = event else {
+             return InputStatus::Unhandled;
+         };
+@@ -326,16 +337,54 @@ pub(super) fn run(app: AndroidApp) -> Result<()> {
+     if text.len() > 4096 {
+         return Err("launch configuration too large".into());
+     }
+-    let mut config = text.lines();
+-    let root = resolve_under(
+-        &directory,
+-        config.next().ok_or("no game selected")?.as_bytes(),
+-    )?;
+-    let font_path = resolve_under(
+-        &directory,
+-        config.next().ok_or("no font selected")?.as_bytes(),
+-    )?;
+-    let face = config.next().ok_or("no font collection index")?.parse()?;
++    // TyranorNext build-time patch: accept absolute `game=`/`user=` entries while
++    // keeping the original three-line format working.
++    let mut entries = std::collections::HashMap::new();
++    let mut legacy_lines = Vec::new();
++    for line in text.lines() {
++        let line = line.trim();
++        if line.is_empty() {
++            continue;
++        }
++        match line.split_once('=') {
++            Some((key, value))
++                if !key.is_empty()
++                    && !key.contains('/')
++                    && !key.contains('\\')
++                    && !value.is_empty() =>
++            {
++                entries.insert(key.to_string(), value.to_string());
++            }
++            _ => legacy_lines.push(line.to_string()),
++        }
++    }
++    let root = match entries.get("game") {
++        Some(value) if value.starts_with('/') => {
++            let path = std::fs::canonicalize(value)?;
++            if !path.is_dir() {
++                return Err("game path is not a directory".into());
++            }
++            path
++        }
++        _ => resolve_under(
++            &directory,
++            legacy_lines.first().ok_or("no game selected")?.as_bytes(),
++        )?,
++    };
++    let font_path = match entries.get("font") {
++        Some(value) => resolve_under(&directory, value.as_bytes())?,
++        None => resolve_under(
++            &directory,
++            legacy_lines.get(1).ok_or("no font selected")?.as_bytes(),
++        )?,
++    };
++    let face: u32 = match entries.get("face") {
++        Some(value) => value.parse()?,
++        None => legacy_lines
++            .get(2)
++            .ok_or("no font collection index")?
++            .parse()?,
++    };
+     let font = Rc::new(RefCell::new(FontRenderer::read(&font_path, face)?));
+     let game = Registry::builtin().identify_game(&root, None)?;
+     let record = game
+@@ -347,7 +396,10 @@ pub(super) fn run(app: AndroidApp) -> Result<()> {
+         record.game,
+         game.selection.profile.id
+     );
+-    let user = directory.join("users").join(&record.game);
++    let user = match entries.get("user") {
++        Some(value) if value.starts_with('/') => std::path::PathBuf::from(value),
++        _ => directory.join("users").join(&record.game),
++    };
+     let script = load_start(&root, &game.files)?;
+     let mut startup = Startup::new(&script, &root, &game, 0)?;
+     // Match the desktop host's existing command policy; identity and unsupported
+diff --git a/platforms/android/native/src/lib.rs b/platforms/android/native/src/lib.rs
+index f09ecb5..b46d017 100644
+--- a/platforms/android/native/src/lib.rs
++++ b/platforms/android/native/src/lib.rs
+@@ -19,9 +19,29 @@ fn android_main(app: android_activity::AndroidApp) {
+     if let Err(error) = app::run(app) {
+         log::error!("Android game failed: {error}");
+         if let Some(directory) = directory {
++            // TyranorNext build-time patch: classify the failure so the Android host
++            // can show the specific message instead of a generic black screen.
++            let text = error.to_string();
++            let code = if text.contains("not a recorded executable")
++                || text.contains("does not have a registered identity")
++                || text.contains("UnknownGame")
++                || text.contains("UnknownBinary")
++            {
++                "unregistered"
++            } else if text.contains("font") {
++                "font"
++            } else if text.contains("vulkan") || text.contains("adapter") {
++                "vulkan"
++            } else if text.contains("audio") {
++                "audio"
++            } else {
++                "load-failed"
++            };
+             let _ = std::fs::write(
+                 directory.join("launch-error.txt"),
+-                "游戏加载或运行失败。请确认游戏数据完整、字体有效且游戏版本受支持。",
++                format!(
++                    "code={code}\n游戏加载或运行失败。请确认游戏数据完整、字体有效且游戏版本受支持。\n{error}"
++                ),
+             );
+         }
+     }

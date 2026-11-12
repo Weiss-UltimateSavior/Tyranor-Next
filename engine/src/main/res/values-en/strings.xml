@@ -5,6 +5,16 @@
     <string name="engine_ethornell_game_menu">Open game menu (right click)</string>
     <string name="engine_ethornell_backlog">Backlog (scroll up)</string>
     <string name="engine_ethornell_host_request">Game confirmation</string>
+    <string name="engine_ethornell_dialog_unavailable">Unable to load input dialog</string>
+    <string name="engine_ethornell_dialog_unavailable_detail">The input request from the game is unavailable, so this input can only be cancelled.</string>
+    <string name="engine_ethornell_dialog_default_title">Input</string>
+    <string name="engine_ethornell_dialog_date_title">Date</string>
+    <string name="engine_ethornell_dialog_field">Value</string>
+    <string name="engine_ethornell_dialog_date_field">Date field %1$d</string>
+    <string name="engine_ethornell_dialog_segment">Part %1$d of %2$d</string>
+    <string name="engine_ethornell_dialog_month">Month</string>
+    <string name="engine_ethornell_dialog_day">Day</string>
+    <string name="engine_ethornell_dialog_empty_option">(empty)</string>
     <string name="engine_game_loading">Game loading</string>
     <string name="engine_starting_game">Starting game</string>
     <string name="engine_preparing_game">Please wait while the game content is prepared</string>
@@ -43,11 +53,15 @@
     <string name="engine_fvp_back_again_to_exit">Press back again to exit the game</string>
     <string name="engine_xsys35_missing_game_dir">System35 failed to start: the game directory is missing</string>
     <string name="engine_xsys35_init_failed">Failed to initialize the System35 engine: no scenario file (S*.ALD) found</string>
+    <string name="engine_xsys35_runtime_pack_missing">The System35 engine runtime is not ready. Restart the app or reinstall it.</string>
     <string name="engine_xsys35_back_again_to_exit">Press back again to exit the game</string>
     <string name="engine_xsys4_missing_game_dir">System4 failed to start: the game directory is missing</string>
     <string name="engine_xsys4_init_failed">Failed to initialize System4: System40.ini / AliceStart.ini not found</string>
+    <string name="engine_xsys4_runtime_pack_missing">The System4 engine runtime is not ready. Restart the app or reinstall it.</string>
     <string name="engine_xsys4_gles3_required">A device with OpenGL ES 3.0 support is required</string>
     <string name="engine_xsys4_back_again_to_exit">Press back again to exit the game</string>
+    <string name="engine_krkrsdl3_init_failed">krkrsdl3 engine initialization failed</string>
+    <string name="engine_krkrsdl3_runtime_pack_missing">The krkrsdl3 engine runtime is not ready. Restart the app or reinstall it.</string>
     <string name="engine_fb_missing_game_dir">Launch failed: game directory is missing</string>
     <string name="engine_fb_init_failed">Engine initialization failed</string>
     <string name="engine_fb_back_again_to_exit">Press back again to exit the game</string>
@@ -109,6 +123,8 @@
     <string name="engine_input_binding_empty">Not bound</string>
     <string name="engine_input_delete">Delete</string>
     <string name="engine_input_reset">Reset</string>
+    <string name="engine_systemnnn_reading_default">%1$s (default)</string>
+    <string name="engine_systemnnn_reading_original">%1$s (original)</string>
     <string name="engine_input_save">Save</string>
     <string name="engine_input_cancel">Cancel</string>
     <string name="engine_input_confirm">OK</string>
@@ -129,4 +145,13 @@
     <string name="engine_input_screenshot_saved_private">Could not write to the gallery folder; saved in the app folder: %1$s</string>
     <string name="engine_input_action_screenshot">Screenshot</string>
     <string name="engine_input_group_actions">Actions</string>
+    <string name="engine_cmvs_init_failed">CMVS engine initialization failed</string>
+    <string name="engine_cmvs_runtime_pack_missing">CMVS runtime library is not ready. Restart or reinstall the app.</string>
+    <string name="engine_cmvs_back_again_to_exit">Press back again to exit the game</string>
+    <string name="engine_cmvs_unregistered">This game is not in the registered CMVS list and is not supported yet</string>
+    <string name="engine_cmvs_font_invalid">CMVS font is unavailable. Select the font again.</string>
+    <string name="engine_cmvs_vulkan_unavailable">This device does not support Vulkan, so CMVS cannot start</string>
+    <string name="engine_cmvs_audio_failed">CMVS audio initialization failed</string>
+    <string name="engine_cmvs_font_index_title">Font collection index</string>
+    <string name="engine_cmvs_font_index_message">Use 0 for a normal font file</string>
 </resources>

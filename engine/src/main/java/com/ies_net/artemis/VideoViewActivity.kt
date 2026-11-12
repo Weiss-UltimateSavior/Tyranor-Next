@@ -52,6 +52,11 @@ class VideoViewActivity : Activity(), IMediaPlayer.OnCompletionListener, IMediaP
 
     override fun onCreate(bundle: Bundle?) {
         super.onCreate(bundle)
+        // IJK 三件套来自运行库包；缺失时直接结束，避免在播放器构造期抛 UnsatisfiedLinkError。
+        if (!com.core.nativeplugin.IjkRuntime.load(this)) {
+            finish()
+            return
+        }
         setVolumeControlStream(AudioManager.STREAM_MUSIC)
         enterFullscreen()
         pausedBySystem = false

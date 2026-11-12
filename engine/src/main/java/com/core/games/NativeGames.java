@@ -2,6 +2,8 @@ package com.core.games;
 
 import android.content.Context;
 
+import com.core.nativeplugin.NativeRuntimePack;
+
 /**
  * JNI 桥：加载自研 shim {@code libgames_bridge.so}，由 shim 再 dlopen 引擎库
  * {@code libsiglus.so}（上游 {@code game_launcher}，同时导出 Siglus 与 framebuffer 两套 ABI）。
@@ -18,6 +20,22 @@ public final class NativeGames {
     }
 
     private NativeGames() {}
+
+    /** 引擎运行库绝对路径（首启从 assets 解压）；必须在其他 native 调用之前设置。 */
+    public static native void nativeSetEngineLibraryPath(String path);
+
+    /**
+     * 绑定已解压的 {@code libsiglus.so}。返回 false 表示运行库未就绪，
+     * 调用方应提示引擎初始化失败并结束宿主。
+     */
+    public static boolean prepareEngineLibrary(Context context) {
+        String path = NativeRuntimePack.libraryPath(context, NativeRuntimePack.PACK_SIGLUS, "libsiglus.so");
+        if (path == null) {
+            return false;
+        }
+        nativeSetEngineLibraryPath(path);
+        return true;
+    }
 
     /** 鼠标键：与 {@code game_fb_pointer_button} 的 button 参数一致。 */
     public static final int BUTTON_LEFT = 0;

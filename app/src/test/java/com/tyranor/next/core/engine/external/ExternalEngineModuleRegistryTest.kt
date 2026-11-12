@@ -3,6 +3,7 @@ package com.tyranor.next.core.engine.external
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.settings.EngineSettingsStore
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -16,12 +17,16 @@ class ExternalEngineModuleRegistryTest {
         assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias("external.renpy"))
         assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias(RenPyExternalEngineModule.packageName))
         assertTrue(ExternalEngineModuleRegistry.isExternalEngine(EngineType.RENPY))
-        assertTrue(RenPyExternalEngineModule.installUrl.orEmpty().endsWith("/RenPy-Plugin-8.5.apk"))
+        assertEquals("renpy85", RenPyExternalEngineModule.id)
+        assertEquals("Ren'Py 8.5.3", RenPyExternalEngineModule.displayName)
+        assertEquals("cyou.joiplay.runtime.renpy.v8d4d1", RenPyExternalEngineModule.packageName)
+        assertEquals(10200L, RenPyExternalEngineModule.minimumVersionCode)
     }
 
     @Test
     fun resolvesRenPyVersions() {
         assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_85))
+        assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_853))
         assertSame(RenPy77ExternalEngineModule, ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_77))
         assertNull(ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_AUTO))
         assertNull(ExternalEngineModuleRegistry.moduleForRenpyVersion("unknown"))
@@ -61,7 +66,7 @@ class ExternalEngineModuleRegistryTest {
     @Test
     fun renpyVersionModuleProtocols() {
         assertEquals(
-            "https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RenPy-Plugin-8.5.apk",
+            "https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RenPyPlugin-8.5.3-1.02.00.apk",
             RenPyExternalEngineModule.installUrl,
         )
         assertEquals(
@@ -82,6 +87,19 @@ class ExternalEngineModuleRegistryTest {
     }
 
     @Test
+    fun legacyAndCurrentRenPy85ValuesResolveToUpgradedPackage() {
+        assertSame(
+            RenPyExternalEngineModule,
+            ExternalEngineModuleRegistry.resolveRenpyModule(EngineSettingsStore.RENPY_85),
+        )
+        assertSame(
+            RenPyExternalEngineModule,
+            ExternalEngineModuleRegistry.resolveRenpyModule(EngineSettingsStore.RENPY_853),
+        )
+        assertEquals("renpy85", RenPyExternalEngineModule.id)
+    }
+
+    @Test
     fun resolvesRpgMakerByEngineAndAliases() {
         assertSame(RpgMakerExternalEngineModule, ExternalEngineModuleRegistry.moduleForEngine(EngineType.RPGMAKER))
         assertSame(RpgMakerExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias("internal.rpgmaker"))
@@ -92,5 +110,26 @@ class ExternalEngineModuleRegistryTest {
         assertSame(RpgMakerExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias(RpgMakerExternalEngineModule.packageName))
         assertTrue(ExternalEngineModuleRegistry.isExternalEngine(EngineType.RPGMAKER))
         assertTrue(RpgMakerExternalEngineModule.installUrl.orEmpty().endsWith("/RPGM-Plugin.apk"))
+        assertFalse(RpgMakerExternalEngineModule.launchEntryIsFile)
+    }
+
+    @Test
+    fun resolvesRuffleByEngineAndAliases() {
+        assertSame(RuffleExternalEngineModule, ExternalEngineModuleRegistry.moduleForEngine(EngineType.RUFFLE))
+        assertSame(RuffleExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias("internal.flash"))
+        assertSame(RuffleExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias("external.flash"))
+        assertSame(RuffleExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias("internal.ruffle"))
+        assertSame(RuffleExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias("external.ruffle"))
+        assertSame(RuffleExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias(RuffleExternalEngineModule.packageName))
+        assertSame(RuffleExternalEngineModule, ExternalEngineModuleRegistry.resolveModule(EngineType.RUFFLE))
+        assertTrue(ExternalEngineModuleRegistry.isExternalEngine(EngineType.RUFFLE))
+        assertTrue(RuffleExternalEngineModule.requiresGameDirectoryPath)
+        assertTrue(RuffleExternalEngineModule.launchEntryIsFile)
+        assertEquals(
+            "https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RufflePlugin-1.02.00.apk",
+            RuffleExternalEngineModule.installUrl,
+        )
+        assertFalse(RenPyExternalEngineModule.launchEntryIsFile)
+        assertFalse(RenPy77ExternalEngineModule.launchEntryIsFile)
     }
 }

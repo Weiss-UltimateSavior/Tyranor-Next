@@ -176,6 +176,34 @@ object EffectiveEngineSettings {
     }
 
     /**
+     * Ruffle 外置模块全局设置 + 单游戏覆盖合并：null 覆盖直接跟随全局；
+     * 字符串字段经白名单校验，非法覆盖回退全局（全局也非法时回退插件默认）；
+     * screenTimeout 为 0/5/10/15/30/45/60 分钟，0 = 不自动关闭。
+     */
+    fun mergeRuffle(
+        global: EngineSettingsStore.Ruffle,
+        override: RuffleOverride?,
+    ): EngineSettingsStore.Ruffle {
+        if (override == null) return global
+        fun normalized(value: String?): String? = value?.trim()?.lowercase(java.util.Locale.ROOT)
+        return global.copy(
+            screenTimeout = override.screenTimeout?.trim()?.toIntOrNull()
+                ?.takeIf { it in EngineSettingsStore.RUFFLE_SCREEN_TIMEOUTS }
+                ?: EngineSettingsStore.normalizeRuffleScreenTimeout(global.screenTimeout),
+            backend = normalized(override.backend)?.takeIf { it in EngineSettingsStore.RUFFLE_BACKENDS }
+                ?: EngineSettingsStore.normalizeRuffleBackend(global.backend),
+            quality = normalized(override.quality)?.takeIf { it in EngineSettingsStore.RUFFLE_QUALITIES }
+                ?: EngineSettingsStore.normalizeRuffleQuality(global.quality),
+            scaleMode = normalized(override.scaleMode)?.takeIf { it in EngineSettingsStore.RUFFLE_SCALE_MODES }
+                ?: EngineSettingsStore.normalizeRuffleScaleMode(global.scaleMode),
+            letterbox = normalized(override.letterbox)?.takeIf { it in EngineSettingsStore.RUFFLE_LETTERBOXES }
+                ?: EngineSettingsStore.normalizeRuffleLetterbox(global.letterbox),
+            loadBehavior = normalized(override.loadBehavior)?.takeIf { it in EngineSettingsStore.RUFFLE_LOAD_BEHAVIORS }
+                ?: EngineSettingsStore.normalizeRuffleLoadBehavior(global.loadBehavior),
+        )
+    }
+
+    /**
      * Web 壳端口三级合并：单游戏覆盖值合法（1..65535）时优先，否则回退全局生效值。
      */
     fun resolveWebShellPort(override: String?, global: Int): Int =
@@ -274,6 +302,16 @@ data class RenPyOverride(
     val lessUpdates: Boolean? = null,
     val dontUseGl2: Boolean? = null,
     val recompile: Boolean? = null,
+)
+
+/** Ruffle 外置模块单游戏覆盖字段（null = 跟随全局；screenTimeout 按字符串存储）。 */
+data class RuffleOverride(
+    val screenTimeout: String? = null,
+    val backend: String? = null,
+    val quality: String? = null,
+    val scaleMode: String? = null,
+    val letterbox: String? = null,
+    val loadBehavior: String? = null,
 )
 
 /** ONS 单游戏覆盖字段（null = 跟随全局）。 */

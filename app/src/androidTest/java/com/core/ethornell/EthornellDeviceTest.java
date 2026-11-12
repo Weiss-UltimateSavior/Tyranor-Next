@@ -14,6 +14,7 @@ import android.util.Log;
 import android.view.Surface;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
+import com.core.nativeplugin.NativeRuntimePack;
 import java.io.File;
 import java.io.InputStream;
 import java.io.ByteArrayOutputStream;
@@ -40,6 +41,8 @@ import org.json.JSONObject;
 @RunWith(AndroidJUnit4.class)
 public final class EthornellDeviceTest {
     static final String TAG = "EthornellHarness";
+    /** Schema-valid explicit cancel for kind-5 dialogs; tests never fake an accepted answer. */
+    private static final String DIALOG_CANCEL = "{\"accepted\":false}";
     private static native String probe(String absoluteLibrary);
     private static Context app() { return InstrumentationRegistry.getInstrumentation().getTargetContext().getApplicationContext(); }
     private static Bundle args() { return InstrumentationRegistry.getArguments(); }
@@ -49,19 +52,43 @@ public final class EthornellDeviceTest {
         return selected.equals("gbk") ? 1 : 0;
     }
 
+    /**
+     * Extracts {@code assets/engine-runtime/ethornell.zip.xz} on demand and binds the absolute
+     * library path into the production JNI bridge. Replaces the legacy APK lib/arm64-v8a lookup:
+     * after a fresh install or {@code pm clear} that file never exists, and the bridge would
+     * otherwise fall back to a missing plain SONAME.
+     */
+    private static String runtimeLibrary() {
+        Context context = app();
+        assertTrue("Ethornell runtime pack not ready: NativeRuntimePack.ensure(PACK_ETHORNELL) failed "
+                        + "to extract assets/engine-runtime/ethornell.zip.xz",
+                NativeRuntimePack.ensure(context, NativeRuntimePack.PACK_ETHORNELL));
+        String path = NativeRuntimePack.libraryPath(context, NativeRuntimePack.PACK_ETHORNELL, "libethornell.so");
+        assertNotNull("Ethornell runtime pack not ready: libethornell.so missing after extraction", path);
+        File library = new File(path);
+        assertTrue("Ethornell runtime pack not ready: " + path + " is not a readable file",
+                library.isFile() && library.canRead());
+        assertTrue("Ethornell JNI bridge rejected runtime library path " + path,
+                NativeEthornell.prepareEngineLibrary(context));
+        return path;
+    }
+
     @Test public void loadAbiBuildInfoAndRejectInvalidTokens() throws Exception {
         bounded(() -> {
+            // The engine library only exists after extracting the runtime pack, not in APK lib/.
+            String library = runtimeLibrary();
             System.loadLibrary("ethornell_test_probe");
-            String report = probe(new File(app().getApplicationInfo().nativeLibraryDir, "libethornell.so").getPath());
+            String report = probe(library);
             Log.i(TAG, "LOAD " + report + " sdk=" + Build.VERSION.SDK_INT + " abi=" + Build.SUPPORTED_ABIS[0]
-                    + " page_size=" + Os.sysconf(OsConstants._SC_PAGESIZE));
+                    + " page_size=" + Os.sysconf(OsConstants._SC_PAGESIZE) + " pack=ethornell lib=" + library);
             assertTrue(report, report.startsWith("OK RTLD_NOW"));
+            assertTrue(report, report.contains("symbols=15"));
             assertTrue(report, report.contains("build_info=ethornell"));
-            NativeEthornell.load();
             for (long bad : new long[]{0, -1, Long.MAX_VALUE}) {
                 rejected("invalid token step", () -> NativeEthornell.step(bad, System.nanoTime()));
                 rejected("invalid token pause", () -> NativeEthornell.setPaused(bad, 0));
                 rejected("invalid token poll", () -> NativeEthornell.pollEvent(bad));
+                rejected("invalid token payload", () -> NativeEthornell.requestPayload(bad, 1));
                 rejected("invalid token close", () -> NativeEthornell.requestClose(bad));
                 NativeEthornell.destroy(bad); // production destroy explicitly permits unknown/idempotent tokens
             }
@@ -71,7 +98,7 @@ public final class EthornellDeviceTest {
     @Test public void supplementaryUtf8PathsAndWrongThreadAreSafe() throws Exception {
         bounded(() -> {
             try (Fixture fixture = new Fixture(false)) {
-                NativeEthornell.load();
+                runtimeLibrary();
                 for (String bad : new String[]{"bad\0path", "bad\uD800", "bad\uDC00"}) {
                     rejected("invalid UTF-16 resource", () -> NativeEthornell.create(app(), bad, fixture.user.getPath(), "", encoding()));
                     rejected("invalid UTF-16 user", () -> NativeEthornell.create(app(), fixture.resource.getPath(), bad, "", encoding()));
@@ -79,6 +106,15 @@ public final class EthornellDeviceTest {
                 }
                 long handle = create(fixture);
                 try {
+                    // Payload lookup contract: unknown/stale ids return null (non-fatal); id 0 is rejected.
+                    assertNull("unknown dialog id must not be fatal",
+                            NativeEthornell.requestPayload(handle, Long.MAX_VALUE));
+                    rejected("zero dialog request id", () -> NativeEthornell.requestPayload(handle, 0));
+                    NativeEthornell.completeRequest(handle, Long.MAX_VALUE, 0, DIALOG_CANCEL); // stale id: no-op
+                    // Neither the unknown payload nor the stale response may poison the owner token.
+                    NativeEthornell.setPaused(handle, 1);
+                    NativeEthornell.setPaused(handle, 0);
+                    poll(handle, new Events(), true);
                     AtomicReference<Throwable> wrong = new AtomicReference<>();
                     Thread thread = new Thread(() -> {
                         try { NativeEthornell.step(handle, System.nanoTime()); }
@@ -212,7 +248,7 @@ public final class EthornellDeviceTest {
     private static long runUserDataPhase(File resource, File user, String expectedTitle) throws Exception {
         File r = resource.getCanonicalFile(), u = user.getCanonicalFile();
         assertFalse("Resource/user overlap", r.toPath().startsWith(u.toPath()) || u.toPath().startsWith(r.toPath()));
-        NativeEthornell.load();
+        runtimeLibrary();
         long handle = NativeEthornell.create(app(), r.getPath(), u.getPath(), "", encoding());
         assertNotEquals("User-data phase create failed", 0, handle);
         GpuSurfaceConsumer consumer = null;
@@ -232,6 +268,13 @@ public final class EthornellDeviceTest {
                     observed.add(text); Log.i(TAG, "USER_DATA " + text);
                     assertFalse("Fatal user-data diagnostic: " + observed, event.kind == 1 && event.code < 0);
                     assertNotEquals("Unexpected confirmation; do not auto-accept serialization errors", 2, event.kind);
+                    if (event.kind == 5) {
+                        // No dialog fixture belongs to this phase: fetch the payload, cancel it
+                        // explicitly, then fail rather than silently accept or ignore it.
+                        String payload = NativeEthornell.requestPayload(handle, event.requestId);
+                        NativeEthornell.completeRequest(handle, event.requestId, 0, DIALOG_CANCEL);
+                        fail("Unexpected dialog in user-data fixture: " + text + " payload=" + payload);
+                    }
                     if (event.kind == 4) {
                         assertFalse("Repeated Title event", title);
                         assertEquals("Wrong user-data phase result: " + observed, expectedTitle, event.text);
@@ -270,7 +313,7 @@ public final class EthornellDeviceTest {
             assertTrue("game_path must be readable directory", root.isAbsolute() && root.isDirectory() && root.canRead());
             File user = new File(app().getFilesDir(), "ethornell-device-game-" + UUID.randomUUID());
             assertTrue(user.mkdirs());
-            NativeEthornell.load();
+            runtimeLibrary();
             long handle = 0;
             GpuSurfaceConsumer consumer = null;
             try {
@@ -296,7 +339,7 @@ public final class EthornellDeviceTest {
     }
 
     private static long create(Fixture fixture) {
-        NativeEthornell.load();
+        runtimeLibrary();
         try { fixture.assertRootsAccessibleAndDisjoint(); }
         catch (Exception error) { throw new AssertionError("Fixture root preflight failed", error); }
         long handle = NativeEthornell.create(app(), fixture.resource.getPath(), fixture.user.getPath(), "", encoding());
@@ -363,7 +406,18 @@ public final class EthornellDeviceTest {
             if (event.kind == 3) events.closed = true;
             if (event.kind == 2 && respond) {
                 assertTrue("invalid/replayed request: " + value, event.requestId != 0 && events.requests.add(event.requestId));
-                NativeEthornell.completeRequest(handle, event.requestId, 1);
+                NativeEthornell.completeRequest(handle, event.requestId, 1, "");
+            }
+            if (event.kind == 5 && respond) {
+                // Never route a dialog through the kind-2 integer answer.
+                assertTrue("invalid/replayed dialog request: " + value,
+                        event.requestId != 0 && events.requests.add(event.requestId));
+                // Payload is fetched on the owner thread; no real dialog fixture exists here,
+                // so the only honest policy is an explicit schema-valid cancel (never accept).
+                String payload = NativeEthornell.requestPayload(handle, event.requestId);
+                assertNotNull("pending dialog payload missing: " + value, payload);
+                Log.i(TAG, "DIALOG id=" + event.requestId + " payload=" + payload);
+                NativeEthornell.completeRequest(handle, event.requestId, 0, DIALOG_CANCEL);
             }
         }
         fail("Event queue exceeded bounded poll budget");
@@ -419,8 +473,8 @@ public final class EthornellDeviceTest {
                 Context tests = InstrumentationRegistry.getInstrumentation().getContext();
                 String directory = profile.equals("render") ? "ethornell-render" : "ethornell-user-data/" + profile.substring("user-data-".length());
                 String expectedHash = profile.equals("render") ? "f0d1d96ef30135c95bc722414a9d9572ec3f34952fb57ad9a1bfcf6adb8c06d8"
-                        : profile.equals("user-data-write") ? "0a3455d3b5165d64d59a8f16d7f805983c626dc2af418633096d1f7d18d22a26"
-                        : "75c558c5fe797fb522d6d0baadeff0e9471fd13f67bc612e674dc8b8831f4ab0";
+                        : profile.equals("user-data-write") ? "b64f297f3854c19360406b51143cd5e30b1b44b3e711bc21917d99f88f0fd538"
+                        : "a7a5494ca1e8a6e66f00e46c35a8d5a93920457d49a92ad75c82ad20c44e842c";
                 byte[] manifest;
                 try (InputStream input = tests.getAssets().open(directory + "/fixture.json")) { manifest = readSmallAsset(input); }
                 try (InputStream input = tests.getAssets().open(directory + "/system.arc")) { expected = readSmallAsset(input); }

@@ -1,7 +1,9 @@
 package com.core.ethornell;
 
 import java.util.ArrayDeque;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ScheduledExecutorService;
@@ -21,7 +23,10 @@ public final class EthornellSession {
         void input(long handle, Input input);
         void step(long handle, long timeNs);
         Event poll(long handle);
-        void respond(long handle, long requestId, int result);
+        /** Owner worker only: full kind-5 dialog JSON; null when stale or unsupported. */
+        String requestPayload(long handle, long requestId);
+        /** Empty text settles an integer request; non-empty text is the kind-5 JSON answer. */
+        void respond(long handle, long requestId, int result, String text);
         void requestClose(long handle);
         void destroy(long handle);
     }
@@ -45,8 +50,16 @@ public final class EthornellSession {
         public final int kind, code;
         public final long requestId;
         public final String text;
+        /** kind 5: full JSON request fetched on the owner worker; null when unavailable. */
+        public final String payload;
+        /** Bounded host diagnostic when payload could not be fetched; null on success. */
+        public final String payloadError;
         public Event(int kind, long requestId, int code, String text) {
+            this(kind, requestId, code, text, null, null);
+        }
+        public Event(int kind, long requestId, int code, String text, String payload, String payloadError) {
             this.kind = kind; this.requestId = requestId; this.code = code; this.text = text;
+            this.payload = payload; this.payloadError = payloadError;
         }
     }
     /** No catch-up passes; retain real monotonic time and let Rust normalize >500ms. */
@@ -70,8 +83,8 @@ public final class EthornellSession {
     }
     private final Object lock = new Object();
     private final ArrayDeque<Command> commands = new ArrayDeque<>();
-    private final Set<Long> pending = new HashSet<>(); // worker only
-    private final Set<Long> seenRequests = new HashSet<>(); // bounded replay protection
+    private final Map<Long, Integer> pending = new HashMap<>(); // worker only: unanswered kind 2/5 requests
+    private long retryCandidate; // worker only: most recently answered kind-2 id, 0 when none
     private final Set<CountDownLatch> detachBarriers = new HashSet<>(); // under lock
     private final Backend backend;
     private final Listener listener;
@@ -88,6 +101,8 @@ public final class EthornellSession {
     private int reasons = PAUSE_ACTIVITY | PAUSE_FOCUS | PAUSE_AUDIO;
     private boolean attached, framePending;
     private volatile String operation = "idle";
+    // Upstream poisons at the 17th outstanding host request; diagnose one step earlier.
+    private static final int HOST_REQUEST_BUDGET = 16;
     // Bootstrap/decoding budget is a bring-up fault threshold, not a performance claim.
     private static final long CALL_FAULT_MS = 15_000;
     private static final long DETACH_FAULT_MS = 1500;
@@ -205,10 +220,18 @@ public final class EthornellSession {
         }
     }
     public void respond(long sessionToken, long requestId, int result) {
+        respond(sessionToken, requestId, result, "");
+    }
+    public void respond(long sessionToken, long requestId, int result, String text) {
         if (sessionToken != token) return;
+        final String answer = text == null ? "" : text;
         enqueue(() -> {
-            if (!pending.remove(requestId)) return;
-            backend.respond(handle, requestId, result); clock.reset(); poll();
+            Integer kind = pending.remove(requestId);
+            if (kind == null) return; // unknown/stale/duplicate answer: no native call, no failure
+            backend.respond(handle, requestId, result, answer);
+            // Sys80:3C Retry may re-push the same id immediately; only the latest id is a candidate.
+            if (kind == 2) retryCandidate = requestId;
+            clock.reset(); poll();
         }, false);
     }
     public void requestClose() { enqueue(() -> { backend.requestClose(handle); poll(); }, false); }
@@ -226,23 +249,58 @@ public final class EthornellSession {
         state = !attached ? State.READY_NO_SURFACE : reasons == 0 && pending.isEmpty() ? State.RUNNING : State.SUSPENDED;
     }
     private void poll() {
+        boolean first = true;
+        boolean sawEvent = false;
         for (int i = 0; i < 64; i++) {
             Event event = backend.poll(handle);
             if (event == null) break;
-            if (event.kind == 2) {
-                if (event.requestId == 0 || seenRequests.contains(event.requestId)) continue;
-                if (pending.size() >= 64) throw new IllegalStateException("host request budget");
-                if (seenRequests.size() >= 65536) throw new IllegalStateException("request replay budget");
-                seenRequests.add(event.requestId);
-                pending.add(event.requestId);
+            sawEvent = true;
+            boolean retry = first && retryCandidate != 0 && event.kind == 2 && event.requestId == retryCandidate;
+            first = false;
+            if (retry) {
+                // The id is still outstanding in native; re-admit it without spending new budget.
+                retryCandidate = 0;
+                pending.put(event.requestId, 2);
+                listener.event(token, event);
+                continue;
             }
-            listener.event(token, event);
+            if (event.kind == 2 || event.kind == 5) {
+                if (event.requestId == 0 || pending.containsKey(event.requestId)) {
+                    retryCandidate = 0; // duplicate while unanswered, or a malformed id
+                    continue;
+                }
+                if (pending.size() + (retryCandidate != 0 ? 1 : 0) >= HOST_REQUEST_BUDGET) {
+                    listener.failedDetail(token, "operation=poll host_request_budget=" + HOST_REQUEST_BUDGET
+                            + " pending=" + pending.size() + " retry_candidate=" + (retryCandidate != 0 ? 1 : 0));
+                    throw new IllegalStateException("host request budget");
+                }
+                retryCandidate = 0; // the answered id did not retry first: drop the one-shot candidate
+                pending.put(event.requestId, event.kind);
+            } else {
+                retryCandidate = 0;
+            }
+            Event delivered = event.kind == 5 ? withPayload(event) : event;
+            listener.event(token, delivered);
             if (event.kind == 3) { close(); break; }
         }
+        if (!sawEvent) retryCandidate = 0;
         updateState();
     }
+    /** Runs on the owner worker, immediately before the UI listener sees a kind-5 request. */
+    private Event withPayload(Event event) {
+        String payload = null;
+        String error = null;
+        try {
+            payload = backend.requestPayload(handle, event.requestId);
+            if (payload == null) error = "payload_unavailable";
+        } catch (RuntimeException | LinkageError failure) {
+            // Payload failures are a cancellable UI state, never session poison.
+            error = EthornellFailureDetail.safe(failure);
+        }
+        return new Event(event.kind, event.requestId, event.code, event.text, payload, error);
+    }
     private void cleanup() {
-        pending.clear(); seenRequests.clear();
+        pending.clear(); retryCandidate = 0;
         if (handle != 0) {
             // destroy also ACKs every attached Surface before releasing native references.
             backend.destroy(handle); handle = 0;
@@ -303,7 +361,8 @@ public final class EthornellSession {
             @Override public void input(long h, Input i) { operation = "input"; target.input(h, i); }
             @Override public void step(long h, long time) { operation = "step"; target.step(h, time); }
             @Override public Event poll(long h) { operation = "poll"; return target.poll(h); }
-            @Override public void respond(long h, long id, int result) { operation = "respond"; target.respond(h, id, result); }
+            @Override public String requestPayload(long h, long id) { operation = "request_payload"; return target.requestPayload(h, id); }
+            @Override public void respond(long h, long id, int result, String text) { operation = "respond"; target.respond(h, id, result, text); }
             @Override public void requestClose(long h) { operation = "request_close"; target.requestClose(h); }
             @Override public void destroy(long h) { operation = "destroy"; target.destroy(h); }
         };

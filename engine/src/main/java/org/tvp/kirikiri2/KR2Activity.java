@@ -341,8 +341,8 @@ public class KR2Activity extends Cocos2dxActivity {
         msgHandler = new Handler(Looper.getMainLooper()) { @Override public void handleMessage(Message msg) { KR2Activity.this.handleMessage(msg); } };
         Sp = PreferenceManager.getDefaultSharedPreferences(this);
         super.onCreate(savedInstanceState);
-        // 1.2.6 libgame126.so 缺失 initDump/nativeOnLowMemory 的 JNI 实现，
-        // 此处用 try-catch 兜底以兼容该版本；1.3.4/1.3.9 的 .so 都有这两个方法，不会进入 catch。
+        // initDump 由当前加载的 libgame/libgame134 提供；插件缺符号（安装不完整或
+        // 版本不匹配）时以 try-catch 兜底，避免宿主直接崩溃。
         try {
             initDump(getFilesDir().getAbsolutePath() + "/dump");
         } catch (UnsatisfiedLinkError e) {
@@ -447,7 +447,7 @@ public class KR2Activity extends Cocos2dxActivity {
         super.onDestroy();
     }
     @Override public void onLowMemory() {
-        // 1.2.6 libgame126.so 缺失 nativeOnLowMemory JNI 实现，try-catch 兜底。
+        // nativeOnLowMemory 由当前加载的 libgame/libgame134 提供；缺符号时 try-catch 兜底。
         try { nativeOnLowMemory(); } catch (UnsatisfiedLinkError ignored) { }
     }
 
@@ -579,14 +579,29 @@ public class KR2Activity extends Cocos2dxActivity {
         if (p == null || !p.startsWith("/")) return;
         while (p.endsWith("/") && p.length() > 1) p = p.substring(0, p.length() - 1);
         String lower = p.toLowerCase(Locale.ROOT);
+        // Primary mount root is per-process (Secure Folder mounts at /storage/emulated/<uid>).
+        String primaryRoot = bridge.PrimaryStorageRoot.get();
+        String primaryRootLower = primaryRoot.toLowerCase(Locale.ROOT);
         if (lower.equals("/sdcard") || lower.startsWith("/sdcard/")) {
             out.add("/sdcard");
+        } else if (lower.equals(primaryRootLower) || lower.startsWith(primaryRootLower + "/")) {
+            out.add(primaryRoot);
         } else if (lower.equals("/storage/emulated/0") || lower.startsWith("/storage/emulated/0/")) {
+            // Legacy engine-side spellings of the primary volume; on isolated users the
+            // native layer may still emit /0 paths, so keep it as an explicit alias root.
             out.add("/storage/emulated/0");
         } else if (lower.startsWith("/storage/")) {
             String rest = p.substring("/storage/".length());
             int slash = rest.indexOf('/');
-            out.add(slash > 0 ? "/storage/" + rest.substring(0, slash) : p);
+            String first = slash > 0 ? rest.substring(0, slash) : rest;
+            if ("emulated".equalsIgnoreCase(first)) {
+                // The emulated volume mounts at /storage/emulated/<uid>; never collapse it
+                // to the broad /storage/emulated root.
+                int second = rest.indexOf('/', slash + 1);
+                out.add(second > slash ? "/storage/" + rest.substring(0, second) : p);
+            } else {
+                out.add(slash > 0 ? "/storage/" + first : p);
+            }
         }
     }
 
@@ -616,7 +631,12 @@ public class KR2Activity extends Cocos2dxActivity {
             int colon = docId.indexOf(':');
             String volume = colon >= 0 ? docId.substring(0, colon) : docId;
             String rel = colon >= 0 ? docId.substring(colon + 1) : "";
-            if ("primary".equalsIgnoreCase(volume)) return rel.isEmpty() ? "/storage/emulated/0" : "/storage/emulated/0/" + rel;
+            // document IDs come from the provider and are untrusted: reject traversal.
+            if (rel.indexOf('\\') >= 0 || java.util.Arrays.asList(rel.split("/")).contains("..")) return value;
+            if ("primary".equalsIgnoreCase(volume)) {
+                String primaryRoot = bridge.PrimaryStorageRoot.get();
+                return rel.isEmpty() ? primaryRoot : primaryRoot + "/" + rel;
+            }
             if (volume != null && !volume.isEmpty()) return rel.isEmpty() ? "/storage/" + volume : "/storage/" + volume + "/" + rel;
         } catch (Throwable ignored) { }
         return value;

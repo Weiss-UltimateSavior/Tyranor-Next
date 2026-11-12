@@ -84,7 +84,7 @@ internal fun ArtemisPatchChoiceDialog(
 
 /**
  * Compose 挂起版确认入口：供非 Compose 的透明蹦床（GameShortcutActivity）使用，
- * 行为与 Compose 版完全一致，并遵循 AppAlertDialog 弹窗规范（白底 / 8dp 圆角 / 统一排版）。
+ * 行为与 Compose 版完全一致，并遵循 AppAlertDialog 弹窗规范（白底 / 统一圆角 / 统一排版）。
  *
  * 通过 [ComponentActivity.setContent] 挂载 [ArtemisPatchChoiceDialog]，选择后卸载弹窗并返回结果；
  * 配置变更 / 进程重建时 composition 随 Activity 重建，弹窗会重新出现，由调用方负责不静默退出。

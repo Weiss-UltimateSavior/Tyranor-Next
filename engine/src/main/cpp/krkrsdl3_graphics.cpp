@@ -666,18 +666,34 @@ void clearSession(JNIEnv* env) {
     if (sdlHandle) dlclose(sdlHandle);
     engineHandle = sdlHandle = nullptr;
 }
+std::string javaPath(JNIEnv* env, jstring value) {
+    if (!value) return {};
+    const char* chars = env->GetStringUTFChars(value, nullptr);
+    if (!chars) { env->ExceptionClear(); return {}; }
+    std::string path(chars);
+    env->ReleaseStringUTFChars(value, chars);
+    return path;
+}
 } // namespace
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_core_krkrsdl3_Krkrsdl3Graphics_nativeInstall(JNIEnv* env, jobject owner) {
+Java_com_core_krkrsdl3_Krkrsdl3Graphics_nativeInstall(JNIEnv* env, jobject owner,
+        jstring enginePath, jstring sdlPath) {
     try {
     std::lock_guard<std::mutex> lock(lifecycle);
     if (allowed.load() || callback || !installed.empty()) return JNI_FALSE;
 #if !defined(__aarch64__)
     return JNI_FALSE;
 #else
-    engineHandle = dlopen("libkrkrsdl3.so", RTLD_NOW | RTLD_NOLOAD);
-    sdlHandle = dlopen("libSDL3.so", RTLD_NOW | RTLD_NOLOAD);
+    // Runtime packs live in files/engine_runtime and are loaded with
+    // System.load(absolutePath), so a SONAME-only RTLD_NOLOAD no longer matches.
+    // The host supplies those exact paths; an empty path keeps the old lookup.
+    std::string engineLibrary = javaPath(env, enginePath);
+    std::string sdlLibrary = javaPath(env, sdlPath);
+    engineHandle = dlopen(engineLibrary.empty() ? "libkrkrsdl3.so" : engineLibrary.c_str(),
+            RTLD_NOW | RTLD_NOLOAD);
+    sdlHandle = dlopen(sdlLibrary.empty() ? "libSDL3.so" : sdlLibrary.c_str(),
+            RTLD_NOW | RTLD_NOLOAD);
     Image image, sdl;
     bool identity = engineHandle && sdlHandle
             && identify(engineHandle, kBegin, "e088c4563fdbc75118564e68acf6e3e70ec83a91", image)

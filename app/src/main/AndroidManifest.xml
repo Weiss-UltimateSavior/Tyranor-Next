@@ -4,7 +4,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <!-- 应用内下载更新后调起系统安装器所需（canRequestPackageInstalls 判断依据） -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -13,6 +13,7 @@
         <package android:name="cyou.joiplay.runtime.rpgmaker" />
         <package android:name="cyou.joiplay.runtime.renpy.v8d4d1" />
         <package android:name="cyou.joiplay.runtime.renpy.v7d7d1" />
+        <package android:name="cyou.joiplay.runtime.ruffle" />
         <!-- 外置主机模拟器跳转目标（安装探测 + 显式组件启动） -->
         <package android:name="org.ppsspp.ppsspp" />
         <package android:name="dev.eden.eden_emulator" />
@@ -23,6 +24,11 @@
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <!-- 第三方运行时模块发现（包名前缀 com.tyranor.runtime. + 该 action；不申请 QUERY_ALL_PACKAGES） -->
+        <intent>
+            <action android:name="com.tyranor.runtime.action.LAUNCH" />
+            <category android:name="android.intent.category.DEFAULT" />
         </intent>
     </queries>
 
@@ -70,6 +76,8 @@
         <activity
             android:name=".ui.save.SaveManagementActivity"
             android:exported="false" />
+        <activity android:name=".ui.save.WebDavSettingsActivity" android:exported="false" />
+        <receiver android:name=".core.game.save.sync.SaveSyncExitReceiver" android:exported="false" />
         <!-- 桌面快捷方式回跳蹦床：exported=true 为桌面 Launcher 跨进程显式启动所必需，勿改回 false（见 GameShortcutActivity KDoc） -->
         <activity
             android:name=".ui.game.GameShortcutActivity"
@@ -84,7 +92,10 @@
             android:name=".ui.settings.EngineSettingsActivity"
             android:exported="false" />
         <activity
-            android:name=".ui.settings.EngineSettingsMenuActivity"
+            android:name=".ui.settings.AboutAppActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.runtime.EngineModuleManagementActivity"
             android:exported="false" />
         <activity
             android:name=".ui.settings.PerGameSettingsActivity"
@@ -131,12 +142,38 @@
         <activity
             android:name=".MainActivity"
             android:enableOnBackInvokedCallback="true"
-            android:exported="true">
+            android:exported="true" />
+        <!--
+          启动器图标通过 activity-alias 切换（Android 不支持运行时直接替换 manifest 图标）：
+          应用设置「经典应用图标」开启时启用 LauncherClassic、禁用 LauncherDefault，关闭时反之。
+          保持 MainActivity 自身不挂 MAIN/LAUNCHER，避免两个入口同时出现在桌面。
+        -->
+        <activity-alias
+            android:name=".LauncherDefault"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+        <activity-alias
+            android:name=".LauncherClassic"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_classic"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_classic_round"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
     </application>
 
 </manifest>

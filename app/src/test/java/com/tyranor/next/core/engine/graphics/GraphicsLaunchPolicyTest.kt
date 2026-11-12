@@ -82,7 +82,7 @@ class GraphicsLaunchPolicyTest {
     @Test fun autoKernelPreservesMigratedModeAndUnsupportedVersionsStayDisabled() {
         val migrated = GraphicsSettingsCodec.legacyGlobal(GraphicsFamily.KR, krMode = "m")
         for (kernel in listOf(EngineSettingsStore.KR_AUTO, EngineSettingsStore.KERNEL_KIRIKIRI2)) {
-            for (version in listOf(EngineSettingsStore.KR_AUTO, EngineSettingsStore.KR_139, EngineSettingsStore.KR_134, EngineSettingsStore.KR_126)) {
+            for (version in listOf(EngineSettingsStore.KR_AUTO, EngineSettingsStore.KR_139, EngineSettingsStore.KR_134)) {
                 val capability = GraphicsCapabilities.forRuntime(GraphicsFamily.KR, kernel, version)
                 assertTrue(capability.supported)
                 val extras = GraphicsLaunchPolicy.extras(migrated, capability)
@@ -97,7 +97,7 @@ class GraphicsLaunchPolicyTest {
         }
     }
     @Test fun sdl3OpenGlIsIndependentOfTheKirikiroidVersionAndSoftwareKeepsItsSettings() {
-        for (version in listOf(EngineSettingsStore.KR_AUTO, EngineSettingsStore.KR_126, "unknown")) {
+        for (version in listOf(EngineSettingsStore.KR_AUTO, "1.2.6", "unknown")) {
             for (renderer in listOf("", "opengl", "gl", "gpu")) {
                 val capability = GraphicsCapabilities.forRuntime(GraphicsFamily.KR,
                     EngineSettingsStore.KERNEL_KRKRSDL3, version, renderer)
@@ -118,8 +118,7 @@ class GraphicsLaunchPolicyTest {
 
     @Test fun artemisActualCandidatesGateWithoutErasingTheOriginalRequest() {
         val supported = listOf(EngineSettingsStore.ART_ENGINE_AUTO, EngineSettingsStore.ART_ENGINE_V1,
-            EngineSettingsStore.ART_ENGINE_V3, EngineSettingsStore.ART_ENGINE_V4,
-            EngineSettingsStore.ART_ENGINE_V5, EngineSettingsStore.ART_ENGINE_V6)
+            EngineSettingsStore.ART_ENGINE_V6)
         for (version in supported + EngineSettingsStore.ART_ENGINE_V2) {
             val capability = GraphicsCapabilities.forRuntime(GraphicsFamily.ARTEMIS,
                 EngineSettingsStore.ART_KERNEL_OFFICIAL, version)
@@ -179,7 +178,7 @@ class GraphicsLaunchPolicyTest {
             EngineSettingsStore.ART_KERNEL_OFFICIAL, EngineSettingsStore.ART_ENGINE_AUTO)
         assertTrue(preview.runtimeDependent)
         assertTrue(GraphicsSettingsCodec.effectiveEnabled(saved, preview))
-        for (version in listOf(EngineSettingsStore.ART_ENGINE_V2, EngineSettingsStore.ART_ENGINE_V3)) {
+        for (version in listOf(EngineSettingsStore.ART_ENGINE_V2, "3")) {
             val actual = GraphicsCapabilities.forRuntime(GraphicsFamily.ARTEMIS,
                 EngineSettingsStore.ART_KERNEL_OFFICIAL, version)
             val request = GraphicsLaunchPolicy.artemisExtras(saved, actual)

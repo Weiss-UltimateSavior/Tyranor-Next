@@ -5,6 +5,16 @@
     <string name="engine_ethornell_game_menu">ゲームメニュー（右クリック）</string>
     <string name="engine_ethornell_backlog">バックログ（上スクロール）</string>
     <string name="engine_ethornell_host_request">ゲームの確認</string>
+    <string name="engine_ethornell_dialog_unavailable">入力ダイアログを読み込めません</string>
+    <string name="engine_ethornell_dialog_unavailable_detail">ゲームから送られた入力内容を利用できないため、この入力はキャンセルしてください。</string>
+    <string name="engine_ethornell_dialog_default_title">入力</string>
+    <string name="engine_ethornell_dialog_date_title">日付</string>
+    <string name="engine_ethornell_dialog_field">入力内容</string>
+    <string name="engine_ethornell_dialog_date_field">日付フィールド %1$d</string>
+    <string name="engine_ethornell_dialog_segment">%2$d 個中 %1$d 番目</string>
+    <string name="engine_ethornell_dialog_month">月</string>
+    <string name="engine_ethornell_dialog_day">日</string>
+    <string name="engine_ethornell_dialog_empty_option">（空）</string>
     <string name="engine_game_loading">ゲームを読み込み中</string>
     <string name="engine_starting_game">ゲームを起動しています</string>
     <string name="engine_preparing_game">ゲームデータを準備しています。しばらくお待ちください</string>
@@ -43,11 +53,15 @@
     <string name="engine_fvp_back_again_to_exit">もう一度戻るキーを押すとゲームを終了します</string>
     <string name="engine_xsys35_missing_game_dir">System35 の起動に失敗しました：ゲームディレクトリがありません</string>
     <string name="engine_xsys35_init_failed">System35 エンジンの初期化に失敗しました：シナリオファイル（S*.ALD）が見つかりません</string>
+    <string name="engine_xsys35_runtime_pack_missing">System35 エンジンのランタイムが未準備です。アプリを再起動するか再インストールしてください</string>
     <string name="engine_xsys35_back_again_to_exit">もう一度戻るキーを押すとゲームを終了します</string>
     <string name="engine_xsys4_missing_game_dir">System4 の起動に失敗しました：ゲームディレクトリがありません</string>
     <string name="engine_xsys4_init_failed">System4 エンジンの初期化に失敗しました：System40.ini / AliceStart.ini が見つかりません</string>
+    <string name="engine_xsys4_runtime_pack_missing">System4 エンジンのランタイムが未準備です。アプリを再起動するか再インストールしてください</string>
     <string name="engine_xsys4_gles3_required">OpenGL ES 3.0 対応デバイスが必要です</string>
     <string name="engine_xsys4_back_again_to_exit">もう一度戻るキーを押すとゲームを終了します</string>
+    <string name="engine_krkrsdl3_init_failed">krkrsdl3 エンジンの初期化に失敗しました</string>
+    <string name="engine_krkrsdl3_runtime_pack_missing">krkrsdl3 エンジンのランタイムが未準備です。アプリを再起動するか再インストールしてください</string>
     <string name="engine_fb_missing_game_dir">起動失敗：ゲームディレクトリがありません</string>
     <string name="engine_fb_init_failed">エンジンの初期化に失敗しました</string>
     <string name="engine_fb_back_again_to_exit">もう一度戻るキーを押すとゲームを終了します</string>
@@ -109,6 +123,8 @@
     <string name="engine_input_binding_empty">未割り当て</string>
     <string name="engine_input_delete">削除</string>
     <string name="engine_input_reset">初期化</string>
+    <string name="engine_systemnnn_reading_default">%1$s（既定）</string>
+    <string name="engine_systemnnn_reading_original">%1$s（原版）</string>
     <string name="engine_input_save">保存</string>
     <string name="engine_input_cancel">キャンセル</string>
     <string name="engine_input_confirm">OK</string>
@@ -129,4 +145,13 @@
     <string name="engine_input_screenshot_saved_private">ギャラリーフォルダーに書き込めないため、アプリ内に保存しました：%1$s</string>
     <string name="engine_input_action_screenshot">スクリーンショット</string>
     <string name="engine_input_group_actions">アクション</string>
+    <string name="engine_cmvs_init_failed">CMVS エンジンの初期化に失敗しました</string>
+    <string name="engine_cmvs_runtime_pack_missing">CMVS ランタイムが準備できていません。アプリを再起動するか再インストールしてください。</string>
+    <string name="engine_cmvs_back_again_to_exit">もう一度戻るキーを押すとゲームを終了します</string>
+    <string name="engine_cmvs_unregistered">この作品は CMVS の登録リストにないため、まだ対応していません</string>
+    <string name="engine_cmvs_font_invalid">CMVS フォントを利用できません。フォントを選び直してください。</string>
+    <string name="engine_cmvs_vulkan_unavailable">この端末は Vulkan 非対応のため CMVS を起動できません</string>
+    <string name="engine_cmvs_audio_failed">CMVS オーディオの初期化に失敗しました</string>
+    <string name="engine_cmvs_font_index_title">フォントコレクションのインデックス</string>
+    <string name="engine_cmvs_font_index_message">通常のフォントは 0 を入力してください</string>
 </resources>

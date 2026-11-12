@@ -54,7 +54,7 @@ import com.tyranor.next.ui.common.NoRippleButton
  *   下载仅 http(s) 交系统浏览器处理（blob/data 无法外发，提示用户）；
  * - 不注入任何 `addJavascriptInterface`，禁用文件/content 访问（任意网址内容的安全底线）；
  *   混合内容用兼容模式（用户可自定义 http 站点，属有意取舍）；
- * - 四页常驻组合下首页切走后不会销毁：不在前台（[isActive] 为 false）或应用退后台时
+ * - 主界面常驻组合下首页切走后不会销毁：不在前台（[isActive] 为 false）或应用退后台时
  *   `onPause + pauseTimers + 暂停媒体 + 收键盘`，避免后台继续跑 JS/音视频；引擎 WebView 在独立进程，
  *   主进程已用 `WebView.setDataDirectorySuffix` 隔离数据目录（见 TyranorNextApplication）；
  * - `canGoBack()` 且首页在前台时，返回键先回退页面而不是退出应用；

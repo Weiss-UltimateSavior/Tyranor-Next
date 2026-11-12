@@ -1,17 +1,17 @@
 package com.tyranor.next.core.game.storage
 
-import android.app.ActivityManager
-import android.app.Application
 import android.content.Context
-import android.os.Build
-import android.os.Process
 import android.util.Log
 import androidx.room.withTransaction
+import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.game.model.GameSortKeys
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.scan.GameRecordCodec
 import com.tyranor.next.core.game.scan.GameRootMatcher
-import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.core.process.AppProcess
+import com.tyranor.next.core.settings.AppStorageNames
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -38,7 +38,7 @@ object GameLibraryRepository {
 
     private const val TAG = "GameLibraryRepo"
 
-    private const val LEGACY_PREFS = "game_scanner"
+    private const val LEGACY_PREFS = AppStorageNames.GAME_SCANNER_PREFS
     private const val LEGACY_KEY_ROOTS = "scan_roots"
     private const val LEGACY_KEY_GAMES = "scan_games"
     private const val LEGACY_KEY_RECENT = "recent_games"
@@ -60,7 +60,7 @@ object GameLibraryRepository {
 
     /**
      * 写互斥：缓存门面发出的 DB 写与一致性搜索共用，保证搜索不会读到未落库的中间状态。
-     * 搜索额外先切到同一线程排队（见 [searchGamesConsistent]），mutex 只兜挂起恢复后的乱序。
+     * 搜索额外先切到同一线程排队（见 [searchGameUrisConsistent]），mutex 只兜挂起恢复后的乱序。
      */
     private val writeMutex = Mutex()
 
@@ -72,7 +72,7 @@ object GameLibraryRepository {
     /** 应用启动预热（仅主进程）：旧数据迁移检查 + 单游戏覆盖 prefs 同步 + GameLibraryFacade
      * 同步门面缓存回填，避免主线程首次读库阻塞。引擎子进程直接跳过。 */
     fun init(context: Context) {
-        if (!isMainProcess(context)) return
+        if (!AppProcess.isMain(context)) return
         val app = context.applicationContext
         writeScope.launch {
             try {
@@ -121,6 +121,8 @@ object GameLibraryRepository {
                 }
                 migrationDone = true
                 Log.i(TAG, "Legacy game_scanner prefs imported into Room (repair=$repairNeeded)")
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (t: Throwable) {
                 // 导入失败不阻断启动：DB 保持空/旧状态，下次启动重试；旧 prefs 未删，可整体回滚。
                 Log.e(TAG, "Legacy game library import failed", t)
@@ -210,9 +212,15 @@ object GameLibraryRepository {
     }
 
     /** 从最近打开列表移除：派生视图写 0 即移除。 */
-    suspend fun clearRecent(context: Context, uri: String) = withContext(Dispatchers.IO) {
+    internal suspend fun clearRecent(context: Context, uri: String, expectedOpenedAt: Long?) = withContext(Dispatchers.IO) {
         ensureMigrated(context)
-        dao(context).updateLastOpened(uri, 0L, System.currentTimeMillis())
+        val dao = dao(context)
+        val now = System.currentTimeMillis()
+        if (expectedOpenedAt == null) {
+            dao.updateLastOpened(uri, 0L, now)
+        } else {
+            dao.clearLastOpenedIfMatches(uri, expectedOpenedAt, now)
+        }
     }
 
     /** 最近打开时间回写：仅更新 openTime 实际变化的行（方案 4.1 的 recent 派生模型）。 */
@@ -231,34 +239,34 @@ object GameLibraryRepository {
         }
     }
 
-    // ============ 搜索 / 排序（方案阶段 3） ============
+    // ============ 标题搜索 ============
 
     /**
      * 与写入串行化的一致性搜索：先切到单线程写调度器排队（严格晚于已排队的写），
-     * 再经写互斥兜住挂起恢复后的乱序；返回已按 sortMode 排序的结果。
+     * 再经写互斥兜住挂起恢复后的乱序。返回命中的 URI，展示使用当前库快照及用户排序。
      */
-    suspend fun searchGamesConsistent(context: Context, query: String, sortMode: String): List<ScanGame> =
+    suspend fun searchGameUrisConsistent(context: Context, query: String): Set<String> =
         withContext(writeDispatcher) {
-            writeMutex.withLock { searchGames(context, query, sortMode) }
-        }
-
-    suspend fun searchGames(context: Context, query: String, sortMode: String): List<ScanGame> =
-        withContext(Dispatchers.IO) {
-            ensureMigrated(context)
-            val escaped = escapeLikeQuery(query.trim())
-            if (escaped.isEmpty()) return@withContext emptyList()
-            val dao = dao(context)
-            val entities = if (sortMode == AppSettingsStore.GAME_SORT_BRACKET_TAG) {
-                dao.searchGamesSortedByBracketTag(escaped)
-            } else {
-                dao.searchGamesSortedByTitle(escaped)
+            val term = query.trim()
+            if (term.isEmpty()) return@withContext emptySet()
+            val titleKey = GameSortKeys.titleKey(term)
+            writeMutex.withLock {
+                ensureMigrated(context)
+                dao(context).searchGameUris(term, titleKey).toSet()
             }
-            entities.map { it.toModel() }
         }
 
-    /** LIKE 通配符转义，保证用户输入按字面匹配（与 UI contains 行为一致）。 */
-    private fun escapeLikeQuery(query: String): String =
-        query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    /** 从 Room 确认库中引擎，等候已排队的写入。旧库导入未完成时返回 null。 */
+    suspend fun loadEngineTypesConsistent(context: Context): Set<EngineType>? =
+        withContext(writeDispatcher) {
+            writeMutex.withLock {
+                ensureMigrated(context)
+                if (!migrationDone) return@withLock null
+                dao(context).getEngineTypes().mapTo(mutableSetOf()) { name ->
+                    runCatching { EngineType.valueOf(name) }.getOrDefault(EngineType.UNKNOWN)
+                }
+            }
+        }
 
     // ============ scan_roots ============
 
@@ -338,6 +346,11 @@ object GameLibraryRepository {
 
     // ============ 缓存门面接入 ============
 
+    /** 等候已经排队的写，调用方再读取缓存或写失败后恢复的 Room 快照。 */
+    internal suspend fun awaitPendingWrites() = withContext(writeDispatcher) {
+        writeMutex.withLock { }
+    }
+
     /** 持久化写失败回调：缓存先行更新后落库失败会让内存缓存与 DB（事实源）分叉，
      *  注册方（GameLibraryFacade）借此丢弃内存缓存，下次读取回源 DB 自愈。 */
     @Volatile
@@ -381,14 +394,4 @@ object GameLibraryRepository {
 
     private fun dao(context: Context): GameLibraryDao = GameLibraryDatabase.get(context).gameLibraryDao()
 
-    /** 引擎子进程（:tyrano/:kirikiri2 等）复用同一 Application 类，本仓库只在主进程初始化。 */
-    private fun isMainProcess(context: Context): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            return Application.getProcessName() == context.packageName
-        }
-        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return false
-        return am.runningAppProcesses
-            ?.firstOrNull { it.pid == Process.myPid() }
-            ?.processName == context.packageName
-    }
 }

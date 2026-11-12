@@ -6,9 +6,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 外观风格三态归一化的纯 JVM 测试：三档取值、未知值回退、玻璃系判定与持久化取值稳定性。
+ * 外观风格归一化的纯 JVM 测试：三档取值、未知值回退、玻璃族/乳白族判定与持久化取值稳定性。
  *
- * 这层规则决定存量用户（旧值 `glass` = 复古玻璃）升级后是否会丢风格，属于必须钉住的行为。
+ * 这层规则决定存量用户（旧值 `glass` = 复古玻璃）升级后是否会丢风格，属于必须钉住的行为；
+ * 已删除档位的历史持久化值也必须安全回退默认，不得崩溃或落到非法状态。
  */
 class AppearanceStyleTest {
 
@@ -16,7 +17,7 @@ class AppearanceStyleTest {
     fun knownValues_areKept() {
         assertEquals(AppearanceStyle.DEFAULT, AppearanceStyle.fromStorage("default"))
         assertEquals(AppearanceStyle.RETRO_GLASS, AppearanceStyle.fromStorage("glass"))
-        assertEquals(AppearanceStyle.ADVANCED_GLASS, AppearanceStyle.fromStorage("glass_advanced"))
+        assertEquals(AppearanceStyle.MILK_GLASS, AppearanceStyle.fromStorage("milk_glass"))
     }
 
     @Test
@@ -28,13 +29,29 @@ class AppearanceStyleTest {
     }
 
     @Test
-    fun glassFamilyCoversRetroAndAdvanced() {
+    fun removedAdvancedStyleValue_fallsBackToDefault() {
+        // 已删除的第三档遗留持久化值：升级后回默认，不崩溃、不留悬空状态
+        assertEquals(AppearanceStyle.DEFAULT, AppearanceStyle.fromStorage("glass_advanced"))
+    }
+
+    @Test
+    fun glassFamilyIsOnlyRetroGlass() {
         assertFalse(AppearanceStyle.DEFAULT.isGlass)
         assertTrue(AppearanceStyle.RETRO_GLASS.isGlass)
-        assertTrue(AppearanceStyle.ADVANCED_GLASS.isGlass)
+        assertFalse(AppearanceStyle.MILK_GLASS.isGlass)
+    }
 
-        assertFalse(AppearanceStyle.RETRO_GLASS.isAdvancedGlass)
-        assertTrue(AppearanceStyle.ADVANCED_GLASS.isAdvancedGlass)
+    @Test
+    fun milkGlassIsItsOwnStyle() {
+        assertTrue(AppearanceStyle.MILK_GLASS.isMilkGlass)
+        assertFalse(AppearanceStyle.DEFAULT.isMilkGlass)
+        assertFalse(AppearanceStyle.RETRO_GLASS.isMilkGlass)
+        assertTrue(AppearanceStyle.RETRO_GLASS.hasDarkBackdrop)
+        assertTrue(AppearanceStyle.MILK_GLASS.hasDarkBackdrop)
+        assertFalse(AppearanceStyle.DEFAULT.hasDarkBackdrop)
+        assertTrue(AppearanceStyle.RETRO_GLASS.hasFixedContentPalette)
+        assertTrue(AppearanceStyle.MILK_GLASS.hasFixedContentPalette)
+        assertFalse(AppearanceStyle.DEFAULT.hasFixedContentPalette)
     }
 
     @Test
@@ -42,7 +59,7 @@ class AppearanceStyleTest {
         // 持久化取值改了就等于一次静默的数据迁移（存量用户外观风格丢失），这里钉住
         assertEquals("default", AppearanceStyle.DEFAULT.storageValue)
         assertEquals("glass", AppearanceStyle.RETRO_GLASS.storageValue)
-        assertEquals("glass_advanced", AppearanceStyle.ADVANCED_GLASS.storageValue)
+        assertEquals("milk_glass", AppearanceStyle.MILK_GLASS.storageValue)
     }
 
     @Test

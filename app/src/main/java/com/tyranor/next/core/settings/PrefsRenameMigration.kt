@@ -17,7 +17,7 @@ import com.core.engine.EnginePrefs
  */
 object PrefsRenameMigration {
 
-    private const val LEGACY_PREFS = "yukihub_prefs"
+    private const val LEGACY_PREFS = AppStorageNames.LEGACY_ENGINE_PREFS
     private const val MIGRATED_MARKER = "prefs_rename_migrated_v1"
 
     fun migrate(context: Context) {

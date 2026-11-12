@@ -59,6 +59,21 @@ static GamesApi g_api;
 static std::once_flag g_api_once;
 static void* g_lib_handle = nullptr;
 
+// Absolute path of the engine library, supplied by Java before the first native call.
+// Empty (legacy callers) keeps the plain soname lookup for libraries shipped in lib/.
+static std::mutex g_engine_library_path_mutex;
+static std::string g_engine_library_path;
+
+static std::string engine_library_path() {
+    std::lock_guard<std::mutex> lock(g_engine_library_path_mutex);
+    return g_engine_library_path;
+}
+
+static void set_engine_library_path(const std::string& path) {
+    std::lock_guard<std::mutex> lock(g_engine_library_path_mutex);
+    g_engine_library_path = path;
+}
+
 static JavaVM* g_java_vm = nullptr;
 
 static void* load_symbol(const char* sym) {
@@ -71,9 +86,11 @@ static void* load_symbol(const char* sym) {
 
 static void load_api_once() {
     std::call_once(g_api_once, []() {
-        g_lib_handle = dlopen("libsiglus.so", RTLD_NOW);
+        const std::string configured = engine_library_path();
+        const char* library = configured.empty() ? "libsiglus.so" : configured.c_str();
+        g_lib_handle = dlopen(library, RTLD_NOW);
         if (!g_lib_handle) {
-            LOGE("dlopen libsiglus.so failed: %s", dlerror());
+            LOGE("dlopen %s failed: %s", library, dlerror());
             return;
         }
         g_api.init_context = reinterpret_cast<init_context_fn_t>(load_symbol("siglus_android_init_context"));
@@ -118,6 +135,12 @@ static std::string jstring_to_string(JNIEnv* env, jstring value) {
     std::string out(chars);
     env->ReleaseStringUTFChars(value, chars);
     return out;
+}
+
+/** Absolute path of libsiglus.so (extracted runtime pack); must precede any other native call. */
+extern "C" JNIEXPORT void JNICALL
+Java_com_core_games_NativeGames_nativeSetEngineLibraryPath(JNIEnv* env, jclass, jstring path) {
+    set_engine_library_path(jstring_to_string(env, path));
 }
 
 static jstring string_to_jstring(JNIEnv* env, const char* value) {

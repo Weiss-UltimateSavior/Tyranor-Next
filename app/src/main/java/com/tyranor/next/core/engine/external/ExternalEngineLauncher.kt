@@ -11,18 +11,47 @@ import com.tyranor.next.core.engine.graphics.putDisabledGraphicsRequest
 /** 外置 APK 引擎启动与安装状态检查。 */
 object ExternalEngineLauncher {
     fun isPackageInstalled(context: Context, module: ExternalEngineModule): Boolean =
+        checkInstallation(context, module) == null
+
+    /** Returns a typed missing/outdated result, or null when the installed package is usable. */
+    fun checkInstallation(context: Context, module: ExternalEngineModule): ExternalEngineLaunchResult? =
         try {
             val packageManager = context.applicationContext.packageManager
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 packageManager.getPackageInfo(module.packageName, PackageManager.PackageInfoFlags.of(0))
             } else {
                 @Suppress("DEPRECATION")
                 packageManager.getPackageInfo(module.packageName, 0)
             }
-            true
+            val installedVersionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                packageInfo.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                packageInfo.versionCode.toLong()
+            }
+            if (!isVersionCodeSupported(installedVersionCode, module.minimumVersionCode)) {
+                ExternalEngineLaunchResult.failure(
+                    ExternalEngineErrorCode.PACKAGE_OUTDATED,
+                    moduleNameRes = module.displayNameRes,
+                    moduleNameFallback = module.displayName,
+                    engineName = module.engine.displayName,
+                    installUrl = module.installUrl,
+                )
+            } else {
+                null
+            }
         } catch (_: PackageManager.NameNotFoundException) {
-            false
+            ExternalEngineLaunchResult.failure(
+                ExternalEngineErrorCode.PACKAGE_NOT_INSTALLED,
+                moduleNameRes = module.displayNameRes,
+                moduleNameFallback = module.displayName,
+                engineName = module.engine.displayName,
+                installUrl = module.installUrl,
+            )
         }
+
+    internal fun isVersionCodeSupported(installed: Long, minimum: Long): Boolean =
+        minimum <= 0L || installed >= minimum
 
     fun launch(context: Context, module: ExternalEngineModule, request: ExternalEngineLaunchRequest): ExternalEngineLaunchResult {
         if (module.requiresGameDirectoryPath && request.gameDirectoryPath.isBlank()) {
@@ -31,13 +60,7 @@ object ExternalEngineLauncher {
                 engineName = request.game.engine.displayName,
             )
         }
-        if (!isPackageInstalled(context, module)) {
-            return ExternalEngineLaunchResult.failure(
-                ExternalEngineErrorCode.PACKAGE_NOT_INSTALLED,
-                moduleNameRes = module.displayNameRes,
-                moduleNameFallback = module.displayName,
-            )
-        }
+        checkInstallation(context, module)?.let { return it }
         module.prepareForLaunch(context, request)?.let { return it }
 
         val intent = module.buildLaunchIntent(request).addFlags(
@@ -54,6 +77,7 @@ object ExternalEngineLauncher {
                 ExternalEngineErrorCode.ACTIVITY_NOT_FOUND,
                 moduleNameRes = module.displayNameRes,
                 moduleNameFallback = module.displayName,
+                installUrl = module.installUrl,
             )
         } catch (_: SecurityException) {
             ExternalEngineLaunchResult.failure(

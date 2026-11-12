@@ -24,6 +24,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.settings.EngineSettingsStore
+import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TopBarIcon
@@ -63,7 +64,7 @@ internal fun EthornellSettingsScreen() {
                 AppTopBar(
                     title = stringResource(R.string.ethornell_settings_title),
                     background = Color.Transparent,
-                    contentColor = MiuixTheme.colorScheme.onBackground,
+                    contentColor = PageTextColor,
                     trailing = {
                         TopBarIcon(painterResource(R.drawable.ic_save), stringResource(R.string.engine_settings_save_content_description), MiuixTheme.colorScheme.primary) {
                             EngineSettingsStore.setEthornellNls(context, nls)

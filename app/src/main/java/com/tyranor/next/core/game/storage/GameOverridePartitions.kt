@@ -92,6 +92,7 @@ internal object GameOverridePartitions {
     const val KEY_FVP_NLS = "fvp_nls"
     const val KEY_ETHORNELL_NLS = "ethornell_nls"
     const val KEY_ETHORNELL_FONT = "ethornell_font"
+    const val KEY_CMVS_FONT = "cmvs_font"
     const val KEY_FVP_SYSTEM_FONT = "fvp_system_font"
     const val KEY_FVP_TEXT_HIDPI = "fvp_text_hidpi"
     const val KEY_FVP_FONT = "fvp_font"
@@ -117,6 +118,13 @@ internal object GameOverridePartitions {
     const val KEY_RENPY_LESS_UPDATES = "renpy_less_updates"
     const val KEY_RENPY_DONT_USE_GL2 = "renpy_dont_use_gl2"
     const val KEY_RENPY_RECOMPILE = "renpy_recompile"
+    // Ruffle 外置模块配置覆盖键（与 PerGameSettingsStore.F_RUFFLE_*、EngineSettingsStore.KEY_RUFFLE_* 字面量锚定）
+    const val KEY_RUFFLE_SCREEN_TIMEOUT = "ruffle_screen_timeout"
+    const val KEY_RUFFLE_BACKEND = "ruffle_backend"
+    const val KEY_RUFFLE_QUALITY = "ruffle_quality"
+    const val KEY_RUFFLE_SCALE_MODE = "ruffle_scale_mode"
+    const val KEY_RUFFLE_LETTERBOX = "ruffle_letterbox"
+    const val KEY_RUFFLE_LOAD_BEHAVIOR = "ruffle_load_behavior"
     const val ONS_OBJECT_KEY = "ons"
 
     /** Read-only legacy migration key; keep old KR values in their own partition until frozen. */
@@ -159,13 +167,15 @@ internal object GameOverridePartitions {
         KEY_RPG_SPEED_UP, KEY_RPG_FONT_SCALE,
         KEY_SIGLUS_LANGUAGE, KEY_SIGLUS_GRAPHICS,
         KEY_FB_NLS,
-        KEY_ETHORNELL_NLS, KEY_ETHORNELL_FONT,
+        KEY_ETHORNELL_NLS, KEY_ETHORNELL_FONT, KEY_CMVS_FONT,
         KEY_FVP_NLS, KEY_FVP_SYSTEM_FONT, KEY_FVP_TEXT_HIDPI, KEY_FVP_FONT,
         KEY_XSYS35_SCOPED_SAVE_DIR, KEY_XSYS35_RENDERER,
         KEY_XSYS35_INTEGER_SCALE, KEY_XSYS35_MUTE_UNFOCUS,
         KEY_XSYS4_SCOPED_SAVE_DIR, KEY_XSYS4_ENCODING,
         KEY_XSYS4_FONT_GOTHIC_PATH, KEY_XSYS4_FONT_MINCHO_PATH,
         KEY_XSYS4_JOYPAD, KEY_XSYS4_MSGSKIP_DELAY,
+        KEY_RUFFLE_SCREEN_TIMEOUT, KEY_RUFFLE_BACKEND, KEY_RUFFLE_QUALITY,
+        KEY_RUFFLE_SCALE_MODE, KEY_RUFFLE_LETTERBOX, KEY_RUFFLE_LOAD_BEHAVIOR,
     )
     // Ren'Py 分区：版本选择 + 外置模块配置，显式建模防止未来收紧分区时丢键
     val RENPY_KEYS: Set<String> = setOf(

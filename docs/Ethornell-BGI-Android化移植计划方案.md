@@ -15,6 +15,7 @@
 - 构建与许可：§10；里程碑 / 工作量：§11。
 - 测试与发布完成定义：§12；风险回退 / 待决事项 / 参考：§13–§15。
 - §0.3 与[测试验收记录](Ethornell测试验收记录.md)记录实施状态；文末保留原调研与独立审查记录，不将它们冒充实施验收。
+- 上游 `0cfff1d` 的 15 符号 / kind 5 / payload / 存档门禁增量计划见[Ethornell-BGI-宿主重构计划方案.md](Ethornell-BGI-宿主重构计划方案.md)。
 
 ## 0. 执行摘要
 
@@ -52,18 +53,18 @@
 - **P2 / 条件增强**：完整 IME、手柄高级映射、独立存档迁移、SAF 原生 VFS、额外视频后端、超分等。
 - P2 不意味着“遇到调用可以假装成功”：首批游戏若依赖某项，必须提前实现，或明确把该游戏排除在支持范围外。
 
-### 0.3 当前验收矩阵（2026-10-16，draft）
+### 0.3 历史验收矩阵（2026-10-16，draft；2026-11-02 更新见 0.3.1）
 
-**当前`9e2fef…`：中文标题/两句正文/正常退出已通过；真实slot数据准备/保存流程尚未闭环，无date/thumbnail/file、重启读回未成，仍禁管理。** 空slot无需确认可正常，不以此判失败；当前复核跨VM procedure双输出/共享heap，不硬写ready或猜placeholder根因。available=false、M5/发布未过。
+**历史候选 `9e2fef…`（2026-10-16）：中文标题/两句正文/正常退出已通过；真实slot数据准备/保存流程当时尚未闭环，无date/thumbnail/file、重启读回未成，当时仍禁管理。** 空slot无需确认可正常，不以此判失败；当时复核跨VM procedure双输出/共享heap，不硬写ready或猜placeholder根因。当时 available=false、M5/发布未过；当前状态见 0.3.1。
 
 | 范围 | 当前verified | remaining / 状态 |
 |---|---|---|
 | 运行时与App接入（M1/M4） | code1002集成候选已获父exact APK native静态及full JVM构建14s通过、cache reused，真实Android gate trace已取到 | 仅构建/诊断验证，不等商业修复；最终关trace并按固定hash重验，不跨候选借用结果 |
 | 原创核心fixture（M2） | API36/SJIS、16KB/SJIS与GBK各 **4 pass / 1 optional skip**；RTLD_NOW/14ABI、UTF-8/thread/token、BP Closed、像素/重挂与已覆盖glyph/render fixture通过 | 不是完整字体/文本验收：真实game文本未画；API26加载/create/thread过，2项GPU为该硬件stage2 `adapter_unavailable`，不能泛化所有API26设备 |
-| Surface/暂停/退出重入（M3） | 16KB像素/重挂20轮、实机正常close20会话、两环境pause3/3及dispatch3/3通过 | pause为直接JNI+Kira API，不含硬件录音/Activity onPause；dispatch只覆盖已列三例，不等完整故障/路由/小时级soak |
+| Surface/暂停/退出重入（M3） | 旧候选：16KB像素/重挂20轮、实机正常close20会话、两环境pause3/3及dispatch3/3通过；**新调度器夹具后续已重写并 3/3 通过，见 0.3.1** | pause为直接JNI+Kira API，不含硬件录音/Activity onPause；dispatch只覆盖已列三例，不等完整故障/路由/小时级soak |
 | 真实游戏（M2/M5） | 中文标题/两句正文/正常退出/三critical文件证据保持，真实slot输入链已验证 | **slot数据准备/保存未闭环**，无date/thumbnail/file、重启读回未成；数据生产者涉及跨VM procedure双输出/共享heap，尚待真实结果，不把堆指针当bool或硬写ready |
 | 真实游戏正常退出 | 父手动Back→宿主确认→游戏自绘YES/NO→YES→App通过，非kill | 仅已观察正常退出路径；不将旧不明回App推断为native crash，不代替slot/重读或小时级生命周期 |
-| 私有用户数据/存档（M3/M4） | SafeStore两环境6/6、VM三会话持久化通过；dispatch实机3/3（4.541s）、16KB3/3（12.971s）均过，protocol层两平台闭环；flag聚焦4suites/42tests零失败 | HOST_DISPATCH_PROTOCOL已true，DEVICE_SAVE_IO=false、available=false；商业slot激活/提交仍主P1，管理不开放，不再把protocol写待适配 |
+| 私有用户数据/存档（M3/M4） | 旧快照：SafeStore两环境6/6、VM三会话持久化通过；dispatch实机3/3（4.541s）、16KB3/3（12.971s）均过，protocol层两平台闭环；flag聚焦4suites/42tests零失败 | 当时 HOST_DISPATCH_PROTOCOL=true、DEVICE_SAVE_IO=false、available=false；**2026-11-02 已按 P3 置 true 并受限开放（见 0.3.1）**；商业slot仍不宣称 |
 | 自动测试与审查 | 父最新App567tests（0fail、1skip）、engine250（0fail）；script22/VM209、tools75及Release/pause/dispatch设备证据保持；App/native基础层主要完成 | 不累加旧计数；callee/profile与DA源码尚须freeze后统一build；商业slot、音频听感/蓝牙、小时soak、多GPU/公开许可未过，full plan不done |
 | 兼容与发布（M5） | Release R8+resource shrink构建44s通过；16KB matching纯Java probe **3/3通过**（identity、RTLD_NOW/14ABI/build_info、productionJNI create/poll/destroy），精确APK库/zipalign有证据 | scope仅`release-native-load-create-only`，不含GPU/title/商业slot；真实game首轮语言ABI/API26GPU/长稳等未闭环，**source许可/公开发布独立blocked** |
 
@@ -76,6 +77,17 @@
 最新父复验：protocol flag变更后full App/engine unit+strings构建24s通过、cache stored；当前Debug APK精确native静态检查、tools75与actionlint重复通过。真实游戏手动正常退出后可再次正常App启动、不再busy。仅余商业SAVE事件激活/提交仍在trace（含独立输入路径复核），无slot成功证据；不因已投入时间降低完整目标门槛。调查日期保留10-15，跨日证据以日志执行时间为准。
 
 M0–M5原阶段门槛继续有效；下文保留标明“调查/探针/拟议”的原始设计取证，不能据此否认§0.3与§12.5已验证的实施结果。候选旧hash/字节/失败仅见[验收时间线](Ethornell测试验收记录.md)，顶层仅保当前候选。仍为draft，继续以首标题、正文与商业存读档闭环为目标。
+
+### 0.3.1 2026-11-02 更新：宿主 ABI 升级与存档门禁回填
+
+上方 2026-10-16 矩阵保留为历史，不再代表当前工作区。当前宿主已按上游 `0cfff1d` 完成 15 符号/kind 5 升级，并按[宿主重构计划](Ethornell-BGI-宿主重构计划方案.md)推进；最新证据边界见[测试验收记录](Ethornell测试验收记录.md)的 `043fef05` 节。
+
+- **当前随包产物**：`libethornell.so` SHA-256 `043fef05d0485f027cd5b344a93ddfecd52f97e8e7f8a12fe2986dbcab376d3e`（27,259,224 B），基于 `0cfff1d` + 1 个本地补丁（`0001-user-data-double-bgi-resource.patch`，SHA-256 `77b99d93...`；`file_policy.rs` `be3547f7...`；inventory `d30b0774...`）。补丁同时收敛双重 `bgi-resource` 的 `UserData` 前缀，并把顶层 `BGI.gdb`/`BGI####.cad` 全局数据映射到私有 user-root。provenance `dirty=true`、`local_patches=1`；`--local-static`（含 debug/release APK 精确库字节）与 zipalign（build-tools 36.0.0）通过，**严格来源审计因 dirty 未通过**，`release_ready=false`。
+- **已实施并验证**：15 个 `ethornell_android_*` 导出（含 `request_payload`）、ABI v1 结构尺寸不变、kind bound 1..5、kind 5 payload 两段式读取与 JSON 回答；header 与库同步，provenance 使用新 inventory。Debug/JVM 构建通过；app 910/engine 583（代码未变时的既有运行）、tools 79、`file_policy` Rust 14/14；`EthornellDeviceTest` 全类 6/6（1.426s）、`EthornellPauseDeviceTest` 3/3（2.999s）、`EthornellSaveDeviceTest` 9/9（`pm clear` 后，2.047s）、Release R8 probe SJIS/GBK 各 3/3（`043f`）、ABI/supplementary 2/2。
+- **存档管理已开放（范围受限）**：`EthornellSaveDeviceTest` 9/9（`pm clear` 后；首轮 8/9 为残留任务占用全局门禁的测试隔离问题），`DEVICE_SAVE_IO_VERIFIED=true`、`HOST_DISPATCH_PROTOCOL_VERIFIED=true`、`available=true`。只覆盖 App 私有 user-root 的备份/恢复/删除与 64 MiB 单文件边界；不自动导入资源根 `UserData`，不承诺商业游戏内槽位或 PC 存档互通。
+- **Amairo 启动（范围受限）**：私有 Activity 30s/45s 含语言点击均存活，点击后无 `failed_detail`；私有 user-root 生成 `BGI.gdb`（约 123,802 B）。新夹具下 `UserData` 可能为空，不据此声称槽位。该补丁只修启动期/全局数据写入路径，标题/对白/槽位保存/读回与 `Sys80:34`、`Sys80:30/31/35` 等读取 API 均未验证。
+- **范围受限通过**：`EthornellPauseDeviceTest` 已按新调度器多 stage/step 模型重写并 3/3 通过（2.999s）；只覆盖 pause/Surface，精确 guest tick/held 不在该夹具断言，不能外推音频路由/Activity 焦点。
+- **仍未验证**：商业游戏内槽位保存/重启读回、真实对白/输入 dialog 未验证；16KB 模拟器未在本轮重跑，API26 GPU、音频路由、字体/电影与长稳仍未闭环。原矩阵中“真实游戏标题/两句正文/正常退出”等历史证据不因本次 ABI 升级自动适用于新库。
 
 ## 1. 项目基线与证据使用方式
 
@@ -556,7 +568,7 @@ Activity 首版拟参照现有宿主使用 `singleInstance`，但**重入策略�
 | `engine/src/main/AndroidManifest.xml`、`engine/src/main/res/values/styles.xml`、`engine/consumer-rules.pro` | private Activity、进程/屏幕/主题、release JNI 保留 |
 | `.github/workflows/android-ci.yml`、`android-beta-release.yml` | 现有 assemble/JVM 门禁补 native ABI/依赖/16KB/设备测试证据，或独立 native CI 交付报告 |
 
-网络封面服务通常无需按引擎新增分支；首页分类目前按 enum 自动生成（`CategoryWarehouse.kt:161–193`），不重复增加第二套分类逻辑。标题回写是可选增强，必须保护用户改名且处理跨进程通知，不能把 Room 放进引擎子进程。
+网络封面服务通常无需按引擎新增分支；引擎分类的自动生成逻辑已随「分类仓库」首页样式一并移除，不重复增加第二套分类逻辑。标题回写是可选增强，必须保护用户改名且处理跨进程通知，不能把 Room 放进引擎子进程。
 - 实施时同步 `CONTEXT.md`，只描述已落地行为，计划尚未支持的能力不得写入事实清单。
 
 ## 10. 构建、二进制检查与许可
@@ -683,13 +695,13 @@ Android CLI 安装沿用项目规范 `android --sdk=/tmp/androidsdk install ...`
 - [x] 已覆盖的glyph/render fixture设备子项有通过证据；只勾该子集，不勾真实游戏字体/编码/正文布局整体通过。
 - [x] 实机正常close fixture两轮退出ACK、进程退出与新进程重入通过，无测试中间强杀。
 - [x] 跨进程dispatch设备3/3通过（4.541s）：持锁owner metadata/进程身份核验、claim/ACK/TERMINAL/退出重入、revoke late拒绝、missing-resource terminal后新token；仅授权protocol gate，管理仍关闭。
-- [x] 相同dispatch三例16KB再验3/3通过（12.971s）；两平台protocol闭环，flag聚焦4suites/42tests零失败，HOST_DISPATCH_PROTOCOL=true/DEVICE_SAVE_IO=false/available=false。
+- [x] 相同dispatch三例16KB再验3/3通过（12.971s）；两平台protocol闭环，flag聚焦4suites/42tests零失败（**旧候选**；当时 HOST_DISPATCH_PROTOCOL=true/DEVICE_SAVE_IO=false/available=false，本次已按 P3 置 true 并受限开放，见 §12.5.1）。
 - [x] 合成框架重复压力：16KB像素/重挂/旧generation拒绝20/20轮，实机10轮双会话正常退出/重入（共20次）通过，轮间无test kill；不外推真实游戏或小时级soak。
-- [x] 直接JNI暂停仪器3/3通过：fractional guest clock精确序列/CANCEL held清理、无Surface与Activity/focus原因独立、新generation暂停detach恢复RGBW；真实Kira init/pause API被调用，不外推录音或Activity onPause集成。
+- [x] 直接JNI暂停仪器3/3通过（**旧候选**；新调度器夹具已重写，2026-11-02 3/3 通过，见 §12.5.1）：fractional guest clock精确序列/CANCEL held清理、无Surface与Activity/focus原因独立、新generation暂停detach恢复RGBW；真实Kira init/pause API被调用，不外推录音或Activity onPause集成。
 - [x] 扫描/显式启动/全局与单游戏设置/三语言已接入；实机识别及GBK设置保存、App/engine现有自动回归通过（skip单列）。
-- [x] 私有save store/gate已有实现与自动回归，设备后端6/6通过（含恶意ZIP typed failure）；未验证native槽位时保持管理关闭，capability false。
+- [x] 私有save store/gate已有实现与自动回归，设备后端6/6通过（含恶意ZIP typed failure）；**旧候选**当时未验证 native 槽位而保持管理关闭、capability false；2026-11-02 已按受限范围开放，见 §12.5.1。
 - [x] 合成globalSDC由VM真实写入/destroy/同根重读/空根negative，16KB/SJIS与实机/GBK均通过；Java未造档，不外推商业slot。
-- [x] 合法样本普通App UI新用户三语言选择简中后，正常标题/中文菜单父截图视觉PASS；新游戏街景/speaker、zoom推进与SAVE中文十槽UI可见。仅勾这些子项，不代表正文或slot保存成功。
+- [x] **（旧候选）** 合法样本普通App UI新用户三语言选择简中后，正常标题/中文菜单父截图视觉PASS；新游戏街景/speaker、zoom推进与SAVE中文十槽UI可见。仅勾这些子项，不代表正文或slot保存成功，也不适用于 `043fef05` 当前库。
 - [x] 父实机新游戏/私有UserData写入后，system.arc、原BGI.gdb和原UserData/AmairoChocolate101.sud三critical文件与原ZIP的SHA-256一致；仅此三文件，不声称全资源树hash或商业slot闭环。
 - [x] 当前候选新游戏街景/角色名/首句真实中文与点击推进后的第二句中文均父实机视觉PASS，不再是数字key；仅代表已观察两句，不外推全篇或精确DA ABI。
 - [x] 真实样本手动Back→宿主确认→游戏自绘YES/NO→YES→App正常退出通过，无kill；只勾正常退出路径，不等商业slot或完整生命周期。
@@ -699,12 +711,29 @@ Android CLI 安装沿用项目规范 `android --sdk=/tmp/androidsdk install ...`
 
 - [ ] 最终首分岔修复候选固定source inputs/hash并复验独立可复现构建、依赖、最终APK、release R8加载与回退版本。
 - [ ] API26在有可用adapter硬件上的GPU验证及无adapter错误边界验收；不以当前两项失败推断整个Android26不支持；多GPU/后端仍待验证。
-- [ ] 首批真实游戏完整矩阵：标题与两句正文已过，商业slot实际提交/日期缩略图/新文件/退出重开读取未闭环；当前无保存且非确认crash，选择/音画/长篇仍不统称全兼容。
+- [ ] 首批真实游戏完整矩阵：标题与两句正文旧候选曾通过（**不适用于 `043fef05` 当前库**），商业slot实际提交/日期缩略图/新文件/退出重开读取未闭环；当前无保存且非确认crash，选择/音画/长篇仍不统称全兼容。
 - [ ] 后台暂停/音频焦点与路由、输入cancel/慢调用故障、真实游戏生命周期、小时级soak及dispatch issue-revoke完整覆盖；已过Surface20轮/正常close20会话不代勾这些范围。
 - [ ] 真实游戏字体、文本布局/编码/缺字与需要的IME/电影/Flash能力验证；不支持场景明确排除，不假成功。
-- [ ] native存档创建读回与App管理闭环后再决定开放；恶意ZIP typed-error及私有后端设备6/6已通过，但不等于native槽位或PC互通。
+- [ ] 商业游戏内 native 存档创建/重启读回仍未闭环；App 管理已按 App 私有 user-root 的受限范围开放（§12.5.1），不等于商业槽位或 PC 互通。
 - [ ] 其他引擎设备回归、长稳/内存与性能预算、最终兼容声明和回退演练齐全。
 - [ ] source许可、第三方notice/SBOM、修改源码/构建与符号交付闭环；**公开发布仍独立blocked，不因技术通过自动勾选**。
+
+### 12.5.1 2026-11-02 追加状态（覆盖旧勾选，不删除历史）
+
+**本次新增已实施/已验证**
+
+- [x] 宿主升级到上游 `0cfff1d` 的 ABI v1 接口面：15 个导出（含 `request_payload`）、kind 5、payload 两段式读取、JSON 回答；ABI header 与库同步。
+- [x] 构建/JVM：`:app:assembleDebug`、`:app:assembleDebugAndroidTest` 成功；app JVM 910 tests 0 fail，engine 583 tests 0 fail，`checkHardcodedUiStrings` 与 tools 79 tests 通过。
+- [x] 设备核心：`EthornellDeviceTest` 全类 6/6（15 符号/ABI、UTF-8/线程/token、GPU 像素与重挂、Closed、合成 VM 全局 user-data write/read/empty）；ABI/supplementary 2/2。
+- [x] 存档：`EthornellSaveDeviceTest` 门禁翻转后 9/9（含 64 MiB、ZIP 回滚、恶意 ZIP、公开 `GameSaveManager`、busy 拒绝）；`DEVICE_SAVE_IO_VERIFIED=true`、`HOST_DISPATCH_PROTOCOL_VERIFIED=true`、`available=true`，范围仅 App 私有 user-root。
+- [x] Release R8 probe SJIS/GBK 各 3/3（15 symbols、kind<=5、production JNI create/poll/destroy）；`--local-static`、Release APK exact native 与 zipalign（build-tools 36.0.0）通过；严格来源审计因 `dirty=true` 本地补丁未通过，`release_ready=false`。
+
+**仍未通过/未验证**
+
+- [x] `EthornellPauseDeviceTest` 已按新调度器多 stage/step 模型重写并 3/3 通过；范围仅 pause/Surface，精确 guest tick/held 序列不在该夹具断言（输入映射由 JVM 测试覆盖）。
+- [ ] 商业游戏内槽位保存/重启读回、真实对白/输入 dialog 未验证；Amairo 当前仅验证语言点击后宿主存活（30s/45s，无 `failed_detail`）与启动期全局数据写入（`BGI.gdb`，约 123,802 B；新夹具 `UserData` 可能为空），历史标题/正文证据不自动适用于新库；`Sys80:34`、`Sys80:30/31/35` 等读取 API 未验证。
+- [ ] 16KB 模拟器本轮未重跑；API26 GPU、音频路由、字体/电影、后台暂停集成、小时级 soak 与多 GPU 未闭环。
+- [ ] source 许可、notice/SBOM、公开发布门槛仍独立 blocked。
 
 ## 13. 风险与回退
 

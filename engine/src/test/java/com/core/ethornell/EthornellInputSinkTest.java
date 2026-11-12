@@ -30,7 +30,8 @@ public class EthornellInputSinkTest {
             @Override public void input(long h, EthornellSession.Input input) { inputs.add(input); }
             @Override public void step(long h, long now) {}
             @Override public EthornellSession.Event poll(long h) { return null; }
-            @Override public void respond(long h, long id, int answer) {}
+            @Override public String requestPayload(long h, long id) { return null; }
+            @Override public void respond(long h, long id, int answer, String text) {}
             @Override public void requestClose(long h) { drained.countDown(); }
             @Override public void destroy(long h) { closed.countDown(); }
         }, new EthornellSession.Listener() {

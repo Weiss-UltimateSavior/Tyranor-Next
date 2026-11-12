@@ -146,6 +146,14 @@ public final class SiglusActivity extends AppCompatActivity implements
         gameDirName = new File(gameRoot).getName();
         pathHash = getIntent().getStringExtra(LaunchContract.SIGLUS_PATH_HASH);
 
+        // 运行库已由启动编排解压到应用私有目录；缺失说明安装包不完整或解压失败。
+        if (!NativeSiglus.prepareEngineLibrary(this)) {
+            Toast.makeText(this, uiString(R.string.engine_siglus_init_failed),
+                    Toast.LENGTH_LONG).show();
+            finish();
+            return;
+        }
+
         NativeSiglus.setMessageboxListener(this);
         try {
             SiglusHost.Listener listener = new SiglusHost.Listener() {

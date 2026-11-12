@@ -3,6 +3,7 @@ import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Delete
 import org.gradle.api.tasks.Exec
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFile
@@ -12,7 +13,10 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.bundling.Zip
+import org.gradle.api.tasks.bundling.ZipEntryCompression
 import org.gradle.process.ExecOperations
+import buildlogic.CompressXzArchive
+import buildlogic.VerifyEngineRuntimePack
 import java.util.Properties
 import javax.inject.Inject
 
@@ -41,7 +45,7 @@ fun String.asBuildConfigString(): String =
  * 应用版本名：发版唯一需要手改的版本字段（issue #79）。
  * versionCode 由它推导，杜绝“只改 versionName、忘记递增 versionCode”。
  */
-val appVersionName = "1.61"
+val appVersionName = "1.65"
 
 /**
  * versionName -> versionCode 映射：major*1_000_000 + minor*1_000 + patch。
@@ -86,8 +90,26 @@ tasks.register<PrintAppVersionTask>("printAppVersion") {
 val appNativePluginSourceDir = layout.projectDirectory.dir("src/main/nativeplugins")
 val engineNativePluginSourceDir = rootProject.layout.projectDirectory.dir("engine/src/main/nativeplugins")
 val mergedNativePluginSourceDir = layout.buildDirectory.dir("generated/nativeplugin-sources")
+val bundledNativePluginContainerDir = layout.buildDirectory.dir("generated/nativeplugin-containers")
 val bundledNativePluginAssetsDir = layout.buildDirectory.dir("generated/assets/nativeplugins")
+// `*.tmp` scratch files live under build/tmp, never in the generated asset tree: a killed worker
+// must not leave a file that mergeAssets would count as an APK asset.
+val bundledAssetTemporaryDir = layout.buildDirectory.dir("tmp/xz")
 val bundledNativePluginEngineIds = listOf("kirikiroid2", "ons", "artemis")
+val engineRuntimeLibraryDir = rootProject.layout.projectDirectory.dir("engine/src/main/jniLibs/arm64-v8a")
+val bundledEngineRuntimeContainerDir = layout.buildDirectory.dir("generated/engine-runtime-containers")
+val bundledEngineRuntimeAssetsDir = layout.buildDirectory.dir("generated/assets/engine-runtime")
+// 随包但首启才解压的大体积运行库：(packId, 库文件名) 与 NativeRuntimePack 的分片常量一一对应。
+val bundledEngineRuntimePacks = linkedMapOf(
+    "siglus" to listOf("libsiglus.so"),
+    "fvp" to listOf("librfvp.so"),
+    "ethornell" to listOf("libethornell.so"),
+    "krkrsdl3" to listOf("libkrkrsdl3.so"),
+    "ijk" to listOf("libijkffmpeg.so", "libijksdl.so", "libijkplayer.so"),
+    "xsystem" to listOf("libxsystem35.so", "libxsystem4.so", "libSDL2x.so"),
+    "cmvs" to listOf("libcmvs_android.so"),
+    "systemnnn" to listOf("libsystemnnn.so"),
+)
 val engineAssetSourceDir = rootProject.layout.projectDirectory.dir("engine/src/main/assets")
 val sharedEngineAssetNames = listOf(
     "__rmmz__.js",
@@ -98,6 +120,24 @@ val sharedEngineAssetNames = listOf(
 )
 val hikarinagiClientId = configValue("HIKARINAGI_CLIENT_ID")
 val tyranorApplicationId = configValue("TYRANOR_APPLICATION_ID").ifBlank { "com.tyranor.next" }
+val webdavDeviceProbe = providers.gradleProperty("webdavDeviceProbe").orNull.let { value ->
+    require(value == null || value == "true" || value == "false") { "webdavDeviceProbe must be true or false" }
+    value == "true"
+}
+if (webdavDeviceProbe) {
+    require(tyranorApplicationId.startsWith("com.tyranor.next.webdavacceptance")) {
+        "The WebDAV device probe requires a dedicated webdavacceptance application ID"
+    }
+}
+val webdavFrameworkProbe = providers.gradleProperty("webdavFrameworkProbe").orNull.let { value ->
+    require(value == null || value == "true" || value == "false") { "webdavFrameworkProbe must be true or false" }
+    value == "true"
+}
+if (webdavFrameworkProbe) {
+    require(webdavDeviceProbe && gradle.startParameter.taskNames.none { it.contains("release", ignoreCase = true) }) {
+        "The framework-only WebDAV probe requires the dedicated debug device probe"
+    }
+}
 val ethornellReleaseProbe = providers.gradleProperty("ethornellReleaseProbe").orNull.let { value ->
     require(value == null || value == "true" || value == "false") { "ethornellReleaseProbe must be true or false" }
     value == "true"
@@ -127,23 +167,108 @@ val syncBundledNativePluginSources by tasks.registering(Sync::class) {
     into(mergedNativePluginSourceDir)
 }
 
-val bundledNativePluginZipTasks = bundledNativePluginEngineIds.map { engineId ->
+val bundledNativePluginContainerTasks = bundledNativePluginEngineIds.associateWith { engineId ->
     tasks.register<Zip>("package${engineId.replaceFirstChar { it.uppercase() }}NativePlugin") {
         group = "native plugins"
-        description = "Packages the $engineId native engine plugin as a compressed asset."
+        description = "Stages the $engineId native engine plugin as a single uncompressed zip container."
         dependsOn(syncBundledNativePluginSources)
         from(mergedNativePluginSourceDir.map { it.dir(engineId) })
-        destinationDirectory.set(bundledNativePluginAssetsDir)
+        destinationDirectory.set(bundledNativePluginContainerDir)
         archiveFileName.set("$engineId.zip")
+        // STORED keeps the container uncompressed on purpose: CompressXzArchive then shares one
+        // LZMA2 dictionary across every library in the family, so near-identical engine revisions
+        // (two Kirikiroid2 kernels, four Artemis builds) stop paying twice for the same code.
+        entryCompression = ZipEntryCompression.STORED
         isPreserveFileTimestamps = false
         isReproducibleFileOrder = true
     }
 }
 
+val bundledNativePluginAssetTasks = bundledNativePluginEngineIds.map { engineId ->
+    tasks.register<CompressXzArchive>("compress${engineId.replaceFirstChar { it.uppercase() }}NativePlugin") {
+        group = "native plugins"
+        description = "Compresses the $engineId native engine plugin into an LZMA2 APK asset."
+        dependsOn(bundledNativePluginContainerTasks.getValue(engineId))
+        sourceFile.set(bundledNativePluginContainerDir.map { it.file("$engineId.zip") })
+        destinationFile.set(bundledNativePluginAssetsDir.map { it.file("$engineId.zip.xz") })
+        temporaryDirectory.set(bundledAssetTemporaryDir)
+        preset = 9
+    }
+}
+
 val packageBundledNativePlugins by tasks.registering {
     group = "native plugins"
-    description = "Packages bundled native engine plugins as compressed assets."
-    dependsOn(bundledNativePluginZipTasks)
+    description = "Packages bundled native engine plugins as LZMA2-compressed assets."
+    dependsOn(bundledNativePluginAssetTasks)
+}
+
+// 分片清单是唯一事实源：先校验列出的 .so 确实存在于 jniLibs，再让暂存任务打包。
+// 这样直接调用 package<Pack>RuntimePack 也会在缺库时以清晰消息失败，而不是静默产出缺库 zip。
+val bundledEngineRuntimeSourceVerificationTasks = bundledEngineRuntimePacks.mapValues { (packId, libraries) ->
+    tasks.register<VerifyEngineRuntimePack>("verify${packId.replaceFirstChar { it.uppercase() }}RuntimePackSources") {
+        group = "native plugins"
+        description = "Verifies the $packId engine runtime pack lists existing jniLibs sources."
+        this.packId.set(packId)
+        libraryNames.set(libraries)
+        libraryDirectory.set(engineRuntimeLibraryDir)
+    }
+}
+
+val bundledEngineRuntimeContainerTasks = bundledEngineRuntimePacks.mapValues { (packId, libraries) ->
+    tasks.register<Zip>("package${packId.replaceFirstChar { it.uppercase() }}RuntimePack") {
+        group = "native plugins"
+        description = "Stages the $packId engine runtime libraries as an uncompressed zip container."
+        dependsOn(bundledEngineRuntimeSourceVerificationTasks.getValue(packId))
+        from(engineRuntimeLibraryDir) { include(libraries) }
+        destinationDirectory.set(bundledEngineRuntimeContainerDir)
+        archiveFileName.set("$packId.zip")
+        entryCompression = ZipEntryCompression.STORED
+        isPreserveFileTimestamps = false
+        isReproducibleFileOrder = true
+    }
+}
+
+// 暂存容器必须至少有一个条目：空 zip 会压成一个合法但无用的资产，导致首启缺库。
+val bundledEngineRuntimeContainerVerificationTasks = bundledEngineRuntimePacks.mapValues { (packId, libraries) ->
+    tasks.register<VerifyEngineRuntimePack>("verify${packId.replaceFirstChar { it.uppercase() }}RuntimePackContainer") {
+        group = "native plugins"
+        description = "Verifies the $packId engine runtime pack container is not empty."
+        dependsOn(bundledEngineRuntimeContainerTasks.getValue(packId))
+        this.packId.set(packId)
+        libraryNames.set(libraries)
+        libraryDirectory.set(engineRuntimeLibraryDir)
+        containerFile.set(bundledEngineRuntimeContainerDir.map { it.file("$packId.zip") })
+    }
+}
+
+val bundledEngineRuntimeAssetTasks = bundledEngineRuntimePacks.keys.map { packId ->
+    tasks.register<CompressXzArchive>("compress${packId.replaceFirstChar { it.uppercase() }}RuntimePack") {
+        group = "native plugins"
+        description = "Compresses the $packId engine runtime libraries into an LZMA2 APK asset."
+        dependsOn(bundledEngineRuntimeContainerVerificationTasks.getValue(packId))
+        sourceFile.set(bundledEngineRuntimeContainerDir.map { it.file("$packId.zip") })
+        destinationFile.set(bundledEngineRuntimeAssetsDir.map { it.file("$packId.zip.xz") })
+        temporaryDirectory.set(bundledAssetTemporaryDir)
+        preset = 9
+    }
+}
+
+val packageBundledEngineRuntime by tasks.registering {
+    group = "native plugins"
+    description = "Packages on-demand engine runtime libraries as LZMA2-compressed assets."
+    dependsOn(bundledEngineRuntimeAssetTasks)
+}
+
+// 旧布局曾把未压缩的 `<engine>.zip` / `<pack>.zip` 直接写进 assets 输出目录；它们不是任何任务
+// 的输出，mergeAssets UP-TO-DATE 时会残留并被计入 APK。Delete 没有输出、每次构建都会执行，
+// 成本可忽略；顺带清掉旧版 worker 可能遗留在该目录的 `.tmp`。
+val cleanupLegacyBundledAssetContainers by tasks.registering(Delete::class) {
+    group = "native plugins"
+    description = "Deletes legacy plain .zip containers and abandoned .tmp files from generated asset directories."
+    delete(
+        fileTree(bundledNativePluginAssetsDir.get().asFile) { include("*.zip", "*.tmp") },
+        fileTree(bundledEngineRuntimeAssetsDir.get().asFile) { include("*.zip", "*.tmp") },
+    )
 }
 
 val syncSharedEngineAssets by tasks.registering(Sync::class) {
@@ -154,8 +279,8 @@ val syncSharedEngineAssets by tasks.registering(Sync::class) {
         includeEmptyDirs = false
     }
     // 必须落在独立子目录：Sync 会清空目标目录下所有“非本次拷贝”的文件，
-    // 若与 packageXNativePlugin 的输出（generated/assets/nativeplugins）共享父目录，
-    // 一旦执行顺序为 zip → sync → mergeAssets，插件 zip 会被整目录抹掉，
+    // 若与 packageXNativePlugin / compressXNativePlugin 的输出（generated/assets/nativeplugins）共享父目录，
+    // 一旦执行顺序为 zip → sync → mergeAssets，插件资产会被整目录抹掉，
     // 产出缺失运行库的 APK（beta-1.21 事故根因，顺序无保证故本地难复现）。
     into(layout.buildDirectory.dir("generated/assets/engine"))
 }
@@ -248,19 +373,34 @@ android {
     // 这些字体由 System35、System4 与 ONS 共用，替换字体文件须同步检查三者。
     androidResources {
       noCompress += listOf("ttf", "otf")
+      // 插件资产已是 LZMA2 流，二次 deflate 没有收益，只会拖慢打包。
+      noCompress += "xz"
     }
 
     packaging {
       jniLibs {
         useLegacyPackaging = true
+        // 大体积引擎运行库不再进 APK 的 lib/：改为 assets/engine-runtime/<pack>.zip.xz 随包，
+        // 首启该引擎时解压到应用私有目录，再由 JNI 桥按绝对路径 dlopen（见 NativeRuntimePack）。
+        // 排除清单直接从 bundledEngineRuntimePacks 推导，避免分片清单与 excludes 两份手写清单漂移。
+        excludes += bundledEngineRuntimePacks.values.flatten().map { "**/$it" }
+        // Old x86 emulators exercise Android storage/UI, never the arm64 game runtimes.
+        if (webdavFrameworkProbe) excludes += "**/*.so"
       }
       resources {
         excludes += "/META-INF/{AL2.0,LGPL2.1}"
       }
     }
 
-    // 引擎原生插件先压缩为 assets/nativeplugins/<engine>.zip，首次启动自动安装到 app 私有目录
+    // 引擎原生插件先打成未压缩 zip 容器，再经 LZMA2 压成 assets/nativeplugins/<engine>.zip.xz，
+    // 首次启动自动解压安装到 app 私有目录
     sourceSets {
+      if (webdavDeviceProbe) {
+        getByName("debug") {
+          manifest.srcFile("src/webdavProbe/AndroidManifest.xml")
+          java.srcDir("src/webdavProbe/java")
+        }
+      }
       if (ethornellReleaseProbe) {
         // AGP's built-in Kotlin source set independently includes src/androidTest/java.
         // Clear BOTH languages on base and build-type test overlays; clearing Java alone
@@ -325,12 +465,23 @@ val compileEthornellTestProbe by tasks.registering(CompileEthornellTestProbe::cl
         ?: providers.environmentVariable("ANDROID_SDK_ROOT").orNull
         ?: error("Android SDK required for instrumentation JNI probe")
     val ndk = providers.environmentVariable("ANDROID_NDK_HOME").orNull ?: "$sdk/ndk/28.0.13004108"
-    val host = if (System.getProperty("os.name").contains("Mac")) "darwin-x86_64" else "linux-x86_64"
-    compilerPath.set("$ndk/toolchains/llvm/prebuilt/$host/bin/clang++")
+    val hostOs = System.getProperty("os.name")
+    val host = when {
+        hostOs.contains("Mac") -> "darwin-x86_64"
+        hostOs.contains("Windows") -> "windows-x86_64"
+        else -> "linux-x86_64"
+    }
+    val compiler = if (hostOs.contains("Windows")) "clang++.exe" else "clang++"
+    compilerPath.set("$ndk/toolchains/llvm/prebuilt/$host/bin/$compiler")
+}
+androidComponents.beforeVariants(androidComponents.selector().withBuildType("release")) { variant ->
+    if (webdavFrameworkProbe) variant.enable = false
 }
 androidComponents.onVariants(androidComponents.selector().withBuildType(ethornellTestBuildType)) { variant ->
-    variant.androidTest?.sources?.jniLibs?.addGeneratedSourceDirectory(
-        compileEthornellTestProbe, CompileEthornellTestProbe::jniOutput)
+    if (!webdavFrameworkProbe) {
+        variant.androidTest?.sources?.jniLibs?.addGeneratedSourceDirectory(
+            compileEthornellTestProbe, CompileEthornellTestProbe::jniOutput)
+    }
     if (ethornellReleaseProbe) {
         variant.androidTest?.sources?.java?.addStaticSourceDirectory("src/releaseProbe/java")
     }
@@ -341,7 +492,11 @@ tasks.matching {
         it.name.contains("Lint", ignoreCase = true)
 }.configureEach {
     dependsOn(packageBundledNativePlugins)
+    dependsOn(packageBundledEngineRuntime)
     dependsOn(syncSharedEngineAssets)
+    // 依赖而非仅放在打包链里：mergeAssets 为 UP-TO-DATE 时依赖仍会执行，旧布局残留的
+    // `*.zip` 才不会跨构建一直留在 assets 输出目录并被计入 APK。
+    dependsOn(cleanupLegacyBundledAssetContainers)
 }
 
 tasks.named("check") {
@@ -404,11 +559,14 @@ dependencies {
   implementation(libs.androidx.documentfile)
   implementation(libs.androidx.exifinterface)
   implementation(libs.appauth)
+  implementation(libs.okhttp)
 
   // Miuix 组件库（设置页 Card + Preference 体系）
   implementation(libs.miuix.ui)
   implementation(libs.miuix.preference)
   // 液态玻璃导航（圆角流体玻璃底部导航，参考 RinneMobile）
   implementation(libs.backdrop)
+  // 首启解压 assets/nativeplugins/<engine>.zip.xz（LZMA2，构建期由 CompressXzArchive 生成）
+  implementation(libs.xz)
   implementation(project(":engine"))
 }

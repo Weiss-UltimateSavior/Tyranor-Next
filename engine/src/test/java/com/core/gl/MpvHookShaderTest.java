@@ -30,6 +30,16 @@ public final class MpvHookShaderTest {
         }
     }
 
+    @Test public void coordinateWrapperConvertsBothSamplingAndPixelPhase() {
+        MpvHookShader.Pass pass = MpvHookShader.parse(
+                "//!DESC final\n//!BIND MAIN\n//!SAVE MAIN\nvec4 hook(){return MAIN_tex(MAIN_pos);}").get(0);
+        String source = MpvHookShader.fragmentSource(pass);
+        assertTrue(source.contains("u_FLIP_Y ? 1.0-p.y : p.y"));
+        assertTrue(source.contains("texture(u_MAIN, hookCoord(pos))"));
+        assertTrue(source.contains("#define MAIN_pos hookCoord(vPos)"));
+        assertTrue(source.contains("MAIN_tex(hookCoord(vPos) + off / u_MAIN_size)"));
+    }
+
     @Test public void deblurReadsPublishedKernelBeforeWritingItsSameNamedReplacement() throws Exception {
         Path asset = Path.of("src/main/assets/anime4k/Anime4K_Deblur_DoG.glsl");
         if (!Files.exists(asset)) asset = Path.of("engine").resolve(asset);

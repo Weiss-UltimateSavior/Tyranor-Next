@@ -1,13 +1,12 @@
 {
   "engineId": "kirikiroid2",
-  "pluginVersion": 1,
+  "pluginVersion": 2,
   "abi": "arm64-v8a",
   "bridgeAbi": 1,
   "libs": [
     "libSDL2.so",
     "libffmpeg.so",
     "libgame.so",
-    "libgame134.so",
-    "libgame126.so"
+    "libgame134.so"
   ]
 }

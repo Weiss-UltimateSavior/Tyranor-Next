@@ -1,9 +1,16 @@
 plugins { id 'groovy' }
 
+// XZ for Java (public domain) compresses bundled native plugin archives at build time; the same
+// artifact is a runtime dependency of :app, which decompresses the asset on first install.
+repositories {
+    mavenCentral()
+}
+
 // Use only the Gradle distribution's own APIs and Groovy, including standalone CI invocation.
 dependencies {
     implementation gradleApi()
     implementation localGroovy()
+    implementation 'org.tukaani:xz:1.10'
 }
 
 sourceSets {

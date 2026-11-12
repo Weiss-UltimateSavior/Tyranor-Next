@@ -27,7 +27,7 @@ import kotlinx.coroutines.Dispatchers
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
-import top.yukonga.miuix.kmp.preference.ArrowPreference
+import com.tyranor.next.ui.common.ArrowPreference
 
 /**
  * 字体导入单实现（m18）：统一的显示名解析 + 扩展名白名单校验 + 复制到私有字体目录。

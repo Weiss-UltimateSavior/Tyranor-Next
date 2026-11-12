@@ -20,10 +20,8 @@ import androidx.annotation.RequiresApi
  *
  * 因此兜底分三层，合起来才谈得上「AGSL 异常时不崩」：
  * - **挂载前探测**（[isRuntimeShaderUsable]）：任一候选程序编译失败即认为本机 AGSL 不可用，
- *   调用方据此**不挂载透镜档**，并让经典档**不传 Highlight**
- *   （`LiquidGlassNavigationBar(highlightAvailable = …)`，取值用 [highlightAllowed]——
- *   **不能**直接用 [isRuntimeShaderUsable]，它在 API 33 以下恒为 false，会连带抹掉 Android 12
- *   经典档本来正常的高光）——回退路径本身也不再依赖 AGSL；
+ *   调用方据此**不挂载透镜档**；经典档已不再使用库的 `Highlight`（改为单层
+ *   `glassEdgeStroke` 描边），回退路径本身不依赖 AGSL；
  * - **运行期熔断**（[allowShaderWork] / [onShaderWorkFailed]）：探测通过后库 shader 仍可能失败，
  *   此时把折射整块跳过，而不是让异常冒泡到组合/布局期崩掉主界面；
  * - 结果按进程缓存，成功与失败都只探测一次。

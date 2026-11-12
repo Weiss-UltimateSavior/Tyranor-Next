@@ -17,8 +17,7 @@ class ArtemisVorbisRepairTest {
     private val libs = File("src/main/nativeplugins/artemis/arm64-v8a")
 
     @Test fun repairsAllKnownOldKernelsWithoutChangingSources() {
-        val counts = mapOf("libartemis.so" to 7, "libartemis-v4.so" to 7,
-            "libartemis-compatible-v2.so" to 7, "libartemis-compatible.so" to 14)
+        val counts = mapOf("libartemis.so" to 7, "libartemis-compatible.so" to 14)
         for ((name, count) in counts) {
             val source = File(libs, name)
             val before = source.readBytes()
@@ -44,7 +43,7 @@ class ArtemisVorbisRepairTest {
     }
 
     @Test fun fixedCleanAndUnknownLibrariesPassThrough() {
-        for (name in listOf("libartemis-v5.so", "libartemis-v6.so", "libartemis-clean.so")) {
+        for (name in listOf("libartemis-v6.so", "libartemis-clean.so")) {
             val source = File(libs, name)
             assertEquals(source, ArtemisVorbisRepair.prepare(source, temp.newFolder(name)))
         }
@@ -88,7 +87,6 @@ class ArtemisVorbisRepairTest {
 
     @Test fun bundledNewKernelsAlreadyUse32BitSerialComparisons() {
         for ((name, sites) in mapOf(
-            "libartemis-v5.so" to listOf(0x56eca8, 0x56fa58, 0x56fe48, 0x5706c4, 0x570bb0, 0x570cc4, 0x570da4),
             "libartemis-v6.so" to listOf(0x5c6cc8, 0x5c7a78, 0x5c7e68, 0x5c86e4, 0x5c8bd0, 0x5c8ce4, 0x5c8dc4),
         )) {
             val bytes = File(libs, name).readBytes()
@@ -115,7 +113,7 @@ class ArtemisVorbisRepairTest {
 
     @Test fun allHostsRegisterTheSameLibraryAsTheBootstrap() {
         val dir = File("src/main/java/com/akira/tyranoemu/remote")
-        for (host in listOf("V1", "V2", "V3", "V4", "V5", "V6", "Clean")) {
+        for (host in listOf("V1", "V2", "V6", "Clean")) {
             val text = File(dir, "ArtemisActivity$host.java").readText()
             assertTrue(text.contains("loadResolvedEngineLibrary("))
             assertFalse(text.contains("artemisLibPath("))

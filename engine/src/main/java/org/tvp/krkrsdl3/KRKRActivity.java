@@ -22,18 +22,36 @@ public class KRKRActivity extends SDLActivity {
     private boolean skipStartupDialogs;
     private long launchStartElapsedMs = -1L;
 
-    // override sdl functions
-    static {
-        System.loadLibrary("SDL3");
-        System.loadLibrary("krkrsdl3");
+    // 引擎主体从运行库包按绝对路径加载；libSDL3.so 体积小且被 SDL 内部依赖，仍随 APK lib/。
+    private static volatile String sEngineLibraryPath;
+
+    /** 由子类在 super.onCreate 之前注入（见 Krkrsdl3Activity）。 */
+    public static void setEngineLibraryPath(String path) {
+        sEngineLibraryPath = path;
     }
 
     @Override
     protected String[] getLibraries() {
         return new String[] {
-                "SDL3",
-                "krkrsdl3"
+                "SDL3"
         };
+    }
+
+    @Override
+    public void loadLibraries() {
+        System.loadLibrary("SDL3");
+        String path = sEngineLibraryPath;
+        if (path == null) {
+            throw new UnsatisfiedLinkError("krkrsdl3 runtime pack missing");
+        }
+        System.load(path);
+    }
+
+    @Override
+    protected String getMainSharedObject() {
+        String path = sEngineLibraryPath;
+        // SDL 的默认实现同样返回绝对路径（nativeLibraryDir + 库名），直接返回解压路径即可。
+        return path != null ? path : super.getMainSharedObject();
     }
 
     @Override

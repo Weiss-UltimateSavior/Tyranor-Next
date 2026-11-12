@@ -30,7 +30,8 @@
       "forceParameters": false,
       "visible": true,
       "migrationTarget": null,
-      "maxOutputScale": 1
+      "maxOutputScale": 1,
+      "topLeftCoordinates": true
     },
     {
       "id": "denoise_median",
@@ -62,7 +63,8 @@
       "forceParameters": false,
       "visible": true,
       "migrationTarget": null,
-      "maxOutputScale": 1
+      "maxOutputScale": 1,
+      "topLeftCoordinates": true
     },
     {
       "id": "denoise_mode",
@@ -94,7 +96,8 @@
       "forceParameters": false,
       "visible": true,
       "migrationTarget": null,
-      "maxOutputScale": 1
+      "maxOutputScale": 1,
+      "topLeftCoordinates": true
     },
     {
       "id": "thin_hq",
@@ -126,7 +129,8 @@
       "forceParameters": false,
       "visible": true,
       "migrationTarget": null,
-      "maxOutputScale": 1
+      "maxOutputScale": 1,
+      "topLeftCoordinates": true
     },
     {
       "id": "darken_hq",
@@ -158,7 +162,8 @@
       "forceParameters": false,
       "visible": true,
       "migrationTarget": null,
-      "maxOutputScale": 1
+      "maxOutputScale": 1,
+      "topLeftCoordinates": true
     }
   ]
 }

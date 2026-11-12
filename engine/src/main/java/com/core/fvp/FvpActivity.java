@@ -88,6 +88,14 @@ public final class FvpActivity extends AppCompatActivity implements
         }
         nls = getIntent().getStringExtra(LaunchContract.FVP_NLS);
 
+        // 运行库已由启动编排解压到应用私有目录；缺失说明安装包不完整或解压失败。
+        if (!NativeRfvp.prepareEngineLibrary(this)) {
+            Toast.makeText(this, uiString(R.string.engine_fvp_init_failed),
+                    Toast.LENGTH_LONG).show();
+            finish();
+            return;
+        }
+
         surfaceView.getHolder().addCallback(this);
         surfaceView.setOnTouchListener(this);
         surfaceView.setFocusable(true);

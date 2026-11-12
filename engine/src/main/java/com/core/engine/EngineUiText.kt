@@ -2,29 +2,32 @@ package com.core.engine
 
 import android.app.Activity
 import android.content.Context
-import android.content.Intent
 import android.content.res.Configuration
 import java.util.Locale
 
 /** Resolves launcher-facing engine text without changing the native engine's compatibility locale. */
 object EngineUiText {
     @JvmStatic
-    fun get(context: Context, resourceId: Int): String {
+    fun get(context: Context?, resourceId: Int): String {
         if (context == null) return ""
-        var languageTag: String? = null
         return try {
-            if (context is Activity) {
-                val intent = context.intent
-                if (intent != null) languageTag = intent.getStringExtra(LaunchContract.UI_LANGUAGE_TAG)
-            }
-            if (languageTag == null || languageTag.trim().isEmpty()) {
-                return context.getString(resourceId)
-            }
-            val configuration = Configuration(context.resources.configuration)
-            configuration.setLocale(Locale.forLanguageTag(languageTag))
-            context.createConfigurationContext(configuration).getString(resourceId)
+            localizedContext(context).getString(resourceId)
         } catch (_: Throwable) {
             context.getString(resourceId)
+        }
+    }
+
+    /** Resources for the host's UI language. The engine can keep its own game locale. */
+    @JvmStatic
+    fun localizedContext(context: Context): Context {
+        return try {
+            val languageTag = (context as? Activity)?.intent?.getStringExtra(LaunchContract.UI_LANGUAGE_TAG)
+            if (languageTag.isNullOrBlank()) return context
+            val configuration = Configuration(context.resources.configuration)
+            configuration.setLocale(Locale.forLanguageTag(languageTag))
+            context.createConfigurationContext(configuration)
+        } catch (_: RuntimeException) {
+            context
         }
     }
 

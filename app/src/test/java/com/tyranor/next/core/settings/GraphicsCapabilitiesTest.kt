@@ -37,7 +37,7 @@ class GraphicsCapabilitiesTest {
     }
 
     @Test fun sdl3PreviewUsesTheSelectedRendererWithoutBorrowingKirikiroidVersion() {
-        for (version in listOf(EngineSettingsStore.KR_126, "unknown")) {
+        for (version in listOf("1.2.6", "unknown")) {
             for (renderer in listOf("", "opengl", "software", " SW ")) {
                 val preview = GraphicsCapabilities.forSettings(GraphicsFamily.KR,
                     EngineSettingsStore.KERNEL_KRKRSDL3, version, renderer)

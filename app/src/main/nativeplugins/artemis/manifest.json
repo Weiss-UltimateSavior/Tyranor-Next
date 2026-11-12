@@ -1,14 +1,11 @@
 {
   "engineId": "artemis",
-  "pluginVersion": 32,
+  "pluginVersion": 33,
   "abi": "arm64-v8a",
   "bridgeAbi": 1,
   "libs": [
     "libartemis.so",
     "libartemis-compatible.so",
-    "libartemis-compatible-v2.so",
-    "libartemis-v4.so",
-    "libartemis-v5.so",
     "libartemis-v6.so",
     "libartemis-clean.so"
   ]

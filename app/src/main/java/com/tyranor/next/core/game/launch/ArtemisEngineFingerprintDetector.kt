@@ -44,32 +44,20 @@ object ArtemisEngineFingerprintDetector {
 
     private val EMOTE_CHAIN = listOf(
         EngineSettingsStore.ART_ENGINE_V6,
-        EngineSettingsStore.ART_ENGINE_V3,
         EngineSettingsStore.ART_ENGINE_V1,
         EngineSettingsStore.ART_ENGINE_V2,
-        EngineSettingsStore.ART_ENGINE_V4,
-        EngineSettingsStore.ART_ENGINE_V5,
     )
     private val COMMERCIAL_ANDROID_CHAIN = listOf(
-        EngineSettingsStore.ART_ENGINE_V5,
-        EngineSettingsStore.ART_ENGINE_V4,
         EngineSettingsStore.ART_ENGINE_V2,
-        EngineSettingsStore.ART_ENGINE_V3,
         EngineSettingsStore.ART_ENGINE_V1,
     )
     private val ANDROID_ASSETS_CHAIN = listOf(
-        EngineSettingsStore.ART_ENGINE_V4,
-        EngineSettingsStore.ART_ENGINE_V5,
         EngineSettingsStore.ART_ENGINE_V2,
-        EngineSettingsStore.ART_ENGINE_V3,
         EngineSettingsStore.ART_ENGINE_V1,
     )
     private val LEGACY_CHAIN = listOf(
         EngineSettingsStore.ART_ENGINE_V2,
         EngineSettingsStore.ART_ENGINE_V1,
-        EngineSettingsStore.ART_ENGINE_V3,
-        EngineSettingsStore.ART_ENGINE_V4,
-        EngineSettingsStore.ART_ENGINE_V5,
     )
 
     data class ArtemisGameFingerprint(

@@ -11,9 +11,6 @@ public final class ArtemisLibraryIdentity {
     static {
         Map<String, String> ids = new HashMap<>();
         ids.put("libartemis.so", "e76366a3d04e34520fa9fe30a1b6f0d626ececb5");
-        ids.put("libartemis-compatible-v2.so", "69e16d9f524ecfcc157f20b5e2baa459a2866332");
-        ids.put("libartemis-v4.so", "247435d33e6ea1f5812ea7f8518f748e4e3917f4");
-        ids.put("libartemis-v5.so", "a58d93be16200236703b1518ab07fb132e9fe882");
         ids.put("libartemis-v6.so", "2f23ca4efda5953cefd19f0fa09687844a008e42");
         BUILD_IDS = Collections.unmodifiableMap(ids);
     }

@@ -32,15 +32,6 @@ object NativeLibraryLoader {
     }
 
     @JvmStatic
-    fun loadKirikiroid126(context: Context): String? {
-        val ffmpeg = NativePluginManager.kirikiroid2LibPath(context, NativePluginConstants.LIB_FFMPEG) ?: return null
-        val game = NativePluginManager.kirikiroid2LibPath(context, NativePluginConstants.LIB_GAME_126) ?: return null
-        loadPath(ffmpeg)
-        loadPath(game)
-        return game
-    }
-
-    @JvmStatic
     fun loadOns(context: Context): String? {
         // 先一次性预检全部 .so，任一缺失即整体失败，避免加载到一半无法回滚。
         val paths = NativePluginConstants.ONS_REQUIRED_LIBS.map { lib ->

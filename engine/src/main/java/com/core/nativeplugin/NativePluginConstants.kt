@@ -25,13 +25,9 @@ object NativePluginConstants {
     const val LIB_FFMPEG = "libffmpeg.so"
     const val LIB_GAME_139 = "libgame.so"
     const val LIB_GAME_134 = "libgame134.so"
-    const val LIB_GAME_126 = "libgame126.so"
 
     const val LIB_ARTEMIS = "libartemis.so"
     const val LIB_ARTEMIS_COMPATIBLE = "libartemis-compatible.so"
-    const val LIB_ARTEMIS_COMPATIBLE_V2 = "libartemis-compatible-v2.so"
-    const val LIB_ARTEMIS_V4 = "libartemis-v4.so"
-    const val LIB_ARTEMIS_V5 = "libartemis-v5.so"
     /** 官方拆解 Rev.3294（含 E-mote）运行库。 */
     const val LIB_ARTEMIS_V6 = "libartemis-v6.so"
     /** 自研 clean-room 兼容内核（artemis-compat 仓库构建产物）。 */
@@ -52,7 +48,6 @@ object NativePluginConstants {
         LIB_FFMPEG,
         LIB_GAME_139,
         LIB_GAME_134,
-        LIB_GAME_126,
     )
 
     /** ONS(Yuri runtime) 外置插件必备 so，加载顺序即此处顺序（依赖先于依赖方）。 */
@@ -71,9 +66,6 @@ object NativePluginConstants {
     val ARTEMIS_REQUIRED_LIBS: List<String> = listOf(
         LIB_ARTEMIS,
         LIB_ARTEMIS_COMPATIBLE,
-        LIB_ARTEMIS_COMPATIBLE_V2,
-        LIB_ARTEMIS_V4,
-        LIB_ARTEMIS_V5,
         LIB_ARTEMIS_V6,
         LIB_ARTEMIS_CLEAN,
     )

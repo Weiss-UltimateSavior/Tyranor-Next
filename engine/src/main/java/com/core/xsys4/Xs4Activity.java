@@ -102,8 +102,27 @@ public final class Xs4Activity extends SDLActivity {
             Log.w(TAG, "xsys4 " + note);
         }
 
+        // 运行库由启动编排解压；缺失（或 stamp 与当前 APK 不一致）时不能在此 finish：
+        // 本类是 SDL 宿主，super.onCreate 才加载运行库，未调用 super 就结束会抛
+        // SuperNotCalledException。保持 null 交给 loadLibraries 抛 UnsatisfiedLinkError，
+        // 由 SDL 的 mBrokenLibraries 错误路径收场。
+        String sdl = com.core.nativeplugin.NativeRuntimePack.libraryPath(
+                this, com.core.nativeplugin.NativeRuntimePack.PACK_XSYSTEM, "libSDL2x.so");
+        String engine = com.core.nativeplugin.NativeRuntimePack.libraryPath(
+                this, com.core.nativeplugin.NativeRuntimePack.PACK_XSYSTEM, "libxsystem4.so");
+        if (sdl == null || engine == null) {
+            Toast.makeText(this, uiString(R.string.engine_xsys4_runtime_pack_missing), Toast.LENGTH_LONG).show();
+            Log.w(TAG, "xsystem runtime pack not ready: sdl=" + sdl + " engine=" + engine);
+        }
+        // 无条件赋值（含 null）：静态字段跨 Activity 实例保留，必须清掉上一次的旧路径。
+        sSdlLibraryPath = sdl;
+        sEngineLibraryPath = engine;
         super.onCreate(savedInstanceState);
-        sdlReady = true;
+        sdlReady = !SDLActivity.mBrokenLibraries;
+        if (SDLActivity.mBrokenLibraries) {
+            // SDL 已展示运行库加载错误框，不再设置依赖 native 的窗口样式。
+            return;
+        }
 
         // Workaround for https://github.com/libsdl-org/SDL/issues/8995 —— 必须 super.onCreate 之后调用，
         // 此时 SDL 单例已建立（sendCommand 依赖 mSingleton）。
@@ -163,10 +182,31 @@ public final class Xs4Activity extends SDLActivity {
 
     // ---------- SDL 主循环参数 ----------
 
+    // 引擎库从运行库包按绝对路径加载；libSDL2x.so 同包，先加载依赖。
+    private static volatile String sSdlLibraryPath;
+    private static volatile String sEngineLibraryPath;
+
+    @Override
+    public void loadLibraries() {
+        String sdl = sSdlLibraryPath;
+        String engine = sEngineLibraryPath;
+        if (sdl == null || engine == null) throw new UnsatisfiedLinkError("xsystem runtime pack missing");
+        System.load(sdl);
+        System.load(engine);
+    }
+
+    @Override
+    protected String getMainSharedObject() {
+        String path = sEngineLibraryPath;
+        // SDL 默认返回 nativeLibraryDir + 库名，这里换成运行库包解压后的绝对路径。
+        return path != null ? path : super.getMainSharedObject();
+    }
+
     @Override
     protected String[] getLibraries() {
-        // 末项为主库（getMainSharedObject 取 libxsystem4.so）。SDL2x 与 System35 共用，其余依赖均静态链入。
-        return new String[] { "SDL2x", "xsystem4" };
+        // 实际加载顺序由覆写的 loadLibraries() 决定（SDL2x → xsystem4），主库路径由
+        // getMainSharedObject() 返回解压后的绝对路径；SDL2x 与 System35 共用，其余依赖均静态链入。
+        return new String[] { "SDL2x" };
     }
 
     @Override

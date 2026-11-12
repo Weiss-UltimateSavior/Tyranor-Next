@@ -33,10 +33,67 @@ var TyranoPlayer = (function() {
     return TyranoPlayer;
 })();
 var _tyrano_player = new TyranoPlayer("");
-// 注意：此处刻意不改写 tyrano.base.fitBaseSize。引擎自带实现会按 ScreenCentering
-// 用 margin-left/top 居中，并写入 kag.tmp.screen_info、触发 resize（点击坐标换算依赖它）。
-// 旧覆写会先清掉居中边距(margin:0)再改用 left/top 定位，一旦 left 未生效即造成画面
-// 左对齐偏移（右侧黑边），故交由引擎原生逻辑处理。
+// 本宿主用整屏 WebView 展示：桌面端导出的 Config.tjs 可能把 ScreenCentering 设为
+// false（桌面窗口与画面同宽时无感）。Tyrano 4.x 的 fitBaseSize / 5.x 的 _fitBaseSize
+// 在该值为 false 时只做缩放、不写居中偏移，宽屏手机上画面便固定在左上角，右侧留下
+// 大片黑边。这里在引擎初始化前包裹实际布局函数，把开关收敛为 true，复用引擎自带的
+// 居中、resize/orientation 处理与 base_scale/screen_info 记录；不再自行重算几何
+//（旧覆写已由 27078f67 移除，曾因自行定位导致偏移）。
+// vchat 与 useCamera 是引擎显式关闭居中的两种布局模式（v5 vchat 依赖未居中的 base
+// 计算聊天区高度），保持引擎决定，不强制。
+(function () {
+    if (typeof tyrano === 'undefined' || !tyrano.base) return;
+    var base = tyrano.base;
+    var forcedCenter = false;
+
+    function shouldCenter(config) {
+        if (!config) return false;
+        // 只有 fix 比例会走引擎的居中分支；fit/default 不写偏移，保持原样。
+        if (String(config.ScreenRatio) !== 'fix') return false;
+        return String(config.vchat) !== 'true' && String(config.useCamera) !== 'true';
+    }
+
+    // v5 在 index.html 的 [tyrano='config'] 里启用 vchat 时，首帧 fit 可能已经居中；
+    // 引擎的 false 分支不会清理旧偏移，这里在切到 vchat/useCamera 时恢复未居中位置。
+    function clearForcedCenter() {
+        forcedCenter = false;
+        try {
+            $(".tyrano_base").css({
+                "margin-left": "0px",
+                "margin-top": "0px",
+                "left": "0px",
+                "top": "0px"
+            });
+        } catch (e) {}
+    }
+
+    function wrap(name) {
+        var original = base[name];
+        if (typeof original !== 'function' || original.__tyranorCenterWrapped) return;
+        var wrapped = function () {
+            try {
+                var kag = this.tyrano && this.tyrano.kag;
+                var config = kag && kag.config;
+                if (config && shouldCenter(config)) {
+                    config.ScreenCentering = 'true';
+                    forcedCenter = true;
+                } else if (config && forcedCenter) {
+                    clearForcedCenter();
+                }
+            } catch (e) {
+                // kag 尚未挂好时保持原行为，后续 fit 再处理。
+            }
+            return original.apply(this, arguments);
+        };
+        wrapped.__tyranorCenterWrapped = true;
+        base[name] = wrapped;
+    }
+
+    // 4.x 只暴露 fitBaseSize；5.x 的 fitBaseSize 仅延时调用 _fitBaseSize，
+    // 且初始化会直接调 _fitBaseSize，两者都包住才能覆盖首帧与 resize。
+    wrap('fitBaseSize');
+    wrap('_fitBaseSize');
+})();
 $.setStorage = function(key, val, type) {
     if ("appJsInterface" in window) {
         appJsInterface.setStorage(key, escape(JSON.stringify(val)));
