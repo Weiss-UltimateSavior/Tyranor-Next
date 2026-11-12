@@ -44,6 +44,8 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
   <img src="https://contrib.rocks/image?repo=Weiss-UltimateSavior/Tyranor-Next" />
 </a>
 
+RPG Maker MV/MZ 的 DKTools 浏览器文件索引缺失时，可由宿主提供会话内只读索引，支持目录及 ASAR 游戏，并优先保留游戏已有索引。索引排除已知存档/备份目录，支持资源名大小写与空白差异；超限时尝试仅提供语言和数据目录。适用模式见 [SPEC 第 4 节](SPEC.md#4-引擎识别与运行路线)，验证边界见 [第 10 节](SPEC.md#10-实验能力与证据边界)。
+
 ## 支持范围
 
 ### 引擎与游戏类型

@@ -79,6 +79,14 @@ Ren’Py 8.5.3 与原 8.5 使用相同 APK 包名，作为同一模块升级，�
 
 外置模拟器跳转使用显式组件启动目标应用：YU-RIS / CatSystem2 / PC 通过 Winlator 的 `dir_path` 与 `exe_path` 传递游戏目录和主程序；PSP / Nintendo Switch 则传递 ROM URI 及读取授权。具体协议见 [外置模拟器接入说明](docs/外置主机模拟器跳转接入方案.md)。
 
+MV/MZ 的 Tyranor-2.3.4 与 TynMV/TynMZ 宿主为 DKTools 的 `MODE_NWJS_STAMP` 浏览器模式提供缺失文件索引兼容。游戏已有 `data/Stamp.json` 时继续交给原插件读取；缺失时使用会话内只读目录索引，支持磁盘及 ASAR 资源，不写回游戏文件。其他模式保留原行为，其他网页游戏不启用该兼容端点。
+
+- 自行生成的索引重复加载时保留同一索引；游戏重置或替换索引后重新判定。仅生成的索引采用逐层资源名匹配：精确优先，其次唯一的大小写、空白类别、扩展名前尾随空白匹配，歧义时不选取任意文件；保留真实名称供目录枚举，HTTP 资源解析采用相同规则。
+- 两套 ASAR 读取器支持 packed/unpacked 资源、隐式目录和磁盘优先覆盖；unpacked 文件从同名 `.asar.unpacked` 目录安全读取，使用实际文件长度，外部文件缺失时不伪装为存在。目录树首次列目录时构建，最多 250,000 个节点；不可变归档的节点超限结果在会话内缓存，中断可重试。精确 ASAR 文件读取不依赖这棵可选目录树。扫描不重复列出当前 ASAR 容器及其 unpacked 镜像目录。子目录不可读或消失时隔离该目录，磁盘根不可读但归档可读时仍可提供归档索引。
+- 索引不跟随符号链接，包括指向游戏根内部的别名；HTTP 仍可服务其安全解析到根内的目标，因此这类链接不会获得 DKTools 索引兼容。`node_modules`、`.git` 不进入索引；游戏根的 `save`、`saves`、`savedata`、`backup`、`backups`、`config`、`original`、`deleted` 不进入索引，其他任意自定义私有目录不保证自动识别。
+- 服务器成功响应 DKTools 脚本 GET 后触发一次后台索引预热；游戏已有 Stamp 时不扫描，未请求 DKTools 脚本的会话不因启动服务器而预建索引。完整扫描受条目数 50,000、目录数 2,048、深度 64、估计/编码字节数 8 MiB 及协作式 5 秒预算约束，优先遍历 `locales` 和 `data`；完整扫描超限时另行尝试仅索引这两个根目录。降级索引只代表这部分资源，不能承诺其他依赖文件枚举的插件继续运行。完整索引在会话内缓存，降级结果/确定性失败退避 5 秒后允许重试，关闭服务器后取消后续扫描；文件系统阻塞调用不受硬实时超时保证。
+- 索引端点需要该会话的 cookie，cookie 名按会话区分以避免同主机不同端口覆盖。入口页会发放 cookie，因此它只约束请求归属，不是同设备其他应用的安全隔离边界；排除已知私有目录只能减少元数据枚举，不能替代整个本地服务器的访问控制。
+
 Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动边界如下：
 
 - 扫描目录的直接子项中，每个顶层 `.swf` 默认是一条记录：uri 为文件 URI，`launchTarget` 为文件名，别名 `internal.flash`。
@@ -224,6 +232,8 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 Hikarinagi OAuth 支持授权、回调校验及 token 刷新。应用检查 GitHub Releases，提供正式/预发布候选、下载与系统安装器跳转；后台任务在应用进入后台时安排，并受网络和系统调度限制，不保证固定时间完成。通知及未知来源安装受系统授权控制；失败不应阻断离线游戏库功能。
 
 ## 10. 实验能力与证据边界
+
+DKTools 索引兼容的自动化验证覆盖合成目录、两套读取器的 packed/unpacked ASAR、请求归属检查、原索引优先与模式隔离、重复加载及资源名差异；JS harness 作为 Android CI 的显式步骤执行。本地 DKTools 11.2.6 样本配置为 mode 0，其 Node 浏览器环境验证可枚举并加载三种语言各 12 个文件、5,811 个键，也验证重复加载和大小写不同的目录枚举。此环境观察到插件原有 `getStats` 浏览器路径分隔符问题，未将其作为已修复能力。上述证据不等于 Android 实机运行通过，也不代表所有 DKTools 版本或所有 MV/MZ 插件已兼容。首次索引耗时、预热与首帧关系、内存/ANR，以及游戏画面、语言、存读档仍需按目标设备与样本单独验证。
 
 Ethornell 已接入扫描、设置与内置宿主，并已升级到上游 `0cfff1d` 的 ABI v1 接口面：15 个导出（含 `request_payload`）、Event kind 5 输入对话框与 JSON 回答。当前随包库为 `043fef05…`（27,259,224 B），在上游基础上带 1 个本地补丁（SHA-256 `77b99d93…`；修复启动期 `Sys80:32` 双重 `bgi-resource` 前缀的 `UserData` 写入，并把顶层 `bgi-resource/BGI.gdb` 与 `bgi-resource/BGI####.cad` 全局数据映射到私有 user-root），provenance `dirty=true`、`local_patches=1`；`--local-static`、debug/release APK 精确库字节与 release zipalign（build-tools 36.0.0）通过，**严格来源审计因 dirty 未通过**、`release_ready=false`。`EthornellDeviceTest` 全类 6/6 通过（1.426s；15 符号/ABI、UTF-8 与线程/token、原创 GPU 像素与 Surface 重挂、脚本 Closed、合成 VM 全局 user-data 写入/重开/空根反例），`EthornellPauseDeviceTest` 3/3 通过（2.999s，仅暂停/恢复与 Surface），`EthornellSaveDeviceTest` 9/9（`pm clear` 后，2.047s），Release R8 probe SJIS/GBK 各 3/3。真实样本私有 Activity 在 30s/45s 含语言点击后仍存活、无 `failed_detail`，私有 user-root 生成 `BGI.gdb`（约 123,802 B）；新夹具下 `UserData` 可能为空，不据此声称存档槽位。标题/对白/输入对话框、商业槽位保存/读回与 `Sys80:34`、`Sys80:30/31/35` 等读取 API 未验证，不能据此宣称完整兼容。
 

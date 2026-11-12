@@ -98,6 +98,13 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --no-daemon
 
+      - name: Set up Node.js for web compatibility regression tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run web compatibility harnesses
+        run: ./gradlew :engine:jsHarness :engine:dkToolsHarness --no-daemon
       - name: Check lint on PR changes
         if: github.event_name == 'pull_request'
         run: |

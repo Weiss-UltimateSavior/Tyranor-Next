@@ -1,5 +1,7 @@
 package com.core.rpgmaker
 
+import com.core.web.DkToolsCompat
+
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -48,7 +50,8 @@ import org.json.JSONObject
  * 不影响 v0 路径。
  *
  * 本 Activity 位于 engine 模块的 com.core.rpgmaker 独立运行时包（不依赖 app 层），
- * 与 tyrano 宿主（com.core.tyrano，承载 v0）互不引用；v1/v2 专属运行时资产集中在
+ * 与 tyrano 宿主（com.core.tyrano，承载 v0）共用只读文件索引和 com.core.web 辅助；
+ * 两者分别适配各自 ASAR 读取器。v1/v2 专属运行时资产集中在
  * assets/rpgmaker/ 子目录，共享脚本（__rpg__.js、__rmmz__.js、触屏手柄、修改器等）
  * 仍以 engine assets 根为单份源头。用户偏好（UI 缩放、外网开关）直接读取共享的
  * tyranor_prefs，与 engine 内其他宿主同模式。
@@ -239,14 +242,14 @@ class RpgMakerActivity : Activity() {
                 else -> RPG_MV_HOOK_ASSET
             }
             val lateHook = loadAssetOrNull(hookAsset) ?: ByteArray(0)
-            val scriptAppends = if (webGameType == WebGameType.RPG_MZ) {
+            val scriptAppends = (if (webGameType == WebGameType.RPG_MZ) {
                 mapOf(
                     "js/rmmz_core.js" to loadAsset(RPG_MZ_CORE_HOOK_ASSET),
                     "js/rmmz_managers.js" to loadAsset(RPG_MZ_MANAGERS_HOOK_ASSET),
                 )
             } else {
                 emptyMap()
-            }
+            }) + mapOf(DkToolsCompat.SCRIPT_PATH to loadAsset(DkToolsCompat.ASSET_PATH))
             val modResources = if (rpgMakerModEnabled) {
                 mapOf(
                     RPG_MAKER_MOD_CORE_PATH to loadAsset(RPG_MAKER_MOD_CORE_ASSET),
