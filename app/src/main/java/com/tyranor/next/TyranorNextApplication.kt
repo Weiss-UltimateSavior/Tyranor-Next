@@ -83,6 +83,7 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
     private fun initializeMainLibrary() {
         if (libraryInitialized) return
         libraryInitialized = true
+        AppSettingsStore.initGameConditions(this)
         GameLibraryRepository.init(this)
     }
 
