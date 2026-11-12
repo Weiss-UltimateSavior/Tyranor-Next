@@ -676,6 +676,8 @@
 
     <string name="external_engine_resolve_dir_failed">Unable to resolve the real path for the %1$s game directory, so the external engine module cannot start</string>
     <string name="external_engine_module_missing">%1$s was not detected. Download and install the module first</string>
+    <string name="external_engine_module_outdated">The installed module is outdated. Download and install %1$s</string>
+    <string name="engine_module_install_or_update">Module missing or update required</string>
     <string name="external_engine_no_activity">%1$s does not provide an Activity that can receive launch requests</string>
     <string name="external_engine_denied">%1$s launch was denied by the system. Check the module permissions</string>
     <string name="external_engine_launch_failed">%1$s launch failed. Check the module permissions</string>

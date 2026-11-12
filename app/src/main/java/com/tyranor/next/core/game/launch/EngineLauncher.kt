@@ -43,9 +43,7 @@ import com.tyranor.next.core.engine.graphics.putGraphicsExtras
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
 import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
-import com.tyranor.next.core.engine.external.ExternalEngineErrorCode
 import com.tyranor.next.core.engine.external.ExternalEngineLaunchRequest
-import com.tyranor.next.core.engine.external.ExternalEngineLaunchResult
 import com.tyranor.next.core.engine.external.ExternalEngineLauncher
 import com.tyranor.next.core.engine.external.WinlatorContract
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
@@ -403,16 +401,8 @@ object EngineLauncher {
             ) ?: defaultModule
             // 先确认模块已安装，再走目录/权限门禁：否则未安装时会把用户先送去「所有文件访问」，
             // 真正的缺失原因（应安装模块）反而看不到。
-            if (!ExternalEngineLauncher.isPackageInstalled(context, module)) {
-                return LaunchResult.Failure.ExternalModuleFailed(
-                    ExternalEngineLaunchResult.failure(
-                        ExternalEngineErrorCode.PACKAGE_NOT_INSTALLED,
-                        moduleNameRes = module.displayNameRes,
-                        moduleNameFallback = module.displayName,
-                        engineName = game.engine.displayName,
-                        installUrl = module.installUrl,
-                    ),
-                )
+            ExternalEngineLauncher.checkInstallation(context, module)?.let {
+                return LaunchResult.Failure.ExternalModuleFailed(it)
             }
             if (module.requiresGameDirectoryPath && path == null) {
                 return LaunchResult.Failure.GameDirUnresolved

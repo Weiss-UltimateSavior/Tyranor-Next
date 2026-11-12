@@ -676,6 +676,8 @@
 
     <string name="external_engine_resolve_dir_failed">无法解析 %1$s 游戏目录真实路径，外置引擎模块无法启动</string>
     <string name="external_engine_module_missing">未检测到 %1$s，请先下载安装模块</string>
+    <string name="external_engine_module_outdated">已安装的模块版本过旧，请下载安装 %1$s</string>
+    <string name="engine_module_install_or_update">模块未安装或需要更新</string>
     <string name="external_engine_no_activity">%1$s 未提供可接收启动请求的 Activity</string>
     <string name="external_engine_denied">%1$s 启动被系统拒绝，请检查模块权限</string>
     <string name="external_engine_launch_failed">%1$s 启动失败，请检查模块权限</string>

@@ -676,6 +676,8 @@
 
     <string name="external_engine_resolve_dir_failed">%1$s のゲームフォルダ実パスを解析できないため、外部エンジンモジュールを起動できません</string>
     <string name="external_engine_module_missing">%1$s が見つかりません。先にモジュールをダウンロードしてインストールしてください</string>
+    <string name="external_engine_module_outdated">インストール済みのモジュールが古いため、%1$s をダウンロードしてインストールしてください</string>
+    <string name="engine_module_install_or_update">モジュール未インストール、または更新が必要</string>
     <string name="external_engine_no_activity">%1$s には起動要求を受け取れる Activity がありません</string>
     <string name="external_engine_denied">%1$s の起動がシステムに拒否されました。モジュール権限を確認してください</string>
     <string name="external_engine_launch_failed">%1$s の起動に失敗しました。モジュール権限を確認してください</string>

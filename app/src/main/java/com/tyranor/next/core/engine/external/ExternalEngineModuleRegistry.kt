@@ -18,7 +18,7 @@ object ExternalEngineModuleRegistry {
 
     /**
      * 解析某引擎实际生效的外置模块：
-     * Ren'Py 显式版本优先；auto/null/未知时使用扫描探测版本；仍未知则默认 8.5。
+     * Ren'Py 显式版本优先；auto/null/未知时使用扫描探测版本；仍未知则默认当前 8.5.3 模块。
      */
     fun resolveModule(
         engine: EngineType,
@@ -42,7 +42,7 @@ object ExternalEngineModuleRegistry {
     /** 按 Ren'Py 版本（EngineSettingsStore 的 RENPY_* 常量）查找模块；auto/未知返回 null，由调用方回退默认。 */
     fun moduleForRenpyVersion(version: String?): ExternalEngineModule? =
         when (version?.trim()?.lowercase(Locale.ROOT)) {
-            EngineSettingsStore.RENPY_85 -> RenPyExternalEngineModule
+            EngineSettingsStore.RENPY_85, EngineSettingsStore.RENPY_853 -> RenPyExternalEngineModule
             EngineSettingsStore.RENPY_77 -> RenPy77ExternalEngineModule
             else -> null
         }
