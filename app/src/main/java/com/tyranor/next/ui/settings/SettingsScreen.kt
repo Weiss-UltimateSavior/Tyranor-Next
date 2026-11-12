@@ -67,6 +67,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tyranor.next.R
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.core.settings.AppearanceStyle
 import com.tyranor.next.core.settings.GraphicsCapabilities
 import com.tyranor.next.core.settings.GraphicsFamily
 import com.tyranor.next.core.settings.GraphicsSettings
@@ -328,6 +329,27 @@ fun SettingsScreen(
                                 magnetThreshold = 0.25f,
                                 hapticEffect = SliderDefaults.SliderHapticEffect.Step,
                                 modifier = Modifier.padding(horizontal = 16.dp),
+                            )
+                            val appearanceStyles = AppearanceStyle.entries
+                            val appearanceLabels = appearanceStyles.map { style ->
+                                stringResource(
+                                    when (style) {
+                                        AppearanceStyle.DEFAULT -> R.string.settings_appearance_style_default
+                                        AppearanceStyle.RETRO_GLASS -> R.string.settings_appearance_style_glass
+                                        AppearanceStyle.MILK_GLASS -> R.string.settings_appearance_style_milk
+                                    },
+                                )
+                            }
+                            OverlayDropdownPreference(
+                                title = stringResource(R.string.settings_appearance_style),
+                                items = appearanceLabels,
+                                selectedIndex = appearanceStyles.indexOf(AppThemeColors.appearanceStyle).coerceAtLeast(0),
+                                onSelectedIndexChange = { index ->
+                                    appearanceStyles.getOrNull(index)?.let { style ->
+                                        AppSettingsStore.setAppearanceStyle(ctx, style)
+                                        AppThemeColors.refresh(ctx)
+                                    }
+                                },
                             )
                         }
                     }
