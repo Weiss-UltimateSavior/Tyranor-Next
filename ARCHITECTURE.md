@@ -51,6 +51,8 @@ flowchart TD
 
 数据写入链为 UI 命令队列 → [GameLibraryFacade](app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryFacade.kt) 缓存与修订号 → [GameLibraryRepository](app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryRepository.kt) 单线程 FIFO + mutex → Room。封面更新只修改对应字段；一致性搜索先等待已排队写入，避免旧结果覆盖新状态。
 
+游戏页的排序与筛选由 `core/game/model` 在内存完成。Room 与等待查询时的内存回退使用相同的标题键做字面匹配。Room 只返回命中的 URI，页面再对当前游戏库快照应用排序与筛选，更改条件不重查 Room。发布库快照前等待已排队写入，失效引擎条件仅在确认引擎已不存在后清除。
+
 旧 `game_scanner` prefs 仍作为幂等迁移来源和恢复镜像，不能删除为“无用缓存”。应用/引擎偏好及引擎进程读取的单游戏 blob 仍保留 prefs；Room 不是所有状态的唯一介质，也不能把普通 SharedPreferences 当成实时跨进程消息总线。
 
 Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并从镜像修复；v2→v3 通过显式 `Migration(2,3)` 新增 `games.runtime_module_package` 列及索引，schema v3 的 `3.json` 已导出。后续版本必须显式注册 `Migration`，不能扩大全局破坏性回退。当前数据库、加密凭据、存档同步状态与备份边界统一见 [持久化数据清单](docs/应用持久化数据清单.md)；清单分别说明 v1 破坏性重建与 v2→v3 显式迁移；专题验收记录仍只对各自标注的版本有效。
