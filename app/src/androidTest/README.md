@@ -24,6 +24,8 @@ android --sdk=/tmp/androidsdk install --device='adb-AUUEUT3C22008394-f7wkhv._adb
 
 **先核对 APK applicationId 确为 `com.tyranor.next.ethornelltest`，不要覆盖正式 `com.tyranor.next`。** 两个 APK 属于不同包，必须分两次 install；逗号传入一次会被当作同一包 split，出现 `Split null` 重复错误。测试库只提供 arm64-v8a；真实 API 36 / 4KB 设备与 API35 arm64 模拟器可执行，但不等于 API26 / 16KB 验证。
 
+启动器别名以 `${applicationId}.LauncherDefault` / `${applicationId}.LauncherClassic` 声明，匹配图标切换器使用的实际包名；目标 Activity 仍为命名空间下的 `com.tyranor.next.MainActivity`。
+
 ## 自动合成夹具测试
 
 ```bash
