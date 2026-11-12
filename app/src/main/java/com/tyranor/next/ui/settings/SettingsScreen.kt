@@ -23,8 +23,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,9 +30,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -54,7 +50,6 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -77,11 +72,7 @@ import com.tyranor.next.core.settings.GraphicsFamily
 import com.tyranor.next.core.settings.GraphicsSettings
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.game.storage.GameLibraryFacade
-import com.tyranor.next.theme.AppSheetTopShape
 import com.tyranor.next.theme.AppThemeColors
-import com.tyranor.next.theme.GlassPanelSolid
-import com.tyranor.next.theme.GlassSurfaceSolid
-import com.tyranor.next.theme.MilkGlassPanelBackground
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.PageSecondaryTextColor
 import com.tyranor.next.theme.PageTextColor
@@ -93,8 +84,7 @@ import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppAlertDialog
-import com.tyranor.next.ui.common.AppDialogMaxWidth
-import com.tyranor.next.ui.common.AppSheetDragHandle
+import com.tyranor.next.ui.common.AppBottomSheet
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.SettingsEntryCard
@@ -339,24 +329,6 @@ fun SettingsScreen(
                                 hapticEffect = SliderDefaults.SliderHapticEffect.Step,
                                 modifier = Modifier.padding(horizontal = 16.dp),
                             )
-                            var gameSort by remember { mutableStateOf(AppSettingsStore.getGameSort(ctx)) }
-                            val gameSortModes = listOf(
-                                AppSettingsStore.GAME_SORT_ALPHA to stringResource(R.string.settings_sort_alpha),
-                                AppSettingsStore.GAME_SORT_BRACKET_TAG to stringResource(R.string.settings_sort_bracket_tag),
-                            )
-                            val sortIndex = gameSortModes.indexOfFirst { it.first == gameSort }
-                                .let { if (it < 0) 0 else it }
-                            OverlayDropdownPreference(
-                                title = stringResource(R.string.settings_game_sort),
-                                items = gameSortModes.map { it.second },
-                                selectedIndex = sortIndex,
-                                onSelectedIndexChange = { index ->
-                                    gameSortModes.getOrNull(index)?.first?.let { sort ->
-                                        gameSort = sort
-                                        AppSettingsStore.setGameSort(ctx, sort)
-                                    }
-                                },
-                            )
                         }
                     }
                 }
@@ -406,54 +378,18 @@ fun SettingsScreen(
     }
 
     if (showScanDirs) {
-        // 抽屉内条目底色：与游戏操作抽屉一致（复古玻璃用不透明条目色，白雾玻璃用弹窗内条目色）
+        // 抽屉内条目底色遵循页面灰底取色；白雾玻璃用面板内条目色。
         val dirItemSurface = when {
-            AppThemeColors.isGlass -> GlassSurfaceSolid
             AppThemeColors.isMilkGlass -> DialogItemSurface
             else -> NavWhite
         }
-        ModalBottomSheet(
-            onDismissRequest = { showScanDirs = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            sheetMaxWidth = AppDialogMaxWidth,
-            // 关闭拖拽手势：只允许遮罩/返回键关闭（与游戏操作抽屉一致）
-            sheetGesturesEnabled = false,
-            containerColor = when {
-                AppThemeColors.isGlass -> GlassPanelSolid
-                AppThemeColors.isMilkGlass -> Color.Transparent
-                else -> MaterialTheme.colorScheme.background
-            },
-            contentColor = TextColor,
-            scrimColor = when {
-                AppThemeColors.isGlass -> Color.Black.copy(alpha = 0.6f)
-                AppThemeColors.isMilkGlass -> Color.Black.copy(alpha = 0.45f)
-                else -> Color.Black.copy(alpha = 0.32f)
-            },
-            contentWindowInsets = { WindowInsets(0.dp) },
-            shape = AppSheetTopShape,
-            dragHandle = {
-                if (!AppThemeColors.isMilkGlass) AppSheetDragHandle(showGlassTopBorder = true)
-            },
-        ) {
-            // 列表最大高度为底部两个长按钮与标题预留空间，避免抽屉整体超出屏幕
-            val sheetMaxHeight = with(LocalConfiguration.current) {
-                (screenHeightDp - 280).dp.coerceIn(80.dp, 420.dp)
-            }
-            Box(Modifier.fillMaxWidth().clip(AppSheetTopShape)) {
-                if (AppThemeColors.isMilkGlass) {
-                    MilkGlassPanelBackground(Modifier.matchParentSize())
-                }
-                Column(Modifier.fillMaxWidth()) {
-                    if (AppThemeColors.isMilkGlass) {
-                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            AppSheetDragHandle()
-                        }
-                    }
-                    LazyColumn(
-                        modifier = Modifier.fillMaxWidth().heightIn(max = sheetMaxHeight),
+        AppBottomSheet(onDismissRequest = { showScanDirs = false }) {
+            Column(Modifier.fillMaxWidth().weight(1f, fill = false)) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
+                ) {
                         item {
                             Text(
                                 stringResource(R.string.settings_game_dirs_title),
@@ -553,27 +489,25 @@ fun SettingsScreen(
                                 )
                             }
                         }
-                    }
-                    // 底部主操作：输入路径 / 添加目录 改为两个长按钮；
-                    // 点击后抽屉保持展开，列表随 rootsRevision 自动刷新
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        NoRippleButton(
-                            text = stringResource(R.string.settings_input_path),
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = { showPathDialog = true },
-                        )
-                        NoRippleButton(
-                            text = stringResource(R.string.settings_add_dir),
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = { dirPicker.launch(null) },
-                        )
-                    }
+                }
+
+                // 底部主操作：输入路径 / 添加目录改为两个长按钮；点击后抽屉保持展开。
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    NoRippleButton(
+                        text = stringResource(R.string.settings_input_path),
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { showPathDialog = true },
+                    )
+                    NoRippleButton(
+                        text = stringResource(R.string.settings_add_dir),
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { dirPicker.launch(null) },
+                    )
                 }
             }
         }

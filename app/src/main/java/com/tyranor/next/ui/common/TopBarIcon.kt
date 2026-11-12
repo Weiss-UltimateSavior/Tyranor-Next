@@ -11,6 +11,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 
 /**
@@ -26,6 +28,7 @@ fun TopBarIcon(
     painter: Painter,
     contentDescription: String?,
     tint: Color,
+    stateDescription: String? = null,
     onClick: () -> Unit,
 ) {
     Image(
@@ -33,6 +36,10 @@ fun TopBarIcon(
         contentDescription = contentDescription,
         colorFilter = ColorFilter.tint(tint),
         modifier = Modifier
+            .then(
+                if (stateDescription != null) Modifier.semantics { this.stateDescription = stateDescription }
+                else Modifier,
+            )
             .padding(start = 2.dp)
             .size(34.dp)
             .clip(RoundedCornerShape(6.dp))
