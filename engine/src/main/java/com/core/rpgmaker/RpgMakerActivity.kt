@@ -796,10 +796,12 @@ class RpgMakerActivity : Activity() {
         DoubleBackExit.clear(this)
         runCatching { inputRemap?.onDestroy() }
         inputRemap = null
-        // 销毁前必须等 localStorage 同步刷完：evaluateJavascript 是异步的，紧跟着 destroy()
-        // 会让 FLUSH_LOCAL_STORAGE_JS 从未执行，200ms 合并窗口内的写入随之丢失。
+        // 销毁前必须等 localStorage 刷完：evaluateJavascript 是异步的，紧跟着 destroy()
+        // 会让落盘脚本从未执行，200ms 合并窗口内的写入随之丢失。
         // 回调在 UI 线程投递，所以这里「回调触发销毁 + 看门狗兜底」：渲染进程已死时
         // evaluateJavascript 不会回调，看门狗负责把 WebView 销毁掉（避免泄漏）。
+        // 真正退出（isFinishing）时用 FINAL 脚本：放宽预算并把剩余键数回传，退出时
+        // 优先写完数据；recreate 之类页面还要用的场景仍走有预算的版本，避免卡住渲染线程。
         val dying = webView
         webView = null
         if (dying != null) {
@@ -811,9 +813,24 @@ class RpgMakerActivity : Activity() {
                     runCatching { dying.destroy() }
                 }
             }
+            val finishing = isFinishing
             Handler(Looper.getMainLooper()).postDelayed(teardown, FLUSH_TEARDOWN_WATCHDOG_MS)
             runCatching {
-                dying.evaluateJavascript(FLUSH_LOCAL_STORAGE_JS) { _ -> teardown.run() }
+                dying.evaluateJavascript(
+                    if (finishing) FLUSH_LOCAL_STORAGE_FINAL_JS else FLUSH_LOCAL_STORAGE_JS,
+                ) { value ->
+                    if (finishing) {
+                        // 脚本可能根本没装（v0/v1 会话）或抛错：这两种情况都拿不到数字，
+                        // 不能当成「0 个待写」——那是把失败报成成功
+                        val reported = value?.trim()?.trim('"')
+                        val pending = reported?.toIntOrNull()
+                        when {
+                            pending == null -> Log.w(TAG, "localStorage flush reported no count: $reported")
+                            pending > 0 -> Log.w(TAG, "localStorage flush incomplete at exit: $pending key(s) pending")
+                        }
+                    }
+                    teardown.run()
+                }
             }.onFailure { teardown.run() }
         }
         runCatching { localServer?.stop() }
@@ -973,14 +990,24 @@ class RpgMakerActivity : Activity() {
                 "catch(e){try{if(window.__tyranorLocalStorageFlush){window.__tyranorLocalStorageFlush();}}catch(e2){}}"
 
         /**
+         * 真正退出时的落盘入口：`flushAll(true)` 放宽预算到 `FLUSH_ALL_HARD_CAP_MS`，
+         * 并把**仍未落盘**的键数作为字符串回传，让宿主能记录「这次退出还剩几个键」。
+         *
+         * 只回传数字不回传布尔：脚本正常返回但数据没写完，与脚本压根没跑，是两种失败，
+         * 之前的 `evaluateJavascript(..., null)` 把两者都当成了成功。
+         */
+        private const val FLUSH_LOCAL_STORAGE_FINAL_JS =
+            "try{var f=window.__tyranorLocalStorageFlushAll;String(f?f(true):'missing');}catch(e){'error'}"
+
+        /**
          * 销毁时等待落盘回调的上限：渲染进程已死时 `evaluateJavascript` 不会回调，
          * 由看门狗兜底销毁 WebView（避免为了等一次落盘而泄漏 WebView）。
          *
-         * 必须**大于** JS 侧 `__nwjs_polyfill_v2.js` 的 `FLUSH_ALL_BUDGET_MS`（800ms）加调度
-         * 余量：慢存储上正常刷盘也可能超过 250ms，超时太短会在刷盘中途把页面拆掉，
-         * 那比不刷还糟（半批已写、剩余丢失且无 warn）。
+         * 必须**大于** JS 侧 `FLUSH_ALL_HARD_CAP_MS`（2000ms，真正退出时的兜底上限）
+         * 加调度余量：慢存储上正常刷盘也可能超过几百毫秒，超时太短会在刷盘中途把页面
+         * 拆掉，那比不刷还糟（半批已写、剩余丢失且只剩一条 warn）。
          */
-        private const val FLUSH_TEARDOWN_WATCHDOG_MS = 1_200L
+        private const val FLUSH_TEARDOWN_WATCHDOG_MS = 2_500L
         private const val RPG_MZ_CORE_HOOK_ASSET = "__hook_rmmz_core.js"
         private const val RPG_MZ_MANAGERS_HOOK_ASSET = "__hook_rmmz_managers.js"
         private const val RPG_MAKER_SAVE_BRIDGE_NAME = "saveDataManager"
@@ -1054,13 +1081,13 @@ class RpgMakerActivity : Activity() {
          * `finish()` 到 `killProcess` 的延迟。
          *
          * 必须**大于** [FLUSH_TEARDOWN_WATCHDOG_MS]，否则进程会在 localStorage 落盘完成前
-         * 被杀掉（退出动画/界面早已不可见，多留 1 秒只是让收尾跑完，用户无感）。
-         * 不变量：`PROCESS_EXIT_DELAY_MS > FLUSH_TEARDOWN_WATCHDOG_MS > FLUSH_ALL_BUDGET_MS`。
+         * 被杀掉（退出动画/界面早已不可见，多留几秒只是让收尾跑完，用户无感）。
+         * 不变量：`PROCESS_EXIT_DELAY_MS > FLUSH_TEARDOWN_WATCHDOG_MS > FLUSH_ALL_HARD_CAP_MS`。
          *
          * 延迟越长，「旧会话的退出任务撞上新会话」的窗口越大，所以真正的保护是
          * [sessionOwnership] 的期号比对，而不是这个数值本身。
          */
-        private const val PROCESS_EXIT_DELAY_MS = 1_500L
+        private const val PROCESS_EXIT_DELAY_MS = 3_000L
         private const val MAX_ENTRY_SEARCH_DEPTH = 2
         private val WEB_ENTRY_SUBDIRS = arrayOf("www", "resources", "app.asar", "app", "tyrano", "data", "scenario", "system", "game")
 

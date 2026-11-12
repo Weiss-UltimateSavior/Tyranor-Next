@@ -1374,6 +1374,67 @@ console.log('\n== localStorage 跨会话（模拟重启）==');
     })());
 }
 
+console.log('\n== localStorage 退出刷盘的失败路径 ==');
+{
+    // 回归：预算耗尽时未尝试的键必须被计数、告警并排续写，而不是静默留在 dirty 里
+    check('预算耗尽：返回剩余键数、记 warn、排续写定时器', (() => {
+        const s = Object.create(global.Storage.prototype);
+        for (let i = 0; i < 64; i++) s.setItem('budget.key.' + i, 'v' + i);
+
+        const realNow = Date.now;
+        const origWarn = console.warn;
+        const origSetTimeout = global.setTimeout;
+        let warned = 0;
+        let timers = 0;
+        let calls = 0;
+        let remaining = -1;
+        console.warn = function (m) { if (String(m).indexOf('flushAll stopped with') >= 0) warned++; };
+        global.setTimeout = function (fn, ms) { timers++; return origSetTimeout(fn, ms); };
+        try {
+            // 前两次取时间用于算 deadline 与第一批的预算判定，之后直接跳到预算之外
+            Date.now = function () { calls++; return calls <= 2 ? realNow() : realNow() + 10 * 60 * 1000; };
+            remaining = window.__tyranorLocalStorageFlushAll();
+        } finally {
+            Date.now = realNow;
+            console.warn = origWarn;
+            global.setTimeout = origSetTimeout;
+        }
+        // 64 个键 / 每批 32：第一批写完，剩 32 未尝试
+        return remaining === 32 && warned === 1 && timers >= 1;
+    })(), (() => {
+        const s = Object.create(global.Storage.prototype);
+        return 'length=' + s.length;
+    })());
+
+    // 回归：removeItem 删除失败后同键重新 setItem，待删重试不得把新值删掉
+    check('删除失败后重新 setItem：新值不会被待删重试抹掉', (() => {
+        const key = 'recreate.after.failed.delete';
+        const name = HostBuffer.from(key, 'utf8').toString('hex') + '.dat';
+        const target = nodePath.join(storeDir, name);
+        const s = Object.create(global.Storage.prototype);
+
+        s.setItem(key, 'OLD');
+        window.__tyranorLocalStorageFlushAll();
+
+        // 让删除失败，触发 suppressedNames 登记
+        const bridgeFs = global.TyranorFs;
+        const origRemove = bridgeFs.remove;
+        bridgeFs.remove = function () { return false; };
+        try { s.removeItem(key); } finally { bridgeFs.remove = origRemove; }
+        if (!fs.existsSync(target)) return false;   // 删除失败，旧文件应仍在
+
+        // 同键重新保存：新值必须能落盘，并且不被随后的「待删重试」清掉
+        s.setItem(key, 'NEW');
+        window.__tyranorLocalStorageFlushAll();
+        window.__tyranorLocalStorageFlushAll();
+        return fs.existsSync(target) && fs.readFileSync(target, 'utf8') === 'NEW';
+    })(), (() => {
+        const name = HostBuffer.from('recreate.after.failed.delete', 'utf8').toString('hex') + '.dat';
+        const target = nodePath.join(storeDir, name);
+        return fs.existsSync(target) ? 'disk=' + fs.readFileSync(target, 'utf8') : 'disk=<missing>';
+    })());
+}
+
     console.log(failed === 0 ? '\n全部通过' : '\n失败 ' + failed + ' 项');
     process.exit(failed === 0 ? 0 : 1);
 })();

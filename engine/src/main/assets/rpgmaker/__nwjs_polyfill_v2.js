@@ -3310,9 +3310,11 @@
             var MAX_FLUSH_RETRY = 1;
             // 单次 flush 的键数上限：切后台/退出时 flush 跑在渲染线程上，连续 fsync 会卡界面
             var MAX_FLUSH_KEYS = 32;
-            // flushAll 的总耗时预算（毫秒）：宿主在 onPause/销毁前同步调用它，不能无限跑。
-            // 超出预算的键留在 dirty 里交给重试定时器，并记一条 warn（不静默丢）。
+            // flushAll 的总耗时预算（毫秒）：宿主在 onPause 同步调用它，不能无限占住渲染线程
             var FLUSH_ALL_BUDGET_MS = 800;
+            // 真正退出（Activity isFinishing）时的兜底上限：此时页面马上要被销毁，
+            // 优先把数据写完，慢一点无所谓，但不能真的卡死
+            var FLUSH_ALL_HARD_CAP_MS = 2000;
 
             // 键名 → 文件名。用「UTF-8 字节的十六进制」编码：
             // 之前用 encodeURIComponent 再替换 '%' 为 '_' 的方案有歧义——
@@ -3482,6 +3484,9 @@
                         try {
                             realFs.writeFileSync(target, values[key]);
                             rememberKey(key);
+                            // 该键已经有新值了：之前 removeItem 失败留下的「待删」标记必须作废，
+                            // 否则下一次 flush 的 retrySuppressedDeletes 会把刚写的新值删掉
+                            delete suppressedNames[fileNameFor(key)];
                             // 已落盘：回到「按需读」，避免整份存档/数据表常驻内存
                             delete values[key];
                         } catch (e) {
@@ -3532,22 +3537,28 @@
             }
 
             /**
-             * 同步刷完全部脏键（宿主在 onPause / 销毁前调用）。
+             * 同步刷完脏键（宿主在 onPause / 销毁前调用），返回**仍未落盘**的键数。
              *
              * flush() 每批只写 MAX_FLUSH_KEYS 个键，剩余批次靠 setTimeout 续跑；而宿主
              * 紧接着会 webView.onPause()/destroy()，JS 定时器不再有机会执行 —— 只调 flush()
              * 最多保住 32 个键。
              *
              * 这里按**快照**分批跑完：失败的批次只登记、不打断后续批次（否则首批全失败会让
-             * 后面本来能写的配置键一起丢失）。总耗时受 FLUSH_ALL_BUDGET_MS 约束，超出预算的
-             * 键留在 dirty 里交给重试定时器，并明确记一条 warn（不再静默依赖定时器）。
+             * 后面本来能写的配置键一起丢失）。
+             *
+             * 预算：[ignoreBudget] 为假时受 FLUSH_ALL_BUDGET_MS 约束（onPause 路径，页面还活着，
+             * 不能长时间占住渲染线程）；为真时用于**真正退出**（Activity isFinishing），
+             * 只受 FLUSH_ALL_HARD_CAP_MS 兜底——退出时优先把数据写完，慢一点无所谓。
+             * 无论哪种模式，未写完的键都会留在 dirty、排一次续写定时器并记 warn，且把剩余
+             * 数量返回给宿主，不再像之前那样「既不算 skipped 也不告警」。
              */
-            function flushAll() {
+            function flushAll(ignoreBudget) {
                 if (flushTimer !== null) { try { clearTimeout(flushTimer); } catch (e) {} flushTimer = null; }
                 retrySuppressedDeletes();
                 var pending = Object.keys(dirty);
-                if (!pending.length) return;
-                var deadline = Date.now() + FLUSH_ALL_BUDGET_MS;
+                if (!pending.length) return 0;
+                var budget = ignoreBudget === true ? FLUSH_ALL_HARD_CAP_MS : FLUSH_ALL_BUDGET_MS;
+                var deadline = Date.now() + budget;
                 var failed = [];
                 var next = 0;
                 for (; next < pending.length; next += MAX_FLUSH_KEYS) {
@@ -3557,19 +3568,23 @@
                     var bad = writeBatch(batch);
                     for (var f = 0; f < bad.length; f++) failed.push(bad[f]);
                 }
-                // 预算内没跑到的键：保持 dirty，由重试定时器接手（并记 warn）
-                var skipped = 0;
-                for (var r = next; r < pending.length; r++) {
-                    if (!hasOwn(dirty, pending[r])) { dirty[pending[r]] = true; skipped++; }
-                }
+                // 未尝试的键从未被移出 dirty（只有 batch 内的键会），所以这里要按「还没写」
+                // 直接计数，而不是去比对 dirty 有没有被删掉
+                var unattempted = pending.length - next;
                 if (failed.length) {
                     for (var g = 0; g < failed.length; g++) dirty[failed[g]] = true;
                     flushRetries = 0;
-                    if (flushTimer === null) flushTimer = setTimeout(flush, FLUSH_RETRY_MS);
                 }
-                if (skipped > 0) {
-                    console.warn("[nw-polyfill-v2] localStorage flushAll hit its " + FLUSH_ALL_BUDGET_MS + "ms budget with " + skipped + " key(s) still pending");
+                var remaining = Object.keys(dirty).length;
+                if (remaining > 0) {
+                    // 页面还活着时自动续写；真正退出时这次排程无效，但宿主会拿到 remaining
+                    if (flushTimer === null) flushTimer = setTimeout(flush, 0);
+                    console.warn(
+                        "[nw-polyfill-v2] localStorage flushAll stopped with " + remaining +
+                        " key(s) pending (" + unattempted + " not attempted, " + failed.length + " failed)",
+                    );
                 }
+                return remaining;
             }
 
             var nativeSet = null, nativeGet = null, nativeRemove = null, nativeKey = null;
@@ -3615,6 +3630,9 @@
                             var k = String(key);
                             values[k] = value === undefined ? "undefined" : String(value);
                             delete removedKeys[k];
+                            // 这个键重新有值了：之前 removeItem 失败留下的「待删」标记必须作废，
+                            // 否则 flush 时的重试删除会把马上要写的新值删掉
+                            delete suppressedNames[fileNameFor(k)];
                             rememberKey(k);
                             markDirty(k);
                             return undefined;

@@ -6,7 +6,6 @@ import com.core.web.AsarWebRoot
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.util.Base64
-import java.util.LinkedHashMap
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -52,18 +51,6 @@ internal class RpgMakerFsBridge(
      * 写入始终落磁盘（压缩包不可写），与 NW.js 下写 save/ 目录的行为一致。
      */
     private val asarPrefix: String = if (asar == null) "" else AsarWebRoot.prefixFor { asar.has(it) }
-
-    /**
-     * 原始路径 → 规范化路径（realpath）缓存。
-     *
-     * 规范化结果在一次会话内稳定（只有符号链接被重建才会变），而 realpath 要逐级解析
-     * 整条路径——它是每个 fs 调用最贵的一步。命中后只剩目标自身的 exists/stat。
-     * 只缓存成功结果：被拒绝（越界/非法字符）的路径保持每次重新判定与记日志。
-     */
-    private val pathCache = object : LinkedHashMap<String, File>(64, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, File>): Boolean =
-            size > PATH_CACHE_MAX_ENTRIES
-    }
 
     /**
      * 请求路径 → 相对网页根的路径。绝对路径只有在位于 contentRoot 之下时才可映射到
@@ -422,17 +409,21 @@ internal class RpgMakerFsBridge(
     fun remove(path: String?): Boolean {
         val file = resolve(path) ?: return false
         return try {
-            if (!file.exists()) {
+            val removed = if (!file.exists()) {
                 true
             } else {
-                file.delete().also { removed ->
-                    if (removed) {
+                file.delete().also { ok ->
+                    if (ok) {
                         // 父目录少了一个条目；若删的是目录，它自身的名字列表缓存也要丢
                         dirIndex.invalidate(file.parentFile ?: file)
                         dirIndex.invalidate(file)
                     }
                 }
             }
+            // 删除也要记版本（墓碑）：否则旧会话的退出刷盘看到「没人写过」就把旧值写回来，
+            // 新会话的删除等于被撤销。文件本来就不存在时同样要记——旧会话可能正准备创建它。
+            RpgMakerStorageWriteLedger.record(file.path, session)
+            removed
         } catch (error: Throwable) {
             Log.w(TAG, "fs remove failed: ${file.path}", error)
             false
@@ -538,10 +529,13 @@ internal class RpgMakerFsBridge(
         // 注意不要 trim()：文件名里的尾随空格是真实存在的（部分素材名带尾随空格），
         // trim 会让这类文件永远无法访问（Node 的 fs 同样不做 trim）。
         val raw = path?.takeIf { it.isNotEmpty() && it.any { c -> !c.isWhitespace() } } ?: return null
-        // realpath 是每个 fs 调用里最贵的一步，且结果在会话内稳定：命中即返回。
-        // 仍复核一次 isInsideRoot（纯字符串比较）：缓存值只在「填充时」合法，若祖先目录
-        // 之后被换成指向游戏根之外的符号链接，这里必须重新拒绝而不是直接放行。
-        synchronized(pathCache) { pathCache[raw]?.let { if (isInsideRoot(it)) return it } }
+        // 每次访问都重新 canonicalize（realpath），**不缓存**结果。
+        //
+        // 缓存看似能省 realpath，但它会把「填充时合法」当成「现在仍合法」：若祖先目录在
+        // 缓存之后被替换成指向游戏根之外的符号链接，缓存 File 的字符串仍以 root 开头，
+        // isInsideRoot 照样通过，而实际读写会跟随新链接越界（可复现：先读根内文件，
+        // 再把该目录换成指向根外的 symlink，缓存命中后读到根外内容；新建 bridge 则正确拒绝）。
+        // 每次重算 realpath 只多几次 lstat，相对一次 WebView 请求的往返可以忽略。
         if (raw.any { it == '\u0000' || it.isISOControl() }) return null
         val normalized = raw.removePrefix("file://").replace('\\', '/')
         val candidate = if (normalized.startsWith("/")) File(normalized) else File(contentRoot, normalized)
@@ -555,7 +549,6 @@ internal class RpgMakerFsBridge(
             Log.w(TAG, "fs path rejected (outside game dir): $path")
             return null
         }
-        synchronized(pathCache) { pathCache[raw] = canonical }
         return canonical
     }
 
@@ -574,8 +567,5 @@ internal class RpgMakerFsBridge(
 
         /** 单次写入上限；与读取上限分开命名以便独立调整（当前同值）。 */
         private const val MAX_WRITE_BYTES = 16L * 1024L * 1024L
-
-        /** 规范化路径缓存的条目上限：游戏目录内路径远多于此，按访问顺序淘汰。 */
-        private const val PATH_CACHE_MAX_ENTRIES = 512
     }
 }
