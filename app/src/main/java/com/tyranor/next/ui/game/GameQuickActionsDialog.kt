@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -64,10 +65,15 @@ import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.shakeOnTrigger
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.tyranor.next.ui.common.notice.AppNotice
 
 // 长按弹窗顶部超框封面的尺寸：封面从卡片上沿向上探出 Overhang，卡片内为封面预留剩余高度。
 private val QuickActionCoverWidth = 100.dp
@@ -107,6 +113,9 @@ internal fun GameQuickActionsDialog(
     var shortcutRequestInFlight by remember(game.uri) { mutableStateOf(false) }
     var shortcutCropUriText by rememberSaveable(game.uri) { mutableStateOf<String?>(null) }
     var shortcutPickerForNoCover by rememberSaveable(game.uri) { mutableStateOf(false) }
+    val feedback = remember(game.uri) { QuickActionFeedback() }
+    val exitHandle = rememberGameDialogExitHandle()
+    val shownQuickLaunched = feedback.shownQuickLaunch(quickLaunched)
 
     val batchScrapeRunningMessage = stringResource(R.string.game_batch_scraping_running)
     val coverSetFailedMessage = stringResource(R.string.game_cover_set_failed)
@@ -119,7 +128,9 @@ internal fun GameQuickActionsDialog(
     /** Blocks destructive cover/shortcut actions while a batch scrape is running. */
     fun isBatchScrapingActive(): Boolean {
         if (!CoverScrapeTaskManager.state.value.running) return false
-        android.widget.Toast.makeText(context, batchScrapeRunningMessage, android.widget.Toast.LENGTH_SHORT).show()
+        AppNotice.makeText(context, batchScrapeRunningMessage, android.widget.Toast.LENGTH_SHORT, AppNotice.Kind.Limit).show()
+        // 仅「修改封面」走这道拦截：被拒绝时该条目抖一下
+        feedback.rejectCover()
         return true
     }
 
@@ -152,9 +163,11 @@ internal fun GameQuickActionsDialog(
                 GameShortcutManager.RequestResult.UNSUPPORTED -> shortcutUnsupportedMessage
                 GameShortcutManager.RequestResult.FAILED -> shortcutFailedMessage
             }
-            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+            AppNotice.makeText(context, message, android.widget.Toast.LENGTH_SHORT, AppNotice.Kind.Info).show()
             if (result == GameShortcutManager.RequestResult.REQUESTED || result == GameShortcutManager.RequestResult.UPDATED) {
-                onDismiss()
+                exitHandle.closeThen(onDismiss)
+            } else {
+                feedback.rejectShortcut()
             }
         }
     }
@@ -196,17 +209,18 @@ internal fun GameQuickActionsDialog(
             }
             if (updated != null) {
                 onGameUpdated(updated)
-                onDismiss()
+                exitHandle.closeThen(onDismiss)
             } else {
-                android.widget.Toast
-                    .makeText(context, coverSetFailedMessage, android.widget.Toast.LENGTH_SHORT)
+                AppNotice.makeText(context, coverSetFailedMessage, android.widget.Toast.LENGTH_SHORT, AppNotice.Kind.Failure)
                     .show()
+                feedback.rejectCover()
             }
         }
     }
 
     AppAlertDialog(
         onDismissRequest = onDismiss,
+        dismissEnabled = !showDeleteConfirm,
         // 顶部：超出卡片上沿的封面 + 封面右侧空白区内的游戏标题
         title = {
             Row(
@@ -231,36 +245,42 @@ internal fun GameQuickActionsDialog(
         // 条目列表可能超过小屏横屏的正文高度上限，允许正文区域内滚动
         textScrollEnabled = true,
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(QuickActionItemSpacing)) {
-                // 每个动作各占一整行；删除游戏为底部整行长按钮
-                QuickActionItem(
-                    title = if (quickLaunched) {
-                        stringResource(R.string.game_remove_quick_launch)
-                    } else {
-                        stringResource(R.string.game_add_quick_launch)
-                    },
-                    leadingIcon = R.drawable.ic_home,
-                    onClick = {
-                        if (onQuickLaunchToggle()) {
-                            onDismiss()
+            exitHandle.capture()
+            // 动作条目自上而下依次弹入；正文可滚动，手指一拖未完成的入场立即收尾
+            ProvideEntrance {
+                Column(
+                    modifier = Modifier.skipEntranceOnDrag(),
+                    verticalArrangement = Arrangement.spacedBy(QuickActionItemSpacing),
+                ) {
+                    QuickActionItem(
+                        modifier = feedback.toggleRow(),
+                        title = if (shownQuickLaunched) {
+                            stringResource(R.string.game_remove_quick_launch)
                         } else {
-                            android.widget.Toast
-                                .makeText(context, quickLaunchFullMessage, android.widget.Toast.LENGTH_SHORT)
-                                .show()
-                        }
-                    },
-                )
-                QuickActionItem(
-                    title = stringResource(R.string.game_add_desktop_shortcut),
-                    leadingIcon = R.drawable.ic_sheet_desktop_shortcut,
-                    onClick = { if (!shortcutRequestInFlight) openShortcutCrop() },
-                )
-                QuickActionItem(
-                    title = stringResource(R.string.game_rename),
-                    leadingIcon = R.drawable.ic_sheet_rename,
-                    onClick = { showRenameDialog = true },
-                )
-                QuickActionDeleteButton(onClick = { showDeleteConfirm = true })
+                            stringResource(R.string.game_add_quick_launch)
+                        },
+                        leadingIcon = R.drawable.ic_home,
+                        onClick = {
+                            feedback.toggle(onQuickLaunchToggle, close = { exitHandle.closeThen(onDismiss) }) {
+                                AppNotice.makeText(context, quickLaunchFullMessage, android.widget.Toast.LENGTH_SHORT, AppNotice.Kind.Limit)
+                                    .show()
+                            }
+                        },
+                    )
+                    QuickActionItem(
+                        modifier = feedback.shortcutRow(shortcutRequestInFlight),
+                        title = stringResource(R.string.game_add_desktop_shortcut),
+                        leadingIcon = R.drawable.ic_sheet_desktop_shortcut,
+                        onClick = { if (!shortcutRequestInFlight) openShortcutCrop() else feedback.rejectShortcut() },
+                    )
+                    QuickActionItem(
+                        modifier = Modifier.staggeredEntrance(2),
+                        title = stringResource(R.string.game_rename),
+                        leadingIcon = R.drawable.ic_sheet_rename,
+                        onClick = { showRenameDialog = true },
+                    )
+                    QuickActionDeleteButton(modifier = Modifier.staggeredEntrance(3), onClick = { showDeleteConfirm = true })
+                }
             }
         },
         confirmButton = {},
@@ -269,6 +289,7 @@ internal fun GameQuickActionsDialog(
         topOverhang = {
             QuickActionCover(
                 game = game,
+                modifier = feedback.coverEntry(),
                 // 点击封面与原先的「修改封面」条目一致：相册选图后走统一封面保存流程
                 onClick = { if (!isBatchScrapingActive()) imagePicker.launch("image/*") },
             )
@@ -305,6 +326,8 @@ internal fun GameQuickActionsDialog(
     }
 
     if (showDeleteConfirm) {
+        // 确认删除：确认弹窗先沉下，再由长按弹窗沉下，最后才删除并关闭（原路逐层退回，而不是两层一起瞬间消失）
+        val deleteExitHandle = rememberGameDialogExitHandle()
         AppAlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             title = {
@@ -324,13 +347,18 @@ internal fun GameQuickActionsDialog(
                     text = stringResource(R.string.common_delete),
                     contentColor = MaterialTheme.colorScheme.error,
                     onClick = {
-                        showDeleteConfirm = false
-                        onDeleteGame()
-                        onDismiss()
+                        deleteExitHandle.closeThen {
+                            showDeleteConfirm = false
+                            exitHandle.closeThen {
+                                onDeleteGame()
+                                onDismiss()
+                            }
+                        }
                     },
                 )
             },
             dismissButton = {
+                deleteExitHandle.capture()
                 DialogTextButton(
                     text = stringResource(R.string.common_cancel),
                     onClick = { showDeleteConfirm = false },
@@ -349,9 +377,11 @@ internal fun GameQuickActionsDialog(
 private fun QuickActionItem(
     title: String,
     @DrawableRes leadingIcon: Int,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     AppNavItem(
+        modifier = modifier,
         title = title,
         leadingIcon = leadingIcon,
         containerColor = DialogItemSurface,
@@ -363,11 +393,11 @@ private fun QuickActionItem(
 
 /** 删除游戏：整行纯色长按钮，尺寸对齐游戏操作抽屉底部的主操作长按钮。 */
 @Composable
-private fun QuickActionDeleteButton(onClick: () -> Unit) {
+private fun QuickActionDeleteButton(modifier: Modifier, onClick: () -> Unit) {
     // 实底危险按钮取固定深红 + 白字：深色 scheme 的 error/onError 是浅粉 + 深褐红，
     // 在复古玻璃的深色面板上会发白失焦，与其它外观风格割裂（见 theme/Color.kt）。
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(AppComponentShape)
             .background(DangerFill)
@@ -401,12 +431,13 @@ private fun QuickActionDeleteButton(onClick: () -> Unit) {
 @Composable
 private fun QuickActionCover(
     game: ScanGame,
+    modifier: Modifier,
     onClick: () -> Unit,
 ) {
     val coverBitmap by rememberCoverBitmap(game.coverUri)
     val editCoverLabel = stringResource(R.string.game_edit_cover)
     Box(
-        modifier = Modifier
+        modifier = modifier
             .size(width = QuickActionCoverWidth, height = QuickActionCoverHeight)
             .clip(AppComponentShape)
             .background(game.engine.coverColor())
@@ -469,6 +500,10 @@ private fun RenameGameDialog(
     var title by rememberSaveable(game.uri, game.title) { mutableStateOf(game.title) }
     val normalizedTitle = title.trim()
     val canConfirm = normalizedTitle.isNotEmpty() && normalizedTitle != game.title
+    // 键盘「完成」时内容无效（空 / 未改动）：输入框抖一下，告诉用户这次没有保存
+    var invalidShake by remember { mutableIntStateOf(0) }
+    // 「保存」位于确认槽、原本没有退场控制器：借取消槽捕获的控制器，保存时先沉下再回到长按弹窗
+    val exitHandle = rememberGameDialogExitHandle()
 
     AppAlertDialog(
         onDismissRequest = onDismiss,
@@ -480,7 +515,14 @@ private fun RenameGameDialog(
                 AppSearchField(
                     query = title,
                     onQueryChange = { title = it },
-                    onSearch = { if (canConfirm) onConfirm(normalizedTitle) },
+                    onSearch = {
+                        if (canConfirm) {
+                            exitHandle.closeThen { onConfirm(normalizedTitle) }
+                        } else {
+                            invalidShake++
+                        }
+                    },
+                    modifier = Modifier.shakeOnTrigger(invalidShake),
                     imeAction = ImeAction.Done,
                     leadingIcon = painterResource(R.drawable.ic_sheet_rename),
                     iconContentDescription = stringResource(R.string.game_rename),
@@ -491,12 +533,20 @@ private fun RenameGameDialog(
         confirmButton = {
             DialogTextButton(
                 text = stringResource(R.string.common_save),
+                // 变为可保存的一刻轻轻弹一下（颜色本身由公共按钮决定）
+                modifier = Modifier
+                    .gameDialogAction(4, confirmEnabled = canConfirm),
                 enabled = canConfirm,
-                onClick = { onConfirm(normalizedTitle) },
+                onClick = { exitHandle.closeThen { onConfirm(normalizedTitle) } },
             )
         },
         dismissButton = {
-            DialogTextButton(onClick = onDismiss, text = stringResource(R.string.common_cancel))
+            exitHandle.capture()
+            DialogTextButton(
+                onClick = onDismiss,
+                text = stringResource(R.string.common_cancel),
+                modifier = Modifier.gameDialogAction(3),
+            )
         },
     )
 }

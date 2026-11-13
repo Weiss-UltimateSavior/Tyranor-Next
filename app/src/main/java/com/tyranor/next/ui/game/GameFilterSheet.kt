@@ -38,7 +38,7 @@ import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.SlidingTabRow
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.CardDefaults
-import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
+import com.tyranor.next.ui.common.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
@@ -151,7 +151,7 @@ internal fun GameFilterSheet(
                                         cornerRadius = AppComponentCornerRadius,
                                         colors = CardDefaults.defaultColors(color = cardColor),
                                     ) {
-                                        WindowDropdownPreference(
+                                        OverlayDropdownPreference(
                                             title = stringResource(R.string.game_filter_sort_section),
                                             items = sortModes.map { it.second },
                                             selectedIndex = sortIndex,
@@ -164,7 +164,7 @@ internal fun GameFilterSheet(
                                         cornerRadius = AppComponentCornerRadius,
                                         colors = CardDefaults.defaultColors(color = cardColor),
                                     ) {
-                                        WindowDropdownPreference(
+                                        OverlayDropdownPreference(
                                             title = stringResource(R.string.game_filter_played_section),
                                             items = playedOptions.map { it.second },
                                             selectedIndex = playedIndex,

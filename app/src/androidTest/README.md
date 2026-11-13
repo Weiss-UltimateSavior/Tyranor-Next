@@ -2,6 +2,27 @@
 
 WebDAV 存档同步、恢复与 Compose UI 的独立验收入口见 [WebDAV 设备验收记录](../../../docs/WebDAV-device-acceptance.md)。这些测试要求专用 application ID 与显式 opt-in；其纯框架辅助 Activity 不证明原生游戏兼容性。
 
+## 界面动效设备验收
+
+动效测试通过 `MotionDeviceAcceptance` 同时校验显式 opt-in 与本轮期望的隔离 application ID。包名由 `motion_target_package` 参数指定，可沿用本页的 `com.tyranor.next.ethornelltest`，不再固定为某个本地私有包名。缺少参数、未授权或实际 target 与参数不一致时，测试会明确失败并说明原因，不能把跳过当成验收通过。正式包 `com.tyranor.next` 与 instrumentation 的 `.test` 包不接受为 target。
+
+以下命令示例只准备隔离 debug 目标；执行前按实际设备指定 `<serial>`，先核对两个 APK 的 application ID，再分别安装。不要以正式包构建或安装这些验收 APK。
+
+```bash
+TYRANOR_APPLICATION_ID=com.tyranor.next.ethornelltest ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
+adb -s '<serial>' install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s '<serial>' install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb -s '<serial>' shell am instrument -w -r \
+  -e motion_device_acceptance true \
+  -e motion_target_package com.tyranor.next.ethornelltest \
+  -e class com.tyranor.next.ui.common.MotionDialogDeviceTest \
+  com.tyranor.next.ethornelltest.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+PowerShell 构建时先设 `$env:TYRANOR_APPLICATION_ID = 'com.tyranor.next.ethornelltest'`，再运行 `./gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon`，完成后恢复原环境变量。使用其它 `com.tyranor.next.*` 隔离包时，构建变量、`motion_target_package` 和 runner 前缀必须一起替换。执行其它动效类或 `类名#方法名` 时保留上述两个 `-e` 参数；没有这些参数的默认 instrumentation 执行会报告门禁失败。
+
+新增遮罩回归包括 `com.tyranor.next.ui.common.motion.NestedWindowScrimDeviceTest`（实际屏幕像素）与 `DialogWindowDimDeviceTest`（真实窗口属性/释放）。测试通过只说明所执行场景，不证明商业游戏兼容性或完整性能矩阵。
+
 ## 内置引擎时长记录
 
 `GamePlaytimeDeviceTest` 使用独立包与原创 HTML 夹具，启动真实的 `:tyrano` 私有宿主，验证前台片段落盘、后台不累计、重复导入幂等，以及同一运行游戏收到新启动 UUID 后仍沿用原会话与排序起点。它不证明原生游戏兼容性，也不覆盖全部引擎的真实游戏验收。

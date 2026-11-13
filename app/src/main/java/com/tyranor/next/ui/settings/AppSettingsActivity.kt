@@ -25,14 +25,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -46,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppSecondaryTopBar
+import com.tyranor.next.ui.common.collectSettingAsState
 import com.tyranor.next.ui.common.effectiveNavStyle
 import com.tyranor.next.ui.common.isSideRailLayout
 import com.tyranor.next.ui.common.BottomInsetSpacer
@@ -54,6 +57,20 @@ import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
 import com.tyranor.next.core.settings.AppIconSwitcher
+import com.tyranor.next.ui.common.SliderValueHeader
+import com.tyranor.next.ui.common.motion.rememberThemeSwitch
+import com.tyranor.next.ui.common.rememberStagedCompose
+import com.tyranor.next.ui.common.stagedItem
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.ExpandVisibility
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
+import com.tyranor.next.ui.common.motion.bounceOnChange
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.pressSquishGroup
+import com.tyranor.next.ui.common.motion.shakeOnTrigger
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.HomeWebUrls
 import com.tyranor.next.theme.PageTextColor
@@ -69,11 +86,11 @@ import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.ColorPicker
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
-import top.yukonga.miuix.kmp.basic.Slider
+import com.tyranor.next.ui.common.Slider
 import top.yukonga.miuix.kmp.basic.SliderDefaults
 import com.tyranor.next.ui.common.ArrowPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
+import com.tyranor.next.ui.common.OverlayDropdownPreference
+import com.tyranor.next.ui.common.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /** 应用设置页 Activity：入口见设置页「应用设置」项。 */
@@ -96,22 +113,22 @@ class AppSettingsActivity : AppScreenActivity() {
 internal fun AppSettingsScreen() {
     val ctx = LocalContext.current
     val navStyle = effectiveNavStyle()
-    val engineTabs by AppSettingsStore.engineTabsState.collectAsState()
-    val engineCardIcon by AppSettingsStore.engineCardIconState.collectAsState()
-    val sideRailEnabled by AppSettingsStore.sideRailState.collectAsState()
-    val hideCardTitleTag by AppSettingsStore.gameCardTitleTagState.collectAsState()
-    val gameCardStyle by AppSettingsStore.gameCardStyleState.collectAsState()
-    val gameCardBadge by AppSettingsStore.gameCardBadgeState.collectAsState()
-    val homeStyle by AppSettingsStore.homeStyleState.collectAsState()
-    val homePageEnabled by AppSettingsStore.homePageEnabledState.collectAsState()
-    val classicIcon by AppSettingsStore.classicIconEnabledState.collectAsState()
-    val homeWebUrl by AppSettingsStore.homeWebUrlState.collectAsState()
+    val engineTabs by AppSettingsStore.engineTabsState.collectSettingAsState()
+    val engineCardIcon by AppSettingsStore.engineCardIconState.collectSettingAsState()
+    val sideRailEnabled by AppSettingsStore.sideRailState.collectSettingAsState()
+    val hideCardTitleTag by AppSettingsStore.gameCardTitleTagState.collectSettingAsState()
+    val gameCardStyle by AppSettingsStore.gameCardStyleState.collectSettingAsState()
+    val gameCardBadge by AppSettingsStore.gameCardBadgeState.collectSettingAsState()
+    val homeStyle by AppSettingsStore.homeStyleState.collectSettingAsState()
+    val homePageEnabled by AppSettingsStore.homePageEnabledState.collectSettingAsState()
+    val classicIcon by AppSettingsStore.classicIconEnabledState.collectSettingAsState()
+    val homeWebUrl by AppSettingsStore.homeWebUrlState.collectSettingAsState()
     val fixedPalette = AppThemeColors.hasFixedContentPalette
     // 平板/大窗口 + 侧边栏开关开启：导航以侧栏显示（液态玻璃两档不参与侧栏适配）
     val railLayout = isSideRailLayout()
-    var showColorPicker by remember { mutableStateOf(false) }
-    var showHomeWebUrlDialog by remember { mutableStateOf(false) }
-    var showHomeWebCustomDialog by remember { mutableStateOf(false) }
+    var dialog by rememberSaveable { mutableStateOf<SettingsDialog?>(null) }
+    // 「重置悬浮按钮位置」点击次数：驱动该行的落点回弹（第一次组合不弹）
+    var floatingNavResetTick by remember { mutableIntStateOf(0) }
     // 本页可能先于主界面被组合（进程重建后直接恢复到设置页）：主动加载一次持久化值，
     // 否则下拉/开关会显示成默认档（与磁盘上的真实取值不一致）
     LaunchedEffect(Unit) {
@@ -128,9 +145,13 @@ internal fun AppSettingsScreen() {
         }
     }
 
+    // 进场分帧组合：第一帧只组合骨架与最上面几项，其余每帧补一组（见 StagedCompose）
+    val staged = rememberStagedCompose(last = 6)
+
     MiuixSettingsTheme {
+      ProvideEntrance {
         MiuixScaffold(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
             containerColor = ComposeColor.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
@@ -149,8 +170,8 @@ internal fun AppSettingsScreen() {
                 contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                stagedItem(1, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(0).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             var language by remember { mutableStateOf(AppSettingsStore.getLanguage(ctx)) }
                             val languageModes = listOf(
@@ -161,22 +182,28 @@ internal fun AppSettingsScreen() {
                             )
                             val languageIndex = languageModes.indexOfFirst { it.first == language }
                                 .let { if (it < 0) 0 else it }
+                            // 整屏文字一起换语言：与主题切换同一套揭开过渡（从点击处软边圆形揭开新语言的界面）
+                            val languageSwitch = rememberThemeSwitch()
                             OverlayDropdownPreference(
                                 title = stringResource(R.string.settings_language_title),
                                 items = languageModes.map { it.second },
                                 selectedIndex = languageIndex,
                                 onSelectedIndexChange = { index ->
                                     languageModes.getOrNull(index)?.first?.let { mode ->
-                                        language = mode
-                                        AppSettingsStore.setLanguage(ctx, mode)
+                                        // 选了当前语言：什么都没变，不播放过渡
+                                        if (mode == language) return@let
+                                        languageSwitch {
+                                            language = mode
+                                            AppSettingsStore.setLanguage(ctx, mode)
+                                        }
                                     }
                                 },
                             )
                         }
                     }
                 }
-                item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                stagedItem(1, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(1).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_color_wheel),
@@ -184,47 +211,60 @@ internal fun AppSettingsScreen() {
                                     Box(
                                         modifier = Modifier
                                             .padding(end = 6.dp)
+                                            .bounceOnChange(AppThemeColors.primary)
                                             .size(24.dp)
                                             .clip(CircleShape)
                                             .background(AppThemeColors.primary),
                                     )
                                 },
                                 endActions = {
-                                    Text(
-                                        AppThemeColors.primary.toHex(),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
+                                    BlurCrossfade(targetState = AppThemeColors.primary.toHex()) { hex ->
+                                        Text(
+                                            hex,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 },
-                                onClick = { showColorPicker = true },
+                                onClick = { dialog = SettingsDialog.ColorPicker },
                             )
                         }
                     }
                 }
-                item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                stagedItem(2, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(2).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                        Column(Modifier.padding(vertical = 4.dp)) {
+                            // 界面动效：增强（新动效，默认）/ 普通（原版动效），切换即时全 App 生效并持久化
+                            val motionEnhanced by AppSettingsStore.motionEnhancedState.collectSettingAsState()
+                            OverlayDropdownPreference(
+                                title = stringResource(R.string.settings_motion_mode),
+                                items = listOf(
+                                    stringResource(R.string.settings_motion_enhanced),
+                                    stringResource(R.string.settings_motion_normal),
+                                ),
+                                selectedIndex = if (motionEnhanced) 0 else 1,
+                                onSelectedIndexChange = { index ->
+                                    AppSettingsStore.setMotionEnhanced(ctx, index == 0)
+                                },
+                            )
+                        }
+                    }
+                }
+                stagedItem(3, staged) {
+                    MiuixCard(modifier = Modifier.staggeredEntrance(3).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 应用圆角调整：默认外观与复古玻璃共用同一数值；拖动即时生效并逐档落盘
                             val radiusSteps = AppSettingsStore.APP_CORNER_RADIUS_STEPS
                             val cornerRadius = AppThemeColors.appCornerRadius
                             val cornerRadiusLabel = stringResource(R.string.settings_app_corner_radius)
-                            Row(
+                            // 标题 + 读数：每跳一档只替换变化的数字（「25 dp」→「30 dp」只有数字在糊，「dp」不动）
+                            SliderValueHeader(
+                                title = cornerRadiusLabel,
+                                value = stringResource(R.string.settings_app_corner_radius_value, cornerRadius),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(start = 16.dp, end = 16.dp, top = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    cornerRadiusLabel,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                Text(
-                                    stringResource(R.string.settings_app_corner_radius_value, cornerRadius),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                            )
                             Slider(
                                 value = cornerRadius.toFloat(),
                                 onValueChange = { raw ->
@@ -243,6 +283,7 @@ internal fun AppSettingsScreen() {
                                     .semantics { contentDescription = cornerRadiusLabel },
                             )
                             // 深浅色切换（原「外观模式」）：状态驱动选中项，跟随系统时系统深浅不变也不会漏刷新下拉展示
+                            val themeModeSwitch = rememberThemeSwitch()
                             var themeMode by remember { mutableStateOf(AppSettingsStore.getThemeMode(ctx)) }
                             val themeModes = listOf(
                                 AppSettingsStore.THEME_MODE_SYSTEM to stringResource(R.string.common_follow_system),
@@ -251,25 +292,36 @@ internal fun AppSettingsScreen() {
                             )
                             val modeIndex = themeModes.indexOfFirst { it.first == themeMode }
                                 .let { if (it < 0) 1 else it } // 未知存量值回退浅色
+                            // 置灰 / 恢复：切换外观风格时该行（禁用色 + 说明文字）模糊替换，行高弹簧过渡，
+                            // 不再瞬间变灰、瞬间多出一行说明（「普通」档瞬时替换，与原版一致）
+                            BlurCrossfade(
+                                targetState = fixedPalette,
+                                modifier = Modifier.fillMaxWidth(),
+                                label = "themeModeEnabled",
+                            ) { disabled ->
                             OverlayDropdownPreference(
                                 title = stringResource(R.string.settings_theme_mode),
-                                summary = if (fixedPalette) stringResource(R.string.settings_disabled_in_glass_style) else null,
+                                summary = if (disabled) stringResource(R.string.settings_disabled_in_glass_style) else null,
                                 items = themeModes.map { it.second },
                                 selectedIndex = modeIndex,
-                                enabled = !fixedPalette,
+                                enabled = !disabled,
                                 onSelectedIndexChange = { index ->
                                     themeModes.getOrNull(index)?.first?.let { mode ->
-                                        themeMode = mode
-                                        AppSettingsStore.setThemeMode(ctx, mode)
-                                        AppThemeColors.refresh(ctx)
+                                        // 深浅色切换：从点击处揭开新主题
+                                        themeModeSwitch {
+                                            themeMode = mode
+                                            AppSettingsStore.setThemeMode(ctx, mode)
+                                            AppThemeColors.refresh(ctx)
+                                        }
                                     }
                                 },
                             )
+                            }
                         }
                     }
                 }
-                item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                stagedItem(4, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(4).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 导航栏样式：经典 MD / 液态玻璃 · 经典 / 液态玻璃 · 透镜 / 悬浮按钮。
                             // 未显式选择时使用液态玻璃 · 经典；玻璃系外观保留经典 MD 的悬浮玻璃条。
@@ -321,19 +373,25 @@ internal fun AppSettingsScreen() {
                                 },
                             )
                             // 悬浮按钮支持长按拖动；拖动后可用此项一键回右下角
-                            if (navStyle == AppSettingsStore.NAV_STYLE_FLOATING_BUTTON) {
+                            ExpandVisibility(visible = navStyle == AppSettingsStore.NAV_STYLE_FLOATING_BUTTON) {
                                 ArrowPreference(
+                                    // 落点反馈：点按后整行轻弹一下，表示已复位（不涉及导航栏本身的任何动效）
+                                    modifier = Modifier.bounceOnChange(
+                                        floatingNavResetTick.takeIf { it > 0 },
+                                        depth = 0.05f,
+                                    ),
                                     title = stringResource(R.string.settings_nav_bar_reset_position),
                                     onClick = {
                                         AppSettingsStore.setFloatingNavPosition(ctx, 1f, 1f)
+                                        floatingNavResetTick++
                                     },
                                 )
                             }
                         }
                     }
                 }
-                item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                stagedItem(5, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(5).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 显示首页：关闭后首页与导航栏首页入口隐藏，游戏页成为第一页
                             SwitchPreference(
@@ -365,21 +423,24 @@ internal fun AppSettingsScreen() {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_home_web_url),
                                 endActions = {
+                                    // 地址变化（选预设 / 自定义保存）时行尾值模糊替换，与色调值的写法一致
+                                    BlurCrossfade(targetState = homeWebUrl, label = "homeWebUrl") { url ->
                                     Text(
-                                        homeWebUrl,
+                                        url,
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
+                                    }
                                 },
-                                onClick = { showHomeWebUrlDialog = true },
+                                onClick = { dialog = SettingsDialog.WebUrl },
                             )
                         }
                     }
                 }
-                item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                stagedItem(6, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(6).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 经典应用图标：开启后启用旧图标别名，关闭恢复当前新图标（默认关）
                             SwitchPreference(
@@ -394,8 +455,8 @@ internal fun AppSettingsScreen() {
                         }
                     }
                 }
-                item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                stagedItem(6, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(7).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 平板侧边栏：开启时平板/大窗口下导航移到侧边，关闭则保持底部导航
                             SwitchPreference(
@@ -409,8 +470,8 @@ internal fun AppSettingsScreen() {
                         }
                     }
                 }
-                item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                stagedItem(6, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(8).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             SwitchPreference(
                                 title = stringResource(R.string.settings_engine_tabs),
@@ -429,8 +490,8 @@ internal fun AppSettingsScreen() {
                         }
                     }
                 }
-                item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                stagedItem(6, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(9).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 游戏页卡片风格：瀑布（默认）/ 网格 / 列表（封面流）
                             val cardStyleModes = listOf(
@@ -472,44 +533,46 @@ internal fun AppSettingsScreen() {
                 item { BottomInsetSpacer() }
             }
         }
+      }
     }
 
-    if (showColorPicker) {
+    if (dialog == SettingsDialog.ColorPicker) {
+        // 色调确认也走揭开：主题色是全局状态，直接换会整屏瞬间变色；圆心取最近一次按在页面上的位置（打开轮盘的那一行）
+        val colorSwitch = rememberThemeSwitch()
         ColorPickerDialog(
             initialColor = AppThemeColors.primary,
             onConfirm = { newColor ->
-                AppSettingsStore.setThemeColorHex(ctx, newColor.copy(alpha = 1f).toHex())
-                AppThemeColors.refresh(ctx)
-                showColorPicker = false
+                colorSwitch {
+                    AppSettingsStore.setThemeColorHex(ctx, newColor.copy(alpha = 1f).toHex())
+                    AppThemeColors.refresh(ctx)
+                }
+                dialog = null
             },
-            onDismiss = { showColorPicker = false },
+            onDismiss = { dialog = null },
         )
     }
 
-    if (showHomeWebUrlDialog) {
+    if (dialog == SettingsDialog.WebUrl) {
         HomeWebUrlDialog(
             currentUrl = homeWebUrl,
             onSelectPreset = { url ->
                 AppSettingsStore.setHomeWebUrl(ctx, url)
-                showHomeWebUrlDialog = false
+                dialog = null
             },
-            onCustom = {
-                showHomeWebUrlDialog = false
-                showHomeWebCustomDialog = true
-            },
-            onDismiss = { showHomeWebUrlDialog = false },
+            onCustom = { dialog = SettingsDialog.CustomWebUrl },
+            onDismiss = { dialog = null },
         )
     }
 
-    if (showHomeWebCustomDialog) {
+    if (dialog == SettingsDialog.CustomWebUrl) {
         HomeWebCustomUrlDialog(
             // 当前值为预设时不预填（避免误认为已自定义）；自定义值才回显
             initialUrl = if (HomeWebUrls.isPreset(homeWebUrl)) "" else homeWebUrl,
             onConfirm = { url ->
                 AppSettingsStore.setHomeWebUrl(ctx, url)
-                showHomeWebCustomDialog = false
+                dialog = null
             },
-            onDismiss = { showHomeWebCustomDialog = false },
+            onDismiss = { dialog = null },
         )
     }
 }
@@ -542,7 +605,9 @@ private fun HomeWebUrlDialog(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 // 预设点击即保存（执行动作，无跳转箭头）；自定义进入下一级弹窗（保留箭头）
+                // 弹窗编排：三个条目在正文入场后依次轻轻升起（只改图层，停稳后与原样一致）
                 AppNavItem(
+                    modifier = Modifier.staggeredEntrance(1, distance = 10.dp, stepMillis = 40L),
                     title = stringResource(R.string.home_web_preset_kungal),
                     summary = summaryOf(AppSettingsStore.HOME_WEB_URL_KUNGAL),
                     leadingIcon = R.drawable.ic_web_link,
@@ -551,6 +616,7 @@ private fun HomeWebUrlDialog(
                     indication = null,
                 ) { onSelectPreset(AppSettingsStore.HOME_WEB_URL_KUNGAL) }
                 AppNavItem(
+                    modifier = Modifier.staggeredEntrance(2, distance = 10.dp, stepMillis = 40L),
                     title = stringResource(R.string.home_web_preset_letmoe),
                     summary = summaryOf(AppSettingsStore.HOME_WEB_URL_LETMOE),
                     leadingIcon = R.drawable.ic_web_link,
@@ -559,6 +625,7 @@ private fun HomeWebUrlDialog(
                     indication = null,
                 ) { onSelectPreset(AppSettingsStore.HOME_WEB_URL_LETMOE) }
                 AppNavItem(
+                    modifier = Modifier.staggeredEntrance(3, distance = 10.dp, stepMillis = 40L),
                     title = stringResource(R.string.settings_home_web_custom),
                     summary = if (isCustom) {
                         "$currentUrl · $currentMark"
@@ -588,10 +655,13 @@ private fun HomeWebCustomUrlDialog(
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var input by remember { mutableStateOf(initialUrl) }
-    var invalid by remember { mutableStateOf(false) }
+    var input by rememberSaveable { mutableStateOf(initialUrl) }
+    var invalid by rememberSaveable { mutableStateOf(false) }
+    // 校验被拒次数：每次确认被拒（含提示已显示时再次确认）输入框与提示都抖一下
+    var rejectCount by remember { mutableIntStateOf(0) }
     val confirm = {
         val url = HomeWebUrls.normalize(input)
+        if (url == null) rejectCount++
         if (url == null) invalid = true else onConfirm(url)
     }
     AppAlertDialog(
@@ -605,13 +675,15 @@ private fun HomeWebCustomUrlDialog(
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.Top,
             ) {
                 // 弹窗正文内的输入框禁用点击反馈（清空按钮走 LocalIndication）；
                 // 语义图标用「重命名/编辑」，不用默认搜索图标
                 CompositionLocalProvider(LocalIndication provides NoIndication) {
                     AppSearchField(
                         query = input,
+                        // 输入无效：欠阻尼水平晃动后回到原位（只改放置图层，「普通」档不加）
+                        modifier = Modifier.shakeOnTrigger(rejectCount.takeIf { it > 0 }),
                         onQueryChange = {
                             input = it
                             invalid = false
@@ -624,12 +696,15 @@ private fun HomeWebCustomUrlDialog(
                         textStyle = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                if (invalid) {
+                // 提示条展开/收起（原 spacedBy(6.dp) 间距并入提示自身的顶部内边距）
+                ExpandVisibility(visible = invalid) {
                     Text(
                         stringResource(R.string.settings_home_web_url_invalid),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                        modifier = Modifier
+                            .shakeOnTrigger(rejectCount.takeIf { it > 0 }, amplitude = 5.dp)
+                            .padding(start = 4.dp, end = 4.dp, top = 10.dp, bottom = 4.dp),
                     )
                 }
             }
@@ -646,6 +721,14 @@ private fun HomeWebCustomUrlDialog(
     )
 }
 
+private enum class SettingsDialog { ColorPicker, WebUrl, CustomWebUrl }
+
+// 保存颜色的原始位模式，旋转只恢复草稿，不量化颜色，也不提前写入设置。
+private val PickerColorSaver = Saver<ComposeColor, Long>(
+    save = { it.value.toLong() },
+    restore = { ComposeColor(it.toULong()) },
+)
+
 /** 色调轮盘弹窗：内嵌 Miuix ColorPicker，确认后应用并持久化主题色。
  *  不允许透明色与黑白灰色（无色相），非法时禁用「确定」并提示。 */
 @Composable
@@ -654,7 +737,7 @@ private fun ColorPickerDialog(
     onConfirm: (ComposeColor) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var pickerColor by remember { mutableStateOf(initialColor) }
+    var pickerColor by rememberSaveable(stateSaver = PickerColorSaver) { mutableStateOf(initialColor) }
     val invalid = pickerColor.isTransparentOrGray()
     AppAlertDialog(
         onDismissRequest = onDismiss,
@@ -665,7 +748,7 @@ private fun ColorPickerDialog(
                     color = pickerColor,
                     onColorChanged = { pickerColor = it },
                 )
-                if (invalid) {
+                ExpandVisibility(visible = invalid) {
                     Text(
                         stringResource(R.string.settings_invalid_theme_color),
                         style = MaterialTheme.typography.bodyMedium,
