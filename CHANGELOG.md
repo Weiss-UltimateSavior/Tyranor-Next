@@ -13,6 +13,7 @@
 - SystemNNN 单游戏设置按字段显示存档图层槽、台词行宽和剧情状态块的来源。背景脚本按 PC 的 `ENDIF` 帧边界和 `noSkipFrame` 出帧，支持 Ctrl 语音规则、脚本鼠标样式和二角、串牌的配对提示。
 - SystemNNN 标题和菜单背景按实际耗时逐步补帧。圆形擦入等转场保留截图细节，马赛克按相同采样像素批量绘制。
 - 修复 SystemNNN 抓图失败时转场首帧提前显示新图层的问题。
+- 修复 SystemNNN 连续转场沿用旧空窗口的问题。减少动态背景模糊逐帧运算量。
 - SystemNNN 将存档格式保存在游戏目录的 `emberfall-system.cfg`。全局档版号按 EXE、原版 `.org` 模板和游戏文件一次性判定，单游戏引擎设置可查看来源并重新分析。
 - SystemNNN 支持脚本 DEBUG 与 24 位 PCM VAW。调试模式可把脚本 DEBUG 消息输出到 Logcat。
 - 内置 SystemNNN 播放器的启动目录或脚本校验失败时提示返回游戏库。
