@@ -65,6 +65,7 @@ import com.tyranor.next.ui.common.motion.LocalSheetBackdrop
 import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.MotionSprings
 import com.tyranor.next.ui.common.motion.passThroughTouches
+import com.tyranor.next.ui.common.motion.restoreInteraction
 import com.tyranor.next.ui.common.motion.DialogWindowScrim
 import com.tyranor.next.ui.common.motion.MotionTokens
 import com.tyranor.next.ui.common.notice.NoticeHost
@@ -157,16 +158,6 @@ internal fun AppAlertDialog(
     // 动作执行后弹窗若仍在（例如校验未通过），再弹回来，不会卡在隐藏状态。
     val exitController = remember(enhanced, focusManager) {
         DialogExitController { action ->
-            if (!enhanced) {
-                try {
-                    action()
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (failure: Exception) {
-                    actionFailed(failure)
-                }
-                return@DialogExitController
-            }
             if (dismissing.value) return@DialogExitController
             dismissing.value = true
             focusManager.clearFocus(force = true)
@@ -174,17 +165,21 @@ internal fun AppAlertDialog(
             scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 runDialogExitAction(
                     animateExit = {
-                        launch { dimAlpha.animateTo(0f, MotionTokens.fadeOut(0.001f)) }
-                        slideFraction.animateTo(1f, MotionTokens.surfaceExit(0.001f))
+                        if (enhanced) {
+                            launch { dimAlpha.animateTo(0f, MotionTokens.fadeOut(0.001f)) }
+                            slideFraction.animateTo(1f, MotionTokens.surfaceExit(0.001f))
+                        }
                     },
                     action = action,
                     afterAction = {
                         // 仍在组合中：动作没有关闭弹窗，恢复显示。
                         delay(80)
-                        dialogWindow[0]?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                        dialogWindow[0].restoreInteraction()
                         dismissing.value = false
-                        launch { dimAlpha.animateTo(1f, MotionTokens.fadeIn(0.001f)) }
-                        slideFraction.animateTo(0f, DialogEnterSpec)
+                        if (enhanced) {
+                            launch { dimAlpha.animateTo(1f, MotionTokens.fadeIn(0.001f)) }
+                            slideFraction.animateTo(0f, DialogEnterSpec)
+                        }
                     },
                     onFailure = { actionFailed(it) },
                     cleanup = {

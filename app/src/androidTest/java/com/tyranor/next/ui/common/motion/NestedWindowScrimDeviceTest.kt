@@ -7,6 +7,7 @@ import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.Window
+import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -38,6 +40,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.AppBottomSheet
+import com.tyranor.next.ui.common.AppSidePanel
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.MotionDeviceAcceptance
 import java.io.File
@@ -62,7 +66,31 @@ class NestedWindowScrimDeviceTest {
 
     @Test fun ordinaryBackNeverUncoversTheParentMask() = checkNestedExit(enhanced = false, back = true)
 
-    private fun checkNestedExit(enhanced: Boolean, back: Boolean) {
+    @Test fun enhancedSheetCancelNeverUncoversTheParentMask() =
+        checkNestedExit(enhanced = true, back = false, parentKind = ParentKind.Sheet)
+
+    @Test fun enhancedSheetBackNeverUncoversTheParentMask() =
+        checkNestedExit(enhanced = true, back = true, parentKind = ParentKind.Sheet)
+
+    @Test fun ordinarySheetCancelNeverUncoversTheParentMask() =
+        checkNestedExit(enhanced = false, back = false, parentKind = ParentKind.Sheet)
+
+    @Test fun ordinarySheetBackNeverUncoversTheParentMask() =
+        checkNestedExit(enhanced = false, back = true, parentKind = ParentKind.Sheet)
+
+    @Test fun enhancedSidePanelCancelNeverUncoversTheParentMask() =
+        checkNestedExit(enhanced = true, back = false, parentKind = ParentKind.SidePanel)
+
+    @Test fun enhancedSidePanelBackNeverUncoversTheParentMask() =
+        checkNestedExit(enhanced = true, back = true, parentKind = ParentKind.SidePanel)
+
+    @Test fun ordinarySidePanelCancelNeverUncoversTheParentMask() =
+        checkNestedExit(enhanced = false, back = false, parentKind = ParentKind.SidePanel)
+
+    @Test fun ordinarySidePanelBackNeverUncoversTheParentMask() =
+        checkNestedExit(enhanced = false, back = true, parentKind = ParentKind.SidePanel)
+
+    private fun checkNestedExit(enhanced: Boolean, back: Boolean, parentKind: ParentKind = ParentKind.Dialog) {
         MotionDeviceAcceptance.require(enhanced = null)
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val originalMode = compose.runOnIdle { MotionMode.enhanced }
@@ -75,7 +103,7 @@ class NestedWindowScrimDeviceTest {
         val probe = AtomicReference<IntOffset?>()
         val parentButton = AtomicReference<IntOffset?>()
         val childCancelButton = AtomicReference<IntOffset?>()
-        val case = "${if (enhanced) "enhanced" else "ordinary"}-${if (back) "back" else "cancel"}"
+        val case = "${parentKind.evidenceName}-${if (enhanced) "enhanced" else "ordinary"}-${if (back) "back" else "cancel"}"
         val context = instrumentation.targetContext
         val evidence = File(context.externalCacheDir ?: context.cacheDir, "nested-window-scrim/$case")
         val samples = mutableListOf<String>()
@@ -247,49 +275,48 @@ class NestedWindowScrimDeviceTest {
                         Box(Modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(24.dp)) {
                             Box(Modifier.size(16.dp).then(screenCenter(probe)))
                         }
-                        if (parentVisible.value) {
-                            AppAlertDialog(
-                                onDismissRequest = { parentVisible.value = false },
-                                title = {
-                                    ObserveWindow(parentWindow)
-                                    Text("Parent dialog", Modifier.testTag("scrim-parent"))
-                                },
-                                text = {
-                                    Text("Parent body")
-                                    if (childVisible.value) {
-                                        AppAlertDialog(
-                                            onDismissRequest = { childActions.intValue++; childVisible.value = false },
-                                            title = {
-                                                ObserveWindow(childWindow)
-                                                DisposableEffect(Unit) {
-                                                    mountedChild = true
-                                                    childMounts++
-                                                    onDispose { mountedChild = false; childDisposals++ }
-                                                }
-                                                Text("Child dialog", Modifier.testTag("scrim-child"))
-                                            },
-                                            text = { Text("Cancel this confirmation") },
-                                            dismissButton = {
-                                                DialogTextButton("Cancel", Modifier.testTag("scrim-cancel")
-                                                    .then(screenCenter(childCancelButton))) {
-                                                    childActions.intValue++
-                                                    childVisible.value = false
-                                                }
-                                            },
-                                            confirmButton = { Text("Confirm") },
-                                        )
-                                    }
-                                },
-                                dismissButton = { Text("Parent stays open") },
-                                confirmButton = {
-                                    DialogTextButton("Open child", Modifier.testTag("scrim-open")
-                                        .then(screenCenter(parentButton))) {
-                                        parentActions.intValue++
-                                        childVisible.value = true
-                                    }
-                                },
-                            )
-                        }
+                        ParentWindow(
+                            kind = parentKind,
+                            visible = parentVisible.value,
+                            onDismissRequest = { parentVisible.value = false },
+                            title = {
+                                ObserveWindow(parentWindow)
+                                Text("Parent dialog", Modifier.testTag("scrim-parent"))
+                            },
+                            content = {
+                                Text("Parent body")
+                                if (childVisible.value) {
+                                    AppAlertDialog(
+                                        onDismissRequest = { childActions.intValue++; childVisible.value = false },
+                                        title = {
+                                            ObserveWindow(childWindow)
+                                            DisposableEffect(Unit) {
+                                                mountedChild = true
+                                                childMounts++
+                                                onDispose { mountedChild = false; childDisposals++ }
+                                            }
+                                            Text("Child dialog", Modifier.testTag("scrim-child"))
+                                        },
+                                        text = { Text("Cancel this confirmation") },
+                                        dismissButton = {
+                                            DialogTextButton("Cancel", Modifier.testTag("scrim-cancel")
+                                                .then(screenCenter(childCancelButton))) {
+                                                childActions.intValue++
+                                                childVisible.value = false
+                                            }
+                                        },
+                                        confirmButton = { Text("Confirm") },
+                                    )
+                                }
+                            },
+                            openButton = {
+                                DialogTextButton("Open child", Modifier.testTag("scrim-open")
+                                    .then(screenCenter(parentButton))) {
+                                    parentActions.intValue++
+                                    childVisible.value = true
+                                }
+                            },
+                        )
                     }
                 }
             }
@@ -321,6 +348,14 @@ class NestedWindowScrimDeviceTest {
 
             if (back) instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
             else tap(childCancelButton)
+            // Exit must hand the mask back before the panel animation advances, so the
+            // still-visible parent surface becomes bright immediately without exposing the page.
+            compose.runOnIdle {
+                assertEquals("Closing child must immediately stop dimming its parent", 0,
+                    originalChild.attributes.flags and WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                assertEquals(0f, originalChild.attributes.dimAmount, 0f)
+                assertEquals(0f, originalChild.dialogScrimAlpha(), 0f)
+            }
             screenshot("exit-requested")
             frames("child-exit", 80)
             awaitRemoved("scrim-child", childWindow, sample = true)
@@ -370,6 +405,47 @@ class NestedWindowScrimDeviceTest {
                     MotionMode.sync(originalMode)
                 }
                 compose.mainClock.autoAdvance = true
+            }
+        }
+    }
+
+    private enum class ParentKind(val evidenceName: String) {
+        Dialog("dialog"), Sheet("sheet"), SidePanel("side-panel"),
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun ParentWindow(
+        kind: ParentKind,
+        visible: Boolean,
+        onDismissRequest: () -> Unit,
+        title: @Composable () -> Unit,
+        content: @Composable () -> Unit,
+        openButton: @Composable () -> Unit,
+    ) {
+        when (kind) {
+            ParentKind.Dialog -> if (visible) {
+                AppAlertDialog(
+                    onDismissRequest = onDismissRequest,
+                    title = title,
+                    text = content,
+                    dismissButton = { Text("Parent stays open") },
+                    confirmButton = openButton,
+                )
+            }
+            ParentKind.Sheet -> if (visible) {
+                AppBottomSheet(onDismissRequest = onDismissRequest) {
+                    title()
+                    content()
+                    openButton()
+                }
+            }
+            // Keep the host composed after open=false: enhanced external close owns its
+            // exit animation and removes the actual Window only after that exit completes.
+            ParentKind.SidePanel -> AppSidePanel(open = visible, onDismiss = onDismissRequest) {
+                title()
+                content()
+                openButton()
             }
         }
     }

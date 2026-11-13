@@ -185,7 +185,10 @@ class MotionCoverSearchDialogDeviceTest {
                 val window = requireNotNull(bindingWindow)
                 assertTrue(window.decorView.isAttachedToWindow)
                 assertTrue("The window must be touchable before binding", window.attributes.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE == 0)
-                assertTrue("The visible window must still own its dim before binding", window.attributes.dimAmount > 0f)
+                // A settled bottom sheet already draws the shared mask. Search legitimately
+                // requests zero native dim above it, while retaining ownership until release.
+                assertTrue("The live window must still submit its coordinated dim before binding",
+                    window.attributes.flags and WindowManager.LayoutParams.FLAG_DIM_BEHIND != 0)
             }
             compose.onNodeWithText(candidateTitle).performClick()
             compose.waitUntil(timeoutMillis = 10_000) { updates.get() > 0 }

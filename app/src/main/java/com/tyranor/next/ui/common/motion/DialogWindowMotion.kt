@@ -70,7 +70,7 @@ private const val DIALOG_SCRIM_ALPHA = 0.5f
  * 在 `Dialog { }` 内容里调用：默认关闭该窗口的系统进出场动画，并让窗口 dim 跟随 [dimProgress]（0..1，通常就是弹窗自己的
  * 遮罩进度）同步淡入淡出，停稳时的总暗度与原来一致。关闭开始时调用 [passThroughTouches]，退场期间点击直接落到下层页面。
  * 这是缺陷修复，「普通」与「增强」动效档都生效。
- * 同一 Activity 的叠层窗口保留下层仍显示的 native dim，避免上层进退场时压掉父遮罩。
+ * 同一 Activity 的叠层窗口保留下层仍显示的遮罩；上层开始关闭时立即将 dim 交回下层，恢复父窗口亮度。
  * 没有自绘进退场的原版弹窗可用 [preserveWindowAnimations] 保留平台效果，关闭时调用 [releaseDialogDim]。
  *
  * @return 弹窗所在的平台窗口（取不到时为 null）
@@ -125,7 +125,7 @@ private object DialogWindowDims {
     private val bindings = IdentityHashMap<Window, Binding>()
     private val stack = DialogDimStack<Window>(
         isVisible = { it.decorView.isAttachedToWindow && it.decorView.isShown },
-        applyDim = { window, dim, scrim -> bindings[window]?.applyDim(dim, scrim) },
+        applyDim = { window, dim, scrim, enabled -> bindings[window]?.applyDim(dim, scrim, enabled) },
     )
 
     fun bind(
@@ -163,8 +163,12 @@ private object DialogWindowDims {
     fun release(window: Window) {
         val binding = bindings[window]
         if (binding == null) clearDim(window)
-        else update(window, 0f, binding.enabled, binding.animations, binding.baseDim, 0f, binding.baseScrim)
+        else binding.release()
     }
+
+    fun beginExit(window: Window) { bindings[window]?.beginExit() }
+
+    fun restore(window: Window) { bindings[window]?.restore() }
 
     fun scrimAlpha(window: Window?): Float = bindings[window]?.appliedScrim ?: 0f
 
@@ -183,6 +187,7 @@ private object DialogWindowDims {
             if (event == Lifecycle.Event.ON_DESTROY) dispose()
         }
         private var disposed = false
+        private var released = false
         var registered = false
             private set
         var appliedScrim by mutableFloatStateOf(0f)
@@ -200,7 +205,21 @@ private object DialogWindowDims {
             if (disposed || registered) return
             registered = true
             // Commit the inherited floor before this Window can replace the parent's dim in WMS.
-            stack.register(owner, window, dim, enabled, baseDim, scrim, baseScrim)
+            stack.register(owner, window, dim, enabled, baseDim, scrim, baseScrim, released)
+        }
+
+        fun beginExit() {
+            if (registered && stack.beginExit(window)) released = true
+        }
+
+        fun release() {
+            released = true
+            if (registered) stack.release(window) else clearDim(window)
+        }
+
+        fun restore() {
+            released = false
+            if (registered) stack.restore(window)
         }
 
         override fun onViewAttachedToWindow(view: View) {
@@ -229,11 +248,11 @@ private object DialogWindowDims {
             bindings.remove(window)
         }
 
-        fun applyDim(value: Float, drawnScrim: Float) {
+        fun applyDim(value: Float, drawnScrim: Float, nativeEnabled: Boolean) {
             appliedScrim = drawnScrim
             val attributes = window.attributes
             val flag = WindowManager.LayoutParams.FLAG_DIM_BEHIND
-            val flags = if (enabled) attributes.flags or flag else attributes.flags and flag.inv()
+            val flags = if (nativeEnabled) attributes.flags or flag else attributes.flags and flag.inv()
             if (attributes.dimAmount == value && attributes.flags == flags && attributes.windowAnimations == animations) return
             attributes.dimAmount = value
             attributes.flags = flags
@@ -252,17 +271,29 @@ private object DialogWindowDims {
     }
 }
 
-/** Release this window's own dim, retaining the native mask of any lower visible dialog. */
+/** Drop this window's dim eligibility until an explicit reopen; lower windows retain their own masks. */
 fun Window?.releaseDialogDim() {
     if (this != null) DialogWindowDims.release(this)
+}
+
+/** An accepted nested close yields the mask while allowing the surface to finish moving. */
+internal fun Window?.beginDialogDimExit() {
+    if (this != null) DialogWindowDims.beginExit(this)
+}
+
+/** Explicit reopening only; resource cleanup must leave a closing window released. */
+internal fun Window?.restoreDialogDim() {
+    if (this != null) DialogWindowDims.restore(this)
 }
 
 /** Read in the scrim's draw phase so attach/removal invalidates only that drawing. */
 fun Window?.dialogScrimAlpha(): Float = DialogWindowDims.scrimAlpha(this)
 
-/** 弹窗开始关闭时调用：窗口不再接收触摸，退场动画期间的点击直接交给下层页面。 */
+/** 开始关闭时释放触摸；有下层窗口时立即交回遮罩，单窗口仍跟随原退场渐隐。 */
 fun Window?.passThroughTouches() {
-    this?.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+    if (this == null) return
+    addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+    beginDialogDimExit()
 }
 
 /**
@@ -273,9 +304,11 @@ fun Window?.releaseFocusForExit() {
     this?.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
 }
 
-/** 撤销 [passThroughTouches] 与 [releaseFocusForExit]：退场途中被重新打开时恢复正常交互。 */
+/** 退场途中明确重开时恢复交互和最新遮罩请求；关闭清理不可无条件调用。 */
 fun Window?.restoreInteraction() {
-    this?.clearFlags(
+    if (this == null) return
+    clearFlags(
         WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
     )
+    restoreDialogDim()
 }

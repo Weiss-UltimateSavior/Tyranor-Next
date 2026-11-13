@@ -81,12 +81,20 @@ class DialogWindowDimDeviceTest {
             originalChild.releaseFocusForExit()
             originalChild.releaseDialogDim()
             originalChild.releaseDialogDim() // Repeated release cannot remove the parent's floor.
+            assertEquals("The parent must brighten before any exit animation frame", 0,
+                checkNotNull(originalChild).attributes.flags and WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            assertEquals(0f, originalChild.attributes.dimAmount, 0f)
         }
-        awaitDims(parent to 0.4f, child to 0.4f)
+        awaitDims(parent to 0.4f)
+        compose.runOnIdle { child.dim.floatValue = 0.2f }
+        compose.mainClock.advanceTimeBy(32)
+        compose.waitForIdle()
         compose.runOnIdle {
             val flags = checkNotNull(originalChild).attributes.flags
             assertTrue(flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE != 0)
             assertTrue(flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE != 0)
+            assertEquals("A raw update must not re-enable a closing window", 0,
+                flags and WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             originalChild.restoreInteraction()
             // Change the requested base dim as the same live Window switches motion mode.
             // The dim host must update rather than disposing/re-registering it in a new order.

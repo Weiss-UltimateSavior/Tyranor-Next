@@ -178,6 +178,7 @@ class MotionSheetController internal constructor(
         closeJob?.cancel()
         closeJob = null
         closing = false
+        scrimWindow.restoreDialogDim()
         scope.launch { offset.animateTo(0f, SettleSpec, initialVelocity = v) }
         return true
     }
@@ -263,6 +264,8 @@ class MotionSheetController internal constructor(
         if (closing) return
         closing = true
         closeCommitted = false
+        // A nested sheet returns its mask immediately; keep its grab/click-to-reopen input.
+        scrimWindow.beginDialogDimExit()
         animateClose(velocity)
     }
 
@@ -285,6 +288,7 @@ class MotionSheetController internal constructor(
             if (!closeCommitted) {
                 exit.cancel()
                 closing = false
+                scrimWindow.restoreDialogDim()
             }
         }
     }
@@ -305,6 +309,7 @@ class MotionSheetController internal constructor(
         closeJob?.cancel()
         closeJob = null
         closing = false
+        scrimWindow.restoreDialogDim()
         scope.launch(start = CoroutineStart.UNDISPATCHED) { offset.stop() }
         return true
     }
@@ -462,6 +467,21 @@ fun MotionSheetController.BindWindowScrim(color: Color) {
     SideEffect { scrimWindow = window }
     DisposableEffect(window) {
         onDispose { if (scrimWindow === window) scrimWindow = null }
+    }
+    val state = sheetState
+    LaunchedEffect(window, state, enhanced) {
+        if (enhanced || window == null || state == null) return@LaunchedEffect
+        // M3 can query confirmValueChange more than once before hiding. Yield only when
+        // its actual target changes, so a veto cannot withdraw a still-open sheet's mask.
+        var opened = state.currentValue != SheetValue.Hidden
+        snapshotFlow { state.targetValue }.collect { target ->
+            if (target != SheetValue.Hidden) {
+                opened = true
+                window.restoreDialogDim()
+            } else if (opened) {
+                window.beginDialogDimExit()
+            }
+        }
     }
 }
 
