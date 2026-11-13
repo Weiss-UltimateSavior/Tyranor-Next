@@ -3,5 +3,5 @@ Unmodified source: https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/refs/tags/n8
 Build options: platform/android/build_movie_codec.sh (also packaged as ffmpeg-build.sh).
 Emberfall native build source (local trial): SystemNNN-M working tree.
 Public base: https://github.com/PorisRora/SystemNNN-Emberfall/tree/39f407f957ee3e35668cfe37c46208e067520b35
-libsystemnnn.so: 5453608 bytes, SHA-256 8299b3a62ad265acaa1ef2c4de97ad2e2775004e552308848fc51dde0adf4d4b
+libsystemnnn.so: 5453864 bytes, SHA-256 b2e9652212b99f12fd08c3ad5e5b491616926dad90592e4d83743668af68ff4f
 Static relinking instructions: https://github.com/PorisRora/SystemNNN-Emberfall/blob/dee50101472c61a5ebe84945e46b229d5de64180/platform/android/tyn/README.md

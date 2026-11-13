@@ -108,6 +108,7 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 - SystemNNN 原版设置按 `voiceVoiceChangeFlag` 在入场时读取角色组的 `voiceVoiceChangeVarN`。省略变量名且启用了 `voiceNameChangeFlag` 时继承 `voiceNameChangeVarN`。值大于零时使用配置的替换音效，省略或非正数的编号沿用原值。角色音量滑块优先使用 `charaVoiceVolumeSE`，默认使用该角色的关闭状态点击音效。
 - SystemNNN 分类滑条按 `volumeMin` / `volumeMax` 和分类覆盖值映射原版档位。XAudio2 模式应用游戏声明的范围覆盖。分类增益使用对应的 DirectSound 或 XAudio2 规则，总音量作用于混音输出和影片。
 - SystemNNN 的剧情、标题和菜单背景按实际积累的整帧推进。补帧受全局 `maxSkipFrame`、背景 `maxSkipFrameBackScript` 和原版存档 `noSkipFrame` 限制。圆形擦入等同坐标混合效果使用逻辑尺寸的遮罩合成截图，马赛克仍按游戏逻辑尺寸取样。
+- SystemNNN 的 `PREPAREOVERRAP` 从上一帧取转场起图。宿主抓图不可用时复用上一帧的原生画面。脚本在此期间改动的图层进入转场目标。
 - SystemNNN 剧情和有声影片各自在播放期间持有音频焦点，初次请求被拒或永久失焦后可由前台操作重试。播放器暂时离开前台或影片纹理重建时保留解码位置。剧本等待影片自然结束、获准跳过或播放失败后继续。
 - SystemNNN 小游戏在说明结束后按游戏帧周期发牌。Monte 依次消牌、收拢与补牌，Pyramid 和 Golf 按原版移动牌堆间的纸牌。二角先画连线，消除花牌后让其余牌加速下落。串牌在消除后依次下落、按行左移、从上方补回孤张。点按跳过原版允许跳过的动画，落牌期间等待棋盘就位。
 
