@@ -262,6 +262,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         screen.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
             private Surface attached;
             @Override public void onSurfaceTextureAvailable(SurfaceTexture texture,int width,int height){
+                storyPlane.textureReset();
                 attached=new Surface(texture);
                 storySurface=attached;
                 surfaceOwner.surface(attached);
@@ -272,7 +273,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture){
                 Surface old=attached;
                 attached=null;
-                if(storySurface==old)storySurface=null;
+                if(storySurface==old){storySurface=null;storyPlane.textureReset();}
                 surfaceOwner.surface(null);
                 // Abandon the consumer after TextureView detaches it. A blocked producer wakes
                 // without making the UI thread wait for the current native buffer submission.
@@ -282,7 +283,10 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 });
                 return false;
             }
-            @Override public void onSurfaceTextureUpdated(SurfaceTexture texture){}
+            @Override public void onSurfaceTextureUpdated(SurfaceTexture texture){
+                if(runner==surfaceOwner&&attached!=null&&storySurface==attached)
+                    storyPlane.textureUpdated(texture.getTimestamp());
+            }
         });
         if (foreground) runner.active(true);
         layoutStage();
@@ -329,7 +333,10 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             stage.setLayoutParams(params);
         }
     }
-    @Override public void loaded() {runOnUiThread(() -> {refreshAfterLoad=true;modeUnderPanel=null;});}
+    @Override public void loaded() {runOnUiThread(() -> {
+        refreshAfterLoad=true;modeUnderPanel=null;
+        if(quickNoticeView!=null)quickNoticeView.clear();
+    });}
     @Override public void debugFrame(int[] state,String script,String bgm) {
         ui.post(() -> {
             if(!foreground||debugOverlay==null)return;
@@ -380,10 +387,10 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 choices=new GameChoicePanel(this,uiAssets,frame,preferences.getBoolean("changeSelectColor",false),
                     ()->{
                         if(runner==null||controls!=null&&controls.clicking())return false;
-                        runner.choicePressed(frame.word);
+                        runner.choicePressed(frame);
                         return true;
                     },
-                    number->{if(runner!=null)runner.input(lastX,lastY,number);});
+                    number->{if(runner!=null)runner.input(frame,lastX,lastY,number);});
                 choices.planeInvalidated(storyPlane::schedulePush);
                 choices.sound((se,voice)->{if(runner!=null)runner.playClick(se,voice);});
                 stage.addView(choices,stage.indexOfChild(dialoguePanel)+1,new FrameLayout.LayoutParams(width,height));
@@ -434,8 +441,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 case BACKLOG:showBacklog();break;
                 case SAVE:runner.suspendScriptAudio();showSlots(true);break;
                 case LOAD:runner.suspendScriptAudio();showSlots(false);break;
-                case QUICK_SAVE:storyPlane.flushForCapture();runner.quickSave();break;
-                case QUICK_LOAD:runner.quickLoad();break;
+                case QUICK_SAVE:runner.quickSave(currentFrame);break;
+                case QUICK_LOAD:runner.quickLoad(currentFrame);break;
                 case AUTO:runner.auto(target);break;
                 case SKIP:runner.skip(target);break;
                 case FILM_SKIP:runner.skipFilm();break;
@@ -454,12 +461,15 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     @Override public void quickNotice(int number,int frameMs){runOnUiThread(()->{
         if(quickNoticeView!=null&&titlePanel==null&&panelsOpen==0&&!uiHidden)quickNoticeView.show(number,frameMs);
     });}
+    @Override public void quickLoadNotice(int number,int frameMs,long generation,long submittedAt){
+        runOnUiThread(()->storyPlane.afterTextureUpdate(generation,submittedAt,()->quickNotice(number,frameMs)));
+    }
     @Override public void mode(boolean automatic,boolean skipping) {runOnUiThread(() -> {
         autoMode=automatic;skipMode=skipping;
         updateVisibility();updateStatus();
     });}
     @Override public void text(GameRunner.Frame frame,int visible,int total,int effect,int progress){runOnUiThread(()->{
-        if(currentFrame==null||currentFrame.line!=frame.line||currentFrame.word!=frame.word||!currentFrame.script.equals(frame.script))return;
+        if(currentFrame!=frame)return;
         int count=Math.min(Math.max(0,visible),fullBody.codePointCount(0,fullBody.length()));
         revealed=frame.displayBody.offsetForGlyphs(count);dialoguePanel.reveal(revealed,effect,progress);
         boolean printing=count<total;
@@ -503,7 +513,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         autoMode=false;skipMode=false;updateStatus();
         if(uiHidden){uiHidden=false;updateVisibility();return;}
         if(currentFrame!=null && currentFrame.wait==NativeGame.END){showMenu();return;}
-        runner.input(lastX,lastY,0);
+        runner.input(currentFrame,lastX,lastY,0);
     }
     private void hideUi() {if(runner==null)return;runner.auto(false);runner.skip(false);if(quickNoticeView!=null)quickNoticeView.clear();uiHidden=true;updateVisibility();}
     private void updateVisibility() {
@@ -1081,6 +1091,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         private Canvas canvas;
         private Bitmap floatingBitmap;
         private Canvas floatingCanvas;
+        private long textureTimestamp,noticeTimestamp;
+        private Runnable pendingLoadNotice;
         private boolean dirty,scheduled;
         private final Runnable animationFlush=()->{
             scheduled=false;
@@ -1097,8 +1109,24 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             if(next!=null){
                 if(token!=null&&token!=next)token.close();
                 token=next;
+                pendingLoadNotice=null;
                 schedulePush();
             }
+        }
+        void textureReset(){textureTimestamp=0;}
+        void textureUpdated(long timestamp){
+            textureTimestamp=timestamp;
+            if(pendingLoadNotice!=null&&timestamp>=noticeTimestamp){
+                Runnable notice=pendingLoadNotice;
+                pendingLoadNotice=null;
+                notice.run();
+            }
+        }
+        void afterTextureUpdate(long generation,long timestamp,Runnable notice){
+            onTokenAvailable();
+            if(token==null||!token.acceptsFrame(generation)||isDestroyed()||isFinishing())return;
+            if(textureTimestamp>=timestamp)notice.run();
+            else{noticeTimestamp=timestamp;pendingLoadNotice=notice;}
         }
         void schedulePush(){
             dirty=true;
@@ -1118,6 +1146,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         void clear(){
             frame=null;
             onTokenAvailable();
+            pendingLoadNotice=null;
             dirty=false;
             if(token!=null)NativeGame.pushMessagePlane(token.value(),null,new int[6],false);
         }
@@ -1125,6 +1154,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             if(stage!=null)stage.removeCallbacks(animationFlush);
             ui.removeCallbacks(animationFlush);
             if(token!=null)token.close();
+            pendingLoadNotice=null;textureReset();
             token=null;owner=null;frame=null;bitmap=null;canvas=null;floatingBitmap=null;floatingCanvas=null;dirty=false;scheduled=false;
         }
         private void ensureLaidOut(View view){
@@ -1145,6 +1175,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 NativeGame.pushMessagePlane(token.value(),null,new int[6],false);
                 return;
             }
+            if(!token.acceptsFrame(target.generation))return;
             int choicePage=choices==null?0:choices.page();
             int[] key=DialogueLayout.composePlaneKey(target.planeKey,uiHidden,choicePage);
             boolean showLongImage=target.wait==NativeGame.DIALOGUE&&target.layoutCommand==0x22220002&&

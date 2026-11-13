@@ -18,7 +18,7 @@ public final class MessagePlaneTokenTest {
         for(long handle:handles){
             List<Long> released=new ArrayList<>();
             AtomicReference<MessagePlaneToken> pending=new AtomicReference<>(
-                MessagePlaneToken.adopt(handle,released::add));
+                MessagePlaneToken.adopt(handle,1,released::add));
             MessagePlaneToken ui=pending.getAndSet(null);
             check(ui!=null,"nonzero JNI pointer must reach the UI");
             check(ui.value()==handle,"pointer bits changed during handoff");
@@ -32,8 +32,8 @@ public final class MessagePlaneTokenTest {
     @Test public void replacingPendingTokenDoesNotReleaseConsumedToken(){
         List<Long> released=new ArrayList<>();
         AtomicReference<MessagePlaneToken> pending=new AtomicReference<>();
-        MessagePlaneToken first=MessagePlaneToken.adopt(0xb400000000000001L,released::add);
-        MessagePlaneToken second=MessagePlaneToken.adopt(0xb400000000000002L,released::add);
+        MessagePlaneToken first=MessagePlaneToken.adopt(0xb400000000000001L,1,released::add);
+        MessagePlaneToken second=MessagePlaneToken.adopt(0xb400000000000002L,2,released::add);
         pending.set(first);
         pending.getAndSet(second).close();
         MessagePlaneToken ui=pending.getAndSet(null);
@@ -48,7 +48,7 @@ public final class MessagePlaneTokenTest {
     @Test public void concurrentCloseReleasesExactlyOnce() throws Exception {
         AtomicInteger releases=new AtomicInteger();
         AtomicReference<Long> released=new AtomicReference<>();
-        MessagePlaneToken token=MessagePlaneToken.adopt(0xb400007a12345678L,value->{
+        MessagePlaneToken token=MessagePlaneToken.adopt(0xb400007a12345678L,1,value->{
             released.set(value);releases.incrementAndGet();
         });
         CountDownLatch start=new CountDownLatch(1);
@@ -66,8 +66,17 @@ public final class MessagePlaneTokenTest {
     }
 
     @Test public void zeroIsTheOnlyAbsentToken(){
-        check(MessagePlaneToken.adopt(0,value->{throw new AssertionError("null pointer released");})==null,
+        check(MessagePlaneToken.adopt(0,1,value->{throw new AssertionError("null pointer released");})==null,
             "zero pointer must be absent");
+    }
+
+    @Test public void restoredPlaneRejectsThePreviousSession(){
+        List<Long> released=new ArrayList<>();
+        MessagePlaneToken token=MessagePlaneToken.adopt(0xb400000000000002L,2,released::add);
+        check(!token.acceptsFrame(1),"an old dialogue can have the same script frame key");
+        check(token.acceptsFrame(2),"the restored frame must reach its mailbox");
+        token.close();
+        check(!token.acceptsFrame(2),"closed mailboxes must reject frames");
     }
 
 }

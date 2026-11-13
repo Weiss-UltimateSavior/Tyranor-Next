@@ -17,7 +17,6 @@ final class SaveSlots {
     private static final int DEFAULT_SLOT_COUNT=20;
     private static final int LAST_MAGIC=0x4c535432; // LST2, physical PC slot numbers
     private static final int SLOT_UI_MAGIC=0x534c5532; // SLU2
-    private static final int MAX_PICTURE_SIZE=512;
     private static final int MAX_CACHED_PICTURE_PIXELS=6*1024*1024;
     private final GameSavePaths paths;
     private PcStorySave pc;
@@ -281,9 +280,6 @@ final class SaveSlots {
         }catch(IOException|RuntimeException e){
             return new Entry(slot,true,true,Math.max(0,file.lastModified()),"",null);
         }
-    }
-    static int pictureDimension(GameUiAssets.Config data,String field,int fallback){
-        return Math.max(1,Math.min(MAX_PICTURE_SIZE,data.number(field,fallback)));
     }
     static boolean valid(int slot) { return slot==AUTO || slot==QUICK || slot>=0 && slot<MAX_MANUAL_SLOTS; }
     static boolean exists(File file) { return file.isFile() || new File(file.getPath()+".bak").isFile(); }

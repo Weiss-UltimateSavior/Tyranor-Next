@@ -33,6 +33,7 @@ final class NativeGame {
     static native void deactivateSurface(long token);
     static native void bindSurface(long handle,long token);
     static native void presentSurface(long handle);
+    static native long presentStoryFrame(long handle);
     static native boolean configureMenuBackground(long handle,int mode,byte[] script,byte[] background,boolean repeat);
     // A zero result signals script end. A positive result is the current engine frame period.
     static native int advanceOpening(long handle,int elapsedMs);

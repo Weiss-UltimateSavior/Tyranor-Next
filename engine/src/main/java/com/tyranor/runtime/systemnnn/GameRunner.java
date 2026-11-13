@@ -47,19 +47,21 @@ final class GameRunner {
         final DialogueDecorations decorations;
         final String[] choices,choiceMessages;
         final int[] choiceInfo,places,placeCharacters,planeKey;
+        final long generation;
         final Bitmap[] placePortraits;
         final Modal modal;
         final boolean alreadyRead;
         Frame(int wait,int width,int height,String script,int line,int word,String speaker,String body,DialogueMarkup displayBody,String[] choices,boolean read,
               int messageId,int windowType,int fontType,int scriptCursor,boolean windowVisible,boolean nameWindow,boolean optionsAllowed,int command,int layoutCommand,int drawMessage,int frameMs,
               String[] choiceMessages,int[] choiceInfo,int[] places,int placeMode,int[] placeCharacters,Bitmap[] placePortraits,Modal modal,
-              DialogueDecorations decorations,boolean filmSkip,int[] planeKey) {
+              DialogueDecorations decorations,boolean filmSkip,int[] planeKey,long generation) {
             this.wait=wait;this.width=width;this.height=height;this.script=script;this.line=line;this.word=word;
             this.speaker=speaker;this.body=body;this.choices=choices;this.alreadyRead=read;
             this.displayBody=displayBody;
             this.decorations=decorations;
             this.filmSkip=filmSkip;
             this.planeKey=planeKey;
+            this.generation=generation;
             this.messageId=messageId;this.windowType=windowType;this.fontType=fontType;this.scriptCursor=scriptCursor;this.windowVisible=windowVisible;
             this.nameWindow=nameWindow;this.optionsAllowed=optionsAllowed;this.command=command;this.layoutCommand=layoutCommand;this.drawMessage=drawMessage;this.frameMs=frameMs;
             this.choiceMessages=choiceMessages;this.choiceInfo=choiceInfo;this.places=places;
@@ -162,6 +164,7 @@ final class GameRunner {
         void slotsChanged();
         void quickSlot(boolean available);
         void quickNotice(int number,int frameMs);
+        void quickLoadNotice(int number,int frameMs,long generation,long submittedAt);
         void backlog(List<BacklogLine> lines);
         void gallery(GalleryCatalog.Page page,long request);
         void spectrum(int[] bands);
@@ -223,6 +226,8 @@ final class GameRunner {
     private PlayerSettings settings;
     private int shownWait=-1,shownWord=-1,shownLine=-1,x,y;
     private long handle,deadline,lastTickAt,planeEnteredAt;
+    private long sessionGeneration;
+    private boolean quickLoadFramePending;
     private boolean planeGateTimeoutLogged;
     private final Object surfaceOwner=new Object();
     private volatile long surfaceBinding;
@@ -1152,9 +1157,10 @@ final class GameRunner {
         }
         return true;
     }
-    void input(int atX,int atY,int choice){tasks.post(() -> {
+    void input(Frame frame,int atX,int atY,int choice){tasks.post(() -> {
+        if(frame==null||frame.generation!=sessionGeneration)return;
         if(choice>0)choiceClicking=false;
-        if(onTitle||menuOpen||!playing()||meta[0]==NativeGame.MODAL||
+        if(onTitle||menuOpen||quickLoadFramePending||!playing()||meta[0]==NativeGame.MODAL||
             (choice==0&&meta[0]==NativeGame.CHOICE)||(choice>0&&meta[0]!=NativeGame.CHOICE))return;
         if(choice==0)setModes(false,false);
         if(choice==0&&(meta[0]==NativeGame.DRAW||meta[0]==NativeGame.OVERLAP)&&!NativeGame.requestAdvance(handle))return;
@@ -1162,7 +1168,8 @@ final class GameRunner {
             choiceClicking=true;
             int expectedWord=meta[1];
             tasks.postDelayed(()->{
-                if(meta[0]==NativeGame.CHOICE&&meta[1]==expectedWord)input(atX,atY,choice);
+                if(frame.generation!=sessionGeneration)return;
+                if(meta[0]==NativeGame.CHOICE&&meta[1]==expectedWord)input(frame,atX,atY,choice);
                 else choiceClicking=false;
             },Math.max(1,meta[5]));
             return;
@@ -1173,8 +1180,9 @@ final class GameRunner {
         }
         markRead();x=atX;y=atY;step(0,choice==0,choice);
     });}
-    void choicePressed(int word){tasks.post(()->{
-        if(!onTitle&&!menuOpen&&meta[0]==NativeGame.CHOICE&&meta[1]==word)choiceClicking=true;
+    void choicePressed(Frame frame){tasks.post(()->{
+        if(frame.generation==sessionGeneration&&!onTitle&&!menuOpen&&!quickLoadFramePending&&
+            meta[0]==NativeGame.CHOICE&&meta[1]==frame.word)choiceClicking=true;
     });}
     void choosePlace(int place,java.util.function.Consumer<Boolean> done){tasks.post(()->{
         if(handle==0||onTitle||failed||meta[0]!=NativeGame.PLACE){done.accept(false);return;}
@@ -1702,7 +1710,7 @@ final class GameRunner {
     SaveSlots.Entry[] slotEntries(){return slots.entries();}
     Integer lastSelectedSlot(){return slots.lastSelectedSlot();}
     void saveSlot(int slot){
-        tasks.post(()->save(slot,()->playPanelSound(uiAssets.save,"saveSound",0),1));
+        tasks.post(()->save(slot,false,1));
     }
     void loadSlot(int slot){loadSlot(slot,null);}
     void loadSlot(int slot,java.util.function.Consumer<Boolean> done){tasks.post(()->loadSlot(slot,false,done));}
@@ -1716,7 +1724,8 @@ final class GameRunner {
             openSlot(slot,done!=null);
             success=true;
             SAVE_FILES.execute(()->rememberSlot(slot));
-            if(quick)quickNotice(false);else if(done==null)playPanelSound(uiAssets.load,"loadSound",0);
+            if(quick)quickLoadFramePending=true;
+            else if(done==null)playPanelSound(uiAssets.load,"loadSound",0);
         }catch(FileNotFoundException e){
             if(!quick)ui.notice(text(R.string.engine_systemnnn_host_slot_missing));
         }catch(Exception e){
@@ -1728,11 +1737,14 @@ final class GameRunner {
             if(done!=null)done.accept(success);
         }
     }
-    void quickSave(){tasks.post(() -> {
-        if(!onTitle&&quickEnabled(true))
-            save(slots.quickNumber(),()->quickNotice(true),uiAssets.save.number("quickSetLastFlag",0));
+    void quickSave(Frame frame){tasks.post(() -> {
+        if(frame!=null&&frame.generation==sessionGeneration&&!onTitle&&!quickLoadFramePending&&quickEnabled(true))
+            save(slots.quickNumber(),true,uiAssets.save.number("quickSetLastFlag",0));
     });}
-    void quickLoad(){tasks.post(() -> {if(!onTitle&&quickEnabled(false))loadSlot(slots.quickNumber(),true,null);});}
+    void quickLoad(Frame frame){tasks.post(() -> {
+        if(frame!=null&&frame.generation==sessionGeneration&&!onTitle&&!quickLoadFramePending&&quickEnabled(false))
+            loadSlot(slots.quickNumber(),true,null);
+    });}
     private boolean quickEnabled(boolean saving){
         int enabled=uiAssets.game.number("quickSaveEnable",0);
         return slots.quickNumber()>=0&&(saving?enabled:uiAssets.game.number("quickLoadEnable",enabled))!=0;
@@ -1743,10 +1755,9 @@ final class GameRunner {
         SaveSlots.Entry slot=slots.entry(quick);
         ui.quickSlot(slot.exists&&!slot.corrupt);
     }
-    private void quickNotice(boolean saving){
-        if(uiAssets.game.number("noticeFlag",0)==0||uiAssets.game.number(saving?"quickSavePrint":"quickLoadPrint",1)==0)return;
-        int number=uiAssets.game.number(saving?"saveNoticeNumber":"loadNoticeNumber",saving?2:1);
-        ui.quickNotice(number,meta[5]);
+    private int quickNoticeNumber(boolean saving){
+        if(uiAssets.game.number("noticeFlag",0)==0||uiAssets.game.number(saving?"quickSavePrint":"quickLoadPrint",1)==0)return 0;
+        return uiAssets.game.number(saving?"saveNoticeNumber":"loadNoticeNumber",saving?2:1);
     }
     private void playPanelSound(GameUiAssets.Config config,String key,int fallback){
         int cue=config.number(key,fallback);
@@ -1766,7 +1777,7 @@ final class GameRunner {
             initialize();
         }catch(Exception|LinkageError e){broken(e);}
     });}
-    private void save(int slot,Runnable feedback,int marker){
+    private void save(int slot,boolean quick,int marker){
         Modal modal=activeModal();
         boolean chart=modal!=null&&modal.mode==Modal.SELECT_CHART;
         if(handle==0||failed||onTitle||replaying||
@@ -1775,31 +1786,25 @@ final class GameRunner {
             return;
         }
         try{
-            Capture picture=slotPicture();
-            byte[] data=NativeGame.exportPcSave(handle,picture==null?null:picture.pixels,
-                picture==null?0:picture.width,picture==null?0:picture.height);
+            byte[] data=NativeGame.exportPcSave(handle,null,0,0);
             if(data==null)throw new IOException("PC save export returned no data");
-            if(feedback!=null)feedback.run();
+            if(!quick)playPanelSound(uiAssets.save,"saveSound",0);
+            long generation=sessionGeneration;
             CompletableFuture.runAsync(()->{
                 try{writeSlot(slot,data,marker);}
                 catch(IOException e){throw new CompletionException(e);}
-            },SAVE_FILES).whenComplete((unused,error)->{if(error!=null)saveFailed(error);});
-            writeReadLines();
+            },SAVE_FILES).whenComplete((unused,error)->{
+                if(error!=null)saveFailed(error);
+                else tasks.post(()->{
+                    if(closing||generation!=sessionGeneration)return;
+                    writeReadLines();
+                    if(quick){
+                        int notice=quickNoticeNumber(true);
+                        if(notice>0)ui.quickNotice(notice,meta[5]);
+                    }
+                });
+            });
         }catch(IOException|RuntimeException e){saveFailed(e);}
-    }
-    private Capture slotPicture(){
-        int w=SaveSlots.pictureDimension(uiAssets.dataFile,"picSizeX",uiAssets.dataFile.number("areaSizeX",132));
-        int h=SaveSlots.pictureDimension(uiAssets.dataFile,"picSizeY",uiAssets.dataFile.number("areaSizeY",100));
-        String hideFlag=meta[0]==NativeGame.DIALOGUE?"messageMiniCGNoMessageFlag":
-            meta[0]==NativeGame.CHOICE?"selectMiniCGNoMessageFlag":null;
-        boolean hideMessage=hideFlag!=null&&uiAssets.game.number(hideFlag,0)!=0;
-        try{
-            int[] pixels=hideMessage?NativeGame.saveSceneThumbnail(handle,w,h):NativeGame.saveThumbnail(handle,w,h);
-            return pixels==null?null:new Capture(pixels,w,h);
-        }catch(RuntimeException|OutOfMemoryError e){
-            Log.w("SystemNNN","Unable to capture slot preview",e);
-            return null;
-        }
     }
     private void writeSlot(int slot,byte[] data,int marker) throws IOException {
         File file=slots.pcFile(slot);
@@ -1856,6 +1861,20 @@ final class GameRunner {
     private final Runnable ticker=new Runnable(){public void run(){
         if(!playing())return;
         int period=Math.max(1,meta[5]);long nowTick=SystemClock.uptimeMillis();
+        if(quickLoadFramePending){
+            // The restored choice timer and text reveal begin once a complete frame is queued.
+            try{
+                long submittedAt=NativeGame.presentStoryFrame(handle);
+                if(submittedAt>0){
+                    quickLoadFramePending=false;
+                    startFrameClock();
+                    int notice=quickNoticeNumber(false);
+                    if(notice>0)ui.quickLoadNotice(notice,meta[5],sessionGeneration,submittedAt);
+                }
+            }catch(RuntimeException e){broken(e);return;}
+            tasks.postDelayed(this,period);
+            return;
+        }
         int elapsed=(int)Math.min(Integer.MAX_VALUE,Math.max(0,nowTick-lastTickAt));lastTickAt=nowTick;boolean advance=false;
         tickModal(Math.min(1000,elapsed),period);
         if(!onTitle&&!menuOpen){
@@ -2121,7 +2140,8 @@ final class GameRunner {
     }
     MessagePlaneToken takePlaneToken(){return pendingPlaneToken.getAndSet(null);}
     private void offerPlaneToken(long value){
-        MessagePlaneToken token=MessagePlaneToken.adopt(value,NativeGame::releaseMessagePlane);
+        quickLoadFramePending=false;
+        MessagePlaneToken token=MessagePlaneToken.adopt(value,++sessionGeneration,NativeGame::releaseMessagePlane);
         if(token==null)return;
         if(closing){token.close();return;}
         MessagePlaneToken stale=pendingPlaneToken.getAndSet(token);
@@ -2178,7 +2198,7 @@ final class GameRunner {
         Bitmap[] portraits=placeMode!=0?placePortraits(placeMode,placeCharacters):new Bitmap[0];
         Modal modal=shownWait==NativeGame.MODAL?readModal():null;
         Frame next=new Frame(shownWait,meta[3],meta[4],script,shownLine,shownWord,speaker,body,displayBody,options,false,properties[0],properties[1],properties[2],scriptCursor,
-            properties[3]!=0,message.nameWindow,properties[4]!=0,properties[5],properties[6],drawMessage,meta[5],messages,choice,places,placeMode,placeCharacters,portraits,modal,decorations,filmSkip,planeKey);
+            properties[3]!=0,message.nameWindow,properties[4]!=0,properties[5],properties[6],drawMessage,meta[5],messages,choice,places,placeMode,placeCharacters,portraits,modal,decorations,filmSkip,planeKey,sessionGeneration);
         if(!replaying&&shownWait==NativeGame.DIALOGUE&&!readLines.isEmpty()){
             String previousBody=decode(NativeGame.dialogue(handle)[1]);
             if(readLines.remove(next.legacyReadKey(raw[0],previousBody)))NativeGame.markRead(handle,next.messageId);
@@ -2188,7 +2208,7 @@ final class GameRunner {
                 current.alreadyRead:NativeGame.isRead(handle,next.messageId));
         current=new Frame(next.wait,next.width,next.height,next.script,next.line,next.word,next.speaker,next.body,next.displayBody,next.choices,
             read,next.messageId,next.windowType,next.fontType,next.scriptCursor,
-            next.windowVisible,next.nameWindow,next.optionsAllowed,next.command,next.layoutCommand,next.drawMessage,next.frameMs,messages,choice,places,placeMode,placeCharacters,portraits,modal,decorations,filmSkip,planeKey);
+            next.windowVisible,next.nameWindow,next.optionsAllowed,next.command,next.layoutCommand,next.drawMessage,next.frameMs,messages,choice,places,placeMode,placeCharacters,portraits,modal,decorations,filmSkip,planeKey,sessionGeneration);
         planeEnteredAt=SystemClock.uptimeMillis();
         planeGateTimeoutLogged=false;
         textDone=false;visibleText=0;

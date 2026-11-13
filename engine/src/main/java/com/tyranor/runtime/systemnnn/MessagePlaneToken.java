@@ -7,14 +7,17 @@ import java.util.function.LongConsumer;
 final class MessagePlaneToken implements AutoCloseable {
     private final AtomicLong value;
     private final LongConsumer release;
+    private final long generation;
 
-    private MessagePlaneToken(long value,LongConsumer release){
+    private MessagePlaneToken(long value,long generation,LongConsumer release){
         this.value=new AtomicLong(value);
+        this.generation=generation;
         this.release=release;
     }
-    static MessagePlaneToken adopt(long value,LongConsumer release){
-        return value==0?null:new MessagePlaneToken(value,release);
+    static MessagePlaneToken adopt(long value,long generation,LongConsumer release){
+        return value==0?null:new MessagePlaneToken(value,generation,release);
     }
+    boolean acceptsFrame(long frameGeneration){return generation==frameGeneration&&value.get()!=0;}
     long value(){return value.get();}
     @Override public void close(){
         long held=value.getAndSet(0);
