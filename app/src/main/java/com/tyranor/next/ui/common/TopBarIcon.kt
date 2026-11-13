@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
  * 左侧自带 2dp 间距，保证相邻图标之间留白统一。
  * tint 由调用方传当前主题色（Material 页面传 MaterialTheme.colorScheme.primary，
  * Miuix 页面传 MiuixTheme.colorScheme.primary）。
- * 全 App 顶部栏图标按钮必须使用本组件，禁止自行用 IconButton/Icon 拼装。
+ * 全 App 顶部栏右侧操作图标按钮必须使用本组件，禁止自行用 IconButton/Icon 拼装。
  */
 @Composable
 fun TopBarIcon(

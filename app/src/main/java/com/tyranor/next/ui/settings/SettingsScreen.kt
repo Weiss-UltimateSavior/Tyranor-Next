@@ -87,6 +87,7 @@ import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppBottomSheet
 import com.tyranor.next.ui.common.AppSearchField
+import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.SettingsEntryCard
 import com.tyranor.next.ui.common.coachAnchor
@@ -1003,7 +1004,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
-                AppTopBar(
+                AppSecondaryTopBar(
                     title = engineSettingsKindTitle(kind),
                     background = Color.Transparent,
                     contentColor = PageTextColor,
@@ -1101,7 +1102,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     }
 }
 
-/** 顶部栏：统一复用 AppTopBar（Miuix 页面背景取色）。 */
+/** 顶部栏：一级设置页面复用 AppTopBar（透明背景与页面前景色）。 */
 @Composable
 private fun SettingsTopBar(title: String) {
     AppTopBar(

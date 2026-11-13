@@ -45,7 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.ui.common.AppScreenActivity
-import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.effectiveNavStyle
 import com.tyranor.next.ui.common.isSideRailLayout
 import com.tyranor.next.ui.common.BottomInsetSpacer
@@ -134,7 +134,7 @@ internal fun AppSettingsScreen() {
             containerColor = ComposeColor.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
-                AppTopBar(
+                AppSecondaryTopBar(
                     title = stringResource(R.string.settings_app_title),
                     background = ComposeColor.Transparent,
                     contentColor = PageTextColor,

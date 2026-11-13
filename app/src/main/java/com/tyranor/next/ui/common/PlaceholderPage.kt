@@ -14,13 +14,13 @@ import androidx.compose.ui.unit.dp
 import com.tyranor.next.theme.PageSecondaryTextColor
 
 /**
- * 占位页面：顶部栏复用统一组件 [AppTopBar]，正文居中显示标题和一句用于区分的话。
- * 仅用于新页面骨架搭建；真实功能页必须直接使用 [AppTopBar] 而非本组件。
+ * 占位页面：顶部栏复用统一组件 [AppSecondaryTopBar]，正文居中显示标题和一句用于区分的话。
+ * 仅用于新页面骨架搭建；真实功能页必须直接使用 [AppSecondaryTopBar] 而非本组件。
  */
 @Composable
 internal fun PlaceholderPage(title: String, description: String, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxSize()) {
-        AppTopBar(title = title)
+        AppSecondaryTopBar(title = title)
         // 正文区域
         Column(
             modifier = Modifier.fillMaxSize().padding(24.dp),

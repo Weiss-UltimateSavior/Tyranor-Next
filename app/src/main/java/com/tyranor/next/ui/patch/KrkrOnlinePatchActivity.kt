@@ -56,7 +56,7 @@ import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.AppScreenActivity
-import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.TimeFormats
@@ -131,7 +131,7 @@ private fun KrkrOnlinePatchScreen(game: ScanGame) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        AppTopBar(
+        AppSecondaryTopBar(
             title = stringResource(R.string.patch_title),
             trailing = {
                 TopBarIcon(painterResource(R.drawable.ic_refresh), stringResource(R.string.patch_refresh_content_description), MaterialTheme.colorScheme.primary) {
