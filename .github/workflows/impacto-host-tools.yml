@@ -1,0 +1,33 @@
+name: Impacto host tools
+
+on:
+  pull_request:
+    paths:
+      - 'tools/impacto/**'
+      - 'engine/impacto/**'
+      - '.github/workflows/impacto-host-tools.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check source and candidate gates
+        run: |
+          python tools/impacto/test-upstream-integrity.py
+          python tools/impacto/test-stage-upstream.py
+          bash -n tools/impacto/build-upstream.sh
+          bash tools/impacto/test-build-tools.sh
+      - name: Check dependency pinning without downloads
+        run: |
+          cmake -S tools/impacto/tests/pins -B "$RUNNER_TEMP/impacto-pins" \
+            -DCMAKE_PROJECT_impacto_INCLUDE="$GITHUB_WORKSPACE/engine/impacto/host-build/pin-dependencies.cmake" \
+            -DTYRANOR_IMPACTO_SOURCE_LOCK="$GITHUB_WORKSPACE/engine/impacto/source-lock.json"
