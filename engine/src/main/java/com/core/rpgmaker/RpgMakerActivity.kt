@@ -338,10 +338,15 @@ class RpgMakerActivity : Activity() {
             // 静默降级变成一条可检索的错误日志。哨兵由**实际注入的资产**生成，资产缺失时
             // 不会因为「期望有 v2」而每次都误报致命错误。
             val sentinel = polyfillAssets.joinToString("&&") { it.flag }
+            // 会话版本要传给注入脚本：`__rpg_v12.js` 据此决定「v1 用我们的实现、v2 把
+            // 渲染器交还游戏 core」——否则一处补丁会盖掉游戏自己的 textureGC 策略。
+            val sessionConfig = "<script>window.__tyranorRpg={engine:'" +
+                (if (webGameType == WebGameType.RPG_MZ) "MZ" else "MV") +
+                "',version:'" + (normalizedVersion ?: "") + "'};</script>"
             val earlyHtml = if (polyfillAssets.isEmpty()) {
                 ""
             } else {
-                polyfillAssets.joinToString(separator = "") { script ->
+                sessionConfig + polyfillAssets.joinToString(separator = "") { script ->
                     // 键本身已含 `__tyranor__/` 前缀（它同时是 internalResources 的查找键），
                     // 这里只补前导 '/'，否则会拼成 `/__tyranor__/__tyranor__/...` 而 404
                     "<script src='${internalResourceUrl(script.resourceKey)}'></script>"
