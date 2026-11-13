@@ -156,7 +156,7 @@ final class GameRunner {
         void titleRestart(TitleMenu title,Capture background);
         void style(DialogueStyle style);
         void panels(GameUiAssets assets);
-        void parameters(int[] raw,int[] display,int[] auxiliary);
+        void parameters(int[] display,int[] auxiliary);
         void scriptMouse(int variant);
         void text(Frame frame,int visible,int total,int effect,int progress);
         void choiceTime(Frame frame,int remaining);
@@ -405,7 +405,7 @@ final class GameRunner {
         int[] auxiliary=NativeGame.auxiliaryState(handle);
         if(pcMessageCursor!=Integer.MIN_VALUE&&(uiAssets==null||uiAssets.game.number("expModeButtonIsMessageCursor",0)==0)&&
             auxiliary!=null&&auxiliary.length>34)auxiliary[34]=pcMessageCursor;
-        ui.parameters(NativeGame.parameters(handle),NativeGame.displayParameters(handle),auxiliary);
+        ui.parameters(NativeGame.displayParameters(handle),auxiliary);
         publishScriptMouse();
     }
     private void publishScriptMouse(){
