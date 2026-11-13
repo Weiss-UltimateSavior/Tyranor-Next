@@ -166,6 +166,15 @@ internal fun SystemNnnSaveLayoutSettings(gameUri: String) {
                 ),
                 style = MaterialTheme.typography.bodySmall,
             )
+            val extStatus = when (current.extensionEnabled) {
+                1 -> R.string.engine_settings_systemnnn_layout_ext_on
+                0 -> R.string.engine_settings_systemnnn_layout_ext_off
+                else -> R.string.engine_settings_systemnnn_layout_ext_pending
+            }
+            Text(
+                stringResource(R.string.engine_settings_systemnnn_layout_ext_status, stringResource(extStatus)),
+                style = MaterialTheme.typography.bodySmall,
+            )
             val okikae = if (current.okikae) R.string.engine_settings_systemnnn_layout_okikae_on
                 else R.string.engine_settings_systemnnn_layout_okikae_off
             Text(
@@ -175,18 +184,34 @@ internal fun SystemNnnSaveLayoutSettings(gameUri: String) {
                 ),
                 style = MaterialTheme.typography.bodySmall,
             )
-            val extensionCode = when (current.extensionStartCode) {
-                -1 -> stringResource(R.string.engine_settings_systemnnn_layout_ext_unknown)
+            val extensionBlocks = when (current.extensionStartCode) {
+                -1 -> stringResource(
+                    if (current.extensionEnabled == 1) R.string.engine_settings_systemnnn_layout_ext_unknown
+                    else R.string.engine_settings_systemnnn_layout_ext_pending,
+                )
                 0 -> stringResource(R.string.engine_settings_systemnnn_layout_ext_none)
-                else -> current.extensionStartCode.toString()
+                else -> {
+                    val unknown = stringResource(R.string.engine_settings_systemnnn_layout_ext_length_unknown)
+                    val separator = stringResource(R.string.engine_settings_systemnnn_layout_ext_separator)
+                    current.extensionSizes.ifEmpty { listOf(-1) }.mapIndexed { index, size ->
+                        val length = if (size < 0) unknown
+                        else stringResource(R.string.engine_settings_systemnnn_layout_ext_length, size)
+                        stringResource(R.string.engine_settings_systemnnn_layout_ext_block, current.extensionStartCode + index, length)
+                    }.joinToString(separator)
+                }
             }
             Text(
-                stringResource(R.string.engine_settings_systemnnn_layout_ext, extensionCode),
+                stringResource(R.string.engine_settings_systemnnn_layout_ext, extensionBlocks),
                 style = MaterialTheme.typography.bodySmall,
             )
-            if (current.extensionStartCode == -1) {
+            if (current.extensionStartCode == -1 && current.extensionEnabled == 1) {
                 Text(
                     stringResource(R.string.engine_settings_systemnnn_layout_ext_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            } else if (current.extensionStartCode > 0 && current.extensionSizes.isEmpty()) {
+                Text(
+                    stringResource(R.string.engine_settings_systemnnn_layout_ext_refresh),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }

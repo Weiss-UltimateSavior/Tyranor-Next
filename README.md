@@ -57,7 +57,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | CMVS                 | `data/pack/script.cpz` + `start.ps3/ps2`（仅 19 部登记作品）              | 内置 CMVS 原生运行时（cmvs-rs，NativeActivity） |
 | System35             | `*.ALD`（`SA.ALD` 等；根目录或 `GAMEDATA/`）、`System39.ain`/`System39.ini`/`*.wai`/`*.bgi`/`*.alk` | 内置 System3.x 运行时（xsystem35） |
 | System4              | `System40.ini` 或 `AliceStart.ini`（根目录；`*.ain` 为辅助特征）                    | 内置 System4 运行时（xsystem4）      |
-| SystemNNN            | 游戏目录下的 `spt/sys.spt`（不区分大小写）                            | 内置 [SystemNNN-Emberfall 0.6.16](https://github.com/PorisRora/SystemNNN-Emberfall)（ARM64） |
+| SystemNNN            | 游戏目录下的 `spt/sys.spt`（不区分大小写）                            | 内置 [SystemNNN-Emberfall 0.6.17](https://github.com/PorisRora/SystemNNN-Emberfall)（ARM64） |
 | YU-RIS               | `yscfg.dat`、`pac/*.ypf`、`YS*.DLL`、`.ymv`                          | 外置 Winlator（winlator-cn）        |
 | CatSystem2           | `config/startup.xml`、`*.int`、`*.cst`、`*.hg3`、`*.kcs` 等组合         | 外置 Winlator（winlator-cn）        |
 | PC（手动添加）        | 游戏页顶栏「添加 PC 游戏」选择目录并指定启动 exe                          | 外置 Winlator（winlator-cn）        |
@@ -84,7 +84,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 - SystemNNN 的游戏设置支持随剧情变量切换角色试听音，按游戏原版配置生效。
 - SystemNNN 的分类音量范围与衰减按游戏原版设置。滑条最左端对应配置下限，分类开关控制是否播放，总音量也作用于影片。
 - SystemNNN 引擎设置提供 EXE 解析器和调试模式。EXE 解析器默认开启。开启调试模式后，游戏左上角显示脚本、图层、存档文字行宽及音频状态，脚本 DEBUG 消息可在系统 Logcat 的 SystemNNN 标签下查看。单游戏可分别覆盖两项设置。
-- SystemNNN 单游戏引擎设置在「配置文件信息」下显示含文件名的完整路径、存档图层槽、台词行宽、剧情状态块、全局档版本、文本替换表及 EXT 起始编号（实际数值／无／解析失败）。也可手动重新分析并生成配置；需要 EXT 却无法确定编号时会停止启动并提示。
+- SystemNNN 单游戏引擎设置在「配置文件信息」下显示完整配置路径、存档图层槽、台词行宽、剧情状态块、全局档版本、EXT 状态、文本替换表及各 EXT 编号与数据块长度。可手动重新分析并生成配置。需要 EXT 却无法确定编号时，启动会提示重新分析。
 - SystemNNN 标题和菜单背景按 PC 的补帧规则推进。圆形擦入等仅替换同一位置像素的转场使用原尺寸画面合成。
 - SystemNNN 连续转场会重新抓取当前对白。抓图失败时沿用上一帧的原生画面。动态背景模糊使用整数滑动窗口计算。
 - SystemNNN 剧情正文缩小字号时保留游戏设定的行距。原版全局档的自动速度超出档位范围时，自动播放沿用文字速度的档位。

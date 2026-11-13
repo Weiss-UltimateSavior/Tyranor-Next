@@ -160,6 +160,7 @@ final class NativeGame {
     static native void setSkip(long handle,boolean skip);
     static native void setCtrlSkip(long handle,boolean enabled);
     static native boolean skipActive(long handle);
+    static native int storyModes(long handle);
     static native boolean skipEffective(long handle);
     static native int[] readState(long handle);
     static native void restoreReadState(long handle,int[] identifiers);

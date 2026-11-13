@@ -1338,9 +1338,10 @@ final class GameRunner {
         if(handle!=0)NativeGame.setParameters(handle,new int[]{6,auto?1:0});
     }
     private void syncModes(){
-        if(handle==0)return;boolean automatic=false;int[] values=NativeGame.parameters(handle);
-        for(int i=0;i<values.length;i+=2)if(values[i]==6){automatic=values[i+1]!=0;break;}
-        boolean skipping=NativeGame.skipActive(handle);
+        // Only AUTO/SKIP are polled during a story tick.
+        if(handle==0)return;
+        int modes=NativeGame.storyModes(handle);
+        boolean automatic=(modes&1)!=0,skipping=(modes&2)!=0;
         if(autoMode!=automatic||skipMode!=skipping){autoMode=automatic;skipMode=skipping;ui.mode(autoMode,skipMode);}
     }
     void playClick(){tasks.post(() -> {if(handle!=0)NativeGame.playSystemSe(handle,0);});}

@@ -26,6 +26,8 @@ internal object SystemNnnSaveLayout {
             val okikae: Boolean,
             val executableOkikae: Boolean,
             val extensionStartCode: Int,
+            val extensionEnabled: Int,
+            val extensionSizes: List<Int>,
         ) : Result
     }
 
@@ -48,6 +50,8 @@ internal object SystemNnnSaveLayout {
                     okikae = config.okikae,
                     executableOkikae = config.executableOkikae,
                     extensionStartCode = config.extensionStartCode,
+                    extensionEnabled = config.extensionEnabled,
+                    extensionSizes = config.extensionSizes,
                 )
             } catch (_: IOException) {
                 Result.Failed
