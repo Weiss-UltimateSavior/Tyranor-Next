@@ -186,6 +186,7 @@ internal fun GameShortcutCropDialog(
                     .then(if (tablet) Modifier.safeDrawingPadding() else Modifier)
                     .padding(horizontal = 12.dp, vertical = 18.dp)
                     .then(overlay.panel(Modifier)),
+                panelDim = overlay.panelDim(Modifier),
                 loadState = loadState,
                 metrics = metrics,
                 transform = transform,
@@ -228,12 +229,14 @@ private fun CropDialogCard(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
     modifier: Modifier = Modifier,
+    panelDim: Modifier = Modifier,
 ) {
     Card(
         modifier = modifier
             .then(if (tablet) Modifier.widthIn(max = 420.dp) else Modifier)
             .fillMaxWidth()
             .imePadding()
+            .then(panelDim)
             .then(if (tablet) Modifier.pointerInput(Unit) { detectTapGestures { } } else Modifier)
             .glassBorder(),
         colors = CardDefaults.cardColors(

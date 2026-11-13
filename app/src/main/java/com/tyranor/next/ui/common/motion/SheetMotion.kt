@@ -609,6 +609,23 @@ private fun Modifier.sheetWindowScrim(controller: MotionSheetController, color: 
     drawContent()
 }
 
+/** The shared Window mask stays behind the sheet; only the actual panel receives this extra dim. */
+@OptIn(ExperimentalMaterial3Api::class)
+private fun Modifier.sheetPanelDim(controller: MotionSheetController): Modifier = drawWithCache {
+    val outline = AppSheetTopShape.createOutline(size, layoutDirection, this)
+    onDrawWithContent {
+        drawContent()
+        val alpha = controller.scrimWindow.dialogPanelDimAlpha()
+        if (alpha > 0f) {
+            // ModalBottomSheet applies its own offset inside this modifier in both motion modes.
+            val top = runCatching { controller.sheetState?.requireOffset() }.getOrNull() ?: 0f
+            translate(top = top) {
+                drawOutline(outline = outline, color = Color.Black.copy(alpha = alpha))
+            }
+        }
+    }
+}
+
 /**
  * 抽屉 `ModalBottomSheet(modifier = …)` 上的外观层：位移与展开时的果冻拉伸，以及随抽屉位置渐显渐隐的遮罩。只改绘制，不拦截触摸。
  *
@@ -617,7 +634,7 @@ private fun Modifier.sheetWindowScrim(controller: MotionSheetController, color: 
  */
 @OptIn(ExperimentalMaterial3Api::class)
 fun Modifier.motionSheetSurface(controller: MotionSheetController, scrim: Color): Modifier = if (!controller.enhanced) {
-    sheetWindowScrim(controller, scrim)
+    sheetWindowScrim(controller, scrim).sheetPanelDim(controller)
 } else this
     .onSizeChanged { controller.updateHeight(it.height.toFloat()) }
     // 跳转时随所在页面同步压暗（与 pageTransitionScrim 同一暗度与节奏）
@@ -650,6 +667,7 @@ fun Modifier.motionSheetSurface(controller: MotionSheetController, scrim: Color)
             transformOrigin = TransformOrigin(0.5f, 1f + top / h)
         }
     }
+    .sheetPanelDim(controller)
     // 压暗与褪色盖在抽屉上，并且在图层里面画——跟着抽屉一起翻折，不会留下一块没翻的方形暗影。
     // （褪色不用渲染效果：渲染效果的离屏缓冲只有本布局框那么大，抽屉画在 Material3 的偏移之后，会被裁掉一大块）
     .drawWithCache {

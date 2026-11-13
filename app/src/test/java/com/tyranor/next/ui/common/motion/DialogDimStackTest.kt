@@ -11,9 +11,13 @@ class DialogDimStackTest {
         var applied = -1f
         var scrim = 0f
         var nativeEnabled = false
+        var panelDim = 0f
     }
 
-    private fun stack() = DialogDimStack<Window>({ it.visible }) { window, dim, scrim, nativeEnabled ->
+    private fun stack() = DialogDimStack<Window>(
+        isVisible = { it.visible },
+        applyPanelDim = { window, alpha -> window.panelDim = alpha },
+    ) { window, dim, scrim, nativeEnabled ->
         window.applied = dim
         window.scrim = scrim
         window.nativeEnabled = nativeEnabled
@@ -316,4 +320,243 @@ class DialogDimStackTest {
         assertTrue(child.nativeEnabled)
         assertFalse(stack.beginExit(Window()))
     }
+
+    @Test fun sheetPanelGetsTheMissingMaskWithoutMovingItsRootScrim() {
+        val stack = stack()
+        val owner = Any()
+        val sheet = Window()
+        val child = Window()
+        stack.register(owner, sheet, 0f, false, scrim = 0.32f)
+        val baseline = rootMask(sheet)
+        stack.register(owner, child, 0.5f, true)
+        assertEquals(0.32f, sheet.scrim, 0f)
+        assertEquals(0f, child.applied, 0.0001f)
+        assertTrue(child.nativeEnabled)
+        assertEquals(baseline, rootMask(sheet, child), 0.0001f)
+        assertEquals(0.32f, sheet.panelDim, 0.0001f)
+        assertEquals(0.32f, panelMask(sheet, sheet, child), 0.0001f)
+        assertEquals(0f, child.panelDim, 0f)
+
+        assertTrue(stack.beginExit(child))
+        assertEquals(0.32f, sheet.scrim, 0f)
+        assertEquals(0f, sheet.panelDim, 0f)
+        assertEquals(baseline, rootMask(sheet, child), 0.0001f)
+        stack.update(child, 0.25f, true, baseDim = 0.5f)
+        assertEquals(0f, sheet.panelDim, 0f)
+        stack.restore(child)
+        assertEquals(0.32f, sheet.panelDim, 0.0001f)
+        assertEquals(baseline, rootMask(sheet, child), 0.0001f)
+        stack.remove(child)
+        assertEquals(0f, sheet.panelDim, 0f)
+    }
+
+    @Test fun ordinaryPanelComplementsTheUpperNativeMaskWithoutDeepeningTheRoot() {
+        val stack = stack()
+        val owner = Any()
+        val parent = Window()
+        val child = Window()
+        stack.register(owner, parent, 0.6f, true, scrim = 0.5f)
+        val baseline = rootMask(parent)
+        assertEquals(0.8f, baseline, 0.0001f)
+        stack.register(owner, child, 0.32f, true, scrim = 0.5f)
+        // Keep the established root allocation byte-for-byte: native .6 plus lower drawn .5.
+        assertEquals(0.6f, child.applied, 0.0001f)
+        assertEquals(0.5f, parent.scrim, 0f)
+        assertEquals(0f, child.scrim, 0f)
+        assertEquals(0.5f, parent.panelDim, 0.0001f)
+        assertEquals(baseline, rootMask(parent, child), 0.0001f)
+        assertEquals(baseline, panelMask(parent, parent, child), 0.0001f)
+        assertTrue(stack.beginExit(child))
+        assertEquals(0f, parent.panelDim, 0f)
+        assertEquals(baseline, rootMask(parent, child), 0.0001f)
+        stack.restore(child)
+        assertEquals(baseline, panelMask(parent, parent, child), 0.0001f)
+        stack.remove(parent)
+        assertEquals(0.32f, child.applied, 0.0001f)
+        assertEquals(0.5f, child.scrim, 0f)
+        assertEquals(0f, child.panelDim, 0f)
+    }
+
+    @Test fun anUpperSelfOnlyMaskSupplementsOnlyTheLowerPanel() {
+        val stack = stack()
+        val owner = Any()
+        val parent = Window()
+        val sheet = Window()
+        stack.register(owner, parent, 0.4f, true, scrim = 0.2f)
+        val baseline = rootMask(parent)
+        stack.register(owner, sheet, 0f, false, scrim = 0.32f)
+        assertTrue(parent.nativeEnabled)
+        assertEquals(0.4f, parent.applied, 0f)
+        assertEquals(0.2f, parent.scrim, 0f)
+        assertEquals(0f, sheet.scrim, 0.0001f)
+        // A parent's own native mask is behind its panel and cannot count as external dim.
+        assertEquals(baseline, parent.panelDim, 0.0001f)
+        assertEquals(baseline, panelMask(parent, parent, sheet), 0.0001f)
+        assertEquals(baseline, rootMask(parent, sheet), 0.0001f)
+        assertTrue(stack.beginExit(sheet))
+        assertEquals(0f, parent.panelDim, 0f)
+        assertEquals(baseline, rootMask(parent, sheet), 0.0001f)
+        stack.restore(sheet)
+        stack.remove(parent)
+        assertEquals(0.32f, sheet.scrim, 0f)
+        assertEquals(0f, sheet.panelDim, 0f)
+    }
+
+    @Test fun mixedThreeLayerPanelsUseTheHighestNativeAndAllUpperDrawnMasks() {
+        val stack = stack()
+        val owner = Any()
+        val parent = Window()
+        val middle = Window()
+        val top = Window()
+        stack.register(owner, parent, 0.4f, true, scrim = 0.2f)
+        stack.register(owner, middle, 0f, false, scrim = 0.3f)
+        stack.register(owner, top, 0.32f, true, scrim = 0.5f)
+        assertEquals(0.52f, rootMask(parent, middle, top), 0.0001f)
+        assertEquals(0.52f, panelMask(parent, parent, middle, top), 0.0001f)
+        assertEquals(0.52f, panelMask(middle, parent, middle, top), 0.0001f)
+        assertEquals(0.2f, parent.panelDim, 0.0001f)
+        assertEquals(0.2f, middle.panelDim, 0.0001f)
+        assertTrue(stack.beginExit(top))
+        assertEquals(0.52f, parent.panelDim, 0.0001f)
+        assertEquals(0f, middle.panelDim, 0f)
+        assertEquals(0.52f, rootMask(parent, middle, top), 0.0001f)
+        assertTrue(stack.beginExit(middle))
+        assertEquals(0f, parent.panelDim, 0f)
+        assertEquals(0.52f, rootMask(parent, middle, top), 0.0001f)
+
+        // With the higher native released, an upper drawn supplement still affects the parent.
+        stack.remove(top)
+        stack.remove(middle)
+        stack.update(parent, 0.2f, true, baseDim = 0.4f, scrim = 0.1f, baseScrim = 0.2f)
+        stack.register(owner, middle, 0f, false, scrim = 0.3f)
+        assertTrue(middle.scrim > 0f)
+        assertEquals(0.52f, rootMask(parent, middle), 0.0001f)
+        assertEquals(0.52f, panelMask(parent, parent, middle), 0.0001f)
+    }
+
+    @Test fun pendingReleasedHiddenAndOtherOwnersCannotLeavePanelSupplementsBehind() {
+        data class Owner(val name: String)
+        val stack = stack()
+        val owner = Owner("same")
+        val otherOwner = Owner("same")
+        val sheet = Window()
+        val child = Window().apply { visible = false }
+        val other = Window()
+        stack.register(owner, sheet, 0f, false, scrim = 0.32f)
+        stack.register(otherOwner, other, 0.6f, true, scrim = 0.5f)
+        stack.register(owner, child, 0f, true, baseDim = 0.5f)
+        assertEquals(0f, sheet.panelDim, 0f)
+        assertEquals(0f, other.panelDim, 0f)
+        child.visible = true
+        stack.attached(child)
+        assertEquals(0.32f, sheet.panelDim, 0.0001f)
+        assertEquals(0.32f, sheet.scrim, 0f)
+        assertEquals(0f, child.applied, 0f)
+        assertEquals(0f, other.panelDim, 0f)
+        assertEquals(0.5f, other.scrim, 0f)
+
+        child.visible = false
+        stack.refresh()
+        assertEquals(0f, sheet.panelDim, 0f)
+        child.visible = true
+        stack.attached(child)
+        assertTrue(stack.beginExit(child))
+        stack.remove(child)
+        stack.register(owner, child, 0.25f, true, baseDim = 0.5f, released = true)
+        stack.attached(child)
+        assertEquals(0f, sheet.panelDim, 0f)
+        stack.update(sheet, 0f, false, scrim = 0.4f, baseScrim = 0.5f)
+        stack.update(child, 0.2f, true, baseDim = 0.5f)
+        assertEquals(0f, sheet.panelDim, 0f)
+        stack.restore(child)
+        assertEquals(0.4f, panelMask(sheet, sheet, child), 0.0001f)
+        assertEquals(0.4f, rootMask(sheet, child), 0.0001f)
+        stack.remove(child)
+        assertEquals(0f, sheet.panelDim, 0f)
+    }
+
+    @Test fun aReleasedMiddlePanelStillReceivesTheMaskOfTheVisibleWindowAboveIt() {
+        val stack = stack()
+        val owner = Any()
+        val bottom = Window()
+        val middle = Window()
+        val top = Window()
+        stack.register(owner, bottom, 0f, false, scrim = 0.32f)
+        stack.register(owner, middle, 0f, false, scrim = 0.32f)
+        stack.register(owner, top, 0.5f, true)
+        assertEquals(0f, top.applied, 0.0001f)
+        assertEquals(0.32f, rootMask(bottom, middle, top), 0.0001f)
+        assertEquals(0.32f, panelMask(middle, bottom, middle, top), 0.0001f)
+
+        assertTrue(stack.beginExit(middle))
+        assertEquals(0f, middle.scrim, 0f)
+        assertFalse(middle.nativeEnabled)
+        assertEquals(0.32f, middle.panelDim, 0.0001f)
+        assertEquals(0.32f, panelMask(middle, bottom, middle, top), 0.0001f)
+        assertEquals(0.32f, panelMask(bottom, bottom, middle, top), 0.0001f)
+        assertEquals(0.32f, rootMask(bottom, middle, top), 0.0001f)
+        stack.update(middle, 0f, false, scrim = 0.1f, baseScrim = 0.32f)
+        assertEquals(0f, middle.scrim, 0f)
+        assertEquals(0.32f, middle.panelDim, 0.0001f)
+
+        middle.visible = false
+        stack.refresh()
+        assertEquals(0f, middle.panelDim, 0f)
+        middle.visible = true
+        stack.attached(middle)
+        // A released surface reattached above top no longer has any upper source.
+        assertEquals(0f, middle.panelDim, 0f)
+        assertEquals(0.32f, bottom.panelDim, 0.0001f)
+        assertTrue(stack.beginExit(top))
+        assertEquals(0f, top.panelDim, 0f)
+        assertEquals(0f, bottom.panelDim, 0f)
+        assertEquals(0.32f, rootMask(bottom, middle, top), 0.0001f)
+    }
+
+    @Test fun nativeOnlyAndSingleWindowsNeedNoPanelSupplementAndOpaqueMasksStayFinite() {
+        val stack = stack()
+        for ((dim, scrim) in listOf(0f to 0f, 0f to 1f, 1f to 0f, 1f to 1f, 0.32f to 0.5f)) {
+            val owner = Any()
+            val parent = Window()
+            val child = Window()
+            stack.register(owner, parent, dim, true, scrim = scrim)
+            assertEquals(dim, parent.applied, 0f)
+            assertEquals(scrim, parent.scrim, 0f)
+            assertEquals(0f, parent.panelDim, 0f)
+            val baseline = rootMask(parent)
+            stack.register(owner, child, 0f, true, baseDim = 0.5f)
+            assertEquals(baseline, rootMask(parent, child), 0.0001f)
+            assertEquals(baseline, panelMask(parent, parent, child), 0.0001f)
+            assertTrue(parent.panelDim.isFinite())
+            assertEquals(0f, child.panelDim, 0f)
+            if (scrim == 0f) assertEquals(0f, parent.panelDim, 0f)
+            assertTrue(stack.beginExit(child))
+            assertEquals(0f, parent.panelDim, 0f)
+        }
+        // Source compatibility: applyDim remains the trailing lambda when panel drawing is absent.
+        val legacy = DialogDimStack<Window>({ it.visible }) { window, dim, _, _ -> window.applied = dim }
+        val window = Window()
+        legacy.register(Any(), window, 0.3f, true)
+        assertEquals(0.3f, window.applied, 0f)
+    }
+
+    /** WMS uses the highest eligible native layer; panel-local drawing never changes the root. */
+    private fun rootMask(vararg windows: Window): Float {
+        var alpha = windows.lastOrNull { it.visible && it.nativeEnabled }?.applied ?: 0f
+        for (window in windows) if (window.visible) alpha = over(alpha, window.scrim)
+        return alpha
+    }
+
+    /** A panel sees its own supplement, plus only native/drawn masks from higher Windows. */
+    private fun panelMask(panel: Window, vararg windows: Window): Float {
+        val panelIndex = windows.indexOfFirst { it === panel }
+        val nativeIndex = windows.indexOfLast { it.visible && it.nativeEnabled }
+        var alpha = if (nativeIndex > panelIndex) windows[nativeIndex].applied else 0f
+        for (index in panelIndex + 1 until windows.size) {
+            if (windows[index].visible) alpha = over(alpha, windows[index].scrim)
+        }
+        return over(alpha, panel.panelDim)
+    }
+
+    private fun over(first: Float, second: Float): Float = 1f - (1f - first) * (1f - second)
 }

@@ -76,6 +76,7 @@ import com.tyranor.next.ui.common.motion.rememberEntranceState
 import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.common.motion.DialogWindowScrim
+import com.tyranor.next.ui.common.motion.nestedPanelDim
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -209,6 +210,7 @@ private fun SidePanelWindow(
                         .width(SidePanelWidth)
                         // 消费面板区域点击，避免穿透到遮罩
                         .pointerInput(Unit) { detectTapGestures { } }
+                        .nestedPanelDim(window = { dialogWindow.value }, shape = AppComponentShape)
                         .glassBorder(),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                     colors = CardDefaults.cardColors(

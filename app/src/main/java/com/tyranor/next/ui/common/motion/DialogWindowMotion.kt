@@ -20,7 +20,15 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.lifecycle.Lifecycle
@@ -126,6 +134,7 @@ private object DialogWindowDims {
     private val stack = DialogDimStack<Window>(
         isVisible = { it.decorView.isAttachedToWindow && it.decorView.isShown },
         applyDim = { window, dim, scrim, enabled -> bindings[window]?.applyDim(dim, scrim, enabled) },
+        applyPanelDim = { window, alpha -> bindings[window]?.applyPanelDim(alpha) },
     )
 
     fun bind(
@@ -172,6 +181,8 @@ private object DialogWindowDims {
 
     fun scrimAlpha(window: Window?): Float = bindings[window]?.appliedScrim ?: 0f
 
+    fun panelDimAlpha(window: Window?): Float = bindings[window]?.appliedPanelDim ?: 0f
+
     class Binding(
         private val owner: Any,
         private val window: Window,
@@ -192,6 +203,12 @@ private object DialogWindowDims {
             private set
         var appliedScrim by mutableFloatStateOf(0f)
             private set
+        var appliedPanelDim by mutableFloatStateOf(0f)
+            private set
+
+        fun applyPanelDim(alpha: Float) {
+            appliedPanelDim = alpha
+        }
 
         fun start() {
             bindings[window] = this
@@ -233,6 +250,7 @@ private object DialogWindowDims {
             if (!registered) return
             registered = false
             appliedScrim = 0f
+            appliedPanelDim = 0f
             // Composition can be disposed before WMS removes its Window. Zero dim alone would
             // still override the lower Window; drop eligibility in the same attributes update.
             clearDim(window)
@@ -288,6 +306,32 @@ internal fun Window?.restoreDialogDim() {
 
 /** Read in the scrim's draw phase so attach/removal invalidates only that drawing. */
 fun Window?.dialogScrimAlpha(): Float = DialogWindowDims.scrimAlpha(this)
+
+/** Dim only this panel: its existing background mask keeps the same Window owner. */
+internal fun Window?.dialogPanelDimAlpha(): Float = DialogWindowDims.panelDimAlpha(this)
+
+internal fun Modifier.nestedPanelDim(
+    window: () -> Window?,
+    shape: Shape = RectangleShape,
+): Modifier = drawWithCache {
+    val outline = shape.createOutline(size, layoutDirection, this)
+    onDrawWithContent {
+        drawContent()
+        val alpha = window().dialogPanelDimAlpha()
+        if (alpha > 0f) drawOutline(outline, Color.Black.copy(alpha = alpha))
+    }
+}
+
+/** Arbitrary overhanging content keeps its own transparent outline instead of dimming its bounds. */
+internal fun Modifier.nestedPanelContentDim(window: () -> Window?): Modifier = graphicsLayer {
+    compositingStrategy = if (window().dialogPanelDimAlpha() > 0f) {
+        CompositingStrategy.Offscreen
+    } else CompositingStrategy.Auto
+}.drawWithContent {
+    drawContent()
+    val alpha = window().dialogPanelDimAlpha()
+    if (alpha > 0f) drawRect(Color.Black.copy(alpha = alpha), blendMode = BlendMode.SrcAtop)
+}
 
 /** 开始关闭时释放触摸；有下层窗口时立即交回遮罩，单窗口仍跟随原退场渐隐。 */
 fun Window?.passThroughTouches() {

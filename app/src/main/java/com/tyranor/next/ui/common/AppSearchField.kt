@@ -83,7 +83,8 @@ fun AppSearchField(
         keyboardType != KeyboardType.Text
     val resolvedInputLabel = iconContentDescription
         ?: androidx.compose.ui.res.stringResource(R.string.common_search_content_description)
-    // 聚焦瞬间：输入框整体轻轻「弹一下」、前导图标跟着弹（瞬时反馈，回弹后恢复原样，不留常驻缩放）；
+    // 聚焦反馈只缩放前导图标，编辑区域保持稳定：缩放 BasicTextField 会让行底的
+    // handle anchor 在可见边界处反复进出，导致独立 Popup 中的水滴柄闪烁。
     // 提交（IME 搜索 / 完成）不加反馈：调用方在校验失败时自行 shakeOnTrigger，两者会冲突。「普通」档 bounceOnChange 不加节点。
     var focused by remember { mutableStateOf(false) }
     // 前导图标弹一下的计数：获得焦点 +1（初值 0 不弹）
@@ -103,8 +104,6 @@ fun AppSearchField(
                 inputField = {
                     val fieldModifier = Modifier
                         .fillMaxWidth()
-                        // 聚焦瞬时反馈：整条胶囊极轻地压一下再回弹（停稳缩放为 1）
-                        .bounceOnChange(focused, depth = 0.05f)
                         .onFocusChanged { state ->
                             val now = state.hasFocus
                             if (now && !focused) iconPulse++
@@ -116,7 +115,7 @@ fun AppSearchField(
                         Icon(
                             modifier = Modifier
                                 .padding(start = SearchBarDefaults.LeadingIconStartPadding, end = SearchBarDefaults.LeadingIconEndPadding)
-                                // 聚焦 / 提交时图标弹一下（只改绘制图层）
+                                // 获得焦点时图标弹一下，不改变文本及光标柄的坐标。
                                 .bounceOnChange(iconPulse, depth = 0.22f)
                                 .size(26.dp),
                             painter = leadingIcon ?: painterResource(R.drawable.ic_game_search),
