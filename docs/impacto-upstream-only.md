@@ -19,11 +19,36 @@
 
 本次选定 **Memories Off 6 ~T-Wave~（秋之回忆6）**，对应上游 `mo6tw` profile。
 [上游支持列表](https://github.com/CommitteeOfZero/impacto/issues/1) 明确列出 **PS3 版**；PS Vita 仅注明可能可用且未测试。
-用户正在下载，尚未确认平台和语言；不能仅凭游戏标题判断兼容。
+用户已有的实际样本是 **Windows／Steam 版**（见下节），不是上游列出的 PS3 版；不能仅凭游戏标题判断兼容。
 
 上游 profile 要求数据目录内有 `BG.CPK`、`BGM.CPK`、`CHARA.CPK`、`MASK.CPK`、
 `MOVIE.CPK`、`SCRIPT.cls`、`SCRIPT/`、`SE.CPK`、`SYSTEM.CPK` 和 `VOICE.CPK`。
 不改写用户的商业游戏数据。上游 README 认为该游戏可推进全部结局，同时说明没有游戏完全实现；这不等于 TYN Android 端已验收。
+
+## Windows／Steam 样本核对（只读，2026-11-13）
+
+样本目录含 `game.exe`、`Launcher.exe`、`steam_api.dll`、`steam_settings/` 和 `data/*.cpk`
+（`bg`、`bgm`、`chara`、`manual`、`mask`、`mes00`～`mes02`、`MgsShader`、`movie`、`script`、`se`、`shader`、`sysse`、`system`、`voice`）。
+没有 `SCRIPT.cls`、`SCRIPT/` 或 `PS3_GAME/PARAM.SFO`。随附说明称 `boot.bat`／`boot_game.bat` 为日文原版，`bootHT.bat` 为繁体中文，`bootKT.bat` 为简体中文；未运行任何程序，语言以说明文字为据，未经内容核实。
+只读检查用 [`tools/impacto/inspect-cpk.py`](../tools/impacto/inspect-cpk.py)：仅读取结构和成员前四字节，不输出内容，不在样本旁写文件；回归测试只用合成小档案。该工具核对的是上游 `CpkArchive` 的假设（含 ITOC 才重排偏移、按 `@UTF` 魔数回退解掩码、`Files`／ID 一致），不解码任何成员。
+
+| 项目 | 样本观察 | 上游 `mo6tw` 的假设 | 状态 |
+| --- | --- | --- | --- |
+| 容器 | 16 个包均为 CRI CPK（Version 7.14）。除两个着色器包外的 14 个包，TOC 标记与全量魔数扫描均无压缩成员，Align 2048，带 TOC 与 ITOC，ID 从 0 连续；`shader`／`MgsShader` 的表被掩码（上游按 `@UTF` 魔数回退解开，同一算法）且成员为 CRILAYLA 压缩的 `.cg` | `CpkArchive` 按 `std::get` 读固定列类型，并在 ITOC 末尾按 ID 顺序从 ContentOffset 重排偏移 | 16 个包的 `Files` 与 TOC 行数一致、ID 唯一，列类型与 ITOC 重排偏移同真实 TOC 全部一致（Python 静态复现，**未运行上游代码**）。着色器包的压缩成员不能被上游 `Open` 流式读取，但它们不在上游挂载点内 |
+| 脚本 | `script.cpk` 为 196 个 SC3 `.scx`（ID 0～2 为 `_startup`、`_system`、`_tips`），头部偏移 +4 为字符串表、+12 起为标签表 | PS3 为 `SCRIPT.cls`；VM 用 MO6TW 指令集 | 头部布局与上游访问方式一致，起始字节流外形也像 MO6TW 指令（`00:29`、`00:12`、`00:25` 等）。**指令集是否等同未验证** |
+| 文本 | SC3 内字符串表很小（如 `sa01a` 约 2 KB），另有 `mes00`／`mes01`／`mes02` 各 196 个 `.msb`（`MES\0`，如 `sa01a_00.msb` 约 19 KB） | 无 `UseMsbStrings`，文本在 SC3 内 | 正文推测在 MSB，需 `UseMsbStrings`／`UseSeparateMsbArchive` 类设置；MSB 内容未解码确认 |
+| 界面贴图 | `system.cpk` 为 37 个 PNG 加 `wavtable.dat`，含 `_ht`／`_kt` 语言变体，标题背景为 1920×1080 | 按**数字 ID** 引用图集，设计尺寸 2048×1024 或 1280×720（如 Font=Id 12 2048×1184，Title=Id 33，MainBg=Id 29） | 不匹配：样本 ID 8 为 `encyc_pic.png`（4096×1170），ID 12 为 `font_kt.png`（3072×6000），ID 33 为 `title_bg4.png`（1920×1080）。上游 `sprites.lua`、字体网格和 HUD 坐标均针对 PS3 图集，**不能直接用于该样本** |
+| 立绘与背景 | `bg.cpk` 812 个 PNG；`chara.cpk` 为 384 对 PNG＋`.mvl` | `CharaIsMvl=false` | 需自有 profile 选择；MVL 路径只在上游 `cclcc` 等 profile 使用过，对本样本未验证 |
+| 音频 | `bgm`／`se`／`sysse`／`voice` 均为 HCA，抽查文件头 `ciph` 为 0（未加密） | `hcaaudiostream`（clHCA） | 外形一致，**未实际解码** |
+| 影片 | `movie.cpk` 为 6 个 CRI USM（`@SFV`／`@SFA`，内含 `.264` 流名） | 经 FFmpeg 播放 | USM 不是常规封装，FFmpeg 是否能打开未验证，预计影响片头片尾，不影响标题 |
+
+据此分类（尚无运行证据）：
+
+- **可由路径映射解决**：包名大小写（上游写 `BG.CPK`，样本为小写，Android 区分大小写）和 `script.cpk` 取代 `SCRIPT.cls`。上游支持 `-bp`／`-gc` 指定基础路径与游戏定义，宿主可指向 TYN 自有的 Lua 配置目录，不必改上游文件（读源码所得，未实测）。
+- **需 TYN 自有数据适配**：全部图集 ID、尺寸与坐标，字体网格与字符映射，设计分辨率，MSB 与语言选择（`mes00`～`mes02`），立绘模式。这相当于为 PC 版重写一套实验性 profile，必须标为实验性 PC 配置，不能冒充上游 PS3 配置。
+- **可能需要引擎改动，证据尚不足**：USM 播放；PC 与 PS3 之间指令、系统变量的差异。需要先编出原版库并在宿主中运行，才能确认，不能靠静态推断。
+
+结论：直接套用上游 `mo6tw` 配置不会得到可用界面；能否经自有 profile 进入标题，目前没有证据，也尚未在任何设备上运行。
 
 ## 构建和更新
 
@@ -75,7 +100,9 @@ Git 子进程会清除继承的仓库定位与配置注入环境，避免跨仓�
 - [ ] 解决原版 SDL3 `org.libsdl.app` 与 TYN 已有 SDL2 同名 Java 类的冲突。独立进程本身不能消除同一 APK 中的类名冲突。
 - [ ] 完成资源验证、按游戏隔离的存档和持久 TOML 管理，不继承旧引擎补丁的假设。
 - [ ] 接入扫描、启动、运行库分片及三语言文案，并验证原有 SDL 引擎。
-- [ ] 完成 PS3 游戏数据的标题、正文、声音、输入、存读档、前后台及退出重启验收。
+- [x] 只读核对现有 Windows／Steam 样本的容器、脚本头和资源格式（见上节）；结论是它与上游 PS3 配置不一致，不能直接使用。
+- [ ] 为该样本建立 TYN 自有、标明实验性的 PC profile（图集、字体、MSB、语言、立绘），再验证原版引擎能否读资源并解析脚本。
+- [ ] 完成游戏数据的标题、正文、声音、输入、存读档、前后台及退出重启验收（上游支持的是 PS3 数据；PC 样本是否可行尚无证据）。
 - [ ] 完成 API 28、16 KiB 页设备与 minified Release 检查。
 
 原版库编译、宿主接入和真实游戏测试未完成前，此 PR 保持 Draft，不作为可发布功能。
@@ -88,6 +115,7 @@ Git 子进程会清除继承的仓库定位与配置注入环境，避免跨仓�
 - 增加 Linux 专用父进程锁继承 CLI 集成检查；Windows 本地跳过，由 Linux CI 运行。
 - 17 项候选检查和发布回归通过，覆盖 ELF 边界、源库并发替换、无效快照、构建/发布共用互斥、父进程锁继承及失败释放；不是完整运行库验收。
 - CMake/Ninja 定位的 8 项回归、Bash 语法检查及 CMake 离线依赖声明覆盖检查通过。
+- CPK 检查回归：`test-inspect-cpk.py` 的 14 项合成档案用例通过，覆盖干净布局、偏移错位、列类型不符、按魔数而非标志位解掩码、无 ITOC／ITOC 损坏、`Files` 不符与重复 ID、`@UTF` 版本字段、未标记的 LAYLA 成员、恶意表头不崩溃不挂死、截断、非 CPK 和“不改动样本”；它们只验证检查工具，不涉及游戏兼容性。
 - 官方固定 checkout 的 tree 为 `a2a0b7996a46c5d067efbeb8747cef103a69b157`，Git 洁净检查通过。
 - 用 NDK 28 对原版 `src/io/vfs.cpp`、`src/io/fsfolderarchive.cpp` 执行语法与 ARM64 对象编译均通过。为隔离诊断，外部探针配置禁用了 OpenGL/ImGui 并补齐正常 PCH 标准头；不是完整 CMake 构建。外部直接析构 `FSFolderArchive` 的合成探针会触发不完整类型错误，但不能据此认定当前上游构建必然失败，不能作为恢复引擎补丁的理由。
 - 尚未执行完整 ARM64 编译/链接、APK/JNI、真实游戏或 Android 设备验收。
