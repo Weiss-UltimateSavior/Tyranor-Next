@@ -15,9 +15,25 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 UPSTREAM_URL = "https://github.com/CommitteeOfZero/impacto.git"
 
+# Repository-local variables listed by `git rev-parse --local-env-vars`, plus
+# hook/quarantine locations. Preserve transport/authentication and proxy setup.
+GIT_LOCAL_ENV = {
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_OBJECT_DIRECTORY", "GIT_DIR",
+    "GIT_WORK_TREE", "GIT_IMPLICIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
+    "GIT_GRAFT_FILE", "GIT_SHALLOW_FILE", "GIT_PREFIX", "GIT_INTERNAL_SUPER_PREFIX",
+    "GIT_QUARANTINE_PATH", "GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT",
+    "GIT_NO_REPLACE_OBJECTS", "GIT_REPLACE_REF_BASE",
+}
+
+
+def git_environment():
+    return {key: value for key, value in os.environ.items()
+            if key.upper() not in GIT_LOCAL_ENV
+            and not key.upper().startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"))}
+
 
 def git(source, *arguments):
-    environment = os.environ.copy()
+    environment = git_environment()
     environment["GIT_OPTIONAL_LOCKS"] = "0"
     environment["GIT_NO_REPLACE_OBJECTS"] = "1"
     result = subprocess.run(

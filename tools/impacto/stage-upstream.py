@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Stage an upstream candidate; never overwrite the application's runtime."""
 import argparse
+from contextlib import contextmanager
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -36,42 +39,79 @@ def inspect_elf(elf):
         raise RuntimeError('Refusing a private patched SDL candidate')
 
 
+@contextmanager
+def publication_lock(stage):
+    # Exclusive creation is portable to the Windows regression runner as well.
+    # A crash leaves a lock behind: fail closed rather than guessing its owner is
+    # dead and racing another publisher. Remove it only after checking processes.
+    lock = stage / '.publish.lock'
+    try:
+        descriptor = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError as error:
+        raise RuntimeError(f'Candidate publication is already locked: {lock}; '
+                           'remove a stale lock only after confirming no publisher is running') from error
+    try:
+        os.write(descriptor, str(os.getpid()).encode('ascii'))
+        yield
+    finally:
+        os.close(descriptor)
+        lock.unlink()
+
+
+def source_report(build):
+    spec = importlib.util.spec_from_file_location('verify_upstream', Path(__file__).with_name('verify-upstream.py'))
+    verifier = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(verifier)
+    return verifier.verify(build / 'source', ROOT / 'engine/impacto/source-lock.json')
+
+
+def stage_candidate(build, ndk):
+    stage = build / 'candidate'
+    stage.mkdir(parents=True, exist_ok=True)
+    library = build / 'build/libimpacto.so'
+    tool = ndk / 'toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf'
+    with publication_lock(stage):
+        # Lock before invalidating metadata, so a rejected concurrent invocation
+        # cannot change the active publisher's report.
+        (stage / 'candidate.json').write_text(
+            json.dumps({'version': 1, 'status': 'validation-pending', 'releaseReady': False}) + '\n',
+            encoding='utf-8')
+        source = source_report(build)
+        with tempfile.TemporaryDirectory(prefix='.stage-', dir=stage) as temporary:
+            temporary = Path(temporary)
+            snapshot = temporary / library.name
+            shutil.copyfile(library, snapshot)
+            # All inspection and identity fields describe this private snapshot,
+            # never a build output that another process can replace afterwards.
+            elf = subprocess.check_output([str(tool), '-h', '-l', '--dyn-syms', '--wide', str(snapshot)], text=True)
+            inspect_elf(elf)
+            report = {
+                'version': 1, 'status': 'candidate-not-integrated', 'engineSource': source,
+                'sourceLock': json.loads((ROOT / 'engine/impacto/source-lock.json').read_text()),
+                'tyranorEnginePatches': [], 'tyranorDependencyPatches': [],
+                'upstreamDependencyRecipe': 'Retained, including the upstream LibAtrac9 CMake copy',
+                'library': library.name, 'sha256': digest(snapshot), 'elfLoadAlignment': 16384,
+                'recipeSha256': {name: digest(ROOT / name) for name in [
+                    'tools/impacto/build-upstream.sh', 'engine/impacto/host-build/pin-dependencies.cmake',
+                    'engine/impacto/triplets/arm64-android-impacto.cmake']},
+                'validation': {'hostIntegrated': False, 'gameplayTested': False,
+                               'correspondingSourcesPackaged': False, 'releaseReady': False},
+            }
+            (temporary / 'elf-report.txt').write_text(elf, encoding='utf-8')
+            (temporary / 'candidate.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
+            os.replace(snapshot, stage / library.name)
+            os.replace(temporary / 'elf-report.txt', stage / 'elf-report.txt')
+            # Publish valid metadata last. Interrupted publication stays pending.
+            os.replace(temporary / 'candidate.json', stage / 'candidate.json')
+    print(f'Candidate staged at {stage}; not installed into TYN or approved for distribution.')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build-root', type=Path, required=True)
     parser.add_argument('--ndk', type=Path, required=True)
     args = parser.parse_args()
-    build = args.build_root.resolve()
-    stage = build / 'candidate'
-    stage.mkdir(parents=True, exist_ok=True)
-    # A failed attempt must not leave a previous candidate labelled current.
-    (stage / 'candidate.json').write_text(
-        json.dumps({'version': 1, 'status': 'validation-pending', 'releaseReady': False}) + '\n',
-        encoding='utf-8')
-    spec = importlib.util.spec_from_file_location('verify_upstream', Path(__file__).with_name('verify-upstream.py'))
-    verifier = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(verifier)
-    source = verifier.verify(build / 'source', ROOT / 'engine/impacto/source-lock.json')
-    library = build / 'build/libimpacto.so'
-    tool = args.ndk / 'toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf'
-    elf = subprocess.check_output([str(tool), '-h', '-l', '--dyn-syms', '--wide', str(library)], text=True)
-    inspect_elf(elf)
-    shutil.copyfile(library, stage / library.name)
-    (stage / 'elf-report.txt').write_text(elf, encoding='utf-8')
-    report = {
-        'version': 1, 'status': 'candidate-not-integrated', 'engineSource': source,
-        'sourceLock': json.loads((ROOT / 'engine/impacto/source-lock.json').read_text()),
-        'tyranorEnginePatches': [], 'tyranorDependencyPatches': [],
-        'upstreamDependencyRecipe': 'Retained, including the upstream LibAtrac9 CMake copy',
-        'library': library.name, 'sha256': digest(library), 'elfLoadAlignment': 16384,
-        'recipeSha256': {name: digest(ROOT / name) for name in [
-            'tools/impacto/build-upstream.sh', 'engine/impacto/host-build/pin-dependencies.cmake',
-            'engine/impacto/triplets/arm64-android-impacto.cmake']},
-        'validation': {'hostIntegrated': False, 'gameplayTested': False,
-                       'correspondingSourcesPackaged': False, 'releaseReady': False},
-    }
-    (stage / 'candidate.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
-    print(f'Candidate staged at {stage}; not installed into TYN or approved for distribution.')
+    stage_candidate(args.build_root.resolve(), args.ndk)
 
 
 if __name__ == '__main__':

@@ -35,6 +35,8 @@
 ```sh
 python3 tools/impacto/verify-upstream.py --source /path/to/impacto
 python3 tools/impacto/test-upstream-integrity.py
+python3 tools/impacto/test-git-environment.py
+python3 tools/impacto/test-build-preflight.py
 python3 tools/impacto/test-stage-upstream.py
 ```
 
@@ -51,6 +53,11 @@ bash tools/impacto/build-upstream.sh
 默认写入 `.impacto-upstream-build/<revision>/`；可设置 `IMPACTO_UPSTREAM_BUILD_ROOT` 指向新的独立目录。
 宿主 CMake 钩子固定 FetchContent 依赖，保留上游自己的 LibAtrac9 构建配方，不编辑上游文件。
 使用单独的 vcpkg 缓存，构建前后和失败退出时检查引擎源码。禁止调用上游的 Android install 目标，因为它会写回源码目录。
+Git 子进程会清除继承的仓库定位与配置注入环境，避免跨仓库调用误读或误写调用方仓库。
+当前不复用已有 `build/_deps` 或 `build/CMakeCache.txt`：配置后再次构建须选新的构建目录，防止锁定 SHA 掩盖依赖缓存中的本地修改。
+构建目录由 `.build.lock` 互斥；取得锁后先撤销旧候选状态，再检查 NDK、CMake 和 Ninja，失败记录为 `build-failed`。
+发布时另用 `candidate/.publish.lock`，对独占临时快照进行 ELF 检查和哈希计算，原子替换库后最后发布报告。
+异常会释放锁；进程被强制终止留下的锁须确认没有相关进程后手动移除，不自动抢占。
 成功后 `candidate/` 保存未集成的库、ELF 报告和身份记录；不会拷入 APK，也不代表已满足对应源码分发或设备验收要求。
 
 升级流程：更新完整 SHA 和必要的依赖锁，使用新构建目录，重新编译原版库，核对 JNI/CLI/资源契约，
@@ -75,7 +82,9 @@ bash tools/impacto/build-upstream.sh
 ## 本轮检查
 
 - 20 项真实 Git 仓库回归通过，包含“父仓库冒充源码 checkout”和 Git replace refs 替换锁定提交的拒绝测试。
-- 9 项候选 ELF 文本夹具检查通过，拒绝旧私有 SDL 命名空间、未定义入口和错误对齐；这是解析边界检查，不是真实库验收。
+- 3 项 Git 环境隔离回归通过，真实临时调用方仓库的工作文件、配置、索引、引用及对象均保持不变。
+- 7 项构建前置检查回归通过，覆盖缺失工具、错误 NDK、依赖缓存污染和重复构建；不会下载或编译依赖。
+- 13 项候选检查和发布回归通过，覆盖 ELF 边界、源库并发替换、无效快照、发布互斥及失败释放；不是完整运行库验收。
 - CMake/Ninja 定位的 8 项回归、Bash 语法检查及 CMake 离线依赖声明覆盖检查通过。
 - 官方固定 checkout 的 tree 为 `a2a0b7996a46c5d067efbeb8747cef103a69b157`，Git 洁净检查通过。
 - 用 NDK 28 对原版 `src/io/vfs.cpp`、`src/io/fsfolderarchive.cpp` 执行语法与 ARM64 对象编译均通过。为隔离诊断，外部探针配置禁用了 OpenGL/ImGui 并补齐正常 PCH 标准头；不是完整 CMake 构建。外部直接析构 `FSFolderArchive` 的合成探针会触发不完整类型错误，但不能据此认定当前上游构建必然失败，不能作为恢复引擎补丁的理由。

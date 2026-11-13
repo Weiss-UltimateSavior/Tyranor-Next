@@ -23,6 +23,8 @@ jobs:
       - name: Check source and candidate gates
         run: |
           python tools/impacto/test-upstream-integrity.py
+          python tools/impacto/test-git-environment.py
+          python tools/impacto/test-build-preflight.py
           python tools/impacto/test-stage-upstream.py
           bash -n tools/impacto/build-upstream.sh
           bash tools/impacto/test-build-tools.sh

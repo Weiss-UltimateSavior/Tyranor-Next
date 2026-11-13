@@ -1,5 +1,18 @@
 #!/usr/bin/env bash
 # Source this file; tool resolution has no filesystem or network side effects.
+impacto_clear_git_environment() {
+    local variables name
+    variables=$(git rev-parse --local-env-vars) || return 1
+    while IFS= read -r name; do
+        [[ -z "$name" ]] || unset "$name"
+    done <<< "$variables"
+    unset GIT_INTERNAL_SUPER_PREFIX GIT_QUARANTINE_PATH
+    # Count/parameters were removed above; remove their now-inactive payload too.
+    for name in "${!GIT_CONFIG_KEY_@}" "${!GIT_CONFIG_VALUE_@}"; do
+        [[ -z "$name" ]] || unset "$name"
+    done
+}
+
 impacto_resolve_program() {
     local requested=$1 label=$2 resolved directory name
     if ! resolved=$(command -v -- "$requested") || [[ ! -f "$resolved" || ! -x "$resolved" ]]; then

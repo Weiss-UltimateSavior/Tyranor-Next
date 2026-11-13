@@ -1,23 +1,17 @@
 #!/usr/bin/env bash
 # Build an unmodified upstream candidate. Never install it into the TYN APK.
 set -euo pipefail
-export GIT_NO_REPLACE_OBJECTS=1
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 META="$ROOT/engine/impacto"
 if [[ $(uname -s) != Linux ]]; then
     echo 'This recipe requires Linux and a Linux Android NDK.' >&2
     exit 2
 fi
-: "${ANDROID_NDK_HOME:?Set ANDROID_NDK_HOME to Android NDK 28.0.13004108}"
 source "$ROOT/tools/impacto/build-tools.sh"
-impacto_resolve_build_tools
-readarray -t LOCK < <(python3 - "$META/source-lock.json" "$ANDROID_NDK_HOME/source.properties" <<'PY'
+readarray -t LOCK < <(python3 - "$META/source-lock.json" <<'PY'
 import json, re, sys
 from pathlib import Path
 d = json.loads(Path(sys.argv[1]).read_text())
-ndk = Path(sys.argv[2]).read_text()
-if not re.search(r'^Pkg\.Revision\s*=\s*' + re.escape(d['android']['ndk']) + r'\s*$', ndk, re.M):
-    raise SystemExit('Android NDK revision differs from source-lock.json')
 for name, url in [('impacto', 'https://github.com/CommitteeOfZero/impacto.git'),
                   ('vcpkg', 'https://github.com/microsoft/vcpkg.git')]:
     if d[name]['url'] != url or not re.fullmatch('[0-9a-f]{40}', d[name]['revision']):
@@ -26,13 +20,57 @@ for name, url in [('impacto', 'https://github.com/CommitteeOfZero/impacto.git'),
     print(d[name]['revision'])
 PY
 )
-[[ ${#LOCK[@]} == 4 ]] || { echo 'Unable to read source lock/toolchain identity' >&2; exit 2; }
+[[ ${#LOCK[@]} == 4 ]] || { echo 'Unable to read source lock' >&2; exit 2; }
 
 # Keep this route separate from the old patched engine and SDL binary caches.
 BUILD=${IMPACTO_UPSTREAM_BUILD_ROOT:-"$ROOT/.impacto-upstream-build/${LOCK[1]}"}
 mkdir -p "$BUILD"
 BUILD=$(cd "$BUILD" && pwd)
 SOURCE="$BUILD/source"
+# Serialize complete attempts. A rejected overlapping attempt must not overwrite
+# the active build's candidate state. A crash leaves a fail-closed lock directory.
+if ! mkdir "$BUILD/.build.lock" 2>/dev/null; then
+    echo 'Build root is locked; confirm no build is running before removing a stale .build.lock.' >&2
+    exit 2
+fi
+SOURCE_VALIDATED=0
+verify_on_exit() {
+    local result=$?
+    trap - EXIT
+    if [[ $SOURCE_VALIDATED == 1 ]] &&
+       ! python3 "$ROOT/tools/impacto/verify-upstream.py" --source "$SOURCE" --report "$BUILD/source-after.json"; then
+        result=1
+    fi
+    if [[ $result != 0 ]]; then
+        printf '{"version":1,"status":"build-failed","releaseReady":false}\n' > "$BUILD/candidate/candidate.json"
+    fi
+    rmdir "$BUILD/.build.lock"
+    exit "$result"
+}
+mkdir -p "$BUILD/candidate"
+trap verify_on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+printf '{"version":1,"status":"build-in-progress","releaseReady":false}\n' > "$BUILD/candidate/candidate.json"
+
+# Cached FetchContent trees are mutable. Until they have a dedicated source
+# audit, require a fresh build root instead of trusting their pinned GIT_TAG.
+if [[ -e "$BUILD/build/_deps" || -e "$BUILD/build/CMakeCache.txt" ]]; then
+    echo 'Refusing reused FetchContent/CMake inputs; choose a fresh IMPACTO_UPSTREAM_BUILD_ROOT.' >&2
+    exit 2
+fi
+: "${ANDROID_NDK_HOME:?Set ANDROID_NDK_HOME to Android NDK 28.0.13004108}"
+python3 - "$META/source-lock.json" "$ANDROID_NDK_HOME/source.properties" <<'PY'
+import json, re, sys
+from pathlib import Path
+lock = json.loads(Path(sys.argv[1]).read_text())
+ndk = Path(sys.argv[2]).read_text()
+if not re.search(r'^Pkg\.Revision\s*=\s*' + re.escape(lock['android']['ndk']) + r'\s*$', ndk, re.M):
+    raise SystemExit('Android NDK revision differs from source-lock.json')
+PY
+impacto_clear_git_environment
+export GIT_NO_REPLACE_OBJECTS=1
+impacto_resolve_build_tools
 export VCPKG_ROOT="$BUILD/vcpkg"
 export VCPKG_MAX_CONCURRENCY=${VCPKG_MAX_CONCURRENCY:-4}
 export VCPKG_DISABLE_METRICS=1
@@ -46,9 +84,6 @@ if [[ ! -f "$BUILD/.upstream-only-v1" ]] &&
     echo 'Choose a fresh IMPACTO_UPSTREAM_BUILD_ROOT.' >&2
     exit 2
 fi
-
-mkdir -p "$BUILD/candidate"
-printf '{"version":1,"status":"build-in-progress","releaseReady":false}\n' > "$BUILD/candidate/candidate.json"
 
 checkout() {
     local dir=$1 url=$2 rev=$3
@@ -74,20 +109,7 @@ checkout() {
 }
 checkout "$SOURCE" "${LOCK[0]}" "${LOCK[1]}"
 python3 "$ROOT/tools/impacto/verify-upstream.py" --source "$SOURCE" --report "$BUILD/source-before.json"
-
-# Failed configure/build attempts must also leave a source-state report.
-verify_on_exit() {
-    local result=$?
-    trap - EXIT
-    if ! python3 "$ROOT/tools/impacto/verify-upstream.py" --source "$SOURCE" --report "$BUILD/source-after.json"; then
-        result=1
-    fi
-    if [[ $result != 0 ]]; then
-        printf '{"version":1,"status":"build-failed","releaseReady":false}\n' > "$BUILD/candidate/candidate.json"
-    fi
-    exit "$result"
-}
-trap verify_on_exit EXIT
+SOURCE_VALIDATED=1
 checkout "$VCPKG_ROOT" "${LOCK[2]}" "${LOCK[3]}"
 mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE" "$VCPKG_DOWNLOADS"
 printf 'upstream-only-v1\n' > "$BUILD/.upstream-only-v1"

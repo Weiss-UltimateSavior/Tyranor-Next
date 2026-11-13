@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise the source gate with real temporary Git checkouts, without network."""
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -9,10 +10,14 @@ import unittest
 
 CHECK = Path(__file__).with_name("verify-upstream.py")
 UPSTREAM_URL = "https://github.com/CommitteeOfZero/impacto.git"
+spec = importlib.util.spec_from_file_location("verify_upstream", CHECK)
+verifier = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(verifier)
 
 
 class SourceIntegrityTest(unittest.TestCase):
     def setUp(self):
+        self.environment = verifier.git_environment()
         self.temporary = tempfile.TemporaryDirectory(prefix="impacto-upstream-test-")
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
@@ -33,7 +38,8 @@ class SourceIntegrityTest(unittest.TestCase):
 
     def git(self, *args):
         return subprocess.check_output(["git", "-C", str(self.source), *args],
-                                       text=True, encoding="utf-8", stderr=subprocess.STDOUT)
+                                       text=True, encoding="utf-8", stderr=subprocess.STDOUT,
+                                       env=self.environment)
 
     def write_lock(self, revision, url=UPSTREAM_URL):
         self.lock.write_text(json.dumps({"impacto": {"url": url, "revision": revision}}),
@@ -42,7 +48,7 @@ class SourceIntegrityTest(unittest.TestCase):
     def check(self, success):
         result = subprocess.run([sys.executable, str(CHECK), "--source", str(self.source),
                                  "--lock", str(self.lock), "--report", str(self.report)],
-                                capture_output=True, text=True, encoding="utf-8")
+                                capture_output=True, text=True, encoding="utf-8", env=self.environment)
         self.assertEqual(result.returncode, 0 if success else 1, result.stdout + result.stderr)
         report = json.loads(self.report.read_text(encoding="utf-8"))
         self.assertEqual(report["clean"], success)
@@ -123,7 +129,7 @@ class SourceIntegrityTest(unittest.TestCase):
     def test_git_line_ending_conversion_is_not_a_patch(self):
         converted = self.root / "converted"
         subprocess.run(["git", "clone", "--quiet", "--config", "core.autocrlf=true",
-                        str(self.source), str(converted)], check=True)
+                        str(self.source), str(converted)], check=True, env=self.environment)
         self.source = converted
         self.assertEqual((self.source / "engine.cpp").read_bytes(),
                          b"int main() { return 0; }\r\n")
@@ -134,7 +140,7 @@ class SourceIntegrityTest(unittest.TestCase):
         original = self.report.read_bytes()
         result = subprocess.run([sys.executable, str(CHECK), "--source", str(self.source),
                                  "--lock", str(self.lock), "--report", str(self.report)],
-                                capture_output=True)
+                                capture_output=True, env=self.environment)
         self.assertEqual(result.returncode, 2)
         self.assertEqual(self.report.read_bytes(), original)
 
