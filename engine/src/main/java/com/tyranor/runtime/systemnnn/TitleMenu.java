@@ -43,10 +43,14 @@ final class TitleMenu {
     final String scenarioVariable;
     final GameUiAssets.Config config;
     final int frameMs,autoRestartTime;
+    private final int bgmNumber;
     final boolean restartOnBackgroundEnd;
     TitleMenu(File root,long handle,boolean resume,boolean lastLoad) throws IOException {
         config=GameUiAssets.readConfig(root,"title");
-        frameMs=Math.max(1,GameUiAssets.readConfig(root,"game").number("frameTime",20));
+        GameUiAssets.SharedConfig shared=handle!=0?GameUiAssets.SharedConfig.from(NativeGame.sharedConfigSnapshot(handle),root,null,null):null;
+        boolean fromNative=shared!=null&&shared.fromNative;
+        frameMs=Math.max(1,fromNative?shared.defaultFrameMs:GameUiAssets.readConfig(root,"game").number("frameTime",20));
+        bgmNumber=fromNative?shared.titleBgmNumber:number("bgmNumber",1);
         boolean scripted=number("backScriptFlag",0)!=0;
         autoRestartTime=number("autoRestartTime",0);
         restartOnBackgroundEnd=scripted&&number("scriptEndIsModeEnd",0)!=0;
@@ -90,7 +94,7 @@ final class TitleMenu {
             item.spec=entry.spec;item.image=entry.image;items.add(item);
         }
     }
-    int musicNumber() { return number("bgmNumber",1); }
+    int musicNumber() { return bgmNumber; }
     boolean musicRestarts() { return number("bgmRestartFlag",1)!=0; }
     void restoreMusic(long handle) {
         NativeGame.menuMusic(handle,musicNumber(),number("bgmLoop",0),number("bgmVolume",0),

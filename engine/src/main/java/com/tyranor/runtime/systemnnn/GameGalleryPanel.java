@@ -139,7 +139,7 @@ final class GameGalleryPanel extends GameUiPanel {
         if(cg){
             String font=GalleryCatalog.differenceFont(cfg);
             differenceFont=font.isEmpty()?null:sprite(font);
-            if(differenceFont==null&&!font.isEmpty())Log.i("SystemNNN","Difference font unavailable, using text counter: "+font);
+            if(differenceFont==null&&!font.isEmpty())Log.i("SystemNNN","Difference font unavailable, omitting counter: "+font);
             else if(differenceFont!=null&&12L*dimension(cfg,"differenceFontSizeX",21)>differenceFont.getWidth())
                 Log.w("SystemNNN","Difference font too narrow for 12 glyphs: "+font);
         }
@@ -537,9 +537,6 @@ final class GameGalleryPanel extends GameUiPanel {
                     canvas.drawBitmap(font,glyphSource,dest,paint);
                 }
                 dest.set(0,0,getWidth(),getHeight());
-            }else if(!cell.detail.isEmpty()){
-                paint.setColor(Color.WHITE); paint.setTextAlign(Paint.Align.LEFT); paint.setTextSize(Math.max(12,getHeight()/5f));
-                canvas.drawText(cell.detail,getWidth()*.35f,getHeight()*.88f,paint);
             }
         }
         private void drawMovieCursor(Canvas canvas){

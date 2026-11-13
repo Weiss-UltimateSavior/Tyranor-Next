@@ -22,6 +22,7 @@ final class SaveSlots {
     private final GameSavePaths paths;
     private PcStorySave pc;
     private GameTextDecoder decoder;
+    private PcStorySave.GameDateVars gameDateVars=PcStorySave.GameDateVars.NONE;
     private int quickNumber=-1;
     private volatile Map<Integer,Entry> cached=Collections.emptyMap();
     private volatile int manualCount=DEFAULT_SLOT_COUNT;
@@ -72,18 +73,20 @@ final class SaveSlots {
         final Bitmap picture;
         final Integer artwork;
         final boolean lastSaved;
+        final PcStorySave.GameDate gameDate;
         Entry(int slot,boolean exists,boolean corrupt,long savedAt,String summary,Bitmap picture) {
-            this(slot,exists,corrupt,savedAt,summary,picture,null,false);
+            this(slot,exists,corrupt,savedAt,summary,picture,null,false,null);
         }
         private Entry(int slot,boolean exists,boolean corrupt,long savedAt,String summary,
-                      Bitmap picture,Integer artwork,boolean lastSaved) {
+                      Bitmap picture,Integer artwork,boolean lastSaved,PcStorySave.GameDate gameDate) {
             this.slot=slot; this.exists=exists; this.corrupt=corrupt; this.savedAt=savedAt;
             this.summary=summary;
             this.picture=picture;
             this.artwork=artwork;this.lastSaved=lastSaved;
+            this.gameDate=gameDate;
         }
         private Entry withoutPicture(){
-            return new Entry(slot,exists,corrupt,savedAt,summary,null,artwork,lastSaved);
+            return new Entry(slot,exists,corrupt,savedAt,summary,null,artwork,lastSaved,gameDate);
         }
         private Entry withUi(SlotUi state){
             if(!exists||corrupt)return this;
@@ -91,7 +94,7 @@ final class SaveSlots {
             Integer number=artwork!=null?artwork:art!=null&&art.savedAt==savedAt?art.number:null;
             boolean marked=slot!=AUTO&&state.lastSaved==slot&&state.lastSavedAt==savedAt;
             if(number==null&&!marked)return this;
-            return new Entry(slot,exists,corrupt,savedAt,summary,picture,number,marked);
+            return new Entry(slot,exists,corrupt,savedAt,summary,picture,number,marked,gameDate);
         }
         String label(Context context) { return labelFor(context,slot); }
         String displaySummary(Context context) {
@@ -103,6 +106,7 @@ final class SaveSlots {
         this.paths=paths;
     }
     int quickNumber(){return quickNumber;}
+    PcStorySave.GameDateVars gameDateVars(){return gameDateVars;}
     File pcFile(int slot){
         if(slot<0||slot>=MAX_MANUAL_SLOTS)throw new IllegalArgumentException("Invalid PC save slot");
         return pc.file(slot);
@@ -115,12 +119,19 @@ final class SaveSlots {
         return ".slot"+(slot<10?"0":"")+slot+".sav";
     }
     void preload(File root,GameTextDecoder decoder) throws IOException {
+        preload(root,decoder,null);
+    }
+    void preload(File root,GameTextDecoder decoder,GameUiAssets.SharedConfig shared) throws IOException {
         this.decoder=decoder;
         GameUiAssets.Config game=GameUiAssets.readConfig(root,"game",decoder);
         GameUiAssets.Config data=GameUiAssets.readConfig(root,"dataFile",decoder);
         Layout save=new Layout(GameUiAssets.readConfig(root,"save",decoder),game,data,true);
         Layout load=new Layout(GameUiAssets.readConfig(root,"load",decoder),game,data,false);
-        pc=new PcStorySave(paths.directory(),game.number("taikenflag",0)!=0);
+        boolean fromNative=shared!=null&&shared.fromNative;
+        pc=new PcStorySave(paths.directory(),fromNative?shared.trial():game.number("taikenflag",0)!=0);
+        boolean showGameDate=data.number("gameYearPrintFlag",0)!=0||data.number("gameDatePrintFlag",0)!=0;
+        gameDateVars=!showGameDate?PcStorySave.GameDateVars.NONE:
+            (fromNative?shared.gameDateVars():PcStorySave.GameDateVars.load(root,game));
         int quick=data.number("quickSlotNumber",1);
         quickNumber=quick>0&&quick<=MAX_MANUAL_SLOTS?quick-1:-1;
         preload(Math.max(save.pages*save.perPage,load.pages*load.perPage));
@@ -259,14 +270,14 @@ final class SaveSlots {
     }
     private static Entry empty(int slot){return new Entry(slot,false,false,0,"",null);}
     private static Entry pcEntry(int slot,PcStorySave.Preview preview){
-        return new Entry(slot,true,false,preview.savedAt,preview.summary,preview.picture,preview.artwork,false);
+        return new Entry(slot,true,false,preview.savedAt,preview.summary,preview.picture,preview.artwork,false,preview.gameDate);
     }
     private Entry readEntry(int slot,int remainingPixels) {
         File file=pcFile(slot);
         if(!exists(file))return empty(slot);
         try{
             byte[] bytes=PcStorySave.read(file);
-            return pcEntry(slot,PcStorySave.preview(bytes,file.lastModified(),decoder,remainingPixels));
+            return pcEntry(slot,PcStorySave.preview(bytes,file.lastModified(),decoder,remainingPixels,gameDateVars));
         }catch(IOException|RuntimeException e){
             return new Entry(slot,true,true,Math.max(0,file.lastModified()),"",null);
         }

@@ -78,9 +78,16 @@ final class DialogueLayout {
         return result;
     }
     static Text[] layouts(Map<String,String> values){
+        return layouts(values,null);
+    }
+    static Text[] layouts(Map<String,String> values,GameUiAssets.SharedConfig shared){
         int count=clamp(number(values,"fontSizeTypeNumber",0),0,MAX_LAYOUTS-1)+1;
-        int font=Math.min(72,number(values,"fontSize",24)),x=number(values,"printX",100),y=number(values,"printY",100);
-        int nx=number(values,"nextX",0),ny=number(values,"nextY",font+6),space=number(values,"space",1);
+        int font=Math.min(72,shared!=null?shared.messageFontSize:number(values,"fontSize",24));
+        int x=shared!=null?shared.printX:number(values,"printX",100);
+        int y=shared!=null?shared.printY:number(values,"printY",100);
+        int nx=shared!=null?shared.nextX:number(values,"nextX",0);
+        int ny=shared!=null?shared.nextY:number(values,"nextY",font+6);
+        int space=number(values,"space",1);
         Text[] result=new Text[count];result[0]=new Text(font,x,y,nx,ny,space);
         for(int i=1;i<count;i++)result[i]=new Text(
             Math.min(72,number(values,"fontSizeByFontSizeType"+i,font)),number(values,"printXByFontSizeType"+i,x),
@@ -113,8 +120,13 @@ final class DialogueLayout {
         return number(values,"nameColorChangeFlag",1)!=0||number(values,"autoNameWindowFlag",0)!=0;
     }
     static Text[] longLayouts(Map<String,String> values,Text[] normal){
-        int x=number(values,"LPrintX",100),y=number(values,"LPrintY",100);
-        int nx=number(values,"LNextX",normal[0].nextX),ny=number(values,"LNextY",normal[0].nextY);
+        return longLayouts(values,normal,null);
+    }
+    static Text[] longLayouts(Map<String,String> values,Text[] normal,GameUiAssets.SharedConfig shared){
+        int x=shared!=null?shared.lprintX:number(values,"LPrintX",100);
+        int y=shared!=null?shared.lprintY:number(values,"LPrintY",100);
+        int nx=shared!=null?shared.lnextX:number(values,"LNextX",normal[0].nextX);
+        int ny=shared!=null?shared.lnextY:number(values,"LNextY",normal[0].nextY);
         Text[] result=new Text[normal.length];
         for(int i=0;i<result.length;i++)result[i]=new Text(normal[i].font,x,y,nx,ny,normal[i].space);
         return result;

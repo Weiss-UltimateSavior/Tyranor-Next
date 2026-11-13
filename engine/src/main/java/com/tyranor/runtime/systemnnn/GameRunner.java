@@ -354,10 +354,12 @@ final class GameRunner {
         boolean loaded=false;
         try{
             int[] format=NativeGame.currentPcSystemSaveFormat(candidate);
+            int[] rawShared=NativeGame.sharedConfigSnapshot(candidate);
             saveResult(SAVE_FILES.submit(()->{
-                pcSystemSave=PcSystemSave.open(root,savePaths.directory(),GameUiAssets.readConfig(root,"game",codec),format);
+                GameUiAssets.Config game=GameUiAssets.readConfig(root,"game",codec);
+                pcSystemSave=PcSystemSave.open(root,savePaths.directory(),game,format);
                 if(pending==null)readReadLines();else recoverProgress(previousProgress,pending);
-                slots.preload(root,codec);
+                slots.preload(root,codec,GameUiAssets.SharedConfig.from(rawShared,root,game,null));
                 return true;
             }));
             loaded=true;
@@ -1705,7 +1707,7 @@ final class GameRunner {
     }
     private void writeSlot(int slot,byte[] data,int marker) throws IOException {
         File file=slots.pcFile(slot);
-        PcStorySave.Preview preview=PcStorySave.preview(data,System.currentTimeMillis(),codec,512*512);
+        PcStorySave.Preview preview=PcStorySave.preview(data,System.currentTimeMillis(),codec,512*512,slots.gameDateVars());
         PcStorySave.write(file,data);
         slots.savedPc(slot,preview);
         try{slots.recordWritten(slot,preview.savedAt,null,marker);}

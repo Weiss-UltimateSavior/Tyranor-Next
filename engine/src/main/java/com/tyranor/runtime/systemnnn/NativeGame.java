@@ -48,6 +48,10 @@ final class NativeGame {
     static native Object[] saveLayoutConfig(byte[] gameDirectory,boolean regenerate);
     static native byte[] exportPcSave(long handle,int[] pixels,int width,int height);
     static native Object[] inspectPcSave(byte[] save,int pictureBudget);
+    static native int[] pcSaveDateVariables(byte[] gameDirectory);
+    static native int[] inspectPcSaveGameDate(byte[] save,int yearVar,int dateVar);
+    static native int computeGameWeekday(int year,int month,int day);
+    static native int[] sharedConfigSnapshot(long handle);
     static native boolean inspectSaveSnapshot(ByteBuffer data,int length,int wait,int word,int line,byte[][] content);
     static native boolean restoreSnapshot(long handle,byte[] data,int wait,int word,int line,byte[][] content,int[] meta,
                                           boolean keepMusicPosition,boolean migrateLegacySystemVariables,boolean restartMusic);

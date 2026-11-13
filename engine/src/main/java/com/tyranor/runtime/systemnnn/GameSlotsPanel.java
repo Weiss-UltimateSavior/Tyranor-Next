@@ -8,8 +8,10 @@ import android.view.View;
 import com.core.engine.EngineUiText;
 import com.core.engine.R;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -64,11 +66,178 @@ final class GameSlotsPanel extends GameUiPanel {
         }
         private static int clamp(int v,int lo,int hi){return Math.min(hi,Math.max(lo,v));}
     }
+    static final class GameDateLayout {
+        static final class Glyph {
+            final boolean weekSheet;
+            final int cell,x,y,width,height;
+            Glyph(boolean weekSheet,int cell,int x,int y,int width,int height){
+                this.weekSheet=weekSheet;this.cell=cell;this.x=x;this.y=y;this.width=width;this.height=height;
+            }
+        }
+        static final GameDateLayout DISABLED=new GameDateLayout(
+            false,false,false,false,false,true,true,true,0,0,0,0,0,"","",16,16,16,0,0,0,0,0,0,16,16,16,0,0);
+        final boolean enabled;
+        final boolean yearPrint,monthPrint,dayPrint,weekPrint;
+        final boolean yearUpZero,monthUpZero,dayUpZero;
+        final int yearSlashFlag,monthSlashFlag,daySlashFlag;
+        final int weekYouFlag,weekBiFlag;
+        final String timeFont,weekFont;
+        final int timeSizeX,timeSizeY,timeNextX;
+        final int yearX,yearY,monthX,monthY,dayX,dayY;
+        final int weekSizeX,weekSizeY,weekNextX,weekX,weekY;
+
+        private GameDateLayout(boolean enabled,boolean yearPrint,boolean monthPrint,boolean dayPrint,boolean weekPrint,
+                               boolean yearUpZero,boolean monthUpZero,boolean dayUpZero,
+                               int yearSlashFlag,int monthSlashFlag,int daySlashFlag,int weekYouFlag,int weekBiFlag,
+                               String timeFont,String weekFont,int timeSizeX,int timeSizeY,int timeNextX,
+                               int yearX,int yearY,int monthX,int monthY,int dayX,int dayY,
+                               int weekSizeX,int weekSizeY,int weekNextX,int weekX,int weekY){
+            this.enabled=enabled;
+            this.yearPrint=yearPrint;this.monthPrint=monthPrint;this.dayPrint=dayPrint;this.weekPrint=weekPrint;
+            this.yearUpZero=yearUpZero;this.monthUpZero=monthUpZero;this.dayUpZero=dayUpZero;
+            this.yearSlashFlag=yearSlashFlag;this.monthSlashFlag=monthSlashFlag;this.daySlashFlag=daySlashFlag;
+            this.weekYouFlag=weekYouFlag;this.weekBiFlag=weekBiFlag;
+            this.timeFont=timeFont;this.weekFont=weekFont;
+            this.timeSizeX=timeSizeX;this.timeSizeY=timeSizeY;this.timeNextX=timeNextX;
+            this.yearX=yearX;this.yearY=yearY;this.monthX=monthX;this.monthY=monthY;this.dayX=dayX;this.dayY=dayY;
+            this.weekSizeX=weekSizeX;this.weekSizeY=weekSizeY;this.weekNextX=weekNextX;this.weekX=weekX;this.weekY=weekY;
+        }
+
+        static GameDateLayout read(GameUiAssets.Config data){
+            int yearFlag=data.number("gameYearPrintFlag",0);
+            int dateFlag=data.number("gameDatePrintFlag",0);
+            if(yearFlag==0&&dateFlag==0)return DISABLED;
+            int monthFlag=data.number("gameMonthPrintFlag",1);
+            int dayFlag=data.number("gameDayPrintFlag",1);
+            int weekFlag=data.number("gameWeekPrintFlag",1);
+            int slashFlag=data.number("gameDateSlashPrintFlag",1);
+            int yearSlash=data.number("gameYearSlashPrintFlag",yearFlag*2*slashFlag);
+            int monthSlash=data.number("gameMonthSlashPrintFlag",monthFlag*2*slashFlag);
+            int daySlash=data.number("gameDaySlashPrintFlag",0);
+            int weekYou=data.number("gameWeekYouPrintFlag",1);
+            int weekBi=data.number("gameWeekBiPrintFlag",2);
+            boolean hasTime=yearFlag!=0||monthFlag!=0||dayFlag!=0;
+            String timeFont=hasTime?data.value("fileNameGameTimeFont","ta_font"):"";
+            int picSizeX=16,picSizeY=16,nextX=16;
+            if(hasTime){
+                picSizeX=clamp(data.number("gameTimeFontSizeX",16),1,512);
+                picSizeY=clamp(data.number("gameTimeFontSizeY",16),1,512);
+                nextX=clamp(data.number("gameTimeFontNextX",picSizeX),1,512);
+            }
+            int timeSizeX=picSizeX,timeSizeY=picSizeY,timeNextX=nextX;
+            int baseX=clamp(data.number("gameTimePrintX",0),-4096,4096);
+            int baseY=clamp(data.number("gameTimePrintY",0),-4096,4096);
+            boolean yearUpZero=true;
+            int yearX=baseX,yearY=baseY;
+            if(yearFlag!=0){
+                yearUpZero=data.number("gameYearUpZeroPrintFlag",1)!=0;
+                yearX=clamp(data.number("gameYearPrintX",baseX),-4096,4096);
+                yearY=clamp(data.number("gameYearPrintY",baseY),-4096,4096);
+                baseX=yearX+timeNextX*5;
+                baseY=yearY;
+            }
+            boolean monthUpZero=true;
+            int monthX=baseX,monthY=baseY;
+            if(monthFlag!=0){
+                monthUpZero=data.number("gameMonthUpZeroPrintFlag",1)!=0;
+                monthX=clamp(data.number("gameMonthPrintX",baseX),-4096,4096);
+                monthY=clamp(data.number("gameMonthPrintY",baseY),-4096,4096);
+                baseX=monthX+timeNextX*3;
+                baseY=monthY;
+            }
+            boolean dayUpZero=true;
+            int dayX=baseX,dayY=baseY;
+            if(dayFlag!=0){
+                dayUpZero=data.number("gameDayUpZeroPrintFlag",1)!=0;
+                dayX=clamp(data.number("gameDayPrintX",baseX),-4096,4096);
+                dayY=clamp(data.number("gameDayPrintY",baseY),-4096,4096);
+                baseX=dayX+timeNextX*2+(daySlash!=0?timeNextX:0);
+                baseY=dayY;
+            }
+            String weekFont=weekFlag!=0?data.value("fileNameGameWeekFont","ta_font"):"";
+            int weekSizeX=picSizeX,weekSizeY=picSizeY,weekNextX=picSizeX;
+            int weekX=baseX,weekY=baseY;
+            if(weekFlag!=0){
+                weekSizeX=clamp(data.number("gameWeekFontSizeX",picSizeX),1,512);
+                weekSizeY=clamp(data.number("gameWeekFontSizeY",picSizeY),1,512);
+                weekNextX=clamp(data.number("gameWeekFontNextX",weekSizeX),1,512);
+                weekX=clamp(data.number("gameWeekPrintX",baseX),-4096,4096);
+                weekY=clamp(data.number("gameWeekPrintY",baseY),-4096,4096);
+            }
+            return new GameDateLayout(true,yearFlag!=0,monthFlag!=0,dayFlag!=0,weekFlag!=0,
+                yearUpZero,monthUpZero,dayUpZero,yearSlash,monthSlash,daySlash,weekYou,weekBi,
+                timeFont,weekFont,timeSizeX,timeSizeY,timeNextX,yearX,yearY,monthX,monthY,dayX,dayY,
+                weekSizeX,weekSizeY,weekNextX,weekX,weekY);
+        }
+
+        boolean hasTime(){return yearPrint||monthPrint||dayPrint;}
+
+        boolean outside(int cardWidth,int cardHeight){
+            if(!enabled)return false;
+            if(yearPrint&&boxOutside(yearX,yearY,(yearSlashFlag!=0?4:3)*timeNextX+timeSizeX,timeSizeY,cardWidth,cardHeight))
+                return true;
+            if(monthPrint&&boxOutside(monthX,monthY,(monthSlashFlag!=0?2:1)*timeNextX+timeSizeX,timeSizeY,cardWidth,cardHeight))
+                return true;
+            if(dayPrint&&boxOutside(dayX,dayY,(daySlashFlag!=0?2:1)*timeNextX+timeSizeX,timeSizeY,cardWidth,cardHeight))
+                return true;
+            int weekCells=weekBiFlag!=0?2:weekYouFlag!=0?1:0;
+            return weekPrint&&boxOutside(weekX,weekY,weekCells*weekNextX+weekSizeX,weekSizeY,cardWidth,cardHeight);
+        }
+
+        private static boolean boxOutside(int x,int y,int w,int h,int cardWidth,int cardHeight){
+            return x<0||y<0||x+w>cardWidth||y+h>cardHeight;
+        }
+
+        List<Glyph> glyphs(PcStorySave.GameDate gd){
+            if(!enabled||gd==null)return java.util.Collections.emptyList();
+            List<Glyph> out=new ArrayList<>(12);
+            if(yearPrint){
+                appendSuuji(out,false,yearX,yearY,timeSizeX,timeSizeY,timeNextX,4,yearUpZero,gd.year);
+                if(yearSlashFlag!=0&&yearSlashFlag-1+10>=0)
+                    out.add(new Glyph(false,yearSlashFlag-1+10,yearX+timeNextX*4,yearY,timeSizeX,timeSizeY));
+            }
+            if(monthPrint){
+                appendSuuji(out,false,monthX,monthY,timeSizeX,timeSizeY,timeNextX,2,monthUpZero,gd.month);
+                if(monthSlashFlag!=0&&monthSlashFlag-1+10>=0)
+                    out.add(new Glyph(false,monthSlashFlag-1+10,monthX+timeNextX*2,monthY,timeSizeX,timeSizeY));
+            }
+            if(dayPrint){
+                appendSuuji(out,false,dayX,dayY,timeSizeX,timeSizeY,timeNextX,2,dayUpZero,gd.day);
+                if(daySlashFlag!=0&&daySlashFlag-1+10>=0)
+                    out.add(new Glyph(false,daySlashFlag-1+10,dayX+timeNextX*2,dayY,timeSizeX,timeSizeY));
+            }
+            if(weekPrint){
+                appendSuuji(out,true,weekX,weekY,weekSizeX,weekSizeY,weekNextX,1,false,gd.week);
+                if(weekYouFlag!=0&&weekYouFlag-1+10>=0)
+                    out.add(new Glyph(true,weekYouFlag-1+10,weekX+weekNextX,weekY,weekSizeX,weekSizeY));
+                if(weekBiFlag!=0&&weekBiFlag-1+10>=0)
+                    out.add(new Glyph(true,weekBiFlag-1+10,weekX+weekNextX*2,weekY,weekSizeX,weekSizeY));
+            }
+            return out;
+        }
+
+        private static void appendSuuji(List<Glyph> out,boolean weekSheet,int printX,int printY,
+                                        int sizeX,int sizeY,int nextX,int keta,boolean upZero,int dat){
+            if(dat<0)return;
+            int putX=printX+(keta-1)*nextX;
+            for(int i=0;i<keta;i++){
+                int d=dat%10;
+                if(d!=0||i==0||dat>0||upZero)
+                    out.add(new Glyph(weekSheet,d,putX,printY,sizeX,sizeY));
+                putX-=nextX;
+                dat/=10;
+                if(dat==0&&!upZero)return;
+            }
+        }
+
+        private static int clamp(int v,int lo,int hi){return Math.min(hi,Math.max(lo,v));}
+    }
     private final boolean saving;
     private final Select select;
     private final Runnable close;
     private final GameUiAssets.Config config,data;
     private final SaveSlots.Layout layout;
+    private final GameDateLayout gameDateLayout;
     private final Map<Integer,SaveSlots.Entry> entries=new HashMap<>();
     private final int cardWidth,cardHeight;
     private final Bitmap artworkAtlas,lastSaveAtlas;
@@ -89,6 +258,7 @@ final class GameSlotsPanel extends GameUiPanel {
         this.saving=saving;this.select=select;this.close=close;
         config=saving?assets.save:assets.load;data=assets.dataFile;
         layout=new SaveSlots.Layout(config,assets.game,data,saving);
+        gameDateLayout=GameDateLayout.read(data);
         page=layout.openingPcPage(lastSelected);
         cardWidth=limit(data.number("areaSizeX",132),1,4096);cardHeight=limit(data.number("areaSizeY",100),1,4096);
         artworkAtlas=data.number("addPicPrintFlag",0)!=0?sprite(data.value("fileNameAddPic","ta_sl_font")):null;
@@ -107,8 +277,9 @@ final class GameSlotsPanel extends GameUiPanel {
         int selectX=limit(data.number("selectPrintX",0),-4096,4096),selectY=limit(data.number("selectPrintY",0),-4096,4096);
         int selectW=limit(data.number("selectSizeX",cardWidth),1,4096),selectH=limit(data.number("selectSizeY",cardHeight),1,4096);
         boolean cursorOutside=selectX<0||selectY<0||selectX+selectW>cardWidth||selectY+selectH>cardHeight;
+        boolean dateOutside=gameDateLayout.outside(cardWidth,cardHeight);
         // Original decorations may extend past the slot base, e.g. lastSavePrintY=-6 or selectPrintX=-1.
-        if(artworkAtlas!=null||lastSaveAtlas!=null||cursorOutside)setClipChildren(false);
+        if(artworkAtlas!=null||lastSaveAtlas!=null||cursorOutside||dateOutside)setClipChildren(false);
         opening(config,false);
         entries(slots,warmup);
     }
@@ -341,9 +512,29 @@ final class GameSlotsPanel extends GameUiPanel {
             int pw=limit(data.number("picSizeX",182),1,512),ph=limit(data.number("picSizeY",102),1,512);
             picture(c,preview,px,py,pw,ph);
         }
-        private void contents(Canvas c){
+        private void drawGameDate(Canvas c,PcStorySave.GameDate gd){
+            Bitmap timePic=gameDateLayout.hasTime()&&!gameDateLayout.timeFont.isEmpty()?sprite(gameDateLayout.timeFont):null;
+            Bitmap weekPic=gameDateLayout.weekPrint&&!gameDateLayout.weekFont.isEmpty()?sprite(gameDateLayout.weekFont):null;
+            if(timePic==null&&weekPic==null)return;
+            p.setAlpha(255);
+            for(GameDateLayout.Glyph g:gameDateLayout.glyphs(gd)){
+                Bitmap sheet=g.weekSheet?weekPic:timePic;
+                if(sheet!=null&&g.cell>=0&&(long)(g.cell+1)*g.width<=sheet.getWidth()&&g.height<=sheet.getHeight()){
+                    int srcX=g.cell*g.width;
+                    c.drawBitmap(sheet,new Rect(srcX,0,srcX+g.width,g.height),
+                        new Rect(g.x,g.y,g.x+g.width,g.y+g.height),p);
+                }
+            }
+        }
+        private int contents(Canvas c,int clip){
             timestamp(c);
             serialNumber(c,false);
+            if(gameDateLayout.enabled&&e.gameDate!=null){
+                c.restoreToCount(clip);
+                drawGameDate(c,e.gameDate);
+                clip=c.save();
+                c.clipRect(0,0,cardWidth,cardHeight);
+            }
             int x=data.number("textPrintX",210),y=data.number("textPrintY",87),size=limit(data.number("textFontSize",16),8,40);
             int artworkY=data.number("addPicPrintY",46);
             if(data.number("textPrintFlag",0)!=0&&!summary.isEmpty()){
@@ -352,11 +543,12 @@ final class GameSlotsPanel extends GameUiPanel {
                     // The quick-slot plate already has a label in the comment box.
                     int small=Math.min(size,13),top=y-small-10;
                     if(top>=artworkY+16)line(c,summary,x,top,small,color);
-                    return;
+                    return clip;
                 }
                 int n=line(c,summary,x,y,size,color);
                 if(n<summary.length()&&y+size*2<=cardHeight)line(c,summary.substring(n),x,y+size,size,color);
             }
+            return clip;
         }
         @Override protected void onDraw(Canvas canvas){
             int save=canvas.save();
@@ -382,7 +574,7 @@ final class GameSlotsPanel extends GameUiPanel {
                     clip=canvas.save();
                     canvas.clipRect(0,0,cardWidth,cardHeight);
                 }
-                contents(canvas);
+                clip=contents(canvas,clip);
             }
             canvas.restoreToCount(clip);
             long now=SystemClock.uptimeMillis();

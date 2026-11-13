@@ -25,17 +25,17 @@ final class DialogueStyle {
     private int canvasWidth=1280,canvasHeight=720;
 
     private DialogueStyle(Bitmap[] windows,Bitmap[] nameWindows,Map<String,String> windowConfig,Map<String,String> config,
-                          Map<String,String> game,Map<String,Integer> names) {
+                          Map<String,String> game,Map<String,Integer> names,GameUiAssets.SharedConfig shared) {
         this.windows=windows;this.nameWindows=nameWindows;this.windowConfig=windowConfig;this.names=names;
         original=!config.isEmpty()||!windowConfig.isEmpty();
-        counts=DialogueLayout.counts(windowConfig);layouts=DialogueLayout.layouts(config);
-        longLayouts=DialogueLayout.longLayouts(config,layouts);
+        counts=DialogueLayout.counts(windowConfig);layouts=DialogueLayout.layouts(config,shared);
+        longLayouts=DialogueLayout.longLayouts(config,layouts,shared);
         nameWindowEnabled=DialogueLayout.number(windowConfig,"nameWindowFlag",0)!=0;
         printName=DialogueLayout.number(config,"nameFlag",1)!=0;
         autoNameWindow=DialogueLayout.number(config,"autoNameWindowFlag",0)!=0;
         nameTableEnabled=DialogueLayout.usesNameTable(config);
         markupStyle=new DialogueMarkup.Style(game);
-        nameLayouts=DialogueLayout.nameLayouts(config,layouts,markupStyle.singleByte);
+        nameLayouts=DialogueLayout.nameLayouts(config,layouts,shared!=null?shared.singleByteText():markupStyle.singleByte);
         int weight=DialogueLayout.number(game,"fontWeight",700);
         fontWeight=weight>=0&&weight<=1000?weight:700;
         boolean custom=DialogueLayout.number(config,"colorCustomFlag",0)!=0;
@@ -43,7 +43,7 @@ final class DialogueStyle {
         defaultNameColor=custom?color(config,"nameColor",Color.WHITE):Color.WHITE;
         nameShadeColor=custom?color(config,"nameShadeColor",Color.BLACK):Color.BLACK;
         readBodyColor=color(config,"readMessageColor",bodyColor);readNameColor=color(config,"readNameColor",defaultNameColor);
-        canvas(canvasWidth,canvasHeight);
+        canvas(shared!=null?shared.screenWidth:canvasWidth,shared!=null?shared.screenHeight:canvasHeight);
     }
     void canvas(int width,int height){
         canvasWidth=Math.max(1,width);canvasHeight=Math.max(1,height);
@@ -56,7 +56,7 @@ final class DialogueStyle {
     int bodyY(DialogueLayout.Text text){return DialogueLayout.clamp(text.y,0,canvasHeight-1);}
     int bodyWidth(DialogueLayout.Text text){return Math.max(1,canvasWidth-bodyX(text)-Math.min(80,canvasWidth/4));}
     int bodyHeight(DialogueLayout.Text text){return Math.max(1,canvasHeight-bodyY(text)-Math.min(10,canvasHeight/4));}
-    static DialogueStyle fallback() { return new DialogueStyle(new Bitmap[1],new Bitmap[1],new HashMap<>(),new HashMap<>(),new HashMap<>(),new HashMap<>()); }
+    static DialogueStyle fallback() { return new DialogueStyle(new Bitmap[1],new Bitmap[1],new HashMap<>(),new HashMap<>(),new HashMap<>(),new HashMap<>(),null); }
     static DialogueStyle load(File root,GameTextDecoder codec,GameUiAssets assets) {
         Map<String,String> config=assets.printMessage.fields(),windows=assets.messageWindow.fields();Map<String,Integer> palette=new HashMap<>();
         try {
@@ -90,7 +90,7 @@ final class DialogueStyle {
             images[i]=assets.image(windowNames[i]);
             if(nameEnabled)nameImages[i]=assets.image(nameNames[i]);
         }
-        return new DialogueStyle(images,nameImages,windows,config,assets.game.fields(),palette);
+        return new DialogueStyle(images,nameImages,windows,config,assets.game.fields(),palette,assets.sharedConfig);
     }
     DialogueLayout.Name nameLayout(int font){return nameLayouts[DialogueLayout.clamp(font,0,nameLayouts.length-1)];}
     DialogueMarkup markup(String text){return markupStyle.parse(text);}
