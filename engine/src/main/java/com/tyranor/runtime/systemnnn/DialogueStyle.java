@@ -15,6 +15,7 @@ final class DialogueStyle {
     final DialogueLayout.Text[] layouts,longLayouts;
     private final DialogueLayout.Name[] nameLayouts;
     int windowX,windowY,windowWidth,windowHeight,nameX,nameY,nameWidth,nameHeight;
+    final int windowLayers,nameWindowLayers;
     final boolean original,nameWindowEnabled;
     final int fontWeight,bodyColor,defaultNameColor,nameShadeColor;
     final DialogueMarkup.Style markupStyle;
@@ -30,6 +31,8 @@ final class DialogueStyle {
         original=!config.isEmpty()||!windowConfig.isEmpty();
         counts=DialogueLayout.counts(windowConfig);layouts=DialogueLayout.layouts(config,shared);
         longLayouts=DialogueLayout.longLayouts(config,layouts,shared);
+        windowLayers=DialogueLayout.number(windowConfig,"notTransWindowUse",0);
+        nameWindowLayers=DialogueLayout.number(windowConfig,"notTransNameWindowUse",0);
         nameWindowEnabled=DialogueLayout.number(windowConfig,"nameWindowFlag",0)!=0;
         printName=DialogueLayout.number(config,"nameFlag",1)!=0;
         autoNameWindow=DialogueLayout.number(config,"autoNameWindowFlag",0)!=0;

@@ -35,6 +35,24 @@ final class DialogueLayout {
         final boolean nameWindow;
         Message(String name,String body,boolean nameWindow){this.name=name;this.body=body;this.nameWindow=nameWindow;}
     }
+    static final class WindowBand {
+        final int srcY,width,height,alpha;
+        WindowBand(int srcY,int width,int height,int alpha){
+            this.srcY=srcY;this.width=width;this.height=height;this.alpha=alpha;
+        }
+    }
+    static WindowBand[] windowBands(int width,int height,int layers,int opacity){
+        if(width<=0||height<=0)return new WindowBand[0];
+        int clampedOpacity=clamp(opacity,0,100);
+        int count=((layers&2)!=0?1:0)+(clampedOpacity>0?1:0)+((layers&1)!=0?1:0);
+        WindowBand[] bands=new WindowBand[count];
+        int at=0;
+        if((layers&2)!=0)bands[at++]=new WindowBand(height*((layers&1)!=0?2:1),width,height,255);
+        if(clampedOpacity>0)bands[at++]=new WindowBand(0,width,height,
+            clampedOpacity>=100?255:(clampedOpacity*255+50)/100);
+        if((layers&1)!=0)bands[at]=new WindowBand(height,width,height,255);
+        return bands;
+    }
     static int clamp(int value,int low,int high){return Math.max(low,Math.min(value,high));}
     static String cursorName(Map<String,String> config,int kind,int scriptVariant,int configVariant){
         String key="filenameCursor"+(kind+1);
@@ -133,5 +151,31 @@ final class DialogueLayout {
     }
     static int lineX(Text layout,int row,int right){
         return (int)Math.max(0,Math.min(right-1L,layout.x+(long)row*layout.nextX));
+    }
+    static final int PLANE_UI_HIDDEN=1<<16;
+    static final long PLANE_GATE_TIMEOUT_MS=250L;
+    static final int GATE_HOLD=0,GATE_MATCHED=1,GATE_BYPASSED=2,GATE_TIMED_OUT=3;
+    static int[] composePlaneKey(int[] expected,boolean uiHidden,int choicePage){
+        int[] key=new int[6];
+        if(expected!=null)System.arraycopy(expected,0,key,0,Math.min(5,expected.length));
+        key[5]=(uiHidden?PLANE_UI_HIDDEN:0)|(Math.max(0,choicePage)&0xffff);
+        return key;
+    }
+    static boolean planeKeyMatches(int[] presented,int[] expected){
+        if(presented==null||expected==null||presented.length<5||expected.length<5)return false;
+        for(int i=0;i<5;i++)if(presented[i]!=expected[i])return false;
+        return presented.length<6||(presented[5]&PLANE_UI_HIDDEN)==0;
+    }
+    static int choiceSetId(int[] key){
+        return key!=null&&key.length>=5?key[4]:0;
+    }
+    static boolean portraitMoving(int index,boolean hasImage,int count,boolean activeAtFrame,int waitMax){
+        return index==0&&hasImage&&count>1&&(waitMax>0||activeAtFrame);
+    }
+    static int evaluatePlaneGate(int[] presented,int[] expected,boolean hasSurface,boolean active,boolean menuOpen,long elapsedMs){
+        if(!hasSurface||!active||menuOpen)return GATE_BYPASSED;
+        if(expected==null||expected.length<5||(expected[0]!=3&&expected[0]!=4))return GATE_MATCHED;
+        if(planeKeyMatches(presented,expected))return GATE_MATCHED;
+        return elapsedMs>=PLANE_GATE_TIMEOUT_MS?GATE_TIMED_OUT:GATE_HOLD;
     }
 }

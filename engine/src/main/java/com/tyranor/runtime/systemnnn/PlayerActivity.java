@@ -3,7 +3,6 @@ package com.tyranor.runtime.systemnnn;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
-import android.graphics.RectF;
 import android.graphics.SurfaceTexture;
 
 import android.app.Activity;
@@ -46,11 +45,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private GameRunner runner;
     private FrameLayout root,stage;
     private TextureView screen;
-    private ImageView transitionView;
-    private long transitionToken,transitionTimestamp;
     private Surface storySurface;
-    private View longPrintBackdrop;
-    private volatile StoryScreen storyScreen;
+    private final StoryPlane storyPlane=new StoryPlane();
     private DialoguePanel dialoguePanel;
     private GameStoryControls controls;
     private FrameLayout independentStatus;
@@ -73,7 +69,6 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private MoviePlayback moviePlayback;
     private boolean storyMovieExitActive;
     private GameSlotsPanel gameSlots;
-    private GameRunner.SlotPreview slotPreview;
     private GalleryCatalog.Page galleryPage,replayReturn;
     private long galleryRequest;
     private int galleryCgPage,settingsPage;
@@ -89,8 +84,6 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private int panelsOpen,revealed;
     private String fullBody="";
     private GameRunner.Frame currentFrame;
-    private GameRunner.Frame drawnStoryFrame;
-    private Bitmap overlapPlane;
     private GameRunner.Modal visibleModal,modeUnderPanel;
     private Bitmap optionalGalleryPrevious;
     private boolean openGalleryAfterTitle;
@@ -226,53 +219,28 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             returnToLibrary(R.string.engine_systemnnn_host_game_interrupted,R.string.engine_systemnnn_host_check_versions);
             return;
         }
+        storyPlane.release();
         root.removeAllViews();
         storyTouchSlop=ViewConfiguration.get(this).getScaledTouchSlop();
         stage=new FrameLayout(this){
             @Override public void onDescendantInvalidated(View child,View target){
                 super.onDescendantInvalidated(child,target);
-                StoryScreen foreground=storyScreen;
-                if(foreground==null)return;
-                if(child==dialoguePanel||child==choices||child==longPrintBackdrop){
-                    boolean separateCursor=dialoguePanel!=null&&dialoguePanel.isMessageCursor(target);
-                    boolean separateTimer=choices!=null&&choices.isTimer(target);
-                    foreground.messageChanged(!separateCursor&&!separateTimer);
-                }
+                if(child==dialoguePanel||child==choices)storyPlane.schedulePush();
             }
         };
+        stage.getViewTreeObserver().addOnPreDrawListener(()->{storyPlane.onPreDraw();return true;});
         launchingGame=true;
         stage.setForeground(new ColorDrawable(Color.BLACK));
         root.addView(stage,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
         root.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> layoutStage());
         screen=new TextureView(this); screen.setContentDescription(text(R.string.engine_systemnnn_host_game_display));screen.setSoundEffectsEnabled(false);
         stage.addView(screen,new FrameLayout.LayoutParams(-1,-1));
-        transitionView=new ImageView(this);
-        transitionView.setScaleType(ImageView.ScaleType.FIT_XY);
-        transitionView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        transitionView.setVisibility(View.GONE);
-        stage.addView(transitionView,new FrameLayout.LayoutParams(-1,-1));
         screen.setOnTouchListener((view,event) -> {
             if (event.getActionMasked()==MotionEvent.ACTION_UP) {advance();view.performClick();}
             return true;
         });
-        longPrintBackdrop=new View(this){
-            private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
-            private final RectF destination=new RectF();
-            @Override protected void onDraw(Canvas canvas){
-                Bitmap bitmap=uiAssets==null?null:uiAssets.longPrintImage;
-                if(bitmap==null)return;
-                float sx=getWidth()/(float)width,sy=getHeight()/(float)height;
-                destination.set(0,0,bitmap.getWidth()*sx,bitmap.getHeight()*sy);
-                canvas.drawBitmap(bitmap,null,destination,paint);
-            }
-        };
-        longPrintBackdrop.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        longPrintBackdrop.setVisibility(View.GONE);
-        stage.addView(longPrintBackdrop,new FrameLayout.LayoutParams(-1,-1));
         dialoguePanel=new DialoguePanel(this,v -> advance());
         stage.addView(dialoguePanel,new FrameLayout.LayoutParams(-1,-1)); dialoguePanel.setVisibility(View.GONE);
-        storyScreen=new StoryScreen();
-        stage.addView(storyScreen,new FrameLayout.LayoutParams(-1,-1));
         if(debugMode){
             debugOverlay=new GameDebugOverlay(uiContext);
             debugOverlay.setTranslationZ(dp(8));
@@ -301,7 +269,6 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 if(attached!=null)surfaceOwner.surface(attached);
             }
             @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture){
-                clearTransitionView();
                 Surface old=attached;
                 attached=null;
                 if(storySurface==old)storySurface=null;
@@ -314,9 +281,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 });
                 return false;
             }
-            @Override public void onSurfaceTextureUpdated(SurfaceTexture texture){
-                if(transitionTimestamp>0&&texture.getTimestamp()>=transitionTimestamp)clearTransitionView();
-            }
+            @Override public void onSurfaceTextureUpdated(SurfaceTexture texture){}
         });
         if (foreground) runner.active(true);
         layoutStage();
@@ -326,9 +291,21 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private DialogInterface.OnClickListener dialogClick(DialogInterface.OnClickListener action) {
         return (dialog,which) -> {systemClick();if(action!=null)action.onClick(dialog,which);};
     }
+    private void scaleLogicalView(View view,int stageW,int stageH){
+        if(view==null)return;
+        FrameLayout.LayoutParams params=(FrameLayout.LayoutParams)view.getLayoutParams();
+        if(params.width!=width||params.height!=height){
+            params.width=width;params.height=height;
+            view.setLayoutParams(params);
+        }
+        view.setPivotX(0);
+        view.setPivotY(0);
+        view.setScaleX(stageW/(float)width);
+        view.setScaleY(stageH/(float)height);
+    }
     private void layoutStage() {
         if(stage==null)return;
-        if(longPrintBackdrop!=null)longPrintBackdrop.invalidate();
+        storyPlane.schedulePush();
         if(dialoguePanel!=null)dialoguePanel.canvas(width,height);
         if(controls!=null)controls.canvas(width,height);
         if(quickNoticeView!=null)quickNoticeView.canvas(width,height);
@@ -340,18 +317,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(availableWidth<=0||availableHeight<=0)return;
         float scale=Math.min((float)availableWidth/width,(float)availableHeight/height);
         int w=Math.max(1,Math.round(width*scale)),h=Math.max(1,Math.round(height*scale));
-        if(dialoguePanel!=null){
-            // The live message and the script's wipe source use the same logical glyph layout.
-            FrameLayout.LayoutParams message=(FrameLayout.LayoutParams)dialoguePanel.getLayoutParams();
-            if(message.width!=width||message.height!=height){
-                message.width=width;message.height=height;
-                dialoguePanel.setLayoutParams(message);
-            }
-            dialoguePanel.setPivotX(0);
-            dialoguePanel.setPivotY(0);
-            dialoguePanel.setScaleX(w/(float)width);
-            dialoguePanel.setScaleY(h/(float)height);
-        }
+        scaleLogicalView(dialoguePanel,w,h);
+        scaleLogicalView(choices,w,h);
         int left=(availableWidth-w)/2;
         int top=(availableHeight-h)/2;
         FrameLayout.LayoutParams params=(FrameLayout.LayoutParams)stage.getLayoutParams();
@@ -372,41 +339,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     @Override public void frame(GameRunner.Frame frame,int initialVisible) {
         runOnUiThread(()->applyFrame(frame,initialVisible));
     }
-    @Override public void afterStoryDraw(Runnable ready){
-        runOnUiThread(()->{
-            if(stage==null||!stage.isAttachedToWindow()||!stage.isShown())ready.run();
-            // Later frame changes posted by the worker run after this traversal.
-            else stage.postOnAnimation(ready);
-        });
-    }
-    @Override public void transitionFrame(GameRunner.Frame frame,int initialVisible,Bitmap scene,long token,Runnable ready){
-        runOnUiThread(()->{
-            try{
-                if(isDestroyed()||transitionView==null)return;
-                // Show the new base and the matching message plane in one Android draw.
-                transitionToken=token;
-                transitionTimestamp=0;
-                transitionView.setImageBitmap(scene);
-                transitionView.setVisibility(View.VISIBLE);
-                applyFrame(frame,initialVisible);
-            }finally{ready.run();}
-        });
-    }
-    @Override public void transitionQueued(long token,long timestamp){
-        runOnUiThread(()->{
-            if(token!=transitionToken)return;
-            transitionTimestamp=timestamp;
-            SurfaceTexture texture=screen==null?null:screen.getSurfaceTexture();
-            if(timestamp==0||texture==null||texture.getTimestamp()>=timestamp)clearTransitionView();
-        });
-    }
-    private void clearTransitionView(){
-        transitionToken=transitionTimestamp=0;
-        if(transitionView!=null){
-            transitionView.setImageDrawable(null);
-            transitionView.setVisibility(View.GONE);
-        }
-    }
+    @Override public void planeChanged(){runOnUiThread(storyPlane::onTokenAvailable);}
     private void applyFrame(GameRunner.Frame frame,int initialVisible){
         if (isDestroyed() || stage==null) return;
         if (titlePanel!=null) {stage.removeView(titlePanel); titlePanel=null; titleModel=null;}
@@ -423,9 +356,11 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         boolean changed=refreshAfterLoad || currentFrame==null || currentFrame.wait!=frame.wait || currentFrame.line!=frame.line ||
             currentFrame.word!=frame.word || !currentFrame.script.equals(frame.script) ||
             !currentFrame.body.equals(frame.body) || !currentFrame.speaker.equals(frame.speaker) ||
-            currentFrame.nameWindow!=frame.nameWindow || currentFrame.decorations!=frame.decorations;
-        currentFrame=drawnStoryFrame=frame;
-        if(slotPreview!=null&&slotPreview.frame!=frame)slotPreview=null;
+            currentFrame.nameWindow!=frame.nameWindow || currentFrame.decorations!=frame.decorations ||
+            DialogueLayout.choiceSetId(currentFrame.planeKey)!=DialogueLayout.choiceSetId(frame.planeKey);
+        currentFrame=frame;
+        storyPlane.frame(frame);
+        dialoguePanel.directDraw(frame.wait==NativeGame.END);
         dialoguePanel.scriptCursorVariant(frame.scriptCursor);
         dialoguePanel.storyBody(frame.hasDialogueText());
         dialoguePanel.passive(frame.wait==NativeGame.DRAW);
@@ -449,7 +384,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                     },
                     number->{if(runner!=null)runner.input(lastX,lastY,number);});
                 choices.sound((se,voice)->{if(runner!=null)runner.playClick(se,voice);});
-                stage.addView(choices,stage.indexOfChild(storyScreen),new FrameLayout.LayoutParams(-1,-1));
+                stage.addView(choices,stage.indexOfChild(dialoguePanel)+1,new FrameLayout.LayoutParams(width,height));
+                if(stage.getWidth()>0&&stage.getHeight()>0)scaleLogicalView(choices,stage.getWidth(),stage.getHeight());
             }
             if(frame.wait==NativeGame.END){
                 String end=text(R.string.engine_systemnnn_host_story_ended);
@@ -459,13 +395,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         updateVisibility(); updateStatus();
         if(frame.wait==NativeGame.PLACE&&gamePanel==null&&preparingPanel==null)showPlace(null);
     }
-    @Override public void screenLayerChanged(){
-        StoryScreen view=storyScreen;
-        if(view!=null)view.postInvalidate();
-    }
-    @Override public void style(DialogueStyle style) {runOnUiThread(() -> {dialogueStyle=style;if(dialoguePanel!=null){dialoguePanel.style(style);reserveCommandSpace();}});}
+    @Override public void style(DialogueStyle style) {runOnUiThread(() -> {dialogueStyle=style;if(dialoguePanel!=null){dialoguePanel.style(style);reserveCommandSpace();storyPlane.schedulePush();}});}
     @Override public void choiceTime(GameRunner.Frame frame,int remaining){runOnUiThread(()->{
-        if(choices!=null&&currentFrame==frame)choices.remaining(remaining);
+        if(choices!=null&&currentFrame==frame){choices.remaining(remaining);storyPlane.schedulePush();}
     });}
     private void selectDialogueVariant(){
         if(dialoguePanel==null||preferences==null)return;
@@ -475,6 +407,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             preferences.getInt("messageWindowIndex",0),line&&currentFrame.layoutCommand==0x22220002,
             draw?currentFrame.showsDialogue():!line||currentFrame.windowVisible);
         reserveCommandSpace();
+        storyPlane.schedulePush();
     }
     private void reserveCommandSpace(){
         if(dialoguePanel!=null&&controls!=null)dialoguePanel.contentRight(controls.contentRight(dialoguePanel.bodyX(),dialoguePanel.bodyY(),
@@ -483,7 +416,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     @Override public void panels(GameUiAssets assets) {runOnUiThread(() -> {
         uiAssets=assets;if(isDestroyed()||stage==null)return;
         updatePointerIcon();
-        longPrintBackdrop.invalidate();
+        storyPlane.schedulePush();
         dialoguePanel.cursorAssets(assets);
         if(controls!=null)stage.removeView(controls);
         controls=new GameStoryControls(this,assets,new GameStoryControls.Listener(){
@@ -499,7 +432,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 case BACKLOG:showBacklog();break;
                 case SAVE:runner.suspendScriptAudio();showSlots(true);break;
                 case LOAD:runner.suspendScriptAudio();showSlots(false);break;
-                case QUICK_SAVE:runner.quickSave(captureSlotPreview());break;
+                case QUICK_SAVE:storyPlane.flushForCapture();runner.quickSave();break;
                 case QUICK_LOAD:runner.quickLoad();break;
                 case AUTO:runner.auto(target);break;
                 case SKIP:runner.skip(target);break;
@@ -529,6 +462,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         revealed=frame.displayBody.offsetForGlyphs(count);dialoguePanel.reveal(revealed,effect,progress);
         boolean printing=count<total;
         if(typing!=printing){typing=printing;updateVisibility();}
+        else storyPlane.schedulePush();
     });}
     @Override public void parameters(int[] raw,int[] display,int[] auxiliary){runOnUiThread(()->{
         pendingDisplay=display;pendingAuxiliary=auxiliary;ui.removeCallbacks(syncRuntimeDisplay);ui.post(syncRuntimeDisplay);
@@ -573,21 +507,20 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private void updateVisibility() {
         if(dialoguePanel==null)return;
         if(gamePanel==null&&isModalPanel(preparingPanel))return;
+        boolean storySession=!launchingGame&&titlePanel==null&&moviePlayback==null&&!storyMovieExitActive;
         boolean storyVisible=panelsOpen==0||gamePanel!=null&&gamePanel.awaitingCapturedBackdrop();
-        boolean inGame=!launchingGame&&titlePanel==null&&storyVisible&&moviePlayback==null&&!storyMovieExitActive;
-        storyScreen.setVisibility(inGame?View.VISIBLE:View.GONE);
-        storyScreen.windowChanged();
+        boolean inGame=storySession&&storyVisible;
+        if(!storySession||currentFrame!=null&&currentFrame.wait==NativeGame.MODAL)storyPlane.frame(null);
         boolean line=currentFrame!=null&&currentFrame.wait==NativeGame.DIALOGUE;
-        boolean showBackdrop=inGame&&line&&currentFrame.layoutCommand==0x22220002&&uiAssets!=null&&
-            uiAssets.longPrintImage!=null&&(!uiHidden||!uiAssets.longPrintImageOffWithWindow);
-        longPrintBackdrop.setVisibility(showBackdrop?View.VISIBLE:View.GONE);
         boolean hasDialogue=currentFrame!=null&&(currentFrame.showsDialogue()&&(!line||currentFrame.windowVisible||!fullBody.isEmpty())||
             currentFrame.wait==NativeGame.END);
-        dialoguePanel.setVisibility(inGame&&!uiHidden&&hasDialogue?View.VISIBLE:View.GONE);
+        boolean hasChoices=currentFrame!=null&&currentFrame.wait==NativeGame.CHOICE;
+        dialoguePanel.setVisibility(!storySession||!hasDialogue?View.GONE:inGame&&!uiHidden?View.VISIBLE:View.INVISIBLE);
         dialoguePanel.waiting(inGame&&!uiHidden&&hasDialogue&&!typing&&!skipMode&&currentFrame.wait==NativeGame.DIALOGUE,
             autoMode,currentFrame==null?0:currentFrame.layoutCommand,currentFrame==null?20:currentFrame.frameMs);
         if(controls!=null){if(inGame&&!uiHidden&&!sceneReplay)controls.frame(currentFrame,typing,choices);else controls.setVisibility(View.GONE);}
-        if(choices!=null)choices.setVisibility(inGame&&!uiHidden?View.VISIBLE:View.GONE);
+        if(choices!=null)choices.setVisibility(!storySession||!hasChoices?View.GONE:inGame&&!uiHidden?View.VISIBLE:View.INVISIBLE);
+        storyPlane.schedulePush();
         syncIndependentStatus();
     }
     private int visiblePrintMode(){
@@ -765,14 +698,13 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             if(titleModel!=model||returningToTitle)modeUnderPanel=null;
             if(returningToTitle){returningToTitle=false;closeOriginalPanel(false);}
             if(previous!=null){closeOriginalPanel(false);titlePrevious=previous.bitmap();}
-            typing=false;currentFrame=drawnStoryFrame=null;slotPreview=null;fullBody="";uiHidden=false;refreshAfterLoad=false;
+            typing=false;currentFrame=null;fullBody="";uiHidden=false;refreshAfterLoad=false;
             if(titlePanel!=null)stage.removeView(titlePanel);
             titleModel=model;if(w>0&&h>0){width=w;height=h;}layoutStage();
-            storyScreen.clear();
-            storyScreen.setVisibility(View.GONE);
-            longPrintBackdrop.setVisibility(View.GONE);
+            dialoguePanel.directDraw(false);
             dialoguePanel.setVisibility(View.GONE);if(controls!=null)controls.setVisibility(View.GONE);
             if(choices!=null){stage.removeView(choices);choices=null;}
+            storyPlane.clear();
             launchingGame=false;
             clearStartupViews();
             showTitlePanel(model,initial);
@@ -976,8 +908,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             if(!choices.menuAllowed()){if(choices.backlogAllowed())showBacklog();return;}
         }else if(currentFrame!=null&&!currentFrame.optionsAllowed)return;
         if(controls!=null)controls.cancelClick();
-        // Keep the story message plane before the system menu hides it.
-        slotPreview=captureSlotPreview();
+        if(titlePanel==null)storyPlane.flushForCapture();
         if(uiAssets!=null&&uiAssets.system.has("Menu1Button1FileName")){showOriginalMenu();return;}
         AlertDialog dialog=hostDialog().setTitle(text(R.string.engine_systemnnn_host_game_menu))
             .setItems(new String[]{text(R.string.engine_systemnnn_host_continue_game),text(R.string.engine_systemnnn_host_save_progress),text(R.string.engine_systemnnn_host_load_save),text(R.string.engine_systemnnn_host_settings),text(R.string.engine_systemnnn_host_backlog),text(R.string.engine_systemnnn_host_title),text(R.string.engine_systemnnn_host_exit_to_tyn)},(d,item) -> {
@@ -1073,22 +1004,20 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }
     private void captureForPanel(GameUiPanel panel,Runnable back,GameUiAssets.Config sceneEffect,boolean needsPrevious,GameRunner owner){
         boolean withStoryUi=captureStoryUi(sceneEffect);
-        owner.capture(withStoryUi?null:sceneEffect,needsPrevious||withStoryUi,(previous,scene)->runOnUiThread(()->{
+        if(titlePanel==null)storyPlane.flushForCapture();
+        owner.capture(sceneEffect,withStoryUi,needsPrevious,(previous,scene)->runOnUiThread(()->{
             if(preparingPanel!=panel)return;
             Bitmap before=null;
             try{
                 TitlePanel title=titlePanel;
                 if(previous!=null){
                     if(title!=null)before=UiOpening.snapshot(title,previous.bitmap(),canvas->drawTitleCapture(title,canvas));
-                    else if(withStoryUi)before=snapshotMenuStory(previous,sceneEffect);
                     else before=snapshotStory(previous,true);
                 }
             }catch(RuntimeException|OutOfMemoryError e){
                 Log.w("SystemNNN","Unable to capture the full menu screen",e);
             }
-            if(withStoryUi&&before!=null)filterCapturedPanel(panel,back,sceneEffect,needsPrevious,owner,before);
-            else if(withStoryUi)captureNativeBackground(panel,back,sceneEffect,owner,null);
-            else finishCapturedPanel(panel,back,sceneEffect,owner,before,scene);
+            finishCapturedPanel(panel,back,sceneEffect,owner,before,scene);
         }));
     }
     private void filterCapturedPanel(GameUiPanel panel,Runnable back,GameUiAssets.Config effect,boolean needsPrevious,
@@ -1101,7 +1030,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         }));
     }
     private void captureNativeBackground(GameUiPanel panel,Runnable back,GameUiAssets.Config effect,GameRunner owner,Bitmap before){
-        owner.capture(effect,false,(unused,scene)->runOnUiThread(()->finishCapturedPanel(panel,back,effect,owner,before,scene)));
+        owner.capture(effect,false,false,(unused,scene)->runOnUiThread(()->finishCapturedPanel(panel,back,effect,owner,before,scene)));
     }
     private void finishCapturedPanel(GameUiPanel panel,Runnable back,GameUiAssets.Config effect,GameRunner owner,
                                      Bitmap before,GameRunner.Capture scene){
@@ -1121,182 +1050,135 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(independentMode==4&&independentStatus!=null&&independentStatus.getVisibility()==View.VISIBLE)
             independentStatus.draw(canvas);
     }
-    @Override public Bitmap captureOverlapSource(GameRunner.Frame frame,int w,int h){
-        // Keep capture on the UI thread and off the normal frame path. This
-        // draws only the story overlay; the native scene stays in the renderer.
-        java.util.concurrent.FutureTask<Bitmap> capture=new java.util.concurrent.FutureTask<>(()->{
-            if(isDestroyed()||frame!=drawnStoryFrame||panelsOpen!=0||moviePlayback!=null||
-                stage==null||stage.getWidth()<=0||stage.getHeight()<=0||
-                storyScreen.getVisibility()!=View.VISIBLE)return null;
-            boolean withUi=dialoguePanel.getVisibility()==View.VISIBLE||
-                choices!=null&&choices.getVisibility()==View.VISIBLE;
-            if(!withUi&&longPrintBackdrop.getVisibility()!=View.VISIBLE&&storyScreen.layer==0)return null;
-            if(overlapPlane==null||overlapPlane.getWidth()!=w||overlapPlane.getHeight()!=h)
-                overlapPlane=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);
-            else overlapPlane.eraseColor(Color.TRANSPARENT);
-            UiOpening.drawOnto(stage,overlapPlane,canvas->drawStorySnapshot(canvas,withUi,false));
-            return overlapPlane;
-        });
-        runOnUiThread(capture);
-        try{return capture.get(25,java.util.concurrent.TimeUnit.MILLISECONDS);}
-        catch(InterruptedException e){Thread.currentThread().interrupt();}
-        catch(java.util.concurrent.ExecutionException e){Log.w("SystemNNN","Unable to capture story transition",e.getCause());}
-        catch(java.util.concurrent.TimeoutException ignored){}
-        capture.cancel(false);
-        return null;
-    }
-    private Bitmap snapshotStory(GameRunner.Capture picture,boolean withUi){
-        return UiOpening.snapshot(stage,picture.bitmap(),canvas->drawStorySnapshot(canvas,withUi,true));
-    }
-    private Bitmap snapshotMenuStory(GameRunner.Capture picture,GameUiAssets.Config config){
-        if(config.number("backScriptFlag",0)==0)
-            return UiOpening.snapshot(stage,picture.bitmap(),canvas->drawStorySnapshot(canvas,true,false));
-        // Background scripts sample the saved screen in game coordinates.
-        Bitmap base=picture.mutableBitmap();
-        if(stage.getWidth()>0&&stage.getHeight()>0)
-            UiOpening.drawOnto(stage,base,canvas->drawStorySnapshot(canvas,true,false));
-        return base;
-    }
-    private GameRunner.SlotPreview captureSlotPreview(){
-        GameRunner.Frame frame=drawnStoryFrame;
-        if(frame==null||frame!=currentFrame||uiAssets==null||moviePlayback!=null)return null;
-        if(panelsOpen!=0)return slotPreview;
-        if(storyScreen.getVisibility()!=View.VISIBLE||stage.getWidth()<=0||stage.getHeight()<=0)return null;
-        String hideFlag=frame.wait==NativeGame.DIALOGUE?"messageMiniCGNoMessageFlag":
-            frame.wait==NativeGame.CHOICE?"selectMiniCGNoMessageFlag":null;
-        if(hideFlag!=null&&uiAssets.game.number(hideFlag,0)!=0)return null;
-        Bitmap overlay=null;
-        try{
-            int w=SaveSlots.pictureDimension(uiAssets.dataFile,"picSizeX",uiAssets.dataFile.number("areaSizeX",132));
-            int h=SaveSlots.pictureDimension(uiAssets.dataFile,"picSizeY",uiAssets.dataFile.number("areaSizeY",100));
-            overlay=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);
-            UiOpening.drawOnto(stage,overlay,canvas->drawStorySnapshot(canvas,true,false));
-            return new GameRunner.SlotPreview(frame,overlay);
-        }catch(RuntimeException|OutOfMemoryError e){
-            if(overlay!=null)overlay.recycle();
-            Log.w("SystemNNN","Unable to capture the message plane for the save preview",e);
-            return null;
-        }
-    }
-    private void drawStorySnapshot(Canvas canvas,boolean withUi,boolean withFloatingUi){
-        boolean screenComposited=storyScreen.paint(canvas,withUi,withFloatingUi,false);
-        for(int i=0;i<stage.getChildCount();i++){
-            View child=stage.getChildAt(i);
-            if(child==dialoguePanel&&!withFloatingUi){
-                // The PC removes the wait cursor and quick buttons before capturing the menu background.
-                if(!screenComposited&&withUi)drawStageChild(canvas,dialoguePanel,dialoguePanel::drawMessagePlane);
-            }else if(child==longPrintBackdrop||child==dialoguePanel||child==choices){
-                if(!screenComposited&&(withUi||child==longPrintBackdrop))drawStageChild(canvas,child);
-            }else if(withUi&&withFloatingUi&&(child==controls||child==quickNoticeView||child==independentStatus)){
-                drawStageChild(canvas,child);
+    private Bitmap snapshotStory(GameRunner.Capture picture,boolean withFloatingUi){
+        return UiOpening.snapshot(stage,picture.bitmap(),canvas->{
+            if(!withFloatingUi||uiHidden)return;
+            for(int i=0;i<stage.getChildCount();i++){
+                View child=stage.getChildAt(i);
+                if(child==controls||child==quickNoticeView||child==independentStatus)drawStageChild(canvas,child);
             }
-        }
+        });
     }
     private static void drawStageChild(Canvas canvas,View child){
-        if(child!=null)drawStageChild(canvas,child,child::draw);
-    }
-    private static void drawStageChild(Canvas canvas,View child,java.util.function.Consumer<Canvas> draw){
         if(child==null||child.getVisibility()!=View.VISIBLE||child.getAlpha()<=0)return;
         int saved=canvas.save();
         canvas.translate(child.getLeft(),child.getTop());
         canvas.concat(child.getMatrix());
         canvas.clipRect(0,0,child.getWidth(),child.getHeight());
         if(child.getAlpha()<1)canvas.saveLayerAlpha(0,0,child.getWidth(),child.getHeight(),Math.round(child.getAlpha()*255));
-        draw.accept(canvas);
+        child.draw(canvas);
         canvas.restoreToCount(saved);
     }
 
-    // Slot 31 is a screen effect. It sees the game and message art together,
-    // while the option buttons keep their original drawing and hit positions.
-    private final class StoryScreen extends View {
-        private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
-        private final RectF destination=new RectF();
+    private final class StoryPlane {
+        private final Paint bitmapPaint=new Paint(Paint.FILTER_BITMAP_FLAG);
         private GameRunner owner;
-        private long layer;
-        private Bitmap image;
-        private Canvas messagePlane;
-        private GameRunner.Frame composedFrame;
-        private boolean composedWithUi,composedWithBackdrop,composedForStory,compositionDirty=true;
+        private GameRunner.Frame frame;
+        private long token;
+        private Bitmap bitmap;
+        private Canvas canvas;
+        private boolean dirty,scheduled;
+        private final Runnable animationFlush=()->{
+            scheduled=false;
+            if(!isDestroyed()&&!isFinishing())pushNow(true);
+        };
 
-        StoryScreen(){
-            super(PlayerActivity.this);
-            setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        void frame(GameRunner.Frame next){
+            frame=next;
         }
-        private void releaseLayer(){
-            if(layer>0)NativeGame.releaseScreenLayer(layer);
-            layer=0;
+        void onTokenAvailable(){
+            if(runner==null){release();return;}
+            if(owner!=runner){release();owner=runner;}
+            long next=runner.takePlaneToken();
+            if(next>0){
+                if(token>0&&token!=next)NativeGame.releaseMessagePlane(token);
+                token=next;
+                schedulePush();
+            }
+        }
+        void schedulePush(){
+            dirty=true;
+            if(scheduled||stage==null||isDestroyed()||isFinishing())return;
+            scheduled=true;
+            if(stage.isAttachedToWindow())stage.postOnAnimation(animationFlush);
+            else ui.post(animationFlush);
+        }
+        void onPreDraw(){
+            if(dirty&&!isDestroyed()&&!isFinishing())pushNow(true);
+        }
+        void flushForCapture(){
+            if(isDestroyed()||isFinishing())return;
+            pushNow(false);
+            if(panelsOpen==0&&preparingPanel==null&&!uiHidden&&dialoguePanel!=null&&dialoguePanel.waitingCursorVisible()){
+                dirty=true;
+                if(!scheduled){
+                    scheduled=true;
+                    ui.postDelayed(animationFlush,32);
+                }
+            }
         }
         void clear(){
-            releaseLayer();
-            owner=null;image=null;messagePlane=null;composedFrame=null;compositionDirty=true;
+            frame=null;
+            onTokenAvailable();
+            dirty=false;
+            if(token>0)NativeGame.pushMessagePlane(token,null,new int[6],false);
         }
-        void messageChanged(boolean recomposite){
-            if(recomposite)compositionDirty=true;
-            if(layer>0)invalidate();
+        void release(){
+            if(stage!=null)stage.removeCallbacks(animationFlush);
+            ui.removeCallbacks(animationFlush);
+            if(token>0)NativeGame.releaseMessagePlane(token);
+            token=0;owner=null;frame=null;bitmap=null;canvas=null;dirty=false;scheduled=false;
         }
-        void windowChanged(){
-            if(layer!=0&&composedWithBackdrop==uiHidden)invalidate();
-        }
-        @Override protected void onSizeChanged(int w,int h,int oldw,int oldh){
-            super.onSizeChanged(w,h,oldw,oldh);
-            compositionDirty=true;
-        }
-        boolean paint(Canvas canvas,boolean withUi,boolean withFloatingUi,boolean live){
-            if(owner!=runner){clear();owner=runner;}
-            if(owner==null)return false;
-            long update=owner.takeScreenLayer();
-            if(update!=0){
-                releaseLayer();
-                layer=update>0?update:0;
-                compositionDirty=true;
-                if(layer==0){image=null;messagePlane=null;}
+        private void ensureLaidOut(View view){
+            if(view==null||view.getVisibility()==View.GONE)return;
+            if(view.getWidth()!=width||view.getHeight()!=height||view.isLayoutRequested()){
+                view.measure(View.MeasureSpec.makeMeasureSpec(width,View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(height,View.MeasureSpec.EXACTLY));
+                view.layout(0,0,width,height);
             }
-            GameRunner.Frame visible=drawnStoryFrame;
-            if(layer==0||visible==null||getWidth()<=0||getHeight()<=0)return false;
+        }
+        private void pushNow(boolean withCursor){
+            onTokenAvailable();
+            dirty=false;
+            if(token<=0)return;
+            boolean storySession=!launchingGame&&titlePanel==null&&moviePlayback==null&&!storyMovieExitActive;
+            GameRunner.Frame target=frame;
+            if(!storySession||target==null||target.wait==NativeGame.END){
+                NativeGame.pushMessagePlane(token,null,new int[6],false);
+                return;
+            }
+            int choicePage=choices==null?0:choices.page();
+            int[] key=DialogueLayout.composePlaneKey(target.planeKey,uiHidden,choicePage);
+            boolean showLongImage=target.wait==NativeGame.DIALOGUE&&target.layoutCommand==0x22220002&&
+                uiAssets!=null&&uiAssets.longPrintImage!=null&&(!uiHidden||!uiAssets.longPrintImageOffWithWindow);
+            boolean drawDialogue=!uiHidden&&dialoguePanel!=null&&dialoguePanel.getVisibility()!=View.GONE;
+            boolean drawChoices=!uiHidden&&choices!=null&&choices.getVisibility()!=View.GONE;
+            if(!showLongImage&&!drawDialogue&&!drawChoices){
+                NativeGame.pushMessagePlane(token,null,key,!uiHidden);
+                return;
+            }
+            boolean liveCursor=withCursor&&panelsOpen==0&&preparingPanel==null&&!uiHidden;
             try{
-                if(image==null||image.getWidth()!=width||image.getHeight()!=height){
-                    image=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888);
-                    messagePlane=new Canvas(image);
-                    compositionDirty=true;
+                int w=Math.max(1,width),h=Math.max(1,height);
+                if(bitmap==null||bitmap.getWidth()!=w||bitmap.getHeight()!=h){
+                    bitmap=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);
+                    canvas=new Canvas(bitmap);
+                }else bitmap.eraseColor(Color.TRANSPARENT);
+                if(showLongImage)canvas.drawBitmap(uiAssets.longPrintImage,0f,0f,bitmapPaint);
+                if(drawDialogue){
+                    ensureLaidOut(dialoguePanel);
+                    dialoguePanel.drawPlane(canvas,liveCursor);
                 }
-                boolean withBackdrop=withUi&&!uiHidden;
-                if(compositionDirty||composedWithUi!=withUi||composedWithBackdrop!=withBackdrop||
-                    composedFrame!=visible||live&&!composedForStory){
-                    compositionDirty=false;
-                    image.eraseColor(Color.TRANSPARENT);
-                    int saved=messagePlane.save();
-                    messagePlane.scale(width/(float)getWidth(),height/(float)getHeight());
-                    drawStageChild(messagePlane,longPrintBackdrop);
-                    if(withUi){
-                        drawStageChild(messagePlane,dialoguePanel,dialoguePanel::drawMessagePlane);
-                        if(choices!=null)choices.drawOptions(messagePlane);
-                    }
-                    messagePlane.restoreToCount(saved);
-                    if(!NativeGame.compositeScreenLayer(layer,image,visible.wait,visible.word,visible.line,withBackdrop,live)){
-                        compositionDirty=true;
-                        return false;
-                    }
-                    composedFrame=visible;
-                    composedWithUi=withUi;
-                    composedWithBackdrop=withBackdrop;composedForStory=live;
+                if(drawChoices){
+                    ensureLaidOut(choices);
+                    choices.drawPlane(canvas,true);
                 }
-                destination.set(0,0,getWidth(),getHeight());
-                canvas.drawBitmap(image,null,destination,paint);
-                if(withUi){
-                    if(choices!=null)choices.drawTimer(canvas);
-                    if(withFloatingUi)drawStageChild(canvas,dialoguePanel,dialoguePanel::drawMessageCursor);
-                }
-                return true;
+                NativeGame.pushMessagePlane(token,bitmap,key,!uiHidden);
+                if(liveCursor&&(drawDialogue&&dialoguePanel.animating()||drawChoices&&choices.animating()))schedulePush();
             }catch(RuntimeException|OutOfMemoryError e){
-                clear();
-                Log.w("SystemNNN","Unable to compose the message screen layer",e);
-                return false;
+                Log.w("SystemNNN","Unable to rasterize story UI plane",e);
             }
         }
-        @Override protected void onDraw(Canvas canvas){
-            paint(canvas,true,true,true);
-        }
-        @Override protected void onDetachedFromWindow(){clear();super.onDetachedFromWindow();}
     }
     private boolean acceptPreparedPanel(GameUiPanel panel,GameRunner owner){
         if(preparingPanel!=panel)return false;
@@ -1367,8 +1249,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         UiOpening opening=new UiOpening(config,currentFrame.frameMs,false);
         if(!opening.hasFade()){closeOriginalPanel(false);runner.menu(false);return;}
         if(opening.needsWipeTarget()){
+            storyPlane.flushForCapture();
             GameRunner owner=runner;GameUiPanel panel=gamePanel;
-            owner.capture(null,true,(picture,ignored)->runOnUiThread(()->{
+            owner.capture(null,true,true,(picture,ignored)->runOnUiThread(()->{
                 if(owner==runner&&panel==gamePanel&&!isFinishing()&&!isDestroyed())finishEnteringStory(opening,previous,picture);
             }));
         }else finishEnteringStory(opening,previous,null);
@@ -1750,12 +1633,12 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     });}
     private void showSlots(boolean saving) {
         if(runner==null)return;savingSlots=saving;
-        if(saving)slotPreview=captureSlotPreview();
+        if(saving&&titlePanel==null)storyPlane.flushForCapture();
         if(uiAssets!=null){
             GameUiAssets.Config config=saving?uiAssets.save:uiAssets.load;
             Runnable back=()->leaveOriginalPanel(config);
             gameSlots=new GameSlotsPanel(this,uiAssets,saving,runner.slotEntries(),runner.lastSelectedSlot(),this::systemClick,back,slot->{
-                if(saving)runner.saveSlot(slot,slotPreview);
+                if(saving){storyPlane.flushForCapture();runner.saveSlot(slot);}
                 else{
                     GameUiPanel panel=gamePanel;
                     panel.leave(config,false,(picture,filled)->{
@@ -1790,8 +1673,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             button.setEnabled(savingSlots||entry.exists&&!entry.corrupt);
             button.setSoundEffectsEnabled(false);button.setOnClickListener(clicked(v -> {
                 if(savingSlots && entry.exists){AlertDialog confirm=hostDialog().setTitle(text(R.string.engine_systemnnn_host_overwrite_prompt,entry.label(this))).setMessage(detail)
-                    .setNegativeButton(text(R.string.engine_cancel),dialogClick(null)).setPositiveButton(text(R.string.engine_systemnnn_host_overwrite_save),dialogClick((d,which) -> runner.saveSlot(entry.slot,slotPreview))).create();showPanel(confirm);}
-                else if(savingSlots)runner.saveSlot(entry.slot,slotPreview);
+                    .setNegativeButton(text(R.string.engine_cancel),dialogClick(null)).setPositiveButton(text(R.string.engine_systemnnn_host_overwrite_save),dialogClick((d,which) -> {storyPlane.flushForCapture();runner.saveSlot(entry.slot);})).create();showPanel(confirm);}
+                else if(savingSlots){storyPlane.flushForCapture();runner.saveSlot(entry.slot);}
                 else {runner.loadSlot(entry.slot);slotsDialog.dismiss();}
             }));slotRows.addView(button,new LinearLayout.LayoutParams(-1,-2));
         }
@@ -2017,6 +1900,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         super.onDestroy();
     }
     private void closeRunner(){
+        storyPlane.release();
         if(runner==null){closePlayerTask();return;}
         runner.close(playerTask);
         playerTask=null;

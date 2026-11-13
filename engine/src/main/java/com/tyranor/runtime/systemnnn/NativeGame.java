@@ -59,8 +59,6 @@ final class NativeGame {
     // A live tick uses ms for real-time waits and reports the animation budget in PACED_MS.
     static native void tick(long handle, int ms, int x, int y, boolean advance, int choice, boolean replay, int[] meta);
     static native boolean tickStory(long handle, int ms, int x, int y, boolean advance, int choice, int[] meta, GameRunner host);
-    static native void copyStoryFrame(long handle,Bitmap image);
-    static native long presentStoryFrame(long handle);
     static native byte[][] content(long handle);
     static native void frameInfo(long handle,int[] meta);
     static native int runtimeMode(long handle);
@@ -126,12 +124,13 @@ final class NativeGame {
     static native void replayBacklogVoice(long handle,byte[] name);
     static native void stopScriptAudio(long handle);
     static native int[] saveThumbnail(long handle,int width,int height);
+    static native int[] saveSceneThumbnail(long handle,int width,int height);
     static native int saveSlotArt(long handle);
-    // Zero means no change, -1 ends the current layer, a positive token owns a detached frame.
-    static native long takeScreenLayer(long handle);
-    static native boolean compositeScreenLayer(long token,Bitmap messagePlane,int wait,int word,int line,
-                                               boolean showBackdrop,boolean record);
-    static native void releaseScreenLayer(long token);
+    static native long messagePlaneToken(long handle);
+    static native void pushMessagePlane(long token,Bitmap bitmap,int[] key,boolean showBackdrop);
+    static native void releaseMessagePlane(long token);
+    static native int[] expectedPlaneKey(long handle);
+    static native int[] presentedPlaneKey(long handle);
     static native int[] dialogueProperties(long handle);
     static native void setVolumes(long handle,int music,int sound,int voice,int effectVoice);
     static native void setParameters(long handle,int[] idValuePairs);

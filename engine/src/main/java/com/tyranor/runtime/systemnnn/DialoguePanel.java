@@ -16,7 +16,6 @@ import android.text.Layout;
 import android.graphics.text.LineBreaker;
 import android.text.style.LeadingMarginSpan;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.TextView;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,12 +24,12 @@ import java.util.concurrent.ThreadLocalRandom;
 /** Message and name windows use the game's logical canvas. */
 final class DialoguePanel extends FrameLayout {
     final DialogueTextView speaker,body;
-    private final ImageView window,nameWindow;
+    private final WindowView window,nameWindow;
     private final MessageCursor cursor;
     private final PortraitLayer belowWindow,aboveWindow;
     private final CutinLayer cutinLayer;
     private DialogueDecorations decorations=DialogueDecorations.EMPTY;
-    private boolean drawingMessagePlane;
+    private boolean drawingPlane,includeCursor,directDraw;
     private DialogueStyle style=DialogueStyle.fallback();
     private PlayerSettings settings=PlayerSettings.defaults();
     private boolean hasSpeaker,showNameWindow,wasRead,longPrint,showWindow=true,storyBody,passive;
@@ -46,7 +45,7 @@ final class DialoguePanel extends FrameLayout {
     DialoguePanel(Context context,OnClickListener click) {
         super(context);
         belowWindow=new PortraitLayer(1);addView(belowWindow,new LayoutParams(-1,-1));
-        window=image(); nameWindow=image();
+        window=window(false); nameWindow=window(true);
         aboveWindow=new PortraitLayer(2);addView(aboveWindow,new LayoutParams(-1,-1));
         speaker=text(new DialogueTextView(context));speaker.setGravity(Gravity.TOP|Gravity.LEFT);speaker.setTextDirection(TEXT_DIRECTION_LTR);speaker.setSingleLine(true);
         body=text(new DialogueTextView(context));body.setGravity(Gravity.TOP|Gravity.LEFT);body.setTextDirection(TEXT_DIRECTION_LTR);
@@ -66,18 +65,28 @@ final class DialoguePanel extends FrameLayout {
         cutinLayer=new CutinLayer(click);addView(cutinLayer,new LayoutParams(-1,-1));
         cursor=new MessageCursor();addView(cursor,new LayoutParams(-1,-1));
     }
-    private ImageView image() { ImageView v=new ImageView(getContext());v.setSoundEffectsEnabled(false);v.setScaleType(ImageView.ScaleType.FIT_XY); addView(v,new LayoutParams(1,1)); return v; }
-    void drawMessagePlane(Canvas canvas){
-        if(getVisibility()!=VISIBLE)return;
-        drawingMessagePlane=true;
-        try{draw(canvas);}finally{drawingMessagePlane=false;}
+    private WindowView window(boolean name) {
+        WindowView v=new WindowView(getContext(),name);
+        addView(v,new LayoutParams(1,1));
+        return v;
     }
-    void drawMessageCursor(Canvas canvas){
-        if(getVisibility()==VISIBLE&&cursor.getVisibility()==VISIBLE)cursor.draw(canvas);
+    void directDraw(boolean value){
+        if(directDraw!=value){directDraw=value;invalidate();}
     }
-    boolean isMessageCursor(View view){return view==cursor;}
+    boolean waitingCursorVisible(){return cursor.getVisibility()==VISIBLE;}
+    boolean animating(){
+        return getVisibility()!=GONE&&(cursor.moving()||belowWindow.moving()||aboveWindow.moving());
+    }
+    void drawPlane(Canvas canvas,boolean withCursor){
+        if(getVisibility()==GONE)return;
+        drawingPlane=true;includeCursor=withCursor;
+        try{draw(canvas);}finally{drawingPlane=false;includeCursor=false;}
+    }
+    @Override protected void dispatchDraw(Canvas canvas){
+        if(drawingPlane||directDraw)super.dispatchDraw(canvas);
+    }
     @Override protected boolean drawChild(Canvas canvas,View child,long time){
-        return (!drawingMessagePlane||child!=cursor)&&super.drawChild(canvas,child,time);
+        return (directDraw||includeCursor||child!=cursor)&&super.drawChild(canvas,child,time);
     }
     private <T extends TextView> T text(T v) {
         v.setSoundEffectsEnabled(false);v.setIncludeFontPadding(false);v.setTextColor(Color.WHITE);
@@ -100,7 +109,8 @@ final class DialoguePanel extends FrameLayout {
     void canvas(int width,int height){
         int w=Math.max(1,width),h=Math.max(1,height);
         if(w==canvasWidth&&h==canvasHeight)return;
-        canvasWidth=w;canvasHeight=h;contentRight=w;style.canvas(w,h);requestLayout();
+        canvasWidth=w;canvasHeight=h;contentRight=w;style.canvas(w,h);
+        window.invalidate();nameWindow.invalidate();requestLayout();
     }
     void variant(int windowType,int fontType,int configType,boolean longPrint,boolean windowVisible){
         boolean skin=windowVisible&&!longPrint;
@@ -112,13 +122,11 @@ final class DialoguePanel extends FrameLayout {
         Bitmap windowImage=style.windows[index],nameImage=style.nameWindows[index];
         layout=DialogueLayout.layout(longPrint?style.longLayouts:style.layouts,fontType);
         textScale=-1;
-        window.setImageBitmap(windowImage);nameWindow.setImageBitmap(nameImage);
-        window.setBackgroundColor(Color.TRANSPARENT);
-        nameWindow.setBackgroundColor(Color.TRANSPARENT);
+        window.bitmap(windowImage);nameWindow.bitmap(nameImage);
         colors(); requestLayout();
         showWindows();
     }
-    void settings(PlayerSettings value) { settings=value;window.setAlpha(value.windowOpacity/100f);nameWindow.setAlpha(value.windowOpacity/100f);colors(); requestLayout(); }
+    void settings(PlayerSettings value) { settings=value;window.invalidate();nameWindow.invalidate();colors(); requestLayout(); }
     void storyBody(boolean value){if(storyBody!=value){storyBody=value;requestLayout();}}
     void passive(boolean value){passive=value;}
     void decorations(DialogueDecorations value,int period,boolean reset){
@@ -250,12 +258,46 @@ final class DialoguePanel extends FrameLayout {
         LayoutParams p=(LayoutParams)view.getLayoutParams();p.leftMargin=Math.round(x*sx);p.topMargin=Math.round(y*sy);
         p.width=Math.max(1,Math.round(width*sx));p.height=Math.max(1,Math.round(height*sy));
     }
+    private final class WindowView extends View {
+        private final boolean name;
+        private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
+        private final Rect src=new Rect();
+        private final RectF dst=new RectF();
+        private Bitmap image;
+
+        WindowView(Context context,boolean name){
+            super(context);
+            this.name=name;
+            setSoundEffectsEnabled(false);
+        }
+        void bitmap(Bitmap value){
+            if(image!=value){image=value;invalidate();}
+        }
+        @Override protected void onDraw(Canvas canvas){
+            if(image==null||getWidth()<=0||getHeight()<=0)return;
+            int sliceW=name?style.nameWidth:style.windowWidth;
+            int sliceH=name?style.nameHeight:style.windowHeight;
+            int layers=name?style.nameWindowLayers:style.windowLayers;
+            if(sliceW<=0||sliceH<=0)return;
+            float sx=getWidth()/(float)sliceW,sy=getHeight()/(float)sliceH;
+            for(DialogueLayout.WindowBand band:DialogueLayout.windowBands(sliceW,sliceH,layers,settings.windowOpacity)){
+                int w=Math.min(band.width,image.getWidth());
+                int h=Math.min(band.height,image.getHeight()-band.srcY);
+                if(w<=0||h<=0)continue;
+                src.set(0,band.srcY,w,band.srcY+h);
+                dst.set(0,0,w*sx,h*sy);
+                paint.setAlpha(band.alpha);
+                canvas.drawBitmap(image,src,dst,paint);
+            }
+        }
+    }
     private final class PortraitLayer extends View {
         private final int depth;
         private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
         private final RectF dest=new RectF();
         private int period,delay;
         private long cycleStart;
+        private boolean moving;
 
         PortraitLayer(int depth){
             super(DialoguePanel.this.getContext());
@@ -263,13 +305,17 @@ final class DialoguePanel extends FrameLayout {
             setVisibility(GONE);
             setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
         }
+        boolean moving(){return getVisibility()==VISIBLE&&moving;}
         void configure(int period){
             this.period=Math.max(1,period);
             boolean visible=decorations.depth==depth&&decorations.portraits.length>0;
+            moving=false;
             setVisibility(visible?VISIBLE:GONE);
             if(visible){
-                delay=waitFrames(decorations.portraits[0]);
+                DialogueDecorations.Portrait primary=decorations.portraits[0];
+                delay=waitFrames(primary);
                 cycleStart=SystemClock.uptimeMillis();
+                moving=DialogueLayout.portraitMoving(0,primary.image!=null,primary.animation.count,primary.animation.active(0),primary.waitMax);
                 invalidate();
             }
         }
@@ -279,7 +325,7 @@ final class DialoguePanel extends FrameLayout {
         }
         @Override protected void onDraw(Canvas canvas){
             long now=SystemClock.uptimeMillis();
-            boolean moving=false;
+            boolean active=false;
             int saved=canvas.save();
             canvas.scale(getWidth()/(float)canvasWidth,getHeight()/(float)canvasHeight);
             for(int i=0;i<decorations.portraits.length;i++){
@@ -291,11 +337,13 @@ final class DialoguePanel extends FrameLayout {
                 }
                 SpriteAnimation animation=face.animation;
                 dest.set(face.x,face.y,face.x+animation.w,face.y+animation.h);
-                animation.draw(canvas,face.image,dest,paint,Math.max(0,frame),255);
-                moving|=animation.count>1&&(face.waitMax>0||animation.active(Math.max(0,frame)));
+                long clamped=Math.max(0,frame);
+                animation.draw(canvas,face.image,dest,paint,clamped,255);
+                active|=DialogueLayout.portraitMoving(i,true,animation.count,animation.active(clamped),face.waitMax);
             }
             canvas.restoreToCount(saved);
-            if(moving&&!drawingMessagePlane)postInvalidateOnAnimation();
+            moving=active;
+            if(active)postInvalidateOnAnimation();
         }
     }
     private final class CutinLayer extends FrameLayout {
@@ -409,9 +457,10 @@ final class DialoguePanel extends FrameLayout {
         private int period=20,mode;
         private int variant,scriptVariant;
         private GameUiAssets assets;
-        private boolean enabled,fixX,fixY;
+        private boolean enabled,fixX,fixY,moving;
         private long since;
         MessageCursor(){super(DialoguePanel.this.getContext());setVisibility(GONE);setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);}
+        boolean moving(){return getVisibility()==VISIBLE&&moving;}
         void assets(GameUiAssets assets){
             this.assets=assets;
             GameUiAssets.Config cfg=assets.messageCursor;
@@ -447,13 +496,16 @@ final class DialoguePanel extends FrameLayout {
             int selected=(automatic?1:0)+(command==0x22220002?2:0);
             boolean show=visible&&enabled&&images[selected]!=null;
             if(show&&(getVisibility()!=VISIBLE||selected!=mode))since=SystemClock.uptimeMillis();
-            mode=selected;period=Math.max(1,frameMs);setVisibility(show?VISIBLE:GONE);
+            mode=selected;period=Math.max(1,frameMs);
+            SpriteAnimation clip=clips[selected];
+            moving=show&&clip!=null&&(clip.active((SystemClock.uptimeMillis()-since)/period)||startAlpha[selected]!=endAlpha[selected]);
+            setVisibility(show?VISIBLE:GONE);
             if(show)invalidate();
         }
         @Override protected void onDraw(Canvas canvas){
-            if(clips[mode]==null)return;
+            if(clips[mode]==null){moving=false;return;}
             float sx=getWidth()/(float)canvasWidth,sy=getHeight()/(float)canvasHeight;
-            if(sx<=0||sy<=0)return;
+            if(sx<=0||sy<=0){moving=false;return;}
             float px=x[mode]*sx,py=y[mode]*sy;
             android.text.Layout lines=body.getLayout();
             if(mode>=2&&decorations.cutin){
@@ -472,7 +524,8 @@ final class DialoguePanel extends FrameLayout {
             if(n>duration)n=2*duration-n;
             int alpha=startAlpha[mode]+(endAlpha[mode]-startAlpha[mode])*n/duration;
             clip.draw(canvas,images[mode],dest,paint,frame,alpha*255/100);
-            if(clip.active(frame)||startAlpha[mode]!=endAlpha[mode])postInvalidateOnAnimation();
+            moving=images[mode]!=null&&(clip.active(frame)||startAlpha[mode]!=endAlpha[mode]);
+            if(moving)postInvalidateOnAnimation();
         }
     }
 }

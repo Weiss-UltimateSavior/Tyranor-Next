@@ -28,7 +28,7 @@ final class GameChoicePanel extends GameUiPanel {
     private boolean changeColor;
     private Runnable confirmation;
     private ChoiceTimer timer;
-    private boolean drawingOptions;
+    private boolean drawingPlane,includeTimer;
     private int remaining;
 
     GameChoicePanel(Context context,GameUiAssets assets,GameRunner.Frame frame,boolean changeColor,
@@ -59,6 +59,23 @@ final class GameChoicePanel extends GameUiPanel {
         readyAt=appearAt+(appearType==0?0:bound(cfg.number("firstAppearTime",10),0,1000))*(long)frame.frameMs;
         render();
     }
+    int page(){return page;}
+    boolean animating(){
+        if(getVisibility()==GONE)return false;
+        long now=SystemClock.uptimeMillis();
+        if(now<readyAt||focused>=0&&animation.active((now-readyAt)/Math.max(1,frame.frameMs))||
+            controlsBusy()||confirming())return true;
+        for(int i=0;i<getChildCount();i++){
+            View child=getChildAt(i);
+            if(child instanceof GameButton){
+                GameButton b=(GameButton)child;
+                int mode=!b.isEnabled()?3:b.isPressed()||b.isHovered()?1:0;
+                SpriteAnimation s=b.spec.states[mode];
+                if(s!=null&&s.count>1)return true;
+            }
+        }
+        return false;
+    }
     void changeColor(boolean value){
         if(value==changeColor)return;
         changeColor=value;
@@ -66,17 +83,16 @@ final class GameChoicePanel extends GameUiPanel {
         for(ChoiceRow row:rows)row.invalidate();
     }
     void remaining(int value){remaining=value;if(timer!=null)timer.invalidate();}
-    boolean isTimer(View view){return timer!=null&&view==timer;}
-    void drawOptions(Canvas canvas){
-        if(getVisibility()!=VISIBLE)return;
-        drawingOptions=true;
-        try{draw(canvas);}finally{drawingOptions=false;}
+    void drawPlane(Canvas canvas,boolean withTimer){
+        if(getVisibility()==GONE)return;
+        drawingPlane=true;includeTimer=withTimer;
+        try{draw(canvas);}finally{drawingPlane=false;includeTimer=false;}
     }
-    void drawTimer(Canvas canvas){
-        if(getVisibility()==VISIBLE&&timer!=null&&timer.getVisibility()==VISIBLE)timer.draw(canvas);
+    @Override protected void dispatchDraw(Canvas canvas){
+        if(drawingPlane)super.dispatchDraw(canvas);
     }
     @Override protected boolean drawChild(Canvas canvas,View child,long drawingTime){
-        return (!drawingOptions||child!=timer)&&super.drawChild(canvas,child,drawingTime);
+        return (includeTimer||child!=timer)&&super.drawChild(canvas,child,drawingTime);
     }
     boolean confirming(){return confirmation!=null;}
     private boolean timeLimitActionAllowed(){return frame.choiceInfo[0]==0||cfg.number("timeLimitOptionOk",0)!=0;}
