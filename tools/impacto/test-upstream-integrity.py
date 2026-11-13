@@ -121,8 +121,12 @@ class SourceIntegrityTest(unittest.TestCase):
         self.check(False)
 
     def test_git_line_ending_conversion_is_not_a_patch(self):
-        self.git("config", "core.autocrlf", "true")
-        (self.source / "engine.cpp").write_bytes(b"int main() { return 0; }\r\n")
+        converted = self.root / "converted"
+        subprocess.run(["git", "clone", "--quiet", "--config", "core.autocrlf=true",
+                        str(self.source), str(converted)], check=True)
+        self.source = converted
+        self.assertEqual((self.source / "engine.cpp").read_bytes(),
+                         b"int main() { return 0; }\r\n")
         self.check(True)
 
     def test_report_cannot_modify_source(self):
