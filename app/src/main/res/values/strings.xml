@@ -92,13 +92,14 @@
     <string name="settings_scan_depth_level">%1$d 级</string>
     <string name="settings_sort_alpha">字母大小</string>
     <string name="settings_sort_bracket_tag">括号标签</string>
+    <string name="game_sort_engine">引擎</string>
+    <string name="game_sort_recent">最近游玩</string>
     <string name="settings_game_card_style">游戏卡片风格</string>
     <string name="settings_game_card_style_waterfall">瀑布</string>
     <string name="settings_game_card_style_grid">网格</string>
     <string name="settings_game_card_style_cover_flow">列表</string>
     <string name="settings_game_card_badge">卡片引擎角标</string>
     <string name="settings_game_card_hide_title_tag">卡片隐藏名称标签</string>
-    <string name="settings_game_sort">游戏排序</string>
     <string name="settings_engine_settings">引擎设置</string>
     <string name="settings_cover_scraper">封面刮削</string>
     <string name="settings_update_check">更新检查</string>
@@ -217,6 +218,17 @@
     <string name="game_empty_message">点击添加文件夹并扫描</string>
     <string name="game_add_folder">添加文件夹</string>
     <string name="game_no_match">未找到匹配的游戏</string>
+    <string name="game_filter_title">筛选与排序</string>
+    <string name="game_filter_content_description">筛选与排序</string>
+    <string name="game_filter_state_active">筛选或排序已启用</string>
+    <string name="game_filter_sort_section">排序方式</string>
+    <string name="game_filter_engine_section">引擎类型</string>
+    <string name="game_filter_played_section">游玩状态</string>
+    <string name="game_filter_all">全部</string>
+    <string name="game_filter_played_only">已游玩</string>
+    <string name="game_filter_played_none">未游玩</string>
+    <string name="game_filter_reset">重置</string>
+    <string name="game_filter_reset_keeps_search">重置不会清除搜索词</string>
     <string name="game_auto_patch_title">应用自动补丁</string>
     <string name="game_auto_patch_message">「%1$s」的启动文件打包在 .pfs 归档内，首次启动需要解出少量基础文件（system.ini、窗口配置与视频）并适配 Android 平台。是否应用补丁？</string>
     <string name="game_patch_always">总是</string>
@@ -225,6 +237,7 @@
     <string name="game_launch_failed">启动失败</string>
     <string name="game_cover_set_failed">封面设置失败</string>
     <string name="game_launch_action">启动游戏</string>
+    <string name="game_playtime_total_accessibility">累计时长：%1$s</string>
     <string name="game_launch_file">启动文件</string>
     <string name="game_launch_file_auto_summary">自动 - 如有错误请手动选择启动文件</string>
     <string name="game_remove_quick_launch">移除首页</string>
@@ -676,6 +689,8 @@
 
     <string name="external_engine_resolve_dir_failed">无法解析 %1$s 游戏目录真实路径，外置引擎模块无法启动</string>
     <string name="external_engine_module_missing">未检测到 %1$s，请先下载安装模块</string>
+    <string name="external_engine_module_outdated">已安装的模块版本过旧，请下载安装 %1$s</string>
+    <string name="engine_module_install_or_update">模块未安装或需要更新</string>
     <string name="external_engine_no_activity">%1$s 未提供可接收启动请求的 Activity</string>
     <string name="external_engine_denied">%1$s 启动被系统拒绝，请检查模块权限</string>
     <string name="external_engine_launch_failed">%1$s 启动失败，请检查模块权限</string>
@@ -1045,8 +1060,8 @@
     <string name="launch_runtime_module_denied">运行时模块拒绝启动或权限不足</string>
     <string name="launch_runtime_module_failed">运行时模块启动失败</string>
     <string name="save_external_exit_title">确认已退出外部游戏</string>
-    <string name="save_external_exit_summary">在 Winlator 中退出游戏后，确认结束本次存档保护</string>
-    <string name="save_external_exit_message">请先在 Winlator 中完全退出“%1$s”，并确认共用存档目录的其他游戏也已退出。仅切回 Tyranor 不代表游戏退出。确认后将解除本次运行标记，允许上传、切换存档和删除；若游戏仍在写入，可能造成存档丢失。</string>
+    <string name="save_external_exit_summary">在外置运行环境中退出游戏后，确认结束本次存档保护</string>
+    <string name="save_external_exit_message">请先在外置运行环境中完全退出“%1$s”，并确认共用存档目录的其他游戏也已退出。仅切回 Tyranor 不代表游戏退出。确认后将解除本次运行标记，允许上传、切换存档和删除；若游戏仍在写入，可能造成存档丢失。</string>
     <string name="save_external_exit_done">已确认外部游戏退出，可继续管理存档</string>
     <string name="launch_cmvs_layout_invalid">CMVS 游戏目录缺少 data/pack/script.cpz、唯一 start 或 key.cfg</string>
     <string name="launch_cmvs_user_data_unavailable">CMVS 存档目录不可用</string>

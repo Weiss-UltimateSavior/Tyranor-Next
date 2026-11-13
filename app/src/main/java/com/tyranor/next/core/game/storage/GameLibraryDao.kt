@@ -22,6 +22,9 @@ internal interface GameLibraryDao {
     @Query("SELECT COUNT(*) FROM games")
     suspend fun countGames(): Int
 
+    @Query("SELECT DISTINCT engine FROM games")
+    suspend fun getEngineTypes(): List<String>
+
     @Upsert
     suspend fun upsertGames(games: List<GameEntity>)
 
@@ -50,20 +53,12 @@ internal interface GameLibraryDao {
     @Query("UPDATE games SET last_opened_at = :openedAt, updated_at = :updatedAt WHERE uri = :uri")
     suspend fun updateLastOpened(uri: String, openedAt: Long, updatedAt: Long)
 
-    // ---------- games 搜索（迁移方案阶段 3，排序键为预计算列） ----------
+    @Query("UPDATE games SET last_opened_at = 0, updated_at = :updatedAt WHERE uri = :uri AND last_opened_at = :expectedOpenedAt")
+    suspend fun clearLastOpenedIfMatches(uri: String, expectedOpenedAt: Long, updatedAt: Long)
 
-    /** LIKE 通配符由调用方转义；排序键为预计算小写列，二进制比较与 UI 内存排序等价。 */
-    @Query(
-        "SELECT * FROM games WHERE title LIKE '%' || :escapedQuery || '%' ESCAPE '\\' " +
-            "ORDER BY sort_title",
-    )
-    suspend fun searchGamesSortedByTitle(escapedQuery: String): List<GameEntity>
-
-    @Query(
-        "SELECT * FROM games WHERE title LIKE '%' || :escapedQuery || '%' ESCAPE '\\' " +
-            "ORDER BY (sort_tag = ''), sort_tag, sort_title",
-    )
-    suspend fun searchGamesSortedByBracketTag(escapedQuery: String): List<GameEntity>
+    /** 原文精确匹配与预计算标题键匹配；两者均按字面查找子串。 */
+    @Query("SELECT uri FROM games WHERE instr(title, :term) > 0 OR instr(sort_title, :titleKey) > 0")
+    suspend fun searchGameUris(term: String, titleKey: String): List<String>
 
     /** 最近打开列表：last_opened_at 的派生视图，替代旧 recent_games 快照（迁移方案 4.1）。 */
     @Query("SELECT * FROM games WHERE last_opened_at > 0 ORDER BY last_opened_at DESC LIMIT :limit")

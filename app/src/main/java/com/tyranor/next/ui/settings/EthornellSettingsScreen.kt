@@ -26,7 +26,7 @@ import com.tyranor.next.R
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.MiuixSettingsTheme
-import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.TopBarIcon
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -61,7 +61,7 @@ internal fun EthornellSettingsScreen() {
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
-                AppTopBar(
+                AppSecondaryTopBar(
                     title = stringResource(R.string.ethornell_settings_title),
                     background = Color.Transparent,
                     contentColor = PageTextColor,

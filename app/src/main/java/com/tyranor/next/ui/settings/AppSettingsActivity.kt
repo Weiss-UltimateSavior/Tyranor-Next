@@ -45,7 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.ui.common.AppScreenActivity
-import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.effectiveNavStyle
 import com.tyranor.next.ui.common.isSideRailLayout
 import com.tyranor.next.ui.common.BottomInsetSpacer
@@ -55,7 +55,6 @@ import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
 import com.tyranor.next.core.settings.AppIconSwitcher
 import com.tyranor.next.core.settings.AppSettingsStore
-import com.tyranor.next.core.settings.AppearanceStyle
 import com.tyranor.next.core.settings.HomeWebUrls
 import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.AppThemeColors
@@ -135,7 +134,7 @@ internal fun AppSettingsScreen() {
             containerColor = ComposeColor.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
-                AppTopBar(
+                AppSecondaryTopBar(
                     title = stringResource(R.string.settings_app_title),
                     background = ComposeColor.Transparent,
                     contentColor = PageTextColor,
@@ -198,37 +197,6 @@ internal fun AppSettingsScreen() {
                                     )
                                 },
                                 onClick = { showColorPicker = true },
-                            )
-                        }
-                    }
-                }
-                item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
-                        Column(Modifier.padding(vertical = 4.dp)) {
-                            // 外观主题：默认 / 复古玻璃 / 白雾玻璃（切换即时全 App 生效并持久化）
-                            val appearanceStyles = AppearanceStyle.entries
-                            val appearanceLabels = appearanceStyles.map { style ->
-                                stringResource(
-                                    when (style) {
-                                        AppearanceStyle.DEFAULT -> R.string.settings_appearance_style_default
-                                        AppearanceStyle.RETRO_GLASS -> R.string.settings_appearance_style_glass
-                                        AppearanceStyle.MILK_GLASS -> R.string.settings_appearance_style_milk
-                                    },
-                                )
-                            }
-                            val appearanceIndex = appearanceStyles
-                                .indexOf(AppThemeColors.appearanceStyle)
-                                .coerceAtLeast(0)
-                            OverlayDropdownPreference(
-                                title = stringResource(R.string.settings_appearance_style),
-                                items = appearanceLabels,
-                                selectedIndex = appearanceIndex,
-                                onSelectedIndexChange = { index ->
-                                    appearanceStyles.getOrNull(index)?.let { style ->
-                                        AppSettingsStore.setAppearanceStyle(ctx, style)
-                                        AppThemeColors.refresh(ctx)
-                                    }
-                                },
                             )
                         }
                     }

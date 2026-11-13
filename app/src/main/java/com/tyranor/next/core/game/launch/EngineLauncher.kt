@@ -43,9 +43,7 @@ import com.tyranor.next.core.engine.graphics.putGraphicsExtras
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
 import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
-import com.tyranor.next.core.engine.external.ExternalEngineErrorCode
 import com.tyranor.next.core.engine.external.ExternalEngineLaunchRequest
-import com.tyranor.next.core.engine.external.ExternalEngineLaunchResult
 import com.tyranor.next.core.engine.external.ExternalEngineLauncher
 import com.tyranor.next.core.engine.external.WinlatorContract
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
@@ -59,6 +57,7 @@ import com.tyranor.next.core.game.manual.AndroidAppGames
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.EthornellPaths
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.playtime.GamePlaytimeRepository
 import com.tyranor.next.core.game.storage.SystemNnnCopyStore
 import com.tyranor.next.core.game.storage.SystemNnnGameDirectory
 import com.tyranor.runtime.systemnnn.SystemNnnHost
@@ -403,16 +402,8 @@ object EngineLauncher {
             ) ?: defaultModule
             // 先确认模块已安装，再走目录/权限门禁：否则未安装时会把用户先送去「所有文件访问」，
             // 真正的缺失原因（应安装模块）反而看不到。
-            if (!ExternalEngineLauncher.isPackageInstalled(context, module)) {
-                return LaunchResult.Failure.ExternalModuleFailed(
-                    ExternalEngineLaunchResult.failure(
-                        ExternalEngineErrorCode.PACKAGE_NOT_INSTALLED,
-                        moduleNameRes = module.displayNameRes,
-                        moduleNameFallback = module.displayName,
-                        engineName = game.engine.displayName,
-                        installUrl = module.installUrl,
-                    ),
-                )
+            ExternalEngineLauncher.checkInstallation(context, module)?.let {
+                return LaunchResult.Failure.ExternalModuleFailed(it)
             }
             if (module.requiresGameDirectoryPath && path == null) {
                 return LaunchResult.Failure.GameDirUnresolved
@@ -579,8 +570,18 @@ object EngineLauncher {
             return LaunchResult.Failure.EngineLibraryPackFailed(packId)
         }
         return try {
-            val intent = buildIntent(context, game.engine, path, game, patchChoice, krSafMirror, settings)
-                .putExtra(LaunchContract.ROOT_URI, game.uri)
+            val playtimeSession = if (GamePlaytimeRepository.supports(game.engine) && game.uri.isNotBlank()) {
+                java.util.UUID.randomUUID().toString() to GamePlaytimeRepository.nextSessionStartedAt(context)
+            } else {
+                null
+            }
+            val intent = buildIntent(context, game.engine, path, game, patchChoice, krSafMirror, settings).apply {
+                putExtra(LaunchContract.ROOT_URI, game.uri)
+                playtimeSession?.let { (sessionId, startedAt) ->
+                    putExtra(LaunchContract.PLAYTIME_SESSION_ID, sessionId)
+                    putExtra(LaunchContract.PLAYTIME_SESSION_STARTED_AT, startedAt)
+                }
+            }
             // Intent 组装后、真正拉起引擎前最后一次确认，取消后不 startActivity
             currentCoroutineContext().ensureActive()
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

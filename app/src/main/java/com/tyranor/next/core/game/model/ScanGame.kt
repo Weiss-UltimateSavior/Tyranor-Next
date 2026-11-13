@@ -22,7 +22,7 @@ data class ScanGame(
     val runtimeModulePackage: String? = null,
     /** 用户通过“启动文件”手动指定的启动入口文件名（相对游戏目录）；null 表示自动。 */
     val launchFile: String? = null,
-    /** 最近一次打开时间戳（毫秒），仅最近打开列表展示使用；0 表示未知。 */
+    /** 最近一次打开时间戳（毫秒），用于最近打开、游玩状态筛选与最近游玩排序；0 表示无记录。 */
     val openTime: Long = 0,
 )
 

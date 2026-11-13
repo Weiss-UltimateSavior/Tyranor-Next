@@ -19,42 +19,40 @@ import androidx.compose.ui.unit.dp
 import com.tyranor.next.theme.PageTextColor
 
 /**
- * 页面顶部栏统一组件（AGENTS.md「页面顶部栏统一规范」的唯一入口）。
+ * 一级页面（首页 / 游戏 / 引擎 / 设置）的统一顶部栏。
  *
- * 结构固定为：不透明背景容器 → statusBarsPadding → 64dp 标题行（标题居左 titleLarge Bold）：
+ * 透明背景 → statusBarsPadding → 64dp 标题行；标题居左、titleLarge Bold，
+ * 默认使用页面前景色 [PageTextColor]。背景由页面根层提供，不能用不透明色覆盖。
+ * 二级页面使用 [AppSecondaryTopBar]，不在一级顶部栏添加返回按钮。
  *
- * ```
- * Column(fillMaxWidth, background(background))        // 页面背景色容器（不透明）
- * ├── Column(statusBarsPadding)                        // 避开状态栏（背景延伸）
- * │   ├── Row(height 64dp, padding horizontal 16dp)    // 标题区 + 右侧图标
- * │   └── underTitle 附加区（如游戏页搜索框，可选）
- * ```
- *
- * 标题必须经本组件渲染（titleLarge + Bold + 页面内容色），右上角图标必须用 [TopBarIcon]。
- * 禁止任何页面自行手写该结构。
- *
- * @param title 标题文案
- * @param background 背景色；**默认透明**（露出页面根部背景层：纯色底），
- *   Miuix 风格页面同样传 `Color.Transparent`（**不要**传 `MiuixTheme.colorScheme.background`
- *   ——它是 `PageGrey`，会盖住玻璃/根部背景，与 AGENTS.md「顶部栏背景恒为透明」冲突），
- *   需要页面底色参与取色的页面传 `PageGrey`（见 AGENTS.md 容器色约定）。玻璃外观风格下
- *   页面背景为透明，顶栏随之透明（露出渐变/图片/环境光）；此时页面内容必须整体垫在顶栏下方
- *   （用持久 padding，而非滚动 contentPadding），否则滚动内容会从顶栏下方穿过与标题重叠。
- * @param contentColor 标题前景色；默认 [PageTextColor]（页面级前景色）。
- *   白雾玻璃的 Miuix `onBackground` 取深色（库内 preference 标题与卡片共用该色槽），
- *   顶栏必须走页面级前景色；默认值已处理，调用方通常无需显式传。
- * @param underTitle 标题行下方的附加内容（可选，如游戏页常驻搜索框，可随列表滚动折叠）；置于状态栏背景延伸区内
- * @param trailing 标题右侧的图标/内容（可选，必须用 [TopBarIcon] 等公共组件）
+ * @param background 背景色，保持默认 [Color.Transparent]，露出页面根背景。
+ * @param contentColor 标题前景色，默认 [PageTextColor]，适配深浅色与玻璃外观。
+ * @param underTitle 标题下方附加区，如游戏页可折叠搜索框。
+ * @param trailing 右侧操作区，图标使用 [TopBarIcon]。
  */
 @Composable
 fun AppTopBar(
     title: String,
     modifier: Modifier = Modifier,
-    // 默认透明：默认外观风格露出页面根部背景层（纯色底）；玻璃系同现状
+    // 根背景透出，适配默认与玻璃外观。
     background: Color = Color.Transparent,
     contentColor: Color = PageTextColor,
     underTitle: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+) {
+    AppTopBarLayout(title, modifier, background, contentColor, underTitle, trailing)
+}
+
+/** 两类顶栏共用状态栏留白、标题排版与附加区布局。 */
+@Composable
+internal fun AppTopBarLayout(
+    title: String,
+    modifier: Modifier,
+    background: Color,
+    contentColor: Color,
+    underTitle: (@Composable () -> Unit)?,
+    trailing: (@Composable () -> Unit)?,
+    leading: (@Composable () -> Unit)? = null,
 ) {
     Column(modifier.fillMaxWidth().background(background)) {
         Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
@@ -62,6 +60,7 @@ fun AppTopBar(
                 modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                leading?.invoke()
                 Text(
                     title,
                     style = MaterialTheme.typography.titleLarge,

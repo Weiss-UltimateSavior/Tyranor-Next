@@ -92,13 +92,14 @@
     <string name="settings_scan_depth_level">%1$d levels</string>
     <string name="settings_sort_alpha">Alphabetical</string>
     <string name="settings_sort_bracket_tag">Bracket tag</string>
+    <string name="game_sort_engine">Engine</string>
+    <string name="game_sort_recent">Recently played</string>
     <string name="settings_game_card_style">Game card style</string>
     <string name="settings_game_card_style_waterfall">Waterfall</string>
     <string name="settings_game_card_style_grid">Grid</string>
     <string name="settings_game_card_style_cover_flow">List</string>
     <string name="settings_game_card_badge">Card engine badge</string>
     <string name="settings_game_card_hide_title_tag">Hide name tags on cards</string>
-    <string name="settings_game_sort">Game sorting</string>
     <string name="settings_engine_settings">Engine settings</string>
     <string name="settings_cover_scraper">Cover scraping</string>
     <string name="settings_update_check">Check for updates</string>
@@ -217,6 +218,17 @@
     <string name="game_empty_message">Add a folder and scan it</string>
     <string name="game_add_folder">Add folder</string>
     <string name="game_no_match">No matching games found</string>
+    <string name="game_filter_title">Filter and sort</string>
+    <string name="game_filter_content_description">Filter and sort</string>
+    <string name="game_filter_state_active">Filter or sort active</string>
+    <string name="game_filter_sort_section">Sort by</string>
+    <string name="game_filter_engine_section">Engine type</string>
+    <string name="game_filter_played_section">Play status</string>
+    <string name="game_filter_all">All</string>
+    <string name="game_filter_played_only">Played</string>
+    <string name="game_filter_played_none">Unplayed</string>
+    <string name="game_filter_reset">Reset</string>
+    <string name="game_filter_reset_keeps_search">Reset leaves the search term unchanged</string>
     <string name="game_auto_patch_title">Apply automatic patch</string>
     <string name="game_auto_patch_message">The launch file for “%1$s” is packed inside a .pfs archive. On first launch, Tyranor Next needs to extract several base files (system.ini, window configuration, and videos) and adapt them for Android. Apply the patch?</string>
     <string name="game_patch_always">Always</string>
@@ -225,6 +237,7 @@
     <string name="game_launch_failed">Launch failed</string>
     <string name="game_cover_set_failed">Failed to set cover</string>
     <string name="game_launch_action">Launch game</string>
+    <string name="game_playtime_total_accessibility">Total play time: %1$s</string>
     <string name="game_launch_file">Launch file</string>
     <string name="game_launch_file_auto_summary">Auto - choose a launch file manually if startup fails</string>
     <string name="game_remove_quick_launch">Remove from Home</string>
@@ -676,6 +689,8 @@
 
     <string name="external_engine_resolve_dir_failed">Unable to resolve the real path for the %1$s game directory, so the external engine module cannot start</string>
     <string name="external_engine_module_missing">%1$s was not detected. Download and install the module first</string>
+    <string name="external_engine_module_outdated">The installed module is outdated. Download and install %1$s</string>
+    <string name="engine_module_install_or_update">Module missing or update required</string>
     <string name="external_engine_no_activity">%1$s does not provide an Activity that can receive launch requests</string>
     <string name="external_engine_denied">%1$s launch was denied by the system. Check the module permissions</string>
     <string name="external_engine_launch_failed">%1$s launch failed. Check the module permissions</string>
@@ -1045,8 +1060,8 @@
     <string name="launch_runtime_module_denied">The runtime module refused to launch or permission is insufficient</string>
     <string name="launch_runtime_module_failed">Failed to launch the runtime module</string>
     <string name="save_external_exit_title">Confirm external game has exited</string>
-    <string name="save_external_exit_summary">After quitting the game in Winlator, confirm to end save protection</string>
-    <string name="save_external_exit_message">Fully quit “%1$s” in Winlator first, along with any other game sharing its save folder. Switching back to Tyranor does not mean the game has exited. Confirming clears this run’s protection and allows uploads, save selection and removal. If the game is still writing, saves may be lost.</string>
+    <string name="save_external_exit_summary">After quitting the game in its external runtime, confirm to end save protection</string>
+    <string name="save_external_exit_message">Fully quit “%1$s” in its external runtime first, along with any other game sharing its save folder. Switching back to Tyranor does not mean the game has exited. Confirming clears this run’s protection and allows uploads, save selection and removal. If the game is still writing, saves may be lost.</string>
     <string name="save_external_exit_done">External game exit confirmed. Save management is available</string>
     <string name="launch_cmvs_layout_invalid">CMVS game layout is invalid: missing data/pack/script.cpz, a unique start script or key.cfg</string>
     <string name="launch_cmvs_user_data_unavailable">CMVS save directory is unavailable</string>
