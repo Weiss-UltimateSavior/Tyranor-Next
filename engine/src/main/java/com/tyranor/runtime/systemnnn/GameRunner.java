@@ -42,6 +42,7 @@ final class GameRunner {
         final boolean windowVisible,nameWindow,optionsAllowed,filmSkip;
         final String script,speaker,body;
         final DialogueMarkup displayBody;
+        final DialogueDecorations decorations;
         final String[] choices,choiceMessages;
         final int[] choiceInfo,places,placeCharacters;
         final Bitmap[] placePortraits;
@@ -49,10 +50,12 @@ final class GameRunner {
         final boolean alreadyRead;
         Frame(int wait,int width,int height,String script,int line,int word,String speaker,String body,DialogueMarkup displayBody,String[] choices,boolean read,
               int messageId,int windowType,int fontType,int scriptCursor,boolean windowVisible,boolean nameWindow,boolean optionsAllowed,int command,int layoutCommand,int drawMessage,int frameMs,
-              String[] choiceMessages,int[] choiceInfo,int[] places,int placeMode,int[] placeCharacters,Bitmap[] placePortraits,Modal modal,boolean filmSkip) {
+              String[] choiceMessages,int[] choiceInfo,int[] places,int placeMode,int[] placeCharacters,Bitmap[] placePortraits,Modal modal,
+              DialogueDecorations decorations,boolean filmSkip) {
             this.wait=wait;this.width=width;this.height=height;this.script=script;this.line=line;this.word=word;
             this.speaker=speaker;this.body=body;this.choices=choices;this.alreadyRead=read;
             this.displayBody=displayBody;
+            this.decorations=decorations;
             this.filmSkip=filmSkip;
             this.messageId=messageId;this.windowType=windowType;this.fontType=fontType;this.scriptCursor=scriptCursor;this.windowVisible=windowVisible;
             this.nameWindow=nameWindow;this.optionsAllowed=optionsAllowed;this.command=command;this.layoutCommand=layoutCommand;this.drawMessage=drawMessage;this.frameMs=frameMs;
@@ -236,6 +239,8 @@ final class GameRunner {
     private GameTextDecoder codec;
     private Frame current;
     private Frame skipLinePending;
+    private byte[][] dialogueVisualFields;
+    private DialogueDecorations dialogueDecorations=DialogueDecorations.EMPTY;
     private DialogueStyle dialogueStyle;
     private GameUiAssets uiAssets;
     private RuntimeHandle runtime;
@@ -267,14 +272,14 @@ final class GameRunner {
     private GalleryCatalog.MovieList movieList;
     private GalleryCatalog.Page galleryPage;
     private long galleryRequest,galleryWritten;
-    private boolean replaying,galleryMusicPlaying,galleryMusicPaused;
+    private volatile boolean replaying;
+    private boolean galleryMusicPlaying,galleryMusicPaused;
     private MusicSpectrum gallerySpectrum;
     private boolean moviePlaying;
     private int galleryCue=-1,gallerySong=-1,galleryVolume=100;
     private volatile int configMask;
     private int overlayMode,overlaysSentMode=-1;
-    private final byte[][][] overlayRows=new byte[2][][];
-    private final Modal[] overlayModels=new Modal[2];
+    private byte[][][] overlayRows;
     private final GameUiAssets.ModeAssets[] overlayAssets=new GameUiAssets.ModeAssets[2];
 
     private long openNative(){
@@ -542,7 +547,7 @@ final class GameRunner {
         if(handle!=0)NativeGame.close(handle);
         offerScreenLayer(-1);
         handle=candidate;commitRuntime(candidate);onTitle=true;menuOpen=false;menuModal=null;systemMenuModal=false;
-        choiceClicking=false;failed=false;history=null;current=null;shownWait=-1;
+        choiceClicking=false;failed=false;history=null;current=null;shownWait=-1;resetDialogueDecorations();
         configMask=0;
         replaying=false; galleryPage=null; currentTitle=title; galleryWritten=unsaved?-1:stored;
         galleryCue=title==null?-1:title.musicNumber();
@@ -851,7 +856,7 @@ final class GameRunner {
         if(!systemStateEstablished)writeReadLines();
         queueGalleryWrite();
         GameSave.Run last=next.lastInput();x=last.x;y=last.y;
-        failed=false;shownWait=-1;current=null;autoMode=false;skipMode=false;syncModes();
+        failed=false;shownWait=-1;current=null;resetDialogueDecorations();autoMode=false;skipMode=false;syncModes();
         ui.style(dialogueStyle);
         publishParameters();if(save!=null){NativeGame.captureBacklogJump(handle,0);ui.loaded();}
         if(meta[0]==NativeGame.MOVIE)startStoryMovie();else updateUi();
@@ -984,30 +989,31 @@ final class GameRunner {
         publishStatusOverlays();
     });}
     private void publishStatusOverlays(){
-        if(overlayMode<=0||handle==0||uiAssets==null||!uiAssets.freeStatus||failed)return;
-        boolean changed=overlayMode!=overlaysSentMode;
+        if(overlayMode<=0||handle==0||uiAssets==null||!uiAssets.statusOverlays||failed)return;
         try{
-            for(int i=0;i<overlayRows.length;i++){
-                int type=i==0?Modal.PRINT_STATUS:Modal.PRINT_PARTY;
-                byte[][] raw=NativeGame.statusOverlay(handle,type,overlayMode);
-                if(Arrays.deepEquals(raw,overlayRows[i]))continue;
-                overlayRows[i]=raw;changed=true;
-                if(raw==null){overlayModels[i]=null;continue;}
-                if(overlayAssets[i]==null)overlayAssets[i]=uiAssets.statusAssets(handle,codec,i!=0);
-                int count=(raw.length-1)/2;
-                ByteBuffer values=ByteBuffer.wrap(raw[0]).order(java.nio.ByteOrder.LITTLE_ENDIAN);
-                if(raw.length!=1+2*count||values.remaining()!=8L+8L*count)throw new IOException("Invalid status layer fields");
-                int group=values.getInt(),selection=values.getInt();
+            byte[][][] raw=NativeGame.statusOverlays(handle,overlayMode);
+            if(overlayMode==overlaysSentMode&&Arrays.deepEquals(raw,overlayRows))return;
+            if(raw==null||raw.length>2)throw new IOException("Invalid status layer count");
+            Modal[] overlays=new Modal[raw.length];
+            for(int i=0;i<raw.length;i++){
+                byte[][] layer=raw[i];
+                int count=(layer.length-1)/2;
+                ByteBuffer values=ByteBuffer.wrap(layer[0]).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+                if(layer.length!=1+2*count||values.remaining()!=12L+8L*count)throw new IOException("Invalid status layer fields");
+                int type=values.getInt(),group=values.getInt(),selection=values.getInt();
+                if(type!=Modal.PRINT_STATUS&&type!=Modal.PRINT_PARTY)throw new IOException("Invalid status layer mode");
+                int assetIndex=type==Modal.PRINT_PARTY?1:0;
+                if(overlayAssets[assetIndex]==null)overlayAssets[assetIndex]=uiAssets.statusAssets(handle,codec,assetIndex!=0);
                 Modal.Row[] rows=new Modal.Row[count];
                 for(int row=0;row<count;row++)
-                    rows[row]=new Modal.Row(values.getInt(),values.getInt(),decode(raw[1+2*row],true),"",decode(raw[2+2*row],true));
-                overlayModels[i]=new Modal(new int[]{0,type,0},null,null,new int[]{0,1,group,selection,0},
-                    rows,overlayAssets[i],codec,null,null);
+                    rows[row]=new Modal.Row(values.getInt(),values.getInt(),decode(layer[1+2*row],true),"",decode(layer[2+2*row],true));
+                overlays[i]=new Modal(new int[]{0,type,0},null,null,new int[]{0,1,group,selection,0},
+                    rows,overlayAssets[assetIndex],codec,null,null);
             }
-            if(changed){overlaysSentMode=overlayMode;ui.statusOverlays(overlayMode,overlayModels.clone());}
+            overlayRows=raw;overlaysSentMode=overlayMode;ui.statusOverlays(overlayMode,overlays);
         }catch(IOException|RuntimeException e){
             Log.w("SystemNNN","Unable to render independent status",e);
-            ui.statusOverlays(overlayMode,new Modal[2]);overlayMode=0;
+            ui.statusOverlays(overlayMode,new Modal[0]);overlayMode=0;
         }
     }
     void suspendScriptAudio(){tasks.post(()->{
@@ -1200,7 +1206,7 @@ final class GameRunner {
             ui.style(dialogueStyle);
             ui.loaded();
         }else if(history!=null)history.recordNativeBoundary(x,y);
-        menuOpen=true;shownWait=-1;current=null;choiceClicking=false;
+        menuOpen=true;shownWait=-1;current=null;resetDialogueDecorations();choiceClicking=false;
         step(0,false,0);
         return failed?rejectedModal():new ModalUpdate(2,meta[0],0,current==null?null:current.modal);
     }
@@ -1480,7 +1486,7 @@ final class GameRunner {
             tasks.removeCallbacks(ticker); stopSound(); NativeGame.close(handle);
             offerScreenLayer(-1);
             handle=candidate; galleryWritten=stored; onTitle=false; replaying=true; menuOpen=false; history=null;
-            current=null; shownWait=-1; x=y=0;
+            current=null; shownWait=-1; resetDialogueDecorations(); x=y=0;
             System.arraycopy(state,0,meta,0,meta.length);
             bindSurface(true);
             ui.galleryReplayStarted(); queueGalleryWrite();
@@ -1505,6 +1511,7 @@ final class GameRunner {
         }
         return scene.hiddenLayers;
     }
+    boolean isGallerySceneReplay(){return replaying;}
     void endGalleryReplay() { tasks.post(() -> { if (replaying) finishReplay(); }); }
     private void finishReplay() {
         try { openTitle(); ui.galleryReplayFinished(); }
@@ -1580,7 +1587,7 @@ final class GameRunner {
         // Both the engine and the staged journal have passed validation.
         history=prefix;
         GameSave.Run last=history.lastInput();x=last.x;y=last.y;
-        choiceClicking=false;shownWait=-1;current=null;setModes(false,false);
+        choiceClicking=false;shownWait=-1;current=null;resetDialogueDecorations();setModes(false,false);
         publishParameters();ui.loaded();updateUi();
         Log.i("SystemNNN","Backlog jump restored line="+meta[2]+" word="+meta[1]+" cursor="+history.cursor());
         done.accept(true);
@@ -1653,7 +1660,10 @@ final class GameRunner {
         }catch(Exception|LinkageError e){broken(e);}
     });}
     private void save(int slot,Runnable feedback,int marker,SlotPreview preview){
-        if(handle==0||failed||onTitle||replaying||(meta[0]!=NativeGame.DIALOGUE&&meta[0]!=NativeGame.CHOICE&&meta[0]!=NativeGame.PLACE)){
+        Modal modal=activeModal();
+        boolean chart=modal!=null&&modal.mode==Modal.SELECT_CHART;
+        if(handle==0||failed||onTitle||replaying||
+           (!chart&&meta[0]!=NativeGame.DIALOGUE&&meta[0]!=NativeGame.CHOICE&&meta[0]!=NativeGame.PLACE)){
             ui.notice(text(R.string.engine_systemnnn_host_cannot_save));
             return;
         }
@@ -2066,6 +2076,21 @@ final class GameRunner {
         // Keep the outgoing frame until the modal has captured its backdrop.
         if(shownWait!=NativeGame.MODAL)offerScreenLayer(NativeGame.takeScreenLayer(handle));
     }
+    private void resetDialogueDecorations(){
+        dialogueVisualFields=null;
+        dialogueDecorations=DialogueDecorations.EMPTY;
+    }
+    private DialogueDecorations dialogueDecorations(){
+        byte[][] raw=NativeGame.dialogueVisuals(handle);
+        if(Arrays.deepEquals(raw,dialogueVisualFields))return dialogueDecorations;
+        dialogueVisualFields=raw;
+        try{dialogueDecorations=DialogueDecorations.load(raw,handle,uiAssets);}
+        catch(IOException|RuntimeException e){
+            Log.w("SystemNNN","Unable to draw original dialogue decorations",e);
+            dialogueDecorations=DialogueDecorations.EMPTY;
+        }
+        return dialogueDecorations;
+    }
     private void updateUi(){updateUi(false);}
     private void updateUi(boolean transition){
         publishScriptMouse();
@@ -2086,7 +2111,9 @@ final class GameRunner {
         int[] properties=NativeGame.dialogueProperties(handle);
         boolean retained=drawMessage==Frame.DRAW_RETAINED_MESSAGE;
         String decoded=shownWait==NativeGame.DIALOGUE||retained?decode(raw[1]):"";
-        DialogueLayout.Message message=dialogueStyle.split(decoded,retained||properties[6]==0x22220001);
+        DialogueDecorations decorations=dialogueDecorations();
+        DialogueLayout.Message message=decorations.cutin?new DialogueLayout.Message("",decoded,false):
+            dialogueStyle.split(decoded,retained||properties[6]==0x22220001);
         String speaker=message.name,body=message.body;
         DialogueMarkup displayBody=dialogueStyle.markup(body).withoutFinalLineBreak();
         String[] options=new String[raw.length-2];for(int i=0;i<options.length;i++)options[i]=decode(raw[i+2]);
@@ -2099,7 +2126,7 @@ final class GameRunner {
         Bitmap[] portraits=placeMode!=0?placePortraits(placeMode,placeCharacters):new Bitmap[0];
         Modal modal=shownWait==NativeGame.MODAL?readModal():null;
         Frame next=new Frame(shownWait,meta[3],meta[4],script,shownLine,shownWord,speaker,body,displayBody,options,false,properties[0],properties[1],properties[2],scriptCursor,
-            properties[3]!=0,message.nameWindow,properties[4]!=0,properties[5],properties[6],drawMessage,meta[5],messages,choice,places,placeMode,placeCharacters,portraits,modal,filmSkip);
+            properties[3]!=0,message.nameWindow,properties[4]!=0,properties[5],properties[6],drawMessage,meta[5],messages,choice,places,placeMode,placeCharacters,portraits,modal,decorations,filmSkip);
         if(!replaying&&shownWait==NativeGame.DIALOGUE&&!readLines.isEmpty()){
             String previousBody=decode(NativeGame.dialogue(handle)[1]);
             if(readLines.remove(next.legacyReadKey(raw[0],previousBody)))NativeGame.markRead(handle,next.messageId);
@@ -2109,12 +2136,12 @@ final class GameRunner {
                 current.alreadyRead:NativeGame.isRead(handle,next.messageId));
         current=new Frame(next.wait,next.width,next.height,next.script,next.line,next.word,next.speaker,next.body,next.displayBody,next.choices,
             read,next.messageId,next.windowType,next.fontType,next.scriptCursor,
-            next.windowVisible,next.nameWindow,next.optionsAllowed,next.command,next.layoutCommand,next.drawMessage,next.frameMs,messages,choice,places,placeMode,placeCharacters,portraits,modal,filmSkip);
+            next.windowVisible,next.nameWindow,next.optionsAllowed,next.command,next.layoutCommand,next.drawMessage,next.frameMs,messages,choice,places,placeMode,placeCharacters,portraits,modal,decorations,filmSkip);
         textDone=false;visibleText=0;
         boolean skipLine=false;
         if(shownWait==NativeGame.DIALOGUE){
             int prefix=-1;
-            if(properties[5]==0x22220003){
+            if(properties[5]==0x22220003||decorations.cutin){
                 String previous=decode(NativeGame.appendPrefix(handle));
                 if(!previous.isEmpty()&&decoded.startsWith(previous)){
                     int oldBodyEnd=Math.max(0,previous.length()-(decoded.length()-body.length()));

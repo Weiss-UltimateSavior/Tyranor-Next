@@ -6,6 +6,7 @@ import com.core.engine.EngineUiText;
 import android.content.Context;
 import android.graphics.*;
 import android.os.SystemClock;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -60,6 +61,7 @@ final class GameGalleryPanel extends GameUiPanel {
     void update(GalleryCatalog.Page value) {
         if(page==null||page.screen!=value.screen)opening(value.config,false);
         page=value;
+        setClipChildren(page.screen!=GalleryCatalog.Screen.CG);
         background(page.background);
         clearControls();
         cgView=null;
@@ -133,10 +135,19 @@ final class GameGalleryPanel extends GameUiPanel {
         Bitmap cursor=sprite(cfg.value("filenameCursor",""));
         Bitmap animationBadge=cg&&cfg.number("animePrintFlag",0)!=0?sprite(cfg.value("fileNameAnime","ta_futa1")):null;
         int dark=bounded(cfg.number("picMustPrintPercent",0),0,100);
+        Bitmap differenceFont=null;
+        if(cg){
+            String font=GalleryCatalog.differenceFont(cfg);
+            differenceFont=font.isEmpty()?null:sprite(font);
+            if(differenceFont==null&&!font.isEmpty())Log.i("SystemNNN","Difference font unavailable, using text counter: "+font);
+            else if(differenceFont!=null&&12L*dimension(cfg,"differenceFontSizeX",21)>differenceFont.getWidth())
+                Log.w("SystemNNN","Difference font too narrow for 12 glyphs: "+font);
+        }
         for (int i=0;i<page.cells.size();i++) {
             GalleryCatalog.Cell cell=page.cells.get(i);
             Tile tile=new Tile(cell,sprite(cell.picture),null,frame,cursor,dark);
             if(cell.animated)tile.animationBadge=animationBadge;
+            tile.differenceFont=differenceFont;
             tile.setOnClickListener(v -> {
                 click.run();
                 if (cg) actions.open(GalleryCatalog.Screen.VIEW,page.group,0,cell.index);
@@ -340,12 +351,15 @@ final class GameGalleryPanel extends GameUiPanel {
         int dx=cfg.number("cursorNextX",0),dy=cfg.number("cursorNextY",h);
         int labelX=cfg.number("musicNamePrintX",30),labelY=cfg.number("musicNamePrintY",0);
         int first=-1;
+        // CommonListenBGM m_cannotMusicNameColor*: 128 unless cannotColorR/G/B overrides it.
+        int cannot=Color.rgb(bounded(cfg.number("cannotColorR",128),0,255),bounded(cfg.number("cannotColorG",128),0,255),
+            bounded(cfg.number("cannotColorB",128),0,255));
         for (int i=0;i<page.cells.size();i++) {
             GalleryCatalog.Cell cell=page.cells.get(i);
             if (cell.enabled && first==-1) first=cell.index;
             int atX=x+i*dx,atY=y+i*dy;
             if (cell.index==page.index) picture(cfg.value("filenameCursor",""),atX,atY,w,h);
-            TextView name=text(cell.label,dimension(cfg,"messageFontSize",16),cell.enabled?Color.WHITE:0xff8f9eaa);
+            TextView name=text(cell.label,dimension(cfg,"messageFontSize",16),cell.enabled?Color.WHITE:cannot);
             name.setSingleLine(true);
             name.setGravity(cfg.number("musicNameCenterFlag",0)!=0?Gravity.CENTER:Gravity.CENTER_VERTICAL);
             name.setSoundEffectsEnabled(false);
@@ -448,7 +462,8 @@ final class GameGalleryPanel extends GameUiPanel {
         private final ColorMatrixColorFilter gray;
         private Runnable movieSelection;
         private long movieSelectedAt;
-        private Bitmap animationBadge;
+        private Bitmap animationBadge,differenceFont;
+        private final Rect glyphSource=new Rect();
 
         Tile(GalleryCatalog.Cell cell,Bitmap image,Rect source,Bitmap frame,Bitmap cursor,int dark) {
             super(GameGalleryPanel.this.getContext());
@@ -499,7 +514,30 @@ final class GameGalleryPanel extends GameUiPanel {
             if (focus&&movie&&cell.enabled) drawMovieCursor(canvas);
             else if(focus&&!movie&&cursor!=null)canvas.drawBitmap(cursor,null,dest,paint);
             if(movieSelection!=null)postInvalidateOnAnimation();
-            if (cell.enabled && !cell.detail.isEmpty() && page.config.number("differencePrintFlag",0)!=0) {
+            if (page.screen==GalleryCatalog.Screen.CG) drawDifference(canvas);
+        }
+        /** CommonSelectCG::PrintBlock "got/total" counter in the block's logical sizeX/sizeY space. */
+        private void drawDifference(Canvas canvas){
+            GameUiAssets.Config cfg=page.config;
+            int got=cell.unlockedVariants,total=cell.totalVariants;
+            if(!GalleryCatalog.differenceVisible(cfg.number("differencePrintFlag",1),cfg.number("differencePrintByGetFlag",0),got,total))
+                return;
+            int fw=dimension(cfg,"differenceFontSizeX",21),fh=dimension(cfg,"differenceFontSizeY",27);
+            int next=bounded(cfg.number("differenceFontNextX",fw),-4096,4096);
+            int keta=bounded(cfg.number("differentKeta",2),1,8);
+            int px=bounded(cfg.number("differencePrintX",0),-4096,4096),py=bounded(cfg.number("differencePrintY",0),-4096,4096);
+            Bitmap font=differenceFont;
+            if(font!=null&&12L*fw<=font.getWidth()&&fh<=font.getHeight()){
+                float sx=getWidth()/(float)dimension(cfg,"sizeX",156),sy=getHeight()/(float)dimension(cfg,"sizeY",88);
+                paint.setAlpha(255);
+                for(int[] glyph:GalleryCatalog.differenceGlyphs(got,total,keta,next)){
+                    int left=px+glyph[0];
+                    glyphSource.set(glyph[1]*fw,0,(glyph[1]+1)*fw,fh);
+                    dest.set(Math.round(left*sx),Math.round(py*sy),Math.round((left+fw)*sx),Math.round((py+fh)*sy));
+                    canvas.drawBitmap(font,glyphSource,dest,paint);
+                }
+                dest.set(0,0,getWidth(),getHeight());
+            }else if(!cell.detail.isEmpty()){
                 paint.setColor(Color.WHITE); paint.setTextAlign(Paint.Align.LEFT); paint.setTextSize(Math.max(12,getHeight()/5f));
                 canvas.drawText(cell.detail,getWidth()*.35f,getHeight()*.88f,paint);
             }

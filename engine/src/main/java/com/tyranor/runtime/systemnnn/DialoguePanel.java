@@ -19,12 +19,18 @@ import android.text.style.LeadingMarginSpan;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 /** Message and name windows use the game's logical canvas. */
 final class DialoguePanel extends FrameLayout {
     final DialogueTextView speaker,body;
     private final ImageView window,nameWindow;
     private final MessageCursor cursor;
+    private final PortraitLayer belowWindow,aboveWindow;
+    private final CutinLayer cutinLayer;
+    private DialogueDecorations decorations=DialogueDecorations.EMPTY;
     private boolean drawingMessagePlane;
     private DialogueStyle style=DialogueStyle.fallback();
     private PlayerSettings settings=PlayerSettings.defaults();
@@ -40,7 +46,9 @@ final class DialoguePanel extends FrameLayout {
 
     DialoguePanel(Context context,OnClickListener click) {
         super(context);
+        belowWindow=new PortraitLayer(1);addView(belowWindow,new LayoutParams(-1,-1));
         window=image(); nameWindow=image();
+        aboveWindow=new PortraitLayer(2);addView(aboveWindow,new LayoutParams(-1,-1));
         speaker=text(new DialogueTextView(context));speaker.setGravity(Gravity.TOP|Gravity.LEFT);speaker.setTextDirection(TEXT_DIRECTION_LTR);speaker.setSingleLine(true);
         body=text(new DialogueTextView(context));body.setGravity(Gravity.TOP|Gravity.LEFT);body.setTextDirection(TEXT_DIRECTION_LTR);
         // Scripted row positions use the same line advance for every glyph.
@@ -56,6 +64,7 @@ final class DialoguePanel extends FrameLayout {
         body.setMovementMethod(new ScrollingMovementMethod());body.setVerticalScrollBarEnabled(true);
         window.setOnClickListener(click); nameWindow.setOnClickListener(click);
         speaker.setOnClickListener(click); body.setOnClickListener(click);
+        cutinLayer=new CutinLayer(click);addView(cutinLayer,new LayoutParams(-1,-1));
         cursor=new MessageCursor();addView(cursor,new LayoutParams(-1,-1));
     }
     private ImageView image() { ImageView v=new ImageView(getContext());v.setSoundEffectsEnabled(false);v.setScaleType(ImageView.ScaleType.FIT_XY); addView(v,new LayoutParams(1,1)); return v; }
@@ -113,13 +122,19 @@ final class DialoguePanel extends FrameLayout {
     void settings(PlayerSettings value) { settings=value;window.setAlpha(value.windowOpacity/100f);nameWindow.setAlpha(value.windowOpacity/100f);colors(); requestLayout(); }
     void storyBody(boolean value){if(storyBody!=value){storyBody=value;requestLayout();}}
     void passive(boolean value){passive=value;}
+    void decorations(DialogueDecorations value,int period,boolean reset){
+        if(decorations==value&&!reset)return;
+        decorations=value;
+        belowWindow.configure(period);aboveWindow.configure(period);
+        showWindows();
+    }
     @Override public boolean dispatchTouchEvent(MotionEvent event){return !passive&&super.dispatchTouchEvent(event);}
     void read(boolean value){wasRead=value;colors();}
     void cursorAssets(GameUiAssets assets){cursor.assets(assets);body.effectColors(assets.printMessage);}
     void cursorVariant(int value){cursor.variant(value);}
     void scriptCursorVariant(int value){cursor.scriptVariant(value);}
     void waiting(boolean visible,boolean automatic,int command,int period){
-        cursor.waiting(visible,automatic,command,period);
+        cursor.waiting(visible&&(!decorations.cutin||cutinLayer.getVisibility()==VISIBLE),automatic,command,period);
     }
     void contentRight(int value){if(contentRight!=value){contentRight=value;requestLayout();}}
     int bodyX(){return style.bodyX(layout);}
@@ -131,6 +146,7 @@ final class DialoguePanel extends FrameLayout {
         boolean read=wasRead&&settings.changeReadColor;
         body.setTextColor(read?style.readBodyColor:style.bodyColor);body.markupTextColor(read);
         speaker.setTextColor(read?style.readNameColor:style.speakerColor(speakerName));speaker.markupTextColor(read);
+        cutinLayer.colors();
     }
     private GradientDrawable rounded(int color,int radius) {
         GradientDrawable background=new GradientDrawable();background.setColor(color);
@@ -148,14 +164,19 @@ final class DialoguePanel extends FrameLayout {
         speaker.setText(name.text);speaker.markup(name,style.markupStyle);
     }
     private void showWindows(){
-        window.setVisibility(showWindow?VISIBLE:GONE);
-        nameWindow.setVisibility(showWindow&&showNameWindow&&style.nameWindowEnabled?VISIBLE:GONE);
-        speaker.setVisibility(!longPrint&&hasSpeaker?VISIBLE:GONE);
+        boolean normal=!decorations.cutin;
+        window.setVisibility(normal&&showWindow?VISIBLE:GONE);
+        nameWindow.setVisibility(normal&&showWindow&&showNameWindow&&style.nameWindowEnabled?VISIBLE:GONE);
+        speaker.setVisibility(normal&&!longPrint&&hasSpeaker?VISIBLE:GONE);
+        body.setVisibility(normal?VISIBLE:GONE);
+        cutinLayer.setVisibility(!normal&&(showWindow||longPrint)?VISIBLE:GONE);
+        if(normal)cutinLayer.clear();
     }
     void message(String text,int visible){message(DialogueMarkup.plain(text),visible);}
     void message(DialogueMarkup text,int visible){
         message=text.text;revealed=DialogueLayout.clamp(visible,0,message.length());rendered=null;lastLogicalRow=0;
         body.markup(text,style.markupStyle);body.markupReveal(revealed);body.messageEffect(0,0);
+        if(decorations.cutin)cutinLayer.message(text);
         for(int i=0;i<message.length();i++)if(message.charAt(i)=='\n')lastLogicalRow++;
         body.scrollTo(0,0);requestLayout();
     }
@@ -164,6 +185,7 @@ final class DialoguePanel extends FrameLayout {
         body.markupReveal(revealed);
         body.messageEffect(effect,progress);
         if(rendered!=null)applyReveal(rendered);
+        if(decorations.cutin)cutinLayer.reveal();
     }
     private void applyReveal(Spannable text){
         if(revealed<message.length())text.setSpan(hiddenText,revealed,message.length(),Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -233,6 +255,155 @@ final class DialoguePanel extends FrameLayout {
         LayoutParams p=(LayoutParams)view.getLayoutParams();p.leftMargin=Math.round(x*sx);p.topMargin=Math.round(y*sy);
         p.width=Math.max(1,Math.round(width*sx));p.height=Math.max(1,Math.round(height*sy));
     }
+    private final class PortraitLayer extends View {
+        private final int depth;
+        private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
+        private final RectF dest=new RectF();
+        private int period,delay;
+        private long cycleStart;
+
+        PortraitLayer(int depth){
+            super(DialoguePanel.this.getContext());
+            this.depth=depth;
+            setVisibility(GONE);
+            setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+        void configure(int period){
+            this.period=Math.max(1,period);
+            boolean visible=decorations.depth==depth&&decorations.portraits.length>0;
+            setVisibility(visible?VISIBLE:GONE);
+            if(visible){
+                delay=waitFrames(decorations.portraits[0]);
+                cycleStart=SystemClock.uptimeMillis();
+                invalidate();
+            }
+        }
+        private int waitFrames(DialogueDecorations.Portrait portrait){
+            return portrait.waitMin==portrait.waitMax?portrait.waitMin:
+                ThreadLocalRandom.current().nextInt(portrait.waitMin,portrait.waitMax+1);
+        }
+        @Override protected void onDraw(Canvas canvas){
+            long now=SystemClock.uptimeMillis();
+            boolean moving=false;
+            int saved=canvas.save();
+            canvas.scale(getWidth()/(float)canvasWidth,getHeight()/(float)canvasHeight);
+            for(int i=0;i<decorations.portraits.length;i++){
+                DialogueDecorations.Portrait face=decorations.portraits[i];
+                if(face.image==null)continue;
+                long frame=i==0?(now-cycleStart)/period-delay:0;
+                if(i==0&&face.waitMax>0&&frame>=face.cycle){
+                    cycleStart=now;delay=waitFrames(face);frame=-delay;
+                }
+                SpriteAnimation animation=face.animation;
+                dest.set(face.x,face.y,face.x+animation.w,face.y+animation.h);
+                animation.draw(canvas,face.image,dest,paint,Math.max(0,frame),255);
+                moving|=animation.count>1&&(face.waitMax>0||animation.active(Math.max(0,frame)));
+            }
+            canvas.restoreToCount(saved);
+            if(moving&&!drawingMessagePlane)postInvalidateOnAnimation();
+        }
+    }
+    private final class CutinLayer extends FrameLayout {
+        private final OnClickListener click;
+        private final List<DialogueTextView> lines=new ArrayList<>();
+        private final List<DialogueMarkup> text=new ArrayList<>();
+        private final List<Integer> starts=new ArrayList<>();
+        private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
+        private final RectF dest=new RectF();
+
+        CutinLayer(OnClickListener click){
+            super(DialoguePanel.this.getContext());
+            this.click=click;
+            setVisibility(GONE);
+        }
+        void clear(){
+            if(lines.isEmpty())return;
+            removeAllViews();lines.clear();text.clear();starts.clear();
+        }
+        void message(DialogueMarkup message){
+            clear();
+            for(int start=0;start<message.text.length()&&lines.size()<64;){
+                int end=message.text.indexOf('\n',start);
+                if(end<0)end=message.text.length();
+                DialogueMarkup row=message.slice(start,end);
+                DialogueTextView line=DialogueTextView.panel(getContext(),row,style.markupStyle,layout.font,style.bodyColor);
+                line.setGravity(Gravity.TOP|Gravity.LEFT);line.setMaxLines(1);line.setHorizontallyScrolling(true);
+                line.setTextDirection(TEXT_DIRECTION_LTR);line.setTypeface(body.getTypeface());
+                line.setSoundEffectsEnabled(false);line.setOnClickListener(click);
+                textShadow(line,Color.BLACK);
+                lines.add(line);text.add(row);starts.add(start);
+                addView(line,new LayoutParams(1,1));
+                start=end+1;
+            }
+            colors();reveal();requestLayout();
+        }
+        void colors(){
+            for(DialogueTextView line:lines){
+                line.setTextColor(body.getCurrentTextColor());
+                line.markupTextColor(wasRead&&settings.changeReadColor);
+            }
+        }
+        void reveal(){
+            for(int i=0;i<lines.size();i++)
+                lines.get(i).previewReveal(DialogueLayout.clamp(revealed-starts.get(i),0,text.get(i).text.length()));
+            invalidate();
+        }
+        private DialogueDecorations.Row geometry(int index){
+            return index<decorations.rows.length?decorations.rows[index]:null;
+        }
+        @Override protected void onMeasure(int widthSpec,int heightSpec){
+            float sx=MeasureSpec.getSize(widthSpec)/(float)canvasWidth,sy=MeasureSpec.getSize(heightSpec)/(float)canvasHeight;
+            float factor=storyBody?settings.readingSize/100f:1f;
+            for(int i=0;i<lines.size();i++){
+                DialogueDecorations.Row row=geometry(i);
+                boolean positioned=row!=null&&row.positioned;
+                int x=positioned?row.x:DialogueLayout.lineX(layout,i,canvasWidth);
+                int y=positioned?row.y:bodyY()+layout.nextY*i;
+                int font=Math.max(1,layout.font+(positioned?row.fontDelta:0));
+                DialogueTextView line=lines.get(i);
+                float size=Math.max(1,font*sx*factor);
+                line.setTextSize(TypedValue.COMPLEX_UNIT_PX,size);line.markupFont(font);
+                line.setLetterSpacing((float)layout.space/font);
+                int inset=line.markupTopInset(size);
+                place(line,x,y,canvasWidth-x,2*font,sx,sy);
+                LayoutParams position=(LayoutParams)line.getLayoutParams();
+                position.topMargin-=inset;position.height+=inset;
+            }
+            super.onMeasure(widthSpec,heightSpec);
+        }
+        @Override protected void dispatchDraw(Canvas canvas){
+            long time=getDrawingTime();
+            for(int i=0;i<lines.size();i++){
+                if(starts.get(i)>revealed)break;
+                DialogueDecorations.Row row=geometry(i);
+                if(row!=null&&row.type!=0&&row.rows>0)drawWindow(canvas,row,i);
+                drawChild(canvas,lines.get(i),time);
+            }
+        }
+        private void drawWindow(Canvas canvas,DialogueDecorations.Row row,int index){
+            float sx=getWidth()/(float)canvasWidth,sy=getHeight()/(float)canvasHeight;
+            int w,h;
+            if(row.type<0){
+                if(row.window==null)return;
+                w=row.window.getWidth();h=row.window.getHeight();
+            }else{
+                int count=0;
+                for(int i=index;i<Math.min(lines.size(),index+row.rows);i++)count=Math.max(count,text.get(i).glyphCount);
+                int font=Math.max(1,layout.font+row.fontDelta);
+                w=row.type>1?row.type:(font+1)*count+2*row.padX+row.stepX*(row.rows-1);
+                h=font+1+2*row.padY+row.stepY*(row.rows-1);
+            }
+            if(w<=0||h<=0)return;
+            dest.set(row.windowX*sx,row.windowY*sy,(row.windowX+w)*sx,(row.windowY+h)*sy);
+            if(row.type<0){
+                paint.setAlpha(Math.round(settings.windowOpacity*2.55f));
+                canvas.drawBitmap(row.window,null,dest,paint);
+            }else{
+                paint.setColor(row.color);
+                canvas.drawRect(dest,paint);
+            }
+        }
+    }
     private final class MessageCursor extends View {
         private final SpriteAnimation[] clips=new SpriteAnimation[4];
         private final Bitmap[] images=new Bitmap[4];
@@ -290,7 +461,11 @@ final class DialoguePanel extends FrameLayout {
             if(sx<=0||sy<=0)return;
             float px=x[mode]*sx,py=y[mode]*sy;
             android.text.Layout lines=body.getLayout();
-            if(mode>=2&&lines!=null&&lines.getLineCount()>0){
+            if(mode>=2&&decorations.cutin){
+                int lastLength=message.codePointCount(message.lastIndexOf('\n')+1,message.length());
+                if(!fixX)px+=(layout.x+(long)lastLength*(layout.font+layout.space))*sx;
+                if(!fixY)py+=(layout.y+(long)lastLogicalRow*layout.nextY)*sy;
+            }else if(mode>=2&&lines!=null&&lines.getLineCount()>0){
                 int line=lines.getLineCount()-1;
                 if(!fixX)px+=message.endsWith("\n")?DialogueLayout.lineX(layout,lastLogicalRow,textRight)*sx:
                     body.getLeft()+lines.getLineRight(line);

@@ -64,7 +64,7 @@ final class GameUiAssets {
 
     final Config system,config,save,load,backlog,messageWindow,game,printMessage,dataFile,notice,messageCursor,selection;
     final Config gameMouse,selectPlace,selectPlace2;
-    final boolean freeStatus;
+    final boolean statusOverlays;
     final Bitmap longPrintImage;
     final boolean longPrintImageOffWithWindow;
     final long systemExtensionModes;
@@ -89,7 +89,7 @@ final class GameUiAssets {
         this.longPrintImage=images.get(longPrintImageKey(printMessage));
         this.longPrintImageOffWithWindow=printMessage.number("addLPrintImageOffWithWindow",0)!=0;
         this.textRates=textRates;
-        this.freeStatus=freeStatus;
+        statusOverlays=freeStatus||game.number("useExtClass",0)!=0;
         this.legacyVolumeDefaults=legacyVolumeDefaults;
         this.useXAudio2=useXAudio2;
         long extensions=0;
@@ -325,7 +325,7 @@ final class GameUiAssets {
         for(Config button:storyButtons.values())names.addAll(button.imageNames());
         for (int i=1;i<=Math.max(9,GameSystemMenuPanel.optionCount(system));++i)
             request(names,system,"Menu1Button"+i+"FileName");
-        request(names,system,"backScreenFileName","filenameMenuBase");
+        request(names,system,"backScreenFileName","filenameMenuBase","systemMenuSceneBackFileName","systemMenuSceneEndFileName");
         common(names,system); common(names,config); common(names,save); common(names,load);
         names.addAll(save.imageNames(field->field.matches("tab[0-9]+button[12]filename")));
         names.addAll(load.imageNames(field->field.matches("tab[0-9]+button[12]filename")));
@@ -339,7 +339,7 @@ final class GameUiAssets {
         request(names,backlog,"backlogBGFileName","titlePicFileName","upArrowFileName","downArrowFileName","filenameVoice","filenameJump");
         Config data=readConfig(root,"dataFile"),notice=readConfig(root,"notice");
         request(names,save,"filenameBG");request(names,load,"filenameBG");
-        request(names,data,"filenameSaveCursor","filenameLoadCursor","fileNameSaveTimeFont",
+        request(names,data,"filenameSaveCursor","filenameLoadCursor","filenameOverwriteCursor","fileNameSaveTimeFont",
             "fileNameSerialNumberFont","filenameSaveBase","filenameLoadBase","filenameQuickSaveBase","filenameQuickLoadBase","filenameLastSave",
             "fileNameError","fileNameBad","fileNameOld");
         if(data.number("addPicPrintFlag",0)!=0)names.add(systemImageKey(data.value("fileNameAddPic","ta_sl_font")));

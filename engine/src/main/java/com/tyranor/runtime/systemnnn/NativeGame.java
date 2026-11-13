@@ -75,6 +75,7 @@ final class NativeGame {
     static native byte[][] chartText(long handle);
     static native void setChartStorage(long handle,byte[] path);
     static native byte[][] statusOverlay(long handle,int type,int mode);
+    static native byte[][][] statusOverlays(long handle,int mode);
     static native boolean openModal(long handle,int mode,int caller);
     static native int actModal(long handle,int request,int action,int value);
     static native int abortModal(long handle,int request,String reason);
@@ -84,6 +85,7 @@ final class NativeGame {
     static native boolean storyExited(long handle);
     // Raw game-encoded speaker and body; content indices remain unchanged for save replay.
     static native byte[][] dialogue(long handle);
+    static native byte[][] dialogueVisuals(long handle);
     // Each backlog entry contributes speaker, body, four raw voice names and style.
     static native byte[][] backlog(long handle);
     static native long[] backlogJumpIds(long handle);

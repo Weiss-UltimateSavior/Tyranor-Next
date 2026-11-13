@@ -17,6 +17,8 @@
 - SystemNNN 将存档格式保存在游戏目录的 `emberfall-system.cfg`。全局档版号按 EXE、原版 `.org` 模板和游戏文件一次性判定，单游戏引擎设置可查看来源并重新分析。
 - SystemNNN 支持脚本 DEBUG 与 24 位 PCM VAW。调试模式可把脚本 DEBUG 消息输出到 Logcat。
 - 内置 SystemNNN 播放器的启动目录或脚本校验失败时提示返回游戏库。
+- SystemNNN 同步对话层 `DialogueDecorations`（`PortraitLayer` 头像眨眼与口型、`CutinLayer` 特写与光标分支）、多槽位 `statusOverlays` 按序叠加及 `SELECT_CHART` 流程图剧情存档准入。
+- SystemNNN 补齐原版纯 Java 界面配置：`mustStartPage1Flag` 设置页记忆、回想模式 `systemMenu` 存读档与扩展项禁用及 `systemMenuSceneBackFileName` / `systemMenuSceneEndFileName` 直接退回回想列表、音乐鉴赏 `cannotColorR/G/B` 未解锁置灰、CG 鉴赏 `fileNameDifferenceFont`（`CSuuji`）精灵数字差分计数，以及存读档槽位 `fileNameOverwriteCursor` 与 `save/load/overwriteAnime*` 动态光标。
 - ZIP 和 WebDAV 恢复在独立进程校验快照。WebDAV 可沿用同源副本迁移前的待上传会话和已提交的恢复记录。
 - 新增首次使用七步快速入门教练层：在真实首页、游戏页、引擎页和设置页中展示添加、搜索、封面、重新扫描等入口；新安装用户可跳过或完成引导，已有数据的升级用户默认跳过，通知权限延后到引导完成后请求。
 - 完善首次使用引导边界：初始化存储写入失败不阻断启动，完成标记支持重试；失败的首次安装判定跨进程重启保留，避免迁移标记或空数据库误跳过引导；清理不可达的启动失败重试页，修正白雾玻璃气泡材质并按页面生命周期管理锚点；引导语义保留真实高亮控件，完成后复用同一主导航组合，避免无障碍焦点丢失与页面重建；页面切换等待真实控件锚点，并处理 Activity 重建后的状态恢复，避免过期高亮或绕过引导。

@@ -15,7 +15,55 @@ import java.util.Map;
 
 /** Save and load slot artwork in the game's configured grid. */
 final class GameSlotsPanel extends GameUiPanel {
+    private static final PorterDuffXfermode ADD=new PorterDuffXfermode(PorterDuff.Mode.ADD);
     interface Select { void choose(int slot); }
+    static final class CursorAnime {
+        final int pattern,type,speed;
+        CursorAnime(int pattern,int type,int speed){
+            this.pattern=clamp(pattern,0,256);
+            this.type=type;
+            this.speed=clamp(speed,1,10000);
+        }
+        static CursorAnime read(GameUiAssets.Config data,boolean saving,boolean exists,boolean clicked){
+            String prefix=!saving?"load":exists?"overwrite":"save";
+            int pattern0=data.number(prefix+"AnimePattern",0);
+            int type0=data.number(prefix+"AnimeType",1);
+            int speed0=data.number(prefix+"AnimeSpeed",1);
+            if(!clicked)return new CursorAnime(pattern0,type0,speed0);
+            return new CursorAnime(data.number(prefix+"AnimePattern2",pattern0),
+                data.number(prefix+"AnimeType2",type0),data.number(prefix+"AnimeSpeed2",speed0));
+        }
+        static String[] cursorCandidates(GameUiAssets.Config data,int selectMode,boolean saving,boolean exists){
+            String primary=selectMode==1?data.value("fileNameSelectPic",""):"";
+            String fallback=!saving?data.value("fileNameLoadCursor",""):data.value("fileNameSaveCursor","");
+            String overwrite=saving&&exists?data.value("fileNameOverwriteCursor",""):"";
+            return new String[]{primary,overwrite,fallback};
+        }
+        /** Returns {pic1, pic2, percent, activeFlag} matching CCommonDataFile::GetNowCursorPic and CalcuCursorAnime. */
+        int[] frame(long elapsedTicks){
+            if(pattern<=1)return new int[]{0,0,100,0};
+            long ticks=Math.max(0L,elapsedTicks);
+            boolean rev=type==3||type==4||type==7||type==8;
+            boolean lim=type==2||type==4||type==6||type==8;
+            int dv=rev?Math.max(1,(pattern-1)*2):pattern;
+            long cycle=(long)dv*speed;
+            long count=lim?Math.min(ticks,cycle):ticks%cycle;
+            int pic1=(int)(count/speed),pic2=pic1+1;
+            if(lim){
+                int limData=rev?dv:dv-1;
+                if(pic1>=dv)pic1=limData;
+                if(pic2>=dv)pic2=limData;
+            }
+            pic2%=dv;
+            if(rev){
+                if(pic1>=pattern)pic1=(pattern-1)*2-pic1;
+                if(pic2>=pattern)pic2=(pattern-1)*2-pic2;
+            }
+            int percent=type>=5?(int)(100L*(speed-(count%speed))/speed):100;
+            return new int[]{pic1,pic2,percent,!lim||ticks<cycle?1:0};
+        }
+        private static int clamp(int v,int lo,int hi){return Math.min(hi,Math.max(lo,v));}
+    }
     private final boolean saving;
     private final Select select;
     private final Runnable close;
@@ -31,9 +79,9 @@ final class GameSlotsPanel extends GameUiPanel {
     private long lastSaveSince=SystemClock.uptimeMillis();
     private int page,backgroundPage=-1;
     private GameUiPanel confirmation;
-    private SlotCard loadCard;
-    private Runnable pendingLoad;
-    private long loadClickAt;
+    private SlotCard selectedCard;
+    private Runnable pendingSelect;
+    private long clickAt;
     private boolean refreshEntries;
     GameSlotsPanel(Context c,GameUiAssets assets,boolean saving,SaveSlots.Entry[] slots,Integer lastSelected,Runnable click,Runnable close,Select select,
                    UiPreviewPool.Warmup warmup){
@@ -56,20 +104,23 @@ final class GameSlotsPanel extends GameUiPanel {
         lastSaveDestination=new RectF(markX,markY,markX+markWidth,markY+markHeight);
         lastSaveAnimation=new SpriteAnimation(0,0,markWidth,markHeight,data.number("lastSaveType",1),
             data.number("lastSavePattern",1),data.number("lastSaveSpeed",1),true);
-        // Original decorations may extend past the slot base, e.g. lastSavePrintY=-6.
-        if(artworkAtlas!=null||lastSaveAtlas!=null)setClipChildren(false);
+        int selectX=limit(data.number("selectPrintX",0),-4096,4096),selectY=limit(data.number("selectPrintY",0),-4096,4096);
+        int selectW=limit(data.number("selectSizeX",cardWidth),1,4096),selectH=limit(data.number("selectSizeY",cardHeight),1,4096);
+        boolean cursorOutside=selectX<0||selectY<0||selectX+selectW>cardWidth||selectY+selectH>cardHeight;
+        // Original decorations may extend past the slot base, e.g. lastSavePrintY=-6 or selectPrintX=-1.
+        if(artworkAtlas!=null||lastSaveAtlas!=null||cursorOutside)setClipChildren(false);
         opening(config,false);
         entries(slots,warmup);
     }
     private String uiText(int resource,Object... args){
         return EngineUiText.localizedContext(getContext()).getString(resource,args);
     }
-    @Override boolean controlsBusy(){return super.controlsBusy()||confirmation!=null||loadCard!=null;}
+    @Override boolean controlsBusy(){return super.controlsBusy()||confirmation!=null||selectedCard!=null;}
     void entries(SaveSlots.Entry[] value){entries(value,null);}
     private void entries(SaveSlots.Entry[] value,UiPreviewPool.Warmup warmup){
         entries.clear();
         for(SaveSlots.Entry entry:value)entries.put(entry.slot,entry);
-        if(confirmation==null&&loadCard==null)render(warmup);else refreshEntries=true;
+        if(confirmation==null&&selectedCard==null){lastSaveSince=SystemClock.uptimeMillis();render(warmup);}else refreshEntries=true;
     }
     private void render(){render(null);}
     private void render(UiPreviewPool.Warmup warmup){
@@ -86,10 +137,10 @@ final class GameSlotsPanel extends GameUiPanel {
             SlotCard card=new SlotCard(e,index+1,quick);
             card.setEnabled((!quick||allowQuick)&&(saving||e.exists&&!e.corrupt));
             card.setOnClickListener(v->{
-                if(!saving)beginLoad(card,e.slot);
+                if(!saving)beginSelect(card,e.slot);
                 else if(e.exists&&config.number("warningPrintFlag",1)!=0){
-                    sound(config.number("warningSound",0)-1,-1);confirm(e);
-                }else select.choose(e.slot);
+                    sound(config.number("warningSound",0)-1,-1);confirm(card,e);
+                }else beginSelect(card,e.slot);
             });
             put(card,x+(i%layout.columns)*dx,y+(i/layout.columns)*dy,cardWidth,cardHeight);
         }
@@ -154,44 +205,52 @@ final class GameSlotsPanel extends GameUiPanel {
         put(label,x,y,width,h);
         return label;
     }
-    private void confirm(SaveSlots.Entry e){
+    private void confirm(SlotCard card,SaveSlots.Entry e){
         GameUiAssets.Config cfg=assets.save;
         GameUiPanel dialog=new GameUiPanel(getContext(),assets,null,click);confirmation=dialog;
         dialog.canvas(canvasWidth,canvasHeight);
         int x=cfg.number("dialogX",331),y=cfg.number("dialogY",277);
         dialog.picture(cfg.value("filenameDialog","ta_dialog_save"),x,y,cfg.number("dialogSizeX",618),cfg.number("dialogSizeY",143));
         dialog.sound(this::sound);
-        dialog.buttonAt(cfg,"dialogOk","dialogOk",uiText(R.string.engine_systemnnn_ctl_overwrite),()->{dismissConfirmation();select.choose(e.slot);},x,y,90,60,192,72);
+        dialog.buttonAt(cfg,"dialogOk","dialogOk",uiText(R.string.engine_systemnnn_ctl_overwrite),()->{removeView(confirmation);confirmation=null;beginSelect(card,e.slot);},x,y,90,60,192,72);
         dialog.buttonAt(cfg,"dialogCancel","dialogCancel",uiText(R.string.engine_systemnnn_ctl_cancel_overwrite),this::dismissConfirmation,x,y,323,60,192,72);
         addView(dialog,new LayoutParams(-1,-1));
     }
     private void dismissConfirmation(){
         removeView(confirmation);confirmation=null;
-        if(refreshEntries){refreshEntries=false;render();}
+        if(refreshEntries&&selectedCard==null){refreshEntries=false;lastSaveSince=SystemClock.uptimeMillis();render();}
     }
-    private void beginLoad(SlotCard card,int slot){
-        if(loadCard!=null)return;
-        loadCard=card;loadClickAt=SystemClock.uptimeMillis();
-        sound(config.number("loadSound",0)-1,-1);
+    private void beginSelect(SlotCard card,int slot){
+        if(selectedCard!=null)return;
+        selectedCard=card;clickAt=SystemClock.uptimeMillis();
+        if(!saving)sound(config.number("loadSound",0)-1,-1);
         card.invalidate();
-        pendingLoad=()->{pendingLoad=null;select.choose(slot);};
-        postDelayed(pendingLoad,limit(config.number("clickTime",8),0,1000)*(long)frameMs);
+        pendingSelect=()->{
+            pendingSelect=null;
+            if(saving){
+                SlotCard done=selectedCard;selectedCard=null;
+                if(done!=null)done.invalidate();
+                if(refreshEntries){refreshEntries=false;lastSaveSince=SystemClock.uptimeMillis();render();}
+            }
+            select.choose(slot);
+        };
+        postDelayed(pendingSelect,limit(config.number("clickTime",8),0,1000)*(long)frameMs);
     }
     @Override public boolean dispatchTouchEvent(MotionEvent event){
-        return pendingLoad!=null||super.dispatchTouchEvent(event);
+        return pendingSelect!=null||super.dispatchTouchEvent(event);
     }
     @Override boolean backOverlay(){
-        if(loadCard!=null)return true;
+        if(selectedCard!=null)return true;
         if(confirmation==null)return false;
         click.run();dismissConfirmation();return true;
     }
     @Override void cancelLeave(){
-        if(loadCard!=null){loadCard.invalidate();loadCard=null;}
+        if(selectedCard!=null){selectedCard.invalidate();selectedCard=null;}
         super.cancelLeave();
-        if(refreshEntries){refreshEntries=false;render();}
+        if(refreshEntries){refreshEntries=false;lastSaveSince=SystemClock.uptimeMillis();render();}
     }
     @Override protected void onDetachedFromWindow(){
-        if(pendingLoad!=null){removeCallbacks(pendingLoad);pendingLoad=null;}
+        if(pendingSelect!=null){removeCallbacks(pendingSelect);pendingSelect=null;}
         super.onDetachedFromWindow();
     }
     private static int limit(int v,int lo,int hi){return Math.min(hi,Math.max(lo,v));}
@@ -226,6 +285,10 @@ final class GameSlotsPanel extends GameUiPanel {
         private final boolean quick;
         private final String time,summary,label;
         private final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);
+        private final Rect cursorSrc=new Rect(),cursorDest=new Rect();
+        private final RectF cursorDestF=new RectF();
+        private int cursorState;
+        private long cursorSince;
         SlotCard(SaveSlots.Entry e,int serial,boolean quick){
             super(GameSlotsPanel.this.getContext());this.e=e;this.serial=serial;setSoundEffectsEnabled(false);
             time=e.exists?new SimpleDateFormat("yyyy/MM/dd HH:mm",Locale.ROOT).format(new Date(e.savedAt)):"";
@@ -321,32 +384,76 @@ final class GameSlotsPanel extends GameUiPanel {
                 }
                 contents(canvas);
             }
-            int selectMode=data.number("selectPrintMode",1);
-            boolean selected=loadCard==this;
-            if(selected&&pendingLoad!=null)postInvalidateOnAnimation();
-            if(isPressed()||selected&&(selectMode==2||((SystemClock.uptimeMillis()-loadClickAt)/frameMs&1)==1)){
-                Bitmap cursor=sprite(data.value(saving?"filenameSaveCursor":"filenameLoadCursor",""));
-                int x=data.number("selectPrintX",0),y=data.number("selectPrintY",0);
-                int w=limit(data.number("selectSizeX",cardWidth),1,4096),h=limit(data.number("selectSizeY",cardHeight),1,4096);
-                if(selectMode==0){
-                    int alpha=255*limit(data.number("selectColorPercent",50),0,100)/100;
-                    p.setColor(Color.argb(alpha,data.number("selectColorR",255)&255,data.number("selectColorG",255)&255,data.number("selectColorB",255)&255));
-                    canvas.drawRect(x,y,x+w,y+h,p);
-                }else if(cursor!=null&&w<=cursor.getWidth()&&h<=cursor.getHeight()){
-                    int srcX=selected&&selectMode==2&&cursor.getWidth()>=2*w?w:0;
-                    p.setAlpha(255);canvas.drawBitmap(cursor,new Rect(srcX,0,srcX+w,h),new Rect(x,y,x+w,y+h),p);
-                }else{
-                    p.setColor(0x99e69419);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(3);
-                    canvas.drawRect(2,2,cardWidth-2,cardHeight-2,p);p.setStyle(Paint.Style.FILL);
-                }
-            }
             canvas.restoreToCount(clip);
+            long now=SystemClock.uptimeMillis();
+            drawCursor(canvas,now);
             if(e.lastSaved&&lastSaveAtlas!=null){
-                long frame=(SystemClock.uptimeMillis()-lastSaveSince)/frameMs;
+                long frame=(now-lastSaveSince)/frameMs;
                 if(lastSaveAnimation.draw(canvas,lastSaveAtlas,lastSaveDestination,p,frame,255)&&lastSaveAnimation.active(frame))
                     postInvalidateOnAnimation();
             }
             canvas.restoreToCount(save);
+        }
+        private Bitmap resolveCursor(int selectMode){
+            for(String candidate:CursorAnime.cursorCandidates(data,selectMode,saving,e.exists)){
+                if(!candidate.isEmpty()){
+                    Bitmap pic=sprite(candidate);
+                    if(pic!=null)return pic;
+                }
+            }
+            return null;
+        }
+        private void drawCursor(Canvas canvas,long now){
+            int selectMode=data.number("selectPrintMode",1);
+            boolean selected=selectedCard==this;
+            boolean focused=isEnabled()&&(selected||isPressed()||isHovered());
+            int state=!focused?0:selected?2:1;
+            if(state!=cursorState){cursorState=state;cursorSince=now;}
+            if(selected&&pendingSelect!=null&&selectMode!=2)postInvalidateOnAnimation();
+            if(state==0||(state==2&&selectMode!=2&&((now-clickAt)/frameMs&1)==0))return;
+            int x=limit(data.number("selectPrintX",0),-4096,4096),y=limit(data.number("selectPrintY",0),-4096,4096);
+            int w=limit(data.number("selectSizeX",cardWidth),1,4096),h=limit(data.number("selectSizeY",cardHeight),1,4096);
+            if(selectMode==0){
+                int alpha=255*limit(data.number("selectPercent",data.number("selectColorPercent",50)),0,100)/100;
+                p.setColor(Color.argb(alpha,limit(data.number("selectColorR",230),0,255),
+                    limit(data.number("selectColorG",0),0,255),limit(data.number("selectColorB",255),0,255)));
+                canvas.drawRect(x,y,x+w,y+h,p);
+                return;
+            }
+            Bitmap cursor=resolveCursor(selectMode);
+            if(cursor==null||w>cursor.getWidth()||h>cursor.getHeight()){
+                p.setColor(0x99e69419);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(3);
+                canvas.drawRect(2,2,cardWidth-2,cardHeight-2,p);p.setStyle(Paint.Style.FILL);
+                return;
+            }
+            int srcX=selected&&selectMode==2&&cursor.getWidth()>=2L*w?w:0;
+            CursorAnime anime=selectMode==2?CursorAnime.read(data,saving,e.exists,selected):null;
+            cursorDest.set(x,y,x+w,y+h);
+            if(anime!=null&&anime.pattern>1&&cursor.getHeight()>=(long)anime.pattern*h){
+                long ticks=Math.max(0L,(selected?now-clickAt:now-cursorSince)/frameMs);
+                int[] f=anime.frame(ticks);
+                if(f[2]>=100||f[0]==f[1]){
+                    cursorSrc.set(srcX,f[0]*h,srcX+w,(f[0]+1)*h);
+                    p.setAlpha(255);canvas.drawBitmap(cursor,cursorSrc,cursorDest,p);
+                }else if(f[2]<=0){
+                    cursorSrc.set(srcX,f[1]*h,srcX+w,(f[1]+1)*h);
+                    p.setAlpha(255);canvas.drawBitmap(cursor,cursorSrc,cursorDest,p);
+                }else{
+                    int alpha1=Math.round(255f*f[2]/100f);
+                    cursorDestF.set(x,y,x+w,y+h);
+                    int layer=canvas.saveLayer(cursorDestF,null);
+                    cursorSrc.set(srcX,f[0]*h,srcX+w,(f[0]+1)*h);
+                    p.setAlpha(alpha1);canvas.drawBitmap(cursor,cursorSrc,cursorDest,p);
+                    cursorSrc.set(srcX,f[1]*h,srcX+w,(f[1]+1)*h);
+                    p.setAlpha(255-alpha1);p.setXfermode(ADD);canvas.drawBitmap(cursor,cursorSrc,cursorDest,p);
+                    p.setXfermode(null);p.setAlpha(255);
+                    canvas.restoreToCount(layer);
+                }
+                if(f[3]!=0&&(!selected||pendingSelect!=null))postInvalidateOnAnimation();
+            }else{
+                cursorSrc.set(srcX,0,srcX+w,h);
+                p.setAlpha(255);canvas.drawBitmap(cursor,cursorSrc,cursorDest,p);
+            }
         }
     }
 }

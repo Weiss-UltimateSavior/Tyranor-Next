@@ -76,7 +76,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private GameRunner.SlotPreview slotPreview;
     private GalleryCatalog.Page galleryPage,replayReturn;
     private long galleryRequest;
-    private int galleryCgPage;
+    private int galleryCgPage,settingsPage;
     private boolean sceneReplay;
     private Runnable panelBack;
     private int width=1280,height=720,lastX=0,lastY=0;
@@ -425,12 +425,14 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         modeUnderPanel=null;
         boolean changed=refreshAfterLoad || currentFrame==null || currentFrame.wait!=frame.wait || currentFrame.line!=frame.line ||
             currentFrame.word!=frame.word || !currentFrame.script.equals(frame.script) ||
-            !currentFrame.body.equals(frame.body) || !currentFrame.speaker.equals(frame.speaker) || currentFrame.nameWindow!=frame.nameWindow;
+            !currentFrame.body.equals(frame.body) || !currentFrame.speaker.equals(frame.speaker) ||
+            currentFrame.nameWindow!=frame.nameWindow || currentFrame.decorations!=frame.decorations;
         currentFrame=drawnStoryFrame=frame;
         if(slotPreview!=null&&slotPreview.frame!=frame)slotPreview=null;
         dialoguePanel.scriptCursorVariant(frame.scriptCursor);
         dialoguePanel.storyBody(frame.hasDialogueText());
         dialoguePanel.passive(frame.wait==NativeGame.DRAW);
+        dialoguePanel.decorations(frame.decorations,frame.frameMs,refreshAfterLoad);
         selectDialogueVariant();
         if (changed) {
             refreshAfterLoad=false;
@@ -609,7 +611,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         }
     }
     private void syncIndependentStatus(){
-        if(runner==null||uiAssets==null||!uiAssets.freeStatus||stage==null)return;
+        if(runner==null||uiAssets==null||!uiAssets.statusOverlays||stage==null)return;
         int mode=visiblePrintMode();
         if(mode!=independentMode){
             independentMode=mode;
@@ -635,20 +637,25 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         runOnUiThread(()->{
             if(stage==null||uiAssets==null||mode!=independentMode||isDestroyed()||isFinishing())return;
             if(independentStatus==null){
-                if(overlays[0]==null&&overlays[1]==null)return;
+                if(overlays.length==0)return;
                 independentStatus=new FrameLayout(this);
                 independentStatus.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
             }
-            for(int i=0;i<overlays.length;i++){
-                GameStatusPartyPanel part=independentParts[i];
-                if(overlays[i]==null){
-                    if(part!=null)independentStatus.removeView(part);
-                    independentParts[i]=null;
-                }else if(part==null){
-                    part=new GameStatusPartyPanel(this,uiAssets,overlays[i],width,height);
-                    independentParts[i]=part;
-                    independentStatus.addView(part,i==1?independentStatus.getChildCount():0,new FrameLayout.LayoutParams(-1,-1));
-                }else {part.canvas(width,height);part.update(overlays[i]);}
+            int used=0;
+            for(GameRunner.Modal overlay:overlays){
+                int index=overlay.mode==GameRunner.Modal.PRINT_PARTY?1:0;
+                used|=1<<index;
+                GameStatusPartyPanel part=independentParts[index];
+                if(part==null){
+                    part=new GameStatusPartyPanel(this,uiAssets,overlay,width,height);
+                    independentParts[index]=part;
+                    independentStatus.addView(part,new FrameLayout.LayoutParams(-1,-1));
+                }else {part.canvas(width,height);part.update(overlay);}
+                independentStatus.bringChildToFront(part);
+            }
+            for(int i=0;i<independentParts.length;i++)if((used&(1<<i))==0&&independentParts[i]!=null){
+                independentStatus.removeView(independentParts[i]);
+                independentParts[i]=null;
             }
             independentStatus.setVisibility(independentStatus.getChildCount()==0?View.GONE:View.VISIBLE);
             placeIndependentStatus();
@@ -796,11 +803,18 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(action==TitleMenu.Action.SETTINGS)warmStoryPanel(GameStoryControlsModel.Action.CONFIG);
         else if(action==TitleMenu.Action.LOAD)warmStoryPanel(GameStoryControlsModel.Action.LOAD);
     }
+    private int openingSettingsPage(){
+        return GameSettingsPanel.openingPage(uiAssets.config,
+            GameSettingsPanel.pageCount(uiAssets.settingsModel(width,height)),settingsPage);
+    }
+    private boolean inSceneReplay(){
+        return sceneReplay||runner!=null&&runner.isGallerySceneReplay();
+    }
     private void warmStoryPanel(GameStoryControlsModel.Action action){
         if(uiAssets==null||uiAssets.runtime==null)return;
         UiPreviewPool.Request request;
         switch(action){
-        case CONFIG:request=UiPreviewPool.Request.read(uiAssets.config,12,1);break;
+        case CONFIG:request=UiPreviewPool.Request.read(uiAssets.config,12,openingSettingsPage()+1);break;
         case SAVE:case LOAD:
             boolean saving=action==GameStoryControlsModel.Action.SAVE;
             GameUiAssets.Config config=saving?uiAssets.save:uiAssets.load;
@@ -968,8 +982,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         AlertDialog dialog=hostDialog().setTitle(text(R.string.engine_systemnnn_host_game_menu))
             .setItems(new String[]{text(R.string.engine_systemnnn_host_continue_game),text(R.string.engine_systemnnn_host_save_progress),text(R.string.engine_systemnnn_host_load_save),text(R.string.engine_systemnnn_host_settings),text(R.string.engine_systemnnn_host_backlog),text(R.string.engine_systemnnn_host_title),text(R.string.engine_systemnnn_host_exit_to_tyn)},(d,item) -> {
                 systemClick();
-                switch(item){case 1:showSlots(true);break;case 2:showSlots(false);break;case 3:showSettings();break;
-                case 4:showBacklog();break;case 5:runner.returnToTitle();break;case 6:finish();break;default:break;}
+                switch(item){case 1:if(!inSceneReplay())showSlots(true);break;case 2:if(!inSceneReplay())showSlots(false);break;case 3:showSettings();break;
+                case 4:showBacklog();break;case 5:if(inSceneReplay())runner.endGalleryReplay();else runner.returnToTitle();break;case 6:finish();break;default:break;}
             }).setNegativeButton(text(R.string.engine_systemnnn_host_close),dialogClick(null)).create();
         showPanel(dialog);
         runner.suspendScriptAudio();
@@ -1612,19 +1626,20 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         Runnable[] actions={()->showSlots(true),()->showSlots(false),this::showSettings,
             ()->{closeOriginalPanel();hideUi();},()->{closeOriginalPanel();runner.skip(true);},this::showBacklog,
             ()->{closeOriginalPanel();runner.auto(true);},back,()->confirmOriginalExit(panel)};
+        boolean replay=inSceneReplay();
         Set<Integer> standardSlots=new HashSet<>();
         for(int i=0;i<keys.length;i++){
             int n=cfg.number(keys[i],i+1);if(n<=0||i==5&&choices!=null&&!choices.backlogAllowed())continue;
             if(currentFrame!=null&&currentFrame.placeMode!=0&&
                 (i==3||i==4||i==6||i==5&&uiAssets.place(currentFrame.placeMode).number("backLogOk",0)==0))continue;
             if(modeUnderPanel!=null&&(i==3||i==4||i==6||i==5&&modeUnderPanel.assets.config.number("backLogOk",0)==0))continue;
-            GameButton button=panel.button(cfg,"Menu1Button"+n,"Menu1Button1",labels[i],actions[i],940,ys[i],320,72);
+            GameButton button=panel.standardButton(cfg,i,replay,"Menu1Button"+n,"Menu1Button1",labels[i],actions[i],940,ys[i],320,72);
             standardSlots.add(n);
-            if(i==0)button.prepare(()->warmStoryPanel(GameStoryControlsModel.Action.SAVE));
-            if(i==1)button.prepare(()->warmStoryPanel(GameStoryControlsModel.Action.LOAD));
+            if(i==0&&!replay)button.prepare(()->warmStoryPanel(GameStoryControlsModel.Action.SAVE));
+            if(i==1&&!replay)button.prepare(()->warmStoryPanel(GameStoryControlsModel.Action.LOAD));
             if(i==2)button.prepare(()->warmStoryPanel(GameStoryControlsModel.Action.CONFIG));
         }
-        panel.addExtendedModes(standardSlots,GameRunner.Modal::systemMenuMode,mode->!sceneReplay&&runner!=null&&runner.systemMenuModeEnabled(mode),
+        panel.addExtendedModes(standardSlots,GameRunner.Modal::systemMenuMode,mode->!replay&&runner!=null&&runner.systemMenuModeEnabled(mode),
             mode->openSystemMenuMode(panel,mode));
         showOriginalPanel(panel,back,capture?cfg:null);
         if(runner!=null)runner.suspendScriptAudio();
@@ -1646,7 +1661,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private void confirmOriginalExit(GameSystemMenuPanel panel) {
         if(gamePanel!=panel||runner==null)return;
         Runnable confirm=()->{
-            if(sceneReplay){closeOriginalPanel();runner.returnToTitle();return;}
+            if(inSceneReplay()){closeOriginalPanel();runner.endGalleryReplay();return;}
             if(returningToTitle)return;
             panel.leave(uiAssets.system,true,picture->{
                 if(isDestroyed()||isFinishing()||gamePanel!=panel||runner==null)return;
@@ -1654,14 +1669,14 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 runner.returnToTitle();
             });
         };
-        if(sceneReplay||uiAssets.system.number("warningPrintFlag",1)==0){confirm.run();return;}
+        if(inSceneReplay()||uiAssets.system.number("warningPrintFlag",1)==0){confirm.run();return;}
         panel.confirmExit(confirm,()->leaveOriginalPanel(uiAssets.system));
     }
     private LinearLayout column() {LinearLayout box=new LinearLayout(hostDialogContext);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(18),dp(8),dp(18),dp(14));return box;}
     private void showSettings() {
         if(uiAssets!=null&&(uiAssets.config.has("modename")||uiAssets.settingsModel(width,height).original)){
             Runnable back=()->leaveOriginalPanel(uiAssets.config);
-            showOriginalPanel(new GameSettingsPanel(this,uiAssets,preferences,runner,this::systemClick,back,width,height,fullscreen,runner.configMask(),takePanelWarmup()),back);return;
+            showOriginalPanel(new GameSettingsPanel(this,uiAssets,preferences,runner,this::systemClick,back,width,height,fullscreen,runner.configMask(),takePanelWarmup(),settingsPage,page->settingsPage=page),back);return;
         }
         LinearLayout box=column();
         TextView hint=hostLabel(text(R.string.engine_systemnnn_host_settings_hint),14);hint.setPadding(0,0,0,dp(10));box.addView(hint);

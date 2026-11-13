@@ -158,6 +158,7 @@ final class GalleryCatalog {
         final int index;
         final String label,picture,detail;
         final boolean enabled,animated,missingMovie;
+        final int unlockedVariants,totalVariants;
 
         Cell(int index,String label,String picture,String detail,boolean enabled) {
             this(index,label,picture,detail,enabled,false);
@@ -166,8 +167,14 @@ final class GalleryCatalog {
             this(index,label,picture,detail,enabled,animated,false);
         }
         Cell(int index,String label,String picture,String detail,boolean enabled,boolean animated,boolean missingMovie) {
+            this(index,label,picture,detail,enabled,animated,missingMovie,0,0);
+        }
+        /** CG cells also keep the original block counters behind the "got/total" detail text. */
+        Cell(int index,String label,String picture,String detail,boolean enabled,boolean animated,boolean missingMovie,
+             int unlockedVariants,int totalVariants) {
             this.index=index; this.label=label; this.picture=picture; this.detail=detail; this.enabled=enabled;this.animated=animated;
             this.missingMovie=missingMovie;
+            this.unlockedVariants=Math.max(0,unlockedVariants);this.totalVariants=Math.max(0,totalVariants);
         }
     }
     static final class Page {
@@ -253,13 +260,62 @@ final class GalleryCatalog {
             if (names.isEmpty()) break;
             total+=names.size();
             if (total>16384) throw new IOException("CG 列表超过容量");
-            List<Cg> blocks=new ArrayList<>();
-            for (int i=0;i<names.size();i++) {
-                CgVariant variant=cgVariant(names.get(i),i);
-                if (!variant.difference || blocks.isEmpty()) blocks.add(new Cg());
-                blocks.get(blocks.size()-1).variants.add(variant);
-            }
-            albums.add(blocks);
+            albums.add(blocks(names));
+        }
+    }
+    /** CommonSelectCG starts a new block at each row without the original '@' difference mark. */
+    private static List<Cg> blocks(List<String> names) {
+        List<Cg> blocks=new ArrayList<>();
+        for (int i=0;i<names.size();i++) {
+            CgVariant variant=cgVariant(names.get(i),i);
+            if (!variant.difference || blocks.isEmpty()) blocks.add(new Cg());
+            blocks.get(blocks.size()-1).variants.add(variant);
+        }
+        return blocks;
+    }
+    /** Per block {getKosuu,total}, as counted by CommonSelectCG for the difference counter. */
+    static int[][] blockVariantCounts(List<String> names,int[] keys,int group) {
+        List<Cg> blocks=blocks(names);
+        int[][] counts=new int[blocks.size()][];
+        for (int i=0;i<counts.length;i++)
+            counts[i]=new int[]{blocks.get(i).unlocked(keys,group).size(),blocks.get(i).variants.size()};
+        return counts;
+    }
+    static final String DIFFERENCE_FONT="ta_sl_font3";
+    /** CommonSelectCG m_defaultFont2FileName; loaded only while differencePrintFlag bit 0 can draw it. */
+    static String differenceFont(GameUiAssets.Config cfg) {
+        if ((cfg.number("differencePrintFlag",1)&1)==0) return "";
+        return GameUiAssets.systemImageKey(cfg.value("fileNameDifferenceFont",DIFFERENCE_FONT));
+    }
+    /** CommonSelectCG::PrintBlock differencePrintFlag and differencePrintByGetFlag gate. */
+    static boolean differenceVisible(int flag,int byGet,int got,int total) {
+        if (total<=0 || got<0 || (flag&1)==0) return false;
+        boolean visible=(flag&2)!=0 || total>=2;
+        if (byGet==0 && got==0) visible=false;
+        return visible;
+    }
+    /**
+     * Glyph x offsets and atlas indices for "got/total" relative to differencePrintX.
+     * Mirrors CSuuji::Print without leading zeros, slash glyph 11, and the total<10 shift.
+     */
+    static int[][] differenceGlyphs(int got,int total,int keta,int nextX) {
+        int places=bound(keta,1,8),step=bound(nextX,-4096,4096);
+        List<int[]> glyphs=new ArrayList<>();
+        int slash=step*places,totalX=step*(places+1);
+        if (total<10) totalX-=step;
+        suuji(glyphs,totalX,total,places,step);
+        glyphs.add(new int[]{slash,11});
+        suuji(glyphs,0,got,places,step);
+        return glyphs.toArray(new int[0][]);
+    }
+    private static void suuji(List<int[]> glyphs,int x,int value,int keta,int nextX) {
+        if (value<0) return;
+        int at=x+(keta-1)*nextX;
+        for (int i=0;i<keta;i++) {
+            glyphs.add(new int[]{at,value%10});
+            at-=nextX;
+            value/=10;
+            if (value==0) return;
         }
     }
     static CgVariant cgVariant(String raw,int unlockIndex) {
@@ -503,7 +559,8 @@ final class GalleryCatalog {
                 boolean open=!images.isEmpty();
                 String name=(open?images.get(0):block.variants.get(0)).name;
                 cells.add(new Cell(i,"CG "+(i+1),name.isEmpty()?"":"sys/sm/sm"+name,
-                    images.size()+"/"+block.variants.size(),open,block.variants.get(0).frames>0));
+                    images.size()+"/"+block.variants.size(),open,block.variants.get(0).frames>0,false,
+                    images.size(),block.variants.size()));
             }
             size=album.stream().mapToInt(block -> block.variants.size()).sum();
         } else if (screen==Screen.SCENE) {
@@ -532,6 +589,10 @@ final class GalleryCatalog {
         for(MenuModeButton mode:modes)names.add(GameUiAssets.systemImageKey(mode.setup.art.image));
         if (screen==Screen.CG && cfg.number("animePrintFlag",0)!=0)
             names.add(GameUiAssets.systemImageKey(cfg.value("fileNameAnime","ta_futa1")));
+        if (screen==Screen.CG) {
+            String font=differenceFont(cfg);
+            if (!font.isEmpty()) names.add(font);
+        }
         names.addAll(cfg.imageNames());
         if(screen!=Screen.VIEW)
             for (Cell cell:cells) if (screen==Screen.MOVIE || cell.enabled || cfg.number("picMustPrintPercent",0)!=0) names.add(cell.picture);
