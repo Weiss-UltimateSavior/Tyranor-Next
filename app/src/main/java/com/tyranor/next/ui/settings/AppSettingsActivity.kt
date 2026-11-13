@@ -25,7 +25,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -48,7 +47,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.ui.common.AppScreenActivity
-import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.AppSecondaryTopBar
+import com.tyranor.next.ui.common.collectSettingAsState
 import com.tyranor.next.ui.common.effectiveNavStyle
 import com.tyranor.next.ui.common.isSideRailLayout
 import com.tyranor.next.ui.common.BottomInsetSpacer
@@ -72,7 +72,6 @@ import com.tyranor.next.ui.common.motion.pressSquishGroup
 import com.tyranor.next.ui.common.motion.shakeOnTrigger
 import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.core.settings.AppSettingsStore
-import com.tyranor.next.core.settings.AppearanceStyle
 import com.tyranor.next.core.settings.HomeWebUrls
 import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.AppThemeColors
@@ -93,7 +92,6 @@ import com.tyranor.next.ui.common.ArrowPreference
 import com.tyranor.next.ui.common.OverlayDropdownPreference
 import com.tyranor.next.ui.common.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import com.tyranor.next.ui.common.collectSettingAsState
 
 /** 应用设置页 Activity：入口见设置页「应用设置」项。 */
 class AppSettingsActivity : AppScreenActivity() {
@@ -157,7 +155,7 @@ internal fun AppSettingsScreen() {
             containerColor = ComposeColor.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
-                AppTopBar(
+                AppSecondaryTopBar(
                     title = stringResource(R.string.settings_app_title),
                     background = ComposeColor.Transparent,
                     contentColor = PageTextColor,
@@ -236,37 +234,8 @@ internal fun AppSettingsScreen() {
                 stagedItem(2, staged) {
                     MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(2).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
-                            // 外观主题：默认 / 复古玻璃 / 白雾玻璃（切换即时全 App 生效并持久化）
-                            val appearanceStyles = AppearanceStyle.entries
-                            val appearanceLabels = appearanceStyles.map { style ->
-                                stringResource(
-                                    when (style) {
-                                        AppearanceStyle.DEFAULT -> R.string.settings_appearance_style_default
-                                        AppearanceStyle.RETRO_GLASS -> R.string.settings_appearance_style_glass
-                                        AppearanceStyle.MILK_GLASS -> R.string.settings_appearance_style_milk
-                                    },
-                                )
-                            }
-                            val themeSwitch = rememberThemeSwitch()
-                            val appearanceIndex = appearanceStyles
-                                .indexOf(AppThemeColors.appearanceStyle)
-                                .coerceAtLeast(0)
-                            OverlayDropdownPreference(
-                                title = stringResource(R.string.settings_appearance_style),
-                                items = appearanceLabels,
-                                selectedIndex = appearanceIndex,
-                                onSelectedIndexChange = { index ->
-                                    appearanceStyles.getOrNull(index)?.let { style ->
-                                        // 整屏换皮：从点击处揭开新主题（「普通」档 / 无法截屏时直接应用）
-                                        themeSwitch {
-                                            AppSettingsStore.setAppearanceStyle(ctx, style)
-                                            AppThemeColors.refresh(ctx)
-                                        }
-                                    }
-                                },
-                            )
                             // 界面动效：增强（新动效，默认）/ 普通（原版动效），切换即时全 App 生效并持久化
-                            val motionEnhanced by AppSettingsStore.motionEnhancedState.collectAsState()
+                            val motionEnhanced by AppSettingsStore.motionEnhancedState.collectSettingAsState()
                             OverlayDropdownPreference(
                                 title = stringResource(R.string.settings_motion_mode),
                                 items = listOf(

@@ -77,6 +77,12 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.tyranor.next.R
 import com.tyranor.next.theme.AppThemeColors
+import com.tyranor.next.theme.NoticeLightCapsuleBackground
+import com.tyranor.next.theme.NoticeLightCapsuleContent
+import com.tyranor.next.theme.NoticeLightCapsuleFailure
+import com.tyranor.next.theme.NoticeDarkCapsuleBackground
+import com.tyranor.next.theme.NoticeDarkCapsuleContent
+import com.tyranor.next.theme.NoticeDarkCapsuleFailure
 import com.tyranor.next.ui.common.isTabletScreen
 import com.tyranor.next.ui.common.motion.BlurCrossfade
 import com.tyranor.next.ui.common.motion.MotionMode
@@ -389,9 +395,15 @@ private fun noticeColors(): NoticeColors {
     val whiteCapsule = AppThemeColors.isDark || AppThemeColors.isGlass
     return remember(whiteCapsule) {
         if (whiteCapsule) {
-            NoticeColors(Color(0xFFF2F2F4), Color(0xFF17171A), Color(0xFFD93025), Color.Black.copy(alpha = 0.10f), Color.Black)
+            NoticeColors(
+                NoticeLightCapsuleBackground, NoticeLightCapsuleContent, NoticeLightCapsuleFailure,
+                Color.Black.copy(alpha = 0.10f), Color.Black,
+            )
         } else {
-            NoticeColors(Color(0xFF1C1C1F), Color(0xFFF5F5F7), Color(0xFFFF7B72), Color.White.copy(alpha = 0.20f), Color.Black)
+            NoticeColors(
+                NoticeDarkCapsuleBackground, NoticeDarkCapsuleContent, NoticeDarkCapsuleFailure,
+                Color.White.copy(alpha = 0.20f), Color.Black,
+            )
         }
     }
 }

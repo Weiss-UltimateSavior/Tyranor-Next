@@ -57,7 +57,7 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppSearchField
-import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
@@ -377,7 +377,7 @@ private fun WebDavSettingsScreen() {
             containerColor = ComposeColor.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
-                AppTopBar(
+                AppSecondaryTopBar(
                     title = stringResource(R.string.webdav_title),
                     background = ComposeColor.Transparent,
                     contentColor = PageTextColor,

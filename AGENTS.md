@@ -138,16 +138,16 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 
 ## 页面顶部栏统一规范
 
-所有页面（首页 / 游戏 / 引擎 / 设置）的顶部栏必须统一。**一律使用统一组件
-`com.tyranor.next.ui.common.AppTopBar`**，禁止任何页面手写该结构；占位页可复用
-`com.tyranor.next.ui.common.PlaceholderPage`（内部同样走 AppTopBar）。
+一级页面（导航对应的首页 / 游戏 / 引擎 / 设置）使用 `com.tyranor.next.ui.common.AppTopBar`；
+二级页面使用 `com.tyranor.next.ui.common.AppSecondaryTopBar`（加粗返回箭头 + 标题，可保留右侧操作）。
+禁止页面手写顶栏结构；二级占位页可复用 `PlaceholderPage`。
 
-### 0. 统一入口（AppTopBar）
+### 0. 统一入口（AppTopBar / AppSecondaryTopBar）
 
-- 页面顶部栏必须调用 `AppTopBar(title, ...)`；标题、结构、取色由组件兜底。
+- 一级页面调用 `AppTopBar(title, ...)`，二级页面调用 `AppSecondaryTopBar(title, ...)`；两者共用状态栏留白、64dp 标题行和附加区布局。
 - 参数约定：
-  - Material 页面（默认）：不传 `background`/`contentColor`，组件默认 `Color.Transparent` / `colorScheme.onBackground`。
-  - Miuix 风格页面（设置类 MiuixScaffold 的 `topBar` 槽）：传 `background = Color.Transparent`（顶部栏背景恒为透明，交由根部背景层——`MiuixTheme.colorScheme.background` 实为 `PageGrey`，传它会盖住玻璃/根部背景）、`contentColor = MiuixTheme.colorScheme.onBackground`，并设 `contentWindowInsets = WindowInsets(0.dp)`。
+  - Material 页面（默认）：不传 `background`/`contentColor`，组件默认 `Color.Transparent` / `PageTextColor`。
+  - Miuix 风格页面（设置类 MiuixScaffold 的 `topBar` 槽）：传 `background = Color.Transparent`（顶部栏背景恒为透明，交由根部背景层——`MiuixTheme.colorScheme.background` 实为 `PageGrey`，传它会盖住玻璃/根部背景）、`contentColor = PageTextColor`，并设 `contentWindowInsets = WindowInsets(0.dp)`。
   - 需要按页面背景取文字色的页面：保持 `background = Color.Transparent`，传 `contentColor = TextColor`，背景仍由页面根层提供。
   - 右侧图标用 `trailing` 槽传入 `TopBarIcon`；标题下方的折叠内容（如游戏页搜索框）用 `underTitle` 槽。
 - 新页面/组件禁止再书写「背景层 + statusBarsPadding + 64dp + titleLarge Bold」结构。
@@ -156,9 +156,9 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 
 - 顶部栏由公共组件内部使用 **Column + Row**，页面不自行使用 Material3 `TopAppBar` 替代；Miuix 页面壳按下文约定接入。
 
-- 页面由外层 `Column` 组装为「顶部栏 → 正文内容」，Material 页与 Miuix 页均保持上下分离布局；Miuix 页由透明 `MiuixScaffold` 的 `topBar` 槽承载 `AppTopBar`，正文位于顶栏下方，不启用顶栏模糊叠层。
+- 页面由外层 `Column` 组装为「顶部栏 → 正文内容」，Material 页与 Miuix 页均保持上下分离布局；Miuix 页由透明 `MiuixScaffold` 的 `topBar` 槽承载对应层级的公共顶栏，正文位于顶栏下方，不启用顶栏模糊叠层。
 
-- **禁止在顶部栏放置任何返回按钮/图标**。返回统一依赖系统返回键/手势（`Activity` 默认 `finish()`），不要通过 `onBack` 参数下发返回回调。
+- 一级顶部栏不放返回按钮；二级顶部栏内置无底色的加粗返回箭头（24dp 图标、48dp 触控区），触控区距标题 9dp，图标用 drawable，颜色跟随标题的 `contentColor`（默认 `PageTextColor`）。按钮通过宿主 `OnBackPressedDispatcher` 触发系统返回，复用页面的返回处理与退出转场，无需页面传回调。
 
 ### 2. 高度
 
@@ -206,7 +206,7 @@ Column(fillMaxSize)                                // 页面根
 └── 正文内容
 ```
 
-> 设置类页面若使用 `MiuixScaffold`，`containerColor` 取 `Color.Transparent`（背景由根部背景层绘制）；`topBar` 槽调用 `AppTopBar`，并设 `contentWindowInsets = WindowInsets(0.dp)`，不要自行重写顶栏结构。
+> 设置类页面若使用 `MiuixScaffold`，`containerColor` 取 `Color.Transparent`（背景由根部背景层绘制）；`topBar` 槽调用对应层级的公共顶栏，并设 `contentWindowInsets = WindowInsets(0.dp)`，不要自行重写顶栏结构。
 
 ### 7. 顶部栏图标按钮
 
@@ -220,7 +220,7 @@ Column(fillMaxSize)                                // 页面根
 
 ### 8. 明文豁免
 
-- **明文豁免（按键方案布局编辑器）**：`ui/settings/PadLayoutEditScreen.kt`（`PadLayoutEditActivity`）**不设顶部栏**，编辑画布占满全屏（含系统栏区域）——为有意设计，不受本节 0–7 条约束。理由：该页的核心契约是与游戏内按键层**同视口**（按钮位置按视口归一化存储，横竖屏按比例重映射），顶栏会压缩画布高度、使「所见即所得」失效。操作方式与退出方式由进屏 Toast 说明，保存经编辑面板内的「保存」触发，退出走系统返回键。**该豁免仅限本页**，其余页面一律使用 `AppTopBar`，不得援引。
+- **明文豁免（按键方案布局编辑器）**：`ui/settings/PadLayoutEditScreen.kt`（`PadLayoutEditActivity`）**不设顶部栏**，编辑画布占满全屏（含系统栏区域）——为有意设计，不受本节 0–7 条约束。理由：该页的核心契约是与游戏内按键层**同视口**（按钮位置按视口归一化存储，横竖屏按比例重映射），顶栏会压缩画布高度、使「所见即所得」失效。操作方式与退出方式由进屏 Toast 说明，保存经编辑面板内的「保存」触发，退出走系统返回键。**该豁免仅限本页**，其余页面一律使用对应层级的公共顶栏，不得援引。
 - **同一豁免的延伸（该页复用 engine 原生编辑 UI）**：本页把 engine 侧的原生按键层与编辑面板（`com.core.input.VirtualPadView` / `VirtualPadEditPanel`，由 core 门面 `PadEditorHost` 提供 `rootView`）整体当作画布，因此**该页内的自绘弹窗与文字尺寸**同样随本页豁免应用统一弹窗材质、圆角与两档排版（面板为深色卡片、随游戏画面同视口呈现，见 `VirtualPadEditPanel.showDarkDialog`）。延伸豁免**同样仅限本页与游戏内按键层**：设置域的其它弹窗（`AppAlertDialog`）必须照常遵守弹窗点击反馈、动态面板取色与 `AppComponentShape` 规范。**理由修正**：该页 Activity 固定 `sensorLandscape`（见 `AndroidManifest.xml`），编辑器本身不经历横竖屏切换；「横竖屏按比例重映射」描述的是**游戏内**按键层的行为。
 
 ***
@@ -232,7 +232,7 @@ Column(fillMaxSize)                                // 页面根
 | 页面意图 | 应使用的入口 / 实现归属 |
 | --- | --- |
 | 主标签与引擎分类切页；独立页面推入、返回 | 常驻页共用 `TabPageMotion` 的弹簧与 `tabPageTransform`，两种宿主保留各自的交互时钟。Activity 走 `startActivityWithPageTransition` / `AppScreenActivity`；背景、翻折和遮罩由 `PageTransitionBackground`、`depthFoldStack`、`pageEnterFold` 处理。 |
-| 抽屉、侧栏、弹窗、下拉、提示条 | 复用 `MotionSheetController` / `SheetBackdrop`、`AppSidePanel`、`AppAlertDialog`、`OverlayDropdownPreference`、`AppNotice`。公共窗口负责遮罩与释放触摸；灵动岛的变形、阴影、排队、按住/滑动与离页时机归 `NoticeHost` / `NoticeCenter`。业务页只提交内容及回调。 |
+| 抽屉、侧栏、弹窗、下拉、提示条 | 抽屉使用 `AppBottomSheet`（内部复用 `MotionSheetController` / `SheetBackdrop`），其余复用 `AppSidePanel`、`AppAlertDialog`、`OverlayDropdownPreference`、`AppNotice`。公共窗口负责遮罩与释放触摸；灵动岛的变形、阴影、排队、按住/滑动与离页时机归 `NoticeHost` / `NoticeCenter`。业务页只提交内容及回调。 |
 | 入场、重播、增删补位、拖拽排序、删除消散 | 入场用 `EntranceState` / `staggeredEntrance`；有稳定 key 的 lazy 列表、网格、瀑布流在原修饰符位置调用 `listItemMotion()`。仅原本快速补位的场景用 `ListItemPlacement.Reflow`。普通 Column 的补位用 `reorderPlacement`；滤镜链的拖动归 `GraphicsChainMotion.kt`；游戏删除走 `GameRemovalMotion.kt` 与 `dissolve`。 |
 | 内容替换、区块显隐、读数与反馈 | 用 `BlurCrossfade`、`BlurVisibility`、`ExpandVisibility`、`ExpandSectionVisibility` 或 `RollingNumberText`，按原效果选有无模糊与是否等待退场。失败、等待、占位、图标回弹、滚动、触觉走 `shakeOnTrigger`、`DelayedProgress` / `breathing`、`shimmerSweep`、`bounceOnChange`、`scrollJelly`、`MotionHaptics`。 |
 | 控件、按压、拖动 | 行和卡片用已有公共控件、`pressSquish` / `pressSquishGroup`；开关、滑条、搜索、进度、可用态、刷新、分类指示器由对应控件持有。跟手输入与松手弹簧分别处理；不要给拖动每一帧重新建动画。 |
@@ -248,7 +248,7 @@ Column(fillMaxSize)                                // 页面根
 
 ## 跨页面一致性要求
 
-- 所有页面共用 `PlaceholderPage`（或与之一致的结构），禁止各页面各自实现不同样式的顶部栏。
+- 一级页统一使用 `AppTopBar`，二级页统一使用 `AppSecondaryTopBar`（或二级占位骨架 `PlaceholderPage`），禁止页面手写顶部栏。
 
 - 新增页面时：页面主体内容放入 `Column` 的正文区域即可，顶部栏保持相同。
 
@@ -279,7 +279,7 @@ Column(fillMaxSize)                                // 页面根
 - **整页变换走绘制阶段图层，别写在整页容器的 `graphicsLayer` 里**：Compose 的 `RectManager` 在图层的**位置类属性**（缩放 / 位移 / 旋转 / 透视距离 / 枢轴）变化时，会把该节点整棵子树的包围盒沿每层变换重新算一遍（`insertOrUpdateTransformedNodeSubhierarchy` → `boundingRectInRoot`，O(子树节点数 × 深度)）；透明度、渲染效果、裁剪不是位置类属性，不触发。整页容器（几百个节点）上的翻折 / 切页位移与缩放每帧一次，真机 debug 包上抽屉打开 / 页面推入的每一帧多花约 3ms（主线程 20%~27%）。所以这些统一用 `ui/common/motion/DrawPhaseLayers.kt` 的 `drawPhaseLayers`（翻折：`depthFoldStack` / `pageEnterFold`）与 `TabPageMotion.kt` 的 `tabPageTransform`（主界面与引擎页切页）：变换放在自己持有的 `GraphicsLayer` 里，进度变化只改图层属性并 `view.invalidate()`，Compose 只看见恒等的外层图层。要点：①录制必须用 DrawScope 的成员扩展 `layer.record(size) { drawContent() }`，不要用带 `density / layoutDirection` 的 `GraphicsLayer.record`（它用图层自己的作用域，`drawContent()` 会直接画到外面，图层是空的，表现为「翻折 / 褪色没了」）；②读进度由 `LayerSourceReads` 的 `SnapshotStateObserver` 单独订阅，不放进 `draw()`，否则每帧重录内容；③外层要有恒等的 `graphicsLayer`（`tabPageTransform` 已有透明度层，`drawPhaseLayers` 自带），让显示列表被缓存；④代价是命中测试不再跟随变换——只适合变换期间不接收触摸、或偏移很小的整页容器；**小控件（按压形变、条目入场、滚动果冻）不要这么做**，它们的子树本来就小，多一层 RenderNode 不划算；⑤页面与抽屉共用 `FoldAxis` 的角度/透视及褪色查表；抽屉使用自己的窗口坐标枢轴。实测对照见 CHANGELOG；诊断用 `simpleperf record --call-graph dwarf` + `--children`，看 `NodeCoordinator.updateLayerParameters` 占比。
 - **重内容的二级页面分帧组合**：二级页面一次性组合太重时（应用设置约 12 个下拉 / 滑条 / 开关），新 Activity 的第一帧要 70~90ms，侧推一开始就顿一下，旧页的压暗翻折、新页的入场翻折也跟着卡。用 `rememberStagedCompose(last)` + `LazyListScope.stagedItem(order, staged) { … }`（`ui/common/StagedCompose.kt`）把列表项按组分帧放行：第一帧只组合页面骨架（第 0 组留空），之后每帧补一组，内容随页面滑入自上而下依次出现——窗口侧推由系统驱动、不受主线程拖累。只在「新页正在侧推进场」且「增强」档分帧（系统重建 / 恢复、「普通」档一次组合完）。组号要让每组的组合成本大致相当（按卡片分，重的卡片单独一组）。真机实测（应用设置，120Hz 屏）：点击后最长一帧 69~93ms → 29~44ms，点击到侧推可见约快 50ms；代价是 6~7 个 13~16ms 的中等帧（60Hz 下都在预算内，120Hz 下算卡顿帧，卡顿帧计数反而更多）。其它很重的二级页面照此接入；列表项已经很轻的页面不要用，白白多出几帧延迟。
 - **性能度量（debug 包）**：`dumpsys gfxinfo <包名> reset` → 操作 → `dumpsys gfxinfo`（卡顿帧、分位数）+ 读 `/proc/<pid>/task/<tid>/stat` 的 utime/stime 算主线程 / RenderThread 的 CPU 占用（比卡顿帧更能反映低端设备的压力）；定位热点用 perfetto（`gfx view input wm am` 类别，`Choreographer#doFrame` 下看 `Recomposer:recompose` / `traversal` / `HardwareRenderer#syncAndDrawFrame`，渲染线程看 `prepareTree` / `Drawing`）与 `simpleperf record --app`（debug 包可直接采样，JIT 方法名可见）；需要看「每个可组合函数花多少」时临时实现 `androidx.compose.runtime.CompositionTracer` 并 `Composer.setTracer`，按 `info` 聚合自身 / 含子级耗时，用完删除。几个已知事实：debug（debuggable）包只跑解释器 + JIT，AOT 与基线配置都不生效（系统把 debuggable 包的编译过滤器强制降为 `verify`，`cmd package compile -m speed -f` 也无效），所以主线程代码量本身就是成本；同一份代码改成不可调试（`isDebuggable = false`）再 AOT（`cmd package compile -m speed -f <包名>`）后真机实测：冷启动 1.45s → 0.25~0.3s，首页空闲整进程 28% → 17%（主线程 16% → 6%），切页最长帧 24~32ms → 13~14ms，二级页推入最长帧 61~69ms → 20ms，抽屉打开卡顿帧 2.2% → 0.8%——debug 包「卡」的大头是运行时模式，不是代码；复现这个对照要先关掉 LeakCanary（它在不可调试包里启动即崩溃：`java.lang.Error: LeakCanary in non-debuggable build`，在 `src/debug/res` 里放 `leak_canary_watcher_auto_install=false`），LeakCanary 开 / 关本身对这些流程没有可测量的差别；常驻粒子背景（`DefaultPageBackgroundLayer`）约 30fps 整窗重绘，是空闲功耗的大头（空闲时整进程约 28~36% 单核），因为要保持动效显示效果，没有降帧率，每帧只能压低渲染树的开销；开着无障碍服务（如 GKD）的设备上 Compose 的语义同步会额外占用主线程，页面语义节点越少越好。；**评估「真实流畅度」不要用 debug 包**：隔离包名下直接 `TYRANOR_APPLICATION_ID=com.tyranor.next.motionv2 ./gradlew :app:assembleRelease`（没有 CI 签名时 release 用 debug 密钥签名，可覆盖安装；LeakCanary 只在 debugImplementation，不会崩），`adb install -r` 后 `adb shell cmd package compile -m speed -f <包名>`，再按同样流程测。同一份代码、同一部手机：二级页推入 / 返回的卡顿帧 5.6% → 1.5%，抽屉打开 2.8% → 0.8%，切页 3~4% → 0.6%，主线程 CPU 20% / 27% / 55% → 7% / 10% / 16%；首次进入引擎设置页最长一帧 99ms → 30ms，返回时销毁二级页 20~37ms → 5ms。用户说「第一次卡、之后几次好点」基本就是 debug 运行时的冷路径（解释执行 + JIT 未预热），不是代码里某处的问题；**进出二级页的「最后一刻」卡顿的已知来源（debug 包，真机 trace 实测）**：①返回动画收尾约 0.5s 处，系统派发 `activityDestroy`，主线程被 `performDestroy` 占住 20~37ms（几乎全是 `CompositionImpl.dispose`：几百个节点的 `onForgotten`、协程取消、懒列表节点释放，稳态下每次约 20ms），正好落在动画视觉结束之后的那几帧；释放组合无法拆开或提前（页面还在屏幕上），目前不处理；②首次进入重页面（引擎设置页，KRKR 内核约 15 个下拉 / 开关行）新 Activity 的第一帧约 90~100ms，之后各次不会更好，这是组合本身的量（解释执行下每行约几 ms），分帧组合试过（第一帧降到约 50~60ms，但每张重卡片单独要 15~46ms，落在窗口侧推刚开始的那段，等于把「开头停一下」换成「滑动中掉帧」，总量不变），已撤——只有卡片很轻、可以细分到每帧 ≤10ms 时才值得用 `StagedCompose`；③窗口侧推本身（系统驱动）在尾部是平滑的，逐帧测量页面左缘位置与内容位置都是单调衰减、倾斜约 0.35s 就不到 1 像素，不是「衔接」问题；动画结束后显示刷新率会从 120Hz 降到 30Hz（只剩 30fps 粒子背景），属于正常的降档。真机逐帧运动分析方法：`screenrecord` 拉下来用 `ffmpeg -vf showinfo` 取时间戳，按行 / 列剖面互相关估页面位移与倾斜，`dumpsys`/perfetto 加 `android.surfaceflinger.frametimeline` 数据源看显示帧间隔与 jank 类型
-- **界面动效档位**：应用设置「外观主题」卡片内的「界面动效」可选「增强」（默认，新动效）与「普通」（原版 Tyranor 动效）。全局状态为 `ui/common/motion/MotionMode.kt` 的 `MotionMode.enhanced`（持久化 `AppSettingsStore.KEY_MOTION_ENHANCED`）。工具集函数已自行按档位退化；具名效果内部涉及两档的分支必须等价于 `if (MotionMode.enhanced) 新动效 else 原版动效`，保证「普通」档与原版完全一致。缺陷修复（如弹窗关闭后遮罩残留，见 `DialogWindowMotion.kt`）两档都生效。
+- **界面动效档位**：应用设置中独立的「界面动效」卡片可选「增强」（默认，新动效）与「普通」（原版 Tyranor 动效）。全局状态为 `ui/common/motion/MotionMode.kt` 的 `MotionMode.enhanced`（持久化 `AppSettingsStore.KEY_MOTION_ENHANCED`）。工具集函数已自行按档位退化；具名效果内部涉及两档的分支必须等价于 `if (MotionMode.enhanced) 新动效 else 原版动效`，保证「普通」档与原版完全一致。缺陷修复（如弹窗关闭后遮罩残留，见 `DialogWindowMotion.kt`）两档都生效。
 - 原生 Dialog 必须由窗口宿主统一调用 `syncDialogWindow` 并在关闭时放行触摸（公共弹窗/侧栏走 `DialogWindowScrim`，搜索封面/裁剪走 `GameOverlayMotion.BindWindow` 与退出控制器），页面不要再同步一次：否则平台窗口自带的背景变暗会在卡片退场后再残留一段，并在此期间拦截点击。
 - **常驻分页的列表必须按页面下标做 key（关闭首页后整页点不动的恶性 bug）**：`MainTabPages` 的页面列表随「显示首页」开关增删首页（`visiblePages`），`forEach` 里每页的 `remember { derivedStateOf … }`（`pageSettled`）和整页内容的组合状态如果不加 `key(page)`，会按「位置」错位复用——游戏页拿到首页「没停稳」的状态，选中页被判成不可交互，整页被「消费所有触摸」的挡层盖住：底栏还能切页，但所有页面内容（卡片、设置行）点不动、无障碍树里也没有页面节点；关闭首页后必现，冷启动也一样（状态流初值是默认「开」，第一次组合按四页画、随后收敛成三页，错位发生在这一次）。现在 `forEach` 内整体包 `key(page)`、`pageSettled` 用 `remember(motion)`，并在第一次组合前同步 `initHomePageEnabled`（避免先按四页画一遍）。**任何「列表 + 逐项 remember」的常驻结构，只要列表会增删头部项，都必须 key；`remember` 的值引用了外部变量就要把它写进 remember 的 key。** 诊断方法：`uiautomator dump` 看页面内容有没有节点、临时在 `SideEffect` 里打印每页的 `selected / interactive / settled / offset / alpha`。
 - **多页切换不要现场组合**：同一屏内的分页（如引擎页顶部分类）提前组合好并常驻（空闲时预组合其余页），切换时只改各页的图层位移 / 透明度；用 `AnimatedContent` 现场组合新页会在切换那一帧掉帧。引擎分类与主标签**共用增强档效果**（普通档分别保留瞬切和主标签补间）（`TabPagerState` 的 `pageOffset` / `pageAlpha` + 宿主的景深缩放 `TabPageMotion.DepthScale`）：整宽水平弹簧位移（`MotionTokens.page`）+ 淡入淡出弹簧（`MotionTokens.fadeIn`）+ 景深缩放 0.06，只有旧页和新页参与，分页容器 `clipToBounds`；改其一必须与 `MainTabPages` 保持一致。列表内容里不要直接捕获会随切换变化的值（改捕获 `rememberUpdatedState`），否则切换时所有页的条目一起重组。页面顶层作用域也不要读选中项：用 `derivedStateOf` / lambda 传递（`rememberTabPagerState({ selectedTab }, …)`），每个分页的外壳单独成 composable（`EnginePageHost`）、每页的列表用 `remember(engines, …)` 固定，否则切页那一帧整页重组（实测 25ms → 12ms）。几个分页叠在同一个 `Box` 里时，**当前页必须用 `zIndex` 放在最上层**（`EnginePageHost`）：命中测试从最上层的兄弟开始，排在后面的「非当前页」挡触摸层会把压在它下面的当前页的触摸整片吃掉（曾导致引擎页中间区域列表滑不动、卡片点不了，只剩最左侧一条能响应）。新增引擎：加进 `EngineLauncher.supportedEngines`，并在 `engineTabOf` 的穷举 `when` 里指定分类，其余自动生效。

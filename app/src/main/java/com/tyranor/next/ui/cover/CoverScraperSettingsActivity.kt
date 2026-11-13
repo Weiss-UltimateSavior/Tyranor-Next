@@ -53,7 +53,7 @@ import com.tyranor.next.theme.PageGrey
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.AppScreenActivity
-import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.NoRippleTextButton
 import com.tyranor.next.ui.common.motion.BlurCrossfade
@@ -359,7 +359,7 @@ private fun CoverSourceRow(
 
 @Composable
 private fun CoverScraperTopBar() {
-    AppTopBar(
+    AppSecondaryTopBar(
         title = stringResource(R.string.settings_cover_scraper),
         background = ComposeColor.Transparent,
         contentColor = PageTextColor,

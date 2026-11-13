@@ -206,12 +206,7 @@ fun MainScreen(
   val unselectedColor = UnselectedGrey
   // 导航栏样式：应用设置 → 默认 / 液态玻璃 · 经典 / 液态玻璃 · 透镜（内存态，设置页切换即时生效）
   LaunchedEffect(Unit) {
-    // initNavStyle 是幂等的（设置页也会调用一次），这里与游戏排序一起在 IO 线程读一次 prefs
-    val gameSort = withContext(Dispatchers.IO) {
-      AppSettingsStore.initNavStyle(context)
-      AppSettingsStore.getGameSort(context)
-    }
-    AppSettingsStore.gameSortState.value = gameSort
+    withContext(Dispatchers.IO) { AppSettingsStore.initNavStyle(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initEngineTabs(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initEngineCardIcon(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initSideRail(context) }
@@ -739,7 +734,7 @@ private fun ColumnScope.MainTabPages(
               entrance = tabEntrances[page],
               overlay = overlay,
               allowHiddenDraw = page != 0 || foldDesaturate,
-              reportActive = onboarding || (page == 0 && !foldDesaturate),
+              reportActive = onboarding,
             ) { pageActive ->
               when (page) {
                 0 -> HomeScreen(
@@ -817,8 +812,8 @@ internal fun MainTabPageHost(
   val gateHiddenDraw = MotionMode.enhanced && allowHiddenDraw
   val pageShown by remember(motion) { derivedStateOf { motion.alpha.value > HiddenPageAlpha } }
   val pageSelected by rememberUpdatedState(selected)
-  // 只有引导锚点和 Web 首页需要等到完全停稳；其余页面不订阅这个状态。
-  val pageActive = reportActive && selected && !pageTransition.isRunning
+  // 首页在停稳后恢复 Web 生命周期或导入游戏时长；其余页面只在引导需要锚点时订阅。
+  val pageActive = (page == 0 || reportActive) && selected && !pageTransition.isRunning
   Box(
     Modifier
       .fillMaxSize()

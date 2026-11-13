@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -51,18 +52,23 @@ import androidx.compose.ui.layout.positionInParent
 import kotlin.math.roundToInt
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.LayoutDirection
 import com.tyranor.next.theme.AppComponentShape
+import com.tyranor.next.theme.TabLensRimMiddle
+import com.tyranor.next.theme.TabLensRimBottom
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassSurfaceHigh
 import com.tyranor.next.theme.GlassText
 import com.tyranor.next.theme.GlassTextSecondary
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.PageSecondaryTextColor
+import com.tyranor.next.theme.SheetSecondaryTextColor
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.LocalAppDialogContent
 import com.tyranor.next.theme.UnselectedGrey
@@ -77,6 +83,7 @@ import kotlinx.coroutines.launch
 
 /** 标签高度（两形态统一）。 */
 private val SlidingTabHeight = 42.dp
+private val TabLabelHorizontalPadding = 16.dp
 
 /** 等分宽度形态的标签间距。 */
 private val FixedTabSpacing = 6.dp
@@ -167,6 +174,7 @@ private val IndicatorThreshold = 0.1.dp
  * @param selectedIndex 当前选中下标（越界自动收敛）
  * @param onTabSelected 点击标签回调
  * @param scrollable 是否横向滚动形态
+ * @param scrollResetKey 变化时重新定位滚动态的选中项，即使选中下标未变
  */
 @Composable
 fun SlidingTabRow(
@@ -181,11 +189,12 @@ fun SlidingTabRow(
      * 不传则沿用组件自带的「蠕动」弹簧。
      */
     pager: TabPagerState? = null,
+    scrollResetKey: Int = 0,
 ) {
     if (tabs.isEmpty()) return
     val safeIndex = selectedIndex.coerceIn(0, tabs.lastIndex)
     if (scrollable) {
-        ScrollableSlidingTabRow(tabs, safeIndex, onTabSelected, modifier)
+        ScrollableSlidingTabRow(tabs, safeIndex, onTabSelected, modifier, scrollResetKey)
     } else {
         FixedSlidingTabRow(tabs, safeIndex, onTabSelected, modifier, pager)
     }
@@ -239,7 +248,7 @@ private fun FixedSlidingTabRow(
             }
         }
         Row(
-            modifier = Modifier.fillMaxWidth().fillMaxHeight(),
+            modifier = Modifier.fillMaxWidth().fillMaxHeight().selectableGroup(),
             horizontalArrangement = Arrangement.spacedBy(FixedTabSpacing),
         ) {
             tabs.forEachIndexed { index, label ->
@@ -311,8 +320,8 @@ private fun TabLensGlass(
     val rim = remember {
         Brush.verticalGradient(
             0f to Color.White.copy(alpha = 0.95f),
-            0.55f to Color(0x14000000),
-            1f to Color(0x24000000),
+            0.55f to TabLensRimMiddle,
+            1f to TabLensRimBottom,
         )
     }
     val sheen = remember {
@@ -421,24 +430,26 @@ private fun ScrollableSlidingTabRow(
     selectedIndex: Int,
     onTabSelected: (Int) -> Unit,
     modifier: Modifier,
+    scrollResetKey: Int,
 ) {
     val shape = AppComponentShape
     val density = LocalDensity.current
+    val layoutDirection = LocalLayoutDirection.current
     val scrollState = rememberScrollState()
-    // 标签数量变化时同步更换测量表；异步 clear 可能晚于首次布局，把刚写入的几何清空且不再触发测量。
-    val geometry = remember(tabs.size) { mutableStateMapOf<Int, TabGeometry>() }
+    val geometry = remember(tabs) { mutableStateMapOf<Int, TabGeometry>() }
     // 首次自动定位（快照）与后续选中变化（动画）的区分
     var positionedOnce by remember { mutableStateOf(false) }
-    // 选中项在可视区外时滚动到可见（首次直接定位；用户点击的标签必然可见，不触发）
-    LaunchedEffect(selectedIndex, geometry.size, scrollState.viewportSize) {
-        val target = geometry[selectedIndex] ?: return@LaunchedEffect
+    // 恢复首项时回到起点；其他选中项只在可视区外时滚入可见。
+    val selectedGeometry = geometry[selectedIndex]
+    LaunchedEffect(selectedIndex, selectedGeometry, scrollState.viewportSize, scrollResetKey) {
+        val target = selectedGeometry ?: return@LaunchedEffect
         val viewport = scrollState.viewportSize
         if (viewport <= 0) return@LaunchedEffect
         val scroll = scrollState.value.toFloat()
         val visible = target.x >= scroll && target.x + target.width <= scroll + viewport
-        if (!visible) {
+        if (!visible || (selectedIndex == 0 && scroll > 0)) {
             val margin = with(density) { ScrollableTabContentPadding.toPx() }
-            val targetScroll = (target.x - margin).coerceAtLeast(0f).toInt()
+            val targetScroll = if (selectedIndex == 0) 0 else (target.x - margin).coerceAtLeast(0f).toInt()
             if (positionedOnce) scrollState.animateScrollTo(targetScroll) else scrollState.scrollTo(targetScroll)
         }
         positionedOnce = true
@@ -458,11 +469,12 @@ private fun ScrollableSlidingTabRow(
                     )
                 }
                 Row(
-                    modifier = Modifier.fillMaxHeight(),
+                    modifier = Modifier.fillMaxHeight().selectableGroup(),
                     horizontalArrangement = Arrangement.spacedBy(ScrollableTabSpacing),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Spacer(Modifier.width(ScrollableTabContentPadding))
+                    // 相邻项间距也计入留白，使两端实际各为 12dp。
+                    Spacer(Modifier.width(ScrollableTabContentPadding - ScrollableTabSpacing))
                     tabs.forEachIndexed { index, label ->
                         TabLabel(
                             label = label,
@@ -473,8 +485,14 @@ private fun ScrollableSlidingTabRow(
                                 // 记录相对内容坐标系的几何：onGloballyPositioned 放在链首，
                                 // 取到的是含内边距的整块标签位置/宽度（与指示器同坐标系）
                                 .onGloballyPositioned { coords ->
-                                    val x = coords.positionInParent().x
+                                    val physicalX = coords.positionInParent().x
                                     val width = coords.size.width.toFloat()
+                                    val x = if (layoutDirection == LayoutDirection.Rtl) {
+                                        val row = coords.parentLayoutCoordinates ?: return@onGloballyPositioned
+                                        row.size.width - physicalX - width
+                                    } else {
+                                        physicalX
+                                    }
                                     val current = geometry[index]
                                     if (current == null || current.x != x || current.width != width) {
                                         geometry[index] = TabGeometry(x, width)
@@ -482,7 +500,7 @@ private fun ScrollableSlidingTabRow(
                                 },
                         )
                     }
-                    Spacer(Modifier.width(ScrollableTabContentPadding))
+                    Spacer(Modifier.width(ScrollableTabContentPadding - ScrollableTabSpacing))
                 }
             }
         }
@@ -529,7 +547,7 @@ private fun TabLabel(
             .pressSquish(scale = 0.92f, follow = 0.dp)
             .clip(AppComponentShape)
             .selectable(selected = selected, role = Role.Tab, onClick = onClick)
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = TabLabelHorizontalPadding),
         contentAlignment = Alignment.Center,
     ) {
         val targetColor = tabContentColor(selected)
@@ -570,6 +588,7 @@ private fun TabLabel(
  */
 @Composable
 private fun tabIndicatorContainer(): Color = when {
+    LocalAppSheetContent.current && AppThemeColors.isMilkGlass -> DialogItemSurface
     LocalAppDialogContent.current -> DialogItemSurface
     AppThemeColors.isGlass -> GlassSurfaceHigh
     else -> NavWhite
@@ -581,6 +600,7 @@ private fun tabContentColor(selected: Boolean): Color = when {
     selected && AppThemeColors.isGlass -> GlassText
     selected -> TextColor
     AppThemeColors.isGlass -> GlassTextSecondary
+    LocalAppSheetContent.current && AppThemeColors.isMilkGlass -> SheetSecondaryTextColor
     AppThemeColors.isMilkGlass -> PageSecondaryTextColor
     LocalAppDialogContent.current -> UnselectedGrey
     else -> MaterialTheme.colorScheme.onSurfaceVariant

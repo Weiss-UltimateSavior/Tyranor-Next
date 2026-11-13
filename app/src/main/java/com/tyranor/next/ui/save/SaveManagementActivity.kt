@@ -44,6 +44,7 @@ import com.tyranor.next.core.game.save.RpgSaveFormat
 import com.tyranor.next.core.game.save.RpgSaveSync
 import com.tyranor.next.core.game.save.sync.SaveSyncException
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
+import com.tyranor.next.core.game.save.sync.requiresExternalSaveExitConfirmation
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.ScanGameIntents
@@ -58,7 +59,7 @@ import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppScreenActivity
-import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.motion.BlurCrossfade
@@ -216,7 +217,7 @@ private fun SaveManagementScreen(game: ScanGame) {
     ) { uri: Uri? ->
         if (uri != null) {
             runSaveTask {
-                val count = manager.exportToZip(game, uri, exportFormat)
+                val count = manager.withManualSaveAccess(game) { manager.exportToZip(game, uri, exportFormat) }
                 saveExportedCountFormat.format(count)
             }
         }
@@ -224,7 +225,7 @@ private fun SaveManagementScreen(game: ScanGame) {
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) {
             runSaveTask {
-                val count = manager.importFromZip(game, uri)
+                val count = manager.withManualSaveAccess(game) { manager.importFromZip(game, uri) }
                 saveImportedCountFormat.format(count)
             }
         }
@@ -237,7 +238,7 @@ private fun SaveManagementScreen(game: ScanGame) {
             containerColor = ComposeColor.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
-                AppTopBar(
+                AppSecondaryTopBar(
                     title = stringResource(R.string.save_management_title),
                     background = ComposeColor.Transparent,
                     contentColor = PageTextColor,
@@ -316,7 +317,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                         cornerRadius = AppComponentCornerRadius,
                     ) {
                         Column(Modifier.padding(vertical = 4.dp)) {
-                            if (game.engine == EngineType.YURIS) {
+                            if (requiresExternalSaveExitConfirmation(game.engine)) {
                                 AppNavItem(
                                     title = stringResource(R.string.save_external_exit_title),
                                     summary = stringResource(R.string.save_external_exit_summary),
@@ -515,7 +516,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                     onClick = {
                         showDeleteConfirm = false
                         runSaveTask {
-                            val count = manager.deleteSaves(game)
+                            val count = manager.withManualSaveAccess(game) { manager.deleteSaves(game) }
                             saveDeletedCountFormat.format(count)
                         }
                     },

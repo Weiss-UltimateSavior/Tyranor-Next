@@ -2,6 +2,18 @@
 
 WebDAV 存档同步、恢复与 Compose UI 的独立验收入口见 [WebDAV 设备验收记录](../../../docs/WebDAV-device-acceptance.md)。这些测试要求专用 application ID 与显式 opt-in；其纯框架辅助 Activity 不证明原生游戏兼容性。
 
+## 内置引擎时长记录
+
+`GamePlaytimeDeviceTest` 使用独立包与原创 HTML 夹具，启动真实的 `:tyrano` 私有宿主，验证前台片段落盘、后台不累计、重复导入幂等，以及同一运行游戏收到新启动 UUID 后仍沿用原会话与排序起点。它不证明原生游戏兼容性，也不覆盖全部引擎的真实游戏验收。
+
+```bash
+TYRANOR_APPLICATION_ID=com.tyranor.next.playtimetest ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
+# 核对并分别安装上述两个 APK，包名必须为 com.tyranor.next.playtimetest 与其 .test 包。
+adb shell am instrument -w -r -e class com.tyranor.next.core.game.playtime.GamePlaytimeDeviceTest -e playtime_test true com.tyranor.next.playtimetest.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+2026-11-12 在 MAA-AN10 / API 36 实机通过 1 项测试；对应 JVM 时长逻辑与启动记账回归共 9 项通过。全量 Android lint 未通过：App 29 个、engine 54 个存量错误，报错未涉及本次修改的文件。
+
 R8 release-native 动态验证使用可选的纯Java runner，见 [`../releaseProbe/README.md`](../releaseProbe/README.md)。不得把默认debug AndroidX测试APK与release target混装；默认本页命令仍针对debug，省略 `ethornellReleaseProbe` 属性即可。
 
 这些是 **真实 Android JNI/VM/GPU** 测试，不使用 mock Backend，不更改生产 Activity 的 exported 或添加 Intent backdoor。默认合成数据由测试 Java 在专用 app 私有目录生成，不含商业资产。测试代码直接访问 engine 是仪器层边界测试，非 UI 业务依赖。

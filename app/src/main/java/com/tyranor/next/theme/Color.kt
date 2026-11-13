@@ -35,6 +35,18 @@ val CoverBadgeText = Color.White
 /** 未读/更新提醒红点：固定亮红，不随主题色与深浅色变化。 */
 val NoticeDotRed = Color(0xFFFF2D2D)
 
+// ===== 应用内提示胶囊：浅/深胶囊配对色，按实际背景风格选择 =====
+val NoticeLightCapsuleBackground = Color(0xFFF2F2F4)
+val NoticeLightCapsuleContent = Color(0xFF17171A)
+val NoticeLightCapsuleFailure = Color(0xFFD93025)
+val NoticeDarkCapsuleBackground = Color(0xFF1C1C1F)
+val NoticeDarkCapsuleContent = Color(0xFFF5F5F7)
+val NoticeDarkCapsuleFailure = Color(0xFFFF7B72)
+
+/** 分类栏透镜的中性边缘渐变；不随主题强调色变化。 */
+val TabLensRimMiddle = Color(0x14000000)
+val TabLensRimBottom = Color(0x24000000)
+
 // ===== 实底危险按钮（删除等破坏性动作）固定色：不随主题色与外观风格变化 =====
 // 深色 scheme 的 colorScheme.error 是浅粉（#F2B8B5）+ 深褐红字，放在玻璃深色面板上
 // 会发白失焦，与默认/白雾玻璃的深红底白字割裂；实底危险按钮统一取下面这对固定值。
@@ -206,6 +218,20 @@ val PageSecondaryTextColor: Color
         AppThemeColors.isDark -> TextColorDark.copy(alpha = 0.72f)
         else -> TextColorLight.copy(alpha = 0.6f)
     }
+
+/** 抽屉辅助文字：白雾玻璃的亮面板使用深色正文。 */
+val SheetSecondaryTextColor: Color
+    get() = if (AppThemeColors.isMilkGlass) TextColor else PageSecondaryTextColor
+
+/** 抽屉遮罩：玻璃面板需要加深与页面之间的层次。 */
+val SheetScrimColor: Color
+    get() = Color.Black.copy(
+        alpha = when {
+            AppThemeColors.isGlass -> 0.6f
+            AppThemeColors.isMilkGlass -> 0.45f
+            else -> 0.32f
+        },
+    )
 
 /** 首次使用教练层的统一遮罩色。 */
 val CoachOverlayScrim: Color = Color.Black.copy(alpha = 0.46f)

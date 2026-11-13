@@ -58,7 +58,7 @@ import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.AppScreenActivity
-import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.TimeFormats
@@ -157,7 +157,7 @@ private fun KrkrOnlinePatchScreen(game: ScanGame) {
     val noMatch = !loading && filtered.isEmpty() && message == null
 
     Column(Modifier.fillMaxSize().skipEntranceOnDrag()) {
-        AppTopBar(
+        AppSecondaryTopBar(
             title = stringResource(R.string.patch_title),
             trailing = {
                 // 拉取索引期间刷新图标缓缓明灭（包一层不改尺寸的 Box，静止时与原样一致）

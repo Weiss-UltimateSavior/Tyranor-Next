@@ -25,8 +25,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -39,8 +37,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -62,8 +58,6 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -81,16 +75,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tyranor.next.R
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.core.settings.AppearanceStyle
 import com.tyranor.next.core.settings.GraphicsCapabilities
 import com.tyranor.next.core.settings.GraphicsFamily
 import com.tyranor.next.core.settings.GraphicsSettings
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.game.storage.GameLibraryFacade
-import com.tyranor.next.theme.AppSheetTopShape
 import com.tyranor.next.theme.AppThemeColors
-import com.tyranor.next.theme.GlassPanelSolid
-import com.tyranor.next.theme.GlassSurfaceSolid
-import com.tyranor.next.theme.MilkGlassPanelBackground
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.PageSecondaryTextColor
 import com.tyranor.next.theme.PageTextColor
@@ -102,9 +93,9 @@ import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppAlertDialog
-import com.tyranor.next.ui.common.AppDialogMaxWidth
-import com.tyranor.next.ui.common.AppSheetDragHandle
+import com.tyranor.next.ui.common.AppBottomSheet
 import com.tyranor.next.ui.common.AppSearchField
+import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.SettingsEntryCard
 import com.tyranor.next.ui.common.coachAnchor
@@ -116,6 +107,7 @@ import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.SliderValueHeader
 import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.rememberThemeSwitch
 import com.tyranor.next.ui.common.motion.BlurText
 import com.tyranor.next.ui.common.motion.BlurVisibility
 import com.tyranor.next.ui.common.motion.ExpandHorizontallyVisibility
@@ -126,15 +118,7 @@ import com.tyranor.next.ui.common.motion.breathing
 import com.tyranor.next.ui.common.motion.shakeOnTrigger
 import com.tyranor.next.ui.common.motion.ListItemPlacement
 import com.tyranor.next.ui.common.motion.listItemMotion
-import com.tyranor.next.ui.common.motion.MotionSheetEffects
 import com.tyranor.next.ui.common.motion.ProvideEntrance
-import com.tyranor.next.ui.common.motion.motionSheetDrag
-import com.tyranor.next.ui.common.motion.BindBackdrop
-import com.tyranor.next.ui.common.motion.nativeScrim
-import com.tyranor.next.ui.common.motion.LocalSheetBackdrop
-import com.tyranor.next.ui.common.motion.motionSheetSurface
-import com.tyranor.next.ui.common.motion.rememberMotionSheetController
-import com.tyranor.next.ui.common.motion.rememberMotionSheetState
 import com.tyranor.next.ui.common.motion.PressSquishDefaults
 import com.tyranor.next.ui.common.motion.pressSquish
 import com.tyranor.next.ui.common.motion.pressSquishGroup
@@ -376,26 +360,31 @@ fun SettingsScreen(
                                 hapticEffect = SliderDefaults.SliderHapticEffect.Step,
                                 modifier = Modifier.staggeredEntrance(3, distance = 10.dp).padding(horizontal = 16.dp),
                             )
-                            var gameSort by remember { mutableStateOf(AppSettingsStore.getGameSort(ctx)) }
-                            val gameSortModes = listOf(
-                                AppSettingsStore.GAME_SORT_ALPHA to stringResource(R.string.settings_sort_alpha),
-                                AppSettingsStore.GAME_SORT_BRACKET_TAG to stringResource(R.string.settings_sort_bracket_tag),
-                            )
-                            val sortIndex = gameSortModes.indexOfFirst { it.first == gameSort }
-                                .let { if (it < 0) 0 else it }
+                            val appearanceStyles = AppearanceStyle.entries
+                            val appearanceLabels = appearanceStyles.map { style ->
+                                stringResource(
+                                    when (style) {
+                                        AppearanceStyle.DEFAULT -> R.string.settings_appearance_style_default
+                                        AppearanceStyle.RETRO_GLASS -> R.string.settings_appearance_style_glass
+                                        AppearanceStyle.MILK_GLASS -> R.string.settings_appearance_style_milk
+                                    },
+                                )
+                            }
+                            val themeSwitch = rememberThemeSwitch()
                             OverlayDropdownPreference(
                                 modifier = Modifier
                                     .staggeredEntrance(4, distance = 10.dp)
-                                    // 选中新排序后整行轻弹一下作落点反馈（Miuix 内部值文字无法过渡）
-                                    .bounceOnChange(gameSort, depth = 0.05f)
+                                    .bounceOnChange(AppThemeColors.appearanceStyle, depth = 0.05f)
                                     .pressSquish(scale = PressSquishDefaults.RowScale),
-                                title = stringResource(R.string.settings_game_sort),
-                                items = gameSortModes.map { it.second },
-                                selectedIndex = sortIndex,
+                                title = stringResource(R.string.settings_appearance_style),
+                                items = appearanceLabels,
+                                selectedIndex = appearanceStyles.indexOf(AppThemeColors.appearanceStyle).coerceAtLeast(0),
                                 onSelectedIndexChange = { index ->
-                                    gameSortModes.getOrNull(index)?.first?.let { sort ->
-                                        gameSort = sort
-                                        AppSettingsStore.setGameSort(ctx, sort)
+                                    appearanceStyles.getOrNull(index)?.let { style ->
+                                        themeSwitch {
+                                            AppSettingsStore.setAppearanceStyle(ctx, style)
+                                            AppThemeColors.refresh(ctx)
+                                        }
                                     }
                                 },
                             )
@@ -454,199 +443,144 @@ fun SettingsScreen(
     }
 
     if (showScanDirs) {
-        // 抽屉内条目底色：与游戏操作抽屉一致（复古玻璃用不透明条目色，白雾玻璃用弹窗内条目色）
+        // 抽屉内条目底色遵循页面灰底取色；白雾玻璃用面板内条目色。
         val dirItemSurface = when {
-            AppThemeColors.isGlass -> GlassSurfaceSolid
             AppThemeColors.isMilkGlass -> DialogItemSurface
             else -> NavWhite
         }
-        // 「增强」档：抽屉的展开 / 收起 / 跟手下拉由控制器接管（与游戏操作抽屉一致，见 SheetMotion.kt）
-        val sheetMotion = rememberMotionSheetController()
-        val scanSheetState = rememberMotionSheetState(sheetMotion)
-        LocalSheetBackdrop.current?.let { sheetMotion.BindBackdrop(it) }
-        val scanScrim = when {
-            AppThemeColors.isGlass -> Color.Black.copy(alpha = 0.6f)
-            AppThemeColors.isMilkGlass -> Color.Black.copy(alpha = 0.45f)
-            else -> Color.Black.copy(alpha = 0.32f)
-        }
-        ModalBottomSheet(
-            onDismissRequest = { showScanDirs = false },
-            modifier = Modifier.motionSheetSurface(sheetMotion, scanScrim),
-            sheetState = scanSheetState,
-            properties = if (sheetMotion.enhanced) {
-                ModalBottomSheetProperties(shouldDismissOnBackPress = false)
-            } else {
-                ModalBottomSheetProperties()
-            },
-            sheetMaxWidth = AppDialogMaxWidth,
-            // 关闭拖拽手势：只允许遮罩/返回键关闭（与游戏操作抽屉一致）
-            sheetGesturesEnabled = false,
-            containerColor = when {
-                AppThemeColors.isGlass -> GlassPanelSolid
-                AppThemeColors.isMilkGlass -> Color.Transparent
-                else -> MaterialTheme.colorScheme.background
-            },
-            contentColor = TextColor,
-            scrimColor = sheetMotion.nativeScrim(scanScrim),
-            contentWindowInsets = { WindowInsets(0.dp) },
-            shape = AppSheetTopShape,
-            dragHandle = {
-                if (!AppThemeColors.isMilkGlass) {
-                    AppSheetDragHandle(showGlassTopBorder = true, modifier = Modifier.motionSheetDrag(sheetMotion))
-                }
-            },
-        ) {
-            MotionSheetEffects(sheetMotion) { showScanDirs = false }
-            // 列表最大高度为底部两个长按钮与标题预留空间，避免抽屉整体超出屏幕
-            val sheetMaxHeight = with(LocalConfiguration.current) {
-                (screenHeightDp - 280).dp.coerceIn(80.dp, 420.dp)
-            }
-            // 抽屉自带入场节拍：标题、目录条目与底部按钮依次弹入
-            ProvideEntrance {
-            Box(Modifier.fillMaxWidth().skipEntranceOnDrag().motionSheetDrag(sheetMotion).clip(AppSheetTopShape)) {
-                if (AppThemeColors.isMilkGlass) {
-                    MilkGlassPanelBackground(Modifier.matchParentSize())
-                }
-                Column(Modifier.fillMaxWidth()) {
-                    if (AppThemeColors.isMilkGlass) {
-                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            AppSheetDragHandle()
-                        }
+        AppBottomSheet(onDismissRequest = { showScanDirs = false }) {
+            Column(Modifier.fillMaxWidth().weight(1f, fill = false)) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    item {
+                        Text(
+                            stringResource(R.string.settings_game_dirs_title),
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .staggeredEntrance(0, distance = 12.dp, stepMillis = 40L)
+                                .fillMaxWidth()
+                                .padding(horizontal = 4.dp, vertical = 8.dp),
+                        )
                     }
-                    LazyColumn(
-                        modifier = Modifier.fillMaxWidth().heightIn(max = sheetMaxHeight),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
+                    if (scanDirs.isEmpty()) {
                         item {
                             Text(
-                                stringResource(R.string.settings_game_dirs_title),
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier
-                                    .staggeredEntrance(0, distance = 12.dp, stepMillis = 40L)
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 4.dp, vertical = 8.dp),
+                                stringResource(R.string.settings_no_game_dirs),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = PageSecondaryTextColor,
                             )
                         }
-                        if (scanDirs.isEmpty()) {
-                            item {
-                                Text(
-                                    stringResource(R.string.settings_no_game_dirs),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = PageSecondaryTextColor,
-                                )
-                            }
+                    }
+                    itemsIndexed(scanDirs, key = { _, dir -> dir }) { index, dir ->
+                        // 目录被改名/删除或权限失效后标记为已失效，提示用户手动清理。
+                        // DocumentFile.isDirectory 可能触发 binder 调用，放到 IO 线程执行。
+                        val valid by produceState(initialValue = false, dir) {
+                            value = withContext(Dispatchers.IO) { isScanDirValid(ctx, dir) }
                         }
-                        itemsIndexed(scanDirs, key = { _, dir -> dir }) { index, dir ->
-                            // 目录被改名/删除或权限失效后标记为已失效，提示用户手动清理。
-                            // DocumentFile.isDirectory 可能触发 binder 调用，放到 IO 线程执行。
-                            val valid by produceState(initialValue = false, dir) {
-                                value = withContext(Dispatchers.IO) { isScanDirValid(ctx, dir) }
-                            }
-                            // 与游戏操作抽屉的 AppNavItem 同规格：约 58dp 高、16dp 左右视觉留白、
-                            // 24dp 左侧图标、标题 bodyMedium；删除动作以行尾图标按钮承载
-                            Row(
-                                // 目录增删快速补位；抽屉打开时仍依次升起。
-                                modifier = listItemMotion(ListItemPlacement.Reflow)
-                                    .staggeredEntrance(index + 1, distance = 10.dp, stepMillis = 35L)
-                                    .fillMaxWidth()
+                        // 与游戏操作抽屉的 AppNavItem 同规格：约 58dp 高、16dp 左右视觉留白、
+                        // 24dp 左侧图标、标题 bodyMedium；删除动作以行尾图标按钮承载
+                        Row(
+                            // 目录增删快速补位；抽屉打开时仍依次升起。
+                            modifier = listItemMotion(ListItemPlacement.Reflow)
+                                .staggeredEntrance(index + 1, distance = 10.dp, stepMillis = 35L)
+                                .fillMaxWidth()
+                                .clip(AppComponentShape)
+                                .background(dirItemSurface)
+                                .glassBorder()
+                                .padding(start = 16.dp, end = 8.dp, top = 11.dp, bottom = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Image(
+                                painter = painterResource(R.drawable.ic_settings_game_dir),
+                                contentDescription = null,
+                                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
+                                modifier = Modifier.size(24.dp),
+                            )
+                            Text(
+                                if (valid) scanDirName(ctx, dir) else "${scanDirName(ctx, dir)}（${stringResource(R.string.settings_invalid_suffix)}）",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (valid) TextColor else MaterialTheme.colorScheme.error,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
                                     .clip(AppComponentShape)
-                                    .background(dirItemSurface)
-                                    .glassBorder()
-                                    .padding(start = 16.dp, end = 8.dp, top = 11.dp, bottom = 11.dp),
-                                verticalAlignment = Alignment.CenterVertically,
+                                    .clickable(
+                                        enabled = !cleanupState.running,
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                        onClick = { resourceCleanup.removeRoot(dir) },
+                                    ),
+                                contentAlignment = Alignment.Center,
                             ) {
-                                Image(
-                                    painter = painterResource(R.drawable.ic_settings_game_dir),
-                                    contentDescription = null,
-                                    colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
+                                // 复用长按游戏卡片操作弹窗「删除游戏」的左侧图标
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_sheet_delete),
+                                    contentDescription = stringResource(R.string.common_delete),
+                                    tint = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.size(24.dp),
                                 )
-                                Text(
-                                    if (valid) scanDirName(ctx, dir) else "${scanDirName(ctx, dir)}（${stringResource(R.string.settings_invalid_suffix)}）",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (valid) TextColor else MaterialTheme.colorScheme.error,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .clip(AppComponentShape)
-                                        .clickable(
-                                            enabled = !cleanupState.running,
-                                            interactionSource = remember { MutableInteractionSource() },
-                                            indication = null,
-                                            onClick = { resourceCleanup.removeRoot(dir) },
-                                        ),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    // 复用长按游戏卡片操作弹窗「删除游戏」的左侧图标
-                                    Icon(
-                                        painter = painterResource(R.drawable.ic_sheet_delete),
-                                        contentDescription = stringResource(R.string.common_delete),
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(24.dp),
-                                    )
-                                }
-                            }
-                        }
-                        item {
-                            val result = cleanupState.result
-                            val message = when {
-                                cleanupState.running -> stringResource(R.string.settings_systemnnn_copy_cleanup_running)
-                                result != null && result.failed > 0 -> stringResource(
-                                    R.string.settings_systemnnn_copy_cleanup_incomplete,
-                                    result.cleared, result.failed,
-                                )
-                                cleanupState.canRetry -> stringResource(R.string.settings_systemnnn_copy_cleanup_pending)
-                                cleanupState.failed -> stringResource(R.string.save_operation_failed)
-                                result != null && result.cleared > 0 -> stringResource(
-                                    R.string.settings_systemnnn_copy_cleanup_done,
-                                    result.cleared,
-                                )
-                                result != null -> stringResource(R.string.settings_systemnnn_copy_cleanup_empty)
-                                else -> null
-                            }
-                            BlurCrossfade(targetState = message) { status ->
-                                if (status != null) Text(status, color = PageSecondaryTextColor, style = MaterialTheme.typography.bodyMedium)
-                            }
-                            val canRetry = cleanupState.canRetry && !cleanupState.running
-                            ExpandVisibility(visible = canRetry) {
-                                NoRippleButton(
-                                    text = stringResource(R.string.common_retry),
-                                    modifier = Modifier.fillMaxWidth(),
-                                    enabled = canRetry,
-                                    onClick = resourceCleanup::retry,
-                                )
                             }
                         }
                     }
-                    // 底部主操作：输入路径 / 添加目录 改为两个长按钮；
-                    // 点击后抽屉保持展开，列表随 rootsRevision 自动刷新
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        NoRippleButton(
-                            text = stringResource(R.string.settings_input_path),
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = { showPathDialog = true },
-                        )
-                        NoRippleButton(
-                            text = stringResource(R.string.settings_add_dir),
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = { dirPicker.launch(null) },
-                        )
+                    item {
+                        val result = cleanupState.result
+                        val message = when {
+                            cleanupState.running -> stringResource(R.string.settings_systemnnn_copy_cleanup_running)
+                            result != null && result.failed > 0 -> stringResource(
+                                R.string.settings_systemnnn_copy_cleanup_incomplete,
+                                result.cleared, result.failed,
+                            )
+                            cleanupState.canRetry -> stringResource(R.string.settings_systemnnn_copy_cleanup_pending)
+                            cleanupState.failed -> stringResource(R.string.save_operation_failed)
+                            result != null && result.cleared > 0 -> stringResource(
+                                R.string.settings_systemnnn_copy_cleanup_done,
+                                result.cleared,
+                            )
+                            result != null -> stringResource(R.string.settings_systemnnn_copy_cleanup_empty)
+                            else -> null
+                        }
+                        BlurCrossfade(targetState = message) { status ->
+                            if (status != null) Text(status, color = PageSecondaryTextColor, style = MaterialTheme.typography.bodyMedium)
+                        }
+                        val canRetry = cleanupState.canRetry && !cleanupState.running
+                        ExpandVisibility(visible = canRetry) {
+                            NoRippleButton(
+                                text = stringResource(R.string.common_retry),
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = canRetry,
+                                onClick = resourceCleanup::retry,
+                            )
+                        }
                     }
                 }
-            }
+
+                // 底部主操作：输入路径 / 添加目录改为两个长按钮；点击后抽屉保持展开。
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    NoRippleButton(
+                        text = stringResource(R.string.settings_input_path),
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { showPathDialog = true },
+                    )
+                    NoRippleButton(
+                        text = stringResource(R.string.settings_add_dir),
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { dirPicker.launch(null) },
+                    )
+                }
             }
         }
     }
@@ -1145,7 +1079,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
-                AppTopBar(
+                AppSecondaryTopBar(
                     title = engineSettingsKindTitle(kind),
                     background = Color.Transparent,
                     contentColor = PageTextColor,
@@ -1243,7 +1177,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     }
 }
 
-/** 顶部栏：统一复用 AppTopBar（Miuix 页面背景取色）。 */
+/** 顶部栏：一级设置页面复用 AppTopBar（透明背景与页面前景色）。 */
 @Composable
 private fun SettingsTopBar(title: String) {
     AppTopBar(

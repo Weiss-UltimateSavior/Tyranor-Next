@@ -13,16 +13,16 @@ import android.content.pm.PackageManager
  * 可能被重置，属于桌面实现差异，应用侧无法规避。
  */
 object AppIconSwitcher {
-    // Relative manifest component names expand against the app namespace, even when
-    // an isolated build overrides applicationId. Only the component's package varies.
-    private const val ALIAS_DEFAULT = "com.tyranor.next.LauncherDefault"
-    private const val ALIAS_CLASSIC = "com.tyranor.next.LauncherClassic"
+    // Manifest aliases use ${applicationId}; their class names follow the installed
+    // package, including isolated builds. The target Activity keeps the source namespace.
+    private const val ALIAS_DEFAULT = ".LauncherDefault"
+    private const val ALIAS_CLASSIC = ".LauncherClassic"
 
     /** 按设置启用对应别名；幂等，启动时调用一次可纠正升级或切换失败导致的不一致。 */
     fun apply(context: Context, useClassicIcon: Boolean) {
         val packageName = context.packageName
-        val defaultAlias = ComponentName(packageName, ALIAS_DEFAULT)
-        val classicAlias = ComponentName(packageName, ALIAS_CLASSIC)
+        val defaultAlias = ComponentName(packageName, packageName + ALIAS_DEFAULT)
+        val classicAlias = ComponentName(packageName, packageName + ALIAS_CLASSIC)
         setEnabled(context, if (useClassicIcon) classicAlias else defaultAlias, true)
         setEnabled(context, if (useClassicIcon) defaultAlias else classicAlias, false)
     }

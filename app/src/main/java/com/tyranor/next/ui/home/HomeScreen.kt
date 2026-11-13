@@ -60,6 +60,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -73,6 +74,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
+import com.tyranor.next.core.game.playtime.GamePlaytimeRepository
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.NavWhite
@@ -109,6 +112,7 @@ import com.tyranor.next.ui.game.rememberCoverBitmap
 import com.tyranor.next.ui.main.MainLibraryUiState
 import com.tyranor.next.ui.common.collectSettingAsState
 import com.tyranor.next.ui.common.motion.DelayedProgress
+import kotlinx.coroutines.CancellationException
 
 /** 最近打开展示策略：竖屏 2 列 × 5 行 = 10 张；横屏/大屏 5 列 × 3 行 = 15 张。 */
 private const val RECENT_COLUMNS_PORTRAIT = 2
@@ -135,6 +139,16 @@ fun HomeScreen(
     val context = LocalContext.current
     val quickLaunch = libraryState.quickLaunch
     val homeStyle by AppSettingsStore.homeStyleState.collectSettingAsState()
+    LaunchedEffect(isActive, homeStyle) {
+        if (!isActive || homeStyle == AppSettingsStore.HOME_STYLE_WEB) return@LaunchedEffect
+        try {
+            GamePlaytimeRepository.refresh(context.applicationContext)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Refresh is best-effort; the recent list remains available if stats storage fails.
+        }
+    }
     // 锚点生命周期跟随页面，而不是 LazyColumn 首项；拖动时保留上一帧目标，避免立即退化为全屏拦截。
     DisposableEffect(homeStyle, isActive) {
         onDispose { onCoachAnchorChanged(Rect.Zero) }
@@ -643,7 +657,7 @@ private fun QuickLaunchEmptyCard(modifier: Modifier = Modifier) {
 
 /**
  * 最近打开卡片：竖屏两列、横屏/大屏五列网格，封面铺满卡片（无封面时用引擎分类色底），
- * 底部信息面板仅显示游戏名；点按打开操作抽屉，长按删除该条最近记录。
+ * 底部信息面板显示游戏名与内置引擎累计时长；点按打开操作抽屉，长按删除该条最近记录。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -657,6 +671,12 @@ private fun RecentGameCard(
     // 长按删除：「增强」档先播放消散（晃动 → 缩小变红 → 化成碎屑），播完再移除这条记录；「普通」档直接移除
     val dissolveScope = rememberCoroutineScope()
     val dissolve = rememberDissolveState()
+    val playtimeEngine = RuntimeModuleBindings.builtInSystemNnn(game).engine
+    val showPlaytime = GamePlaytimeRepository.supports(playtimeEngine)
+    val titleStyle = MaterialTheme.typography.bodyMedium
+    // Preserve the original one-line title plus 12.5dp padding at either edge, including font scaling.
+    val panelHeight = with(LocalDensity.current) { titleStyle.lineHeight.toDp() } + 25.dp
+    val compactStyle = titleStyle.copy(lineHeight = titleStyle.fontSize)
     val coverBitmap by rememberCoverBitmap(game.coverUri)
     val bmp = coverBitmap
     val reveal = rememberCoverReveal(bmp != null, CoverSurface.Recent)
@@ -694,22 +714,32 @@ private fun RecentGameCard(
                 color = Color.White.copy(alpha = 0.7f),
             )
         }
-        // 底部信息面板：仅展示游戏名（比卡片默认标题小一号）
+        // 保持原遮罩高度；内置游戏用紧凑两行显示标题与小时数，外置游戏保持单行居中。
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                .height(panelHeight)
+                .clipToBounds()
                 .background(NavWhiteOverlay)
-                .padding(horizontal = 12.dp, vertical = 12.5.dp),
+                .padding(horizontal = 12.dp),
+            verticalArrangement = Arrangement.Center,
         ) {
             Text(
                 game.title,
-                style = MaterialTheme.typography.bodyMedium,
+                style = if (showPlaytime) compactStyle else titleStyle,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (showPlaytime) {
+                RecentGamePlaytime(
+                    gameUri = game.uri,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textStyle = compactStyle,
+                )
+            }
         }
     }
 }

@@ -122,6 +122,9 @@ class MotionSheetController internal constructor(
     internal var sheetState: SheetState? = null
     internal var onClosed: () -> Unit = {}
 
+    /** 关闭请求的业务守卫；下拉窗口展开等临时模态状态下保留抽屉。 */
+    internal var canClose: () -> Boolean = { true }
+
     /** 跳转到新页面时抽屉随所在页面一起压暗的进度（0..1）。 */
     internal val navDim = Animatable(0f)
 
@@ -248,6 +251,7 @@ class MotionSheetController internal constructor(
      * 或被手指抓住（[reopenForGrab]）。
      */
     fun close(velocity: Float = 0f) {
+        if (!canClose()) return
         if (!enhanced) {
             onClosed()
             return
@@ -347,7 +351,7 @@ class MotionSheetController internal constructor(
         // 判定位置 = 松手位置 + 约 0.12s 的惯性投影：慢拉看位置（约 1/3），明显的快速下甩也能收起；
         // 只有直接拉抽屉才计速度，列表滚到顶的余量惯性不会转交，不会重现误关
         val projected = offset.value + v.coerceIn(-6000f, 6000f) * FLING_PROJECTION_SECONDS
-        if (height > 0f && projected > height * DISMISS_FRACTION) {
+        if (canClose() && height > 0f && projected > height * DISMISS_FRACTION) {
             close(v)
         } else {
             scope.launch { offset.animateTo(0f, SettleSpec, initialVelocity = v) }
@@ -394,9 +398,17 @@ fun rememberMotionSheetController(): MotionSheetController {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun rememberMotionSheetState(controller: MotionSheetController): SheetState {
+fun rememberMotionSheetState(
+    controller: MotionSheetController,
+    confirmValueChange: (SheetValue) -> Boolean = { true },
+): SheetState {
+    val currentConfirm by rememberUpdatedState(confirmValueChange)
+    controller.canClose = { currentConfirm(SheetValue.Hidden) }
     if (!controller.enhanced) {
-        return rememberModalBottomSheetState(skipPartiallyExpanded = true).also { controller.sheetState = it }
+        return rememberModalBottomSheetState(
+            skipPartiallyExpanded = true,
+            confirmValueChange = { currentConfirm(it) },
+        ).also { controller.sheetState = it }
     }
     val density = LocalDensity.current
     return remember(controller) {
@@ -406,7 +418,9 @@ fun rememberMotionSheetState(controller: MotionSheetController): SheetState {
             velocityThreshold = { with(density) { 125.dp.toPx() } },
             initialValue = SheetValue.Expanded,
             confirmValueChange = { value ->
-                if (value == SheetValue.Hidden && !controller.allowHide) {
+                if (!currentConfirm(value)) {
+                    false
+                } else if (value == SheetValue.Hidden && !controller.allowHide) {
                     controller.close()
                     false
                 } else {

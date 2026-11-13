@@ -47,7 +47,7 @@ import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.AppAlertDialog
-import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.motion.listItemMotion
@@ -229,7 +229,7 @@ internal fun EngineModuleManagementScreen() {
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
-                AppTopBar(
+                AppSecondaryTopBar(
                     title = stringResource(R.string.engine_module_management_title),
                     background = Color.Transparent,
                     contentColor = PageTextColor,

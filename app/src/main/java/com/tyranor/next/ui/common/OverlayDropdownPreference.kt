@@ -80,6 +80,8 @@ import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.popup.OverlayDropdownPopup
+import top.yukonga.miuix.kmp.popup.WindowDropdownPopup
+import top.yukonga.miuix.kmp.window.WindowListPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
@@ -349,6 +351,17 @@ fun OverlayDropdownPreference(
                         renderInRootScaffold = renderInRootScaffold,
                         collapseOnSelection = collapseOnSelection,
                     )
+                } else if (LocalAppSheetContent.current) {
+                    // 抽屉是独立窗口，普通档沿用 WindowDropdownPreference 的窗口弹层。
+                    WindowDropdownPopup(
+                        entry = entry,
+                        show = isDropdownExpanded.value,
+                        onDismiss = { setExpanded(false) },
+                        onDismissFinished = { isHoldDown.value = false },
+                        maxHeight = maxHeight,
+                        dropdownColors = dropdownColors,
+                        collapseOnSelection = collapseOnSelection,
+                    )
                 } else {
                     OverlayDropdownPopup(
                         entry = entry,
@@ -369,6 +382,42 @@ fun OverlayDropdownPreference(
         holdDownState = isHoldDown.value,
         enabled = actualEnabled,
     )
+}
+
+/** 页内与抽屉的滑选共用同一份弹层内容，仅由窗口上下文选择宿主。 */
+@Composable
+private fun DropdownListPopup(
+    show: Boolean,
+    alignment: PopupPositionProvider.Align,
+    onDismissRequest: () -> Unit,
+    onDismissFinished: () -> Unit,
+    maxHeight: Dp?,
+    minWidth: Dp,
+    renderInRootScaffold: Boolean,
+    content: @Composable () -> Unit,
+) {
+    if (LocalAppSheetContent.current) {
+        WindowListPopup(
+            show = show,
+            alignment = alignment,
+            onDismissRequest = onDismissRequest,
+            onDismissFinished = onDismissFinished,
+            maxHeight = maxHeight,
+            minWidth = minWidth,
+            content = content,
+        )
+    } else {
+        OverlayListPopup(
+            show = show,
+            alignment = alignment,
+            onDismissRequest = onDismissRequest,
+            onDismissFinished = onDismissFinished,
+            maxHeight = maxHeight,
+            minWidth = minWidth,
+            renderInRootScaffold = renderInRootScaffold,
+            content = content,
+        )
+    }
 }
 
 /** 长按滑选的会话状态：悬停项、已确认项，以及弹层里各选项在屏幕坐标系下的区域。 */
@@ -557,7 +606,7 @@ private fun SlideSelectDropdownPopup(
         if (slide.closing) pillFade.animateTo(0f, tween(190, easing = FastOutSlowInEasing))
     }
 
-    OverlayListPopup(
+    DropdownListPopup(
         show = show,
         // 与 Miuix 下拉弹层一致：右对齐到条目、最小宽度不额外撑开
         alignment = PopupPositionProvider.Align.End,

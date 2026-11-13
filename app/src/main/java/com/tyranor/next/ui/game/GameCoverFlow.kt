@@ -72,10 +72,11 @@ internal fun GameCoverFlow(
     val pagerState = rememberPagerState(pageCount = { games.size })
     val scope = rememberCoroutineScope()
 
-    // 过滤/搜索导致列表缩短时收敛到最后一页
+    // 条件变化由调用方重置状态；同一条件下列表缩短时收敛到最后一页。
     LaunchedEffect(games.size) {
-        if (games.isEmpty()) return@LaunchedEffect
-        if (pagerState.currentPage > games.lastIndex) pagerState.scrollToPage(games.lastIndex)
+        if (games.isNotEmpty() && pagerState.currentPage > games.lastIndex) {
+            pagerState.scrollToPage(games.lastIndex)
+        }
     }
 
     // 搜索 / 过滤 / 排序换了一批游戏：这一刻起短时间内新组合的卡片（换上来的新游戏）从略小、透明处弹到原位，

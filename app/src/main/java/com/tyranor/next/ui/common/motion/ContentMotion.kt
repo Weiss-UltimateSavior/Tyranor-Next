@@ -332,13 +332,23 @@ fun ExpandVisibility(
     modifier: Modifier = Modifier,
     blur: Dp = 6.dp,
     label: String = "ExpandVisibility",
+    /** 仅供基线已使用 expand + fade 的入口；普通档沿用 Compose 原展开/收起规格。 */
+    ordinaryExpandFade: Boolean = false,
     content: @Composable AnimatedVisibilityScope.() -> Unit,
 ) {
     AnimatedVisibility(
         visible = visible,
         modifier = modifier,
-        enter = if (MotionMode.enhanced) expandBlurEnter() else EnterTransition.None,
-        exit = if (MotionMode.enhanced) shrinkBlurExit() else ExitTransition.None,
+        enter = when {
+            MotionMode.enhanced -> expandBlurEnter()
+            ordinaryExpandFade -> expandVertically() + fadeIn()
+            else -> EnterTransition.None
+        },
+        exit = when {
+            MotionMode.enhanced -> shrinkBlurExit()
+            ordinaryExpandFade -> shrinkVertically() + fadeOut()
+            else -> ExitTransition.None
+        },
         label = label,
     ) {
         Box(blurLayer(blur), propagateMinConstraints = true) {

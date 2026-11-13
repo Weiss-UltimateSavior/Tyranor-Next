@@ -41,7 +41,7 @@ import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.SettingsEntryCard
 import com.tyranor.next.ui.common.AppScreenActivity
-import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.motion.ProvideEntrance
 import com.tyranor.next.ui.common.motion.staggeredEntrance
@@ -79,7 +79,7 @@ internal fun AboutAppScreen() {
     // 页面入场：顶栏标题、图标版本行与三个入口卡依次弹入
     ProvideEntrance {
     Column(Modifier.fillMaxSize()) {
-        AppTopBar(title = stringResource(R.string.settings_about_app))
+        AppSecondaryTopBar(title = stringResource(R.string.settings_about_app))
         Column(
             modifier = Modifier
                 .fillMaxWidth()

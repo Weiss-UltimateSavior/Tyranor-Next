@@ -346,7 +346,9 @@ fun EngineScreen(
                 }
                 val statusRes = when {
                     module != null ->
-                        if (installed) R.string.engine_module_installed else R.string.engine_module_not_installed
+                        if (installed) R.string.engine_module_installed
+                        else if (module.minimumVersionCode > 0) R.string.engine_module_install_or_update
+                        else R.string.engine_module_not_installed
 
                     emulator != null ->
                         if (installed) R.string.engine_emulator_installed else R.string.engine_emulator_not_installed
@@ -1098,7 +1100,9 @@ private fun engineDialogEntries(
             EngineDialogEntry(
                 id = module.id,
                 title = module.displayName(context),
-                summaryRes = if (installed) R.string.engine_module_installed else R.string.engine_module_not_installed,
+                summaryRes = if (installed) R.string.engine_module_installed
+                    else if (module.minimumVersionCode > 0) R.string.engine_module_install_or_update
+                    else R.string.engine_module_not_installed,
                 installed = installed,
                 installUrl = module.installUrl,
             )

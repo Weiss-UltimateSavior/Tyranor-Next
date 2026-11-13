@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.tyranor.next.R
 import com.tyranor.next.core.cover.CoverScrapeTaskManager
+import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.i18n.AppLocaleController
@@ -44,10 +45,12 @@ data class MainLibraryUiState(
     val scrapeMessage: String? = null,
     val cleanupError: SaveSyncError? = null,
     val cleanupGameTitle: String? = null,
-    /** 已发布搜索结果的查询词；与页面当前查询词一致时结果才可用（迁移方案阶段 3）。 */
+    /** 最新搜索词；与页面当前搜索词一致时才可采用 [searchHitUris]。 */
     val searchQuery: String = "",
-    /** Room DAO 搜索结果（已按当前排序模式排序）；null 表示无可用的 DB 搜索结果。 */
-    val searchResults: List<ScanGame>? = null,
+    /** 当前游戏标题快照的 Room 命中集；null 表示尚无结果，空集合表示没有命中。 */
+    val searchHitUris: Set<String>? = null,
+    /** 已从 Room 确认的引擎类型；null 表示尚不能据此清除已失效的筛选条件。 */
+    val confirmedEngineTypes: Set<EngineType>? = null,
 )
 
 /**
@@ -63,10 +66,10 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
     private val _uiState = MutableStateFlow(MainLibraryUiState())
     val uiState: StateFlow<MainLibraryUiState> = _uiState.asStateFlow()
 
-    /** 搜索防抖任务；activeSearchQuery 记录最新请求词，过期结果按词校验后丢弃。 */
+    /** 搜索防抖任务；请求实例区分快速回到相同搜索词时仍在执行的旧查询。 */
     private var searchJob: Job? = null
     @Volatile
-    private var activeSearchQuery: String = ""
+    private var activeSearchRequest: SearchRequest? = null
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
@@ -81,6 +84,8 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
                     // 发布失败也不能杀死 FIFO 队列协程，否则后续所有命令（扫描/删除/搜索）全部停摆。
                     try {
                         publishStorageSnapshot(command.revision, command.finishesScan)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
                     } catch (throwable: Throwable) {
                         Log.e(TAG, "Publish storage snapshot failed", throwable)
                     }
@@ -252,9 +257,9 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
 
     fun removeRecentGame(target: ScanGame) {
         val revision = stateRevision.incrementAndGet()
-        _uiState.update { MainLibraryStateReducer.removeRecent(it, target.uri) }
+        _uiState.update { MainLibraryStateReducer.removeRecent(it, target) }
         enqueuePersistence(revision) {
-            GameLibraryFacade.removeRecentGame(appContext, target.uri)
+            GameLibraryFacade.removeRecentGame(appContext, target.uri, target.openTime)
         }
     }
 
@@ -296,19 +301,18 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     /**
-     * 游戏页搜索（迁移方案阶段 3）：防抖后经 FIFO 队列走 Room DAO 查询（预计算排序键 +
-     * LIKE 转义，并与待落库写互斥保证一致性）。空词回退页面内存过滤路径。
+     * 游戏页搜索：防抖后经 FIFO 队列查询 Room 的标题命中集，与待落库写互斥。
+     * 新搜索词立即使旧命中集失效，等待期间页面用内存快照过滤。
      */
     fun onSearchQueryChanged(query: String) {
         searchJob?.cancel()
-        if (query.isBlank()) {
-            activeSearchQuery = ""
-            _uiState.update { it.copy(searchQuery = "", searchResults = null) }
-            return
-        }
+        activeSearchRequest = null
+        _uiState.update { it.copy(searchQuery = query, searchHitUris = null) }
+        if (query.isBlank()) return
+        val request = SearchRequest(query)
         searchJob = viewModelScope.launch {
             delay(SEARCH_DEBOUNCE_MS)
-            activeSearchQuery = query
+            activeSearchRequest = request
             enqueuePersistence(revision = stateRevision.get()) { }
         }
     }
@@ -322,6 +326,7 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private suspend fun publishStorageSnapshot(commandRevision: Long, finishesScan: Boolean) {
+        GameLibraryRepository.awaitPendingWrites()
         val games = GameLibraryFacade.loadGames(appContext)
         val byUri = games.associateBy { it.uri }
         val storedQuick = GameLibraryFacade.loadQuickLaunch(appContext)
@@ -331,15 +336,20 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
         val quick = storedQuick.mapNotNull { stored -> byUri[stored.uri] }.take(GameLibraryFacade.MAX_QUICK_LAUNCH)
         if (quick != storedQuick) GameLibraryFacade.saveQuickLaunch(appContext, quick)
 
+        val confirmedEngines = if (commandRevision == stateRevision.get()) {
+            confirmEngineTypes(games)
+        } else {
+            null
+        }
+        // 引擎确认可能等待并发写完成，期间门面缓存可能更新或因写失败而回源。
+        if (commandRevision == stateRevision.get() && GameLibraryFacade.loadGames(appContext) !== games) {
+            enqueuePersistence(commandRevision, finishesScan) { }
+            return
+        }
         _uiState.update { current ->
             if (commandRevision == stateRevision.get()) {
-                current.copy(
-                    games = games,
-                    // 完整最近列表（存储侧 RECENT_LIMIT = 20 条）；展示数量由首页按布局决定
-                    recentGames = normalizedRecent,
-                    quickLaunch = quick,
-                    loaded = true,
-                    scanning = if (finishesScan) false else current.scanning,
+                MainLibraryStateReducer.acceptStorageSnapshot(
+                    current, games, normalizedRecent, quick, finishesScan, confirmedEngines,
                 )
             } else if (finishesScan) {
                 current.copy(scanning = false)
@@ -348,23 +358,43 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
             }
         }
 
-        // 搜索激活时随每次发布刷新 DB 搜索结果（与待落库写互斥），重命名/封面更新后保持同步。
-        val searchQuery = activeSearchQuery
-        if (searchQuery.isNotBlank()) {
-            val results = GameLibraryRepository.searchGamesConsistent(
-                appContext,
-                searchQuery.trim(),
-                AppSettingsStore.getGameSort(appContext),
-            )
-            _uiState.update { current ->
-                if (activeSearchQuery == searchQuery) {
-                    current.copy(searchQuery = searchQuery, searchResults = results)
-                } else {
-                    current
-                }
+        // 搜索激活时随库更新刷新命中集，例如重命名后标题可能不再匹配。
+        val request = activeSearchRequest ?: return
+        if (commandRevision != stateRevision.get()) return
+        val hits = GameLibraryRepository.searchGameUrisConsistent(appContext, request.query)
+        // 查询等待落库时，写失败可能使门面缓存回源到另一份标题快照。
+        if (!sameSearchTitles(games, GameLibraryFacade.loadGames(appContext))) {
+            // 用回源后的库刷新页面；较新的命令会自行发布快照。
+            if (commandRevision == stateRevision.get()) enqueuePersistence(commandRevision) { }
+            return
+        }
+        _uiState.update { current ->
+            if (activeSearchRequest === request && commandRevision == stateRevision.get() &&
+                current.searchQuery == request.query && sameSearchTitles(current.games, games)
+            ) {
+                current.copy(searchHitUris = hits)
+            } else {
+                current
             }
         }
     }
+
+    private suspend fun confirmEngineTypes(games: List<ScanGame>): Set<EngineType>? {
+        val previous = _uiState.value.confirmedEngineTypes
+        val cached = games.mapTo(mutableSetOf()) { it.engine }
+        if (cached == previous) return previous
+        return try {
+            // 门面的库快照先于异步写入更新。Room 确认后才允许自动清除已选引擎。
+            GameLibraryRepository.loadEngineTypesConsistent(appContext)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            Log.w(TAG, "Confirm library engine types failed", failure)
+            previous
+        }
+    }
+
+    private class SearchRequest(val query: String)
 
     private data class PersistenceCommand(
         val revision: Long,
@@ -378,7 +408,13 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
     }
 }
 
-/** 将用户实际改动的字段合并到最新磁盘对象，避免重命名覆盖同时完成的刮削封面。 */
+/** URI 和标题按快照顺序比较，忽略封面、打开时间等元数据。 */
+private fun sameSearchTitles(first: List<ScanGame>, second: List<ScanGame>): Boolean =
+    first === second || (first.size == second.size && first.indices.all { index ->
+        first[index].uri == second[index].uri && first[index].title == second[index].title
+    })
+
+/** 将用户改动的游戏元数据合并到最新磁盘对象；最近打开时间由游玩记录入口管理。 */
 internal fun mergeChangedGameFields(base: ScanGame, before: ScanGame, updated: ScanGame): ScanGame = base.copy(
     title = if (updated.title != before.title) updated.title else base.title,
     engine = if (updated.engine != before.engine) updated.engine else base.engine,
@@ -403,13 +439,35 @@ internal fun mergeChangedGameFields(base: ScanGame, before: ScanGame, updated: S
         base.runtimeModulePackage
     },
     launchFile = if (updated.launchFile != before.launchFile) updated.launchFile else base.launchFile,
-    openTime = if (updated.openTime != before.openTime) updated.openTime else base.openTime,
 )
 
 /** 纯状态变换单独收口，便于在本地单测覆盖页面间同步规则。 */
 internal object MainLibraryStateReducer {
+    fun acceptStorageSnapshot(
+        state: MainLibraryUiState,
+        games: List<ScanGame>,
+        recentGames: List<ScanGame>,
+        quickLaunch: List<ScanGame>,
+        finishesScan: Boolean,
+        confirmedEngineTypes: Set<EngineType>?,
+    ): MainLibraryUiState = state.copy(
+        games = games,
+        // 完整最近列表（存储侧 RECENT_LIMIT = 20 条）；展示数量由首页按布局决定。
+        recentGames = recentGames,
+        quickLaunch = quickLaunch,
+        loaded = true,
+        scanning = if (finishesScan) false else state.scanning,
+        searchHitUris = state.searchHitUris?.takeIf { sameSearchTitles(state.games, games) },
+        confirmedEngineTypes = confirmedEngineTypes,
+    )
+
     fun acceptGames(state: MainLibraryUiState, games: List<ScanGame>): MainLibraryUiState {
-        val snapshot = games.toList()
+        // 刮削结果可能在清除记录落库之前拍下快照；游玩时间由后续库快照校准。
+        val currentTimes = state.games.associate { it.uri to it.openTime }
+        val snapshot = games.map { game ->
+            val openTime = currentTimes[game.uri]
+            if (openTime != null && openTime != game.openTime) game.copy(openTime = openTime) else game
+        }
         val byUri = snapshot.associateBy { it.uri }
         return state.copy(
             games = snapshot,
@@ -418,26 +476,47 @@ internal object MainLibraryStateReducer {
             },
             quickLaunch = state.quickLaunch.mapNotNull { byUri[it.uri] },
             loaded = true,
+            searchHitUris = state.searchHitUris?.takeIf { sameSearchTitles(state.games, snapshot) },
         )
     }
 
-    fun replaceGame(state: MainLibraryUiState, updated: ScanGame): MainLibraryUiState = state.copy(
-        games = state.games.map { if (it.uri == updated.uri) updated else it },
-        recentGames = state.recentGames.map {
-            if (it.uri == updated.uri) updated.copy(openTime = it.openTime) else it
-        },
-        quickLaunch = state.quickLaunch.map { if (it.uri == updated.uri) updated else it },
-    )
+    fun replaceGame(state: MainLibraryUiState, updated: ScanGame): MainLibraryUiState {
+        fun replaceIn(games: List<ScanGame>) = games.map { game ->
+            if (game.uri == updated.uri) updated.copy(openTime = game.openTime) else game
+        }
+        val games = replaceIn(state.games)
+        return state.copy(
+            games = games,
+            recentGames = replaceIn(state.recentGames),
+            quickLaunch = state.quickLaunch.map { if (it.uri == updated.uri) updated else it },
+            searchHitUris = state.searchHitUris?.takeIf { sameSearchTitles(state.games, games) },
+        )
+    }
 
-    fun deleteGame(state: MainLibraryUiState, uri: String): MainLibraryUiState = state.copy(
-        games = state.games.filterNot { it.uri == uri },
-        recentGames = state.recentGames.filterNot { it.uri == uri },
-        quickLaunch = state.quickLaunch.filterNot { it.uri == uri },
-    )
+    fun deleteGame(state: MainLibraryUiState, uri: String): MainLibraryUiState {
+        val engine = state.games.firstOrNull { it.uri == uri }?.engine
+        return state.copy(
+            games = state.games.filterNot { it.uri == uri },
+            recentGames = state.recentGames.filterNot { it.uri == uri },
+            quickLaunch = state.quickLaunch.filterNot { it.uri == uri },
+            searchHitUris = state.searchHitUris?.minus(uri),
+            // 用户可在新条目第一次落库前移除它。这时等下一次 Room 确认再决定该引擎是否消失。
+            confirmedEngineTypes = state.confirmedEngineTypes?.takeUnless { engine != null && engine !in it },
+        )
+    }
 
-    fun removeRecent(state: MainLibraryUiState, uri: String): MainLibraryUiState = state.copy(
-        recentGames = state.recentGames.filterNot { it.uri == uri },
-    )
+    fun removeRecent(state: MainLibraryUiState, target: ScanGame): MainLibraryUiState {
+        fun matches(game: ScanGame) = game.uri == target.uri && game.openTime == target.openTime
+        val index = state.games.indexOfFirst { it.openTime != 0L && matches(it) }
+        val recent = state.recentGames.filterNot(::matches)
+        if (index < 0 && recent.size == state.recentGames.size) return state
+        return state.copy(
+            games = if (index < 0) state.games else state.games.toMutableList().apply {
+                this[index] = this[index].copy(openTime = 0L)
+            },
+            recentGames = recent,
+        )
+    }
 
     fun toggleQuickLaunch(state: MainLibraryUiState, game: ScanGame): MainLibraryUiState {
         val exists = state.quickLaunch.any { it.uri == game.uri }

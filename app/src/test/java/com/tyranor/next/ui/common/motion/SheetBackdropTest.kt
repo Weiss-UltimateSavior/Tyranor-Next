@@ -205,6 +205,47 @@ class SheetBackdropTest {
         assertEquals(1f, layer.scaleX, EPS)
     }
 
+    @Test
+    fun closeGuardBlocksBothModesAndReadsTheLatestDecision() = runTest {
+        for (enhanced in listOf(false, true)) {
+            val frames = Frames(this)
+            val sheet = MotionSheetController(frames.scope, enhanced) { 0L }
+            sheet.updateHeight(500f)
+            sheet.offset.snapTo(0f)
+            var allowed = false
+            var closes = 0
+            sheet.canClose = { allowed }
+            sheet.onClosed = { closes++ }
+            sheet.close()
+            frames.advance(3)
+            assertFalse(sheet.closing)
+            assertEquals(0f, sheet.offset.value, EPS)
+            assertEquals(0, closes)
+            allowed = true
+            sheet.close()
+            if (enhanced) sheet.close() // 重复请求不能重复交付退出回调。
+            frames.advance(60)
+            assertEquals(1, closes)
+        }
+    }
+
+    @Test
+    fun guardedDragBeyondDismissLineReturnsToOpenInsteadOfClosing() = runTest {
+        val frames = Frames(this)
+        val sheet = MotionSheetController(frames.scope, enhanced = true) { 0L }
+        sheet.updateHeight(500f)
+        sheet.offset.snapTo(0f)
+        var closes = 0
+        sheet.canClose = { false }
+        sheet.onClosed = { closes++ }
+        sheet.dragBy(250f)
+        sheet.settle()
+        frames.advance(60)
+        assertFalse(sheet.closing)
+        assertEquals(0f, sheet.offset.value, EPS)
+        assertEquals(0, closes)
+    }
+
     private fun assertDepth(backdrop: SheetBackdrop, cover: Float, sink: Float) {
         assertEquals("cover", cover, backdrop.cover, EPS)
         assertEquals("sink", sink, backdrop.sink, EPS)
