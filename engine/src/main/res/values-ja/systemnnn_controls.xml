@@ -26,22 +26,15 @@
     <string name="engine_systemnnn_ctl_input_halfwidth">この名前欄には # を除く半角文字のみ入力できます</string>
     <string name="engine_systemnnn_ctl_input_fullwidth">この欄にはゲームで使える全角文字のみ入力できます</string>
     <string name="engine_systemnnn_ctl_input_rejected">ゲームが入力を受け付けませんでした</string>
-    <string name="engine_systemnnn_ctl_pc_export">PC セーブを書き出す</string>
-    <string name="engine_systemnnn_ctl_pc_import">PC セーブを読み込む</string>
     <string name="engine_systemnnn_ctl_page_previous">前のページ</string>
     <string name="engine_systemnnn_ctl_page_next">次のページ</string>
-    <string name="engine_systemnnn_ctl_back_transfer">戻る。長押しで「%1$s」</string>
     <string name="engine_systemnnn_ctl_page_count">%2$d ページ中 %1$d ページ</string>
     <string name="engine_systemnnn_ctl_overwrite">上書きセーブ</string>
     <string name="engine_systemnnn_ctl_cancel_overwrite">上書きをキャンセル</string>
-    <string name="engine_systemnnn_ctl_slot_auto">オートセーブ</string>
     <string name="engine_systemnnn_ctl_slot_quick">クイックセーブ</string>
-    <string name="engine_systemnnn_ctl_other_saves">その他のセーブ</string>
     <string name="engine_systemnnn_ctl_slot_number">セーブ %1$s</string>
     <string name="engine_systemnnn_ctl_slot_unreadable">セーブを読み込めません</string>
     <string name="engine_systemnnn_ctl_slot_empty">空きスロット</string>
-    <string name="engine_systemnnn_ctl_slot_legacy">旧形式のセーブ</string>
-    <string name="engine_systemnnn_ctl_position">%1$s · セリフ %2$d</string>
     <string name="engine_systemnnn_ctl_title_new">はじめから</string>
     <string name="engine_systemnnn_ctl_title_gallery">鑑賞</string>
     <string name="engine_systemnnn_ctl_title_last_load">前回のセーブを読み込む</string>
@@ -149,4 +142,8 @@
     <string name="engine_systemnnn_ctl_chart_cancel">移動をキャンセル</string>
     <string name="engine_systemnnn_ctl_movie_playing">ムービーを再生中</string>
     <string name="engine_systemnnn_ctl_movie_skippable">ムービーを再生中 · タップでスキップ</string>
+    <string name="engine_systemnnn_ctl_title_scenario">シナリオ</string>
+    <string name="engine_systemnnn_ctl_title_minigame">ミニゲーム</string>
+    <string name="engine_systemnnn_ctl_film_skip">場面をスキップ</string>
+    <string name="engine_systemnnn_ctl_minigame_unavailable">ミニゲームを開けません</string>
 </resources>

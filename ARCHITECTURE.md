@@ -120,9 +120,10 @@ WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano
 
 ## 7. 其它功能边界
 
-- SystemNNN 在同一 `sav` 目录中通过 `emberfall.lock` 与独立播放器协调存档访问。TYN 只替换自身格式的白名单文件，目录、锁及 PC 数据原地保留。中断恢复材料保存在 `emberfall.migrate/tyn-restore`，独立播放器会拒绝打开该未完成事务，TYN 在持锁时恢复。清理旧副本资源时同时持有来源锁和游戏存档锁，并写入逐出标记；带标记的副本不再启动，由用户删除并从可访问的原目录重新添加。存档管理与同步在此期间仍使用同一 `sav`。
+- SystemNNN 在同一 `sav` 目录中通过 `emberfall.lock` 与独立播放器协调存档访问。TYN 管理原版编号剧情槽和 Emberfall 的全局进度及扩展文件。旧手机剧情档留在游戏目录。恢复旧版未提交事务时保留原版槽位。中断恢复材料保存在 `emberfall.migrate/tyn-restore`，独立播放器会拒绝打开该未完成事务，TYN 在持锁时恢复。清理旧副本资源时同时持有来源锁和游戏存档锁，并写入逐出标记；带标记的副本不再启动，由用户删除并从可访问的原目录重新添加。存档管理与同步在此期间仍使用同一 `sav`。
 - SystemNNN 不再创建 SAF 副本；`SystemNnnCopyStore` 仅保留旧副本的识别与资源回收。ZIP 恢复和删档在同一来源锁内解析并锁定当前 `sav`。
 - SystemNNN 的 ZIP 导入在私有 `:systemnnn_validator` 进程通过绑定服务校验。主进程只传应用缓存中的暂存目录名及校验条件，服务只返回结果。服务死亡、校验超时或快照无效时不会替换活动存档。WebDAV 对已核对同源的副本迁移会话基线和已提交的恢复记录，仍有待提交的恢复事务时返回类型化错误。
+- SystemNNN 单游戏引擎设置通过同一私有进程读取或重新生成存档格式配置。App 解析游戏目录，Emberfall 在该目录读写 `emberfall-system.cfg` 并返回展示字段。
 
 - 封面：`CoverScraperService` 聚合在线来源，`CoverScrapeTaskManager` 管理应用级批量任务；UI 使用缩略图缓存，不在重组期同步抓取/解码。
 - 存档：`GameSaveManager` 解析位置并导入/导出 ZIP；MV/MZ 的格式转化与互通独立于存档镜像，均采用同源目录解析。Ethornell 存档管理已按 capability 开放（`DEVICE_SAVE_IO_VERIFIED=true` 与 `HOST_DISPATCH_PROTOCOL_VERIFIED=true`）；范围仅 App 私有 user-root 的备份/恢复/删除，ZIP 单个文件上限 64 MiB（与 native 原子写一致），总量 1 GiB 预算不等于该上限；不自动导入资源根 `UserData`，不承诺商业游戏内槽位兼容或 PC 格式互通。

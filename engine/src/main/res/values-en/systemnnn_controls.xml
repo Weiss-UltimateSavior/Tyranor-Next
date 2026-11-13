@@ -26,22 +26,15 @@
     <string name="engine_systemnnn_ctl_input_halfwidth">This name field accepts only half-width characters, excluding #</string>
     <string name="engine_systemnnn_ctl_input_fullwidth">This field accepts only full-width characters supported by the game</string>
     <string name="engine_systemnnn_ctl_input_rejected">The game rejected this input</string>
-    <string name="engine_systemnnn_ctl_pc_export">Export PC save</string>
-    <string name="engine_systemnnn_ctl_pc_import">Load PC save</string>
     <string name="engine_systemnnn_ctl_page_previous">Previous page</string>
     <string name="engine_systemnnn_ctl_page_next">Next page</string>
-    <string name="engine_systemnnn_ctl_back_transfer">Back; long press for %1$s</string>
     <string name="engine_systemnnn_ctl_page_count">Page %1$d of %2$d</string>
     <string name="engine_systemnnn_ctl_overwrite">Overwrite save</string>
     <string name="engine_systemnnn_ctl_cancel_overwrite">Cancel overwrite</string>
-    <string name="engine_systemnnn_ctl_slot_auto">Autosave</string>
     <string name="engine_systemnnn_ctl_slot_quick">Quick save</string>
-    <string name="engine_systemnnn_ctl_other_saves">Other saves</string>
     <string name="engine_systemnnn_ctl_slot_number">Save %1$s</string>
     <string name="engine_systemnnn_ctl_slot_unreadable">Save cannot be read</string>
     <string name="engine_systemnnn_ctl_slot_empty">Empty slot</string>
-    <string name="engine_systemnnn_ctl_slot_legacy">Legacy save</string>
-    <string name="engine_systemnnn_ctl_position">%1$s · Line %2$d</string>
     <string name="engine_systemnnn_ctl_title_new">New game</string>
     <string name="engine_systemnnn_ctl_title_gallery">Gallery</string>
     <string name="engine_systemnnn_ctl_title_last_load">Load last save</string>
@@ -149,4 +142,8 @@
     <string name="engine_systemnnn_ctl_chart_cancel">Cancel jump</string>
     <string name="engine_systemnnn_ctl_movie_playing">Playing movie</string>
     <string name="engine_systemnnn_ctl_movie_skippable">Playing movie · Tap to skip</string>
+    <string name="engine_systemnnn_ctl_title_scenario">Scenario</string>
+    <string name="engine_systemnnn_ctl_title_minigame">Minigame</string>
+    <string name="engine_systemnnn_ctl_film_skip">Skip scene</string>
+    <string name="engine_systemnnn_ctl_minigame_unavailable">Unable to open minigame</string>
 </resources>

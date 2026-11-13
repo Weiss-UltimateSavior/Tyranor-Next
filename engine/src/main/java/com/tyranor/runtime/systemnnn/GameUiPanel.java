@@ -29,9 +29,10 @@ class GameUiPanel extends FrameLayout {
     final int frameMs;
     private UiOpening opening;
     private boolean copyingTarget,backdropHeld,leaving;
+    private boolean changingPage,presentingPage;
     private Runnable finishExit,capturedBackdropReady;
     private Consumer<Throwable> backdropFailure;
-    private Bitmap capturedBackground;
+    private Bitmap capturedBackground,pageBackground;
     private View independentStatus;
     int printMode=1;
     private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);
@@ -64,7 +65,8 @@ class GameUiPanel extends FrameLayout {
     boolean wantsPrevious(){return opening!=null&&opening.needsPrevious();}
     boolean openingRunning(){return opening!=null&&opening.running();}
     boolean activeFrameReady(){return !waitingForBackground()&&(opening==null||!opening.fading());}
-    boolean controlsBusy(){return leaving||pendingButton!=null;}
+    boolean controlsBusy(){return leaving||changingPage||pendingButton!=null;}
+    boolean pageChanging(){return changingPage;}
     void previous(Bitmap picture){if(opening!=null)opening.previous(picture);}
     void capture(Consumer<Bitmap> done){
         capture(false,done);
@@ -92,10 +94,13 @@ class GameUiPanel extends FrameLayout {
         else{
             // Native capture retains its 2 Mi-pixel limit; scale UI art only once,
             // with Canvas filtering, after reading the logical script background.
-            double scale=Math.min(1,Math.min(4096.0/Math.max(canvasWidth,canvasHeight),
-                Math.sqrt((2*1024*1024.0)/canvasWidth/canvasHeight)));
+            double scale=captureScale();
             background.copyFrame(Math.max(1,(int)(canvasWidth*scale)),Math.max(1,(int)(canvasHeight*scale)),compose);
         }
+    }
+    private double captureScale(){
+        return Math.min(1,Math.min(4096.0/Math.max(canvasWidth,canvasHeight),
+            Math.sqrt((2*1024*1024.0)/canvasWidth/canvasHeight)));
     }
     private void drawCapturedControls(Canvas canvas,GameUiBackground background){
         for(int i=0;i<getChildCount();i++){
@@ -173,7 +178,7 @@ class GameUiPanel extends FrameLayout {
         if(pool==null)return;
         backdropRequest=request;backdropHeld=true;
         ChartBackdrop chart=new ChartBackdrop(canvasWidth,canvasHeight,centerLayer,scriptTiles,display);
-        backdrop=new GameUiBackground(getContext(),pool,request,null,frameMs,UiPreviewPool.stepLimit(assets.game),null,0,0,chart);
+        backdrop=new GameUiBackground(getContext(),pool,request,null,frameMs,null,0,0,chart);
         addView(backdrop,0,new LayoutParams(-1,-1));
     }
     private void uiBackground(GameUiAssets.Config cfg,int mode,int page,UiPreviewPool.Warmup warmup,int[] saved,int width,int height){
@@ -185,11 +190,35 @@ class GameUiPanel extends FrameLayout {
         UiPreviewPool pool=request==null||assets.runtime==null?null:assets.runtime.previews();
         if(pool==null)return;
         backdropRequest=request;
-        backdrop=new GameUiBackground(getContext(),pool,request,warmup,frameMs,UiPreviewPool.stepLimit(assets.game),saved,width,height);
+        backdrop=new GameUiBackground(getContext(),pool,request,warmup,frameMs,saved,width,height);
         backdropHeld=true;
         addView(backdrop,0,new LayoutParams(-1,-1));
     }
     void previewPlace(int place){if(backdrop!=null)backdrop.page(place);}
+    boolean prepareBackgroundPage(int page,Runnable showControls){
+        GameUiBackground source=backdrop;
+        if(source==null||!backdropRequest.restartOnPage||!source.frameReady())return false;
+        changingPage=true;
+        double scale=captureScale();
+        source.preparePage(page,Math.max(1,(int)(canvasWidth*scale)),Math.max(1,(int)(canvasHeight*scale)),frame->{
+            if(!isAttachedToWindow()||backdrop!=source){
+                if(frame!=null)frame.recycle();
+                finishBackgroundPage();
+                if(isAttachedToWindow()&&backdrop==null)showControls.run();
+                return;
+            }
+            pageBackground=frame;
+            showControls.run();
+            if(frame==null)finishBackgroundPage();
+            else invalidate();
+        });
+        return true;
+    }
+    private void finishBackgroundPage(){
+        changingPage=presentingPage=false;
+        pageBackground=null;
+        invalidate();
+    }
     private void holdBackground(boolean hold){
         if(backdrop!=null&&backdropHeld!=hold){backdropHeld=hold;backdrop.hold(hold);}
     }
@@ -212,6 +241,7 @@ class GameUiPanel extends FrameLayout {
     }
     void drawPanelBackground(Canvas canvas){}
     @Override public boolean dispatchTouchEvent(MotionEvent event){
+        if(changingPage)return true;
         if(waitingForBackground())return true;
         if(opening!=null&&opening.touch(event)){invalidate();return true;}
         if(leaving)return true;
@@ -227,7 +257,7 @@ class GameUiPanel extends FrameLayout {
     }
     void panelPointer(MotionEvent event){}
     private boolean waitingForBackground(){
-        return opening!=null&&opening.needsTarget()||backdrop!=null&&!backdrop.frameReady();
+        return opening!=null&&opening.needsTarget()||backdrop!=null&&pageBackground==null&&!backdrop.frameReady();
     }
     @Override protected void onLayout(boolean changed,int left,int top,int right,int bottom){
         super.onLayout(changed,left,top,right,bottom);
@@ -259,6 +289,7 @@ class GameUiPanel extends FrameLayout {
         if(source!=backdrop)return;
         backdrop=null;backdropRequest=null;scriptedBackground=false;
         removeView(source);
+        if(changingPage)finishBackgroundPage();
         if(backdropFailure!=null)backdropFailure.accept(failure);
         backgroundReady();
     }
@@ -285,10 +316,25 @@ class GameUiPanel extends FrameLayout {
     }
     @Override protected void onDetachedFromWindow(){
         capturedBackdropReady=null;
+        if(changingPage)finishBackgroundPage();
         if(opening!=null)opening.close();
         super.onDetachedFromWindow();
     }
     @Override protected boolean drawChild(Canvas canvas,View child,long drawingTime){
+        Bitmap staged=pageBackground;
+        if(child==backdrop&&staged!=null){
+            super.drawChild(canvas,child,drawingTime);
+            canvas.drawBitmap(staged,null,new Rect(0,0,getWidth(),getHeight()),paint);
+            if(!presentingPage){
+                presentingPage=true;
+                GameUiBackground source=backdrop;
+                postOnAnimation(()->{
+                    if(pageBackground==staged&&backdrop==source&&isAttachedToWindow())
+                        source.presentPage(this::finishBackgroundPage);
+                });
+            }
+            return true;
+        }
         if(opening==null||child==backdrop)return super.drawChild(canvas,child,drawingTime);
         int offset=backdrop==null?0:1,save=canvas.save();
         boolean drawn=opening.reveal(canvas,child,indexOfChild(child)-offset,getChildCount()-offset,

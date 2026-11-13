@@ -16,28 +16,31 @@ final class TitleMenu {
         START(R.string.engine_systemnnn_ctl_title_new), LOAD(R.string.engine_systemnnn_host_load_save),
         SETTINGS(R.string.engine_systemnnn_host_settings), EXTRAS(R.string.engine_systemnnn_ctl_title_gallery),
         EXIT(R.string.engine_systemnnn_host_exit_game), CONTINUE(R.string.engine_systemnnn_host_continue_game),
-        LAST_LOAD(R.string.engine_systemnnn_ctl_title_last_load), WEBSITE(R.string.engine_systemnnn_ctl_title_website), MODE(R.string.engine_systemnnn_ctl_title_extension);
+        LAST_LOAD(R.string.engine_systemnnn_ctl_title_last_load), WEBSITE(R.string.engine_systemnnn_ctl_title_website), MODE(R.string.engine_systemnnn_ctl_title_extension),
+        SCENARIO(R.string.engine_systemnnn_ctl_title_scenario), MINIGAME(R.string.engine_systemnnn_ctl_title_minigame);
         final int labelRes;
         Action(int labelRes) { this.labelRes=labelRes; }
     }
     static final class Item {
         final Action action;
-        final int x,y,width,height,mode;
+        final int x,y,width,height,mode,scenario;
         final boolean enabled;
         final String label;
         Bitmap image;
         GameButton.Spec spec;
         Item(Action action,int x,int y,int width,int height,boolean enabled) {
-            this(action,x,y,width,height,enabled,0,null);
+            this(action,x,y,width,height,enabled,0,0,null);
         }
-        Item(Action action,int x,int y,int width,int height,boolean enabled,int mode,String label){
+        Item(Action action,int x,int y,int width,int height,boolean enabled,int mode,int scenario,String label){
             this.action=action;this.x=x;this.y=y;this.width=width;this.height=height;this.enabled=enabled;
-            this.mode=mode;this.label=label;
+            this.mode=mode;this.scenario=scenario;this.label=label;
         }
     }
     final ArrayList<Item> items=new ArrayList<>();
     final boolean skinned;
     final String website;
+    // Raw game bytes. Empty when the title has no extension modes, as on PC.
+    final String scenarioVariable;
     final GameUiAssets.Config config;
     final int frameMs,autoRestartTime;
     final boolean restartOnBackgroundEnd;
@@ -53,6 +56,7 @@ final class TitleMenu {
         try{restoreMusic(handle);}
         catch(RuntimeException e){Log.w("SystemNNN","Title music unavailable",e);}
         website=value("HTMLaddr","");
+        scenarioVariable=number("extModeNumber",0)>0?value("extModeReturnVarName",""):"";
         boolean extras=GameResourcePaths.file(root,"init","omake.xtx")!=null||GameResourcePaths.file(root,"init2","omake.fxf")!=null;
         Action[] basic={Action.START,Action.LOAD,Action.SETTINGS,Action.EXTRAS,Action.EXIT};
         int count=DialogueLayout.clamp(number("basicButtonNumber",basic.length),0,64);
@@ -61,12 +65,12 @@ final class TitleMenu {
             config.has("menu1Button1PrintY")||buttons.stream().anyMatch(button->!button.setup.art.image.isEmpty());
         Map<String,Bitmap> artwork=new HashMap<>();
         for(MenuModeButton button:buttons){
-            Action action=button.index<basic.length?basic[button.index]:Action.MODE;
+            Action action=button.index<basic.length?basic[button.index]:button.scenario!=0?Action.SCENARIO:Action.MODE;
             if(!skinned&&(action==Action.MODE||action==Action.EXTRAS&&!extras))continue;
             ButtonArt.Setup setup=button.setup;
             boolean enabled=button.enabled&&(action!=Action.EXTRAS||extras);
             Item item=new Item(action,button.x,button.y,setup.width,setup.height,enabled,
-                button.mode,button.label);
+                button.mode,button.scenario,button.label);
             if(skinned){
                 item.spec=new GameButton.Spec(setup);
                 loadArtwork(handle,item,artwork);
@@ -80,6 +84,10 @@ final class TitleMenu {
         }else{
             int continueIndex=!items.isEmpty()&&items.get(0).action==Action.START?1:0;
             items.add(continueIndex,new Item(Action.CONTINUE,0,0,0,0,resume));
+        }
+        for(GameMiniGames.Entry entry:GameMiniGames.entries(root,config,handle,"title")){
+            Item item=new Item(Action.MINIGAME,entry.x,entry.y,entry.w,entry.h,true,entry.index,0,null);
+            item.spec=entry.spec;item.image=entry.image;items.add(item);
         }
     }
     int musicNumber() { return number("bgmNumber",1); }

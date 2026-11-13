@@ -4,6 +4,7 @@ The Emberfall compatibility implementation is maintained by PorisRora (Rooboko).
 Emberfall generates the default shard mesh for its full-screen and layer effects.
 Copyright (c) 2026 PorisRora (Rooboko).
 Emberfall's original code in the bundled runtime is licensed under GPL-2.0-only.
-Corresponding native source: https://github.com/PorisRora/SystemNNN-Emberfall/tree/d0170741089e9f29de7329a5e0d4e37d06ff5c71
+Corresponding native source (local trial): SystemNNN-M working tree.
+Public base: https://github.com/PorisRora/SystemNNN-Emberfall/tree/39f407f957ee3e35668cfe37c46208e067520b35
 License: Emberfall-GPL-2.0-only.txt
 License and third-party notices: https://github.com/PorisRora/SystemNNN-Emberfall/blob/338a5a17ae72b4051e5037641067b9c230178b02/THIRD_PARTY_NOTICES.md

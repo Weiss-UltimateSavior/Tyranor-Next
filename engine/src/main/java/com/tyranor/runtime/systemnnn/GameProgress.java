@@ -37,7 +37,8 @@ import java.util.regex.Pattern;
 final class GameProgress {
     private static final int NNR1=0x4e4e5231,NNR2=0x4e4e5232,NNR3=0x4e4e5233,NNR4=0x4e4e5234,
         NNE1=0x4e4e4531,NNE2=0x4e4e4532,NNE3=0x4e4e4533;
-    private static final int MAX_READ=100000,TEXT_FIELDS=102,OPTION_WORDS=NativeGame.OPTIONAL_PROGRESS_WORDS,FINGERPRINT_BYTES=32;
+    static final int MAX_READ=262144;
+    private static final int TEXT_FIELDS=102,OPTION_WORDS=NativeGame.OPTIONAL_PROGRESS_WORDS,FINGERPRINT_BYTES=32;
     private static final int MAX_CHART_NODES=256*1024,MAX_CHART=8+2*MAX_CHART_NODES;
     private static final long MAX_FILE=32L*1024*1024,MAX_EXTENSION=2L*1024*1024;
     private static final Logger LOG=Logger.getLogger(GameProgress.class.getName());

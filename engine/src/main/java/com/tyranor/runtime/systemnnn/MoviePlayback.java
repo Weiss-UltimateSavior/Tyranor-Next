@@ -49,11 +49,11 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
     private String pendingFailure;
     private int videoWidth, videoHeight;
 
-    MoviePlayback(Context context, File file, int volume, boolean canSkip, Listener listener) {
+    MoviePlayback(Context context, File file, float gain, boolean canSkip, Listener listener) {
         super(context);
         this.listener = listener;
         this.canSkip = canSkip;
-        this.volume = Math.max(0, Math.min(100, volume)) / 100f;
+        this.volume = gain;
         filename = file.getPath().getBytes(StandardCharsets.UTF_8);
         audioFocus = new PlayerAudioFocus(context, owner, audioAttributes, this::mayRequestFocus,
             () -> Log.i(TAG, "Movie playing muted while audio focus is unavailable"));

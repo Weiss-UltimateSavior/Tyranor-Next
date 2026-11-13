@@ -74,9 +74,11 @@ final class GameUiAssets {
     private final Map<String,Bitmap> images;
     private final int[] textRates;
     private final boolean legacyVolumeDefaults;
+    private final boolean useXAudio2;
     private GameUiAssets(File root,Config system,Config config,Config save,Config load,Config backlog,Config messageWindow,
                          Config game,Config printMessage,Config dataFile,Config notice,Config messageCursor,Config selection,Config gameMouse,Config selectPlace,Config selectPlace2,
-                         Map<String,Config> storyButtons,Map<String,Bitmap> images,int[] textRates,boolean freeStatus,boolean legacyVolumeDefaults) throws IOException {
+                         Map<String,Config> storyButtons,Map<String,Bitmap> images,int[] textRates,boolean freeStatus,
+                         boolean legacyVolumeDefaults,boolean useXAudio2) throws IOException {
         this.root=root.getCanonicalFile();
         this.system=system; this.config=config; this.save=save; this.load=load; this.backlog=backlog;
         this.messageWindow=messageWindow;
@@ -89,6 +91,7 @@ final class GameUiAssets {
         this.textRates=textRates;
         this.freeStatus=freeStatus;
         this.legacyVolumeDefaults=legacyVolumeDefaults;
+        this.useXAudio2=useXAudio2;
         long extensions=0;
         for(int item=10;item<=GameSystemMenuPanel.optionCount(system);item++){
             int mode=system.number("expOptionMode"+item,0);
@@ -97,7 +100,7 @@ final class GameUiAssets {
         systemExtensionModes=extensions;
     }
     OriginalSettingsModel settingsModel(int width,int height){
-        return new OriginalSettingsModel(config,game,width,height,legacyVolumeDefaults);
+        return new OriginalSettingsModel(config,game,width,height,legacyVolumeDefaults,useXAudio2);
     }
     private static String key(String value) { return value.toLowerCase(Locale.ROOT); }
     private static boolean spacing(char c){return c==' '||c=='\t';}
@@ -216,13 +219,15 @@ final class GameUiAssets {
         }
         return loaded;
     }
-    PointerIcon pointer(int variant){
-        if(!gameMouse.has("fileNameMouse"))return null;
+    PointerIcon pointer(int configVariant,int scriptVariant){
+        if(game.number("gameMouseCreateFlag",1)==0)return null;
         int configs=DialogueLayout.clamp(gameMouse.number("mouseNumberConfig",1),1,64);
         int scripts=DialogueLayout.clamp(gameMouse.number("mouseNumberScript",1),1,64);
-        int index=DialogueLayout.clamp(variant,0,configs-1)+1;
-        String name=gameMouse.value("fileNameMouse","");
-        if(configs>1||scripts>1)name=gameMouse.value("fileNameMouse"+(configs>1&&scripts>1?"1_":"")+index,name);
+        int config=configVariant>=0&&configVariant<configs?configVariant+1:1;
+        int script=scriptVariant>=0&&scriptVariant<scripts?scriptVariant+1:1;
+        String name=gameMouse.value("fileNameMouse","ta_mouse");
+        if(configs>1&&scripts>1)name=gameMouse.value("fileNameMouse"+script+"_"+config,name);
+        else if(configs>1||scripts>1)name=gameMouse.value("fileNameMouse"+(scripts>1?script:config),name);
         Bitmap sheet=image(name);
         if(sheet==null)return null;
         int w=DialogueLayout.clamp(gameMouse.number("sizeX",32),1,Math.min(512,sheet.getWidth()));
@@ -312,6 +317,8 @@ final class GameUiAssets {
         names.addAll(config.imageNames());
         names.addAll(messageCursor.imageNames());
         names.addAll(gameMouse.imageNames());
+        if(game.number("gameMouseCreateFlag",1)!=0&&!gameMouse.has("fileNameMouse"))
+            names.add(systemImageKey("ta_mouse"));
         if(game.number("selectPlaceIsDefault",0)!=0)names.addAll(selectPlace.imageNames());
         if(game.number("selectPlace2IsDefault",0)!=0&&game.number("selectPlace2ClassDisable",0)==0)names.addAll(selectPlace2.imageNames());
         names.addAll(selection.imageNames());
@@ -378,6 +385,7 @@ final class GameUiAssets {
             catch(IOException e){Log.w("SystemNNN","Optional status configuration unavailable: "+name,e);}
         }
         return new GameUiAssets(root,system,config,save,load,backlog,messageWindow,game,printMessage,data,notice,messageCursor,selection,gameMouse,selectPlace,selectPlace2,
-            storyButtons,images,NativeGame.settingsTextRates(handle),freeStatus,NativeGame.legacyVolumeDefaults(handle));
+            storyButtons,images,NativeGame.settingsTextRates(handle),freeStatus,NativeGame.legacyVolumeDefaults(handle),
+            NativeGame.usesXAudio2(handle));
     }
 }

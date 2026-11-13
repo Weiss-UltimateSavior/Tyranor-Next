@@ -844,6 +844,10 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         CmvsSettingsScreen()
         return
     }
+    if (kind == EngineSettingsKind.SYSTEMNNN) {
+        SystemNnnSettingsScreen()
+        return
+    }
     val ctx = LocalContext.current
     val graphicsFamily = kind.graphicsFamily()
     var graphics by remember(kind) {

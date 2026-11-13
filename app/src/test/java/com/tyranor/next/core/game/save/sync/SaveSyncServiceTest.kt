@@ -102,7 +102,7 @@ class SaveSyncServiceTest {
         val before = harness.setActive(game, "before")
         val gameDirectory = temp.newFolder("systemnnn").canonicalFile
         val saveDirectory = File(gameDirectory, "sav").apply { mkdir() }
-        val save = File(saveDirectory, "emberfall.sav").apply { writeText("progress after exit") }
+        val save = File(saveDirectory, "data0.sav").apply { writeText("progress after exit") }
         val archive = temp.newFile("systemnnn-progress.zip")
         ZipOutputStream(archive.outputStream()).use { output ->
             output.putNextEntry(ZipEntry(save.name))
@@ -117,8 +117,8 @@ class SaveSyncServiceTest {
         val session = JSONObject().put("token", "pending-exit").put("uri", game.uri)
             .put("activeKey", directoryKey).put("baseline", before)
         harness.sessions.save(key, session)
-        val saves = SystemNnnSaveStore(gameDirectory, saveDirectory, validateSnapshot = { _, incoming, existing, _ ->
-            SystemNnnHost.canReplaceSaveSnapshot(incoming, existing)
+        val saves = SystemNnnSaveStore(gameDirectory, saveDirectory, validateSnapshot = { _, _, _, _ ->
+            error("The test only exports saves")
         })
         var attemptedCapture = false
         suspend fun flush() = SaveSyncRuntime.flushPending(harness.root, harness.world) { target, activeKey ->

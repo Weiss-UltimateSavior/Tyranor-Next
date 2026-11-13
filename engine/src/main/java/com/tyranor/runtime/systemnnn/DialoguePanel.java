@@ -43,6 +43,9 @@ final class DialoguePanel extends FrameLayout {
         window=image(); nameWindow=image();
         speaker=text(new DialogueTextView(context));speaker.setGravity(Gravity.TOP|Gravity.LEFT);speaker.setTextDirection(TEXT_DIRECTION_LTR);speaker.setSingleLine(true);
         body=text(new DialogueTextView(context));body.setGravity(Gravity.TOP|Gravity.LEFT);body.setTextDirection(TEXT_DIRECTION_LTR);
+        // Scripted row positions use the same line advance for every glyph.
+        if(Build.VERSION.SDK_INT>=28)body.setFallbackLineSpacing(false);
+        if(Build.VERSION.SDK_INT>=35)body.setLocalePreferredLineHeightForMinimumUsed(false);
         body.setBreakStrategy(LineBreaker.BREAK_STRATEGY_SIMPLE);body.setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE);
         body.setAccessibilityDelegate(new AccessibilityDelegate(){
             @Override public void onInitializeAccessibilityNodeInfo(View host,AccessibilityNodeInfo info){
@@ -70,6 +73,8 @@ final class DialoguePanel extends FrameLayout {
     }
     private <T extends TextView> T text(T v) {
         v.setSoundEffectsEnabled(false);v.setIncludeFontPadding(false);v.setTextColor(Color.WHITE);
+        // Rasterize story glyphs in the game's pixel grid for both the live view and the software wipe snapshot.
+        v.setLayerType(View.LAYER_TYPE_SOFTWARE,null);
         textShadow(v,Color.BLACK); addView(v,new LayoutParams(1,1)); return v;
     }
     static void textShadow(TextView view,int color){view.setShadowLayer(2,1,1,color);}
@@ -110,7 +115,7 @@ final class DialoguePanel extends FrameLayout {
     void passive(boolean value){passive=value;}
     @Override public boolean dispatchTouchEvent(MotionEvent event){return !passive&&super.dispatchTouchEvent(event);}
     void read(boolean value){wasRead=value;colors();}
-    void cursorAssets(GameUiAssets assets){cursor.assets(assets);}
+    void cursorAssets(GameUiAssets assets){cursor.assets(assets);body.effectColors(assets.printMessage);}
     void cursorVariant(int value){cursor.variant(value);}
     void scriptCursorVariant(int value){cursor.scriptVariant(value);}
     void waiting(boolean visible,boolean automatic,int command,int period){
@@ -120,6 +125,7 @@ final class DialoguePanel extends FrameLayout {
     int bodyX(){return style.bodyX(layout);}
     int bodyY(){return style.bodyY(layout);}
     int bodyWidth(){return style.bodyWidth(layout);}
+    int measuredBodyWidth(){return body.getWidth();}
     int bodyHeight(){return style.bodyHeight(layout);}
     private void colors(){
         boolean read=wasRead&&settings.changeReadColor;
@@ -149,13 +155,14 @@ final class DialoguePanel extends FrameLayout {
     void message(String text,int visible){message(DialogueMarkup.plain(text),visible);}
     void message(DialogueMarkup text,int visible){
         message=text.text;revealed=DialogueLayout.clamp(visible,0,message.length());rendered=null;lastLogicalRow=0;
-        body.markup(text,style.markupStyle);body.markupReveal(revealed);
+        body.markup(text,style.markupStyle);body.markupReveal(revealed);body.messageEffect(0,0);
         for(int i=0;i<message.length();i++)if(message.charAt(i)=='\n')lastLogicalRow++;
         body.scrollTo(0,0);requestLayout();
     }
-    void reveal(int visible){
+    void reveal(int visible,int effect,int progress){
         revealed=DialogueLayout.clamp(visible,0,message.length());
         body.markupReveal(revealed);
+        body.messageEffect(effect,progress);
         if(rendered!=null)applyReveal(rendered);
     }
     private void applyReveal(Spannable text){
@@ -190,7 +197,9 @@ final class DialoguePanel extends FrameLayout {
         int origin=Math.min(DialogueLayout.lineX(layout,0,right),DialogueLayout.lineX(layout,lastLogicalRow,right));
         place(body,origin,bodyY(),right-origin,bodyHeight(),sx,sy);
         float factor=storyBody?settings.readingSize/100f:1f;
-        body.setTextSize(TypedValue.COMPLEX_UNIT_PX,Math.max(style.original?1:12,layout.font*sx)*factor);
+        float originalSize=Math.max(style.original?1:12,layout.font*sx);
+        float textSize=originalSize*factor;
+        body.setTextSize(TypedValue.COMPLEX_UNIT_PX,textSize);
         body.markupFont(layout.font*factor);
         int markupTop=body.markupTopInset(body.getTextSize());
         if(markupTop>0){
@@ -199,7 +208,9 @@ final class DialoguePanel extends FrameLayout {
         }
         body.setLetterSpacing((float)layout.space/Math.max(1,layout.font));
         android.graphics.Paint.FontMetrics metrics=body.getPaint().getFontMetrics();
-        body.setLineSpacing(Math.max(1,layout.nextY*sy*factor)-(metrics.descent-metrics.ascent),1f);
+        // Keep the game's row positions when shrinking text. Larger text needs room for the extra glyph height.
+        float lineStep=Math.max(1,layout.nextY*sy+Math.max(0,textSize-originalSize));
+        body.setLineSpacing(lineStep-(metrics.descent-metrics.ascent),1f);
         speaker.setTextSize(TypedValue.COMPLEX_UNIT_PX,Math.max(1,name.font*sx));
         speaker.markupFont(name.font);
         int nameMarkupTop=speaker.markupTopInset(speaker.getTextSize());

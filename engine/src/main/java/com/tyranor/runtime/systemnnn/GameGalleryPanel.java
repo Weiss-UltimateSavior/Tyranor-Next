@@ -1,6 +1,7 @@
 package com.tyranor.runtime.systemnnn;
 
 import com.core.engine.R;
+import com.core.engine.EngineUiText;
 
 import android.content.Context;
 import android.graphics.*;
@@ -20,6 +21,7 @@ final class GameGalleryPanel extends GameUiPanel {
     interface Actions {
         void open(GalleryCatalog.Screen screen,int group,int page,int index);
         void mode(int mode);
+        void miniGame(int index);
         void cgFrame(GalleryCatalog.Page page,int frame,Consumer<Bitmap> done);
         void back();
         void replay(int group,int index);
@@ -86,6 +88,13 @@ final class GameGalleryPanel extends GameUiPanel {
             GameButton.Spec spec=new GameButton.Spec(entry.setup);
             animatedButton(spec,sprite(entry.setup.art.image),entry.label.isEmpty()?MenuModeButton.fallbackLabel(getContext(),entry.mode):entry.label,()->sound(spec.sound,spec.voice),
                 ()->actions.mode(entry.mode),entry.x,entry.y,entry.setup.width,entry.setup.height).setEnabled(entry.enabled);
+        }
+        for(GameMiniGames.Entry entry:page.miniGames){
+            if(entry.spec==null){
+                View area=new View(getContext());area.setOnClickListener(v->actions.miniGame(entry.index));
+                put(area,entry.x,entry.y,entry.w,entry.h);
+            }else animatedButton(entry.spec,entry.image,EngineUiText.get(getContext(),R.string.engine_systemnnn_ctl_title_minigame),
+                ()->sound(entry.spec.sound,entry.spec.voice),()->actions.miniGame(entry.index),entry.x,entry.y,entry.w,entry.h);
         }
     }
     private void menuButton(int index,String label,boolean enabled,Runnable action) {

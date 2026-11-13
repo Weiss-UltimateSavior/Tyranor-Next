@@ -26,22 +26,15 @@
     <string name="engine_systemnnn_ctl_input_halfwidth">此姓名输入框只接受半角文字，且不能输入 #</string>
     <string name="engine_systemnnn_ctl_input_fullwidth">此输入框只接受游戏支持的全角字符</string>
     <string name="engine_systemnnn_ctl_input_rejected">游戏拒绝了这次输入</string>
-    <string name="engine_systemnnn_ctl_pc_export">导出 PC 存档</string>
-    <string name="engine_systemnnn_ctl_pc_import">读取 PC 存档</string>
     <string name="engine_systemnnn_ctl_page_previous">上一页</string>
     <string name="engine_systemnnn_ctl_page_next">下一页</string>
-    <string name="engine_systemnnn_ctl_back_transfer">返回，长按%1$s</string>
     <string name="engine_systemnnn_ctl_page_count">第 %1$d / %2$d 页</string>
     <string name="engine_systemnnn_ctl_overwrite">覆盖保存</string>
     <string name="engine_systemnnn_ctl_cancel_overwrite">取消覆盖</string>
-    <string name="engine_systemnnn_ctl_slot_auto">自动存档</string>
     <string name="engine_systemnnn_ctl_slot_quick">快速存档</string>
-    <string name="engine_systemnnn_ctl_other_saves">其他存档</string>
     <string name="engine_systemnnn_ctl_slot_number">存档 %1$s</string>
     <string name="engine_systemnnn_ctl_slot_unreadable">存档无法读取</string>
     <string name="engine_systemnnn_ctl_slot_empty">空槽位</string>
-    <string name="engine_systemnnn_ctl_slot_legacy">旧版存档</string>
-    <string name="engine_systemnnn_ctl_position">%1$s · 第 %2$d 句</string>
     <string name="engine_systemnnn_ctl_title_new">新游戏</string>
     <string name="engine_systemnnn_ctl_title_gallery">鉴赏</string>
     <string name="engine_systemnnn_ctl_title_last_load">读取上次存档</string>
@@ -149,4 +142,8 @@
     <string name="engine_systemnnn_ctl_chart_cancel">取消跳转</string>
     <string name="engine_systemnnn_ctl_movie_playing">动画播放</string>
     <string name="engine_systemnnn_ctl_movie_skippable">动画播放 · 轻触跳过</string>
+    <string name="engine_systemnnn_ctl_title_scenario">剧情</string>
+    <string name="engine_systemnnn_ctl_title_minigame">小游戏</string>
+    <string name="engine_systemnnn_ctl_film_skip">跳过片段</string>
+    <string name="engine_systemnnn_ctl_minigame_unavailable">无法打开小游戏</string>
 </resources>

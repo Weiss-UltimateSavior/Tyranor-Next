@@ -23,7 +23,7 @@ final class GameSave {
     private static final int NATIVE_BASELINE=-5;
     private static final int RANDOM_STATE=-6, CLOCK_SAMPLE=-7, RESET_GALLERY=-8, GALLERY_BITS=-9;
     private static final int RESET_SCRIPT_PROGRESS=-10, SET_SCRIPT_PROGRESS=-11;
-    private static final int MAX_GALLERY_KEYS=150000;
+    private static final int MAX_GALLERY_KEYS=GalleryStore.LIMIT;
     static final int MAGIC_NS1=0x4e4e5331, MAGIC_NS2=0x4e4e5332;
     private static final int MAX_RUNS=200000, MAX_TICKS=24000000, MAX_CONTENT_BYTES=1024*1024;
     // A native checkpoint still validates its ID and cursor. This token can
@@ -100,8 +100,8 @@ final class GameSave {
         save.useNativeBaseline(0,0);
         return save;
     }
-    void recordModalBoundary(int x,int y){
-        // The legacy journal cannot reproduce a raw-text or multi-step reply.
+    void recordNativeBoundary(int x,int y){
+        // The legacy journal cannot reproduce a native-only action.
         // Existing native Backlog checkpoints still validate their original cursor.
         if(!requiresSnapshot())useNativeBaseline(x,y);
     }
@@ -175,6 +175,18 @@ final class GameSave {
     void appendWithClock(int ms,int x,int y,boolean advance,int choice,boolean skip,int date,int milliseconds){
         if(date!=0)stateRun(CLOCK_SAMPLE,date,milliseconds);
         append(ms,x,y,advance,choice,skip);
+    }
+    void appendWithClock(int elapsed,int animation,int x,int y,boolean advance,int choice,boolean skip,
+                         int date,int milliseconds){
+        if(elapsed==animation&&elapsed<=1000){
+            appendWithClock(elapsed,x,y,advance,choice,skip,date,milliseconds);
+        }else if(requiresSnapshot()){
+            updateNativePointer(x,y);
+        }else{
+            // The legacy journal has one time per input. Keep the native Backlog
+            // checkpoints when an update has distinct elapsed and animation clocks.
+            useNativeBaseline(x,y);
+        }
     }
     void recordMovieContinuationClock(int date,int milliseconds){
         if(requiresSnapshot()||runs.isEmpty())return;
@@ -530,10 +542,11 @@ final class GameSave {
         checkSlot(file,loaded.metadata);
         return loaded;
     }
-    static boolean restoreSnapshot(Loaded loaded,long handle,int[] meta,boolean keepMusicPosition,boolean migrateLegacy) {
+    static boolean restoreSnapshot(Loaded loaded,long handle,int[] meta,boolean keepMusicPosition,boolean migrateLegacy,
+                                   boolean restartMusic) {
         Metadata at=loaded.metadata;
         return loaded.nativeSnapshot!=null&&NativeGame.restoreSnapshot(handle,loaded.nativeSnapshot,at.wait,at.word,at.line,
-            loaded.content,meta,keepMusicPosition,migrateLegacy);
+            loaded.content,meta,keepMusicPosition,migrateLegacy,restartMusic);
     }
     static void replay(Loaded loaded,long handle,int[] meta) throws IOException {
         if(meta==null||meta.length<7)throw new IOException("缺少恢复状态");

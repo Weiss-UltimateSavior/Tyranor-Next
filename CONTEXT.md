@@ -25,7 +25,7 @@ AliceSoft 的两代引擎，各为独立的引擎类型（XSYS35 对应 System 3
 _Avoid_: System3/4、AliceSoft 引擎
 
 **SystemNNN（SYSTEMNNN）**:
-由 tinyan 开发的视觉小说引擎家族。Tyranor Next 的内置实现由 Emberfall 承载。
+由 tinyan 开发的视觉小说引擎家族。Tyranor Next 的内置实现由 Emberfall 承载，剧情存读档使用原版编号槽位。
 _Avoid_: Emberfall 独立播放器、第三方运行时模块
 
 **视觉小说引擎组（Framebuffer 引擎）**:

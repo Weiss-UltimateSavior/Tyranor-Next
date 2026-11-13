@@ -53,8 +53,37 @@ final class DialogueMarkup {
     final List<Annotation> annotations;
 
     private DialogueMarkup(String text,List<Annotation> annotations){
-        this.text=text;this.glyphCount=text.codePointCount(0,text.length());
+        this.text=text;
+        int glyphs=0;
+        for(int offset=0;offset<text.length();){
+            int code=text.codePointAt(offset);
+            if(code!='\n'&&code!='\r')glyphs++;
+            offset+=Character.charCount(code);
+        }
+        this.glyphCount=glyphs;
         this.annotations=Collections.unmodifiableList(annotations);
+    }
+
+    // The PC reveal budget is shared by rows. The line separators take no time.
+    int offsetForGlyphs(int count){
+        if(count>=glyphCount)return text.length();
+        int offset=0;
+        while(offset<text.length()){
+            int code=text.codePointAt(offset);
+            if(code!='\n'&&code!='\r'){
+                if(count<=0)break;
+                count--;
+            }
+            offset+=Character.charCount(code);
+        }
+        return offset;
+    }
+
+    DialogueMarkup withoutFinalLineBreak(){
+        int end=text.length();
+        if(end>0&&text.charAt(end-1)=='\n')end--;
+        if(end>0&&text.charAt(end-1)=='\r')end--;
+        return slice(0,end);
     }
 
     static DialogueMarkup plain(String text){return new DialogueMarkup(text,Collections.emptyList());}

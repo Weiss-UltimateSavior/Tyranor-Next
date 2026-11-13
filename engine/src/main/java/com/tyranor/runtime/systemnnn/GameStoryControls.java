@@ -49,6 +49,7 @@ final class GameStoryControls extends FrameLayout {
         case LOAD:label=R.string.engine_systemnnn_ctl_load;break;
         case AUTO:label=R.string.engine_systemnnn_ctl_auto;break;
         case SKIP:label=R.string.engine_systemnnn_ctl_skip;break;
+        case FILM_SKIP:label=R.string.engine_systemnnn_ctl_film_skip;break;
         case HIDE:label=R.string.engine_systemnnn_ctl_hide;break;
         default:label=R.string.engine_systemnnn_ctl_menu;break;
         }
@@ -60,7 +61,7 @@ final class GameStoryControls extends FrameLayout {
     void cancelClick(){
         if(dispatch!=null)removeCallbacks(dispatch);
         dispatch=null;clicked=null;
-        for(ArtButton b:buttons){b.setClickable(!typing);b.invalidate();}
+        for(ArtButton b:buttons){b.setClickable(clickableWhileTyping(b));b.invalidate();}
     }
     void canvas(int width,int height){canvasWidth=Math.max(1,width);canvasHeight=Math.max(1,height);requestLayout();}
     void frame(GameRunner.Frame frame,boolean typing,GameChoicePanel choice){
@@ -69,24 +70,25 @@ final class GameStoryControls extends FrameLayout {
         this.typing=!choiceButtons&&(typing||frame==null||frame.wait!=NativeGame.DIALOGUE);
         if(frame!=null&&frame.width>0&&frame.height>0&&(canvasWidth!=frame.width||canvasHeight!=frame.height))canvas(frame.width,frame.height);
         if(frame!=null)period=Math.max(1,frame.frameMs);
-        boolean visible=frame!=null&&frame.optionsAllowed&&
+        boolean visible=frame!=null&&(frame.filmSkip||frame.optionsAllowed&&
             (frame.wait==NativeGame.DIALOGUE||
-             (frame.wait==NativeGame.DRAW||frame.wait==NativeGame.OVERLAP)&&model.original&&model.drawDuringTransitions);
+             (frame.wait==NativeGame.DRAW||frame.wait==NativeGame.OVERLAP)&&model.original&&model.drawDuringTransitions));
         setVisibility(visible||choiceButtons?VISIBLE:GONE);
         for(ArtButton button:buttons){
             GameStoryControlsModel.Action action=button.spec.action;
-            boolean show=!choiceButtons||action==GameStoryControlsModel.Action.MENU||
+            boolean show=choiceButtons?(action==GameStoryControlsModel.Action.MENU||
                 action==GameStoryControlsModel.Action.QUICK_SAVE&&choice.quickSlotAllowed(true)||
-                action==GameStoryControlsModel.Action.QUICK_LOAD&&choice.quickSlotAllowed(false);
+                action==GameStoryControlsModel.Action.QUICK_LOAD&&choice.quickSlotAllowed(false)):visible&&frame.optionsAllowed;
+            if(action==GameStoryControlsModel.Action.FILM_SKIP)show=!choiceButtons&&frame!=null&&frame.filmSkip;
             button.setVisibility(show?VISIBLE:GONE);
-            button.setClickable(show&&!this.typing&&clicked==null);
+            button.setClickable(show&&clickableWhileTyping(button)&&clicked==null);
         }
     }
     void modes(boolean auto,boolean skip){automatic=auto;skipping=skip;invalidate();}
     int contentRight(int x,int y,int bottom,int fallback){
         int right=fallback;
         for(GameStoryControlsModel.Button b:model.buttons)
-            if(b.x>x+80&&b.y<bottom&&b.y+b.height>y)right=Math.min(right,b.x-8);
+            if(b.action!=GameStoryControlsModel.Action.FILM_SKIP&&b.x>x+80&&b.y<bottom&&b.y+b.height>y)right=Math.min(right,b.x-8);
         return right;
     }
     @Override protected void onMeasure(int ws,int hs){
@@ -96,8 +98,11 @@ final class GameStoryControls extends FrameLayout {
             p.width=Math.max(1,Math.round((b.right()-b.left())*sx));p.height=Math.max(1,Math.round((b.bottom()-b.top())*sy));}
         super.onMeasure(ws,hs);
     }
+    private boolean clickableWhileTyping(ArtButton button){
+        return !typing||button.spec.action==GameStoryControlsModel.Action.FILM_SKIP;
+    }
     private void click(ArtButton b){
-        if(typing||clicked!=null||!b.isEnabled()||choice!=null&&choice.confirming())return;
+        if(!clickableWhileTyping(b)||clicked!=null||!b.isEnabled()||choice!=null&&choice.confirming())return;
         clicked=b;
         for(ArtButton button:buttons)button.setClickable(false);
         boolean target=b.spec.action==GameStoryControlsModel.Action.AUTO?!automatic:!skipping;

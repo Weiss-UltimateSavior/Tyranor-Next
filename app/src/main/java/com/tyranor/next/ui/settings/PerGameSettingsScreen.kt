@@ -98,6 +98,19 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 fun PerGameSettingsScreen(game: ScanGame) {
     val ctx = LocalContext.current
     val gid = game.uri
+    val systemNnn = game.engine == EngineType.SYSTEMNNN
+    var systemNnnFullscreen by remember(gid, systemNnn) {
+        mutableStateOf(if (systemNnn) PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_SYSTEMNNN_FULLSCREEN) else null)
+    }
+    var systemNnnReadingSize by remember(gid, systemNnn) {
+        mutableStateOf(if (systemNnn) PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_SYSTEMNNN_READING_SIZE) else null)
+    }
+    var systemNnnExeAnalysis by remember(gid, systemNnn) {
+        mutableStateOf(if (systemNnn) PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_SYSTEMNNN_EXE_ANALYSIS) else null)
+    }
+    var systemNnnDebugMode by remember(gid, systemNnn) {
+        mutableStateOf(if (systemNnn) PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_SYSTEMNNN_DEBUG_MODE) else null)
+    }
     val graphicsFamily = game.engine.graphicsFamily()
     val globalGraphics = graphicsFamily?.let { EngineSettingsStore.getGraphicsSettings(ctx, it) }
     var graphicsOverride by remember(gid, graphicsFamily) {
@@ -535,6 +548,12 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val effRenderer = krRender[PerGameSettingsStore.F_RENDERER]!!.value ?: globalRenderer
 
     fun save() {
+        if (systemNnn) {
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_SYSTEMNNN_FULLSCREEN, systemNnnFullscreen)
+            PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_SYSTEMNNN_READING_SIZE, systemNnnReadingSize)
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_SYSTEMNNN_EXE_ANALYSIS, systemNnnExeAnalysis)
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_SYSTEMNNN_DEBUG_MODE, systemNnnDebugMode)
+        }
         graphicsFamily?.let { PerGameSettingsStore.setGraphicsOverride(ctx, gid, it, graphicsOverride) }
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ENGINE_VERSION, krVersion)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ENGINE_KERNEL, krKernel)
@@ -1398,6 +1417,28 @@ fun PerGameSettingsScreen(game: ScanGame) {
                     }
                     EngineType.SYSTEMNNN -> item {
                         SectionCard(game.engine.displayName) {
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_systemnnn_fullscreen),
+                                EngineSettingsStore.isSystemNnnFullscreen(ctx),
+                                systemNnnFullscreen,
+                            ) { systemNnnFullscreen = it }
+                            OverrideChoice(
+                                stringResource(R.string.engine_settings_systemnnn_reading_size),
+                                systemNnnReadingSizeChoices().toMap(),
+                                EngineSettingsStore.getSystemNnnReadingSize(ctx).toString(),
+                                systemNnnReadingSize,
+                            ) { systemNnnReadingSize = it }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_systemnnn_exe_analysis),
+                                EngineSettingsStore.isSystemNnnExeAnalysisEnabled(ctx),
+                                systemNnnExeAnalysis,
+                            ) { systemNnnExeAnalysis = it }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_systemnnn_debug_mode),
+                                EngineSettingsStore.isSystemNnnDebugMode(ctx),
+                                systemNnnDebugMode,
+                            ) { systemNnnDebugMode = it }
+                            SystemNnnSaveLayoutSettings(game.uri)
                             Text(
                                 stringResource(R.string.engine_settings_systemnnn_hint),
                                 style = MaterialTheme.typography.bodyMedium,

@@ -1270,7 +1270,10 @@ object EngineLauncher {
             EngineType.XSYS35 -> buildXs35Intent(context, path, game, settings)
 
             EngineType.XSYS4 -> buildXs4Intent(context, path, game, settings)
-            EngineType.SYSTEMNNN -> SystemNnnHost.createLaunchIntent(context, File(path), game.title).apply {
+            EngineType.SYSTEMNNN -> SystemNnnHost.createLaunchIntent(
+                context, File(path), game.title, game.uri, settings.systemNnnFullscreen, settings.systemNnnReadingSize,
+                settings.systemNnnExeAnalysis, settings.systemNnnDebugMode,
+            ).apply {
                 // The engine keeps no copy identity; pass the original directory as the legacy key.
                 SystemNnnGameDirectory.resolve(game.uri)?.absolutePath?.let {
                     putExtra(LaunchContract.RUNTIME_MODULE_SOURCE_IDENTITY_PATH, it)

@@ -179,15 +179,18 @@ final class GalleryCatalog {
         final String background;
         final List<Cell> cells;
         final List<MenuModeButton> modeButtons;
+        final List<GameMiniGames.Entry> miniGames;
         final Map<String,Bitmap> images;
         final CgImage cg;
 
         Page(Screen screen,GameUiAssets.Config config,int group,int page,int pages,int index,
              int columns,int rows,int percent,int musicVolume,String background,List<Cell> cells,
-             Map<String,Bitmap> images,CgImage cg,List<MenuModeButton> modeButtons,GalleryCatalog catalog) {
+             Map<String,Bitmap> images,CgImage cg,List<MenuModeButton> modeButtons,List<GameMiniGames.Entry> miniGames,
+             GalleryCatalog catalog) {
             this.screen=screen; this.config=config; this.group=group; this.page=page; this.pages=pages; this.index=index;
             this.columns=columns; this.rows=rows; this.percent=percent; this.musicVolume=musicVolume;
             this.background=background; this.cells=cells; this.images=images;this.cg=cg;this.modeButtons=modeButtons;
+            this.miniGames=miniGames;
             cgAvailable=catalog.cgAvailable(); sceneAvailable=catalog.sceneAvailable(); musicAvailable=catalog.musicAvailable();
             movieAvailable=catalog.movieAvailable();
             cgGroups=catalog.cgGroups(); sceneGroups=catalog.sceneGroups();
@@ -200,6 +203,7 @@ final class GalleryCatalog {
     private final List<String> sceneNames=new ArrayList<>();
     private final List<Song> songs=new ArrayList<>();
     private final MovieList movies;
+    private final GameUiAssets.Config miniGames;
     private final boolean showOpening;
     private final boolean animeEnabled;
     private final int animeBufferMax;
@@ -211,6 +215,7 @@ final class GalleryCatalog {
     GalleryCatalog(File root,GameTextDecoder codec,long handle,MovieList movies) throws IOException {
         for (Screen screen:Screen.values()) configs.put(screen,GameUiAssets.readConfig(root,screen.config,codec));
         this.movies=movies;
+        miniGames=config(Screen.OMAKE).number("miniGameFlag",0)!=0?GameUiAssets.readConfig(root,"minigame",codec):null;
         GameUiAssets.Config game=GameUiAssets.readConfig(root,"game",codec);
         animeEnabled=game.number("animeEffectEnable",0)!=0;
         animeBufferMax=bound(game.number("animeBufferMax",60),1,MAX_ANIMATION_FRAMES);
@@ -411,7 +416,7 @@ final class GalleryCatalog {
         if (encrypted) for (int i=0;i<bytes.length;i++) bytes[i]^=(byte)0xff;
         return bytes;
     }
-    private static List<String> tokens(File root,String folder,String name) throws IOException {
+    static List<String> tokens(File root,String folder,String name) throws IOException {
         byte[] bytes=listBytes(root,folder,name);
         return bytes==null?Collections.emptyList():tokens(new String(bytes,StandardCharsets.ISO_8859_1),true);
     }
@@ -544,7 +549,26 @@ final class GalleryCatalog {
             }
         }
         int percent=size==0?0:unlocked*100/size;
-        return new Page(screen,cfg,group,page,pages,index,columns,rows,percent,musicVolume,bg,cells,images,cgImage,modes,this);
+        List<GameMiniGames.Entry> games=screen==Screen.OMAKE&&miniGames!=null?
+            GameMiniGames.entries(miniGames,handle,"omake"):Collections.emptyList();
+        return new Page(screen,cfg,group,page,pages,index,columns,rows,percent,musicVolume,bg,cells,images,cgImage,modes,games,this);
+    }
+    List<Bitmap> miniGameBackgrounds(long handle,GameUiAssets.Config setup){
+        int[] unlocked=NativeGame.galleryState(handle);
+        Set<String> choices=new LinkedHashSet<>();
+        boolean variants=setup.number("sabunOkFlag",0)!=0,joint=setup.number("allOkFlag",0)!=0;
+        for(int group=0;group<albums.size();group++)for(Cg cg:albums.get(group))for(CgVariant v:cg.unlocked(unlocked,group)){
+            if(v.difference&&!variants||!joint&&v.name.startsWith("!")||v.name.regionMatches(true,0,"ta",0,2))continue;
+            choices.add(v.picture(false,"",0));
+        }
+        List<String> order=new ArrayList<>(choices);Collections.shuffle(order);
+        List<Bitmap> images=new ArrayList<>(2);
+        for(String name:order){
+            Bitmap image=sprite(handle,name,true);
+            if(image!=null)images.add(image);
+            if(images.size()==2)break;
+        }
+        return images;
     }
     private CgImage cgImage(long handle,CgVariant variant,GameUiAssets.Config cfg) throws IOException {
         boolean animate=animeEnabled&&variant.frames>0;

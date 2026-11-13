@@ -3,8 +3,10 @@ package com.tyranor.runtime.systemnnn;
 import android.content.Context;
 import android.graphics.*;
 import android.os.SystemClock;
+import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.View;
+import java.util.function.Consumer;
 
 import static com.tyranor.runtime.systemnnn.ButtonArt.number;
 
@@ -48,20 +50,34 @@ final class GameButton extends View {
     private long stateSince;
     private Runnable pending;
     private Runnable prepare;
+    private Consumer<ButtonArt.SoundEvent> feedback;
+    private Runnable hoverCue;
+    private int enterWait,exitWait;
+    private boolean pointerInside;
 
     GameButton(Context context,Spec spec,Bitmap image,String label,int frameMs){
         super(context);this.spec=spec;this.image=image;this.label=label;period=Math.max(1,frameMs);
         setContentDescription(label);setSoundEffectsEnabled(false);setFocusable(true);
     }
     void prepare(Runnable action){prepare=action;}
+    void feedback(Consumer<ButtonArt.SoundEvent> action,int enterWait,int exitWait){
+        feedback=action;this.enterWait=enterWait;this.exitWait=exitWait;
+    }
     boolean commit(Runnable cue,Runnable action){
         if(pending!=null||!isEnabled())return false;
+        cancelHoverCue();
         pending=()->{pending=null;invalidate();action.run();};
         cue.run();invalidate();postDelayed(pending,spec.clickTime*(long)period);
         if(prepare!=null)prepare.run();
         return true;
     }
-    @Override protected void onDetachedFromWindow(){if(pending!=null)removeCallbacks(pending);pending=null;super.onDetachedFromWindow();}
+    @Override protected void onDetachedFromWindow(){
+        if(pending!=null)removeCallbacks(pending);
+        pending=null;
+        cancelHoverCue();
+        pointerInside=false;
+        super.onDetachedFromWindow();
+    }
     @Override public CharSequence getAccessibilityClassName(){return "android.widget.Button";}
     @Override protected void drawableStateChanged(){super.drawableStateChanged();invalidate();}
     boolean pictureHit(float localX,float localY){
@@ -72,8 +88,31 @@ final class GameButton extends View {
     }
     @Override public boolean onTouchEvent(MotionEvent event){
         if(pending!=null)return true;
-        if(event.getActionMasked()==MotionEvent.ACTION_DOWN&&!pictureHit(event.getX(),event.getY()))return false;
+        if(event.getActionMasked()==MotionEvent.ACTION_DOWN){
+            if(!pictureHit(event.getX(),event.getY()))return false;
+            if(feedback!=null&&!isEnabled())feedback.accept(ButtonArt.SoundEvent.CANNOT_CLICK);
+        }
         return super.onTouchEvent(event);
+    }
+    @Override public boolean onHoverEvent(MotionEvent event){
+        if(feedback!=null&&pending==null&&isEnabled()&&event.isFromSource(InputDevice.SOURCE_MOUSE)){
+            boolean inside=event.getActionMasked()!=MotionEvent.ACTION_HOVER_EXIT&&pictureHit(event.getX(),event.getY());
+            if(pointerInside!=inside){
+                pointerInside=inside;
+                cancelHoverCue();
+                int wait=inside?enterWait:exitWait;
+                ButtonArt.SoundEvent kind=inside?ButtonArt.SoundEvent.ENTER:ButtonArt.SoundEvent.EXIT;
+                if(wait==0)feedback.accept(kind);
+                else if(wait>0){
+                    hoverCue=()->{hoverCue=null;feedback.accept(kind);};
+                    postDelayed(hoverCue,(long)period*wait);
+                }
+            }
+        }
+        return super.onHoverEvent(event);
+    }
+    private void cancelHoverCue(){
+        if(hoverCue!=null){removeCallbacks(hoverCue);hoverCue=null;}
     }
     @Override protected void onDraw(Canvas c){
         int mode=!isEnabled()?3:pending!=null?2:isPressed()||isHovered()?1:0;

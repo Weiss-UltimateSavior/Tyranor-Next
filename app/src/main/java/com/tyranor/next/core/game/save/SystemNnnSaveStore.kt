@@ -53,7 +53,9 @@ internal class SystemNnnSaveStore(
         if (!Files.notExists(migration.toPath(), NOFOLLOW_LINKS)) access(allowLegacyMigration = true) {}
     }
 
-    fun files(root: File = directory): Map<String, File> {
+    fun files(root: File = directory): Map<String, File> = saveFiles(root, restoreRetired = false)
+
+    private fun saveFiles(root: File, restoreRetired: Boolean): Map<String, File> {
         val safeRoot = SavePathSafety.requireSafeRoot(root)
         if (Files.notExists(safeRoot.toPath(), NOFOLLOW_LINKS)) return emptyMap()
         val result = linkedMapOf<String, File>()
@@ -64,7 +66,8 @@ internal class SystemNnnSaveStore(
                 when {
                     SystemNnnHost.isManagedSaveDirectory(relative) ->
                         visit(SavePathSafety.requireSafeRoot(child, safeRoot))
-                    SystemNnnHost.isManagedSaveFile(relative) ->
+                    SystemNnnHost.isManagedSaveFile(relative) ||
+                        restoreRetired && SystemNnnHost.isRetiredRollbackFile(relative) ->
                         result[relative.toString().replace(File.separatorChar, '/')] = SavePathSafety.requireSafeFile(safeRoot, child)
                 }
             }
@@ -97,8 +100,16 @@ internal class SystemNnnSaveStore(
             Files.createDirectory(restore.toPath())
             Files.createDirectory(before.toPath())
             for ((name, file) in existing) copySynced(file, File(before, name))
-            FileOutputStream(pending).use { it.fd.sync() }
-            apply(incoming)
+            FileOutputStream(pending).use {
+                it.write(2)
+                it.fd.sync()
+            }
+            // Older backups omit PC slots or PC global archives.
+            apply(
+                incoming,
+                preservePcSlots = source != null && incoming.keys.none(SystemNnnHost::isPcStorySave),
+                preservePcGlobal = source != null && incoming.keys.none(SystemNnnHost::isPcGlobalSave),
+            )
             Files.delete(pending.toPath())
         } catch (failure: Exception) {
             try {
@@ -134,7 +145,17 @@ internal class SystemNnnSaveStore(
             if (!Files.isDirectory(before.toPath(), NOFOLLOW_LINKS)) {
                 throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
             }
-            apply(files(before))
+            // Old pending markers were empty, and their rollback copy excluded PC slots.
+            val version = Files.newInputStream(pending.toPath(), NOFOLLOW_LINKS).use {
+                val version = it.read()
+                if (version == -1 || version in 1..2 && it.read() == -1) version
+                else throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            }
+            apply(
+                saveFiles(before, restoreRetired = version == -1),
+                preservePcSlots = version == -1,
+                preservePcGlobal = version < 2,
+            )
             Files.delete(pending.toPath())
         }
         clearRestore()
@@ -145,7 +166,7 @@ internal class SystemNnnSaveStore(
         Files.delete(migration.toPath())
     }
 
-    private fun apply(snapshot: Map<String, File>) {
+    private fun apply(snapshot: Map<String, File>, preservePcSlots: Boolean, preservePcGlobal: Boolean) {
         val live = files()
         for ((name, file) in snapshot) {
             val target = File(directory, name)
@@ -159,7 +180,14 @@ internal class SystemNnnSaveStore(
                 Files.deleteIfExists(temporary.toPath())
             }
         }
-        for ((name, file) in live) if (name !in snapshot) Files.delete(file.toPath())
+        for ((name, file) in live) {
+            if (name !in snapshot &&
+                !(preservePcSlots && SystemNnnHost.isPcStorySave(name)) &&
+                !(preservePcGlobal && SystemNnnHost.isPcGlobalSave(name))
+            ) {
+                Files.delete(file.toPath())
+            }
+        }
     }
 
     private fun copySynced(source: File, destination: File) {

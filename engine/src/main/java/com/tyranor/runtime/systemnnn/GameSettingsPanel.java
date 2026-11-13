@@ -10,6 +10,7 @@ import android.widget.TextView;
 import com.core.engine.EngineUiText;
 import com.core.engine.R;
 import java.util.ArrayList;
+import java.util.function.IntSupplier;
 
 /** Configuration pages retain the selected game's artwork, coordinates and parameter groups. */
 final class GameSettingsPanel extends GameUiPanel {
@@ -24,12 +25,14 @@ final class GameSettingsPanel extends GameUiPanel {
     private final GameRunner runner;
     private final Runnable close;
     private final boolean previewMutedVoice;
+    private final boolean fullscreen;
     private final int configMask;
     private final DialogueMarkup.Style previewMarkup;
     private OriginalSettingsModel model;
     private View returnButton;
     private ImageView previewWindow,previewNameWindow;
     private boolean[] visibleVoiceThemes;
+    private boolean[] characterVoiceChanges;
     private int page,backgroundPage=-1;
     private boolean writingPreferences,watchingPreferences;
     private final ArrayList<TextView> sampleRows=new ArrayList<>();
@@ -46,12 +49,13 @@ final class GameSettingsPanel extends GameUiPanel {
         }
     };
     private final SharedPreferences.OnSharedPreferenceChangeListener preferenceListener=(prefs,key)->{
-        if(writingPreferences||PlayerSettings.READING_SIZE.equals(key)||RuntimeSettingsAdapter.isPersistedKey(key))return;
+        if(writingPreferences||RuntimeSettingsAdapter.isPersistedKey(key))return;
         removeCallbacks(refresh);post(refresh);
     };
-    GameSettingsPanel(Context context,GameUiAssets assets,SharedPreferences prefs,GameRunner runner,Runnable click,Runnable close,int width,int height,int configMask,
+    GameSettingsPanel(Context context,GameUiAssets assets,SharedPreferences prefs,GameRunner runner,Runnable click,Runnable close,int width,int height,boolean fullscreen,int configMask,
                       UiPreviewPool.Warmup warmup){
         super(context,assets,"ta_cnf_bg01",click);preferences=prefs;this.runner=runner;this.close=close;this.configMask=configMask;
+        this.fullscreen=fullscreen;
         languageContext=EngineUiText.localizedContext(context);
         previewMutedVoice=assets.config.number("playOffToOnSoundFlag",0)!=0;
         previewMarkup=new DialogueMarkup.Style(assets.game.fields());
@@ -67,7 +71,9 @@ final class GameSettingsPanel extends GameUiPanel {
     }
     private OriginalSettingsModel settingsModel(){return assets.settingsModel(canvasWidth,canvasHeight);}
     @Override protected void onAttachedToWindow(){super.onAttachedToWindow();
-        if(!watchingPreferences){preferences.registerOnSharedPreferenceChangeListener(preferenceListener);watchingPreferences=true;}showPage(page);
+        if(!watchingPreferences){preferences.registerOnSharedPreferenceChangeListener(preferenceListener);watchingPreferences=true;}
+        characterVoiceChanges=runner.settingsCharacterVoiceChanges(model.characters);
+        showPage(page);
         if(model.systemVoices.size()>1)runner.settingsVoiceRoles(assets.config,model.systemVoices.size(),visible->post(()->{
             if(!isAttachedToWindow())return;
             visibleVoiceThemes=visible;
@@ -84,6 +90,10 @@ final class GameSettingsPanel extends GameUiPanel {
     private void write(Runnable change){writingPreferences=true;try{change.run();}finally{writingPreferences=false;}}
     private void writeInt(String key,int value){write(()->preferences.edit().putInt(key,value).apply());}
     private void writeBoolean(String key,boolean value){write(()->preferences.edit().putBoolean(key,value).apply());}
+    private void selectPage(int selected){
+        if(selected==page||controlsBusy())return;
+        if(!prepareBackgroundPage(selected+1,()->{backgroundPage=selected;showPage(selected);}))showPage(selected);
+    }
     private void showPage(int selected){
         page=Math.max(0,Math.min(selected,(model.original?model.pages:2)-1));clearControls();
         previewWindow=null;previewNameWindow=null;
@@ -92,8 +102,8 @@ final class GameSettingsPanel extends GameUiPanel {
         background(model.background(page+1));
         if(!model.original){fallback();return;}
         if(backgroundPage!=page){uiBackground(assets.config,12,page+1);backgroundPage=page;}
-        if(model.pageMode==2)for(int i=0;i<model.tabs.size();i++){final int target=i;drawButton(model.tabs.get(i),page==i,string(R.string.engine_systemnnn_ctl_settings_page,i+1),()->showPage(target));}
-        else if(model.pageMode==1)pageArrows(assets.config,page,model.pages,616,16,646,this::showPage);
+        if(model.pageMode==2)for(int i=0;i<model.tabs.size();i++){final int target=i;drawButton(model.tabs.get(i),page==i,string(R.string.engine_systemnnn_ctl_settings_page,i+1),()->selectPage(target));}
+        else if(model.pageMode==1)pageArrows(assets.config,page,model.pages,616,16,646,this::selectPage);
         for(OriginalSettingsModel.Slider s:model.sliders)if(s.page==page+1)volume(s);
         for(OriginalSettingsModel.CharacterControl c:model.characters)if(c.page==page+1)character(c);
         for(OriginalSettingsModel.Choice c:model.modes)if(c.page==page+1)mode(c);
@@ -106,7 +116,7 @@ final class GameSettingsPanel extends GameUiPanel {
         preview();
         returnButton=back(assets.config,close);
     }
-    @Override boolean backOverlay(){return returnButton!=null&&returnButton.performClick();}
+    @Override boolean backOverlay(){return pageChanging()||returnButton!=null&&returnButton.performClick();}
     private void systemVoices(){
         int selected=preferences.getInt("systemVoiceSelection",0);
         for(int i=0;i<model.systemVoices.size();i++){
@@ -156,12 +166,11 @@ final class GameSettingsPanel extends GameUiPanel {
         },()->play(s.button.state(enabled),s.index==3&&previewMutedVoice,false));
         int maximum=s.index==0?3:s.index==7?2:100,initial=s.index==0||s.index==7?1:s.index==6||s.index==8?100:80;
         int value=Math.max(0,Math.min(preferences.getInt(s.key,initial),maximum));
-        String exact="originalSlider."+s.kind;boolean speed=s.index==0||s.index==7;
-        int position=speed&&preferences.contains(exact)?preferences.getInt(exact,0):s.fromPreference(value);
+        String exact="originalSlider."+s.kind;
+        int position=preferences.getInt(exact,s.fromPreference(value));
         if(s.index==0)sampleSpeed=position;
         ValueBar bar=new ValueBar(getContext(),assets.image(s.image),label,0,s.steps,position,s.width,s.height,20,null,next->{
-            if(speed)write(()->preferences.edit().putInt(s.key,s.toPreference(next)).putInt(exact,next).apply());
-            else writeInt(s.key,s.toPreference(next));
+            write(()->preferences.edit().putInt(s.key,s.toPreference(next)).putInt(exact,next).apply());
             if(s.index==0){sampleSpeed=next;restartSample();}
             if(s.index==6){
                 float opacity=s.toPreference(next)/100f;
@@ -176,9 +185,13 @@ final class GameSettingsPanel extends GameUiPanel {
     private void character(OriginalSettingsModel.CharacterControl c){
         if(c.ids.length==0)return;boolean enabled=true;for(int id:c.ids)enabled&=preferences.getBoolean("character."+id+".enabled",true);
         final boolean next=!enabled;
-        drawButton(c.button,enabled,string(R.string.engine_systemnnn_ctl_settings_character_group,c.index+1)+" · "+toggleState(enabled),()->{
+        ButtonArt.Setup setup=c.button.state(enabled);
+        GameButton button=drawButton(c.button,enabled,string(R.string.engine_systemnnn_ctl_settings_character_group,c.index+1)+" · "+toggleState(enabled),()->{
             write(()->{SharedPreferences.Editor edit=preferences.edit();for(int id:c.ids)edit.putBoolean("character."+id+".enabled",next);edit.apply();});showPage(page);
-        },()->play(c.button.state(!next),false,previewMutedVoice));
+        },()->playCharacter(c,!next,ButtonArt.SoundEvent.CLICK));
+        if(c.soundChange!=null)button.feedback(event->{
+            if(!controlsBusy()&&activeFrameReady())playCharacter(c,!next,event);
+        },setup.enterWait,setup.exitWait);
         if(c.hasSlider){
             int value=Math.max(model.characterMin,Math.min(preferences.getInt("character."+c.ids[0]+".steps",0),model.characterMax));
             Bitmap image=assets.image(assets.config.value("filenameCharaVoiceVolume","ta_bar02"));
@@ -186,16 +199,29 @@ final class GameSettingsPanel extends GameUiPanel {
                 model.characterMin,model.characterMax,value,c.width,c.height,20,null,
                 steps->write(()->{SharedPreferences.Editor edit=preferences.edit();for(int id:c.ids)edit.putInt("character."+id+".steps",steps);edit.apply();}));
             int configured=assets.config.number("charaVoiceVolumeSE"+(c.index+1),0);
-            int cue=configured==0?c.button.off.sound:configured>0?configured-1:-1;
-            bar.onCommit(position->runner.playSettingsClick(cue,-1,c.button.on.volumeType,false,false));
+            if(configured==0)bar.onCommit(position->runner.playSettingsClick(
+                characterSound(c,false,ButtonArt.SoundEvent.CLICK),-1,c.button.on.volumeType,false,false));
+            else if(configured>0)bar.onCommit(position->runner.playSettingsClick(configured-1,-1,c.button.on.volumeType,false,false));
             bar.setEnabled(enabled);put(bar,c.x,c.y-10,c.width,c.height+20);
         }
     }
+    private IntSupplier characterSound(OriginalSettingsModel.CharacterControl control,boolean enabled,ButtonArt.SoundEvent event){
+        boolean[] changes=characterVoiceChanges;
+        return ()->control.sound(enabled,event,changes[control.index]);
+    }
+    private void playCharacter(OriginalSettingsModel.CharacterControl control,boolean enabled,ButtonArt.SoundEvent event){
+        ButtonArt.Setup setup=control.button.state(enabled);
+        runner.playSettingsClick(characterSound(control,enabled,event),setup.voice(event),setup.volumeType,false,previewMutedVoice);
+    }
     private void mode(OriginalSettingsModel.Choice c){
-        boolean value=preferences.getBoolean(c.key,c.defaultValue);int selected=c.key.equals("skipReadOnly")?(value?0:1):(value?1:0);
+        boolean displayMode=c.key.equals("fullscreen");
+        boolean value=displayMode?fullscreen:preferences.getBoolean(c.key,c.defaultValue);
+        boolean skipReadOnly=c.key.equals("skipReadOnly");
+        int selected=skipReadOnly?(value?0:1):(value?1:0);
         for(int i=0;i<c.buttons.length;i++){final int option=i;
-            drawButton(c.buttons[i],selected==i,modeLabel(c.key,i),()->{
-                writeBoolean(c.key,c.key.equals("skipReadOnly")?option==0:option!=0);
+            // The game's artwork reflects the Android window mode chosen in TYN.
+            drawButton(c.buttons[i],selected==i,modeLabel(c.key,i),displayMode?null:()->{
+                writeBoolean(c.key,skipReadOnly?option==0:option!=0);
                 showPage(page);
             });
         }
@@ -324,7 +350,7 @@ final class GameSettingsPanel extends GameUiPanel {
         long elapsed=now-sampleSince;
         int shown=(int)Math.min(length,elapsed*rate/1000);
         TextView row=sampleRows.get(sampleLine);
-        int end=line.text.offsetByCodePoints(0,shown);
+        int end=line.offsetForGlyphs(shown);
         if(row instanceof DialogueTextView)((DialogueTextView)row).previewReveal(end);
         else{
             String visible=line.text.substring(0,end);
@@ -344,8 +370,15 @@ final class GameSettingsPanel extends GameUiPanel {
     private GameButton drawButton(OriginalSettingsModel.Button b,boolean state,String label,Runnable action,Runnable cue){
         ButtonArt.Setup setup=b.state(state);
         GameButton.Spec spec=new GameButton.Spec(setup);
-        GameButton button=animatedButton(spec,assets.image(spec.image),label,cue,
-            action,b.x(state),b.y(state),setup.width,setup.height);
+        Bitmap image=assets.image(spec.image);
+        GameButton button;
+        if(action==null){
+            button=new GameButton(getContext(),spec,image,label,frameMs);
+            button.setFocusable(false);
+            put(button,b.x(state),b.y(state),setup.width,setup.height);
+        }else{
+            button=animatedButton(spec,image,label,cue,action,b.x(state),b.y(state),setup.width,setup.height);
+        }
         button.setSelected(state);
         return button;
     }
@@ -370,5 +403,11 @@ final class GameSettingsPanel extends GameUiPanel {
     private ValueBar volumeBar(String image,String label,int min,int max,int value,int w,int h,java.util.function.IntConsumer change){
         return new ValueBar(getContext(),assets.image(image),label,min,max,value,w,h,20,click,change);
     }
-    @Override boolean isAdjusting(){for(int i=0;i<getChildCount();i++){View v=getChildAt(i);if(v instanceof ValueBar&&((ValueBar)v).tracking)return true;}return false;}
+    @Override boolean isAdjusting(){
+        for(int i=0;i<getChildCount();i++){
+            View control=getChildAt(i);
+            if(control instanceof ValueBar&&((ValueBar)control).tracking||control instanceof GameButton&&control.isPressed())return true;
+        }
+        return false;
+    }
 }

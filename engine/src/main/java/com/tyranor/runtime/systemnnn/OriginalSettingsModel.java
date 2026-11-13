@@ -9,6 +9,7 @@ final class OriginalSettingsModel {
     final GameUiAssets.Config config;
     final int canvasWidth,canvasHeight;
     final int pages,pageMode,characterMin,characterMax;
+    final int volumeMin,volumeMax;
     final boolean original;
     private final boolean resetRadioSource;
     final List<Slider> sliders=new ArrayList<>();
@@ -42,7 +43,37 @@ final class OriginalSettingsModel {
     }
     static final class CharacterControl {
         final int index,page;final int[] ids;final Button button;final boolean hasSlider;final int x,y,width,height;
-        CharacterControl(int index,int page,int[] ids,Button button,boolean hasSlider,int x,int y,int w,int h){this.index=index;this.page=page;this.ids=ids;this.button=button;this.hasSlider=hasSlider;this.x=x;this.y=y;width=w;height=h;}
+        final CharacterSoundChange soundChange;
+        CharacterControl(int index,int page,int[] ids,Button button,boolean hasSlider,int x,int y,int w,int h,CharacterSoundChange soundChange){
+            this.index=index;this.page=page;this.ids=ids;this.button=button;this.hasSlider=hasSlider;this.x=x;this.y=y;width=w;height=h;
+            this.soundChange=soundChange;
+        }
+        int sound(boolean enabled,ButtonArt.SoundEvent event,boolean changed){
+            int alternate=changed&&soundChange!=null?soundChange.sound(enabled,event):0;
+            return alternate>0?alternate-1:button.state(enabled).sound(event);
+        }
+    }
+    static final class CharacterSoundChange {
+        final String variable;
+        private final int[] off,on;
+        private CharacterSoundChange(String variable,int[] off,int[] on){this.variable=variable;this.off=off;this.on=on;}
+
+        static CharacterSoundChange read(GameUiAssets.Config config,int group){
+            ButtonArt.SoundEvent[] events=ButtonArt.SoundEvent.values();
+            int[] off=new int[events.length],on=new int[events.length];
+            boolean present=false;
+            for(ButtonArt.SoundEvent event:events){
+                int id=event.ordinal();
+                off[id]=config.number("voiceVoiceChangeVoiceOff"+event.changeField+group,0);
+                on[id]=config.number("voiceVoiceChangeVoiceOn"+event.changeField+group,0);
+                present|=off[id]>0||on[id]>0;
+            }
+            if(!present)return null;
+            String inherited=config.number("voiceNameChangeFlag",0)!=0?config.value("voiceNameChangeVar"+group,""):"";
+            String variable=config.value("voiceVoiceChangeVar"+group,inherited);
+            return new CharacterSoundChange(variable,off,on);
+        }
+        int sound(boolean enabled,ButtonArt.SoundEvent event){return (enabled?on:off)[event.ordinal()];}
     }
     static final class Choice {
         final String key;final int page;final boolean defaultValue;final Button[] buttons;
@@ -64,9 +95,19 @@ final class OriginalSettingsModel {
         this(c,game,width,height,false);
     }
     OriginalSettingsModel(GameUiAssets.Config c,GameUiAssets.Config game,int width,int height,boolean legacyVolumeDefaults){
+        this(c,game,width,height,legacyVolumeDefaults,false);
+    }
+    OriginalSettingsModel(GameUiAssets.Config c,GameUiAssets.Config game,int width,int height,boolean legacyVolumeDefaults,
+                          boolean useXAudio2){
         canvasWidth=width>0?width:1280;canvasHeight=height>0?height:720;
         config=c;pages=bound(c.number("modePageMax",1),1,16);pageMode=bound(c.number("pageMode",pages>1?1:0),0,2);
         resetRadioSource=game!=null&&game.number("notSrcCopyFlagEnable",0)!=0;
+        int min=c.number("volumeMin",80),max=c.number("volumeMax",100);
+        if(useXAudio2){
+            min=c.number("volumeMinWin10",c.number("volumeMinXAudio2",min));
+            max=c.number("volumeMaxWin10",c.number("volumeMaxXAudio2",max));
+        }
+        volumeMin=min;volumeMax=max;
         int radioCount=bound(c.number("expRadioNumber",0),0,16),checkCount=bound(c.number("expCheckNumber",0),0,16);
         original=c.has("musicVolumePrintX")&&c.has("musicBarFileName")||radioCount>0||checkCount>0;
         int w=c.number("volumeSizeX",338),h=c.number("volumeSizeY",19);
@@ -83,12 +124,13 @@ final class OriginalSettingsModel {
                 int buttonY=c.number(kind+"ButtonPrintY",y);
                 toggle=new Button(buttonX,buttonY,buttonX,buttonY,previousVolume.off,previousVolume.on);
             }
-            int min=c.number(kind+"RealVolumeMin",c.number("volumeMin",80)),max=c.number(kind+"RealVolumeMax",c.number("volumeMax",100));
-            sliders.add(new Slider(i,page(kind+"VolumePrintPage",1),x,y,w,h,bound(c.number(kind+"VolumeDevide",i==0||i==7?4:100),1,10000),min,max,c.value(kind+"BarFileName","ta_opt_bar"),toggle));
+            int realMin=c.number(kind+"RealVolumeMin",volumeMin),realMax=c.number(kind+"RealVolumeMax",volumeMax);
+            sliders.add(new Slider(i,page(kind+"VolumePrintPage",1),x,y,w,h,bound(c.number(kind+"VolumeDevide",i==0||i==7?4:100),1,10000),realMin,realMax,c.value(kind+"BarFileName","ta_opt_bar"),toggle));
         }
         characterMin=bound(c.number("charaVoiceVolumeMin",-15),-15,15);characterMax=bound(c.number("charaVoiceVolumeMax",15),characterMin,15);
         int charCount=c.number("voiceCutButtonFlag",1)==0?0:bound(c.number("voiceCutButtonNumber",0),0,72),nextId=1;
         boolean custom=c.number("voiceCutButtonCustomFlag",0)!=0,auto=c.number("voiceAutoLineSetFlag",0)!=0;
+        boolean changeCharacterSound=c.number("voiceVoiceChangeFlag",0)!=0;
         int nx=c.number("voiceAutoLineNumberX",5),ny=c.number("voiceAutoLineNumberY",0);
         Button previousCharacter=null;
         for(int i=0;i<charCount;i++){
@@ -103,7 +145,8 @@ final class OriginalSettingsModel {
                 b=button(prefix,previousCharacter,false,x,y);
             }else b=button(prefix,previousCharacter,false);
             characters.add(new CharacterControl(i,page("voicePrintPage",1),ids,b,c.number("charaVoiceVolumeFlag",0)!=0,
-                b.x+c.number("charaVolumePrintX",0),b.y+c.number("charaVolumePrintY",30),bound(c.number("charaVolumeSizeX",200),1,canvasWidth),bound(c.number("charaVolumeSizeY",20),1,canvasHeight)));
+                b.x+c.number("charaVolumePrintX",0),b.y+c.number("charaVolumePrintY",30),bound(c.number("charaVolumeSizeX",200),1,canvasWidth),bound(c.number("charaVolumeSizeY",20),1,canvasHeight),
+                changeCharacterSound?CharacterSoundChange.read(c,i+1):null));
             previousCharacter=b;
         }
         String[] kinds={"screen","skip","auto"},modeKeys={"fullscreen","skipReadOnly","autoEnabled"};
