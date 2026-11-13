@@ -494,7 +494,6 @@
     <string name="engine_settings_sharpness">画面シャープ化</string>
     <string name="engine_settings_sharpness_strength">シャープ化強度</string>
     <string name="engine_settings_text_encoding">テキストエンコード</string>
-    <string name="engine_settings_rotate_screen">画面を反転</string>
     <string name="engine_settings_auto_patch">自動パッチ</string>
     <string name="engine_settings_artemis_resolution">ステージ解像度</string>
     <string name="engine_settings_artemis_side_cut">切り抜いて全画面表示</string>

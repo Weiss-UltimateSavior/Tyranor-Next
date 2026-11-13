@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
@@ -53,6 +54,10 @@ import org.json.JSONObject
  * 传入的 Launcher 主题色在 engine 内复刻 LauncherDialogFactory 的视觉风格，保持统一。
  */
 class TyranoActivity : Activity() {
+    override fun setRequestedOrientation(requestedOrientation: Int) {
+        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
+    }
+
     private var webView: WebView? = null
     private var virtualMouseLayer: VirtualMouseLayer? = null
     private var inputRemap: InputRemapController? = null

@@ -2,6 +2,7 @@ package com.core.fvp;
 
 import android.graphics.Color;
 import android.graphics.Rect;
+import android.content.pm.ActivityInfo;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.util.DisplayMetrics;
@@ -43,6 +44,11 @@ public final class FvpActivity extends AppCompatActivity implements
         SurfaceHolder.Callback,
         Choreographer.FrameCallback,
         View.OnTouchListener {
+
+    @Override
+    public void setRequestedOrientation(int requestedOrientation) {
+        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+    }
 
     private static final String TAG = "FvpActivity";
 

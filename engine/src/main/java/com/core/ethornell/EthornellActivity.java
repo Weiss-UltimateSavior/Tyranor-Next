@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.BroadcastReceiver;
 import android.content.IntentFilter;
+import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.media.AudioAttributes;
@@ -53,6 +54,11 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /** Fullscreen game host, not an application management page. VM/GPU/IO never run on UI. */
 public final class EthornellActivity extends AppCompatActivity implements SurfaceHolder.Callback, Choreographer.FrameCallback {
+    @Override
+    public void setRequestedOrientation(int requestedOrientation) {
+        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+    }
+
     private static final AtomicLong TOKENS = new AtomicLong(1);
     private final Handler ui = new Handler(Looper.getMainLooper());
     private EthornellSession session;

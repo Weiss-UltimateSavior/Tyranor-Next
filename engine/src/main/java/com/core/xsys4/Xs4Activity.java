@@ -206,12 +206,17 @@ public final class Xs4Activity extends SDLActivity {
     /**
      * xsystem4 以可缩放窗口创建 SDL 窗口且未设置 SDL_HINT_ORIENTATIONS，上游 SDL 会请求
      * SCREEN_ORIENTATION_FULL_USER，设备锁定竖屏时游戏被信箱化。System4 只支持横屏，故始终请求
-     * sensorLandscape（与 manifest 声明一致）。
+     * 标准横屏。
      */
     @Override
     public void setOrientationBis(int w, int h, boolean resizable, String hint) {
-        Log.v(TAG, "force sensorLandscape (w=" + w + ", h=" + h + ", resizable=" + resizable + ", hint=" + hint + ")");
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        Log.v(TAG, "force landscape (w=" + w + ", h=" + h + ", resizable=" + resizable + ", hint=" + hint + ")");
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+    }
+
+    @Override
+    public void setRequestedOrientation(int requestedOrientation) {
+        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
     }
 
     // ---------- SDL 主循环参数 ----------

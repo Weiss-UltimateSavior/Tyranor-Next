@@ -3,6 +3,7 @@ package com.core.cmvs
 import android.app.AlertDialog
 import android.app.NativeActivity
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
 import android.os.Process
@@ -31,6 +32,10 @@ import java.util.UUID
  * `libcmvs_android.so` is dlopen()ed only after both checks pass.
  */
 class CmvsActivity : NativeActivity() {
+    override fun setRequestedOrientation(requestedOrientation: Int) {
+        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
+    }
+
     @Volatile private var startupAllowed = false
     @Volatile private var choosingFont = false
     private var startupController: EngineSurfaceStartupController? = null

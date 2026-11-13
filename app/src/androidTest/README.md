@@ -12,7 +12,7 @@ TYRANOR_APPLICATION_ID=com.tyranor.next.playtimetest ./gradlew :app:assembleDebu
 adb shell am instrument -w -r -e class com.tyranor.next.core.game.playtime.GamePlaytimeDeviceTest -e playtime_test true com.tyranor.next.playtimetest.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-统一启动加载组件、Web 与真实 Ethornell 私有宿主的本轮设备结果为 9/9 通过；完整命令、身份、截图及未覆盖项见[统一加载验收记录](../../../docs/统一引擎宿主启动加载界面验收记录.md)。
+统一启动加载组件、Web 与真实 Ethornell 私有宿主的初轮设备结果为 9/9 通过；完整命令、身份、截图及未覆盖项见[统一加载验收记录](../../../docs/统一引擎宿主启动加载界面验收记录.md)。
 
 ## Web 宿主启动遮罩设备回归
 
@@ -210,3 +210,5 @@ failed identity_sha256=<64hex> token=<session token>
 `ui/save/SaveDialogDismissDeviceTest` 补充两个隔离目标用例：任务中点击遮罩/返回保持弹窗可见，任务结束后允许关闭；退场动画已经开始后 busy 改变仍清除父状态。执行沿用 `com.tyranor.next.webdavacceptance*` 与 `-e webdav_device_acceptance true` 的双重门槛。
 
 2026-10-27 本轮仅编译该测试和普通 AndroidTest APK，按用户要求未连接设备、未执行新增 UI 用例；原有截图与设备报告不代表这两个新增用例已执行。
+
+固定横屏设备回归另含 `com.core.engine.EngineOrientationDeviceTest`（安装后20个宿主清单与Android 16属性）和 `com.tyranor.next.core.engine.external.ExternalEngineOrientationDeviceTest`（三个外置Intent方向请求）。两项均要求隔离包 `com.tyranor.next.startuptest` 与 `startup_test=true`；不启动外置APK，不保证其应用方向参数。结果见统一加载验收记录第7节。

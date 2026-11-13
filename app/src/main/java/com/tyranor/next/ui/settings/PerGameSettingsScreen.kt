@@ -118,7 +118,6 @@ fun PerGameSettingsScreen(game: ScanGame) {
 
     var artKernel by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_KERNEL)) }
     var artVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_VERSION)) }
-    var artRotate by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_ART_ROTATE)) }
     var artPatch by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_PATCH)) }
     var artResolution by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_RESOLUTION)) }
     var artSideCut by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_SIDE_CUT)) }
@@ -406,7 +405,6 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalOns = remember { EngineSettingsStore.loadOns(ctx) }
     val globalArtKernel = EngineSettingsStore.getArtKernel(ctx)
     val globalArtVersion = EngineSettingsStore.getArtEngineVersion(ctx)
-    val globalArtRotate = EngineSettingsStore.isArtRotateScreen(ctx)
     val globalArtPatch = EngineSettingsStore.getArtAutoPatch(ctx)
     val globalArtResolution = EngineSettingsStore.getArtResolution(ctx)
     val globalArtSideCut = EngineSettingsStore.getArtSideCut(ctx)
@@ -562,7 +560,6 @@ fun PerGameSettingsScreen(game: ScanGame) {
         }
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_KERNEL, artKernel)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_VERSION, artVersion)
-        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_ART_ROTATE, artRotate)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_PATCH, artPatch)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_RESOLUTION, artResolution)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_SIDE_CUT, artSideCut)
@@ -934,7 +931,6 @@ fun PerGameSettingsScreen(game: ScanGame) {
                         item {
                             SectionCard("Artemis") {
                                 OverrideChoice(stringResource(R.string.engine_settings_engine_kernel), artKernelMap, globalArtKernel, artKernel) { artKernel = it }
-                                OverrideSwitch(stringResource(R.string.engine_settings_rotate_screen), globalArtRotate, artRotate) { artRotate = it }
                                 if (effectiveArtKernel == EngineSettingsStore.ART_KERNEL_OFFICIAL) {
                                     OverrideChoice(stringResource(R.string.engine_settings_engine_version), artVersionMap, globalArtVersion, artVersion) { artVersion = it }
                                     OverrideChoice(stringResource(R.string.engine_settings_auto_patch), artPatchMap, globalArtPatch, artPatch) { artPatch = it }

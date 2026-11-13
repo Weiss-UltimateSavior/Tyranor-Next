@@ -65,9 +65,13 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     private volatile boolean launchDispatched;
     private volatile boolean launchSucceeded;
     private volatile boolean maskRevealRequested;
-    private volatile boolean launchOrientationGuardEnabled;
     private volatile String resolvedGameLibrary;
     private int launchReadinessFrames;
+
+    @Override
+    public void setRequestedOrientation(int requestedOrientation) {
+        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+    }
     private String pendingGamePath;
     private boolean pendingMaps;
     private com.core.gl.ArtemisPerformanceOverlay graphicsOverlay;
@@ -88,8 +92,6 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
 
     @Override
     public void onCreate(Bundle bundle) {
-        launchOrientationGuardEnabled = !getIntent().getBooleanExtra(LaunchContract.ORIGIN_MODE, false);
-        applyKrkrRequestedOrientation();
         doSetSystemUiVisibility();
         NativeBridge.configureSafMirror(
                 getIntent().getStringExtra(LaunchContract.SAF_MIRROR_INDEX),
@@ -667,11 +669,6 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
             if (!destroyed && mask != null) {
                 Log.i(TAG, "hide KRKR launch mask after game-ready signal");
                 mask.reveal();
-                mask.postDelayed(() -> {
-                    if (destroyed || mask == null) return;
-                    launchOrientationGuardEnabled = false;
-                    applyKrkrRequestedOrientation();
-                }, 150L);
             }
         });
     }
@@ -775,13 +772,11 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     public void onResume() {
         super.onResume();
         if (graphicsOverlay != null) graphicsOverlay.show();
-        applyKrkrRequestedOrientation();
     }
 
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
-        applyKrkrRequestedOrientation();
         doSetSystemUiVisibility();
     }
 
@@ -815,26 +810,4 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
 
     public abstract String soName();
 
-    private void applyKrkrRequestedOrientation() {
-        try {
-            setRequestedOrientation(currentKrkrRequestedOrientation());
-        } catch (Throwable t) {
-            Log.w(TAG, "apply KRKR orientation failed", t);
-        }
-    }
-
-    private int currentKrkrRequestedOrientation() {
-        int requested = getIntent() == null
-                ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                : getIntent().getIntExtra(LaunchContract.ORIENTATION, ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
-        if (!launchOrientationGuardEnabled) return requested;
-        // Kirikiroid2/Cocos is fragile while startupFrom/doStartup is still loading XP3/TJS.
-        // During the launch mask, always use a concrete landscape orientation.  Do not use
-        // SCREEN_ORIENTATION_LOCKED here: some tablets lock the transient portrait state and
-        // leave the loading overlay mismatched with the touch/surface coordinates.
-        if (requested == ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE) {
-            return ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE;
-        }
-        return ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
-    }
 }

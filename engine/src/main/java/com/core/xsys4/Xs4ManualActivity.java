@@ -1,6 +1,7 @@
 package com.core.xsys4;
 
 import android.app.Activity;
+import android.content.pm.ActivityInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -36,6 +37,11 @@ public final class Xs4ManualActivity extends Activity {
     static final String EXTRA_INDEX_PATH = "xs4_manual_index";
 
     private WebView webView;
+
+    @Override
+    public void setRequestedOrientation(int requestedOrientation) {
+        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {

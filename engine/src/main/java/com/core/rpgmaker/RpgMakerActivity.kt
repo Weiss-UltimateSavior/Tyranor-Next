@@ -3,6 +3,7 @@ package com.core.rpgmaker
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Color
 import android.net.Uri
@@ -55,6 +56,10 @@ import org.json.JSONObject
  * tyranor_prefs，与 engine 内其他宿主同模式。
  */
 class RpgMakerActivity : Activity() {
+    override fun setRequestedOrientation(requestedOrientation: Int) {
+        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
+    }
+
     private var webView: WebView? = null
     private var inputRemap: InputRemapController? = null
     private var virtualMouseLayer: VirtualMouseLayer? = null

@@ -494,7 +494,6 @@
     <string name="engine_settings_sharpness">画面锐化</string>
     <string name="engine_settings_sharpness_strength">锐化强度</string>
     <string name="engine_settings_text_encoding">文本编码</string>
-    <string name="engine_settings_rotate_screen">画面反转</string>
     <string name="engine_settings_auto_patch">自动补丁</string>
     <string name="engine_settings_artemis_resolution">舞台分辨率</string>
     <string name="engine_settings_artemis_side_cut">裁切铺满</string>

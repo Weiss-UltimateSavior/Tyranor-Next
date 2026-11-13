@@ -17,7 +17,7 @@
 | TyranorNext 使用的 action | `cyou.joiplay.runtime.flash.run` |
 | 安装方式 | 用户另行安装；主 App 只探测安装状态并拉起，不提供手动启用开关 |
 | 获取入口 | `https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RufflePlugin-1.02.00.apk`（APK 直链） |
-| 屏幕方向 | 仅横屏；启动 extra `orientation = 6` |
+| 屏幕方向 | 主 App 请求标准横屏：`orientation = 0`；实际窗口由外置 APK 决定 |
 | 存储权限 | 主 App 首次启动可能需要「所有文件访问」才能把 SWF 记录解析为真实路径；插件可能另行申请自身存储权限 |
 
 `AndroidManifest.xml` 的 `<queries>` 已声明该包名，Android 11+ 可做安装探测。未安装时引擎页的 Ruffle 条目（分类显示时归入「网页」）显示未安装，点击安装入口打开项目托管的 RufflePlugin-1.02.00.apk 直链；启动返回 `PACKAGE_NOT_INSTALLED`，由 UI 映射文案。插件自身的权限请求以其安装包与运行时申请为准，主 App 只处理自身的「所有文件访问」门禁。
@@ -30,7 +30,7 @@
 | --- | --- |
 | `game` | JSON 字符串，见 2.2 |
 | `settings` | JSON 字符串，见 2.3 |
-| `orientation` | `6`（横屏） |
+| `orientation` | `0`（`SCREEN_ORIENTATION_LANDSCAPE`） |
 | `rootUri` | 游戏记录原始 URI（文件或目录） |
 | `launchTarget` | 入口 SWF 文件名 |
 

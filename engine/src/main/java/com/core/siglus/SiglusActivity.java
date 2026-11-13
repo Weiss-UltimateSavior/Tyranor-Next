@@ -3,6 +3,7 @@ package com.core.siglus;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.os.Build;
@@ -66,6 +67,11 @@ public final class SiglusActivity extends AppCompatActivity implements
         View.OnTouchListener,
         SiglusTextInputView.Listener,
         NativeSiglus.MessageboxListener {
+
+    @Override
+    public void setRequestedOrientation(int requestedOrientation) {
+        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+    }
 
     private static final String TAG = "SiglusActivity";
 

@@ -2,6 +2,7 @@ package com.core.games;
 
 import android.graphics.Bitmap;
 import android.graphics.Color;
+import android.content.pm.ActivityInfo;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -46,6 +47,11 @@ import java.nio.ByteOrder;
  */
 public final class FramebufferGameActivity extends AppCompatActivity
         implements Choreographer.FrameCallback, FramebufferTextInputView.Listener {
+
+    @Override
+    public void setRequestedOrientation(int requestedOrientation) {
+        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+    }
 
     private static final String TAG = "FramebufferGame";
 

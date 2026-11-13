@@ -831,7 +831,6 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
 
     var artKernel by remember { mutableStateOf(EngineSettingsStore.getArtKernel(ctx)) }
     var artVersion by remember { mutableStateOf(EngineSettingsStore.getArtEngineVersion(ctx)) }
-    var artRotate by remember { mutableStateOf(EngineSettingsStore.isArtRotateScreen(ctx)) }
     var artPatch by remember { mutableStateOf(EngineSettingsStore.getArtAutoPatch(ctx)) }
     var artResolution by remember { mutableStateOf(EngineSettingsStore.getArtResolution(ctx)) }
     var artSideCut by remember { mutableStateOf(EngineSettingsStore.getArtSideCut(ctx)) }
@@ -960,7 +959,6 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.saveOns(ctx, ons)
         EngineSettingsStore.setArtKernel(ctx, artKernel)
         EngineSettingsStore.setArtEngineVersion(ctx, artVersion)
-        EngineSettingsStore.setArtRotateScreen(ctx, artRotate)
         EngineSettingsStore.setArtAutoPatch(ctx, artPatch)
         EngineSettingsStore.setArtResolution(ctx, artResolution)
         EngineSettingsStore.setArtSideCut(ctx, artSideCut)
@@ -1022,7 +1020,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 krVersion, krKernel, krScoped, krSkipStartupDialogs, krFont, krForceFont, krRenderer, krDrawThread,
                 krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134,
                 krVCursorScale, krMenuOpa, krPatchOverlayMode,
-                ons, artKernel, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
+                ons, artKernel, artVersion, artPatch, artResolution, artSideCut, artSurfaceCache,
                 artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, siglusLanguage, fbNls,
                 fvpNls, fvpSystemFont, fvpTextHidpi, fvpFont,
                 xs35Scoped, xs35Renderer, xs35IntegerScale, xs35MuteUnfocus,
@@ -1058,7 +1056,6 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onOns = { ons = it },
                 onArtKernel = { artKernel = it },
                 onArtVersion = { artVersion = it },
-                onArtRotate = { artRotate = it },
                 onArtPatch = { artPatch = it },
                 onArtResolution = { artResolution = it },
                 onArtSideCut = { artSideCut = it },
@@ -1126,7 +1123,7 @@ private fun LazyListPlaceholder(
     krRenderer: String, krDrawThread: String, krSwCompress: String, krOglCompress: String,
     krMem: String, krTexsize: String, krAccurate: String, krFps: String, isSdl3: Boolean, krIs134: Boolean,
     krVCursorScale: String, krMenuOpa: String, krPatchOverlayMode: String,
-    ons: EngineSettingsStore.Ons, artKernel: String, artVersion: String, artRotate: Boolean, artPatch: String,
+    ons: EngineSettingsStore.Ons, artKernel: String, artVersion: String, artPatch: String,
     artResolution: String, artSideCut: String, artSurfaceCache: String, artFontCache: String,
     artPowerSaving: String,
     tyExternal: Boolean, tyScoped: Boolean, rpgMakerMod: Boolean,
@@ -1154,7 +1151,7 @@ private fun LazyListPlaceholder(
     onKrVCursorScale: (String) -> Unit, onKrMenuOpa: (String) -> Unit,
     onResetKrFont: () -> Unit, onOns: (EngineSettingsStore.Ons) -> Unit,
     onArtKernel: (String) -> Unit,
-    onArtVersion: (String) -> Unit, onArtRotate: (Boolean) -> Unit, onArtPatch: (String) -> Unit,
+    onArtVersion: (String) -> Unit, onArtPatch: (String) -> Unit,
     onArtResolution: (String) -> Unit, onArtSideCut: (String) -> Unit,
     onArtSurfaceCache: (String) -> Unit, onArtFontCache: (String) -> Unit,
     onArtPowerSaving: (String) -> Unit,
@@ -1311,7 +1308,6 @@ private fun LazyListPlaceholder(
         if (kind == EngineSettingsKind.ARTEMIS) item {
             EngineCard("Artemis") {
                 DropdownRow(stringResource(R.string.engine_settings_engine_kernel), artKernelSelect, artKernel, onArtKernel)
-                SwitchPreference(title = stringResource(R.string.engine_settings_rotate_screen), checked = artRotate, onCheckedChange = onArtRotate)
                 if (artKernel == EngineSettingsStore.ART_KERNEL_OFFICIAL) {
                     DropdownRow(stringResource(R.string.engine_settings_engine_version), artVersionMap, artVersion, onArtVersion)
                     DropdownRow(stringResource(R.string.engine_settings_auto_patch), artPatchMap, artPatch, onArtPatch)

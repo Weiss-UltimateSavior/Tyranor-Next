@@ -219,12 +219,17 @@ public final class Xs35Activity extends SDLActivity {
      * xsystem35 以可缩放窗口创建 SDL 窗口且未设置 SDL_HINT_ORIENTATIONS，上游 SDL 在
      * 「无 hint + resizable」时会请求 SCREEN_ORIENTATION_FULL_USER（尊重系统旋转锁），
      * 设备锁定竖屏时活动会以竖屏渲染、游戏被信箱化。System3.x 游戏必须横屏，故覆盖
-     * 该扩展点始终请求 sensorLandscape（与 manifest 声明一致，不受旋转锁影响）。
+     * 该扩展点始终请求标准横屏。
      */
     @Override
     public void setOrientationBis(int w, int h, boolean resizable, String hint) {
-        Log.v(TAG, "force sensorLandscape (w=" + w + ", h=" + h + ", resizable=" + resizable + ", hint=" + hint + ")");
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        Log.v(TAG, "force landscape (w=" + w + ", h=" + h + ", resizable=" + resizable + ", hint=" + hint + ")");
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+    }
+
+    @Override
+    public void setRequestedOrientation(int requestedOrientation) {
+        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
     }
 
     // ---------- SDL 主循环参数 ----------

@@ -39,6 +39,7 @@ object EngineSettingsStore {
     // Artemis 应用级默认
     const val KEY_ARTEMIS_ENGINE_VERSION = "artemis_engine_version"
     const val KEY_ARTEMIS_KERNEL = "artemis_kernel"
+    /** Legacy preference retained for stored-data compatibility; built-in launches ignore it. */
     const val KEY_ARTEMIS_ROTATE_SCREEN = "artemis_rotate_screen"
     const val KEY_ARTEMIS_AUTO_PATCH = "artemis_auto_patch"
     const val KEY_ARTEMIS_RESOLUTION = "artemis_resolution"
@@ -709,8 +710,6 @@ object EngineSettingsStore {
     fun setArtKernel(c: Context, v: String) = prefs(c).edit().putString(KEY_ARTEMIS_KERNEL, normalizeArtKernel(v)).apply()
     fun normalizeArtKernel(v: String?): String =
         if (v?.trim() == ART_KERNEL_CLEAN) ART_KERNEL_CLEAN else ART_KERNEL_OFFICIAL
-    fun isArtRotateScreen(c: Context): Boolean = prefs(c).getBoolean(KEY_ARTEMIS_ROTATE_SCREEN, false)
-    fun setArtRotateScreen(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_ARTEMIS_ROTATE_SCREEN, b).apply()
     fun getArtAutoPatch(c: Context): String {
         val v = prefs(c).getString(KEY_ARTEMIS_AUTO_PATCH, ART_PATCH_DEFAULT)?.trim()
         return if (v != null && v in ART_PATCHES) v else ART_PATCH_DEFAULT

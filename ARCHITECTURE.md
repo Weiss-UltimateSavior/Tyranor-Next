@@ -94,6 +94,8 @@ Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并�
 - `Surface` 消失、Activity `finish()`、原生销毁完成与进程退出是不同事件。修改宿主必须维护线程归属、资源租约、回调世代和释放时序，不能用强杀结果冒充正常退出。
 - SystemNNN 的播放器在最终存档写入和目录锁释放后撤销任务记录。相同游戏快速重开时，工作线程有界等待上一会话释放存档。只读校验服务运行在单独的 `:systemnnn_validator`，不登记播放器会话。
 
+内置播放器方向策略归 engine 宿主管理：清单声明 `landscape`，各宿主覆盖 `setRequestedOrientation` 将引擎、SDL 和视频的请求统一收敛为 `SCREEN_ORIENTATION_LANDSCAPE`，不在揭开加载遮罩后恢复传感器方向。App 启动链发送相同方向；历史 Artemis 旋转字段仅保留数据兼容，不参与解析。20 个播放器相关 Activity 各自声明 `android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY=true`，在当前 targetSdk 36 下保留大屏固定方向限制，不影响应用页面的自适应布局。该兼容开关在 targetSdk 37 后不再有效，后续升级须重新验收大屏窗口策略，见 [Android 官方方向适配说明](https://developer.android.com/develop/adaptive-apps/guides/app-orientation-aspect-ratio-resizability)。
+
 宿主启动加载由 engine 的 `EngineStartupOverlay` 负责原生 View 视觉与终态清理；`EngineSurfaceReadyProbe` 在 API 26+ 直接对宿主 Surface 做单请求 PixelCopy，`EngineSurfaceReadyState` 管理请求代际、暂停与迟到结果。SDL / NativeActivity 复用 `EngineSurfaceStartupController`；NativeActivity 通过原有 SurfaceHolder.Callback2 转发源窗口，遮罩使用应用内 TYPE_APPLICATION_PANEL，不能拿包含遮罩的 Window 截图判断游戏内容。该机制不依赖滤镜，不修改预编译运行库，不改变 native 引擎线程归属。Web / SystemNNN / krkr 使用各自的内容或场景信号；组件清理不替代引擎原有销毁 ACK 与进程退出规则。主题 / 语言读取 LaunchContract Intent 快照，固定黑底的文字配色与 App 卡片色板分开。
 
 WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano` 保留历史默认目录，`:rpgmaker` 自设后缀。更改 profile 或本地 HTTP 端口会影响历史网页存储作用域，须同时评估存档兼容。

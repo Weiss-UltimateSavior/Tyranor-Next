@@ -625,6 +625,11 @@ public class ONScripter extends SDLActivity {
         setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
     }
 
+    @Override
+    public void setRequestedOrientation(int requestedOrientation) {
+        super.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+    }
+
     private String normalizeRootPath(String value) {
         if (value == null) return null;
         String v = value.trim();

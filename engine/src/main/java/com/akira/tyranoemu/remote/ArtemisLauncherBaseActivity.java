@@ -96,14 +96,17 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
     @Override
     public final void onResume() {
         super.onResume();
-        Intent intent = getIntent();
-        setRequestedOrientation(intent == null ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                : intent.getIntExtra(LaunchContract.ORIENTATION, ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE));
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         nativeResumeAllSound();
         if (startupController != null) startupController.onResume();
         if (graphicsOverlay != null && (startupController == null || !startupController.isLoading())) {
             graphicsOverlay.show();
         }
+    }
+
+    @Override
+    public void setRequestedOrientation(int requestedOrientation) {
+        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
     }
 
     @Override
