@@ -17,18 +17,22 @@
             android:process=":kirikiri2"
             android:launchMode="singleInstance"
             android:taskAffinity="com.core.Kirikiroid2"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="landscape"
             android:windowSoftInputMode="adjustPan"
-            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
+            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+            <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
+        </activity>
         <activity
             android:name="com.akira.tyranoemu.remote.Kirikiroid134"
             android:exported="false"
             android:process=":kirikiri2"
             android:launchMode="singleInstance"
             android:taskAffinity="com.core.Kirikiroid2"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="landscape"
             android:windowSoftInputMode="adjustPan"
-            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
+            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+            <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
+        </activity>
         <!-- krkrsdl3 引擎（SDL3 内核，独立入口/独立进程，与 :kirikiri2 隔离） -->
         <activity
             android:name="com.core.krkrsdl3.Krkrsdl3Activity"
@@ -37,8 +41,10 @@
             android:launchMode="singleInstance"
             android:taskAffinity="com.core.Krkrsdl3"
             android:theme="@style/Theme.Krkrsdl3"
-            android:screenOrientation="sensorLandscape"
-            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
+            android:screenOrientation="landscape"
+            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+            <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
+        </activity>
 
         <!-- Tyrano（ty）WebView 宿主 -->
         <activity
@@ -47,8 +53,10 @@
             android:process=":tyrano"
             android:launchMode="singleInstance"
             android:taskAffinity="com.core.Tyrano"
-            android:screenOrientation="sensorLandscape"
-            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
+            android:screenOrientation="landscape"
+            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+            <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
+        </activity>
 
         <!-- RPG Maker MV/MZ 独立运行时（v1/v2）：WebView 宿主，独立进程与 tyrano(:tyrano) 隔离 -->
         <activity
@@ -57,8 +65,10 @@
             android:process=":rpgmaker"
             android:launchMode="singleInstance"
             android:taskAffinity="com.core.RpgMaker"
-            android:screenOrientation="sensorLandscape"
-            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
+            android:screenOrientation="landscape"
+            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+            <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
+        </activity>
 
         <!-- Artemis（ar）原生引擎宿主 -->
         <activity
@@ -67,10 +77,11 @@
             android:process=":artemis"
             android:launchMode="singleInstance"
             android:taskAffinity="com.core.Artemis"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="landscape"
             android:windowSoftInputMode="adjustPan"
             android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
             <meta-data android:name="android.app.lib_name" android:value="artemis_loader" />
+            <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
         </activity>
         <activity
             android:name="com.akira.tyranoemu.remote.ArtemisActivityV2"
@@ -78,10 +89,11 @@
             android:process=":artemis.compat"
             android:launchMode="singleInstance"
             android:taskAffinity="com.core.Artemis"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="landscape"
             android:windowSoftInputMode="adjustPan"
             android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
             <meta-data android:name="android.app.lib_name" android:value="artemis_loader" />
+            <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
         </activity>
         <activity
             android:name="com.akira.tyranoemu.remote.ArtemisActivityV6"
@@ -89,10 +101,11 @@
             android:process=":artemis.v6"
             android:launchMode="singleInstance"
             android:taskAffinity="com.core.Artemis"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="landscape"
             android:windowSoftInputMode="adjustPan"
             android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
             <meta-data android:name="android.app.lib_name" android:value="artemis_loader" />
+            <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
         </activity>
         <!-- 自研 clean-room 兼容内核（artemis-compat）：独立进程，严格自研往返不参与官方回退链 -->
         <activity
@@ -101,10 +114,11 @@
             android:process=":artemis.clean"
             android:launchMode="singleInstance"
             android:taskAffinity="com.core.Artemis"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="landscape"
             android:windowSoftInputMode="adjustPan"
             android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
             <meta-data android:name="android.app.lib_name" android:value="artemis_loader" />
+            <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
         </activity>
 
         <!-- SiglusEngine（siglus_rs）宿主：关闭滤镜沿用 SurfaceView；开启滤镜使用 TextureView + 私有 producer -->
@@ -114,10 +128,11 @@
             android:process=":siglus"
             android:launchMode="singleInstance"
             android:taskAffinity="com.core.Siglus"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="landscape"
             android:theme="@style/Theme.Siglus"
             android:windowSoftInputMode="adjustNothing"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+            <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
         </activity>
 
         <!-- Host-driven Ethornell runtime: VM/GPU calls are owned by its dedicated engine thread. -->
@@ -127,10 +142,12 @@
             android:process=":ethornell"
             android:launchMode="singleInstance"
             android:taskAffinity="com.core.Ethornell"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="landscape"
             android:theme="@style/Theme.Ethornell"
             android:windowSoftInputMode="adjustNothing"
-            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+            <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
+        </activity>
 
         <!-- CMVS NativeActivity + loader: loader forwards only ANativeActivity_onCreate. -->
         <activity
@@ -139,11 +156,12 @@
             android:process=":cmvs"
             android:launchMode="singleInstance"
             android:taskAffinity="com.core.Cmvs"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="landscape"
             android:theme="@style/Theme.Cmvs"
             android:windowSoftInputMode="adjustNothing"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|layoutDirection|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale">
             <meta-data android:name="android.app.lib_name" android:value="cmvs_loader" />
+            <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
         </activity>
 
         <!-- FVPEngine（rfvp）宿主：Java SurfaceView + Choreographer 主循环驱动 Rust 引擎 -->
@@ -153,10 +171,11 @@
             android:process=":fvp"
             android:launchMode="singleInstance"
             android:taskAffinity="com.core.Fvp"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="landscape"
             android:theme="@style/Theme.Fvp"
             android:windowSoftInputMode="adjustNothing"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+            <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
         </activity>
 
         <!-- RealLive / AVG32 / UK2（framebuffer 软渲染）宿主：Choreographer 主循环 + Bitmap 呈现 -->
@@ -166,10 +185,11 @@
             android:process=":fbgames"
             android:launchMode="singleInstance"
             android:taskAffinity="com.core.FramebufferGames"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="landscape"
             android:theme="@style/Theme.FramebufferGames"
             android:windowSoftInputMode="adjustNothing"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+            <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
         </activity>
 
         <!-- System3.x（xsystem35）宿主：SDL2 主循环（vendored org.libsdl.app32 2.32.10） -->
@@ -179,10 +199,12 @@
             android:process=":xsys35"
             android:launchMode="singleInstance"
             android:taskAffinity="com.core.Xsys35"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="landscape"
             android:theme="@style/Theme.Xsys35"
             android:windowSoftInputMode="adjustPan"
-            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+            <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
+        </activity>
 
         <!-- System4（xsystem4）宿主：SDL2 主循环（共用 org.libsdl.app32 2.32.10） -->
         <activity
@@ -191,26 +213,33 @@
             android:process=":xsys4"
             android:launchMode="singleInstance"
             android:taskAffinity="com.core.Xsys4"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="landscape"
             android:theme="@style/Theme.Xsys4"
             android:windowSoftInputMode="adjustPan"
-            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+            <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
+        </activity>
         <!-- System4 游戏手册页（WebView，只读游戏 Manual/，与宿主同进程） -->
         <activity
             android:name="com.core.xsys4.Xs4ManualActivity"
             android:exported="false"
             android:process=":xsys4"
             android:taskAffinity="com.core.Xsys4"
-            android:theme="@style/Theme.Xsys4" />
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.Xsys4">
+            <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
+        </activity>
 
         <activity
             android:name="com.tyranor.runtime.systemnnn.PlayerActivity"
             android:exported="false"
             android:process=":systemnnn"
             android:taskAffinity="${applicationId}.systemnnn"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="landscape"
             android:theme="@style/SystemNnnPlayerTheme"
-            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+            <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
+        </activity>
 
         <service
             android:name="com.tyranor.runtime.systemnnn.SystemNnnSaveValidationService"
@@ -224,14 +253,18 @@
             android:process=":ons"
             android:launchMode="singleInstance"
             android:taskAffinity="com.core.ONScripter"
-            android:screenOrientation="sensorLandscape"
-            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
+            android:screenOrientation="landscape"
+            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+            <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
+        </activity>
         <activity
             android:name="com.ies_net.artemis.VideoViewActivity"
             android:exported="false"
             android:process=":artemis"
-            android:screenOrientation="sensorLandscape"
-            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
+            android:screenOrientation="landscape"
+            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+            <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
+        </activity>
 
     </application>
 

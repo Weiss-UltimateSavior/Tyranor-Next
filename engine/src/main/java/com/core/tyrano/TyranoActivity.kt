@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
@@ -34,6 +35,7 @@ import android.widget.Toast
 import com.core.engine.DoubleBackExit
 import com.core.engine.EnginePrefs
 import com.core.engine.EngineSessionRegistry
+import com.core.engine.EngineStartupOverlay
 import com.core.engine.EngineThemeColors
 import com.core.engine.LaunchContract
 import com.core.engine.R
@@ -52,6 +54,10 @@ import org.json.JSONObject
  * 传入的 Launcher 主题色在 engine 内复刻 LauncherDialogFactory 的视觉风格，保持统一。
  */
 class TyranoActivity : Activity() {
+    override fun setRequestedOrientation(requestedOrientation: Int) {
+        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
+    }
+
     private var webView: WebView? = null
     private var virtualMouseLayer: VirtualMouseLayer? = null
     private var inputRemap: InputRemapController? = null
@@ -68,6 +74,10 @@ class TyranoActivity : Activity() {
     private var rpgMakerModEnabled = false
     private var rpgMakerModGameId = ""
     private val processExitScheduled = AtomicBoolean(false)
+    private var startupOverlay: EngineStartupOverlay? = null
+    private var initialMainFramePending = true
+    private var startupNavigationGeneration = 0L
+    private var startupVisualRequestId = 0L
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(wrapContextForUiScale(newBase) ?: newBase)
@@ -259,6 +269,8 @@ class TyranoActivity : Activity() {
             engineDefaultsEnabled = rpgMakerWebGame,
         ) { js -> webView?.let { v -> runCatching { v.evaluateJavascript(js, null) } } }
 
+        startupOverlay = EngineStartupOverlay(this).also { it.attachTo(root) }
+
         configureWebView(browser)
         when (webGameType) {
             WebGameType.RPG_MV, WebGameType.RPG_MZ -> {
@@ -359,6 +371,8 @@ class TyranoActivity : Activity() {
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 super.onPageStarted(view, url, favicon)
+                if (view !== webView || isFinishing || isDestroyed) return
+                startupNavigationGeneration++
                 Log.i(TAG, "onPageStarted url=$url")
                 // 尽早注入输入接收器：页面脚本开始执行前若未就绪，加载期的手柄/按键输入会被静默丢弃。
                 // evaluateJavascript 在 DOM 未就绪时安全失败，onPageFinished 会再注入一次（接收器自带幂等守卫）
@@ -367,7 +381,9 @@ class TyranoActivity : Activity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
+                if (view !== webView || isFinishing || isDestroyed) return
                 Log.i(TAG, "onPageFinished url=$url")
+                requestStartupVisualReveal(view)
                 // 页面内合成事件 API（幂等，页面每次加载后重新注入）：
                 // 虚拟鼠标（MV/MZ）+ 输入重映射接收器（全 Web 系）
                 if (view != null) {
@@ -378,6 +394,14 @@ class TyranoActivity : Activity() {
                 }
             }
 
+            override fun onPageCommitVisible(view: WebView?, url: String?) {
+                super.onPageCommitVisible(view, url)
+                if (view === webView && !isFinishing && !isDestroyed && initialMainFramePending) {
+                    initialMainFramePending = false
+                    startupOverlay?.reveal()
+                }
+            }
+
             override fun onReceivedError(
                 view: WebView?,
                 request: android.webkit.WebResourceRequest?,
@@ -385,6 +409,15 @@ class TyranoActivity : Activity() {
             ) {
                 super.onReceivedError(view, request, error)
                 Log.e(TAG, "onReceivedError url=${request?.url} code=${error?.errorCode} desc=${error?.description}")
+                if (view === webView && !isFinishing && !isDestroyed && request?.isForMainFrame == true && initialMainFramePending) {
+                    initialMainFramePending = false
+                    startupOverlay?.fail(null)
+                }
+            }
+
+            override fun onRenderProcessGone(view: WebView?, detail: android.webkit.RenderProcessGoneDetail?): Boolean {
+                if (view == null) return true
+                return handleRendererGone(view)
             }
 
             @Suppress("DEPRECATION")
@@ -401,6 +434,12 @@ class TyranoActivity : Activity() {
             ) {
                 super.onReceivedHttpError(view, request, errorResponse)
                 Log.w(TAG, "onReceivedHttpError url=${request?.url} status=${errorResponse?.statusCode}")
+                if (view === webView && !isFinishing && !isDestroyed && request?.isForMainFrame == true &&
+                    initialMainFramePending && (errorResponse?.statusCode ?: 0) >= 400
+                ) {
+                    initialMainFramePending = false
+                    startupOverlay?.fail(null)
+                }
             }
 
             override fun shouldInterceptRequest(
@@ -460,13 +499,69 @@ class TyranoActivity : Activity() {
         }
     }
 
+    private fun handleRendererGone(view: WebView): Boolean {
+        if (webView !== view) {
+            (view.parent as? ViewGroup)?.removeView(view)
+            runCatching { view.destroy() }
+            return true
+        }
+        webView = null
+        (view.parent as? ViewGroup)?.removeView(view)
+        runCatching { view.stopLoading() }
+        runCatching { view.destroy() }
+        runCatching { inputRemap?.onDestroy() }
+        inputRemap = null
+        initialMainFramePending = false
+        if (!isFinishing && !isDestroyed) startupOverlay?.fail(null)
+        Log.e(TAG, "WebView renderer exited; rendered WebView was discarded")
+        return true
+    }
+
     private fun handleNavigation(url: String?, mainFrame: Boolean): Boolean {
-        if (url == null) return true
-        if (handleSpecialScheme(url)) return true
-        val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return true
+        if (mainFrame && initialMainFramePending) startupNavigationGeneration++
+        fun consumed(): Boolean {
+            if (mainFrame) finishStartupForConsumedNavigation()
+            return true
+        }
+        if (url == null) return consumed()
+        if (handleSpecialScheme(url)) return consumed()
+        val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return consumed()
         if (isLocalGameUri(uri)) return false
         if (mainFrame) openExternalHttpUrl(uri)
-        return true
+        return consumed()
+    }
+
+    private fun finishStartupForConsumedNavigation() {
+        if (!initialMainFramePending || isFinishing || isDestroyed) return
+        initialMainFramePending = false
+        startupNavigationGeneration++
+        startupOverlay?.fail(null)
+    }
+
+    private fun requestStartupVisualReveal(view: WebView?) {
+        if (view == null || view !== webView || !initialMainFramePending || isFinishing || isDestroyed) return
+        val navigationGeneration = startupNavigationGeneration
+        val requestId = ++startupVisualRequestId
+        runCatching {
+            view.postVisualStateCallback(requestId, object : WebView.VisualStateCallback() {
+                override fun onComplete(requestId: Long) {
+                    if (view !== webView || isFinishing || isDestroyed || !initialMainFramePending ||
+                        startupNavigationGeneration != navigationGeneration
+                    ) return
+                    initialMainFramePending = false
+                    startupOverlay?.reveal()
+                }
+            })
+        }.onFailure { error ->
+            Log.w(TAG, "postVisualStateCallback failed", error)
+            if (view === webView && !isFinishing && !isDestroyed && initialMainFramePending &&
+                startupNavigationGeneration == navigationGeneration
+            ) {
+                initialMainFramePending = false
+                startupNavigationGeneration++
+                startupOverlay?.fail(null)
+            }
+        }
     }
 
     private fun isLocalGameUri(uri: Uri?): Boolean {
@@ -685,14 +780,17 @@ class TyranoActivity : Activity() {
     override fun onDestroy() {
         EngineSessionRegistry.clear(this, EngineSessionRegistry.HOST_TYRANO)
         DoubleBackExit.clear(this)
+        startupOverlay?.dispose()
+        startupOverlay = null
         runCatching { inputRemap?.onDestroy() }
         inputRemap = null
-        runCatching {
-            webView?.stopLoading()
-            webView?.loadUrl("about:blank")
-            webView?.destroy()
-        }
+        val browser = webView
         webView = null
+        runCatching {
+            browser?.stopLoading()
+            browser?.loadUrl("about:blank")
+            browser?.destroy()
+        }
         runCatching { localServer?.stop() }
         localServer = null
         runCatching { asarArchive?.close() }

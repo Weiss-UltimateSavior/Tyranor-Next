@@ -22,6 +22,9 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.theme.DialogItemSurface
+import androidx.compose.animation.core.Animatable
+import com.tyranor.next.ui.common.motion.MotionMode
+import com.tyranor.next.ui.common.motion.MotionTokens
 import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.SliderDefaults
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -35,6 +38,19 @@ internal fun DialogMiuixSlider(value: Float, onValueChange: (Float) -> Unit, mod
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val thumbHeight = with(LocalDensity.current) { 28.dp.toPx() }
     var width by remember { mutableIntStateOf(0) }
+    // 显示值：拖动中直接跟手；单点跳格、方向键、外部改值时「增强」档以控件弹簧滑到新位置（可随时被拖动接管），
+    // 「普通」档与原版一致直接显示 value
+    val enhanced = MotionMode.enhanced
+    var dragging by remember { mutableStateOf(false) }
+    val shown = remember { Animatable(value) }
+    LaunchedEffect(value, dragging, enhanced) {
+        if (!enhanced || dragging) {
+            shown.snapTo(value)
+        } else if (shown.targetValue != value || shown.value != value) {
+            shown.animateTo(value, MotionTokens.control(0.0005f))
+        }
+    }
+    val displayValue = if (!enhanced || dragging) value else shown.value.coerceIn(0f, 1f)
     fun change(next: Float): Boolean {
         if (!next.isFinite()) return false
         val constrained = next.coerceIn(0f, 1f)
@@ -70,14 +86,19 @@ internal fun DialogMiuixSlider(value: Float, onValueChange: (Float) -> Unit, mod
                 detectTapGestures(onTap = { fromPosition(it.x) })
             }.pointerInput(rtl, thumbHeight) {
                 detectHorizontalDragGestures(
-                    onDragStart = { fromPosition(it.x) },
+                    onDragStart = {
+                        dragging = true
+                        fromPosition(it.x)
+                    },
+                    onDragEnd = { dragging = false },
+                    onDragCancel = { dragging = false },
                     onHorizontalDrag = { pointer, _ -> pointer.consume(); fromPosition(pointer.position.x) },
                 )
             },
         contentAlignment = Alignment.Center,
     ) {
         Slider(
-            value = value,
+            value = displayValue,
             onValueChange = {},
             enabled = false,
             valueRange = 0f..1f,

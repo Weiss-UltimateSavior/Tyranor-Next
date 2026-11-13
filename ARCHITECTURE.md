@@ -37,6 +37,16 @@ flowchart TD
 
 主线程负责 UI。扫描、持久化和启动准备通常转入 IO；现有同步兼容门面仍可能阻塞，不能将本仓库描述为完全没有主线程 I/O。
 
+### 界面动效与窗口交接
+
+页面提供状态、稳定身份和业务动作。共享效果由 `ui/common/motion/` 或公共控件实现；只有单一领域理解的效果由该领域持有，例如引擎容量环和归档步骤。动效档位持久化于 `AppSettingsStore`，Activity 根部通过 `ProvideMotionEnvironment` 同步 `MotionMode`。普通档回退由每个效果决定，不另建普通版页面。
+
+- 常驻主标签与引擎分类共享 `TabPageMotion` 规格和 `tabPageTransform`；各自保留交互时钟。整页位移、缩放和翻折在绘制阶段应用，显隐、命中测试与无障碍由页面宿主控制。独立 Activity 的窗口转场由 `PageTransitions` 和 `AppScreenActivity` 管理，Compose 只处理内容层的景深与遮罩。
+- `MotionSheetController` 管理抽屉的拖动、收起与重入；`SheetBackdrop` 汇总浮层进度，多个来源不在页面上反复叠加缩放。稳定 key 的懒列表、网格和瀑布流共享 `listItemMotion`，逐项入场、删除消散和滚动形变仍是独立效果。
+- `AppNotice` 是提示入口。`NoticeCenter` 持有身份、队列和驻留截止时间；各窗口的 `NoticeHost` 按生命周期登记，由当前绘制者更新动画进度。旧窗口的动画完成回调不能关掉或改写新提示；抽屉等没有可绘制宿主的场景保留 Toast 回退。
+
+具体入口、普通档例外和评审规则见 [AGENTS.md](AGENTS.md#动效与视觉反馈的实现边界强制)，离线检查的覆盖边界见[门禁说明](tools/motion-boundaries.md)。
+
 ## 3. 游戏库与持久化
 
 [GameLibraryDatabase.kt](app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryDatabase.kt) 定义主进程专用 Room 数据库 `game_library.db`，当前 schema v3：
@@ -56,6 +66,14 @@ flowchart TD
 旧 `game_scanner` prefs 仍作为幂等迁移来源和恢复镜像，不能删除为“无用缓存”。应用/引擎偏好及引擎进程读取的单游戏 blob 仍保留 prefs；Room 不是所有状态的唯一介质，也不能把普通 SharedPreferences 当成实时跨进程消息总线。
 
 Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并从镜像修复；v2→v3 通过显式 `Migration(2,3)` 新增 `games.runtime_module_package` 列及索引，schema v3 的 `3.json` 已导出。后续版本必须显式注册 `Migration`，不能扩大全局破坏性回退。当前数据库、加密凭据、存档同步状态与备份边界统一见 [持久化数据清单](docs/应用持久化数据清单.md)；清单分别说明 v1 破坏性重建与 v2→v3 显式迁移；专题验收记录仍只对各自标注的版本有效。
+
+### 类级预编译规则
+
+`app/src/main/baseline-prof.txt` 是从历史设备运行涉及的类扩展得到的 HSP 类级通配规则，不是逐方法采样原件，也不能证明当前版本的性能收益。原始采集命令、APK 哈希与设备构建指纹未随首次文件保留，现已明确这一来源缺口；不得把后续设备或构建身份补写成历史采集身份。
+
+下次获得设备验证授权后，重新采集应同时保存 Git SHA、APK SHA-256、`adb shell getprop ro.build.fingerprint`、系统版本、包名与实际操作路线。运行目标路线后，可用 Android 的 `adb shell cmd package dump-profiles --dump-classes-and-methods <隔离包名>` 导出方法列表（设备须支持此命令并允许读取输出的 `/data/misc/profman/` 文件）；保留原件，再将类描述符去重、排序并生成类级规则，分别记录两份文件的哈希。不得在尚未执行采集时写成已经生成。
+
+修改或删除类时同步清理失效规则。本轮移除了已删除 `MiuixPopupMotion` 的规则，并在 Android CI 增加 `:app:compileReleaseArtProfile`，让 AGP 结合 release/R8 的实际产物扩展和编译规则。此检查验证构建可用性，不替代真实操作覆盖和性能对照。
 
 ## 4. 扫描与启动编排
 
@@ -95,6 +113,10 @@ RPG Maker v2 的插件 `localStorage` 由兼容层调用 [RpgMakerFsBridge](engi
 - Ethornell 由专用 owner 线程管理 JNI 会话，Surface 世代、会话 token、退出 ACK 与存档操作门禁独立约束。宿主已对齐上游 `0cfff1d` 的 ABI v1 接口面：15 个导出（含 `request_payload`）、Event kind 5 输入对话框与 JSON 回答；kind 5 的 payload 只在 owner 线程两段式读取，UI 线程只持有已解析字符串。随包库当前带 1 个已记录的本地补丁（收敛启动期双重 `bgi-resource` 前缀，并放行顶层 `BGI.gdb` / `BGI####.cad` 到私有 user-root；provenance `dirty=true`）；`--local-static` 通过，严格来源审计要求 clean/已发布源码，见 §6。`EthornellPauseDeviceTest` 已重写为多 stage/step 模型并 3/3 通过；暂停/恢复与 Surface 通过，但精确 guest tick/held 序列不在该夹具覆盖范围。
 - `Surface` 消失、Activity `finish()`、原生销毁完成与进程退出是不同事件。修改宿主必须维护线程归属、资源租约、回调世代和释放时序，不能用强杀结果冒充正常退出。
 - SystemNNN 的播放器在最终存档写入和目录锁释放后撤销任务记录。相同游戏快速重开时，工作线程有界等待上一会话释放存档。只读校验服务运行在单独的 `:systemnnn_validator`，不登记播放器会话。
+
+内置播放器方向策略归 engine 宿主管理：清单声明 `landscape`，各宿主覆盖 `setRequestedOrientation` 将引擎、SDL 和视频的请求统一收敛为 `SCREEN_ORIENTATION_LANDSCAPE`，不在揭开加载遮罩后恢复传感器方向。App 启动链发送相同方向；历史 Artemis 旋转字段仅保留数据兼容，不参与解析。20 个播放器相关 Activity 各自声明 `android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY=true`，在当前 targetSdk 36 下保留大屏固定方向限制，不影响应用页面的自适应布局。该兼容开关在 targetSdk 37 后不再有效，后续升级须重新验收大屏窗口策略，见 [Android 官方方向适配说明](https://developer.android.com/develop/adaptive-apps/guides/app-orientation-aspect-ratio-resizability)。
+
+宿主启动加载由 engine 的 `EngineStartupOverlay` 负责原生 View 视觉与终态清理；`EngineSurfaceReadyProbe` 在 API 26+ 直接对宿主 Surface 做单请求 PixelCopy，`EngineSurfaceReadyState` 管理请求代际、暂停与迟到结果。SDL / NativeActivity 复用 `EngineSurfaceStartupController`；NativeActivity 通过原有 SurfaceHolder.Callback2 转发源窗口，遮罩使用应用内 TYPE_APPLICATION_PANEL，不能拿包含遮罩的 Window 截图判断游戏内容。该机制不依赖滤镜，不修改预编译运行库，不改变 native 引擎线程归属。Web / SystemNNN / krkr 使用各自的内容或场景信号；组件清理不替代引擎原有销毁 ACK 与进程退出规则。主题 / 语言读取 LaunchContract Intent 快照，固定黑底的文字配色与 App 卡片色板分开。
 
 WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano` 保留历史默认目录，`:rpgmaker` 自设后缀。更改 profile 或本地 HTTP 端口会影响历史网页存储作用域，须同时评估存档兼容。
 

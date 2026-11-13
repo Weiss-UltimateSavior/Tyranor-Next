@@ -6,9 +6,11 @@ import android.util.Log;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.view.KeyEvent;
+import android.view.SurfaceHolder;
 
 import com.core.engine.ArtemisVersion;
 import com.core.engine.DoubleBackExit;
+import com.core.engine.EngineSurfaceStartupController;
 import com.core.engine.EnginePrefs;
 import com.core.engine.LaunchContract;
 
@@ -17,6 +19,8 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
     private static final String KEY_ARTEMIS_ENGINE_PREFIX = "artemis_engine.";
     private static final String KEY_ARTEMIS_ENGINE_SUCCESS_PREFIX = "artemis_engine_success.";
     private com.core.gl.ArtemisPerformanceOverlay graphicsOverlay;
+    private EngineSurfaceStartupController startupController;
+    private volatile SurfaceHolder startupSurfaceHolder;
     private boolean officialGraphics;
     private long createdAtElapsed;
     private boolean userRequestedFinish;
@@ -77,6 +81,13 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         if (officialGraphics) com.core.gl.ArtemisOfficialBridge.prepare(this);
         super.onCreate(bundle);
         if (officialGraphics) graphicsOverlay = new com.core.gl.ArtemisPerformanceOverlay(this, com.core.gl.ArtemisOfficialBridge.source());
+        startupController = new EngineSurfaceStartupController(this,
+                () -> { if (graphicsOverlay != null) graphicsOverlay.show(); });
+        startupController.attachToWindow();
+        SurfaceHolder surfaceHolder = startupSurfaceHolder;
+        if (surfaceHolder != null && surfaceHolder.getSurface().isValid()) {
+            startupController.onNativeSurfaceCreated(surfaceHolder);
+        }
         createdAtElapsed = SystemClock.elapsedRealtime();
         Log.i("YukiArtemis", "onCreate path=" + (getIntent() == null ? null : getIntent().getStringExtra(LaunchContract.PATH)) + " scoped=" + (getIntent() != null && getIntent().getBooleanExtra(LaunchContract.SCOPED_SAVE_DIR, false)) + " saveName=" + (getIntent() == null ? null : getIntent().getStringExtra(LaunchContract.SCOPED_SAVE_NAME)));
         loadEngineLibrary();
@@ -85,16 +96,23 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
     @Override
     public final void onResume() {
         super.onResume();
-        Intent intent = getIntent();
-        setRequestedOrientation(intent == null ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                : intent.getIntExtra(LaunchContract.ORIENTATION, ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE));
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         nativeResumeAllSound();
-        if (graphicsOverlay != null) graphicsOverlay.show();
+        if (startupController != null) startupController.onResume();
+        if (graphicsOverlay != null && (startupController == null || !startupController.isLoading())) {
+            graphicsOverlay.show();
+        }
+    }
+
+    @Override
+    public void setRequestedOrientation(int requestedOrientation) {
+        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
     }
 
     @Override
     protected void onPause() {
         Log.i("YukiArtemis", "onPause finishing=" + isFinishing() + " pid=" + android.os.Process.myPid());
+        if (startupController != null) startupController.onPause();
         if (graphicsOverlay != null) graphicsOverlay.hide();
         nativePauseAllSound();
         super.onPause();
@@ -118,6 +136,11 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
 
     @Override
     protected void onDestroy() {
+        if (startupController != null) {
+            startupController.dispose();
+            startupController = null;
+        }
+        startupSurfaceHolder = null;
         if (graphicsOverlay != null) graphicsOverlay.hide();
         DoubleBackExit.clear(this);
         // 兼容回退改为「先按动态候选链/旧 stage 拉起下一版本（独立进程），未回退时再记录成功版本」：
@@ -136,6 +159,40 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         } catch (Throwable ignored) {
             // 进程终结失败可安全忽略：系统会回收进程，下次启动仍为全新进程
         }
+    }
+
+    @Override
+    public void surfaceCreated(SurfaceHolder holder) {
+        startupSurfaceHolder = holder;
+        super.surfaceCreated(holder);
+        if (startupController != null) startupController.onNativeSurfaceCreated(holder);
+    }
+
+    @Override
+    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+        startupSurfaceHolder = holder;
+        super.surfaceChanged(holder, format, width, height);
+        if (startupController != null) startupController.onNativeSurfaceChanged(holder);
+    }
+
+    @Override
+    public void surfaceRedrawNeeded(SurfaceHolder holder) {
+        startupSurfaceHolder = holder;
+        super.surfaceRedrawNeeded(holder);
+        if (startupController != null) startupController.onNativeSurfaceRedrawNeeded(holder);
+    }
+
+    @Override
+    public void surfaceDestroyed(SurfaceHolder holder) {
+        if (startupSurfaceHolder == holder) startupSurfaceHolder = null;
+        super.surfaceDestroyed(holder);
+        if (startupController != null) startupController.onNativeSurfaceDestroyed(holder);
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (startupController != null) startupController.onWindowFocusChanged(hasFocus);
     }
 
     /**

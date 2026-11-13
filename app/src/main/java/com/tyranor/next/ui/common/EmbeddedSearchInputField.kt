@@ -29,6 +29,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
 import com.tyranor.next.R
+import com.tyranor.next.ui.common.motion.BlurVisibility
+import com.tyranor.next.ui.common.motion.pressSquish
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.SearchBarDefaults
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -91,7 +93,8 @@ internal fun EmbeddedSearchInputField(
                     ) {
                         innerTextField()
                     }
-                    if (query.isNotEmpty()) {
+                    // 清空按钮随输入内容有无模糊弹入 / 退出
+                    BlurVisibility(visible = query.isNotEmpty()) {
                         Box(
                             modifier = Modifier.padding(
                                 start = SearchBarDefaults.TrailingIconStartPadding,
@@ -100,7 +103,7 @@ internal fun EmbeddedSearchInputField(
                             contentAlignment = Alignment.CenterStart,
                         ) {
                             Icon(
-                                modifier = Modifier.clip(CircleShape).clickable(
+                                modifier = Modifier.pressSquish().clip(CircleShape).clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
                                     onClick = { onQueryChange("") },

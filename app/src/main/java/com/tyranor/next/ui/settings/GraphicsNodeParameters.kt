@@ -22,6 +22,8 @@ import com.tyranor.next.ui.common.DialogMiuixSlider
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.SlidingTabRow
 import com.tyranor.next.ui.common.formatUiDecimal
+import com.tyranor.next.ui.common.motion.ExpandVisibility
+import com.tyranor.next.ui.common.motion.shakeOnTrigger
 import kotlin.math.round
 
 @Composable
@@ -60,8 +62,11 @@ internal fun GraphicsNodeScale(node: GraphicsNode, onDismiss: () -> Unit, onAppl
                         },
                         modifier = Modifier.padding(horizontal = 16.dp),
                     )
-                    if (draft.scaleMode == GraphicsScaleMode.FACTOR) {
-                        ScaleParameter(stringResource(R.string.graphics_filter_scale_multiplier), scale, { scale = it })
+                    // 只有「倍率」模式才有倍率输入：切换模式时原位展开 / 收起（内部保持原 8dp 行距）
+                    ExpandVisibility(draft.scaleMode == GraphicsScaleMode.FACTOR) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ScaleParameter(stringResource(R.string.graphics_filter_scale_multiplier), scale, { scale = it })
+                        }
                     }
                 }
             }
@@ -141,9 +146,15 @@ internal fun GraphicsNodeParameters(node: GraphicsNode, onDismiss: () -> Unit, o
 
 @Composable
 private fun ScaleParameter(title: String, value: String, onChange: (String) -> Unit) {
+    // 校验失败抖一下：按「完成」时值无效，或输入已不可能变成有效倍率（超出上限 / 非有限数）
+    var shake by remember { mutableIntStateOf(0) }
+    val parsed = value.trim().replace(',', '.').toDoubleOrNull()
+    val hopeless = parsed != null && (!parsed.isFinite() || parsed > 4.0)
+    LaunchedEffect(hopeless) { if (hopeless) shake++ }
     Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp))
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        AppSearchField(query = value, onQueryChange = onChange, modifier = Modifier.weight(1f),
+        AppSearchField(query = value, onQueryChange = onChange, modifier = Modifier.weight(1f).shakeOnTrigger(shake),
+            onSearch = { if (validScale(value) == null) shake++ },
             imeAction = androidx.compose.ui.text.input.ImeAction.Done,
             keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
             leadingIcon = androidx.compose.ui.res.painterResource(R.drawable.ic_graphics_parameters),

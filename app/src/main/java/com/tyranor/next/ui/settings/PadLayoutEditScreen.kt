@@ -24,6 +24,7 @@ import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.input.PadEditorHost
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.ui.common.AppScreenActivity
+import com.tyranor.next.ui.common.notice.AppNotice
 
 /**
  * 按键方案布局编辑器（应用内）。
@@ -71,7 +72,7 @@ internal fun PadLayoutEditScreen(profileId: String) {
 
     // 无顶栏：进屏 Toast 代替常驻提示（操作方式 + 退出方式）
     LaunchedEffect(Unit) {
-        Toast.makeText(ctx, hintMessage, Toast.LENGTH_LONG).show()
+        AppNotice.makeText(ctx, hintMessage, Toast.LENGTH_LONG, AppNotice.Kind.Info).show()
     }
 
     // 宿主 View 构建含方案读盘：不在组合期同步读（ANR 风险），改由协程在 IO 读、主线程建视图。
@@ -86,7 +87,7 @@ internal fun PadLayoutEditScreen(profileId: String) {
             onPrimaryColor = Color.WHITE,
             // 回调只给 id / 展示名（core 门面不向 ui 泄漏 engine 类型）；本页无需使用
             onSaved = { _, _ ->
-                Toast.makeText(ctx, savedMessage, Toast.LENGTH_SHORT).show()
+                AppNotice.makeText(ctx, savedMessage, Toast.LENGTH_SHORT, AppNotice.Kind.Success).show()
                 // 保存即完成本页使命，直接退出（编辑面板随视图树回收）
                 activity?.finish()
             },
@@ -94,11 +95,11 @@ internal fun PadLayoutEditScreen(profileId: String) {
             onEditEnded = { activity?.finish() },
             // 写盘失败：留在编辑态并提示，否则用户只看到「点保存没反应」
             onSaveFailed = {
-                Toast.makeText(ctx, saveFailedMessage, Toast.LENGTH_LONG).show()
+                AppNotice.makeText(ctx, saveFailedMessage, Toast.LENGTH_LONG, AppNotice.Kind.Failure).show()
             },
         )
         if (host == null) {
-            Toast.makeText(ctx, invalidMessage, Toast.LENGTH_SHORT).show()
+            AppNotice.makeText(ctx, invalidMessage, Toast.LENGTH_SHORT, AppNotice.Kind.Failure).show()
             activity?.finish()
         }
     }

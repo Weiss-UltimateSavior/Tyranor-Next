@@ -385,6 +385,26 @@ class FixtureTests(unittest.TestCase):
             for name, payload in entries.items():
                 self.assertEqual(manifest["entries"][name]["sha256"], hashlib.sha256(payload).hexdigest())
 
+    def test_render_close_generation_is_pinned_derivation_with_host_close_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "render-close"
+            manifest = fixture.generate(output, "render-close")
+            archive = (output / "system.arc").read_bytes()
+            entries = fixture.parse_packfile(archive)
+            code = entries["ipl._bp"][16:]
+
+            self.assertEqual(hashlib.sha256(archive).hexdigest(),
+                             "233cd2ec37af3ce195322fb439e023e67034b2edab302e2cd222a433d3171d57")
+            self.assertEqual(entries["ipl._bp"], fixture.make_bp("render-close"))
+            self.assertEqual(entries["checker.png"], fixture.make_checker_png(256))
+            self.assertIn(bytes.fromhex("00018068100004211117"), code)
+            self.assertNotIn(bytes.fromhex("8069"), code)
+            self.assertEqual(manifest["derived_from"]["profile"], "render")
+            self.assertEqual(manifest["derived_from"]["system_arc_sha256"],
+                             "f0d1d96ef30135c95bc722414a9d9572ec3f34952fb57ad9a1bfcf6adb8c06d8")
+            self.assertIn("Sys80:68 SetNativeCloseMode", manifest["derived_from"]["derivation"])
+            self.assertIn("host-close ACK", " ".join(manifest["limitations"]))
+
     def test_ret_and_close_generation_stay_unchanged(self):
         for profile, code_hex in [("ret", "17"), ("request-close", "806917")]:
             with self.subTest(profile=profile), tempfile.TemporaryDirectory() as tmp:

@@ -12,6 +12,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -43,6 +44,16 @@ import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.ExpandVisibility
+import com.tyranor.next.ui.common.motion.ExpandSectionVisibility
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.bounceOnChange
+import com.tyranor.next.ui.common.motion.breathing
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.pressSquishGroup
+import com.tyranor.next.ui.common.motion.rememberLastNonNull
+import com.tyranor.next.ui.common.motion.shakeOnTrigger
 import com.tyranor.next.ui.common.shouldShowSaveSyncFeedback
 import com.tyranor.next.ui.common.toSaveSyncMessage
 import kotlinx.coroutines.CancellationException
@@ -52,23 +63,49 @@ import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.DropdownEntry
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import com.tyranor.next.ui.common.ArrowPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import com.tyranor.next.ui.common.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.tyranor.next.ui.common.collectSettingAsState
 
+/**
+ * Presents cloud versions and save identity when WebDAV is enabled, using the parent's task runner
+ * to serialize changes. Selection recovery remains available independently of the WebDAV switch.
+ */
 @Composable
 internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: Int, runTask: (suspend () -> String?) -> Unit) {
     val context = LocalContext.current
-    val enabled by WebDavSettingsStore.enabled.collectAsState()
+    val enabled by WebDavSettingsStore.enabled.collectSettingAsState()
+    // 持久化开关首次读完之前，StateFlow 的初值（false）会在读完后变 true：这一次不算「用户开关」，不播放展开
+    var enabledLoaded by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         // Refresh the shared flow from persisted settings when this panel is first opened.
         withContext(Dispatchers.IO) { WebDavSettingsStore.isEnabled(context) }
+        enabledLoaded = true
     }
     SaveSelectionRecoveryPanel(game, taskRunning, revision, runTask)
-    if (!enabled) return
+    // 在 WebDAV 设置页开关后返回本页：云端面板原位展开 / 收回，而不是瞬间出现或消失。
+    // 关闭时内容随收起离开组合，状态与原先「提前 return」一样被丢弃。
+    ExpandSectionVisibility(
+        visible = enabled,
+        animate = enabledLoaded,
+        label = "saveCloudVersions",
+    ) {
+        SaveCloudVersionsPanel(game, taskRunning, revision, runTask)
+    }
+}
 
+/** WebDAV 开启时的云端版本与身份面板（原 [SaveVersionsPanel] 在开关之后的部分，逻辑不变）。 */
+@Composable
+private fun SaveCloudVersionsPanel(
+    game: ScanGame,
+    taskRunning: Boolean,
+    revision: Int,
+    runTask: (suspend () -> String?) -> Unit,
+) {
+    val context = LocalContext.current
     val service = remember(context) { SaveSyncService(context) }
     var versions by remember(game.uri) { mutableStateOf(emptyList<SaveVersion>()) }
     var loading by remember(game.uri) { mutableStateOf(true) }
@@ -86,6 +123,15 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
     val saveOperationFailedMessage = stringResource(R.string.save_operation_failed)
     val metadataPendingMessage = stringResource(R.string.save_version_metadata_pending)
     val previousPendingMessage = stringResource(R.string.save_version_previous_pending)
+    // 仅供动效：本面板发起的「立即同步」是否在途，以及完成次数（落点反馈）
+    var syncing by remember(game.uri) { mutableStateOf(false) }
+    var syncLanded by remember(game.uri) { mutableIntStateOf(0) }
+    LaunchedEffect(taskRunning) {
+        if (!taskRunning && syncing) {
+            syncing = false
+            syncLanded++
+        }
+    }
 
     fun <T> runSilentTask(block: suspend () -> T, onSuccess: (T) -> Unit) {
         if (taskRunning || !WebDavSettingsStore.isEnabled(context)) return
@@ -122,6 +168,7 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
         if (taskRunning || !WebDavSettingsStore.isEnabled(context)) return
         taskError = null
         taskInfo = null
+        syncing = true
         runTask {
             if (!WebDavSettingsStore.isEnabled(context)) return@runTask null
             val report = try {
@@ -186,91 +233,115 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        loadError?.let { error ->
-            Text(
-                error,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(horizontal = 4.dp),
-            )
+        // 加载失败 / 任务失败 / 任务提示：原位展开、收回（收起途中保留最后一条文案），不瞬间顶开下方卡片
+        val shownLoadError = rememberLastNonNull(loadError)
+        ExpandVisibility(visible = loadError != null, label = "saveVersionsLoadError") {
+            shownLoadError?.let { error ->
+                Text(
+                    error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            }
         }
-        taskError?.takeIf { pendingVersion == null && editedIdentity == null }?.let { error ->
-            Text(
-                error,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(horizontal = 4.dp),
-            )
+        val panelTaskError = taskError?.takeIf { pendingVersion == null && editedIdentity == null }
+        val shownPanelTaskError = rememberLastNonNull(panelTaskError)
+        ExpandVisibility(visible = panelTaskError != null, label = "saveVersionsTaskError") {
+            shownPanelTaskError?.let { error ->
+                Text(
+                    error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            }
         }
-        taskInfo?.takeIf { pendingVersion == null && editedIdentity == null }?.let { info ->
-            Text(info, style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
+        val panelTaskInfo = taskInfo?.takeIf { pendingVersion == null && editedIdentity == null }
+        val shownPanelTaskInfo = rememberLastNonNull(panelTaskInfo)
+        ExpandVisibility(visible = panelTaskInfo != null, label = "saveVersionsTaskInfo") {
+            shownPanelTaskInfo?.let { info ->
+                Text(info, style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
+            }
         }
-        if (loadError == null) {
-            MiuixCard(Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+        ExpandVisibility(visible = loadError == null, label = "saveVersionsCard") {
+            MiuixCard(Modifier.pressSquishGroup().fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                 Column(Modifier.padding(vertical = 4.dp)) {
-                    when {
-                        loading -> Text(
-                            stringResource(R.string.common_loading),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        )
-                        versions.isEmpty() -> Text(
-                            stringResource(R.string.save_versions_none),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        )
-                        else -> {
-                            OverlayDropdownPreference(
-                                title = stringResource(R.string.save_versions_title),
-                                entry = DropdownEntry(
-                                    listOf(DropdownItem(
-                                        text = stringResource(R.string.save_version_choose),
-                                        enabled = false,
-                                        selected = selectedVersion == null,
-                                    )) + versions.map { version ->
-                                        DropdownItem(
-                                            text = saveVersionDisplayText(version, dateFormat, previousUnknown),
-                                            selected = version.id == selectedId,
-                                            onClick = {
-                                                if (!taskRunning && WebDavSettingsStore.isEnabled(context)) {
-                                                    selectedId = version.id
-                                                }
-                                            },
-                                        )
-                                    },
-                                ),
-                                enabled = !taskRunning,
+                    BlurCrossfade(targetState = if (loading) 0 else if (versions.isEmpty()) 1 else 2) { stateKey ->
+                        when (stateKey) {
+                            // 加载中文案缓缓明灭（只改图层透明度，加载完成即被替换）
+                            0 -> Text(
+                                stringResource(R.string.common_loading),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.breathing().padding(horizontal = 16.dp, vertical = 12.dp),
                             )
-                            AppNavItem(
-                                title = stringResource(R.string.save_version_activate),
-                                showLeadingIcon = false,
-                                showArrow = false,
-                                drawSurface = false,
-                                onClick = if (taskRunning || selectedVersion == null) {
-                                    null
-                                } else {
-                                    {
-                                        if (WebDavSettingsStore.isEnabled(context)) {
-                                            taskError = null
-                                            taskInfo = null
-                                            discardPrevious = false
-                                            pendingVersion = selectedVersion
+                            1 -> Text(
+                                stringResource(R.string.save_versions_none),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            )
+                            else -> Column {
+                                OverlayDropdownPreference(
+                                    // 选中一个版本后整行轻轻落一下，确认选择已生效
+                                    modifier = Modifier
+                                        .pressSquish(!taskRunning, PressSquishDefaults.RowScale)
+                                        .bounceOnChange(selectedId.takeIf { it.isNotEmpty() }, depth = 0.05f),
+                                    title = stringResource(R.string.save_versions_title),
+                                    entry = DropdownEntry(
+                                        listOf(DropdownItem(
+                                            text = stringResource(R.string.save_version_choose),
+                                            enabled = false,
+                                            selected = selectedVersion == null,
+                                        )) + versions.map { version ->
+                                            DropdownItem(
+                                                text = saveVersionDisplayText(version, dateFormat, previousUnknown),
+                                                selected = version.id == selectedId,
+                                                onClick = {
+                                                    if (!taskRunning && WebDavSettingsStore.isEnabled(context)) {
+                                                        selectedId = version.id
+                                                    }
+                                                },
+                                            )
+                                        },
+                                    ),
+                                    enabled = !taskRunning,
+                                )
+                                AppNavItem(
+                                    title = stringResource(R.string.save_version_activate),
+                                    showLeadingIcon = false,
+                                    showArrow = false,
+                                    drawSurface = false,
+                                    onClick = if (taskRunning || selectedVersion == null) {
+                                        null
+                                    } else {
+                                        {
+                                            if (WebDavSettingsStore.isEnabled(context)) {
+                                                taskError = null
+                                                taskInfo = null
+                                                discardPrevious = false
+                                                pendingVersion = selectedVersion
+                                            }
                                         }
-                                    }
-                                },
-                            )
+                                    },
+                                )
+                            }
                         }
                     }
                 }
             }
         }
-        MiuixCard(Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+        // 「立即同步 / 云端标识」卡片
+        MiuixCard(Modifier.pressSquishGroup().fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
             Column(Modifier.padding(vertical = 4.dp)) {
                 AppNavItem(
                     title = stringResource(R.string.save_sync_execute),
+                    // 同步进行中缓缓明灭，结束时轻轻落一下
+                    modifier = Modifier
+                        .breathing(syncing && taskRunning)
+                        .bounceOnChange(syncLanded.takeIf { it > 0 }, depth = 0.05f),
                     showLeadingIcon = false,
                     showArrow = false,
                     drawSurface = false,
@@ -280,14 +351,15 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
                     title = stringResource(R.string.save_sync_identity),
                     enabled = !taskRunning,
                     endActions = {
-                        Text(
-                            identity,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantActions,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.fillMaxWidth(0.5f),
-                        )
+                        BlurCrossfade(targetState = identity, modifier = Modifier.fillMaxWidth(0.5f)) { shownIdentity ->
+                            Text(
+                                shownIdentity,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     },
                     onClick = { beginIdentityEdit() },
                 )
@@ -303,17 +375,27 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
                     Text(
                         saveVersionDisplayText(version, dateFormat, previousUnknown),
                         style = MaterialTheme.typography.bodyMedium,
+                        // 切换被拒绝（失败）时，被操作的版本行左右抖一下
+                        modifier = Modifier.shakeOnTrigger(taskError),
                     )
                     Text(stringResource(R.string.save_versions_policy), style = MaterialTheme.typography.bodyMedium)
-                    taskInfo?.let { info ->
-                        Text(info, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // 弹窗内的提示 / 失败：原位展开，弹窗高度平滑长高；失败时整行抖一下
+                    val shownDialogInfo = rememberLastNonNull(taskInfo)
+                    ExpandVisibility(visible = taskInfo != null, label = "saveVersionDialogInfo") {
+                        shownDialogInfo?.let { info ->
+                            Text(info, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
-                    taskError?.let { error ->
-                        Text(error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                    val shownDialogError = rememberLastNonNull(taskError)
+                    ExpandVisibility(visible = taskError != null, label = "saveVersionDialogError") {
+                        shownDialogError?.let { error ->
+                            Text(error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                        }
                     }
                 }
             },
-            confirmButton = { DialogTextButton(stringResource(if (discardPrevious) R.string.save_version_discard_switch else R.string.common_confirm), enabled = !taskRunning) {
+            // 「确认」↔「放弃旧版本并切换」文案模糊替换，而不是瞬间换字
+            confirmButton = { BlurCrossfade(targetState = discardPrevious, label = "saveVersionConfirm") { discard -> DialogTextButton(stringResource(if (discard) R.string.save_version_discard_switch else R.string.common_confirm), enabled = !taskRunning) {
                 runSilentTask(
                     block = { service.activateVersion(game, version.id, discardPrevious) },
                     onSuccess = { result ->
@@ -327,7 +409,7 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
                         }
                     },
                 )
-            } },
+            } } },
             dismissButton = { DialogTextButton(stringResource(R.string.common_cancel), enabled = !taskRunning) {
                 pendingVersion = null
                 taskError = null
@@ -345,8 +427,10 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // 保存被拒绝（校验 / 写入失败）时左右抖一下
             CompositionLocalProvider(LocalIndication provides NoIndication) {
                 AppSearchField(
+                    modifier = Modifier.shakeOnTrigger(taskError),
                     query = editedIdentity.orEmpty(),
                     onQueryChange = {
                         if (!taskRunning) {
@@ -362,8 +446,11 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
                     textStyle = MaterialTheme.typography.bodyMedium,
                 )
             }
-            taskError?.let { error ->
-                Text(error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+            val shownIdentityError = rememberLastNonNull(taskError)
+            ExpandVisibility(visible = taskError != null, label = "saveIdentityError") {
+                shownIdentityError?.let { error ->
+                    Text(error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                }
             }
         } },
         confirmButton = { DialogTextButton(stringResource(R.string.common_save), enabled = !taskRunning) {
@@ -378,6 +465,10 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
     )
 }
 
+/**
+ * Offers confirmed recovery only when the game has an incomplete save-version selection.
+ * Recovery shares the parent task gate and reports failures without dismissing the confirmation.
+ */
 @Composable
 private fun SaveSelectionRecoveryPanel(
     game: ScanGame,
@@ -390,29 +481,41 @@ private fun SaveSelectionRecoveryPanel(
     var needed by remember(game.uri) { mutableStateOf(false) }
     var confirming by remember(game.uri) { mutableStateOf(false) }
     var error by remember(game.uri) { mutableStateOf<String?>(null) }
+    // 仅供动效：失败次数（每次失败都抖，即使文案相同）
+    var errorShake by remember(game.uri) { mutableIntStateOf(0) }
     val failureMessage = stringResource(R.string.save_operation_failed)
     LaunchedEffect(game.uri, revision) {
         needed = withContext(Dispatchers.IO) { service.needsSelectionRecovery(game) }
     }
-    if (!needed) return
-    MiuixCard(Modifier.fillMaxWidth().padding(bottom = 12.dp).glassBorder(),
-        cornerRadius = AppComponentCornerRadius) {
-        AppNavItem(
-            title = stringResource(R.string.save_version_recover),
-            showLeadingIcon = false,
-            showArrow = false,
-            drawSurface = false,
-            onClick = if (taskRunning) null else ({ confirming = true; error = null }),
-        )
+    // 需要恢复时入口卡片原位展开；恢复完成后原路收回（原先为提前 return，瞬间出现 / 消失）
+    ExpandVisibility(visible = needed, label = "saveSelectionRecovery") {
+        MiuixCard(Modifier.pressSquishGroup().fillMaxWidth().padding(bottom = 12.dp).glassBorder(),
+            cornerRadius = AppComponentCornerRadius) {
+            AppNavItem(
+                title = stringResource(R.string.save_version_recover),
+                showLeadingIcon = false,
+                showArrow = false,
+                drawSurface = false,
+                onClick = if (taskRunning) null else ({ confirming = true; error = null }),
+            )
+        }
     }
-    if (confirming) AppAlertDialog(
+    if (needed && confirming) AppAlertDialog(
         onDismissRequest = { confirming = false; error = null },
         dismissEnabled = !taskRunning,
         title = { Text(stringResource(R.string.save_version_recover), style = MaterialTheme.typography.titleMedium) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.save_version_recovery_policy), style = MaterialTheme.typography.bodyMedium)
-                error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
+                // 恢复失败（含重复失败）时说明文字左右抖一下
+                Text(
+                    stringResource(R.string.save_version_recovery_policy),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.shakeOnTrigger(errorShake.takeIf { it > 0 }),
+                )
+                val shownError = rememberLastNonNull(error)
+                ExpandVisibility(visible = error != null, label = "saveRecoveryError") {
+                    shownError?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
+                }
             }
         },
         confirmButton = {
@@ -429,7 +532,10 @@ private fun SaveSelectionRecoveryPanel(
                             is GameSaveException -> failure.toSaveErrorMessage(context, failureMessage)
                             else -> failureMessage
                         }
-                        withContext(Dispatchers.Main) { error = message }
+                        withContext(Dispatchers.Main) {
+                            error = message
+                            errorShake++
+                        }
                     }
                     null
                 }

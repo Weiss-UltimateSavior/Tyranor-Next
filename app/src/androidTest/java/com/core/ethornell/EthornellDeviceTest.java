@@ -469,10 +469,11 @@ public final class EthornellDeviceTest {
             assertTrue(resource.mkdirs()); assertTrue(user.mkdir());
             assertRootsAccessibleAndDisjoint();
             archive = new File(resource, "system.arc");
-            if (profile.equals("render") || profile.equals("user-data-write") || profile.equals("user-data-read")) {
+            if (profile.startsWith("render") || profile.equals("user-data-write") || profile.equals("user-data-read")) {
                 Context tests = InstrumentationRegistry.getInstrumentation().getContext();
-                String directory = profile.equals("render") ? "ethornell-render" : "ethornell-user-data/" + profile.substring("user-data-".length());
+                String directory = profile.startsWith("render") ? "ethornell-" + profile : "ethornell-user-data/" + profile.substring("user-data-".length());
                 String expectedHash = profile.equals("render") ? "f0d1d96ef30135c95bc722414a9d9572ec3f34952fb57ad9a1bfcf6adb8c06d8"
+                        : profile.equals("render-close") ? "233cd2ec37af3ce195322fb439e023e67034b2edab302e2cd222a433d3171d57"
                         : profile.equals("user-data-write") ? "b64f297f3854c19360406b51143cd5e30b1b44b3e711bc21917d99f88f0fd538"
                         : "a7a5494ca1e8a6e66f00e46c35a8d5a93920457d49a92ad75c82ad20c44e842c";
                 byte[] manifest;
@@ -482,6 +483,15 @@ public final class EthornellDeviceTest {
                 assertEquals(profile, metadata.getString("profile"));
                 String digest = sha256(expected);
                 assertEquals("Pinned original archive " + profile, expectedHash, digest);
+                if (profile.equals("render-close")) {
+                    JSONObject derived = metadata.getJSONObject("derived_from");
+                    assertEquals("render", derived.getString("profile"));
+                    assertEquals("f0d1d96ef30135c95bc722414a9d9572ec3f34952fb57ad9a1bfcf6adb8c06d8",
+                            derived.getString("system_arc_sha256"));
+                    assertEquals("bfb81d854ecb0bf1f1d375631e9450bbe51a6316c2513736e0a93e1a23d5cf09",
+                            metadata.getJSONObject("entries").getJSONObject("ipl._bp").getString("sha256"));
+                    assertTrue(derived.getString("derivation").contains("Sys80:68 SetNativeCloseMode"));
+                }
                 assertEquals(metadata.getJSONObject("files").getJSONObject("system.arc").getString("sha256"), digest);
                 assertEquals(metadata.getJSONObject("files").getJSONObject("system.arc").getInt("size"), expected.length);
                 Files.write(archive.toPath(), expected);
