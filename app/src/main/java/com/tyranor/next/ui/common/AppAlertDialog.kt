@@ -38,6 +38,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.tyranor.next.ui.common.motion.nestedPanelContentDim
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
@@ -67,6 +68,7 @@ import com.tyranor.next.ui.common.motion.MotionSprings
 import com.tyranor.next.ui.common.motion.passThroughTouches
 import com.tyranor.next.ui.common.motion.restoreInteraction
 import com.tyranor.next.ui.common.motion.DialogWindowScrim
+import com.tyranor.next.ui.common.motion.nestedPanelDim
 import com.tyranor.next.ui.common.motion.MotionTokens
 import com.tyranor.next.ui.common.notice.NoticeHost
 import com.tyranor.next.ui.common.motion.ProvideEntrance
@@ -275,6 +277,7 @@ internal fun AppAlertDialog(
                         .fillMaxWidth()
                         // 为超框内容留出卡片上沿空间；padding 在 Card 背景之外，表面仍从下方开始
                         .padding(top = topOverhangHeight)
+                        .nestedPanelDim(window = { dialogWindow[0] }, shape = AppComponentShape)
                         .glassBorder(),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                     colors = CardDefaults.cardColors(
@@ -356,7 +359,8 @@ internal fun AppAlertDialog(
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopStart)
-                            .padding(horizontal = AppDialogContentHorizontalPadding),
+                            .padding(horizontal = AppDialogContentHorizontalPadding)
+                            .nestedPanelContentDim { dialogWindow[0] },
                     ) {
                         topOverhang()
                     }

@@ -23,6 +23,10 @@ PowerShell 构建时先设 `$env:TYRANOR_APPLICATION_ID = 'com.tyranor.next.etho
 
 新增遮罩回归包括 `com.tyranor.next.ui.common.motion.NestedWindowScrimDeviceTest`（实际屏幕像素）与 `DialogWindowDimDeviceTest`（真实窗口属性/释放）。测试通过只说明所执行场景，不证明商业游戏兼容性或完整性能矩阵。
 
+`com.tyranor.next.ui.common.motion.ClosingWindowScrimDeviceTest` 同时覆盖原生父弹窗和真实 `AppBottomSheet` 父抽屉。它分别采样底层页面与父面板，要求上层打开时父面板变暗、底层不叠深；冻结上层进度为 1、保留窗口时接受关闭，父面板须立即恢复而底层遮罩保留，并覆盖进度更新和显式重开。
+
+`com.tyranor.next.ui.common.AppSearchFieldHandleDeviceTest` 检查普通/增强档的默认搜索与显式 Done 兼容输入：触摸后必须真实出现水滴柄，再逐帧检查它持续存在，同时确认焦点、文本、语义节点和窗口身份稳定；另验证点击移动、长按选择与拖动选择柄。它区分水滴柄和正常闪烁的细竖线光标。测试限于 androidTest 读取 Compose Foundation 1.11.2 的内部选择柄语义；升级 Compose 时须重新核对该探针。虚拟时钟步进后的采样不能代替连续物理帧录像，API 26/27 上两种参数都进入兼容实现，须另记实际平台覆盖。
+
 ## 内置引擎时长记录
 
 `GamePlaytimeDeviceTest` 使用独立包与原创 HTML 夹具，启动真实的 `:tyrano` 私有宿主，验证前台片段落盘、后台不累计、重复导入幂等，以及同一运行游戏收到新启动 UUID 后仍沿用原会话与排序起点。它不证明原生游戏兼容性，也不覆盖全部引擎的真实游戏验收。

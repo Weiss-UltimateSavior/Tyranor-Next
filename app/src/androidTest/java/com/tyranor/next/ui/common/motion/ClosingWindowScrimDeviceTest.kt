@@ -10,12 +10,16 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.Snapshot
@@ -33,8 +37,10 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import com.tyranor.next.ui.common.MotionDeviceAcceptance
+import com.tyranor.next.ui.common.AppBottomSheet
 import java.io.File
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
@@ -54,7 +60,11 @@ class ClosingWindowScrimDeviceTest {
 
     @Test fun ordinaryClosingWindowBrightensItsParentWithoutUncoveringTheRoot() = checkClosingWindow(false)
 
-    private fun checkClosingWindow(enhanced: Boolean) {
+    @Test fun enhancedDialogDimsTheRealSheetAndReturnsItsMaskOnClose() = checkClosingWindow(true, sheetParent = true)
+
+    @Test fun ordinaryDialogDimsTheRealSheetAndReturnsItsMaskOnClose() = checkClosingWindow(false, sheetParent = true)
+
+    private fun checkClosingWindow(enhanced: Boolean, sheetParent: Boolean = false) {
         MotionDeviceAcceptance.require(enhanced = null)
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val originalMode = compose.runOnIdle { MotionMode.enhanced }
@@ -67,7 +77,8 @@ class ClosingWindowScrimDeviceTest {
         val childWindow = AtomicReference<Window?>()
         val rootProbe = AtomicReference<IntOffset?>()
         val parentProbe = AtomicReference<IntOffset?>()
-        val mode = if (enhanced) "enhanced" else "ordinary"
+        val movingParentProbe = AtomicReference<(() -> IntOffset?)?>()
+        val mode = "${if (sheetParent) "sheet" else "dialog"}-${if (enhanced) "enhanced" else "ordinary"}"
         val context = instrumentation.targetContext
         val evidence = File(context.externalCacheDir ?: context.cacheDir,
             "closing-window-scrim/$mode-${SystemClock.uptimeMillis()}")
@@ -77,6 +88,9 @@ class ClosingWindowScrimDeviceTest {
         fun screenshot(label: String): Brightness {
             compose.waitForIdle()
             instrumentation.waitForIdleSync()
+            // The real sheet enters through a graphicsLayer. Re-read its live coordinates:
+            // an initial onGloballyPositioned callback alone can retain the offscreen point.
+            compose.runOnIdle { movingParentProbe.get()?.invoke()?.let { parentProbe.set(it) } }
             SystemClock.sleep(32) // WMS and SurfaceFlinger run independently of the Compose clock.
             val bitmap = instrumentation.uiAutomation.takeScreenshot()
             assertNotNull("The test requires a screenshot of actual Android windows", bitmap)
@@ -155,13 +169,15 @@ class ClosingWindowScrimDeviceTest {
                             Box(Modifier.size(16.dp).then(screenCenter(rootProbe)))
                         }
                         if (parentVisible.value) {
-                            FixtureDialog(enhanced, { 1f }, parentWindow, "closing-parent", parentProbe) {
+                            val child: @Composable () -> Unit = {
                                 if (childVisible.value) {
                                     FixtureDialog(enhanced, {
                                         childRaw.floatValue.also { observedRaw.set(it) }
                                     }, childWindow, "closing-child")
                                 }
                             }
+                            if (sheetParent) FixtureSheet(parentWindow, parentProbe, movingParentProbe, child)
+                            else FixtureDialog(enhanced, { 1f }, parentWindow, "closing-parent", parentProbe, child)
                         }
                     }
                 }
@@ -176,6 +192,22 @@ class ClosingWindowScrimDeviceTest {
 
             compose.runOnIdle { parentVisible.value = true }
             awaitLayout("closing-parent", parentWindow)
+            if (sheetParent) {
+                // Unlike the fixed-progress native parent, the actual M3 sheet has a real
+                // entry/cover animation. Finish it before establishing the mask baseline.
+                repeat(96) {
+                    compose.mainClock.advanceTimeByFrame()
+                    compose.waitForIdle()
+                }
+                awaitLayout("closing-parent", parentWindow)
+                compose.runOnIdle {
+                    val sheet = checkNotNull(parentWindow.get())
+                    assertEquals("The parent must use the production sheet's self-drawn mask, not a fake native dim", 0,
+                        sheet.attributes.flags and WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                    assertTrue("The production sheet must actually draw its own mask before a child opens",
+                        sheet.dialogScrimAlpha() > 0f)
+                }
+            }
             val baseline = awaitPixels("parent-alone") {
                 it.parent != null && it.parent >= 245 && it.root <= white.root - 32
             }
@@ -263,6 +295,30 @@ class ClosingWindowScrimDeviceTest {
         }
     }
 
+    /** Exercise the actual M3 window, motionSheetSurface, BindWindowScrim and BindBackdrop path. */
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun FixtureSheet(
+        window: AtomicReference<Window?>,
+        parentProbe: AtomicReference<IntOffset?>,
+        movingParentProbe: AtomicReference<(() -> IntOffset?)?>,
+        content: @Composable () -> Unit,
+    ) {
+        val backdrop = rememberSheetBackdrop()
+        CompositionLocalProvider(LocalSheetBackdrop provides backdrop) {
+            AppBottomSheet(onDismissRequest = {}) {
+                val view = LocalView.current
+                SideEffect { window.set((view.parent as DialogWindowProvider).window) }
+                // The child panel occupies the bottom-right. This parent probe lies inside
+                // opaque sheet content near its top-left, separately from the root probe.
+                Box(Modifier.fillMaxWidth().height(240.dp).background(Color.White).testTag("closing-parent")) {
+                    Box(Modifier.padding(20.dp).size(16.dp).then(screenCenter(parentProbe, movingParentProbe)))
+                    content()
+                }
+            }
+        }
+    }
+
     @Composable
     private fun FixtureDialog(
         enhanced: Boolean,
@@ -279,6 +335,7 @@ class ClosingWindowScrimDeviceTest {
             DialogWindowScrim(enhanced, progress, { window.set(it) }, {}, dismissEnabled = false) {
                 if (parentProbe != null) {
                     Box(Modifier.align(Alignment.Center).fillMaxWidth(0.72f).fillMaxHeight(0.62f)
+                        .nestedPanelDim(window = { window.get() })
                         .background(Color.White).testTag(tag)) {
                         Box(Modifier.padding(20.dp).size(16.dp).then(screenCenter(parentProbe)))
                     }
@@ -294,13 +351,22 @@ class ClosingWindowScrimDeviceTest {
     }
 
     @Composable
-    private fun screenCenter(target: AtomicReference<IntOffset?>): Modifier {
+    private fun screenCenter(
+        target: AtomicReference<IntOffset?>,
+        refresh: AtomicReference<(() -> IntOffset?)?>? = null,
+    ): Modifier {
         val view = LocalView.current
         return Modifier.onGloballyPositioned { coordinates ->
-            val location = IntArray(2)
-            view.getLocationOnScreen(location)
-            val center = coordinates.localToRoot(Offset(coordinates.size.width / 2f, coordinates.size.height / 2f))
-            target.set(IntOffset(location[0] + center.x.roundToInt(), location[1] + center.y.roundToInt()))
+            val locate: () -> IntOffset? = {
+                if (!coordinates.isAttached) null else {
+                    val location = IntArray(2)
+                    view.getLocationOnScreen(location)
+                    val center = coordinates.localToRoot(Offset(coordinates.size.width / 2f, coordinates.size.height / 2f))
+                    IntOffset(location[0] + center.x.roundToInt(), location[1] + center.y.roundToInt())
+                }
+            }
+            refresh?.set(locate)
+            locate()?.let { target.set(it) }
         }
     }
 

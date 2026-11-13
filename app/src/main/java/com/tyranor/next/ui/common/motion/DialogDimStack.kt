@@ -10,6 +10,7 @@ import java.util.IdentityHashMap
  */
 internal class DialogDimStack<W : Any>(
     private val isVisible: (W) -> Boolean,
+    private val applyPanelDim: (W, Float) -> Unit = { _, _ -> },
     private val applyDim: (W, Float, Float, Boolean) -> Unit,
 ) {
     private class Request<W>(
@@ -23,6 +24,14 @@ internal class DialogDimStack<W : Any>(
         var released: Boolean = false,
     )
     private class Mask(val dim: Float, val scrim: Float, val fullAlpha: Float)
+    private class Resolved<W>(
+        val request: Request<W>,
+        val dim: Float,
+        val scrim: Float,
+        val target: Float,
+        val visible: Boolean,
+    )
+    private class UpperMask(var nativeDim: Float? = null, var scrim: Float = 0f, var hasSource: Boolean = false)
     private val requests = ArrayList<Request<W>>()
 
     fun register(
@@ -100,11 +109,14 @@ internal class DialogDimStack<W : Any>(
 
     fun refresh() {
         val floors = IdentityHashMap<Any, Mask>()
+        val highest = IdentityHashMap<Any, Resolved<W>>()
+        val resolved = ArrayList<Resolved<W>>(requests.size)
+        // Keep the existing root allocation and its Window update order. Moving a drawn
+        // mask to native dim crosses two independently committed rendering transactions.
         for (request in requests) {
             if (request.released) {
-                // Zero dim with native eligibility would still dim lower dialog content.
-                // Drop that eligibility as well, so WMS uses the lower window's own mask.
                 applyDim(request.window, 0f, 0f, false)
+                resolved.add(Resolved(request, 0f, 0f, 0f, isVisible(request.window)))
                 continue
             }
             val lower = floors[request.owner]
@@ -117,19 +129,37 @@ internal class DialogDimStack<W : Any>(
             // an enhanced dialog). Its own fade controls handoff, rather than its theme's alpha.
             val inherited = if (ownFullAlpha <= 0f) 0f else fullAlpha * (ownAlpha / ownFullAlpha).coerceIn(0f, 1f)
             val target = if (lower == null) ownAlpha else maxOf(lowerAlpha, inherited)
-            // WMS replaces lower native dim with this window's request. Lower drawn masks
-            // remain, so let native dim supply exactly the missing amount, with no extra scrim.
+            // Native dim replaces lower native requests, while lower drawn masks remain.
             val dim = if (!request.enabled) 0f else if (lower == null) request.dim else missingAlpha(target, lowerScrim)
-            // A self-drawn-only source (Material3 sheet) leaves the existing native request
-            // alone. It supplies only what is missing from the lower composed output.
             val scrim = if (lower == null) request.scrim else if (request.enabled) 0f else missingAlpha(target, lowerAlpha)
             applyDim(request.window, dim, scrim, request.enabled)
+            val current = Resolved(request, dim, scrim, target, isVisible(request.window))
+            resolved.add(current)
             if (contributesFloor(request)) {
+                highest[request.owner] = current
                 floors[request.owner] = Mask(
                     if (request.enabled) dim else lower?.dim ?: 0f,
                     combine(lowerScrim, scrim),
                     fullAlpha,
                 )
+            }
+        }
+        // A Window's own scrim is behind its panel. Add only the panel-local amount missing
+        // from masks above it; neither root scrims nor native eligibility need to move.
+        val upperMasks = IdentityHashMap<Any, UpperMask>()
+        for (current in resolved.asReversed()) {
+            val request = current.request
+            val upper = upperMasks.getOrPut(request.owner) { UpperMask() }
+            val alpha = if (current.visible && upper.hasSource) {
+                val external = combine(upper.nativeDim ?: 0f, upper.scrim)
+                missingAlpha(highest[request.owner]?.target ?: 0f, external)
+            } else 0f
+            applyPanelDim(request.window, alpha)
+            if (current.visible && !request.released) {
+                // Descending order selects only the highest actual native request.
+                if (request.enabled && upper.nativeDim == null) upper.nativeDim = current.dim
+                upper.scrim = combine(upper.scrim, current.scrim)
+                if (request.enabled || request.baseScrim > 0f) upper.hasSource = true
             }
         }
     }

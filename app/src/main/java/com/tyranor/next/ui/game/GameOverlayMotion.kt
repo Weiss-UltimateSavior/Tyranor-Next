@@ -12,6 +12,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
+import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.motion.Bind
 import com.tyranor.next.ui.common.motion.DialogSinkStrength
 import com.tyranor.next.ui.common.motion.dialogScrimAlpha
@@ -21,6 +22,7 @@ import com.tyranor.next.ui.common.motion.MotionTokens
 import com.tyranor.next.ui.common.motion.passThroughTouches
 import com.tyranor.next.ui.common.motion.releaseDialogDim
 import com.tyranor.next.ui.common.motion.syncDialogWindow
+import com.tyranor.next.ui.common.motion.nestedPanelDim
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -108,22 +110,32 @@ internal class GameOverlayMotion(
         panel.animateTo(0f, MotionTokens.surfaceExit(threshold))
     }
 
-    fun panel(modifier: Modifier): Modifier = if (!enhanced) modifier else modifier.graphicsLayer {
-        val p = panel.value
-        if (kind == GameOverlay.CoverSearch) {
-            val s = 0.9f + 0.1f * p
-            scaleX = s
-            scaleY = s
-            translationY = (1f - p) * 28.dp.toPx()
-            alpha = dim.value.coerceIn(0f, 1f)
-        } else if (p != 1f) {
-            alpha = p.coerceIn(0f, 1f)
-            translationY = (1f - p) * 48.dp.toPx()
-            val s = 0.92f + 0.08f * p
-            scaleX = s
-            scaleY = s
+    fun panel(modifier: Modifier): Modifier {
+        val motion = if (!enhanced) modifier else modifier.graphicsLayer {
+            val p = panel.value
+            if (kind == GameOverlay.CoverSearch) {
+                val s = 0.9f + 0.1f * p
+                scaleX = s
+                scaleY = s
+                translationY = (1f - p) * 28.dp.toPx()
+                alpha = dim.value.coerceIn(0f, 1f)
+            } else if (p != 1f) {
+                alpha = p.coerceIn(0f, 1f)
+                translationY = (1f - p) * 48.dp.toPx()
+                val s = 0.92f + 0.08f * p
+                scaleX = s
+                scaleY = s
+            }
         }
+        // Search supplies the actual fixed panel bounds here. Crop adds its dim at the Card,
+        // after IME padding, so the keyboard's empty margin is never painted as a panel.
+        return if (kind == GameOverlay.CoverSearch) panelDim(motion) else motion
     }
+
+    fun panelDim(modifier: Modifier): Modifier = modifier.nestedPanelDim(
+        window = { tracks.window },
+        shape = AppComponentShape,
+    )
 
     fun searchScrim(modifier: Modifier): Modifier = modifier.drawBehind {
         val alpha = tracks.window.dialogScrimAlpha()
