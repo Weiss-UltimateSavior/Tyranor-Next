@@ -47,9 +47,9 @@ final class GameChoicePanel extends GameUiPanel {
         center=cfg.number(special?"centeringFlag":"newCenteringFlag",0)!=0;
         boolean scroll=!special&&cfg.number("useScrollFlag",0)!=0;
         visible=scroll?Math.max(1,cfg.number("messagePrintGyo",4)-frame.choiceMessages.length):frame.choices.length;
-        String art=cfg.value("cursorFileName","ta_select_cur01");
+        String art=cfg.value("cursorFileName","ta_select01");
         cursor=sprite(special?cfg.value("filenameSpecialCursor",art):art);
-        int patterns=cfg.number(special?"specialAnimePatternNumber":"animePatternNumber",1);
+        int patterns=cfg.number(special?"specialAnimePatternNumber":"animePatternNumber",special?1:8);
         int period=cfg.number(special?"specialAnimeFrame":"animeFrame",1);
         boolean blend=cfg.number(special?"specialAnimePrintType":"animePrintType",0)!=0;
         boolean reverse=cfg.number(special?"specialAnimeReverse":"animeReverse",0)!=0;
@@ -99,11 +99,18 @@ final class GameChoicePanel extends GameUiPanel {
         clearControls();rows.clear();messages.clear();
         setClipChildren(true);
         if(!special){
-            String tag=frame.choiceInfo[0]>0?"timeLimitWindow":"window";
-            if(cfg.number(tag+"PrintFlag",0)!=0){
-                int x=cfg.number(tag+"PrintX",0),y=cfg.number(tag+"PrintY",0);
-                picture(cfg.value(tag+"FileName","ta_select_win01"),x,y,
-                    bound(cfg.number(tag+"SizeX",canvasWidth),1,4096),bound(cfg.number(tag+"SizeY",220),1,4096));
+            int winFlag=cfg.number("windowPrintFlag",1);
+            String winFile=cfg.value("windowFileName","ta_win_select");
+            int winX=cfg.number("windowPrintX",0),winY=cfg.number("windowPrintY",400);
+            int winW=cfg.number("windowSizeX",800),winH=cfg.number("windowSizeY",200);
+            if(frame.choiceInfo[0]>0){
+                winFlag=cfg.number("timeLimitWindowPrintFlag",winFlag);
+                winFile=cfg.value("timeLimitWindowFileName",winFile);
+                winX=cfg.number("timeLimitWindowPrintX",winX);winY=cfg.number("timeLimitWindowPrintY",winY);
+                winW=cfg.number("timeLimitWindowSizeX",winW);winH=cfg.number("timeLimitWindowSizeY",winH);
+            }
+            if(winFlag!=0&&sprite(winFile)!=null){
+                picture(winFile,winX,winY,bound(winW,1,4096),bound(winH,1,4096));
             }
         }
         int count=Math.max(1,Math.min(8,frame.choices.length));
@@ -267,9 +274,7 @@ final class GameChoicePanel extends GameUiPanel {
             if(focused==index&&now>=readyAt){
                 long elapsed=(now-readyAt)/Math.max(1,frame.frameMs);
                 dest.set(0,0,cursorW,cursorH);
-                if(!animation.draw(canvas,cursor,dest,paint,elapsed,255)){
-                    paint.setColor(0x88498bcc);canvas.drawRect(dest,paint);
-                }
+                animation.draw(canvas,cursor,dest,paint,elapsed,255);
                 if(animation.active(elapsed))postInvalidateOnAnimation();
             }
             int tone=textColor(index);

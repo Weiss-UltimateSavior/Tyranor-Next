@@ -20,6 +20,7 @@
 - SystemNNN 同步对话层 `DialogueDecorations`（`PortraitLayer` 头像眨眼与口型、`CutinLayer` 特写与光标分支）、多槽位 `statusOverlays` 按序叠加及 `SELECT_CHART` 流程图剧情存档准入。
 - SystemNNN 补齐原版纯 Java 界面配置：`mustStartPage1Flag` 设置页记忆、回想模式 `systemMenu` 存读档与扩展项禁用及 `systemMenuSceneBackFileName` / `systemMenuSceneEndFileName` 直接退回回想列表、音乐鉴赏 `cannotColorR/G/B` 未解锁置灰、CG 鉴赏 `fileNameDifferenceFont`（`CSuuji`）精灵数字差分计数，以及存读档槽位 `fileNameOverwriteCursor` 与 `save/load/overwriteAnime*` 动态光标。
 - SystemNNN 支持 `fullMessageNumber` 全屏多行 `LPRINT` / `APPEND` 超行上卷与 `.sav` `MESSAGE` 窗口往返、跨层共享配置快照同步，以及存读档槽位按 `var.fxf` / `var2.fxf` 与 `.sav` `GAMEVAR` 绘制原版游戏内日期与星期（`gameDate*` / `gameWeek*`）；CG 差分计数与槽位日期在缺精灵字库时按原版静默不画。
+- SystemNNN 补齐 `sysfile*.sav` 全量非音频系统设置（文字速度、快进/全屏/自动模式、`WINDOWPERCENT` 窗口透明度、`EXPMODE` / `EXPCHECK`、窗口皮肤及消息/鼠标光标）纯 Java 双向同步；兼容早期通用 `5024 B` `GAMESTATUS` 与 `code=8/9+` 扩展块 `.sav`、自定义 `saveHeaderName`、存档 `GAMEVAR` 系统变量同步导出、读档 `AdjustLoadBGM` 曲目重映射及剧情影片 `fillExitScreenFlag` / `lastWait` 收尾；存读档、鉴赏、历史回看（`bgMode` `0..3`）与选项面板全面对齐上游 `.xtx` 默认规范并清退非原版色块/文字兜底（保留 TYN 默认 85% 阅读字号与设置入口）。
 - ZIP 和 WebDAV 恢复在独立进程校验快照。WebDAV 可沿用同源副本迁移前的待上传会话和已提交的恢复记录。
 - 新增首次使用七步快速入门教练层：在真实首页、游戏页、引擎页和设置页中展示添加、搜索、封面、重新扫描等入口；新安装用户可跳过或完成引导，已有数据的升级用户默认跳过，通知权限延后到引导完成后请求。
 - 完善首次使用引导边界：初始化存储写入失败不阻断启动，完成标记支持重试；失败的首次安装判定跨进程重启保留，避免迁移标记或空数据库误跳过引导；清理不可达的启动失败重试页，修正白雾玻璃气泡材质并按页面生命周期管理锚点；引导语义保留真实高亮控件，完成后复用同一主导航组合，避免无障碍焦点丢失与页面重建；页面切换等待真实控件锚点，并处理 Activity 重建后的状态恢复，避免过期高亮或绕过引导。

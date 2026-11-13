@@ -34,12 +34,16 @@ final class OriginalSettingsModel {
             index=i;kind=VOLUMES[i];key=KEYS[i];this.page=page;this.x=x;this.y=y;width=w;height=h;this.steps=steps;realMin=min;realMax=max;this.image=image;this.button=button;
         }
         int toPreference(int position){
+            if(index==6)return bound(position,0,100);
             position=bound(position,0,steps);
             if(index==0)return Math.round(position*3f/steps);
             if(index==7)return Math.round(position*2f/steps);
             return Math.round(position*100f/steps);
         }
-        int fromPreference(int value){return Math.round(bound(value,0,index==0?3:index==7?2:100)*steps/(index==0?3f:index==7?2f:100f));}
+        int fromPreference(int value){
+            if(index==6)return bound(value,0,100);
+            return Math.round(bound(value,0,index==0?3:index==7?2:100)*steps/(index==0?3f:index==7?2f:100f));
+        }
     }
     static final class CharacterControl {
         final int index,page;final int[] ids;final Button button;final boolean hasSlider;final int x,y,width,height;

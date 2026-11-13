@@ -173,7 +173,7 @@ final class GameRunner {
         void spectrum(int[] bands);
         void galleryReplayStarted();
         void galleryReplayFinished();
-        void movie(File file,float gain,boolean canSkip,boolean startup);
+        void movie(File file,float gain,boolean canSkip,boolean startup,Integer exitColor);
         void loaded();
         void statusOverlays(int mode,Modal[] overlays);
         void titleReturnCancelled();
@@ -218,6 +218,7 @@ final class GameRunner {
     private final LinkedHashSet<String> readLines=new LinkedHashSet<>();
     private GameProgress.State initialProgress;
     private PcSystemSave.Initial initialPcSystem;
+    private int pcMessageCursor=Integer.MIN_VALUE,pendingMessageCursor=Integer.MIN_VALUE,pendingMouseCursor=Integer.MIN_VALUE;
     private int publishedScriptMouse=Integer.MIN_VALUE;
     private Modal menuModal;
     private boolean systemMenuModal;
@@ -276,6 +277,7 @@ final class GameRunner {
     private boolean galleryMusicPlaying,galleryMusicPaused;
     private MusicSpectrum gallerySpectrum;
     private boolean moviePlaying;
+    private Integer pendingMovieExitColor;
     private int galleryCue=-1,gallerySong=-1,galleryVolume=100;
     private volatile int configMask;
     private int overlayMode,overlaysSentMode=-1;
@@ -376,6 +378,7 @@ final class GameRunner {
         if(runtime==null&&initialPcSystem!=null&&initialPcSystem.hasDisplayOptions()){
             NativeGame.setPcDisplayOptions(candidate,initialPcSystem.noSkipFrame(),initialPcSystem.mouseCursor());
             if(initialPcSystem.live){
+                pcMessageCursor=initialPcSystem.messageCursor();
                 NativeGame.setParameters(candidate,initialPcSystem.audioParameters());
                 NativeGame.setAuxiliaryState(candidate,initialPcSystem.audioOwners());
                 int theme=initialPcSystem.audioTheme();
@@ -403,6 +406,8 @@ final class GameRunner {
     private void publishParameters(){
         if(handle==0)return;
         int[] auxiliary=NativeGame.auxiliaryState(handle);
+        if(pcMessageCursor!=Integer.MIN_VALUE&&(uiAssets==null||uiAssets.game.number("expModeButtonIsMessageCursor",0)==0)&&
+            auxiliary!=null&&auxiliary.length>34)auxiliary[34]=pcMessageCursor;
         ui.parameters(NativeGame.parameters(handle),NativeGame.displayParameters(handle),auxiliary);
         publishScriptMouse();
     }
@@ -450,7 +455,19 @@ final class GameRunner {
         if(handle==0||uiAssets==null)return;
         if(requested.length>0){
             NativeGame.setParameters(handle,requested);int[] raw=NativeGame.parameters(handle),accepted=new int[requested.length];
-            for(int i=0;i<requested.length;i+=2){accepted[i]=requested[i];for(int j=0;j<raw.length;j+=2)if(raw[j]==accepted[i]){accepted[i+1]=raw[j+1];break;}}
+            boolean extendedMode=false;
+            for(int i=0;i<requested.length;i+=2){
+                accepted[i]=requested[i];
+                if(accepted[i]>=300&&accepted[i]<316)extendedMode=true;
+                for(int j=0;j<raw.length;j+=2)if(raw[j]==accepted[i]){accepted[i+1]=raw[j+1];break;}
+            }
+            if(extendedMode){
+                int[] aux=NativeGame.auxiliaryState(handle);
+                if(aux!=null&&aux.length>=36){
+                    pendingMessageCursor=aux[34];pendingMouseCursor=aux[35];
+                    if(uiAssets.game.number("expModeButtonIsMessageCursor",0)!=0)pcMessageCursor=aux[34];
+                }
+            }
             RuntimeSettingsAdapter.persistRawOverrides(userPreferences,legacySource,accepted);
             for(int i=0;i<accepted.length;i+=2)if(pcSystemSave.storesAudioParameter(accepted[i])){queueAudioSettings();break;}
         }else{
@@ -488,14 +505,16 @@ final class GameRunner {
         for(int i=0;i<owners.length;i+=2)if(archive.storesAudioOwner(owners[i])){
             owners[ownerCount++]=owners[i];owners[ownerCount++]=owners[i+1];
         }
-        if(rawCount+ownerCount==0)return;
+        int msgCursor=pendingMessageCursor,mouseCursor=pendingMouseCursor;
+        pendingMessageCursor=pendingMouseCursor=Integer.MIN_VALUE;
+        if(rawCount+ownerCount==0&&msgCursor==Integer.MIN_VALUE&&mouseCursor==Integer.MIN_VALUE)return;
         int[] parameters=Arrays.copyOf(raw,rawCount),auxiliary=Arrays.copyOf(owners,ownerCount);
         SAVE_FILES.execute(()->{
             try{
-                if(archive.writeAudioSettings(parameters,auxiliary))
+                if(archive.writeSystemSettings(parameters,auxiliary,msgCursor,mouseCursor))
                     RuntimeSettingsAdapter.clearSavedAudioOverrides(userPreferences,legacySource,parameters,auxiliary);
             }catch(IOException|RuntimeException failure){
-                Log.w("SystemNNN","PC audio settings save failed",failure);
+                Log.w("SystemNNN","PC system settings save failed",failure);
             }
         });
     }
@@ -526,7 +545,8 @@ final class GameRunner {
         int[] state=new int[NativeGame.META_SIZE];TitleMenu title=null;long stored;
         List<LogoPanel.Slide> logos=java.util.Collections.emptyList();
         try{
-            tasks.removeCallbacks(ticker);stopSound();autoMode=false;skipMode=false;ui.mode(false,false);
+            tasks.removeCallbacks(ticker);tasks.removeCallbacks(resumeStoryMovie);pendingMovieExitColor=null;moviePlaying=false;
+            stopSound();autoMode=false;skipMode=false;ui.mode(false,false);
             writeGallery();
             unsaved=handle!=0 && galleryWritten!=NativeGame.galleryRevision(handle);
             if(candidate==0)candidate=openNative();
@@ -768,14 +788,15 @@ final class GameRunner {
         moviePlaying=true;
         stopSound();
         Log.i("SystemNNN","Startup movie requested "+movie.file.getName());
-        ui.movie(movie.file,NativeGame.movieGain(handle),cfg.number("noSkipFlag",0)==0,true);
+        ui.movie(movie.file,NativeGame.movieGain(handle),cfg.number("noSkipFlag",0)==0,true,0xff000000);
         return true;
     }
-    private Capture movieExitScreen(){
-        if(startupConfig.number("fillExitScreenFlag",1)==0)return null;
-        int r=colorChannel(startupConfig.number("exitFadeOutColorR",0));
-        int g=colorChannel(startupConfig.number("exitFadeOutColorG",0));
-        int b=colorChannel(startupConfig.number("exitFadeOutColorB",0));
+    private Capture movieExitScreen(){return movieExitScreen(startupConfig);}
+    private static Capture movieExitScreen(GameUiAssets.Config cfg){
+        if(cfg!=null&&cfg.number("fillExitScreenFlag",1)==0)return null;
+        int r=colorChannel(cfg==null?0:cfg.number("exitFadeOutColorR",0));
+        int g=colorChannel(cfg==null?0:cfg.number("exitFadeOutColorG",0));
+        int b=colorChannel(cfg==null?0:cfg.number("exitFadeOutColorB",0));
         return new Capture(new int[]{0xff000000|r<<16|g<<8|b},1,1);
     }
     void returnToTitle(){tasks.post(() -> {
@@ -852,7 +873,7 @@ final class GameRunner {
         bindSurface(true);
         galleryWritten=unsaved?-1:stored;
         startupStage=null;startupConfig=null;titleBackgroundHeld=false;startupTitleFramePending=false;
-        moviePlaying=false;
+        tasks.removeCallbacks(resumeStoryMovie);pendingMovieExitColor=null;moviePlaying=false;
         onTitle=false;menuOpen=holdStory;systemMenuModal=false;choiceClicking=false;history=next;System.arraycopy(state,0,meta,0,meta.length);
         if(finishEndedRun())return;
         if(!systemStateEstablished)writeReadLines();
@@ -1057,17 +1078,28 @@ final class GameRunner {
             done.accept(scene);
         });
     }
-    private static void filter(int[] pixels,GameUiAssets.Config cfg){
+    static void filter(int[] pixels,GameUiAssets.Config cfg){
         boolean grey=cfg.number("backScreenEffectGrey",0)!=0,negative=cfg.number("backScreenEffectNega",0)!=0;
-        boolean add=cfg.number("backScreenEffectAddSub",0)!=0,multi=cfg.number("backScreenEffectMulti",0)!=0;
-        int dr=add?colorDelta(cfg.number("backScreenColorR",0)):0;
-        int dg=add?colorDelta(cfg.number("backScreenColorG",0)):0;
-        int db=add?colorDelta(cfg.number("backScreenColorB",0)):0;
-        int percentR=multi?cfg.number("backScreenMultiR",100):100;
-        int percentG=multi?cfg.number("backScreenMultiG",100):100;
-        int percentB=multi?cfg.number("backScreenMultiB",100):100;
-        if(percentG==-1)percentG=percentR;
-        if(percentB==-1)percentB=percentG;
+        boolean backlogBg=cfg.number("backScriptFlag",0)==0&&cfg.number("bgMode",0)==2;
+        int dr,dg,db,percentR,percentG,percentB;
+        if(backlogBg){
+            dr=colorDelta(cfg.number("backDeltaR",0));
+            dg=colorDelta(cfg.number("backDeltaG",dr));
+            db=colorDelta(cfg.number("backDeltaB",dg));
+            percentR=cfg.number("backMultiR",100);
+            percentG=cfg.number("backMultiG",percentR);
+            percentB=cfg.number("backMultiB",percentG);
+        }else{
+            boolean add=cfg.number("backScreenEffectAddSub",0)!=0,multi=cfg.number("backScreenEffectMulti",0)!=0;
+            dr=add?colorDelta(cfg.number("backScreenColorR",0)):0;
+            dg=add?colorDelta(cfg.number("backScreenColorG",0)):0;
+            db=add?colorDelta(cfg.number("backScreenColorB",0)):0;
+            percentR=multi?cfg.number("backScreenMultiR",100):100;
+            percentG=multi?cfg.number("backScreenMultiG",100):100;
+            percentB=multi?cfg.number("backScreenMultiB",100):100;
+            if(percentG==-1)percentG=percentR;
+            if(percentB==-1)percentB=percentG;
+        }
         int mr=colorMultiplier(percentR),mg=colorMultiplier(percentG),mb=colorMultiplier(percentB);
         for(int i=0;i<pixels.length;i++){
             int r=(pixels[i]>>>16)&255,g=(pixels[i]>>>8)&255,b=pixels[i]&255;
@@ -1363,42 +1395,65 @@ final class GameRunner {
     }
     private void startMovie(GalleryCatalog.Movie movie){
         moviePlaying=true;
-        tasks.removeCallbacks(ticker);stopSound();
+        tasks.removeCallbacks(ticker);tasks.removeCallbacks(resumeStoryMovie);stopSound();
         if(movie==null||movie.file==null){
+            pendingMovieExitColor=null;
             tasks.post(()->completeMovie(MoviePlayback.Outcome.FAILED,text(R.string.engine_systemnnn_host_movie_missing)));
             return;
         }
         Log.i("SystemNNN","Movie requested "+movie.file.getName()+" gallery="+onTitle);
-        ui.movie(movie.file,NativeGame.movieGain(handle),movieList.print.number("noSkipFlag",0)==0,false);
+        GameUiAssets.Config printCfg=movieList==null?GameUiAssets.Config.empty():movieList.print;
+        Capture exit=onTitle?null:movieExitScreen(printCfg);
+        pendingMovieExitColor=exit==null?null:exit.pixels[0];
+        ui.movie(movie.file,NativeGame.movieGain(handle),printCfg.number("noSkipFlag",0)==0,false,pendingMovieExitColor);
     }
     void finishMovie(MoviePlayback.Outcome outcome,String failure){tasks.post(()->completeMovie(outcome,failure));}
     private void completeMovie(MoviePlayback.Outcome outcome,String failure){
         if(!moviePlaying||closing)return;
-        moviePlaying=false;
         if(outcome==MoviePlayback.Outcome.FAILED){
             Log.w("SystemNNN","Movie playback failed: "+failure);
             ui.notice(text(R.string.engine_systemnnn_host_movie_failed));
         }else Log.i("SystemNNN","Movie playback "+outcome);
         if(startupStage==StartupStage.MOVIE){
+            moviePlaying=false;
+            pendingMovieExitColor=null;
             Capture exit=movieExitScreen();
             long wait=DialogueLayout.clamp(startupConfig.number("lastWait",5),0,1000)*(long)Math.max(1,meta[5]);
             tasks.postDelayed(()->advanceStartup(exit),wait);
             return;
         }
         if(onTitle){
+            moviePlaying=false;
+            pendingMovieExitColor=null;
             if(galleryPage!=null)enterGalleryScreen(galleryPage);
-        }else try{
+            schedule();
+            return;
+        }
+        GameUiAssets.Config printCfg=movieList==null?GameUiAssets.Config.empty():movieList.print;
+        long wait=outcome==MoviePlayback.Outcome.FAILED&&pendingMovieExitColor==null?0:
+            DialogueLayout.clamp(printCfg.number("lastWait",5),0,1000)*(long)Math.max(1,meta[5]);
+        if(wait>0)tasks.postDelayed(resumeStoryMovie,wait);
+        else resumeStoryAfterMovie();
+    }
+    private final Runnable resumeStoryMovie=this::resumeStoryAfterMovie;
+    private void resumeStoryAfterMovie(){
+        if(!moviePlaying||closing||onTitle)return;
+        moviePlaying=false;
+        Integer exitColor=pendingMovieExitColor;
+        try{
             // The movie interrupted an existing journal tick. Resume its VM
             // continuation without adding a second input or advancing time.
             boolean needsClock=meta[NativeGame.CLOCK_DATE]==0;
-            NativeGame.tick(handle,0,x,y,false,0,false,meta);
+            boolean transition=NativeGame.tickStory(handle,0,x,y,false,0,meta,this);
+            pendingMovieExitColor=null;
             if(history!=null&&needsClock&&meta[NativeGame.CLOCK_DATE]!=0)
                 history.recordMovieContinuationClock(meta[NativeGame.CLOCK_DATE],meta[NativeGame.CLOCK_MILLISECONDS]);
             queueGalleryWrite();
             if(finishEndedRun())return;
-            if(meta[0]==NativeGame.MOVIE)startStoryMovie();
-            else{syncModes();updateUi();}
-        }catch(Exception e){broken(e);}
+            if(meta[0]==NativeGame.MOVIE){startStoryMovie();return;}
+            if(exitColor!=null)shownWait=-1;
+            syncModes();updateUi(transition);
+        }catch(Exception e){pendingMovieExitColor=null;broken(e);return;}
         schedule();
     }
     void closeGallery() {
@@ -1485,7 +1540,8 @@ final class GameRunner {
                 if (candidate!=0) NativeGame.close(candidate);
                 noticeFailure(R.string.engine_systemnnn_host_replay_failed,e); return;
             }
-            tasks.removeCallbacks(ticker); stopSound(); NativeGame.close(handle);
+            tasks.removeCallbacks(ticker); tasks.removeCallbacks(resumeStoryMovie); pendingMovieExitColor=null; moviePlaying=false;
+            stopSound(); NativeGame.close(handle);
             offerScreenLayer(-1);
             handle=candidate; galleryWritten=stored; onTitle=false; replaying=true; menuOpen=false; history=null;
             current=null; shownWait=-1; resetDialogueDecorations(); x=y=0;
@@ -1683,8 +1739,8 @@ final class GameRunner {
         }catch(IOException|RuntimeException e){saveFailed(e);}
     }
     private Capture slotPicture(SlotPreview preview){
-        int w=SaveSlots.pictureDimension(uiAssets.dataFile,"picSizeX",182);
-        int h=SaveSlots.pictureDimension(uiAssets.dataFile,"picSizeY",102);
+        int w=SaveSlots.pictureDimension(uiAssets.dataFile,"picSizeX",uiAssets.dataFile.number("areaSizeX",132));
+        int h=SaveSlots.pictureDimension(uiAssets.dataFile,"picSizeY",uiAssets.dataFile.number("areaSizeY",100));
         Capture picture;
         try{picture=new Capture(NativeGame.saveThumbnail(handle,w,h),w,h);}
         catch(RuntimeException|OutOfMemoryError e){
@@ -1823,6 +1879,12 @@ final class GameRunner {
     }
     // Called by JNI only when the live script takes a transition snapshot.
     private Bitmap captureOverlapSource(int width,int height){
+        Integer exitColor=pendingMovieExitColor;
+        if(exitColor!=null){
+            Bitmap solid=Bitmap.createBitmap(Math.max(1,width),Math.max(1,height),Bitmap.Config.ARGB_8888);
+            solid.eraseColor(exitColor);
+            return solid;
+        }
         return current==null?null:ui.captureOverlapSource(current,width,height);
     }
     private void step(int ms,boolean advance,int choice){
@@ -2266,7 +2328,7 @@ final class GameRunner {
         replaceSurface(0);
         if(!postProgressFlush(() -> {
             try{
-                active=false;tasks.removeCallbacks(ticker);stopSound();writeAudioOverrides();
+                active=false;tasks.removeCallbacks(ticker);tasks.removeCallbacks(resumeStoryMovie);pendingMovieExitColor=null;moviePlaying=false;stopSound();writeAudioOverrides();
                 return writeReadLines();
             }finally{
                 try{

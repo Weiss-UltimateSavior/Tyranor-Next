@@ -13,9 +13,11 @@ final class GameUiAssets {
     private static final long MAX_IMAGE_PIXELS=4L*1024*1024, MAX_TOTAL_PIXELS=32L*1024*1024;
 
     static final class Config {
+        static final Config EMPTY=new Config(Collections.emptyMap(),null);
         private final Map<String,String> values;
         private final GameTextDecoder decoder;
         private Config(Map<String,String> values,GameTextDecoder decoder) { this.values=Collections.unmodifiableMap(values);this.decoder=decoder; }
+        static Config empty() { return EMPTY; }
         String value(String name,String fallback) {
             String result=values.get(key(name));
             return result==null ? fallback : result;
@@ -399,7 +401,9 @@ final class GameUiAssets {
         Set<String> names=new LinkedHashSet<>(messageImages);
         for(String name:new String[]{
             "ta_menu_bg01","ta_cnf_bg01","ta_cnf_bg02","ta_cnf_bg03",
-            "ta_savebg01","ta_save_slot01","ta_loadbg01","ta_load_slot01","ta_backlogbg",
+            "ta_savebg01","ta_save_slot01","ta_loadbg01","ta_load_slot01","ta_backlogbg","bg_backlog",
+            "ta_backlog_title","ta_backlog_updown","ta_backlog_up","ta_backlog_down",
+            "ta_sl_font","ta_font_sl3","ta_select01","ta_win_select",
             "ta_back01","ta_up_bt01","ta_down_bt01","ta_bar01","ta_bar03",
             "ta_dialog_save","ta_dialog_quit","ta_dialog_bt01","ta_dialog_bt02"})names.add(systemImageKey(name));
         names.addAll(config.imageNames());
@@ -424,10 +428,10 @@ final class GameUiAssets {
         for (String kind:new String[]{"skip1","skip2","auto1","auto2"})
             request(names,config,kind+"Button1FileName",kind+"Button2FileName");
         request(names,config,"messageSpeedBarFileName","autoSpeedBarFileName");
-        request(names,backlog,"backlogBGFileName","titlePicFileName","upArrowFileName","downArrowFileName","filenameVoice","filenameJump");
+        request(names,backlog,"backlogBGFileName","titlePicFileName","filenameUpdownArrow","upArrowFileName","downArrowFileName","filenameVoice","filenameJump");
         Config data=readConfig(root,"dataFile"),notice=readConfig(root,"notice");
         request(names,save,"filenameBG");request(names,load,"filenameBG");
-        request(names,data,"filenameSaveCursor","filenameLoadCursor","filenameOverwriteCursor","fileNameSaveTimeFont",
+        request(names,data,"fileNameSelectPic","filenameSaveCursor","filenameLoadCursor","filenameOverwriteCursor","fileNameSaveTimeFont",
             "fileNameSerialNumberFont","filenameSaveBase","filenameLoadBase","filenameQuickSaveBase","filenameQuickLoadBase","filenameLastSave",
             "fileNameError","fileNameBad","fileNameOld");
         if(data.number("addPicPrintFlag",0)!=0)names.add(systemImageKey(data.value("fileNameAddPic","ta_sl_font")));

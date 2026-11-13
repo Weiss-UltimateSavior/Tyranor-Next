@@ -122,12 +122,7 @@ final class GameButton extends View {
         SpriteAnimation animation=spec.states[mode];
         dest.set(0,0,getWidth(),getHeight());
         boolean drawn=animation!=null&&animation.draw(c,image,dest,paint,elapsed,255);
-        if(!drawn)drawn=spec.states[0].draw(c,image,dest,paint,0,isEnabled()?255:100);
-        if(!drawn){
-            paint.setColor(mode==2?0xff9a5613:0xff07253b);c.drawRect(dest,paint);
-            paint.setColor(isEnabled()?0xffffbc42:0xff8d9da8);paint.setTextSize(getHeight()*.4f);paint.setTextAlign(Paint.Align.CENTER);
-            c.drawText(label,getWidth()/2f,getHeight()*.64f,paint);
-        }
+        if(!drawn)spec.states[0].draw(c,image,dest,paint,0,isEnabled()?255:100);
         if(animation!=null&&animation.active(elapsed))postInvalidateOnAnimation();
     }
 }

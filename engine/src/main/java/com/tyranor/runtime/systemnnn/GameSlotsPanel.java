@@ -17,7 +17,7 @@ import java.util.Map;
 
 /** Save and load slot artwork in the game's configured grid. */
 final class GameSlotsPanel extends GameUiPanel {
-    private static final PorterDuffXfermode ADD=new PorterDuffXfermode(PorterDuff.Mode.ADD);
+    private final PorterDuffXfermode ADD=new PorterDuffXfermode(PorterDuff.Mode.ADD);
     interface Select { void choose(int slot); }
     static final class CursorAnime {
         final int pattern,type,speed;
@@ -36,9 +36,13 @@ final class GameSlotsPanel extends GameUiPanel {
                 data.number(prefix+"AnimeType2",type0),data.number(prefix+"AnimeSpeed2",speed0));
         }
         static String[] cursorCandidates(GameUiAssets.Config data,int selectMode,boolean saving,boolean exists){
-            String primary=selectMode==1?data.value("fileNameSelectPic",""):"";
-            String fallback=!saving?data.value("fileNameLoadCursor",""):data.value("fileNameSaveCursor","");
-            String overwrite=saving&&exists?data.value("fileNameOverwriteCursor",""):"";
+            String selectName=data.value("fileNameSelectPic","ta_sl_font");
+            String saveCursor=data.value("fileNameSaveCursor",selectName);
+            String loadCursor=data.value("fileNameLoadCursor",saveCursor);
+            String overwriteCursor=data.value("fileNameOverwriteCursor",loadCursor);
+            String primary=selectMode==1?selectName:"";
+            String fallback=!saving?loadCursor:saveCursor;
+            String overwrite=saving&&exists?overwriteCursor:"";
             return new String[]{primary,overwrite,fallback};
         }
         /** Returns {pic1, pic2, percent, activeFlag} matching CCommonDataFile::GetNowCursorPic and CalcuCursorAnime. */
@@ -274,14 +278,26 @@ final class GameSlotsPanel extends GameUiPanel {
         lastSaveDestination=new RectF(markX,markY,markX+markWidth,markY+markHeight);
         lastSaveAnimation=new SpriteAnimation(0,0,markWidth,markHeight,data.number("lastSaveType",1),
             data.number("lastSavePattern",1),data.number("lastSaveSpeed",1),true);
-        int selectX=limit(data.number("selectPrintX",0),-4096,4096),selectY=limit(data.number("selectPrintY",0),-4096,4096);
-        int selectW=limit(data.number("selectSizeX",cardWidth),1,4096),selectH=limit(data.number("selectSizeY",cardHeight),1,4096);
+        int picX=data.number("picPrintX",0),picY=data.number("picPrintY",0);
+        int picW=limit(data.number("picSizeX",cardWidth),1,4096),picH=limit(data.number("picSizeY",cardHeight),1,4096);
+        int selectX=limit(data.number("selectPrintX",picX),-4096,4096),selectY=limit(data.number("selectPrintY",picY),-4096,4096);
+        int selectW=limit(data.number("selectSizeX",picW),1,4096),selectH=limit(data.number("selectSizeY",picH),1,4096);
         boolean cursorOutside=selectX<0||selectY<0||selectX+selectW>cardWidth||selectY+selectH>cardHeight;
         boolean dateOutside=gameDateLayout.outside(cardWidth,cardHeight);
         // Original decorations may extend past the slot base, e.g. lastSavePrintY=-6 or selectPrintX=-1.
         if(artworkAtlas!=null||lastSaveAtlas!=null||cursorOutside||dateOutside)setClipChildren(false);
         opening(config,false);
         entries(slots,warmup);
+    }
+    static String baseImageName(GameUiAssets.Config data,boolean saving,boolean quick){
+        if(data.number("basePrintFlag",0)==0)return "";
+        if(data.number("baseChangeLoadSave",1)==0){
+            String loadBase=data.value("filenameLoadBase","");
+            return quick&&data.has("filenameQuickLoadBase")?data.value("filenameQuickLoadBase",""):loadBase;
+        }
+        String normal=data.value(saving?"filenameSaveBase":"filenameLoadBase","");
+        String quickKey=saving?"filenameQuickSaveBase":"filenameQuickLoadBase";
+        return quick&&data.has(quickKey)?data.value(quickKey,""):normal;
     }
     private String uiText(int resource,Object... args){
         return EngineUiText.localizedContext(getContext()).getString(resource,args);
@@ -352,7 +368,7 @@ final class GameSlotsPanel extends GameUiPanel {
         Bitmap font=sprite(config.value("fileNamePageFont","ta_font_sl3"));
         String number=zero!=0?digits(page+1,places):Integer.toString(page+1);
         View label=pageGlyphs(font,number,w,h,advance,x+Math.max(0,places-number.length())*advance,y);
-        label.setContentDescription(uiText(R.string.engine_systemnnn_ctl_page_count,page+1,pages));
+        if(label!=null)label.setContentDescription(uiText(R.string.engine_systemnnn_ctl_page_count,page+1,pages));
         if(config.number("pageMaxPrintFlag",0)==0)return;
         String maximum=config.number("maxPageUpZeroPrintFlag",zero)!=0?digits(pages,places):Integer.toString(pages);
         int maxX=config.number("pageMaxPrintX",x+(places+1)*advance);
@@ -362,17 +378,15 @@ final class GameSlotsPanel extends GameUiPanel {
             pageGlyphs(font,"/",w,h,advance,config.number("slashPrintX",x+places*advance),config.number("slashPrintY",y));
     }
     private View pageGlyphs(Bitmap font,String number,int w,int h,int advance,int x,int y){
+        if(font==null||font.getWidth()<w*(number.equals("/")?12:10)||font.getHeight()<h)return null;
         int width=w+(number.length()-1)*advance;
-        View label;
-        if(font!=null&&font.getWidth()>=w*(number.equals("/")?12:10)&&font.getHeight()>=h){
-            label=new View(getContext()){
-                private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
-                @Override protected void onDraw(Canvas canvas){
-                    canvas.save();canvas.scale(getWidth()/(float)width,getHeight()/(float)h);
-                    glyphs(canvas,paint,font,number,0,0,w,h,advance);canvas.restore();
-                }
-            };
-        }else label=text(number,Math.min(w,h),saving?0xffff6262:0xff6ad6ff);
+        View label=new View(getContext()){
+            private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
+            @Override protected void onDraw(Canvas canvas){
+                canvas.save();canvas.scale(getWidth()/(float)width,getHeight()/(float)h);
+                glyphs(canvas,paint,font,number,0,0,w,h,advance);canvas.restore();
+            }
+        };
         put(label,x,y,width,h);
         return label;
     }
@@ -465,10 +479,8 @@ final class GameSlotsPanel extends GameUiPanel {
             time=e.exists?new SimpleDateFormat("yyyy/MM/dd HH:mm",Locale.ROOT).format(new Date(e.savedAt)):"";
             this.quick=quick;
             label=quick?SaveSlots.labelFor(getContext(),SaveSlots.QUICK):e.label(getContext());
-            String kind=saving?"Save":"Load";
-            String image=quick?data.value("filenameQuick"+kind+"Base","ta_quk_slot01"):
-                data.value("filename"+kind+"Base","");
-            base=data.number("basePrintFlag",1)!=0?sprite(image):null;
+            String image=baseImageName(data,saving,quick);
+            base=image.isEmpty()?null:sprite(image);
             preview=e.picture;
             artworkTile=artworkSource(e.artwork);
             summary=e.displaySummary(getContext());
@@ -489,28 +501,36 @@ final class GameSlotsPanel extends GameUiPanel {
         }
         private void timestamp(Canvas c){
             if(data.number("saveTimePrintFlag",1)==0)return;
-            int x=data.number("saveTimePrintX",245),y=data.number("saveTimePrintY",11);
-            int w=limit(data.number("saveTimeFontSizeX",20),1,512),h=limit(data.number("saveTimeFontSizeY",30),1,512);
+            int x=data.number("saveTimePrintX",0),y=data.number("saveTimePrintY",0);
+            int w=limit(data.number("saveTimeFontSizeX",10),1,512),h=limit(data.number("saveTimeFontSizeY",10),1,512);
             p.setAlpha(255);
-            if(!glyphs(c,p,sprite(data.value("fileNameSaveTimeFont","")),time,x,y,w,h,limit(data.number("saveTimeFontNextX",w),1,512)))
-                line(c,time,x,y,16,Color.WHITE);
+            glyphs(c,p,sprite(data.value("fileNameSaveTimeFont","ta_sl_font")),time,x,y,w,h,limit(data.number("saveTimeFontNextX",w),1,512));
         }
-        private boolean serialNumber(Canvas c,boolean mustFit){
-            if(data.number("serialPrintFlag",1)==0)return false;
-            int x=data.number("serialPrintX",cardWidth-24),y=data.number("serialPrintY",5);
-            int w=limit(data.number("serialFontSizeX",14),1,512),h=limit(data.number("serialFontSizeY",20),1,512);
+        private void serialNumber(Canvas c){
+            if(data.number("serialPrintFlag",0)==0)return;
+            int x=data.number("serialPrintX",0),y=data.number("serialPrintY",0);
+            int w=limit(data.number("serialFontSizeX",12),1,512),h=limit(data.number("serialFontSizeY",12),1,512);
             int advance=limit(data.number("serialFontNextX",w),1,512);
-            String number=digits(serial,limit(data.number("serialNumberKeta",2),1,4));
-            int width=w+(number.length()-1)*advance;
-            if(mustFit&&(x<0||y<0||x>cardWidth-width||y>cardHeight-h))return false;
+            int keta=limit(data.number("serialNumberKeta",2),1,4);
+            boolean upZero=data.number("logPrintFlag",0)!=0&&data.number("logSerialUpZeroPrintFlag",0)!=0;
+            String number=upZero?digits(serial,keta):Integer.toString(serial);
+            int drawX=upZero?x:x+Math.max(0,keta-number.length())*advance;
             p.setAlpha(255);
-            return glyphs(c,p,sprite(data.value("fileNameSerialNumberFont","")),number,x,y,w,h,advance)||
-                line(c,number,x,y,14,Color.WHITE)>0;
+            glyphs(c,p,sprite(data.value("fileNameSerialNumberFont","ta_sl_font")),number,drawX,y,w,h,advance);
         }
         private void thumbnail(Canvas c){
-            int px=data.number("picPrintX",6),py=data.number("picPrintY",8);
-            int pw=limit(data.number("picSizeX",182),1,512),ph=limit(data.number("picSizeY",102),1,512);
+            int px=data.number("picPrintX",0),py=data.number("picPrintY",0);
+            int pw=limit(data.number("picSizeX",cardWidth),1,4096),ph=limit(data.number("picSizeY",cardHeight),1,4096);
             picture(c,preview,px,py,pw,ph);
+        }
+        private void corruptError(Canvas c){
+            int ex=data.number("errorPrintX",0),ey=data.number("errorPrintY",0);
+            int ox=data.number("oldPrintX",ex),oy=data.number("oldPrintY",ey);
+            int bx=data.number("badPrintX",ox),by=data.number("badPrintY",oy);
+            Bitmap err=sprite(data.value("fileNameError",""));
+            if(err!=null){picture(c,err,ex,ey,err.getWidth(),err.getHeight());return;}
+            Bitmap bad=sprite(data.value("fileNameBad",""));
+            if(bad!=null)picture(c,bad,bx,by,bad.getWidth(),bad.getHeight());
         }
         private void drawGameDate(Canvas c,PcStorySave.GameDate gd){
             Bitmap timePic=gameDateLayout.hasTime()&&!gameDateLayout.timeFont.isEmpty()?sprite(gameDateLayout.timeFont):null;
@@ -528,25 +548,26 @@ final class GameSlotsPanel extends GameUiPanel {
         }
         private int contents(Canvas c,int clip){
             timestamp(c);
-            serialNumber(c,false);
+            serialNumber(c);
             if(gameDateLayout.enabled&&e.gameDate!=null){
                 c.restoreToCount(clip);
                 drawGameDate(c,e.gameDate);
                 clip=c.save();
                 c.clipRect(0,0,cardWidth,cardHeight);
             }
-            int x=data.number("textPrintX",210),y=data.number("textPrintY",87),size=limit(data.number("textFontSize",16),8,40);
-            int artworkY=data.number("addPicPrintY",46);
             if(data.number("textPrintFlag",0)!=0&&!summary.isEmpty()){
-                int color=Color.rgb(data.number("textColorR",128)&255,data.number("textColorG",224)&255,data.number("textColorB",224)&255);
-                if(quick&&base!=null){
-                    // The quick-slot plate already has a label in the comment box.
-                    int small=Math.min(size,13),top=y-small-10;
-                    if(top>=artworkY+16)line(c,summary,x,top,small,color);
-                    return clip;
+                int x=data.number("textPrintX",0),y=data.number("textPrintY",0),size=limit(data.number("textFontSize",12),8,64);
+                int nextY=data.number("textNextY",30),lines=limit(data.number("textPrintNumber",1),1,4);
+                int color=Color.rgb(limit(data.number("textColorR",255),0,255),
+                    limit(data.number("textColorG",255),0,255),limit(data.number("textColorB",255),0,255));
+                String rem=summary;
+                for(int i=0;i<lines&&!rem.isEmpty();i++){
+                    int atY=y+i*nextY;
+                    if(atY+size>cardHeight&&i>0)break;
+                    int n=line(c,rem,x,atY,size,color);
+                    if(n<=0)break;
+                    rem=rem.substring(n);
                 }
-                int n=line(c,summary,x,y,size,color);
-                if(n<summary.length()&&y+size*2<=cardHeight)line(c,summary.substring(n),x,y+size,size,color);
             }
             return clip;
         }
@@ -556,16 +577,7 @@ final class GameSlotsPanel extends GameUiPanel {
             int clip=canvas.save();
             canvas.clipRect(0,0,cardWidth,cardHeight);
             if(base!=null)picture(canvas,base,0,0,base.getWidth(),base.getHeight());
-            if(quick&&base==null)
-                line(canvas,label,17,38,20,saving?0xffffb7aa:0xffa4e9ff);
-            if(saving&&base==null&&e.slot>=0&&!e.exists&&!e.corrupt&&!serialNumber(canvas,true)){
-                int x=Math.min(17,cardWidth/4),y=Math.min(38,cardHeight/4);
-                if(line(canvas,label,x,y,Math.min(20,cardHeight-y),0xffffb7aa)==0){
-                    p.setColor(0x99ffb7aa);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1);
-                    canvas.drawRect(0,0,cardWidth,cardHeight,p);p.setStyle(Paint.Style.FILL);
-                }
-            }
-            if(e.corrupt)line(canvas,uiText(R.string.engine_systemnnn_ctl_slot_unreadable),data.number("textPrintX",210),data.number("textPrintY",87),16,0xff91a9ba);
+            if(e.corrupt)corruptError(canvas);
             else if(e.exists){
                 thumbnail(canvas);
                 if(artworkTile!=null){
@@ -596,15 +608,17 @@ final class GameSlotsPanel extends GameUiPanel {
             return null;
         }
         private void drawCursor(Canvas canvas,long now){
-            int selectMode=data.number("selectPrintMode",1);
+            int selectMode=data.number("selectPrintMode",0);
             boolean selected=selectedCard==this;
             boolean focused=isEnabled()&&(selected||isPressed()||isHovered());
             int state=!focused?0:selected?2:1;
             if(state!=cursorState){cursorState=state;cursorSince=now;}
             if(selected&&pendingSelect!=null&&selectMode!=2)postInvalidateOnAnimation();
             if(state==0||(state==2&&selectMode!=2&&((now-clickAt)/frameMs&1)==0))return;
-            int x=limit(data.number("selectPrintX",0),-4096,4096),y=limit(data.number("selectPrintY",0),-4096,4096);
-            int w=limit(data.number("selectSizeX",cardWidth),1,4096),h=limit(data.number("selectSizeY",cardHeight),1,4096);
+            int picX=data.number("picPrintX",0),picY=data.number("picPrintY",0);
+            int picW=limit(data.number("picSizeX",cardWidth),1,4096),picH=limit(data.number("picSizeY",cardHeight),1,4096);
+            int x=limit(data.number("selectPrintX",picX),-4096,4096),y=limit(data.number("selectPrintY",picY),-4096,4096);
+            int w=limit(data.number("selectSizeX",picW),1,4096),h=limit(data.number("selectSizeY",picH),1,4096);
             if(selectMode==0){
                 int alpha=255*limit(data.number("selectPercent",data.number("selectColorPercent",50)),0,100)/100;
                 p.setColor(Color.argb(alpha,limit(data.number("selectColorR",230),0,255),
@@ -613,11 +627,7 @@ final class GameSlotsPanel extends GameUiPanel {
                 return;
             }
             Bitmap cursor=resolveCursor(selectMode);
-            if(cursor==null||w>cursor.getWidth()||h>cursor.getHeight()){
-                p.setColor(0x99e69419);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(3);
-                canvas.drawRect(2,2,cardWidth-2,cardHeight-2,p);p.setStyle(Paint.Style.FILL);
-                return;
-            }
+            if(cursor==null||w>cursor.getWidth()||h>cursor.getHeight())return;
             int srcX=selected&&selectMode==2&&cursor.getWidth()>=2L*w?w:0;
             CursorAnime anime=selectMode==2?CursorAnime.read(data,saving,e.exists,selected):null;
             cursorDest.set(x,y,x+w,y+h);

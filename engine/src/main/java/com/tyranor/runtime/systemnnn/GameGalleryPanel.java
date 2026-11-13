@@ -128,13 +128,13 @@ final class GameGalleryPanel extends GameUiPanel {
     private void grid() {
         GameUiAssets.Config cfg=page.config;
         boolean cg=page.screen==GalleryCatalog.Screen.CG;
-        int w=dimension(cfg,"sizeX",cg?156:326),h=dimension(cfg,"sizeY",cg?88:40);
-        int x=cfg.number("printX",138),y=cfg.number("printY",102);
-        int dx=cfg.number("nextX",w),dy=cfg.number("nextY",h);
-        Bitmap frame=cfg.number("futaPrintFlag",1)!=0?sprite(cfg.value("filenameFuta","")):null;
-        Bitmap cursor=sprite(cfg.value("filenameCursor",""));
+        int w=dimension(cfg,"sizeX",133),h=dimension(cfg,"sizeY",100);
+        int x=cfg.number("printX",85),y=cfg.number("printY",113);
+        int dx=cfg.number("nextX",166),dy=cfg.number("nextY",124);
+        Bitmap frame=cfg.number("futaPrintFlag",1)!=0?sprite(cfg.value("fileNameFuta","ta_futa1")):null;
+        Bitmap cursor=cfg.number("selectPrintMode",1)==2?sprite(cfg.value("fileNameCursor","ta_cg_cur")):null;
         Bitmap animationBadge=cg&&cfg.number("animePrintFlag",0)!=0?sprite(cfg.value("fileNameAnime","ta_futa1")):null;
-        int dark=bounded(cfg.number("picMustPrintPercent",0),0,100);
+        int dark=bounded(cfg.number("picMustPrintPercent",0),-100,100);
         Bitmap differenceFont=null;
         if(cg){
             String font=GalleryCatalog.differenceFont(cfg);
@@ -156,30 +156,52 @@ final class GameGalleryPanel extends GameUiPanel {
             tile.setEnabled(cell.enabled);
             put(tile,x+(i%page.columns)*dx,y+(i/page.columns)*dy,w,h);
         }
-        if (cfg.number("totalPercentPrintFlag",0)!=0)
-            digits(page.percent+"%",cfg.value("filenameTotalPercent",""),"totalPercent",206,659,24,30,20);
+        if (cfg.number("totalPercentPrintFlag",1)!=0)
+            totalPercent(cfg.value("fileNameTotalPercent","ta_font_cg1"));
         pageButtons();
-        if (cfg.number("pagePrintFlag",0)!=0) {
-            int count=bounded(cfg.number("pageKeta",2),1,4);
-            digits(String.format(Locale.ROOT,"%0"+count+"d",page.page+1),cfg.value("fileNamePageFont",""),"page",1204,340,32,54,26);
-        }
+        if (cfg.number("pagePrintFlag",0)!=0) pagePrint("ta_font_sl3");
     }
-    private void digits(String value,String filename,String tag,int x,int y,int width,int height,int spacing) {
+    private void totalPercent(String filename) {
         GameUiAssets.Config cfg=page.config;
-        int w=dimension(cfg,tag+"FontSizeX",width),h=dimension(cfg,tag+"FontSizeY",height);
-        int step=cfg.number(tag+"FontNextX",spacing);
-        int at=cfg.number(tag+"PrintX",x),top=cfg.number(tag+"PrintY",y);
+        int w=dimension(cfg,"totalPercentFontSizeX",16),h=dimension(cfg,"totalPercentFontSizeY",22);
+        int step=cfg.number("totalPercentFontNextX",w);
+        int at=cfg.number("totalPercentPrintX",688),top=cfg.number("totalPercentPrintY",25);
         Bitmap font=sprite(filename);
-        for (int i=0;i<value.length();i++) {
-            char c=value.charAt(i);
-            int n=c=='%'?12:c-'0';
-            Rect source=new Rect(n*w,0,(n+1)*w,h);
-            if (font!=null && source.right<=font.getWidth() && h<=font.getHeight()) {
-                Tile digit=new Tile(new GalleryCatalog.Cell(i,"","","",true),font,source,null,null,100);
-                digit.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
-                put(digit,at+i*step,top,w,h);
-            } else put(text(String.valueOf(c),h,Color.WHITE),at+i*step,top,w,h);
-        }
+        if (font==null || h>font.getHeight()) return;
+        String digitsText=Integer.toString(Math.max(0,page.percent));
+        int numAt=at+Math.max(0,3-digitsText.length())*step;
+        for (int i=0;i<digitsText.length();i++)
+            putGlyph(font,digitsText.charAt(i)-'0',numAt+i*step,top,w,h);
+        putGlyph(font,12,at+3*step,top,w,h);
+    }
+    private void pagePrint(String defaultFont) {
+        GameUiAssets.Config cfg=page.config;
+        int keta=bounded(cfg.number("pageKeta",2),1,4);
+        int zero=cfg.number("pageUpZeroPrintFlag",0);
+        int w=dimension(cfg,"pageFontSizeX",21),h=dimension(cfg,"pageFontSizeY",27);
+        int step=dimension(cfg,"pageFontNextX",w);
+        int x=cfg.number("pagePrintX",0),y=cfg.number("pagePrintY",0);
+        Bitmap font=sprite(cfg.value("fileNamePageFont",defaultFont));
+        if (font==null || h>font.getHeight()) return;
+        String cur=zero!=0?String.format(Locale.ROOT,"%0"+keta+"d",page.page+1):Integer.toString(page.page+1);
+        int curX=x+Math.max(0,keta-cur.length())*step;
+        for (int i=0;i<cur.length();i++) putGlyph(font,cur.charAt(i)-'0',curX+i*step,y,w,h);
+        if (cfg.number("pageMaxPrintFlag",0)==0) return;
+        String max=cfg.number("maxPageUpZeroPrintFlag",zero)!=0
+            ?String.format(Locale.ROOT,"%0"+keta+"d",page.pages):Integer.toString(page.pages);
+        int maxX=cfg.number("pageMaxPrintX",x+(keta+1)*step);
+        if (cfg.number("pageMaxLeftAlign",0)==0) maxX+=Math.max(0,keta-max.length())*step;
+        int maxY=cfg.number("pageMaxPrintY",y);
+        for (int i=0;i<max.length();i++) putGlyph(font,max.charAt(i)-'0',maxX+i*step,maxY,w,h);
+        if (cfg.number("slashPrintFlag",0)!=0)
+            putGlyph(font,11,cfg.number("slashPrintX",x+keta*step),cfg.number("slashPrintY",y),w,h);
+    }
+    private void putGlyph(Bitmap font,int cell,int x,int y,int w,int h) {
+        if (font==null || cell<0 || (long)(cell+1)*w>font.getWidth() || h>font.getHeight()) return;
+        Rect source=new Rect(cell*w,0,(cell+1)*w,h);
+        Tile digit=new Tile(new GalleryCatalog.Cell(cell,"","","",true),font,source,null,null,100);
+        digit.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        put(digit,x,y,w,h);
     }
     private void pageButtons() {
         pageArrows(page.config,page.page,page.pages,canvasWidth/2-24,16,canvasHeight-72,
@@ -187,25 +209,26 @@ final class GameGalleryPanel extends GameUiPanel {
     }
     private void movies(){
         GameUiAssets.Config cfg=page.config;
-        int w=dimension(cfg,"sizeX",320),h=dimension(cfg,"sizeY",180);
-        int x=cfg.number("printX",(canvasWidth-w)/2),y=cfg.number("printY",(canvasHeight-h)/2);
-        int dx=cfg.number("nextX",w),dy=cfg.number("nextY",h);
-        Bitmap frame=sprite(cfg.value("filenameFuta","")),cursor=sprite(cfg.value("fileNameCursor",""));
+        int w=dimension(cfg,"sizeX",133),h=dimension(cfg,"sizeY",100);
+        int x=cfg.number("printX",85),y=cfg.number("printY",113);
+        int dx=cfg.number("nextX",166),dy=cfg.number("nextY",124);
+        Bitmap frame=sprite(cfg.value("filenameFuta",""));
+        Bitmap cursor=cfg.number("selectPrintMode",1)==2?sprite(cfg.value("fileNameCursor","ta_movie_cur")):null;
         for(int i=0;i<page.cells.size();i++){
             GalleryCatalog.Cell cell=page.cells.get(i);
             Tile tile=new Tile(cell,sprite(cell.picture),null,frame,cursor,100);
             tile.setEnabled(cell.enabled);
             tile.setOnClickListener(v->{
                 if(!cell.enabled||!tile.startMovieSelection())return;
-                sound(cfg.number("selectSound",0)-1,-1);
+                sound(cfg.number("selectSound",1)-1,-1);
             });
             put(tile,x+(i%page.columns)*dx,y+(i/page.columns)*dy,w,h);
         }
         pageButtons();
-        if(cfg.number("totalPercentPrintFlag",0)!=0)
-            digits(page.percent+"%",cfg.value("filenameTotalPercent",""),"totalPercent",195,659,24,30,20);
+        if(cfg.number("totalPercentPrintFlag",1)!=0)
+            totalPercent(cfg.value("fileNameTotalPercent","ta_font_movie1"));
         if(cfg.number("pagePrintFlag",0)!=0)
-            digits(String.format(Locale.ROOT,"%02d",page.page+1),cfg.value("fileNamePageFont",""),"page",110,635,36,38,22);
+            pagePrint("ta_font_sl3");
     }
     private void turn(int direction) {
         actions.open(page.screen,page.group,Math.floorMod(page.page+direction,page.pages),page.index);
@@ -351,6 +374,8 @@ final class GameGalleryPanel extends GameUiPanel {
         int dx=cfg.number("cursorNextX",0),dy=cfg.number("cursorNextY",h);
         int labelX=cfg.number("musicNamePrintX",30),labelY=cfg.number("musicNamePrintY",0);
         int first=-1;
+        int enabledColor=Color.rgb(bounded(cfg.number("messageColorR",255),0,255),bounded(cfg.number("messageColorG",255),0,255),
+            bounded(cfg.number("messageColorB",255),0,255));
         // CommonListenBGM m_cannotMusicNameColor*: 128 unless cannotColorR/G/B overrides it.
         int cannot=Color.rgb(bounded(cfg.number("cannotColorR",128),0,255),bounded(cfg.number("cannotColorG",128),0,255),
             bounded(cfg.number("cannotColorB",128),0,255));
@@ -358,8 +383,8 @@ final class GameGalleryPanel extends GameUiPanel {
             GalleryCatalog.Cell cell=page.cells.get(i);
             if (cell.enabled && first==-1) first=cell.index;
             int atX=x+i*dx,atY=y+i*dy;
-            if (cell.index==page.index) picture(cfg.value("filenameCursor",""),atX,atY,w,h);
-            TextView name=text(cell.label,dimension(cfg,"messageFontSize",16),cell.enabled?Color.WHITE:cannot);
+            if (cell.index==page.index) picture(cfg.value("filenameCursor","ta_bgm_selc"),atX,atY,w,h);
+            TextView name=text(cell.label,dimension(cfg,"messageFontSize",22),cell.enabled?enabledColor:cannot);
             name.setSingleLine(true);
             name.setGravity(cfg.number("musicNameCenterFlag",0)!=0?Gravity.CENTER:Gravity.CENTER_VERTICAL);
             name.setSoundEffectsEnabled(false);
@@ -378,7 +403,9 @@ final class GameGalleryPanel extends GameUiPanel {
             cfg.number("stop1PrintX",635),cfg.number("stop1PrintY",72),67,38);
         int min=bounded(cfg.number("volumeMin",0),0,100),max=bounded(cfg.number("volumeMax",100),min,100);
         int volumeW=dimension(cfg,"volumeSizeX",205),volumeH=dimension(cfg,"volumeSizeY",20);
-        ValueBar volume=new ValueBar(getContext(),sprite(cfg.value("filenameVolume","ta_musicbar01")),hostText(R.string.engine_systemnnn_ctl_gallery_volume),
+        Bitmap volumeArt=sprite(cfg.value("filenameVolume","ta_opt_bar"));
+        if(volumeArt==null&&!cfg.has("filenameVolume"))volumeArt=sprite("ta_musicbar01");
+        ValueBar volume=new ValueBar(getContext(),volumeArt,hostText(R.string.engine_systemnnn_ctl_gallery_volume),
             min,max,page.musicVolume,volumeW,volumeH,0,()->{},actions::volume);
         put(volume,cfg.number("volumePrintX",715),cfg.number("volumePrintY",87),volumeW,volumeH);
         if(cfg.number("spectrumPrintFlag",0)!=0){
@@ -485,24 +512,30 @@ final class GameGalleryPanel extends GameUiPanel {
         @Override protected void onDraw(Canvas canvas) {
             dest.set(0,0,getWidth(),getHeight());
             boolean movie=page.screen==GalleryCatalog.Screen.MOVIE;
+            boolean blockGrid=page.screen==GalleryCatalog.Screen.CG || page.screen==GalleryCatalog.Screen.SCENE || movie;
             if (frame!=null&&!movie) canvas.drawBitmap(frame,null,dest,paint);
             boolean valid=image!=null && (source==null || source.left>=0 && source.top>=0 &&
                 source.right<=image.getWidth() && source.bottom<=image.getHeight());
-            if (valid && (cell.enabled || dark>0)) {
-                paint.setColorFilter(cell.enabled||movie?null:gray); paint.setAlpha(cell.enabled||movie?255:dark*255/100);
+            if (valid && (cell.enabled || movie || dark!=0)) {
+                if (blockGrid && source==null) {
+                    GameUiAssets.Config cfg=page.config;
+                    int bw=dimension(cfg,"sizeX",133),bh=dimension(cfg,"sizeY",100);
+                    float sx=getWidth()/(float)bw,sy=getHeight()/(float)bh;
+                    int px=cfg.number("picPrintX",0),py=cfg.number("picPrintY",0);
+                    int pw=dimension(cfg,"picSizeX",bw),ph=dimension(cfg,"picSizeY",bh);
+                    dest.set(Math.round(px*sx),Math.round(py*sy),Math.round((px+pw)*sx),Math.round((py+ph)*sy));
+                }
+                paint.setColorFilter(!cell.enabled&&!movie&&dark<0?gray:null);
+                paint.setAlpha(cell.enabled||movie||dark<0?255:dark*255/100);
                 canvas.drawBitmap(image,source,dest,paint);
                 paint.setColorFilter(null); paint.setAlpha(255);
+                dest.set(0,0,getWidth(),getHeight());
             } else if (movie&&frame!=null) {
                 canvas.drawBitmap(frame,null,dest,paint);
-            } else if (frame==null) {
-                paint.setColor(0xbf0c2339); canvas.drawRect(dest,paint);
-                paint.setColor(cell.enabled?Color.WHITE:0xff8f9eaa); paint.setTextAlign(Paint.Align.CENTER);
-                paint.setTextSize(Math.max(12,Math.min(22,getHeight()/2f)));
-                canvas.drawText(label,getWidth()/2f,getHeight()*.65f,paint); paint.setAlpha(255);
             }
-            if(animationBadge!=null&&valid&&(cell.enabled||dark>0)){
+            if(animationBadge!=null&&valid&&(cell.enabled||dark!=0)){
                 GameUiAssets.Config cfg=page.config;
-                float sx=getWidth()/(float)dimension(cfg,"sizeX",156),sy=getHeight()/(float)dimension(cfg,"sizeY",88);
+                float sx=getWidth()/(float)dimension(cfg,"sizeX",133),sy=getHeight()/(float)dimension(cfg,"sizeY",100);
                 int x=cfg.number("picPrintX",0),y=cfg.number("picPrintY",0);
                 dest.set(Math.round(x*sx),Math.round(y*sy),Math.round((x+animationBadge.getWidth())*sx),
                     Math.round((y+animationBadge.getHeight())*sy));
@@ -511,8 +544,8 @@ final class GameGalleryPanel extends GameUiPanel {
             }
             boolean flash=movieSelection!=null&&(android.os.SystemClock.uptimeMillis()-movieSelectedAt)/frameMs%2==0;
             boolean focus=movieSelection==null?(isPressed()||isHovered()):flash;
-            if (focus&&movie&&cell.enabled) drawMovieCursor(canvas);
-            else if(focus&&!movie&&cursor!=null)canvas.drawBitmap(cursor,null,dest,paint);
+            if (focus&&blockGrid&&cell.enabled) drawBlockCursor(canvas);
+            else if(focus&&!blockGrid&&cursor!=null)canvas.drawBitmap(cursor,null,dest,paint);
             if(movieSelection!=null)postInvalidateOnAnimation();
             if (page.screen==GalleryCatalog.Screen.CG) drawDifference(canvas);
         }
@@ -528,7 +561,7 @@ final class GameGalleryPanel extends GameUiPanel {
             int px=bounded(cfg.number("differencePrintX",0),-4096,4096),py=bounded(cfg.number("differencePrintY",0),-4096,4096);
             Bitmap font=differenceFont;
             if(font!=null&&12L*fw<=font.getWidth()&&fh<=font.getHeight()){
-                float sx=getWidth()/(float)dimension(cfg,"sizeX",156),sy=getHeight()/(float)dimension(cfg,"sizeY",88);
+                float sx=getWidth()/(float)dimension(cfg,"sizeX",133),sy=getHeight()/(float)dimension(cfg,"sizeY",100);
                 paint.setAlpha(255);
                 for(int[] glyph:GalleryCatalog.differenceGlyphs(got,total,keta,next)){
                     int left=px+glyph[0];
@@ -539,12 +572,15 @@ final class GameGalleryPanel extends GameUiPanel {
                 dest.set(0,0,getWidth(),getHeight());
             }
         }
-        private void drawMovieCursor(Canvas canvas){
+        private void drawBlockCursor(Canvas canvas){
             GameUiAssets.Config cfg=page.config;
-            int w=dimension(cfg,"sizeX",320),h=dimension(cfg,"sizeY",180);
-            float sx=getWidth()/(float)w,sy=getHeight()/(float)h;
-            int x=cfg.number("cursorPrintX",0),y=cfg.number("cursorPrintY",0);
-            int cw=dimension(cfg,"cursorSizeX",w),ch=dimension(cfg,"cursorSizeY",h);
+            int bw=dimension(cfg,"sizeX",133),bh=dimension(cfg,"sizeY",100);
+            float sx=getWidth()/(float)bw,sy=getHeight()/(float)bh;
+            int px=cfg.number("picPrintX",0),py=cfg.number("picPrintY",0);
+            int pw=dimension(cfg,"picSizeX",bw),ph=dimension(cfg,"picSizeY",bh);
+            int x=cfg.number("cursorPrintX",px),y=cfg.number("cursorPrintY",py);
+            int cw=cfg.has("cursorSizeX")?dimension(cfg,"cursorSizeX",pw):dimension(cfg,"cursprSizeX",pw);
+            int ch=cfg.has("cursorSizeY")?dimension(cfg,"cursorSizeY",ph):dimension(cfg,"cursprSizeY",ph);
             dest.set(Math.round(x*sx),Math.round(y*sy),Math.round((x+cw)*sx),Math.round((y+ch)*sy));
             int mode=cfg.number("selectPrintMode",1),percent=bounded(cfg.number("selectPercent",50),0,100);
             if(mode==1){
@@ -559,6 +595,7 @@ final class GameGalleryPanel extends GameUiPanel {
                 paint.setXfermode(null);
             }
             paint.setAlpha(255);
+            dest.set(0,0,getWidth(),getHeight());
         }
     }
 }

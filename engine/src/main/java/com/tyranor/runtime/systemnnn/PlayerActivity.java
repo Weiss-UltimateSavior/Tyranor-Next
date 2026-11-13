@@ -49,7 +49,6 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private ImageView transitionView;
     private long transitionToken,transitionTimestamp;
     private Surface storySurface;
-    private TextView status;
     private View longPrintBackdrop;
     private volatile StoryScreen storyScreen;
     private DialoguePanel dialoguePanel;
@@ -72,6 +71,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private Bitmap titlePrevious;
     private SceneEntrance sceneEntrance;
     private MoviePlayback moviePlayback;
+    private boolean storyMovieExitActive;
     private GameSlotsPanel gameSlots;
     private GameRunner.SlotPreview slotPreview;
     private GalleryCatalog.Page galleryPage,replayReturn;
@@ -273,10 +273,6 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         stage.addView(dialoguePanel,new FrameLayout.LayoutParams(-1,-1)); dialoguePanel.setVisibility(View.GONE);
         storyScreen=new StoryScreen();
         stage.addView(storyScreen,new FrameLayout.LayoutParams(-1,-1));
-        status=label("",12); status.setGravity(Gravity.CENTER); status.setPadding(dp(8),dp(3),dp(8),dp(3));
-        status.setBackground(rounded(0xb51a2030,6));
-        FrameLayout.LayoutParams statusParams=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.START);
-        statusParams.setMargins(dp(8),dp(8),0,0); stage.addView(status,statusParams); status.setVisibility(View.GONE);
         if(debugMode){
             debugOverlay=new GameDebugOverlay(uiContext);
             debugOverlay.setTranslationZ(dp(8));
@@ -415,6 +411,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if (isDestroyed() || stage==null) return;
         if (titlePanel!=null) {stage.removeView(titlePanel); titlePanel=null; titleModel=null;}
         clearStartupForStory();
+        if(storyMovieExitActive){storyMovieExitActive=false;stage.setForeground(null);}
         if (frame.width>0&&frame.height>0&&(width!=frame.width || height!=frame.height)) {width=frame.width;height=frame.height;layoutStage();}
         if(frame.wait==NativeGame.MODAL){
             currentFrame=frame;
@@ -577,7 +574,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(dialoguePanel==null)return;
         if(gamePanel==null&&isModalPanel(preparingPanel))return;
         boolean storyVisible=panelsOpen==0||gamePanel!=null&&gamePanel.awaitingCapturedBackdrop();
-        boolean inGame=!launchingGame&&titlePanel==null&&storyVisible&&moviePlayback==null;
+        boolean inGame=!launchingGame&&titlePanel==null&&storyVisible&&moviePlayback==null&&!storyMovieExitActive;
         storyScreen.setVisibility(inGame?View.VISIBLE:View.GONE);
         storyScreen.windowChanged();
         boolean line=currentFrame!=null&&currentFrame.wait==NativeGame.DIALOGUE;
@@ -591,7 +588,6 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             autoMode,currentFrame==null?0:currentFrame.layoutCommand,currentFrame==null?20:currentFrame.frameMs);
         if(controls!=null){if(inGame&&!uiHidden&&!sceneReplay)controls.frame(currentFrame,typing,choices);else controls.setVisibility(View.GONE);}
         if(choices!=null)choices.setVisibility(inGame&&!uiHidden?View.VISIBLE:View.GONE);
-        if(uiHidden||!storyVisible)status.setVisibility(View.GONE);
         syncIndependentStatus();
     }
     private int visiblePrintMode(){
@@ -666,15 +662,12 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         for(GameStatusPartyPanel panel:independentParts)if(panel!=null)panel.uiActive(active);
     }
     private void updateStatus() {
-        if(status==null)return;
         if(controls!=null)controls.modes(autoMode,skipMode);
-        String text=skipMode?(settings.skipReadOnly?text(R.string.engine_systemnnn_host_skip_read):text(R.string.engine_systemnnn_host_skip_all)):
-            autoMode?text(R.string.engine_systemnnn_host_auto):currentFrame!=null&&currentFrame.alreadyRead?text(R.string.engine_systemnnn_host_already_read):"";
-        status.setText(text);status.setVisibility((controls==null||!controls.original())&&!uiHidden&&panelsOpen==0&&titlePanel==null&&!text.isEmpty()?View.VISIBLE:View.GONE);
     }
     private void clearStartupViews(){
         if(logoPanel!=null){stage.removeView(logoPanel);logoPanel=null;}
         if(startupOpening!=null){stage.removeView(startupOpening);startupOpening=null;}
+        storyMovieExitActive=false;
         stage.setForeground(null);
     }
     private void removeTitleForStartup(){
@@ -778,7 +771,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             storyScreen.clear();
             storyScreen.setVisibility(View.GONE);
             longPrintBackdrop.setVisibility(View.GONE);
-            dialoguePanel.setVisibility(View.GONE);if(controls!=null)controls.setVisibility(View.GONE);status.setVisibility(View.GONE);
+            dialoguePanel.setVisibility(View.GONE);if(controls!=null)controls.setVisibility(View.GONE);
             if(choices!=null){stage.removeView(choices);choices=null;}
             launchingGame=false;
             clearStartupViews();
@@ -931,7 +924,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             closeOriginalPanel();
         });
     }
-    @Override public void movie(File file,float gain,boolean canSkip,boolean startup){runOnUiThread(()->{
+    @Override public void movie(File file,float gain,boolean canSkip,boolean startup,Integer exitColor){runOnUiThread(()->{
         if(isFinishing()||isDestroyed()||stage==null||runner==null)return;
         GameRunner owner=runner;
         if(!startup)clearStartupForStory();
@@ -941,7 +934,13 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         moviePlayback=new MoviePlayback(this,file,gain,canSkip,(source,outcome,failure)->{
             if(owner!=runner||source!=moviePlayback)return;
             moviePlayback=null;
-            if(startup)stage.setForeground(new ColorDrawable(Color.BLACK));
+            if(exitColor!=null){
+                storyMovieExitActive=!startup;
+                stage.setForeground(new ColorDrawable(exitColor));
+            }else if(storyMovieExitActive){
+                storyMovieExitActive=false;
+                stage.setForeground(null);
+            }
             stage.removeView(source);
             for(int i=0;i<stage.getChildCount();i++)
                 stage.getChildAt(i).setImportantForAccessibility(gamePanel==null||stage.getChildAt(i)==gamePanel
@@ -968,6 +967,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }
     private void showMenu() {
         if(runner==null){finish();return;}
+        if(moviePlayback!=null||storyMovieExitActive)return;
         boolean modalOptions=visibleModal!=null&&(visibleModal.advancedSelection()||
             visibleModal.mode==GameRunner.Modal.SELECT_CHART||visibleModal.mode==GameRunner.Modal.SELECT_PLACE2);
         if(currentFrame!=null&&currentFrame.wait==NativeGame.MODAL&&!modalOptions)return;
@@ -1066,6 +1066,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }
     private boolean captureStoryUi(GameUiAssets.Config config){
         if(config==null||titlePanel!=null||currentFrame==null||uiAssets==null)return false;
+        if(config==uiAssets.backlog&&config.number("backScriptFlag",0)==0)return false;
         if(config.number("backScriptFlag",0)!=0&&config.number("getWithMessageFlag",1)==0)return false;
         String eraseFlag=currentFrame.wait==NativeGame.CHOICE?"selectMiniCGNoMessageFlag":"messageMiniCGNoMessageFlag";
         return uiAssets.game.number(eraseFlag,0)==0;
@@ -1110,9 +1111,10 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         mountOriginalPanel(panel,back);
     }
     private void installCapturedBackground(GameUiPanel panel,GameUiAssets.Config config,GameRunner.Capture scene){
-        if(scene==null){panel.uiBackground(config,13,1);return;}
+        int mode=panel instanceof GameBacklogPanel?7:13;
+        if(scene==null){panel.uiBackground(config,mode,1);return;}
         panel.capturedBackground(scene.bitmap(),()->{if(gamePanel==panel)updateVisibility();});
-        panel.uiBackground(config,13,1,scene.pixels,scene.width,scene.height);
+        panel.uiBackground(config,mode,1,scene.pixels,scene.width,scene.height);
     }
     private void drawTitleCapture(TitlePanel title,Canvas canvas){
         title.draw(canvas);
@@ -1165,8 +1167,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(hideFlag!=null&&uiAssets.game.number(hideFlag,0)!=0)return null;
         Bitmap overlay=null;
         try{
-            int w=SaveSlots.pictureDimension(uiAssets.dataFile,"picSizeX",182);
-            int h=SaveSlots.pictureDimension(uiAssets.dataFile,"picSizeY",102);
+            int w=SaveSlots.pictureDimension(uiAssets.dataFile,"picSizeX",uiAssets.dataFile.number("areaSizeX",132));
+            int h=SaveSlots.pictureDimension(uiAssets.dataFile,"picSizeY",uiAssets.dataFile.number("areaSizeY",100));
             overlay=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);
             UiOpening.drawOnto(stage,overlay,canvas->drawStorySnapshot(canvas,true,false));
             return new GameRunner.SlotPreview(frame,overlay);
@@ -1185,7 +1187,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 if(!screenComposited&&withUi)drawStageChild(canvas,dialoguePanel,dialoguePanel::drawMessagePlane);
             }else if(child==longPrintBackdrop||child==dialoguePanel||child==choices){
                 if(!screenComposited&&(withUi||child==longPrintBackdrop))drawStageChild(canvas,child);
-            }else if(withUi&&withFloatingUi&&(child==controls||child==status||child==quickNoticeView||child==independentStatus)){
+            }else if(withUi&&withFloatingUi&&(child==controls||child==quickNoticeView||child==independentStatus)){
                 drawStageChild(canvas,child);
             }
         }
@@ -1721,9 +1723,12 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(uiAssets==null||runner==null)return;
         if(choices!=null&&(choices.confirming()||!choices.backlogAllowed()))return;
         if(currentFrame!=null&&currentFrame.placeMode!=0&&uiAssets.place(currentFrame.placeMode).number("backLogOk",0)==0)return;
-        Runnable back=()->{if(runner!=null)runner.closeBacklog();leaveOriginalPanel(uiAssets.backlog);};
+        GameUiAssets.Config cfg=uiAssets.backlog;
+        int bgMode=GameBacklogPanel.bgMode(cfg);
+        boolean capture=bgMode==2||bgMode==3&&cfg.number("screenToGetPutFlag",0)!=0;
+        Runnable back=()->{if(runner!=null)runner.closeBacklog();leaveOriginalPanel(cfg);};
         showOriginalPanel(new GameBacklogPanel(this,uiAssets,dialogueStyle,width,height,back,
-            name->{if(runner!=null)runner.replayBacklogVoice(name);},this::jumpBacklog),back);
+            name->{if(runner!=null)runner.replayBacklogVoice(name);},this::jumpBacklog),back,capture?cfg:null);
         runner.requestBacklog();
     }
     private void jumpBacklog(long id){
@@ -1957,7 +1962,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         return super.dispatchGenericMotionEvent(event);
     }
     private boolean storyPointerActive(){
-        return runner!=null&&stage!=null&&titlePanel==null&&logoPanel==null&&panelsOpen==0&&moviePlayback==null;
+        return runner!=null&&stage!=null&&titlePanel==null&&logoPanel==null&&panelsOpen==0&&moviePlayback==null&&!storyMovieExitActive;
     }
     private void storyPointer(MotionEvent event){
         stage.getLocationOnScreen(storyOrigin);
@@ -1968,6 +1973,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     @Override public void onBackPressed() {
         panelWarmup=null;
         if(moviePlayback!=null){moviePlayback.skip();return;}
+        if(storyMovieExitActive)return;
         if(logoPanel!=null){logoPanel.skip();return;}
         if(startupOpening!=null){startupOpening.skip();return;}
         if(titlePanel!=null&&titlePanel.skipRestartExit())return;

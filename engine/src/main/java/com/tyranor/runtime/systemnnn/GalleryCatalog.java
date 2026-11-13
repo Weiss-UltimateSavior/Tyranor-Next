@@ -517,13 +517,13 @@ final class GalleryCatalog {
         CgImage cgImage=null;
         String bg=GameUiAssets.systemImageKey(cfg.value("filenameBG",screen.background));
         if (screen==Screen.MOVIE) {
-            columns=Math.max(1,Math.min(16,cfg.number("blockNumberX",1)));
-            rows=Math.max(1,Math.min(16,cfg.number("blockNumberY",1)));
+            columns=Math.max(1,Math.min(16,cfg.number("blockNumberX",4)));
+            rows=Math.max(1,Math.min(16,cfg.number("blockNumberY",3)));
             size=movies.entries.size()+(showOpening?1:0);
         } else if (screen==Screen.CG || screen==Screen.SCENE) {
             boolean cg=screen==Screen.CG;
-            columns=Math.max(1,Math.min(16,cfg.number("blockNumberX",cg?6:3)));
-            rows=Math.max(1,Math.min(16,cfg.number("blockNumberY",cg?5:8)));
+            columns=Math.max(1,Math.min(16,cfg.number("blockNumberX",4)));
+            rows=Math.max(1,Math.min(16,cfg.number("blockNumberY",3)));
             size=cg?albums.get(group).size():scenes.get(group).size();
         } else if (screen==Screen.MUSIC) {
             size=songs.size(); rows=Math.max(1,Math.min(32,cfg.number("musicPrintNumber",18)));
@@ -592,6 +592,19 @@ final class GalleryCatalog {
         if (screen==Screen.CG) {
             String font=differenceFont(cfg);
             if (!font.isEmpty()) names.add(font);
+        }
+        if (screen==Screen.CG || screen==Screen.SCENE) {
+            if (cfg.number("futaPrintFlag",1)!=0) names.add(GameUiAssets.systemImageKey(cfg.value("fileNameFuta","ta_futa1")));
+            if (cfg.number("selectPrintMode",1)==2) names.add(GameUiAssets.systemImageKey(cfg.value("fileNameCursor","ta_cg_cur")));
+            if (cfg.number("totalPercentPrintFlag",1)!=0) names.add(GameUiAssets.systemImageKey(cfg.value("fileNameTotalPercent","ta_font_cg1")));
+            if (cfg.number("pagePrintFlag",0)!=0) names.add(GameUiAssets.systemImageKey(cfg.value("fileNamePageFont","ta_font_sl3")));
+        } else if (screen==Screen.MOVIE) {
+            if (cfg.number("selectPrintMode",1)==2) names.add(GameUiAssets.systemImageKey(cfg.value("fileNameCursor","ta_movie_cur")));
+            if (cfg.number("totalPercentPrintFlag",1)!=0) names.add(GameUiAssets.systemImageKey(cfg.value("fileNameTotalPercent","ta_font_movie1")));
+            if (cfg.number("pagePrintFlag",0)!=0) names.add(GameUiAssets.systemImageKey(cfg.value("fileNamePageFont","ta_font_sl3")));
+        } else if (screen==Screen.MUSIC) {
+            names.add(GameUiAssets.systemImageKey(cfg.value("filenameCursor","ta_bgm_selc")));
+            names.add(GameUiAssets.systemImageKey(cfg.value("filenameVolume","ta_opt_bar")));
         }
         names.addAll(cfg.imageNames());
         if(screen!=Screen.VIEW)

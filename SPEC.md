@@ -109,10 +109,10 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 - SystemNNN 分类滑条按 `volumeMin` / `volumeMax` 和分类覆盖值映射原版档位。XAudio2 模式应用游戏声明的范围覆盖。分类增益使用对应的 DirectSound 或 XAudio2 规则，总音量作用于混音输出和影片。
 - SystemNNN 的剧情、标题和菜单背景按实际积累的整帧推进。补帧受全局 `maxSkipFrame`、背景 `maxSkipFrameBackScript` 和原版存档 `noSkipFrame` 限制。圆形擦入等同坐标混合效果使用逻辑尺寸的遮罩合成截图，马赛克仍按游戏逻辑尺寸取样。
 - SystemNNN 的 `PREPAREOVERRAP` 使用上一帧原生画面与当前已显示的对白。宿主抓图不可用时使用上一帧原生画面或仍有效的带窗口转场终帧。脚本在此期间改动的图层进入转场目标。动态背景模糊保留原来的裁切、整数取整和最终帧缓存。
-- SystemNNN 剧情和有声影片各自在播放期间持有音频焦点，初次请求被拒或永久失焦后可由前台操作重试。播放器暂时离开前台或影片纹理重建时保留解码位置。剧本等待影片自然结束、获准跳过或播放失败后继续。
+- SystemNNN 剧情和有声影片各自在播放期间持有音频焦点，初次请求被拒或永久失焦后可由前台操作重试。播放器暂时离开前台或影片纹理重建时保留解码位置。剧本等待影片自然结束、获准跳过或播放失败后继续，并按 `printMovie` 配置应用 `fillExitScreenFlag` 退场纯色屏与 `lastWait` 帧等待。
 - SystemNNN 小游戏在说明结束后按游戏帧周期发牌。Monte 依次消牌、收拢与补牌，Pyramid 和 Golf 按原版移动牌堆间的纸牌。二角先画连线，消除花牌后让其余牌加速下落。串牌在消除后依次下落、按行左移、从上方补回孤张。点按跳过原版允许跳过的动画，落牌期间等待棋盘就位。
 - SystemNNN 对话层通过 `DialogueDecorations` 绘制角色头像（`PortraitLayer` 眨眼与口型帧）、特写气泡与光标分支（`CutinLayer`），并按序叠加多槽位 `statusOverlays` 状态浮层。
-- SystemNNN 原版设置按 `mustStartPage1Flag` 控制入场固定打开第 1 页或保留会话内上次页码；场景回想中打开原版 `systemMenu` 时禁用存读档与扩展项，按 `systemMenuSceneBackFileName` / `systemMenuSceneEndFileName` 切换按钮贴图并直接退回回想列表；音乐鉴赏未解锁曲目应用 `cannotColorR/G/B` 置灰配色，CG 鉴赏差分计数支持 `fileNameDifferenceFont`（`CSuuji`）精灵数字贴图及 `differencePrintFlag` / `differencePrintByGetFlag` 开关，缺精灵字库时按原版静默不画。
+- SystemNNN 原版设置按 `mustStartPage1Flag` 控制入场固定打开第 1 页或保留会话内上次页码（保留右上角阅读字号快捷入口与默认 85% 阅读字号）；`windowPercent` 窗口透明度滑条保持 0–100 原始百分比映射而不受 `windowPercentVolumeDevide` 分段缩放影响。场景回想中打开原版 `systemMenu` 时禁用存读档与扩展项，按 `systemMenuSceneBackFileName` / `systemMenuSceneEndFileName` 切换按钮贴图并直接退回回想列表；鉴赏页按上游默认网格、收集率（`ta_font_cg1` / `ta_font_movie1`）、页码（`ta_font_sl3`）、未解锁盖板（`ta_futa1` 与有符号 `picMustPrintPercent`）、选框模式（`selectPrintMode`）、音乐室 `cannotColorR/G/B` 与正文配色及 CG `fileNameDifferenceFont`（`CSuuji`）差分数字绘制；历史回看支持 `bgMode` `0..3`（纯色、背景图、`backDelta*` / `backMulti*` 级联抓屏滤镜、背景脚本）与 `titleMessage` `#` 颜色前缀；选项分支对齐 `ta_select01` / `ta_win_select` 默认配置；各界面缺贴图或关闭显示开关时一律按原版静默不画，不绘制非原版色块或文字兜底。
 
 - 应用设置、引擎设置、单游戏设置按作用域分离；单游戏未覆盖的字段跟随引擎全局设置，经 `EngineSettingsResolver` 统一解析。
 - Winlator 全局与单游戏图形加速支持跟随容器配置、DXVK、WineD3D（跟随容器渲染器）、WineD3D + OpenGL / GDI。显式 GL/GDI 预设通过既有 `dxwrapperConfig` 整项替换 WineD3D 配置，其它子参数用接收端默认值；可与 Box64 同时下发，开启写入容器配置时持久化。旧 WineD3D 不迁移，空值与继承语义不变；需支持该协议的 winlator-cn。
@@ -143,11 +143,11 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 
 - 按引擎和生效设置解析目录，为支持的引擎提供存档镜像导出、导入与删除。独立存档、Kirikiri 镜像等各有规则，不统一硬编码为 `<游戏根>/save`。
 - SystemNNN 的存档管理及 WebDAV 同步使用游戏目录下的 `sav`，处理原版 `dataN.sav` 与 `tdataN.sav`、全局进度、流程图节点和随档元数据。随档元数据包括最近读取槽位（影响标题页的上次读档入口）和存档页展示信息。SystemNNN 一律直接在游戏目录读写，不复制游戏；原目录不可读或 `sav` 不可写时返回类型化错误。直接访问的游戏目录须通过存档可写检查才进入播放器。旧版本遗留的副本仍可只读打开，但不再创建、恢复或重新导入。再次启动已有的同一游戏时，恢复存活的播放器任务。
-- SystemNNN 的已读、鉴赏解锁和系统变量读写游戏的 `sysfile*.sav` 或 `tsysfile*.sav`。启用原版结果表的游戏使用 `result.sav`。ZIP 和 WebDAV 恢复先校验这些文件。旧备份缺少这些文件时保留当前 PC 全局档。
+- SystemNNN 的已读、鉴赏解锁、系统变量以及非音频/音频全量原版系统设置（文字速度、快进/全屏/自动模式、`WINDOWPERCENT` 窗口透明度、`EXPMODE` / `EXPCHECK`、窗口皮肤及消息/鼠标光标）双向读写游戏的 `sysfile*.sav` 或 `tsysfile*.sav`。启用原版结果表的游戏使用 `result.sav`。ZIP 和 WebDAV 恢复先校验这些文件。旧备份缺少这些文件时保留当前 PC 全局档。
 - 存档管理可手动清理旧版本遗留的 SystemNNN 副本资源并原地保留整个 `sav`。删除游戏、删除游戏目录或重扫丢弃条目时自动尝试清理；运行中或无法安全清理时保留副本资源并提示（删除游戏会保留库条目），失败项记入应用侧持久队列，下次启动或打开「游戏目录」抽屉时重试。清理后的副本不再可启动。
 - 重扫强识别的 SystemNNN 游戏时，发现失败会保留原第三方模块绑定。确认模块不可用时可回落到内置引擎，同时记录原模块。原模块恢复并启用后可通过重扫切回。
 - SystemNNN 识别旧版本留下的同源 SAF 副本时，核对来源与存档目录后沿用待上传会话的基线及已提交的恢复记录。归属无法确认或原目录仍有未完成的版本恢复时暂停启动并保留会话。存档替换在移除回滚标记后提交，后续通知失败仍会尝试清理恢复目录。
-- SystemNNN 存读档按游戏配置显示页数、网格、箭头或页签。剧情摘要由游戏的文字显示开关控制。手动存档和快速存档按游戏配置捕获包含对话或选项的缩略图。原版标题启用上次读档按钮时，读取最近一次成功选择的手动或快速存档。无原版标题配置时，宿主标题按最近的原版槽位续玩。剧情存读档使用原版槽位；流程图选关（`SELECT_CHART`）允许进入剧情存档，覆盖已有槽位时优先选用 `fileNameOverwriteCursor` 光标贴图，并按 `saveAnime*`、`loadAnime*`、`overwriteAnime*`（类型 1–8）播放槽位光标帧动画；有档槽位按原版 `var.fxf` / `var2.fxf` 与 `.sav` `GAMEVAR` 解析并绘制游戏内日期与星期（`gameDate*`、`gameYear*`、`gameMonth*`、`gameDay*`、`gameTime*`、`gameWeek*` 及 `fileNameGameTimeFont` / `fileNameGameWeekFont`，缺精灵字库时静默不画）。
+- SystemNNN 存读档按游戏配置显示页数、网格、箭头或页签。剧情摘要由游戏的文字显示开关控制。手动存档和快速存档按游戏配置捕获缩略图（默认 `132×100`），并按 `basePrintFlag`、`baseChangeLoadSave`、`serialPrintFlag`、`saveTimePrintFlag` 与 `selectPrintMode` 上游默认值绘制槽位元素。原版标题启用上次读档按钮时，读取最近一次成功选择的手动或快速存档。无原版标题配置时，宿主标题按最近的原版槽位续玩。剧情存读档使用原版槽位（兼容早期通用 `5024 B` `GAMESTATUS`、`code=8/9+` 扩展块与自定义 `saveHeaderName`）；导出存档时同步写入当前运行期系统变量至 `GAMEVAR`，读档时保持运行期全局系统变量并按 `AdjustLoadBGM` / `adjustLoadBGMVarName` 执行曲目重映射。流程图选关（`SELECT_CHART`）允许进入剧情存档，覆盖已有槽位时优先选用 `fileNameOverwriteCursor` 光标贴图，并按 `saveAnime*`、`loadAnime*`、`overwriteAnime*`（类型 1–8）播放槽位光标帧动画；有档槽位按原版 `var.fxf` / `var2.fxf` 与 `.sav` `GAMEVAR` 解析并绘制游戏内日期与星期（`gameDate*`、`gameYear*`、`gameMonth*`、`gameDay*`、`gameTime*`、`gameWeek*` 及 `fileNameGameTimeFont` / `fileNameGameWeekFont`，缺精灵字库时静默不画）。
 - SystemNNN 导入 ZIP 或 WebDAV 版本时，由独立校验进程检查原版槽位的数据块和随包全局进度。旧手机剧情档由备份恢复忽略。旧的未提交恢复事务会保留当前 PC 槽位。实际读档会继续核对游戏脚本和素材。仅含有效全局进度的版本可恢复到没有剧情槽和流程图检查点的目录。校验失败时保留现有存档。
 - SystemNNN 不再复制游戏目录，播放器以传入的绝对路径读写游戏，不保存副本标识或副本清单；应用每次启动同时传入原游戏目录作为旧版设置/存档迁移的身份键，由应用负责保存。旧版本遗留的副本仅按原路径只读使用。启动目录或脚本校验失败时，播放器提示返回游戏库。手动恢复 ZIP 解包后在锁内确认当前 `sav`。
 - SystemNNN 全局进度优先读取有效主档，扩展按基档指纹匹配。主档缺失或格式损坏时自动恢复有效的 `.bak` 并保留损坏的原文件。主档因 I/O 暂不可读时可只读使用备份，主档和备份均原地保留。确认没有有效进度时可隔离损坏文件并重新建立。核对游戏库时持久化旧 Emberfall 内置绑定。WebDAV 读取游戏库时在内存中识别该绑定，退出上传遇到存档锁占用会延后重试。

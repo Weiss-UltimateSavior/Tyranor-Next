@@ -21,13 +21,12 @@ final class ValueBar extends View {
     private void clickCue(){if(click!=null)click.run();}
     private void committed(){if(commit!=null)commit.accept(value);}
     @Override protected void onDraw(Canvas c){
-        float sy=getHeight()/(float)(logicalHeight+padding),top=padding*.5f*sy,bottom=top+logicalHeight*sy;
+        float sy=getHeight()/(float)(logicalHeight+padding),top=padding*.5f*sy;
         float fraction=max==min?1:(value-min)/(float)(max-min);int extent=Math.round(logicalWidth*fraction);p.setAlpha(isEnabled()?255:110);
         if(image!=null&&extent>0){
             int width=Math.min(extent,image.getWidth()),height=Math.min(logicalHeight,image.getHeight());
             c.drawBitmap(image,new Rect(0,0,width,height),new RectF(0,top,getWidth()*width/(float)logicalWidth,top+height*sy),p);
         }
-        else if(image==null){p.setColor(0xff365776);c.drawRect(0,top,getWidth(),bottom,p);p.setColor(0xff83d8ff);c.drawRect(0,top,getWidth()*fraction,bottom,p);}
     }
     @Override public boolean onTouchEvent(MotionEvent e){if(!isEnabled())return false;
         switch(e.getActionMasked()){

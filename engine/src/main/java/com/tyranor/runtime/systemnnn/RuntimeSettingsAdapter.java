@@ -131,7 +131,7 @@ final class RuntimeSettingsAdapter {
         OriginalSettingsModel model=assets.settingsModel(1280,720);
         for(int i=0;i<OriginalSettingsModel.KEYS.length;i++){
             String display=OriginalSettingsModel.KEYS[i],exact="originalSlider."+OriginalSettingsModel.VOLUMES[i];
-            boolean exactPosition=model.original||i==0||i==7;
+            boolean exactPosition=model.original||i==0||i==6||i==7;
             if(exactPosition&&key.equals(exact)){
                 Integer value=integer(values,exact);
                 if(value!=null)return new int[]{VOLUME_IDS[i],raw(slider(model,i),value)};
@@ -139,13 +139,13 @@ final class RuntimeSettingsAdapter {
                 Integer mobile=integer(values,display);
                 if(mobile==null)return EMPTY;
                 OriginalSettingsModel.Slider s=slider(model,i);
-                return new int[]{VOLUME_IDS[i],raw(s,s.fromPreference(mobile))};
+                return new int[]{VOLUME_IDS[i],i==6?100-bound(mobile,0,100):raw(s,s.fromPreference(mobile))};
             }
             if(key.equals(display)){
                 if(exactPosition&&integer(values,exact)!=null)return EMPTY;
                 Integer value=integer(values,display);if(value==null)return EMPTY;
                 OriginalSettingsModel.Slider s=slider(model,i);
-                return new int[]{VOLUME_IDS[i],raw(s,s.fromPreference(value))};
+                return new int[]{VOLUME_IDS[i],i==6?100-bound(value,0,100):raw(s,s.fromPreference(value))};
             }
             if(SWITCH_IDS[i]>=0&&key.equals("enabled."+display)){
                 Boolean value=bool(values,key);return value==null?EMPTY:new int[]{SWITCH_IDS[i],value?1:0};
@@ -176,10 +176,10 @@ final class RuntimeSettingsAdapter {
                     OriginalSettingsModel.Slider s=slider(model,i);
                     String exact="originalSlider."+s.kind;
                     int position=position(s,value);
-                    if(model.original||i==0||i==7){
+                    if(model.original||i==0||i==6||i==7){
                         int previous=preferences.getInt(exact,position);
                         // Several slider positions can produce the same integer PC volume.
-                        if(previous>=0&&previous<=s.steps&&raw(s,previous)==value)position=previous;
+                        if(i!=6&&previous>=0&&previous<=s.steps&&raw(s,previous)==value)position=previous;
                         edit.putInt(exact,position);
                     }
                     edit.putInt(OriginalSettingsModel.KEYS[i],s.toPreference(position));

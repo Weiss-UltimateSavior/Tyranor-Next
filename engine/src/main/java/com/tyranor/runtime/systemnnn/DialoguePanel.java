@@ -6,7 +6,6 @@ import android.os.Build;
 import android.os.SystemClock;
 import android.view.View;
 import android.view.accessibility.AccessibilityNodeInfo;
-import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.util.TypedValue;
@@ -114,8 +113,8 @@ final class DialoguePanel extends FrameLayout {
         layout=DialogueLayout.layout(longPrint?style.longLayouts:style.layouts,fontType);
         textScale=-1;
         window.setImageBitmap(windowImage);nameWindow.setImageBitmap(nameImage);
-        if(windowImage==null)window.setBackground(rounded(0xdc1b202b,12));else window.setBackgroundColor(Color.TRANSPARENT);
-        if(nameImage==null)nameWindow.setBackground(rounded(0xe3242b38,8));else nameWindow.setBackgroundColor(Color.TRANSPARENT);
+        window.setBackgroundColor(Color.TRANSPARENT);
+        nameWindow.setBackgroundColor(Color.TRANSPARENT);
         colors(); requestLayout();
         showWindows();
     }
@@ -147,10 +146,6 @@ final class DialoguePanel extends FrameLayout {
         body.setTextColor(read?style.readBodyColor:style.bodyColor);body.markupTextColor(read);
         speaker.setTextColor(read?style.readNameColor:style.speakerColor(speakerName));speaker.markupTextColor(read);
         cutinLayer.colors();
-    }
-    private GradientDrawable rounded(int color,int radius) {
-        GradientDrawable background=new GradientDrawable();background.setColor(color);
-        background.setCornerRadius(radius*getResources().getDisplayMetrics().density);return background;
     }
     void speaker(String name,boolean nameWindow) { hasSpeaker=name!=null&&!name.isEmpty();showNameWindow=nameWindow;
         speakerName=hasSpeaker?name:"";

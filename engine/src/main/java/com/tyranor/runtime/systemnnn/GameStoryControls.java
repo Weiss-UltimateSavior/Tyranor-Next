@@ -5,7 +5,6 @@ import android.graphics.*;
 import android.os.SystemClock;
 import android.view.*;
 import android.widget.FrameLayout;
-import android.widget.TextView;
 import com.core.engine.EngineUiText;
 import com.core.engine.R;
 import java.util.*;
@@ -28,13 +27,6 @@ final class GameStoryControls extends FrameLayout {
             ArtButton view=new ArtButton(b,assets.image(b.art.image));buttons.add(view);addView(view,new LayoutParams(1,1));
         }
         quickSlot(false);
-        if(!model.original){
-            String title=EngineUiText.get(context,R.string.engine_systemnnn_ctl_menu);
-            TextView menu=new TextView(context);menu.setText(title);menu.setTextColor(Color.WHITE);menu.setGravity(Gravity.CENTER);
-            menu.setContentDescription(title);menu.setSoundEffectsEnabled(false);
-            menu.setOnClickListener(v->listener.action(GameStoryControlsModel.Action.MENU,false));
-            addView(menu,new LayoutParams(140,48,Gravity.BOTTOM|Gravity.RIGHT));
-        }
     }
     boolean original(){return model.original;}
     boolean clicking(){return clicked!=null;}

@@ -227,7 +227,7 @@ final class PcStorySave {
             if(size<HEADER_BYTES||size>bytes.length-offset)return null;
             String name=blockName(bytes,offset+16);
             if(name==null||!seenCodes.add(code))return null;
-            if(offset==0&&(size!=HEADER_BYTES||code!=0||!"SAVEDATA".equals(name)))return null;
+            if(offset==0&&(size!=HEADER_BYTES||code!=0||name.isEmpty()))return null;
             if(code==4){
                 if(!"GAMEVAR".equals(name)||(size!=HEADER_BYTES+1024L*4&&size!=HEADER_BYTES+2224L*4))return null;
                 varOffset=offset+HEADER_BYTES;
