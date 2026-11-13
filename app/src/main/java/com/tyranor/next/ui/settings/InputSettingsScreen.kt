@@ -69,7 +69,7 @@ import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import com.tyranor.next.ui.common.motion.pressSquish
 import com.tyranor.next.ui.common.motion.pressSquishGroup
 import com.tyranor.next.ui.common.motion.staggeredEntrance
-import com.tyranor.next.ui.game.startActivityWithPageTransition
+import com.tyranor.next.ui.common.motion.startActivityWithPageTransition
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch

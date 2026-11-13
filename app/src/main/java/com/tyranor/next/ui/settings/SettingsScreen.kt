@@ -132,7 +132,7 @@ import com.tyranor.next.core.updater.UpdateCandidate
 import com.tyranor.next.core.updater.UpdateCheckResult
 import com.tyranor.next.core.updater.UpdateDownloadResult
 import com.tyranor.next.ui.cover.CoverScraperSettingsActivity
-import com.tyranor.next.ui.game.startActivityWithPageTransition
+import com.tyranor.next.ui.common.motion.startActivityWithPageTransition
 import java.io.File
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -725,6 +725,7 @@ fun SettingsScreen(
                                     title = stringResource(R.string.update_version_item, candidate.latestVersion),
                                     leadingIcon = R.drawable.ic_update_download,
                                     containerColor = DialogItemSurface,
+                                    indication = null,
                                     onClick = {
                                         if (candidate.apkAsset != null) {
                                             startApkDownload(candidate)
@@ -746,6 +747,7 @@ fun SettingsScreen(
                                 title = stringResource(R.string.update_open_releases),
                                 leadingIcon = R.drawable.ic_update_github,
                                 containerColor = DialogItemSurface,
+                                indication = null,
                                 showArrow = false,
                                 onClick = {
                                     runCatching {

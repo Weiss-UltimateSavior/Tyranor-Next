@@ -159,6 +159,9 @@ jobs:
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --no-daemon
 
+      - name: Compile release baseline profile
+        run: ./gradlew :app:compileReleaseArtProfile --no-daemon
+
       - name: Check packaged SystemNNN runtime
         run: python3 tools/check-systemnnn-runtime.py --apk app/build/outputs/apk/debug/app-debug.apk
 

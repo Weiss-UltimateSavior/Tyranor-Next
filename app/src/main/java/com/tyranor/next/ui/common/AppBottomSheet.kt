@@ -32,6 +32,7 @@ import com.tyranor.next.theme.PageGrey
 import com.tyranor.next.theme.SheetScrimColor
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.ui.common.motion.BindBackdrop
+import com.tyranor.next.ui.common.motion.BindWindowScrim
 import com.tyranor.next.ui.common.motion.LocalSheetBackdrop
 import com.tyranor.next.ui.common.motion.MotionSheetController
 import com.tyranor.next.ui.common.motion.MotionSheetEffects
@@ -97,6 +98,7 @@ internal fun AppBottomSheet(
         shape = AppSheetTopShape,
         dragHandle = null,
     ) {
+        controller.BindWindowScrim(SheetScrimColor)
         // 竖屏保留更多页面露出；横屏按高度比例给内容留空间。短屏不强制抬高到最小值，
         // 避免内容超过可用视口；滚动区会在剩余高度内滚动。
         val configuration = LocalConfiguration.current

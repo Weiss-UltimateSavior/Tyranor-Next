@@ -32,7 +32,7 @@ NoPressFeedbackButtons OverlayDropdownPreference SlidingTabRow TabPagerState
 TopBarIcon notice/NoticeHost
 """.split())
 OWNERS.update("ui/common/motion/" + f + ".kt" for f in """
-BlurText ContentMotion DeleteEffect Entrance FeedbackMotion GameCoverMotion
+BlurText ContentMotion DeleteEffect Entrance ExpandSectionVisibility FeedbackMotion GameCoverMotion
 ListItemMotion MotionMode MotionSprings MotionTokens PagerMotion PageTransitions
 ParallaxCardPager PressSquish ReorderPlacementMotion ReplayEntranceSprings
 ScrollMotion SheetMotion TabPageMotion
@@ -68,6 +68,8 @@ PRIMITIVES = re.compile(
     r"fade(?:In|Out)|(?:slide|scale)(?:In|Out)(?:Horizontally|Vertically)?|"
     r"(?:expand|shrink)(?:In|Out|Horizontally|Vertically)|animateContentSize)"
 )
+CONTAINERS = {"androidx.compose.animation." + name for name in ("AnimatedContent", "AnimatedVisibility", "Crossfade")}
+CONTAINER_SPECS = {"com.tyranor.next.ui.archive.archivePaneTransition"}
 ID = r"[A-Za-z_]\w*"
 DOT = r"\s*\.\s*"
 IMPORT = re.compile(r"(?m)^[ \t]*import[ \t]+(\w+(?:\.\w+)*(?:\.\*)?)(?:[ \t]+as[ \t]+(\w+))?[ \t]*;?")
@@ -144,7 +146,7 @@ def resolve(name, imports, stars):
 
 EXTENSIONS = {"animateContentSize", "animateFloat", "animateDp", "animateColor", "animateInt",
               "animateOffset", "animateSize", "animateRect", "animateIntSize", "animateIntOffset",
-              "animateValue", "animateItem", "animateItemPlacement"}
+              "animateValue", "animateItem", "animateItemPlacement", "AnimatedContent", "AnimatedVisibility"}
 
 
 # All three names on the SAME argument list are the lazy-item spec protocol.
@@ -219,6 +221,22 @@ def check_source(path, source):
         if not page:
             continue
         for target in set(targets):
+            if target in CONTAINERS:
+                # High-level containers also have implicit animations. The existing archive
+                # caller supplies a named owner's spec; other pages use the shared wrappers.
+                start = code.find("(", hit.end(1))
+                depth = 0
+                end = start
+                for end in range(start, len(code)):
+                    depth += (code[end] == "(") - (code[end] == ")")
+                    if depth == 0:
+                        break
+                args = code[start + 1:end] if start >= 0 else ""
+                spec = re.search(r"\btransitionSpec\s*=\s*\{\s*([\w.]+)\s*\(", args)
+                supplied = spec and CONTAINER_SPECS.intersection(resolve(spec[1], imports, stars))
+                if not supplied:
+                    report(pos, f"{target}: use a named effect, or a registered owner's transitionSpec")
+                continue
             if not (PRIMITIVES.fullmatch(target) or target.startswith((MOTION + "MotionTokens.", MOTION + "MotionSprings."))):
                 continue
             allowed = False

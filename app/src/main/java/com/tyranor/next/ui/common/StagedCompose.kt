@@ -7,9 +7,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.platform.LocalContext
 import com.tyranor.next.ui.common.motion.MotionMode
+import com.tyranor.next.ui.common.motion.PageEnter
 import com.tyranor.next.ui.common.motion.PageTransitions
 
 /**
@@ -30,6 +32,14 @@ class StagedCompose internal constructor(last: Int, fresh: Boolean) {
         val groups = groups ?: return
         for (order in 1 until groups.size) withFrameNanos { groups[order].value = true }
     }
+
+    internal companion object {
+        /** 入场身份只在创建时判定，不能把页面组合订阅到逐帧变化的动画进度。 */
+        fun forPage(last: Int, enhanced: Boolean, enter: PageEnter?): StagedCompose =
+            Snapshot.withoutReadObservation {
+                StagedCompose(last, enhanced && enter != null && enter.progress.value < 1f)
+            }
+    }
 }
 
 /** 创建本页的分帧进度，共 [last] + 1 组（0..[last]）：第一帧放行第 0 组，之后每帧放行下一组。 */
@@ -39,8 +49,7 @@ fun rememberStagedCompose(last: Int): StagedCompose {
     val staged = remember(context, last) {
         val enter = (PageTransitions.findActivity(context) as? AppScreenActivity)?.pageEnter
         // 进度已满 = 系统重建 / 恢复的页面，没有侧推进场，不分帧
-        val fresh = MotionMode.enhanced && enter != null && enter.progress.value < 1f
-        StagedCompose(last, fresh)
+        StagedCompose.forPage(last, MotionMode.enhanced, enter)
     }
     LaunchedEffect(staged) {
         staged.revealGroups()

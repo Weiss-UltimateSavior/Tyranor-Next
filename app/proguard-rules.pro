@@ -40,10 +40,3 @@
 -keepclassmembers class * {
     native <methods>;
 }
-
-# 界面动效「增强」档：运行期替换 Miuix 弹窗展开弹簧（ui/common/motion/MotionMode.kt 的 MiuixPopupMotion），
-# 保留类名与静态字段名，反射失败时会静默回退原版行为。
--keepclassmembers class top.yukonga.miuix.kmp.basic.ListPopupDefaults {
-    static ** FractionAnimationSpec;
-}
--keepnames class top.yukonga.miuix.kmp.basic.ListPopupDefaults

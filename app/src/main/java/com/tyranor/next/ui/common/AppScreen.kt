@@ -93,6 +93,7 @@ abstract class AppScreenActivity : ComponentActivity() {
         AppSettingsStore.initMotionEnhanced(this)
         MotionMode.sync(AppSettingsStore.motionEnhancedState.value)
         syncCloseTransition(MotionMode.enhanced)
+        PageTransitions.bindPushOwner(this)
         // 「普通」档不播入场翻折（入场的协程直接返回），进度若还是 0，之后在本页里把「界面动效」切到「增强」时，
         // 翻折会按「还没进来」画出来：页面永远停在最大倾角（14°）并褪色（用户录屏复现过）。
         // 所以普通档创建的页面也从「已就位」开始；系统重建 / 恢复同理。必须在同步档位之后创建
@@ -129,12 +130,15 @@ abstract class AppScreenActivity : ComponentActivity() {
         syncCloseTransition(MotionMode.enhanced)
         // 退出：入场翻折原路倒放，与窗口的侧推退出同曲线同时长
         // 只在第一次 finish 时倒放（重复调用不重启动画）；系统动画倍率为 0（关闭动画）时直接归位
-        if (MotionMode.enhanced && !isFinishing) {
-            val durationMillis = (MotionSprings.PushDurationMillis * transitionAnimationScale(this)).toInt()
-            // 必须在页面组合的作用域里跑（带帧时钟）；lifecycleScope 没有帧时钟，animateTo 会直接抛异常崩进程
-            pageEnter.playTo(0f, durationMillis)
+        if (!isFinishing) {
+            if (MotionMode.enhanced) {
+                val durationMillis = (MotionSprings.PushDurationMillis * transitionAnimationScale(this)).toInt()
+                // 必须在页面组合的作用域里跑（带帧时钟）；lifecycleScope 没有帧时钟，animateTo 会直接抛异常崩进程
+                pageEnter.playTo(0f, durationMillis)
+            }
             // 下一层页面此刻就开始收回压暗 / 翻折（与窗口返回动画同一个起点，不等它 onResume）
-            PageTransitions.notifyPopStarted()
+            // 即使本页切到了普通档，也须消费它确实拥有的层；未登记的页面始终是空操作。
+            PageTransitions.notifyPopStarted(this)
         }
         super.finish()
         // 返回：当前页向右整页退出，上一级从左侧回到原位（侧推的倒放）

@@ -30,15 +30,17 @@ class PageEnterTest {
     }
 
     @Test
-    fun playTo_withZeroDuration_snapsWithoutNeedingAFrameClock() = runBlocking {
-        val enter = PageEnter(initial = 1f)
-        val job = Job()
-        // 不带帧时钟的作用域：直接就位（snapTo 不需要帧时钟）也绝不能抛异常
-        enter.scope = CoroutineScope(coroutineContext + job)
-        enter.playTo(0f, durationMillis = 0)
-        withTimeout(TimeoutMillis) { while (enter.progress.value > 0f) delay(1) }
-        assertEquals(0f, enter.progress.value, 1e-4f)
-        job.cancel()
+    fun playTo_withDisabledAnimations_staysFlatEvenWhenFinishingDuringEntry() = runBlocking {
+        for (duration in listOf(0, -1)) {
+            val enter = PageEnter(initial = 0.4f)
+            val job = Job()
+            // 动画关闭且没有帧时钟：中途退出也必须就位，不能 snap 到退出端的最大翻折。
+            enter.scope = CoroutineScope(coroutineContext + job)
+            enter.playTo(0f, durationMillis = duration)
+            withTimeout(TimeoutMillis) { while (enter.progress.value < 1f) delay(1) }
+            assertEquals(1f, enter.progress.value, 0f)
+            job.cancel()
+        }
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.tyranor.next.ui.common
 
 import android.view.Window
+import android.util.Log
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -73,6 +74,8 @@ import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import com.tyranor.next.ui.common.motion.animateContentSizeSpring
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -139,35 +142,59 @@ internal fun AppAlertDialog(
     val currentDismissEnabled by rememberUpdatedState(dismissEnabled)
     val focusManager = LocalFocusManager.current
 
+    fun actionFailed(failure: Exception) {
+        Log.e("AppAlertDialog", "Dialog exit action failed", failure)
+        try {
+            currentOnDismiss()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (closeFailure: Exception) {
+            Log.e("AppAlertDialog", "Could not close dialog after its exit action failed", closeFailure)
+        }
+    }
+
     // 取消类按钮：先播放退场再执行按钮动作（按钮通常直接把弹窗从组合里移除，来不及播放退场）。
     // 动作执行后弹窗若仍在（例如校验未通过），再弹回来，不会卡在隐藏状态。
     val exitController = remember(enhanced, focusManager) {
         DialogExitController { action ->
             if (!enhanced) {
-                action()
+                try {
+                    action()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    actionFailed(failure)
+                }
                 return@DialogExitController
             }
             if (dismissing.value) return@DialogExitController
             dismissing.value = true
             focusManager.clearFocus(force = true)
             dialogWindow[0].passThroughTouches()
-            scope.launch {
-                var acted = false
-                try {
-                    launch { dimAlpha.animateTo(0f, MotionTokens.fadeOut(0.001f)) }
-                    slideFraction.animateTo(1f, MotionTokens.surfaceExit(0.001f))
-                    acted = true
-                    action()
-                } finally {
-                    // 退场动画途中弹窗被销毁（旋转、Activity 结束）：用户已经确认的动作仍要执行，不能被静默丢弃
-                    if (!acted) withContext(NonCancellable) { action() }
-                }
-                // 仍在组合中：动作没有关闭弹窗，恢复显示
-                delay(80)
-                dialogWindow[0]?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
-                dismissing.value = false
-                launch { dimAlpha.animateTo(1f, MotionTokens.fadeIn(0.001f)) }
-                slideFraction.animateTo(0f, DialogEnterSpec)
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                runDialogExitAction(
+                    animateExit = {
+                        launch { dimAlpha.animateTo(0f, MotionTokens.fadeOut(0.001f)) }
+                        slideFraction.animateTo(1f, MotionTokens.surfaceExit(0.001f))
+                    },
+                    action = action,
+                    afterAction = {
+                        // 仍在组合中：动作没有关闭弹窗，恢复显示。
+                        delay(80)
+                        dialogWindow[0]?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                        dismissing.value = false
+                        launch { dimAlpha.animateTo(1f, MotionTokens.fadeIn(0.001f)) }
+                        slideFraction.animateTo(0f, DialogEnterSpec)
+                    },
+                    onFailure = { actionFailed(it) },
+                    cleanup = {
+                        try {
+                            dialogWindow[0]?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                        } finally {
+                            dismissing.value = false
+                        }
+                    },
+                )
             }
         }
     }
@@ -178,16 +205,28 @@ internal fun AppAlertDialog(
         dismissing.value = true
         focusManager.clearFocus(force = true)
         dialogWindow[0].passThroughTouches()
-        scope.launch {
-            if (enhanced) {
-                // 退场：临界阻尼弹簧顺滑沉下（不回弹），遮罩同步淡出
-                launch { dimAlpha.animateTo(0f, MotionTokens.fadeOut(0.001f)) }
-                slideFraction.animateTo(1f, MotionTokens.surfaceExit(0.001f))
-            } else {
-                launch { dimAlpha.animateTo(0f, tween(250, easing = FastOutLinearInEasing)) }
-                slideFraction.animateTo(1f, tween(260, easing = FastOutLinearInEasing))
-            }
-            currentOnDismiss()
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            runDialogExitAction(
+                animateExit = {
+                    if (enhanced) {
+                        launch { dimAlpha.animateTo(0f, MotionTokens.fadeOut(0.001f)) }
+                        slideFraction.animateTo(1f, MotionTokens.surfaceExit(0.001f))
+                    } else {
+                        launch { dimAlpha.animateTo(0f, tween(250, easing = FastOutLinearInEasing)) }
+                        slideFraction.animateTo(1f, tween(260, easing = FastOutLinearInEasing))
+                    }
+                },
+                action = { currentOnDismiss() },
+                afterAction = {},
+                onFailure = { Log.e("AppAlertDialog", "Dialog dismissal failed", it) },
+                cleanup = {
+                    try {
+                        dialogWindow[0]?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                    } finally {
+                        dismissing.value = false
+                    }
+                },
+            )
         }
     }
 
@@ -366,3 +405,55 @@ internal class DialogExitController(val closeThen: (action: () -> Unit) -> Unit)
 
 /** 当前按钮所在弹窗的退场控制器；为 null 时按钮直接执行动作。 */
 internal val LocalDialogExit = staticCompositionLocalOf<DialogExitController?> { null }
+
+/** Deliver an accepted action once even when exit is cancelled, then always release the exit guard. */
+internal suspend fun runDialogExitAction(
+    animateExit: suspend () -> Unit,
+    action: () -> Unit,
+    afterAction: suspend () -> Unit,
+    onFailure: (Exception) -> Unit,
+    cleanup: () -> Unit,
+) {
+    var cancellation: CancellationException? = null
+    var failure: Exception? = null
+    fun record(error: Exception) {
+        if (error is CancellationException) {
+            if (cancellation == null) cancellation = error
+            else if (cancellation !== error) cancellation!!.addSuppressed(error)
+        } else {
+            if (failure == null) failure = error else if (failure !== error) failure!!.addSuppressed(error)
+        }
+    }
+    try {
+        try {
+            animateExit()
+        } catch (error: Exception) {
+            record(error)
+        }
+        // Rotation/disposal can cancel the animation after a user accepted this action.
+        // Attempt it exactly once; an action failure must never cause an automatic retry.
+        withContext(NonCancellable) {
+            try {
+                action()
+            } catch (error: Exception) {
+                record(error)
+            }
+        }
+        val cancelled = cancellation
+        val failed = failure
+        if (cancelled != null) {
+            if (failed != null) {
+                cancelled.addSuppressed(failed)
+                try {
+                    onFailure(failed)
+                } catch (closeFailure: Exception) {
+                    if (closeFailure !== cancelled) cancelled.addSuppressed(closeFailure)
+                }
+            }
+            throw cancelled
+        }
+        if (failed != null) onFailure(failed) else afterAction()
+    } finally {
+        cleanup()
+    }
+}

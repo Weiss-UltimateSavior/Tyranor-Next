@@ -17,7 +17,7 @@ internal object TabPageMotion {
  * 「增强」档：整宽水平位移与景深缩放放在**绘制阶段图层**里（[drawPhaseLayersInOwnedLayer]），透明度仍在外层 `graphicsLayer`。
  * 原来这几项都写在整页容器的 `graphicsLayer` 里，位移 / 缩放一变，Compose 就要把整页（几百个节点）的包围盒重新算一遍，
  * 切页期间每帧一次，真机 debug 包上占主线程约 18%；画出来的结果不变。
- * 命中测试不再跟着位移 / 缩放：切页期间主界面页本来就不接收触摸（`pageInteractive` 要等到位），引擎页只在刚起步时偏得多。
+ * 命中测试不跟着绘制位移 / 缩放：主标签和引擎分类都在页面停稳后恢复触摸与无障碍交互。
  * 「普通」档保持原版：位移与透明度写在同一个 `graphicsLayer` 里。
  *
  * @param key 节点身份（同一个分页的状态持有者），相同就不重建节点

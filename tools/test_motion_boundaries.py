@@ -15,6 +15,30 @@ PAGE = "ui/game/Fixture.kt"
 
 
 class MotionBoundariesTest(unittest.TestCase):
+    def test_implicit_container_animations_are_checked(self):
+        source = """import androidx.compose.animation.AnimatedContent as Swap
+        import androidx.compose.animation.AnimatedVisibility
+        import androidx.compose.animation.Crossfade
+        import com.tyranor.next.ui.archive.archivePaneTransition as pane
+        fun bad() {
+            Swap(target) { body() }
+            AnimatedVisibility(visible) { body() }
+            Crossfade(target) { body() }
+        }
+        fun owned() = Swap(target, transitionSpec = { pane(targetState) }) { body() }
+        """
+        self.assertEqual([line for line, _ in gate.check_source(PAGE, source)], [6, 7, 8])
+
+    def test_transition_receiver_container_animations_are_checked(self):
+        source = """import androidx.compose.animation.AnimatedContent as Swap
+        import androidx.compose.animation.AnimatedVisibility
+        fun bad() {
+            transition.Swap { body() }
+            transition.AnimatedVisibility({ it }) { body() }
+        }
+        """
+        self.assertEqual([line for line, _ in gate.check_source(PAGE, source)], [4, 5])
+
     def test_raw_list_and_disguised_variant(self):
         # Also check that registered implementation owners cannot reimplement list motion.
         source = """fun row() = Modifier

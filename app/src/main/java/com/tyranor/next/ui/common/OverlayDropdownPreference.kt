@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.runtime.withFrameNanos
@@ -24,6 +25,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.CompositingStrategy
@@ -64,6 +67,7 @@ import com.tyranor.next.ui.common.motion.BlurTextWith
 import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.MotionSprings
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import top.yukonga.miuix.kmp.basic.BasicComponent
@@ -167,9 +171,11 @@ fun OverlayDropdownPreference(
     val hapticFeedback = LocalHapticFeedback.current
     val currentHapticFeedback by rememberUpdatedState(hapticFeedback)
     val currentOnExpandedChange = rememberUpdatedState(onExpandedChange)
+    val selectionEpoch = remember { DropdownSelectionEpoch() }
     val setExpanded: (Boolean) -> Unit = remember {
         { expanded ->
             if (isDropdownExpanded.value != expanded) {
+                selectionEpoch.invalidate()
                 isDropdownExpanded.value = expanded
                 currentOnExpandedChange.value?.invoke(expanded)
             }
@@ -184,7 +190,16 @@ fun OverlayDropdownPreference(
     }
     // 「增强」档：长按条目后手指不抬起、滑到弹层里的某个选项上，松手即选定（普通档与原版一致）
     val slideEnabled = MotionMode.enhanced && actualEnabled
-    val slide = remember { DropdownSlideState() }
+    val rowCoordinates = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    val configuration = LocalConfiguration.current
+    // Selection/callback changes keep the session; replacing options or window geometry does not.
+    val slide = remember(
+        entry.items.map { it.text to it.enabled }, slideEnabled,
+        configuration.screenWidthDp, configuration.screenHeightDp, configuration.orientation,
+        LocalDensity.current, LocalLayoutDirection.current,
+    ) { DropdownSlideState() }
+    slide.rowCoords = rowCoordinates[0]
+    val currentSlide by rememberUpdatedState(slide)
     val slideScope = rememberCoroutineScope()
     val longPressMillis = LocalViewConfiguration.current.longPressTimeoutMillis
     val currentEntry by rememberUpdatedState(entry)
@@ -192,6 +207,7 @@ fun OverlayDropdownPreference(
     val pickItem: (Int) -> Unit = { picked ->
         val pickedItem = currentEntry.items.getOrNull(picked)
         if (pickedItem != null && pickedItem.enabled) {
+            val selection = selectionEpoch.beginSelection()
             // 同步标记「已确认」：选择块留在选中项上（不会先淡出再出现），手势收尾的清理也不会把它清掉
             slide.confirmed = picked
             slideScope.launch {
@@ -201,11 +217,13 @@ fun OverlayDropdownPreference(
                 // 选中生效会触发一次较重的重组（有时还牵动整页换皮）：等它那几帧过去再开始弹性动画，
                 // 否则动画的头几帧被吞掉，看起来一抽一抽的
                 repeat(2) { withFrameNanos { } }
-                slide.pulseTick++
+                if (!selectionEpoch.isCurrent(selection)) return@launch
+                if (currentSlide === slide) slide.pulseTick++
                 // 选择块吸附到位的瞬间就开始收起：选择块与弹层一起渐隐消失，整套退出很利落
                 delay(CONFIRM_POP_MILLIS)
+                if (!selectionEpoch.isCurrent(selection)) return@launch
                 if (collapseOnSelection) {
-                    slide.closing = true
+                    currentSlide.closing = true
                     setExpanded(false)
                 }
             }
@@ -227,8 +245,11 @@ fun OverlayDropdownPreference(
     BasicComponent(
         modifier = if (slideEnabled) {
             rowModifier
-                .onGloballyPositioned { slide.rowCoords = it }
-                .pointerInput(longPressMillis) {
+                .onGloballyPositioned {
+                    rowCoordinates[0] = it
+                    slide.rowCoords = it
+                }
+                .pointerInput(longPressMillis, slide) {
                     awaitEachGesture {
                         // Initial 传递：先于条目自身的点击处理；只观察，长按成立后才开始消费
                         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
@@ -291,7 +312,7 @@ fun OverlayDropdownPreference(
                         } finally {
                             // 手势结束 / 被取消：不论如何都撤掉「正在滑选」状态（已确认选中的除外）
                             slide.rowTracking = false
-                            if (slide.confirmed < 0) slide.reset()
+                            if (slide.confirmed < 0) slide.resetGesture()
                         }
                     }
                 }
@@ -336,21 +357,23 @@ fun OverlayDropdownPreference(
             )
             if (itemsNotEmpty) {
                 if (slideEnabled) {
-                    SlideSelectDropdownPopup(
-                        entry = entry,
-                        show = isDropdownExpanded.value,
-                        slide = slide,
-                        onPick = pickItem,
-                        onDismiss = { setExpanded(false) },
-                        onDismissFinished = {
-                            isHoldDown.value = false
-                            slide.reset()
-                        },
-                        maxHeight = maxHeight,
-                        dropdownColors = dropdownColors,
-                        renderInRootScaffold = renderInRootScaffold,
-                        collapseOnSelection = collapseOnSelection,
-                    )
+                    key(slide) {
+                        SlideSelectDropdownPopup(
+                            entry = entry,
+                            show = isDropdownExpanded.value,
+                            slide = slide,
+                            onPick = pickItem,
+                            onDismiss = { setExpanded(false) },
+                            onDismissFinished = {
+                                isHoldDown.value = false
+                                slide.reset()
+                            },
+                            maxHeight = maxHeight,
+                            dropdownColors = dropdownColors,
+                            renderInRootScaffold = renderInRootScaffold,
+                            collapseOnSelection = collapseOnSelection,
+                        )
+                    }
                 } else if (LocalAppSheetContent.current) {
                     // 抽屉是独立窗口，普通档沿用 WindowDropdownPreference 的窗口弹层。
                     WindowDropdownPopup(
@@ -420,8 +443,19 @@ private fun DropdownListPopup(
     }
 }
 
+/** Delayed selection completion survives a mode switch, but never a reopen or a newer selection. */
+internal class DropdownSelectionEpoch {
+    private var generation = 0L
+
+    fun invalidate() { generation++ }
+
+    fun beginSelection(): Long = ++generation
+
+    fun isCurrent(selection: Long): Boolean = generation == selection
+}
+
 /** 长按滑选的会话状态：悬停项、已确认项，以及弹层里各选项在屏幕坐标系下的区域。 */
-private class DropdownSlideState {
+internal class DropdownSlideState {
     var active by mutableStateOf(false)
     var hovered by mutableIntStateOf(-1)
     var confirmed by mutableIntStateOf(-1)
@@ -469,11 +503,104 @@ private class DropdownSlideState {
         }
     }
 
-    fun reset() {
+    fun resetGesture() {
         active = false
         hovered = -1
         confirmed = -1
         closing = false
+        fromRow = false
+        rowTracking = false
+    }
+
+    fun reset() {
+        resetGesture()
+        itemBounds.clear()
+    }
+
+    fun pillTarget(count: Int): DropdownPillTarget {
+        val row = if (confirmed >= 0) confirmed else hovered
+        val center = if (row in 0 until count) centerOf(row, count) else null
+        val pitch = pitch(count)
+        val target = when {
+            center == null || pitch == null -> null
+            confirmed >= 0 -> center
+            active -> center + (fingerY - center).coerceIn(-pitch * 0.5f, pitch * 0.5f) * MAGNET
+            else -> null
+        }
+        return DropdownPillTarget(target, confirmed >= 0)
+    }
+}
+
+internal data class DropdownPillTarget(val center: Float?, val confirmed: Boolean)
+
+/** The existing integrator, with a subpixel resting threshold so an open popup can stop requesting frames. */
+internal class DropdownPillMotion {
+    var center = 0f
+        private set
+    var speed = 0f
+        private set
+    var alpha = 0f
+        private set
+    private var alphaSpeed = 0f
+
+    fun settleIfClose(target: DropdownPillTarget): Boolean {
+        val alphaTarget = if (target.center != null) 1f else 0f
+        if (kotlin.math.abs(alpha - alphaTarget) > 0.001f || kotlin.math.abs(alphaSpeed) > 0.01f) return false
+        if (target.center != null &&
+            (kotlin.math.abs(center - target.center) > 0.01f || kotlin.math.abs(speed) > 0.1f)) return false
+        target.center?.let { center = it }
+        speed = 0f
+        alpha = alphaTarget
+        alphaSpeed = 0f
+        return true
+    }
+
+    fun step(target: DropdownPillTarget, elapsed: Float) {
+        val destination = target.center
+        if (destination != null && alpha < 0.02f) {
+            center = destination
+            speed = 0f
+        }
+        val k = if (target.confirmed) 650f else 900f
+        val zeta = if (target.confirmed) 0.52f else 0.78f
+        val alphaTarget = if (destination != null) 1f else 0f
+        val ka = if (alphaTarget > 0f) 800f else 280f
+        val za = if (alphaTarget > 0f) 0.85f else 1f
+        var remaining = elapsed.coerceIn(0f, 0.05f)
+        while (remaining > 0f) {
+            val h = minOf(remaining, 1f / 240f)
+            remaining -= h
+            if (destination != null) {
+                speed += (-k * (center - destination) - 2f * zeta * kotlin.math.sqrt(k) * speed) * h
+                center += speed * h
+            } else {
+                speed = 0f
+            }
+            alphaSpeed += (-ka * (alpha - alphaTarget) - 2f * za * kotlin.math.sqrt(ka) * alphaSpeed) * h
+            alpha += alphaSpeed * h
+        }
+    }
+}
+
+internal suspend fun runDropdownPillMotion(
+    target: () -> DropdownPillTarget,
+    apply: (DropdownPillMotion) -> Unit,
+) {
+    val motion = DropdownPillMotion()
+    var last: Long? = null
+    while (true) {
+        val destination = target()
+        if (motion.settleIfClose(destination)) {
+            apply(motion)
+            // Do not restart an animation at each touch event. Only suspend after the integrator settles.
+            snapshotFlow(target).first { it != destination }
+            last = null
+        } else {
+            val now = withFrameNanos { it }
+            motion.step(target(), last?.let { (now - it) / 1_000_000_000f } ?: 0f)
+            last = now
+            apply(motion)
+        }
     }
 }
 
@@ -529,54 +656,10 @@ private fun SlideSelectDropdownPopup(
         if (!show) return@LaunchedEffect
         pillAlpha = 0f
         pillSpeed = 0f
-        var speed = 0f
-        var alphaSpeed = 0f
-        var last = withFrameNanos { it }
-        while (true) {
-            val now = withFrameNanos { it }
-            val dt = ((now - last) / 1_000_000_000f).coerceIn(0f, 0.05f)
-            last = now
-            // 目标：确认后吸附到选中行；滑选中 = 行中心 + 一部分手指的偏离量（磁吸，限制在半行内），既跟手又有「落在行里」的结构感
-            val n = items.size
-            val confirmed = slide.confirmed
-            val row = if (confirmed >= 0) confirmed else slide.hovered
-            val center = if (row >= 0) slide.centerOf(row, n) else null
-            val pitch = slide.pitch(n)
-            val target: Float? = when {
-                center == null || pitch == null -> null
-                confirmed >= 0 -> center
-                slide.active -> center + (slide.fingerY - center).coerceIn(-pitch * 0.5f, pitch * 0.5f) * MAGNET
-                else -> null
-            }
-            var x = pillCenter
-            var a = pillAlpha
-            // 首次出现：直接落在目标上（不从旧位置滑过来）
-            if (target != null && a < 0.02f) {
-                x = target
-                speed = 0f
-            }
-            // 追随用较硬的弹簧；确认吸附用更弹的弹簧（明显回弹）
-            val k = if (confirmed >= 0) 650f else 900f
-            val zeta = if (confirmed >= 0) 0.52f else 0.78f
-            val aTarget = if (target != null) 1f else 0f
-            val ka = if (aTarget > 0f) 800f else 280f
-            val za = if (aTarget > 0f) 0.85f else 1f
-            var remaining = dt
-            while (remaining > 0f) {
-                val h = minOf(remaining, 1f / 240f)
-                remaining -= h
-                if (target != null) {
-                    speed += (-k * (x - target) - 2f * zeta * kotlin.math.sqrt(k) * speed) * h
-                    x += speed * h
-                } else {
-                    speed = 0f
-                }
-                alphaSpeed += (-ka * (a - aTarget) - 2f * za * kotlin.math.sqrt(ka) * alphaSpeed) * h
-                a += alphaSpeed * h
-            }
-            pillCenter = x
-            pillSpeed = speed
-            pillAlpha = a
+        runDropdownPillMotion({ slide.pillTarget(items.size) }) { motion ->
+            pillCenter = motion.center
+            pillSpeed = motion.speed
+            pillAlpha = motion.alpha
         }
     }
     LaunchedEffect(slide.pulseTick) {
@@ -629,7 +712,7 @@ private fun SlideSelectDropdownPopup(
                         }
                         // 在弹层里按住并上下滑动：选择块跟着手指走，松手选定手指下的那一项；
                         // 没有滑动（普通点按）时不消费，交给选项自己的点击
-                        .pointerInput(index) {
+                        .pointerInput(slide, index) {
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                                 // 不设任何拦截：弹层里的每一次新触摸都直接接管（并覆盖掉旧状态）。
@@ -641,7 +724,8 @@ private fun SlideSelectDropdownPopup(
                                 var sliding = false
                                 var finished = false
                                 // 手指一按下，按住的区域就出现主题色高光（还没滑动也有；松手点按时由选项自己的点击处理）
-                                slide.reset()
+                                // Keep this open popup's freshly measured geometry for the new gesture.
+                                slide.resetGesture()
                                 slide.active = true
                                 slide.fromRow = false
                                 slide.hovered = index
@@ -669,10 +753,10 @@ private fun SlideSelectDropdownPopup(
                                         if (sliding) {
                                             val picked = slide.hovered
                                             slide.active = false
-                                            if (picked >= 0) currentOnPick(picked) else slide.reset()
+                                            if (picked >= 0) currentOnPick(picked) else slide.resetGesture()
                                         } else if (slide.confirmed < 0) {
                                             // 普通点按：高光让位给选项自己的点击（它会触发选择并收起）
-                                            slide.reset()
+                                            slide.resetGesture()
                                         }
                                         finished = true
                                         break
@@ -680,7 +764,7 @@ private fun SlideSelectDropdownPopup(
                                 }
                                 } finally {
                                     // 手势被取消 / 中断：撤掉高光，状态不残留
-                                    if (!finished && slide.confirmed < 0) slide.reset()
+                                    if (!finished && slide.confirmed < 0) slide.resetGesture()
                                 }
                             }
                         }

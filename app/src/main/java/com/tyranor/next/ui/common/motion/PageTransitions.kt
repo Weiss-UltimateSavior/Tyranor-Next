@@ -37,6 +37,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.R
 import com.tyranor.next.theme.AppThemeColors
 import kotlinx.coroutines.CoroutineScope
@@ -51,6 +52,7 @@ import top.yukonga.miuix.kmp.utils.MiuixOverscrollFactory
  * 上一级页面的压暗与翻折景深由该页自己的 [PageDepth]（[pageTransitionScrim] / [depthFoldStack]）在 Compose 里同步绘制。
  */
 object PageTransitions {
+    private const val PUSH_TOKEN_EXTRA = "com.tyranor.next.ui.common.motion.PAGE_PUSH_TOKEN"
     // 「增强」档为水平侧推；「普通」档沿用原版的上下翻页（进入向上、返回向下）
     val PushEnter: Int get() = if (MotionMode.enhanced) R.anim.page_push_enter else R.anim.page_slide_in_from_bottom
     val PushExit: Int get() = if (MotionMode.enhanced) R.anim.page_push_exit else R.anim.page_slide_out_to_top
@@ -61,10 +63,10 @@ object PageTransitions {
     private var lastPushAt: Long = 0L
 
     /** 记一次「正在推入下一页」，供当前页在 onPause 时压暗（「普通」档不压暗）。 */
-    fun markPush() {
+    private fun markPush(): Long? {
         lastPushAt = if (MotionMode.enhanced) SystemClock.uptimeMillis() else 0L
         // 每次推入新开一层「收回」登记：同一次推入里被盖住的页面和它上面的抽屉，在上层页面退出时一起收回
-        if (MotionMode.enhanced) popLevels.add(ArrayList())
+        return if (MotionMode.enhanced) popLevels.push() else null
     }
 
     /** 仅消费最近一秒的侧推标记，避免普通生命周期变化触发页面压暗。 */
@@ -91,20 +93,27 @@ object PageTransitions {
      * 与窗口的返回动画同一个起点。原来要等下层页面 onResume 才开始收回，比窗口动画晚几十毫秒，一级页面看起来「没有立刻抬起」。
      * 只在主线程访问。
      */
-    private val popLevels = ArrayList<ArrayList<() -> Unit>>()
+    // Seed tokens from the monotonic process start, so restored intents cannot claim a
+    // new process's first push merely because both counters started at one.
+    private val popLevels = PagePopLevels<Activity>(SystemClock.elapsedRealtimeNanos())
 
     internal fun registerPop(unfold: () -> Unit) {
-        (popLevels.lastOrNull() ?: ArrayList<() -> Unit>().also { popLevels.add(it) }).add(unfold)
+        popLevels.register(unfold)
     }
 
     internal fun unregisterPop(unfold: () -> Unit) {
-        for (level in popLevels) level.remove(unfold)
+        popLevels.unregister(unfold)
     }
 
-    /** 最上面的二级页面开始退出（`finish()`）：让它下一层的页面（和页面上的抽屉）立刻开始收回压暗 / 翻折。 */
-    fun notifyPopStarted() {
-        val level = popLevels.removeLastOrNull() ?: return
-        for (unfold in level.toList()) unfold()
+    /** 只有本次 push 真正打开的页面可绑定此层；重建时同 token 改绑新 Activity 实例。 */
+    internal fun bindPushOwner(activity: Activity) {
+        val token = activity.intent?.getLongExtra(PUSH_TOKEN_EXTRA, 0L) ?: return
+        popLevels.bind(token, activity)
+    }
+
+    /** 栈顶的实际接收页面开始退出时收回下一层；直接打开的二级页不会误消费别人的层。 */
+    fun notifyPopStarted(activity: Activity) {
+        popLevels.pop(activity)
     }
 
     /** 新页第一帧已经画出（窗口侧推即将开始）：此刻才让被盖住的下层页面开始压暗 / 翻折，与侧推同一个起点。 */
@@ -120,12 +129,15 @@ object PageTransitions {
 
     /** 以侧推转场启动页面；启动失败时撤销压暗标记，不让随后无关的 onPause 误压暗。 */
     fun startPush(activity: Activity, intent: Intent) {
-        markPush()
+        val token = markPush()
+        val pushIntent = Intent(intent).apply {
+            if (token != null) putExtra(PUSH_TOKEN_EXTRA, token) else removeExtra(PUSH_TOKEN_EXTRA)
+        }
         try {
-            activity.startActivity(intent, pushOptions(activity))
+            activity.startActivity(pushIntent, pushOptions(activity))
         } catch (e: RuntimeException) {
             lastPushAt = 0L
-            popLevels.removeLastOrNull()
+            if (token != null) popLevels.cancel(token)
             throw e
         }
     }
@@ -151,6 +163,54 @@ object PageTransitions {
             c = c.baseContext
         }
         return null
+    }
+}
+
+/** One push owns one pop level. Registration alone never manufactures an unowned level. */
+internal class PagePopLevels<O : Any>(initialToken: Long = 0L) {
+    private class Level<O>(val token: Long) {
+        var owner: O? = null
+        val callbacks = ArrayList<() -> Unit>()
+    }
+
+    private var nextToken = initialToken
+    private val levels = ArrayList<Level<O>>()
+
+    fun push(): Long = (++nextToken).also { levels.add(Level(it)) }
+
+    fun bind(token: Long, owner: O) {
+        levels.firstOrNull { it.token == token }?.owner = owner
+    }
+
+    fun register(callback: () -> Unit) {
+        levels.lastOrNull()?.callbacks?.add(callback)
+    }
+
+    fun unregister(callback: () -> Unit) {
+        for (level in levels) level.callbacks.remove(callback)
+    }
+
+    fun cancel(token: Long) {
+        levels.removeAll { it.token == token }
+    }
+
+    fun pop(owner: O) {
+        val level = levels.lastOrNull() ?: return
+        if (level.owner !== owner) return
+        levels.removeAt(levels.lastIndex)
+        for (callback in level.callbacks.toList()) callback()
+    }
+}
+
+/** Uses the hosting Activity's page transition, falling back to a new task for non-Activity contexts. */
+internal fun startActivityWithPageTransition(context: Context, intent: Intent) {
+    val activity = AppLocaleController.findActivity(context)
+    if (activity != null) {
+        // 水平侧推：新页从右侧推入，上一级向左让开并压暗（见 ui/common/motion/PageTransitions.kt）
+        PageTransitions.startPush(activity, intent)
+    } else {
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
     }
 }
 
@@ -364,11 +424,11 @@ class PageEnter internal constructor(initial: Float = 0f) {
      */
     internal var scope: CoroutineScope? = null
 
-    /** 在页面组合的作用域里把进度补间到 [target]；[durationMillis] <= 0 直接就位；页面还没组合 / 已离开组合时什么也不做。 */
+    /** 在页面组合的作用域里补间到 [target]；系统关闭动画时保持完全就位，避免退出前闪出最大翻折。 */
     internal fun playTo(target: Float, durationMillis: Int) {
         scope?.launch {
             if (durationMillis <= 0) {
-                progress.snapTo(target)
+                progress.snapTo(1f)
             } else {
                 progress.animateTo(target, tween(durationMillis, easing = MotionSprings.PushEasing))
             }

@@ -110,7 +110,7 @@ import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import top.yukonga.miuix.kmp.utils.MiuixPopupUtils
 import com.tyranor.next.ui.engine.EngineScreen
 import com.tyranor.next.ui.game.GameScreen
-import com.tyranor.next.ui.game.startActivityWithPageTransition
+import com.tyranor.next.ui.common.motion.startActivityWithPageTransition
 import com.tyranor.next.ui.home.HomeScreen
 import com.tyranor.next.ui.save.WebDavSettingsActivity
 import com.tyranor.next.ui.runtime.EngineModuleManagementActivity

@@ -227,7 +227,7 @@ private fun FixedSlidingTabRow(
         val tabWidth = (maxWidth - FixedTabSpacing * (tabs.size - 1)) / tabs.size
         val lensEnabled = pager != null && MotionMode.enhanced
         if (lensEnabled) {
-            // 选中块就是底栏同款透镜（见 TabPagerState）：静止时与原来的白色胶囊指示器完全一致，
+            // 选中块就是底栏同款透镜（见 TabPagerState）：静止时沿用原白色胶囊指示器的配色与圆角，
             // 点选 / 长按时按底栏透镜的运动与按压形变动起来
             TabLensBase(pager!!, tabWidth, FixedTabSpacing, shape)
         } else {

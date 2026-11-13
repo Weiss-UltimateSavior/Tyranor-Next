@@ -8,6 +8,7 @@ import androidx.lifecycle.LifecycleOwner
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.MotionSheetController
+import com.tyranor.next.ui.common.motion.startActivityWithPageTransition
 import com.tyranor.next.ui.settings.PerGameSettingsActivity
 
 /** Home and library own separate selections; both clear theirs on ordinary-mode settings navigation. */

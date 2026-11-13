@@ -12,7 +12,7 @@ python3 -B tools/check-motion-boundaries.py
 | 边界 | 拦截 | 允许 |
 | --- | --- | --- |
 | 列表条目 | 直接调用 `animateItem` / `animateItemPlacement`；在同一组参数里手配 `fadeInSpec`、`placementSpec`、`fadeOutSpec`；直接拿 `ListItemPlacement.Layout.spec` / `Reflow.spec` | `listItemMotion()`、`listItemMotion(ListItemPlacement.Reflow)`、传 `enabled`、在两种公开变体中选择、叠加具名入场效果 |
-| 业务页面 | 在页面内直接构造 Compose 动画，如 `Animatable`、`animate*AsState`、`rememberInfiniteTransition`、`tween`、`spring`、进退场原语，或直接调用 `MotionTokens` / `MotionSprings` 的规格函数 | 调用具名效果、传状态/动作，或把 owner 提供的转场交给 `AnimatedContent` / `AnimatedVisibility`；普通布局、绘制、滚动 API 和单纯的类型/import 不会因名称里有 animate 而报错 |
+| 业务页面 | 直接构造 `Animatable`、`animate*AsState`、`rememberInfiniteTransition`、`tween`、`spring`、进退场原语，直接调用 `MotionTokens` / `MotionSprings` 的规格函数，或使用隐含默认动画的 `AnimatedContent` / `AnimatedVisibility` / `Crossfade` | 调用具名效果、传状态/动作；现有归档 `AnimatedContent` 仅在显式使用已登记的 `archivePaneTransition` 时允许。普通布局、绘制、滚动 API 和单纯的类型/import 不会因名称里有 animate 而报错 |
 
 列表规则覆盖 `app/src/main/{java,kotlin}/**/*.kt`，包括已登记的效果实现；由 `ui/common/motion/ListItemMotion.kt` 独占原始条目动画和变体配置。业务页面规则覆盖这两个源码根中 `com/tyranor/next/ui/` 下的 Kotlin 文件及 `MainActivity.kt`。动效实现文件在脚本的 `OWNERS` 中按完整相对路径登记；放进 `common/motion`、文件起名叫 `*Motion.kt` 都不会自动放行。
 

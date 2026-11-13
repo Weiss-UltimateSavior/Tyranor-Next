@@ -81,7 +81,7 @@ import com.tyranor.next.ui.common.DialogTextButton
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.LocalIndication
 import com.tyranor.next.ui.common.AppNavItem
-import com.tyranor.next.ui.game.startActivityWithPageTransition
+import com.tyranor.next.ui.common.motion.startActivityWithPageTransition
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.TopBarIcon

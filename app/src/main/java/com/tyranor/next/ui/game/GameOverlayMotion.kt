@@ -2,7 +2,6 @@ package com.tyranor.next.ui.game
 
 import android.view.Window
 import androidx.compose.animation.core.Animatable
-import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -15,10 +14,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.ui.common.motion.Bind
 import com.tyranor.next.ui.common.motion.DialogSinkStrength
+import com.tyranor.next.ui.common.motion.dialogScrimAlpha
 import com.tyranor.next.ui.common.motion.LocalSheetBackdrop
 import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.MotionTokens
 import com.tyranor.next.ui.common.motion.passThroughTouches
+import com.tyranor.next.ui.common.motion.releaseDialogDim
 import com.tyranor.next.ui.common.motion.syncDialogWindow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -46,14 +47,17 @@ internal class GameOverlayMotion(
 
     @Composable
     fun BindWindow() {
-        val current = syncDialogWindow(preserveWindowAnimations = !enhanced) {
+        val current = syncDialogWindow(
+            preserveWindowAnimations = !enhanced,
+            scrimAlpha = if (kind == GameOverlay.CoverSearch) 0.5f else 0f,
+        ) {
             if (enhanced) dim.value else 1f
         }
         tracks.window = current
         DisposableEffect(current) {
             onDispose {
                 current.passThroughTouches()
-                current?.setDimAmount(0f)
+                current.releaseDialogDim()
             }
         }
         if (kind == GameOverlay.CoverSearch) {
@@ -68,7 +72,7 @@ internal class GameOverlayMotion(
 
     fun releaseWindow() {
         tracks.window.passThroughTouches()
-        tracks.window?.setDimAmount(0f)
+        tracks.window.releaseDialogDim()
     }
 
     fun dismiss(action: () -> Unit) {
@@ -121,9 +125,10 @@ internal class GameOverlayMotion(
         }
     }
 
-    fun searchScrim(modifier: Modifier): Modifier = if (enhanced) modifier.drawBehind {
-        drawRect(Color.Black.copy(alpha = 0.5f * dim.value.coerceIn(0f, 1f)))
-    } else modifier.background(Color.Black.copy(alpha = 0.5f))
+    fun searchScrim(modifier: Modifier): Modifier = modifier.drawBehind {
+        val alpha = tracks.window.dialogScrimAlpha()
+        if (alpha > 0f) drawRect(Color.Black.copy(alpha = alpha))
+    }
 }
 
 @Composable

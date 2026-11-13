@@ -1,5 +1,6 @@
 package com.tyranor.next.ui.common.motion
 
+import android.view.View
 import android.view.Window
 import android.view.WindowManager
 import androidx.compose.foundation.clickable
@@ -9,16 +10,23 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.DialogWindowProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import java.util.IdentityHashMap
 import kotlin.math.roundToInt
 
 /** 增强档只用窗口 dim；普通档保留主题 dim 与自绘遮罩。两者都跟随面板的遮罩进度。 */
@@ -31,10 +39,15 @@ internal fun DialogWindowScrim(
     dismissEnabled: Boolean = true,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val window = syncDialogWindow(baseDimOverride = if (enhanced) DIALOG_SCRIM_ALPHA else null, dimProgress = progress)
+    val window = syncDialogWindow(
+        baseDimOverride = if (enhanced) DIALOG_SCRIM_ALPHA else null,
+        scrimAlpha = if (enhanced) 0f else DIALOG_SCRIM_ALPHA,
+        dimProgress = progress,
+    )
     SideEffect { onWindow(window) }
-    val scrim = if (enhanced) Modifier else Modifier.drawBehind {
-        drawRect(Color.Black.copy(alpha = DIALOG_SCRIM_ALPHA * progress()))
+    val scrim = Modifier.drawBehind {
+        val alpha = window.dialogScrimAlpha()
+        if (alpha > 0f) drawRect(Color.Black.copy(alpha = alpha))
     }
     Box(
         Modifier.fillMaxSize().then(scrim).clickable(
@@ -57,7 +70,8 @@ private const val DIALOG_SCRIM_ALPHA = 0.5f
  * 在 `Dialog { }` 内容里调用：默认关闭该窗口的系统进出场动画，并让窗口 dim 跟随 [dimProgress]（0..1，通常就是弹窗自己的
  * 遮罩进度）同步淡入淡出，停稳时的总暗度与原来一致。关闭开始时调用 [passThroughTouches]，退场期间点击直接落到下层页面。
  * 这是缺陷修复，「普通」与「增强」动效档都生效。
- * 没有自绘进退场的原版弹窗可用 [preserveWindowAnimations] 保留平台效果，关闭时须同步清零 dim。
+ * 同一 Activity 的叠层窗口保留下层仍显示的 native dim，避免上层进退场时压掉父遮罩。
+ * 没有自绘进退场的原版弹窗可用 [preserveWindowAnimations] 保留平台效果，关闭时调用 [releaseDialogDim]。
  *
  * @return 弹窗所在的平台窗口（取不到时为 null）
  */
@@ -66,40 +80,185 @@ fun syncDialogWindow(
     preserveWindowAnimations: Boolean = false,
     /** 非 null 时用它替代窗口主题自带的暗度（弹窗 / 侧栏的「增强」档用较浅的统一遮罩），null 则沿用窗口自带暗度。 */
     baseDimOverride: Float? = null,
+    /** 本窗口自绘遮罩的完整暗度；共享协调器只让它补足下层缺少的部分，避免叠层加深。 */
+    scrimAlpha: Float = 0f,
     dimProgress: () -> Float,
 ): Window? {
-    val window = (LocalView.current.parent as? DialogWindowProvider)?.window
+    val view = LocalView.current
+    val window = (view.parent as? DialogWindowProvider)?.window
+    val owner = remember(window) { PageTransitions.findActivity(view.context) ?: window }
     val originalAnimations = remember(window) { window?.attributes?.windowAnimations ?: 0 }
     val themeDim = remember(window) { window?.attributes?.dimAmount ?: 0f }
     val hasThemeDim = remember(window) { (window?.attributes?.flags ?: 0) and WindowManager.LayoutParams.FLAG_DIM_BEHIND != 0 }
     val baseDim = baseDimOverride ?: themeDim
     val progress = rememberUpdatedState(dimProgress)
-    DisposableEffect(window) {
-        if (window != null && window.attributes.dimAmount != 0f) window.setDimAmount(0f)
-        onDispose { }
+    val dimEnabled = hasThemeDim || baseDimOverride != null
+    val animations = if (preserveWindowAnimations) originalAnimations else 0
+    DisposableEffect(window, owner) {
+        val binding = if (window != null && owner != null) {
+            DialogWindowDims.bind(owner, window, quantizedDim(baseDim, progress.value()), dimEnabled, animations,
+                baseDim, quantizedDim(scrimAlpha, progress.value()), scrimAlpha)
+        } else null
+        onDispose { binding?.dispose() }
     }
     SideEffect {
-        val animations = if (preserveWindowAnimations) originalAnimations else 0
-        if (window != null && window.attributes.windowAnimations != animations) window.setWindowAnimations(animations)
-        if (window != null) {
-            val flag = WindowManager.LayoutParams.FLAG_DIM_BEHIND
-            val needed = hasThemeDim || baseDimOverride != null
-            if ((window.attributes.flags and flag != 0) != needed) {
-                if (needed) window.addFlags(flag) else window.clearFlags(flag)
-            }
-        }
+        if (window != null) DialogWindowDims.update(window, quantizedDim(baseDim, progress.value()), dimEnabled, animations,
+            baseDim, quantizedDim(scrimAlpha, progress.value()), scrimAlpha)
     }
-    LaunchedEffect(window, baseDim) {
+    LaunchedEffect(window, baseDim, dimEnabled, animations, scrimAlpha) {
         if (window == null) return@LaunchedEffect
         // 暗度只有 8 位精度：弹簧尾段肉眼不可辨的微小变化不再触发一次窗口布局与 WMS 调用；两端仍精确落到 0 与 baseDim
-        val fullLevel = (baseDim * 255f).roundToInt()
-        snapshotFlow { (progress.value().coerceIn(0f, 1f) * baseDim * 255f).roundToInt() }.collect { level ->
-            val dim = if (level >= fullLevel) baseDim else level / 255f
-            if (window.attributes.dimAmount != dim) window.setDimAmount(dim)
+        snapshotFlow { quantizedDim(baseDim, progress.value()) to quantizedDim(scrimAlpha, progress.value()) }.collect { (dim, scrim) ->
+            DialogWindowDims.update(window, dim, dimEnabled, animations, baseDim, scrim, scrimAlpha)
         }
     }
     return window
 }
+
+private fun quantizedDim(baseDim: Float, progress: Float): Float {
+    val level = (progress.coerceIn(0f, 1f) * baseDim * 255f).roundToInt()
+    return if (level >= (baseDim * 255f).roundToInt()) baseDim else level / 255f
+}
+
+/** Window registration follows real attachment, while composition owns the listener lifetime. UI thread only. */
+private object DialogWindowDims {
+    private val bindings = IdentityHashMap<Window, Binding>()
+    private val stack = DialogDimStack<Window>(
+        isVisible = { it.decorView.isAttachedToWindow && it.decorView.isShown },
+        applyDim = { window, dim, scrim -> bindings[window]?.applyDim(dim, scrim) },
+    )
+
+    fun bind(
+        owner: Any,
+        window: Window,
+        dim: Float,
+        enabled: Boolean,
+        animations: Int,
+        baseDim: Float,
+        scrim: Float,
+        baseScrim: Float,
+    ): Binding =
+        Binding(owner, window, dim, enabled, animations, baseDim, scrim, baseScrim).also { it.start() }
+
+    fun update(
+        window: Window,
+        dim: Float,
+        enabled: Boolean,
+        animations: Int,
+        baseDim: Float,
+        scrim: Float,
+        baseScrim: Float,
+    ) {
+        bindings[window]?.let {
+            it.dim = dim
+            it.enabled = enabled
+            it.animations = animations
+            it.baseDim = baseDim
+            it.scrim = scrim
+            it.baseScrim = baseScrim
+            if (it.registered) stack.update(window, dim, enabled, baseDim, scrim, baseScrim)
+        }
+    }
+
+    fun release(window: Window) {
+        val binding = bindings[window]
+        if (binding == null) clearDim(window)
+        else update(window, 0f, binding.enabled, binding.animations, binding.baseDim, 0f, binding.baseScrim)
+    }
+
+    fun scrimAlpha(window: Window?): Float = bindings[window]?.appliedScrim ?: 0f
+
+    class Binding(
+        private val owner: Any,
+        private val window: Window,
+        var dim: Float,
+        var enabled: Boolean,
+        var animations: Int,
+        var baseDim: Float,
+        var scrim: Float,
+        var baseScrim: Float,
+    ) : View.OnAttachStateChangeListener {
+        private val lifecycle = (owner as? LifecycleOwner)?.lifecycle
+        private val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_DESTROY) dispose()
+        }
+        private var disposed = false
+        var registered = false
+            private set
+        var appliedScrim by mutableFloatStateOf(0f)
+            private set
+
+        fun start() {
+            bindings[window] = this
+            window.decorView.addOnAttachStateChangeListener(this)
+            register()
+            if (lifecycle?.currentState == Lifecycle.State.DESTROYED) dispose()
+            else lifecycle?.addObserver(observer)
+        }
+
+        private fun register() {
+            if (disposed || registered) return
+            registered = true
+            // Commit the inherited floor before this Window can replace the parent's dim in WMS.
+            stack.register(owner, window, dim, enabled, baseDim, scrim, baseScrim)
+        }
+
+        override fun onViewAttachedToWindow(view: View) {
+            register()
+            stack.attached(window)
+        }
+
+        override fun onViewDetachedFromWindow(view: View) = unregister()
+
+        private fun unregister() {
+            if (!registered) return
+            registered = false
+            appliedScrim = 0f
+            // Composition can be disposed before WMS removes its Window. Zero dim alone would
+            // still override the lower Window; drop eligibility in the same attributes update.
+            clearDim(window)
+            stack.remove(window)
+        }
+
+        fun dispose() {
+            if (disposed) return
+            disposed = true
+            window.decorView.removeOnAttachStateChangeListener(this)
+            lifecycle?.removeObserver(observer)
+            unregister()
+            bindings.remove(window)
+        }
+
+        fun applyDim(value: Float, drawnScrim: Float) {
+            appliedScrim = drawnScrim
+            val attributes = window.attributes
+            val flag = WindowManager.LayoutParams.FLAG_DIM_BEHIND
+            val flags = if (enabled) attributes.flags or flag else attributes.flags and flag.inv()
+            if (attributes.dimAmount == value && attributes.flags == flags && attributes.windowAnimations == animations) return
+            attributes.dimAmount = value
+            attributes.flags = flags
+            attributes.windowAnimations = animations
+            window.attributes = attributes
+        }
+    }
+
+    private fun clearDim(window: Window) {
+        val attributes = window.attributes
+        val flags = attributes.flags and WindowManager.LayoutParams.FLAG_DIM_BEHIND.inv()
+        if (attributes.flags == flags && attributes.dimAmount == 0f) return
+        attributes.flags = flags
+        attributes.dimAmount = 0f
+        window.attributes = attributes
+    }
+}
+
+/** Release this window's own dim, retaining the native mask of any lower visible dialog. */
+fun Window?.releaseDialogDim() {
+    if (this != null) DialogWindowDims.release(this)
+}
+
+/** Read in the scrim's draw phase so attach/removal invalidates only that drawing. */
+fun Window?.dialogScrimAlpha(): Float = DialogWindowDims.scrimAlpha(this)
 
 /** 弹窗开始关闭时调用：窗口不再接收触摸，退场动画期间的点击直接交给下层页面。 */
 fun Window?.passThroughTouches() {

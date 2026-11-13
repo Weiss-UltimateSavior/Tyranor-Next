@@ -1,8 +1,10 @@
 package com.tyranor.next.ui.common.motion
 
 import android.os.Build
+import android.view.Window
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -14,6 +16,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -79,6 +82,7 @@ class MotionSheetController internal constructor(
         android.os.SystemClock.uptimeMillis()
     },
 ) {
+    internal var scrimWindow by mutableStateOf<Window?>(null)
     internal val dragConnection = SheetDragConnection(this)
 
     /** 抽屉额外位移（px）：初始在屏幕外，展开动画把它带到 0。 */
@@ -433,10 +437,33 @@ fun rememberMotionSheetState(
 }
 
 /**
- * 传给 `ModalBottomSheet(scrimColor = …)` 的遮罩色：增强档的遮罩由 [motionSheetSurface] 自绘（随抽屉位置渐显渐隐），
- * 这里给透明（Material3 的遮罩层仍负责「点遮罩关闭」与无障碍语义）；普通档原样返回，沿用 Material3 遮罩。
+ * Material3 的透明遮罩仍负责点击关闭与无障碍语义；实际绘制统一参与叠层遮罩协调。
  */
-fun MotionSheetController.nativeScrim(color: Color): Color = if (enhanced) Color.Transparent else color
+fun MotionSheetController.nativeScrim(color: Color): Color = color.copy(alpha = 0f)
+
+// Material3 1.4.0 StandardMotionTokens.DefaultEffects, used by ModalBottomSheet's Scrim.
+// MotionScheme is internal in that version; keep these pinned values in this shared owner.
+private val OrdinarySheetScrimSpec = spring<Float>(dampingRatio = 1f, stiffness = 1600f)
+
+/** Register the sheet's self-drawn mask without enabling native window dim. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MotionSheetController.BindWindowScrim(color: Color) {
+    // Same target and pinned motion scheme used by Material3 1.4's Scrim. Enhanced mode
+    // keeps its existing cover track; ordinary mode retains Material3's original fade.
+    val ordinaryProgress = if (enhanced) null else animateFloatAsState(
+        targetValue = if (sheetState?.targetValue != SheetValue.Hidden) 1f else 0f,
+        animationSpec = OrdinarySheetScrimSpec,
+        label = "Sheet scrim",
+    )
+    val window = syncDialogWindow(preserveWindowAnimations = true, scrimAlpha = color.alpha) {
+        if (enhanced) cover else ordinaryProgress!!.value
+    }
+    SideEffect { scrimWindow = window }
+    DisposableEffect(window) {
+        onDispose { if (scrimWindow === window) scrimWindow = null }
+    }
+}
 
 /**
  * 页面景深的来源登记处：被抽屉 / 弹窗 / 侧栏盖住的页面向后翻折（见 [depthFoldStack]），翻折的进度跟着浮层的展开走。
@@ -549,6 +576,19 @@ fun SheetBackdrop.Bind(strength: () -> Float = { 1f }, progress: () -> Float) {
 /** 自绘遮罩的出血：遮罩矩形向四周多画这么多像素，保证盖住整个窗口（超出窗口的部分由窗口裁掉，没有额外开销）。 */
 private const val SCRIM_BLEED = 8192f
 
+private fun Modifier.sheetWindowScrim(controller: MotionSheetController, color: Color): Modifier = drawWithContent {
+    // Outside Material3's sheet offset: the mask stays in window coordinates.
+    val alpha = controller.scrimWindow.dialogScrimAlpha()
+    if (alpha > 0f) {
+        drawRect(
+            color = color.copy(alpha = alpha),
+            topLeft = Offset(-SCRIM_BLEED, -SCRIM_BLEED),
+            size = Size(size.width + 2f * SCRIM_BLEED, size.height + 2f * SCRIM_BLEED),
+        )
+    }
+    drawContent()
+}
+
 /**
  * 抽屉 `ModalBottomSheet(modifier = …)` 上的外观层：位移与展开时的果冻拉伸，以及随抽屉位置渐显渐隐的遮罩。只改绘制，不拦截触摸。
  *
@@ -556,21 +596,12 @@ private const val SCRIM_BLEED = 8192f
  *   抽屉从屏幕下方升起时遮罩同步渐显、下沉 / 下拉时同步渐隐，抽屉与遮罩是同一个动作；停稳时与 Material3 原遮罩逐像素一致
  */
 @OptIn(ExperimentalMaterial3Api::class)
-fun Modifier.motionSheetSurface(controller: MotionSheetController, scrim: Color): Modifier = if (!controller.enhanced) this else this
+fun Modifier.motionSheetSurface(controller: MotionSheetController, scrim: Color): Modifier = if (!controller.enhanced) {
+    sheetWindowScrim(controller, scrim)
+} else this
     .onSizeChanged { controller.updateHeight(it.height.toFloat()) }
     // 跳转时随所在页面同步压暗（与 pageTransitionScrim 同一暗度与节奏）
-    .drawWithContent {
-        // 遮罩：画在抽屉后面。本修饰符在 Material3 自身位移与本控制器位移之外，坐标系固定在窗口顶部，不随抽屉移动
-        val cover = controller.cover
-        if (cover > 0.001f && scrim.alpha > 0f) {
-            drawRect(
-                color = scrim.copy(alpha = scrim.alpha * cover),
-                topLeft = Offset(-SCRIM_BLEED, -SCRIM_BLEED),
-                size = Size(size.width + 2f * SCRIM_BLEED, size.height + 2f * SCRIM_BLEED),
-            )
-        }
-        drawContent()
-    }
+    .sheetWindowScrim(controller, scrim)
     // 外层：从抽屉进入二级页面时整个界面一起翻折（单独一层，不和下面的位移 / 拉伸共用枢轴）。
     // 图层坐标系以本修饰符的布局框（Material3 偏移之前、窗口顶部）为准：竖直枢轴取窗口高度的 DepthPivotY 处，
     // 水平枢轴取窗口左缘（抽屉比窗口窄时——平板 / 横屏的最大宽度——左缘在本布局框左侧 (窗口宽 − 抽屉宽) / 2 处）

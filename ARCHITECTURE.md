@@ -67,6 +67,14 @@ flowchart TD
 
 Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并从镜像修复；v2→v3 通过显式 `Migration(2,3)` 新增 `games.runtime_module_package` 列及索引，schema v3 的 `3.json` 已导出。后续版本必须显式注册 `Migration`，不能扩大全局破坏性回退。当前数据库、加密凭据、存档同步状态与备份边界统一见 [持久化数据清单](docs/应用持久化数据清单.md)；清单分别说明 v1 破坏性重建与 v2→v3 显式迁移；专题验收记录仍只对各自标注的版本有效。
 
+### 类级预编译规则
+
+`app/src/main/baseline-prof.txt` 是从历史设备运行涉及的类扩展得到的 HSP 类级通配规则，不是逐方法采样原件，也不能证明当前版本的性能收益。原始采集命令、APK 哈希与设备构建指纹未随首次文件保留，现已明确这一来源缺口；不得把后续设备或构建身份补写成历史采集身份。
+
+下次获得设备验证授权后，重新采集应同时保存 Git SHA、APK SHA-256、`adb shell getprop ro.build.fingerprint`、系统版本、包名与实际操作路线。运行目标路线后，可用 Android 的 `adb shell cmd package dump-profiles --dump-classes-and-methods <隔离包名>` 导出方法列表（设备须支持此命令并允许读取输出的 `/data/misc/profman/` 文件）；保留原件，再将类描述符去重、排序并生成类级规则，分别记录两份文件的哈希。不得在尚未执行采集时写成已经生成。
+
+修改或删除类时同步清理失效规则。本轮移除了已删除 `MiuixPopupMotion` 的规则，并在 Android CI 增加 `:app:compileReleaseArtProfile`，让 AGP 结合 release/R8 的实际产物扩展和编译规则。此检查验证构建可用性，不替代真实操作覆盖和性能对照。
+
 ## 4. 扫描与启动编排
 
 1. [EngineScanner](app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt) 遍历已授权根目录，利用真实路径或 SAF 会话读取目录特征，按优先链识别引擎并产出 `ScanGame`；重扫合并保留手动添加记录。

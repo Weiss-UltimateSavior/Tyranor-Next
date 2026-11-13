@@ -131,7 +131,7 @@ import com.tyranor.next.ui.common.motion.RollingNumberText
 import com.tyranor.next.ui.common.motion.bounceOnChange
 import com.tyranor.next.ui.common.motion.pressSquish
 import com.tyranor.next.ui.common.motion.staggeredEntrance
-import com.tyranor.next.ui.game.startActivityWithPageTransition
+import com.tyranor.next.ui.common.motion.startActivityWithPageTransition
 import com.tyranor.next.ui.settings.EngineSettingsActivity
 import com.tyranor.next.ui.settings.artVersionOptions
 import com.tyranor.next.ui.settings.engineSettingsKindOf
@@ -208,7 +208,9 @@ fun EngineScreen(
         // 顶栏标题的页面入场由 AppTopBar 自带
         var selectedTab by rememberSaveable { mutableIntStateOf(0) }
         // 分类栏与分页内容共用的状态：点选时指示器弹过去、分页只在旧页和新页之间切换；长按分类栏 / 标题区唤出玻璃透镜选择
-        val pager = rememberTabPagerState({ selectedTab }, EngineTab.entries.size)
+        val enhanced = MotionMode.enhanced
+        // Switching modes discards an in-flight enhanced page and its offsets together.
+        val pager = key(enhanced) { rememberTabPagerState({ selectedTab }, EngineTab.entries.size) }
         val onTabSelected: (Int) -> Unit = { selectedTab = it }
         // 顶部分页（可在应用设置中关闭）：关闭时平铺展示全部引擎项
         // 随生命周期订阅：设置页盖在上面、本页不可见时不在后台重组（后台组合 / 销毁四个分页会占满主线程，
@@ -270,13 +272,18 @@ fun EngineScreen(
 
         // 引擎列表：竖屏单列；横屏/大屏一行两个
         val engineColumns = if (isWideScreen()) 2 else 1
-        // 分页切换：各分页提前组合好并常驻（与主界面四个 Tab 同一思路），切换时只对各页的图层做位移 / 透明度弹簧动画，
+        // 增强档各分页提前组合好并常驻（与主界面四个 Tab 同一思路），切换时只对各页的图层做位移 / 透明度弹簧动画，
         // 完全没有现场组合、解码的开销，所以不会卡；旧页朝反方向滑走并淡出，新页带弹性滑入并淡入，方向与指示器一致。
         val pageKeys: List<Int> = if (categorizeEngines) EngineTab.entries.indices.toList() else listOf(-1)
-        // 当前页立刻组合；其余分页在稍后空闲时提前组合（避免拖慢进入本页的首帧）
-        var composedPages by remember { mutableStateOf(setOf(Snapshot.withoutReadObservation { activePageState.value })) }
-        LaunchedEffect(activePageState) { snapshotFlow { activePageState.value }.collect { composedPages = composedPages + it } }
-        LaunchedEffect(categorizeEngines) {
+        // 当前页立刻组合；仅增强档在稍后空闲时预组合其余分页。普通档始终只保留当前页。
+        var composedPages by remember(categorizeEngines, enhanced) {
+            mutableStateOf(setOf(Snapshot.withoutReadObservation { activePageState.value }))
+        }
+        LaunchedEffect(activePageState, enhanced) {
+            if (enhanced) snapshotFlow { activePageState.value }.collect { composedPages = composedPages + it }
+        }
+        LaunchedEffect(categorizeEngines, enhanced) {
+            if (!enhanced) return@LaunchedEffect
             delay(700)
             composedPages = composedPages + pageKeys
         }
@@ -284,7 +291,7 @@ fun EngineScreen(
         // 只捕获 activePageState 这个 State 对象，仅引导高亮那一个条目读它的值
         Box(Modifier.fillMaxSize().clipToBounds()) {
         pageKeys.forEach { pageTab ->
-        if (pageTab !in composedPages) return@forEach
+        if (if (enhanced) pageTab !in composedPages else pageTab != activePageState.value) return@forEach
         key(pageTab) {
         EnginePageHost(pageTab = pageTab, pager = pager, activePage = activePageState) {
         // 每页的列表固定下来（按 engines / 分页开关 / 页号为 key）：不固定的话每次重组都会生成一个内容相同的新 List，
@@ -940,12 +947,12 @@ private fun engineIconRes(engine: EngineType): Int = when (engine) {
 
 /** 引擎页顶部分页（顺序即展示顺序）：GAL / RPGM / 主机 / 网页。 */
 /**
- * 一个分页的外壳：只改图层的位移 / 透明度（读 [TabPagerState.pageOffset]），非当前页屏蔽触摸与无障碍。
+ * 一个分页的外壳：只改图层的位移 / 透明度（读 [TabPagerState.pageOffset]），非当前页及未停稳页屏蔽触摸与无障碍。
  * 单独成函数是为了让「当前页」这个会在切页时变化的值只在这里被读取——切页时只有这四个小外壳重组，
  * 里面的网格内容（[content]）参数不变，被整体跳过。
  */
 @Composable
-private fun EnginePageHost(
+internal fun EnginePageHost(
     pageTab: Int,
     pager: TabPagerState,
     activePage: State<Int>,
@@ -953,6 +960,12 @@ private fun EnginePageHost(
 ) {
     // 隐藏分页不把内容画进显示列表（见 skipDrawWhenHidden）：只在显隐边界翻转，不读逐帧变化的 alpha
     val shown by remember(pager, pageTab) { derivedStateOf { pageTab >= 0 && pager.pageAlpha(pageTab) > HiddenPageAlpha } }
+    val settled by remember(pager, pageTab) {
+        derivedStateOf {
+            pageTab < 0 || (kotlin.math.abs(pager.pageOffset(pageTab)) < 0.02f && pager.pageAlpha(pageTab) > 0.98f)
+        }
+    }
+    val interactive = pageTab == activePage.value && (!MotionMode.enhanced || settled)
     Box(
         Modifier
             .fillMaxSize()
@@ -972,8 +985,8 @@ private fun EnginePageHost(
                 if (MotionMode.enhanced) Modifier.skipDrawWhenHidden { shown || pageTab == activePage.value } else Modifier,
             )
             .then(
-                if (pageTab != activePage.value) {
-                    // 非当前页：保持组合但不接收触摸、不进无障碍树
+                if (!interactive) {
+                    // Draw-phase movement does not move hit targets; expose only the settled page.
                     Modifier
                         .clearAndSetSemantics { }
                         .pointerInput(Unit) {

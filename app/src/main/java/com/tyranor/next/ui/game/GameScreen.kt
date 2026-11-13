@@ -5,8 +5,7 @@ import com.tyranor.next.ui.common.motion.CoverReveal
 import com.tyranor.next.ui.common.motion.listItemMotion
 import com.tyranor.next.ui.common.motion.ListItemPlacement
 import com.tyranor.next.ui.common.motion.rememberCoverReveal
-import android.app.Activity
-import com.tyranor.next.ui.common.motion.PageTransitions
+import com.tyranor.next.ui.common.motion.startActivityWithPageTransition
 import com.tyranor.next.ui.common.motion.rememberMotionSheetController
 import com.tyranor.next.ui.common.motion.BlurCrossfade
 import com.tyranor.next.ui.common.motion.BlurVisibility
@@ -139,7 +138,6 @@ import com.tyranor.next.core.game.model.GameSortKeys
 import com.tyranor.next.core.game.model.sortGames
 import com.tyranor.next.core.cover.persistentCoverDir
 import com.tyranor.next.core.cover.stableKey
-import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.auth.HikarinagiAuthStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
@@ -370,18 +368,6 @@ private fun deleteCoverFile(context: android.content.Context, coverUri: String?)
     val coverDir = persistentCoverDir(context).canonicalPath
     if (runCatching { file.canonicalPath }.getOrNull()?.startsWith(coverDir) == true) {
         file.delete()
-    }
-}
-
-/** Uses the hosting Activity's page transition, falling back to a new task for non-Activity contexts. */
-internal fun startActivityWithPageTransition(context: android.content.Context, intent: android.content.Intent) {
-    val activity = AppLocaleController.findActivity(context)
-    if (activity != null) {
-        // 水平侧推：新页从右侧推入，上一级向左让开并压暗（见 ui/common/motion/PageTransitions.kt）
-        PageTransitions.startPush(activity, intent)
-    } else {
-        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
     }
 }
 
