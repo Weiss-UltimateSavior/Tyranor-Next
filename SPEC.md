@@ -103,6 +103,7 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 - SystemNNN 游戏默认隐藏系统栏，按安全区域等比居中。引擎页提供全局全屏和阅读字号，单游戏设置可逐项跟随全局或覆盖，重新启动游戏后生效。游戏原版窗口选项仅显示当前 TYN 模式。剧情正文字号提供 60%、85%、100% 和 115% 四档，85% 为默认，100% 为原版。存读档页使用游戏配置的槽位。播放器宿主提示跟随 TYN 所选语言，系统弹窗沿用 TYN 主题色。游戏配置提供的文字和贴图优先显示。剧情内打开静态系统菜单时，背景应用游戏配置的颜色效果，保持已显示的对话清晰度。
 - SystemNNN 的脚本 DEBUG 使用台词表索引，执行后继续推进脚本。调试模式开启时，脚本消息通过 SystemNNN 标签写入 Android Logcat 的临时缓冲区。PACKTYPE 0 的 VAW 支持 8、16 和 24 位 PCM。
 - SystemNNN 按游戏的长文本配置绘制普通 DRAW 背景；全屏/长文模式按 `fullMessageNumber`（缺省按屏幕与行距推导）承载多行 `LPRINT` 与 `APPEND` 超行上卷，并按当前可见窗口与原版 `.sav` `MESSAGE` 块往返。APPEND 保留已显示的文字并按原版选择版式。注音按姓名、台词和选项的显示状态着色。故事画面按单通道 `Layers 0..N-2 -> LPrintBGMode -> StoryPlane 逻辑分辨率透明 UI 平面 -> 前景槽位 Slot N-1`（16 层游戏的 `Slot 15`、32 层游戏的 `Slot 31`）一次合成上屏；前景槽位 `Slot N-1` 的 `EFFECT_GET` 在对话窗或选项合成之后单遍取样，供后续脚本特效读取。对话窗与姓名窗支持 `init/messageWindow.xtx` 的 `notTransWindowUse` / `notTransNameWindowUse`（`0..3`）多段不透明边框/衬底带与半透明底片分层绘制。
+- SystemNNN 文字平面 JNI 引用仅以零值表示不存在，完整保留包括 ARM64 地址标记在内的 64 位值；工作线程交给 UI 后由 UI 释放，替换或关闭时只释放一次。EXE 状态块解析可追踪有界直线指令中的局部常量，遇到分支、改写或未知指令则保留文件回退。
 - SystemNNN 按游戏配置定位剧情正文各行。阅读字号小于或等于 100% 时保留行距，放大时为额外字高预留空间。空正文沿用脚本的窗口显示状态。自动速度超出五个档位时使用文字速度的档位，原版全局档仍保存原值。
 - SystemNNN 快进与跨句推进通过 `PlaneKey` 门控对齐当前已上屏单通道合成帧（原生 `R1` 在内容键跳变时非阻塞最多跳 2 tick 后回退净底图，宿主 `R2` 在 250 ms 超时或离屏/菜单态自动放行），先显示允许跳过的整句台词再推进脚本。普通对白与大框切换在同一单通道合成帧更新底图与窗口。
 - SystemNNN 原版设置按 `voiceVoiceChangeFlag` 在入场时读取角色组的 `voiceVoiceChangeVarN`。省略变量名且启用了 `voiceNameChangeFlag` 时继承 `voiceNameChangeVarN`。值大于零时使用配置的替换音效，省略或非正数的编号沿用原值。角色音量滑块优先使用 `charaVoiceVolumeSE`，默认使用该角色的关闭状态点击音效。

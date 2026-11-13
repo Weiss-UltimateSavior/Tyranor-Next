@@ -1,7 +1,7 @@
 FFmpeg 8.1.3 (LGPL 2.1 or later) is statically linked into libsystemnnn.so.
 Unmodified source: https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/refs/tags/n8.1.3
 Build options: platform/android/build_movie_codec.sh (also packaged as ffmpeg-build.sh).
-Emberfall native build source: https://github.com/PorisRora/SystemNNN-Emberfall/tree/414d147b6ccfe48fef87f7512f52595c1f8d6ea8
+Emberfall native build source: https://github.com/PorisRora/SystemNNN-Emberfall/tree/ed965c3eea37f9b375614925163fcd6be9d9c3f6
 Local test build only: the source commit above is retained locally and has not been pushed.
-libsystemnnn.so: 5516976 bytes, SHA-256 f223634a250e3188a4bd7f3db28a7885e41781a50c69377ed5dc5abe933b77e9
+libsystemnnn.so: 5518448 bytes, SHA-256 4810a6d628eca6ea0092a102a800ab6ebc97d1fbe8a48ca97d4b06c113d800f8
 Static relinking instructions: https://github.com/PorisRora/SystemNNN-Emberfall/blob/dee50101472c61a5ebe84945e46b229d5de64180/platform/android/tyn/README.md
