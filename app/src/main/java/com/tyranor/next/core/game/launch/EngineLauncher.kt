@@ -57,6 +57,7 @@ import com.tyranor.next.core.game.manual.AndroidAppGames
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.EthornellPaths
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.playtime.GamePlaytimeRepository
 import com.tyranor.next.core.game.storage.SystemNnnCopyStore
 import com.tyranor.next.core.game.storage.SystemNnnGameDirectory
 import com.tyranor.runtime.systemnnn.SystemNnnHost
@@ -569,8 +570,18 @@ object EngineLauncher {
             return LaunchResult.Failure.EngineLibraryPackFailed(packId)
         }
         return try {
-            val intent = buildIntent(context, game.engine, path, game, patchChoice, krSafMirror, settings)
-                .putExtra(LaunchContract.ROOT_URI, game.uri)
+            val playtimeSession = if (GamePlaytimeRepository.supports(game.engine) && game.uri.isNotBlank()) {
+                java.util.UUID.randomUUID().toString() to GamePlaytimeRepository.nextSessionStartedAt(context)
+            } else {
+                null
+            }
+            val intent = buildIntent(context, game.engine, path, game, patchChoice, krSafMirror, settings).apply {
+                putExtra(LaunchContract.ROOT_URI, game.uri)
+                playtimeSession?.let { (sessionId, startedAt) ->
+                    putExtra(LaunchContract.PLAYTIME_SESSION_ID, sessionId)
+                    putExtra(LaunchContract.PLAYTIME_SESSION_STARTED_AT, startedAt)
+                }
+            }
             // Intent 组装后、真正拉起引擎前最后一次确认，取消后不 startActivity
             currentCoroutineContext().ensureActive()
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

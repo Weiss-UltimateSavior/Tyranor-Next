@@ -84,6 +84,8 @@ Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并�
 
 ## 5. 引擎进程与生命周期
 
+游戏时长由 App 的 `core/game/playtime` 独立采集：Application 在每个进程安装生命周期适配，只有携带 `ROOT_URI` 与 `PLAYTIME_SESSION_ID` 的内置宿主白名单参与；辅助视频继承身份，System4 手册和校验进程不参与。`PLAYTIME_SESSION_STARTED_AT` 是主进程持久化分配的递增会话排序键，系统时钟回拨时仍递增，辅助 Activity 继承原值；它不参与时长相减。子进程按单调时钟累计前台区间，将累计检查点以跨进程文件锁与 AtomicFile 写入 `noBackupFilesDir/game_playtime/`，主进程按记录 ID 取最大累计值，幂等导入独立 Room 库 `game_playtime.db`，子进程不开统计数据库。检查点每 15 秒及在暂停时保存，闭合记录入库后才删除，崩溃后不按当前时间补算；该能力与最近打开、存档同步会话互相独立。统计库使用 TRUNCATE 日志，拥有独立 schema 与迁移边界，不受游戏库的破坏性恢复影响；默认进入系统备份候选，实际恢复仍受系统配额和传输策略限制。
+
 以 [engine Manifest](engine/src/main/AndroidManifest.xml) 为准，内置宿主均为 `exported=false`，主要分为 `:kirikiri2`、`:krkrsdl3`、`:ons`、多档 `:artemis*`、`:siglus`、`:fbgames`、`:fvp`、`:ethornell`、`:cmvs`、`:systemnnn`、`:xsys35`、`:xsys4`、`:tyrano`、`:rpgmaker`。进程隔离用于控制原生库、全局状态与符号冲突；不提供通用跨引擎热切换保证。第三方 APK 运行时模块运行在用户安装的独立 APK 进程中，不属于上述宿主，也不由 App 建立 JNI 会话。
 
 - FVP、Framebuffer 及 Siglus 关闭滤镜的路径仍由主线程 `Choreographer` 同步驱动原生调用。

@@ -237,6 +237,7 @@
     <string name="game_launch_failed">Launch failed</string>
     <string name="game_cover_set_failed">Failed to set cover</string>
     <string name="game_launch_action">Launch game</string>
+    <string name="game_playtime_total_accessibility">Total play time: %1$s</string>
     <string name="game_launch_file">Launch file</string>
     <string name="game_launch_file_auto_summary">Auto - choose a launch file manually if startup fails</string>
     <string name="game_remove_quick_launch">Remove from Home</string>

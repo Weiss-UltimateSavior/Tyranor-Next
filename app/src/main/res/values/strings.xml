@@ -237,6 +237,7 @@
     <string name="game_launch_failed">启动失败</string>
     <string name="game_cover_set_failed">封面设置失败</string>
     <string name="game_launch_action">启动游戏</string>
+    <string name="game_playtime_total_accessibility">累计时长：%1$s</string>
     <string name="game_launch_file">启动文件</string>
     <string name="game_launch_file_auto_summary">自动 - 如有错误请手动选择启动文件</string>
     <string name="game_remove_quick_launch">移除首页</string>

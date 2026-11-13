@@ -80,6 +80,21 @@ class TyranoActivity : Activity() {
         val newDir = resolveGameDir(intent)
         if (newDir.isNullOrBlank()) return // 无法解析的意图不接管当前游戏，保留原 Intent
         val changed = newDir != gameDir || behaviorSignature(intent) != behaviorSignature(getIntent())
+        val activeRootUri = getIntent().getStringExtra(LaunchContract.ROOT_URI)
+        val requestedRootUri = intent.getStringExtra(LaunchContract.ROOT_URI)
+        val activePlaytimeSession = getIntent().getStringExtra(LaunchContract.PLAYTIME_SESSION_ID)
+        val activePlaytimeStartedAt = getIntent().getLongExtra(LaunchContract.PLAYTIME_SESSION_STARTED_AT, 0L)
+        if (!changed && !activeRootUri.isNullOrBlank() && activeRootUri == requestedRootUri &&
+            !activePlaytimeSession.isNullOrBlank()
+        ) {
+            // Same running game re-dispatched (e.g. shortcut/update): keep its original time session.
+            intent.putExtra(LaunchContract.PLAYTIME_SESSION_ID, activePlaytimeSession)
+            if (activePlaytimeStartedAt > 0L) {
+                intent.putExtra(LaunchContract.PLAYTIME_SESSION_STARTED_AT, activePlaytimeStartedAt)
+            } else {
+                intent.removeExtra(LaunchContract.PLAYTIME_SESSION_STARTED_AT)
+            }
+        }
         setIntent(intent)
         if (changed && !isFinishing) {
             Log.i(TAG, "onNewIntent relaunch with changed intent; recreate")

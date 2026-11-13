@@ -237,6 +237,7 @@
     <string name="game_launch_failed">起動に失敗しました</string>
     <string name="game_cover_set_failed">カバー画像の設定に失敗しました</string>
     <string name="game_launch_action">ゲームを起動</string>
+    <string name="game_playtime_total_accessibility">累計プレイ時間：%1$s</string>
     <string name="game_launch_file">起動ファイル</string>
     <string name="game_launch_file_auto_summary">自動 - 問題がある場合は手動で起動ファイルを選択</string>
     <string name="game_remove_quick_launch">ホームから削除</string>
