@@ -7,15 +7,12 @@ import android.os.SystemClock;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Choreographer;
-import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
-import android.widget.ProgressBar;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.activity.OnBackPressedCallback;
@@ -28,6 +25,8 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.core.engine.EngineUiText;
+import com.core.engine.EngineStartupOverlay;
+import com.core.engine.EngineSurfaceReadyProbe;
 import com.core.engine.LaunchContract;
 import com.core.engine.R;
 
@@ -55,12 +54,15 @@ public final class FvpActivity extends AppCompatActivity implements
 
     private FrameLayout rootLayout;
     private SurfaceView surfaceView;
-    private View loadingOverlay;
+    private EngineStartupOverlay loadingOverlay;
+    private EngineSurfaceReadyProbe startupProbe;
 
     private long handle = 0L;
     private boolean running = false;
     private volatile boolean surfaceReady = false;
-    private boolean loadingOverlayVisible = true;
+    private boolean resumed;
+    private boolean windowFocused;
+    private long surfaceGeneration;
     private long lastFrameNs = 0L;
 
     private String gameRoot;
@@ -74,6 +76,21 @@ public final class FvpActivity extends AppCompatActivity implements
 
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         setContentView(buildContentView());
+        startupProbe = new EngineSurfaceReadyProbe(this, new EngineSurfaceReadyProbe.SurfaceProvider() {
+            @Override public android.view.Surface currentSurface() {
+                return surfaceView.getHolder().getSurface();
+            }
+            @Override public long currentGeneration() { return surfaceGeneration; }
+        }, new EngineSurfaceReadyProbe.Listener() {
+            @Override public void onReady(long generation) {
+                if (!isFinishing() && !isDestroyed() && handle != 0L && generation == surfaceGeneration
+                        && loadingOverlay != null) loadingOverlay.reveal();
+            }
+            @Override public void onFailure(EngineSurfaceReadyProbe.Failure failure) {
+                if (!isFinishing() && !isDestroyed() && loadingOverlay != null)
+                    loadingOverlay.fail(null);
+            }
+        });
 
         gameRoot = firstNonEmpty(
                 getIntent().getStringExtra(LaunchContract.PATH),
@@ -114,36 +131,9 @@ public final class FvpActivity extends AppCompatActivity implements
         rootLayout.addView(surfaceView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        loadingOverlay = buildLoadingOverlay();
-        rootLayout.addView(loadingOverlay, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        loadingOverlay = new EngineStartupOverlay(this);
+        loadingOverlay.attachTo(rootLayout);
         return rootLayout;
-    }
-
-    private View buildLoadingOverlay() {
-        FrameLayout overlay = new FrameLayout(this);
-        overlay.setBackgroundColor(Color.BLACK);
-        ProgressBar spinner = new ProgressBar(this);
-        overlay.addView(spinner, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
-        TextView label = new TextView(this);
-        label.setText(uiString(R.string.engine_starting_game));
-        label.setTextColor(Color.LTGRAY);
-        label.setTextSize(14.0f);
-        label.setGravity(Gravity.CENTER);
-        FrameLayout.LayoutParams labelParams = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
-        labelParams.topMargin = (int) (72 * getResources().getDisplayMetrics().density);
-        overlay.addView(label, labelParams);
-        return overlay;
-    }
-
-    private void hideLoadingOverlay() {
-        if (loadingOverlayVisible && loadingOverlay != null) {
-            loadingOverlayVisible = false;
-            rootLayout.removeView(loadingOverlay);
-            loadingOverlay = null;
-        }
     }
 
     @Override
@@ -157,18 +147,25 @@ public final class FvpActivity extends AppCompatActivity implements
     @Override
     protected void onResume() {
         super.onResume();
+        resumed = true;
+        windowFocused = hasWindowFocus();
         applyImmersive();
+        updateStartupProbe();
         maybeStartFrameLoop();
     }
 
     @Override
     protected void onPause() {
+        resumed = false;
+        if (startupProbe != null) startupProbe.stop();
         stopFrameLoop();
         super.onPause();
     }
 
     @Override
     protected void onDestroy() {
+        if (startupProbe != null) startupProbe.dispose();
+        if (loadingOverlay != null) loadingOverlay.dispose();
         stopFrameLoop();
         destroyEngine();
         super.onDestroy();
@@ -177,6 +174,8 @@ public final class FvpActivity extends AppCompatActivity implements
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        windowFocused = hasFocus;
+        updateStartupProbe();
         if (hasFocus) {
             applyImmersive();
         }
@@ -216,6 +215,7 @@ public final class FvpActivity extends AppCompatActivity implements
 
     @Override
     public void surfaceCreated(@NonNull SurfaceHolder holder) {
+        surfaceGeneration++;
         if (handle != 0L) {
             // 后台恢复：Android 换了新的 ANativeWindow；保留运行中的引擎并重挂窗口，避免重启本局。
             NativeRfvp.setSurface(handle, holder.getSurface(), surfaceWidth(holder), surfaceHeight(holder));
@@ -224,6 +224,7 @@ public final class FvpActivity extends AppCompatActivity implements
         } else {
             ensureEngine(holder);
         }
+        updateStartupProbe();
         maybeStartFrameLoop();
     }
 
@@ -240,6 +241,8 @@ public final class FvpActivity extends AppCompatActivity implements
     public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
         // ANativeWindow 即将失效，但引擎必须存活：切后台不重启游戏，onDestroy 才销毁。
         surfaceReady = false;
+        surfaceGeneration++;
+        if (startupProbe != null) startupProbe.stop();
         stopFrameLoop();
     }
 
@@ -276,6 +279,7 @@ public final class FvpActivity extends AppCompatActivity implements
         }
         handle = created;
         surfaceReady = true;
+        updateStartupProbe();
 
         boolean textHidpi = getIntent().getBooleanExtra(LaunchContract.FVP_TEXT_HIDPI, true);
         boolean systemFont = getIntent().getBooleanExtra(LaunchContract.FVP_SYSTEM_FONT, true);
@@ -321,6 +325,12 @@ public final class FvpActivity extends AppCompatActivity implements
         }
     }
 
+    private void updateStartupProbe() {
+        if (startupProbe == null) return;
+        if (resumed && windowFocused && surfaceReady) startupProbe.start();
+        else startupProbe.stop();
+    }
+
     private void stopFrameLoop() {
         if (running) {
             running = false;
@@ -352,7 +362,6 @@ public final class FvpActivity extends AppCompatActivity implements
             finish();
             return;
         }
-        hideLoadingOverlay();
         Choreographer.getInstance().postFrameCallback(this);
     }
 

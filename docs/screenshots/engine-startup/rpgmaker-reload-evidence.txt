@@ -1,0 +1,18 @@
+result=passed
+
+activeWindowTree:
+android.widget.FrameLayout text=null desc=null viewId=null bounds=Rect(0, 0 - 2700, 1224)
+  android.widget.LinearLayout text=null desc=null viewId=null bounds=Rect(0, 0 - 2700, 1224)
+    android.widget.FrameLayout text=null desc=null viewId=android:id/content bounds=Rect(0, 0 - 2700, 1224)
+      android.widget.FrameLayout text=null desc=null viewId=null bounds=Rect(0, 0 - 2700, 1224)
+        android.webkit.WebView text=null desc=null viewId=null bounds=Rect(0, 0 - 2700, 1224)
+          android.webkit.WebView text=Original MV startup fixture desc=null viewId=null bounds=Rect(0, 0 - 2700, 1224)
+            android.view.View text= desc=null viewId=gameScreen bounds=Rect(0, 0 - 2700, 1224)
+              android.widget.Image text= desc=null viewId=gameCanvas bounds=Rect(0, 0 - 2700, 1224)
+            android.view.View text= desc=null viewId=startupFixture bounds=Rect(23, 23 - 2491, 453)
+              android.widget.TextView text=RPG_STARTUP_acd638dbc94648eab19cedb89423df62 desc=null viewId=fixture bounds=Rect(23, 106 - 2491, 202)
+              android.widget.TextView text=RPG_STARTUP_acd638dbc94648eab19cedb89423df62_COUNT_2 desc=null viewId=counter bounds=Rect(23, 274 - 2491, 374)
+            android.widget.Image text=child-resource-probe desc=null viewId=null bounds=Rect(0, 1222 - 854, 1224)
+            android.widget.TextView text= desc=null viewId=reloadBadge bounds=Rect(132, 182 - 1215, 798)
+        android.view.View text=null desc=null viewId=null bounds=Rect(0, 0 - 2700, 1224)
+        android.view.View text=null desc=null viewId=null bounds=Rect(0, 0 - 2700, 1224)

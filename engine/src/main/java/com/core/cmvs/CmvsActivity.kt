@@ -8,10 +8,12 @@ import android.os.Bundle
 import android.os.Process
 import android.text.InputType
 import android.view.KeyEvent
+import android.view.SurfaceHolder
 import android.view.WindowManager
 import android.widget.EditText
 import androidx.annotation.Keep
 import com.core.engine.DoubleBackExit
+import com.core.engine.EngineSurfaceStartupController
 import com.core.engine.LaunchContract
 import com.core.engine.R
 import com.core.nativeplugin.NativeRuntimePack
@@ -31,6 +33,8 @@ import java.util.UUID
 class CmvsActivity : NativeActivity() {
     @Volatile private var startupAllowed = false
     @Volatile private var choosingFont = false
+    private var startupController: EngineSurfaceStartupController? = null
+    @Volatile private var startupSurfaceHolder: SurfaceHolder? = null
 
     @Keep
     @Synchronized
@@ -50,10 +54,56 @@ class CmvsActivity : NativeActivity() {
             resolveCmvsEngineLibraryPath() != null
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (startupAllowed) {
+            startupController = EngineSurfaceStartupController(this).also {
+                it.attachToWindow()
+                startupSurfaceHolder?.takeIf { holder -> holder.surface.isValid }
+                    ?.let { holder -> it.onNativeSurfaceCreated(holder) }
+            }
+        }
         if (!startupAllowed) {
             // The App process reads launch-error.txt and surfaces the typed failure.
             finish()
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        startupController?.onResume()
+    }
+
+    override fun onPause() {
+        startupController?.onPause()
+        super.onPause()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        startupController?.onWindowFocusChanged(hasFocus)
+    }
+
+    override fun surfaceCreated(holder: SurfaceHolder) {
+        startupSurfaceHolder = holder
+        super.surfaceCreated(holder)
+        startupController?.onNativeSurfaceCreated(holder)
+    }
+
+    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+        startupSurfaceHolder = holder
+        super.surfaceChanged(holder, format, width, height)
+        startupController?.onNativeSurfaceChanged(holder)
+    }
+
+    override fun surfaceRedrawNeeded(holder: SurfaceHolder) {
+        startupSurfaceHolder = holder
+        super.surfaceRedrawNeeded(holder)
+        startupController?.onNativeSurfaceRedrawNeeded(holder)
+    }
+
+    override fun surfaceDestroyed(holder: SurfaceHolder) {
+        if (startupSurfaceHolder === holder) startupSurfaceHolder = null
+        super.surfaceDestroyed(holder)
+        startupController?.onNativeSurfaceDestroyed(holder)
     }
 
     private fun readLaunchToken(): String? {
@@ -221,6 +271,9 @@ class CmvsActivity : NativeActivity() {
     override fun onDestroy() {
         choosingFont = false
         try {
+            startupController?.dispose()
+            startupController = null
+            startupSurfaceHolder = null
             super.onDestroy()
         } finally {
             Process.killProcess(Process.myPid())

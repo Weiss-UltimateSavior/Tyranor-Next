@@ -36,6 +36,8 @@ import androidx.core.content.ContextCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import com.core.engine.EngineSessionRegistry;
+import com.core.engine.EngineStartupOverlay;
+import com.core.engine.EngineSurfaceReadyProbe;
 import com.core.engine.EngineThemeColors;
 import com.core.engine.EngineUiText;
 import com.core.engine.LaunchContract;
@@ -58,7 +60,8 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
     private InputRemapController remap;
     private SurfaceView surface;
     private FrameLayout root;
-    private TextView loading;
+    private EngineStartupOverlay loading;
+    private EngineSurfaceReadyProbe startupProbe;
     private Payload payload;
     private long generation, attachedGeneration;
     private boolean resumed, destroyed, frameScheduled, processVerified;
@@ -139,10 +142,20 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
         surface = new SurfaceView(this); surface.setKeepScreenOn(true);
         surface.setFocusableInTouchMode(true);
         root.addView(surface, new FrameLayout.LayoutParams(-1, -1));
-        loading = new TextView(this); loading.setText(text(R.string.engine_starting_game));
-        loading.setTextColor(Color.WHITE); loading.setTextSize(14); loading.setGravity(android.view.Gravity.CENTER);
-        root.addView(loading, new FrameLayout.LayoutParams(-1, -1));
+        loading = new EngineStartupOverlay(this);
+        loading.attachTo(root);
         setContentView(root);
+        startupProbe = new EngineSurfaceReadyProbe(this, new EngineSurfaceReadyProbe.SurfaceProvider() {
+            @Override public android.view.Surface currentSurface() { return surface.getHolder().getSurface(); }
+            @Override public long currentGeneration() { return attachedGeneration; }
+        }, new EngineSurfaceReadyProbe.Listener() {
+            @Override public void onReady(long sourceGeneration) {
+                if (!destroyed && sourceGeneration == attachedGeneration && loading != null) loading.reveal();
+            }
+            @Override public void onFailure(EngineSurfaceReadyProbe.Failure failure) {
+                if (!destroyed && loading != null) loading.fail(null);
+            }
+        });
         long sessionToken = TOKENS.getAndIncrement();
         // Payload validation already bound this exact basename to SHA-256(ROOT_URI UTF-8).
         EthornellLifecycle lifecycle = new EthornellLifecycle(new File(payload.user).getName(), sessionToken,
@@ -157,7 +170,12 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
             }
             @Override public void failed(long token) {
                 lifecycle.failed();
-                ui.post(() -> { if (alive(token)) toast(R.string.engine_ethornell_failed); });
+                ui.post(() -> {
+                    if (alive(token)) {
+                        if (loading != null && loading.isLoading()) loading.fail(text(R.string.engine_ethornell_failed));
+                        toast(R.string.engine_ethornell_failed);
+                    }
+                });
             }
             @Override public void failedDetail(long token, String safeDetail) { lifecycle.failedDetail(safeDetail); }
             @Override public void forcedExit(long token, String safeReason) { lifecycle.forcedExit(safeReason); }
@@ -260,7 +278,9 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
         if (session == null) return;
         if (remap != null) remap.onResume();
         session.pause(EthornellSession.PAUSE_ACTIVITY, false);
-        requestAudio(); scheduleFrame(); immersive();
+        requestAudio();
+        updateStartupProbe();
+        scheduleFrame(); immersive();
     }
     private void requestAudio() {
         boolean granted = false;
@@ -270,6 +290,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
     }
     @Override protected void onPause() {
         resumed = false; stopFrames();
+        if (startupProbe != null) startupProbe.stop();
         if (remap != null) remap.onPause();
         releaseInput();
         if (session != null) {
@@ -286,6 +307,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
             releaseInput();
         }
         if (session != null) session.pause(EthornellSession.PAUSE_FOCUS, !focus);
+        updateStartupProbe();
         if (focus) {
             immersive();
             if (pendingFocusAction != null && resumed && !destroyed) {
@@ -298,6 +320,8 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
         if (noisyRegistered) { unregisterReceiver(noisyReceiver); noisyRegistered = false; }
         if (remap != null) remap.onDestroy();
         releaseInput();
+        if (startupProbe != null) startupProbe.dispose();
+        if (loading != null) loading.dispose();
         if (session != null) session.close();
         // Never clear the registry until native destroy has actually completed.
         super.onDestroy();
@@ -313,20 +337,24 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
             // Touch-free right-click/backlog controls must also work before the first pointer event.
             input.position(width / 2f, height / 2f);
             scheduleFrame();
+            updateStartupProbe();
         }
     }
     @Override public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
         stopFrames(); releaseInput();
+        if (startupProbe != null) startupProbe.stop();
         if (session != null && attachedGeneration != 0) session.detachAndWait(attachedGeneration);
         attachedGeneration = 0;
+    }
+    private void updateStartupProbe() {
+        if (startupProbe == null) return;
+        if (resumed && hasWindowFocus() && attachedGeneration != 0) startupProbe.start();
+        else startupProbe.stop();
     }
     @Override public void doFrame(long timeNs) {
         frameScheduled = false;
         if (!resumed || destroyed || attachedGeneration == 0 || session == null) return;
         session.frame(timeNs, attachedGeneration);
-        if (loading != null && session.state() == EthornellSession.State.RUNNING) {
-            root.removeView(loading); loading = null;
-        }
         scheduleFrame();
     }
     private void scheduleFrame() {

@@ -135,11 +135,11 @@ final class GameRunner {
         }
     }
     interface Listener {
-        void frame(Frame frame,int initialVisible);
+        void frame(Frame frame,int initialVisible,long startupGeneration);
         void screenLayerChanged();
-        void logo(List<LogoPanel.Slide> slides,int width,int height,int frameMs);
-        void opening(GameUiAssets.Config config,int frameMs,Capture initial,Capture previous);
-        void title(TitleMenu title,int width,int height,Capture initial,Capture previous);
+        void logo(List<LogoPanel.Slide> slides,int width,int height,int frameMs,long startupGeneration);
+        void opening(GameUiAssets.Config config,int frameMs,Capture initial,Capture previous,long startupGeneration);
+        void title(TitleMenu title,int width,int height,Capture initial,Capture previous,long startupGeneration);
         void titleRestart(TitleMenu title,Capture background);
         void style(DialogueStyle style);
         void panels(GameUiAssets assets);
@@ -161,7 +161,7 @@ final class GameRunner {
         void titleReturnCancelled();
         void notice(String message);
         void progressCorrupt();
-        void error(Throwable reason);
+        void error(Throwable reason,long startupGeneration);
     }
     private final HandlerThread worker=new HandlerThread("SystemNNN-Game");
     private final AtomicLong pendingScreenLayer=new AtomicLong();
@@ -182,6 +182,7 @@ final class GameRunner {
     private Future<?> autoWrite;
     private volatile boolean closing;
     private volatile boolean audioForeground;
+    private long startupGeneration;
     private final GalleryStore galleryStore;
     private final GameProgress progressStore;
     private final CompletableFuture<Void> previousProgress;
@@ -445,7 +446,7 @@ final class GameRunner {
         ui.style(dialogueStyle);ui.panels(uiAssets);publishQuickSlot();publishParameters();
         if(launching){
             titleBackgroundHeld=true;
-            ui.logo(logos,meta[3],meta[4],meta[5]);
+            ui.logo(logos,meta[3],meta[4],meta[5],startupGeneration);
             if(logos.isEmpty()&&completeStartupLogo())return;
         }else publishTitle(previous);
         schedule();
@@ -470,7 +471,7 @@ final class GameRunner {
         Capture initial=captureEntranceFrame(currentTitle.config);
         startupTitleFramePending=afterStartup&&initial!=null;
         if(afterStartup&&!startupTitleFramePending)bindSurface(true);
-        ui.title(currentTitle,meta[3],meta[4],initial,previous);
+        ui.title(currentTitle,meta[3],meta[4],initial,previous,startupGeneration);
         Log.i("SystemNNN","Title "+root.getName()+" buttons="+currentTitle.items.size());
         UiPreviewPool.Request settings=UiPreviewPool.Request.read(uiAssets.config,12,1);
         if(settings!=null){
@@ -603,7 +604,7 @@ final class GameRunner {
         NativeGame.configureMenuBackground(handle,2,null,null,false);
         startupLogoFinished=false;
         titleBackgroundHeld=true;
-        ui.logo(logos,meta[3],meta[4],meta[5]);
+        ui.logo(logos,meta[3],meta[4],meta[5],startupGeneration);
         schedule();
         return true;
     }
@@ -627,7 +628,7 @@ final class GameRunner {
         }catch(RuntimeException e){Log.w("SystemNNN","Startup opening background unavailable",e);return false;}
         titleBackgroundHeld=true;
         NativeGame.tick(handle,0,0,0,false,0,false,meta);
-        ui.opening(cfg,meta[5],captureEntranceFrame(cfg),previous);
+        ui.opening(cfg,meta[5],captureEntranceFrame(cfg),previous,startupGeneration);
         Log.i("SystemNNN","Startup opening "+(script.isEmpty()?image:script));
         schedule();
         return true;
@@ -1525,6 +1526,7 @@ final class GameRunner {
     }
     void restart(boolean replaceResume){tasks.post(()->{
         if(closing)return;
+        startupGeneration++;
         try{
             if(!initialized)initialize();
             else if(replaceResume){open(null,false);save(SaveSlots.AUTO,false,null,0);}
@@ -1949,7 +1951,7 @@ final class GameRunner {
             Log.i("SystemNNN","script="+script+" line="+shownLine+" word="+shownWord+" speaker="+speaker+" choices="+options.length);
         Log.i("SystemNNN","frame wait="+shownWait+" word="+shownWord+" line="+shownLine+" remaining="+meta[6]+
             " options="+(current.optionsAllowed?1:0)+" window="+current.windowType+" font="+current.fontType);
-        if(!systemMenuModal||shownWait!=NativeGame.MODAL||placeMode!=0)ui.frame(current,visibleText);
+        if(!systemMenuModal||shownWait!=NativeGame.MODAL||placeMode!=0)ui.frame(current,visibleText,startupGeneration);
         publishScreenLayer();
     }
     private void markRead(){if(!replaying&&handle!=0&&current!=null&&current.wait==NativeGame.DIALOGUE)NativeGame.markRead(handle,current.messageId);}
@@ -2002,7 +2004,7 @@ final class GameRunner {
         tasks.removeCallbacks(ticker);failed=true;stopSound();
         Log.e("SystemNNN","Game session failed",reason);
         if(!initialized&&reason instanceof GameProgress.InvalidBase)ui.progressCorrupt();
-        else ui.error(reason);
+        else ui.error(reason,startupGeneration);
     }
     private void releaseSaveAccess(Closeable playerTask,CompletableFuture<Void> release){
         SAVE_FILES.execute(()->{

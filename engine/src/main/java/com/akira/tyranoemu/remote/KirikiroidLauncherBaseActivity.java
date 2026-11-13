@@ -5,25 +5,17 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
-import android.content.res.ColorStateList;
 import android.graphics.Color;
-import android.graphics.PorterDuff;
-import android.graphics.Typeface;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.util.Xml;
-import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
-import android.widget.FrameLayout;
-import android.widget.LinearLayout;
-import android.widget.ProgressBar;
-import android.widget.TextView;
 import android.widget.Toast;
 
+import com.core.engine.EngineStartupOverlay;
 import com.core.engine.LaunchContract;
 
 import java.io.File;
@@ -66,10 +58,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     private static final long SAFE_FALLBACK_REVEAL_MS = 20_000L;
     @SuppressLint("StaticFieldLeak") // Dedicated process activity; cleared immediately before process termination.
     public static Context app;
-    private FrameLayout mask;
-    private TextView maskMessage;
-    private TextView maskHint;
-    private ProgressBar loadingSpinner;
+    private EngineStartupOverlay mask;
     private volatile boolean nativeBridgeInitialized;
     private volatile boolean destroyed;
     private volatile boolean firstFrameRendered;
@@ -119,71 +108,9 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         if (getIntent().getBooleanExtra(LaunchContract.ORIGIN_MODE, false)) {
             return;
         }
-        int primaryColor = launcherPrimaryColor();
-        int backgroundColor = launcherColor("launcher_bg_color", Color.rgb(244, 245, 245));
-        int textColor = launcherColor("launcher_text_color", Color.rgb(20, 34, 27));
-        int mutedTextColor = launcherColor("launcher_text_muted_color", Color.rgb(130, 144, 138));
-
-        FrameLayout launchMask = new FrameLayout(this);
-        launchMask.setBackgroundColor(backgroundColor);
-        configureLandscapeLoadingWindow(backgroundColor);
-        // Never expose the KRKR shell scene while the selected game is being
-        // started. The overlay is removed only after the game's first frames.
-        FrameLayout safeContent = new FrameLayout(this);
-        launchMask.addView(safeContent, new FrameLayout.LayoutParams(-1, -1));
-        LinearLayout loadingPanel = new LinearLayout(this);
-        loadingPanel.setOrientation(LinearLayout.VERTICAL);
-        loadingPanel.setGravity(Gravity.CENTER_HORIZONTAL);
-        loadingPanel.setPadding(dp(22), dp(20), dp(22), dp(16));
-
-        ProgressBar spinner = new ProgressBar(this);
-        spinner.setIndeterminateTintList(ColorStateList.valueOf(primaryColor));
-        spinner.getIndeterminateDrawable().setColorFilter(primaryColor, PorterDuff.Mode.SRC_IN);
-        spinner.setContentDescription(uiString(R.string.engine_game_loading));
-
-        TextView title = new TextView(this);
-        title.setText(uiString(R.string.engine_starting_game));
-        title.setTextColor(textColor);
-        title.setTextSize(16.0f);
-        title.setTypeface(null, Typeface.BOLD);
-        title.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(-1, -2);
-        titleParams.topMargin = dp(0);
-        loadingPanel.addView(title, titleParams);
-
-        LinearLayout.LayoutParams spinnerParams = new LinearLayout.LayoutParams(dp(32), dp(32));
-        spinnerParams.gravity = Gravity.CENTER_HORIZONTAL;
-        spinnerParams.topMargin = dp(14);
-        loadingPanel.addView(spinner, spinnerParams);
-
-        TextView hint = new TextView(this);
-        hint.setText(uiString(R.string.engine_preparing_game));
-        hint.setTextColor(mutedTextColor);
-        hint.setTextSize(11.0f);
-        hint.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(-1, -2);
-        hintParams.topMargin = dp(10);
-        loadingPanel.addView(hint, hintParams);
-
-        FrameLayout.LayoutParams panelParams = new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER);
-        safeContent.addView(loadingPanel, panelParams);
-        safeContent.setOnApplyWindowInsetsListener((view, insets) -> {
-            // Match PadUi: the background can occupy the whole display, while
-            // interactive/readable content stays clear of cutouts and bars.
-            safeContent.setPadding(
-                    insets.getSystemWindowInsetLeft(),
-                    insets.getSystemWindowInsetTop(),
-                    insets.getSystemWindowInsetRight(),
-                    insets.getSystemWindowInsetBottom());
-            return insets;
-        });
-        safeContent.requestApplyInsets();
-        launchMask.setLayoutParams(new ViewGroup.LayoutParams(-1, -1));
-        this.mask = launchMask;
-        this.maskMessage = title;
-        this.maskHint = hint;
-        this.loadingSpinner = spinner;
-        this.mFrameLayout.addView(launchMask);
+        configureLandscapeLoadingWindow(Color.BLACK);
+        mask = new EngineStartupOverlay(this);
+        mask.attachTo(mFrameLayout);
         NativeBridge.setKrkrGameReadyListener(this::revealGame);
         String path = getIntent().getStringExtra(LaunchContract.PATH);
         if (path != null && path.length() != 0) {
@@ -719,7 +646,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
             Log.e(TAG, "renderer-ready launch failed", t);
         }
         if (!launchSucceeded) {
-            showLaunchFailure(uiString(R.string.engine_launch_failed));
+            showLaunchFailure();
         } else if (mask != null) {
             // Keep the KRKR shell hidden until the native update hook reports
             // that doStartup and the menu transition completed. The fallback
@@ -739,21 +666,24 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         mask.post(() -> {
             if (!destroyed && mask != null) {
                 Log.i(TAG, "hide KRKR launch mask after game-ready signal");
-                mask.animate().alpha(0.0f).setDuration(150L).withEndAction(() -> {
-                    if (mask != null) mask.setVisibility(android.view.View.GONE);
+                mask.reveal();
+                mask.postDelayed(() -> {
+                    if (destroyed || mask == null) return;
                     launchOrientationGuardEnabled = false;
                     applyKrkrRequestedOrientation();
-                }).start();
+                }, 150L);
             }
         });
+    }
+
+    private void showLaunchFailure() {
+        showLaunchFailure(null);
     }
 
     private void showLaunchFailure(String message) {
         runOnUiThread(() -> {
             if (destroyed || isFinishing() || mask == null) return;
-            if (loadingSpinner != null) loadingSpinner.setVisibility(View.GONE);
-            if (maskMessage != null) maskMessage.setText(message);
-            if (maskHint != null) maskHint.setText(uiString(R.string.engine_return_and_retry));
+            if (mask != null) mask.fail(message);
         });
     }
 
@@ -764,10 +694,6 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     protected final String gameLibraryForBridge() {
         String library = resolvedGameLibrary;
         return library != null && library.length() != 0 ? library : soName();
-    }
-
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     private void configureLandscapeLoadingWindow(int backgroundColor) {
@@ -785,54 +711,9 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
             window.setStatusBarContrastEnforced(false);
             window.setNavigationBarContrastEnforced(false);
         }
-        int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
-        if (!isLauncherDarkMode()) {
-            flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
-        }
-        window.getDecorView().setSystemUiVisibility(flags);
-    }
-
-    private int launcherPrimaryColor() {
-        Intent intent = getIntent();
-        if (intent != null && intent.hasExtra(LaunchContract.PRIMARY_COLOR)) {
-            return intent.getIntExtra(LaunchContract.PRIMARY_COLOR, Color.rgb(24, 185, 120));
-        }
-        // Deprecated reflection fallback: com.apps should pass "primaryColor" via Intent extra.
-        // TODO: remove reflection once com.apps migration is complete.
-        try {
-            Object value = Class.forName("com.apps.LauncherActivity")
-                    .getMethod("launcherPrimaryColor", Context.class)
-                    .invoke(null, this);
-            if (value instanceof Integer) return (Integer) value;
-        } catch (Throwable ignored) {
-            // 反射失败时忽略，回退 Intent extra 主色（兼容兜底）
-        }
-        return launcherColor("launcher_primary_color", Color.rgb(24, 185, 120));
-    }
-
-    @SuppressLint("DiscouragedApi") // Engine cannot compile against the app module's generated R class.
-    private int launcherColor(String name, int fallback) {
-        Context uiContext = launcherUiContext();
-        int id = uiContext.getResources().getIdentifier(name, "color", getPackageName());
-        return id == 0 ? fallback : uiContext.getColor(id);
-    }
-
-    private Context launcherUiContext() {
-        // Deprecated reflection fallback: com.apps should pass "darkMode" via Intent extra.
-        // Note: this Context does NOT automatically resolve values-night resources based on
-        // the "darkMode" Intent extra; wrapLauncherUiMode in com.apps wraps the Context with
-        // a UiModeManager override to force day/night resource resolution. When the reflection
-        // fallback is removed, callers passing "darkMode" extra must also apply the night mode
-        // override via AppCompatDelegate.setDefaultNightMode() or similar before retrieving colors.
-        try {
-            Object value = Class.forName("com.apps.LauncherActivity")
-                    .getMethod("wrapLauncherUiMode", Context.class)
-                    .invoke(null, this);
-            if (value instanceof Context) return (Context) value;
-        } catch (Throwable ignored) {
-            // 反射失败时忽略，回退默认 Context（兼容兜底）
-        }
-        return this;
+        // Loading bars are fixed black, so keep white system-bar icons in every launcher theme.
+        window.getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
     }
 
     private String uiString(int resourceId) {
@@ -845,25 +726,6 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         } catch (Throwable ignored) {
             return getString(resourceId);
         }
-    }
-
-    private boolean isLauncherDarkMode() {
-        Intent intent = getIntent();
-        if (intent != null && intent.hasExtra(LaunchContract.DARK_MODE)) {
-            return intent.getBooleanExtra(LaunchContract.DARK_MODE, false);
-        }
-        // Deprecated reflection fallback: com.apps should pass "darkMode" via Intent extra.
-        try {
-            Object value = Class.forName("com.apps.LauncherActivity")
-                    .getMethod("isLauncherDarkMode", Context.class)
-                    .invoke(null, this);
-            if (value instanceof Boolean) return (Boolean) value;
-        } catch (Throwable ignored) {
-            // 反射失败时忽略，回退系统 uiMode 判断（兼容兜底）
-        }
-        return (getResources().getConfiguration().uiMode
-                & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
-                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
     }
 
     private static String normalizeKrPath(String path) {
@@ -937,10 +799,8 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         try {
             destroyed = true;
             if (graphicsOverlay != null) graphicsOverlay.hide();
+            if (mask != null) mask.dispose();
             mask = null;
-            maskMessage = null;
-            maskHint = null;
-            loadingSpinner = null;
             NativeBridge.setKrkrGameReadyListener(null);
             com.core.gl.Anime4kRuntime.reset();
             if (app == this) app = null;

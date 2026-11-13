@@ -1,0 +1,14 @@
+result=passed
+
+activeWindowTree:
+android.widget.FrameLayout text=null desc=null viewId=null bounds=Rect(0, 0 - 2700, 1224)
+  android.widget.LinearLayout text=null desc=null viewId=null bounds=Rect(0, 0 - 2700, 1224)
+    android.widget.FrameLayout text=null desc=null viewId=android:id/content bounds=Rect(0, 0 - 2700, 1224)
+      android.widget.FrameLayout text=null desc=null viewId=null bounds=Rect(0, 0 - 2700, 1224)
+        android.webkit.WebView text=null desc=null viewId=null bounds=Rect(0, 0 - 2700, 1224)
+          android.webkit.WebView text= desc=null viewId=null bounds=Rect(0, 0 - 2700, 1224)
+            android.view.View text= desc=null viewId=startupFixture bounds=Rect(0, 76 - 2700, 347)
+              android.widget.TextView text=TYRANO_STARTUP_ecbb3cd9881440f495ed6f642f599e70 desc=null viewId=fixture bounds=Rect(0, 76 - 2700, 175)
+              android.widget.TextView text=TYRANO_STARTUP_ecbb3cd9881440f495ed6f642f599e70_COUNT_2 desc=null viewId=counter bounds=Rect(0, 251 - 2700, 347)
+            android.widget.Image text=child-resource-probe desc=null viewId=null bounds=Rect(0, 424 - 854, 520)
+            android.widget.TextView text= desc=null viewId=reloadBadge bounds=Rect(132, 182 - 1215, 798)

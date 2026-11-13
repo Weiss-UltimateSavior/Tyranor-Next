@@ -30,6 +30,7 @@ import android.util.Log;
 import android.view.*;
 import android.widget.*;
 import com.core.engine.EngineUiText;
+import com.core.engine.EngineStartupOverlay;
 import com.core.engine.LaunchContract;
 import com.core.engine.R;
 import java.io.Closeable;
@@ -49,7 +50,9 @@ import java.util.Set;
 public final class PlayerActivity extends Activity implements GameRunner.Listener {
     private File game;
     private GameRunner runner;
-    private FrameLayout root,stage;
+    private FrameLayout root,contentHost,stage;
+    private EngineStartupOverlay startupOverlay;
+    private final EngineStartupGeneration startupGeneration=new EngineStartupGeneration();
     private TextureView screen;
     private Surface storySurface;
     private Button panelActionButton,otherSavesButton;
@@ -137,7 +140,10 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         }
         setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);
         immersive();
-        root=new FrameLayout(this); root.setBackgroundColor(Color.BLACK); setContentView(root);
+        root=new FrameLayout(this); root.setBackgroundColor(Color.BLACK);
+        contentHost=new FrameLayout(this);
+        root.addView(contentHost,new FrameLayout.LayoutParams(-1,-1));
+        setContentView(root);
         root.setOnApplyWindowInsetsListener((view,insets)->{
             int left,top,right,bottom;
             if(Build.VERSION.SDK_INT>=30){
@@ -361,7 +367,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 text(R.string.engine_systemnnn_host_exit_to_tyn),v->finish());
             return;
         }
-        root.removeAllViews();
+        startupOverlay=new EngineStartupOverlay(this);
+        startupOverlay.attachTo(root);
+        contentHost.removeAllViews();
         storyTouchSlop=ViewConfiguration.get(this).getScaledTouchSlop();
         stage=new FrameLayout(this){
             @Override public void onDescendantInvalidated(View child,View target){
@@ -377,7 +385,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         };
         launchingGame=true;
         stage.setForeground(new ColorDrawable(Color.BLACK));
-        root.addView(stage,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
+        contentHost.addView(stage,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
         panelActionButton=new Button(this);
         panelActionButton.setSingleLine(true);
         panelActionButton.setSoundEffectsEnabled(false);
@@ -389,7 +397,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         });
         FrameLayout.LayoutParams actionPosition=new FrameLayout.LayoutParams(-2,dp(48),Gravity.TOP|Gravity.END);
         actionPosition.setMargins(dp(4),dp(4),dp(4),0);
-        root.addView(panelActionButton,actionPosition);
+        contentHost.addView(panelActionButton,actionPosition);
         otherSavesButton=new Button(this);
         otherSavesButton.setText(text(R.string.engine_systemnnn_ctl_other_saves));
         otherSavesButton.setSingleLine(true);
@@ -398,7 +406,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         otherSavesButton.setOnClickListener(v->{if(panelActionReady())showOtherSaves();});
         FrameLayout.LayoutParams otherPosition=new FrameLayout.LayoutParams(-2,dp(48),Gravity.TOP|Gravity.END);
         otherPosition.setMargins(dp(4),dp(52),dp(4),0);
-        root.addView(otherSavesButton,otherPosition);
+        contentHost.addView(otherSavesButton,otherPosition);
         root.getViewTreeObserver().addOnPreDrawListener(()->{updatePanelActionEnabled();return true;});
         root.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> layoutStage());
         screen=new TextureView(this); screen.setContentDescription(text(R.string.engine_systemnnn_host_game_display));screen.setSoundEffectsEnabled(false);
@@ -480,8 +488,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(gamePanel!=null)gamePanel.canvas(width,height);
         reserveCommandSpace();
         if(root.getWidth()==0 || root.getHeight()==0)return;
-        int availableWidth=root.getWidth()-root.getPaddingLeft()-root.getPaddingRight();
-        int availableHeight=root.getHeight()-root.getPaddingTop()-root.getPaddingBottom();
+        int availableWidth=contentHost.getWidth()-contentHost.getPaddingLeft()-contentHost.getPaddingRight();
+        int availableHeight=contentHost.getHeight()-contentHost.getPaddingTop()-contentHost.getPaddingBottom();
         if(availableWidth<=0||availableHeight<=0)return;
         float scale=Math.min((float)availableWidth/width,(float)availableHeight/height);
         int w=Math.max(1,Math.round(width*scale)),h=Math.max(1,Math.round(height*scale));
@@ -495,8 +503,27 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         }
     }
     @Override public void loaded() {runOnUiThread(() -> {refreshAfterLoad=true;modeUnderPanel=null;});}
-    @Override public void frame(GameRunner.Frame frame,int initialVisible) {
+    private void revealStartupOverlayAfterLayout(View content) {
+        if (startupOverlay==null || !startupOverlay.isLoading() || content==null) return;
+        EngineStartupOverlay expected=startupOverlay;
+        ViewTreeObserver observer=content.getViewTreeObserver();
+        if (!observer.isAlive()) return;
+        observer.addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+            @Override public boolean onPreDraw() {
+                ViewTreeObserver current=content.getViewTreeObserver();
+                if (current.isAlive()) current.removeOnPreDrawListener(this);
+                content.post(() -> {
+                    if (!isDestroyed()&&!isFinishing()&&startupOverlay==expected) expected.reveal();
+                });
+                return true;
+            }
+        });
+        content.requestLayout();
+        content.invalidate();
+    }
+    @Override public void frame(GameRunner.Frame frame,int initialVisible,long generation) {
         runOnUiThread(() -> {
+            if (!startupGeneration.accepts(generation)) return;
             if (isDestroyed() || stage==null) return;
             if (titlePanel!=null) {stage.removeView(titlePanel); titlePanel=null; titleModel=null;}
             clearStartupForStory();
@@ -505,6 +532,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 currentFrame=frame;
                 // Preserve the last story composition until the modal has captured it.
                 if(gamePanel==null&&preparingPanel==null)showScriptModal(null);
+                revealStartupOverlayAfterLayout(stage);
                 return;
             }
             modeUnderPanel=null;
@@ -543,6 +571,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             }
             updateVisibility(); updateStatus();
             if(frame.wait==NativeGame.PLACE&&gamePanel==null&&preparingPanel==null)showPlace(null);
+            revealStartupOverlayAfterLayout(stage);
         });
     }
     @Override public void screenLayerChanged(){
@@ -781,8 +810,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         MoviePlayback previous=moviePlayback;moviePlayback=null;
         if(previous!=null){previous.dispose();stage.removeView(previous);}
     }
-    @Override public void logo(List<LogoPanel.Slide> slides,int w,int h,int frameMs){
+    @Override public void logo(List<LogoPanel.Slide> slides,int w,int h,int frameMs,long generation){
         runOnUiThread(()->{
+            if (!startupGeneration.accepts(generation)) return;
             GameRunner owner=runner;
             if(isDestroyed()||isFinishing()||stage==null||owner==null)return;
             if(w>0&&h>0){width=w;height=h;}layoutStage();
@@ -796,10 +826,12 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             stage.addView(logoPanel,new FrameLayout.LayoutParams(-1,-1));
             removeTitleForStartup();
             updateVisibility();
+            revealStartupOverlayAfterLayout(logoPanel);
         });
     }
-    @Override public void opening(GameUiAssets.Config config,int frameMs,GameRunner.Capture initial,GameRunner.Capture previous){
+    @Override public void opening(GameUiAssets.Config config,int frameMs,GameRunner.Capture initial,GameRunner.Capture previous,long generation){
         runOnUiThread(()->{
+            if (!startupGeneration.accepts(generation)) return;
             GameRunner owner=runner;
             if(isDestroyed()||isFinishing()||stage==null||owner==null)return;
             clearStartupViews();
@@ -808,6 +840,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             stage.addView(startupOpening,new FrameLayout.LayoutParams(-1,-1));
             removeTitleForStartup();
             updateVisibility();
+            revealStartupOverlayAfterLayout(startupOpening);
         });
     }
     private final class OpeningScreen extends View {
@@ -855,8 +888,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 }))owner.finishTitleRestart(model,false);
         });
     }
-    @Override public void title(TitleMenu model,int w,int h,GameRunner.Capture initial,GameRunner.Capture previous) {
+    @Override public void title(TitleMenu model,int w,int h,GameRunner.Capture initial,GameRunner.Capture previous,long generation) {
         runOnUiThread(() -> {
+            if (!startupGeneration.accepts(generation)) return;
             if(isDestroyed() || isFinishing() || stage==null)return;
             if(titleModel!=model||returningToTitle)modeUnderPanel=null;
             if(returningToTitle){returningToTitle=false;closeOriginalPanel(false);}
@@ -872,6 +906,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             launchingGame=false;
             clearStartupViews();
             showTitlePanel(model,initial);
+            revealStartupOverlayAfterLayout(titlePanel);
         });
     }
     private void showTitlePanel(TitleMenu model,GameRunner.Capture initial){
@@ -1861,8 +1896,11 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 dialogClick((d,w)->{if(owner==runner)owner.recoverCorruptProgress();}))
             .show();
     });}
-    @Override public void error(Throwable reason) { runOnUiThread(() -> {
+    @Override public void error(Throwable reason,long generation) { runOnUiThread(() -> {
+        if (!startupGeneration.fail(generation)) return;
         if (isDestroyed() || isFinishing()) return;
+        if(startupOverlay!=null&&startupOverlay.isLoading())
+            startupOverlay.fail(null);
         if(returningToTitle){returningToTitle=false;titlePrevious=null;closeOriginalPanel(false);}
         String detail=reason.getMessage();
         if(detail!=null&&detail.contains("spt/sys.spt")&&
@@ -1884,9 +1922,15 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             .setCancelable(false)
             .setNegativeButton(text(R.string.engine_systemnnn_host_exit_to_tyn),dialogClick((d,w) -> finish()))
             .setPositiveButton(startOver?text(R.string.engine_systemnnn_host_start_over):text(R.string.engine_systemnnn_host_retry_load),
-                dialogClick((d,w) -> {if(owner!=null&&owner==runner)owner.restart(startOver);})).show();
+                dialogClick((d,w) -> {if(owner!=null&&owner==runner){resetStartupOverlayForRetry();owner.restart(startOver);}})).show();
     }); }
     private String text(int resource,Object... arguments){return uiContext.getString(resource,arguments);}
+    private void resetStartupOverlayForRetry() {
+        startupGeneration.advance();
+        if(startupOverlay!=null)startupOverlay.dispose();
+        startupOverlay=new EngineStartupOverlay(this);
+        startupOverlay.attachTo(root);
+    }
     private int dp(int n) {return Math.round(n*getResources().getDisplayMetrics().density);}
     private TextView label(String s,int size) {
         TextView t=new TextView(this); t.setTextColor(Color.WHITE);
@@ -1896,13 +1940,13 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         GradientDrawable bg=new GradientDrawable(); bg.setColor(color); bg.setCornerRadius(dp(radius)); return bg;
     }
     private void message(String title,String body,String action,View.OnClickListener listener) {
-        root.removeAllViews(); LinearLayout box=new LinearLayout(this); box.setGravity(Gravity.CENTER);
+        contentHost.removeAllViews(); LinearLayout box=new LinearLayout(this); box.setGravity(Gravity.CENTER);
         box.setPadding(dp(32),dp(16),dp(32),dp(16)); box.setOrientation(LinearLayout.VERTICAL);
         TextView heading=label(title,22); heading.setTypeface(Typeface.DEFAULT,Typeface.BOLD); box.addView(heading);
         TextView description=label(body,16); description.setPadding(0,dp(12),0,dp(12)); box.addView(description);
         if (action!=null) {Button b=new Button(this); b.setText(action);b.setSoundEffectsEnabled(false);b.setOnClickListener(clicked(listener)); box.addView(b);}
         Button back=new Button(this); back.setText(text(R.string.engine_systemnnn_host_back));back.setSoundEffectsEnabled(false);back.setOnClickListener(clicked(v -> finish())); box.addView(back);
-        root.addView(box,new FrameLayout.LayoutParams(-1,-1));
+        contentHost.addView(box,new FrameLayout.LayoutParams(-1,-1));
     }
     private void immersive() {
         boolean full=settings==null||settings.fullscreen;
@@ -2009,6 +2053,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     @Override protected void onPause() {foreground=false;if(gamePanel!=null)gamePanel.uiActive(false);statusActive(false); if(runner!=null) runner.active(false);
         if(moviePlayback!=null)moviePlayback.pause();super.onPause();}
     @Override protected void onDestroy() {
+        startupGeneration.dispose();
+        if(startupOverlay!=null)startupOverlay.dispose();
+        startupOverlay=null;
         if(moviePlayback!=null){moviePlayback.dispose();moviePlayback=null;}
         ui.removeCallbacksAndMessages(null);
         discardPanelPreparation();

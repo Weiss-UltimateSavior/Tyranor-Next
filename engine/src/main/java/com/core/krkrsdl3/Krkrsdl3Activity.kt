@@ -10,9 +10,11 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Toast
 import com.core.engine.EngineThemeColors
+import com.core.engine.EngineSurfaceStartupController
 import com.core.engine.LaunchContract
 import com.core.engine.R
 import com.core.gl.ArtemisPerformanceOverlay
@@ -44,6 +46,7 @@ class Krkrsdl3Activity : KRKRActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     @Volatile private var graphics: Krkrsdl3Graphics? = null
     private var graphicsOverlay: ArtemisPerformanceOverlay? = null
+    private var startupController: EngineSurfaceStartupController? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // 先落方向锁再走 super：super 链中 KRKRActivity.onCreate → fullscreen() 会设置方向
@@ -73,6 +76,7 @@ class Krkrsdl3Activity : KRKRActivity() {
         super.onCreate(savedInstanceState)
         if (!SDLActivity.mBrokenLibraries) {
             graphics?.let { graphicsOverlay = ArtemisPerformanceOverlay(this, it) }
+            attachStartupOverlay()
         }
         // 绝对超时兜底：即使原生窗口创建回调异常缺失，超时后也解除方向锁
         scheduleGuardRelease(GUARD_FALLBACK_RELEASE_MS)
@@ -81,6 +85,15 @@ class Krkrsdl3Activity : KRKRActivity() {
     /** `libSDL3.so` 仍随 APK 的 `lib/`，图形桥按该绝对路径做 NOLOAD 查找。 */
     private fun sdlLibraryPath(): String =
         File(applicationInfo.nativeLibraryDir, "libSDL3.so").absolutePath
+
+    private fun attachStartupOverlay() {
+        val surfaceView = SDLActivity.mSurface ?: return
+        val layout = SDLActivity.mLayout ?: return
+        val content = findViewById<ViewGroup>(android.R.id.content)
+        startupController = EngineSurfaceStartupController(this) { graphicsOverlay?.show() }.also {
+            it.attachTo(content ?: layout, surfaceView.holder)
+        }
+    }
 
     /**
      * SDL3 运行库加载失败时只弹错误框并返回，但 KRKRActivity.onCreate 之后仍会调用本 native
@@ -97,10 +110,12 @@ class Krkrsdl3Activity : KRKRActivity() {
         // 覆盖 KRKRActivity 固定的竖屏强制：按启动器传入的方向（默认 sensorLandscape=6），
         // 与 KirikiroidLauncherBaseActivity.onResume 行为一致。
         applyEngineRequestedOrientation()
-        graphicsOverlay?.show()
+        if (startupController?.isLoading() != true) graphicsOverlay?.show()
+        startupController?.onResume()
     }
 
     override fun onPause() {
+        startupController?.onPause()
         graphicsOverlay?.hide()
         super.onPause()
     }
@@ -127,8 +142,13 @@ class Krkrsdl3Activity : KRKRActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         val forceFocus = intent?.getStringExtra(LaunchContract.FOCUS)?.toBoolean() ?: false
         super.onWindowFocusChanged(hasFocus || forceFocus)
+        startupController?.onWindowFocusChanged(hasFocus)
         if (hasFocus || forceFocus) applySystemUiVisibility()
-        if (hasFocus || forceFocus) graphicsOverlay?.show() else graphicsOverlay?.hide()
+        if (hasFocus || forceFocus) {
+            if (startupController?.isLoading() != true) graphicsOverlay?.show()
+        } else {
+            graphicsOverlay?.hide()
+        }
     }
 
     /**
@@ -172,6 +192,8 @@ class Krkrsdl3Activity : KRKRActivity() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
+        startupController?.dispose()
+        startupController = null
         graphicsOverlay?.hide()
         graphicsOverlay = null
         super.onDestroy()

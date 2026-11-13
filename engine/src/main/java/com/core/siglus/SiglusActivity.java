@@ -25,8 +25,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
-import android.widget.ProgressBar;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.activity.OnBackPressedCallback;
@@ -39,6 +37,8 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.core.engine.EnginePrefs;
+import com.core.engine.EngineStartupOverlay;
+import com.core.engine.EngineSurfaceReadyProbe;
 import com.core.engine.R;
 import com.core.engine.EngineUiText;
 import com.core.engine.LaunchContract;
@@ -93,7 +93,8 @@ public final class SiglusActivity extends AppCompatActivity implements
     private SiglusWindowLease displayWindow;
     private final Runnable capacityAvailable = this::acquireDisplayWindow;
     private SiglusTextInputView textInputView;
-    private View loadingOverlay;
+    private EngineStartupOverlay loadingOverlay;
+    private EngineSurfaceReadyProbe startupProbe;
 
     private SiglusHost engine;
     private SiglusEngineThread filteredEngine;
@@ -104,7 +105,6 @@ public final class SiglusActivity extends AppCompatActivity implements
     private boolean running = false;
     private volatile boolean surfaceReady = false;
     private long lastFrameNs = 0L;
-    private boolean loadingOverlayVisible = true;
     private boolean imeVisible = false;
 
     private String gameRoot;
@@ -131,6 +131,21 @@ public final class SiglusActivity extends AppCompatActivity implements
         filterMode = requestedChain != null;
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         setContentView(buildContentView());
+        startupProbe = new EngineSurfaceReadyProbe(this, new EngineSurfaceReadyProbe.SurfaceProvider() {
+            @Override public Surface currentSurface() {
+                return !filterMode && surfaceView instanceof SurfaceView
+                        ? ((SurfaceView) surfaceView).getHolder().getSurface() : null;
+            }
+            @Override public long currentGeneration() { return surfaceGeneration; }
+        }, new EngineSurfaceReadyProbe.Listener() {
+            @Override public void onReady(long generation) {
+                if (!destroying && !filterMode && generation == surfaceGeneration) hideLoadingOverlay();
+            }
+            @Override public void onFailure(EngineSurfaceReadyProbe.Failure failure) {
+                if (!destroying && !filterMode && loadingOverlay != null)
+                    loadingOverlay.fail(null);
+            }
+        });
 
         gameRoot = firstNonEmpty(
                 getIntent().getStringExtra(LaunchContract.PATH),
@@ -168,6 +183,7 @@ public final class SiglusActivity extends AppCompatActivity implements
                     if (!filterMode) {
                         surfaceReady = windowAvailable && generation == surfaceGeneration;
                         writeBackGameTitleAsync();
+                        startDirectStartupProbe();
                         maybeStartFrameLoop();
                         return;
                     }
@@ -184,13 +200,13 @@ public final class SiglusActivity extends AppCompatActivity implements
                         surfaceReady = success && windowAvailable && generation == surfaceGeneration;
                         if (!success) Toast.makeText(SiglusActivity.this, uiString(R.string.engine_launch_failed),
                                 Toast.LENGTH_LONG).show();
+                        startDirectStartupProbe();
                         maybeStartFrameLoop();
                     } else completeSurfaceConnection(request, success);
                 }
                 @Override public void onStepped(int status, boolean imeNeeded, int[] area) {
                     if (status > 0) { stopFrameLoop(); finish(); return; }
                     if (status < 0) { faulted = true; stopFrameLoop(); return; }
-                    if (!filterMode) hideLoadingOverlay();
                     if (resumed) updateImeState(imeNeeded, area);
                 }
                 @Override public void onBlocked() {
@@ -249,36 +265,19 @@ public final class SiglusActivity extends AppCompatActivity implements
         inputParams.gravity = Gravity.TOP | Gravity.START;
         rootLayout.addView(textInputView, inputParams);
 
-        loadingOverlay = buildLoadingOverlay();
-        rootLayout.addView(loadingOverlay, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        loadingOverlay = new EngineStartupOverlay(this);
+        loadingOverlay.attachTo(rootLayout);
         return rootLayout;
     }
 
-    private View buildLoadingOverlay() {
-        FrameLayout overlay = new FrameLayout(this);
-        overlay.setBackgroundColor(Color.BLACK);
-        ProgressBar spinner = new ProgressBar(this);
-        overlay.addView(spinner, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
-        TextView label = new TextView(this);
-        label.setText(uiString(R.string.engine_starting_game));
-        label.setTextColor(Color.LTGRAY);
-        label.setTextSize(14.0f);
-        label.setGravity(Gravity.CENTER);
-        FrameLayout.LayoutParams labelParams = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
-        labelParams.topMargin = (int) (72 * getResources().getDisplayMetrics().density);
-        overlay.addView(label, labelParams);
-        return overlay;
+    private void hideLoadingOverlay() {
+        if (loadingOverlay != null) loadingOverlay.reveal();
     }
 
-    private void hideLoadingOverlay() {
-        if (loadingOverlayVisible && loadingOverlay != null) {
-            loadingOverlayVisible = false;
-            rootLayout.removeView(loadingOverlay);
-            loadingOverlay = null;
-        }
+    private void startDirectStartupProbe() {
+        if (startupProbe == null) return;
+        if (!filterMode && surfaceReady && resumed && hasWindowFocus()) startupProbe.start();
+        else startupProbe.stop();
     }
 
     @Override
@@ -294,6 +293,7 @@ public final class SiglusActivity extends AppCompatActivity implements
         super.onResume();
         resumed = true;
         applyImmersive();
+        startDirectStartupProbe();
         if (filterMode) {
             acquireDisplayWindow();
             attachDisplay();
@@ -304,6 +304,7 @@ public final class SiglusActivity extends AppCompatActivity implements
     @Override
     protected void onPause() {
         resumed = false;
+        if (startupProbe != null) startupProbe.stop();
         stopFrameLoop();
         cancelPointer();
         if (graphicsOverlay != null) graphicsOverlay.hide();
@@ -323,6 +324,8 @@ public final class SiglusActivity extends AppCompatActivity implements
         hideIme();
         NativeSiglus.setMessageboxListener(null);
         if (filterMode) detachFilteredDisplay();
+        if (startupProbe != null) startupProbe.dispose();
+        if (loadingOverlay != null) loadingOverlay.dispose();
         destroyEngine(); // Native producer destruction precedes consumer disposal.
         super.onDestroy();
     }
@@ -341,6 +344,7 @@ public final class SiglusActivity extends AppCompatActivity implements
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        startDirectStartupProbe();
         if (hasFocus) {
             applyImmersive();
         }
@@ -400,6 +404,7 @@ public final class SiglusActivity extends AppCompatActivity implements
         if (filterMode) return;
         surfaceGeneration++;
         windowAvailable = surfaceReady = false;
+        if (startupProbe != null) startupProbe.stop();
         stopFrameLoop();
         cancelPointer();
         // Every JNI render/create/set_surface/resize completed on this same UI

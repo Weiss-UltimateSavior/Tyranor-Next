@@ -7,12 +7,14 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.ConfigurationInfo;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.ViewGroup;
 import android.widget.Toast;
 
 import org.libsdl.app32.SDLActivity;
 import org.tvp.kirikiri2.KrDialogStyle;
 
 import com.core.engine.DoubleBackExit;
+import com.core.engine.EngineSurfaceStartupController;
 import com.core.engine.EngineUiText;
 import com.core.engine.LaunchContract;
 import com.core.engine.R;
@@ -57,6 +59,7 @@ public final class Xs4Activity extends SDLActivity {
     private File iniFile;
     private String encoding;
     private Xs4Fonts.Resolved fonts;
+    private EngineSurfaceStartupController startupController;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -133,16 +136,47 @@ public final class Xs4Activity extends SDLActivity {
                 + " scoped=" + getIntent().getBooleanExtra(LaunchContract.XS4_SCOPED_SAVE_DIR, false)
                 + " savedir=" + getIntent().getStringExtra(LaunchContract.XS4_SAVE_DIR)
                 + " encoding=" + encoding);
+        attachStartupOverlay();
+    }
+
+    private void attachStartupOverlay() {
+        if (SDLActivity.mBrokenLibraries || SDLActivity.mSurface == null || SDLActivity.mLayout == null) return;
+        ViewGroup content = findViewById(android.R.id.content);
+        startupController = new EngineSurfaceStartupController(this);
+        startupController.attachTo(content != null ? content : SDLActivity.mLayout,
+                SDLActivity.mSurface.getHolder());
     }
 
     @Override
     protected void onDestroy() {
         // 引擎原生库不可重入，与 Xs35Activity / Artemis / KRKR 宿主同策略：收尾后无条件自杀进程。
         try {
+            if (startupController != null) {
+                startupController.dispose();
+                startupController = null;
+            }
             super.onDestroy();
         } finally {
             android.os.Process.killProcess(android.os.Process.myPid());
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (startupController != null) startupController.onResume();
+    }
+
+    @Override
+    protected void onPause() {
+        if (startupController != null) startupController.onPause();
+        super.onPause();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (startupController != null) startupController.onWindowFocusChanged(hasFocus);
     }
 
     @Override

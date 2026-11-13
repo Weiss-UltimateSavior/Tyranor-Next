@@ -15,7 +15,6 @@ import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -29,6 +28,7 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.core.engine.EngineUiText;
+import com.core.engine.EngineStartupOverlay;
 import com.core.engine.LaunchContract;
 import com.core.engine.R;
 
@@ -58,7 +58,7 @@ public final class FramebufferGameActivity extends AppCompatActivity
 
     private FrameLayout rootLayout;
     private FramebufferView fbView;
-    private View loadingOverlay;
+    private EngineStartupOverlay loadingOverlay;
     private FramebufferTextInputView textInputView;
     private TextView imeButton;
     private TextView skipButton;
@@ -138,6 +138,10 @@ public final class FramebufferGameActivity extends AppCompatActivity
 
         fbView = new FramebufferView(this);
         fbView.setOnTouchListener((v, event) -> onGameTouch(event));
+        fbView.setFirstFrameDrawnListener(() -> {
+            if (!isFinishing() && !isDestroyed() && handle != 0L && loadingOverlay != null)
+                loadingOverlay.reveal();
+        });
         rootLayout.addView(fbView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
@@ -148,9 +152,8 @@ public final class FramebufferGameActivity extends AppCompatActivity
 
         rootLayout.addView(buildControlBar(), bottomEndParams());
 
-        loadingOverlay = buildLoadingOverlay();
-        rootLayout.addView(loadingOverlay, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        loadingOverlay = new EngineStartupOverlay(this);
+        loadingOverlay.attachTo(rootLayout);
         return rootLayout;
     }
 
@@ -189,31 +192,6 @@ public final class FramebufferGameActivity extends AppCompatActivity
         bar.addView(button, params);
         button.setOnClickListener(listener);
         return button;
-    }
-
-    private View buildLoadingOverlay() {
-        FrameLayout overlay = new FrameLayout(this);
-        overlay.setBackgroundColor(Color.BLACK);
-        ProgressBar spinner = new ProgressBar(this);
-        overlay.addView(spinner, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
-        TextView label = new TextView(this);
-        label.setText(uiString(R.string.engine_starting_game));
-        label.setTextColor(Color.LTGRAY);
-        label.setTextSize(14.0f);
-        label.setGravity(Gravity.CENTER);
-        FrameLayout.LayoutParams labelParams = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
-        labelParams.topMargin = dp(72);
-        overlay.addView(label, labelParams);
-        return overlay;
-    }
-
-    private void hideLoadingOverlay() {
-        if (loadingOverlay != null) {
-            rootLayout.removeView(loadingOverlay);
-            loadingOverlay = null;
-        }
     }
 
     @Override
@@ -256,7 +234,6 @@ public final class FramebufferGameActivity extends AppCompatActivity
         } else if (title != null && !title.trim().isEmpty()) {
             setTitle(title);
         }
-        hideLoadingOverlay();
         maybeStartFrameLoop();
     }
 
@@ -287,6 +264,8 @@ public final class FramebufferGameActivity extends AppCompatActivity
 
     @Override
     protected void onDestroy() {
+        if (fbView != null) fbView.setFirstFrameDrawnListener(null);
+        if (loadingOverlay != null) loadingOverlay.dispose();
         hideIme();
         closeGame();
         super.onDestroy();
