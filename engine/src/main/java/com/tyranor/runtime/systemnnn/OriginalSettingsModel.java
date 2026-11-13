@@ -1,6 +1,7 @@
 package com.tyranor.runtime.systemnnn;
 
 import java.util.*;
+import java.util.function.IntPredicate;
 
 /** Read-only layout/parameter declarations from commonConfig; pages and character IDs stay one-based. */
 final class OriginalSettingsModel {
@@ -48,9 +49,26 @@ final class OriginalSettingsModel {
     static final class CharacterControl {
         final int index,page;final int[] ids;final Button button;final boolean hasSlider;final int x,y,width,height;
         final CharacterSoundChange soundChange;
-        CharacterControl(int index,int page,int[] ids,Button button,boolean hasSlider,int x,int y,int w,int h,CharacterSoundChange soundChange){
+        final boolean requiresHeardVoice;
+        final String imageVariable;
+        CharacterControl(int index,int page,int[] ids,Button button,boolean hasSlider,int x,int y,int w,int h,
+                         CharacterSoundChange soundChange,boolean requiresHeardVoice,String imageVariable){
             this.index=index;this.page=page;this.ids=ids;this.button=button;this.hasSlider=hasSlider;this.x=x;this.y=y;width=w;height=h;
             this.soundChange=soundChange;
+            this.requiresHeardVoice=requiresHeardVoice;
+            this.imageVariable=imageVariable;
+        }
+        boolean visible(IntPredicate heard){
+            if(!requiresHeardVoice)return true;
+            for(int id:ids)if(heard.test(id))return true;
+            return false;
+        }
+        String variantImage(boolean enabled,int variant){
+            if(variant<=0)return "";
+            String base=GameUiAssets.systemImageKey(button.state(enabled).art.image);
+            if(base.isEmpty())return "";
+            String name=base+"_"+variant;
+            return name.length()<=255?name:"";
         }
         int sound(boolean enabled,ButtonArt.SoundEvent event,boolean changed){
             int alternate=changed&&soundChange!=null?soundChange.sound(enabled,event):0;
@@ -134,6 +152,8 @@ final class OriginalSettingsModel {
         characterMin=bound(c.number("charaVoiceVolumeMin",-15),-15,15);characterMax=bound(c.number("charaVoiceVolumeMax",15),characterMin,15);
         int charCount=c.number("voiceCutButtonFlag",1)==0?0:bound(c.number("voiceCutButtonNumber",0),0,72),nextId=1;
         boolean custom=c.number("voiceCutButtonCustomFlag",0)!=0,auto=c.number("voiceAutoLineSetFlag",0)!=0;
+        boolean requiresHeardVoice=c.number("voiceCutButtonCheckAppearFlag",0)!=0;
+        boolean changeCharacterImage=c.number("voiceNameChangeFlag",0)!=0;
         boolean changeCharacterSound=c.number("voiceVoiceChangeFlag",0)!=0;
         int nx=c.number("voiceAutoLineNumberX",5),ny=c.number("voiceAutoLineNumberY",0);
         Button previousCharacter=null;
@@ -150,7 +170,8 @@ final class OriginalSettingsModel {
             }else b=button(prefix,previousCharacter,false);
             characters.add(new CharacterControl(i,page("voicePrintPage",1),ids,b,c.number("charaVoiceVolumeFlag",0)!=0,
                 b.x+c.number("charaVolumePrintX",0),b.y+c.number("charaVolumePrintY",30),bound(c.number("charaVolumeSizeX",200),1,canvasWidth),bound(c.number("charaVolumeSizeY",20),1,canvasHeight),
-                changeCharacterSound?CharacterSoundChange.read(c,i+1):null));
+                changeCharacterSound?CharacterSoundChange.read(c,i+1):null,requiresHeardVoice,
+                changeCharacterImage?c.value("voiceNameChangeVar"+(i+1),""):""));
             previousCharacter=b;
         }
         String[] kinds={"screen","skip","auto"},modeKeys={"fullscreen","skipReadOnly","autoEnabled"};

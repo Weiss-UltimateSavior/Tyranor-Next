@@ -19,6 +19,8 @@ import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
@@ -30,6 +32,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
@@ -421,20 +424,49 @@ final class GameRunner {
             ready.accept(visible);
         });
     }
-    boolean[] settingsCharacterVoiceChanges(List<OriginalSettingsModel.CharacterControl> characters){
+    static final class SettingsCharacterArt {
+        final Bitmap off,on;
+        SettingsCharacterArt(Bitmap off,Bitmap on){this.off=off;this.on=on;}
+        Bitmap image(boolean enabled){return enabled?on:off;}
+    }
+    boolean[] settingsCharacters(List<OriginalSettingsModel.CharacterControl> characters,Consumer<SettingsCharacterArt[]> ready){
         boolean[] changes=new boolean[characters.size()];
-        if(characters.stream().noneMatch(control->control.soundChange!=null))return changes;
+        boolean loadArt=characters.stream().anyMatch(control->control.requiresHeardVoice||!control.imageVariable.isEmpty());
+        if(!loadArt&&characters.stream().noneMatch(control->control.soundChange!=null))return changes;
         // Resolve at Config entry. The same worker reads the result when playing each cue.
         tasks.post(()->{
-            if(closing||handle==0)return;
+            if(closing||handle==0||uiAssets==null)return;
             for(OriginalSettingsModel.CharacterControl control:characters){
-                if(control.soundChange==null)continue;
-                String variable=control.soundChange.variable;
-                if(!variable.isEmpty()&&variable.length()<=255)
-                    changes[control.index]=NativeGame.menuVariable(handle,resourceName(variable))>0;
+                if(control.soundChange!=null)changes[control.index]=settingsVariable(control.soundChange.variable)>0;
             }
+            if(loadArt)ready.accept(settingsCharacterArt(characters));
         });
         return changes;
+    }
+    private int settingsVariable(String name){
+        return name.isEmpty()||name.length()>255?0:NativeGame.menuVariable(handle,resourceName(name));
+    }
+    private SettingsCharacterArt[] settingsCharacterArt(List<OriginalSettingsModel.CharacterControl> characters){
+        SettingsCharacterArt[] result=new SettingsCharacterArt[characters.size()];
+        String[] off=new String[result.length],on=new String[result.length];
+        Set<String> requested=new LinkedHashSet<>();
+        for(OriginalSettingsModel.CharacterControl control:characters){
+            if(!control.visible(id->NativeGame.voiceRoleHeard(handle,id)))continue;
+            int i=control.index,variant=settingsVariable(control.imageVariable);
+            off[i]=control.variantImage(false,variant);on[i]=control.variantImage(true,variant);
+            if(!off[i].isEmpty())requested.add(off[i]);
+            if(!on[i].isEmpty())requested.add(on[i]);
+        }
+        Map<String,Bitmap> loaded=java.util.Collections.emptyMap();
+        try{loaded=uiAssets.settingsCharacterImages(handle,requested);}
+        catch(RuntimeException|OutOfMemoryError e){Log.w("SystemNNN","Unable to load alternate settings character art",e);}
+        for(int i=0;i<result.length;i++)if(off[i]!=null){
+            Bitmap offImage=loaded.get(off[i]),onImage=loaded.get(on[i]);
+            if(offImage==null)offImage=uiAssets.image(off[i]);
+            if(onImage==null)onImage=uiAssets.image(on[i]);
+            result[i]=new SettingsCharacterArt(offImage,onImage);
+        }
+        return result;
     }
     void settings(String key,PlayerSettings value){
         final int[] requested=uiAssets==null?new int[0]:RuntimeSettingsAdapter.changedParameter(preferences,uiAssets,key);

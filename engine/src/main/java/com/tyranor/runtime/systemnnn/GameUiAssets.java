@@ -152,6 +152,9 @@ final class GameUiAssets {
     final File root;
     RuntimeHandle runtime;
     private final Map<String,Bitmap> images;
+    // Worker-only cache of the current configuration portrait names, including misses.
+    private Set<String> characterImageRequest=Collections.emptySet();
+    private Map<String,Bitmap> characterImages=Collections.emptyMap();
     private final int[] textRates;
     private final boolean legacyVolumeDefaults;
     private final boolean useXAudio2;
@@ -265,6 +268,13 @@ final class GameUiAssets {
     }
     Map<String,Bitmap> modeSprites(long handle,Collection<String> requested){
         return modeSprites(handle,requested,"");
+    }
+    Map<String,Bitmap> settingsCharacterImages(long handle,Set<String> requested){
+        if(!characterImageRequest.equals(requested)){
+            characterImages=modeSprites(handle,requested,"",characterImages,false);
+            characterImageRequest=new LinkedHashSet<>(requested);
+        }
+        return characterImages;
     }
     private Map<String,Bitmap> modeSprites(long handle,Collection<String> requested,String keyedImage){
         return modeSprites(handle,requested,keyedImage,Collections.emptyMap(),false);
