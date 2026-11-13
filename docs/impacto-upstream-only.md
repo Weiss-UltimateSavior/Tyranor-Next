@@ -4,6 +4,9 @@
 `e04f9a15` 建立。它取代已关闭的 [PR #161](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/161)
 的引擎补丁路线。本 PR 先建立引用、编译和来源验证工具，宿主接入在同一 PR 内继续推进。
 
+当前唯一开发入口：[上游 PR #165](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/165)，
+分支 `yuukana1:feat/impacto-upstream-only`。原独立私有仓库已弃用，不再承担源码、产物或后续交接依赖。
+
 ## 约束与当前行为
 
 - 直接引用 [CommitteeOfZero/impacto](https://github.com/CommitteeOfZero/impacto)，用完整 commit SHA 固定版本。
@@ -32,7 +35,23 @@
 ```sh
 python3 tools/impacto/verify-upstream.py --source /path/to/impacto
 python3 tools/impacto/test-upstream-integrity.py
+python3 tools/impacto/test-stage-upstream.py
 ```
+
+候选库构建目前要求 Linux、Python 3.10+、Git、C/C++、make、Ninja、pkg-config、
+Perl、autoconf、automake、libtool、m4、NASM、Bison、Flex、CMake 3.31.1+ 和 Android NDK 28.0.13004108：
+
+```sh
+export ANDROID_NDK_HOME=/path/to/android-ndk/28.0.13004108
+export IMPACTO_CMAKE=/path/to/cmake/bin/cmake
+export VCPKG_MAX_CONCURRENCY=4
+bash tools/impacto/build-upstream.sh
+```
+
+默认写入 `.impacto-upstream-build/<revision>/`；可设置 `IMPACTO_UPSTREAM_BUILD_ROOT` 指向新的独立目录。
+宿主 CMake 钩子固定 FetchContent 依赖，保留上游自己的 LibAtrac9 构建配方，不编辑上游文件。
+使用单独的 vcpkg 缓存，构建前后和失败退出时检查引擎源码。禁止调用上游的 Android install 目标，因为它会写回源码目录。
+成功后 `candidate/` 保存未集成的库、ELF 报告和身份记录；不会拷入 APK，也不代表已满足对应源码分发或设备验收要求。
 
 升级流程：更新完整 SHA 和必要的依赖锁，使用新构建目录，重新编译原版库，核对 JNI/CLI/资源契约，
 更新运行库与配套源码，执行真实游戏和生命周期测试。任何阶段失败都保留日志并停止替换运行库。
@@ -41,6 +60,7 @@ python3 tools/impacto/test-upstream-integrity.py
 
 - [x] 从 TYN 上游共同祖先建立独立分支，不合入私有实验仓库的独立根历史。
 - [x] 固定来源，增加原版 checkout 校验和真实 Git 仓库回归。
+- [x] 增加独立原版构建入口、宿主侧依赖锁定与候选库校验；尚未完成全量构建。
 - [ ] 完成原版 ARM64 编译；记录工具链、完整源码及产物身份。
 - [ ] 适配原版 `-g`、`-bp`、`-gc`、`-uc` 参数，不发送自定义 `--tyranor-resource-root`。
 - [ ] 在宿主提供 `getChosenDirectory`、`chooseDirectory`、`resetChosenDir` 回调；控制原版 CWD、配置回退及 ImGui 相对写入位置。
@@ -51,3 +71,12 @@ python3 tools/impacto/test-upstream-integrity.py
 - [ ] 完成 API 28、16 KiB 页设备与 minified Release 检查。
 
 原版库编译、宿主接入和真实游戏测试未完成前，此 PR 保持 Draft，不作为可发布功能。
+
+## 本轮检查
+
+- 20 项真实 Git 仓库回归通过，包含“父仓库冒充源码 checkout”和 Git replace refs 替换锁定提交的拒绝测试。
+- 9 项候选 ELF 文本夹具检查通过，拒绝旧私有 SDL 命名空间、未定义入口和错误对齐；这是解析边界检查，不是真实库验收。
+- CMake/Ninja 定位的 8 项回归、Bash 语法检查及 CMake 离线依赖声明覆盖检查通过。
+- 官方固定 checkout 的 tree 为 `a2a0b7996a46c5d067efbeb8747cef103a69b157`，Git 洁净检查通过。
+- 用 NDK 28 对原版 `src/io/vfs.cpp`、`src/io/fsfolderarchive.cpp` 执行语法与 ARM64 对象编译均通过。为隔离诊断，外部探针配置禁用了 OpenGL/ImGui 并补齐正常 PCH 标准头；不是完整 CMake 构建。外部直接析构 `FSFolderArchive` 的合成探针会触发不完整类型错误，但不能据此认定当前上游构建必然失败，不能作为恢复引擎补丁的理由。
+- 尚未执行完整 ARM64 编译/链接、APK/JNI、真实游戏或 Android 设备验收。

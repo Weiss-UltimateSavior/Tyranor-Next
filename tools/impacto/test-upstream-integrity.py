@@ -57,6 +57,18 @@ class SourceIntegrityTest(unittest.TestCase):
         (self.source / "engine.cpp").write_text("modified\n", encoding="utf-8")
         self.check(False)
 
+    def test_replace_ref_cannot_impersonate_locked_revision(self):
+        (self.source / "engine.cpp").write_text("patched\n", encoding="utf-8")
+        self.git("add", "engine.cpp")
+        self.git("-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "modified engine")
+        modified = self.git("rev-parse", "HEAD").strip()
+        self.git("checkout", "--quiet", "--detach", self.revision)
+        self.git("replace", self.revision, modified)
+        self.git("read-tree", "--reset", "-u", "HEAD")
+        self.assertEqual((self.source / "engine.cpp").read_text(), "patched\n")
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        self.check(False)
+
     def test_parent_repository_cannot_impersonate_source_checkout(self):
         child = self.source / "source"
         child.mkdir()

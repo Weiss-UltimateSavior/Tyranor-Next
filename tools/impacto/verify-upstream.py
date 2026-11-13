@@ -19,6 +19,7 @@ UPSTREAM_URL = "https://github.com/CommitteeOfZero/impacto.git"
 def git(source, *arguments):
     environment = os.environ.copy()
     environment["GIT_OPTIONAL_LOCKS"] = "0"
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
     result = subprocess.run(
         ["git", "-C", str(source), "--no-optional-locks", *arguments],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment,
