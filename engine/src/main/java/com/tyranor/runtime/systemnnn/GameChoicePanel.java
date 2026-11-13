@@ -88,11 +88,26 @@ final class GameChoicePanel extends GameUiPanel {
         drawingPlane=true;includeTimer=withTimer;
         try{draw(canvas);}finally{drawingPlane=false;includeTimer=false;}
     }
+    boolean hasFloating(){
+        for(int i=0;i<getChildCount();i++){
+            View child=getChildAt(i);
+            if((child==timer||child instanceof GameButton)&&child.getVisibility()==VISIBLE)return true;
+        }
+        return false;
+    }
+    void drawFloating(Canvas canvas){
+        if(getVisibility()==GONE)return;
+        for(int i=0;i<getChildCount();i++){
+            View child=getChildAt(i);
+            if((child==timer||child instanceof GameButton)&&child.getVisibility()==VISIBLE)
+                super.drawChild(canvas,child,getDrawingTime());
+        }
+    }
     @Override protected void dispatchDraw(Canvas canvas){
         if(drawingPlane)super.dispatchDraw(canvas);
     }
     @Override protected boolean drawChild(Canvas canvas,View child,long drawingTime){
-        return (includeTimer||child!=timer)&&super.drawChild(canvas,child,drawingTime);
+        return (includeTimer||(child!=timer&&!(child instanceof GameButton)))&&super.drawChild(canvas,child,drawingTime);
     }
     boolean confirming(){return confirmation!=null;}
     private boolean timeLimitActionAllowed(){return frame.choiceInfo[0]==0||cfg.number("timeLimitOptionOk",0)!=0;}

@@ -1093,4 +1093,8 @@
     <string name="save_systemnnn_clear_resources">Clear imported game resources</string>
     <string name="save_systemnnn_clear_resources_message">Free space by clearing resources from the imported copy. The original game folder and all saves in the copy will be kept. The next launch imports the resources again from the original folder.</string>
     <string name="save_systemnnn_clear_resources_done">Imported game resources cleared</string>
+    <string name="engine_settings_systemnnn_layout_ext">EXT starting code: %1$s</string>
+    <string name="engine_settings_systemnnn_layout_ext_none">None</string>
+    <string name="engine_settings_systemnnn_layout_ext_unknown">Analysis failed</string>
+    <string name="engine_settings_systemnnn_layout_ext_hint">Games requiring EXT blocks need a resolved starting code to launch. Use the button below to analyze and regenerate the configuration.</string>
 </resources>

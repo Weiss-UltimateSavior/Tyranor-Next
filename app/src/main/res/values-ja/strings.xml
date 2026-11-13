@@ -1093,4 +1093,8 @@
     <string name="save_systemnnn_clear_resources">取り込んだゲームデータを削除</string>
     <string name="save_systemnnn_clear_resources_message">アプリ内のコピーからゲームデータを削除して空き容量を増やします。元のゲームフォルダーとコピー内のすべてのセーブデータは残ります。次回の起動時に元のフォルダーからゲームデータを取り込み直します。</string>
     <string name="save_systemnnn_clear_resources_done">取り込んだゲームデータを削除しました</string>
+    <string name="engine_settings_systemnnn_layout_ext">EXT 開始番号：%1$s</string>
+    <string name="engine_settings_systemnnn_layout_ext_none">なし</string>
+    <string name="engine_settings_systemnnn_layout_ext_unknown">解析失敗</string>
+    <string name="engine_settings_systemnnn_layout_ext_hint">EXT が必要なゲームは開始番号を確定するまで起動できません。下のボタンで解析し、設定を再生成してください。</string>
 </resources>

@@ -152,4 +152,5 @@
     <string name="engine_cmvs_audio_failed">CMVS 音频初始化失败</string>
     <string name="engine_cmvs_font_index_title">字体集合索引</string>
     <string name="engine_cmvs_font_index_message">普通字体请填 0</string>
+    <string name="engine_systemnnn_host_ext_unresolved">无法确定本游戏的 EXT 存档起始编号，已停止启动。请在单游戏引擎设置中点击“分析并生成配置”。若仍显示“解析失败”，当前 EXE 写档格式尚未被识别。</string>
 </resources>

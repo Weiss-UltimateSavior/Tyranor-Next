@@ -25,6 +25,7 @@ internal object SystemNnnSaveLayout {
             val executableStatusBytes: Boolean,
             val okikae: Boolean,
             val executableOkikae: Boolean,
+            val extensionStartCode: Int,
         ) : Result
     }
 
@@ -46,6 +47,7 @@ internal object SystemNnnSaveLayout {
                     executableStatusBytes = config.executableStatusBytes,
                     okikae = config.okikae,
                     executableOkikae = config.executableOkikae,
+                    extensionStartCode = config.extensionStartCode,
                 )
             } catch (_: IOException) {
                 Result.Failed

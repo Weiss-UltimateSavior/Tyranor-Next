@@ -128,6 +128,7 @@ final class NativeGame {
     static native int saveSlotArt(long handle);
     static native long messagePlaneToken(long handle);
     static native void pushMessagePlane(long token,Bitmap bitmap,int[] key,boolean showBackdrop);
+    static native void pushStoryPlanes(long token,Bitmap bitmap,Bitmap floating,int[] key,boolean showBackdrop);
     static native void releaseMessagePlane(long token);
     static native int[] expectedPlaneKey(long handle);
     static native int[] presentedPlaneKey(long handle);

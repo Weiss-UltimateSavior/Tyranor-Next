@@ -152,4 +152,5 @@
     <string name="engine_cmvs_audio_failed">CMVS オーディオの初期化に失敗しました</string>
     <string name="engine_cmvs_font_index_title">フォントコレクションのインデックス</string>
     <string name="engine_cmvs_font_index_message">通常のフォントは 0 を入力してください</string>
+    <string name="engine_systemnnn_host_ext_unresolved">このゲームに必要な EXT セーブ開始番号を確定できないため、起動を停止しました。ゲーム別エンジン設定で設定の解析・生成を実行してください。解析失敗のままの場合、この EXE の書き込み形式はまだ認識できません。</string>
 </resources>

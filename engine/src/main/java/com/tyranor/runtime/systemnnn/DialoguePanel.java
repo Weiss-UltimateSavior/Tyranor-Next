@@ -82,6 +82,10 @@ final class DialoguePanel extends FrameLayout {
         drawingPlane=true;includeCursor=withCursor;
         try{draw(canvas);}finally{drawingPlane=false;includeCursor=false;}
     }
+    void drawFloating(Canvas canvas){
+        if(getVisibility()!=GONE&&cursor.getVisibility()==VISIBLE)
+            super.drawChild(canvas,cursor,getDrawingTime());
+    }
     @Override protected void dispatchDraw(Canvas canvas){
         if(drawingPlane||directDraw)super.dispatchDraw(canvas);
     }

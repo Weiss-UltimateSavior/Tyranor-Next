@@ -175,6 +175,21 @@ internal fun SystemNnnSaveLayoutSettings(gameUri: String) {
                 ),
                 style = MaterialTheme.typography.bodySmall,
             )
+            val extensionCode = when (current.extensionStartCode) {
+                -1 -> stringResource(R.string.engine_settings_systemnnn_layout_ext_unknown)
+                0 -> stringResource(R.string.engine_settings_systemnnn_layout_ext_none)
+                else -> current.extensionStartCode.toString()
+            }
+            Text(
+                stringResource(R.string.engine_settings_systemnnn_layout_ext, extensionCode),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (current.extensionStartCode == -1) {
+                Text(
+                    stringResource(R.string.engine_settings_systemnnn_layout_ext_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
         } else {
             val status = when (current) {
                 null -> R.string.engine_settings_systemnnn_layout_loading

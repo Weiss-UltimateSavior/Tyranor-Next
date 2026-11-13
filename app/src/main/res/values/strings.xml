@@ -1056,6 +1056,10 @@
     <string name="engine_settings_systemnnn_layout_replacements">文本替换表：%1$s · %2$s</string>
     <string name="engine_settings_systemnnn_layout_okikae_on">使用</string>
     <string name="engine_settings_systemnnn_layout_okikae_off">未使用</string>
+    <string name="engine_settings_systemnnn_layout_ext">EXT 起始编号：%1$s</string>
+    <string name="engine_settings_systemnnn_layout_ext_none">无</string>
+    <string name="engine_settings_systemnnn_layout_ext_unknown">解析失败</string>
+    <string name="engine_settings_systemnnn_layout_ext_hint">需要 EXT 的游戏必须取得起始编号才能启动。可点击下方按钮重新分析生成配置。</string>
     <string name="engine_settings_systemnnn_debug_mode">调试模式</string>
     <string name="engine_settings_systemnnn_debug_mode_summary">在游戏画面左上角显示运行状态，并将脚本 DEBUG 消息输出到 Logcat。</string>
     <string name="engine_settings_systemnnn_hint">全屏时隐藏系统栏，保持游戏原比例。阅读字号只调整剧情正文。重新启动游戏后生效。</string>

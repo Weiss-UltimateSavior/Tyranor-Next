@@ -1077,6 +1077,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         private long token;
         private Bitmap bitmap;
         private Canvas canvas;
+        private Bitmap floatingBitmap;
+        private Canvas floatingCanvas;
         private boolean dirty,scheduled;
         private final Runnable animationFlush=()->{
             scheduled=false;
@@ -1127,7 +1129,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             if(stage!=null)stage.removeCallbacks(animationFlush);
             ui.removeCallbacks(animationFlush);
             if(token>0)NativeGame.releaseMessagePlane(token);
-            token=0;owner=null;frame=null;bitmap=null;canvas=null;dirty=false;scheduled=false;
+            token=0;owner=null;frame=null;bitmap=null;canvas=null;floatingBitmap=null;floatingCanvas=null;dirty=false;scheduled=false;
         }
         private void ensureLaidOut(View view){
             if(view==null||view.getVisibility()==View.GONE)return;
@@ -1167,13 +1169,23 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 if(showLongImage)canvas.drawBitmap(uiAssets.longPrintImage,0f,0f,bitmapPaint);
                 if(drawDialogue){
                     ensureLaidOut(dialoguePanel);
-                    dialoguePanel.drawPlane(canvas,liveCursor);
+                    dialoguePanel.drawPlane(canvas,false);
                 }
                 if(drawChoices){
                     ensureLaidOut(choices);
-                    choices.drawPlane(canvas,true);
+                    choices.drawPlane(canvas,false);
                 }
-                NativeGame.pushMessagePlane(token,bitmap,key,!uiHidden);
+                boolean drawFloating=liveCursor&&(drawDialogue&&dialoguePanel.waitingCursorVisible()||
+                    drawChoices&&choices.hasFloating());
+                if(drawFloating){
+                    if(floatingBitmap==null||floatingBitmap.getWidth()!=w||floatingBitmap.getHeight()!=h){
+                        floatingBitmap=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);
+                        floatingCanvas=new Canvas(floatingBitmap);
+                    }else floatingBitmap.eraseColor(Color.TRANSPARENT);
+                    if(drawDialogue)dialoguePanel.drawFloating(floatingCanvas);
+                    if(drawChoices)choices.drawFloating(floatingCanvas);
+                }
+                NativeGame.pushStoryPlanes(token,bitmap,drawFloating?floatingBitmap:null,key,!uiHidden);
                 if(liveCursor&&(drawDialogue&&dialoguePanel.animating()||drawChoices&&choices.animating()))schedulePush();
             }catch(RuntimeException|OutOfMemoryError e){
                 Log.w("SystemNNN","Unable to rasterize story UI plane",e);
@@ -1708,6 +1720,10 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if (isDestroyed() || isFinishing()) return;
         if(returningToTitle){returningToTitle=false;titlePrevious=null;closeOriginalPanel(false);}
         String detail=reason.getMessage();
+        if(detail!=null&&detail.contains("EXT_START_UNRESOLVED")){
+            returnToLibrary(R.string.engine_systemnnn_host_game_interrupted,R.string.engine_systemnnn_host_ext_unresolved);
+            return;
+        }
         if(detail!=null&&detail.contains("spt/sys.spt")&&
             (detail.contains("SPT header")||detail.contains("SPTHEADER0")||detail.contains("Record length"))) {
             returnToLibrary(R.string.engine_systemnnn_host_invalid_script_title,R.string.engine_systemnnn_host_invalid_script_hint);

@@ -108,7 +108,8 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 - SystemNNN 原版设置按 `voiceVoiceChangeFlag` 在入场时读取角色组的 `voiceVoiceChangeVarN`。省略变量名且启用了 `voiceNameChangeFlag` 时继承 `voiceNameChangeVarN`。值大于零时使用配置的替换音效，省略或非正数的编号沿用原值。角色音量滑块优先使用 `charaVoiceVolumeSE`，默认使用该角色的关闭状态点击音效。
 - SystemNNN 分类滑条按 `volumeMin` / `volumeMax` 和分类覆盖值映射原版档位。XAudio2 模式应用游戏声明的范围覆盖。分类增益使用对应的 DirectSound 或 XAudio2 规则，总音量作用于混音输出和影片。
 - SystemNNN 的剧情、标题和菜单背景按实际积累的整帧推进。补帧受全局 `maxSkipFrame`、背景 `maxSkipFrameBackScript` 和原版存档 `noSkipFrame` 限制。圆形擦入等同坐标混合效果使用逻辑尺寸的遮罩合成截图，马赛克仍按游戏逻辑尺寸取样。
-- SystemNNN 的 `PREPAREOVERRAP`、`EFFECT_GET` 与存档缩略图（按 `messageMiniCGNoMessageFlag` / `selectMiniCGNoMessageFlag` 区分带 UI 合成帧与纯净场景帧）统一直接取自原生单通道合成净帧，不再依赖宿主 UI 线程二次抓屏拼接；影片退场纯色帧亦直接衔接到后续转场源。脚本在此期间改动的图层进入转场目标。动态背景模糊保留原来的裁切、整数取整和最终帧缓存。
+- SystemNNN 的 `PREPAREOVERRAP` 使用上一张实际显示的净帧；`EFFECT_GET` 在当前帧对应图层处取样。存档缩略图按 `messageMiniCGNoMessageFlag` / `selectMiniCGNoMessageFlag` 区分带 UI 与纯场景；等待光标、选项翻页按钮和倒计时在末层特效之后合成到显示帧，不进入抓图或缩略图。UI 未就绪时保留上一张完整画面，不以裸场景兜底或确认未显示的帧。清图层、设置抓图缓冲和完成未上屏转场不清空上一张已显示净帧；影片退场颜色保持到恢复执行的脚本完成取样。动态背景模糊保留原来的裁切、整数取整和最终帧缓存。
+- SystemNNN 的 `emberfall-system.cfg` V3 记录 `ext_start_code`，值为实际整数、`无` 或 `解析失败`，并在单游戏「配置文件信息」展示。首次初始化或手动生成先结合游戏配置和自动登记判断 EXT 使用，再由经过校验的 PE32 写档指令提取起始编号；不用 `GAMESTATUS` 长度猜编号，也不读取玩家 PC 存档决定格式。有 EXT 却没有可信编号时拒绝启动。已有配置直接读取；旧配置缺少 EXT 字段且游戏需要 EXT 时提示手动重新生成。已确定格式但无法落盘时仍使用本次内存结果。游戏私有 EXT 负载的兼容性不因取得起始编号而自动成立。
 - SystemNNN 剧情和有声影片各自在播放期间持有音频焦点，初次请求被拒或永久失焦后可由前台操作重试。播放器暂时离开前台或影片纹理重建时保留解码位置。剧本等待影片自然结束、获准跳过或播放失败后继续，并按 `printMovie` 配置应用 `fillExitScreenFlag` 退场纯色屏与 `lastWait` 帧等待。
 - SystemNNN 小游戏在说明结束后按游戏帧周期发牌。Monte 依次消牌、收拢与补牌，Pyramid 和 Golf 按原版移动牌堆间的纸牌。二角先画连线，消除花牌后让其余牌加速下落。串牌在消除后依次下落、按行左移、从上方补回孤张。点按跳过原版允许跳过的动画，落牌期间等待棋盘就位。
 - SystemNNN 对话层通过 `DialogueDecorations` 绘制角色头像（`PortraitLayer` 眨眼与口型帧）、特写气泡与光标分支（`CutinLayer`），并按序叠加多槽位 `statusOverlays` 状态浮层。
