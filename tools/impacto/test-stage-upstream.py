@@ -86,6 +86,7 @@ class SnapshotPublicationTest(unittest.TestCase):
         self.addCleanup(self.source_patch.stop)
 
     def assert_no_temporary_publication(self):
+        self.assertFalse((self.build / '.build.lock').exists())
         self.assertFalse((self.candidate / '.publish.lock').exists())
         self.assertFalse(list(self.candidate.glob('.stage-*')))
 
@@ -123,7 +124,7 @@ class SnapshotPublicationTest(unittest.TestCase):
     def test_second_publisher_cannot_modify_active_publication(self):
         def readelf(command, **kwargs):
             pending = (self.candidate / 'candidate.json').read_bytes()
-            with self.assertRaisesRegex(RuntimeError, 'already locked'):
+            with self.assertRaisesRegex(RuntimeError, 'locked'):
                 stage.stage_candidate(self.build, self.root / 'ndk')
             self.assertEqual((self.candidate / 'candidate.json').read_bytes(), pending)
             return ELF
@@ -139,6 +140,50 @@ class SnapshotPublicationTest(unittest.TestCase):
                 stage.stage_candidate(self.build, self.root / 'ndk')
         self.assertEqual(json.loads((self.candidate / 'candidate.json').read_text())['status'],
                          'validation-pending')
+        self.assert_no_temporary_publication()
+
+    def test_standalone_publication_cannot_overwrite_active_build_failure(self):
+        failed = json.dumps({'status': 'build-failed', 'releaseReady': False})
+        (self.candidate / 'candidate.json').write_text(failed, encoding='utf-8')
+        with stage.build_lock(self.build):
+            with self.assertRaisesRegex(RuntimeError, 'Build root is locked'):
+                stage.stage_candidate(self.build, self.root / 'ndk')
+            self.assertEqual((self.candidate / 'candidate.json').read_text(), failed)
+        self.assert_no_temporary_publication()
+
+    def test_build_child_reuses_parent_lock_without_releasing_it(self):
+        with stage.build_lock(self.build):
+            owner = int((self.build / '.build.lock/owner').read_text())
+            with patch.object(stage.os, 'getppid', return_value=owner):
+                with patch.object(stage.subprocess, 'check_output', return_value=ELF):
+                    stage.stage_candidate(self.build, self.root / 'ndk', owner)
+            self.assertEqual((self.build / '.build.lock/owner').read_text().strip(), str(owner))
+        self.assert_no_temporary_publication()
+
+    def test_unrelated_process_cannot_claim_inherited_lock(self):
+        previous = (self.candidate / 'candidate.json').read_bytes()
+        with stage.build_lock(self.build):
+            owner = int((self.build / '.build.lock/owner').read_text())
+            with patch.object(stage.os, 'getppid', return_value=owner + 1):
+                with self.assertRaisesRegex(RuntimeError, 'does not belong to the parent'):
+                    stage.stage_candidate(self.build, self.root / 'ndk', owner)
+            self.assertEqual((self.candidate / 'candidate.json').read_bytes(), previous)
+        self.assert_no_temporary_publication()
+
+    def test_two_build_children_still_serialize_publication(self):
+        with stage.build_lock(self.build):
+            owner = int((self.build / '.build.lock/owner').read_text())
+
+            def readelf(command, **kwargs):
+                pending = (self.candidate / 'candidate.json').read_bytes()
+                with self.assertRaisesRegex(RuntimeError, 'publication is already locked'):
+                    stage.stage_candidate(self.build, self.root / 'ndk', owner)
+                self.assertEqual((self.candidate / 'candidate.json').read_bytes(), pending)
+                return ELF
+
+            with patch.object(stage.os, 'getppid', return_value=owner):
+                with patch.object(stage.subprocess, 'check_output', side_effect=readelf):
+                    stage.stage_candidate(self.build, self.root / 'ndk', owner)
         self.assert_no_temporary_publication()
 
 

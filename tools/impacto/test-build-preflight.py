@@ -110,6 +110,24 @@ class BuildPreflightTest(unittest.TestCase):
         self.assertEqual(json.loads(self.report.read_text()), self.previous)
         self.assertTrue(lock.is_dir())
 
+    @unittest.skipIf(os.name == 'nt', 'Build-shell PID inheritance is a Linux runtime contract')
+    def test_real_build_child_accepts_parent_lock_and_leaves_cleanup_to_parent(self):
+        result = subprocess.run([self.bash, '-c',
+                                 'set -eu; mkdir "$1/.build.lock"; '
+                                 'printf "%s\\n" "$$" > "$1/.build.lock/owner"; '
+                                 'if python3 "$2" --build-root "$1" --ndk "$3" --build-lock-owner "$$"; '
+                                 'then exit 92; fi; '
+                                 'test -f "$1/.build.lock/owner"; '
+                                 'rm "$1/.build.lock/owner"; rmdir "$1/.build.lock"',
+                                 'parent-lock-test', str(self.build), str(TOOLS / 'stage-upstream.py'),
+                                 str(self.ndk)], env=self.environment,
+                                capture_output=True, text=True, timeout=20)
+        # No source checkout exists: reaching validation-pending proves the real
+        # CLI acquired the inherited lock, then failed source validation safely.
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(self.report.read_text())['status'], 'validation-pending')
+        self.assertFalse((self.build / '.build.lock').exists())
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

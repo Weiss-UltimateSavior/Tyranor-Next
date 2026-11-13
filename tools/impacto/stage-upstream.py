@@ -40,6 +40,29 @@ def inspect_elf(elf):
 
 
 @contextmanager
+def build_lock(build, inherited_owner=None):
+    lock = build / '.build.lock'
+    if inherited_owner is not None:
+        # Only the direct child of the owning build shell may reuse its lock.
+        # The child must leave ownership and cleanup with the parent.
+        if (inherited_owner != os.getppid()
+                or (lock / 'owner').read_text(encoding='ascii').strip() != str(inherited_owner)):
+            raise RuntimeError('Inherited build lock does not belong to the parent process')
+        yield
+        return
+    try:
+        lock.mkdir()
+    except FileExistsError as error:
+        raise RuntimeError(f'Build root is locked: {lock}') from error
+    try:
+        (lock / 'owner').write_text(str(os.getpid()) + '\n', encoding='ascii')
+        yield
+    finally:
+        (lock / 'owner').unlink(missing_ok=True)
+        lock.rmdir()
+
+
+@contextmanager
 def publication_lock(stage):
     # Exclusive creation is portable to the Windows regression runner as well.
     # A crash leaves a lock behind: fail closed rather than guessing its owner is
@@ -65,12 +88,12 @@ def source_report(build):
     return verifier.verify(build / 'source', ROOT / 'engine/impacto/source-lock.json')
 
 
-def stage_candidate(build, ndk):
+def stage_candidate(build, ndk, inherited_owner=None):
     stage = build / 'candidate'
     stage.mkdir(parents=True, exist_ok=True)
     library = build / 'build/libimpacto.so'
     tool = ndk / 'toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf'
-    with publication_lock(stage):
+    with build_lock(build, inherited_owner), publication_lock(stage):
         # Lock before invalidating metadata, so a rejected concurrent invocation
         # cannot change the active publisher's report.
         (stage / 'candidate.json').write_text(
@@ -110,8 +133,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build-root', type=Path, required=True)
     parser.add_argument('--ndk', type=Path, required=True)
+    parser.add_argument('--build-lock-owner', type=int, help=argparse.SUPPRESS)
     args = parser.parse_args()
-    stage_candidate(args.build_root.resolve(), args.ndk)
+    stage_candidate(args.build_root.resolve(), args.ndk, args.build_lock_owner)
 
 
 if __name__ == '__main__':

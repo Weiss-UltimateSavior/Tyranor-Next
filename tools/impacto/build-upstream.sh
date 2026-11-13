@@ -33,6 +33,7 @@ if ! mkdir "$BUILD/.build.lock" 2>/dev/null; then
     echo 'Build root is locked; confirm no build is running before removing a stale .build.lock.' >&2
     exit 2
 fi
+printf '%s\n' "$$" > "$BUILD/.build.lock/owner"
 SOURCE_VALIDATED=0
 verify_on_exit() {
     local result=$?
@@ -44,6 +45,7 @@ verify_on_exit() {
     if [[ $result != 0 ]]; then
         printf '{"version":1,"status":"build-failed","releaseReady":false}\n' > "$BUILD/candidate/candidate.json"
     fi
+    rm -- "$BUILD/.build.lock/owner"
     rmdir "$BUILD/.build.lock"
     exit "$result"
 }
@@ -137,4 +139,4 @@ export VULKAN_SDK="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysro
 python3 "$ROOT/tools/impacto/verify-upstream.py" --source "$SOURCE" --report "$BUILD/source-after.json"
 # Upstream Android install paths point inside its source checkout. Do not install.
 # The old package-runtime.py requires a patched SDL namespace; do not use it here.
-python3 "$ROOT/tools/impacto/stage-upstream.py" --build-root "$BUILD" --ndk "$ANDROID_NDK_HOME"
+python3 "$ROOT/tools/impacto/stage-upstream.py" --build-root "$BUILD" --ndk "$ANDROID_NDK_HOME" --build-lock-owner "$$"
