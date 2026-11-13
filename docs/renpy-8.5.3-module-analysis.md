@@ -30,7 +30,7 @@
 | 设置载荷 | `RenPyConfigurationParser` 读取嵌套的 `app.cheats.boolean` 与 8 个 `renpy_* .boolean` | 当前 9 项配置无需改格式或新增必填项 |
 | 配置优先级 | 解析 Intent 后读取扁平 `configuration.json`，文件同键覆盖 Intent | 保留启动前同步已有配置文件的策略，未知键保留、不创建新文件 |
 | 配置路径 | 游戏位于主外部存储根下时取游戏目录，否则取主外部存储 `JoiPlay/games/<id>/configuration.json` | 与 `RenPyRuntimeEnvironment.configFileFor` 一致 |
-| 屏幕方向 | 两个 Activity 清单均为 `sensorLandscape`；未在检查的播放器业务代码中找到读取 `orientation` extra | 保留兼容 extra；不能将其描述为该版本的有效方向控制接口 |
+| 屏幕方向 | 两个 Activity 清单均为 `sensorLandscape`；未在检查的播放器业务代码中找到读取 `orientation` extra | 保留兼容 extra，后续统一方向策略将请求值改为 `0`（标准横屏）；不能将其描述为该版本的有效方向控制接口 |
 | 自动关闭 | 解析器另认识可选 `app.screenTimeout`；大于 0 才启动计时器 | 当前项目未下发，无新增必需字段，不在本次新增设置 |
 
 8 个引擎字段仍映射到 `JOIPLAY_HW_VIDEO`、`JOIPLAY_AUTOSAVE`、`JOIPLAY_VARIANT_PHONE`、`RENPY_GL_VSYNC`、`RENPY_LESS_MEMORY`、`RENPY_LESS_UPDATES`、`RENPY_DONT_USE_GL2`、`RENPY_RECOMPILE`。前四项显式写入 `1/0`，后四项仅在开启时设置 `1`。`cheats` 用于 JoiPad 的金手指工具显隐，不是这些环境变量之一。

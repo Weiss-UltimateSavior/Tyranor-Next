@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 提示条「提示」图标：圆 + i（运行期按主题色染色） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FF000000"
+        android:pathData="M12,2.5a9.5,9.5 0,1 0,0 19a9.5,9.5 0,1 0,0 -19zM11,7h2v2h-2zM11,11h2v6h-2z" />
+</vector>

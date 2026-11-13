@@ -8,7 +8,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import com.tyranor.next.ui.common.motion.bounceOnChange
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
@@ -75,6 +83,18 @@ fun AppSearchField(
         keyboardType != KeyboardType.Text
     val resolvedInputLabel = iconContentDescription
         ?: androidx.compose.ui.res.stringResource(R.string.common_search_content_description)
+    // 聚焦反馈只缩放前导图标，编辑区域保持稳定：缩放 BasicTextField 会让行底的
+    // handle anchor 在可见边界处反复进出，导致独立 Popup 中的水滴柄闪烁。
+    // 提交（IME 搜索 / 完成）不加反馈：调用方在校验失败时自行 shakeOnTrigger，两者会冲突。「普通」档 bounceOnChange 不加节点。
+    var focused by remember { mutableStateOf(false) }
+    // 前导图标弹一下的计数：获得焦点 +1（初值 0 不弹）
+    var iconPulse by remember { mutableIntStateOf(0) }
+    val currentOnSearch by rememberUpdatedState(onSearch)
+    val submit: () -> Unit = remember {
+        {
+            currentOnSearch()
+        }
+    }
     MiuixSettingsTheme {
         // miuix 无 controller 的 MiuixTheme 重载不提供 LocalContentColor（默认黑色），
         // InputField 内部强制以 LocalContentColor.current 作为输入文字颜色，
@@ -84,12 +104,19 @@ fun AppSearchField(
                 inputField = {
                     val fieldModifier = Modifier
                         .fillMaxWidth()
+                        .onFocusChanged { state ->
+                            val now = state.hasFocus
+                            if (now && !focused) iconPulse++
+                            focused = now
+                        }
                         .glassBorder(CircleShape)
                         .semantics { contentDescription = resolvedInputLabel }
                     val fieldLeadingIcon: @Composable () -> Unit = {
                         Icon(
                             modifier = Modifier
                                 .padding(start = SearchBarDefaults.LeadingIconStartPadding, end = SearchBarDefaults.LeadingIconEndPadding)
+                                // 获得焦点时图标弹一下，不改变文本及光标柄的坐标。
+                                .bounceOnChange(iconPulse, depth = 0.22f)
                                 .size(26.dp),
                             painter = leadingIcon ?: painterResource(R.drawable.ic_game_search),
                             tint = MiuixTheme.colorScheme.primary,
@@ -101,7 +128,7 @@ fun AppSearchField(
                         EmbeddedSearchInputField(
                             query = query,
                             onQueryChange = onQueryChange,
-                            onSearch = onSearch,
+                            onSearch = submit,
                             textStyle = textStyle ?: MiuixTheme.textStyles.main,
                             leadingIcon = fieldLeadingIcon,
                             modifier = fieldModifier,
@@ -114,7 +141,7 @@ fun AppSearchField(
                         InputField(
                             query = query,
                             onQueryChange = onQueryChange,
-                            onSearch = { onSearch() },
+                            onSearch = { submit() },
                             textStyle = textStyle ?: MiuixTheme.textStyles.main,
                             expanded = false,
                             onExpandedChange = { },

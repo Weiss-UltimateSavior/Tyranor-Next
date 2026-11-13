@@ -1,5 +1,14 @@
 package com.tyranor.next.ui.settings
 
+import com.tyranor.next.ui.common.motion.ExpandHorizontallyVisibility
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.ExpandVisibility
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.breathing
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -46,7 +56,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runInterruptible
 import com.tyranor.next.ui.common.ArrowPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
+import com.tyranor.next.ui.common.SwitchPreference
+import com.tyranor.next.ui.common.notice.AppNotice
 
 /** RTP 管理行：与插件 `MKXPConfigurationParser` 目录契约一一对应的三个可导入子类型。 */
 private val RPGM_RTP_TYPES = listOf("rpgmxp", "rpgmvx", "rpgmvxace")
@@ -70,6 +81,7 @@ internal fun RpgMakerRgssSettingsCard(
     onSettings: (EngineSettingsStore.RpgMaker) -> Unit,
 ) {
     val ctx = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     var moduleInstalled by remember {
         mutableStateOf(ExternalEngineLauncher.isPackageInstalled(ctx, RpgMakerExternalEngineModule))
@@ -151,7 +163,7 @@ internal fun RpgMakerRgssSettingsCard(
         coreImportingRtpTypes = coreImportingRtpTypes - watching
         watching.forEach { type ->
             if (importedBefore[type] != true && rtpImported[type] == true) {
-                Toast.makeText(ctx, ctx.getString(R.string.engine_settings_rpgm_rtp_imported), Toast.LENGTH_LONG).show()
+                AppNotice.makeText(ctx, R.string.engine_settings_rpgm_rtp_imported, Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -167,9 +179,9 @@ internal fun RpgMakerRgssSettingsCard(
             // 会让用户无从判断是包损坏、格式不对，还是被安全上限拦下。
             // core 返回类型化原因，文案与括号样式由 UI 层资源组装（AGENTS.md 错误处理协议）
             val message = rejection?.let {
-                ctx.getString(R.string.engine_settings_rpgm_rtp_import_failed, it.userMessage(ctx))
-            } ?: ctx.getString(R.string.engine_settings_rpgm_rtp_imported)
-            Toast.makeText(ctx, message, Toast.LENGTH_LONG).show()
+                resources.getString(R.string.engine_settings_rpgm_rtp_import_failed, it.userMessage(ctx))
+            } ?: resources.getString(R.string.engine_settings_rpgm_rtp_imported)
+            AppNotice.makeText(ctx, message, Toast.LENGTH_LONG, AppNotice.Kind.Info).show()
         } finally {
             localImportingRtpTypes = localImportingRtpTypes - type
         }
@@ -198,11 +210,14 @@ internal fun RpgMakerRgssSettingsCard(
     val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
-            val okMsg = ctx.getString(R.string.engine_settings_rpgm_custom_font_imported)
-            val failedMsg = ctx.getString(R.string.engine_settings_rpgm_custom_font_import_failed)
             val path = runInterruptible(Dispatchers.IO) { RpgMakerRuntimeEnvironment.importCustomFont(ctx, uri) }
             if (path != null) onSettings(settings.copy(customFont = path))
-            Toast.makeText(ctx, if (path != null) okMsg else failedMsg, Toast.LENGTH_SHORT).show()
+            val messageRes = if (path != null) {
+                R.string.engine_settings_rpgm_custom_font_imported
+            } else {
+                R.string.engine_settings_rpgm_custom_font_import_failed
+            }
+            AppNotice.makeText(ctx, messageRes, Toast.LENGTH_SHORT, AppNotice.Kind.Info).show()
         }
     }
 
@@ -217,22 +232,26 @@ internal fun RpgMakerRgssSettingsCard(
                     stringResource(R.string.engine_settings_rpgm_module_status),
                     style = MaterialTheme.typography.titleMedium,
                 )
-                Text(
-                    stringResource(
-                        if (moduleInstalled) R.string.engine_module_installed else R.string.engine_module_not_installed,
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                BlurCrossfade(moduleInstalled) { installed ->
+                    Text(
+                        stringResource(
+                            if (installed) R.string.engine_module_installed else R.string.engine_module_not_installed,
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            BlurCrossfade(moduleInstalled) { installed ->
+                Icon(
+                    imageVector = if (installed) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp),
+                    tint = if (installed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                 )
             }
-            Icon(
-                imageVector = if (moduleInstalled) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
-                contentDescription = null,
-                modifier = Modifier.size(22.dp),
-                tint = if (moduleInstalled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-            )
         }
-        if (!moduleInstalled) {
+        ExpandVisibility(!moduleInstalled) {
             NoRippleTextButton(
                 text = stringResource(R.string.engine_settings_rpgm_module_download),
                 modifier = Modifier.padding(horizontal = 8.dp),
@@ -243,6 +262,7 @@ internal fun RpgMakerRgssSettingsCard(
         // 兼容性
         RpgmGroupLabel(stringResource(R.string.engine_settings_rpgm_group_compat))
         SwitchPreference(
+            modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
             title = stringResource(R.string.engine_settings_rpgm_use_ruby18),
             checked = settings.useRuby18,
             onCheckedChange = { onSettings(settings.copy(useRuby18 = it)) },
@@ -251,21 +271,25 @@ internal fun RpgMakerRgssSettingsCard(
         // 渲染
         RpgmGroupLabel(stringResource(R.string.engine_settings_rpgm_group_render))
         SwitchPreference(
+            modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
             title = stringResource(R.string.engine_settings_rpgm_smooth_scaling),
             checked = settings.smoothScaling,
             onCheckedChange = { onSettings(settings.copy(smoothScaling = it)) },
         )
         SwitchPreference(
+            modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
             title = stringResource(R.string.engine_settings_rpgm_vsync),
             checked = settings.vsync,
             onCheckedChange = { onSettings(settings.copy(vsync = it)) },
         )
         SwitchPreference(
+            modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
             title = stringResource(R.string.engine_settings_rpgm_frame_skip),
             checked = settings.frameSkip,
             onCheckedChange = { onSettings(settings.copy(frameSkip = it)) },
         )
         SwitchPreference(
+            modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
             title = stringResource(R.string.engine_settings_rpgm_solid_fonts),
             checked = settings.solidFonts,
             onCheckedChange = { onSettings(settings.copy(solidFonts = it)) },
@@ -310,47 +334,57 @@ internal fun RpgMakerRgssSettingsCard(
             summary = stringResource(R.string.engine_settings_rpgm_group_advanced_hint),
             onClick = { advancedExpanded = !advancedExpanded },
         )
-        if (advancedExpanded) {
-            SwitchPreference(
-                title = stringResource(R.string.engine_settings_rpgm_path_cache),
-                checked = settings.pathCache,
-                onCheckedChange = { onSettings(settings.copy(pathCache = it)) },
-            )
-            SwitchPreference(
-                title = stringResource(R.string.engine_settings_rpgm_prebuilt_path_cache),
-                checked = settings.prebuiltPathCache,
-                onCheckedChange = { onSettings(settings.copy(prebuiltPathCache = it)) },
-            )
-            SwitchPreference(
-                title = stringResource(R.string.engine_settings_rpgm_fast_path_enum),
-                checked = settings.fastPathEnum,
-                onCheckedChange = { onSettings(settings.copy(fastPathEnum = it)) },
-            )
-            SwitchPreference(
-                title = stringResource(R.string.engine_settings_rpgm_copy_text),
-                checked = settings.copyText,
-                onCheckedChange = { onSettings(settings.copy(copyText = it)) },
-            )
-            SwitchPreference(
-                title = stringResource(R.string.engine_settings_rpgm_cheats),
-                checked = settings.cheats,
-                onCheckedChange = { onSettings(settings.copy(cheats = it)) },
-            )
-            SwitchPreference(
-                title = stringResource(R.string.engine_settings_rpgm_use_cjk_font),
-                checked = settings.useCJKFont,
-                onCheckedChange = { onSettings(settings.copy(useCJKFont = it)) },
-            )
-            SwitchPreference(
-                title = stringResource(R.string.engine_settings_rpgm_postload_scripts),
-                checked = settings.enablePostloadScripts,
-                onCheckedChange = { onSettings(settings.copy(enablePostloadScripts = it)) },
-            )
-            SwitchPreference(
-                title = stringResource(R.string.engine_settings_rpgm_debug),
-                checked = settings.debug,
-                onCheckedChange = { onSettings(settings.copy(debug = it)) },
-            )
+        ExpandVisibility(advancedExpanded) {
+            Column {
+                SwitchPreference(
+                    modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
+                    title = stringResource(R.string.engine_settings_rpgm_path_cache),
+                    checked = settings.pathCache,
+                    onCheckedChange = { onSettings(settings.copy(pathCache = it)) },
+                )
+                SwitchPreference(
+                    modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
+                    title = stringResource(R.string.engine_settings_rpgm_prebuilt_path_cache),
+                    checked = settings.prebuiltPathCache,
+                    onCheckedChange = { onSettings(settings.copy(prebuiltPathCache = it)) },
+                )
+                SwitchPreference(
+                    modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
+                    title = stringResource(R.string.engine_settings_rpgm_fast_path_enum),
+                    checked = settings.fastPathEnum,
+                    onCheckedChange = { onSettings(settings.copy(fastPathEnum = it)) },
+                )
+                SwitchPreference(
+                    modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
+                    title = stringResource(R.string.engine_settings_rpgm_copy_text),
+                    checked = settings.copyText,
+                    onCheckedChange = { onSettings(settings.copy(copyText = it)) },
+                )
+                SwitchPreference(
+                    modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
+                    title = stringResource(R.string.engine_settings_rpgm_cheats),
+                    checked = settings.cheats,
+                    onCheckedChange = { onSettings(settings.copy(cheats = it)) },
+                )
+                SwitchPreference(
+                    modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
+                    title = stringResource(R.string.engine_settings_rpgm_use_cjk_font),
+                    checked = settings.useCJKFont,
+                    onCheckedChange = { onSettings(settings.copy(useCJKFont = it)) },
+                )
+                SwitchPreference(
+                    modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
+                    title = stringResource(R.string.engine_settings_rpgm_postload_scripts),
+                    checked = settings.enablePostloadScripts,
+                    onCheckedChange = { onSettings(settings.copy(enablePostloadScripts = it)) },
+                )
+                SwitchPreference(
+                    modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
+                    title = stringResource(R.string.engine_settings_rpgm_debug),
+                    checked = settings.debug,
+                    onCheckedChange = { onSettings(settings.copy(debug = it)) },
+                )
+            }
         }
 
         // RTP
@@ -400,9 +434,12 @@ internal fun RpgMakerRgssSettingsCard(
                 )
             },
             text = {
-                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // 两个来源依次弹入（与添加游戏弹窗同一写法）
+                ProvideEntrance {
+                Column(Modifier.fillMaxWidth().skipEntranceOnDrag(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     // 弹窗点击反馈规范：共享条目组件显式 indication = null（与其他弹窗一致）
                     AppNavItem(
+                        modifier = Modifier.staggeredEntrance(0),
                         title = stringResource(R.string.engine_settings_rpgm_rtp_from_zip),
                         containerColor = DialogItemSurface,
                         indication = null,
@@ -411,6 +448,7 @@ internal fun RpgMakerRgssSettingsCard(
                         zipLauncher.launch("*/*")
                     }
                     AppNavItem(
+                        modifier = Modifier.staggeredEntrance(1),
                         title = stringResource(R.string.engine_settings_rpgm_rtp_from_dir),
                         containerColor = DialogItemSurface,
                         indication = null,
@@ -418,6 +456,7 @@ internal fun RpgMakerRgssSettingsCard(
                         showRtpSourceDialog = false
                         treeLauncher.launch(null)
                     }
+                }
                 }
             },
             confirmButton = {
@@ -457,7 +496,7 @@ internal fun RpgMakerRgssSettingsCard(
                             RpgMakerRuntimeEnvironment.RtpClearResult.FAILED ->
                                 R.string.engine_settings_rpgm_rtp_clear_failed
                         }
-                        Toast.makeText(ctx, ctx.getString(msg), Toast.LENGTH_SHORT).show()
+                        AppNotice.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
                     }
                 })
             },
@@ -501,6 +540,10 @@ private fun RpgmGroupLabel(text: String) {
     )
 }
 
+/**
+ * 展示一种 RTP 的读取中/已导入/缺失状态，已导入时才显示清除入口。
+ * 同类型导入期间禁用导入与清除，避免文件写入和删除交错。
+ */
 @Composable
 private fun RpgmRtpRow(
     title: String,
@@ -517,17 +560,20 @@ private fun RpgmRtpRow(
     ) {
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(
-                stringResource(
-                    when (imported) {
-                        null -> R.string.engine_settings_rpgm_rtp_checking_status
-                        true -> R.string.engine_settings_rpgm_rtp_imported_status
-                        false -> R.string.engine_settings_rpgm_rtp_missing_status
-                    },
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            // 读取状态中 / 本类型导入在途：状态文字缓缓明灭（等待中），完成后平滑回到不透明再模糊替换
+            BlurCrossfade(imported, Modifier.breathing(active = imported == null || importing)) { state ->
+                Text(
+                    stringResource(
+                        when (state) {
+                            null -> R.string.engine_settings_rpgm_rtp_checking_status
+                            true -> R.string.engine_settings_rpgm_rtp_imported_status
+                            false -> R.string.engine_settings_rpgm_rtp_missing_status
+                        },
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         NoRippleTextButton(
             text = stringResource(R.string.engine_settings_rpgm_rtp_import),
@@ -535,7 +581,7 @@ private fun RpgmRtpRow(
             enabled = !importing,
             onClick = onImport,
         )
-        if (imported == true) {
+        ExpandHorizontallyVisibility(imported == true) {
             // 清除是破坏性动作；无点击反馈实现（AGENTS.md 弹窗/页内按钮规范），
             // 语义色取 colorScheme.error（AGENTS.md 3.3：error 用于错误/删除）
             NoRippleTextButton(

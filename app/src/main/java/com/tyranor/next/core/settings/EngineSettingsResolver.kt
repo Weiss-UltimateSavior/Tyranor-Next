@@ -115,10 +115,9 @@ object EngineSettingsResolver {
                 EngineSettingsStore.ART_KERNELS,
                 EngineSettingsStore.ART_KERNEL_OFFICIAL,
             ),
-            artRotate = EffectiveEngineSettings.resolveBool(
-                bool(PerGameSettingsStore.F_ART_ROTATE),
-                EngineSettingsStore.isArtRotateScreen(app),
-            ),
+            // Retained only so the resolved settings model stays source-compatible.
+            // Legacy global/per-game values are preserved in storage but no longer affect launches.
+            artRotate = false,
             artAutoPatch = EffectiveEngineSettings.resolveAllowed(
                 str(PerGameSettingsStore.F_ART_PATCH),
                 EngineSettingsStore.getArtAutoPatch(app),
@@ -336,6 +335,7 @@ data class ResolvedEngineSettings(
     val artVersion: String,
     /** Artemis 内核生效值（官方多 revision / 自研 clean-room）。 */
     val artKernel: String,
+    /** Compatibility field; always false because built-in player orientation is fixed landscape. */
     val artRotate: Boolean,
     val artAutoPatch: String,
     val artResolution: String,

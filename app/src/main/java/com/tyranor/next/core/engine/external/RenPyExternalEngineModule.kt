@@ -2,6 +2,7 @@ package com.tyranor.next.core.engine.external
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.settings.EngineSettingsStore
 import org.json.JSONObject
@@ -51,7 +52,7 @@ abstract class RenPyRuntimeModule(
                 ExternalEngineContract.SETTINGS,
                 buildSettingsJson(request.resolvedSettings?.renpy),
             )
-            putExtra(ExternalEngineContract.ORIENTATION, 6)
+            putExtra(ExternalEngineContract.ORIENTATION, ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
             putExtra(ExternalEngineContract.ROOT_URI, request.game.uri)
             putExtra(ExternalEngineContract.LAUNCH_TARGET, request.launchTarget)
         }

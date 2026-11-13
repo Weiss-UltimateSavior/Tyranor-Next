@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 侧推节奏：起步就在全速、越接近停位越慢的单调减速曲线（0.22, 0.61, 0.36, 1；与 MotionSprings.PushEasing 数值一致）。
+     旧曲线起步先加速再减速（前几帧每帧 17 → 40px），手感发黏；这条一出手就跟上，尾部一路柔和收住 -->
+<pathInterpolator xmlns:android="http://schemas.android.com/apk/res/android"
+    android:controlX1="0.22"
+    android:controlY1="0.61"
+    android:controlX2="0.36"
+    android:controlY2="1.0" />

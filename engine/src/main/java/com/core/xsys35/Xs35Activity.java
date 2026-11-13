@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.ViewGroup;
 import android.widget.Toast;
 
 import org.libsdl.app32.SDLActivity;
@@ -13,6 +14,7 @@ import org.tvp.kirikiri2.KrDialogStyle;
 
 import com.core.engine.DoubleBackExit;
 import com.core.engine.EnginePrefs;
+import com.core.engine.EngineSurfaceStartupController;
 import com.core.engine.EngineUiText;
 import com.core.engine.LaunchContract;
 import com.core.engine.R;
@@ -52,6 +54,8 @@ public final class Xs35Activity extends SDLActivity {
 
     /** 标题回写只做一次（SDL 每次 setWindowTitle 都会回调 setTitle）。 */
     private volatile boolean titleWrittenBack = false;
+
+    private EngineSurfaceStartupController startupController;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -119,10 +123,20 @@ public final class Xs35Activity extends SDLActivity {
         Log.i(TAG, "xsys35 launch gamedir=" + gameRoot
                 + " scoped=" + getIntent().getBooleanExtra(LaunchContract.XS35_SCOPED_SAVE_DIR, false)
                 + " savedir=" + scopedSaveDir);
+        attachStartupOverlay();
+    }
+
+    private void attachStartupOverlay() {
+        if (SDLActivity.mBrokenLibraries || SDLActivity.mSurface == null || SDLActivity.mLayout == null) return;
+        ViewGroup content = findViewById(android.R.id.content);
+        startupController = new EngineSurfaceStartupController(this);
+        startupController.attachTo(content != null ? content : SDLActivity.mLayout,
+                SDLActivity.mSurface.getHolder());
     }
 
     @Override
     protected void onStop() {
+        if (startupController != null) startupController.onPause();
         super.onStop();
         if (midi != null) {
             midi.onActivityStop();
@@ -132,6 +146,7 @@ public final class Xs35Activity extends SDLActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (startupController != null) startupController.onResume();
         if (midi != null) {
             midi.onActivityResume();
         }
@@ -142,6 +157,10 @@ public final class Xs35Activity extends SDLActivity {
         // 上游顺序：先让 SDLActivity.onDestroy 收尾（停 SDL 线程 / nativeQuit），再释放 MIDI，
         // 最后无条件自杀进程（引擎原生库不可重入，与 Artemis/KRKR 宿主同策略）。
         try {
+            if (startupController != null) {
+                startupController.dispose();
+                startupController = null;
+            }
             super.onDestroy();
         } finally {
             try {
@@ -153,6 +172,18 @@ public final class Xs35Activity extends SDLActivity {
                 android.os.Process.killProcess(android.os.Process.myPid());
             }
         }
+    }
+
+    @Override
+    protected void onPause() {
+        if (startupController != null) startupController.onPause();
+        super.onPause();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (startupController != null) startupController.onWindowFocusChanged(hasFocus);
     }
 
     @Override
@@ -188,12 +219,17 @@ public final class Xs35Activity extends SDLActivity {
      * xsystem35 以可缩放窗口创建 SDL 窗口且未设置 SDL_HINT_ORIENTATIONS，上游 SDL 在
      * 「无 hint + resizable」时会请求 SCREEN_ORIENTATION_FULL_USER（尊重系统旋转锁），
      * 设备锁定竖屏时活动会以竖屏渲染、游戏被信箱化。System3.x 游戏必须横屏，故覆盖
-     * 该扩展点始终请求 sensorLandscape（与 manifest 声明一致，不受旋转锁影响）。
+     * 该扩展点始终请求标准横屏。
      */
     @Override
     public void setOrientationBis(int w, int h, boolean resizable, String hint) {
-        Log.v(TAG, "force sensorLandscape (w=" + w + ", h=" + h + ", resizable=" + resizable + ", hint=" + hint + ")");
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        Log.v(TAG, "force landscape (w=" + w + ", h=" + h + ", resizable=" + resizable + ", hint=" + hint + ")");
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+    }
+
+    @Override
+    public void setRequestedOrientation(int requestedOrientation) {
+        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
     }
 
     // ---------- SDL 主循环参数 ----------
