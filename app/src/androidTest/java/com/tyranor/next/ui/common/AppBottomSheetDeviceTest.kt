@@ -10,15 +10,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import androidx.test.espresso.Espresso.pressBack
+import android.graphics.Bitmap
+import android.util.Log
+import java.io.File
 import androidx.test.platform.app.InstrumentationRegistry
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
@@ -89,10 +94,51 @@ class AppBottomSheetDeviceTest {
                 }
                 compose.waitForIdle()
             }
-            compose.mainClock.advanceTimeBy(1_200)
             val context = InstrumentationRegistry.getInstrumentation().targetContext
             val title = context.getString(R.string.game_filter_title)
             val sortLabel = context.getString(R.string.game_filter_sort_section)
+            // A platform Dialog can complete its first measure after a single virtual-clock
+            // advance. MotionSheetEffects starts only once that measured height is positive.
+            // Wait for the real title to enter the visible window while advancing finite frames.
+            var previousTitleBounds: Rect? = null
+            var stableSamples = 0
+            try {
+                compose.waitUntil(5_000) {
+                    compose.mainClock.advanceTimeBy(100)
+                    try {
+                        val titleNode = compose.onNodeWithText(title).assertIsDisplayed()
+                        compose.onNodeWithText(sortLabel).assertIsDisplayed()
+                        val measuredBounds = titleNode.fetchSemanticsNode().boundsInRoot
+                        stableSamples = if (measuredBounds == previousTitleBounds) stableSamples + 1 else 0
+                        previousTitleBounds = measuredBounds
+                        stableSamples >= 2
+                    } catch (_: AssertionError) {
+                        previousTitleBounds = null
+                        stableSamples = 0
+                        false
+                    }
+                }
+            } catch (failure: Throwable) {
+                // Retain evidence if this is a real short-window layout defect rather than
+                // first-measure timing; do not replace the visibility assertion or its timeout.
+                runCatching {
+                    val windows = compose.onAllNodes(isDialog()).fetchSemanticsNodes()
+                    val titleNodes = compose.onAllNodesWithText(title).fetchSemanticsNodes()
+                    Log.e("AppBottomSheetTest", "clock=${compose.mainClock.currentTime}, " +
+                        "windows=${windows.map { it.boundsInRoot }}, " +
+                        "title=${titleNodes.map { it.boundsInRoot }}, " +
+                        "screen=${context.resources.displayMetrics.widthPixels}x${context.resources.displayMetrics.heightPixels}")
+                    val screenshot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+                    if (screenshot != null) {
+                        val evidence = File(context.externalCacheDir ?: context.cacheDir,
+                            "filter-sheet-${if (enhanced) "enhanced" else "ordinary"}-not-displayed.png")
+                        evidence.outputStream().use { screenshot.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                        screenshot.recycle()
+                        Log.e("AppBottomSheetTest", "Visibility failure screenshot: ${evidence.absolutePath}")
+                    }
+                }.onFailure { failure.addSuppressed(it) }
+                throw failure
+            }
             compose.onNodeWithText(title).assertIsDisplayed()
             val sheetWindows = windowCount()
             compose.onNodeWithText(sortLabel).performClick()
