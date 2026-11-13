@@ -443,24 +443,22 @@ console.log('\n== localStorage 落地（内存镜像 + 合并落盘）==');
 check('Storage.prototype 已被接管', window.__tyranorLocalStoragePersisted === true);
 const storeDir = nodePath.join(gameRoot, 'AppData', 'Local Storage');
 check(
-    '写入先进内存（落盘前不产生文件）',
+    'setItem 返回即已落盘（不再等 200ms 定时器）',
     (() => {
         const s = Object.create(global.Storage.prototype);
         s.setItem('ConfigManager.data', '{"volume":80}');
         const target = nodePath.join(storeDir, '436f6e6669674d616e616765722e64617461.dat');
-        // 去抖窗口内盘上不应有文件（flush 由 200ms 定时器触发，同步断言必然早于它）
-        return s.getItem('ConfigManager.data') === '{"volume":80}' && !fs.existsSync(target);
+        // 返回前已持久接收并物化：此刻盘上就必须是完整内容，页面被销毁也不影响
+        return s.getItem('ConfigManager.data') === '{"volume":80}' &&
+            fs.existsSync(target) && fs.readFileSync(target, 'utf8') === '{"volume":80}';
     })(),
 );
 check(
-    '重复 getItem 不再过桥（内存镜像）',
+    '重复 getItem 不再过桥（读一次后走内存镜像）',
     (() => {
+        // 新文档读盘上已有的键：首读必须过桥，第二次必须命中镜像（`values` 只留这一次）
+        newSession();
         const s = Object.create(global.Storage.prototype);
-        s.setItem('ConfigManager.data', '{"volume":80}');
-        // 先落盘并清空内存镜像：否则两次 getItem 都命中 values，`calls === 0` 恒真，
-        // 即使磁盘读取完全不缓存这条断言也会通过
-        window.__tyranorLocalStorageFlushAll();
-        // 首读会走 existsSync/readFileSync，缓存后必须 0 次桥调用；两个都计数才测得出来
         const bridgeFs = global.TyranorFs;
         const origExists = bridgeFs.exists;
         const origReadText = bridgeFs.readText;
@@ -497,23 +495,24 @@ check(
 check(
     '旧会话刷盘让位给已写过同一文件的新会话',
     (() => {
-        // 模拟「同一游戏快速重启」：新会话已经把该 .dat 写成新值，旧会话此刻才刷盘。
-        // 旧值必须被跳过，否则会把新值覆盖回去。
+        // 模拟「同一游戏快速重启」：该路径已归新会话，旧文档的 setItem 必须被**拒绝**
+        // （抛 QuotaExceededError），而不是静默写入后被覆盖，也不是谎称成功。
         const key = 'ConfigManager.data';
         const target = nodePath.join(storeDir, '436f6e6669674d616e616765722e64617461.dat');
         fs.writeFileSync(target, '{"volume":10}');   // 新会话写入的新值
-        const s = Object.create(global.Storage.prototype);
-        s.setItem(key, '{"volume":80}');             // 旧会话的待写旧值
         const bridgeFs = global.TyranorFs;
         const orig = bridgeFs.isSuperseded;
         bridgeFs.isSuperseded = function (p) { return nodePath.resolve(p) === nodePath.resolve(target); };
+        const s = Object.create(global.Storage.prototype);
+        let rejected = false;
         try {
-            window.__tyranorLocalStorageFlushAll();
+            s.setItem(key, '{"volume":80}');
+        } catch (error) {
+            rejected = error && error.name === 'QuotaExceededError';
         } finally {
             bridgeFs.isSuperseded = orig;
         }
-        // 盘上必须仍是新值，且旧会话的内存待写项已被丢弃（不再重试覆盖）
-        return fs.readFileSync(target, 'utf8') === '{"volume":10}' && s.getItem(key) === '{"volume":10}';
+        return rejected && fs.readFileSync(target, 'utf8') === '{"volume":10}';
     })(),
 );
 check(
@@ -1402,31 +1401,16 @@ console.log('\n== localStorage 跨会话（模拟重启）==');
 
 console.log('\n== localStorage 退出刷盘的失败路径 ==');
 {
-    // 回归（复审问题 1/5）：预算耗尽 / 单批被打断时，未尝试的键必须已经在恢复队列里，
-    // 宿主拿到的是「既未落盘也未入队」的真实丢失数。入队先于落盘，因此这里是 0。
-    check('预算耗尽：先整体入队，返回值只计真实丢失', (() => {
+    // 回归：64 个键在预算模式下全部已接收——接收发生在每次 setItem 返回前，与批次大小
+    // 和退出预算无关；宿主拿到的是「既未落盘也未入队」的真实丢失数，因此是 0。
+    check('64 键在预算模式下也不丢（返回 0 表示无未接收项）', (() => {
         newSession();
         const s = Object.create(global.Storage.prototype);
         for (let i = 0; i < 64; i++) s.setItem('budget.key.' + i, 'v' + i);
-        const journal = nodePath.join(storeDir, '.tyranor-pending.json');
-
-        const realNow = Date.now;
-        let calls = 0;
-        let remaining = -1;
-        try {
-            // 前两次取时间用于算 deadline 与第一批的预算判定，之后直接跳到预算之外
-            Date.now = function () { calls++; return calls <= 2 ? realNow() : realNow() + 10 * 60 * 1000; };
-            remaining = window.__tyranorLocalStorageFlushAll();
-        } finally {
-            Date.now = realNow;
-        }
-        const staged = fs.existsSync(journal)
-            ? Object.keys(JSON.parse(fs.readFileSync(journal, 'utf8')).entries || {}).length
-            : 0;
-        // 预算模式（onPause / 页面隐藏）同样先入队：切后台后被系统杀是最常见的丢值路径
+        const remaining = window.__tyranorLocalStorageFlushAll();
         newSession();
         const recovered = Object.create(global.Storage.prototype);
-        return remaining === 0 && staged > 0 &&
+        return remaining === 0 &&
             Array.from({ length: 64 }, (_, i) => recovered.getItem('budget.key.' + i) === 'v' + i).every(Boolean);
     })(), (() => {
         const journal = nodePath.join(storeDir, '.tyranor-pending.json');
@@ -1508,29 +1492,19 @@ console.log('\n== localStorage 文档销毁前的收尾（复审修复项）==')
         return 'written=' + written;
     })());
 
-    // 回归 2（复审问题 1）：预算耗尽后宿主要销毁 WebView 时，剩余值必须进原生恢复队列，
-    // 由下一次文档初始化重放；返回 0 表示「没有既未落盘也未进队列的键」。
-    check('预算耗尽：剩余键交给恢复队列，下次初始化重放', (() => {
+    // 回归：宿主销毁时最终钩子只报告状态；64 个键都已在此前的 setItem 里接收并落盘。
+    check('64 键全部可恢复，最终钩子返回 0 且不留队列', (() => {
         newSession();
         const s = Object.create(global.Storage.prototype);
         for (let i = 0; i < 64; i++) s.setItem('journal.key.' + i, 'J' + i);
-        const realNow = Date.now;
-        let calls = 0;
-        let remaining = -1;
-        Date.now = function () { calls++; return calls <= 2 ? realNow() : realNow() + 10 * 60 * 1000; };
-        try { remaining = window.__tyranorLocalStorageFlushAll(true); } finally { Date.now = realNow; }
-        const staged = fs.existsSync(journalPath)
-            ? Object.keys(JSON.parse(fs.readFileSync(journalPath, 'utf8')).entries || {}).length
-            : 0;
-        newSession();   // 下一次文档初始化 → 重放恢复队列
+        const remaining = window.__tyranorLocalStorageFlushAll(true);
+        newSession();   // 下一次文档初始化
         let written = 0;
         for (let i = 0; i < 64; i++) {
             const p = fileOf('journal.key.' + i);
             if (fs.existsSync(p) && fs.readFileSync(p, 'utf8') === 'J' + i) written++;
         }
-        // 入队要在落盘之前发生：即使落盘被预算打断，数据也已经在队列里（因此 staged 是
-        // 全部 64 个键，与批次大小无关）；返回值只统计「既没落盘也没进队列」的键，必须是 0
-        return remaining === 0 && staged === 64 && written === 64 && !fs.existsSync(journalPath);
+        return remaining === 0 && written === 64 && !fs.existsSync(journalPath);
     })(), (() => {
         let written = 0;
         for (let i = 0; i < 64; i++) if (fs.existsSync(fileOf('journal.key.' + i))) written++;
@@ -1708,7 +1682,7 @@ console.log('\n== Storage 修改返回前持久交接 ==');
         const s = Object.create(global.Storage.prototype);
         s.setItem('accepted.failure', 'OLD');
         const original = bridge.commitStorageMutation;
-        bridge.commitStorageMutation = () => false;
+        bridge.commitStorageMutation = () => 0;
         let threw = false;
         try { s.setItem('accepted.failure', 'NEW'); } catch (error) { threw = true; }
         finally { bridge.commitStorageMutation = original; }
@@ -1734,7 +1708,7 @@ console.log('\n== Storage 修改返回前持久交接 ==');
         s.setItem('cancel.failed', 'OLD_PENDING');
         s.setItem('cancel.kept', 'KEPT');
         const original = bridge.commitStorageMutation;
-        bridge.commitStorageMutation = () => false;
+        bridge.commitStorageMutation = () => 0;
         let failures = 0;
         try {
             try { s.removeItem('cancel.failed'); } catch (error) { if (error.name === 'QuotaExceededError') failures++; }
@@ -1765,7 +1739,8 @@ console.log('\n== Storage 修改返回前持久交接 ==');
         const s = Object.create(global.Storage.prototype);
         s.setItem('recovery.pending', 'LATEST');
         const original = bridge.replayPendingStorage;
-        bridge.replayPendingStorage = () => -1;
+        // 队列本身读不出来 → fatal：所有 Storage API 必须报错而不是读旧值
+        bridge.replayPendingStorage = () => JSON.stringify({ applied: 0, fatal: true, failed: [] });
         let thrown = 0;
         try {
             newSession();
@@ -1782,7 +1757,53 @@ console.log('\n== Storage 修改返回前持久交接 ==');
                 try { operation(); } catch (error) { if (error.name === 'InvalidStateError') thrown++; }
             });
         } finally { bridge.replayPendingStorage = original; }
+        // 恢复可用的新文档必须能读回已落盘的值（失败态只属于上一个文档）
+        newSession();
         return thrown === 6 && Object.create(global.Storage.prototype).getItem('recovery.pending') === 'LATEST';
+    })());
+    const nameToFile = (key) => nodePath.join(storeDir, HostBuffer.from(String(key), 'utf8').toString('hex') + '.dat');
+    check('物化被推迟时 200ms flush 会补写并清空队列', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        const key = 'deferred.flush';
+        const target = nameToFile(key);
+        const original = bridge.writeText;
+        let failures = 1;
+        bridge.writeText = function (p2, data) {
+            if (failures-- > 0 && nodePath.resolve(p2) === nodePath.resolve(target)) return false;
+            return original.apply(this, arguments);
+        };
+        try {
+            s.setItem(key, 'DEFERRED');
+        } finally { bridge.writeText = original; }
+        // 接收成功但物化失败：值在队列里，盘上还没有
+        if (fs.existsSync(target)) return false;
+        window.__tyranorLocalStorageFlush();   // 200ms 定时器走的就是这个函数
+        return fs.existsSync(target) && fs.readFileSync(target, 'utf8') === 'DEFERRED' &&
+            !fs.existsSync(nodePath.join(storeDir, '.tyranor-pending.json'));
+    })());
+    check('单条物化失败只阻塞该键，其余键照常可读', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('healthy.key', 'OK');
+        const blocked = nameToFile('blocked.write');
+        fs.mkdirSync(blocked, { recursive: true });
+        const blockedDelete = nameToFile('blocked.delete');
+        fs.mkdirSync(blockedDelete, { recursive: true });
+        fs.writeFileSync(nodePath.join(blockedDelete, 'child'), 'x');
+        s.setItem('blocked.write', 'B');
+        s.removeItem('blocked.delete');
+
+        newSession();   // 下一次文档：重放只应把这两条列进失败名单
+        const fresh = Object.create(global.Storage.prototype);
+        let writeBlocked = false;
+        let deleteReadable = false;
+        try { fresh.getItem('blocked.write'); } catch (error) { writeBlocked = error.name === 'InvalidStateError'; }
+        try { deleteReadable = fresh.getItem('blocked.delete') === null; } catch (error) { deleteReadable = false; }
+        const healthy = fresh.getItem('healthy.key') === 'OK';
+        fs.rmdirSync(blocked, { recursive: true });
+        fs.rmdirSync(blockedDelete, { recursive: true });
+        return healthy && writeBlocked && deleteReadable;
     })());
     check('final flush 只报告已接收状态，不触发跨桥磁盘 I/O', (() => {
         newSession();

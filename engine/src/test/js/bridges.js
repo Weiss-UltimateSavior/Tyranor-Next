@@ -212,44 +212,6 @@ function createBridges(gameRoot, contentRoot) {
                 return true;
             } catch (e) { return false; }
         },
-        replayPendingStorage: () => {
-            const journalPath = nodePath.join(storeDir, JOURNAL_NAME);
-            let json = null;
-            try { json = JSON.parse(fs.readFileSync(journalPath, 'utf8')); } catch (e) { return 0; }
-            let applied = 0;
-            let failed = 0;
-            const entries = json.entries || {};
-            Object.keys(entries).forEach((name) => {
-                if (!NAME_RE.test(name)) return;
-                const e = entries[name];
-                const target = nodePath.join(storeDir, name);
-                const exists = fs.existsSync(target);
-                // 入队后文件被改过 → 条目过期（与 Kotlin matchesSnapshot 同判据）
-                if (!e.a) {
-                    if (!!e.e !== exists) return;
-                    if (exists) {
-                        const st = fs.statSync(target);
-                        if (Math.floor(st.mtimeMs) !== Number(e.m || 0) || st.size !== Number(e.s || 0)) return;
-                        if (e.c !== undefined && e.c !== null && crc32OfFile(target) !== Number(e.c)) return;
-                    }
-                }
-                if (fsBridge.isSuperseded(target)) return;
-                try {
-                    if (e.d) {
-                        if (exists) fs.unlinkSync(target);
-                    } else {
-                        fs.mkdirSync(nodePath.dirname(target), { recursive: true });
-                        fs.writeFileSync(target, String(e.v == null ? '' : e.v));
-                    }
-                    applied++;
-                } catch (err) { failed++; /* 单条失败保留队列，下次再试 */ }
-            });
-            // 与 Kotlin 同语义：只有全部恢复成功才清空队列（失败条目下次再试）
-            if (failed === 0) {
-                try { fs.unlinkSync(journalPath); } catch (e) {}
-            }
-            return failed > 0 ? -1 : applied;
-        },
         clearPendingStorage: () => {
             try { fs.unlinkSync(nodePath.join(storeDir, JOURNAL_NAME)); return true; }
             catch (e) { return e && e.code === 'ENOENT'; }
@@ -287,41 +249,112 @@ function createBridges(gameRoot, contentRoot) {
     };
 
     // 此替身验证真实脚本的调用时机；会话排序/claim 的并发由 JVM 测试验证。
+    // 返回码与 Kotlin 一致：0=未接收，1=已接收并物化，2=已接收但落盘推迟。
+    const readJournal = () => {
+        const journal = nodePath.join(storeDir, JOURNAL_NAME);
+        try { return fs.existsSync(journal) ? JSON.parse(fs.readFileSync(journal, 'utf8')) : { entries: {} }; }
+        catch (error) { return { entries: {} }; }
+    };
+    const writeJournal = (entries) => {
+        const journal = nodePath.join(storeDir, JOURNAL_NAME);
+        // 与 Kotlin 一致：队列空了就删文件，不留 `{entries:{}}` 的残骸
+        if (!Object.keys(entries).length) { try { fs.unlinkSync(journal); } catch (e) {} return; }
+        fs.mkdirSync(storeDir, { recursive: true });
+        fs.writeFileSync(journal, JSON.stringify({ entries }));
+    };
+    // 物化一条：写/删成功就把它从队列里摘掉（与 Kotlin applyQueuedEntry 同语义）
+    const applyEntry = (name, value) => {
+        const target = nodePath.join(storeDir, name);
+        if (fsBridge.isSuperseded(target)) return true;
+        const entries = readJournal().entries;
+        const entry = entries[name];
+        if (!entry) return true;                                   // 已物化/已被更新会话接管
+        if ((entry.d ? null : entry.v) !== value) return true;      // 内容已被改写
+        // 与 Kotlin 的 writeResolved/removeResolved 一致：失败返回 false，不向上抛
+        let done = false;
+        try { done = value === null ? fsBridge.remove(target) : fsBridge.writeText(target, value); }
+        catch (error) { done = false; }
+        if (!done) return false;
+        delete entries[name];
+        writeJournal(entries);
+        return true;
+    };
     fsBridge.commitStorageMutation = (payload) => {
         try {
             const input = JSON.parse(payload);
-            const journal = nodePath.join(storeDir, JOURNAL_NAME);
-            const old = fs.existsSync(journal) ? JSON.parse(fs.readFileSync(journal, 'utf8')) : { entries: {} };
-            const entries = Object.assign({}, old.entries);
+            const entries = Object.assign({}, readJournal().entries);
             const writes = input.values || {};
             const deletes = new Set(input.deletes || []);
             if (input.clear) {
                 Object.keys(entries).forEach((name) => deletes.add(name));
-                if (fs.existsSync(storeDir)) fs.readdirSync(storeDir).filter((name) => NAME_RE.test(name)).forEach((name) => deletes.add(name));
+                if (fs.existsSync(storeDir)) {
+                    fs.readdirSync(storeDir).filter((name) => NAME_RE.test(name)).forEach((name) => deletes.add(name));
+                }
             }
-            if (Object.keys(writes).some((name) => !NAME_RE.test(name)) || [...deletes].some((name) => !NAME_RE.test(name))) return false;
-            Object.keys(writes).forEach((name) => { entries[name] = Object.assign(entryJson(name, String(writes[name])), { a: true }); });
-            deletes.forEach((name) => { entries[name] = Object.assign(entryJson(name, null), { a: true }); recorded.deletes.add(nodePath.join(storeDir, name)); });
+            if (Object.keys(writes).some((name) => !NAME_RE.test(name))) return 0;
+            if ([...deletes].some((name) => !NAME_RE.test(name))) return 0;
+            // 与 Kotlin 一致：该路径已归更高会话所有时，旧文档的这次修改整体拒绝
+            const superseded = Object.keys(writes).some((name) => fsBridge.isSuperseded(nodePath.join(storeDir, name))) ||
+                [...deletes].some((name) => fsBridge.isSuperseded(nodePath.join(storeDir, name)));
+            if (superseded) return 0;
+            Object.keys(writes).forEach((name) => {
+                entries[name] = Object.assign(entryJson(name, String(writes[name])), { a: true });
+            });
+            deletes.forEach((name) => {
+                entries[name] = Object.assign(entryJson(name, null), { a: true });
+                recorded.deletes.add(nodePath.join(storeDir, name));
+            });
             if (input.clear) recorded.clears.add(nodePath.normalize(storeDir));
-            fs.mkdirSync(storeDir, { recursive: true });
-            fs.writeFileSync(journal, JSON.stringify({ entries }));
-            return true;
-        } catch (error) { return false; }
+            writeJournal(entries);
+            // 接收后立刻物化：与 Kotlin 一致，正常路径下队列回到空态
+            let deferred = false;
+            Object.keys(writes).forEach((name) => { if (!applyEntry(name, String(writes[name]))) deferred = true; });
+            deletes.forEach((name) => { if (!applyEntry(name, null)) deferred = true; });
+            return deferred ? 2 : 1;
+        } catch (error) { return 0; }
     };
     fsBridge.flushStorageMutation = (name, value) => {
-        try {
+        try { return applyEntry(name, value); } catch (error) { return false; }
+    };
+    fsBridge.replayPendingStorage = () => {
+        const journal = nodePath.join(storeDir, JOURNAL_NAME);
+        const failed = [];
+        let applied = 0;
+        if (!fs.existsSync(journal)) return JSON.stringify({ applied: 0, fatal: false, failed });
+        let entries;
+        try { entries = JSON.parse(fs.readFileSync(journal, 'utf8')).entries || {}; }
+        catch (error) {
+            // 与 Kotlin 的隔离语义对齐：坏队列不可解析时改名留证，本次按空队列继续
+            try { fs.renameSync(journal, journal + '.corrupt.' + Date.now()); } catch (e2) {}
+            return JSON.stringify({ applied: 0, fatal: false, failed });
+        }
+        Object.keys(entries).forEach((name) => {
+            const e = entries[name];
             const target = nodePath.join(storeDir, name);
-            if (fsBridge.isSuperseded(target)) return true;
-            const journal = nodePath.join(storeDir, JOURNAL_NAME);
-            const entries = fs.existsSync(journal) ? JSON.parse(fs.readFileSync(journal, 'utf8')).entries : {};
-            const entry = entries[name];
-            if (entry && (entry.d ? null : entry.v) !== value) return true;
-            const done = value === null ? fsBridge.remove(target) : fsBridge.writeText(target, value);
-            if (!done) return false;
-            delete entries[name];
-            fs.writeFileSync(journal, JSON.stringify({ entries }));
-            return true;
-        } catch (error) { return false; }
+            const deleted = !!e.d;
+            if (!e.a) {
+                const exists = fs.existsSync(target);
+                const stale = !!e.e !== exists || (exists && (() => {
+                    const st = fs.statSync(target);
+                    return Math.floor(st.mtimeMs) !== Number(e.m || 0) || st.size !== Number(e.s || 0) ||
+                        (e.c !== undefined && e.c !== null && crc32OfFile(target) !== Number(e.c));
+                })());
+                if (stale) { delete entries[name]; return; }
+            }
+            if (fsBridge.isSuperseded(target)) return;
+            try {
+                if (deleted) { if (fs.existsSync(target)) fs.unlinkSync(target); }
+                else {
+                    fs.mkdirSync(nodePath.dirname(target), { recursive: true });
+                    fs.writeFileSync(target, String(e.v == null ? '' : e.v));
+                }
+                applied++;
+                delete entries[name];
+            } catch (err) { failed.push({ n: name, d: deleted }); }
+        });
+        if (failed.length) writeJournal(entries);
+        else { try { fs.unlinkSync(journal); } catch (e) {} }
+        return JSON.stringify({ applied, fatal: false, failed });
     };
 
     const b64 = (bufOrStr) => NodeBuffer.isBuffer(bufOrStr) ? bufOrStr.toString('base64') : NodeBuffer.from(String(bufOrStr), 'binary').toString('base64');

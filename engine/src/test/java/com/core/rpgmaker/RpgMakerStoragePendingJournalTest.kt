@@ -5,18 +5,17 @@ import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 回归：文档销毁时没写完的 localStorage 数据必须能被下一次文档初始化重放。
+ * 恢复队列的底层语义与**旧格式兼容**（历史版本写入、没有 `a`（accepted）标记的条目）。
  *
- * 背景（复审问题 1/2/5）：`setItem` 是内存镜像 + 合并写，宿主在退出或重建时会销毁
- * WebView——JS 定时器与内存镜像一起消失。`flushAll` 一旦没写完（预算耗尽、单键 I/O
- * 失败），剩下的值就永久丢失。修复把它交给原生恢复队列，由新文档重放。
- *
- * 这里直接跑真实 Kotlin 实现（不经过 WebView）：覆盖恢复、删除重试、条目合并、
- * 快照失配（入队后被改写）、账本让位与非法文件名。
+ * 生产过程不再调用 `stagePendingStorage`：Storage 修改在返回前走 `commitStorageMutation`
+ * 直接落盘（见 [RpgMakerStorageCommitTest]），所以这里用 legacy 入口覆盖的是
+ * 「升级前留下的队列如何被安全重放」与队列自身的合并/指纹/容量规则——
+ * 后者在旧条目上仍然生效，不能因为没有生产者就删掉。
  */
 class RpgMakerStoragePendingJournalTest {
 
@@ -50,7 +49,7 @@ class RpgMakerStoragePendingJournalTest {
         assertTrue("待写数据已落到恢复队列", journalFile.isFile)
 
         // 下一次文档初始化（新会话期号）
-        assertEquals(1, bridge(2L).replayPendingStorage())
+        assertEquals(1, bridge(2L).replayedCount())
         assertEquals("PENDING", storedFile(name).readText())
         assertFalse("重放完成后队列清空，避免下次重复应用", journalFile.exists())
     }
@@ -61,7 +60,7 @@ class RpgMakerStoragePendingJournalTest {
         val target = storedFile(name, "KEEP")
 
         assertTrue(bridge(1L).stagePendingStorage("""{"values":{},"deletes":["$name"]}"""))
-        assertEquals(1, bridge(2L).replayPendingStorage())
+        assertEquals(1, bridge(2L).replayedCount())
         assertFalse("删除意图必须跨文档保留并按原样重放", target.exists())
     }
 
@@ -74,7 +73,7 @@ class RpgMakerStoragePendingJournalTest {
         // 入队之后有人写了新值（新会话/插件自己）：快照 (存在, mtime, size) 失配
         storedFile(name, "NEWER-VALUE")
 
-        assertEquals(0, bridge(2L).replayPendingStorage())
+        assertEquals(0, bridge(2L).replayedCount())
         assertEquals("NEWER-VALUE", storedFile(name).readText())
     }
 
@@ -91,7 +90,7 @@ class RpgMakerStoragePendingJournalTest {
         assertTrue("测试前提：mtime 能被恢复", target.setLastModified(stagedMtime))
         assertEquals("测试前提：(存在, size, mtime) 与入队快照完全一致", stagedMtime, target.lastModified())
 
-        assertEquals("同长度改写只能靠内容指纹（CRC32）发现", 0, bridge(2L).replayPendingStorage())
+        assertEquals("同长度改写只能靠内容指纹（CRC32）发现", 0, bridge(2L).replayedCount())
         assertEquals("BBBB", target.readText())
     }
 
@@ -104,7 +103,7 @@ class RpgMakerStoragePendingJournalTest {
         // 文件本身没有变化（快照仍匹配），但账本表明更新的会话已经写过这个路径
         RpgMakerStorageWriteLedger.record(target.canonicalPath, 5L)
 
-        assertEquals(0, bridge(2L).replayPendingStorage())
+        assertEquals(0, bridge(2L).replayedCount())
         assertEquals("OLD", storedFile(name).readText())
     }
 
@@ -123,7 +122,7 @@ class RpgMakerStoragePendingJournalTest {
         // Storage.removeItem(removed)：删除意图 + 只丢弃该条目（期望值 null = 不比对内容）
         assertTrue(bridge(1L).discardPendingStorage("""{"$removed":null}"""))
 
-        assertEquals("只应恢复未删除的那一条", 1, bridge(2L).replayPendingStorage())
+        assertEquals("只应恢复未删除的那一条", 1, bridge(2L).replayedCount())
         assertFalse("入队后被删除的键不能被重放写回来", File(storeDir, removed).exists())
         assertEquals("KEPT", File(storeDir, kept).readText())
     }
@@ -136,7 +135,7 @@ class RpgMakerStoragePendingJournalTest {
         assertTrue(bridge(2L).stagePendingStorage("""{"values":{"$name":"B"},"deletes":[]}"""))
         // 旧文档按自己的内容丢弃：内容已不同，不能把新条目一起删掉
         assertTrue(bridge(2L).discardPendingStorage("""{"$name":"A"}"""))
-        assertEquals(1, bridge(3L).replayPendingStorage())
+        assertEquals(1, bridge(3L).replayedCount())
         assertEquals("B", File(storeDir, name).readText())
     }
 
@@ -146,7 +145,7 @@ class RpgMakerStoragePendingJournalTest {
         assertTrue(bridge(2L).stagePendingStorage("""{"values":{"$name":"NEW"},"deletes":[]}"""))
         // 旧文档晚到的入队（同一文件名）：值与会话都更旧，必须让位
         assertTrue(bridge(1L).stagePendingStorage("""{"values":{"$name":"OLD"},"deletes":[]}"""))
-        assertEquals(1, bridge(3L).replayPendingStorage())
+        assertEquals(1, bridge(3L).replayedCount())
         assertEquals("NEW", File(storeDir, name).readText())
     }
 
@@ -156,7 +155,7 @@ class RpgMakerStoragePendingJournalTest {
         assertTrue(bridge(2L).stagePendingStorage("""{"values":{"$name":"NEW"},"deletes":[]}"""))
         // 旧文档的 removeItem 不能作废新文档已入队的值
         assertTrue(bridge(1L).discardPendingStorage("""{"$name":null}"""))
-        assertEquals(1, bridge(3L).replayPendingStorage())
+        assertEquals(1, bridge(3L).replayedCount())
         assertEquals("NEW", File(storeDir, name).readText())
     }
 
@@ -169,7 +168,7 @@ class RpgMakerStoragePendingJournalTest {
         storedFile(name, "WRITTEN")
         // 再次入队同一个值：必须保留首次指纹，否则旧条目会「看起来仍然有效」
         assertTrue(bridge(1L).stagePendingStorage("""{"values":{"$name":"A"},"deletes":[]}"""))
-        assertEquals(0, bridge(2L).replayPendingStorage())
+        assertEquals(0, bridge(2L).replayedCount())
         assertEquals("WRITTEN", storedFile(name).readText())
     }
 
@@ -186,15 +185,18 @@ class RpgMakerStoragePendingJournalTest {
             ),
         )
 
-        assertEquals("部分恢复失败必须向页面报告未就绪", -1, bridge(2L).replayPendingStorage())
+        // 单条失败不是致命错误：其余条目照常恢复，页面只会挡住这一条
+        assertEquals(1, bridge(2L).replayedCount())
         assertEquals("OK", File(storeDir, ok).readText())
+        assertEquals(listOf(broken), bridge(2L).replayKept())
         assertTrue("失败条目必须保留到下次", journalFile.exists())
         val queued = JSONObject(journalFile.readText())
             .getJSONObject("entries").keys().asSequence().toList()
         assertEquals("队里只剩失败的那条", listOf(broken), queued)
 
-        // 目标仍然不可写：继续留在队列里，并向页面报告未就绪。
-        assertEquals(-1, bridge(3L).replayPendingStorage())
+        // 目标仍然不可写：继续留在队列里，下次文档再试
+        assertEquals(0, bridge(3L).replayedCount())
+        assertEquals(listOf(broken), bridge(3L).replayKept())
         assertTrue(journalFile.exists())
     }
 
@@ -206,7 +208,7 @@ class RpgMakerStoragePendingJournalTest {
             bridge(1L).stagePendingStorage("""{"values":{"$first":"A","$second":"B"},"deletes":[]}"""),
         )
         assertTrue(bridge(1L).clearPendingStorage())
-        assertEquals(0, bridge(2L).replayPendingStorage())
+        assertEquals(0, bridge(2L).replayedCount())
         assertFalse(File(storeDir, first).exists())
         assertFalse(File(storeDir, second).exists())
     }
@@ -220,8 +222,8 @@ class RpgMakerStoragePendingJournalTest {
         // 本进程 doc1 入队：每条只记自己的期号，不能被整份队列的 max 抬成 9
         assertTrue(bridge(1L).stagePendingStorage("""{"values":{"62.dat":"NEW_SESSION"},"deletes":[]}"""))
         // doc2 清空存储（目录级墓碑，期号 2）：本进程 doc1 的条目必须让位
-        assertTrue(bridge(2L).recordClear("AppData/Local Storage"))
-        assertEquals("上一进程及本进程清除之前的条目都必须让位", 0, bridge(2L).replayPendingStorage())
+        assertNotEquals(0, bridge(2L).commitCode(emptyMap(), clear = true))
+        assertEquals("上一进程及本进程清除之前的条目都必须让位", 0, bridge(2L).replayedCount())
         assertFalse(File(storeDir, "61.dat").exists())
         assertFalse("本进程清除之前入队的键不能被重放写回", File(storeDir, "62.dat").exists())
     }
@@ -236,7 +238,7 @@ class RpgMakerStoragePendingJournalTest {
         assertTrue(bridge(1L).stagePendingStorage("""{"values":{"$first":"A"},"deletes":[]}"""))
         assertTrue(bridge(1L).stagePendingStorage("""{"values":{"$second":"B"},"deletes":[]}"""))
 
-        assertEquals(2, bridge(2L).replayPendingStorage())
+        assertEquals(2, bridge(2L).replayedCount())
         assertEquals("A", storedFile(first).readText())
         assertEquals("B", storedFile(second).readText())
     }
@@ -251,7 +253,7 @@ class RpgMakerStoragePendingJournalTest {
             ),
         )
         assertFalse("被拒载荷不应产生队列文件", journalFile.exists())
-        assertEquals(0, bridge(2L).replayPendingStorage())
+        assertEquals(0, bridge(2L).replayedCount())
         assertFalse(File(root, "AppData/escape.dat").exists())
         assertFalse(File(root, "escape.dat").exists())
     }
@@ -261,18 +263,25 @@ class RpgMakerStoragePendingJournalTest {
         // JS 侧偶尔会传空表（例如删除意图已在新值写入时作废）：不能因此报失败
         assertTrue(bridge(1L).stagePendingStorage("""{"values":{},"deletes":[]}"""))
         assertFalse("没有待写项就不该产生队列文件", journalFile.exists())
-        assertEquals(0, bridge(2L).replayPendingStorage())
+        assertEquals(0, bridge(2L).replayedCount())
     }
 
     @Test
-    fun corruptJournalIsPreservedAndReported() {
+    fun corruptJournalIsQuarantinedAndReported() {
         storedFile("80.dat", "KEEP")
         val damaged = "{ this is not json"
         journalFile.writeText(damaged)
-        assertEquals(-1, bridge(2L).replayPendingStorage())
+
+        // 不可解析 → 改名留证后按空队列继续：一次损坏不能把 Storage 变成永久不可用
+        assertEquals(0, bridge(2L).replayedCount())
         assertEquals("KEEP", storedFile("80.dat").readText())
-        assertEquals("损坏队列保留供恢复，不能当作空存储", damaged, journalFile.readText())
-        assertFalse(bridge(2L).stagePendingStorage("""{"values":{"80.dat":"REPLACEMENT"},"deletes":[]}"""))
-        assertEquals(damaged, journalFile.readText())
+        val quarantined = storeDir.listFiles()
+            ?.filter { it.name.startsWith(RpgMakerStoragePendingJournal.FILE_NAME + ".corrupt.") }
+        assertEquals("保留取证副本", 1, quarantined?.size)
+        assertEquals(damaged, quarantined!!.first().readText())
+
+        assertTrue(bridge(2L).stagePendingStorage("""{"values":{"80.dat":"RECOVERED"},"deletes":[]}"""))
+        assertEquals(1, bridge(3L).replayedCount())
+        assertEquals("RECOVERED", storedFile("80.dat").readText())
     }
 }

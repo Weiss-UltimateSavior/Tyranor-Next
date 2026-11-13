@@ -833,7 +833,7 @@ class RpgMakerActivity : Activity() {
                         else -> when (val pending = reported.toIntOrNull()) {
                             null -> Log.w(TAG, "localStorage flush reported unexpected value: $reported")
                             in 1..Int.MAX_VALUE ->
-                                Log.w(TAG, "localStorage flush incomplete at exit: $pending key(s) not persisted")
+                                Log.w(TAG, "localStorage recovery still failing at exit (see pending storage logs)")
                         }
                     }
                     teardown.run()
@@ -991,7 +991,7 @@ class RpgMakerActivity : Activity() {
         private const val NWJS_POLYFILL_V1_RESOURCE = "__tyranor__/nwjs_polyfill_v1.js"
         private const val NWJS_POLYFILL_V2_RESOURCE = "__tyranor__/nwjs_polyfill_v2.js"
 
-        /** v2 会话的 localStorage 合并落盘入口（见 `__nwjs_polyfill_v2.js` 的 `__tyranorLocalStorageFlushAll`）。 */
+        /** v2 会话的尽力物化入口（见 `__nwjs_polyfill_v2.js` 的 `__tyranorLocalStorageFlushAll`）。 */
         private const val FLUSH_LOCAL_STORAGE_JS =
             "try{if(window.__tyranorLocalStorageFlushAll){window.__tyranorLocalStorageFlushAll();}}" +
                 "catch(e){try{if(window.__tyranorLocalStorageFlush){window.__tyranorLocalStorageFlush();}}catch(e2){}}"

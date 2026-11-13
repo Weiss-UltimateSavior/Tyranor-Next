@@ -860,7 +860,11 @@
 
         var realFs = {
             commitStorageMutation: function (payload) {
-                return typeof bridge.commitStorageMutation === "function" && bridge.commitStorageMutation(payload) === true;
+                try {
+                    return typeof bridge.commitStorageMutation === "function"
+                        ? Number(bridge.commitStorageMutation(payload)) || 0
+                        : 0;
+                } catch (e) { return 0; }
             },
             flushStorageMutation: function (name, value) {
                 return typeof bridge.flushStorageMutation === "function" && bridge.flushStorageMutation(name, value) === true;
@@ -883,24 +887,12 @@
                 try { return typeof bridge.recordClear === "function" && bridge.recordClear(p) === true; }
                 catch (e) { return false; }
             },
-            // 未落盘数据交给原生恢复队列（文档销毁后仍可重放）
-            stagePendingStorage: function (payload) {
-                try { return typeof bridge.stagePendingStorage === "function" && bridge.stagePendingStorage(payload) === true; }
-                catch (e) { return false; }
-            },
             replayPendingStorage: function () {
-                try { return typeof bridge.replayPendingStorage === "function" ? Number(bridge.replayPendingStorage()) : -1; }
-                catch (e) { return -1; }
-            },
-            clearPendingStorage: function () {
-                try { return typeof bridge.clearPendingStorage === "function" && bridge.clearPendingStorage() === true; }
-                catch (e) { return false; }
-            },
-            // 丢弃恢复队列里指定文件名的条目（JSON 字符串数组）：入队之后该键又被删除时，
-            // 队列里的旧值必须作废；空串表示整份丢弃（Storage.clear 用）
-            discardPendingStorage: function (namesJson) {
-                try { return typeof bridge.discardPendingStorage === "function" && bridge.discardPendingStorage(namesJson) === true; }
-                catch (e) { return false; }
+                try {
+                    if (typeof bridge.replayPendingStorage !== "function") return null;
+                    var report = JSON.parse(String(bridge.replayPendingStorage()));
+                    return report && typeof report === "object" ? report : null;
+                } catch (e) { return null; }
             },
             exists: function (p, cb) { if (typeof cb === "function") setTimeout(function () { cb(realFs.existsSync(p)); }, 0); },
             readFileSync: function (p, enc) {
@@ -3409,7 +3401,10 @@
             var suppressedNames = Object.create(null);
             var flushTimer = null;
             var flushRetries = 0;
-            var recoveryPending = false;
+            var recoveryFatal = false;
+            // 已接收但没能落盘的条目：文件名 -> true(待删除) / false(待写入)。
+            // 只影响这一个键：待删除的读回 null，待写入的报未就绪，其余键照常可用。
+            var unrecovered = Object.create(null);
 
             function storageError(name, message) {
                 var error = new Error(message);
@@ -3417,16 +3412,17 @@
                 return error;
             }
             function ensureStorageReady() {
-                if (!recoveryPending) return;
-                var recovered = realFs.replayPendingStorage();
-                recoveryPending = !(recovered >= 0);
-                if (recoveryPending) throw storageError("InvalidStateError", "Persistent Storage recovery is pending");
+                if (recoveryFatal) throw storageError("InvalidStateError", "Persistent Storage recovery failed");
+            }
+            /** 该文件名在队列里是否还有未落盘的意图：null=没有，true=待删除，false=待写入。 */
+            function pendingIntent(name) {
+                return hasOwn(unrecovered, name) ? unrecovered[name] : null;
             }
             function acceptMutation(payload) {
                 ensureStorageReady();
-                if (!realFs.commitStorageMutation(JSON.stringify(payload))) {
-                    throw storageError("QuotaExceededError", "Persistent Storage mutation was not accepted");
-                }
+                var code = realFs.commitStorageMutation(JSON.stringify(payload));
+                if (!code) throw storageError("QuotaExceededError", "Persistent Storage mutation was not accepted");
+                return code;
             }
 
             function rememberKey(key) {
@@ -3454,6 +3450,8 @@
                     if (!/\.dat$/.test(name)) continue;
                     // 删除失败留下的文件：镜像里已无此键，不能再索引回来
                     if (suppressedNames[name]) continue;
+                    // 队列里还有未落盘意图的键：待删除的不能索引回来，待写入的磁盘上还是旧值
+                    if (pendingIntent(name) !== null) continue;
                     var hex = name.slice(0, -4);
                     if (hex.charAt(0) === "h") continue;   // 哈希名无法还原原键，读取时按 key 兜底
                     var key = hexToText(hex);
@@ -3487,8 +3485,17 @@
             }
 
             function readValue(key) {
+                ensureStorageReady();
                 if (hasOwn(values, key)) return values[key];
                 if (removedKeys[key] || (storageCleared && !files[key])) return null;
+                var expected = fileNameFor(key);
+                var intent = pendingIntent(expected);
+                // 已接收的删除还没落盘：磁盘上那份旧值必须当作已删除
+                if (intent === true) return null;
+                // 已接收的写入还没落盘：磁盘上是旧值，读出来会被当成新值
+                if (intent === false) {
+                    throw storageError("InvalidStateError", "Storage value is not recovered yet: " + key);
+                }
                 ensureIndex();
                 var name = files[key];
                 if (name) {
@@ -3596,7 +3603,7 @@
              * 非最终调用可尽力物化；未完成的 .dat 工作已在队列里，不计为未接收数据。
              */
             function flushAll(finalizing) {
-                if (finalizing === true) return recoveryPending ? 1 : 0;
+                if (finalizing === true) return recoveryFatal ? 1 : 0;
                 ensureStorageReady();
                 if (flushTimer !== null) { clearTimeout(flushTimer); flushTimer = null; }
                 retrySuppressedDeletes();
@@ -3636,8 +3643,20 @@
                 // 上一次文档销毁/重载时交给原生恢复队列的待写数据：必须在页面脚本读取
                 // localStorage 之前落地（本段在首页任何游戏脚本之前执行），否则插件读到的
                 // 仍是旧值，随后的合并写会把恢复出来的值覆盖掉。
-                try { recoveryPending = !(realFs.replayPendingStorage() >= 0); }
-                catch (eReplay) { recoveryPending = true; }
+                try {
+                    var replayReport = realFs.replayPendingStorage();
+                    if (!replayReport || replayReport.fatal) {
+                        recoveryFatal = true;
+                    } else {
+                        var failedEntries = replayReport.failed || [];
+                        for (var r = 0; r < failedEntries.length; r++) {
+                            var failedEntry = failedEntries[r];
+                            if (failedEntry && failedEntry.n) {
+                                unrecovered[String(failedEntry.n)] = failedEntry.d === true;
+                            }
+                        }
+                    }
+                } catch (eReplay) { recoveryFatal = true; }
                 // 最终钩子只报告持久交接状态：此前的 Storage 成功返回已完成接收。
                 try {
                     window.addEventListener("pagehide", function (event) {
@@ -3689,15 +3708,18 @@
                         var k = String(key);
                         var text = String(value);
                         var writes = Object.create(null);
-                        writes[fileNameFor(k)] = text;
+                        var name = fileNameFor(k);
+                        writes[name] = text;
                         // 接收失败时抛错，镜像、索引和 native fallback 都保持原状。
-                        acceptMutation({ values: writes, deletes: [] });
+                        var code = acceptMutation({ values: writes, deletes: [] });
+                        delete unrecovered[name];
                         ensureIndex();
                         values[k] = text;
                         delete removedKeys[k];
                         delete suppressedNames[fileNameFor(k)];
                         rememberKey(k);
-                        markDirty(k);
+                        // 已接收且已落盘就不必再排物化；只有落盘被推迟时才留着重试
+                        if (code === 2) markDirty(k); else delete dirty[k];
                     };
                 } catch (eSet) {}
                 try {
@@ -3707,7 +3729,9 @@
                             var value = readValue(String(key));
                             if (value !== null && value !== undefined) return value;
                             if (removedKeys[String(key)] || storageCleared) return null;
-                        } catch (e) {}
+                        } catch (e) {
+                            if (e && e.name === "InvalidStateError") throw e;
+                        }
                         if (nativeGet) { try { return nativeGet.call(this, key); } catch (e2) {} }
                         return null;
                     };
@@ -3716,7 +3740,8 @@
                     Storage.prototype.removeItem = function (key) {
                         var k = String(key);
                         var name = fileNameFor(k);
-                        acceptMutation({ values: {}, deletes: [name] });
+                        var code = acceptMutation({ values: {}, deletes: [name] });
+                        if (code === 2) unrecovered[name] = true; else delete unrecovered[name];
                         ensureIndex();
                         delete values[k];
                         delete dirty[k];
@@ -3724,15 +3749,19 @@
                         var at = order.indexOf(k);
                         if (at >= 0) order.splice(at, 1);
                         removedKeys[k] = true;
-                        if (realFs.flushStorageMutation(name, null)) delete suppressedNames[name];
-                        else suppressedNames[name] = true;
+                        // 接收时已尝试物化：文件还在就挡住读，避免旧值复活
+                        var stillThere = false;
+                        try { stillThere = realFs.existsSync(pathFor(k)); } catch (e) {}
+                        if (stillThere) suppressedNames[name] = true; else delete suppressedNames[name];
                         if (nativeRemove) { try { nativeRemove.call(this, k); } catch (e) {} }
                     };
                 } catch (eRemove) {}
                 try {
                     Storage.prototype.clear = function () {
-                        // 原生在同一目录锁内把磁盘、journal 与遗留 claim 中的键一起登记删除。
+                        // 原生在同一目录锁内把磁盘、journal 与遗留 claim 中的键一起登记删除，
+                        // 并尽力当场物化；这里只清镜像，不再逐文件过桥。
                         acceptMutation({ clear: true });
+                        unrecovered = Object.create(null);
                         // 接收之后的物化是尽力而为；即使二次目录读取失败，镜像也已经清空。
                         if (flushTimer !== null) { clearTimeout(flushTimer); flushTimer = null; }
                         values = Object.create(null);
@@ -3743,7 +3772,7 @@
                         indexLoaded = true;
                         storageCleared = true;
                         try {
-                            var names = realFs.existsSync(STORE_DIR) ? realFs.readdirSync(STORE_DIR) : [];
+                            var names = [];
                             for (var i = 0; i < names.length; i++) {
                                 var name = String(names[i]);
                                 if (!/\.dat$/.test(name)) continue;

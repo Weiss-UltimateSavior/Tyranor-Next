@@ -4,6 +4,7 @@ import java.io.File
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -63,11 +64,12 @@ class RpgMakerFsBridgeDeleteLedgerTest {
     fun explicitDeleteIntentDoesNotRequireAnExistingFile() {
         val older = RpgMakerFsBridge(root, root, null, RpgMakerDirIndex(), session = 1L)
         val newer = RpgMakerFsBridge(root, root, null, RpgMakerDirIndex(), session = 2L)
-        val path = "AppData/not-yet-flushed.dat"
+        val path = "AppData/Local Storage/61.dat"
 
-        // 真实 JS 路径：Storage.removeItem 直接登记删除意图，不先 existsSync
-        assertTrue(newer.recordDelete(path))
-        assertFalse("登记意图本身不应该创建文件", file(path).exists())
+        // 真实 JS 路径：Storage.removeItem → commitStorageMutation({deletes})，
+        // 目标文件根本不存在（还没物化过）也必须登记删除意图
+        assertNotEquals(0, newer.commitCode(emptyMap(), deletes = listOf("61.dat")))
+        assertFalse("删除意图本身不应该创建文件", file(path).exists())
         assertTrue("删除意图与文件是否存在无关", older.isSuperseded(path))
     }
 
@@ -77,7 +79,7 @@ class RpgMakerFsBridgeDeleteLedgerTest {
         val newer = RpgMakerFsBridge(root, root, null, RpgMakerDirIndex(), session = 2L)
 
         // Storage.clear()：旧会话内存里的待写键在磁盘上还不存在，只能靠目录级墓碑挡住
-        assertTrue(newer.recordClear("AppData/Local Storage"))
+        assertNotEquals(0, newer.commitCode(emptyMap(), clear = true))
         assertTrue(
             "被清除目录下尚未落盘的键也必须让位",
             older.isSuperseded("AppData/Local Storage/61.dat"),

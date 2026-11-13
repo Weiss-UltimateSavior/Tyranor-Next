@@ -46,10 +46,10 @@ internal object RpgMakerStoragePendingJournal {
     private const val MAX_ENTRIES = 4096
 
     /**
-     * 单条值上限（字符）。取值保证 `MAX_VALUE_CHARS * 3 ≤ MAX_CRC_BYTES`：
-     * 任何被接受的值（最坏 UTF-8 三字节/字符）都还在计算内容指纹的范围内。
+     * 单条值上限（字符）。浏览器给每个 origin 的 localStorage 配额本来只有几 MiB，
+     * 这里取 8Mi 保证「浏览器能存下的值，恢复队列也能存下」，不再额外收紧插件行为。
      */
-    private const val MAX_VALUE_CHARS = 2 * 1024 * 1024
+    private const val MAX_VALUE_CHARS = 8 * 1024 * 1024
 
     /** 队列总字符上限（按合并结果计，不是按单次入参计）。 */
     private const val MAX_TOTAL_CHARS = 12L * 1024L * 1024L
@@ -68,6 +68,15 @@ internal object RpgMakerStoragePendingJournal {
 
     /** 队列文件级的互斥：读改写在同一个锁内，避免旧会话的收尾与新会话的重放互相覆盖。 */
     private val lock = Any()
+
+    /** 临时文件清理的节流时间戳（进程级）。 */
+    @Volatile
+    private var lastTempCleanupAt = 0L
+
+    /** 临时文件保留时长：远大于任何一次写入，避免清掉正在写的副本。 */
+    private const val TEMP_FILE_TTL_MS = 10 * 60 * 1000L
+
+    private const val TEMP_CLEANUP_INTERVAL_MS = 60 * 1000L
 
     /** 一条待恢复项；[value] 为 null 表示删除意图。 */
     internal class Entry(
@@ -190,8 +199,8 @@ internal object RpgMakerStoragePendingJournal {
             val remaining = existing.filterValues { it.session > session }
             if (remaining.size == existing.size) return true
             if (remaining.isEmpty()) {
+                // 删除失败不能报成功：条目还在，下次重放会把刚清掉的键写回来
                 deleteQuietly(File(storeDir, FILE_NAME))
-                true
             } else {
                 writeSnapshot(File(storeDir, FILE_NAME), remaining)
             }
@@ -224,8 +233,8 @@ internal object RpgMakerStoragePendingJournal {
                 }
                 if (remaining.size == existing.size) return true
                 if (remaining.isEmpty()) {
+                    // 同上：队列文件删不掉就等于没丢弃，必须如实返回失败
                     deleteQuietly(File(storeDir, FILE_NAME))
-                    true
                 } else {
                     writeSnapshot(File(storeDir, FILE_NAME), remaining)
                 }
@@ -306,16 +315,25 @@ internal object RpgMakerStoragePendingJournal {
 
     private fun parse(file: File): Snapshot? {
         if (!file.exists()) return null
-        if (!file.isFile || file.length() > MAX_JOURNAL_BYTES) {
-            throw IOException("pending storage journal unreadable: ${file.path}")
-        }
+        if (!file.isFile) return quarantine(file, "not a regular file")
+        if (file.length() > MAX_JOURNAL_BYTES) return quarantine(file, "too large ${file.length()}")
         return parseContent(file)
     }
 
     private fun parseContent(file: File): Snapshot? {
+        // 读失败是暂时性 I/O 故障：不隔离，交给调用方当次失败
         val raw = String(file.readBytes(), StandardCharsets.UTF_8)
+        val parsed = try {
+            decodeContent(raw)
+        } catch (error: Throwable) {
+            return quarantine(file, "invalid content: ${error.message}")
+        }
+        return parsed
+    }
+
+    private fun decodeContent(raw: String): Snapshot? {
         val json = JSONObject(raw)
-        // 没有 run 标识的旧格式同样归零；不删除损坏队列，接收/重放向调用方报告失败。
+        // 没有 run 标识的旧格式同样归零
         val sameRun = json.optString("run", "") == RUN_ID
         val entriesJson = json.getJSONObject("entries")
         if (entriesJson.length() > MAX_ENTRIES) throw IOException("Too many Storage entries")
@@ -424,27 +442,56 @@ internal object RpgMakerStoragePendingJournal {
     }
 
     /**
-     * 清掉上次进程被杀时残留的临时文件（`.tyranor-pending.json.tmp.<nanos>`）。
-     * 只在入队时扫一次：目录里通常只有几十个 `.dat`，成本可忽略。
+     * 清掉上次进程被杀时残留的临时文件（`.tyranor-pending.json.tmp.<nanos>`、
+     * `.tyranor-pending.claim.tmp.<nanos>` 与 `.dat.tmp.<nanos>`）。
+     *
+     * 每次入队都扫一遍目录会随 Storage 键数线性放大，因此按时间节流；残留文件本身不影响
+     * 正确性，只是占空间，晚一点清没有代价。
      */
     private fun cleanupTempFiles(storeDir: File) {
-        val prefix = FILE_NAME + ".tmp."
+        val now = System.currentTimeMillis()
+        if (now - lastTempCleanupAt < TEMP_CLEANUP_INTERVAL_MS) return
+        lastTempCleanupAt = now
+        val staleBefore = now - TEMP_FILE_TTL_MS
+        val prefixes = arrayOf(FILE_NAME + ".tmp.", CLAIM_NAME + ".tmp.")
         try {
             storeDir.listFiles()?.forEach { candidate ->
-                if (candidate.isFile && candidate.name.startsWith(prefix)) candidate.delete()
+                if (!candidate.isFile) return@forEach
+                val name = candidate.name
+                val isTemp = prefixes.any { name.startsWith(it) } ||
+                    (name.contains(".tmp.") && name.substringAfterLast('.').all { it.isDigit() })
+                if (isTemp && candidate.lastModified() < staleBefore) candidate.delete()
             }
         } catch (error: Throwable) {
             Log.w(TAG, "pending storage temp cleanup failed: ${storeDir.path}", error)
         }
     }
 
-    private fun deleteQuietly(file: File) {
-        try {
-            if (file.exists() && !file.delete()) throw IOException("pending storage file not removable: ${file.path}")
+    private fun deleteQuietly(file: File): Boolean {
+        return try {
+            if (!file.exists() || file.delete()) true
+            else {
+                Log.w(TAG, "pending storage file not removable: ${file.path}")
+                false
+            }
         } catch (error: Throwable) {
             Log.w(TAG, "pending storage file not removable: ${file.path}", error)
-            throw error
+            false
         }
+    }
+
+    /**
+     * 不可解析的队列改名留证后按空队列继续。
+     *
+     * 严格解析的目的是「不把坏数据当成真实意图」；但若一直报错，一次损坏就会让该游戏的
+     * Storage 永久不可用（每次访问都重试同一份坏文件）。改名既保留取证副本，又让本次
+     * 会话能继续起来。
+     */
+    private fun quarantine(file: File, reason: String): Snapshot? {
+        val target = File(file.parentFile, file.name + ".corrupt." + System.currentTimeMillis())
+        val moved = runCatching { file.renameTo(target) }.getOrDefault(false)
+        Log.w(TAG, "pending storage quarantined ($reason): ${file.path} -> ${target.path} moved=$moved")
+        return null
     }
 
     /**
