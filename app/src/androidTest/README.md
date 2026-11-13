@@ -33,8 +33,6 @@ TYRANOR_APPLICATION_ID=com.tyranor.next.playtimetest ./gradlew :app:assembleDebu
 adb shell am instrument -w -r -e class com.tyranor.next.core.game.playtime.GamePlaytimeDeviceTest -e playtime_test true com.tyranor.next.playtimetest.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-统一启动加载组件、Web 与真实 Ethornell 私有宿主的初轮设备结果为 9/9 通过；完整命令、身份、截图及未覆盖项见[统一加载验收记录](../../../docs/统一引擎宿主启动加载界面验收记录.md)。
-
 ## Web 宿主启动遮罩设备回归
 
 `EngineStartupWebDeviceTest` 使用随机目录下的原创 HTML 夹具，分别启动真实私有 `:tyrano` 与产品 MV v1 选择的 `:rpgmaker` Activity；RPG 夹具加载宿主提供的 MV v1 核心脚本及依赖，但不包含游戏数据或商业内容。夹具包含故意缺失的子资源并只触发一次页面 reload。测试通过 accessibility 树确认页面内容呈现、子资源 404 不导致启动失败，且同一 Activity reload 不重新显示首次启动遮罩。测试只在显式隔离包与 opt-in 下运行，并仅删除夹具及结束隔离宿主任务/进程；它验证宿主加载路径，不宣称 RPG Maker 游戏兼容性。
@@ -232,4 +230,4 @@ failed identity_sha256=<64hex> token=<session token>
 
 2026-10-27 本轮仅编译该测试和普通 AndroidTest APK，按用户要求未连接设备、未执行新增 UI 用例；原有截图与设备报告不代表这两个新增用例已执行。
 
-固定横屏设备回归另含 `com.core.engine.EngineOrientationDeviceTest`（安装后20个宿主清单与Android 16属性）和 `com.tyranor.next.core.engine.external.ExternalEngineOrientationDeviceTest`（三个外置Intent方向请求）。两项均要求隔离包 `com.tyranor.next.startuptest` 与 `startup_test=true`；不启动外置APK，不保证其应用方向参数。结果见统一加载验收记录第7节。
+固定横屏设备回归另含 `com.core.engine.EngineOrientationDeviceTest`（安装后20个宿主清单与Android 16属性）和 `com.tyranor.next.core.engine.external.ExternalEngineOrientationDeviceTest`（三个外置Intent方向请求）。两项均要求隔离包 `com.tyranor.next.startuptest` 与 `startup_test=true`；不启动外置APK，不保证其应用方向参数。
