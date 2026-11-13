@@ -28,7 +28,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
@@ -173,7 +173,7 @@ final class GameRunner {
         void error(Throwable reason);
     }
     private final HandlerThread worker=new HandlerThread("SystemNNN-Game");
-    private final AtomicLong pendingPlaneToken=new AtomicLong();
+    private final AtomicReference<MessagePlaneToken> pendingPlaneToken=new AtomicReference<>();
     private final Handler tasks;
     private final File root,legacySource,readFile,chartDirectory,legacyFiles;
     private final GameSavePaths savePaths;
@@ -2087,12 +2087,13 @@ final class GameRunner {
         }
         return pictures;
     }
-    long takePlaneToken(){return pendingPlaneToken.getAndSet(0);}
-    private void offerPlaneToken(long token){
-        if(token<=0)return;
-        if(closing){NativeGame.releaseMessagePlane(token);return;}
-        long stale=pendingPlaneToken.getAndSet(token);
-        if(stale>0)NativeGame.releaseMessagePlane(stale);
+    MessagePlaneToken takePlaneToken(){return pendingPlaneToken.getAndSet(null);}
+    private void offerPlaneToken(long value){
+        MessagePlaneToken token=MessagePlaneToken.adopt(value,NativeGame::releaseMessagePlane);
+        if(token==null)return;
+        if(closing){token.close();return;}
+        MessagePlaneToken stale=pendingPlaneToken.getAndSet(token);
+        if(stale!=null)stale.close();
         ui.planeChanged();
     }
     private void resetDialogueDecorations(){
@@ -2284,8 +2285,8 @@ final class GameRunner {
                 return writeReadLines();
             }finally{
                 try{
-                    long unused=takePlaneToken();
-                    if(unused>0)NativeGame.releaseMessagePlane(unused);
+                    MessagePlaneToken unused=takePlaneToken();
+                    if(unused!=null)unused.close();
                     if(handle!=0){NativeGame.close(handle);handle=0;}
                     if(runtime!=null)runtime.close();
                 }finally{

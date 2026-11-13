@@ -1074,7 +1074,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         private final Paint bitmapPaint=new Paint(Paint.FILTER_BITMAP_FLAG);
         private GameRunner owner;
         private GameRunner.Frame frame;
-        private long token;
+        private MessagePlaneToken token;
         private Bitmap bitmap;
         private Canvas canvas;
         private Bitmap floatingBitmap;
@@ -1091,9 +1091,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         void onTokenAvailable(){
             if(runner==null){release();return;}
             if(owner!=runner){release();owner=runner;}
-            long next=runner.takePlaneToken();
-            if(next>0){
-                if(token>0&&token!=next)NativeGame.releaseMessagePlane(token);
+            MessagePlaneToken next=runner.takePlaneToken();
+            if(next!=null){
+                if(token!=null&&token!=next)token.close();
                 token=next;
                 schedulePush();
             }
@@ -1123,13 +1123,13 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             frame=null;
             onTokenAvailable();
             dirty=false;
-            if(token>0)NativeGame.pushMessagePlane(token,null,new int[6],false);
+            if(token!=null)NativeGame.pushMessagePlane(token.value(),null,new int[6],false);
         }
         void release(){
             if(stage!=null)stage.removeCallbacks(animationFlush);
             ui.removeCallbacks(animationFlush);
-            if(token>0)NativeGame.releaseMessagePlane(token);
-            token=0;owner=null;frame=null;bitmap=null;canvas=null;floatingBitmap=null;floatingCanvas=null;dirty=false;scheduled=false;
+            if(token!=null)token.close();
+            token=null;owner=null;frame=null;bitmap=null;canvas=null;floatingBitmap=null;floatingCanvas=null;dirty=false;scheduled=false;
         }
         private void ensureLaidOut(View view){
             if(view==null||view.getVisibility()==View.GONE)return;
@@ -1142,11 +1142,11 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         private void pushNow(boolean withCursor){
             onTokenAvailable();
             dirty=false;
-            if(token<=0)return;
+            if(token==null)return;
             boolean storySession=!launchingGame&&titlePanel==null&&moviePlayback==null&&!storyMovieExitActive;
             GameRunner.Frame target=frame;
             if(!storySession||target==null||target.wait==NativeGame.END){
-                NativeGame.pushMessagePlane(token,null,new int[6],false);
+                NativeGame.pushMessagePlane(token.value(),null,new int[6],false);
                 return;
             }
             int choicePage=choices==null?0:choices.page();
@@ -1156,7 +1156,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             boolean drawDialogue=!uiHidden&&dialoguePanel!=null&&dialoguePanel.getVisibility()!=View.GONE;
             boolean drawChoices=!uiHidden&&choices!=null&&choices.getVisibility()!=View.GONE;
             if(!showLongImage&&!drawDialogue&&!drawChoices){
-                NativeGame.pushMessagePlane(token,null,key,!uiHidden);
+                NativeGame.pushMessagePlane(token.value(),null,key,!uiHidden);
                 return;
             }
             boolean liveCursor=withCursor&&panelsOpen==0&&preparingPanel==null&&!uiHidden;
@@ -1185,7 +1185,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                     if(drawDialogue)dialoguePanel.drawFloating(floatingCanvas);
                     if(drawChoices)choices.drawFloating(floatingCanvas);
                 }
-                NativeGame.pushStoryPlanes(token,bitmap,drawFloating?floatingBitmap:null,key,!uiHidden);
+                NativeGame.pushStoryPlanes(token.value(),bitmap,drawFloating?floatingBitmap:null,key,!uiHidden);
                 if(liveCursor&&(drawDialogue&&dialoguePanel.animating()||drawChoices&&choices.animating()))schedulePush();
             }catch(RuntimeException|OutOfMemoryError e){
                 Log.w("SystemNNN","Unable to rasterize story UI plane",e);
