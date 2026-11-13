@@ -1,8 +1,15 @@
 package com.tyranor.next.ui.home
 
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import com.tyranor.next.ui.game.openPerGameSettingsFromSheet
+import com.tyranor.next.ui.game.removeRecentGame
+import com.tyranor.next.ui.game.gameRemovalDust
+import com.tyranor.next.ui.common.motion.CoverSurface
+import com.tyranor.next.ui.common.motion.listItemMotion
+import com.tyranor.next.ui.common.motion.ListItemPlacement
+import com.tyranor.next.ui.common.motion.CardPagerIndicator
+import com.tyranor.next.ui.common.motion.PagerCardLayers
+import com.tyranor.next.ui.common.motion.ParallaxCardPager
+import com.tyranor.next.ui.common.motion.rememberCoverReveal
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -14,7 +21,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,10 +31,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Icon
@@ -38,28 +45,28 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -84,13 +91,27 @@ import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.boxBlurArgb
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.isWideScreen
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.BlurVisibility
+import com.tyranor.next.ui.common.motion.ExpandVisibility
+import com.tyranor.next.ui.common.motion.ScrollJellyState
+import com.tyranor.next.ui.common.motion.rememberLastNonNull
+import com.tyranor.next.ui.common.motion.rememberScrollJellyState
+import com.tyranor.next.ui.common.motion.scrollJelly
+import com.tyranor.next.ui.common.motion.scrollJellyHost
+import com.tyranor.next.ui.common.motion.dissolve
+import com.tyranor.next.ui.common.motion.dissolveTint
+import com.tyranor.next.ui.common.motion.rememberDissolveState
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.game.GameActionsSheet
 import com.tyranor.next.ui.game.GameQuickActionsDialog
 import com.tyranor.next.ui.game.coverColor
 import com.tyranor.next.ui.game.rememberCoverBitmap
-import com.tyranor.next.ui.game.startActivityWithPageTransition
 import com.tyranor.next.ui.main.MainLibraryUiState
-import com.tyranor.next.ui.settings.PerGameSettingsActivity
+import com.tyranor.next.ui.common.collectSettingAsState
+import com.tyranor.next.ui.common.motion.DelayedProgress
 import kotlinx.coroutines.CancellationException
 
 /** 最近打开展示策略：竖屏 2 列 × 5 行 = 10 张；横屏/大屏 5 列 × 3 行 = 15 张。 */
@@ -99,6 +120,10 @@ private const val RECENT_COLUMNS_WIDE = 5
 private const val RECENT_VISIBLE_PORTRAIT = 10
 private const val RECENT_VISIBLE_WIDE = 15
 
+/**
+ * Hosts the selected native or web home and shares game actions and launch gates with the library.
+ * The active-tab flag controls the web home's lifecycle while the main tabs remain composed.
+ */
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
@@ -113,7 +138,7 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val quickLaunch = libraryState.quickLaunch
-    val homeStyle by AppSettingsStore.homeStyleState.collectAsState()
+    val homeStyle by AppSettingsStore.homeStyleState.collectSettingAsState()
     LaunchedEffect(isActive, homeStyle) {
         if (!isActive || homeStyle == AppSettingsStore.HOME_STYLE_WEB) return@LaunchedEffect
         try {
@@ -128,7 +153,7 @@ fun HomeScreen(
     DisposableEffect(homeStyle, isActive) {
         onDispose { onCoachAnchorChanged(Rect.Zero) }
     }
-    val homeWebUrl by AppSettingsStore.homeWebUrlState.collectAsState()
+    val homeWebUrl by AppSettingsStore.homeWebUrlState.collectSettingAsState()
     var webReloadSignal by remember { mutableIntStateOf(0) }
     var selectedGameUri by rememberSaveable { mutableStateOf<String?>(null) }
     val selectedGame = remember(libraryState.games, selectedGameUri) {
@@ -164,6 +189,7 @@ fun HomeScreen(
                         painterResource(R.drawable.ic_refresh),
                         stringResource(R.string.home_web_refresh_content_description),
                         MaterialTheme.colorScheme.primary,
+                        spin = true,
                     ) { webReloadSignal++ }
                 },
             )
@@ -201,8 +227,7 @@ fun HomeScreen(
                 onDismiss = { selectedGameUri = null },
                 onGameUpdated = { replaceGame(it) },
                 onEngineSettings = {
-                    startActivityWithPageTransition(context, PerGameSettingsActivity.createIntent(context, game))
-                    selectedGameUri = null
+                    openPerGameSettingsFromSheet(context, game) { selectedGameUri = null }
                 },
             )
         }
@@ -242,87 +267,108 @@ private fun NativeHomeContent(
     val recentGames = libraryState.recentGames.take(
         if (wideScreen) RECENT_VISIBLE_WIDE else RECENT_VISIBLE_PORTRAIT,
     )
+    // 滚动果冻：快速滚动时卡片沿滚动方向轻微拉长，停下 Q 弹回原样（静止 = 原样；「普通」档不挂节点）
+    val scrollJelly = rememberScrollJellyState()
     Column(modifier.fillMaxSize()) {
         AppTopBar(title = stringResource(R.string.nav_home))
 
-        // ===== 快捷启动卡与最近打开列表合并为同一个滚动列表 =====
-        // 水平内边距统一由 contentPadding 提供（覆盖快捷启动区与列表行）
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+        // ===== 快捷启动卡与最近打开列表合并为同一个滚动网格 =====
+        // 快捷启动卡始终是同一个网格项（key 不变）：加载中 / 空态 / 有记录之间切换时它纹丝不动，只有下面的内容换。
+        // （此前拆成「有记录用网格、没记录用列表」两套容器，快捷启动卡各渲染一份，删光记录时新旧容器交叉淡入淡出，
+        //  快捷启动卡会跟着晃动。）
+        val topPadding = 4.dp
+        val bottomPadding = 16.dp + glassNavBottomInset()
+        val itemSpacing = 10.dp
+        val density = LocalDensity.current
+        var viewportHeightPx by remember { mutableIntStateOf(0) }
+        var quickHeightPx by remember { mutableIntStateOf(0) }
+        // 加载中 / 空态占满快捷启动卡之外的剩余高度并居中（网格项没有 fillParentMaxSize，按实测高度计算）
+        val fillerHeight = with(density) {
+            (viewportHeightPx - quickHeightPx).toDp() - topPadding - bottomPadding - itemSpacing
+        }.coerceAtLeast(0.dp)
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(recentColumns),
+            modifier = Modifier
+                .fillMaxSize()
+                .onSizeChanged { viewportHeightPx = it.height }
+                .scrollJellyHost(scrollJelly),
             contentPadding = PaddingValues(
                 start = 12.dp,
                 end = 12.dp,
-                top = 4.dp,
-                bottom = 16.dp + glassNavBottomInset(),
+                top = topPadding,
+                bottom = bottomPadding,
             ),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(itemSpacing),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            if (!libraryState.loaded) {
-                // 加载中：快捷启动区（空态）在顶部，指示器占满剩余空间居中
-                item(key = "loading", contentType = "loading") {
-                    Column(Modifier.fillParentMaxSize()) {
-                        QuickLaunchSection(
-                            quickLaunch = quickLaunch,
-                            onGameClick = onGameClick,
-                            onGameLongClick = onGameLongClick,
-                            onCoachAnchorChanged = onCoachAnchorChanged,
-                            isActive = isActive,
-                        )
-                        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator()
-                        }
-                    }
-                }
-            } else if (recentGames.isEmpty()) {
-                item(key = "recent_empty", contentType = "recent_empty") {
-                    Column(Modifier.fillParentMaxSize()) {
-                        QuickLaunchSection(
-                            quickLaunch = quickLaunch,
-                            onGameClick = onGameClick,
-                            onGameLongClick = onGameLongClick,
-                            onCoachAnchorChanged = onCoachAnchorChanged,
-                            isActive = isActive,
-                        )
-                        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                            Text(
-                                stringResource(R.string.home_recent_empty),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = PageSecondaryTextColor,
-                            )
-                        }
-                    }
-                }
-            } else {
-                item(key = "quick_launch", contentType = "quick_launch") {
-                    QuickLaunchSection(
-                        quickLaunch = quickLaunch,
-                        onGameClick = onGameClick,
-                        onGameLongClick = onGameLongClick,
-                        onCoachAnchorChanged = onCoachAnchorChanged,
-                        isActive = isActive,
-                    )
-                }
-                items(
-                    items = recentGames.chunked(recentColumns),
-                    key = { row -> row.first().uri },
-                    contentType = { "recent_row" },
-                ) { row ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+            item(
+                key = "quick_launch",
+                span = { GridItemSpan(maxLineSpan) },
+                contentType = "quick_launch",
+            ) {
+                QuickLaunchSection(
+                    modifier = listItemMotion().onSizeChanged { quickHeightPx = it.height },
+                    quickLaunch = quickLaunch,
+                    onGameClick = onGameClick,
+                    onGameLongClick = onGameLongClick,
+                    onCoachAnchorChanged = onCoachAnchorChanged,
+                    isActive = isActive,
+                    jelly = scrollJelly,
+                )
+            }
+            when {
+                !libraryState.loaded -> item(
+                    key = "loading",
+                    span = { GridItemSpan(maxLineSpan) },
+                    contentType = "loading",
+                ) {
+                    // 加载中 ↔ 空态 ↔ 列表互相替换时淡入淡出，而不是瞬间换掉
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(fillerHeight)
+                            .then(listItemMotion())
+                            .staggeredEntrance(1),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        row.forEach { game ->
-                            RecentGameCard(
-                                game = game,
-                                modifier = Modifier.weight(1f),
-                                onClick = { onGameClick(game) },
-                                onLongClick = { onRecentRemoved(game) },
-                            )
-                        }
-                        repeat(recentColumns - row.size) {
-                            Spacer(Modifier.weight(1f))
-                        }
+                        DelayedProgress { CircularProgressIndicator() }
                     }
+                }
+                recentGames.isEmpty() -> item(
+                    key = "recent_empty",
+                    span = { GridItemSpan(maxLineSpan) },
+                    contentType = "recent_empty",
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(fillerHeight)
+                            .then(listItemMotion())
+                            .staggeredEntrance(1),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            stringResource(R.string.home_recent_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = PageSecondaryTextColor,
+                        )
+                    }
+                }
+                else -> gridItemsIndexed(
+                    items = recentGames,
+                    key = { _, game -> game.uri },
+                    contentType = { _, _ -> "recent_card" },
+                ) { index, game ->
+                    RecentGameCard(
+                        game = game,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(listItemMotion(ListItemPlacement.Reflow))
+                            .staggeredEntrance(index / recentColumns + 1),
+                        onClick = { onGameClick(game) },
+                        onLongClick = { onRecentRemoved(game) },
+                        jelly = scrollJelly,
+                    )
                 }
             }
         }
@@ -338,11 +384,13 @@ private fun QuickLaunchSection(
     quickLaunch: List<ScanGame>,
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
+    modifier: Modifier = Modifier,
     onCoachAnchorChanged: (Rect) -> Unit = {},
     isActive: Boolean = true,
+    jelly: ScrollJellyState? = null,
 ) {
     BoxWithConstraints(
-        modifier = Modifier.fillMaxWidth().coachAnchor(isActive, onCoachAnchorChanged),
+        modifier = modifier.fillMaxWidth().staggeredEntrance(0).coachAnchor(isActive, onCoachAnchorChanged),
         contentAlignment = Alignment.Center,
     ) {
         if (maxWidth >= 600.dp) {
@@ -355,37 +403,48 @@ private fun QuickLaunchSection(
             ) {
                 repeat(3) { i ->
                     val game = quickLaunch.getOrNull(i)
-                    // 按游戏 uri 做 key：删除卡片后槽位状态跟随游戏而不是按位置复用，
+                    // 卡位模糊替换：设为 / 取消快捷启动时，空槽与游戏卡互相模糊替换而不是瞬间换掉。
+                    // 内容按游戏 uri 区分（contentKey）：删除卡片后状态仍跟随游戏而不是按位置复用，
                     // 避免复用被删卡的封面 MutableState（上一个封面串到另一张卡）。
-                    key(game?.uri ?: "quick_launch_empty_$i") {
-                        if (game != null) {
+                    BlurCrossfade(
+                        targetState = game,
+                        modifier = Modifier.weight(1f),
+                        contentKey = { it?.uri ?: "quick_launch_empty_$i" },
+                        label = "quickLaunchSlot$i",
+                    ) { slotGame ->
+                        if (slotGame != null) {
                             QuickLaunchCard(
-                                game = game,
-                                onClick = { onGameClick(game) },
-                                onLongClick = { onGameLongClick(game) },
-                                modifier = Modifier.weight(1f),
+                                game = slotGame,
+                                onClick = { onGameClick(slotGame) },
+                                onLongClick = { onGameLongClick(slotGame) },
+                                modifier = Modifier.fillMaxWidth(),
+                                jelly = jelly,
                             )
                         } else {
-                            QuickLaunchEmptyCard(modifier = Modifier.weight(1f))
+                            QuickLaunchEmptyCard(modifier = Modifier.fillMaxWidth())
                         }
                     }
                 }
             }
-        } else if (quickLaunch.isEmpty()) {
+        } else {
+            // 空态（整张白卡 + 加号）与快捷启动卡互相模糊替换：第一次设为快捷启动 / 删光最后一张时不瞬间切换。
+            // 退场中的一侧拿到的是它自己的旧列表，收起过程中内容不会先空掉。
+            BlurCrossfade(
+                targetState = quickLaunch,
+                contentAlignment = Alignment.Center,
+                contentKey = { it.isEmpty() },
+                label = "quickLaunchCompact",
+            ) { shownQuickLaunch ->
+        if (shownQuickLaunch.isEmpty()) {
             QuickLaunchEmptyCard(modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth())
         } else {
-            val pagerState = rememberPagerState { quickLaunch.size }
+            val pagerState = rememberPagerState { shownQuickLaunch.size }
             Column(
                 modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier.fillMaxWidth(),
-                    pageSpacing = 10.dp,
-                    verticalAlignment = Alignment.Top,
-                ) { page ->
-                    val game = quickLaunch.getOrNull(page) ?: return@HorizontalPager
+                ParallaxCardPager(pagerState, Modifier.fillMaxWidth()) { page, layers ->
+                    val game = shownQuickLaunch.getOrNull(page) ?: return@ParallaxCardPager
                     // 按游戏 uri 做 key：删除卡片后页面状态跟随游戏而不是按位置复用，
                     // 避免复用被删卡的封面 MutableState（上一个封面串到另一张卡）。
                     key(game.uri) {
@@ -393,69 +452,25 @@ private fun QuickLaunchSection(
                             game = game,
                             onClick = { onGameClick(game) },
                             onLongClick = { onGameLongClick(game) },
-                            modifier = Modifier.fillMaxWidth(),
+                            layers = layers,
+                            modifier = layers.depth(Modifier.fillMaxWidth()),
+                            jelly = jelly,
                         )
                     }
                 }
                 // 口径：0/1 项不显示指示；2–3 项在卡片下方显示「当前页胶囊 + 其余圆点」
-                if (quickLaunch.size > 1) {
-                    QuickLaunchPagerIndicator(
-                        pageCount = quickLaunch.size,
-                        currentPage = pagerState.currentPage,
+                // 出现 / 消失时高度弹簧展开收起，收起过程中仍画最后一次的页数（不会先空掉）
+                val indicatorPageCount = rememberLastNonNull(shownQuickLaunch.size.takeIf { it > 1 })
+                ExpandVisibility(visible = shownQuickLaunch.size > 1, label = "quickLaunchIndicator") {
+                    CardPagerIndicator(
+                        pageCount = indicatorPageCount ?: shownQuickLaunch.size,
+                        pagerState = pagerState,
                         modifier = Modifier.padding(top = 10.dp),
                     )
                 }
             }
         }
-    }
-}
-
-/**
- * 快捷启动翻页指示：当前页为加宽胶囊（主题色实底 + 同色柔光），其余为半透明小圆点。
- * 只在可滑动（2–3 项）的小屏单卡形态下绘制于卡片下方；大屏三卡并排与 0/1 项不显示。
- */
-@Composable
-private fun QuickLaunchPagerIndicator(
-    pageCount: Int,
-    currentPage: Int,
-    modifier: Modifier = Modifier,
-) {
-    if (pageCount <= 1) return
-    val activePage = currentPage.coerceIn(0, pageCount - 1)
-    val primary = MaterialTheme.colorScheme.primary
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        repeat(pageCount) { index ->
-            val selected = index == activePage
-            val width by animateDpAsState(
-                targetValue = if (selected) 24.dp else 8.dp,
-                animationSpec = tween(durationMillis = 200),
-                label = "quickLaunchIndicatorWidth$index",
-            )
-            val color = if (selected) primary else primary.copy(alpha = 0.32f)
-            Box(
-                modifier = Modifier
-                    .height(8.dp)
-                    .width(width)
-                    .then(
-                        if (selected) {
-                            Modifier.shadow(
-                                elevation = 6.dp,
-                                shape = CircleShape,
-                                clip = false,
-                                ambientColor = color,
-                                spotColor = color,
-                            )
-                        } else {
-                            Modifier
-                        },
-                    )
-                    .clip(CircleShape)
-                    .background(color),
-            )
+            }
         }
     }
 }
@@ -471,6 +486,8 @@ private fun QuickLaunchCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
+    jelly: ScrollJellyState? = null,
+    layers: PagerCardLayers = PagerCardLayers.Static,
 ) {
     val pressModifier = if (onLongClick != null) {
         Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
@@ -479,6 +496,9 @@ private fun QuickLaunchCard(
     }
     BoxWithConstraints(
         modifier = modifier
+            .pressSquish(scale = PressSquishDefaults.CardScale, charge = onLongClick != null)
+            // 滚动果冻：快速滚动时沿滚动方向轻微拉长，停下回弹（静止 = 原样）
+            .scrollJelly(jelly)
             .height(172.dp)
             .clip(AppComponentShape)
             .background(QuickLaunchFallback)
@@ -493,6 +513,8 @@ private fun QuickLaunchCard(
         }
         val cardMaxWidth = maxWidth
         val coverBitmap by rememberCoverBitmap(game.coverUri)
+        // 背景封面加载完成后淡入
+        val backdropReveal = rememberCoverReveal(coverBitmap != null, CoverSurface.QuickLaunchBackdrop)
         coverBitmap?.let { bmp ->
             // 封面缩到 40px 再拉伸铺满：API 31+ 由 Modifier.blur（RenderEffect）做真高斯；
             // API 26-30 无 RenderEffect，若只放大 40px 会呈马赛克（issue #76），
@@ -520,16 +542,13 @@ private fun QuickLaunchCard(
                 bitmap = blurred,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.matchParentSize().blur(24.dp),
+                modifier = layers.backdrop(Modifier.matchParentSize()) { backdropReveal.alpha }.blur(24.dp),
             )
             // 黑色压暗遮罩：保证白色文字可读
-            Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.25f)))
+            Box(layers.backdrop(Modifier.matchParentSize()) { backdropReveal.alpha }.background(Color.Black.copy(alpha = 0.25f)))
         }
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .then(pressModifier)
-                .padding(20.dp),
+            modifier = layers.foreground(Modifier.fillMaxSize().then(pressModifier).padding(20.dp)),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth().weight(1f),
@@ -568,20 +587,29 @@ private fun QuickLaunchCard(
                             .background(Color.White.copy(alpha = 0.18f)),
                         contentAlignment = Alignment.Center,
                     ) {
-                        val bmp = coverBitmap
-                        if (bmp != null) {
-                            Image(
-                                bitmap = bmp,
-                                contentDescription = game.title,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        } else {
-                            Text(
-                                "Tyranor",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.White.copy(alpha = 0.7f),
-                            )
+                        BlurCrossfade(
+                            targetState = coverBitmap,
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                            contentKey = { it != null },
+                        ) { bmp ->
+                            if (bmp != null) {
+                                Image(
+                                    bitmap = bmp,
+                                    contentDescription = game.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            } else {
+                                // 替换容器会把内容撑满封面位：外包一层居中，保持原先居中的占位文字
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Text(
+                                        "Tyranor",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = Color.White.copy(alpha = 0.7f),
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -638,7 +666,11 @@ private fun RecentGameCard(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    jelly: ScrollJellyState? = null,
 ) {
+    // 长按删除：「增强」档先播放消散（晃动 → 缩小变红 → 化成碎屑），播完再移除这条记录；「普通」档直接移除
+    val dissolveScope = rememberCoroutineScope()
+    val dissolve = rememberDissolveState()
     val playtimeEngine = RuntimeModuleBindings.builtInSystemNnn(game).engine
     val showPlaytime = GamePlaytimeRepository.supports(playtimeEngine)
     val titleStyle = MaterialTheme.typography.bodyMedium
@@ -647,20 +679,21 @@ private fun RecentGameCard(
     val compactStyle = titleStyle.copy(lineHeight = titleStyle.fontSize)
     val coverBitmap by rememberCoverBitmap(game.coverUri)
     val bmp = coverBitmap
-    val coverAlpha by animateFloatAsState(
-        targetValue = if (bmp != null) 1f else 0f,
-        animationSpec = tween(durationMillis = 300),
-        label = "recentCoverFadeIn",
-    )
+    val reveal = rememberCoverReveal(bmp != null, CoverSurface.Recent)
     Box(
         modifier
+            .gameRemovalDust(dissolve)
+            .pressSquish(scale = PressSquishDefaults.CardScale, charge = true)
+            // 滚动果冻：快速滚动时沿滚动方向轻微拉长，停下回弹（静止 = 原样）
+            .scrollJelly(jelly)
             .aspectRatio(1f)
             .clip(AppComponentShape)
+            .dissolveTint(dissolve, MaterialTheme.colorScheme.error)
             .background(game.engine.coverColor())
             .glassBorder()
             .combinedClickable(
                 onClick = onClick,
-                onLongClick = onLongClick,
+                onLongClick = { dissolveScope.removeRecentGame(dissolve, onLongClick) },
                 onLongClickLabel = stringResource(R.string.common_delete),
             ),
         contentAlignment = Alignment.Center,
@@ -670,9 +703,11 @@ private fun RecentGameCard(
                 bitmap = bmp,
                 contentDescription = game.title,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = coverAlpha },
+                modifier = reveal.image(Modifier.fillMaxSize()),
             )
-        } else {
+        }
+        // 无封面占位字：封面到达时原地模糊退场（与封面淡入交叠），而不是瞬间消失；「普通」档即时切换
+        BlurVisibility(visible = bmp == null, label = "recentCoverPlaceholder") {
             Text(
                 "Tyranor",
                 style = MaterialTheme.typography.bodyMedium,

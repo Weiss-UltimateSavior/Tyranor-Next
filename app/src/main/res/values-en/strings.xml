@@ -40,6 +40,9 @@
     <string name="settings_appearance_style_default">Default</string>
     <string name="settings_appearance_style_glass">Retro glass</string>
     <string name="settings_appearance_style_milk">White mist glass</string>
+    <string name="settings_motion_mode">Interface motion</string>
+    <string name="settings_motion_enhanced">Enhanced</string>
+    <string name="settings_motion_normal">Standard</string>
     <string name="settings_app_corner_radius">App corner radius</string>
     <string name="settings_app_corner_radius_value">%1$d dp</string>
     <string name="settings_disabled_in_glass_style">Unavailable in glass appearance themes</string>
@@ -949,7 +952,7 @@
     <string name="onboarding_coach_home_web_title">Explore the web home</string>
     <string name="onboarding_coach_home_web_body">Your configured web home is shown here.</string>
     <string name="onboarding_coach_games_title">Add your games</string>
-    <string name="onboarding_coach_games_body">Use Add game to choose and save a game folder. It is scanned after you add it.</string>
+    <string name="onboarding_coach_games_body">Use Add game to add a PC or Android game manually. To scan a folder, use Add folder in an empty library or Game folders in Settings.</string>
     <string name="onboarding_coach_games_search_title">Find a game</string>
     <string name="onboarding_coach_games_search_body">Use search to filter the games in your library by name.</string>
     <string name="onboarding_coach_games_cover_title">Fill in covers</string>

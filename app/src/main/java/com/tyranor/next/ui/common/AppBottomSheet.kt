@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetValue
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -31,6 +31,18 @@ import com.tyranor.next.theme.MilkGlassPanelBackground
 import com.tyranor.next.theme.PageGrey
 import com.tyranor.next.theme.SheetScrimColor
 import com.tyranor.next.theme.TextColor
+import com.tyranor.next.ui.common.motion.BindBackdrop
+import com.tyranor.next.ui.common.motion.BindWindowScrim
+import com.tyranor.next.ui.common.motion.LocalSheetBackdrop
+import com.tyranor.next.ui.common.motion.MotionSheetController
+import com.tyranor.next.ui.common.motion.MotionSheetEffects
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.motionSheetDrag
+import com.tyranor.next.ui.common.motion.motionSheetSurface
+import com.tyranor.next.ui.common.motion.nativeScrim
+import com.tyranor.next.ui.common.motion.rememberMotionSheetController
+import com.tyranor.next.ui.common.motion.rememberMotionSheetState
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 
 internal val LocalAppSheetContent = staticCompositionLocalOf { false }
 
@@ -43,7 +55,8 @@ internal val LocalAppSheetContent = staticCompositionLocalOf { false }
  *
  * 两处刻意关掉 M3 默认行为：
  * - **关闭手势固定关闭**：M3 默认「位移 > 56dp 或速度 > 125dp/s」即关闭，用户快速滑动内容时
- *   剩余手势/惯性会转交抽屉，极易误关（issue #27）。关闭统一走遮罩或返回键。
+ *   剩余手势/惯性会转交抽屉，极易误关（issue #27）。普通档走遮罩或返回键；
+ *   增强档由统一控制器处理跟手下拉，且所有关闭请求均先经过业务守卫。
  * - **把手不可点**：M3 会给 `dragHandle` 槽套 clickable，Expanded 状态下点按直接关闭，
  *   与上一条冲突；这里置空槽位、在内容首位自绘把手。
  *
@@ -55,14 +68,20 @@ internal val LocalAppSheetContent = staticCompositionLocalOf { false }
 internal fun AppBottomSheet(
     onDismissRequest: () -> Unit,
     confirmValueChange: (SheetValue) -> Boolean = { true },
+    controller: MotionSheetController = rememberMotionSheetController(),
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val sheetState = rememberMotionSheetState(controller, confirmValueChange)
+    LocalSheetBackdrop.current?.let { controller.BindBackdrop(it) }
     ModalBottomSheet(
-        onDismissRequest = onDismissRequest,
-        sheetState = rememberModalBottomSheetState(
-            skipPartiallyExpanded = true,
-            confirmValueChange = confirmValueChange,
-        ),
+        onDismissRequest = {
+            if (controller.canClose()) {
+                if (controller.enhanced) controller.close() else onDismissRequest()
+            }
+        },
+        modifier = Modifier.motionSheetSurface(controller, SheetScrimColor),
+        sheetState = sheetState,
+        properties = ModalBottomSheetProperties(shouldDismissOnBackPress = !controller.enhanced),
         // 与统一弹窗共用最大宽度，避免横屏/大屏拉伸过宽
         sheetMaxWidth = AppDialogMaxWidth,
         sheetGesturesEnabled = false,
@@ -73,12 +92,13 @@ internal fun AppBottomSheet(
             else -> PageGrey
         },
         contentColor = TextColor,
-        scrimColor = SheetScrimColor,
+        scrimColor = controller.nativeScrim(SheetScrimColor),
         contentWindowInsets = { WindowInsets(0.dp) },
         // 顶部圆角与组件统一圆角保持一致
         shape = AppSheetTopShape,
         dragHandle = null,
     ) {
+        controller.BindWindowScrim(SheetScrimColor)
         // 竖屏保留更多页面露出；横屏按高度比例给内容留空间。短屏不强制抬高到最小值，
         // 避免内容超过可用视口；滚动区会在剩余高度内滚动。
         val configuration = LocalConfiguration.current
@@ -86,20 +106,23 @@ internal fun AppBottomSheet(
             screenHeightDp = configuration.screenHeightDp,
             isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
         )
-        Box(Modifier.fillMaxWidth().clip(AppSheetTopShape)) {
-            if (AppThemeColors.isMilkGlass) {
-                MilkGlassPanelBackground(Modifier.matchParentSize())
-            }
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = sheetMaxHeight)
-                    // 导航栏间距统一在这里加，调用方内容尾部不要再加一次
-                    .navigationBarsPadding()
-                    .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)),
-            ) {
-                AppSheetDragHandle(showGlassTopBorder = true)
-                CompositionLocalProvider(LocalAppSheetContent provides true) { content() }
+        MotionSheetEffects(controller, onDismissRequest)
+        ProvideEntrance {
+            Box(Modifier.fillMaxWidth().skipEntranceOnDrag().motionSheetDrag(controller).clip(AppSheetTopShape)) {
+                if (AppThemeColors.isMilkGlass) {
+                    MilkGlassPanelBackground(Modifier.matchParentSize())
+                }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = sheetMaxHeight)
+                        // 导航栏间距统一在这里加，调用方内容尾部不要再加一次
+                        .navigationBarsPadding()
+                        .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)),
+                ) {
+                    AppSheetDragHandle(showGlassTopBorder = true)
+                    CompositionLocalProvider(LocalAppSheetContent provides true) { content() }
+                }
             }
         }
     }

@@ -40,6 +40,9 @@
     <string name="settings_appearance_style_default">デフォルト</string>
     <string name="settings_appearance_style_glass">レトロガラス</string>
     <string name="settings_appearance_style_milk">白霧ガラス</string>
+    <string name="settings_motion_mode">画面のアニメーション</string>
+    <string name="settings_motion_enhanced">強化</string>
+    <string name="settings_motion_normal">標準</string>
     <string name="settings_app_corner_radius">アプリの角丸調整</string>
     <string name="settings_app_corner_radius_value">%1$d dp</string>
     <string name="settings_disabled_in_glass_style">ガラス外観テーマでは使用できません</string>
@@ -949,7 +952,7 @@
     <string name="onboarding_coach_home_web_title">ウェブホームを見る</string>
     <string name="onboarding_coach_home_web_body">設定したウェブホームをここに表示します。</string>
     <string name="onboarding_coach_games_title">ゲームを追加</string>
-    <string name="onboarding_coach_games_body">「ゲームを追加」でゲームフォルダーを選択して保存します。追加後に自動でスキャンされます。</string>
+    <string name="onboarding_coach_games_body">「ゲームを追加」から PC ゲームまたは Android ゲームを手動で追加できます。フォルダをスキャンするには、空のゲーム一覧の「フォルダを追加」、または設定の「ゲームフォルダを追加」を使用します。</string>
     <string name="onboarding_coach_games_search_title">ゲームを探す</string>
     <string name="onboarding_coach_games_search_body">検索欄でライブラリ内のゲームを名前から絞り込めます。</string>
     <string name="onboarding_coach_games_cover_title">カバーを補完</string>

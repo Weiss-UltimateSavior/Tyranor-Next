@@ -40,6 +40,9 @@
     <string name="settings_appearance_style_default">默认</string>
     <string name="settings_appearance_style_glass">复古玻璃</string>
     <string name="settings_appearance_style_milk">白雾玻璃</string>
+    <string name="settings_motion_mode">界面动效</string>
+    <string name="settings_motion_enhanced">增强</string>
+    <string name="settings_motion_normal">普通</string>
     <string name="settings_app_corner_radius">应用圆角调整</string>
     <string name="settings_app_corner_radius_value">%1$d dp</string>
     <string name="settings_disabled_in_glass_style">玻璃外观主题下不可用</string>
@@ -949,7 +952,7 @@
     <string name="onboarding_coach_home_web_title">浏览网页首页</string>
     <string name="onboarding_coach_home_web_body">这里展示你配置的网页首页内容。</string>
     <string name="onboarding_coach_games_title">添加你的游戏</string>
-    <string name="onboarding_coach_games_body">点击“添加游戏”选择并保存游戏目录；首次添加后会自动扫描。</string>
+    <string name="onboarding_coach_games_body">点击“添加游戏”手动添加 PC 或安卓游戏。扫描目录请使用空游戏库的“添加文件夹”，或前往设置中的“游戏目录添加”。</string>
     <string name="onboarding_coach_games_search_title">查找游戏</string>
     <string name="onboarding_coach_games_search_body">用搜索框按名称筛选游戏库中的内容。</string>
     <string name="onboarding_coach_games_cover_title">补全封面</string>

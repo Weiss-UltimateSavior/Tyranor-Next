@@ -13,6 +13,8 @@ import android.content.pm.PackageManager
  * 可能被重置，属于桌面实现差异，应用侧无法规避。
  */
 object AppIconSwitcher {
+    // Manifest aliases use ${applicationId}; their class names follow the installed
+    // package, including isolated builds. The target Activity keeps the source namespace.
     private const val ALIAS_DEFAULT = ".LauncherDefault"
     private const val ALIAS_CLASSIC = ".LauncherClassic"
 

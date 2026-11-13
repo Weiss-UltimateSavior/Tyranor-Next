@@ -21,8 +21,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,9 +32,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -48,7 +43,6 @@ import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -56,9 +50,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import com.tyranor.next.R
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AppComponentShape
-import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.AppThemeColors
-import com.tyranor.next.theme.CoachOverlayScrim
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.TextColor
@@ -66,6 +58,12 @@ import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.CoachAnchor
 import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.NoRippleTextButton
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.ExpandVisibility
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.bounceOnChange
+import com.tyranor.next.ui.common.motion.rememberEntranceState
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 
 private data class CoachStep(
     @StringRes val title: Int,
@@ -135,6 +133,12 @@ fun OnboardingCoachOverlay(
     val onboardingPaneTitle = stringResource(R.string.onboarding_title)
     var tooltipBounds by remember(safeStep) { mutableStateOf<Rect?>(null) }
     var overlayBoundsInRoot by remember { mutableStateOf<Rect?>(null) }
+    val spotlight = rememberCoachSpotlight()
+    val displayedBodyRes = coachBodyForStep(bodyRes)
+    val cardPlacement = rememberCoachCardPlacement(safeStep)
+    val isLastStep = safeStep == coachSteps.lastIndex
+    // 引导层自己的入场节拍：首次出现时提示卡片与其中各行依次弹入
+    ProvideEntrance(rememberEntranceState()) {
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
@@ -174,107 +178,16 @@ fun OnboardingCoachOverlay(
         val targetTop = targetRect.top.coerceIn(0f, overlayHeightPx)
         val targetRight = targetRect.right.coerceIn(targetLeft, overlayWidthPx)
         val targetBottom = targetRect.bottom.coerceIn(targetTop, overlayHeightPx)
-        val targetWidth = targetRight - targetLeft
-        val targetHeight = targetBottom - targetTop
         val targetLeftDp = with(density) { targetLeft.toDp() }
         val targetTopDp = with(density) { targetTop.toDp() }
         val targetRightDp = with(density) { targetRight.toDp() }
         val targetBottomDp = with(density) { targetBottom.toDp() }
         val targetHeightDp = with(density) { (targetBottom - targetTop).toDp() }
 
-        Canvas(
-            Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    // 让被讲解的真实控件保持清晰，避免整屏灰蒙蒙。
-                    compositingStrategy = CompositingStrategy.Offscreen
-                }
-        ) {
-            // 优先使用真实控件上报的 root 坐标；首帧尚未测量时才使用保守回退值。
-            val cornerRadius = minOf(AppComponentCornerRadius.toPx(), targetHeight * 0.22f)
-            drawRect(CoachOverlayScrim)
-            if (showTarget) {
-                val targetSize = Size(targetWidth, targetHeight)
-                drawRoundRect(
-                    color = Color.Transparent,
-                    topLeft = Offset(targetLeft, targetTop),
-                    size = targetSize,
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius),
-                    blendMode = BlendMode.Clear,
-                )
-                drawRoundRect(
-                    color = primary.copy(alpha = 0.86f),
-                    topLeft = Offset(targetLeft, targetTop),
-                    size = targetSize,
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx()),
-                )
-                tooltipBounds?.let {
-                    val tooltip = Rect(
-                        left = it.left - overlayOrigin.x,
-                        top = it.top - overlayOrigin.y,
-                        right = it.right - overlayOrigin.x,
-                        bottom = it.bottom - overlayOrigin.y,
-                    )
-                    val drawnTarget = Rect(targetLeft, targetTop, targetRight, targetBottom)
-                    val horizontalOverlap = drawnTarget.left <= tooltip.right &&
-                        drawnTarget.right >= tooltip.left
-                    val connector = when {
-                        // 目标在提示卡片上方：两端分别落在提示卡片上边和目标下边，
-                        // 每个端点都限制在自身矩形内，避免连线悬空在卡片外。
-                        drawnTarget.bottom <= tooltip.top -> {
-                            if (horizontalOverlap) {
-                                Offset(tooltip.center.x, tooltip.top) to
-                                    Offset(drawnTarget.center.x, drawnTarget.bottom)
-                            } else {
-                                Offset(
-                                    drawnTarget.center.x.coerceIn(tooltip.left, tooltip.right),
-                                    tooltip.top,
-                                ) to Offset(
-                                    tooltip.center.x.coerceIn(drawnTarget.left, drawnTarget.right),
-                                    drawnTarget.bottom,
-                                )
-                            }
-                        }
-                        // 目标在提示卡片下方。
-                        drawnTarget.top >= tooltip.bottom -> {
-                            if (horizontalOverlap) {
-                                Offset(tooltip.center.x, tooltip.bottom) to
-                                    Offset(drawnTarget.center.x, drawnTarget.top)
-                            } else {
-                                Offset(
-                                    drawnTarget.center.x.coerceIn(tooltip.left, tooltip.right),
-                                    tooltip.bottom,
-                                ) to Offset(
-                                    tooltip.center.x.coerceIn(drawnTarget.left, drawnTarget.right),
-                                    drawnTarget.top,
-                                )
-                            }
-                        }
-                        // 两者高度相交时，按左右关系连接相邻边缘。
-                        drawnTarget.left >= tooltip.right -> {
-                            Offset(tooltip.right, tooltip.center.y) to
-                                Offset(drawnTarget.left, drawnTarget.center.y)
-                        }
-                        drawnTarget.right <= tooltip.left -> {
-                            Offset(tooltip.left, tooltip.center.y) to
-                                Offset(drawnTarget.right, drawnTarget.center.y)
-                        }
-                        else -> {
-                            Offset(tooltip.center.x, tooltip.center.y) to
-                                Offset(drawnTarget.center.x, drawnTarget.center.y)
-                        }
-                    }
-                    drawLine(
-                        color = primary.copy(alpha = 0.72f),
-                        start = connector.first,
-                        end = connector.second,
-                        strokeWidth = 2.5.dp.toPx(),
-                        cap = StrokeCap.Round,
-                    )
-                }
-            }
-        }
+        spotlight.Draw(
+            safeStep, Rect(targetLeft, targetTop, targetRight, targetBottom), showTarget,
+            primary, overlayOrigin, tooltipBounds = { tooltipBounds },
+        )
 
         // Canvas 仍负责绘制整屏遮罩，但不参与命中测试。外围四块拦截区阻止误触，
         // 高亮矩形中间保持为空，事件才能继续传递到真实控件。
@@ -316,37 +229,55 @@ fun OnboardingCoachOverlay(
                 .widthIn(max = 320.dp)
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
-                .padding(top = maxHeight * if (safeStep == 0) 0.40f else 0.54f)
-                .then(if (AppThemeColors.isMilkGlass) Modifier else Modifier.shadow(10.dp, AppComponentShape))
-                .verticalScroll(rememberScrollState())
+                .then(cardPlacement.position(Modifier, maxHeight, overlayHeightPx))
+                // 连接线锚点取「入场图层之外」的最终布局矩形：onGloballyPositioned 只在布局变化时回调，
+                // 若放在入场图层内侧，首次回调会记下隐藏态（下移 / 缩小）的位置并一直沿用
                 .onGloballyPositioned { coordinates ->
                     val bounds = coordinates.boundsInRoot()
                     if (tooltipBounds != bounds) tooltipBounds = bounds
                 }
+                // 首次出现：卡片整体从下方弹入（比卡内各行行程更长，主次分明）
+                .staggeredEntrance(0, distance = 28.dp)
+                // 换步落点反馈：卡片轻轻压一下再回弹
+                .bounceOnChange(safeStep, depth = 0.05f)
+                .then(if (AppThemeColors.isMilkGlass) Modifier else Modifier.shadow(10.dp, AppComponentShape))
+                .verticalScroll(rememberScrollState())
                 .background(NavWhite, AppComponentShape)
                 .glassBorder()
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.staggeredEntrance(1, distance = 12.dp).fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(9.dp).background(primary, CircleShape))
+                // 标题前的主题色圆点：换步时弹一下，提示「这是新的一步」
+                Box(Modifier.bounceOnChange(safeStep, depth = 0.35f).size(9.dp).background(primary, CircleShape))
+                // 标题模糊替换（内容永不瞬间替换）；卡片高度随新内容弹簧过渡
+                BlurCrossfade(targetState = titleRes, label = "coachTitle") { res ->
+                    Text(
+                        stringResource(res),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = coachTextColor,
+                    )
+                }
+            }
+            // 正文晚标题一拍模糊替换（错峰）
+            BlurCrossfade(
+                targetState = displayedBodyRes,
+                modifier = Modifier.staggeredEntrance(2, distance = 12.dp),
+                label = "coachBody",
+            ) { res ->
                 Text(
-                    stringResource(titleRes),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
+                    stringResource(res),
+                    style = MaterialTheme.typography.bodyMedium,
                     color = coachTextColor,
                 )
             }
-            Text(
-                stringResource(bodyRes),
-                style = MaterialTheme.typography.bodyMedium,
-                color = coachTextColor,
-            )
-            if (saveFailed) {
+            // 保存失败提示：展开推开下方内容，重试时原路收回
+            ExpandVisibility(visible = saveFailed, label = "coachSaveFailed") {
                 Text(
                     stringResource(R.string.onboarding_save_failed),
                     style = MaterialTheme.typography.bodyMedium,
@@ -355,7 +286,7 @@ fun OnboardingCoachOverlay(
                 )
             }
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.staggeredEntrance(3, distance = 12.dp).fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
@@ -367,14 +298,7 @@ fun OnboardingCoachOverlay(
                     },
                 ) {
                     coachSteps.indices.forEach { index ->
-                        Box(
-                            Modifier
-                                .size(if (index == safeStep) 16.dp else 7.dp)
-                                .background(
-                                    if (index == safeStep) primary else coachTextColor.copy(alpha = 0.24f),
-                                    CircleShape,
-                                ),
-                        )
+                        CoachProgressDot(index, index == safeStep, primary, coachTextColor.copy(alpha = 0.24f))
                     }
                 }
                 Spacer(Modifier.weight(1f))
@@ -389,10 +313,14 @@ fun OnboardingCoachOverlay(
                 text = stringResource(
                     if (safeStep == coachSteps.lastIndex) R.string.onboarding_start else R.string.onboarding_next,
                 ),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
+                modifier = Modifier
+                    .coachNextAction(isLastStep, saving, saveFailed)
+                    .fillMaxWidth()
+                    .heightIn(min = 44.dp),
                 enabled = !saving,
                 onClick = onNext,
             )
         }
+    }
     }
 }
