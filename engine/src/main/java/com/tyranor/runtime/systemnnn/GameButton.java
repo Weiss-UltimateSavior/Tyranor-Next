@@ -11,7 +11,7 @@ import java.util.function.Consumer;
 import static com.tyranor.runtime.systemnnn.ButtonArt.number;
 
 /** CCommonButton states in the original atlas, with the original click wait. */
-final class GameButton extends View {
+final class GameButton extends StoryPlaneView {
     static final class Spec {
         final SpriteAnimation[] states;
         final String image;

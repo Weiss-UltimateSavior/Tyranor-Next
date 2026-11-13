@@ -10,7 +10,10 @@ import android.view.View;
 import java.util.ArrayList;
 
 /** Original selection window, hit rectangles and animated focus cursor. */
-final class GameChoicePanel extends GameUiPanel {
+final class GameChoicePanel extends GameUiPanel implements StoryPlaneView.Host {
+    private Runnable planeInvalidated;
+    void planeInvalidated(Runnable action){planeInvalidated=action;}
+    @Override public void invalidateStoryPlane(){if(planeInvalidated!=null)planeInvalidated.run();}
     interface Select {void choose(int oneBased);}
     private final GameUiAssets.Config cfg;
     private final DialogueMarkup.Style markup;
@@ -196,7 +199,7 @@ final class GameChoicePanel extends GameUiPanel {
         confirmation=()->{confirmation=null;select.choose(index+1);};
         postDelayed(confirmation,bound(cfg.number("clickingTime",5),0,1000)*(long)frame.frameMs);
     }
-    private final class ChoiceTimer extends View {
+    private final class ChoiceTimer extends StoryPlaneView {
         private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);
         private final Bitmap bar=sprite(cfg.value("fileNameTimer",""));
         private final Bitmap digits=sprite(cfg.value("fileNameTimerTime",""));
@@ -268,7 +271,7 @@ final class GameChoicePanel extends GameUiPanel {
         }
     }
     @Override protected void onDetachedFromWindow(){if(confirmation!=null)removeCallbacks(confirmation);confirmation=null;super.onDetachedFromWindow();}
-    private final class ChoiceRow extends View {
+    private final class ChoiceRow extends StoryPlaneView {
         final int index;
         final String label;
         final DialogueTextView annotated;

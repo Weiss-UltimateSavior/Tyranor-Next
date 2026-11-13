@@ -22,7 +22,10 @@ import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 /** Message and name windows use the game's logical canvas. */
-final class DialoguePanel extends FrameLayout {
+final class DialoguePanel extends FrameLayout implements StoryPlaneView.Host {
+    private Runnable planeInvalidated;
+    void planeInvalidated(Runnable action){planeInvalidated=action;}
+    @Override public void invalidateStoryPlane(){if(planeInvalidated!=null)planeInvalidated.run();}
     final DialogueTextView speaker,body;
     private final WindowView window,nameWindow;
     private final MessageCursor cursor;
@@ -94,8 +97,8 @@ final class DialoguePanel extends FrameLayout {
     }
     private <T extends TextView> T text(T v) {
         v.setSoundEffectsEnabled(false);v.setIncludeFontPadding(false);v.setTextColor(Color.WHITE);
-        // Rasterize story glyphs in the game's pixel grid for both the live view and the software wipe snapshot.
-        v.setLayerType(View.LAYER_TYPE_SOFTWARE,null);
+        // StoryPlane already supplies a software canvas; avoid an extra View bitmap cache.
+        v.setLayerType(View.LAYER_TYPE_NONE,null);
         textShadow(v,Color.BLACK); addView(v,new LayoutParams(1,1)); return v;
     }
     static void textShadow(TextView view,int color){view.setShadowLayer(2,1,1,color);}
@@ -262,7 +265,7 @@ final class DialoguePanel extends FrameLayout {
         LayoutParams p=(LayoutParams)view.getLayoutParams();p.leftMargin=Math.round(x*sx);p.topMargin=Math.round(y*sy);
         p.width=Math.max(1,Math.round(width*sx));p.height=Math.max(1,Math.round(height*sy));
     }
-    private final class WindowView extends View {
+    private final class WindowView extends StoryPlaneView {
         private final boolean name;
         private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
         private final Rect src=new Rect();
@@ -295,12 +298,29 @@ final class DialoguePanel extends FrameLayout {
             }
         }
     }
-    private final class PortraitLayer extends View {
+    private final class PortraitLayer extends StoryPlaneView {
         private final int depth;
         private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
         private final RectF dest=new RectF();
         private int period,delay;
-        private long cycleStart;
+        private long cycleStart,wakeAt;
+        private final Runnable wake=()->{wakeAt=0;invalidate();};
+        private void cancelWake(){
+            if(wake!=null)removeCallbacks(wake);
+            wakeAt=0;
+        }
+        private void wakeAt(long deadline,long now){
+            if(!isShown())deadline=0;
+            if(wakeAt==deadline)return;
+            cancelWake();
+            if(deadline>0){wakeAt=deadline;postDelayed(wake,Math.max(1,deadline-now));}
+        }
+        @Override protected void onDetachedFromWindow(){cancelWake();super.onDetachedFromWindow();}
+        @Override protected void onVisibilityChanged(View view,int visibility){
+            super.onVisibilityChanged(view,visibility);
+            if(visibility!=VISIBLE)cancelWake();
+        }
+
         private boolean moving;
 
         PortraitLayer(int depth){
@@ -311,6 +331,7 @@ final class DialoguePanel extends FrameLayout {
         }
         boolean moving(){return getVisibility()==VISIBLE&&moving;}
         void configure(int period){
+            cancelWake();
             this.period=Math.max(1,period);
             boolean visible=decorations.depth==depth&&decorations.portraits.length>0;
             moving=false;
@@ -319,7 +340,7 @@ final class DialoguePanel extends FrameLayout {
                 DialogueDecorations.Portrait primary=decorations.portraits[0];
                 delay=waitFrames(primary);
                 cycleStart=SystemClock.uptimeMillis();
-                moving=DialogueLayout.portraitMoving(0,primary.image!=null,primary.animation.count,primary.animation.active(0),primary.waitMax);
+                moving=DialogueLayout.portraitMoving(0,primary.image!=null,primary.animation.count,primary.animation.active(0),primary.waitMax,-delay);
                 invalidate();
             }
         }
@@ -330,6 +351,7 @@ final class DialoguePanel extends FrameLayout {
         @Override protected void onDraw(Canvas canvas){
             long now=SystemClock.uptimeMillis();
             boolean active=false;
+            long nextWake=0;
             int saved=canvas.save();
             canvas.scale(getWidth()/(float)canvasWidth,getHeight()/(float)canvasHeight);
             for(int i=0;i<decorations.portraits.length;i++){
@@ -343,10 +365,13 @@ final class DialoguePanel extends FrameLayout {
                 dest.set(face.x,face.y,face.x+animation.w,face.y+animation.h);
                 long clamped=Math.max(0,frame);
                 animation.draw(canvas,face.image,dest,paint,clamped,255);
-                active|=DialogueLayout.portraitMoving(i,true,animation.count,animation.active(clamped),face.waitMax);
+                active|=DialogueLayout.portraitMoving(i,true,animation.count,animation.active(clamped),face.waitMax,frame);
+                if(i==0&&animation.count>1&&face.waitMax>0&&frame<0)
+                    nextWake=cycleStart+(long)delay*period;
             }
             canvas.restoreToCount(saved);
             moving=active;
+            wakeAt(nextWake,now);
             if(active)postInvalidateOnAnimation();
         }
     }
@@ -451,7 +476,7 @@ final class DialoguePanel extends FrameLayout {
             }
         }
     }
-    private final class MessageCursor extends View {
+    private final class MessageCursor extends StoryPlaneView {
         private final SpriteAnimation[] clips=new SpriteAnimation[4];
         private final Bitmap[] images=new Bitmap[4];
         private final int[] x=new int[4],y=new int[4],startAlpha=new int[4],endAlpha=new int[4],alphaLoop=new int[4];

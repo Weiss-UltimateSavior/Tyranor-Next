@@ -169,8 +169,8 @@ final class DialogueLayout {
     static int choiceSetId(int[] key){
         return key!=null&&key.length>=5?key[4]:0;
     }
-    static boolean portraitMoving(int index,boolean hasImage,int count,boolean activeAtFrame,int waitMax){
-        return index==0&&hasImage&&count>1&&(waitMax>0||activeAtFrame);
+    static boolean portraitMoving(int index,boolean hasImage,int count,boolean activeAtFrame,int waitMax,long frame){
+        return index==0&&hasImage&&count>1&&frame>=0&&(waitMax>0||activeAtFrame);
     }
     static int evaluatePlaneGate(int[] presented,int[] expected,boolean hasSurface,boolean active,boolean menuOpen,long elapsedMs){
         if(!hasSurface||!active||menuOpen)return GATE_BYPASSED;

@@ -29,6 +29,10 @@ final class DialogueTextView extends AppCompatTextView {
     private boolean annotationFollowsTextColor;
     private HiddenText previewHidden;
 
+    @Override public void invalidate(){super.invalidate();StoryPlaneView.changed(this);}
+    @Override public void invalidate(android.graphics.Rect dirty){super.invalidate(dirty);StoryPlaneView.changed(this);}
+    @Override public void invalidate(int l,int t,int r,int b){super.invalidate(l,t,r,b);StoryPlaneView.changed(this);}
+
     DialogueTextView(Context context){super(context);setEmojiCompatEnabled(false);}
 
     static DialogueTextView panel(Context context,DialogueMarkup text,DialogueMarkup.Style style,int font,int color){

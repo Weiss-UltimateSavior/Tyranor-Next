@@ -240,6 +240,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             return true;
         });
         dialoguePanel=new DialoguePanel(this,v -> advance());
+        dialoguePanel.planeInvalidated(storyPlane::schedulePush);
         stage.addView(dialoguePanel,new FrameLayout.LayoutParams(-1,-1)); dialoguePanel.setVisibility(View.GONE);
         if(debugMode){
             debugOverlay=new GameDebugOverlay(uiContext);
@@ -266,7 +267,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 surfaceOwner.surface(attached);
             }
             @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture,int width,int height){
-                if(attached!=null)surfaceOwner.surface(attached);
+                // Only the viewport changed; retain the producer and its logical game buffers.
             }
             @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture){
                 Surface old=attached;
@@ -383,6 +384,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                         return true;
                     },
                     number->{if(runner!=null)runner.input(lastX,lastY,number);});
+                choices.planeInvalidated(storyPlane::schedulePush);
                 choices.sound((se,voice)->{if(runner!=null)runner.playClick(se,voice);});
                 stage.addView(choices,stage.indexOfChild(dialoguePanel)+1,new FrameLayout.LayoutParams(width,height));
                 if(stage.getWidth()>0&&stage.getHeight()>0)scaleLogicalView(choices,stage.getWidth(),stage.getHeight());
@@ -1082,7 +1084,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         private boolean dirty,scheduled;
         private final Runnable animationFlush=()->{
             scheduled=false;
-            if(!isDestroyed()&&!isFinishing())pushNow(true);
+            if(!isDestroyed()&&!isFinishing())pushNow();
         };
 
         void frame(GameRunner.Frame next){
@@ -1106,18 +1108,12 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             else ui.post(animationFlush);
         }
         void onPreDraw(){
-            if(dirty&&!isDestroyed()&&!isFinishing())pushNow(true);
+            if(dirty&&!isDestroyed()&&!isFinishing())pushNow();
         }
         void flushForCapture(){
             if(isDestroyed()||isFinishing())return;
-            pushNow(false);
-            if(panelsOpen==0&&preparingPanel==null&&!uiHidden&&dialoguePanel!=null&&dialoguePanel.waitingCursorVisible()){
-                dirty=true;
-                if(!scheduled){
-                    scheduled=true;
-                    ui.postDelayed(animationFlush,32);
-                }
-            }
+            // Native captures use the clean plane; the separate floating plane stays visible.
+            pushNow();
         }
         void clear(){
             frame=null;
@@ -1139,7 +1135,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 view.layout(0,0,width,height);
             }
         }
-        private void pushNow(boolean withCursor){
+        private void pushNow(){
             onTokenAvailable();
             dirty=false;
             if(token==null)return;
@@ -1159,7 +1155,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 NativeGame.pushMessagePlane(token.value(),null,key,!uiHidden);
                 return;
             }
-            boolean liveCursor=withCursor&&panelsOpen==0&&preparingPanel==null&&!uiHidden;
+            boolean liveCursor=panelsOpen==0&&preparingPanel==null&&!uiHidden;
             try{
                 int w=Math.max(1,width),h=Math.max(1,height);
                 if(bitmap==null||bitmap.getWidth()!=w||bitmap.getHeight()!=h){
