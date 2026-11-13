@@ -149,7 +149,7 @@
           保持 MainActivity 自身不挂 MAIN/LAUNCHER，避免两个入口同时出现在桌面。
         -->
         <activity-alias
-            android:name=".LauncherDefault"
+            android:name="${applicationId}.LauncherDefault"
             android:enabled="true"
             android:exported="true"
             android:icon="@mipmap/ic_launcher"
@@ -162,7 +162,7 @@
             </intent-filter>
         </activity-alias>
         <activity-alias
-            android:name=".LauncherClassic"
+            android:name="${applicationId}.LauncherClassic"
             android:enabled="false"
             android:exported="true"
             android:icon="@mipmap/ic_launcher_classic"

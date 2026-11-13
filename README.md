@@ -4,6 +4,14 @@
 
 基于 **Tyranor 模拟器逆向重写** 的多引擎视觉小说（Galgame）模拟器，面向 Android 平台。具体功能与兼容边界见 [SPEC.md](SPEC.md)。
 
+游戏页搜索栏旁的筛选按钮可按引擎类型和游玩状态筛选标题搜索结果，或按字母、括号标签、引擎、最近游玩排序；筛选按钮与搜索栏随列表滚动一起收起，滚回顶部后一起显示。筛选与排序会保留到下次启动；筛选抽屉会按横竖屏可用高度调整。
+
+一级页面（首页、游戏、引擎、设置）保留原有标题栏；二级页面统一提供加粗返回箭头和标题，支持点击返回与系统返回手势。
+
+设置主页面的扫描卡片在扫描深度滑杆下方提供「外观主题」切换，选择后即时生效并持久化。
+
+内置引擎游戏的累计时长仅在首页最近打开卡片的标题下方左对齐显示，采用最多一位小数的小时格式（如 `0.1h`、`100h`），格式化后为 `0h` 时隐藏，底部文字遮罩保持原高度；按前台运行时间记录，切后台及锁屏暂停；加载、标题菜单、自动播放和游戏内视频计入，历史时长不补算。外置引擎、模拟器和安卓游戏不统计。
+
 iOS版本计划中...  鸿蒙设备可使用卓易通安装
 主打轻便、简单、快捷，不引入其他冗余功能的简约设计思路
 
@@ -70,11 +78,13 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | RPG Maker MZ         | `www/`、`js/rmmz_core.js`                                            | 内置 Web 运行环境（Tyranor-2.3.4 / TynMV-0.2） |
 | VN                   | `globalData.vndata`                                                 | 内置 Web 运行环境                  |
 | WebOther             | 通用 `index.html` 网页游戏                                                | 内置 Web 运行环境                  |
-| Ren'Py               | `.rpa`、`game/script.rpy`、`game/options.rpy`、`renpy/` + `.rpy/.rpyc` | 外置 RenPy APK 模块              |
+| Ren'Py               | `.rpa`、`game/script.rpy`、`game/options.rpy`、`renpy/` + `.rpy/.rpyc` | 外置 RenPy APK 模块（8.5.3 / 7.7.1） |
 | Ruffle / Flash       | 顶层 `.swf`；根 `index.html/index.htm` + 唯一 SWF 的叶子目录                   | 外置 Ruffle APK 模块              |
 | PSP                  | `.pbp`、`.cso`、`.iso`、`.chd`                                         | 外置 PPSSPP 模拟器                 |
 | Nintendo Switch      | `.nsp`、`.xci`、`.nca`、`.nro`                                         | 外置 Eden 模拟器                   |
 
+
+Ren’Py 在 Android 11 及以上支持统一管理游戏根目录的 `saves/`（导入、导出、删除、存档版本与 WebDAV 同步）。退出外置播放器后，需在存档管理页确认已退出，再进行存档操作；Android 10 及以下不接入。
 
 ### 平台与文件要求
 

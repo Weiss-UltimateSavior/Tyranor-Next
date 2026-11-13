@@ -63,10 +63,11 @@ internal fun GameCoverFlow(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
 
-    // 过滤/搜索导致列表缩短时收敛到最后一页
+    // 条件变化由调用方重置状态；同一条件下列表缩短时收敛到最后一页。
     LaunchedEffect(games.size) {
-        if (games.isEmpty()) return@LaunchedEffect
-        if (pagerState.currentPage > games.lastIndex) pagerState.scrollToPage(games.lastIndex)
+        if (games.isNotEmpty() && pagerState.currentPage > games.lastIndex) {
+            pagerState.scrollToPage(games.lastIndex)
+        }
     }
 
     // 背景随页面（不单独铺色）

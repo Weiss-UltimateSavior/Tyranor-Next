@@ -17,12 +17,16 @@ class ExternalEngineModuleRegistryTest {
         assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias("external.renpy"))
         assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias(RenPyExternalEngineModule.packageName))
         assertTrue(ExternalEngineModuleRegistry.isExternalEngine(EngineType.RENPY))
-        assertTrue(RenPyExternalEngineModule.installUrl.orEmpty().endsWith("/RenPy-Plugin-8.5.apk"))
+        assertEquals("renpy85", RenPyExternalEngineModule.id)
+        assertEquals("Ren'Py 8.5.3", RenPyExternalEngineModule.displayName)
+        assertEquals("cyou.joiplay.runtime.renpy.v8d4d1", RenPyExternalEngineModule.packageName)
+        assertEquals(10200L, RenPyExternalEngineModule.minimumVersionCode)
     }
 
     @Test
     fun resolvesRenPyVersions() {
         assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_85))
+        assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_853))
         assertSame(RenPy77ExternalEngineModule, ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_77))
         assertNull(ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_AUTO))
         assertNull(ExternalEngineModuleRegistry.moduleForRenpyVersion("unknown"))
@@ -62,7 +66,7 @@ class ExternalEngineModuleRegistryTest {
     @Test
     fun renpyVersionModuleProtocols() {
         assertEquals(
-            "https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RenPy-Plugin-8.5.apk",
+            "https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RenPyPlugin-8.5.3-1.02.00.apk",
             RenPyExternalEngineModule.installUrl,
         )
         assertEquals(
@@ -80,6 +84,19 @@ class ExternalEngineModuleRegistryTest {
         // 版本选择链路：每游戏版本 → 对应模块 → 是否依赖目录解析
         assertSame(RenPy77ExternalEngineModule, ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_77))
         assertTrue(ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_77)!!.requiresGameDirectoryPath)
+    }
+
+    @Test
+    fun legacyAndCurrentRenPy85ValuesResolveToUpgradedPackage() {
+        assertSame(
+            RenPyExternalEngineModule,
+            ExternalEngineModuleRegistry.resolveRenpyModule(EngineSettingsStore.RENPY_85),
+        )
+        assertSame(
+            RenPyExternalEngineModule,
+            ExternalEngineModuleRegistry.resolveRenpyModule(EngineSettingsStore.RENPY_853),
+        )
+        assertEquals("renpy85", RenPyExternalEngineModule.id)
     }
 
     @Test

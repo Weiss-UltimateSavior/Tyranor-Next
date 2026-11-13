@@ -2,6 +2,7 @@ package com.tyranor.next.core.game.save
 
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import androidx.annotation.StringRes
 import androidx.documentfile.provider.DocumentFile
 import com.core.nativeplugin.NativeRuntimePack
@@ -20,6 +21,7 @@ import com.tyranor.next.core.game.model.Xs35Paths
 import com.tyranor.next.core.game.model.Xs4Paths
 import com.tyranor.next.core.game.save.sync.SaveSyncLocks
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
+import com.tyranor.next.core.game.save.sync.SAVE_DIRECTORY_KEY_PREFIX
 import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.storage.GameLibraryFacade
@@ -72,6 +74,13 @@ class GameSaveManager(private val context: Context) {
                 R.string.save_location_engine_no_file_interface,
                 false,
             )
+        }
+        // Android 11+ Ren'Py modules write to <game root>/saves, including removable storage.
+        // Older systems may redirect to the module's private directory, which we do not manage.
+        if (game.engine == EngineType.RENPY) {
+            val sdkInt = Build.VERSION.SDK_INT
+            val root = if (supportsFileSaves(game.engine, sdkInt)) resolveGameDirectory(game)?.let(::File) else null
+            return renpySaveLocation(root, sdkInt)
         }
         // CMVS: the engine writes saveNNN.dat/system.dat into the private user dir,
         // independent of whether the shared-storage game root can be resolved.
@@ -171,7 +180,9 @@ class GameSaveManager(private val context: Context) {
                     )
                 }
             }
-            EngineType.VN, EngineType.WEB_OTHER, EngineType.RPGMAKER, EngineType.RENPY,
+            EngineType.VN, EngineType.WEB_OTHER, EngineType.RPGMAKER,
+            // Ren'Py returns its API-gated save location above; exhaustive fallback only.
+            EngineType.RENPY,
             // RUFFLE 在函数开头已提前返回（外置模块无 App 可管理的文件存档接口），此分支仅为 when 完备性
             EngineType.RUFFLE,
             // 第三方运行时模块无统一存档接口，此分支仅为 when 完备性
@@ -352,6 +363,21 @@ class GameSaveManager(private val context: Context) {
         val files = if (game.engine == EngineType.ETHORNELL) listSaveFiles(game)
         else listDirectorySaveFiles(game.engine, location)
         return SaveListSnapshot(location, files.size)
+    }
+
+    /** Manual Ren'Py operations share launch/sync admission and require confirmed external exit. */
+    internal suspend fun <T> withManualSaveAccess(game: ScanGame, action: suspend () -> T): T {
+        if (game.engine != EngineType.RENPY) return action()
+        val directory = syncSaveDirectory(game)
+        val key = SAVE_DIRECTORY_KEY_PREFIX + directory.canonicalPath
+        return SaveSyncLocks.active(key) {
+            SaveSyncLocks.mutation(key) {
+                currentCoroutineContext().ensureActive()
+                if (syncSaveDirectory(game) != directory) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+                if (SaveSyncRuntime.isGameRunning(appContext, game)) throw GameSaveException(SaveErrorCode.ENGINE_RUNNING)
+                action()
+            }
+        }
     }
 
     /** 存档导出格式：Tyranor 原生 / JoiPlay+PC 标准（仅 RPG Maker MV/MZ 可选，内容字节一致仅换名）。 */
@@ -1081,12 +1107,20 @@ class GameSaveManager(private val context: Context) {
             }
         }
 
-        internal fun supportsFileSaves(engine: EngineType): Boolean = when (engine) {
+        internal fun supportsFileSaves(engine: EngineType, sdkInt: Int = Build.VERSION.SDK_INT): Boolean = when (engine) {
+            EngineType.RENPY -> sdkInt >= Build.VERSION_CODES.R
             EngineType.KIRIKIRI, EngineType.ONS, EngineType.TYRANO, EngineType.RPG_MV, EngineType.RPG_MZ,
             EngineType.ARTEMIS, EngineType.SIGLUS, EngineType.REALLIVE, EngineType.AVG32, EngineType.UK2,
             EngineType.FVP, EngineType.XSYS35, EngineType.XSYS4, EngineType.YURIS, EngineType.ETHORNELL,
             EngineType.CMVS, EngineType.SYSTEMNNN -> true
             else -> false
+        }
+
+        internal fun renpySaveLocation(gameRoot: File?, sdkInt: Int): SaveLocation = when {
+            !supportsFileSaves(EngineType.RENPY, sdkInt) ->
+                SaveLocation(null, R.string.save_location_engine_no_file_interface, false)
+            gameRoot == null -> SaveLocation(null, R.string.save_error_resolve_game_dir, false)
+            else -> SaveLocation(File(gameRoot, "saves"), R.string.save_location_engine_game_dir, true)
         }
 
         /** Restore resources before deleting any saves or transaction recovery copies. */

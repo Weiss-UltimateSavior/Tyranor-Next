@@ -41,7 +41,7 @@ import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.SettingsEntryCard
 import com.tyranor.next.ui.common.AppScreenActivity
-import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.DialogTextButton
 
 /** 项目仓库地址：关于应用页「项目地址」条目打开的系统浏览器目标。 */
@@ -75,7 +75,7 @@ internal fun AboutAppScreen() {
     val appLabel = stringResource(R.string.app_name)
     val versionLabel = stringResource(R.string.about_app_version, BuildConfig.VERSION_NAME)
     Column(Modifier.fillMaxSize()) {
-        AppTopBar(title = stringResource(R.string.settings_about_app))
+        AppSecondaryTopBar(title = stringResource(R.string.settings_about_app))
         Column(
             modifier = Modifier
                 .fillMaxWidth()

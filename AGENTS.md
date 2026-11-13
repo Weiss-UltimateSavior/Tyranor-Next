@@ -138,16 +138,16 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 
 ## 页面顶部栏统一规范
 
-所有页面（首页 / 游戏 / 引擎 / 设置）的顶部栏必须统一。**一律使用统一组件
-`com.tyranor.next.ui.common.AppTopBar`**，禁止任何页面手写该结构；占位页可复用
-`com.tyranor.next.ui.common.PlaceholderPage`（内部同样走 AppTopBar）。
+一级页面（导航对应的首页 / 游戏 / 引擎 / 设置）使用 `com.tyranor.next.ui.common.AppTopBar`；
+二级页面使用 `com.tyranor.next.ui.common.AppSecondaryTopBar`（加粗返回箭头 + 标题，可保留右侧操作）。
+禁止页面手写顶栏结构；二级占位页可复用 `PlaceholderPage`。
 
-### 0. 统一入口（AppTopBar）
+### 0. 统一入口（AppTopBar / AppSecondaryTopBar）
 
-- 页面顶部栏必须调用 `AppTopBar(title, ...)`；标题、结构、取色由组件兜底。
+- 一级页面调用 `AppTopBar(title, ...)`，二级页面调用 `AppSecondaryTopBar(title, ...)`；两者共用状态栏留白、64dp 标题行和附加区布局。
 - 参数约定：
-  - Material 页面（默认）：不传 `background`/`contentColor`，组件默认 `Color.Transparent` / `colorScheme.onBackground`。
-  - Miuix 风格页面（设置类 MiuixScaffold 的 `topBar` 槽）：传 `background = Color.Transparent`（顶部栏背景恒为透明，交由根部背景层——`MiuixTheme.colorScheme.background` 实为 `PageGrey`，传它会盖住玻璃/根部背景）、`contentColor = MiuixTheme.colorScheme.onBackground`，并设 `contentWindowInsets = WindowInsets(0.dp)`。
+  - Material 页面（默认）：不传 `background`/`contentColor`，组件默认 `Color.Transparent` / `PageTextColor`。
+  - Miuix 风格页面（设置类 MiuixScaffold 的 `topBar` 槽）：传 `background = Color.Transparent`（顶部栏背景恒为透明，交由根部背景层——`MiuixTheme.colorScheme.background` 实为 `PageGrey`，传它会盖住玻璃/根部背景）、`contentColor = PageTextColor`，并设 `contentWindowInsets = WindowInsets(0.dp)`。
   - 需要按页面背景取文字色的页面：保持 `background = Color.Transparent`，传 `contentColor = TextColor`，背景仍由页面根层提供。
   - 右侧图标用 `trailing` 槽传入 `TopBarIcon`；标题下方的折叠内容（如游戏页搜索框）用 `underTitle` 槽。
 - 新页面/组件禁止再书写「背景层 + statusBarsPadding + 64dp + titleLarge Bold」结构。
@@ -156,9 +156,9 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 
 - 顶部栏由公共组件内部使用 **Column + Row**，页面不自行使用 Material3 `TopAppBar` 替代；Miuix 页面壳按下文约定接入。
 
-- 页面由外层 `Column` 组装为「顶部栏 → 正文内容」，Material 页与 Miuix 页均保持上下分离布局；Miuix 页由透明 `MiuixScaffold` 的 `topBar` 槽承载 `AppTopBar`，正文位于顶栏下方，不启用顶栏模糊叠层。
+- 页面由外层 `Column` 组装为「顶部栏 → 正文内容」，Material 页与 Miuix 页均保持上下分离布局；Miuix 页由透明 `MiuixScaffold` 的 `topBar` 槽承载对应层级的公共顶栏，正文位于顶栏下方，不启用顶栏模糊叠层。
 
-- **禁止在顶部栏放置任何返回按钮/图标**。返回统一依赖系统返回键/手势（`Activity` 默认 `finish()`），不要通过 `onBack` 参数下发返回回调。
+- 一级顶部栏不放返回按钮；二级顶部栏内置无底色的加粗返回箭头（24dp 图标、48dp 触控区），触控区距标题 9dp，图标用 drawable，颜色跟随标题的 `contentColor`（默认 `PageTextColor`）。按钮通过宿主 `OnBackPressedDispatcher` 触发系统返回，复用页面的返回处理与退出转场，无需页面传回调。
 
 ### 2. 高度
 
@@ -206,7 +206,7 @@ Column(fillMaxSize)                                // 页面根
 └── 正文内容
 ```
 
-> 设置类页面若使用 `MiuixScaffold`，`containerColor` 取 `Color.Transparent`（背景由根部背景层绘制）；`topBar` 槽调用 `AppTopBar`，并设 `contentWindowInsets = WindowInsets(0.dp)`，不要自行重写顶栏结构。
+> 设置类页面若使用 `MiuixScaffold`，`containerColor` 取 `Color.Transparent`（背景由根部背景层绘制）；`topBar` 槽调用对应层级的公共顶栏，并设 `contentWindowInsets = WindowInsets(0.dp)`，不要自行重写顶栏结构。
 
 ### 7. 顶部栏图标按钮
 
@@ -220,14 +220,14 @@ Column(fillMaxSize)                                // 页面根
 
 ### 8. 明文豁免
 
-- **明文豁免（按键方案布局编辑器）**：`ui/settings/PadLayoutEditScreen.kt`（`PadLayoutEditActivity`）**不设顶部栏**，编辑画布占满全屏（含系统栏区域）——为有意设计，不受本节 0–7 条约束。理由：该页的核心契约是与游戏内按键层**同视口**（按钮位置按视口归一化存储，横竖屏按比例重映射），顶栏会压缩画布高度、使「所见即所得」失效。操作方式与退出方式由进屏 Toast 说明，保存经编辑面板内的「保存」触发，退出走系统返回键。**该豁免仅限本页**，其余页面一律使用 `AppTopBar`，不得援引。
+- **明文豁免（按键方案布局编辑器）**：`ui/settings/PadLayoutEditScreen.kt`（`PadLayoutEditActivity`）**不设顶部栏**，编辑画布占满全屏（含系统栏区域）——为有意设计，不受本节 0–7 条约束。理由：该页的核心契约是与游戏内按键层**同视口**（按钮位置按视口归一化存储，横竖屏按比例重映射），顶栏会压缩画布高度、使「所见即所得」失效。操作方式与退出方式由进屏 Toast 说明，保存经编辑面板内的「保存」触发，退出走系统返回键。**该豁免仅限本页**，其余页面一律使用对应层级的公共顶栏，不得援引。
 - **同一豁免的延伸（该页复用 engine 原生编辑 UI）**：本页把 engine 侧的原生按键层与编辑面板（`com.core.input.VirtualPadView` / `VirtualPadEditPanel`，由 core 门面 `PadEditorHost` 提供 `rootView`）整体当作画布，因此**该页内的自绘弹窗与文字尺寸**同样随本页豁免应用统一弹窗材质、圆角与两档排版（面板为深色卡片、随游戏画面同视口呈现，见 `VirtualPadEditPanel.showDarkDialog`）。延伸豁免**同样仅限本页与游戏内按键层**：设置域的其它弹窗（`AppAlertDialog`）必须照常遵守弹窗点击反馈、动态面板取色与 `AppComponentShape` 规范。**理由修正**：该页 Activity 固定 `sensorLandscape`（见 `AndroidManifest.xml`），编辑器本身不经历横竖屏切换；「横竖屏按比例重映射」描述的是**游戏内**按键层的行为。
 
 ***
 
 ## 跨页面一致性要求
 
-- 所有页面共用 `PlaceholderPage`（或与之一致的结构），禁止各页面各自实现不同样式的顶部栏。
+- 一级页统一使用 `AppTopBar`，二级页统一使用 `AppSecondaryTopBar`（或二级占位骨架 `PlaceholderPage`），禁止页面手写顶部栏。
 
 - 新增页面时：页面主体内容放入 `Column` 的正文区域即可，顶部栏保持相同。
 

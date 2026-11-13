@@ -9,7 +9,7 @@ import org.json.JSONObject
 /**
  * Ren'Py 外置 APK 引擎模块家族（issue #52）。
  *
- * - Ren'Py 8.5 / 7.7.1 走外置 runtime 模块协议（`cyou.joiplay.runtime.renpy.run`），
+ * - Ren'Py 8.5.3 / 7.7.1 走外置 runtime 模块协议（`cyou.joiplay.runtime.renpy.run`），
  *   两者仅包名不同，共享 [RenPyRuntimeModule] 的 intent 构造。
  * 启动协议集中在模块文件内，UI / 扫描器不散落 package/action 字符串。
  */
@@ -102,15 +102,17 @@ abstract class RenPyRuntimeModule(
     internal fun gameIdFor(folder: String): String = Integer.toHexString(folder.hashCode())
 }
 
-/** Ren'Py 8.5 runtime 模块（默认版本）。 */
+/** Ren'Py 8.5.3 runtime 模块（默认版本，兼容旧 8.5 选择值）。 */
 object RenPyExternalEngineModule : RenPyRuntimeModule(
     id = "renpy85",
-    displayName = "Ren'Py 8.5",
+    displayName = "Ren'Py 8.5.3",
     packageName = "cyou.joiplay.runtime.renpy.v8d4d1",
-    installUrl = "https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RenPy-Plugin-8.5.apk",
+    installUrl = "https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RenPyPlugin-8.5.3-1.02.00.apk",
     defaultAlias = "internal.renpy",
     supportedAliases = setOf("external.renpy", "internal.renpy8"),
-)
+) {
+    override val minimumVersionCode: Long = 10200L
+}
 
 /** Ren'Py 7.7.1 runtime 模块（与 8.5 同协议，仅包名不同）。 */
 object RenPy77ExternalEngineModule : RenPyRuntimeModule(
