@@ -225,11 +225,13 @@ function createBridges(gameRoot, contentRoot) {
                 const target = nodePath.join(storeDir, name);
                 const exists = fs.existsSync(target);
                 // 入队后文件被改过 → 条目过期（与 Kotlin matchesSnapshot 同判据）
-                if (!!e.e !== exists) return;
-                if (exists) {
-                    const st = fs.statSync(target);
-                    if (Math.floor(st.mtimeMs) !== Number(e.m || 0) || st.size !== Number(e.s || 0)) return;
-                    if (e.c !== undefined && e.c !== null && crc32OfFile(target) !== Number(e.c)) return;
+                if (!e.a) {
+                    if (!!e.e !== exists) return;
+                    if (exists) {
+                        const st = fs.statSync(target);
+                        if (Math.floor(st.mtimeMs) !== Number(e.m || 0) || st.size !== Number(e.s || 0)) return;
+                        if (e.c !== undefined && e.c !== null && crc32OfFile(target) !== Number(e.c)) return;
+                    }
                 }
                 if (fsBridge.isSuperseded(target)) return;
                 try {
@@ -246,7 +248,7 @@ function createBridges(gameRoot, contentRoot) {
             if (failed === 0) {
                 try { fs.unlinkSync(journalPath); } catch (e) {}
             }
-            return applied;
+            return failed > 0 ? -1 : applied;
         },
         clearPendingStorage: () => {
             try { fs.unlinkSync(nodePath.join(storeDir, JOURNAL_NAME)); return true; }
@@ -282,6 +284,44 @@ function createBridges(gameRoot, contentRoot) {
         },
         __recorded: recorded,
         setTimes: (p, mtime) => { const f = inside(p); if (f === null) return false; try { fs.utimesSync(f, mtime / 1000, mtime / 1000); return true; } catch (e) { return false; } },
+    };
+
+    // 此替身验证真实脚本的调用时机；会话排序/claim 的并发由 JVM 测试验证。
+    fsBridge.commitStorageMutation = (payload) => {
+        try {
+            const input = JSON.parse(payload);
+            const journal = nodePath.join(storeDir, JOURNAL_NAME);
+            const old = fs.existsSync(journal) ? JSON.parse(fs.readFileSync(journal, 'utf8')) : { entries: {} };
+            const entries = Object.assign({}, old.entries);
+            const writes = input.values || {};
+            const deletes = new Set(input.deletes || []);
+            if (input.clear) {
+                Object.keys(entries).forEach((name) => deletes.add(name));
+                if (fs.existsSync(storeDir)) fs.readdirSync(storeDir).filter((name) => NAME_RE.test(name)).forEach((name) => deletes.add(name));
+            }
+            if (Object.keys(writes).some((name) => !NAME_RE.test(name)) || [...deletes].some((name) => !NAME_RE.test(name))) return false;
+            Object.keys(writes).forEach((name) => { entries[name] = Object.assign(entryJson(name, String(writes[name])), { a: true }); });
+            deletes.forEach((name) => { entries[name] = Object.assign(entryJson(name, null), { a: true }); recorded.deletes.add(nodePath.join(storeDir, name)); });
+            if (input.clear) recorded.clears.add(nodePath.normalize(storeDir));
+            fs.mkdirSync(storeDir, { recursive: true });
+            fs.writeFileSync(journal, JSON.stringify({ entries }));
+            return true;
+        } catch (error) { return false; }
+    };
+    fsBridge.flushStorageMutation = (name, value) => {
+        try {
+            const target = nodePath.join(storeDir, name);
+            if (fsBridge.isSuperseded(target)) return true;
+            const journal = nodePath.join(storeDir, JOURNAL_NAME);
+            const entries = fs.existsSync(journal) ? JSON.parse(fs.readFileSync(journal, 'utf8')).entries : {};
+            const entry = entries[name];
+            if (entry && (entry.d ? null : entry.v) !== value) return true;
+            const done = value === null ? fsBridge.remove(target) : fsBridge.writeText(target, value);
+            if (!done) return false;
+            delete entries[name];
+            fs.writeFileSync(journal, JSON.stringify({ entries }));
+            return true;
+        } catch (error) { return false; }
     };
 
     const b64 = (bufOrStr) => NodeBuffer.isBuffer(bufOrStr) ? bufOrStr.toString('base64') : NodeBuffer.from(String(bufOrStr), 'binary').toString('base64');

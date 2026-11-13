@@ -3,6 +3,8 @@ package com.core.rpgmaker
 import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
+import java.util.UUID
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -37,8 +39,8 @@ internal object RpgMakerStoragePendingJournal {
 
     private const val TAG = "YukiRpgMaker"
 
-    /** 本进程标识：nanoTime 在进程间不会重合，用于区分「队列来自上一个进程」。 */
-    private val RUN_ID: Long = System.nanoTime()
+    /** 随机进程标识，跨进程条目归零，避免复用旧会话期号。 */
+    private val RUN_ID: String = UUID.randomUUID().toString()
 
     /** 条目数上限：正常待写键只有几十个，超过说明调用方出了问题。 */
     private const val MAX_ENTRIES = 4096
@@ -77,6 +79,8 @@ internal object RpgMakerStoragePendingJournal {
         val crc: Long?,
         /** 入队它的会话期号；来自上一个进程的条目为 0（视为最旧）。 */
         val session: Long,
+        /** 已在 Storage 返回前接收的新意图；恢复时不再把自身失败物化误判为外部改写。 */
+        val accepted: Boolean = false,
     )
 
     /** 队列快照。 */
@@ -87,6 +91,28 @@ internal object RpgMakerStoragePendingJournal {
      */
     private fun read(storeDir: File): Snapshot? = parse(File(storeDir, FILE_NAME))
 
+    internal fun isStorageName(name: String): Boolean = NAME_PATTERN.matches(name)
+
+    internal fun pendingEntries(storeDir: File): LinkedHashMap<String, Entry> = synchronized(lock) {
+        val merged = LinkedHashMap<String, Entry>()
+        parse(File(storeDir, CLAIM_NAME))?.entries?.forEach { (name, entry) -> merged[name] = entry }
+        read(storeDir)?.entries?.forEach { (name, entry) ->
+            if ((merged[name]?.session ?: Long.MIN_VALUE) <= entry.session) merged[name] = entry
+        }
+        merged
+    }
+
+    /** 先退休旧 claim，再发布新意图；退休失败不能使本次接收出现「返回失败却已修改」。 */
+    private fun retireClaim(storeDir: File): LinkedHashMap<String, Entry> {
+        val merged = pendingEntries(storeDir)
+        val claim = File(storeDir, CLAIM_NAME)
+        if (claim.exists()) {
+            if (!writeSnapshot(File(storeDir, FILE_NAME), merged)) throw IOException("Storage claim migration failed")
+            deleteQuietly(claim)
+        }
+        return merged
+    }
+
     /**
      * 把一批待写值与删除意图并入队列（同名的旧条目只在期号不小于新条目时保留）。
      *
@@ -96,13 +122,18 @@ internal object RpgMakerStoragePendingJournal {
      * 同名条目若**值没有变化**（同一批键在 pagehide / beforeunload / 宿主 onDestroy 会被
      * 重复入队），保留首次的指纹：重新拍快照会让「入队后文件被改过」这条判据失效。
      */
-    fun stage(storeDir: File, session: Long, writes: Map<String, String>, deletes: Collection<String>): Boolean =
+    fun stage(
+        storeDir: File,
+        session: Long,
+        writes: Map<String, String>,
+        deletes: Collection<String>,
+        accepted: Boolean = false,
+    ): Boolean =
         synchronized(lock) {
             if (writes.isEmpty() && deletes.isEmpty()) return true
             try {
                 cleanupTempFiles(storeDir)
-                val merged = LinkedHashMap<String, Entry>()
-                read(storeDir)?.entries?.forEach { (name, entry) -> merged[name] = entry }
+                val merged = retireClaim(storeDir)
                 var rejected = 0
                 writes.forEach { (name, value) ->
                     if (!NAME_PATTERN.matches(name)) {
@@ -118,8 +149,8 @@ internal object RpgMakerStoragePendingJournal {
                     merged[name] = when {
                         // 更新的会话已经入队过同名条目：旧文档晚到的入队必须让位
                         existing != null && existing.session > session -> existing
-                        existing != null && existing.value == value -> existing
-                        else -> fingerprinted(storeDir, name, value, session)
+                        !accepted && existing != null && existing.value == value -> existing
+                        else -> fingerprinted(storeDir, name, value, session, accepted)
                     }
                 }
                 deletes.forEach { name ->
@@ -131,9 +162,9 @@ internal object RpgMakerStoragePendingJournal {
                     if (existing != null) {
                         // 更新的会话或同值删除都保留原条目
                         if (existing.session > session) return@forEach
-                        if (existing.value == null) return@forEach
+                        if (!accepted && existing.value == null) return@forEach
                     }
-                    merged[name] = fingerprinted(storeDir, name, null, session)
+                    merged[name] = fingerprinted(storeDir, name, null, session, accepted)
                 }
                 // 有被拒条目就整份不写：写入一部分却报「已持久化」，会让宿主把真实丢失当成 0
                 if (rejected > 0) {
@@ -155,9 +186,9 @@ internal object RpgMakerStoragePendingJournal {
     /** 丢弃指定会话及更旧会话的条目（`Storage.clear()`：不清掉更新文档刚交进来的数据）。 */
     fun clearUpTo(storeDir: File, session: Long): Boolean = synchronized(lock) {
         try {
-            val existing = read(storeDir) ?: return true
-            val remaining = existing.entries.filterValues { it.session > session }
-            if (remaining.size == existing.entries.size) return true
+            val existing = retireClaim(storeDir)
+            val remaining = existing.filterValues { it.session > session }
+            if (remaining.size == existing.size) return true
             if (remaining.isEmpty()) {
                 deleteQuietly(File(storeDir, FILE_NAME))
                 true
@@ -184,14 +215,14 @@ internal object RpgMakerStoragePendingJournal {
         synchronized(lock) {
             if (expectations.isEmpty()) return true
             try {
-                val existing = read(storeDir) ?: return true
-                val remaining = existing.entries.filter { (name, entry) ->
+                val existing = retireClaim(storeDir)
+                val remaining = existing.filter { (name, entry) ->
                     if (!expectations.containsKey(name)) return@filter true
                     if (entry.session > session) return@filter true
                     val expected = expectations[name]
                     expected != null && entry.value != expected
                 }
-                if (remaining.size == existing.entries.size) return true
+                if (remaining.size == existing.size) return true
                 if (remaining.isEmpty()) {
                     deleteQuietly(File(storeDir, FILE_NAME))
                     true
@@ -225,7 +256,9 @@ internal object RpgMakerStoragePendingJournal {
             // 队列里的条目（更晚入队）覆盖遗留 claim 的同名条目
             val merged = LinkedHashMap<String, Entry>()
             leftover?.entries?.forEach { (name, entry) -> merged[name] = entry }
-            current?.entries?.forEach { (name, entry) -> merged[name] = entry }
+            current?.entries?.forEach { (name, entry) ->
+                if ((merged[name]?.session ?: Long.MIN_VALUE) <= entry.session) merged[name] = entry
+            }
             if (merged.isEmpty()) {
                 deleteQuietly(claim)
                 deleteQuietly(journal)
@@ -233,13 +266,13 @@ internal object RpgMakerStoragePendingJournal {
             }
             if (!writeSnapshot(claim, merged)) {
                 Log.w(TAG, "pending storage claim write failed: ${claim.path}")
-                return null
+                throw IOException("pending storage claim write failed: ${claim.path}")
             }
             deleteQuietly(journal)
             Snapshot(merged)
         } catch (error: Throwable) {
             Log.w(TAG, "pending storage claim failed: $storeDir", error)
-            null
+            throw error
         }
     }
 
@@ -258,7 +291,9 @@ internal object RpgMakerStoragePendingJournal {
             } else {
                 val merged = LinkedHashMap<String, Entry>()
                 read(storeDir)?.entries?.forEach { (name, entry) -> merged[name] = entry }
-                failed.forEach { (name, entry) -> if (!merged.containsKey(name)) merged[name] = entry }
+                failed.forEach { (name, entry) ->
+                    if ((merged[name]?.session ?: Long.MIN_VALUE) < entry.session) merged[name] = entry
+                }
                 writeSnapshot(File(storeDir, FILE_NAME), merged)
             }
         } catch (error: Throwable) {
@@ -269,43 +304,45 @@ internal object RpgMakerStoragePendingJournal {
         requeued
     }
 
-    private fun parse(file: File): Snapshot? = try {
-        when {
-            !file.isFile -> null
-            file.length() > MAX_JOURNAL_BYTES -> {
-                Log.w(TAG, "pending storage journal too large (${file.length()} bytes), discarded: ${file.path}")
-                deleteQuietly(file)
-                null
-            }
-            else -> parseContent(file)
+    private fun parse(file: File): Snapshot? {
+        if (!file.exists()) return null
+        if (!file.isFile || file.length() > MAX_JOURNAL_BYTES) {
+            throw IOException("pending storage journal unreadable: ${file.path}")
         }
-    } catch (error: Throwable) {
-        Log.w(TAG, "pending storage journal unreadable: ${file.path}", error)
-        null
+        return parseContent(file)
     }
 
     private fun parseContent(file: File): Snapshot? {
         val raw = String(file.readBytes(), StandardCharsets.UTF_8)
-        if (raw.isBlank()) return null
-        val json = try {
-            JSONObject(raw)
-        } catch (error: Throwable) {
-            // 坏文件重试多少次也读不出条目：删掉，否则每次启动都要解析+告警一次
-            Log.w(TAG, "pending storage journal corrupted, discarded: ${file.path}", error)
-            deleteQuietly(file)
-            return null
-        }
-        // 上一个进程留下的条目期号不可比，一律视为最旧
-        val sameRun = json.optLong("run", RUN_ID) == RUN_ID
-        val entriesJson = json.optJSONObject("entries")
+        val json = JSONObject(raw)
+        // 没有 run 标识的旧格式同样归零；不删除损坏队列，接收/重放向调用方报告失败。
+        val sameRun = json.optString("run", "") == RUN_ID
+        val entriesJson = json.getJSONObject("entries")
+        if (entriesJson.length() > MAX_ENTRIES) throw IOException("Too many Storage entries")
         val out = LinkedHashMap<String, Entry>()
-        val names = entriesJson?.keys()
-        while (names != null && names.hasNext()) {
+        val names = entriesJson.keys()
+        while (names.hasNext()) {
             val name = names.next()
-            if (!NAME_PATTERN.matches(name)) continue
-            val item = entriesJson.optJSONObject(name) ?: continue
+            if (!NAME_PATTERN.matches(name)) throw IOException("Invalid Storage journal entry")
+            val item = entriesJson.getJSONObject(name)
+            if (item.has("d") && item.get("d") !is Boolean) throw IOException("Invalid Storage delete flag")
+            if (item.has("a") && item.get("a") !is Boolean) throw IOException("Invalid Storage acceptance flag")
             val deleted = item.optBoolean("d", false)
-            val value = if (deleted) null else item.optString("v", "")
+            if (!deleted && (!item.has("v") || item.get("v") !is String)) {
+                throw IOException("Missing Storage value")
+            }
+            if (item.get("e") !is Boolean || item.get("m") !is Number || item.get("s") !is Number) {
+                throw IOException("Invalid Storage fingerprint")
+            }
+            if (item.getLong("m") < 0 || item.getLong("s") < 0) throw IOException("Invalid Storage file metadata")
+            if (item.has("n") && (item.get("n") !is Number || item.getLong("n") < 0)) {
+                throw IOException("Invalid Storage session")
+            }
+            if (item.has("c") && (item.get("c") !is Number || item.getLong("c") < 0)) {
+                throw IOException("Invalid Storage checksum")
+            }
+            val value = if (deleted) null else item.getString("v")
+            if (value != null && value.length > MAX_VALUE_CHARS) throw IOException("Storage value too large")
             out[name] = Entry(
                 value = value,
                 existed = item.optBoolean("e", false),
@@ -313,12 +350,18 @@ internal object RpgMakerStoragePendingJournal {
                 size = item.optLong("s", 0L),
                 crc = if (item.has("c")) item.optLong("c") else null,
                 session = if (sameRun) item.optLong("n", 0L) else 0L,
+                accepted = item.optBoolean("a", false),
             )
+        }
+        if (out.values.sumOf { (it.value?.length ?: 0).toLong() } > MAX_TOTAL_CHARS) {
+            throw IOException("Storage journal values too large")
         }
         return Snapshot(out)
     }
 
-    private fun fingerprinted(storeDir: File, name: String, value: String?, session: Long): Entry {
+    private fun fingerprinted(
+        storeDir: File, name: String, value: String?, session: Long, accepted: Boolean,
+    ): Entry {
         val file = File(storeDir, name)
         val exists = file.exists()
         val size = if (exists) file.length() else 0L
@@ -327,8 +370,11 @@ internal object RpgMakerStoragePendingJournal {
             existed = exists,
             mtime = if (exists) file.lastModified() else 0L,
             size = size,
-            crc = if (exists && size <= MAX_CRC_BYTES) crc32Of(file) else null,
+            crc = if (!accepted && file.isFile && size <= MAX_CRC_BYTES) {
+                crc32Of(file) ?: throw IOException("Storage fingerprint unavailable")
+            } else null,
             session = session,
+            accepted = accepted,
         )
     }
 
@@ -355,6 +401,7 @@ internal object RpgMakerStoragePendingJournal {
             .put("m", entry.mtime)
             .put("s", entry.size)
             .put("n", entry.session)
+            .put("a", entry.accepted)
         entry.crc?.let { json.put("c", it) }
         if (entry.value == null) json.put("d", true) else json.put("v", entry.value)
         return json
@@ -393,9 +440,10 @@ internal object RpgMakerStoragePendingJournal {
 
     private fun deleteQuietly(file: File) {
         try {
-            file.delete()
+            if (file.exists() && !file.delete()) throw IOException("pending storage file not removable: ${file.path}")
         } catch (error: Throwable) {
             Log.w(TAG, "pending storage file not removable: ${file.path}", error)
+            throw error
         }
     }
 

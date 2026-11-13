@@ -1424,7 +1424,10 @@ console.log('\n== localStorage 退出刷盘的失败路径 ==');
             ? Object.keys(JSON.parse(fs.readFileSync(journal, 'utf8')).entries || {}).length
             : 0;
         // 预算模式（onPause / 页面隐藏）同样先入队：切后台后被系统杀是最常见的丢值路径
-        return remaining === 0 && staged === 64;
+        newSession();
+        const recovered = Object.create(global.Storage.prototype);
+        return remaining === 0 && staged > 0 &&
+            Array.from({ length: 64 }, (_, i) => recovered.getItem('budget.key.' + i) === 'v' + i).every(Boolean);
     })(), (() => {
         const journal = nodePath.join(storeDir, '.tyranor-pending.json');
         return 'journal=' + (fs.existsSync(journal) ? 'present' : 'absent');
@@ -1467,11 +1470,12 @@ console.log('\n== localStorage 文档销毁前的收尾（复审修复项）==')
 
     // 回归 1（复审问题 2）：页面卸载不再依赖定时器。旧实现三个文档钩子都只调 flush()，
     // 每批 32 个键、其余交给 setTimeout，文档销毁后定时器不执行 → 超过 32 个脏键就会丢。
-    check('页面卸载：pagehide 抽干全部脏键（不再只写 32 个）', (() => {
+    check('页面卸载不做批量 I/O，新文档恢复全部已接收的值', (() => {
         newSession();
         const s = Object.create(global.Storage.prototype);
         for (let i = 0; i < 128; i++) s.setItem('unload.key.' + i, 'V' + i);
         fireWindow('pagehide', { persisted: false });
+        newSession();
         let written = 0;
         for (let i = 0; i < 128; i++) {
             const p = fileOf('unload.key.' + i);
@@ -1494,6 +1498,7 @@ console.log('\n== localStorage 文档销毁前的收尾（复审修复项）==')
         const origReload = global.location.reload;
         global.location.reload = () => { navigated = true; };
         try { global.nw.Window.get().reload(); } finally { global.location.reload = origReload; }
+        newSession();
         let written = 0;
         for (let i = 0; i < 40; i++) if (fs.existsSync(fileOf('reload.entry.' + i))) written++;
         return navigated && written === 40;
@@ -1573,27 +1578,20 @@ console.log('\n== localStorage 文档销毁前的收尾（复审修复项）==')
         window.__tyranorLocalStorageFlushAll();
         if (!fs.existsSync(target)) return false;
 
-        // 删除失败 → 留下抑制项（待删重试）。先证明「确实留下了待删项」：删不掉 + 队列
-        // 不可用时，flushAll 必须把它计为未完成；少了这一步，注掉 removeItem catch 里的
-        // 抑制登记后本用例依然 PASS（空过）。
+        // 删不掉时已接收的墓碑必须仍在队列里，物化重试也应继续被排队。
         const bridgeFs = global.TyranorFs;
         const origRemove = bridgeFs.remove;
-        const origStage = bridgeFs.stagePendingStorage;
-        const origWarn = console.warn;
-        let queued = -1;
-        bridgeFs.remove = () => false;
-        bridgeFs.stagePendingStorage = () => false;
-        console.warn = () => {};
+        let retries = 0;
+        bridgeFs.remove = () => { retries++; return false; };
         try {
             s.removeItem(key);
-            queued = window.__tyranorLocalStorageFlushAll(true);
-        } finally {
-            bridgeFs.remove = origRemove;
-            bridgeFs.stagePendingStorage = origStage;
-            console.warn = origWarn;
-        }
-        if (!fs.existsSync(target)) return false;
-        if (queued !== 1) return false;
+            window.__tyranorLocalStorageFlush();
+        } finally { bridgeFs.remove = origRemove; }
+        if (!fs.existsSync(target) || retries < 2) return false;
+        // 模拟新文档已接收 NEW，但旧文档的抑制表还在。
+        const writes = {};
+        writes[nameOf(key)] = 'NEW';
+        if (!bridgeFs.commitStorageMutation(JSON.stringify({ values: writes }))) return false;
 
         // 新会话把同一路径写成 NEW，账本随之表明「已被更新的会话写过」
         fs.writeFileSync(target, 'NEW');
@@ -1604,7 +1602,7 @@ console.log('\n== localStorage 文档销毁前的收尾（复审修复项）==')
         const origRemoveAgain = bridgeFs.remove;
         let removeCalls = 0;
         bridgeFs.remove = function (p) { removeCalls++; return origRemoveAgain.apply(this, arguments); };
-        try { window.__tyranorLocalStorageFlushAll(true); } finally {
+        try { window.__tyranorLocalStorageFlush(); } finally {
             bridgeFs.remove = origRemoveAgain;
             bridgeFs.isSuperseded = origSuperseded;
         }
@@ -1650,7 +1648,7 @@ console.log('\n== localStorage 文档销毁前的收尾（复审修复项）==')
 
     // 回归 6（复审问题 5）：删除尚未完成时 flushAll 不能报 0。恢复队列也不可用时，
     // 必须把未完成的删除计入返回值，宿主的 incomplete 检测才不会漏报。
-    check('恢复队列不可用时，flushAll 返回值包含未完成的删除', (() => {
+    check('已接收的删除不依赖退出时再次入队', (() => {
         newSession();
         const key = 'unfinished.delete';
         const target = fileOf(key);
@@ -1674,10 +1672,130 @@ console.log('\n== localStorage 文档销毁前的收尾（复审修复项）==')
             bridgeFs.stagePendingStorage = origStage;
             console.warn = origWarn;
         }
-        return remaining === 1 && fs.existsSync(target);
+        const entry = JSON.parse(fs.readFileSync(journalPath, 'utf8')).entries[nameOf(key)];
+        const durableDelete = entry && entry.d === true;
+        newSession();
+        return remaining === 0 && durableDelete && Object.create(global.Storage.prototype).getItem(key) === null;
     })(), (() => {
         const target = fileOf('unfinished.delete');
         return fs.existsSync(target) ? 'disk=' + fs.readFileSync(target, 'utf8') : 'disk=<missing>';
+    })());
+}
+
+console.log('\n== Storage 修改返回前持久交接 ==');
+{
+    check('没有卸载事件和定时器，新文档也能读回已返回的 setItem', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('accepted.without.events', 'LATEST');
+        // 丢弃旧文档，不执行 flush / pagehide / beforeunload。
+        newSession();
+        return Object.create(global.Storage.prototype).getItem('accepted.without.events') === 'LATEST';
+    })());
+    check('没有退出事件，已返回的 removeItem 不会在新文档复活', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('accepted.delete', 'OLD');
+        window.__tyranorLocalStorageFlush();
+        const original = bridge.remove;
+        bridge.remove = () => false;
+        try { s.removeItem('accepted.delete'); } finally { bridge.remove = original; }
+        newSession();
+        return Object.create(global.Storage.prototype).getItem('accepted.delete') === null;
+    })());
+    check('持久接收失败时 setItem 抛错且原镜像保持不变', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('accepted.failure', 'OLD');
+        const original = bridge.commitStorageMutation;
+        bridge.commitStorageMutation = () => false;
+        let threw = false;
+        try { s.setItem('accepted.failure', 'NEW'); } catch (error) { threw = true; }
+        finally { bridge.commitStorageMutation = original; }
+        return threw && s.getItem('accepted.failure') === 'OLD';
+    })());
+    check('连续物化失败后 final flush 不删除有效队列副本', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('fallback.keeps.journal', 'NEW');
+        const original = bridge.writeText;
+        bridge.writeText = () => false;
+        try {
+            window.__tyranorLocalStorageFlush();
+            window.__tyranorLocalStorageFlush();
+            if (window.__tyranorLocalStorageFlushAll(true) !== 0) return false;
+        } finally { bridge.writeText = original; }
+        newSession();
+        return Object.create(global.Storage.prototype).getItem('fallback.keeps.journal') === 'NEW';
+    })());
+    check('两键入队取消失败时抛错保留旧状态，重试成功后不复活', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('cancel.failed', 'OLD_PENDING');
+        s.setItem('cancel.kept', 'KEPT');
+        const original = bridge.commitStorageMutation;
+        bridge.commitStorageMutation = () => false;
+        let failures = 0;
+        try {
+            try { s.removeItem('cancel.failed'); } catch (error) { if (error.name === 'QuotaExceededError') failures++; }
+            try { s.clear(); } catch (error) { if (error.name === 'QuotaExceededError') failures++; }
+        } finally { bridge.commitStorageMutation = original; }
+        if (failures !== 2 || s.getItem('cancel.failed') !== 'OLD_PENDING' || s.getItem('cancel.kept') !== 'KEPT') return false;
+        s.removeItem('cancel.failed');
+        newSession();
+        const recovered = Object.create(global.Storage.prototype);
+        return recovered.getItem('cancel.failed') === null && recovered.getItem('cancel.kept') === 'KEPT';
+    })());
+    check('clear 接收后目录读取失败，当前镜像与重启结果仍为空', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('clear.after.accept', 'OLD');
+        window.__tyranorLocalStorageFlushAll();
+        const original = bridge.readdir;
+        bridge.readdir = () => '';
+        let threw = false;
+        try { s.clear(); } catch (error) { threw = true; }
+        finally { bridge.readdir = original; }
+        const emptyNow = s.getItem('clear.after.accept') === null && s.length === 0;
+        newSession();
+        return !threw && emptyNow && Object.create(global.Storage.prototype).getItem('clear.after.accept') === null;
+    })());
+    check('恢复未完成时所有 Storage API 显式报错，恢复后可重试', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('recovery.pending', 'LATEST');
+        const original = bridge.replayPendingStorage;
+        bridge.replayPendingStorage = () => -1;
+        let thrown = 0;
+        try {
+            newSession();
+            const pending = Object.create(global.Storage.prototype);
+            const operations = [
+                () => pending.getItem('recovery.pending'),
+                () => pending.setItem('recovery.pending', 'WRONG'),
+                () => pending.removeItem('recovery.pending'),
+                () => pending.clear(),
+                () => pending.length,
+                () => pending.key(0),
+            ];
+            operations.forEach((operation) => {
+                try { operation(); } catch (error) { if (error.name === 'InvalidStateError') thrown++; }
+            });
+        } finally { bridge.replayPendingStorage = original; }
+        return thrown === 6 && Object.create(global.Storage.prototype).getItem('recovery.pending') === 'LATEST';
+    })());
+    check('final flush 只报告已接收状态，不触发跨桥磁盘 I/O', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('accepted.final', 'PERSISTED');
+        const methods = Object.keys(bridge).filter((name) => typeof bridge[name] === 'function');
+        const originals = {};
+        let calls = 0;
+        methods.forEach((name) => { originals[name] = bridge[name]; bridge[name] = () => { calls++; return false; }; });
+        let remaining;
+        try { remaining = window.__tyranorLocalStorageFlushAll(true); }
+        finally { methods.forEach((name) => { bridge[name] = originals[name]; }); }
+        return remaining === 0 && calls === 0;
     })());
 }
 

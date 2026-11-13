@@ -82,6 +82,8 @@ Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并�
 
 ## 5. 引擎进程与生命周期
 
+RPG Maker v2 的插件 `localStorage` 由兼容层调用 [RpgMakerFsBridge](engine/src/main/java/com/core/rpgmaker/RpgMakerFsBridge.kt) 同步持久接收；[RpgMakerStoragePendingJournal](engine/src/main/java/com/core/rpgmaker/RpgMakerStoragePendingJournal.kt) 在游戏目录 `AppData/Local Storage` 保存恢复队列。JS 在接收成功后更新镜像，`.dat` 合并写只负责物化。存储目录锁覆盖接收、claim 重放和物化确认，锁序为目录 → 队列/路径；同目录由 `:rpgmaker` 单进程内多个文档共享。页面兼容层在游戏脚本之前完成恢复，失败保留队列并抛 Storage 未就绪错误；Activity 销毁回调与看门狗不再承担数据交接。该通路只处理插件 Storage，正常游戏存档仍走 `saveDataManager`。
+
 以 [engine Manifest](engine/src/main/AndroidManifest.xml) 为准，内置宿主均为 `exported=false`，主要分为 `:kirikiri2`、`:krkrsdl3`、`:ons`、多档 `:artemis*`、`:siglus`、`:fbgames`、`:fvp`、`:ethornell`、`:cmvs`、`:systemnnn`、`:xsys35`、`:xsys4`、`:tyrano`、`:rpgmaker`。进程隔离用于控制原生库、全局状态与符号冲突；不提供通用跨引擎热切换保证。第三方 APK 运行时模块运行在用户安装的独立 APK 进程中，不属于上述宿主，也不由 App 建立 JNI 会话。
 
 - FVP、Framebuffer 及 Siglus 关闭滤镜的路径仍由主线程 `Choreographer` 同步驱动原生调用。

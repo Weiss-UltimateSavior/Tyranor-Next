@@ -186,15 +186,15 @@ class RpgMakerStoragePendingJournalTest {
             ),
         )
 
-        assertEquals("能写的那条照常恢复", 1, bridge(2L).replayPendingStorage())
+        assertEquals("部分恢复失败必须向页面报告未就绪", -1, bridge(2L).replayPendingStorage())
         assertEquals("OK", File(storeDir, ok).readText())
         assertTrue("失败条目必须保留到下次", journalFile.exists())
         val queued = JSONObject(journalFile.readText())
             .getJSONObject("entries").keys().asSequence().toList()
         assertEquals("队里只剩失败的那条", listOf(broken), queued)
 
-        // 目标仍然不可写：继续留在队列里，且返回 0（没恢复成功）
-        assertEquals(0, bridge(3L).replayPendingStorage())
+        // 目标仍然不可写：继续留在队列里，并向页面报告未就绪。
+        assertEquals(-1, bridge(3L).replayPendingStorage())
         assertTrue(journalFile.exists())
     }
 
@@ -215,11 +215,14 @@ class RpgMakerStoragePendingJournalTest {
     fun epochsArePerEntrySoANewProcessSessionIsNotMasked() {
         // 上一进程留下的条目期号很大（期号在每个进程内从 1 重新计数）
         assertTrue(bridge(9L).stagePendingStorage("""{"values":{"61.dat":"OLD_PROCESS"},"deletes":[]}"""))
+        val priorRun = JSONObject(journalFile.readText()).put("run", "previous-process")
+        journalFile.writeText(priorRun.toString())
         // 本进程 doc1 入队：每条只记自己的期号，不能被整份队列的 max 抬成 9
         assertTrue(bridge(1L).stagePendingStorage("""{"values":{"62.dat":"NEW_SESSION"},"deletes":[]}"""))
         // doc2 清空存储（目录级墓碑，期号 2）：本进程 doc1 的条目必须让位
         assertTrue(bridge(2L).recordClear("AppData/Local Storage"))
-        assertEquals("只有上一进程那条不受本进程墓碑约束", 1, bridge(2L).replayPendingStorage())
+        assertEquals("上一进程及本进程清除之前的条目都必须让位", 0, bridge(2L).replayPendingStorage())
+        assertFalse(File(storeDir, "61.dat").exists())
         assertFalse("本进程清除之前入队的键不能被重放写回", File(storeDir, "62.dat").exists())
     }
 
@@ -262,15 +265,14 @@ class RpgMakerStoragePendingJournalTest {
     }
 
     @Test
-    fun corruptJournalIsDiscardedInsteadOfCrashing() {
+    fun corruptJournalIsPreservedAndReported() {
         storedFile("80.dat", "KEEP")
-        journalFile.writeText("{ this is not json")
-        assertEquals(0, bridge(2L).replayPendingStorage())
-        assertTrue("损坏的队列不能拖垮启动", storedFile("80.dat").exists())
-        assertFalse("读不出来的队列被删除，避免每次启动都重复解析与告警", journalFile.exists())
-        // 删掉之后还能正常入队与重放
-        assertTrue(bridge(2L).stagePendingStorage("""{"values":{"80.dat":"RECOVERED"},"deletes":[]}"""))
-        assertEquals(1, bridge(3L).replayPendingStorage())
-        assertEquals("RECOVERED", storedFile("80.dat").readText())
+        val damaged = "{ this is not json"
+        journalFile.writeText(damaged)
+        assertEquals(-1, bridge(2L).replayPendingStorage())
+        assertEquals("KEEP", storedFile("80.dat").readText())
+        assertEquals("损坏队列保留供恢复，不能当作空存储", damaged, journalFile.readText())
+        assertFalse(bridge(2L).stagePendingStorage("""{"values":{"80.dat":"REPLACEMENT"},"deletes":[]}"""))
+        assertEquals(damaged, journalFile.readText())
     }
 }

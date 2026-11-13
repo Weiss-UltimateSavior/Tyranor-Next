@@ -88,7 +88,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 - SystemNNN 不再进行整目录复制，WebDAV 直接使用游戏目录下的 `sav`。手动恢复 ZIP 会在解包后确认当前存档目录。
 - 游戏目录需位于 Android 可访问的本地存储，并通过系统文件选择器（SAF）授权；启动时目录必须能够映射为真实文件路径，外置存储上的部分引擎可能需要“所有文件访问”权限。
 - 实际兼容性取决于游戏使用的引擎版本、封包/加密方式和脚本特性；特殊修改版可能需要调整引擎设置或补丁。KRKR 游戏的渲染器、FPS 限制、内存占用等引擎偏好按 Kirikiroid2 内核原生键名写入引擎偏好文件，全局与单游戏覆盖均可生效。
-- RPG Maker MV/MZ 可在引擎设置里选运行版本：`Tyranor-2.3.4` 走 Tyrano 宿主（旧版行为，兼容性最稳）；`TynMV-0.1` / `TynMV-0.2` 走 TynMV 宿主，由内置 NW.js 兼容层接管 `require` / `process` / `nw` 与本地文件读写，v2 额外接管 `fs` 与 `localStorage` 落盘。选 TynMV 后游戏资源经本地 HTTP 提供：图片、音频、字体等只读素材在单次会话内复用，`data/`、`save/` 以及脚本、网页、JSON 每次都回源，因此插件改完文件能立即读到新内容。TyranoBuilder 与 `Tyranor-2.3.4` 仍使用原有的资源分发路径。
+- RPG Maker MV/MZ 可在引擎设置里选运行版本：`Tyranor-2.3.4` 走 Tyrano 宿主（旧版行为，兼容性最稳）；`TynMV-0.1` / `TynMV-0.2` 走 TynMV 宿主，由内置 NW.js 兼容层接管 `require` / `process` / `nw` 与本地文件读写，v2 额外接管 `fs` 与 `localStorage` 落盘。`localStorage` 修改在成功返回前已交给原生持久队列，重载或退出不必等待旧页面定时器；持久接收失败会抛 Storage 错误，恢复未完成时会阻止读取旧值。选 TynMV 后游戏资源经本地 HTTP 提供：图片、音频、字体等只读素材在单次会话内复用，`data/`、`save/` 以及脚本、网页、JSON 每次都回源，因此插件改完文件能立即读到新内容。TyranoBuilder 与 `Tyranor-2.3.4` 仍使用原有的资源分发路径。
 
 ## 参与贡献
 

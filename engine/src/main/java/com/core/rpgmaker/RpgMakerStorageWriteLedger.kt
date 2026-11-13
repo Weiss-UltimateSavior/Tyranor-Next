@@ -35,6 +35,15 @@ internal object RpgMakerStorageWriteLedger {
     @PublishedApi
     internal val pathLocks = Array(64) { Any() }
 
+    @PublishedApi
+    internal val storageLocks = Array(64) { Any() }
+
+    /** 锁序固定为存储目录 → 队列 → 文件路径；接收与重放不能分属不同 bridge 的实例锁。 */
+    inline fun <T> withStorageLock(directory: String, block: () -> T): T {
+        val lock = storageLocks[(directory.hashCode() and 0x7fffffff) % storageLocks.size]
+        return synchronized(lock) { block() }
+    }
+
     /**
      * 记录一次成功的写入或删除（路径为规范化后的绝对路径）。
      *

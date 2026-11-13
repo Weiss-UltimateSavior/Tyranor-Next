@@ -414,14 +414,8 @@ class RpgMakerActivity : Activity() {
                     File(dir), bundle.contentRoot, asarArchive, rpgDirIndex, sessionEpochAtCreate,
                 )
                 browser.addJavascriptInterface(fsBridge, RPG_MAKER_FS_BRIDGE_NAME)
-                // 上次文档销毁/重载时没写完的 localStorage 值（恢复队列）必须在页面脚本
-                // 读取之前落地。队列可能积压（上次收尾时磁盘在失败），逐条落盘会 fsync
-                // 多次，因此放到工作线程；不在这里 join——UI 线程白等只会卡住首帧，而
-                // 页面内兼容层初始化会调用同一个桥方法（内部串行），拿到的是同一个已完成
-                // 的结果，晚于插件读取的情况由那一次兜住。
-                val replayer = Thread({ runCatching { fsBridge.replayPendingStorage() } }, "rpgmaker-pending-replay")
-                replayer.isDaemon = true
-                replayer.start()
+                // 恢复由页面兼容层在游戏脚本之前同步完成。Storage 修改返回前已持久接收，
+                // 不再需要 Activity 启动线程与旧文档退出回调争抢队列；恢复失败会显式报错。
             }
             // 原生「计算」能力：哈希/HMAC/随机数/KDF/AES/zlib（纯 JS 复刻要么不可行，
             // 要么容易写出静默错值），由 __nwjs_polyfill_v2.js 包装成 Node 模块
@@ -804,18 +798,8 @@ class RpgMakerActivity : Activity() {
         DoubleBackExit.clear(this)
         runCatching { inputRemap?.onDestroy() }
         inputRemap = null
-        // 销毁前必须等 localStorage 刷完：evaluateJavascript 是异步的，紧跟着 destroy()
-        // 会让落盘脚本从未执行，200ms 合并窗口内的写入随之丢失。
-        // 回调在 UI 线程投递，所以这里「回调触发销毁 + 看门狗兜底」：渲染进程已死时
-        // evaluateJavascript 不会回调，看门狗负责把 WebView 销毁掉（避免泄漏）。
-        //
-        // 退出与重建（`onNewIntent` 换游戏走 recreate()；普通配置变更已被 configChanges
-        // 接管，不会重建）走同一条收尾：两种情况下旧文档都会被销毁，定时器与内存镜像一起
-        // 消失，没有「页面还要继续用、可以慢点写」的情形。脚本内部先按 FLUSH_ALL_HARD_CAP_MS
-        // 抽干脏键，抽不干的连删除意图一起交给原生恢复队列（见 __nwjs_polyfill_v2.js 与
-        // RpgMakerStoragePendingJournal），下一次文档初始化时重放——因此回传的数字是
-        // 「既没落盘也没进恢复队列」的键数，只有它为 0 才真正安全；非 0 说明连队列都写不
-        // 进去（如磁盘满），只能记日志。
+        // Storage 修改返回前已进入原生持久队列；最终钩子只报告接收/恢复状态，不做 I/O。
+        // 此回调与看门狗只负责资源释放，既不交接新值，也不决定已接收数据能否保住。
         val dying = webView
         webView = null
         if (dying != null) {
@@ -1018,26 +1002,12 @@ class RpgMakerActivity : Activity() {
         /** 兼容层抛错：同上，按「未确认」处理。 */
         private const val FLUSH_REPORT_ERROR = "error"
 
-        /**
-         * 文档销毁（Activity 退出或重建）时的落盘入口：`flushAll(true)` 放宽预算到
-         * `FLUSH_ALL_HARD_CAP_MS`，抽不干的键交给原生恢复队列，并把**既没落盘也没进队列**
-         * 的键数作为字符串回传，让宿主能记录「这次收尾还剩几个键」。
-         *
-         * 只回传数字不回传布尔：脚本正常返回但数据没写完，与脚本压根没跑，是两种失败，
-         * 之前的 `evaluateJavascript(..., null)` 把两者都当成了成功。
-         */
+        /** 文档销毁时只报告接收状态；所有已返回的 Storage 修改都已在原生队列中。 */
         private const val FLUSH_LOCAL_STORAGE_FINAL_JS =
             "try{var f=window.__tyranorLocalStorageFlushAll;String(f?f(true):'$FLUSH_REPORT_MISSING');}" +
                 "catch(e){'$FLUSH_REPORT_ERROR'}"
 
-        /**
-         * 销毁时等待落盘回调的上限：渲染进程已死时 `evaluateJavascript` 不会回调，
-         * 由看门狗兜底销毁 WebView（避免为了等一次落盘而泄漏 WebView）。
-         *
-         * 必须**大于** JS 侧 `FLUSH_ALL_HARD_CAP_MS`（2000ms，文档销毁时的兜底上限）
-         * 加调度余量：慢存储上正常刷盘也可能超过几百毫秒，超时太短会在刷盘中途把页面
-         * 拆掉；JS 侧在落盘前已把待写数据整体入队，因此即使被拆也不会丢值。
-         */
+        /** 无脚本回调时的 WebView 资源回收上限；与数据提交耗时无关。 */
         private const val FLUSH_TEARDOWN_WATCHDOG_MS = 2_500L
         private const val RPG_MZ_CORE_HOOK_ASSET = "__hook_rmmz_core.js"
         private const val RPG_MZ_MANAGERS_HOOK_ASSET = "__hook_rmmz_managers.js"
@@ -1113,7 +1083,7 @@ class RpgMakerActivity : Activity() {
          *
          * 必须**大于** [FLUSH_TEARDOWN_WATCHDOG_MS]，否则进程会在 localStorage 落盘完成前
          * 被杀掉（退出动画/界面早已不可见，多留几秒只是让收尾跑完，用户无感）。
-         * 不变量：`PROCESS_EXIT_DELAY_MS > FLUSH_TEARDOWN_WATCHDOG_MS > FLUSH_ALL_HARD_CAP_MS`。
+         * 不变量：`PROCESS_EXIT_DELAY_MS > FLUSH_TEARDOWN_WATCHDOG_MS`。
          *
          * 延迟越长，「旧会话的退出任务撞上新会话」的窗口越大，所以真正的保护是
          * [sessionOwnership] 的期号比对，而不是这个数值本身。
