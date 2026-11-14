@@ -173,6 +173,11 @@ fun EngineScreen(
     var moduleDialogEngine by rememberSaveable { mutableStateOf<EngineType?>(null) }
     // YU-RIS 等「引擎专属外置运行时」弹窗：只列该引擎的目标（如 Winlator），标题与内置版本弹窗同构
     var emulatorDialogEngine by rememberSaveable { mutableStateOf<EngineType?>(null) }
+    // 每次呼出弹窗都换一个编号。弹窗退场期间窗口已放行触摸，此时再点引擎会写入新的目标，
+    // 随后上一个弹窗退场结束才交付关闭回调：若回调无条件清空状态，新弹窗刚呼出就被吞掉（单点概率呼不出）。
+    // 关闭回调只清除自己那一次呼出，新呼出用 key(编号) 换成全新的弹窗实例。
+    var moduleDialogSeq by rememberSaveable { mutableIntStateOf(0) }
+    var emulatorDialogSeq by rememberSaveable { mutableIntStateOf(0) }
     // 内部存储读取是常数级开销，先同步显示；游戏目录大小在后台用批量查询补齐，
     // 避免首次进入时卡片长时间停在加载态。
     val internalStorage = remember { readInternalStorage() }
@@ -383,8 +388,14 @@ fun EngineScreen(
                     onClick = {
                         when {
                             // 外置模拟器（PPSSPP / Eden / Winlator）：打开本引擎的运行时列表弹窗
-                            emulator != null -> emulatorDialogEngine = engine
-                            else -> moduleDialogEngine = engine
+                            emulator != null -> {
+                                emulatorDialogEngine = engine
+                                emulatorDialogSeq++
+                            }
+                            else -> {
+                                moduleDialogEngine = engine
+                                moduleDialogSeq++
+                            }
                         }
                     },
                 )
@@ -399,8 +410,11 @@ fun EngineScreen(
     // 版本模块列表弹窗：复用「加入群聊」弹窗的 AppNavItem 条目，展示该引擎各版本
     // 模块的安装状态；未安装的条目点击直达对应下载页。
     moduleDialogEngine?.let { dialogEngine ->
+        val seq = moduleDialogSeq
+        val closeDialog = { if (moduleDialogSeq == seq) moduleDialogEngine = null }
+        key(seq) {
         AppAlertDialog(
-            onDismissRequest = { moduleDialogEngine = null },
+            onDismissRequest = closeDialog,
             title = {
                 Text(
                     stringResource(R.string.engine_list_title, engineDisplayName(dialogEngine)),
@@ -435,7 +449,7 @@ fun EngineScreen(
                                         AppNotice.makeText(context, engineOpenDownloadFailedMessage, Toast.LENGTH_SHORT, AppNotice.Kind.Failure).show()
                                     }
                                 }
-                                moduleDialogEngine = null
+                                closeDialog()
                             }
                             if (bodyExit != null) bodyExit.closeThen(action) else action()
                         }
@@ -444,16 +458,20 @@ fun EngineScreen(
             },
             // 底部主操作：进入该引擎族的全局引擎设置页（长按钮）
             confirmButton = {
-                EngineGlobalSettingsButton(engine = dialogEngine) { moduleDialogEngine = null }
+                EngineGlobalSettingsButton(engine = dialogEngine, onNavigate = closeDialog)
             },
         )
+        }
     }
 
     // Winlator 系引擎专属弹窗：只列该引擎的外置运行时（Winlator），未安装跳下载页、已安装打开主界面
     emulatorDialogEngine?.let { dialogEngine ->
         val entries = ExternalEmulatorRegistry.targets.filter { it.supports(dialogEngine) }
+        val seq = emulatorDialogSeq
+        val closeDialog = { if (emulatorDialogSeq == seq) emulatorDialogEngine = null }
+        key(seq) {
         AppAlertDialog(
-            onDismissRequest = { emulatorDialogEngine = null },
+            onDismissRequest = closeDialog,
             title = {
                 Text(
                     stringResource(R.string.engine_list_title, engineDisplayName(dialogEngine)),
@@ -487,7 +505,7 @@ fun EngineScreen(
                                 } else if (!ExternalEngineLauncher.openInstallPage(context, target.installUrl)) {
                                     AppNotice.makeText(context, engineOpenDownloadFailedMessage, Toast.LENGTH_SHORT, AppNotice.Kind.Failure).show()
                                 }
-                                emulatorDialogEngine = null
+                                closeDialog()
                             }
                             if (bodyExit != null) bodyExit.closeThen(action) else action()
                         }
@@ -496,9 +514,10 @@ fun EngineScreen(
             },
             // 底部主操作：进入该引擎族的全局引擎设置页（长按钮）
             confirmButton = {
-                EngineGlobalSettingsButton(engine = dialogEngine) { emulatorDialogEngine = null }
+                EngineGlobalSettingsButton(engine = dialogEngine, onNavigate = closeDialog)
             },
         )
+        }
     }
 }
 
