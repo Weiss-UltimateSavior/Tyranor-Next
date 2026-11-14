@@ -47,14 +47,18 @@ object CoverScrapeTaskManager {
             _state.value = CoverScrapeTaskState(running = true)
             job = scope.launch {
                 try {
-                    val input = games ?: GameLibraryFacade.loadGames(appContext)
+                    val (input, initialRevisions) = withContext(Dispatchers.IO) {
+                        GameLibraryFacade.loadGamesWithBindingRevisions(appContext, games)
+                    }
                     val result = CoverScraperService.scrapeLibraryCovers(appContext, input) { original, scraped ->
                         val persisted = withContext(NonCancellable + Dispatchers.IO) {
-                            persistScrapedCover(appContext, original, scraped)
+                            val expectedRev = initialRevisions[original.uri]
+                                ?: GameLibraryFacade.BindingRevisionSnapshot()
+                            persistScrapedCover(appContext, original, scraped, expectedRev)
                         }
                         persisted?.let { _gameUpdates.emit(it) }
                     }
-                    // 每张封面已通过 updateGameCover 单行落库（迁移方案阶段 2），
+                    // 每张封面已通过 updateGameCoverMetadata 单行落库（迁移方案阶段 2），
                     // 这里只读最新库作为结果快照，不再触发整库重写。
                     val mergedGames = withContext(NonCancellable + Dispatchers.IO) {
                         GameLibraryFacade.loadGames(appContext)
@@ -84,9 +88,23 @@ object CoverScrapeTaskManager {
         }
     }
 
-    private fun persistScrapedCover(context: Context, original: ScanGame, scraped: ScanGame): ScanGame? =
-        GameLibraryFacade.updateGameCover(context, original.uri) { current ->
-            mergeScrapedCover(current, original, scraped)
+    internal fun persistScrapedCover(
+        context: Context,
+        original: ScanGame,
+        scraped: ScanGame,
+        expectedRevision: GameLibraryFacade.BindingRevisionSnapshot = GameLibraryFacade.BindingRevisionSnapshot(),
+    ): ScanGame? =
+        GameLibraryFacade.updateGameCoverMetadata(context, original.uri) { current ->
+            val currentRevision = GameLibraryFacade.bindingRevision(current.uri)
+            mergeScrapedCover(
+                current = current,
+                original = original,
+                scraped = scraped,
+                vndbRevisionUnchanged = currentRevision.vndb == expectedRevision.vndb,
+                bangumiRevisionUnchanged = currentRevision.bangumi == expectedRevision.bangumi,
+                hikarinagiRevisionUnchanged = currentRevision.hikarinagi == expectedRevision.hikarinagi,
+                nextmoeRevisionUnchanged = currentRevision.nextmoe == expectedRevision.nextmoe,
+            )
         }?.also { updated ->
             // 换封面成功后清理被替换的旧图。mergeScrapedCover 仅在 current 与任务快照一致时生效，
             // 因此此时 original.coverUri 就是落库前的旧封面；deleteCachedCover 只在 covers_remote
@@ -112,14 +130,42 @@ object CoverScrapeTaskManager {
 }
 
 /** 只在封面仍与任务启动快照一致时应用结果，避免覆盖用户同时进行的手动换封面。 */
-internal fun mergeScrapedCover(current: ScanGame, original: ScanGame, scraped: ScanGame): ScanGame =
+internal fun mergeScrapedCover(
+    current: ScanGame,
+    original: ScanGame,
+    scraped: ScanGame,
+    vndbRevisionUnchanged: Boolean = true,
+    bangumiRevisionUnchanged: Boolean = true,
+    hikarinagiRevisionUnchanged: Boolean = true,
+    nextmoeRevisionUnchanged: Boolean = true,
+): ScanGame =
     if (current.coverUri == original.coverUri && current.coverSource == original.coverSource) {
         current.copy(
             coverUri = scraped.coverUri,
             coverSource = scraped.coverSource,
-            // VNDB 元数据随封面结果一并合并（空串不得覆盖已有值）
-            vndbId = scraped.vndbId?.takeIf { it.isNotBlank() } ?: current.vndbId,
-            metadataTitle = scraped.metadataTitle?.takeIf { it.isNotBlank() } ?: current.metadataTitle,
+            // 已有绑定优先（仅在为空时以刮削命中填充）：游玩状态绑定不写封面列、必过本护栏，
+            // 「刮削值优先」会让标题首条候选静默改写手工绑定，后续状态写入打到错误的远端条目。
+            // 回填另须与任务快照及逐源绑定修订号一致（BK-40）：解绑进行中、或任务期间曾绑定后
+            // 又解绑使 current 回到 null 时均不回填，否则批量刮削会把刚解绑的绑定静默接回去；
+            // 正常绑定窗口（未修改过绑定且 current 与 original 一致为空）仍回填，既有行为不变
+            vndbId = current.vndbId?.takeIf { it.isNotBlank() }
+                ?: scraped.vndbId?.takeIf {
+                    it.isNotBlank() && vndbRevisionUnchanged && current.vndbId == original.vndbId
+                },
+            bangumiId = current.bangumiId?.takeIf { it.isNotBlank() }
+                ?: scraped.bangumiId?.takeIf {
+                    it.isNotBlank() && bangumiRevisionUnchanged && current.bangumiId == original.bangumiId
+                },
+            hikarinagiId = current.hikarinagiId?.takeIf { it.isNotBlank() }
+                ?: scraped.hikarinagiId?.takeIf {
+                    it.isNotBlank() && hikarinagiRevisionUnchanged && current.hikarinagiId == original.hikarinagiId
+                },
+            nextmoeId = current.nextmoeId?.takeIf { it.isNotBlank() }
+                ?: scraped.nextmoeId?.takeIf {
+                    it.isNotBlank() && nextmoeRevisionUnchanged && current.nextmoeId == original.nextmoeId
+                },
+            metadataTitle = current.metadataTitle?.takeIf { it.isNotBlank() }
+                ?: scraped.metadataTitle?.takeIf { it.isNotBlank() },
         )
     } else {
         current

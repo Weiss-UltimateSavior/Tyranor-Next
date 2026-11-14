@@ -10,8 +10,11 @@ import com.tyranor.next.core.settings.AppStorageNames
 
 /**
  * 游戏库 Room 数据库单例。主进程专用；引擎子进程不访问本库。
- * v2 新增 game_overrides / engine_detection_cache（迁移方案阶段 4/5）。
- * v3 新增 games.runtime_module_package（第三方 APK 运行时模块绑定）。
+ * - v2 新增 `game_overrides` / `engine_detection_cache`（迁移方案阶段 4/5）。
+ * - v3 新增 `games.runtime_module_package`（第三方 APK 运行时模块绑定）。
+ * - v4 新增 `games.bangumi_id`（Bangumi 条目绑定）。
+ * - v5 新增 `games.hikarinagi_id`（Hikarinagi 条目绑定）。
+ * - v6 新增 `games.nextmoe_id`（未萌 NextMoe 条目绑定）。
  * 降级（用户回滚旧版本后再次升级）无迁移路径可走时破坏性重建是安全的：games/scan_roots/
  * quick_launch 由 prefs 镜像 + 启动修复导入恢复，game_overrides 由 syncFromPrefs 恢复；
  * engine_detection_cache 为可重建缓存，Artemis 记忆丢失后经一次特征识别 + 一次成功启动
@@ -19,8 +22,8 @@ import com.tyranor.next.core.settings.AppStorageNames
  *
  * 升级路径（m7）：已启用 exportSchema 并导出到 `app/schemas`。破坏性升级**仅对从 v1 起的旧安装
  * 历史过渡开放**（`.fallbackToDestructiveMigrationFrom(1)`，老安装可重建后直升当前版本）；
- * v2→v3 已有显式 Migration；未来任何 version+n 变更必须注册显式 Migration，缺失时启动即抛异常
- * （在开发/CI 阶段暴露），不再静默清空整库。
+ * v2→v3、v3→v4、v4→v5、v5→v6 均有显式 Migration；未来任何 version+n 变更必须注册显式
+ * Migration，缺失时启动即抛异常（在开发/CI 阶段暴露），不再静默清空整库。
  */
 @Database(
     entities = [
@@ -30,7 +33,7 @@ import com.tyranor.next.core.settings.AppStorageNames
         GameOverrideEntity::class,
         EngineDetectionEntity::class,
     ],
-    version = 3,
+    version = 6,
     exportSchema = true,
 )
 internal abstract class GameLibraryDatabase : RoomDatabase() {
@@ -51,6 +54,27 @@ internal abstract class GameLibraryDatabase : RoomDatabase() {
             }
         }
 
+        /** v3→v4：新增 Bangumi 条目绑定列（旧行为 null）。 */
+        internal val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE games ADD COLUMN bangumi_id TEXT")
+            }
+        }
+
+        /** v4→v5：新增 Hikarinagi 条目绑定列（旧行为 null）。 */
+        internal val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE games ADD COLUMN hikarinagi_id TEXT")
+            }
+        }
+
+        /** v5→v6：新增未萌 NextMoe 条目绑定列（旧行为 null）。 */
+        internal val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE games ADD COLUMN nextmoe_id TEXT")
+            }
+        }
+
         @Volatile
         private var instance: GameLibraryDatabase? = null
 
@@ -64,7 +88,7 @@ internal abstract class GameLibraryDatabase : RoomDatabase() {
                 .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                 // 仅 v1→v2 历史过渡允许破坏性重建；未来版本缺 Migration 必须显式暴露（m7）。
                 .fallbackToDestructiveMigrationFrom(dropAllTables = true, 1)
-                .addMigrations(MIGRATION_2_3)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .build()
                 .also { instance = it }
         }

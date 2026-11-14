@@ -15,6 +15,9 @@ internal object GameRecordCodec {
 
     fun serializeGame(g: ScanGame): String {
         // 标题/元数据可能来自 VNDB，含 \n 或 \u0001 会把整个持久化文件解析错乱，需清洗。
+        // 绑定 id（vndbId/bangumiId/hikarinagiId）来自服务端候选，正常不含分隔符；与标题
+        // 同款过 clean() 作为行式格式错位防御（BK-58）：仅污染输入下从「整文件解析错乱」
+        // 收敛为「字段内空格」，合法 id（数字/字母）恒等、零行为变化。
         fun clean(s: String): String = s.replace("\n", " ").replace("\u0001", " ")
         return listOf(
             clean(g.title),
@@ -22,7 +25,7 @@ internal object GameRecordCodec {
             g.engine.name,
             g.launchTarget,
             g.coverUri.orEmpty(),
-            g.vndbId.orEmpty(),
+            clean(g.vndbId.orEmpty()),
             clean(g.metadataTitle.orEmpty()),
             g.launchFile.orEmpty(),
             g.openTime.toString(),
@@ -30,6 +33,9 @@ internal object GameRecordCodec {
             g.externalModuleAlias.orEmpty(),
             g.detectedRenpyVersion.orEmpty(),
             g.runtimeModulePackage.orEmpty(),
+            clean(g.bangumiId.orEmpty()),
+            clean(g.hikarinagiId.orEmpty()),
+            clean(g.nextmoeId.orEmpty()),
         ).joinToString("\u0001")
     }
 
@@ -50,6 +56,9 @@ internal object GameRecordCodec {
             externalModuleAlias = p.getOrElse(10) { "" }.takeIf { it.isNotBlank() },
             detectedRenpyVersion = p.getOrElse(11) { "" }.takeIf { it.isNotBlank() },
             runtimeModulePackage = p.getOrElse(12) { "" }.takeIf { it.isNotBlank() },
+            bangumiId = p.getOrElse(13) { "" }.takeIf { it.isNotBlank() },
+            hikarinagiId = p.getOrElse(14) { "" }.takeIf { it.isNotBlank() },
+            nextmoeId = p.getOrElse(15) { "" }.takeIf { it.isNotBlank() },
         )
     }
 }

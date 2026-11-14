@@ -49,7 +49,7 @@ flowchart TD
 
 ## 3. 游戏库与持久化
 
-[GameLibraryDatabase.kt](app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryDatabase.kt) 定义主进程专用 Room 数据库 `game_library.db`，当前 schema v3：
+[GameLibraryDatabase.kt](app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryDatabase.kt) 定义主进程专用 Room 数据库 `game_library.db`，当前 schema v6：
 
 | 表 | 内容 |
 | --- | --- |
@@ -65,7 +65,7 @@ flowchart TD
 
 旧 `game_scanner` prefs 仍作为幂等迁移来源和恢复镜像，不能删除为“无用缓存”。应用/引擎偏好及引擎进程读取的单游戏 blob 仍保留 prefs；Room 不是所有状态的唯一介质，也不能把普通 SharedPreferences 当成实时跨进程消息总线。
 
-Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并从镜像修复；v2→v3 通过显式 `Migration(2,3)` 新增 `games.runtime_module_package` 列及索引，schema v3 的 `3.json` 已导出。后续版本必须显式注册 `Migration`，不能扩大全局破坏性回退。当前数据库、加密凭据、存档同步状态与备份边界统一见 [持久化数据清单](docs/应用持久化数据清单.md)；清单分别说明 v1 破坏性重建与 v2→v3 显式迁移；专题验收记录仍只对各自标注的版本有效。
+Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并从镜像修复；v2→v3（`games.runtime_module_package` 列及索引）、v3→v4（`games.bangumi_id`）、v4→v5（`games.hikarinagi_id`）、v5→v6（`games.nextmoe_id`）分别通过显式 `Migration(2,3)`、`Migration(3,4)`、`Migration(4,5)`、`Migration(5,6)` 升级，对应 `3.json`–`6.json` 已导出。后续版本必须显式注册 `Migration`，不能扩大全局破坏性回退。当前数据库、加密凭据、存档同步状态与备份边界统一见 [持久化数据清单](docs/应用持久化数据清单.md)；专题验收记录仍只对各自标注的版本有效。
 
 ### 类级预编译规则
 
@@ -151,7 +151,7 @@ WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano
 - SystemNNN 不再创建 SAF 副本；`SystemNnnCopyStore` 仅保留旧副本的识别与资源回收。ZIP 恢复和删档在同一来源锁内解析并锁定当前 `sav`。
 - SystemNNN 的 ZIP 导入在私有 `:systemnnn_validator` 进程通过绑定服务校验。主进程只传应用缓存中的暂存目录名及校验条件，服务只返回结果。服务死亡、校验超时或快照无效时不会替换活动存档。WebDAV 对已核对同源的副本迁移会话基线和已提交的恢复记录，仍有待提交的恢复事务时返回类型化错误。
 
-- 封面：`CoverScraperService` 聚合在线来源，`CoverScrapeTaskManager` 管理应用级批量任务；UI 使用缩略图缓存，不在重组期同步抓取/解码。
+- 封面：`CoverScraperService` 聚合在线来源，`CoverScrapeTaskManager` 管理应用级批量任务；UI 使用缩略图缓存，不在重组期同步抓取/解码。游玩状态（`core/status/PlayStatusService`）复用同一套来源：Bangumi 收藏、VNDB ulist、Hikarinagi 评分与未萌 NextMoe 作品状态的读写均为用户显式操作（Bangumi 为只写模型，不做 GET 回读），授权凭据分别存于 `bangumi_auth_secure` / `vndb_auth_secure` / `hikarinagi_auth_secure` / `nextmoe_auth_secure`（Keystore 加密，排除备份）；Bangumi / Hikarinagi 授权经 AppAuth 网页流程完成，custom scheme 回调由 `RedirectUriReceiverActivity`（exported）接收并转发至各自不导出的回调 Activity；未萌 NextMoe 采用 Public Client + 强制 PKCE S256 与 `127.0.0.1:0` 环回回调（`NextMoeAuthService`）；各服务均以类型化错误码返回、文案由 UI 映射，授权状态经各 store 的 `statusVersion` StateFlow 发布；VNDB token 校验与权限解析（`verifyVndbToken` / `checkVndbPermissions` / `authInfo`）当前落在 core/status，系跟随其唯一消费场景（条目绑定后的权限提示），若迁 core/auth 需连带 `PlayStatusDialog` 与 `CoverScraperSettingsActivity` 两调用点，触碰时评估；条目绑定落在 `games.vndb_id` / `games.bangumi_id` / `games.hikarinagi_id` / `games.nextmoe_id`（schema v6）。
 - 存档：`GameSaveManager` 解析位置并导入/导出 ZIP；MV/MZ 的格式转化与互通独立于存档镜像，均采用同源目录解析。Ethornell 存档管理已按 capability 开放（`DEVICE_SAVE_IO_VERIFIED=true` 与 `HOST_DISPATCH_PROTOCOL_VERIFIED=true`）；范围为游戏目录 `savedata` user-root 的备份/恢复/删除；旧私有树在同一操作门禁内迁入，目标同名文件优先，完成标记避免后续删档复活，ZIP 单个文件上限 64 MiB（与 native 原子写一致），总量 1 GiB 预算不等于该上限；不自动导入资源根 `UserData`。运行时的用户槽位读/查/通用加载走授权别名，别名缺失不会回退到资源槽位；普通资源与命名归档保持原路径。商业游戏槽位保存与重开读档仍是独立验收范围，PC 格式互通不在本 capability 内。
 - 存档变更门禁按规范化目录的父子相交关系互斥，运行证据与待切换 owner 也使用同一范围；相关目录的 revision 参与传输 epoch，父目录切换后内层旧传输与会话失效。不相交的已知目录共享准入并可并行执行哈希、导出与启动；无法解析目录的启动仍独占变更准入。移除游戏只清理已获得门禁的当前应用专属存档目录与事务副本，保留旧独立目录、镜像父目录及索引。删除等锁可取消且有时限，进入必要清理后才不可取消；先推进传输 revision，子项失败保留身份和索引供重试。
 - 存档同步（WebDAV）：`core/game/save/sync/SaveSyncService` 在既有 ZIP 导出/导入能力之上管理不可变历史，按相对路径和内容字节计算 SHA-256；网络串行锁与本地历史锁按 URI 区分，活动存档锁按规范化实际目录区分，重叠 SAF 根共享写入门禁。`SaveDirectoryActivationStore` 在 `noBackupFilesDir/save_sync/directory_selections` 持久化该目录的 owner URI/token 与 revision；导入前写入，所有 alias 在恢复及 session/baseline 清理成功前拒绝同步启动与捕获，清理按持久 `activeKey` 扫描而不依赖当前 alias 是否可解析，完成后保留 revision 使旧 pinned transfer 失效。网络等待不持有本地锁，上传固定私有 ZIP 副本，选择/身份/清理通过 revision 使旧传输收尾失效。默认关闭、启用后默认手动；`SaveSnapshotStore` 负责每游戏 5 版与临时文件维护，`WebDavClient` 负责 WebDAV 传输与旧布局读取，10/20/无上限的独立保留策略由 `SaveSyncService` 执行。每次拉取只取该游戏当前最新云端版本并写入本地历史，不批量下载或直接恢复远端历史；手动激活版本才导入活动存档。旧版本 S 激活后继续保存出的 N 仍沿同一恢复链发布，并用 N 替换云端旧 S。旧保留量值、v1 云端布局和早期 Debug 本地选择标记均保留迁移/读取路径。
@@ -168,8 +168,8 @@ WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano
 - 拆封包：`ui/archive` → `core/unpack` → `com.core.archive.Xp3Core` → Rust；SAF 不能映射路径时经 staging 中转。Artemis PFS 补丁解包不走该工具链。
 - 第三方运行时模块：`core/engine/runtime` 只负责发现、启用、扫描描述解释与显式组件交棒；存档、输入重映射与引擎/单游戏设置均不接管，由模块自身负责。
 - 输入：UI → core 门面 → `engine/com.core.input`，按 canonical 键位注入每宿主的 `InputSink`；布局编辑器复用原生按键层。
-- 授权/更新：Hikarinagi OAuth 经 AppAuth 与 Keystore 保护的凭据存储；后台更新由 WorkManager 单次任务驱动，下载后经 FileProvider 交系统安装器。
+- 授权/更新：Hikarinagi / Bangumi OAuth 经 AppAuth、未萌 NextMoe OAuth 经 `127.0.0.1:0` 环回 PKCE S256 与 Keystore 保护的凭据存储（`hikarinagi_auth_secure` / `bangumi_auth_secure` / `vndb_auth_secure` / `nextmoe_auth_secure`）；后台更新由 WorkManager 单次任务驱动，下载后经 FileProvider 交系统安装器。
 
 ## 8. 已知架构偏差
 
-当前代码仍有与规范不完全一致的部分：授权及在线补丁的部分接口携带本地化文本；旧数据清单和专题验收说明也有历史快照。新增/改动接口须采用类型化错误，修复时连同调用链迁移。
+当前代码仍有与规范不完全一致的部分：在线补丁（`KrkrOnlinePatchService`）与存档位置描述（`GameSaveManager.SaveLocation.description`）的部分接口携带本地化文本；旧数据清单和专题验收说明也有历史快照。新增/改动接口须采用类型化错误，修复时连同调用链迁移。

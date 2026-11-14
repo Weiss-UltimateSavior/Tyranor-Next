@@ -35,17 +35,20 @@ internal interface GameLibraryDao {
     @Query("DELETE FROM games WHERE uri IN (:uris)")
     suspend fun deleteGamesByUris(uris: Collection<String>)
 
-    /** 封面元数据单行更新（迁移方案阶段 2），避免整库重写。 */
+    /** 封面/绑定元数据单行更新（迁移方案阶段 2；vndb/bangumi/hikarinagi/nextmoe 绑定列随同更新），避免整库重写。 */
     @Query(
         "UPDATE games SET cover_uri = :coverUri, cover_source = :coverSource, " +
-            "vndb_id = :vndbId, metadata_title = :metadataTitle, updated_at = :updatedAt " +
-            "WHERE uri = :uri",
+            "vndb_id = :vndbId, bangumi_id = :bangumiId, hikarinagi_id = :hikarinagiId, " +
+            "nextmoe_id = :nextmoeId, metadata_title = :metadataTitle, updated_at = :updatedAt WHERE uri = :uri",
     )
     suspend fun updateCover(
         uri: String,
         coverUri: String?,
         coverSource: String?,
         vndbId: String?,
+        bangumiId: String?,
+        hikarinagiId: String?,
+        nextmoeId: String?,
         metadataTitle: String?,
         updatedAt: Long,
     ): Int

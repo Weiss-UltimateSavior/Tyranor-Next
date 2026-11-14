@@ -1,6 +1,8 @@
 package com.tyranor.next.core.cover
 
+import com.tyranor.next.core.auth.HikarinagiAccessTokenResult
 import com.tyranor.next.core.engine.EngineType
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -28,5 +30,30 @@ class CoverScraperPolicyTest {
     fun xs4WithoutCoverStillSearchesOnlineFirst() {
         assertFalse(keepsLocalCover(onlyMissing = true, localCoverUri = null))
         assertTrue(Xs4IconCover.needsFallback(EngineType.XSYS4, null))
+    }
+
+    @Test
+    fun hikarinagiTokenFailureMapsNetworkSeparatelyFromAuthExpired() {
+        assertEquals(
+            CoverErrorCode.HIKARINAGI_NETWORK,
+            CoverScraperService.hikarinagiTokenFailureToCoverError(
+                HikarinagiAccessTokenResult.RefreshFailed,
+                needsReauth = false,
+            ),
+        )
+        assertEquals(
+            CoverErrorCode.HIKARINAGI_AUTH_EXPIRED,
+            CoverScraperService.hikarinagiTokenFailureToCoverError(
+                HikarinagiAccessTokenResult.RefreshFailed,
+                needsReauth = true,
+            ),
+        )
+        assertEquals(
+            CoverErrorCode.HIKARINAGI_AUTH_EXPIRED,
+            CoverScraperService.hikarinagiTokenFailureToCoverError(
+                HikarinagiAccessTokenResult.ConfigMissing,
+                needsReauth = false,
+            ),
+        )
     }
 }

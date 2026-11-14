@@ -30,6 +30,17 @@ object GameLibraryFacade {
     // 主线程重新读库、解析并构造完整游戏列表。
     private val cacheLock = Any()
     private val gameWrites = GameLibraryWriteGate()
+    // 每游戏逐源条目绑定修订号（进程内单调计数）：批量封面刮削跨异步周期完成时，用于识别
+    // 「先绑定再解绑」使当前 id 回到 null 的场景，避免刮削写回绕过用户显式解绑重新自动回填。
+    internal data class BindingRevisionSnapshot(
+        val vndb: Long = 0L,
+        val bangumi: Long = 0L,
+        val hikarinagi: Long = 0L,
+        val nextmoe: Long = 0L,
+    )
+
+    private val bindingRevisions = mutableMapOf<String, BindingRevisionSnapshot>()
+
     @Volatile
     private var gamesCache: List<ScanGame>? = null
     @Volatile
@@ -84,10 +95,40 @@ object GameLibraryFacade {
 
     // ============ 游戏库 ============
 
+    @Volatile
+    internal var skipPersistForTest: Boolean = false
+
     fun loadGames(context: Context): List<ScanGame> =
         gamesCache ?: synchronized(cacheLock) {
             loadGamesLocked(context)
         }
+
+    /** 在同一 `cacheLock` 下原子读取游戏列表与各条目当前绑定版本快照，消除刮削启动时的交错竞态。 */
+    internal fun loadGamesWithBindingRevisions(
+        context: Context,
+        overrideGames: List<ScanGame>? = null,
+    ): Pair<List<ScanGame>, Map<String, BindingRevisionSnapshot>> = synchronized(cacheLock) {
+        val currentGames = loadGamesLocked(context)
+        // 按选定 URI 从当前权威列表取快照，避免旧列表与锁内较新修订号错配（如先绑后解再写回）
+        val snapshot = if (overrideGames == null) {
+            currentGames.toList()
+        } else {
+            val currentByUri = currentGames.associateBy { it.uri }
+            overrideGames.mapNotNull { candidate -> currentByUri[candidate.uri] }
+        }
+        val revisions = snapshot.associate { game ->
+            game.uri to (bindingRevisions[game.uri] ?: BindingRevisionSnapshot())
+        }
+        snapshot to revisions
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun seedGamesForTest(games: List<ScanGame>?) {
+        synchronized(cacheLock) {
+            gamesCache = games?.toList()
+            bindingRevisions.clear()
+        }
+    }
 
     /** Use [registerGames] when adding URI references. Existing entries can be edited or removed here. */
     fun updateGames(context: Context, transform: (List<ScanGame>) -> List<ScanGame>): List<ScanGame> =
@@ -96,8 +137,11 @@ object GameLibraryFacade {
             val updated = transform(current).toList()
             if (updated != current) {
                 gamesCache = updated
-                // 差量落库：仅 upsert 变更行、删除消失行，封面单字段变化不再触发整库序列化。
-                GameLibraryRepository.post(context) { GameLibraryRepository.applyDiff(it, current, updated) }
+                recordBindingRevisionsLocked(current, updated)
+                if (!skipPersistForTest) {
+                    // 差量落库：仅 upsert 变更行、删除消失行，封面单字段变化不再触发整库序列化。
+                    GameLibraryRepository.post(context) { GameLibraryRepository.applyDiff(it, current, updated) }
+                }
             }
             updated
         }
@@ -133,10 +177,12 @@ object GameLibraryFacade {
     }
 
     /**
-     * 封面元数据单行更新（迁移方案阶段 2）：DB 只 UPDATE 封面相关列，封面刮削等高频路径
-     * 不再触发整库序列化。返回更新后的游戏；游戏不在库中或封面四列均无变化时返回 null。
+     * 封面/绑定元数据单行更新（迁移方案阶段 2）：DB 只 UPDATE 封面与绑定相关列，封面刮削
+     * 等高频路径不再触发整库序列化。返回更新后的游戏；游戏不在库中或封面/绑定七列均无变化
+     * 时返回 null。（BK-51：原名单提「封面」，实际比较与落库含绑定 id 与 metadataTitle，
+     * 更名 [updateGameCoverMetadata] 名副其实。）
      */
-    fun updateGameCover(
+    fun updateGameCoverMetadata(
         context: Context,
         uri: String,
         transform: (ScanGame) -> ScanGame,
@@ -145,22 +191,84 @@ object GameLibraryFacade {
         val before = current.firstOrNull { it.uri == uri } ?: return null
         val after = transform(before)
         if (after.coverUri == before.coverUri && after.coverSource == before.coverSource &&
-            after.vndbId == before.vndbId && after.metadataTitle == before.metadataTitle
+            after.vndbId == before.vndbId && after.bangumiId == before.bangumiId &&
+            after.hikarinagiId == before.hikarinagiId && after.nextmoeId == before.nextmoeId &&
+            after.metadataTitle == before.metadataTitle
         ) {
             return null
         }
         gamesCache = current.map { if (it.uri == uri) after else it }
-        GameLibraryRepository.post(context) {
-            GameLibraryRepository.updateCover(
-                it,
-                uri,
-                after.coverUri,
-                after.coverSource,
-                after.vndbId,
-                after.metadataTitle,
-            )
+        recentGamesCache = recentGamesCache?.map { recent ->
+            if (recent.uri == uri) after.copy(openTime = recent.openTime) else recent
+        }
+        quickLaunchCache = quickLaunchCache?.map { quick ->
+            if (quick.uri == uri) after else quick
+        }
+        recordBindingRevisionLocked(before, after)
+        if (!skipPersistForTest) {
+            GameLibraryRepository.post(context) {
+                GameLibraryRepository.updateCover(
+                    it,
+                    uri,
+                    after.coverUri,
+                    after.coverSource,
+                    after.vndbId,
+                    after.bangumiId,
+                    after.hikarinagiId,
+                    after.nextmoeId,
+                    after.metadataTitle,
+                )
+            }
         }
         after
+    }
+
+    internal fun bindingRevision(uri: String): BindingRevisionSnapshot = synchronized(cacheLock) {
+        bindingRevisions[uri] ?: BindingRevisionSnapshot()
+    }
+
+    private fun recordBindingRevisionsLocked(before: List<ScanGame>, after: List<ScanGame>) {
+        val beforeByUri = before.associateBy { it.uri }
+        val afterByUri = after.associateBy { it.uri }
+        for (uri in beforeByUri.keys + afterByUri.keys) {
+            val prev = beforeByUri[uri]
+            val next = afterByUri[uri]
+            val replacedOrToggled = prev == null || next == null
+            recordBindingRevisionLocked(
+                uri = uri,
+                vndbChanged = replacedOrToggled || prev.vndbId != next.vndbId,
+                bangumiChanged = replacedOrToggled || prev.bangumiId != next.bangumiId,
+                hikarinagiChanged = replacedOrToggled || prev.hikarinagiId != next.hikarinagiId,
+                nextmoeChanged = replacedOrToggled || prev.nextmoeId != next.nextmoeId,
+            )
+        }
+    }
+
+    private fun recordBindingRevisionLocked(before: ScanGame, after: ScanGame) {
+        recordBindingRevisionLocked(
+            uri = after.uri,
+            vndbChanged = before.vndbId != after.vndbId,
+            bangumiChanged = before.bangumiId != after.bangumiId,
+            hikarinagiChanged = before.hikarinagiId != after.hikarinagiId,
+            nextmoeChanged = before.nextmoeId != after.nextmoeId,
+        )
+    }
+
+    private fun recordBindingRevisionLocked(
+        uri: String,
+        vndbChanged: Boolean,
+        bangumiChanged: Boolean,
+        hikarinagiChanged: Boolean,
+        nextmoeChanged: Boolean,
+    ) {
+        if (!vndbChanged && !bangumiChanged && !hikarinagiChanged && !nextmoeChanged) return
+        val current = bindingRevisions[uri] ?: BindingRevisionSnapshot()
+        bindingRevisions[uri] = current.copy(
+            vndb = if (vndbChanged) current.vndb + 1L else current.vndb,
+            bangumi = if (bangumiChanged) current.bangumi + 1L else current.bangumi,
+            hikarinagi = if (hikarinagiChanged) current.hikarinagi + 1L else current.hikarinagi,
+            nextmoe = if (nextmoeChanged) current.nextmoe + 1L else current.nextmoe,
+        )
     }
 
     /** 从持久游戏库中移除指定游戏（在游戏页或首页删除游戏时调用，保证库与最近列表一致）。 */

@@ -1,27 +1,34 @@
 package com.tyranor.next.core.cover
 
 import android.content.Context
-import android.net.Uri
+import androidx.annotation.VisibleForTesting
+import com.tyranor.next.BuildConfig
+import com.tyranor.next.core.auth.NextMoeAuthService
+import com.tyranor.next.core.auth.NextMoeAuthStore
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.net.HttpJsonResult
+import com.tyranor.next.core.net.RequestThrottle
+import com.tyranor.next.core.net.httpJsonResult
+import com.tyranor.next.core.net.optNonBlankString
+import com.tyranor.next.core.net.urlEncode
 import com.tyranor.next.core.settings.AppSettingsStore
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * 未萌 NextMoe（鲲 Galgame 论坛）封面来源：**匿名**接入，不依赖任何登录/授权态。
+ * 未萌 NextMoe（鲲 Galgame 论坛）封面与条目来源：支持匿名调用，也支持在已授权且令牌有效时
+ * 附带用户访问令牌（`catalog:read`，额度由匿名 30/min 提升至 100/min）；若令牌被拒 401
+ * 自动标记失效并回退匿名请求，确保封面搜索与刮削不因授权失效而阻断。
  *
  * 接口（实测）：
  * - 作品检索 `GET /v2/catalog/works?q=<kw>&nsfw=true&limit=N&include=refs`
- * - VNDB 反查 `GET /v2/catalog/works?refs=vndb:v<id>&nsfw=true`
+ * - 外部 / 目录 ID 反查 `GET /v2/catalog/works?refs=vndb:v<id>&nsfw=true` / `?ids=<id>&nsfw=true`
  * - 作品封面 `GET /v2/catalog/works/{id}/covers?nsfw=true&limit=N`
- *
- * 限流实测 `ratelimit-policy: 50;w=60, 10000;w=86400`，故请求间强制最小间隔。
- * `cover_kind` 是开放词表（OpenAPI 明示不得作判别式），这里只作展示文本。
  */
 internal object NextMoeCoverService {
     private const val WORKS_URL = "https://api.nextmoe.dev/v2/catalog/works"
 
-    /** 服务端限流 50 次/分钟 → 取 1.3s 间隔留少量余量（与 VNDB 共用同一实现，各自独立实例）。 */
+    /** 匿名限流保守间隔 1.3s（用户令牌限流 100/min，统一沿用 1.3s 对目录接口足够温和）。 */
     private val throttle = RequestThrottle(1300L)
 
     private const val SEXUAL_SAFE = "safe"
@@ -29,9 +36,21 @@ internal object NextMoeCoverService {
     /** problem+json 的限流错误码（429 之外的限流表达）。 */
     private val RATE_LIMIT_CODES = setOf("RATE_LIMITED", "QUOTA_EXCEEDED")
 
+    @VisibleForTesting
+    @Volatile
+    internal var testHttpRoundTrip: ((url: String, headers: Map<String, String>) -> HttpJsonResult)? = null
+
     fun fetchBestCover(context: Context, game: ScanGame): ScanGame? {
+        val candidates = buildList {
+            game.nextmoeId?.trim()?.takeIf { it.isNotBlank() }?.let { workId ->
+                addAll(requestWorks(ids = workId, query = null, refs = null, limit = 1, context = context))
+            }
+            if (isEmpty()) {
+                addAll(searchCandidates(game.title, game.vndbId, 3, context))
+            }
+        }
         // 逐条尝试直到有一张能下载成功：首条候选缺封面或下载失败时不至于直接放弃
-        for (candidate in searchCandidates(game.title, game.vndbId, 3)) {
+        for (candidate in candidates) {
             val url = candidate.downloadUrl ?: candidate.coverUrl
             if (url.isBlank()) continue
             val cover = CoverImageCache.download(
@@ -43,69 +62,94 @@ internal object NextMoeCoverService {
             return game.copy(
                 coverUri = cover,
                 coverSource = AppSettingsStore.COVER_SOURCE_NEXTMOE,
-                // 空串不得覆盖库中已有元数据
-                vndbId = candidate.vndbId?.takeIf { it.isNotBlank() } ?: game.vndbId,
-                metadataTitle = candidate.metadataTitle?.takeIf { it.isNotBlank() } ?: game.metadataTitle,
+                // 已有绑定优先：空串不得覆盖库中已有元数据
+                vndbId = game.vndbId?.takeIf { it.isNotBlank() } ?: candidate.vndbId?.takeIf { it.isNotBlank() },
+                nextmoeId = game.nextmoeId?.takeIf { it.isNotBlank() } ?: candidate.nextmoeId?.takeIf { it.isNotBlank() },
+                metadataTitle = game.metadataTitle?.takeIf { it.isNotBlank() }
+                    ?: candidate.metadataTitle?.takeIf { it.isNotBlank() },
             )
         }
         return null
     }
 
     /** 一级候选：作品（每作品取官方选定的竖版封面做预览）。有 VNDB id 时优先按 ref 精确反查。 */
-    fun searchCandidates(keyword: String, vndbId: String?, limit: Int): List<CoverSearchCandidate> {
+    fun searchCandidates(
+        keyword: String,
+        vndbId: String?,
+        limit: Int,
+        context: Context? = null,
+    ): List<CoverSearchCandidate> {
         val query = cleanTitle(keyword)
         if (vndbId.isNullOrBlank() && query.isBlank()) return emptyList()
         vndbId?.takeIf { it.isNotBlank() }?.let { ref ->
-            val byRef = requestWorks(query = null, refs = "vndb:$ref", limit = limit)
+            val byRef = requestWorks(ids = null, query = null, refs = "vndb:$ref", limit = limit, context = context)
             if (byRef.isNotEmpty()) return byRef
         }
         if (query.isBlank()) return emptyList()
-        // 关键词模糊匹配命中哪部作品并未被验证，故不写回 VNDB 元数据（避免把异作的 id/标题落库）
-        return requestWorks(query = query, refs = null, limit = limit)
-            .map { it.copy(vndbId = null, metadataTitle = null) }
+        // 关键词模糊匹配命中哪部作品并未被验证，故不回填 VNDB 元数据（避免把异作的 vndbId 落库）；
+        // 候选自身的 nextmoeId 与标题仍保留，供用户手工绑定或缺失时补全。
+        return requestWorks(ids = null, query = query, refs = null, limit = limit, context = context)
+            .map { it.copy(vndbId = null) }
     }
 
     /**
      * 二级候选：某作品**可获取的**封面（NextMoe 一个作品常有多张：main / pkgfront / pkgback / dig…）。
-     * 元数据继承自一级作品候选，绑定后与一级选择行为一致。只拉单页（上限 100，超出不翻页）。
+     * 元数据继承自一级作品候选（[nextmoeId] 必须取作品 id 而非封面 id）。只拉单页（上限 100）。
      */
-    fun listCovers(parent: CoverSearchCandidate, limit: Int): List<CoverSearchCandidate> {
-        if (parent.id.isBlank()) return emptyList()
-        // 作品 id 是路径段，用 Uri.encode 而非表单编码（空格必须是 %20 而不是 +）
-        val url = "$WORKS_URL/${Uri.encode(parent.id, "")}/covers?nsfw=true&limit=${limit.coerceIn(1, 100)}"
-        val json = requestJson(url, emptyOnNotFound = true)
+    fun listCovers(
+        parent: CoverSearchCandidate,
+        limit: Int,
+        context: Context? = null,
+    ): List<CoverSearchCandidate> {
+        val workId = parent.nextmoeId?.takeIf { it.isNotBlank() } ?: parent.id
+        if (workId.isBlank()) return emptyList()
+        // 作品 id 是路径段，用 RFC 3986 路径段编码（空格必须是 %20 而不是 +，同时兼容纯 JVM 单测）
+        val encodedWorkId = workId.urlEncode().replace("+", "%20")
+        val url = "$WORKS_URL/$encodedWorkId/covers?nsfw=true&limit=${limit.coerceIn(1, 100)}"
+        val json = requestJson(url, emptyOnNotFound = true, context = context)
         val items = json.optJSONArray("items") ?: return emptyList()
         return (0 until items.length()).asSequence()
             .mapNotNull { items.optJSONObject(it) }
             .mapNotNull { parseCover(it) }
             // 社区钉选的竖版置顶；其余保持接口原序（不依赖 cover_kind 判别）
             .sortedByDescending { it.pinned }
-            .map { cover ->
-                CoverSearchCandidate(
-                    source = AppSettingsStore.COVER_SOURCE_NEXTMOE,
-                    id = cover.id,
-                    title = parent.title,
-                    subtitle = cover.kind,
-                    detail = detailText(cover.kind, cover.sizeText(), cover.sexual.takeIf { it != SEXUAL_SAFE }),
-                    score = cover.votes,
-                    coverUrl = cover.url,
-                    downloadUrl = cover.url.takeIf { it.isNotBlank() },
-                    vndbId = parent.vndbId,
-                    metadataTitle = parent.metadataTitle,
-                )
-            }
+            .map { cover -> mapCoverToCandidate(parent, cover) }
             .toList()
     }
 
-    private fun requestWorks(query: String?, refs: String?, limit: Int): List<CoverSearchCandidate> {
+    internal fun mapCoverToCandidate(parent: CoverSearchCandidate, cover: NextMoeCover): CoverSearchCandidate {
+        val workId = parent.nextmoeId?.takeIf { it.isNotBlank() } ?: parent.id
+        return CoverSearchCandidate(
+            source = AppSettingsStore.COVER_SOURCE_NEXTMOE,
+            id = cover.id,
+            title = parent.title,
+            subtitle = cover.kind,
+            detail = detailText(cover.kind, cover.sizeText(), cover.sexual.takeIf { it != SEXUAL_SAFE }),
+            score = cover.votes,
+            coverUrl = cover.url,
+            downloadUrl = cover.url.takeIf { it.isNotBlank() },
+            vndbId = parent.vndbId,
+            nextmoeId = workId.takeIf { it.isNotBlank() },
+            metadataTitle = parent.metadataTitle,
+        )
+    }
+
+    private fun requestWorks(
+        ids: String?,
+        query: String?,
+        refs: String?,
+        limit: Int,
+        context: Context?,
+    ): List<CoverSearchCandidate> {
         val params = buildList {
+            ids?.takeIf { it.isNotBlank() }?.let { add("ids=${it.urlEncode()}") }
             query?.takeIf { it.isNotBlank() }?.let { add("q=${it.urlEncode()}") }
             refs?.takeIf { it.isNotBlank() }?.let { add("refs=${it.urlEncode()}") }
             add("nsfw=true")
             add("limit=${limit.coerceIn(1, 100)}")
             add("include=refs")
         }
-        val json = requestJson("$WORKS_URL?${params.joinToString("&")}")
+        val json = requestJson("$WORKS_URL?${params.joinToString("&")}", context = context)
         val items = json.optJSONArray("items") ?: return emptyList()
         return buildList {
             for (i in 0 until items.length()) {
@@ -117,15 +161,16 @@ internal object NextMoeCoverService {
         }
     }
 
-    private fun parseWork(o: JSONObject): CoverSearchCandidate {
-        val id = o.optStr("id").orEmpty()
-        val original = firstNonEmpty(o.optStr("display_name"), o.optStr("latin"))
+    internal fun parseWork(o: JSONObject): CoverSearchCandidate {
+        val id = o.optNonBlankString("id").orEmpty()
+        val original = firstNonEmpty(o.optNonBlankString("display_name"), o.optNonBlankString("latin"))
         val localTitle = localizedTitle(o)
         val title = firstNonEmpty(localTitle, original)
         val cover = o.optJSONObject("cover")
-        val coverUrl = cover?.optStr("url").orEmpty()
+        val coverUrl = cover?.optNonBlankString("url").orEmpty()
         // 只有作品确实带 VNDB 作品 ref 时才回写 VNDB 元数据，避免「VNDB id + 第三方标题」混搭
         val vndbId = findVndbRef(o.optJSONArray("refs"))
+        val resolvedNextMoeId = id.takeIf { it.isNotBlank() }
         return CoverSearchCandidate(
             source = AppSettingsStore.COVER_SOURCE_NEXTMOE,
             id = id,
@@ -134,24 +179,25 @@ internal object NextMoeCoverService {
             detail = detailText(
                 id,
                 cover?.let { sizeText(it.optInt("width", 0), it.optInt("height", 0)) },
-                o.optStr("release_date"),
+                o.optNonBlankString("release_date"),
             ),
             coverUrl = coverUrl,
             downloadUrl = coverUrl.takeIf { it.isNotBlank() },
             vndbId = vndbId,
-            metadataTitle = title.takeIf { it.isNotBlank() && vndbId != null },
+            nextmoeId = resolvedNextMoeId,
+            metadataTitle = title.takeIf { it.isNotBlank() && (resolvedNextMoeId != null || vndbId != null) },
         )
     }
 
-    private fun parseCover(o: JSONObject): NextMoeCover? {
-        val url = o.optStr("url") ?: return null
+    internal fun parseCover(o: JSONObject): NextMoeCover? {
+        val url = o.optNonBlankString("url") ?: return null
         return NextMoeCover(
-            id = o.optStr("id").orEmpty(),
-            kind = o.optStr("cover_kind").orEmpty(),
+            id = o.optNonBlankString("id").orEmpty(),
+            kind = o.optNonBlankString("cover_kind").orEmpty(),
             url = url,
             width = o.optInt("width", 0),
             height = o.optInt("height", 0),
-            sexual = o.optStr("sexual").orEmpty(),
+            sexual = o.optNonBlankString("sexual").orEmpty(),
             pinned = o.optBoolean("portrait_pinned", false),
             votes = o.optInt("vote_count", 0),
         )
@@ -163,7 +209,7 @@ internal object NextMoeCoverService {
         return listOf("zh-Hans", "zh-Hant").asSequence()
             .mapNotNull { localized.optJSONObject(it) }
             .filter { !it.optBoolean("is_machine", false) }
-            .mapNotNull { it.optStr("value") }
+            .mapNotNull { it.optNonBlankString("value") }
             .firstOrNull()
             .orEmpty()
     }
@@ -173,19 +219,42 @@ internal object NextMoeCoverService {
         if (refs == null) return null
         for (i in 0 until refs.length()) {
             val ref = refs.optJSONObject(i) ?: continue
-            if (ref.optStr("source") != "vndb") continue
-            val id = ref.optStr("external_id").orEmpty()
+            if (ref.optNonBlankString("source") != "vndb") continue
+            val id = ref.optNonBlankString("external_id").orEmpty()
             if (id.startsWith("v")) return id
         }
         return null
     }
 
-    private fun requestJson(url: String, emptyOnNotFound: Boolean = false): JSONObject {
-        throttle.await()
-        val result = httpJsonResult(url)
+    private fun requestJson(
+        url: String,
+        emptyOnNotFound: Boolean = false,
+        context: Context? = null,
+    ): JSONObject {
+        val stub = testHttpRoundTrip
+        if (stub != null) {
+            check(BuildConfig.DEBUG) { "test stub must be null in release" }
+        }
+        val authContextToken = context?.let { ctx ->
+            val status = NextMoeAuthStore.getStatus(ctx)
+            if (status.authorized && !status.needsReauth) {
+                NextMoeAuthService.getValidAccessToken(ctx)?.let { ctx to it }
+            } else {
+                null
+            }
+        }
+        if (stub == null) throttle.await()
+        val headers = authContextToken?.let { (_, token) -> mapOf("Authorization" to "Bearer $token") } ?: emptyMap()
+        var result = stub?.invoke(url, headers) ?: httpJsonResult(url, headers = headers)
+        // 带了失效令牌打 /v2/catalog 会返回 401 INVALID_CREDENTIAL 而不会自动降级匿名：
+        // 仅在目录面静默回退匿名请求（不直接置 needsReauth，避免轻量时钟偏差锁死 refresh_token 自动续期）。
+        if (authContextToken != null && result.status == 401) {
+            if (stub == null) throttle.await()
+            result = stub?.invoke(url, emptyMap()) ?: httpJsonResult(url)
+        }
         if (result.status == 404 && emptyOnNotFound) return JSONObject()
         val json = result.json
-        if (result.status == 429 || json?.optString("code").orEmpty() in RATE_LIMIT_CODES) {
+        if (result.status == 429 || json?.optNonBlankString("code").orEmpty() in RATE_LIMIT_CODES) {
             throw CoverSearchException(CoverErrorCode.NEXTMOE_RATE_LIMITED)
         }
         if (result.status !in 200..299 || json == null) throw CoverSearchException(CoverErrorCode.NEXTMOE_NETWORK)
@@ -193,11 +262,7 @@ internal object NextMoeCoverService {
     }
 }
 
-/** `optString` 会把 JSON null 变成字符串 "null"，这里统一收敛为 null。 */
-private fun JSONObject.optStr(key: String): String? =
-    if (isNull(key)) null else optString(key, "").takeIf { it.isNotBlank() && it != "null" }
-
-private data class NextMoeCover(
+internal data class NextMoeCover(
     val id: String,
     val kind: String,
     val url: String,
