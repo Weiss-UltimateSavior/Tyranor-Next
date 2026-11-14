@@ -162,6 +162,7 @@ object EngineLauncher {
         EngineType.CMVS,
         EngineType.RENPY,
         EngineType.RUFFLE,
+        EngineType.IMPACTO,
         // YURIS / CatSystem2 / PC 由外置 Winlator 承载（GAL 分组），引擎页条目点击进入引擎专属弹窗
         EngineType.YURIS,
         EngineType.CATSYSTEM2,
@@ -1286,7 +1287,8 @@ object EngineLauncher {
 
             EngineType.RPGMAKER,
             EngineType.RENPY,
-            EngineType.RUFFLE -> error("${engine.displayName} is handled by external engine launcher")
+            EngineType.RUFFLE,
+            EngineType.IMPACTO -> error("${engine.displayName} is handled by external engine launcher")
 
             EngineType.RUNTIME_MODULE -> error("${engine.displayName} is handled by RuntimeModuleLauncher")
 

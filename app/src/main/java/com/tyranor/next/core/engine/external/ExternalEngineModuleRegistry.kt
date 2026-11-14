@@ -11,6 +11,7 @@ object ExternalEngineModuleRegistry {
         RenPy77ExternalEngineModule,
         RpgMakerExternalEngineModule,
         RuffleExternalEngineModule,
+        ImpactoExternalEngineModule,
     )
 
     fun moduleForEngine(engine: EngineType): ExternalEngineModule? =

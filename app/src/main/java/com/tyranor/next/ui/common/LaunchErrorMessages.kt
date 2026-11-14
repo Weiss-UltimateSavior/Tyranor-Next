@@ -131,7 +131,12 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
                     localized.getString(R.string.external_engine_resolve_dir_failed, result.engineName.orEmpty())
 
                 ExternalEngineErrorCode.PACKAGE_NOT_INSTALLED ->
-                    localized.getString(R.string.external_engine_module_missing, moduleName)
+                    // 没有发布下载地址的模块（Impacto 宿主）不能叫用户「先下载」
+                    if (result.installUrl == null) {
+                        localized.getString(R.string.external_engine_module_unpublished, moduleName)
+                    } else {
+                        localized.getString(R.string.external_engine_module_missing, moduleName)
+                    }
 
                 ExternalEngineErrorCode.PACKAGE_OUTDATED ->
                     localized.getString(R.string.external_engine_module_outdated, moduleName)

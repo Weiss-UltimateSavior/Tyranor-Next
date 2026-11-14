@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Impacto (Tyranor)</string>
+    <string name="request_rejected">起動リクエストが拒否されました。</string>
+    <string name="need_all_files_access">このアプリに「すべてのファイルへのアクセス」を許可してから、Tyranor Next でもう一度起動してください。</string>
+    <string name="game_dir_missing">ゲームフォルダが見つかりません。</string>
+    <string name="game_dir_unreadable">ゲームフォルダを読み取れません。「すべてのファイルへのアクセス」が許可されているか、フォルダが存在するか確認してください。</string>
+    <string name="storage_unavailable">このゲームのデータフォルダを準備できませんでした。</string>
+    <string name="another_game_running">別のゲームが実行中です。終了してから別のゲームを起動してください。</string>
+</resources>
