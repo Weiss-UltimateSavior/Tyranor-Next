@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,6 +33,7 @@ import com.tyranor.next.core.settings.SystemNnnSaveLayout
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.TopBarIcon
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -129,11 +129,11 @@ internal fun SystemNnnSaveLayoutSettings(gameUri: String) {
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Text(stringResource(R.string.engine_settings_systemnnn_layout), style = MaterialTheme.typography.titleSmall)
+        Text(stringResource(R.string.engine_settings_systemnnn_layout), style = MaterialTheme.typography.titleMedium)
         val current = result
         if (current is SystemNnnSaveLayout.Result.Available) {
             SelectionContainer {
-                Text(current.path, style = MaterialTheme.typography.labelSmall)
+                Text(current.path, style = MaterialTheme.typography.bodyMedium)
             }
             val exe = stringResource(R.string.engine_settings_systemnnn_exe_analysis)
             val files = stringResource(R.string.engine_settings_systemnnn_layout_fallback)
@@ -142,21 +142,21 @@ internal fun SystemNnnSaveLayoutSettings(gameUri: String) {
                     R.string.engine_settings_systemnnn_layout_layers, current.layerRecords,
                     if (current.executableLayout) exe else files,
                 ),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
             )
             Text(
                 stringResource(
                     R.string.engine_settings_systemnnn_layout_dialogue, current.messageWidth,
                     if (current.executableMessageWidth) exe else files,
                 ),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
             )
             Text(
                 stringResource(
                     R.string.engine_settings_systemnnn_layout_story_state, current.statusBytes,
                     if (current.executableStatusBytes) exe else files,
                 ),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
             )
             Text(
                 if (current.systemSaveVersion == 0) stringResource(R.string.engine_settings_systemnnn_layout_system_pending)
@@ -164,7 +164,7 @@ internal fun SystemNnnSaveLayoutSettings(gameUri: String) {
                     R.string.engine_settings_systemnnn_layout_system_version,
                     current.systemSaveVersion, if (current.systemSaveFromExecutable) exe else files,
                 ),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
             )
             val extStatus = when (current.extensionEnabled) {
                 1 -> R.string.engine_settings_systemnnn_layout_ext_on
@@ -173,7 +173,7 @@ internal fun SystemNnnSaveLayoutSettings(gameUri: String) {
             }
             Text(
                 stringResource(R.string.engine_settings_systemnnn_layout_ext_status, stringResource(extStatus)),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
             )
             val okikae = if (current.okikae) R.string.engine_settings_systemnnn_layout_okikae_on
                 else R.string.engine_settings_systemnnn_layout_okikae_off
@@ -182,7 +182,7 @@ internal fun SystemNnnSaveLayoutSettings(gameUri: String) {
                     R.string.engine_settings_systemnnn_layout_replacements, stringResource(okikae),
                     if (current.executableOkikae) exe else files,
                 ),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
             )
             val extensionBlocks = when (current.extensionStartCode) {
                 -1 -> stringResource(
@@ -202,17 +202,17 @@ internal fun SystemNnnSaveLayoutSettings(gameUri: String) {
             }
             Text(
                 stringResource(R.string.engine_settings_systemnnn_layout_ext, extensionBlocks),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
             )
             if (current.extensionStartCode == -1 && current.extensionEnabled == 1) {
                 Text(
                     stringResource(R.string.engine_settings_systemnnn_layout_ext_hint),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             } else if (current.extensionStartCode > 0 && current.extensionSizes.isEmpty()) {
                 Text(
                     stringResource(R.string.engine_settings_systemnnn_layout_ext_refresh),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             }
         } else {
@@ -224,9 +224,18 @@ internal fun SystemNnnSaveLayoutSettings(gameUri: String) {
             Text(stringResource(status), style = MaterialTheme.typography.bodyMedium)
         }
         if (generationFailed) {
-            Text(stringResource(R.string.engine_settings_systemnnn_layout_write_failed), color = MaterialTheme.colorScheme.error)
+            Text(
+                stringResource(R.string.engine_settings_systemnnn_layout_write_failed),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
         }
-        OutlinedButton(
+        NoRippleButton(
+            text = stringResource(
+                if (generating) R.string.engine_settings_systemnnn_layout_generating
+                else R.string.engine_settings_systemnnn_layout_generate,
+            ),
+            tonal = true,
             enabled = current != null && current != SystemNnnSaveLayout.Result.Unavailable && !generating,
             onClick = {
                 generating = true
@@ -238,9 +247,6 @@ internal fun SystemNnnSaveLayoutSettings(gameUri: String) {
                     generating = false
                 }
             },
-        ) {
-            Text(stringResource(if (generating) R.string.engine_settings_systemnnn_layout_generating
-                else R.string.engine_settings_systemnnn_layout_generate))
-        }
+        )
     }
 }
