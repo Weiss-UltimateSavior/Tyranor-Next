@@ -1932,7 +1932,7 @@ internal fun GameCard(
     val engineName = gameCardEngineName(game)
     val coverBitmap by rememberCoverBitmap(game.coverUri, isScrolling)
     // 删除消散中：登记在 dissolvingGames 里的卡片播放消散效果，期间不再响应点击
-    val dissolve = dissolvingGames[game.uri]
+    val dissolve = rememberLastNonNull(dissolvingGames[game.uri])
     val pressModifier = if (onLongClick != null) {
         Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
     } else {
@@ -2069,7 +2069,7 @@ internal fun UniformGameCard(
     val engineName = gameCardEngineName(game)
     val coverBitmap by rememberCoverBitmap(game.coverUri, isScrolling)
     // 删除消散中：登记在 dissolvingGames 里的卡片播放消散效果，期间不再响应点击
-    val dissolve = dissolvingGames[game.uri]
+    val dissolve = rememberLastNonNull(dissolvingGames[game.uri])
     val pressModifier = if (onLongClick != null) {
         Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
     } else {
