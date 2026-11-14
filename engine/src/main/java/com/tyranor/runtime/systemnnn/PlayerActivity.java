@@ -424,6 +424,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }
     @Override public void panels(GameUiAssets assets) {runOnUiThread(() -> {
         uiAssets=assets;if(isDestroyed()||stage==null)return;
+        width=assets.sharedConfig.screenWidth;height=assets.sharedConfig.screenHeight;layoutStage();
         updatePointerIcon();
         storyPlane.schedulePush();
         dialoguePanel.cursorAssets(assets);
@@ -521,7 +522,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private void updateVisibility() {
         if(dialoguePanel==null)return;
         if(gamePanel==null&&isModalPanel(preparingPanel))return;
-        boolean storySession=!launchingGame&&titlePanel==null&&moviePlayback==null&&!storyMovieExitActive;
+        boolean storySession=!launchingGame&&titlePanel==null&&moviePlayback==null&&movieErrorPanel==null&&!storyMovieExitActive;
         boolean storyVisible=panelsOpen==0||gamePanel!=null&&gamePanel.awaitingCapturedBackdrop();
         boolean inGame=storySession&&storyVisible;
         if(!storySession||currentFrame!=null&&currentFrame.wait==NativeGame.MODAL)storyPlane.frame(null);
@@ -538,6 +539,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         syncIndependentStatus();
     }
     private int visiblePrintMode(){
+        if(movieErrorPanel!=null)return GameCodecErrorPanel.MODE;
         if(moviePlayback!=null)return 27;
         if(logoPanel!=null)return 2;
         if(startupOpening!=null)return 3;
@@ -870,14 +872,47 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             closeOriginalPanel();
         });
     }
-    @Override public void movie(File file,float gain,boolean canSkip,boolean startup,Integer exitColor){runOnUiThread(()->{
+    private GameCodecErrorPanel movieErrorPanel;
+    @Override public void movieError(GameRunner.MovieError error){runOnUiThread(()->{
+        if(isFinishing()||isDestroyed()||runner!=error.owner||stage==null)return;
+        width=uiAssets.sharedConfig.screenWidth;height=uiAssets.sharedConfig.screenHeight;layoutStage();
+        clearCtrlSkip();
+        clearStartupViews();
+        if(gamePanel!=null)gamePanel.uiActive(false);
+        for(int i=0;i<stage.getChildCount();i++)
+            stage.getChildAt(i).setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        GameCodecErrorPanel panel=new GameCodecErrorPanel(this,uiAssets,error,action->{
+            if(runner!=error.owner||movieErrorPanel==null||movieErrorPanel.error!=error)return;
+            if(action==2){finish();return;}
+            GameCodecErrorPanel current=movieErrorPanel;
+            current.leave(error.data.config,false,(picture,filled)->{
+                if(runner!=error.owner||movieErrorPanel!=current||isFinishing()||isDestroyed())return;
+                current.discardBackground();stage.removeView(current);movieErrorPanel=null;
+                if(!error.startup&&titlePanel==null&&gamePanel==null)storyMovieExitActive=true;
+                for(int i=0;i<stage.getChildCount();i++)
+                    stage.getChildAt(i).setImportantForAccessibility(gamePanel==null||stage.getChildAt(i)==gamePanel
+                        ?View.IMPORTANT_FOR_ACCESSIBILITY_AUTO:View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+                if(gamePanel!=null)gamePanel.uiActive(foreground);
+                error.owner.resolveMovieError(error,action==1);
+                updateVisibility();
+            });
+        });
+        movieErrorPanel=panel;
+        panel.setFocusableInTouchMode(true);
+        panel.sound((se,voice)->error.owner.playClick(se,voice));
+        panel.uiActive(foreground);
+        stage.addView(panel,new FrameLayout.LayoutParams(-1,-1));
+        panel.requestFocus();
+        updateVisibility();immersive();
+    });}
+    @Override public void movie(File file,float gain,boolean canSkip,boolean startup,Integer exitColor,int tracks){runOnUiThread(()->{
         if(isFinishing()||isDestroyed()||stage==null||runner==null)return;
         GameRunner owner=runner;
         if(!startup)clearStartupForStory();
         if(gamePanel!=null)gamePanel.uiActive(false);
         for(int i=0;i<stage.getChildCount();i++)
             stage.getChildAt(i).setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-        moviePlayback=new MoviePlayback(this,file,gain,canSkip,(source,outcome,failure)->{
+        moviePlayback=new MoviePlayback(this,file,gain,canSkip,tracks,(source,outcome,failure)->{
             if(owner!=runner||source!=moviePlayback)return;
             moviePlayback=null;
             if(exitColor!=null){
@@ -891,7 +926,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             for(int i=0;i<stage.getChildCount();i++)
                 stage.getChildAt(i).setImportantForAccessibility(gamePanel==null||stage.getChildAt(i)==gamePanel
                     ?View.IMPORTANT_FOR_ACCESSIBILITY_AUTO:View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-            if(gamePanel!=null)gamePanel.uiActive(foreground);
+            if(gamePanel!=null)gamePanel.uiActive(outcome!=MoviePlayback.Outcome.FAILED&&foreground);
             owner.finishMovie(outcome,failure);
             updateVisibility();
         });
@@ -913,7 +948,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }
     private void showMenu() {
         if(runner==null){finish();return;}
-        if(moviePlayback!=null||storyMovieExitActive)return;
+        if(moviePlayback!=null||movieErrorPanel!=null||storyMovieExitActive)return;
         boolean modalOptions=visibleModal!=null&&(visibleModal.advancedSelection()||
             visibleModal.mode==GameRunner.Modal.SELECT_CHART||visibleModal.mode==GameRunner.Modal.SELECT_PLACE2);
         if(currentFrame!=null&&currentFrame.wait==NativeGame.MODAL&&!modalOptions)return;
@@ -1171,7 +1206,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             onTokenAvailable();
             dirty=false;
             if(token==null)return;
-            boolean storySession=!launchingGame&&titlePanel==null&&moviePlayback==null&&!storyMovieExitActive;
+            boolean storySession=!launchingGame&&titlePanel==null&&moviePlayback==null&&movieErrorPanel==null&&!storyMovieExitActive;
             GameRunner.Frame target=frame;
             if(!storySession||target==null||target.wait==NativeGame.END){
                 NativeGame.pushMessagePlane(token.value(),null,new int[6],false);
@@ -1869,6 +1904,20 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }
     @Override public boolean dispatchKeyEvent(KeyEvent event){
         int key=event.getKeyCode();
+        if(movieErrorPanel!=null){
+            int direction=key==KeyEvent.KEYCODE_DPAD_DOWN?View.FOCUS_DOWN:key==KeyEvent.KEYCODE_DPAD_UP?View.FOCUS_UP:
+                key==KeyEvent.KEYCODE_DPAD_LEFT?View.FOCUS_LEFT:key==KeyEvent.KEYCODE_DPAD_RIGHT?View.FOCUS_RIGHT:0;
+            if(direction!=0){
+                if(event.getAction()==KeyEvent.ACTION_DOWN){
+                    View next=FocusFinder.getInstance().findNextFocus(movieErrorPanel,movieErrorPanel.findFocus(),direction);
+                    if(next!=null)next.requestFocus();
+                }
+                return true;
+            }
+            if(key==KeyEvent.KEYCODE_ENTER||key==KeyEvent.KEYCODE_DPAD_CENTER||key==KeyEvent.KEYCODE_SPACE){
+                movieErrorPanel.dispatchKeyEvent(event);return true;
+            }
+        }
         int bit=key==KeyEvent.KEYCODE_CTRL_LEFT?1:key==KeyEvent.KEYCODE_CTRL_RIGHT?2:0;
         if(bit!=0&&event.getAction()==KeyEvent.ACTION_DOWN&&storyPointerActive()){
             if(ctrlKeys==0)runner.ctrlSkip(true);
@@ -1892,7 +1941,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         return super.dispatchGenericMotionEvent(event);
     }
     private boolean storyPointerActive(){
-        return runner!=null&&stage!=null&&titlePanel==null&&logoPanel==null&&panelsOpen==0&&moviePlayback==null&&!storyMovieExitActive;
+        return runner!=null&&stage!=null&&titlePanel==null&&logoPanel==null&&panelsOpen==0&&moviePlayback==null&&movieErrorPanel==null&&!storyMovieExitActive;
     }
     private void storyPointer(MotionEvent event){
         stage.getLocationOnScreen(storyOrigin);
@@ -1902,6 +1951,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }
     @Override public void onBackPressed() {
         panelWarmup=null;
+        if(movieErrorPanel!=null)return;
         if(moviePlayback!=null){moviePlayback.skip();return;}
         if(storyMovieExitActive)return;
         if(logoPanel!=null){logoPanel.skip();return;}
@@ -1930,15 +1980,18 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         else showMenu();
     }
     @Override protected void onResume() { super.onResume(); foreground=true; immersive();
-        if(gamePanel!=null)gamePanel.uiActive(true);
+        if(gamePanel!=null)gamePanel.uiActive(moviePlayback==null&&movieErrorPanel==null);
         statusActive(true);
         if(runner!=null) runner.active(true);
         if(moviePlayback!=null)moviePlayback.resume();
+        if(movieErrorPanel!=null)movieErrorPanel.uiActive(true);
     }
     @Override protected void onPause() {foreground=false;clearCtrlSkip();if(gamePanel!=null)gamePanel.uiActive(false);statusActive(false); if(runner!=null) runner.active(false);
-        if(moviePlayback!=null)moviePlayback.pause();super.onPause();}
+        if(moviePlayback!=null)moviePlayback.pause();
+        if(movieErrorPanel!=null)movieErrorPanel.uiActive(false);super.onPause();}
     @Override protected void onDestroy() {
         if(moviePlayback!=null){moviePlayback.dispose();moviePlayback=null;}
+        if(movieErrorPanel!=null){movieErrorPanel.discardBackground();movieErrorPanel=null;}
         ui.removeCallbacksAndMessages(null);
         discardPanelPreparation();
         if(preferences!=null)preferences.unregisterOnSharedPreferenceChangeListener(settingsListener);

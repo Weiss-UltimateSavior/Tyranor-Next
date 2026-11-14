@@ -92,4 +92,8 @@
     <string name="engine_systemnnn_host_runtime_interrupted">実行中にエラーが発生しました。戻って既存のセーブから再開できます。</string>
     <string name="engine_systemnnn_host_startup_retry_hint">ゲームファイルとセーブフォルダーへのアクセスを確認して再試行してください。</string>
     <string name="engine_systemnnn_host_audio_focus_unavailable">音声フォーカスを一時的に取得できません。ゲームに戻るか操作すると再試行します。</string>
+    <string name="engine_systemnnn_movie_skip">動画をスキップ</string>
+    <string name="engine_systemnnn_movie_available">再生可能な部分を再生</string>
+    <string name="engine_systemnnn_movie_exit">ゲームを終了</string>
+    <string name="engine_systemnnn_movie_skipped">動画を再生できないため、動画をスキップしました。</string>
 </resources>

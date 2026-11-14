@@ -454,7 +454,7 @@ final class GalleryCatalog {
     private static File gameFile(File root,String folder,String name) {
         return GameResourcePaths.file(root,folder,name);
     }
-    private static File movieFile(File root,String name) throws IOException {
+    static File movieFile(File root,String name) throws IOException {
         if (name==null || new File(name).isAbsolute()) return null;
         File file=gameFile(root,"movie",name);
         if (file==null) return null;

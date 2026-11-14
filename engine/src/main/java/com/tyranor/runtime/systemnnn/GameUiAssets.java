@@ -103,17 +103,18 @@ final class GameUiAssets {
 
         static SharedConfig fallback(File root,Config game,Config printMessage){
             Config empty=new Config(Collections.emptyMap(),null);
-            Config exe=empty,gm=game,pm=printMessage,title=empty;
+            Config exe=empty,main=empty,gm=game,pm=printMessage,title=empty;
             if(root!=null){
                 try{exe=readExeSetup(root);}catch(IOException ignored){}
+                try{main=readConfig(root,"mainControl");}catch(IOException ignored){}
                 if(gm==null)try{gm=readConfig(root,"game");}catch(IOException ignored){}
                 if(pm==null)try{pm=readConfig(root,"printmessage");}catch(IOException ignored){}
                 try{title=readConfig(root,"title");}catch(IOException ignored){}
             }
             if(gm==null)gm=empty;
             if(pm==null)pm=empty;
-            int sw=Math.max(1,exe.number("mainScreenWindowSizeX1",1280));
-            int sh=Math.max(1,exe.number("mainScreenWindowSizeY1",720));
+            int sw=Math.max(1,exe.number("mainScreenWindowSizeX1",main.number("windowSizeX",800)));
+            int sh=Math.max(1,exe.number("mainScreenWindowSizeY1",main.number("windowSizeY",600)));
             int frameMs=Math.max(1,gm.number("frameTime",20));
             int cb=gm.number("codeByte",2)==1?1:2;
             int trial=gm.number("taikenflag",0)!=0?1:0;

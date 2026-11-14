@@ -170,7 +170,8 @@ final class GameRunner {
         void spectrum(int[] bands);
         void galleryReplayStarted();
         void galleryReplayFinished();
-        void movie(File file,float gain,boolean canSkip,boolean startup,Integer exitColor);
+        void movie(File file,float gain,boolean canSkip,boolean startup,Integer exitColor,int tracks);
+        void movieError(MovieError error);
         void loaded();
         void statusOverlays(int mode,Modal[] overlays);
         void titleReturnCancelled();
@@ -275,6 +276,17 @@ final class GameRunner {
     private boolean galleryMusicPlaying,galleryMusicPaused;
     private MusicSpectrum gallerySpectrum;
     private boolean moviePlaying;
+    private boolean skipMovies,playableMoviesOnly;
+    private MovieError movieError;
+    static final class MovieError {
+        final GameRunner owner;
+        final GameUiAssets.ModeAssets data;
+        final int capability;
+        final boolean startup;
+        MovieError(GameRunner owner,GameUiAssets.ModeAssets data,int capability,boolean startup){
+            this.owner=owner;this.data=data;this.capability=capability;this.startup=startup;
+        }
+    }
     private Integer pendingMovieExitColor;
     private int galleryCue=-1,gallerySong=-1,galleryVolume=100;
     private volatile int configMask;
@@ -576,7 +588,7 @@ final class GameRunner {
         int[] state=new int[NativeGame.META_SIZE];TitleMenu title=null;long stored;
         List<LogoPanel.Slide> logos=java.util.Collections.emptyList();
         try{
-            tasks.removeCallbacks(ticker);tasks.removeCallbacks(resumeStoryMovie);pendingMovieExitColor=null;moviePlaying=false;
+            tasks.removeCallbacks(ticker);tasks.removeCallbacks(resumeStoryMovie);pendingMovieExitColor=null;moviePlaying=false;movieError=null;
             stopSound();autoMode=false;skipMode=false;ui.mode(false,false);
             writeGallery();
             unsaved=handle!=0 && galleryWritten!=NativeGame.galleryRevision(handle);
@@ -599,6 +611,7 @@ final class GameRunner {
         }catch(Exception|LinkageError e){if(candidate!=0)NativeGame.close(candidate);if(handle!=0)schedule();throw e;}
         if(handle!=0)NativeGame.close(handle);
         offerPlaneToken(NativeGame.messagePlaneToken(candidate));
+        movieError=null;
         handle=candidate;commitRuntime(candidate);onTitle=true;menuOpen=false;menuModal=null;systemMenuModal=false;
         choiceClicking=false;failed=false;history=null;current=null;shownWait=-1;resetDialogueDecorations();
         configMask=0;
@@ -609,6 +622,9 @@ final class GameRunner {
         ui.style(dialogueStyle);ui.panels(uiAssets);publishQuickSlot();publishParameters();
         if(launching){
             titleBackgroundHeld=true;
+            if(checkStartupCodec())return;
+            StartupStage first=StartupStage.fromMode(GameUiAssets.readConfig(root,"nothing",codec).value("nextMode","logo"));
+            if(first!=StartupStage.LOGO){startupVisited.clear();runStartup(first,null);return;}
             ui.logo(logos,meta[3],meta[4],meta[5]);
             if(logos.isEmpty()&&completeStartupLogo())return;
         }else publishTitle(previous);
@@ -727,7 +743,7 @@ final class GameRunner {
         return next;
     }
     private void advanceStartup(Capture previous){
-        if(closing||failed||startupStage==null)return;
+        if(closing||failed||startupStage==null||movieError!=null)return;
         runStartup(nextStartupStage(),previous);
     }
     private void runStartup(StartupStage start,Capture previous){
@@ -796,6 +812,7 @@ final class GameRunner {
         return true;
     }
     private boolean startStartupMovie(){
+        if(skipMovies)return false;
         GameUiAssets.Config cfg=startupConfig;
         NativeGame.stopScriptAudio(handle);
         NativeGame.menuMusic(handle,-1,0,0,-1,true);
@@ -815,13 +832,62 @@ final class GameRunner {
         catch(IOException e){Log.w("SystemNNN","Startup movie list unavailable",e);}
         if(movie==null)try{movie=GalleryCatalog.openingMovie(root,cfg);}
         catch(IOException e){Log.w("SystemNNN","Startup movie file unavailable",e);}
-        if(movie==null||movie.file==null){Log.w("SystemNNN","Startup movie file missing");return false;}
+        if(movie==null||movie.file==null){Log.w("SystemNNN","Startup movie file missing");showMovieError(0,true);return true;}
+        int tracks=playableMoviesOnly?MoviePlayback.checkCodec(movie.file):4;
+        if(tracks==0){Log.w("SystemNNN","Skipping unavailable startup movie");return false;}
         moviePlaying=true;
         stopSound();
         Log.i("SystemNNN","Startup movie requested "+movie.file.getName());
-        ui.movie(movie.file,NativeGame.movieGain(handle),cfg.number("noSkipFlag",0)==0,true,0xff000000);
+        ui.movie(movie.file,NativeGame.movieGain(handle),cfg.number("noSkipFlag",0)==0,true,0xff000000,tracks);
         return true;
     }
+    private boolean checkStartupCodec(){
+        try{
+            GameUiAssets.Config initial=GameUiAssets.readConfig(root,"nothing",codec);
+            if(initial.number("codecCheckFlag",0)==0)return false;
+            GameUiAssets.Config print=GameUiAssets.readConfig(root,"printMovie",codec);
+            String name=print.value("codecCheckFileName",print.value("movieFileName","default.wmv"));
+            File file=GalleryCatalog.movieFile(root,GameResourcePaths.decodeFilename(resourceName(name)));
+            int capability=MoviePlayback.checkCodec(file);
+            Log.i("SystemNNN","Startup codec check result="+capability);
+            if(capability>=initial.number("codecLimit",4))return false;
+            showMovieError(capability,true);
+            return true;
+        }catch(IOException|RuntimeException e){
+            Log.w("SystemNNN","Startup codec check unavailable",e);
+            showMovieError(0,true);return true;
+        }
+    }
+    private void showMovieError(int capability,boolean startup){
+        if(closing||movieError!=null)return;
+        tasks.removeCallbacks(ticker);tasks.removeCallbacks(resumeStoryMovie);
+        moviePlaying=true;titleBackgroundHeld=true;startupLogoFinished=false;
+        GameUiAssets.ModeAssets data;
+        try{data=uiAssets.modeAssets(handle,codec,"codecerror","CodecError","ta_dialog5");}
+        catch(IOException|RuntimeException e){
+            Log.w("SystemNNN","Movie error artwork unavailable",e);
+            data=new GameUiAssets.ModeAssets(GameUiAssets.Config.empty(),java.util.Collections.emptyMap());
+        }
+        movieError=new MovieError(this,data,capability,startup);
+        if(!GameCodecErrorPanel.available(uiAssets,data)){
+            Log.w("SystemNNN","Movie error interface resources unavailable; skipping movies");
+            ui.notice(text(R.string.engine_systemnnn_movie_skipped));
+            resolveMovieError(movieError,false);
+            return;
+        }
+        ui.movieError(movieError);
+        schedule();
+    }
+    void resolveMovieError(MovieError error,boolean playable){tasks.post(()->{
+        if(closing||failed||movieError!=error||playable&&error.capability==0)return;
+        movieError=null;
+        skipMovies=!playable;playableMoviesOnly=playable;
+        if(error.startup){
+            moviePlaying=false;movieError=null;startupVisited.clear();
+            StartupStage next=StartupStage.fromMode(error.data.config.value("nextMode","logo"));
+            runStartup(next,null);
+        }else completeMovie(MoviePlayback.Outcome.SKIPPED,null);
+    });}
     private Capture movieExitScreen(){return movieExitScreen(startupConfig);}
     private static Capture movieExitScreen(GameUiAssets.Config cfg){
         if(cfg!=null&&cfg.number("fillExitScreenFlag",1)==0)return null;
@@ -904,7 +970,7 @@ final class GameRunner {
         bindSurface(true);
         galleryWritten=unsaved?-1:stored;
         startupStage=null;startupConfig=null;titleBackgroundHeld=false;startupTitleFramePending=false;
-        tasks.removeCallbacks(resumeStoryMovie);pendingMovieExitColor=null;moviePlaying=false;
+        tasks.removeCallbacks(resumeStoryMovie);pendingMovieExitColor=null;moviePlaying=false;movieError=null;
         onTitle=false;menuOpen=holdStory;systemMenuModal=false;choiceClicking=false;history=next;System.arraycopy(state,0,meta,0,meta.length);
         if(finishEndedRun())return;
         if(!systemStateEstablished)writeReadLines();
@@ -961,7 +1027,7 @@ final class GameRunner {
         }
         NativeGame.presentSurface(handle);
     }
-    void windowFocused(){tasks.post(()->{if(playing()&&audio!=null)audio.requestFocus();});}
+    void windowFocused(){tasks.post(()->{if((playing()||movieError!=null&&!failed)&&audio!=null)audio.requestFocus();});}
     private final Runnable debugTicker=new Runnable(){
         @Override public void run(){
             if(closing||!active||failed)return;
@@ -986,7 +1052,7 @@ final class GameRunner {
             tasks.post(()->{
                 active=true;
                 if(debugMode){tasks.removeCallbacks(debugTicker);tasks.post(debugTicker);}
-                if(playing()&&audio!=null)audio.requestFocus();
+                if((playing()||movieError!=null&&!failed)&&audio!=null)audio.requestFocus();
                 if(titleRestartReady)restartTitleSequence();
                 else if(startupStage==StartupStage.LOGO&&startupLogoFinished)advanceStartup(null);
                 else schedule();
@@ -1442,7 +1508,6 @@ final class GameRunner {
         if(!onTitle||moviePlaying||galleryPage==null||galleryPage.screen!=GalleryCatalog.Screen.MOVIE)return;
         GalleryCatalog.Movie movie=gallery.movie(number);
         if(movie==null||!movie.unlocked(NativeGame.galleryState(handle)))return;
-        if(movie.file==null){ui.notice(text(R.string.engine_systemnnn_host_movie_missing));return;}
         NativeGame.stopGalleryMusic(handle);
         NativeGame.stopScriptAudio(handle);
         galleryCue=-1;
@@ -1459,6 +1524,7 @@ final class GameRunner {
     private void startMovie(GalleryCatalog.Movie movie){
         moviePlaying=true;
         tasks.removeCallbacks(ticker);tasks.removeCallbacks(resumeStoryMovie);stopSound();
+        if(skipMovies){tasks.post(()->completeMovie(MoviePlayback.Outcome.SKIPPED,null));return;}
         if(movie==null||movie.file==null){
             pendingMovieExitColor=null;
             tasks.post(()->completeMovie(MoviePlayback.Outcome.FAILED,text(R.string.engine_systemnnn_host_movie_missing)));
@@ -1468,17 +1534,20 @@ final class GameRunner {
         GameUiAssets.Config printCfg=movieList==null?GameUiAssets.Config.empty():movieList.print;
         Capture exit=onTitle?null:movieExitScreen(printCfg);
         pendingMovieExitColor=exit==null?null:exit.pixels[0];
-        ui.movie(movie.file,NativeGame.movieGain(handle),printCfg.number("noSkipFlag",0)==0,false,pendingMovieExitColor);
+        int tracks=playableMoviesOnly?MoviePlayback.checkCodec(movie.file):4;
+        if(tracks==0){tasks.post(()->completeMovie(MoviePlayback.Outcome.SKIPPED,null));return;}
+        ui.movie(movie.file,NativeGame.movieGain(handle),printCfg.number("noSkipFlag",0)==0,false,pendingMovieExitColor,tracks);
     }
     void finishMovie(MoviePlayback.Outcome outcome,String failure){tasks.post(()->completeMovie(outcome,failure));}
     private void completeMovie(MoviePlayback.Outcome outcome,String failure){
         if(!moviePlaying||closing)return;
         if(outcome==MoviePlayback.Outcome.FAILED){
             Log.w("SystemNNN","Movie playback failed: "+failure);
-            ui.notice(text(R.string.engine_systemnnn_host_movie_failed));
+            showMovieError(0,startupStage==StartupStage.MOVIE);
+            return;
         }else Log.i("SystemNNN","Movie playback "+outcome);
         if(startupStage==StartupStage.MOVIE){
-            moviePlaying=false;
+            moviePlaying=false;movieError=null;
             pendingMovieExitColor=null;
             Capture exit=movieExitScreen();
             long wait=DialogueLayout.clamp(startupConfig.number("lastWait",5),0,1000)*(long)Math.max(1,meta[5]);
@@ -1486,7 +1555,7 @@ final class GameRunner {
             return;
         }
         if(onTitle){
-            moviePlaying=false;
+            moviePlaying=false;movieError=null;
             pendingMovieExitColor=null;
             if(galleryPage!=null)enterGalleryScreen(galleryPage);
             schedule();
@@ -1501,7 +1570,7 @@ final class GameRunner {
     private final Runnable resumeStoryMovie=this::resumeStoryAfterMovie;
     private void resumeStoryAfterMovie(){
         if(!moviePlaying||closing||onTitle)return;
-        moviePlaying=false;
+        moviePlaying=false;movieError=null;
         Integer exitColor=pendingMovieExitColor;
         try{
             // The movie interrupted an existing journal tick. Resume its VM
@@ -1603,7 +1672,7 @@ final class GameRunner {
                 if (candidate!=0) NativeGame.close(candidate);
                 noticeFailure(R.string.engine_systemnnn_host_replay_failed,e); return;
             }
-            tasks.removeCallbacks(ticker); tasks.removeCallbacks(resumeStoryMovie); pendingMovieExitColor=null; moviePlaying=false;
+            tasks.removeCallbacks(ticker); tasks.removeCallbacks(resumeStoryMovie); pendingMovieExitColor=null; moviePlaying=false;movieError=null;
             stopSound(); NativeGame.close(handle);
             offerPlaneToken(NativeGame.messagePlaneToken(candidate));
             handle=candidate; galleryWritten=stored; onTitle=false; replaying=true; menuOpen=false; history=null;
@@ -1854,13 +1923,17 @@ final class GameRunner {
     private boolean playing(){
         return active&&surfaceBinding!=0&&!failed&&!moviePlaying&&startupStage!=StartupStage.MOVIE&&handle!=0&&meta[0]!=NativeGame.END;
     }
-    private void schedule(){
-        tasks.removeCallbacks(ticker);
-        if(!playing()){stopSound();return;}
+    private void startSound(){
         if(audio==null)audio=new DeviceAudio(context,tasks,handle,rate,()->audioForeground&&!closing,
             ()->ui.notice(text(R.string.engine_systemnnn_host_audio_focus_unavailable)),(source,error)->tasks.post(()->{
                 if(audio==source&&!closing)broken(new IOException(error));
             }));
+    }
+    private void schedule(){
+        tasks.removeCallbacks(ticker);
+        if(movieError!=null&&active&&!closing&&!failed&&handle!=0){startSound();return;}
+        if(!playing()){stopSound();return;}
+        startSound();
         if(onTitle)NativeGame.resetFramePacing(handle);
         deadline=lastTickAt=SystemClock.uptimeMillis();tasks.post(ticker);
     }
@@ -1927,6 +2000,7 @@ final class GameRunner {
             else{galleryMusicPlaying=false;refreshMusic(galleryPage.page);}
         }
         publishStatusOverlays();
+        if(movieError!=null&&active&&!closing&&!failed&&handle!=0){startSound();return;}
         if(!playing()){stopSound();return;}
         if(!onTitle)deadline=Math.max(deadline+period,SystemClock.uptimeMillis()-period);
         tasks.postAtTime(this,deadline);
@@ -2339,7 +2413,7 @@ final class GameRunner {
         replaceSurface(0);
         if(!postProgressFlush(() -> {
             try{
-                active=false;tasks.removeCallbacks(ticker);tasks.removeCallbacks(resumeStoryMovie);pendingMovieExitColor=null;moviePlaying=false;stopSound();writeAudioOverrides();
+                active=false;tasks.removeCallbacks(ticker);tasks.removeCallbacks(resumeStoryMovie);pendingMovieExitColor=null;moviePlaying=false;movieError=null;stopSound();writeAudioOverrides();
                 return writeReadLines();
             }finally{
                 try{
