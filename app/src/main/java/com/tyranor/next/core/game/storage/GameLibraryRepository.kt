@@ -189,17 +189,30 @@ object GameLibraryRepository {
             }
         }
 
-    /** 封面元数据单行更新（方案阶段 2）：封面刮削不再触碰整库。返回是否有行被更新。 */
+    /** 封面/绑定元数据单行更新（方案阶段 2）：封面刮削不再触碰整库。返回是否有行被更新。 */
     suspend fun updateCover(
         context: Context,
         uri: String,
         coverUri: String?,
         coverSource: String?,
         vndbId: String?,
+        bangumiId: String?,
+        hikarinagiId: String?,
+        nextmoeId: String?,
         metadataTitle: String?,
     ): Boolean = withContext(Dispatchers.IO) {
         ensureMigrated(context)
-        dao(context).updateCover(uri, coverUri, coverSource, vndbId, metadataTitle, System.currentTimeMillis()) > 0
+        dao(context).updateCover(
+            uri,
+            coverUri,
+            coverSource,
+            vndbId,
+            bangumiId,
+            hikarinagiId,
+            nextmoeId,
+            metadataTitle,
+            System.currentTimeMillis(),
+        ) > 0
     }
 
     /** 最近打开列表：games.last_opened_at 的派生视图（方案 4.1），替代旧 recent_games 快照。 */

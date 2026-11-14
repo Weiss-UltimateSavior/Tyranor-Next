@@ -13,6 +13,12 @@ data class ScanGame(
     val coverUri: String? = null,
     val coverSource: String? = null,
     val vndbId: String? = null,
+    /** 绑定的 Bangumi 条目 id（subject id，十进制字符串）；null 表示未绑定。 */
+    val bangumiId: String? = null,
+    /** 绑定的 Hikarinagi Galgame 条目 id；null 表示未绑定。 */
+    val hikarinagiId: String? = null,
+    /** 绑定的未萌 NextMoe 作品 id（catalog work id，十进制字符串）；null 表示未绑定。 */
+    val nextmoeId: String? = null,
     val metadataTitle: String? = null,
     /** 外置 APK 模块内部别名（如 internal.rpgmxp），用于保留同一引擎下的子运行时；Ren'Py 由单游戏版本设置决定，不写该字段。 */
     val externalModuleAlias: String? = null,
@@ -35,6 +41,9 @@ object ScanGameIntents {
     private const val EXTRA_COVER_URI = "extra_cover_uri"
     private const val EXTRA_COVER_SOURCE = "extra_cover_source"
     private const val EXTRA_VNDB_ID = "extra_vndb_id"
+    private const val EXTRA_BANGUMI_ID = "extra_bangumi_id"
+    private const val EXTRA_HIKARINAGI_ID = "extra_hikarinagi_id"
+    private const val EXTRA_NEXTMOE_ID = "extra_nextmoe_id"
     private const val EXTRA_METADATA_TITLE = "extra_metadata_title"
     private const val EXTRA_EXTERNAL_MODULE_ALIAS = "extra_external_module_alias"
     private const val EXTRA_DETECTED_RENPY_VERSION = "extra_detected_renpy_version"
@@ -48,6 +57,9 @@ object ScanGameIntents {
         game.coverUri?.let { putExtra(EXTRA_COVER_URI, it) }
         game.coverSource?.let { putExtra(EXTRA_COVER_SOURCE, it) }
         game.vndbId?.let { putExtra(EXTRA_VNDB_ID, it) }
+        game.bangumiId?.let { putExtra(EXTRA_BANGUMI_ID, it) }
+        game.hikarinagiId?.let { putExtra(EXTRA_HIKARINAGI_ID, it) }
+        game.nextmoeId?.let { putExtra(EXTRA_NEXTMOE_ID, it) }
         game.metadataTitle?.let { putExtra(EXTRA_METADATA_TITLE, it) }
         game.externalModuleAlias?.let { putExtra(EXTRA_EXTERNAL_MODULE_ALIAS, it) }
         game.detectedRenpyVersion?.let { putExtra(EXTRA_DETECTED_RENPY_VERSION, it) }
@@ -68,6 +80,9 @@ object ScanGameIntents {
             coverUri = intent.getStringExtra(EXTRA_COVER_URI),
             coverSource = intent.getStringExtra(EXTRA_COVER_SOURCE),
             vndbId = intent.getStringExtra(EXTRA_VNDB_ID),
+            bangumiId = intent.getStringExtra(EXTRA_BANGUMI_ID),
+            hikarinagiId = intent.getStringExtra(EXTRA_HIKARINAGI_ID),
+            nextmoeId = intent.getStringExtra(EXTRA_NEXTMOE_ID),
             metadataTitle = intent.getStringExtra(EXTRA_METADATA_TITLE),
             externalModuleAlias = intent.getStringExtra(EXTRA_EXTERNAL_MODULE_ALIAS),
             detectedRenpyVersion = intent.getStringExtra(EXTRA_DETECTED_RENPY_VERSION),

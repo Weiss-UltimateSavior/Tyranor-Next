@@ -282,6 +282,9 @@ object EngineScanner {
                     previous.coverUri == null || previous.coverUri == current.coverUri
                 },
             vndbId = previous.vndbId,
+            bangumiId = previous.bangumiId,
+            hikarinagiId = previous.hikarinagiId,
+            nextmoeId = previous.nextmoeId,
             metadataTitle = previous.metadataTitle,
             externalModuleAlias = previous.externalModuleAlias ?: current.externalModuleAlias,
             runtimeModulePackage = if (current.engine == EngineType.RUNTIME_MODULE) {

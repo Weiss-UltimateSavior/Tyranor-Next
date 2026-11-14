@@ -413,6 +413,9 @@ internal fun mergeChangedGameFields(base: ScanGame, before: ScanGame, updated: S
     coverUri = if (updated.coverUri != before.coverUri) updated.coverUri else base.coverUri,
     coverSource = if (updated.coverSource != before.coverSource) updated.coverSource else base.coverSource,
     vndbId = if (updated.vndbId != before.vndbId) updated.vndbId else base.vndbId,
+    bangumiId = if (updated.bangumiId != before.bangumiId) updated.bangumiId else base.bangumiId,
+    hikarinagiId = if (updated.hikarinagiId != before.hikarinagiId) updated.hikarinagiId else base.hikarinagiId,
+    nextmoeId = if (updated.nextmoeId != before.nextmoeId) updated.nextmoeId else base.nextmoeId,
     metadataTitle = if (updated.metadataTitle != before.metadataTitle) updated.metadataTitle else base.metadataTitle,
     externalModuleAlias = if (updated.externalModuleAlias != before.externalModuleAlias) {
         updated.externalModuleAlias
