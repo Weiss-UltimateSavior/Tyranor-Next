@@ -4,11 +4,11 @@ import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.text.TextUtils;
-import android.widget.TextView;
+import androidx.appcompat.widget.AppCompatTextView;
 import com.core.engine.R;
 
 /** Passive status display for SystemNNN's TYN debug setting. */
-final class GameDebugOverlay extends TextView {
+final class GameDebugOverlay extends AppCompatTextView {
     private static final String[] WAITS={
         "RUNNING","DRAW","OVERRAP","DIALOGUE","CHOICE","END","ERROR","MOVIE","PLACE","MODAL"
     };

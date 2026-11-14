@@ -241,7 +241,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         dialoguePanel.planeInvalidated(storyPlane::schedulePush);
         stage.addView(dialoguePanel,new FrameLayout.LayoutParams(-1,-1)); dialoguePanel.setVisibility(View.GONE);
         if(debugMode){
-            debugOverlay=new GameDebugOverlay(uiContext);
+            debugOverlay=new GameDebugOverlay(new ContextThemeWrapper(uiContext,R.style.SystemNnnPlayerTheme));
             debugOverlay.setTranslationZ(dp(8));
             FrameLayout.LayoutParams params=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.START);
             params.setMargins(dp(8),dp(8),dp(8),0);
