@@ -1,10 +1,17 @@
 {
   "upstream": "https://github.com/Weiss-UltimateSavior/Tyranor-Next",
-  "upstreamBundledRevision": "740d7c130fce019350e135066478de61fa9b439e",
   "libraryFile": "engine/src/main/jniLibs/arm64-v8a/libsiglus.so",
-  "librarySha256": "fdef411e1f30550ef7adb7ab4ff1f383433aee94be7609a481eb18c13c3563df",
-  "libraryStatus": "unmodified-upstream-bundled",
-  "purpose": "Use the upstream bundled runtime unchanged; read engine-generated key.toml and Gameexe SCREEN_SIZE in the host.",
+  "librarySha256": "c04b44f8a7cb76c5db0fc022839ebcdf64fda1beabbb3652243d69bd43e4e253",
+  "libraryStatus": "rebuilt-from-siglus_rs",
+  "builtFrom": {
+    "repository": "https://github.com/Weiss-UltimateSavior/siglus_rs",
+    "revision": "19066ea7f36b92fdecaea240a223c9bef14efd2c",
+    "package": "siglus_scene_vm",
+    "target": "aarch64-linux-android",
+    "profile": "release",
+    "ndkVersion": "28.0.13004108"
+  },
+  "purpose": "Use the runtime rebuilt from siglus_rs; read engine-generated key.toml and Gameexe SCREEN_SIZE in the host.",
   "configurationFormatReference": {
     "upstream": "https://github.com/xmoezzz/siglus_rs",
     "revision": "5f358ef1360b0439e92aed2b749e8f25d8721954",
