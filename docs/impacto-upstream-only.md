@@ -114,9 +114,9 @@ Git 子进程会清除继承的仓库定位与配置注入环境，避免跨仓�
 - `EngineType.IMPACTO` 属 GAL 分类，卡片图标为 `ic_engine_card_impacto`，封面色 `#B3123A`。
 - 扫描：`ImpactoGameCatalog` 按**精确大小写**的根目录条目名识别上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`），恰好一个 profile 全部命中才识别；`darling` 的要求集合与全小写的 mo6tw 完全相同，无法区分，所以这种布局一律不识别，不猜；`launchTarget` 保存 profile id（即 `-g` 参数）。影片档不作为特征。该表由 `tools/impacto/check-game-catalog.py` 对照固定提交的 `gamedefinitions.lua` 和各 `vfs.lua` 校验。
 - 现有 Windows／Steam 样本（小写 `.cpk`、`script.cpk`、无 `SCRIPT.cls`）**不会**被识别为 Impacto，也不会被误判成大写布局的 `chlcc`。
-- 启动：`ImpactoExternalEngineModule` 发 `com.tyranor.next.impacto.action.RUN`，携带游戏目录、profile、`gameKey` 与标题；游戏目录需要主 App 已取得的路径与「所有文件访问」。尚无下载地址，未安装时只提示缺失。
+- 启动：`ImpactoExternalEngineModule` 发 `com.tyranor.next.impacto.action.RUN`，携带游戏目录、profile、`gameKey` 与标题；游戏目录需要主 App 已取得的路径与「所有文件访问」。宿主未安装或版本低于 `ImpactoHostContract.VERSION_CODE` 时，提示并引导到与期望版本对应的发布页（`impacto-host-<版本>`）。
 - 存档：存在于宿主 APK 的内部私有目录（`files/games/<gameKey>/saves`），主 App 不提供文件存档管理；单游戏设置页只显示说明，没有可调项。
-- 宿主 APK 见 [`engine/impacto/host-apk/README.md`](../engine/impacto/host-apk/README.md)：只用上游公开钩子，直接引用已校验的上游 Java 源码，不复制、不修改；需要候选库 `libimpacto.so` 才能打包，目前仅 Linux 能构建它。
+- 宿主 APK 见 [`engine/impacto/host-apk/README.md`](../engine/impacto/host-apk/README.md)：只用上游公开钩子，直接引用已校验的上游 Java 源码，不复制、不修改；需要候选库 `libimpacto.so` 才能打包，只能在 Linux（或 WSL）构建。**不内置进 Tyranor Next**：宿主 APK 约 90 MB（其中 CJK 字体与各游戏字体贴图占大头，均已是压缩格式），内置会让所有用户多下载约 100 MB；且上游自带的 SDL3 `org.libsdl.app` 与 TYN 内置的 SDL2 同名，代码无法合并进主 APK。获取方式与其他外置 APK 模块相同：CI 构建、发布到 GitHub Release、主 App 链接过去。
 
 这是接入代码，**不是兼容性验收**：没有编出带引擎库的 APK，引擎没有运行过，也没有对任何游戏数据验证过。
 

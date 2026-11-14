@@ -4,7 +4,6 @@ import com.tyranor.next.core.engine.EngineType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -28,8 +27,14 @@ class ImpactoExternalEngineModuleTest {
             ImpactoHostContract.EXTRA_GAME_KEY,
             ImpactoHostContract.EXTRA_TITLE,
         ).forEach { assertTrue(it, it.startsWith(ImpactoHostContract.PACKAGE + ".")) }
-        // No download page is published yet; the UI must not offer a fake one.
-        assertNull(ImpactoExternalEngineModule.installUrl)
+        // Points at the release page of exactly the host version this app build expects.
+        assertEquals(
+            "https://github.com/Weiss-UltimateSavior/Tyranor-Next/releases/tag/impacto-host-" +
+                ImpactoHostContract.VERSION_NAME,
+            ImpactoExternalEngineModule.installUrl,
+        )
+        assertEquals(ImpactoHostContract.VERSION_CODE.toLong(), ImpactoExternalEngineModule.minimumVersionCode)
+        assertTrue(ImpactoExternalEngineModule.minimumVersionCode > 0L)
         assertTrue(ImpactoExternalEngineModule.requiresGameDirectoryPath)
         assertFalse(ImpactoExternalEngineModule.launchEntryIsFile)
     }

@@ -26,8 +26,13 @@ object ImpactoExternalEngineModule : ExternalEngineModule {
     override val defaultAlias: String = "internal.impacto"
     override val supportedAliases: Set<String> = setOf("external.impacto")
 
-    /** 尚未发布宿主 APK；没有下载地址时 UI 只提示未安装。 */
-    override val installUrl: String? = null
+    /** 与宿主 APK 同版本的发布页；发布由 `impacto-host-release` 工作流完成，合并前必须先发布。 */
+    override val installUrl: String =
+        "https://github.com/Weiss-UltimateSavior/Tyranor-Next/releases/tag/" +
+            ImpactoHostContract.RELEASE_TAG_PREFIX + ImpactoHostContract.VERSION_NAME
+
+    /** 低于本版本的宿主不认识当前请求协议，按「已过期」处理并引导更新。 */
+    override val minimumVersionCode: Long = ImpactoHostContract.VERSION_CODE.toLong()
     override val requiresGameDirectoryPath: Boolean = true
 
     override fun prepareForLaunch(
@@ -69,6 +74,12 @@ object ImpactoExternalEngineModule : ExternalEngineModule {
 /** Impacto 宿主 APK 的 Intent 协议键；两端（本 App 与 `engine/impacto/host-apk`）各持一份常量，改动须同步。 */
 object ImpactoHostContract {
     const val PACKAGE = "com.tyranor.next.impacto"
+
+    /** 本版 App 期望的宿主版本；须与 `engine/impacto/host-apk/app/build.gradle.kts` 一致（`check-host-contract.py` 校验）。 */
+    const val VERSION_CODE = 1
+    const val VERSION_NAME = "0.1.0"
+    const val RELEASE_TAG_PREFIX = "impacto-host-"
+
     const val ACTION_RUN = "com.tyranor.next.impacto.action.RUN"
     const val EXTRA_GAME_DIR = "com.tyranor.next.impacto.extra.GAME_DIR"
     const val EXTRA_PROFILE = "com.tyranor.next.impacto.extra.PROFILE"

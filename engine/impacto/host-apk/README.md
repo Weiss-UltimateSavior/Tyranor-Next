@@ -35,6 +35,22 @@ Tyranor Next 通过 Intent 启动本 APK；本 APK 不属于主 App 的 Gradle �
 读取 extras 时任何运行时异常都按拒绝处理，不会让承载游戏的进程崩溃。校验通过且已授予「所有文件访问」后才启动不导出的游戏 Activity。
 游戏 Activity 运行在独立的 `:game` 进程，并关闭预测性返回（`SDLActivity` 依赖 `onBackPressed()`，targetSdk 36 默认会吞掉它）。
 
+## 获取与发布
+
+与 Ren'Py、Ruffle 等外置 APK 模块一致：**不内置进 Tyranor Next**，由 CI 构建后发布到 GitHub Release，主 App 的
+`ImpactoExternalEngineModule.installUrl` 指向与期望版本对应的发布页（`impacto-host-<versionName>`），主 App 只检查是否已安装、
+版本是否足够并发 Intent。
+
+发布由手动触发的 [`impacto-host-release`](../../../.github/workflows/impacto-host-release.yml) 工作流完成：
+在 Linux 上用 `tools/impacto/setup-linux-tools.sh` 装固定版本的 NDK 与 CMake，用 `build-upstream.sh` 从固定提交编译上游库，
+再用 Tyranor 的发布密钥（与主 App 相同的四个 `ANDROID_*` secrets）签名打包，核对 APK 内确为该候选库、签名不是 debug 密钥后，
+以 `impacto-host-<versionName>` 为标签发布预发布版，附带 SHA-256 与 `candidate.json`。该工作流**从未在 GitHub 上运行过**，
+同一套步骤只在 WSL 里手工演练过。已存在同名发布时工作流会拒绝覆盖：升级宿主须同时提高 `versionCode`/`versionName`，
+并同步改 `ImpactoHostContract.VERSION_CODE`/`VERSION_NAME`（`tools/impacto/check-host-contract.py` 会校验两边一致）。
+
+**合并任何抬高期望宿主版本的改动前，必须先运行该工作流产出对应发布，否则主 App 里的下载链接是 404。**
+宿主必须始终用同一把密钥签名，否则已安装的旧版无法被更新。
+
 ## 构建
 
 需要 Python 3（非 Windows 使用 `python3`）、Android SDK（compileSdk 36）、JDK 17，以及：
@@ -48,10 +64,10 @@ Tyranor Next 通过 Intent 启动本 APK；本 APK 不属于主 App 的 Gradle �
   -PimpactoCandidate=/path/to/build/candidate
 ```
 
-只编译 Java、运行 JVM 单测时不需要候选库：
+只编译 Java、运行 JVM 单测时不需要候选库，加 `-PimpactoHostOnly=true`（打包时也需要核对候选库，所以不加它就必须给 `-PimpactoCandidate`）：
 
 ```sh
-./gradlew -p engine/impacto/host-apk :app:testDebugUnitTest -PimpactoSource=/path/to/verified/impacto
+./gradlew -p engine/impacto/host-apk :app:testDebugUnitTest -PimpactoSource=/path/to/verified/impacto -PimpactoHostOnly=true
 ```
 
 构建任务（`preBuild`，覆盖编译、lint、单测）会先运行 `verify-upstream.py`，检出不干净或版本不对即失败；打包前还会核对候选库：`candidate.json` 必须来自 `../source-lock.json`，且 `libimpacto.so` 的 SHA-256 与报告一致。
