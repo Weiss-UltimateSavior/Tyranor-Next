@@ -1072,7 +1072,7 @@ private val builtinDialogEntries: Map<EngineType, List<EngineDialogEntry>> = map
         builtinEntry("xsys35-2.20.0", "xsystem35-2.20.0"),
     ),
     EngineType.XSYS4 to listOf(
-        builtinEntry("xsys4-6a94a0c", "xsystem4-6a94a0c"),
+        builtinEntry("xsys4-46f7c25", "xsystem4-46f7c25"),
     ),
     EngineType.FVP to listOf(
         builtinEntry("fvp-rfvp", "rfvp-xmoezzz"),

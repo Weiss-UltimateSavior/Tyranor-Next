@@ -1,5 +1,6 @@
 # 变更记录
 
+- 更新 System4（xsystem4）运行库至上游 `46f7c25`（上一基线 `6a94a0c`）：新增 parts activity 系统、KiwiSoundEngine 名称/淡变 API、Evenicle 导出与 MainEXFile 名称调用等；宿主命令行参数、NEEDED 集合与入库方式不变。
 ## 未发布
 
 ### 修复

@@ -26,7 +26,7 @@ engine/xsystem4/
 
 | 项 | 值 |
 | --- | --- |
-| xsystem4 fork | <https://github.com/Weiss-UltimateSavior/xsystem4> @ `6a94a0c5637ce640e787b505ffb2bd21e881f970`（`master`，含 `--encoding`） |
+| xsystem4 fork | <https://github.com/Weiss-UltimateSavior/xsystem4> @ `46f7c253d63d7b513516f42af027419314cbf047`（`master`，含 `--encoding`；2026-11-14 基线，上一基线 `6a94a0c5…`） |
 | 上游 | <https://github.com/nunuhara/xsystem4>（fork 内容与其一致，不含源码改动） |
 | libsys4 fork | <https://github.com/Weiss-UltimateSavior/libsys4> @ `e2bf438d0156a2ca70fc6018fddf7c870794a2ca`（脚本 clone 到 `subprojects/libsys4` 并检出；不改 `.gitmodules`） |
 | libsndfile fork | <https://github.com/Weiss-UltimateSavior/libsndfile>，**`xsystem4` 分支**，@ `be82f4be73c77f1e759bda9dfe1625204441465a`（不在默认分支） |
@@ -105,8 +105,8 @@ libsys4 自身的 `find_package(libdeflate / libjpeg-turbo / WebP / PNG / FLEX /
 按方案 §5.4 逐条落实；以下为实施中**新增或与方案字面不同**的点（均已在脚本内固定）：
 
 1. **顶层 `-S`**：xsystem4 fork 检出（不使用 wrapper）。`--src` 模式下脚本先 `git clone --no-hardlinks` 本地 checkout 到
-   `<build-dir>/src/xsystem4` 再 checkout 固定 commit，**不修改源仓库**（也不在源仓库内放置 libsys4）。
-   克隆保留 `.git`，因此上游 `git rev-parse --short HEAD` 得到 `6a94a0c`（`strings` 实测：`xsystem4 6a94a0c`）。
+   `<build-dir>/src/xsystem4` 再检出目标 commit（`--ref`，缺省固定基线），**不修改源仓库**（也不在源仓库内放置 libsys4）。
+   克隆保留 `.git`，因此上游 `git rev-parse --short HEAD` 得到检出 commit 的短哈希（本次为 `46f7c25`，`strings` 实测：`xsystem4 46f7c25`）。
 2. **工具链参数**：`CMAKE_FIND_ROOT_PATH=<staging>` 并把 `CMAKE_FIND_ROOT_PATH_MODE_{LIBRARY,INCLUDE,PACKAGE}=ONLY`
    （依赖只从 staging 与 NDK sysroot 解析，避免误用宿主 `/usr`、Homebrew 头库）；公共参数见脚本 `COMMON_CMAKE_ARGS`。
 3. **`CMAKE_STAGING_PREFIX` = `CMAKE_INSTALL_PREFIX` = staging**：实测 install 落点为 `staging/lib`、`staging/include`，无路径叠加。
@@ -147,13 +147,17 @@ bash engine/xsystem4/scripts/build-xsys4.sh
 # 从零重建（清空 build/ staging/ third_party/）
 bash engine/xsystem4/scripts/build-xsys4.sh --clean
 
+# 指定引擎版本（--ref 接受 commit / 分支 / tag，在 --src 克隆内解析；2026-11-14 入库即用此命令）
+bash engine/xsystem4/scripts/build-xsys4.sh --src /Volumes/HUAWEI-M2LITE/app/xsystem4 \
+    --ref 46f7c253d63d7b513516f42af027419314cbf047
+
 # 复用本地 checkout，全部输出到仓库外（审核 / 复现用）
 bash engine/xsystem4/scripts/build-xsys4.sh --src /Volumes/HUAWEI-M2LITE/app/xsystem4 \
     --build-dir "$TMPDIR/xsys4-verify" --out "$TMPDIR/xsys4-verify/so" \
     --shaders-out "$TMPDIR/xsys4-verify/shaders" --licenses-out "$TMPDIR/xsys4-verify/licenses"
 ```
 
-脚本参数：`--build-dir` `--out` `--shaders-out` `--licenses-out` `--src` `--sdk` `--cmake` `--ndk` `--jobs` `--clean` `--help`。
+脚本参数：`--build-dir` `--out` `--shaders-out` `--licenses-out` `--src` `--ref` `--sdk` `--cmake` `--ndk` `--jobs` `--clean` `--help`。
 
 ---
 
@@ -174,7 +178,7 @@ bash engine/xsystem4/scripts/build-xsys4.sh --src /Volumes/HUAWEI-M2LITE/app/xsy
 | `sts_mixer-Unlicense.txt` | `include/sts_mixer.h` 末尾 unlicense 段 | 公有领域（Unlicense） |
 | `kvec-MIT.txt` | libsys4 `src/kvec.h` 文件头（`include/system4/vector.h` 同声明） | MIT |
 | `mt19937int-LGPL-notice.txt` | libsys4 `src/mt19937int.c` 文件头 | LGPL-2.0-or-later（`src/dungeon/mtrand43.c` 注明派生自此） |
-| `libffi-LICENSE.txt` / `libogg-COPYING.txt` / `libvorbis-COPYING.txt` / `libjpeg-turbo-LICENSE.md` / `libwebp-COPYING.txt` / `libwebp-PATENTS.txt` / `libpng-LICENSE.txt` / `libdeflate-COPYING.txt` / `freetype-FTL.txt` / `freetype-GPLv2.txt` / `SDL2-LICENSE.txt` / `cglm-LICENSE.txt` | 各依赖 tar 包内的许可文件 | 各自许可 |
+| `libffi-LICENSE.txt` / `libogg-COPYING.txt` / `libvorbis-COPYING.txt` / `libjpeg-turbo-LICENSE.md` / `README.ijg` / `libwebp-COPYING.txt` / `libwebp-PATENTS.txt` / `libpng-LICENSE.txt` / `libdeflate-COPYING.txt` / `freetype-FTL.txt` / `freetype-GPLv2.txt` / `SDL2-LICENSE.txt` / `cglm-LICENSE.txt` | 各依赖 tar 包内的许可文件（`README.ijg` 为 libjpeg-turbo 的 IJG 条款） | 各自许可 |
 
 **无许可头、需作者确认的文件**（记录，不阻塞构建）：
 
@@ -189,8 +193,8 @@ bash engine/xsystem4/scripts/build-xsys4.sh --src /Volumes/HUAWEI-M2LITE/app/xsy
 
 | 项 | 实测值 |
 | --- | --- |
-| 体积 | **5 671 944 B（≈5.41 MiB）** |
-| SHA-256 | **`56a4063eedc9cbd3f72d1bc06e937e0239ecdb44fb61bc68348ee791cca7c6eb`**（2026-10-18 重建；旧值 `bc311662…` 为 2026-10-17 构建，见 §5 第 12 条 / §10） |
+| 体积 | **5 719 640 B（≈5.45 MiB）** |
+| SHA-256 | **`7489a041b35c234aa41a24a4b1100d19a70eb479ac21a999b60ff7997d7686c3`**（2026-11-14，xsystem4 `46f7c25`；旧值 `56a4063e…` 为 `6a94a0c` 基线，见 §10） |
 | 构建 | Release、LTO（`CMAKE_INTERPROCEDURAL_OPTIMIZATION=ON`），`-DANDROID_PLATFORM=android-26`，`c++_static` |
 | ELF | `ELF 64-bit LSB shared object, ARM aarch64, dynamically linked, stripped` |
 
@@ -208,21 +212,23 @@ bash engine/xsystem4/scripts/build-xsys4.sh --src /Volumes/HUAWEI-M2LITE/app/xsy
 ```
 
 - NEEDED 集合 = `{libm, libz, libSDL2x, libGLESv3, libdl, liblog, libc}`，**不含** `libSDL2.so` / `libcglm.so`（门禁通过）。
-- `llvm-nm -D | grep -w SDL_main` → `0000000000259e44 T SDL_main`（门禁通过）。
+- `llvm-nm -D | grep -w SDL_main` → `000000000025f1bc T SDL_main`（门禁通过）。
 - `llvm-readelf -l` 的 LOAD 段（3 个）：`p_align = 0x4000`（16 KB 对齐，门禁通过）：
 
 ```
-LOAD  0x000000 0x0000000000000000 0x0000000000000000 0x5205a0 0x5205a0 R E 0x4000
-LOAD  0x5205a0 0x00000000005245a0 0x00000000005245a0 0x024d10 0x025a60 RW  0x4000
-LOAD  0x5452b0 0x000000000054d2b0 0x000000000054d2b0 0x0230a0 0x052f24 RW  0x4000
+LOAD  0x000000 0x0000000000000000 0x0000000000000000 0x52b920 0x52b920 R E 0x4000
+LOAD  0x52b920 0x000000000052f920 0x000000000052f920 0x024dc0 0x0256e0 RW  0x4000
+LOAD  0x5506e0 0x00000000005586e0 0x00000000005586e0 0x0236c0 0x053734 RW  0x4000
 ```
 
-- 版本串：`strings` 含 `xsystem4 6a94a0c`（`VCS_TAG` 正确）；`strings` 含 `libjpeg-turbo version 3.1.0 (build xsys4)`（第 12 条）。
+- 版本串：`strings` 含 `xsystem4 46f7c25`（`VCS_TAG` 正确）；`strings` 含 `libjpeg-turbo version 3.1.0 (build xsys4)`（第 12 条）。
+- 2026-11-14 重编（`46f7c25`）：NEEDED 集合与 SONAME 不变（`SDL_main` 为 `T`，`LOAD p_align = 0x4000` ×3，计划外 `.so` 0 个）；
+  体积由 5 671 944 B 增至 5 719 640 B（+47 696 B），增量来自 `6a94a0c..46f7c25` 的 parts activity、音频元数据与 HLL 导出。
 - 2026-10-18 重建复核：NEEDED 集合 = `{libm, libz, libSDL2x, libGLESv3, libdl, liblog, libc}`（与上文一致，`SDL_main` 为 `T`，`LOAD p_align = 0x4000` ×3）；
   `libSDL2x.so` SHA-256 仍为 `cee53fbc5fd41a895658ce98401cd6aa033ad6039b426d4401f9ac1b3caba0c1`；体积 5 671 944 B 不变。
 - 构建树 / staging 中计划外 `.so`：0 个（门禁通过）。
 
-**与方案估算的偏差**：方案 §2.1 估算 2.5–3.5 MB（未实测）。实测 5.67 MB（strip 后）。方案 §3.1 提及壳产物解压 7.2 MB 含符号表。
+**与方案估算的偏差**：方案 §2.1 估算 2.5–3.5 MB（未实测）。实测 5.72 MB（strip 后）。方案 §3.1 提及壳产物解压 7.2 MB 含符号表。
 体积主要来自静态链入的 libwebp（含 demux/mux 与 sharpyuv）、libjpeg-turbo（含 turbojpeg）、libsndfile+vorbis、freetype 与 xsystem4 的大量 HLL 模块。**未做按模块裁剪**，留待编排者决策（见 §11）。
 
 编译告警（上游 / 依赖代码，未修补）：`src/java_raw_api.c`（libffi 弃用 API）、`src/dlmalloc.c`（未用变量）、`src/hll/DrawSnow.c:60`（`RAND_MAX` 转 float）、`libsys4/src/ald.c:211`（`optimize` 属性）。
@@ -300,14 +306,18 @@ a6b11b8c1ec7b6e6478186eb741d7e4b2bf9f224e30e1727124b9c685124f158  reign_shadow.f
 
 ## 10. 复现性记录
 
-两次 `--clean` 全量构建（从零下载校验、从零编译全部依赖），**构建目录不同**：
+同一基线各做两轮 `--clean` 全量构建（从零下载校验、从零编译全部依赖），**构建目录不同**：
 
 | 轮次 | 构建目录 | 输出 | SHA-256 |
 | --- | --- | --- | --- |
-| A（2026-10-18 00:13，入库） | `${TMPDIR}/xsys4-build` | 入库（`engine/src/main/jniLibs/arm64-v8a/`） | `56a4063eedc9cbd3f72d1bc06e937e0239ecdb44fb61bc68348ee791cca7c6eb` |
-| B（2026-10-18 00:16，独立重建） | `${TMPDIR}/xsys4-verify-B/build` | 仓库外 `xsys4-verify-B/so/` | `56a4063eedc9cbd3f72d1bc06e937e0239ecdb44fb61bc68348ee791cca7c6eb` |
+| A（2026-10-18 00:13，`6a94a0c`） | `${TMPDIR}/xsys4-build` | 入库（`engine/src/main/jniLibs/arm64-v8a/`） | `56a4063eedc9cbd3f72d1bc06e937e0239ecdb44fb61bc68348ee791cca7c6eb` |
+| B（2026-10-18 00:16，`6a94a0c`） | `${TMPDIR}/xsys4-verify-B/build` | 仓库外 `xsys4-verify-B/so/` | `56a4063eedc9cbd3f72d1bc06e937e0239ecdb44fb61bc68348ee791cca7c6eb` |
+| C（2026-11-14 22:26，`46f7c25`，入库） | `${TMPDIR}/xsys4-build` | 入库（`engine/src/main/jniLibs/arm64-v8a/`） | `7489a041b35c234aa41a24a4b1100d19a70eb479ac21a999b60ff7997d7686c3` |
+| D（2026-11-14 22:42，`46f7c25`，独立重建） | `${TMPDIR}/xsys4-verify/build` | 仓库外 `xsys4-verify/so/` | `7489a041b35c234aa41a24a4b1100d19a70eb479ac21a999b60ff7997d7686c3` |
 
-- A、B 与入库产物三者 `cmp` 逐字节一致；shaders 目录 `diff -rq` 一致。
+- A、B 与对应入库产物三者 `cmp` 逐字节一致；C、D 同样 `cmp` 逐字节一致（体积均 5 719 640 B），shaders 目录 `diff -rq` 一致。
+- A/B 与 C/D 之间 SHA-256 不同是**源码基线不同**（`6a94a0c` → `46f7c25`，26 个上游提交），不是构建环境漂移；同基线两轮（C/D，不同构建目录）仍逐字节一致。
+- **C 轮修掉的一处脚本缺陷**：`licenses/` 的 `README.ijg`（libjpeg-turbo 的 IJG 条款，此前由文档提交手动入库）不在脚本的复制清单里，`rm -rf` 重建目录时会被删除；脚本已补 `lic_copy …/README.ijg README.ijg`，重建后与入库版本一致。
 - **B 轮的限制**：脚本在收集许可文本的最后一步从 `www.gnu.org` 下载 `LGPL-2.0.txt` 时遇到网络 SSL 错误而退出（`.so` 与 shaders 此前已生成并复制到 `--out`），所以 B 轮的 licenses 输出目录缺这一个文件；入库目录里的 `LGPL-2.0.txt` 是此前下载并校验过的。该下载步骤依赖外网、遇网络抖动会让整次构建以非零退出，后续可考虑优先使用 `engine/xsystem4/licenses/` 内已有且 SHA 匹配的文本。
 - 旧值对照（不再有效）：2026-10-17 构建（`BUILD` 未固定）为 `bc311662…`；同一未修复脚本于 2026-10-18 重建为 `5408f5a9…`，二者仅差 libjpeg-turbo 版本串里的构建日期。
 - **证明力说明**：A、B 两轮同在 2026-10-18，不同构建目录；"与日期无关"的证据是产物字符串已是 `libjpeg-turbo version 3.1.0 (build xsys4)`、且不含其它构建日期（唯一类日期串 `libVorbis I 20200704` 是 libvorbis 上游固定发布号），而不是真的改系统日期重建。
@@ -324,7 +334,7 @@ a6b11b8c1ec7b6e6478186eb741d7e4b2bf9f224e30e1727124b9c685124f158  reign_shadow.f
 
 ## 11. 注意事项
 
-1. **体积**：`libxsystem4.so` 5.67 MB（strip 后；gzip -9 约 2.26 MB，`useLegacyPackaging=true` 下 APK 增量约 2.3 MB），高于最初估算（2.5–3.5 MB）。
+1. **体积**：`libxsystem4.so` 5.72 MB（strip 后；gzip -9 约 2.17 MiB，`useLegacyPackaging=true` 下 APK 增量约 2.3 MB），高于最初估算（2.5–3.5 MB）。
    如需压缩，可考虑：libwebp 只保留 decoder（`libwebpdecoder`，去 demux/mux）、确认 libsys4 对 libjpeg-turbo 的 `turbojpeg` 依赖是否可去。当前未裁剪，以保持与 §5 构建参数一致。
 2. **`--build-id=none`**：为跨构建目录逐字节可复现而加（§5-5）。若要求保留 build-id，需接受其随构建目录路径变化。
 3. **LTO**：xsystem4 与 libsys4 为 LTO；cglm（旧 cmake 策略）未 LTO，见 §5-8。

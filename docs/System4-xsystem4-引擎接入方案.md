@@ -3,6 +3,7 @@
 > 状态：**已实施（代码、构建产物、测试与文档均已落地，未提交；独立审核已完成两轮并修复，真机验收未做）**；**一次性交付，不分期**。文中带「实施期修正」「实测」字样的段落以实际实现为准。
 > 上游：`nunuhara/xsystem4`（GPL-2.0-or-later，AliceSoft System 4 引擎开源重实现）＋ 子项目 `nunuhara/libsys4`（GPL-2.0-or-later）；Android 构建参考 `kichikuou/xsystem4-android`（**仓库无 LICENSE，仅作事实参考，不拷贝其任何文件**，§5.5）。
 > 固定基线：xsystem4 `6a94a0c5637ce640e787b505ffb2bd21e881f970`（master，2026-10-16）＋ libsys4 `e2bf438d0156a2ca70fc6018fddf7c870794a2ca`。**不能用壳仓库的 `04333ad`**：该 commit 不含 `--encoding`/GBK 支持（`--encoding` 由 `71dbfda`（2026-10-03）引入，并把 libsys4 升到 `e2bf438`）；两基线间 `CMakeLists.txt` 无差异，Android 构建剧本不受影响（核验实测 `git diff` 为空）。
+> 后续更新（2026-11-14）：运行库重编至 xsystem4 `46f7c253d63d7b513516f42af027419314cbf047`（`6a94a0c` 之后 26 个上游提交；libsys4 / libsndfile 固定 commit 不变），产物哈希与实测见 `engine/xsystem4/BUILD.md` §8 / §10。
 > 本地勘察：`/Volumes/HUAWEI-M2LITE/app/xsystem4-android` = 本项目账号下的 fork **`Weiss-UltimateSavior/xsystem4-android`**（公开，fork 自 `kichikuou/xsystem4-android`；`master` 与上游**逐字相同**，HEAD `1c8f691`，v1.0.7，无本地修改）；其 `xsystem4` 子模块仍指向 `nunuhara/xsystem4` 且未检出，引擎源码结论来自 GitHub 同仓库源码。fork 不改变壳代码的版权状态（§5.5）。
 > 结论摘要：**内置 host 路线**，新增独立 `EngineType.XSYS4`；与已落地的 System35 **共用 `libSDL2x.so`（SDL2 2.32.10）与 `org.libsdl.app32`**，预期只新增 `libxsystem4.so`；字体**默认复用 App 现有字体**（APK 增量 0）并支持用户导入自定义字体。
 > 交付范围（一次做完）：扫描识别（含旧库误判纠正）＋ 启动 ＋ 存档镜像 ＋ 设置（独立存档 / 文本编码 / 自定义字体 / 手柄 / 跳字延迟）＋ 手册页 ＋ exe 图标封面兜底 ＋ 文档 / ADR / 测试 ＋ 真机验收。
