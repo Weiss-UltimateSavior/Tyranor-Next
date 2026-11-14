@@ -69,6 +69,7 @@ import com.tyranor.next.ui.common.motion.ProvideEntrance
 import com.tyranor.next.ui.common.motion.animateContentSizeSpring
 import com.tyranor.next.ui.common.motion.bounceOnChange
 import com.tyranor.next.ui.common.motion.breathing
+import com.tyranor.next.ui.common.motion.rememberDelayedBusy
 import com.tyranor.next.ui.common.motion.rememberLastNonNull
 import com.tyranor.next.ui.common.motion.shakeOnTrigger
 import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
@@ -147,7 +148,10 @@ private fun WebDavSettingsScreen() {
     val manualDirection = SaveSyncDirection.entries.firstOrNull { it.name == manualDirectionName }
         ?: SaveSyncDirection.PULL
     var showResetConfirm by remember { mutableStateOf(false) }
-    val available = enabled && config.enabled && loaded && loadError == null && !busy
+    // 控件的视觉置灰按「忙碌持续超过一瞬」才出现：未配置 / 秒失败的操作 busy 只翻转几毫秒，直接当 enabled 用，连点会让整页闪灰。
+    // 重复提交仍由各处理函数里即时的 canInteract()（含 busy）拦截。
+    val busyShown = rememberDelayedBusy(busy)
+    val available = enabled && config.enabled && loaded && loadError == null && !busyShown
     val saveOperationFailedMessage = stringResource(R.string.save_operation_failed)
     val notSetMessage = stringResource(R.string.webdav_not_set)
     val passwordSetMessage = stringResource(R.string.webdav_password_set)
@@ -197,8 +201,8 @@ private fun WebDavSettingsScreen() {
         }
     }
 
-    fun showToast(message: String) {
-        AppNotice.makeText(context, message, Toast.LENGTH_SHORT, AppNotice.Kind.Info).show()
+    fun showToast(message: String, kind: AppNotice.Kind = AppNotice.Kind.Info) {
+        AppNotice.makeText(context, message, Toast.LENGTH_SHORT, kind).show()
     }
 
     fun canInteract(): Boolean = enabled && config.enabled && loaded && loadError == null && !busy &&
@@ -252,14 +256,14 @@ private fun WebDavSettingsScreen() {
                 }
                 if (!config.enabled || !WebDavSettingsStore.isEnabled(context)) return@launch
                 outcome = true
-                if (!syncOperation || shouldShowSaveSyncFeedback(context)) showToast(result)
+                if (!syncOperation || shouldShowSaveSyncFeedback(context)) showToast(result, AppNotice.Kind.Success)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
                 if (!config.enabled || !WebDavSettingsStore.isEnabled(context)) return@launch
                 outcome = false
                 if (!syncOperation || shouldShowSaveSyncFeedback(context)) {
-                    showToast(failureMessage(failure))
+                    showToast(failureMessage(failure), AppNotice.Kind.Failure)
                 }
             } finally {
                 busy = false

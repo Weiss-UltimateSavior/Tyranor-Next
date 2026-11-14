@@ -163,8 +163,12 @@ internal fun GameQuickActionsDialog(
                 GameShortcutManager.RequestResult.UNSUPPORTED -> shortcutUnsupportedMessage
                 GameShortcutManager.RequestResult.FAILED -> shortcutFailedMessage
             }
-            AppNotice.makeText(context, message, android.widget.Toast.LENGTH_SHORT, AppNotice.Kind.Info).show()
-            if (result == GameShortcutManager.RequestResult.REQUESTED || result == GameShortcutManager.RequestResult.UPDATED) {
+            val requested = result == GameShortcutManager.RequestResult.REQUESTED || result == GameShortcutManager.RequestResult.UPDATED
+            AppNotice.makeText(
+                context, message, android.widget.Toast.LENGTH_SHORT,
+                if (requested) AppNotice.Kind.Success else AppNotice.Kind.Failure,
+            ).show()
+            if (requested) {
                 exitHandle.closeThen(onDismiss)
             } else {
                 feedback.rejectShortcut()

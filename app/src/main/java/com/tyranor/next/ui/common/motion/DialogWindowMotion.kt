@@ -1,5 +1,11 @@
 package com.tyranor.next.ui.common.motion
 
+import android.app.Activity
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.view.InputDevice
+import android.view.MotionEvent
 import android.view.View
 import android.view.Window
 import android.view.WindowManager
@@ -19,7 +25,12 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
@@ -45,6 +56,8 @@ internal fun DialogWindowScrim(
     onWindow: (Window?) -> Unit,
     onDismissRequest: () -> Unit,
     dismissEnabled: Boolean = true,
+    /** 手指在弹窗窗口任意位置按下的位置（弹窗根坐标）；不消费事件。退场期间据此把这次点击转交给下层页面。 */
+    onScrimDown: ((Offset) -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val window = syncDialogWindow(
@@ -58,14 +71,79 @@ internal fun DialogWindowScrim(
         if (alpha > 0f) drawRect(Color.Black.copy(alpha = alpha))
     }
     Box(
-        Modifier.fillMaxSize().then(scrim).clickable(
-            enabled = dismissEnabled,
-            interactionSource = remember { MutableInteractionSource() },
-            indication = null,
-            onClick = onDismissRequest,
-        ),
+        Modifier.fillMaxSize().then(scrim)
+            .clickable(
+                enabled = dismissEnabled,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onDismissRequest,
+            )
+            // Initial 阶段观察所有按下（含落在卡片上的）：退场刚开始的前几帧卡片还盖在原处，用户重新点下层控件的位置
+            // 往往正好落在这张卡片上，卡片会把按下消费掉——只看遮罩区域就漏了这一类点击。只观察，不消费。
+            .then(
+                if (onScrimDown == null) Modifier else Modifier.pointerInput(onScrimDown) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        onScrimDown(down.position)
+                    }
+                },
+            ),
         content = content,
     )
+}
+
+/**
+ * 弹窗退场期间落在遮罩上的点击，退场结束、窗口移除之后补发给 Activity。
+ *
+ * 为什么：弹窗的关闭回调要等退场动画（约 0.25s）放完才交付给调用方；这段时间里窗口若放行触摸，用户点下层页面上的
+ * 控件（比如刚才打开这个弹窗的那一行）只会让控件把「显示弹窗」置为 true——它此刻本来就是 true，没有任何变化——
+ * 随后退场结束，关闭回调又把它置回 false，弹窗再也出不来，只剩按压动效。所以退场期间窗口接住触摸，
+ * 这次点击改为「立刻收尾 → 弹窗移除 → 在同一个位置补发一次点击」，行为等同于用户在弹窗消失之后才点下去。
+ */
+internal object ExitTapReplay {
+    private val handler = Handler(Looper.getMainLooper())
+
+    fun replay(activity: Activity, screenX: Float, screenY: Float) {
+        // 等 2~3 帧：关闭回调交付后调用方在下一帧重组并移除弹窗窗口，补发的点击才落得到下层页面
+        handler.postDelayed({
+            if (activity.isFinishing || activity.isDestroyed) return@postDelayed
+            val origin = IntArray(2)
+            activity.window.decorView.getLocationOnScreen(origin)
+            val x = screenX - origin[0]
+            val y = screenY - origin[1]
+            val down = SystemClock.uptimeMillis()
+            dispatch(activity, down, down, MotionEvent.ACTION_DOWN, x, y)
+            handler.postDelayed({
+                val up = SystemClock.uptimeMillis()
+                dispatch(activity, down, up, MotionEvent.ACTION_UP, x, y)
+            }, TAP_HOLD_MILLIS)
+        }, REPLAY_DELAY_MILLIS)
+    }
+
+    private fun dispatch(activity: Activity, downTime: Long, eventTime: Long, action: Int, x: Float, y: Float) {
+        val properties = arrayOf(MotionEvent.PointerProperties().apply {
+            id = 0
+            toolType = MotionEvent.TOOL_TYPE_FINGER
+        })
+        val coords = arrayOf(MotionEvent.PointerCoords().apply {
+            this.x = x
+            this.y = y
+            pressure = 1f
+            size = 1f
+        })
+        val event = MotionEvent.obtain(
+            downTime, eventTime, action, 1, properties, coords,
+            0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0,
+        )
+        try {
+            activity.dispatchTouchEvent(event)
+        } finally {
+            event.recycle()
+        }
+    }
+
+    private const val REPLAY_DELAY_MILLIS = 50L
+    private const val TAP_HOLD_MILLIS = 40L
 }
 
 private const val DIALOG_SCRIM_ALPHA = 0.5f

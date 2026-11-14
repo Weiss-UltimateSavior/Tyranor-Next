@@ -10,6 +10,7 @@ import android.graphics.drawable.Icon
 import android.net.Uri
 import com.tyranor.next.R
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.settings.AppSettingsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.security.MessageDigest
@@ -44,7 +45,11 @@ object GameShortcutManager {
         // Adaptive icons apply an additional launcher-specific safe-zone inset, which makes
         // the selected crop appear unexpectedly small in the confirmation sheet.
         val icon = coverBitmap?.let(Icon::createWithBitmap)
-            ?: Icon.createWithResource(appContext, R.mipmap.ic_launcher)
+            // 没有封面时退回应用图标：跟随应用设置选中的启动器图标（经典 / 新版），与桌面上的应用图标一致
+            ?: Icon.createWithResource(
+                appContext,
+                if (AppSettingsStore.isClassicIconEnabled(appContext)) R.mipmap.ic_launcher_classic else R.mipmap.ic_launcher,
+            )
         val label = game.title.trim().ifBlank { appContext.getString(R.string.app_name) }
         val shortcut = ShortcutInfo.Builder(appContext, shortcutId(game.uri))
             .setShortLabel(label)

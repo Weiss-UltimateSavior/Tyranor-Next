@@ -1,8 +1,12 @@
 package com.tyranor.next.ui.common
 
 import android.graphics.Color
+import android.content.Intent
 import android.content.res.Configuration
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import androidx.activity.OnBackPressedCallback
 import androidx.compose.animation.core.tween
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -63,6 +67,78 @@ abstract class AppScreenActivity : ComponentActivity() {
         }
     }
 
+    // ---- 从多任务 / 桌面切回后「立刻返回」：把返回放行到启动器的拉起动画结束之后 ----
+    //
+    // 根因（真机 logcat 实测）：从最近任务点回本应用时，系统用桌面的「远程转场」播放拉起动画（约 0.63s）；
+    // 这期间本页 finish() 产生的 CLOSE 转场会被系统**合并进**这个还没结束的远程转场（`Transition was merged: (#CLOSE) into (#TO_FRONT)`），
+    // 合并掉的转场没有任何动画——于是二级页一帧就消失，露出一级页。动画本身没写错，是返回发生得太早。
+    // 所以回到前台后、拉起动画结束之前，系统返回先记下来，等 onEnterAnimationComplete（拉起动画真正结束，实测比远程转场结束晚约 3ms）
+    // 再放行，之后系统照常播放返回动画；不依赖具体机型 / 系统的动画时长。信号万一没来，HotStartGuardTimeoutMillis 兜底放行。
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var resumeCount = 0
+    private var childLaunched = false
+    private var deferredBackPending = false
+
+    private val hotStartBackGuard = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() {
+            deferredBackPending = true
+        }
+    }
+
+    private val hotStartGuardTimeout = Runnable { releaseHotStartBackGuard() }
+
+    /** 拉起动画结束（或兜底超时）：停止拦截，并把期间记下的那次返回交还给系统。 */
+    private fun releaseHotStartBackGuard() {
+        mainHandler.removeCallbacks(hotStartGuardTimeout)
+        hotStartBackGuard.isEnabled = false
+        if (deferredBackPending) {
+            deferredBackPending = false
+            onBackPressedDispatcher.onBackPressed()
+        }
+    }
+
+    private fun cancelHotStartBackGuard() {
+        mainHandler.removeCallbacks(hotStartGuardTimeout)
+        hotStartBackGuard.isEnabled = false
+        deferredBackPending = false
+    }
+
+    /** 本页自己拉起了别的页面：之后的 onResume 是下层页面的正常返回（普通 CLOSE 转场），不是桌面拉起，不用等。 */
+    @Suppress("OVERRIDE_DEPRECATION")
+    override fun startActivityForResult(intent: Intent, requestCode: Int, options: Bundle?) {
+        childLaunched = true
+        super.startActivityForResult(intent, requestCode, options)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 首次 onResume 是本页自己的进场；之后没有拉起过子页就恢复前台的，只会是从多任务 / 桌面 / 别的应用切回
+        val resumedFromOutside = resumeCount > 0 && !childLaunched
+        resumeCount++
+        childLaunched = false
+        cancelHotStartBackGuard()
+        if (resumedFromOutside && MotionMode.enhanced) {
+            hotStartBackGuard.isEnabled = true
+            mainHandler.postDelayed(hotStartGuardTimeout, HotStartGuardTimeoutMillis)
+        }
+    }
+
+    override fun onEnterAnimationComplete() {
+        super.onEnterAnimationComplete()
+        releaseHotStartBackGuard()
+    }
+
+    override fun onPause() {
+        // 又离开了前台：之前记下的返回已经没有意义
+        cancelHotStartBackGuard()
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        cancelHotStartBackGuard()
+        super.onDestroy()
+    }
+
     private fun syncSystemBarStyle(dark: Boolean) {
         if (systemBarsDark == dark) return
         applySystemBarStyle(dark)
@@ -94,6 +170,8 @@ abstract class AppScreenActivity : ComponentActivity() {
         MotionMode.sync(AppSettingsStore.motionEnhancedState.value)
         syncCloseTransition(MotionMode.enhanced)
         PageTransitions.bindPushOwner(this)
+        // 先于子类添加：子类里后加的返回处理（弹窗、未保存确认等）优先级更高，不受影响
+        onBackPressedDispatcher.addCallback(this, hotStartBackGuard)
         // 「普通」档不播入场翻折（入场的协程直接返回），进度若还是 0，之后在本页里把「界面动效」切到「增强」时，
         // 翻折会按「还没进来」画出来：页面永远停在最大倾角（14°）并褪色（用户录屏复现过）。
         // 所以普通档创建的页面也从「已就位」开始；系统重建 / 恢复同理。必须在同步档位之后创建
@@ -145,6 +223,12 @@ abstract class AppScreenActivity : ComponentActivity() {
         PageTransitions.applyPop(this)
     }
 }
+
+/**
+ * 从桌面 / 多任务切回后，拦截返回的兜底时限：正常由 `onEnterAnimationComplete` 放行（实测约 0.63s 后触发），
+ * 只有该信号没来（例如系统没有播放拉起动画）时才靠它，避免返回被一直压住。
+ */
+private const val HotStartGuardTimeoutMillis = 1200L
 
 /** 系统「过渡动画缩放」（开发者选项）：0 = 关闭动画；上限 10。 */
 private fun transitionAnimationScale(context: android.content.Context): Float =

@@ -17,12 +17,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -36,7 +38,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.BuildConfig
 import com.tyranor.next.R
-import com.tyranor.next.theme.AppComponentShape
+import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.SettingsEntryCard
@@ -94,14 +97,20 @@ internal fun AboutAppScreen() {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center,
             ) {
-                // 应用图标取展示尺寸的一半（56dp）；资源本身为 256px 缩略图
+                // 应用图标取展示尺寸的一半（56dp）；资源本身为 256px 缩略图。
+                // 与应用设置「经典应用图标」选中的启动器图标保持一致（同一份插画的缩略图）。
+                val classicIcon = remember { AppSettingsStore.isClassicIconEnabled(context) }
                 Image(
-                    painter = painterResource(R.drawable.ic_about_app),
+                    painter = painterResource(
+                        if (classicIcon) R.drawable.ic_about_app_classic else R.drawable.ic_about_app_default,
+                    ),
                     contentDescription = appLabel,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .size(56.dp)
-                        .clip(AppComponentShape),
+                        // 保留图标文件本身的方形轮廓，只加一点圆角：取「应用圆角调整」与 14dp 中较小者，
+                        // 圆角调到最大（50dp）时不会把 56dp 的图标裁成圆形
+                        .clip(RoundedCornerShape(minOf(AppComponentCornerRadius, 14.dp))),
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(
