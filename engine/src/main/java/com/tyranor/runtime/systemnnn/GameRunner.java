@@ -142,11 +142,6 @@ final class GameRunner {
         final int width,height;
         Capture(int[] pixels,int width,int height){this.pixels=pixels;this.width=width;this.height=height;}
         Bitmap bitmap(){return Bitmap.createBitmap(pixels,width,height,Bitmap.Config.ARGB_8888);}
-        Bitmap mutableBitmap(){
-            Bitmap frame=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888);
-            frame.setPixels(pixels,0,width,0,0,width,height);
-            return frame;
-        }
     }
     interface Listener {
         void frame(Frame frame,int initialVisible);

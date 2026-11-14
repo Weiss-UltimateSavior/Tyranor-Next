@@ -5,7 +5,6 @@ import android.graphics.*;
 import android.os.SystemClock;
 import android.view.InputDevice;
 import android.view.MotionEvent;
-import android.view.View;
 import java.util.function.Consumer;
 
 import static com.tyranor.runtime.systemnnn.ButtonArt.number;
