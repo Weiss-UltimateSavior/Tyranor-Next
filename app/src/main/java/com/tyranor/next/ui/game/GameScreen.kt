@@ -171,7 +171,6 @@ import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.isWideScreen
 import com.tyranor.next.ui.common.LaunchErrorDialog
 import com.tyranor.next.ui.common.LaunchErrorState
-import com.tyranor.next.ui.common.toSaveSyncCleanupException
 import com.tyranor.next.ui.common.toErrorState
 import com.tyranor.next.ui.cover.coverErrorMessage
 import com.tyranor.next.ui.cover.coverSourceTitle
@@ -343,22 +342,29 @@ fun GameScreen(
 }
 
 /**
- * 清理应用内关联数据，不触碰游戏目录。等待存档门禁可取消且有时限；取得门禁后的存档清理及
- * 后续设置清理不可取消。清理失败时调用方须保留游戏库条目，供用户重试。
+ * 清理应用内关联数据，不触碰游戏目录。清理失败不再阻拦删除：调用方先移除游戏库条目，
+ * 这里的异常仅用于记录日志；各清理步骤相互独立，单项失败不影响其余项。
  */
 internal suspend fun cleanupDeletedGame(context: android.content.Context, target: ScanGame) {
-    try {
-        SaveSyncService(context).clearGame(target)
-        withContext(NonCancellable) {
-            PerGameSettingsStore.clear(context, target.uri)
-            GameLibraryFacade.removeRecentGame(context, target.uri)
-            GameLibraryFacade.removeQuickLaunch(context, target.uri)
-            deleteCoverFile(context, target.coverUri)
+    val failures = ArrayList<Exception>()
+    suspend fun attempt(action: suspend () -> Unit) {
+        try {
+            action()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            failures += failure
         }
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (failure: Exception) {
-        throw failure.toSaveSyncCleanupException()
+    }
+    attempt { SaveSyncService(context).clearGame(target) }
+    withContext(NonCancellable) {
+        attempt { PerGameSettingsStore.clear(context, target.uri) }
+        attempt { GameLibraryFacade.removeRecentGame(context, target.uri) }
+        attempt { GameLibraryFacade.removeQuickLaunch(context, target.uri) }
+        attempt { deleteCoverFile(context, target.coverUri) }
+    }
+    if (failures.isNotEmpty()) {
+        throw failures.first().also { first -> failures.drop(1).forEach(first::addSuppressed) }
     }
 }
 
