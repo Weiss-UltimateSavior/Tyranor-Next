@@ -119,7 +119,7 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 - SystemNNN 环境设置的空白触摸保持窗口选项原有亮度，已选单选项与已打开的页签忽略重复点击。角色按钮遵守游戏配置的已听权限和变量贴图。快存完成提示在槽位写入后显示，快读提示等待恢复画面显示。快存缩略图来自已显示的净画面，游戏可配置隐藏对白或选项。
 - SystemNNN 呈现源码契约（待同步原生运行库与设备验收）：逐句点击、自动及快进以完整文字平面已提交为条件，超时只记录日志；短 DRAW 等待自身平面时不扣计时，也不记录未执行的脚本输入。跳整段按钮保留原版立即跳段规则。原生长文附图先于 LPrintBG，FACE/CUTIN 与主消息窗开关独立。回想退出保留运行时与解锁合并流程并直接返回 SELECTSCENE，未配置新 BGM 时继承当前曲目、游标及交叉淡化。流程图缩略图绑定当前会话和模态请求，未就绪时不写黑图；不使用任意重绘的故事画面替代。
 - SystemNNN 存读档源码契约（待同步原生运行库与设备验收）：普通与快速读档共用候选会话。含 LOG 时以存档替换回看，空 LOG 同样清空；无 LOG 时只从当前同游戏剧情会话继承已完成历史、语音名和完整跳转检查点，不继承未消费的语音预约。标题和新游戏使用 `firstMessageNumber`、`firstMessagePrintFlag`、`firstBarPrintFlag`、`barMessage` 初始化，正文沿原版控件显示内嵌颜色。`clearAutoAfterLoad` 控制自动/快进清除；当前句的语音重播寿命与 PCM 播放结束分离，`playLoadVoiceFlag` 的一次语音只用于对白模式。候选的消息层及运行时引用准备失败时保留旧会话，提交后的呈现失败按当前会话错误处理。原生快照新增版本 17 保存语音元数据，兼容旧快照；PC 存档格式不变。
-- SystemNNN 剧情和有声影片各自在播放期间持有音频焦点，初次请求被拒或永久失焦后可由前台操作重试。播放器暂时离开前台或影片纹理重建时保留解码位置。剧本等待影片自然结束、获准跳过或播放失败后继续，并按 `printMovie` 配置应用 `fillExitScreenFlag` 退场纯色屏与 `lastWait` 帧等待。
+- SystemNNN 剧情和有声影片各自在播放期间持有音频焦点，初次请求被拒或永久失焦后可由前台操作重试。播放器暂时离开前台或影片纹理重建时保留解码位置。剧本等待影片自然结束、获准跳过或播放失败后继续，并按 `printMovie` 配置应用 `fillExitScreenFlag` 退场纯色屏与 `lastWait` 帧等待。启动、鉴赏和剧情影片退场后的续接在前台执行一次，等待仅消耗前台时间。
 - SystemNNN 逻辑画布优先读取 `spt/exesetup` 的显式尺寸，再读取 `init2/mainControl.fxf` 或 `init/mainControl.xtx` 的 `windowSizeX/Y`，缺省 800×600；`realWindowSize` 不改变游戏坐标。尺寸不写入存档格式配置。启动按 `nothing.nextMode` 和 `codecCheckFlag/codecLimit` 检查影片；解码失败显示游戏配置的 CODECERROR 页，保留跳过影片、播放可用部分及退出动作。错误页资源不可用时使用现有宿主通知并跳过影片，不另行绘制游戏界面。
 - SystemNNN 小游戏在说明结束后按游戏帧周期发牌。Monte 依次消牌、收拢与补牌，Pyramid 和 Golf 按原版移动牌堆间的纸牌。二角先画连线，消除花牌后让其余牌加速下落。串牌在消除后依次下落、按行左移、从上方补回孤张。点按跳过原版允许跳过的动画，落牌期间等待棋盘就位。
 - SystemNNN 对话层通过 `DialogueDecorations` 绘制角色头像（`PortraitLayer` 眨眼与口型帧）、特写气泡与光标分支（`CutinLayer`），并按序叠加多槽位 `statusOverlays` 状态浮层。
