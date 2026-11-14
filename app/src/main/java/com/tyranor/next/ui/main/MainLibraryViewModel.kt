@@ -13,6 +13,7 @@ import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.scan.SiglusTitleFeedback
 import com.tyranor.next.core.game.scan.Xs35TitleFeedback
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.sync.SaveSyncError
 import com.tyranor.next.core.game.save.sync.SaveSyncException
 import com.tyranor.next.core.settings.AppSettingsStore
@@ -44,6 +45,7 @@ data class MainLibraryUiState(
     val scrapeMessage: String? = null,
     val cleanupError: SaveSyncError? = null,
     val cleanupGameTitle: String? = null,
+    val copyCleanupPending: Boolean = false,
     /** 已发布搜索结果的查询词；与页面当前查询词一致时结果才可用（迁移方案阶段 3）。 */
     val searchQuery: String = "",
     /** Room DAO 搜索结果（已按当前排序模式排序）；null 表示无可用的 DB 搜索结果。 */
@@ -234,20 +236,31 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
         val revision = stateRevision.incrementAndGet()
         _uiState.update { MainLibraryStateReducer.deleteGame(it, target.uri) }
         enqueuePersistence(revision) {
-            try {
+            val queued = try {
                 cleanupDeletedGame(appContext, target)
                 withContext(NonCancellable) {
                     GameLibraryFacade.removeGame(appContext, target.uri)
                 }
             } catch (failure: SaveSyncException) {
                 // Keep the persistent library entry as the retry route when cleanup is blocked.
-                _uiState.update { it.copy(cleanupError = failure.code, cleanupGameTitle = target.title) }
+                _uiState.update { it.copy(cleanupError = failure.code, cleanupGameTitle = target.title, copyCleanupPending = false) }
+                return@enqueuePersistence
+            }
+            // The library entry has been removed and its durable request survives failures here.
+            if (queued) try {
+                val cleanup = GameSaveManager(appContext).drainSystemNnnCleanupQueue(target.uri)
+                if (cleanup.failed != 0) {
+                    _uiState.update { it.copy(copyCleanupPending = true) }
+                }
+            } catch (failure: SaveSyncException) {
+                Log.w(TAG, "Could not resume SystemNNN copy cleanup", failure)
+                _uiState.update { it.copy(copyCleanupPending = true) }
             }
         }
     }
 
     fun dismissCleanupError() {
-        _uiState.update { it.copy(cleanupError = null, cleanupGameTitle = null) }
+        _uiState.update { it.copy(cleanupError = null, cleanupGameTitle = null, copyCleanupPending = false) }
     }
 
     fun removeRecentGame(target: ScanGame) {

@@ -197,7 +197,7 @@ object EngineLauncher {
                 result = if (entry.engine == EngineType.SYSTEMNNN) {
                     restoreSystemNnn(context, entry)?.let { return@withContext it }
                     prepareSystemNnnResources(context, entry)?.let { return@withContext it }
-                    // A source-to-copy rebind also writes the URI's version checkpoint.
+                    // SystemNNN launch and save synchronization share the version checkpoint.
                     SaveSyncLocks.versions(entry.uri) { launchAdmitted() }
                 } else launchAdmitted()
             } while (result == null)
@@ -222,7 +222,7 @@ object EngineLauncher {
         if (game.engine == EngineType.SYSTEMNNN &&
             SystemNnnGameDirectory.accessible(context, game.uri)?.let(SystemNnnCopyStore::resourcesEvicted) == true
         ) {
-            // Cleanup won after the initial resource check. Restage outside the save fence.
+            // Cleanup won after the initial check. Recheck the current resource directory.
             return null
         }
         recoverSystemNnnSaves(context, game)?.let { return it }

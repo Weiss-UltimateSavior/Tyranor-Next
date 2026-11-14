@@ -167,6 +167,9 @@ fun SettingsScreen(
     var scanDirs by remember { mutableStateOf(emptyList<String>()) }
     val resourceCleanup: SystemNnnCleanupViewModel = viewModel()
     val cleanupState by resourceCleanup.state.collectAsStateWithLifecycle()
+    LaunchedEffect(showScanDirs) {
+        if (showScanDirs) resourceCleanup.retry()
+    }
     var showPathDialog by remember { mutableStateOf(false) }
     var pathInput by remember { mutableStateOf("") }
     val settingsUpdateLatestMessage = stringResource(R.string.settings_update_latest)

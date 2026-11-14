@@ -3,11 +3,16 @@ package com.tyranor.runtime.systemnnn
 import com.tyranor.next.core.game.save.GameSaveException
 import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.SaveErrorCode
+import com.tyranor.next.core.game.save.SystemNnnCleanupQueue
 import com.tyranor.next.core.game.save.SystemNnnSaveStore
+import com.tyranor.next.core.game.save.sync.SaveSyncError
+import com.tyranor.next.core.game.save.sync.SaveSyncException
+import com.tyranor.next.core.game.storage.GameLibraryWriteGate
 import com.tyranor.next.core.game.storage.SystemNnnCopyStore
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -559,6 +564,75 @@ class SystemNnnSaveInteropTest {
         put(game, "spt/sys.spt", "partial publish")
         assertFalse(SystemNnnCopyStore.readableBootstrap(game))
 
+    }
+
+    @Test fun cleanupIntentSurvivesRestartAndAnOlderDrainCannotEraseExplicitRetirement() {
+        val directory = temp.newFolder("cleanup")
+        val legacyUri = "primary:Games/Legacy"
+        val uri = "primary:Games/Explicit"
+        fun queue() = SystemNnnCleanupQueue(directory) { listOf(legacyUri) }
+
+        queue().add(listOf(uri), retireCopy = false)
+        val oldAttempt = queue().pending().last()
+        queue().add(listOf(uri), retireCopy = true)
+        queue().add(listOf(uri), retireCopy = false)
+        queue().complete(oldAttempt)
+        val pending = queue().pending()
+        assertEquals(listOf(SystemNnnCleanupQueue.Target(legacyUri, false), SystemNnnCleanupQueue.Target(uri, true)), pending)
+
+        pending.forEach { queue().complete(it) }
+        assertTrue(queue().pending().isEmpty())
+    }
+
+    @Test fun cleanupQueueWriteFailureReportsTypedErrorAndCanBeRetried() {
+        val directory = temp.newFile("cleanup")
+        val uri = "primary:Games/Explicit"
+        val queue = SystemNnnCleanupQueue(directory)
+        val failure = assertThrows(SaveSyncException::class.java) { queue.add(listOf(uri), retireCopy = true) }
+        assertEquals(SaveSyncError.LOCAL_IO, failure.code)
+        assertTrue(directory.isFile)
+        assertTrue(directory.delete())
+        queue.add(listOf(uri), retireCopy = true)
+        assertEquals(listOf(SystemNnnCleanupQueue.Target(uri, true)), SystemNnnCleanupQueue(directory).pending())
+    }
+
+    @Test fun retiredCopyRemainsBackedUpWithoutSupersedingAnAuthorizedReaddedRoot() {
+        val base = temp.newFolder("systemnnn-imports").canonicalFile
+        val identity = "primary:Games/Sample"
+        val entry = base.resolve(SystemNnnCopyStore.key(identity))
+        val copy = entry.resolve("game")
+        put(entry, "source.id", identity)
+        put(copy, "spt/sys.spt", "old resources")
+        put(copy, "sav/data1.sav", "old saves")
+        assertTrue(SystemNnnCopyStore.clearResources(base, identity))
+        assertEquals(copy, SystemNnnCopyStore.activeRoot(SystemNnnCopyStore.committedRoot(base, identity)))
+
+        val queueDirectory = temp.newFolder("cleanup")
+        SystemNnnCleanupQueue(queueDirectory).add(listOf(identity), retireCopy = true)
+        val gate = GameLibraryWriteGate()
+        val pending = SystemNnnCleanupQueue(queueDirectory).pending().single()
+        val retire = { SystemNnnCopyStore.clearResources(base, identity, pending.retireCopy) }
+        var cachedReference = false
+        var committedReference = true
+        val referenced = { cachedReference || committedReference }
+        assertNull(gate.evictIfUnused(referenced, retire)) // Removal was published in memory only.
+        committedReference = false
+        cachedReference = true
+        assertNull(gate.evictIfUnused(referenced, retire)) // A same-source alias was registered.
+        assertEquals(copy, SystemNnnCopyStore.activeRoot(SystemNnnCopyStore.committedRoot(base, identity)))
+        assertEquals(listOf(pending), SystemNnnCleanupQueue(queueDirectory).pending())
+        cachedReference = false
+        SystemNnnHost.lockSaveDirectory(copy).use {
+            assertThrows(SystemNnnHost.SaveBusyException::class.java) { gate.evictIfUnused(referenced, retire) }
+        }
+        assertEquals(false, gate.evictIfUnused(referenced, retire))
+        assertEquals(false, gate.evictIfUnused(referenced, retire)) // Resume after retirement and before dequeue.
+        SystemNnnCleanupQueue(queueDirectory).complete(pending)
+
+        assertNull(SystemNnnCopyStore.activeRoot(SystemNnnCopyStore.committedRoot(base, identity)))
+        assertEquals(copy, SystemNnnCopyStore.committedRoot(base, identity))
+        assertEquals("old saves", copy.resolve("sav/data1.sav").readText())
+        assertTrue(SystemNnnCleanupQueue(queueDirectory).pending().isEmpty())
     }
 
     @Test fun readingCorruptProgressRestoresValidatedBackupAndItsExtension() {

@@ -165,13 +165,14 @@ fun MainScreen(
   val libraryViewModel: MainLibraryViewModel = viewModel()
   val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
   val cleanupError = libraryState.cleanupError
-  if (cleanupError != null) {
-    val cleanupReason = stringResource(cleanupError.syncErrorResource())
+  if (cleanupError != null || libraryState.copyCleanupPending) {
+    val cleanupMessage = if (libraryState.copyCleanupPending) stringResource(R.string.settings_systemnnn_copy_cleanup_pending)
+      else stringResource(R.string.save_sync_cleanup_failed, libraryState.cleanupGameTitle.orEmpty(),
+        stringResource(requireNotNull(cleanupError).syncErrorResource()))
     AppAlertDialog(
       onDismissRequest = libraryViewModel::dismissCleanupError,
       title = { Text(stringResource(R.string.save_operation_failed), style = MaterialTheme.typography.titleMedium) },
-      text = { Text(stringResource(R.string.save_sync_cleanup_failed, libraryState.cleanupGameTitle.orEmpty(), cleanupReason),
-        style = MaterialTheme.typography.bodyMedium) },
+      text = { Text(cleanupMessage, style = MaterialTheme.typography.bodyMedium) },
       textScrollEnabled = true,
       confirmButton = {
         DialogTextButton(stringResource(R.string.common_confirm), onClick = libraryViewModel::dismissCleanupError)
