@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -56,7 +57,7 @@ internal fun DialogWindowScrim(
     onWindow: (Window?) -> Unit,
     onDismissRequest: () -> Unit,
     dismissEnabled: Boolean = true,
-    /** 手指在弹窗窗口任意位置按下的位置（弹窗根坐标）；不消费事件。退场期间据此把这次点击转交给下层页面。 */
+    /** 手指在弹窗窗口任意位置完成一次点击（未移动、未长按、单指）时的按下位置（弹窗根坐标）；不消费事件。退场期间据此把这次点击转交给下层页面。 */
     onScrimDown: ((Offset) -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
@@ -66,6 +67,12 @@ internal fun DialogWindowScrim(
         dimProgress = progress,
     )
     SideEffect { onWindow(window) }
+    // 回调每次重组都是新的 lambda：用 rememberUpdatedState 读最新值，手势协程不随重组重启（否则退场开始引起的重组会打断正在进行的手势）
+    val latestScrimDown by rememberUpdatedState(onScrimDown)
+    val hasScrimDown = onScrimDown != null
+    val viewConfiguration = LocalViewConfiguration.current
+    val tapSlop = viewConfiguration.touchSlop
+    val longPressMillis = viewConfiguration.longPressTimeoutMillis
     val scrim = Modifier.drawBehind {
         val alpha = window.dialogScrimAlpha()
         if (alpha > 0f) drawRect(Color.Black.copy(alpha = alpha))
@@ -81,10 +88,25 @@ internal fun DialogWindowScrim(
             // Initial 阶段观察所有按下（含落在卡片上的）：退场刚开始的前几帧卡片还盖在原处，用户重新点下层控件的位置
             // 往往正好落在这张卡片上，卡片会把按下消费掉——只看遮罩区域就漏了这一类点击。只观察，不消费。
             .then(
-                if (onScrimDown == null) Modifier else Modifier.pointerInput(onScrimDown) {
+                if (!hasScrimDown) Modifier else Modifier.pointerInput(Unit) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                        onScrimDown(down.position)
+                        // 只有一次真正的点击才转交：移动超过触摸容差、按住超过长按时长、多指都说明用户在滑动 / 长按，
+                        // 若无条件回放一次「按下 + 抬起」，下层的行会被当成点击打开，而不是滚动。
+                        var isTap = true
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val change = event.changes.firstOrNull { it.id == down.id }
+                            if (change == null) {
+                                isTap = false
+                                break
+                            }
+                            if (event.changes.size > 1) isTap = false
+                            if ((change.position - down.position).getDistance() > tapSlop) isTap = false
+                            if (change.uptimeMillis - down.uptimeMillis > longPressMillis) isTap = false
+                            if (!change.pressed) break
+                        }
+                        if (isTap) latestScrimDown?.invoke(down.position)
                     }
                 },
             ),

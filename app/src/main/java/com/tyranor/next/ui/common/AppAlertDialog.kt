@@ -3,6 +3,7 @@ package com.tyranor.next.ui.common
 import android.view.Window
 import android.util.Log
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.spring
@@ -86,6 +87,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.staticCompositionLocalOf
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import android.view.WindowManager
 
@@ -155,7 +157,16 @@ internal fun AppAlertDialog(
         (dialogFocus[0] ?: focusManager).clearFocus(force = true)
     }
     // 退场协程与弹窗根 View：退场期间落在遮罩上的点击要「立刻收尾 + 补发给下层页面」（见 ExitTapReplay）
-    val exitJob = remember { arrayOfNulls<kotlinx.coroutines.Job>(1) }
+    val exitAnimation = remember { arrayOfNulls<kotlinx.coroutines.Job>(1) }
+    /** 退场动画：遮罩淡出与面板下沉；返回时动画已结束或被 [scrimDownDuringExit] 中止（中止不是协程取消，不会抛出）。 */
+    suspend fun playExit(dimSpec: AnimationSpec<Float>, slideSpec: AnimationSpec<Float>) = coroutineScope {
+        val job = launch {
+            launch { dimAlpha.animateTo(0f, dimSpec) }
+            slideFraction.animateTo(1f, slideSpec)
+        }
+        exitAnimation[0] = job
+        job.join()
+    }
     val dialogView = remember { arrayOfNulls<android.view.View>(1) }
     // 关闭回调交付之后、窗口真正被移除之前还有一两帧：这段「尾巴」里的按下同样要转交给下层页面，
     // 否则恰好落在这一两帧里的点击会被正在消失的弹窗吞掉。
@@ -168,8 +179,9 @@ internal fun AppAlertDialog(
         val activity = PageTransitions.findActivity(view.context)
         val origin = IntArray(2)
         view.getLocationOnScreen(origin)
-        // 取消退场协程：runDialogExitAction 保证已接受的关闭回调仍会交付一次，调用方随即移除弹窗
-        if (dismissing.value) exitJob[0]?.cancel()
+        // 只中止退场动画（不取消整个退场协程）：协程随后照常交付已接受的动作，动作若没有关闭弹窗，
+        // 仍走 afterAction 恢复显示；取消整个协程会跳过恢复流程，面板停在半途、遮罩不再亮回来。
+        if (dismissing.value) exitAnimation[0]?.cancel()
         if (activity != null) ExitTapReplay.replay(activity, origin[0] + position.x, origin[1] + position.y)
     }
 
@@ -192,13 +204,10 @@ internal fun AppAlertDialog(
             dismissing.value = true
             releaseInputFocus()
             dialogWindow[0].beginDialogDimExit()
-            exitJob[0] = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 runDialogExitAction(
                     animateExit = {
-                        if (enhanced) {
-                            launch { dimAlpha.animateTo(0f, MotionTokens.fadeOut(0.001f)) }
-                            slideFraction.animateTo(1f, MotionTokens.surfaceExit(0.001f))
-                        }
+                        if (enhanced) playExit(MotionTokens.fadeOut(0.001f), MotionTokens.surfaceExit(0.001f))
                     },
                     action = action,
                     afterAction = {
@@ -232,15 +241,13 @@ internal fun AppAlertDialog(
         dismissing.value = true
         releaseInputFocus()
         dialogWindow[0].beginDialogDimExit()
-        exitJob[0] = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
             runDialogExitAction(
                 animateExit = {
                     if (enhanced) {
-                        launch { dimAlpha.animateTo(0f, MotionTokens.fadeOut(0.001f)) }
-                        slideFraction.animateTo(1f, MotionTokens.surfaceExit(0.001f))
+                        playExit(MotionTokens.fadeOut(0.001f), MotionTokens.surfaceExit(0.001f))
                     } else {
-                        launch { dimAlpha.animateTo(0f, tween(250, easing = FastOutLinearInEasing)) }
-                        slideFraction.animateTo(1f, tween(260, easing = FastOutLinearInEasing))
+                        playExit(tween(250, easing = FastOutLinearInEasing), tween(260, easing = FastOutLinearInEasing))
                     }
                 },
                 action = { currentOnDismiss() },
