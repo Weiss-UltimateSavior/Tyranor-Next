@@ -95,17 +95,30 @@ Git 子进程会清除继承的仓库定位与配置注入环境，避免跨仓�
 - [x] 固定来源，增加原版 checkout 校验和真实 Git 仓库回归。
 - [x] 增加独立原版构建入口、宿主侧依赖锁定与候选库校验；尚未完成全量构建。
 - [ ] 完成原版 ARM64 编译；记录工具链、完整源码及产物身份。
-- [ ] 适配原版 `-g`、`-bp`、`-gc`、`-uc` 参数，不发送自定义 `--tyranor-resource-root`。
-- [ ] 在宿主提供 `getChosenDirectory`、`chooseDirectory`、`resetChosenDir` 回调；控制原版 CWD、配置回退及 ImGui 相对写入位置。
-- [ ] 解决原版 SDL3 `org.libsdl.app` 与 TYN 已有 SDL2 同名 Java 类的冲突。独立进程本身不能消除同一 APK 中的类名冲突。
-- [ ] 完成资源验证、按游戏隔离的存档和持久 TOML 管理，不继承旧引擎补丁的假设。
-- [ ] 接入扫描、启动、运行库分片及三语言文案，并验证原有 SDL 引擎。
+- [ ] 适配原版 `-g`、`-bp`、`-gc`、`-uc` 参数：宿主 APK 已重写 `getArguments()` 传这些参数（代码已写，未运行、未验证），不发送自定义 `--tyranor-resource-root`。
+- [ ] 宿主提供 `getChosenDirectory`、`chooseDirectory`、`resetChosenDir`：宿主 APK 已重写，数据根指向按游戏隔离的目录（代码已写，未运行、未验证）。CWD、配置回退及 ImGui 相对写入位置仍由上游默认行为决定。
+- [ ] 原版 SDL3 `org.libsdl.app` 与 TYN 内置 SDL2 的同名类冲突：设计上改为独立宿主 APK 承载，主 APK 不含 SDL3 Java 层；宿主尚未构建成 APK，冲突是否消除未经验证。
+- [ ] 完成资源验证和持久 TOML 管理：存档与 `userconfig.toml` 已按游戏隔离（`games/<gameKey>/`），但在宿主私有目录内，主 App 无法管理；未验证。
+- [ ] 接入扫描、外置模块启动、三语言文案和引擎图标：代码已写，主 App 编译与新增单测通过；Impacto 以外置 APK 承载，不走运行库分片。对已有引擎未见行为改动，但未逐一验证；完整 JVM 回归在本机有 15 个与本改动无关、干净 HEAD 上同样出现的 Windows 环境失败。
 - [x] 只读核对现有 Windows／Steam 样本的容器、脚本头和资源格式（见上节）；结论是它与上游 PS3 配置不一致，不能直接使用。
 - [ ] 为该样本建立 TYN 自有、标明实验性的 PC profile（图集、字体、MSB、语言、立绘），再验证原版引擎能否读资源并解析脚本。
 - [ ] 完成游戏数据的标题、正文、声音、输入、存读档、前后台及退出重启验收（上游支持的是 PS3 数据；PC 样本是否可行尚无证据）。
 - [ ] 完成 API 28、16 KiB 页设备与 minified Release 检查。
 
 原版库编译、宿主接入和真实游戏测试未完成前，此 PR 保持 Draft，不作为可发布功能。
+
+## 主 App 与宿主 APK 接入（未在设备上运行）
+
+主 App 把 Impacto 当作外置 APK 引擎（与 Ren'Py、Ruffle 同一机制）：
+
+- `EngineType.IMPACTO` 属 GAL 分类，卡片图标为 `ic_engine_card_impacto`，封面色 `#B3123A`。
+- 扫描：`ImpactoGameCatalog` 按**精确大小写**的根目录条目名识别上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`），恰好一个 profile 全部命中才识别；`darling` 的要求集合与全小写的 mo6tw 完全相同，无法区分，所以这种布局一律不识别，不猜；`launchTarget` 保存 profile id（即 `-g` 参数）。影片档不作为特征。该表由 `tools/impacto/check-game-catalog.py` 对照固定提交的 `gamedefinitions.lua` 和各 `vfs.lua` 校验。
+- 现有 Windows／Steam 样本（小写 `.cpk`、`script.cpk`、无 `SCRIPT.cls`）**不会**被识别为 Impacto，也不会被误判成大写布局的 `chlcc`。
+- 启动：`ImpactoExternalEngineModule` 发 `com.tyranor.next.impacto.action.RUN`，携带游戏目录、profile、`gameKey` 与标题；游戏目录需要主 App 已取得的路径与「所有文件访问」。尚无下载地址，未安装时只提示缺失。
+- 存档：存在于宿主 APK 的私有外部目录，主 App 不提供文件存档管理；单游戏设置页只显示说明，没有可调项。
+- 宿主 APK 见 [`engine/impacto/host-apk/README.md`](../engine/impacto/host-apk/README.md)：只用上游公开钩子，直接引用已校验的上游 Java 源码，不复制、不修改；需要候选库 `libimpacto.so` 才能打包，目前仅 Linux 能构建它。
+
+这是接入代码，**不是兼容性验收**：没有编出可安装的 APK，没有在任何设备上启动过，也没有对任何游戏数据验证过。
 
 ## 本轮检查
 

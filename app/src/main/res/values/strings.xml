@@ -691,6 +691,7 @@
 
     <string name="external_engine_resolve_dir_failed">无法解析 %1$s 游戏目录真实路径，外置引擎模块无法启动</string>
     <string name="external_engine_module_missing">未检测到 %1$s，请先下载安装模块</string>
+    <string name="external_engine_module_unpublished">未检测到 %1$s。该模块的安装包尚未发布，需要自行构建后安装（见仓库 engine/impacto/host-apk/README.md）</string>
     <string name="external_engine_module_outdated">已安装的模块版本过旧，请下载安装 %1$s</string>
     <string name="engine_module_install_or_update">模块未安装或需要更新</string>
     <string name="external_engine_no_activity">%1$s 未提供可接收启动请求的 Activity</string>
@@ -699,6 +700,9 @@
     <string name="external_rpgm_module_name">RPGM-1.22.00</string>
     <string name="external_ruffle_module_name">Ruffle-1.02.00</string>
     <string name="external_ruffle_resolve_swf_failed">无法定位 SWF 启动文件，Ruffle 模块无法启动</string>
+    <string name="external_impacto_module_name">Impacto</string>
+    <string name="external_impacto_profile_unresolved">无法确认该目录对应的 Impacto 游戏配置，无法启动</string>
+    <string name="engine_settings_impacto_hint">暂无可调选项。游戏由独立的 Impacto 宿主 APK 运行；存档位于该宿主的私有数据目录，本应用无法管理。</string>
     <string name="external_rpgm_resolve_dir_failed">无法解析 RPGM 游戏目录真实路径，外置 RPGM 模块无法启动</string>
 
     <string name="engine_settings_rpgm_module_card">RPG Maker RGSS 外置模块</string>

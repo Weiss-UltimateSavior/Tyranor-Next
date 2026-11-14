@@ -691,6 +691,7 @@
 
     <string name="external_engine_resolve_dir_failed">%1$s のゲームフォルダ実パスを解析できないため、外部エンジンモジュールを起動できません</string>
     <string name="external_engine_module_missing">%1$s が見つかりません。先にモジュールをダウンロードしてインストールしてください</string>
+    <string name="external_engine_module_unpublished">%1$s が見つかりません。このモジュールのパッケージはまだ公開されていないため、自分でビルドしてインストールしてください（リポジトリの engine/impacto/host-apk/README.md を参照）</string>
     <string name="external_engine_module_outdated">インストール済みのモジュールが古いため、%1$s をダウンロードしてインストールしてください</string>
     <string name="engine_module_install_or_update">モジュール未インストール、または更新が必要</string>
     <string name="external_engine_no_activity">%1$s には起動要求を受け取れる Activity がありません</string>
@@ -699,6 +700,9 @@
     <string name="external_rpgm_module_name">RPGM-1.22.00</string>
     <string name="external_ruffle_module_name">Ruffle-1.02.00</string>
     <string name="external_ruffle_resolve_swf_failed">SWF 起動ファイルを特定できないため、Ruffle モジュールを起動できません</string>
+    <string name="external_impacto_module_name">Impacto</string>
+    <string name="external_impacto_profile_unresolved">このフォルダに対応する Impacto のゲーム設定を特定できないため、起動できません</string>
+    <string name="engine_settings_impacto_hint">調整できる項目はまだありません。ゲームは別の Impacto ホスト APK で動作し、セーブデータはそのホストの専用フォルダに保存されるため、このアプリでは管理できません。</string>
     <string name="external_rpgm_resolve_dir_failed">RPGM ゲームフォルダ実パスを解析できないため、外部 RPGM モジュールを起動できません</string>
 
     <string name="engine_settings_rpgm_module_card">RPG Maker RGSS モジュール</string>

@@ -765,6 +765,9 @@ object EngineScanner {
      */
     private const val RUFFLE_MODULE_ALIAS = "internal.flash"
 
+    /** 与 `ImpactoExternalEngineModule.defaultAlias` 同值，理由同上。 */
+    private const val IMPACTO_MODULE_ALIAS = "internal.impacto"
+
     private fun detectRenpyVersionIfNeeded(
         detection: Detection,
         children: List<SafNode>,
@@ -1143,11 +1146,14 @@ object EngineScanner {
         var cmvsStartCount = 0
         var hasCmvsStartHeader = false
         var hasCmvsExe = false
+        // Impacto 按精确大小写匹配根目录条目名（上游 Android 路径区分大小写），故另存原名
+        val impactoRootNames = HashSet<String>()
 
         fun collect(entry: T, rel: String) {
             if (Thread.currentThread().isInterrupted) throw java.util.concurrent.CancellationException()
             val lower = nameOf(entry).lowercase(Locale.ROOT)
             if (lower.isEmpty()) return
+            if (rel.isEmpty()) impactoRootNames.add(nameOf(entry))
             val childRel = if (rel.isEmpty()) lower else "$rel/$lower"
             if (isDirectory(entry)) {
                 hasChildDirectory = true
@@ -1533,6 +1539,16 @@ object EngineScanner {
         }
         if (hasCmvsExe) {
             return Detection(EngineType.CMVS, 82, LAUNCH_TARGET_GAME_DIR)
+        }
+        // Impacto：排在所有既有引擎之后；launchTarget 保存上游 profile id（`-g` 参数）
+        ImpactoGameCatalog.match(impactoRootNames)?.let {
+            return Detection(
+                EngineType.IMPACTO,
+                94,
+                it.profileId,
+                IMPACTO_MODULE_ALIAS,
+                titleHint = it.title,
+            )
         }
         return UNKNOWN_DETECTION
     }

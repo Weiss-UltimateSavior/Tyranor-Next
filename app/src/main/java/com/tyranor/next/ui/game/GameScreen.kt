@@ -2365,6 +2365,7 @@ internal fun EngineType.coverColor(): Color = when (this) {
     EngineType.ANDROID_APP -> Color(0xFF2E7D32)
     EngineType.RENPY -> Color(0xFFE35B84)
     EngineType.RUFFLE -> Color(0xFFC62828)
+    EngineType.IMPACTO -> Color(0xFFB3123A)
     EngineType.RUNTIME_MODULE -> Color(0xFF5C6BC0)
     EngineType.PSP -> Color(0xFF6D4C9F)
     EngineType.NINTENDO_SWITCH -> Color(0xFFD32F2F)

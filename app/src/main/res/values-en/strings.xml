@@ -691,6 +691,7 @@
 
     <string name="external_engine_resolve_dir_failed">Unable to resolve the real path for the %1$s game directory, so the external engine module cannot start</string>
     <string name="external_engine_module_missing">%1$s was not detected. Download and install the module first</string>
+    <string name="external_engine_module_unpublished">%1$s was not found. Its package has not been published yet; build it yourself and install it (see engine/impacto/host-apk/README.md in the repository)</string>
     <string name="external_engine_module_outdated">The installed module is outdated. Download and install %1$s</string>
     <string name="engine_module_install_or_update">Module missing or update required</string>
     <string name="external_engine_no_activity">%1$s does not provide an Activity that can receive launch requests</string>
@@ -699,6 +700,9 @@
     <string name="external_rpgm_module_name">RPGM-1.22.00</string>
     <string name="external_ruffle_module_name">Ruffle-1.02.00</string>
     <string name="external_ruffle_resolve_swf_failed">Unable to locate the SWF launch file, so the Ruffle module cannot start</string>
+    <string name="external_impacto_module_name">Impacto</string>
+    <string name="external_impacto_profile_unresolved">Unable to match this folder to an Impacto game profile, so it cannot be launched</string>
+    <string name="engine_settings_impacto_hint">No adjustable options yet. The game runs in the separate Impacto host APK; its saves live in the private data folder of that host and cannot be managed from this app.</string>
     <string name="external_rpgm_resolve_dir_failed">Unable to resolve the real path for the RPGM game directory, so the external RPGM module cannot start</string>
 
     <string name="engine_settings_rpgm_module_card">RPG Maker RGSS Module</string>
