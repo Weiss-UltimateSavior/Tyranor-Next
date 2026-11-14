@@ -69,7 +69,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private MoviePlayback moviePlayback;
     private boolean storyMovieExitActive;
     private GameSlotsPanel gameSlots;
-    private GalleryCatalog.Page galleryPage,replayReturn;
+    private GalleryCatalog.Page galleryPage;
     private long galleryRequest;
     private int galleryCgPage,settingsPage;
     private boolean sceneReplay;
@@ -526,14 +526,13 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         boolean storyVisible=panelsOpen==0||gamePanel!=null&&gamePanel.awaitingCapturedBackdrop();
         boolean inGame=storySession&&storyVisible;
         if(!storySession||currentFrame!=null&&currentFrame.wait==NativeGame.MODAL)storyPlane.frame(null);
-        boolean line=currentFrame!=null&&currentFrame.wait==NativeGame.DIALOGUE;
-        boolean hasDialogue=currentFrame!=null&&(currentFrame.showsDialogue()&&(!line||currentFrame.windowVisible||!fullBody.isEmpty())||
+        boolean hasDialogue=currentFrame!=null&&(currentFrame.showsDialogue()||
             currentFrame.wait==NativeGame.END);
         boolean hasChoices=currentFrame!=null&&currentFrame.wait==NativeGame.CHOICE;
         dialoguePanel.setVisibility(!storySession||!hasDialogue?View.GONE:inGame&&!uiHidden?View.VISIBLE:View.INVISIBLE);
         dialoguePanel.waiting(inGame&&!uiHidden&&hasDialogue&&!typing&&!skipMode&&currentFrame.wait==NativeGame.DIALOGUE,
             autoMode,currentFrame==null?0:currentFrame.layoutCommand,currentFrame==null?20:currentFrame.frameMs);
-        if(controls!=null){if(inGame&&!uiHidden&&!sceneReplay)controls.frame(currentFrame,typing,choices);else controls.setVisibility(View.GONE);}
+        if(controls!=null){if(inGame&&!uiHidden)controls.frame(currentFrame,typing,choices,sceneReplay);else controls.setVisibility(View.GONE);}
         if(choices!=null)choices.setVisibility(!storySession||!hasChoices?View.GONE:inGame&&!uiHidden?View.VISIBLE:View.INVISIBLE);
         storyPlane.schedulePush();
         syncIndependentStatus();
@@ -805,7 +804,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         public void miniGame(int index) {openMiniGame(index,true);}
         public void back() { galleryBack(); }
         public void replay(int group,int index) {
-            if (runner!=null) { replayReturn=galleryPage; runner.replayGallery(group,index); }
+            if (runner!=null)runner.replayGallery(group,index);
         }
         public void movie(int index) { if(runner!=null)runner.playGalleryMovie(index); }
         public void play(int index) { if (runner!=null) runner.playGallerySong(index); }
@@ -869,7 +868,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         runOnUiThread(() -> {
             if (isDestroyed() || isFinishing()) return;
             sceneReplay=true; galleryPage=null; ++galleryRequest;
-            closeOriginalPanel();
+            closeOriginalPanel(false);
         });
     }
     private GameCodecErrorPanel movieErrorPanel;
@@ -938,12 +937,23 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         }
         updateVisibility();immersive();
     });}
-    @Override public void galleryReplayFinished() {
+    @Override public void galleryReplayFinished(GameRunner owner,TitleMenu title,GalleryCatalog.Page page,int w,int h) {
         runOnUiThread(() -> {
-            if (isDestroyed() || isFinishing()) return;
-            sceneReplay=false;
-            GalleryCatalog.Page page=replayReturn; replayReturn=null;
-            if (page!=null) openGallery(GalleryCatalog.Screen.SCENE,page.group,page.page,-1);
+            if (isDestroyed() || isFinishing() || runner!=owner) return;
+            sceneReplay=false;currentFrame=null;typing=false;fullBody="";uiHidden=false;
+            modeUnderPanel=null;visibleModal=null;refreshAfterLoad=false;
+            closeOriginalPanel(false);clearStartupViews();storyPlane.clear();
+            if(titlePanel!=null)stage.removeView(titlePanel);
+            titleModel=title;width=w;height=h;layoutStage();
+            showTitlePanel(title,null);
+            // Keep the title model for gallery navigation; its background starts only on an actual return to title.
+            titlePanel.setVisibility(View.INVISIBLE);
+            galleryPage=page;++galleryRequest;
+            GameGalleryPanel panel=new GameGalleryPanel(this,uiAssets,page,this::systemClick,galleryActions,width,height);
+            Bitmap previous=optionalGalleryPrevious;optionalGalleryPrevious=null;
+            if(previous!=null)panel.previous(previous);
+            mountOriginalPanel(panel,this::galleryBack);
+            owner.titleShown();
         });
     }
     private void showMenu() {
@@ -1120,7 +1130,6 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }
 
     private final class StoryPlane {
-        private final Paint bitmapPaint=new Paint(Paint.FILTER_BITMAP_FLAG);
         private GameRunner owner;
         private GameRunner.Frame frame;
         private MessagePlaneToken token;
@@ -1131,12 +1140,16 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         private long textureTimestamp,noticeTimestamp;
         private Runnable pendingLoadNotice;
         private boolean dirty,scheduled;
+        private int rasterFailures;
+        private boolean rasterFailed;
+        private final Runnable retryRaster=this::schedulePush;
         private final Runnable animationFlush=()->{
             scheduled=false;
             if(!isDestroyed()&&!isFinishing())pushNow();
         };
 
         void frame(GameRunner.Frame next){
+            if(frame!=next){rasterFailures=0;rasterFailed=false;ui.removeCallbacks(retryRaster);}
             frame=next;
         }
         void onTokenAvailable(){
@@ -1146,6 +1159,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             if(next!=null){
                 if(token!=null&&token!=next)token.close();
                 token=next;
+                rasterFailures=0;rasterFailed=false;ui.removeCallbacks(retryRaster);
                 pendingLoadNotice=null;
                 schedulePush();
             }
@@ -1190,9 +1204,11 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         void release(){
             if(stage!=null)stage.removeCallbacks(animationFlush);
             ui.removeCallbacks(animationFlush);
+            ui.removeCallbacks(retryRaster);
             if(token!=null)token.close();
             pendingLoadNotice=null;textureReset();
             token=null;owner=null;frame=null;bitmap=null;canvas=null;floatingBitmap=null;floatingCanvas=null;dirty=false;scheduled=false;
+            rasterFailures=0;rasterFailed=false;
         }
         private void ensureLaidOut(View view){
             if(view==null||view.getVisibility()==View.GONE)return;
@@ -1205,7 +1221,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         private void pushNow(){
             onTokenAvailable();
             dirty=false;
-            if(token==null)return;
+            if(token==null||rasterFailed)return;
             boolean storySession=!launchingGame&&titlePanel==null&&moviePlayback==null&&movieErrorPanel==null&&!storyMovieExitActive;
             GameRunner.Frame target=frame;
             if(!storySession||target==null||target.wait==NativeGame.END){
@@ -1215,11 +1231,11 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             if(!token.acceptsFrame(target.generation))return;
             int choicePage=choices==null?0:choices.page();
             int[] key=DialogueLayout.composePlaneKey(target.planeKey,uiHidden,choicePage);
-            boolean showLongImage=target.wait==NativeGame.DIALOGUE&&target.layoutCommand==0x22220002&&
-                uiAssets!=null&&uiAssets.longPrintImage!=null&&(!uiHidden||!uiAssets.longPrintImageOffWithWindow);
             boolean drawDialogue=!uiHidden&&dialoguePanel!=null&&dialoguePanel.getVisibility()!=View.GONE;
             boolean drawChoices=!uiHidden&&choices!=null&&choices.getVisibility()!=View.GONE;
-            if(!showLongImage&&!drawDialogue&&!drawChoices){
+            if(!drawDialogue&&!drawChoices){
+                if(target.wait==NativeGame.DIALOGUE&&target.displayBody.glyphCount==0&&!uiHidden)
+                    key[5]|=DialogueLayout.PLANE_TEXT_COMPLETE;
                 NativeGame.pushMessagePlane(token.value(),null,key,!uiHidden);
                 return;
             }
@@ -1230,7 +1246,6 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                     bitmap=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);
                     canvas=new Canvas(bitmap);
                 }else bitmap.eraseColor(Color.TRANSPARENT);
-                if(showLongImage)canvas.drawBitmap(uiAssets.longPrintImage,0f,0f,bitmapPaint);
                 if(drawDialogue){
                     ensureLaidOut(dialoguePanel);
                     dialoguePanel.drawPlane(canvas,false);
@@ -1249,10 +1264,20 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                     if(drawDialogue)dialoguePanel.drawFloating(floatingCanvas);
                     if(drawChoices)choices.drawFloating(floatingCanvas);
                 }
+                // A completion acknowledgement describes the pixels just drawn, not the worker's reveal budget.
+                if(target.wait==NativeGame.DIALOGUE&&drawDialogue&&!uiHidden&&dialoguePanel.textComplete())
+                    key[5]|=DialogueLayout.PLANE_TEXT_COMPLETE;
                 NativeGame.pushStoryPlanes(token.value(),bitmap,drawFloating?floatingBitmap:null,key,!uiHidden);
+                rasterFailures=0;ui.removeCallbacks(retryRaster);
                 if(liveCursor&&(drawDialogue&&dialoguePanel.portraitAnimating()||drawChoices&&choices.animating()))schedulePush();
             }catch(RuntimeException|OutOfMemoryError e){
                 Log.w("SystemNNN","Unable to rasterize story UI plane",e);
+                ui.removeCallbacks(retryRaster);
+                if(++rasterFailures<3)ui.postDelayed(retryRaster,Math.max(16,target.frameMs));
+                else{
+                    rasterFailed=true;
+                    if(owner!=null)owner.storyPlaneFailed(target.generation,e);
+                }
             }
         }
     }
@@ -1358,9 +1383,38 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }
     private void overlayModal(Runnable action){
         if(!isOverlayMode(gamePanel)||visibleModal==null)return;
-        lockModalOverlay(gamePanel,true);
-        modeUnderPanel=visibleModal;
-        action.run();
+        GameUiPanel panel=gamePanel;
+        GameRunner.Modal modal=visibleModal;
+        GameRunner owner=runner;
+        GameRunner.Frame frame=currentFrame;
+        lockModalOverlay(panel,true);
+        if(panel instanceof GameChartPanel&&owner!=null){
+            ((GameChartPanel)panel).captureSave(picture->{
+                if(panel!=gamePanel||owner!=runner||modal!=visibleModal||isDestroyed()||isFinishing()){
+                    if(picture!=null)picture.recycle();
+                    if(panel==gamePanel)lockModalOverlay(panel,false);
+                    return;
+                }
+                GameRunner.Capture capture=null;
+                if(picture!=null)try{
+                    int w=DialogueLayout.clamp(uiAssets.dataFile.number("picSizeX",uiAssets.dataFile.number("areaSizeX",132)),1,512);
+                    int h=DialogueLayout.clamp(uiAssets.dataFile.number("picSizeY",uiAssets.dataFile.number("areaSizeY",100)),1,512);
+                    Bitmap thumbnail=Bitmap.createScaledBitmap(picture,w,h,true);
+                    int[] pixels=new int[w*h];thumbnail.getPixels(pixels,0,w,0,0,w,h);
+                    capture=new GameRunner.Capture(pixels,w,h);
+                    if(thumbnail!=picture)thumbnail.recycle();
+                }catch(RuntimeException|OutOfMemoryError error){Log.w("SystemNNN","Chart save thumbnail unavailable",error);}
+                finally{picture.recycle();}
+                owner.chartSavePicture(frame,modal,capture,accepted->runOnUiThread(()->{
+                    if(panel!=gamePanel||owner!=runner||modal!=visibleModal||isDestroyed()||isFinishing()){
+                        if(panel==gamePanel)lockModalOverlay(panel,false);
+                        return;
+                    }
+                    if(!accepted){lockModalOverlay(panel,false);return;}
+                    modeUnderPanel=modal;action.run();
+                }));
+            });
+        }else{modeUnderPanel=modal;action.run();}
     }
     private boolean resumeModeAfterPanel(Bitmap previous){
         GameRunner.Modal pending=modeUnderPanel;
@@ -1622,7 +1676,14 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private void confirmOriginalExit(GameSystemMenuPanel panel) {
         if(gamePanel!=panel||runner==null)return;
         Runnable confirm=()->{
-            if(inSceneReplay()){closeOriginalPanel();runner.endGalleryReplay();return;}
+            if(inSceneReplay()){
+                GameRunner owner=runner;
+                panel.leave(uiAssets.system,true,picture->{
+                    if(owner!=runner||panel!=gamePanel||isDestroyed()||isFinishing())return;
+                    optionalGalleryPrevious=picture;owner.endGalleryReplay();
+                });
+                return;
+            }
             if(returningToTitle)return;
             panel.leave(uiAssets.system,true,picture->{
                 if(isDestroyed()||isFinishing()||gamePanel!=panel||runner==null)return;
@@ -1974,8 +2035,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             if(!(gamePanel instanceof GameBacklogPanel)&&
                 !(gamePanel instanceof GameGalleryPanel&&((GameGalleryPanel)gamePanel).screen()==GalleryCatalog.Screen.VIEW))systemClick();
             if(panelBack!=null)panelBack.run();else closeOriginalPanel();
-        }else if(sceneReplay){if(runner!=null)runner.endGalleryReplay();}
-        else if(uiHidden){uiHidden=false;updateVisibility();}
+        }else if(uiHidden){uiHidden=false;updateVisibility();}
         else if(runner==null||titlePanel!=null)finish();
         else showMenu();
     }

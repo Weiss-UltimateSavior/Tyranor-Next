@@ -146,8 +146,6 @@ final class GameUiAssets {
     final Config gameMouse,selectPlace,selectPlace2;
     final SharedConfig sharedConfig;
     final boolean statusOverlays;
-    final Bitmap longPrintImage;
-    final boolean longPrintImageOffWithWindow;
     final long systemExtensionModes;
     final Map<String,Config> storyButtons;
     final File root;
@@ -171,8 +169,6 @@ final class GameUiAssets {
         this.storyButtons=Collections.unmodifiableMap(storyButtons);
         this.gameMouse=gameMouse;this.selectPlace=selectPlace;this.selectPlace2=selectPlace2;
         this.images=Collections.unmodifiableMap(images);
-        this.longPrintImage=images.get(longPrintImageKey(printMessage));
-        this.longPrintImageOffWithWindow=printMessage.number("addLPrintImageOffWithWindow",0)!=0;
         this.textRates=textRates;
         statusOverlays=freeStatus||game.number("useExtClass",0)!=0;
         this.legacyVolumeDefaults=legacyVolumeDefaults;
@@ -213,10 +209,6 @@ final class GameUiAssets {
     static String systemImageKey(String value) {
         String name=imageKey(value);
         return name.isEmpty()||name.indexOf('/')>=0?name:"sys/"+name;
-    }
-    private static String longPrintImageKey(Config config) {
-        if(config.number("LPrintAddImageFlag",0)==0)return "";
-        return systemImageKey(config.value("FilenameLPrintImage","lprintimage"));
     }
     /** Does not perform I/O, decoding or JNI calls; safe to query from UI drawing code. */
     Bitmap image(String name) { return name==null ? null : images.get(systemImageKey(name)); }
@@ -407,8 +399,6 @@ final class GameUiAssets {
         if(messageWindow.number("nameWindowFlag",0)!=0)
             for(String name:DialogueLayout.names(messageWindow.fields(),"filenameNameWindow","ta_namewin",windowCounts))
                 messageImages.add(systemImageKey(name));
-        String longPrintImage=longPrintImageKey(printMessage);
-        if(!longPrintImage.isEmpty())messageImages.add(longPrintImage);
         Set<String> names=new LinkedHashSet<>(messageImages);
         for(String name:new String[]{
             "ta_menu_bg01","ta_cnf_bg01","ta_cnf_bg02","ta_cnf_bg03",

@@ -18,8 +18,8 @@ final class NativeGame {
         loaded = true;
     }
     static final int RUNNING=0, DRAW=1, OVERLAP=2, DIALOGUE=3, CHOICE=4, END=5, TITLE=6, MOVIE=7, PLACE=8, MODAL=9;
-    static final int META_SIZE=15, CLOCK_DATE=7, CLOCK_MILLISECONDS=8, SCRIPT_CURSOR=9, DRAW_MESSAGE=10,
-        TITLE_BACKGROUND_ENDED=11, PACED_MS=12, FILM_SKIP_ENABLED=13, SCRIPT_MOUSE=14;
+    static final int META_SIZE=16, CLOCK_DATE=7, CLOCK_MILLISECONDS=8, SCRIPT_CURSOR=9, DRAW_MESSAGE=10,
+        TITLE_BACKGROUND_ENDED=11, PACED_MS=12, FILM_SKIP_ENABLED=13, SCRIPT_MOUSE=14, TICK_EXECUTED=15;
     static final int SELECT_PLACE_MODE=22,SELECT_PLACE2_MODE=35;
     static native long openWithOptions(byte[] path,int sampleRate,long contextToken,boolean analyzeExecutable,boolean debugMode);
     static native long openReplay(byte[] path,int sampleRate,long contextToken,byte[] script,int[] films,int hiddenLayers);
@@ -183,6 +183,7 @@ final class NativeGame {
     // Presets a named variable of a new story before its first tick. False when the game has no such name.
     static native boolean setStoryVariable(long handle,byte[] name,int value);
     static native void menuMusic(long handle,int number,int plays,int volume,int fade,boolean restart);
+    static native void inheritMenuMusic(long handle,long previous);
     static native void playGalleryMusic(long handle,byte[] name,int plays,int volume);
     static native void stopGalleryMusic(long handle);
     static native void pauseGalleryMusic(long handle,boolean paused);

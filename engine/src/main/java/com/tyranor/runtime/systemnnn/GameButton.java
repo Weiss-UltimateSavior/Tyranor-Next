@@ -114,8 +114,15 @@ final class GameButton extends StoryPlaneView {
     private void cancelHoverCue(){
         if(hoverCue!=null){removeCallbacks(hoverCue);hoverCue=null;}
     }
+    private int drawState(){return !isEnabled()?3:pending!=null?2:isPressed()||isHovered()?1:0;}
+    boolean isAnimating(){
+        int mode=drawState();
+        SpriteAnimation animation=spec.states[mode];
+        long elapsed=mode==state?Math.max(0,(SystemClock.uptimeMillis()-stateSince)/period):0;
+        return getVisibility()==VISIBLE&&animation!=null&&animation.active(elapsed);
+    }
     @Override protected void onDraw(Canvas c){
-        int mode=!isEnabled()?3:pending!=null?2:isPressed()||isHovered()?1:0;
+        int mode=drawState();
         long now=SystemClock.uptimeMillis();
         if(mode!=state){state=mode;stateSince=now;}
         long elapsed=(now-stateSince)/period;

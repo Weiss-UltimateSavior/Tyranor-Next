@@ -153,12 +153,16 @@ final class DialogueLayout {
         return (int)Math.max(0,Math.min(right-1L,layout.x+(long)row*layout.nextX));
     }
     static final int PLANE_UI_HIDDEN=1<<16;
+    static final int PLANE_TEXT_COMPLETE=1<<17;
     static final long PLANE_GATE_TIMEOUT_MS=250L;
     static final int GATE_HOLD=0,GATE_MATCHED=1,GATE_BYPASSED=2,GATE_TIMED_OUT=3;
     static int[] composePlaneKey(int[] expected,boolean uiHidden,int choicePage){
+        return composePlaneKey(expected,uiHidden,choicePage,false);
+    }
+    static int[] composePlaneKey(int[] expected,boolean uiHidden,int choicePage,boolean textComplete){
         int[] key=new int[6];
         if(expected!=null)System.arraycopy(expected,0,key,0,Math.min(5,expected.length));
-        key[5]=(uiHidden?PLANE_UI_HIDDEN:0)|(Math.max(0,choicePage)&0xffff);
+        key[5]=(uiHidden?PLANE_UI_HIDDEN:0)|(textComplete&&!uiHidden?PLANE_TEXT_COMPLETE:0)|(Math.max(0,choicePage)&0xffff);
         return key;
     }
     static boolean planeKeyMatches(int[] presented,int[] expected){
@@ -175,7 +179,8 @@ final class DialogueLayout {
     static int evaluatePlaneGate(int[] presented,int[] expected,boolean hasSurface,boolean active,boolean menuOpen,long elapsedMs){
         if(!hasSurface||!active||menuOpen)return GATE_BYPASSED;
         if(expected==null||expected.length<5||(expected[0]!=3&&expected[0]!=4))return GATE_MATCHED;
-        if(planeKeyMatches(presented,expected))return GATE_MATCHED;
+        if(planeKeyMatches(presented,expected)&&
+           (expected[0]!=3||presented.length>=6&&(presented[5]&PLANE_TEXT_COMPLETE)!=0))return GATE_MATCHED;
         return elapsedMs>=PLANE_GATE_TIMEOUT_MS?GATE_TIMED_OUT:GATE_HOLD;
     }
 }

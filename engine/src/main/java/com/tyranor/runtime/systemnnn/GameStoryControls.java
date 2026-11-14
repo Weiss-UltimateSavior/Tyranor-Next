@@ -16,7 +16,7 @@ final class GameStoryControls extends FrameLayout {
     private final GameStoryControlsModel model;
     private final List<ArtButton> buttons=new ArrayList<>();
     private int canvasWidth=1280,canvasHeight=720,period=20;
-    private boolean typing=true,automatic,skipping;
+    private boolean typing=true,automatic,skipping,replaying;
     private ArtButton clicked;
     private Runnable dispatch;
     private GameChoicePanel choice;
@@ -56,8 +56,9 @@ final class GameStoryControls extends FrameLayout {
         for(ArtButton b:buttons){b.setClickable(clickableWhileTyping(b));b.invalidate();}
     }
     void canvas(int width,int height){canvasWidth=Math.max(1,width);canvasHeight=Math.max(1,height);requestLayout();}
-    void frame(GameRunner.Frame frame,boolean typing,GameChoicePanel choice){
+    void frame(GameRunner.Frame frame,boolean typing,GameChoicePanel choice,boolean replaying){
         this.choice=choice;
+        this.replaying=replaying;
         boolean choiceButtons=choice!=null&&choice.storyButtonsAllowed();
         this.typing=!choiceButtons&&(typing||frame==null||frame.wait!=NativeGame.DIALOGUE);
         if(frame!=null&&frame.width>0&&frame.height>0&&(canvasWidth!=frame.width||canvasHeight!=frame.height))canvas(frame.width,frame.height);
@@ -72,6 +73,7 @@ final class GameStoryControls extends FrameLayout {
                 action==GameStoryControlsModel.Action.QUICK_SAVE&&choice.quickSlotAllowed(true)||
                 action==GameStoryControlsModel.Action.QUICK_LOAD&&choice.quickSlotAllowed(false)):visible&&frame.optionsAllowed;
             if(action==GameStoryControlsModel.Action.FILM_SKIP)show=!choiceButtons&&frame!=null&&frame.filmSkip;
+            show&=allowedInReplay(action,replaying);
             button.setVisibility(show?VISIBLE:GONE);
             button.setClickable(show&&clickableWhileTyping(button)&&clicked==null);
         }
@@ -91,7 +93,14 @@ final class GameStoryControls extends FrameLayout {
         super.onMeasure(ws,hs);
     }
     private boolean clickableWhileTyping(ArtButton button){
-        return !typing||button.spec.action==GameStoryControlsModel.Action.FILM_SKIP;
+        return clickableWhileTyping(button.spec.action,typing)&&allowedInReplay(button.spec.action,replaying);
+    }
+    static boolean clickableWhileTyping(GameStoryControlsModel.Action action,boolean typing){
+        return !typing||action==GameStoryControlsModel.Action.FILM_SKIP;
+    }
+    static boolean allowedInReplay(GameStoryControlsModel.Action action,boolean replaying){
+        return !replaying||action!=GameStoryControlsModel.Action.QUICK_SAVE&&action!=GameStoryControlsModel.Action.QUICK_LOAD&&
+            action!=GameStoryControlsModel.Action.SAVE&&action!=GameStoryControlsModel.Action.LOAD;
     }
     private void click(ArtButton b){
         if(!clickableWhileTyping(b)||clicked!=null||!b.isEnabled()||choice!=null&&choice.confirming())return;
@@ -114,7 +123,7 @@ final class GameStoryControls extends FrameLayout {
             setContentDescription(actionLabel(spec.action));setSoundEffectsEnabled(false);setFocusable(true);setOnClickListener(v->click(this));}
         @Override public CharSequence getAccessibilityClassName(){return "android.widget.Button";}
         @Override public boolean onTouchEvent(MotionEvent e){
-            if(typing||clicked!=null)return false;
+            if(!clickableWhileTyping(this)||clicked!=null)return false;
             if(e.getActionMasked()==MotionEvent.ACTION_DOWN){
                 float sx=getWidth()/(float)(spec.right()-spec.left()),sy=getHeight()/(float)(spec.bottom()-spec.top());
                 int x=(int)(e.getX()/sx)+spec.left()-spec.x-spec.checkDeltaX;

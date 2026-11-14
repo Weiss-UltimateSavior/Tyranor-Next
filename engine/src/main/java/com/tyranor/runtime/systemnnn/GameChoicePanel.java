@@ -71,10 +71,7 @@ final class GameChoicePanel extends GameUiPanel implements StoryPlaneView.Host {
         for(int i=0;i<getChildCount();i++){
             View child=getChildAt(i);
             if(child instanceof GameButton){
-                GameButton b=(GameButton)child;
-                int mode=!b.isEnabled()?3:b.isPressed()||b.isHovered()?1:0;
-                SpriteAnimation s=b.spec.states[mode];
-                if(s!=null&&s.count>1)return true;
+                if(((GameButton)child).isAnimating())return true;
             }
         }
         return false;
