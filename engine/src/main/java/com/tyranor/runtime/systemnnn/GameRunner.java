@@ -661,8 +661,8 @@ final class GameRunner {
         schedule();
     }
     private TitleMenu loadTitle(long player) throws IOException {
-        boolean lastLoad=saveResult(SAVE_FILES.submit(slots::lastSelectedSlot))!=null;
-        return new TitleMenu(root,player,lastLoad,lastLoad);
+        boolean[] saved=saveResult(SAVE_FILES.submit(()->new boolean[]{slots.hasAnyLoadData(),slots.lastSelectedSlot()!=null}));
+        return new TitleMenu(root,player,saved[0],saved[1]);
     }
     private void publishTitle(Capture previous){
         publishTitle(previous,false);

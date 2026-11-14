@@ -25,6 +25,7 @@ final class SaveSlots {
     private int quickNumber=-1;
     private volatile Map<Integer,Entry> cached=Collections.emptyMap();
     private volatile int manualCount=DEFAULT_SLOT_COUNT;
+    private volatile int loadCount;
     private volatile Integer lastSelected;
     private volatile SlotUi slotUi=SlotUi.EMPTY;
 
@@ -133,6 +134,7 @@ final class SaveSlots {
             (fromNative?shared.gameDateVars():PcStorySave.GameDateVars.load(root,game));
         int quick=data.number("quickSlotNumber",1);
         quickNumber=quick>0&&quick<=MAX_MANUAL_SLOTS?quick-1:-1;
+        loadCount=load.pages*load.perPage;
         preload(Math.max(save.pages*save.perPage,load.pages*load.perPage));
     }
     private void preload(int manualCount) throws IOException {
@@ -190,6 +192,11 @@ final class SaveSlots {
     }
     private static long picturePixels(Bitmap picture){
         return picture==null?0:(long)picture.getWidth()*picture.getHeight();
+    }
+    boolean hasAnyLoadData(){
+        // CCommonLoad checks existence in its own grid, without checking the save version.
+        for(Entry entry:cached.values())if(entry.slot>=0&&entry.slot<loadCount&&entry.exists)return true;
+        return false;
     }
     Integer lastSelectedSlot(){
         Integer slot=lastSelected;

@@ -45,7 +45,7 @@ final class TitleMenu {
     final int frameMs,autoRestartTime;
     private final int bgmNumber;
     final boolean restartOnBackgroundEnd;
-    TitleMenu(File root,long handle,boolean resume,boolean lastLoad) throws IOException {
+    TitleMenu(File root,long handle,boolean anyLoadData,boolean lastLoad) throws IOException {
         config=GameUiAssets.readConfig(root,"title");
         GameUiAssets.SharedConfig shared=handle!=0?GameUiAssets.SharedConfig.from(NativeGame.sharedConfigSnapshot(handle),root,null,null):null;
         boolean fromNative=shared!=null&&shared.fromNative;
@@ -72,7 +72,8 @@ final class TitleMenu {
             Action action=button.index<basic.length?basic[button.index]:button.scenario!=0?Action.SCENARIO:Action.MODE;
             if(!skinned&&(action==Action.MODE||action==Action.EXTRAS&&!extras))continue;
             ButtonArt.Setup setup=button.setup;
-            boolean enabled=button.enabled&&(action!=Action.EXTRAS||extras);
+            boolean enabled=button.enabled&&(action!=Action.EXTRAS||extras)&&
+                saveActionEnabled(config,action,anyLoadData,lastLoad);
             Item item=new Item(action,button.x,button.y,setup.width,setup.height,enabled,
                 button.mode,button.scenario,button.label);
             if(skinned){
@@ -82,17 +83,24 @@ final class TitleMenu {
             items.add(item);
         }
         if(skinned){
-            if (number("EnableLastLoadButton",0)>0) add(handle,"LastLoad",Action.LAST_LOAD,lastLoad,artwork);
+            if (number("EnableLastLoadButton",0)>0) add(handle,"LastLoad",Action.LAST_LOAD,
+                saveActionEnabled(config,Action.LAST_LOAD,anyLoadData,lastLoad),artwork);
             if (number("EnableHTMLButton",0)!=0) add(handle,"HTML",Action.WEBSITE,
                 website.startsWith("https://")||website.startsWith("http://"),artwork);
         }else{
             int continueIndex=!items.isEmpty()&&items.get(0).action==Action.START?1:0;
-            items.add(continueIndex,new Item(Action.CONTINUE,0,0,0,0,resume));
+            items.add(continueIndex,new Item(Action.CONTINUE,0,0,0,0,
+                saveActionEnabled(config,Action.CONTINUE,anyLoadData,lastLoad)));
         }
         for(GameMiniGames.Entry entry:GameMiniGames.entries(root,config,handle,"title")){
             Item item=new Item(Action.MINIGAME,entry.x,entry.y,entry.w,entry.h,true,entry.index,0,null);
             item.spec=entry.spec;item.image=entry.image;items.add(item);
         }
+    }
+    static boolean saveActionEnabled(GameUiAssets.Config config,Action action,boolean anyLoadData,boolean lastLoad){
+        if(action==Action.LOAD)return config.number("noSaveDataToMaskMenu",0)==0||anyLoadData;
+        if(action==Action.CONTINUE||action==Action.LAST_LOAD)return lastLoad;
+        return true;
     }
     int musicNumber() { return bgmNumber; }
     boolean musicRestarts() { return number("bgmRestartFlag",1)!=0; }
