@@ -154,7 +154,7 @@ docs/、.archify/                     专题方案、审查记录与可视化
 
 本项目基于 **GNU General Public License v2.0** 发布（GPL-2.0-only），详见 [LICENSE](LICENSE)。
 
-`engine/` 引擎运行时基于 Tyranor 模拟器逆向重写，上游涉及 Kirikiroid2 / ONScripter 等 GPL-2.0 项目，因此整个项目以 GPL-2.0 分发；衍生作品须遵循 GPL-2.0 条款，并随发行物提供完整源码。Miuix 等第三方依赖按各自许可证引入。
+`engine/` 引擎运行时基于 Tyranor 模拟器逆向重写，上游涉及 Kirikiroid2 / ONScripter 等 GPL-2.0 项目，因此整个项目以 GPL-2.0 分发；衍生作品须遵循 GPL-2.0 条款，并随发行物提供完整源码。Miuix 等第三方依赖按各自许可证引入；代码/资产级第三方声明汇总见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 | 运行库 | 上游 | 许可证 | 溯源与许可文本 |
 | --- | --- | --- | --- |
@@ -168,6 +168,8 @@ docs/、.archify/                     专题方案、审查记录与可视化
 | VN-SR C08 / C12 / C16 | [AAAA1111-Lab/VN-SR](https://github.com/AAAA1111-Lab/VN-SR) | MIT | [VN-SR滤镜集](docs/vnsr-filters.md) |
 
 System35 / System4 的源码取自对应 fork（固定 commit），构建剧本、补丁记录与静态依赖（SDL2、freetype、libwebp、libsndfile 等）的完整许可证文本见上述 BUILD.md 与 `licenses/` 目录。
+
+System4 运行时包含 libjpeg-turbo；依 IJG 许可要求，随分发文档声明：**This software is based in part on the work of the Independent JPEG Group.**（原文见 `engine/xsystem4/licenses/README.ijg`，许可说明见 `engine/xsystem4/licenses/libjpeg-turbo-LICENSE.md`）
 
 ## 致谢
 - [Kirikiroid2](https://github.com/zeas2/Kirikiroid2): Kirikiroid2引擎

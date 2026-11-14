@@ -13,6 +13,7 @@
 - `engine/src/main/{java,cpp,assets,jniLibs,nativeplugins}`：宿主、JNI 桥、脚本及预编译运行库；`engine/rust/` 为 XP3 Rust 源码。
 - 两模块的 `src/test/` 放 JVM 回归；`engine/src/test/js/` 放 Web 桥测试；`app/src/androidTest/` 和 `app/src/releaseProbe/` 放设备测试。
 - `buildSrc/` 管理图形资源生成与校验，`tools/` 放本地工具，`.github/workflows/` 定义 CI；`docs/`、`.archify/` 保存专题说明与图表。
+- [docs/README.md](docs/README.md)：`docs/` 下的专题文档索引。
 
 开始修改前检查 `git status --short`，保留已有工作；先读相关实现与调用方，再做最小必要修改。优先复用已有门面、错误类型和公共组件，遵循 KISS、YAGNI、DRY 与 SOLID，避免顺手重排无关代码。
 
@@ -26,7 +27,7 @@
 
 ## Commit 与 Pull Request
 
-历史采用 `feat:`、`fix:`、`refactor(scope):`、`docs:`、`build:` 等类型前缀，描述语言并不统一；本次起新提交建议使用英文祈使短句，例如 `docs: clarify engine launch boundaries`。每个提交聚焦一类修改。
+历史采用 `feat:`、`fix:`、`refactor(scope):`、`docs:`、`build:` 等类型前缀，描述语言并不统一；本次起新提交统一使用中文描述，类型前缀保持小写英文，例如 `docs: 澄清引擎启动边界`。每个提交聚焦一类修改。
 
 PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果，并关联对应 Issue（如 `Fixes #123`）。UI 改动附前后截图及相关手机/平板、深浅色场景；原生引擎改动附设备、系统、运行库身份与真实样本证据。明确未执行的检查，不把编译、合成夹具或静态哈希验证当作游戏兼容性验收。
 
@@ -84,7 +85,7 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 - 规则：可以依赖 `engine` 模块；不得依赖 Compose（含 `androidx.compose.ui/foundation/material*` UI 组件，以及 `androidx.compose.runtime` 的状态原语与 `@Immutable` 注解）；不得把页面类作为普通业务依赖。
   全局可观察状态一律用 `kotlinx.coroutines.flow`（`StateFlow`）或纯数据载荷（`ThemeColorPayload` 模式）由 UI 层 `collectAsState` 订阅。
 
-- 新增功能按域放入 `core/game`、`core/engine`、`core/cover`、`core/patch`、`core/unpack`、`core/settings`、`core/auth`、`core/updater`、`core/process` 等包。
+- 新增功能按域放入 `core/game`、`core/engine`、`core/cover`、`core/patch`、`core/unpack`、`core/settings`、`core/auth`、`core/updater`、`core/process` 等包；其中 `core/engine/runtime` 承载第三方 APK 运行时模块，`core/game/playtime` 采集游戏时长，`core/game/save/sync` 管理 WebDAV 存档同步。
 
 ### 3. 界面 UI 交互层
 
@@ -94,7 +95,7 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 
 - 规则：只能调用功能抽象层；禁止直接 import `com.core`、`com.akira`、`com.yuri`、`org.tvp`、`org.libsdl`、`org.cocos2dx`、`bridge` 等底层引擎包。
 
-- 页面按功能域放入 `ui/home`、`ui/game`、`ui/engine`、`ui/settings`、`ui/cover`、`ui/patch`、`ui/save`、`ui/archive`、`ui/auth`、`ui/onboarding`，公共组件放入 `ui/common`。
+- 页面按功能域放入 `ui/home`、`ui/game`、`ui/engine`、`ui/settings`、`ui/cover`、`ui/patch`、`ui/save`、`ui/archive`、`ui/auth`、`ui/onboarding`、`ui/runtime` 等目录；主导航壳在 `ui/main`，公共组件放入 `ui/common`。
 
 ### 4. 资源归属
 
@@ -107,7 +108,7 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 
 - 插件 zip 生成到 `app/build/generated/assets/nativeplugins`（未压缩 zip 容器再压成 `<engine>.zip.xz`，减小 APK 体积）。禁止在 app 与 engine 两边手工维护同一份二进制或共享脚本；插件源合并通过 `DuplicatesStrategy.FAIL` 拒绝重名，脚本单一源归属仍需评审检查。
 
-- 大体积引擎运行库（当前 `libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、IJK 三件套、System35/4 + `libSDL2x.so`）仍以 `engine/src/main/jniLibs` 为源头，但**不进 APK 的 `lib/`**：Gradle 打成 `app/build/generated/assets/engine-runtime/<pack>.zip.xz`，首次启动对应引擎时由 `com.core.nativeplugin.NativeRuntimePack` 解压到 `files/engine_runtime/<pack>/`，JNI 桥按绝对路径 dlopen（IJK 走 `IjkRuntime` 的 `IjkLibLoader`）。新增此类运行库时须同步 `NativeRuntimePack` 的分片常量与 `app/build.gradle.kts` 的 `bundledEngineRuntimePacks`（两处 id 与库名保持一致）；`packaging.jniLibs.excludes` 由该清单自动推导，不要再手写。
+- 大体积引擎运行库（当前 8 个 pack：siglus / fvp / ethornell / krkrsdl3 / ijk / xsystem / cmvs / systemnnn，分别对应 `libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、IJK 三件套、System35/4 + `libSDL2x.so`、`libcmvs_android.so`、`libsystemnnn.so`）仍以 `engine/src/main/jniLibs` 为源头，但**不进 APK 的 `lib/`**：Gradle 打成 `app/build/generated/assets/engine-runtime/<pack>.zip.xz`，首次启动对应引擎时由 `com.core.nativeplugin.NativeRuntimePack` 解压到 `files/engine_runtime/<pack>/`，JNI 桥按绝对路径 dlopen（IJK 走 `IjkRuntime` 的 `IjkLibLoader`）。新增此类运行库时须同步 `NativeRuntimePack` 的分片常量与 `app/build.gradle.kts` 的 `bundledEngineRuntimePacks`（两处 id 与库名保持一致）；`packaging.jniLibs.excludes` 由该清单自动推导，不要再手写。
 
 - 原生运行库通常是已提交的预编译 `.so`；普通 Gradle 构建只编 JNI 桥，不重建全部运行时。更新运行库时必须同步固定来源、校验清单、许可证与设备验收证据，详见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
@@ -132,7 +133,7 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 - 新增错误分支时优先扩展已有 sealed 类型/错误码枚举，不新增并行协议。
 - 取消（`CancellationException`）不属于失败，必须原样向上传播。
 
-存量偏差：`GameSaveManager.SaveLocation.description`、`HikarinagiAuthService` 和 `KrkrOnlinePatchService` 仍有本地化字符串载荷。上述协议是新增/改动代码的约束，并非全仓已完成迁移；修改相关接口时连同 UI 映射和调用方一起对齐，不新增并行错误风格。
+存量偏差：`HikarinagiAuthService` 和 `KrkrOnlinePatchService` 仍有本地化字符串载荷。上述协议是新增/改动代码的约束，并非全仓已完成迁移；修改相关接口时连同 UI 映射和调用方一起对齐，不新增并行错误风格。
 
 ***
 
@@ -720,9 +721,11 @@ Room schema 变更须提交 `app/schemas/` 并添加显式 `Migration`；仅既�
 | `python tools/check-hardcoded-ui-strings.py` | 离线检查三语言字符串键与 Kotlin CJK 字面量 |
 | `python tools/check-motion-boundaries.py` | 检查业务页面是否绕开具名动效入口 |
 | `./gradlew -p buildSrc graphicsResourcesRegression --no-daemon` | 验证图形资源归属与校验逻辑 |
-| `./gradlew :engine:jsHarness --no-daemon` | 用本地 Node.js 验证 Web v2 桥；也接入 `:engine:check` |
-| `cargo test --manifest-path engine/rust/Cargo.toml --locked` | 修改 XP3 Rust 时运行宿主测试 |
+| `./gradlew :engine:jsHarness --no-daemon` | 用本地 Node.js 验证 Web v2 桥；也接入 `:engine:check`（本地/人工门禁） |
+| `cargo test --manifest-path engine/rust/Cargo.toml --locked` | 修改 XP3 Rust 时运行宿主测试（本地/人工门禁） |
 | `./gradlew :app:printAppVersion --no-daemon` | 输出版本名与自动推导的 versionCode |
+
+`:engine:jsHarness` 与 `cargo test` 目前是本地/人工门禁，Android CI 不自动执行；PR 必须记录实际执行结果（未执行时说明原因），不得用 JVM 回归或构建成功替代。
 
 Windows PowerShell 使用 `./gradlew.bat`；Linux/macOS 使用 `./gradlew`。Python、Node、Rust 按相关任务安装；普通 Gradle 构建不运行 Rust 重编。执行 `check` 时仅在明确缺 Node 的场景可用 `-PskipJsHarness` 跳过，并在验证记录中说明。
 

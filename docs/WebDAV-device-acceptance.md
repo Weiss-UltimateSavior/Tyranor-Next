@@ -153,26 +153,7 @@ UiAutomation 服务后再用真实触摸聚焦密码输入框，避免自动化�
 
 ## 原始截图
 
-PNG 直接来自设备 UiAutomation，没有裁切、缩放或重绘；`images/webdav-20261027/sha256.json`
-列出所附 16 张原图的 SHA-256 与字节数。截图上的账号、游戏名和时间均为合成夹具。
-
-| 主题 | WebDAV 设置 | 存档管理 |
-| --- | --- | --- |
-| 默认浅色 | ![WebDAV 默认浅色](images/webdav-20261027/phone-webdav-theme-default-light.png) | ![存档管理默认浅色](images/webdav-20261027/phone-save-management-theme-default-light.png) |
-| 默认深色 | ![WebDAV 默认深色](images/webdav-20261027/phone-webdav-theme-default-dark.png) | ![存档管理默认深色](images/webdav-20261027/phone-save-management-theme-default-dark.png) |
-| 复古玻璃 | ![WebDAV 复古玻璃](images/webdav-20261027/phone-webdav-theme-retro-glass.png) | ![存档管理复古玻璃](images/webdav-20261027/phone-save-management-theme-retro-glass.png) |
-| 高级玻璃（已废弃，历史截图） | ![WebDAV 高级玻璃](images/webdav-20261027/phone-webdav-theme-advanced-glass.png) | ![存档管理高级玻璃](images/webdav-20261027/phone-save-management-theme-advanced-glass.png) |
-
-| 场景 | 截图 |
-| --- | --- |
-| 版本下拉展开 | ![版本下拉](images/webdav-20261027/phone-save-management-dropdown-default-light.png) |
-| S→N 切换确认 | ![切换确认](images/webdav-20261027/phone-webdav-activation-confirm-restored-times.png) |
-| 真实 2 倍字体、横屏、正文滚动后 | ![2 倍字体长文案](images/webdav-20261027/phone-font2x-webdav-reset-policy-landscape-font2x.png) |
-| 宽屏模拟：WebDAV 设置 | ![宽屏 WebDAV](images/webdav-20261027/tablet-width-simulation-webdav-theme-default-light.png) |
-| 宽屏模拟：存档管理 | ![宽屏存档管理](images/webdav-20261027/tablet-width-simulation-save-management-theme-default-light.png) |
-| API 26：WebDAV 设置 | ![API 26 WebDAV](images/webdav-20261027/api26-webdav-theme-default-light.png) |
-| API 26：存档管理 | ![API 26 存档管理](images/webdav-20261027/api26-save-management-theme-default-light.png) |
-| 真机 TalkBack：密码角色与字段 label 的实际语音输出字幕 | ![TalkBack 密码焦点反馈](images/webdav-20261027/phone-talkback-password-label.png) |
+PNG 直接来自设备 UiAutomation，没有裁切、缩放或重绘；截图上的账号、游戏名和时间均为合成夹具。截图与 sha256.json 不随仓库分发，原始验收材料见 [PR #132](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/132) 附件。
 
 ## 复现入口
 
