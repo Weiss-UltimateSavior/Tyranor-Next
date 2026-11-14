@@ -4,8 +4,6 @@
 
 基于 **Tyranor 模拟器逆向重写** 的多引擎视觉小说（Galgame）模拟器，面向 Android 平台。具体功能与兼容边界见 [SPEC.md](SPEC.md)。
 
-
-
 iOS版本计划中...  鸿蒙设备可使用卓易通安装
 主打轻便、简单、快捷，不引入其他冗余功能的简约设计思路
 
@@ -76,11 +74,6 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | Ruffle / Flash       | 顶层 `.swf`；根 `index.html/index.htm` + 唯一 SWF 的叶子目录                   | 外置 Ruffle APK 模块              |
 | PSP                  | `.pbp`、`.cso`、`.iso`、`.chd`                                         | 外置 PPSSPP 模拟器                 |
 | Nintendo Switch      | `.nsp`、`.xci`、`.nca`、`.nro`                                         | 外置 Eden 模拟器                   |
-
-
-Ren’Py 在 Android 11 及以上支持统一管理游戏根目录的 `saves/`（导入、导出、删除、存档版本与 WebDAV 同步）。退出外置播放器后，需在存档管理页确认已退出，再进行存档操作；Android 10 及以下不接入。
-
-实验性 BGI / Ethornell 宿主将存档保存在游戏目录的 `savedata/`。本地内核补丁现已让 VM 识别精确的 `bgi-resource/`、`bgi-user/` 虚拟根，并让受限运行时的文件读取、通用文件加载与查询按授权用户别名访问存档；未命中映射的文件不会回退到资源路径，普通归档加载保持原路径。这不代表商业游戏槽位兼容已验收，详见 [SPEC.md](SPEC.md#10-实验能力与证据边界)。
 
 ### 平台与文件要求
 
@@ -159,19 +152,22 @@ docs/、.archify/                     专题方案、审查记录与可视化
 
 ## 许可证
 
-本项目基于 **GNU General Public License v2.0** 发布，详见 [LICENSE](LICENSE)（GPL-2.0-only）。
+本项目基于 **GNU General Public License v2.0** 发布（GPL-2.0-only），详见 [LICENSE](LICENSE)。
 
-- `engine/` 引擎运行时基于 Tyranor 模拟器逆向重写，上游涉及 Kirikiroid2 / ONScripter 等 GPL-2.0 项目，因此整个项目以 GPL-2.0 授权分发
-- 基于本项目发布的衍生作品须遵循 GPL-2.0 条款，并随发行物提供完整源码
-- Miuix 等第三方依赖按各自许可证引入
-- Siglus / RealLive / AVG32 / UK2 引擎运行库来自 [siglus_rs](https://github.com/xmoezzz/siglus_rs)（MPL-2.0，上述引擎的非官方 Rust 重写/移植），以其自身许可证引入；相应源码可于上游或其 fork 仓库获取
-- FVP 引擎运行库来自 [rfvp](https://github.com/xmoezzz/rfvp)（MPL-2.0，FVP 引擎的非官方 Rust 重写/移植），以其自身许可证引入；相应源码可于上游或其 fork 仓库获取
-- CMVS 引擎运行库来自 fork [cmvs-rs](https://github.com/Weiss-UltimateSavior/cmvs-rs)（上游 MIT OR Apache-2.0，Purple SOFTWARE CMVS 引擎的 Rust 重实现），固定上游 commit 并在构建时应用绝对路径补丁；源码与补丁清单见 `tools/cmvs/`
-- SystemNNN 运行库 `libsystemnnn.so` 由 PorisRora（Rooboko）维护的 Emberfall 源码构建。Emberfall 自有代码采用 GPL-2.0-only。原版 SystemNNN 由 tinyan 开发。默认碎裂网格由 Emberfall 自行生成，供全屏转场和图层碎裂共用。 [运行库对应源码](https://github.com/PorisRora/SystemNNN-Emberfall/tree/d0170741089e9f29de7329a5e0d4e37d06ff5c71) · [对应构建记录](engine/src/main/assets/licenses/systemnnn/ffmpeg-source.txt) · [归属与许可](engine/src/main/assets/licenses/systemnnn/upstream-source.txt)
-- System35 引擎运行库来自 [xsystem35-sdl2](https://github.com/kichikuou/xsystem35-sdl2)（GPL-2.0-or-later，AliceSoft System 3.x 开源重实现的 SDL2 移植），引擎源码与修改声明见 fork [xsystem35-sdl2](https://github.com/Weiss-UltimateSavior/xsystem35-sdl2)；本仓库仅保留预构建运行库、构建剧本与补丁记录（见 `engine/xsystem35/BUILD.md`）；其依赖 SDL2 / SDL2_mixer（zlib）、freetype（FTL/GPLv2）、libwebp（BSD-3-Clause）按各自许可证引入，许可证文本随 `engine/xsystem35/licenses/` 保留
-- System4 引擎运行库来自 [xsystem4](https://github.com/nunuhara/xsystem4)（GPL-2.0-or-later，AliceSoft System 4 引擎的开源重实现），引擎源码与修改声明见 fork [xsystem4](https://github.com/Weiss-UltimateSavior/xsystem4)；其依赖 libsys4（GPL-2.0-or-later，上游 [libsys4](https://github.com/nunuhara/libsys4)）同样取自 fork [libsys4](https://github.com/Weiss-UltimateSavior/libsys4)。Android 构建仅参考 `kichikuou/xsystem4-android` 的事实信息，未拷贝其任何文件。静态链入的依赖包括 libsndfile fork [libsndfile](https://github.com/Weiss-UltimateSavior/libsndfile)（`xsystem4` 分支，LGPL-2.1-or-later）、libogg / libvorbis / libwebp（BSD-3-Clause）、libjpeg-turbo（BSD-3-Clause / IJG）、libpng、libffi / libdeflate / cglm（MIT）及 freetype（同 System35）；SDL2（zlib）与 System35 共用 `libSDL2x.so`；xsystem4 与 libsys4 内的第三方例外（如 cJSON、pl_mpeg（MIT）、queue.h、base64.c（BSD）、kvec.h（MIT；`vector.h` 与之同声明）、sts_mixer（Unlicense，公有领域）、mt19937int（libsys4，LGPL-2.0-or-later 声明））按各自许可证引入。预构建运行库、构建剧本与补丁记录见 `engine/xsystem4/BUILD.md`，许可证文本随 `engine/xsystem4/licenses/` 保留
-- Anime4K GLSL 着色器（`engine/src/main/assets/anime4k/`）来自 [bloc97/Anime4K](https://github.com/bloc97/Anime4K)，按其 MIT 许可证引入（版权声明保留于各着色器文件头部）
-- VN-SR C08 / C12 / C16 原生2X滤镜来自 [AAAA1111-Lab/VN-SR](https://github.com/AAAA1111-Lab/VN-SR)，按 MIT 许可证引入；资源与许可说明见[VN-SR滤镜集](docs/vnsr-filters.md)。
+`engine/` 引擎运行时基于 Tyranor 模拟器逆向重写，上游涉及 Kirikiroid2 / ONScripter 等 GPL-2.0 项目，因此整个项目以 GPL-2.0 分发；衍生作品须遵循 GPL-2.0 条款，并随发行物提供完整源码。Miuix 等第三方依赖按各自许可证引入。
+
+| 运行库 | 上游 | 许可证 | 溯源与许可文本 |
+| --- | --- | --- | --- |
+| Siglus / RealLive / AVG32 / UK2 | [siglus_rs](https://github.com/xmoezzz/siglus_rs) | MPL-2.0 | 上游仓库 |
+| FVP | [rfvp](https://github.com/xmoezzz/rfvp) | MPL-2.0 | 上游仓库 |
+| CMVS | [cmvs-rs](https://github.com/Weiss-UltimateSavior/cmvs-rs) | MIT OR Apache-2.0 | `tools/cmvs/` |
+| SystemNNN | [SystemNNN-Emberfall](https://github.com/PorisRora/SystemNNN-Emberfall)（原版 SystemNNN 由 tinyan 开发） | GPL-2.0-only | `engine/src/main/assets/licenses/systemnnn/` |
+| System35 | [xsystem35-sdl2](https://github.com/kichikuou/xsystem35-sdl2) | GPL-2.0-or-later | `engine/xsystem35/BUILD.md`、`engine/xsystem35/licenses/` |
+| System4 | [xsystem4](https://github.com/nunuhara/xsystem4) / [libsys4](https://github.com/nunuhara/libsys4) | GPL-2.0-or-later | `engine/xsystem4/BUILD.md`、`engine/xsystem4/licenses/` |
+| Anime4K 着色器 | [bloc97/Anime4K](https://github.com/bloc97/Anime4K) | MIT | `engine/src/main/assets/anime4k/` |
+| VN-SR C08 / C12 / C16 | [AAAA1111-Lab/VN-SR](https://github.com/AAAA1111-Lab/VN-SR) | MIT | [VN-SR滤镜集](docs/vnsr-filters.md) |
+
+System35 / System4 的源码取自对应 fork（固定 commit），构建剧本、补丁记录与静态依赖（SDL2、freetype、libwebp、libsndfile 等）的完整许可证文本见上述 BUILD.md 与 `licenses/` 目录。
 
 ## 致谢
 - [Kirikiroid2](https://github.com/zeas2/Kirikiroid2): Kirikiroid2引擎
