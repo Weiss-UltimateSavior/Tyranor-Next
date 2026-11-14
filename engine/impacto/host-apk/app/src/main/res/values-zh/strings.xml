@@ -4,6 +4,7 @@
     <string name="request_rejected">启动请求被拒绝。</string>
     <string name="need_all_files_access">请为本应用开启“所有文件访问”，然后回到 Tyranor Next 重新启动游戏。</string>
     <string name="game_dir_missing">游戏目录已不存在。</string>
+    <string name="game_dir_unreadable">无法读取游戏目录，请确认已授予“所有文件访问”且目录仍存在。</string>
     <string name="storage_unavailable">无法准备该游戏的数据目录。</string>
     <string name="another_game_running">已有游戏在运行，请先退出再启动其他游戏。</string>
 </resources>

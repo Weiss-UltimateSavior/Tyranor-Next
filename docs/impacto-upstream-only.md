@@ -107,7 +107,7 @@ Git 子进程会清除继承的仓库定位与配置注入环境，避免跨仓�
 
 原版库编译、宿主接入和真实游戏测试未完成前，此 PR 保持 Draft，不作为可发布功能。
 
-## 主 App 与宿主 APK 接入（未在设备上运行）
+## 主 App 与宿主 APK 接入
 
 主 App 把 Impacto 当作外置 APK 引擎（与 Ren'Py、Ruffle 同一机制）：
 
@@ -115,10 +115,26 @@ Git 子进程会清除继承的仓库定位与配置注入环境，避免跨仓�
 - 扫描：`ImpactoGameCatalog` 按**精确大小写**的根目录条目名识别上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`），恰好一个 profile 全部命中才识别；`darling` 的要求集合与全小写的 mo6tw 完全相同，无法区分，所以这种布局一律不识别，不猜；`launchTarget` 保存 profile id（即 `-g` 参数）。影片档不作为特征。该表由 `tools/impacto/check-game-catalog.py` 对照固定提交的 `gamedefinitions.lua` 和各 `vfs.lua` 校验。
 - 现有 Windows／Steam 样本（小写 `.cpk`、`script.cpk`、无 `SCRIPT.cls`）**不会**被识别为 Impacto，也不会被误判成大写布局的 `chlcc`。
 - 启动：`ImpactoExternalEngineModule` 发 `com.tyranor.next.impacto.action.RUN`，携带游戏目录、profile、`gameKey` 与标题；游戏目录需要主 App 已取得的路径与「所有文件访问」。尚无下载地址，未安装时只提示缺失。
-- 存档：存在于宿主 APK 的私有外部目录，主 App 不提供文件存档管理；单游戏设置页只显示说明，没有可调项。
+- 存档：存在于宿主 APK 的内部私有目录（`files/games/<gameKey>/saves`），主 App 不提供文件存档管理；单游戏设置页只显示说明，没有可调项。
 - 宿主 APK 见 [`engine/impacto/host-apk/README.md`](../engine/impacto/host-apk/README.md)：只用上游公开钩子，直接引用已校验的上游 Java 源码，不复制、不修改；需要候选库 `libimpacto.so` 才能打包，目前仅 Linux 能构建它。
 
-这是接入代码，**不是兼容性验收**：没有编出可安装的 APK，没有在任何设备上启动过，也没有对任何游戏数据验证过。
+这是接入代码，**不是兼容性验收**：没有编出带引擎库的 APK，引擎没有运行过，也没有对任何游戏数据验证过。
+
+### 真机核对（2026-11-14，一台设备，引擎库缺席）
+
+设备 PPG-AN00，Android 17（SDK 37），arm64-v8a。主 App 用隔离包名 `com.tyranor.next.impactotest` 安装；宿主用 `-PimpactoHostOnly=true` 打出的 `0.1.0-hostonly` 诊断包（不含 `libimpacto.so`，无法启动引擎）。数据是自建的零字节占位文件，不含任何游戏内容。
+
+| 项目 | 结果 |
+| --- | --- |
+| 主 App 启动、引擎页 | 正常；多出一张 Impacto 卡片，用指定的齿轮图，红叉表示宿主未安装；点开显示“模块未安装” |
+| 缺“所有文件访问”时发起请求 | 宿主提示并跳转系统授权页 |
+| 合法请求 | 入口 Activity 校验通过，建出内部数据根，`gamedata/mo6tw` 链接可读到外部目录的 9 个条目；游戏 Activity 在独立 `:game` 进程里启动上游 `SDLActivity`，仅因诊断包没有库而报 `libimpacto.so not found` |
+| 4 种恶意请求（他人私有目录、错误 key、未知 profile、系统路径） | 全部被拒，游戏 Activity 未启动 |
+| 点 Exit | `:game` 进程结束，入口进程和主 App 无崩溃 |
+
+真机发现并已修复的问题：**外部存储（含应用自己的 `Android/data`）是 FUSE，拒绝创建符号链接**（`createSymbolicLink` 抛异常，shell 的 `ln -s` 也被拒），原设计把数据根放在外部目录会失败，现改为放在宿主内部存储。此外，一个遗留在 `build/` 里的假库曾被诊断包误打进 APK，现在诊断包不再引用该目录。
+
+**未覆盖**：引擎启动、任何游戏数据、画面/声音/输入、存读档、从主 App 的游戏库点击启动的完整链路（用 `am start` 模拟了同样的 Intent，识别扫描用单测而非真机覆盖）、其他 Android 版本和机型。
 
 ## 本轮检查
 
@@ -131,4 +147,4 @@ Git 子进程会清除继承的仓库定位与配置注入环境，避免跨仓�
 - CPK 检查回归：`test-inspect-cpk.py` 的 14 项合成档案用例通过，覆盖干净布局、偏移错位、列类型不符、按魔数而非标志位解掩码、无 ITOC／ITOC 损坏、`Files` 不符与重复 ID、`@UTF` 版本字段、未标记的 LAYLA 成员、恶意表头不崩溃不挂死、截断、非 CPK 和“不改动样本”；它们只验证检查工具，不涉及游戏兼容性。
 - 官方固定 checkout 的 tree 为 `a2a0b7996a46c5d067efbeb8747cef103a69b157`，Git 洁净检查通过。
 - 用 NDK 28 对原版 `src/io/vfs.cpp`、`src/io/fsfolderarchive.cpp` 执行语法与 ARM64 对象编译均通过。为隔离诊断，外部探针配置禁用了 OpenGL/ImGui 并补齐正常 PCH 标准头；不是完整 CMake 构建。外部直接析构 `FSFolderArchive` 的合成探针会触发不完整类型错误，但不能据此认定当前上游构建必然失败，不能作为恢复引擎补丁的理由。
-- 尚未执行完整 ARM64 编译/链接、APK/JNI、真实游戏或 Android 设备验收。
+- 尚未执行完整 ARM64 编译/链接、带引擎库的 APK/JNI 或真实游戏验收；宿主 Java 层与主 App 入口已在一台真机上核对（见上节）。

@@ -4,6 +4,7 @@
     <string name="request_rejected">Launch request rejected.</string>
     <string name="need_all_files_access">Allow all files access for this app, then start the game again from Tyranor Next.</string>
     <string name="game_dir_missing">The game folder no longer exists.</string>
+    <string name="game_dir_unreadable">The game folder cannot be read. Check that all files access is granted and the folder still exists.</string>
     <string name="storage_unavailable">Could not prepare this game\'s data folder.</string>
     <string name="another_game_running">Another game is running. Exit it before starting a different one.</string>
 </resources>

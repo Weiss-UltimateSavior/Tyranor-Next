@@ -20,7 +20,7 @@ Tyranor Next 通过 Intent 启动本 APK；本 APK 不属于主 App 的 Gradle �
 | 上游钩子 | 宿主行为 |
 | --- | --- |
 | `SDLActivity.getArguments()` | 传原版命令行 `-g <profile> -bp <basepaths.lua> -gc <gamedefinitions.lua> -uc <userconfig.toml>` |
-| `ImpactoActivity.getChosenDirectory()` | 返回每个游戏独立的数据根 `<外部私有目录>/games/<gameKey>` |
+| `ImpactoActivity.getChosenDirectory()` | 返回每个游戏独立的数据根 `<内部私有目录>/games/<gameKey>` |
 | `ImpactoActivity.chooseDirectory()` / `resetChosenDir()` | 空实现：游戏目录由 Tyranor Next 选择，禁用上游目录选择器 |
 
 原生代码经 JNI 在 Activity 实例上调用后三者，因此重写会被命中。
@@ -56,10 +56,13 @@ Tyranor Next 通过 Intent 启动本 APK；本 APK 不属于主 App 的 Gradle �
 
 构建任务（`preBuild`，覆盖编译、lint、单测）会先运行 `verify-upstream.py`，检出不干净或版本不对即失败；打包前还会核对候选库：`candidate.json` 必须来自 `../source-lock.json`，且 `libimpacto.so` 的 SHA-256 与报告一致。
 
+仅验证 Java 层（请求校验、权限流程、数据目录与符号链接）时，可加 `-PimpactoHostOnly=true`：不打包 `libimpacto.so`，
+版本名带 `-hostonly`，**该 APK 起不了引擎，不得分发**。
+
 ## 限制
 
 - 仅 Android 11（API 30）及以上：需要「所有文件访问」才能经路径读取游戏目录。
 - 每个进程只跑一个游戏；游戏 Activity 结束时宿主结束进程，避免 SDL 的进程级状态残留。
-- 存档在宿主的私有外部目录内，主 App 无法管理或同步。
+- 数据根与存档在宿主的内部私有目录内（`files/games/<gameKey>/`），主 App 无法管理或同步。外部存储（含 `Android/data`）是 FUSE，不允许建符号链接，已在真机上确认，所以数据根必须放在内部存储。
 - 尚未发布 APK，也没有下载地址；主 App 在未安装时只提示缺失。
-- **未在任何设备上运行过，也未与真实游戏数据验证。**
+- **引擎本体未运行过，也未与真实游戏数据验证。** 宿主 Java 层（请求校验、授权流程、数据根与链接、`:game` 进程）已用诊断包在一台真机上验证，详见 `docs/impacto-upstream-only.md`。

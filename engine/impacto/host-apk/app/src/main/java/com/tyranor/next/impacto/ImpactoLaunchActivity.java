@@ -61,18 +61,25 @@ public final class ImpactoLaunchActivity extends Activity {
             return;
         }
 
-        File filesDir = getExternalFilesDir(null);
-        if (filesDir == null) {
-            Toast.makeText(this, R.string.storage_unavailable, Toast.LENGTH_LONG).show();
-            return;
-        }
+        // The data root lives in internal storage: shared and app-specific external storage are FUSE-backed on
+        // Android and refuse symbolic links (verified on a device), while internal storage allows them.
+        File filesDir = getFilesDir();
+        File root;
         try {
-            request.prepareDataRoot(filesDir);
+            root = request.prepareDataRoot(filesDir);
         } catch (IOException | RuntimeException e) {
             Log.e(TAG, "Could not prepare the data root", e);
             Toast.makeText(this, R.string.storage_unavailable, Toast.LENGTH_LONG).show();
             return;
         }
+        // Read the game folder through the link the engine will use, so an unreadable folder is reported here.
+        String[] entries = new File(root, "gamedata/" + request.profile).list();
+        if (entries == null) {
+            Log.e(TAG, "The game folder is not readable through the data-root link");
+            Toast.makeText(this, R.string.game_dir_unreadable, Toast.LENGTH_LONG).show();
+            return;
+        }
+        Log.i(TAG, "Game folder readable through the link: " + entries.length + " entries");
 
         Intent game = new Intent()
                 .setComponent(new ComponentName(this, TyranorImpactoActivity.class))

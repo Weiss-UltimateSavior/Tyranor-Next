@@ -24,10 +24,12 @@ import java.io.File;
 public final class TyranorImpactoActivity extends ImpactoActivity {
     private ImpactoRequest request;
     private File externalFilesDir;
+    private File internalFilesDir;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         externalFilesDir = getExternalFilesDir(null);
+        internalFilesDir = getFilesDir();
         request = ImpactoIntents.read(getIntent());
         super.onCreate(savedInstanceState);
     }
@@ -42,15 +44,16 @@ public final class TyranorImpactoActivity extends ImpactoActivity {
                 "-g", request.profile,
                 "-bp", new File(externalFilesDir, "basepaths.lua").getAbsolutePath(),
                 "-gc", new File(externalFilesDir, "gamedefinitions.lua").getAbsolutePath(),
-                "-uc", new File(ImpactoRequest.dataRoot(externalFilesDir, request.gameKey), "userconfig.toml")
+                "-uc", new File(ImpactoRequest.dataRoot(internalFilesDir, request.gameKey), "userconfig.toml")
                         .getAbsolutePath(),
         };
     }
 
     @Override
     public String getChosenDirectory() {
-        if (request != null && externalFilesDir != null) {
-            return ImpactoRequest.dataRoot(externalFilesDir, request.gameKey).getAbsolutePath();
+        if (request != null) {
+            // Internal per-game root holding gamedata/<profile> (a link to the game folder), patches/ and saves/.
+            return ImpactoRequest.dataRoot(internalFilesDir, request.gameKey).getAbsolutePath();
         }
         return externalFilesDir != null ? externalFilesDir.getAbsolutePath() : super.getChosenDirectory();
     }
