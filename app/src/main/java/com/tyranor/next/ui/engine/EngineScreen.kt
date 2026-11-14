@@ -66,6 +66,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -103,6 +104,7 @@ import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.LocalDialogBodyExit
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.NoRippleButton
@@ -415,6 +417,8 @@ fun EngineScreen(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    // 点条目 = 先让弹窗播完退场再执行动作；直接置空状态会把弹窗瞬间移出组合，退场动画一帧都来不及播
+                    val bodyExit = LocalDialogBodyExit.current
                     engineDialogEntries(context, externalModules.installed, dialogEngine).forEachIndexed { index, entry ->
                         AppNavItem(
                             title = entry.title,
@@ -424,13 +428,16 @@ fun EngineScreen(
                             leadingIcon = R.drawable.ic_engine_chip,
                             containerColor = DialogItemSurface,
                         ) {
-                            if (!entry.installed && entry.installUrl != null) {
-                                val opened = ExternalEngineLauncher.openInstallPage(context, entry.installUrl)
-                                if (!opened) {
-                                    AppNotice.makeText(context, engineOpenDownloadFailedMessage, Toast.LENGTH_SHORT, AppNotice.Kind.Failure).show()
+                            val action = {
+                                if (!entry.installed && entry.installUrl != null) {
+                                    val opened = ExternalEngineLauncher.openInstallPage(context, entry.installUrl)
+                                    if (!opened) {
+                                        AppNotice.makeText(context, engineOpenDownloadFailedMessage, Toast.LENGTH_SHORT, AppNotice.Kind.Failure).show()
+                                    }
                                 }
+                                moduleDialogEngine = null
                             }
-                            moduleDialogEngine = null
+                            if (bodyExit != null) bodyExit.closeThen(action) else action()
                         }
                     }
                 }
@@ -462,6 +469,7 @@ fun EngineScreen(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    val bodyExit = LocalDialogBodyExit.current
                     entries.forEachIndexed { index, target ->
                         val installed = emulatorInstallStates[target.packageName] == true
                         AppNavItem(
@@ -473,12 +481,15 @@ fun EngineScreen(
                             leadingIcon = R.drawable.ic_engine_chip,
                             containerColor = DialogItemSurface,
                         ) {
-                            if (installed) {
-                                ExternalEmulatorLauncher.openHome(context, target)
-                            } else if (!ExternalEngineLauncher.openInstallPage(context, target.installUrl)) {
-                                AppNotice.makeText(context, engineOpenDownloadFailedMessage, Toast.LENGTH_SHORT, AppNotice.Kind.Failure).show()
+                            val action = {
+                                if (installed) {
+                                    ExternalEmulatorLauncher.openHome(context, target)
+                                } else if (!ExternalEngineLauncher.openInstallPage(context, target.installUrl)) {
+                                    AppNotice.makeText(context, engineOpenDownloadFailedMessage, Toast.LENGTH_SHORT, AppNotice.Kind.Failure).show()
+                                }
+                                emulatorDialogEngine = null
                             }
-                            emulatorDialogEngine = null
+                            if (bodyExit != null) bodyExit.closeThen(action) else action()
                         }
                     }
                 }
@@ -868,18 +879,26 @@ private fun EngineRowCard(
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize(),
                         )
-                        // 默认主题保持原有的 NavWhite 色遮罩（44 → 47dp，再加长 3dp）
+                        // 默认主题保持原有的 NavWhite 色遮罩（44 → 47dp，再加长 3dp）。
+                        // 遮罩向右多画 2dp 纯 NavWhite 盖住图片右缘：滚动果冻让卡片带着缩放时，图片与遮罩的边缘
+                        // 各被抗锯齿一次，边缘像素会漏出约 c(1-c) 的图片底色，表现为图标与白区之间的一条细线；
+                        // 多出来的部分落在同色的卡片底上，静止外观不变。
                         Box(
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)
                                 .fillMaxHeight()
                                 .width(fadeWidth)
-                                .background(
-                                    Brush.horizontalGradient(
-                                        0f to Color.Transparent,
-                                        1f to NavWhite,
-                                    ),
-                                ),
+                                .drawBehind {
+                                    drawRect(
+                                        brush = Brush.horizontalGradient(
+                                            0f to Color.Transparent,
+                                            1f to NavWhite,
+                                            startX = 0f,
+                                            endX = size.width,
+                                        ),
+                                        size = Size(size.width + 2.dp.toPx(), size.height),
+                                    )
+                                },
                         )
                     }
                 }

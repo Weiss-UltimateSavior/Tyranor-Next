@@ -329,8 +329,13 @@ internal fun AppAlertDialog(
                                             )
                                             .padding(top = 14.dp),
                                     ) {
-                                        if (showButtonRow) text() else {
-                                            CompositionLocalProvider(LocalDialogExit provides exitController) { text() }
+                                        if (showButtonRow) {
+                                            CompositionLocalProvider(LocalDialogBodyExit provides exitController) { text() }
+                                        } else {
+                                            CompositionLocalProvider(
+                                                LocalDialogExit provides exitController,
+                                                LocalDialogBodyExit provides exitController,
+                                            ) { text() }
                                         }
                                     }
                                     if (showButtonRow) {
@@ -404,6 +409,13 @@ internal class DialogExitController(val closeThen: (action: () -> Unit) -> Unit)
 
 /** 当前按钮所在弹窗的退场控制器；为 null 时按钮直接执行动作。 */
 internal val LocalDialogExit = staticCompositionLocalOf<DialogExitController?> { null }
+
+/**
+ * 弹窗正文内「点一下就关闭弹窗」的条目所用的退场控制器（正文槽恒有，不论是否带按钮行）。
+ * 与 [LocalDialogExit] 分开：正文里的 [com.tyranor.next.ui.common.DialogTextButton] 等
+ * 仍按各自语义决定是否先退场，不会被连带改成先退场再执行。
+ */
+internal val LocalDialogBodyExit = staticCompositionLocalOf<DialogExitController?> { null }
 
 /** Deliver an accepted action once even when exit is cancelled, then always release the exit guard. */
 internal suspend fun runDialogExitAction(
