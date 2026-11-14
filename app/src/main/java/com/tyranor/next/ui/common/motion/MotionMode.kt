@@ -12,7 +12,7 @@ import com.tyranor.next.core.settings.AppSettingsStore
  *
  * 持久化与内存态在 core 的 [AppSettingsStore.motionEnhancedState]；这里是给 Compose 读的快照镜像，
  * 由 [ProvideMotionEnvironment] 在每个 Activity 根部同步。非 Compose 代码（Activity 转场）也可直接读。
- * 下拉滑选选择块的跟手、吸附与确认弹簧由 `OverlayDropdownPreference` 自绘路径管理；
+ * 下拉选择按用户要求在两档共用无选框选择（按下即为选择，可滑选）：候选只改文字色，松手才提交；
  * 第三方 Miuix 弹层的进退场仍使用库本身的动画，不在这里反射修改库常量。
  */
 object MotionMode {
