@@ -952,7 +952,7 @@
     <string name="onboarding_coach_home_web_body">Your configured web home is shown here.</string>
     <string name="onboarding_coach_games_folder_title">Start by adding a folder</string>
     <string name="onboarding_coach_games_folder_body">On first use, tap Add folder to add a game directory and automatically scan for supported games.</string>
-    <string name="onboarding_coach_games_title">Use plus for manual entries</string>
+    <string name="onboarding_coach_games_title">When manual addition is needed</string>
     <string name="onboarding_coach_games_body">The top plus button adds a PC game with an exe or an installed Android app manually. For supported engine games, use Add folder to scan them into the library.</string>
     <string name="onboarding_coach_games_search_title">Find a game</string>
     <string name="onboarding_coach_games_search_body">Use search to filter the games in your library by name.</string>

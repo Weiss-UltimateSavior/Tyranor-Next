@@ -952,7 +952,7 @@
     <string name="onboarding_coach_home_web_body">設定したウェブホームをここに表示します。</string>
     <string name="onboarding_coach_games_folder_title">まずフォルダーを追加</string>
     <string name="onboarding_coach_games_folder_body">初めて使うときは「フォルダーを追加」でゲームフォルダーを追加すると、対応ゲームを自動スキャンします。</string>
-    <string name="onboarding_coach_games_title">手動追加にはプラスを使用</string>
+    <string name="onboarding_coach_games_title">手動追加が必要なとき</string>
     <string name="onboarding_coach_games_body">上部のプラスは、exe を指定する PC ゲームやインストール済み Android アプリの手動追加用です。対応エンジンのゲームは「フォルダーを追加」からスキャンして登録してください。</string>
     <string name="onboarding_coach_games_search_title">ゲームを探す</string>
     <string name="onboarding_coach_games_search_body">検索欄でライブラリ内のゲームを名前から絞り込めます。</string>
