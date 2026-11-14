@@ -386,6 +386,9 @@ final class GameRunner {
         initialized=true;
     }
     private void configure(long candidate){
+        configure(candidate,true);
+    }
+    private void configure(long candidate,boolean applyPlaybackSettings){
         if(runtime==null&&initialPcSystem!=null&&initialPcSystem.hasDisplayOptions()){
             NativeGame.setPcDisplayOptions(candidate,initialPcSystem.noSkipFrame(),initialPcSystem.mouseCursor());
             if(initialPcSystem.live){
@@ -402,7 +405,8 @@ final class GameRunner {
         }
         // TYN sets the initial display mode. Later candidates inherit the live
         // mode from their fork, even while a disk write is still pending.
-        NativeGame.setParameters(candidate,RuntimeSettingsAdapter.persistedOverrides(userPreferences,legacySource,false));
+        // PC loading owns its Auto/Skip decision, including clearAutoAfterLoad.
+        NativeGame.setParameters(candidate,RuntimeSettingsAdapter.persistedOverrides(userPreferences,legacySource,false,applyPlaybackSettings));
         if(runtime==null)NativeGame.setParameters(candidate,RuntimeSettingsAdapter.screenMode(launchFullscreen));
         if(runtime==null&&initialProgress!=null){
             if(initialProgress.read!=null)NativeGame.restoreReadState(candidate,initialProgress.read);
@@ -415,7 +419,7 @@ final class GameRunner {
         }
         int[] owners=RuntimeSettingsAdapter.persistedOwners(userPreferences,legacySource);
         if(owners.length!=0)NativeGame.setAuxiliaryState(candidate,owners);
-        NativeGame.setSkip(candidate,false);
+        if(applyPlaybackSettings)NativeGame.setSkip(candidate,false);
     }
     private void publishParameters(){
         if(handle==0)return;
@@ -585,7 +589,7 @@ final class GameRunner {
     private void openTitle(Capture previous,long candidate) throws IOException {
         boolean launching=runtime==null;
         boolean unsaved;
-        int[] state=new int[NativeGame.META_SIZE];TitleMenu title=null;long stored;
+        int[] state=new int[NativeGame.META_SIZE];TitleMenu title=null;long stored,plane=0;
         List<LogoPanel.Slide> logos=java.util.Collections.emptyList();
         try{
             tasks.removeCallbacks(ticker);tasks.removeCallbacks(resumeStoryMovie);pendingMovieExitColor=null;moviePlaying=false;movieError=null;
@@ -608,17 +612,22 @@ final class GameRunner {
             if(uiAssets==null)uiAssets=GameUiAssets.load(root,candidate);
             if(dialogueStyle==null)dialogueStyle=DialogueStyle.load(root,codec,uiAssets);
             NativeGame.tick(candidate,0,0,0,false,0,false,state);
-        }catch(Exception|LinkageError e){if(candidate!=0)NativeGame.close(candidate);if(handle!=0)schedule();throw e;}
-        if(handle!=0)NativeGame.close(handle);
-        offerPlaneToken(NativeGame.messagePlaneToken(candidate));
+            plane=NativeGame.messagePlaneToken(candidate);
+            commitRuntime(candidate);
+        }catch(Exception|LinkageError e){
+            if(plane!=0)NativeGame.releaseMessagePlane(plane);
+            if(candidate!=0)NativeGame.close(candidate);if(handle!=0)schedule();throw e;
+        }
+        long retired=handle;handle=candidate;
+        if(retired!=0)NativeGame.close(retired);
         movieError=null;
-        handle=candidate;commitRuntime(candidate);onTitle=true;menuOpen=false;menuModal=null;systemMenuModal=false;
+        onTitle=true;menuOpen=false;menuModal=null;systemMenuModal=false;
         choiceClicking=false;failed=false;history=null;current=null;shownWait=-1;resetDialogueDecorations();
         configMask=0;
         replaying=false; galleryPage=null; currentTitle=title; galleryWritten=unsaved?-1:stored;
         galleryCue=title==null?-1:title.musicNumber();
         gallerySong=-1; galleryMusicPlaying=galleryMusicPaused=false; queueGalleryWrite();
-        System.arraycopy(state,0,meta,0,meta.length);bindSurface(true);
+        System.arraycopy(state,0,meta,0,meta.length);offerPlaneToken(plane);bindSurface(true);
         ui.style(dialogueStyle);ui.panels(uiAssets);publishQuickSlot();publishParameters();
         if(launching){
             titleBackgroundHeld=true;
@@ -916,6 +925,7 @@ final class GameRunner {
     void enter(TitleMenu.Action action,String scenarioVariable,int scenario,Runnable onFailure){
         if(!tasks.post(()->{
             if(!onTitle||failed||closing){onFailure.run();return;}
+            long previous=handle;
             try{
                 Integer slot=null;
                 if(action==TitleMenu.Action.CONTINUE||action==TitleMenu.Action.LAST_LOAD){
@@ -927,6 +937,7 @@ final class GameRunner {
                 else open(null,false);
             }
             catch(Exception|LinkageError e){
+                if(handle!=previous){broken(e);return;}
                 schedule();
                 noticeFailure(R.string.engine_systemnnn_host_enter_failed,e);
                 onFailure.run();
@@ -945,14 +956,14 @@ final class GameRunner {
         writeGallery();
         boolean unsaved=handle!=0&&galleryWritten!=NativeGame.galleryRevision(handle);
         long candidate=openNative();
-        long stored;
+        long stored,plane=0;
         try{
-            configure(candidate);
+            configure(candidate,pcSave==null);
             stored=restoreGallery(candidate);
             if(pcSave!=null){
                 if(handle!=0&&!onTitle&&!replaying)
                     NativeGame.setScriptRandomState(candidate,NativeGame.scriptRandomState(handle));
-                NativeGame.restorePcSave(candidate,pcSave,state);
+                NativeGame.restorePcSave(candidate,pcSave,state,handle!=0&&!onTitle&&!replaying?handle:0);
             }else{
                 // The PC starts an ordinary new game when the configured name is not a variable.
                 if(preset&&!NativeGame.setStoryVariable(candidate,resourceName(scenarioVariable),scenario))
@@ -961,22 +972,27 @@ final class GameRunner {
                 NativeGame.tick(candidate,0,0,0,false,0,false,state);
                 next.appendWithClock(0,0,0,false,0,false,state[NativeGame.CLOCK_DATE],state[NativeGame.CLOCK_MILLISECONDS]);
             }
-            configure(candidate);
-        }catch(Exception|LinkageError e){NativeGame.close(candidate);throw e;}
+            configure(candidate,pcSave==null);
+            plane=NativeGame.messagePlaneToken(candidate);
+            commitRuntime(candidate);
+        }catch(Exception|LinkageError e){
+            if(plane!=0)NativeGame.releaseMessagePlane(plane);
+            NativeGame.close(candidate);throw e;
+        }
         stopSound();
-        if(handle!=0)NativeGame.close(handle);
-        offerPlaneToken(NativeGame.messagePlaneToken(candidate));
-        handle=candidate;commitRuntime(candidate);
-        bindSurface(true);
+        long retired=handle;handle=candidate;
+        if(retired!=0)NativeGame.close(retired);
         galleryWritten=unsaved?-1:stored;
         startupStage=null;startupConfig=null;titleBackgroundHeld=false;startupTitleFramePending=false;
         tasks.removeCallbacks(resumeStoryMovie);pendingMovieExitColor=null;moviePlaying=false;movieError=null;
         onTitle=false;menuOpen=holdStory;systemMenuModal=false;choiceClicking=false;history=next;System.arraycopy(state,0,meta,0,meta.length);
+        failed=false;shownWait=-1;current=null;resetDialogueDecorations();autoMode=false;skipMode=false;
+        offerPlaneToken(plane);
         if(finishEndedRun())return;
         if(!systemStateEstablished)writeReadLines();
         queueGalleryWrite();
         GameSave.Run last=next.lastInput();x=last.x;y=last.y;
-        failed=false;shownWait=-1;current=null;resetDialogueDecorations();autoMode=false;skipMode=false;syncModes();
+        bindSurface(true);syncModes();
         ui.style(dialogueStyle);
         publishParameters();if(save!=null){NativeGame.captureBacklogJump(handle,0);ui.loaded();}
         if(meta[0]==NativeGame.MOVIE)startStoryMovie();else updateUi();
@@ -1652,7 +1668,7 @@ final class GameRunner {
     void replayGallery(int group,int index) {
         tasks.post(() -> {
             if (!onTitle || galleryPage==null || galleryPage.screen!=GalleryCatalog.Screen.SCENE) return;
-            long candidate=0;
+            long candidate=0,plane=0;
             int[] state=new int[NativeGame.META_SIZE];
             long stored;
             try {
@@ -1668,16 +1684,17 @@ final class GameRunner {
                 NativeGame.setParameters(candidate,new int[]{6,0});
                 stored=restoreGallery(candidate);
                 NativeGame.tick(candidate,0,0,0,false,0,false,state);
+                plane=NativeGame.messagePlaneToken(candidate);
             } catch (RuntimeException e) {
+                if(plane!=0)NativeGame.releaseMessagePlane(plane);
                 if (candidate!=0) NativeGame.close(candidate);
                 noticeFailure(R.string.engine_systemnnn_host_replay_failed,e); return;
             }
             tasks.removeCallbacks(ticker); tasks.removeCallbacks(resumeStoryMovie); pendingMovieExitColor=null; moviePlaying=false;movieError=null;
             stopSound(); NativeGame.close(handle);
-            offerPlaneToken(NativeGame.messagePlaneToken(candidate));
             handle=candidate; galleryWritten=stored; onTitle=false; replaying=true; menuOpen=false; history=null;
             current=null; shownWait=-1; resetDialogueDecorations(); x=y=0;
-            System.arraycopy(state,0,meta,0,meta.length);
+            System.arraycopy(state,0,meta,0,meta.length);offerPlaneToken(plane);
             bindSurface(true);
             ui.galleryReplayStarted(); queueGalleryWrite();
             if (meta[0]==NativeGame.END) finishReplay();
@@ -1795,6 +1812,7 @@ final class GameRunner {
     }
     private void loadSlot(int slot,boolean quick,java.util.function.Consumer<Boolean> done){
         boolean success=false;
+        long previous=handle;
         try{
             openSlot(slot,done!=null);
             success=true;
@@ -1804,9 +1822,9 @@ final class GameRunner {
         }catch(FileNotFoundException e){
             if(!quick)ui.notice(text(R.string.engine_systemnnn_host_slot_missing));
         }catch(Exception e){
-            noticeFailure(R.string.engine_systemnnn_host_load_failed,e);
+            if(handle!=previous)broken(e);else noticeFailure(R.string.engine_systemnnn_host_load_failed,e);
         }finally{
-            if(!success){
+            if(!success&&!failed){
                 if(done==null&&menuOpen)menu(false);else schedule();
             }
             if(done!=null)done.accept(success);

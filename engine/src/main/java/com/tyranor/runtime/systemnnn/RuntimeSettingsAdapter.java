@@ -41,8 +41,11 @@ final class RuntimeSettingsAdapter {
     }
 
     static int[] persistedOverrides(SharedPreferences preferences,File game,boolean includeScreenMode){
+        return persistedOverrides(preferences,game,includeScreenMode,true);
+    }
+    static int[] persistedOverrides(SharedPreferences preferences,File game,boolean includeScreenMode,boolean includeAutoMode){
         String prefix=namespace(game);Map<String,?> all=preferences.getAll();List<Integer> result=new ArrayList<>();
-        for(int id=0;id<572;id++)if(supported(id)&&(includeScreenMode||id!=SCREEN_MODE)){
+        for(int id=0;id<572;id++)if(supported(id)&&(includeScreenMode||id!=SCREEN_MODE)&&(includeAutoMode||id!=6)){
             Integer value=integer(all,prefix+id);if(value!=null){result.add(id);result.add(value);}
         }
         // Migration TODO: old global eight-setting values used different units

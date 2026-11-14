@@ -50,6 +50,16 @@ public final class OriginalSettingsModelTest {
             new Class<?>[]{SharedPreferences.class},(prefs,method,args)->entries);
     }
 
+    @Test public void pcLoadKeepsItsAutoDecisionInsteadOfReapplyingPreferences(){
+        File game=folder.getRoot();
+        String prefix=RuntimeSettingsAdapter.ownerKey(game,0).replace("owner.0","");
+        for(int auto:new int[]{0,1}){
+            SharedPreferences preferences=values(Map.of(prefix+6,auto,prefix+105,72));
+            assertArrayEquals(new int[]{6,auto,105,72},RuntimeSettingsAdapter.persistedOverrides(preferences,game));
+            assertArrayEquals(new int[]{105,72},RuntimeSettingsAdapter.persistedOverrides(preferences,game,false,false));
+        }
+    }
+
     @Test public void characterArtUsesConfiguredVoiceGroupAndStoryVariant() throws Exception {
         Path init=folder.newFolder("init2").toPath();
         String config="voiceCutButtonNumber 1\n"+

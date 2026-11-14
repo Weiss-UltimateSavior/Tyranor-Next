@@ -7,6 +7,10 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
+import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
@@ -47,18 +51,7 @@ final class GameBacklogPanel extends GameUiPanel {
     }
 
     static int colorForTag(char tag){
-        switch(tag){
-            case 'B':case 0x9ed2:return 0xff000000;
-            case 'U':case 0x9752:return 0xff0000ff;
-            case 'R':case 0x8d64:return 0xffff0000;
-            case 'P':case 0x7d2b:return 0xffff00ff;
-            case 'G':case 0x7dd1:return 0xff00ff00;
-            case 'C':case 0x6c34:return 0xff00ffff;
-            case 'Y':case 0x9ec4:return 0xffffff00;
-            case 'W':case 0x767d:return 0xffffffff;
-            case 'O':case 0x6a59:return 0xffff8000;
-            default:return 0;
-        }
+        return DialogueMarkup.colorTag(tag);
     }
 
     GameBacklogPanel(Context context,GameUiAssets assets,DialogueStyle style,int width,int height,Runnable close,Replay replay,LongConsumer jump){
@@ -104,7 +97,9 @@ final class GameBacklogPanel extends GameUiPanel {
                 voices=Collections.emptyList();
                 jumpId=0;
             }
-            wrap(style.markup(line.body),line.color<0?style.bodyColor:0xff000000|line.color,voices,jumpId,measure,available);
+            DialogueMarkup body=style.markupStyle.backlog(line.body);
+            if(body.omittedSymbol)Log.w("SystemNNN","Backlog decorative cat glyph is unavailable; retaining its original text");
+            wrap(body,line.color<0?style.bodyColor:0xff000000|line.color,voices,jumpId,measure,available);
         }
         first=Math.max(0,rows.size()-visible);
         render();
@@ -151,6 +146,12 @@ final class GameBacklogPanel extends GameUiPanel {
                 inset=annotated.markupTopInset(font);text=annotated;
             }
             text.setMaxLines(1);text.setLetterSpacing(space/(float)font);
+            if(!row.text.colors.isEmpty()){
+                SpannableString colored=new SpannableString(row.text.text);
+                for(DialogueMarkup.ColorRun run:row.text.colors)
+                    colored.setSpan(new ForegroundColorSpan(run.color),run.start,run.end,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                text.setText(colored);
+            }
             put(text,x,top-inset,canvasWidth-x,Math.max(step,font)+inset);
             rowActions(row,top);
         }
