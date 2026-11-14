@@ -61,13 +61,19 @@ internal class SystemNnnSaveStore(
         val result = linkedMapOf<String, File>()
         fun visit(folder: File) {
             val children = folder.listFiles() ?: throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            val names = hashSetOf<String>()
             for (child in children) {
                 val relative = safeRoot.toPath().relativize(child.toPath())
+                val directory = SystemNnnHost.isManagedSaveDirectory(relative)
+                val file = SystemNnnHost.isManagedSaveFile(relative) ||
+                    restoreRetired && SystemNnnHost.isRetiredRollbackFile(relative)
+                if (!directory && !file) continue
+                if (!names.add(foldSaveName(child.name))) {
+                    throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+                }
                 when {
-                    SystemNnnHost.isManagedSaveDirectory(relative) ->
-                        visit(SavePathSafety.requireSafeRoot(child, safeRoot))
-                    SystemNnnHost.isManagedSaveFile(relative) ||
-                        restoreRetired && SystemNnnHost.isRetiredRollbackFile(relative) ->
+                    directory -> visit(SavePathSafety.requireSafeRoot(child, safeRoot))
+                    file ->
                         result[relative.toString().replace(File.separatorChar, '/')] = SavePathSafety.requireSafeFile(safeRoot, child)
                 }
             }
@@ -104,12 +110,13 @@ internal class SystemNnnSaveStore(
                 it.write(3)
                 it.fd.sync()
             }
-            // Older backups omit PC slots, global archives, or an entire chart family.
+            // Older backups omit PC slots, global archives, modern chart flags, or the legacy
+            // chart family. Modern chart nodes were already backed up and retain replacement semantics.
             apply(
                 incoming,
                 preservePcSlots = source != null && incoming.keys.none(SystemNnnHost::isPcStorySave),
                 preservePcGlobal = source != null && incoming.keys.none(SystemNnnHost::isPcGlobalArchive),
-                preserveModernChart = source != null && incoming.keys.none(SystemNnnHost::isModernChartProgress),
+                preserveModernChartProgress = source != null && incoming.keys.none(SystemNnnHost::isModernChartProgress),
                 preserveLegacyChart = source != null && incoming.keys.none(SystemNnnHost::isLegacyChartSave),
             )
             Files.delete(pending.toPath())
@@ -147,7 +154,8 @@ internal class SystemNnnSaveStore(
             if (!Files.isDirectory(before.toPath(), NOFOLLOW_LINKS)) {
                 throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
             }
-            // Empty markers predate PC slots; versions before 3 did not collect PC chart families.
+            // Empty markers predate PC slots; versions before 3 did not collect modern chart
+            // flags or legacy chart files. Their backups already included modern chart nodes.
             val version = Files.newInputStream(pending.toPath(), NOFOLLOW_LINKS).use {
                 val version = it.read()
                 if (version == -1 || version in 1..3 && it.read() == -1) version
@@ -157,7 +165,7 @@ internal class SystemNnnSaveStore(
                 saveFiles(before, restoreRetired = version == -1),
                 preservePcSlots = version == -1,
                 preservePcGlobal = version < 2,
-                preserveModernChart = version < 3,
+                preserveModernChartProgress = version < 3,
                 preserveLegacyChart = version < 3,
             )
             Files.delete(pending.toPath())
@@ -174,12 +182,14 @@ internal class SystemNnnSaveStore(
         snapshot: Map<String, File>,
         preservePcSlots: Boolean,
         preservePcGlobal: Boolean,
-        preserveModernChart: Boolean,
+        preserveModernChartProgress: Boolean,
         preserveLegacyChart: Boolean,
     ) {
         val live = files()
+        val names = snapshot.keys.mapTo(hashSetOf(), ::foldSaveName)
+        val targets = snapshot.keys.associateWith(::targetFile)
         for ((name, file) in snapshot) {
-            val target = File(directory, name)
+            val target = targets.getValue(name)
             val parent = SavePathSafety.requireSafeRoot(target.parentFile!!, directory)
             Files.createDirectories(parent.toPath())
             val temporary = File.createTempFile("write-", ".tmp", restore)
@@ -191,15 +201,43 @@ internal class SystemNnnSaveStore(
             }
         }
         for ((name, file) in live) {
-            if (name !in snapshot &&
+            if (foldSaveName(name) !in names &&
                 !(preservePcSlots && SystemNnnHost.isPcStorySave(name)) &&
                 !(preservePcGlobal && SystemNnnHost.isPcGlobalArchive(name)) &&
-                !(preserveModernChart && SystemNnnHost.isModernChartProgress(name)) &&
+                !(preserveModernChartProgress && SystemNnnHost.isModernChartProgress(name)) &&
                 !(preserveLegacyChart && SystemNnnHost.isLegacyChartSave(name))
             ) {
                 Files.delete(file.toPath())
             }
         }
+    }
+
+    /** Keep the existing PC spelling on both case-sensitive and case-insensitive volumes. */
+    private fun targetFile(name: String): File {
+        if (!SystemNnnHost.isPcStorySave(name) && !SystemNnnHost.isPcGlobalSave(name) &&
+            !SystemNnnHost.isChartNodeSave(name)
+        ) return File(directory, name)
+        var target = SavePathSafety.requireSafeRoot(directory, game)
+        val parts = name.split('/')
+        for ((index, part) in parts.withIndex()) {
+            val children = if (Files.notExists(target.toPath(), NOFOLLOW_LINKS)) emptyArray()
+            else target.listFiles() ?: throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            val folded = foldSaveName(part)
+            val aliases = children.filter { foldSaveName(it.name) == folded }
+            if (aliases.size > 1) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            target = aliases.singleOrNull() ?: File(target, part)
+            if (index < parts.lastIndex) target = SavePathSafety.requireSafeRoot(target, directory)
+            else if (!Files.notExists(target.toPath(), NOFOLLOW_LINKS)) {
+                target = SavePathSafety.requireSafeFile(directory, target)
+            }
+        }
+        val relative = SavePathSafety.requireSafeRoot(directory, game).toPath().relativize(target.toPath())
+        if (!SystemNnnHost.isManagedSaveFile(relative)) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+        return target
+    }
+
+    private fun foldSaveName(name: String): String = buildString(name.length) {
+        for (character in name) append(if (character in 'A'..'Z') character + ('a' - 'A') else character)
     }
 
     private fun copySynced(source: File, destination: File) {

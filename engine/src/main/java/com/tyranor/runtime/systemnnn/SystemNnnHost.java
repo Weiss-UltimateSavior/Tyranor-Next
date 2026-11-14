@@ -198,15 +198,16 @@ public final class SystemNnnHost {
     }
 
     public static boolean isModernChartProgress(String name) {
-        return PcSystemSave.isChartFile(name);
+        return asciiChartPath(name)&&PcSystemSave.isChartFile(name);
     }
 
     private static boolean isLegacyChartProgress(String name) {
-        return name.regionMatches(true,0,"mushiex/",0,8)&&PcSystemSave.isChartFile(name.substring(8));
+        return asciiChartPath(name)&&name.regionMatches(true,0,"mushiex/",0,8)&&PcSystemSave.isChartFile(name.substring(8));
     }
 
     public static boolean isLegacyChartSave(String name) {
-        return isLegacyChartProgress(name)||name.regionMatches(true,0,"mushiex/",0,8)&&isChartNodeSave(name);
+        return asciiChartPath(name)&&(isLegacyChartProgress(name)||
+            name.regionMatches(true,0,"mushiex/",0,8)&&isChartNodeSave(name));
     }
 
     public static boolean isChartNodeSave(String name) {
@@ -218,6 +219,11 @@ public final class SystemNnnHost {
 
     private static boolean isChartSave(String name) {
         return isModernChartProgress(name)||isLegacyChartSave(name)||isChartNodeSave(name);
+    }
+
+    private static boolean asciiChartPath(String name) {
+        for(int i=0;i<name.length();++i)if(name.charAt(i)>127)return false;
+        return true;
     }
 
     private static String relativeSaveName(Path relative) {
@@ -236,6 +242,7 @@ public final class SystemNnnHost {
 
     public static boolean isManagedSaveDirectory(Path relative) {
         String name=relativeSaveName(relative);
+        if(!asciiChartPath(name))return false;
         if(name.equalsIgnoreCase("mushiex")||name.equalsIgnoreCase(GameSavePaths.PREFIX+GameSavePaths.CHART))return true;
         return isChartNodeSave(name+"/slot0.dat");
     }
