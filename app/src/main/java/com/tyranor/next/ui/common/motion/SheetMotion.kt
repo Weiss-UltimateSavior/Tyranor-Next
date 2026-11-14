@@ -363,8 +363,21 @@ class MotionSheetController internal constructor(
         if (canClose() && height > 0f && projected > height * DISMISS_FRACTION) {
             close(v)
         } else {
-            scope.launch { offset.animateTo(0f, SettleSpec, initialVelocity = v) }
+            // 回弹的幅度跟拉下的距离走：慢慢拉下一小段再松手，速度几乎为 0，弹簧的自然过冲只有拉距的几个百分点
+            // （拉 60px 才不到 3px），肉眼看就是「没有回弹」。给一个与拉距成正比、朝向原位的底速度，让过冲稳定可见。
+            val kick = -offset.value * SETTLE_KICK_PER_PX
+            scope.launch { offset.animateTo(0f, SettleSpec, initialVelocity = minOf(v, kick)) }
         }
+    }
+
+    /**
+     * 抽屉在这次手势里被拉下去、又被手指推回了原位，手指还带着向上的速度松手（向上甩）：此刻位移已经是 0，
+     * 没有「回弹」可播，到顶就像撞上了墙——按松手速度向上冲过停位（竖向拉伸）再落回，幅度随速度变化。
+     */
+    internal fun bounceAtTop(flingVelocity: Float) {
+        if (!enhanced || closing) return
+        val v = flingVelocity.coerceIn(-BOUNCE_MAX_VELOCITY, 0f) * BOUNCE_GAIN
+        scope.launch { offset.animateTo(0f, SettleSpec, initialVelocity = v) }
     }
 
     internal companion object {
@@ -376,6 +389,14 @@ class MotionSheetController internal constructor(
         const val LINE_REARM = 0.85f
         const val NAVIGATION_START_TIMEOUT_MILLIS = 700L
         const val FLING_PROJECTION_SECONDS = 0.12f
+
+        /** 松手回弹的底速度：每拉下 1px 给多少 px/s（朝向原位）。 */
+        const val SETTLE_KICK_PER_PX = 5f
+
+        /** 向上甩到顶的最小速度（px/s）：低于它视为没有甩，不弹。 */
+        const val BOUNCE_MIN_VELOCITY = 400f
+        const val BOUNCE_MAX_VELOCITY = 3000f
+        const val BOUNCE_GAIN = 0.7f
         /**
          * 展开：约 0.37s 周期（含全局加速），像抽屉被推上来——利落地升起、越接近停位越慢，只在停位处轻轻多走一点再落稳
          * （阻尼 0.82，过冲约 1%，被竖向拉伸吃掉，底边始终贴住屏幕；不是果冻式的来回弹）；遮罩随抽屉位置渐显，不是先「啪」地全暗。
@@ -775,6 +796,8 @@ internal class SheetDragConnection(private val c: MotionSheetController) : Neste
         if (!c.dragged) return Velocity.Zero
         if (c.offset.value == 0f) {
             c.endDrag()
+            // 拉下去又推回原位、带着向上的速度松手：到顶按速度弹一下（此前这里直接放过，几乎碰不到回弹）
+            if (available.y < -MotionSheetController.BOUNCE_MIN_VELOCITY) c.bounceAtTop(available.y)
             return Velocity.Zero
         }
         c.settle()
