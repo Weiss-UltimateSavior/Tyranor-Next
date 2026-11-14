@@ -16,17 +16,11 @@ migration source and identity hashing contract, not the active write destination
 App save operations migrate legacy data without replacing existing target files;
 removing a library entry retains game-local saves.
 
-The local runtime patch `0004-virtual-user-file-reads.patch` recognizes only
-exact `bgi-resource/` and `bgi-user/` virtual roots followed by a path separator
-at the VM read/existence gate. In restricted `RuntimeTraceApi`, `read_disk_file`
-and `disk_file_exists` use `user_data_alias` only when the mapped path begins
-with `bgi-user/`; other paths keep their original meaning. Restricted
-`load_file_bytes` applies the scoped user alias only to authorized non-named
-archive calls. A missing mapped save does not fall back to the raw resource path;
-other `read_runtime_bytes` calls and ordinary named-archive loads retain their
-original path. The raw `FilePolicy` read helper is unchanged. The device fixture
-exercises Sys81:32/35 generic Header loading as well as the Sys80 loose-file API.
-Commercial-game slot save/readback and format compatibility remain experimental
+Upstream runtime implements hosted virtual roots and user-data read aliases, including
+Sys81 generic Header loading. Local patches 0001–0003 retain the game-local
+save policy and shared-storage writer lock. Patch 0005 retains the previously
+tolerated Graph91:00 no-op only for the identified Amachoco ABI; the native
+operation remains unaudited. Commercial-game slot save/readback and format compatibility remain experimental
 and require separate acceptance; this is a runtime patch, not a host `openat`
 shim.
 
