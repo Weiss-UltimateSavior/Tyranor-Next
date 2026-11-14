@@ -39,7 +39,7 @@
         android:enableOnBackInvokedCallback="false"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
+        android:label="${launcherLabel}"
         android:largeHeap="true"
         android:requestLegacyExternalStorage="true"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -135,6 +135,10 @@
             android:exported="false"
             android:theme="@style/Theme.TyranorNext.Translucent" />
         <activity
+            android:name=".ui.auth.BangumiOAuthCallbackActivity"
+            android:exported="false"
+            android:theme="@style/Theme.TyranorNext.Translucent" />
+        <activity
             android:name="net.openid.appauth.RedirectUriReceiverActivity"
             android:exported="true"
             tools:node="replace">
@@ -147,6 +151,11 @@
                 <data
                     android:host="oauth"
                     android:path="/hikarinagi"
+                    android:scheme="tyranornext" />
+
+                <data
+                    android:host="oauth"
+                    android:path="/bangumi"
                     android:scheme="tyranornext" />
             </intent-filter>
         </activity>
@@ -165,7 +174,7 @@
             android:enabled="true"
             android:exported="true"
             android:icon="@mipmap/ic_launcher"
-            android:label="@string/app_name"
+            android:label="${launcherLabel}"
             android:roundIcon="@mipmap/ic_launcher_round"
             android:targetActivity=".MainActivity">
             <intent-filter>
@@ -178,7 +187,7 @@
             android:enabled="false"
             android:exported="true"
             android:icon="@mipmap/ic_launcher_classic"
-            android:label="@string/app_name"
+            android:label="${launcherLabel}"
             android:roundIcon="@mipmap/ic_launcher_classic_round"
             android:targetActivity=".MainActivity">
             <intent-filter>

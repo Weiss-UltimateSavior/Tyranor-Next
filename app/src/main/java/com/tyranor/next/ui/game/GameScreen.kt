@@ -75,6 +75,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -139,7 +140,11 @@ import com.tyranor.next.core.game.model.sortGames
 import com.tyranor.next.core.cover.persistentCoverDir
 import com.tyranor.next.core.cover.stableKey
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.core.auth.BangumiAuthStore
 import com.tyranor.next.core.auth.HikarinagiAuthStore
+import com.tyranor.next.core.auth.NextMoeAuthStore
+import com.tyranor.next.core.auth.VndbAuthStore
+import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.DialogItemSurface
@@ -749,6 +754,8 @@ private data class DrawerAction(
     val icon: Int,
     val showArrow: Boolean = false,
     val iconTint: Color? = null,
+    /** 行尾内联文本：与标题同行右对齐单行显示（不新增条目高度）。 */
+    val trailingText: String? = null,
     val onClick: () -> Unit,
 )
 
@@ -806,6 +813,108 @@ internal fun GameActionsSheet(
     var coverBindError by rememberSaveable(game.uri) { mutableStateOf<String?>(null) }
     var showLaunchFilePicker by rememberSaveable(game.uri) { mutableStateOf(false) }
     var showPatchConfirm by rememberSaveable(game.uri) { mutableStateOf(false) }
+    var showPlayStatusDialog by rememberSaveable(game.uri) { mutableStateOf(false) }
+    // 游玩状态抽屉副文本：逐源授权门——已绑定但未授权的来源不发起回读、不产出文案行；
+    // TTL 缓存 5 分钟只存全部来源回读成功的汇总（失败文案即时展示、不入缓存），写后失效
+    val bangumiAuthEpoch by BangumiAuthStore.credentialEpoch.collectAsState()
+    val vndbAuthEpoch by VndbAuthStore.credentialEpoch.collectAsState()
+    val hikarinagiAuthEpoch by HikarinagiAuthStore.credentialEpoch.collectAsState()
+    val nextmoeAuthEpoch by NextMoeAuthStore.credentialEpoch.collectAsState()
+    var playStatusSummary by remember(game.uri) { mutableStateOf<String?>(null) }
+    var playStatusRefresh by remember(game.uri) { mutableIntStateOf(0) }
+    LaunchedEffect(
+        game.uri,
+        game.bangumiId,
+        game.vndbId,
+        game.hikarinagiId,
+        game.nextmoeId,
+        playStatusRefresh,
+        bangumiAuthEpoch,
+        vndbAuthEpoch,
+        hikarinagiAuthEpoch,
+        nextmoeAuthEpoch,
+    ) {
+        if (game.bangumiId.isNullOrBlank() && game.vndbId.isNullOrBlank() &&
+            game.hikarinagiId.isNullOrBlank() && game.nextmoeId.isNullOrBlank()
+        ) {
+            playStatusSummary = null
+            PlayStatusSummaryCache.invalidate(game.uri)
+            return@LaunchedEffect
+        }
+        // 逐源授权门：每个来源独立判断，不再「任一来源就绪即整体放行」。
+        // 门内 getStatus 为 Keystore 解密读取，在 LaunchedEffect（主线程调度器）内调用为既有契约
+        // （毫秒级开销，与设置页/凭据弹窗同模式，BK-01B 观察注记）：真机出现可感卡顿或
+        // StrictMode 违规时按「分点下沉 IO」统一下沉到下方既有 withContext(Dispatchers.IO)
+        // 块（BK-01 施工图在案），先算各门布尔再回主线程判空
+        val bangumiReady = game.bangumiId?.let { BangumiAuthStore.getStatus(context).authorized } == true
+        val vndbReady = game.vndbId?.let {
+            // VNDB 门同样排除 needsReauth（与 Hikarinagi 门对称）：last_error 非空表示上次
+            // 校验/回读被明确拒绝（token 失效 / 403 权限不足 / 落盘失败），副文本回读注定
+            // 401/403，不再每次开抽屉重探注定失败的请求。恢复途径都会清 last_error 并
+            // bump statusVersion（重新粘贴 token / 读取成功清标记），缓存键含该布尔位，
+            // 恢复即换键重读。Bangumi 为只写模型无读路径，门仅看 authorized。
+            val status = VndbAuthStore.getStatus(context)
+            status.authorized && !status.needsReauth
+        } == true
+        val hikarinagiReady = game.hikarinagiId?.let {
+            // 授权门排除 needsReauth：令牌已确认失效的来源不发起注定失败的回读，
+            // 与未授权一致不产出文案行；缓存键含该布尔位，失效/恢复即换键重读。
+            // 分位约束：needsReauth 仅承载令牌失效，读路径 403 的权限缺失写入
+            // 独立 permission_error 位、不经本门（令牌有效，回读按 403 报权限文案且不入缓存）
+            val status = HikarinagiAuthStore.getStatus(context)
+            status.authorized && !status.needsReauth
+        } == true
+        val nextmoeReady = game.nextmoeId?.let {
+            val status = NextMoeAuthStore.getStatus(context)
+            status.authorized && !status.needsReauth
+        } == true
+        if (!bangumiReady && !vndbReady && !hikarinagiReady && !nextmoeReady) {
+            playStatusSummary = null
+            return@LaunchedEffect
+        }
+        // 缓存键包含逐源授权门与 locale：授权状态或语言变化即换键重读，不会命中陈旧变体
+        val cacheKey = PlayStatusSummaryCache.key(
+            game.uri,
+            game.bangumiId,
+            game.vndbId,
+            game.hikarinagiId,
+            bangumiReady,
+            vndbReady,
+            hikarinagiReady,
+            // 副文本为本地化文案，locale 入键（BK-41）：语言切换后按新键重读一次，TTL 内
+            // 不再命中旧语言变体；取法与 EngineLauncher 的 UI 语言回传同款（wrap 后取
+            // configuration locale 的 language tag）
+            AppLocaleController.wrap(context).resources.configuration.locales[0].toLanguageTag(),
+            bangumiAuthEpoch = bangumiAuthEpoch,
+            vndbAuthEpoch = vndbAuthEpoch,
+            hikarinagiAuthEpoch = hikarinagiAuthEpoch,
+            nextmoeId = game.nextmoeId,
+            nextmoeReady = nextmoeReady,
+            nextmoeAuthEpoch = nextmoeAuthEpoch,
+        )
+        PlayStatusSummaryCache.get(cacheKey)?.let {
+            playStatusSummary = it
+            return@LaunchedEffect
+        }
+        playStatusSummary = null
+        val readGeneration = PlayStatusSummaryCache.generation(game.uri)
+        val summary = withContext(Dispatchers.IO) {
+            playStatusDrawerSummary(
+                context,
+                game,
+                bangumiReady,
+                vndbReady,
+                hikarinagiReady,
+                nextmoeAuthorized = nextmoeReady,
+            )
+        }
+        if (PlayStatusSummaryCache.generation(game.uri) == readGeneration) {
+            playStatusSummary = summary.line
+            PlayStatusSummaryCache.putIfCacheable(cacheKey, summary, expectedGeneration = readGeneration)
+        } else {
+            playStatusRefresh += 1
+        }
+    }
     // MV/MZ 存档格式转化确认：待转化检测结果 + 已选定的 Artemis 补丁策略（两弹窗串联时保留）
     var rpgSaveDetection by remember(game.uri) { mutableStateOf<RpgSaveFormat.Detection?>(null) }
     var pendingPatchChoice by remember(game.uri) { mutableStateOf<EngineLauncher.ArtemisPatchChoice?>(null) }
@@ -814,6 +923,7 @@ internal fun GameActionsSheet(
     val coverDownloadFailedMessage = stringResource(R.string.game_cover_download_failed)
     // 抽屉动作条目的文案/颜色：buildList 的 lambda 内不允许 @Composable 调用，先在组合体取值
     val drawerSearchCoverTitle = stringResource(R.string.game_search_cover)
+    val drawerPlayStatusTitle = stringResource(R.string.game_play_status)
     val drawerSaveManagementTitle = stringResource(R.string.game_save_management)
     val drawerOnlinePatchTitle = stringResource(R.string.game_online_patch)
     val drawerEngineSettingsTitle = stringResource(R.string.settings_engine_settings)
@@ -987,6 +1097,16 @@ internal fun GameActionsSheet(
                             onClick = { if (!isBatchScrapingActive()) showCoverSourcePicker = true },
                         ),
                     )
+                    add(
+                        DrawerAction(
+                            key = "play_status",
+                            title = drawerPlayStatusTitle,
+                            icon = R.drawable.ic_sheet_play_status,
+                            iconTint = drawerPrimaryColor,
+                            trailingText = playStatusSummary,
+                            onClick = { if (sheetMotion.interact()) showPlayStatusDialog = true },
+                        ),
+                    )
                     if (shouldShowSaveManagement(game)) {
                         add(
                             DrawerAction(
@@ -1041,6 +1161,7 @@ internal fun GameActionsSheet(
                         AppNavItem(
                             title = action.title,
                             modifier = Modifier.gameSheetEntrance(3 + index),
+                            trailingText = action.trailingText,
                             leadingIcon = action.icon,
                             containerColor = drawerItemSurface,
                             verticalPadding = 17.dp,
@@ -1167,6 +1288,14 @@ internal fun GameActionsSheet(
         LaunchErrorDialog(state = state, onDismiss = { launchError = null })
     }
 
+    if (showPlayStatusDialog) {
+        PlayStatusDialog(
+            game = game,
+            onDismiss = { showPlayStatusDialog = false; playStatusRefresh++ },
+            onGameUpdated = onGameUpdated,
+        )
+    }
+
 }
 
 @Composable
@@ -1206,6 +1335,8 @@ private fun CoverSourcePickerDialog(
                         modifier = Modifier.staggeredEntrance(1 + index, distance = 8.dp, stepMillis = 45L),
                         onClick = if (selectable) ({ onSelect(source) }) else null,
                         leadingIcon = R.drawable.ic_cover_source,
+                        // 弹窗条目自足禁用按压反馈（AGENTS.md 弹窗点击反馈统一规范）
+                        indication = null,
                         // 弹窗内条目必须与亮面板形成反差（AGENTS.md 弹窗条目约定）
                         containerColor = DialogItemSurface,
                     )
@@ -1465,7 +1596,10 @@ private fun CoverSearchDialog(
                                             .padding(top = 8.dp),
                                     )
                                 }
-                                ExpandVisibility(drillDown != null) {
+                                ExpandVisibility(
+                                    source == AppSettingsStore.COVER_SOURCE_NEXTMOE &&
+                                        (drillDown != null || candidates.isNotEmpty()),
+                                ) {
                                     // 归属要求：封面数据来自未萌 NextMoe（鲲 Galgame 论坛）
                                     Text(
                                         stringResource(R.string.cover_nextmoe_attribution),
@@ -1615,6 +1749,9 @@ private fun encodeCoverSearchCandidate(candidate: CoverSearchCandidate): String 
         .put("coverUrl", candidate.coverUrl)
         .put("downloadUrl", candidate.downloadUrl)
         .put("vndbId", candidate.vndbId)
+        .put("bangumiId", candidate.bangumiId)
+        .put("hikarinagiId", candidate.hikarinagiId)
+        .put("nextmoeId", candidate.nextmoeId)
         .put("metadataTitle", candidate.metadataTitle)
         .toString()
 
@@ -1630,6 +1767,9 @@ private fun decodeCoverSearchCandidate(encoded: String): CoverSearchCandidate? =
         coverUrl = json.optString("coverUrl"),
         downloadUrl = json.optString("downloadUrl").takeIf { it.isNotBlank() && !json.isNull("downloadUrl") },
         vndbId = json.optString("vndbId").takeIf { it.isNotBlank() && !json.isNull("vndbId") },
+        bangumiId = json.optString("bangumiId").takeIf { it.isNotBlank() && !json.isNull("bangumiId") },
+        hikarinagiId = json.optString("hikarinagiId").takeIf { it.isNotBlank() && !json.isNull("hikarinagiId") },
+        nextmoeId = json.optString("nextmoeId").takeIf { it.isNotBlank() && !json.isNull("nextmoeId") },
         metadataTitle = json.optString("metadataTitle").takeIf { it.isNotBlank() && !json.isNull("metadataTitle") },
     )
 }.getOrNull()

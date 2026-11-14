@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -34,11 +35,11 @@ import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import com.tyranor.next.ui.common.motion.pressSquish
 import com.tyranor.next.ui.common.motion.PressSquishDefaults
 import androidx.compose.animation.core.animateFloatAsState
 import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.ExpandHorizontallyVisibility
 import com.tyranor.next.ui.common.motion.ExpandVisibility
 import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.MotionTokens
@@ -76,6 +77,8 @@ fun AppNavItem(
     title: String,
     modifier: Modifier = Modifier,
     summary: String? = null,
+    /** 行尾内联文本（与标题同行、右对齐单行）；与 [summary] 独立并存，两者可同时渲染。 */
+    trailingText: String? = null,
     @DrawableRes leadingIcon: Int? = null,
     showLeadingIcon: Boolean = true,
     containerColor: Color = NavWhite,
@@ -96,8 +99,9 @@ fun AppNavItem(
     } else {
         targetContentAlpha
     }
-    // 摘要退场期间仍显示最后的内容（而不是收起一个空框）
+    // 摘要 / 尾注退场期间仍显示最后的内容（而不是收起一个空框）
     val shownSummary = rememberLastNonNull(summary?.takeIf { it.isNotBlank() })
+    val shownTrailing = rememberLastNonNull(trailingText?.takeIf { it.isNotBlank() })
     val interactionSource = remember { MutableInteractionSource() }
     Row(
         modifier = modifier
@@ -145,7 +149,7 @@ fun AppNavItem(
                 maxLines = titleMaxLines,
                 overflow = TextOverflow.Ellipsis,
             )
-            // 摘要出现 / 消失：高度弹簧展开、模糊清晰；文案变化：模糊替换（「普通」档均为瞬时）
+            // 摘要出现 / 消失：高度弹簧展开、模糊清晰；文案变化：模糊替换（「普通」档均为瞬时）；固定两行截断
             ExpandVisibility(visible = !summary.isNullOrBlank(), label = "navItemSummary") {
                 BlurCrossfade(targetState = shownSummary.orEmpty(), label = "navItemSummaryText") { text ->
                     Text(
@@ -156,6 +160,41 @@ fun AppNavItem(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+            }
+        }
+        ExpandHorizontallyVisibility(
+            visible = !trailingText.isNullOrBlank(),
+            modifier = Modifier.layout { measurable, constraints ->
+                // Row 中先测非 weighted 子项，限制尾注最大占宽以免挤压左侧标题 Column 到零宽
+                val cappedMaxWidth = if (constraints.hasBoundedWidth) {
+                    (constraints.maxWidth * 0.5f).toInt().coerceAtLeast(1)
+                } else {
+                    constraints.maxWidth
+                }
+                val placeable = measurable.measure(
+                    constraints.copy(
+                        minWidth = constraints.minWidth.coerceAtMost(cappedMaxWidth),
+                        maxWidth = cappedMaxWidth,
+                    ),
+                )
+                layout(placeable.width, placeable.height) {
+                    placeable.placeRelative(0, 0)
+                }
+            },
+            label = "navItemTrailing",
+        ) {
+            BlurCrossfade(
+                targetState = shownTrailing.orEmpty(),
+                modifier = Modifier.padding(start = 8.dp),
+                label = "navItemTrailingText",
+            ) { text ->
+                Text(
+                    text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextColor.copy(alpha = 0.55f * contentAlpha),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
         if (showArrow) {

@@ -16,6 +16,7 @@ internal fun CoverErrorCode.coverErrorMessage(context: Context): String {
         CoverErrorCode.INVALID_SOURCE -> localized.getString(R.string.cover_error_invalid_source)
         CoverErrorCode.SOURCE_DISABLED -> localized.getString(R.string.cover_error_source_disabled)
         CoverErrorCode.UNKNOWN -> localized.getString(R.string.cover_error_unknown)
+        CoverErrorCode.HIKARINAGI_AUTH_MISSING -> localized.getString(R.string.cover_error_hikarinagi_auth_missing)
         CoverErrorCode.HIKARINAGI_AUTH_EXPIRED -> localized.getString(R.string.auth_hikarinagi_expired)
         CoverErrorCode.HIKARINAGI_NETWORK -> localized.getString(R.string.cover_error_hikarinagi_network)
         CoverErrorCode.HIKARINAGI_RETRY -> localized.getString(R.string.cover_error_hikarinagi_retry)
