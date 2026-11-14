@@ -73,11 +73,50 @@ val verifyImpactoCandidate = tasks.register("verifyImpactoCandidate") {
     }
 }
 
-val stageImpactoLibrary = tasks.register<Sync>("stageImpactoLibrary") {
+// llvm-strip comes from the NDK that built the library (ANDROID_NDK_HOME or -PimpactoNdk). Relying on AGP's own
+// stripping is not safe: when it cannot find a usable NDK it only warns and packages the unstripped library
+// (about 340 MB of debug sections), so stripping is done here and a failure stops the build.
+val impactoNdk: File? = (providers.gradleProperty("impactoNdk").orNull ?: System.getenv("ANDROID_NDK_HOME"))
+    ?.takeIf { it.isNotBlank() }?.let(::File)
+
+fun ndkTool(name: String): File {
+    val ndk = impactoNdk ?: throw GradleException("Set ANDROID_NDK_HOME or -PimpactoNdk to the NDK that built libimpacto.so")
+    val host = ndk.resolve("toolchains/llvm/prebuilt").listFiles { f -> f.isDirectory }?.singleOrNull()
+        ?: throw GradleException("No single host toolchain under $ndk/toolchains/llvm/prebuilt")
+    return listOf(name, "$name.exe").map { host.resolve("bin/$it") }.firstOrNull { it.isFile }
+        ?: throw GradleException("$name not found in $ndk")
+}
+
+fun runTool(vararg command: String): String {
+    val process = ProcessBuilder(*command).redirectErrorStream(true).start()
+    val output = process.inputStream.bufferedReader().readText()
+    if (process.waitFor() != 0) throw GradleException("${File(command.first()).name} failed: $output")
+    return output
+}
+
+fun buildId(library: File): String =
+    Regex("Build ID: ([0-9a-f]+)").find(runTool(ndkTool("llvm-readelf").path, "-n", library.path))?.groupValues?.get(1)
+        ?: throw GradleException("No GNU build id in ${library.name}")
+
+val stageImpactoLibrary = tasks.register("stageImpactoLibrary") {
     group = "impacto"
     dependsOn(verifyImpactoCandidate)
-    into(layout.buildDirectory.dir("generated/impacto-jni/arm64-v8a"))
-    from(impactoCandidate) { include("libimpacto.so") }
+    val outputDirectory = layout.buildDirectory.dir("generated/impacto-jni/arm64-v8a")
+    outputs.dir(outputDirectory)
+    outputs.upToDateWhen { false }
+    doLast {
+        val directory = outputDirectory.get().asFile
+        directory.deleteRecursively()
+        directory.mkdirs()
+        val source = impactoCandidate.resolve("libimpacto.so")
+        val staged = File(directory, "libimpacto.so")
+        source.copyTo(staged)
+        runTool(ndkTool("llvm-strip").path, "--strip-unneeded", staged.path)
+        // Stripping keeps the linker's build id, which ties the staged library to the verified candidate.
+        if (buildId(staged) != buildId(source)) throw GradleException("Stripped library lost its build id")
+        val sections = runTool(ndkTool("llvm-readelf").path, "-S", "--wide", staged.path)
+        if (".debug_" in sections) throw GradleException("Debug sections remain after stripping")
+    }
 }
 
 android {

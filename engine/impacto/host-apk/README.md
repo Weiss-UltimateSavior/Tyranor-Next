@@ -56,7 +56,7 @@ Tyranor Next 通过 Intent 启动本 APK；本 APK 不属于主 App 的 Gradle �
 需要 Python 3（非 Windows 使用 `python3`）、Android SDK（compileSdk 36）、JDK 17，以及：
 
 1. 已校验的上游检出（`tools/impacto/verify-upstream.py` 通过），
-2. 候选库 `libimpacto.so`（目前仅 Linux 构建，见 `docs/impacto-upstream-only.md`）。
+2. 候选库 `libimpacto.so`（只能在 Linux 或 WSL 构建，见 `docs/impacto-upstream-only.md`），以及构建它的 NDK：设置 `ANDROID_NDK_HOME` 或 `-PimpactoNdk=<NDK 目录>`。宿主构建用该 NDK 的 `llvm-strip` 剥离调试符号并核对 build-id；找不到工具时构建失败，不会打进未剥离的库（未剥离约 337 MiB，会使 APK 膨胀到 400 MB 以上）。
 
 ```sh
 ./gradlew -p engine/impacto/host-apk :app:assembleDebug \

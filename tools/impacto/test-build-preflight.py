@@ -15,6 +15,7 @@ TOOLS = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('verify_upstream', TOOLS / 'verify-upstream.py')
 verifier = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(verifier)
+PINNED_NDK = json.loads((TOOLS.parents[1] / 'engine/impacto/source-lock.json').read_text(encoding='utf-8'))['android']['ndk']
 
 
 class BuildPreflightTest(unittest.TestCase):
@@ -30,7 +31,7 @@ class BuildPreflightTest(unittest.TestCase):
         self.report.write_text(json.dumps(self.previous), encoding='utf-8')
         self.ndk = self.root / 'ndk'
         self.ndk.mkdir()
-        (self.ndk / 'source.properties').write_text('Pkg.Revision = 28.0.13004108\n', encoding='utf-8')
+        (self.ndk / 'source.properties').write_text(f'Pkg.Revision = {PINNED_NDK}\n', encoding='utf-8')
         self.bin = self.root / 'bin'
         self.bin.mkdir()
         self.program('uname', 'echo Linux')
@@ -80,7 +81,7 @@ class BuildPreflightTest(unittest.TestCase):
         self.rejected('Ninja executable not found')
 
     def test_wrong_ndk_invalidates_previous_candidate(self):
-        (self.ndk / 'source.properties').write_text('Pkg.Revision = 27.0.0\n', encoding='utf-8')
+        (self.ndk / 'source.properties').write_text('Pkg.Revision = 99.0.0\n', encoding='utf-8')
         self.rejected('Android NDK revision differs')
 
     def test_unset_ndk_invalidates_previous_candidate(self):

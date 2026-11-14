@@ -66,10 +66,10 @@ python3 tools/impacto/test-stage-upstream.py
 ```
 
 候选库构建目前要求 Linux、Python 3.10+、Git、C/C++、make、Ninja、pkg-config、
-Perl、autoconf、automake、libtool、m4、NASM、Bison、Flex、CMake 3.31.1+ 和 Android NDK 28.0.13004108：
+Perl、autoconf、automake、libtool、m4、NASM、Bison、Flex、CMake 3.31.1+ 和 Android NDK 27.3.13750724（r27d，即上游官方 CI 在 `ubuntu-24.04` 上默认使用的版本；`tools/impacto/setup-linux-tools.sh` 会按来源锁安装并校验它与 CMake）：
 
 ```sh
-export ANDROID_NDK_HOME=/path/to/android-ndk/28.0.13004108
+export ANDROID_NDK_HOME=/path/to/android-ndk/27.3.13750724
 export IMPACTO_CMAKE=/path/to/cmake/bin/cmake
 export VCPKG_MAX_CONCURRENCY=4
 bash tools/impacto/build-upstream.sh
@@ -94,7 +94,7 @@ Git 子进程会清除继承的仓库定位与配置注入环境，避免跨仓�
 - [x] 从 TYN 上游共同祖先建立独立分支，不合入私有实验仓库的独立根历史。
 - [x] 固定来源，增加原版 checkout 校验和真实 Git 仓库回归。
 - [x] 增加独立原版构建入口、宿主侧依赖锁定与候选库校验；尚未完成全量构建。
-- [ ] 完成原版 ARM64 编译；记录工具链、完整源码及产物身份。
+- [x] 完成原版 ARM64 全量编译，记录工具链、源码与产物身份（见下节）。仍未做：该库在任何设备上运行、对任何游戏数据的验证、配套源码打包与发布。
 - [ ] 适配原版 `-g`、`-bp`、`-gc`、`-uc` 参数：宿主 APK 已重写 `getArguments()` 传这些参数（代码已写，未运行、未验证），不发送自定义 `--tyranor-resource-root`。
 - [ ] 宿主提供 `getChosenDirectory`、`chooseDirectory`、`resetChosenDir`：宿主 APK 已重写，数据根指向按游戏隔离的目录（代码已写，未运行、未验证）。CWD、配置回退及 ImGui 相对写入位置仍由上游默认行为决定。
 - [ ] 原版 SDL3 `org.libsdl.app` 与 TYN 内置 SDL2 的同名类冲突：设计上改为独立宿主 APK 承载，主 APK 不含 SDL3 Java 层；宿主尚未构建成 APK，冲突是否消除未经验证。
@@ -107,6 +107,24 @@ Git 子进程会清除继承的仓库定位与配置注入环境，避免跨仓�
 
 原版库编译、宿主接入和真实游戏测试未完成前，此 PR 保持 Draft，不作为可发布功能。
 
+## 原版 ARM64 全量构建（2026-11-14，WSL Ubuntu 24.04）
+
+用 `tools/impacto/build-upstream.sh` 从固定提交 `ba0b6e08…`（tree `a2a0b799…`，洁净）全量编译，vcpkg 固定在 `fa9a5b33…`，依赖含 SDL3 3.4.10、FFmpeg 等，退出码 0。
+
+| 项目 | 结果 |
+| --- | --- |
+| 工具链 | NDK **27.3.13750724**（r27d）、CMake 3.31.1，均按官方清单的哈希校验；见下文关于 NDK 的说明 |
+| 产物 | `libimpacto.so`，SHA-256 `732c9b86ff558622c39bb0825b20f0efb7ac8f986b4eb97d67887004699cd15e`，GNU build-id `8cc95bb0…`，未剥离 337 MiB（`.debug_*` 约 310 MiB），剥离后约 34 MiB |
+| ELF | `LOAD` 对齐 16 KiB；导出 `JNI_OnLoad`、`SDL_main` 与 67 个 `Java_org_libsdl_app_*`（SDL3 已静态编入）；`NEEDED` 均为系统库（`libGLESv3`、`libEGL`、`libandroid`、`libmediandk`、`libvulkan`、`libOpenSLES`、`liblog`、`libc`、`libm`、`libdl`） |
+| 补丁 | 无 TYN 引擎补丁，无依赖补丁；上游依赖配方保持原样 |
+| 候选状态 | `candidate-not-integrated`；`hostIntegrated`/`gameplayTested`/`correspondingSourcesPackaged`/`releaseReady` 均为 false |
+
+**NDK 说明**：来源锁原固定为 NDK 28.0.13004108，用它做全量构建时 vcpkg 依赖都编好了，但上游源码在 `fsfolderarchive.h`（前向声明的 `TextMetaEntry` 放在 `std::vector` 里）报 `incomplete type`。上游官方 CI 在 `ubuntu-24.04` 上用 runner 默认的 NDK 27.3.13750724（runner 镜像 20261111.370.1 的说明可查），改用它后编译通过，因此来源锁改为该版本。这是宿主侧工具链版本的选择，没有改动上游源码；它支持“r28 的 libc++ 不接受该处写法”这一判断，但我没有单独在 r28 上做最小复现。
+
+**重试须知**：构建过程中 vcpkg 曾因代理 `SSL connect error` 下载失败（网络问题，非编译问题）。脚本要求重试换全新构建根，本次重试只带入 `downloads/`（vcpkg 按哈希校验的源码包），未复用任何构建或二进制缓存。
+
+**打包**：宿主构建在 `stageImpactoLibrary` 里用该 NDK 的 `llvm-strip --strip-unneeded` 显式剥离，并确认 GNU build-id 与候选库一致、无 `.debug_*` 残留。不能依赖 AGP 自带的剥离：它找不到可用 NDK 时只给出 `Unable to strip` 警告，实测会把 337 MiB 的未剥离库原样打进 423 MB 的 APK；显式剥离后 APK 为 120 MB。工作流对最终 APK 用 build-id 校验“确为该候选库”，并拒绝残留调试段、体积异常或 debug 签名。
+
 ## 主 App 与宿主 APK 接入
 
 主 App 把 Impacto 当作外置 APK 引擎（与 Ren'Py、Ruffle 同一机制）：
@@ -118,7 +136,7 @@ Git 子进程会清除继承的仓库定位与配置注入环境，避免跨仓�
 - 存档：存在于宿主 APK 的内部私有目录（`files/games/<gameKey>/saves`），主 App 不提供文件存档管理；单游戏设置页只显示说明，没有可调项。
 - 宿主 APK 见 [`engine/impacto/host-apk/README.md`](../engine/impacto/host-apk/README.md)：只用上游公开钩子，直接引用已校验的上游 Java 源码，不复制、不修改；需要候选库 `libimpacto.so` 才能打包，只能在 Linux（或 WSL）构建。**不内置进 Tyranor Next**：宿主 APK 约 90 MB（其中 CJK 字体与各游戏字体贴图占大头，均已是压缩格式），内置会让所有用户多下载约 100 MB；且上游自带的 SDL3 `org.libsdl.app` 与 TYN 内置的 SDL2 同名，代码无法合并进主 APK。获取方式与其他外置 APK 模块相同：CI 构建、发布到 GitHub Release、主 App 链接过去。
 
-这是接入代码，**不是兼容性验收**：没有编出带引擎库的 APK，引擎没有运行过，也没有对任何游戏数据验证过。
+这是接入代码，**不是兼容性验收**：带真实引擎库的宿主 APK 已能在电脑上打包，但没有装到任何设备上，引擎没有运行过，也没有对任何游戏数据验证过。
 
 ### 真机核对（2026-11-14，一台设备，引擎库缺席）
 
@@ -146,5 +164,6 @@ Git 子进程会清除继承的仓库定位与配置注入环境，避免跨仓�
 - CMake/Ninja 定位的 8 项回归、Bash 语法检查及 CMake 离线依赖声明覆盖检查通过。
 - CPK 检查回归：`test-inspect-cpk.py` 的 14 项合成档案用例通过，覆盖干净布局、偏移错位、列类型不符、按魔数而非标志位解掩码、无 ITOC／ITOC 损坏、`Files` 不符与重复 ID、`@UTF` 版本字段、未标记的 LAYLA 成员、恶意表头不崩溃不挂死、截断、非 CPK 和“不改动样本”；它们只验证检查工具，不涉及游戏兼容性。
 - 官方固定 checkout 的 tree 为 `a2a0b7996a46c5d067efbeb8747cef103a69b157`，Git 洁净检查通过。
+- **NDK 28.0.13004108 编不过原版**：2026-11-14 在 WSL（Ubuntu 24.04）里用该 NDK 做真实全量构建，vcpkg 依赖（含 SDL3、FFmpeg）全部编好，但原版 `src/io/fsfolderarchive.h` 的 `std::vector<TextMetaEntry>`（前向声明的不完整类型）在 r28 的 libc++ 下报 `incomplete type`，`log.cpp`、`main.cpp` 等编译失败。上游官方 CI 用的是 runner 默认的 NDK 27.3.13750724，因此来源锁改为该版本；这是改宿主侧工具链版本，没有改动上游源码。下一条的"诊断性编译通过"是用 NDK 28 做的单文件探针，不能说明全量构建可行。
 - 用 NDK 28 对原版 `src/io/vfs.cpp`、`src/io/fsfolderarchive.cpp` 执行语法与 ARM64 对象编译均通过。为隔离诊断，外部探针配置禁用了 OpenGL/ImGui 并补齐正常 PCH 标准头；不是完整 CMake 构建。外部直接析构 `FSFolderArchive` 的合成探针会触发不完整类型错误，但不能据此认定当前上游构建必然失败，不能作为恢复引擎补丁的理由。
-- 尚未执行完整 ARM64 编译/链接、带引擎库的 APK/JNI 或真实游戏验收；宿主 Java 层与主 App 入口已在一台真机上核对（见上节）。
+- 带引擎库的宿主 APK 尚未装到任何设备；引擎库未在设备上加载，真实游戏未验收。宿主 Java 层与主 App 入口已在一台真机上核对（见上节）。
