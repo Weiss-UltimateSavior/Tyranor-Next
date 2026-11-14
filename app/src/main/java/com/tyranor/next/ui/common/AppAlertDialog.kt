@@ -33,6 +33,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -168,6 +169,7 @@ internal fun AppAlertDialog(
         job.join()
     }
     val dialogView = remember { arrayOfNulls<android.view.View>(1) }
+    val pendingExitTap = remember { arrayOfNulls<PendingExitTap>(1) }
     // 关闭回调交付之后、窗口真正被移除之前还有一两帧：这段「尾巴」里的按下同样要转交给下层页面，
     // 否则恰好落在这一两帧里的点击会被正在消失的弹窗吞掉。
     val deliveredAt = remember { LongArray(1) }
@@ -182,7 +184,23 @@ internal fun AppAlertDialog(
         // 只中止退场动画（不取消整个退场协程）：协程随后照常交付已接受的动作，动作若没有关闭弹窗，
         // 仍走 afterAction 恢复显示；取消整个协程会跳过恢复流程，面板停在半途、遮罩不再亮回来。
         if (dismissing.value) exitAnimation[0]?.cancel()
-        if (activity != null) ExitTapReplay.replay(activity, origin[0] + position.x, origin[1] + position.y)
+        // 不在这里立刻回放：动作若没有关闭弹窗（校验未通过），弹窗会被恢复显示，点击就不该落到它下面的页面。
+        // 先记下，弹窗真正离开组合时才发（见下方 DisposableEffect）；恢复显示则丢弃。
+        if (activity != null) {
+            pendingExitTap[0] = PendingExitTap(
+                activity, origin[0] + position.x, origin[1] + position.y, android.os.SystemClock.uptimeMillis(),
+            )
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            val tap = pendingExitTap[0]
+            pendingExitTap[0] = null
+            // 记下后很快（一两帧）就该离开组合；隔得太久说明弹窗其实留下了（调用方没移除它），这次点击已经过期
+            if (tap != null && android.os.SystemClock.uptimeMillis() - tap.at < PendingExitTapMaxAgeMillis) {
+                ExitTapReplay.replay(tap.activity, tap.screenX, tap.screenY)
+            }
+        }
     }
 
     fun actionFailed(failure: Exception) {
@@ -204,6 +222,7 @@ internal fun AppAlertDialog(
             dismissing.value = true
             releaseInputFocus()
             dialogWindow[0].beginDialogDimExit()
+            var restored = false
             scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 runDialogExitAction(
                     animateExit = {
@@ -212,8 +231,11 @@ internal fun AppAlertDialog(
                     action = action,
                     afterAction = {
                         // 仍在组合中：动作没有关闭弹窗，恢复显示。
+                        restored = true
                         deliveredAt[0] = 0L
                         delay(80)
+                        // 弹窗确实留下了：退场期间记下的那次点击不再转交下层页面
+                        pendingExitTap[0] = null
                         dialogWindow[0].restoreInteraction()
                         dismissing.value = false
                         if (enhanced) {
@@ -226,7 +248,8 @@ internal fun AppAlertDialog(
                         try {
                             dialogWindow[0]?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
                         } finally {
-                            deliveredAt[0] = android.os.SystemClock.uptimeMillis()
+                            // 只有真正交付了关闭才进入「退场尾段」；动作没关弹窗、已恢复显示的，不能再按尾段处理遮罩按下与关闭请求
+                            if (!restored) deliveredAt[0] = android.os.SystemClock.uptimeMillis()
                             dismissing.value = false
                         }
                     },
@@ -441,6 +464,12 @@ internal fun AppAlertDialog(
  * 通用大面板进场（`surfaceEnter`，阻尼 0.2）弹得太狠，小弹窗来回晃好几下显得轻浮。
  */
 private val DialogEnterSpec = MotionSprings.response<Float>(0.42f, 0.74f, 0.0001f)
+
+/** 退场期间在遮罩上记下的一次点击（屏幕坐标），等弹窗确认关闭后再转交给下层页面。 */
+private class PendingExitTap(val activity: android.app.Activity, val screenX: Float, val screenY: Float, val at: Long)
+
+/** 记下的点击超过这个时长还没等到弹窗离开组合，就视为弹窗留下了，点击作废。 */
+private const val PendingExitTapMaxAgeMillis = 600L
 
 /** 关闭回调交付后，窗口还可能多留一两帧：这段时间内的按下仍按「退场中」转交给下层页面。 */
 private const val ExitTailMillis = 250L
