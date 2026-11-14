@@ -21,7 +21,7 @@ internal class SystemNnnSaveStore(
         Files.move(source.toPath(), target.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
     },
 ) {
-    private val migration = File(directory, SystemNnnHost.SAVE_MIGRATION_DIRECTORY)
+    private val migration = migrationDirectory(directory)
     // The released standalone player rejects unknown entries in this stage before opening saves.
     private val restore = File(migration, SystemNnnHost.SAVE_RESTORE_DIRECTORY)
     private val before = File(restore, "before")
@@ -50,7 +50,7 @@ internal class SystemNnnSaveStore(
     }
 
     fun recoverForLaunch() {
-        if (!Files.notExists(migration.toPath(), NOFOLLOW_LINKS)) access(allowLegacyMigration = true) {}
+        if (hasRecovery(directory)) access(allowLegacyMigration = true) {}
     }
 
     fun files(root: File = directory): Map<String, File> = saveFiles(root, restoreRetired = false)
@@ -134,7 +134,7 @@ internal class SystemNnnSaveStore(
     }
 
     private fun recover(allowLegacyMigration: Boolean = false) {
-        if (Files.notExists(migration.toPath(), NOFOLLOW_LINKS)) return
+        if (!hasRecovery(directory)) return
         SavePathSafety.requirePlainDirectoryEntry(migration)
         if (Files.notExists(restore.toPath(), NOFOLLOW_LINKS)) {
             if (migration.listFiles()?.isEmpty() == true) {
@@ -176,6 +176,13 @@ internal class SystemNnnSaveStore(
     private fun clearRestore() {
         SavePathSafety.deleteTreeNoFollow(restore)
         Files.delete(migration.toPath())
+    }
+
+    companion object {
+        fun hasRecovery(directory: File): Boolean =
+            !Files.notExists(migrationDirectory(directory).toPath(), NOFOLLOW_LINKS)
+
+        private fun migrationDirectory(directory: File): File = File(directory, SystemNnnHost.SAVE_MIGRATION_DIRECTORY)
     }
 
     private fun apply(

@@ -3,6 +3,9 @@ package com.tyranor.next.core.game.storage
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import com.tyranor.next.core.game.save.GameSaveException
+import com.tyranor.next.core.game.save.SaveErrorCode
+import com.tyranor.next.core.game.save.SystemNnnSaveStore
 import com.tyranor.runtime.systemnnn.SystemNnnHost
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -136,7 +139,7 @@ internal object SystemNnnCopyStore {
             !Files.notExists(marker(game, EVICTED), LinkOption.NOFOLLOW_LINKS)
     }
 
-    fun hasImportedResources(game: File): Boolean = resourceChildren(game).isNotEmpty()
+    fun hasImportedResources(game: File): Boolean = copyContents(game).resources.isNotEmpty()
 
     fun readableBootstrap(root: File): Boolean = try {
         if (resourcesEvicted(root)) {
@@ -265,21 +268,23 @@ internal object SystemNnnCopyStore {
         return String(identity.toByteArray(), StandardCharsets.UTF_8)
     }
 
-    private fun resourceChildren(game: File): List<File> {
+    private data class CopyContents(val resources: List<File>, val saves: File?)
+
+    private fun copyContents(game: File): CopyContents {
         plainDirectory(game)
         val children = game.listFiles() ?: throw Failure(Reason.COPY_FAILED)
         val resources = ArrayList<File>()
-        var sawSaves = false
+        var saves: File? = null
         for (child in children) {
             if (!child.name.equals("sav", ignoreCase = true)) {
                 resources.add(child)
                 continue
             }
-            if (sawSaves) throw Failure(Reason.CORRUPT_COPY)
+            if (saves != null) throw Failure(Reason.CORRUPT_COPY)
             plainDirectory(child)
-            sawSaves = true
+            saves = child
         }
-        return resources
+        return CopyContents(resources, saves)
     }
 
     /** Removes imported game resources and keeps the whole `sav` directory in place. */
@@ -293,16 +298,20 @@ internal object SystemNnnCopyStore {
         if (committedRoot(base, identity) == null) return false
         return withImportLock(base, identity) {
             val game = activeRoot(committedRoot(base, identity)) ?: return@withImportLock false
-            val resources = resourceChildren(game)
-            if (resources.isEmpty() && !retireCopy) return@withImportLock false
+            val ordinaryContents = if (retireCopy) null else copyContents(game)
+            if (ordinaryContents?.resources?.isEmpty() == true) return@withImportLock false
             SystemNnnHost.lockSaveDirectory(game).use {
+                val (resources, saves) = ordinaryContents ?: copyContents(game)
+                if (retireCopy && saves != null && SystemNnnSaveStore.hasRecovery(saves)) {
+                    throw GameSaveException(SaveErrorCode.SAVE_SELECTION_INCOMPLETE)
+                }
                 val eviction = marker(game, EVICTED)
                 if (Files.notExists(eviction, LinkOption.NOFOLLOW_LINKS)) Files.createFile(eviction)
                 else if (!Files.isRegularFile(eviction, LinkOption.NOFOLLOW_LINKS)) throw Failure(Reason.CORRUPT_COPY)
                 for (resource in resources) deleteOwnedTree(resource)
                 if (retireCopy) Files.createFile(marker(game, RETIRED))
+                resources.isNotEmpty()
             }
-            resources.isNotEmpty()
         }
     }
 

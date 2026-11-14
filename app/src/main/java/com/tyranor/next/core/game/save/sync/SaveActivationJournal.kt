@@ -46,6 +46,34 @@ internal class SaveActivationJournal(private val directory: File) {
         }
     }
 
+    /** Inspect under the active-directory fence, including preparations that have no directory owner yet. */
+    fun hasPendingForDirectory(key: String, activeKey: String): Boolean {
+        val own = records.inspect(key)
+        if (own.has("token")) {
+            val directory = own.opt("activeKey") as? String
+            // A journal bound to a different directory does not depend on the retiring directory.
+            if ((own.opt("token") as? String).isNullOrBlank() ||
+                directory?.startsWith(SAVE_DIRECTORY_KEY_PREFIX) != true ||
+                !File(directory.removePrefix(SAVE_DIRECTORY_KEY_PREFIX)).isAbsolute ||
+                saveDirectoryScopesOverlap(directory, activeKey)
+            ) return true
+        } else if (!Files.notExists(archive(key).toPath(), NOFOLLOW_LINKS)) {
+            return true
+        }
+        return records.keys().any { other ->
+            if (other == key) return@any false
+            val state = try {
+                records.inspect(other)
+            } catch (failure: SaveSyncException) {
+                if (failure.code != SaveSyncError.LOCAL_IO) throw failure
+                // An unreadable entry for another URI supplies no evidence of ownership.
+                return@any false
+            }
+            val directory = state.opt("activeKey") as? String
+            state.has("token") && !directory.isNullOrBlank() && saveDirectoryScopesOverlap(directory, activeKey)
+        }
+    }
+
     /** Consumes an already-private staging ZIP after validating it; never pass a history file. */
     fun prepare(
         key: String,

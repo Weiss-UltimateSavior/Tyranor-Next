@@ -22,6 +22,7 @@ import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Rule
@@ -37,6 +38,59 @@ import java.util.zip.ZipOutputStream
 class SaveSyncServiceTest {
     @get:Rule
     val temp = TemporaryFolder()
+
+    @Test
+    fun directoryRetirementWaitsForPreparedActivationAndOverlappingOwner() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("retiring-copy", EngineType.SYSTEMNNN)
+        val alias = harness.addGame("overlapping-save-owner")
+        val directory = SAVE_DIRECTORY_KEY_PREFIX + File(harness.root, "copy/sav").canonicalPath
+        val aliasDirectory = SAVE_DIRECTORY_KEY_PREFIX + File(harness.root, "copy").canonicalPath
+        val unrelatedDirectory = SAVE_DIRECTORY_KEY_PREFIX + File(harness.root, "copy2").canonicalPath
+        val key = harness.key(alias)
+        val owners = SaveDirectoryActivationStore(harness.root)
+
+        fun assertPinned() {
+            val failure = assertThrows(SaveSyncException::class.java) {
+                harness.service.requireSaveDirectoryRetirementAvailable(game, directory)
+            }
+            assertEquals(SaveSyncError.SELECTION_INCOMPLETE, failure.code)
+        }
+
+        val staged = harness.archive("unrelated", "unrelated")
+        harness.journal.prepare(harness.key(game), harness.versionFor(staged), staged, null)
+        assertPinned() // Old journal or an archive for the queued URI has no other directory owner.
+        harness.journal.clear(harness.key(game))
+        val orphan = harness.journal.archive(harness.key(game))
+        harness.archive("orphan", "orphan").copyTo(orphan)
+        assertPinned() // The process can die after moving the ZIP and before recording its owner.
+        harness.journal.clear(harness.key(game))
+
+        val source = harness.archive("original-staged", "original")
+        val sourceVersion = harness.versionFor(source)
+        val original = harness.journal.prepare(harness.key(game), sourceVersion, source, null, unrelatedDirectory)
+        harness.service.requireSaveDirectoryRetirementAvailable(game, directory)
+        assertEquals(original, harness.journal.load(harness.key(game)))
+        harness.world.directoryKey = unrelatedDirectory
+        harness.service.recoverSelection(game)
+        assertNull(harness.journal.load(harness.key(game)))
+        assertTrue(harness.snapshots.isValid(harness.key(game), sourceVersion))
+
+        val other = harness.archive("unrelated-directory", "other")
+        harness.journal.prepare(key, harness.versionFor(other), other, null, unrelatedDirectory)
+        harness.service.requireSaveDirectoryRetirementAvailable(game, directory)
+        harness.journal.clear(key)
+
+        val aliasStage = harness.archive("alias-staged", "alias")
+        val pending = harness.journal.prepare(key, harness.versionFor(aliasStage), aliasStage, null, aliasDirectory)
+        assertPinned()
+        assertNull(owners.owned(alias.uri).singleOrNull())
+        owners.begin(aliasDirectory, alias.uri, pending.token)
+        harness.journal.clear(key)
+        assertPinned() // The owner alone still fences retirement while completion is pending.
+        owners.complete(aliasDirectory, alias.uri, pending.token, committed = false)
+        harness.service.requireSaveDirectoryRetirementAvailable(game, directory)
+    }
 
     @Test
     fun systemNnnSaveLockRetriesExitUpload() = runBlocking {

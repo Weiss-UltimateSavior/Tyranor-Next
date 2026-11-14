@@ -635,6 +635,43 @@ class SystemNnnSaveInteropTest {
         assertTrue(SystemNnnCleanupQueue(queueDirectory).pending().isEmpty())
     }
 
+    @Test fun pendingSaveRecoveryKeepsCopyAndCleanupRequestUntilRetry() {
+        val base = temp.newFolder("systemnnn-imports").canonicalFile
+        val source = "primary:Games/Pending"
+        val entry = base.resolve(SystemNnnCopyStore.key(source))
+        val copy = entry.resolve("game")
+        val saves = copy.resolve("SaV")
+        val migration = SystemNnnHost.SAVE_MIGRATION_DIRECTORY
+        val restore = SystemNnnHost.SAVE_RESTORE_DIRECTORY
+        put(entry, "source.id", source)
+        put(copy, "spt/sys.spt", "copy resource")
+        put(saves, "data1.sav", "partially restored")
+        put(saves, "$migration/$restore/before/data1.sav", "old save")
+        put(saves, "$migration/$restore/pending", "")
+        val queue = SystemNnnCleanupQueue(temp.newFolder("cleanup"))
+        queue.add(listOf(source), retireCopy = true)
+        fun drain() {
+            val target = queue.pending().single()
+            SystemNnnCopyStore.clearResources(base, source, target.retireCopy)
+            queue.complete(target)
+        }
+
+        val interrupted = assertThrows(GameSaveException::class.java) { drain() }
+        assertEquals(SaveErrorCode.SAVE_SELECTION_INCOMPLETE, interrupted.code)
+        assertEquals(copy, SystemNnnCopyStore.activeRoot(SystemNnnCopyStore.committedRoot(base, source)))
+        assertTrue(SystemNnnCopyStore.hasImportedResources(copy))
+        assertFalse(entry.resolve("resources-evicted").exists())
+        assertEquals("partially restored", saves.resolve("data1.sav").readText())
+        assertTrue(queue.pending().single().retireCopy)
+
+        SystemNnnSaveStore(copy, saves, ::validateFixture).recoverForLaunch()
+        assertEquals("old save", saves.resolve("data1.sav").readText())
+        drain()
+        assertTrue(queue.pending().isEmpty())
+        assertNull(SystemNnnCopyStore.activeRoot(SystemNnnCopyStore.committedRoot(base, source)))
+        assertEquals("old save", saves.resolve("data1.sav").readText())
+    }
+
     @Test fun readingCorruptProgressRestoresValidatedBackupAndItsExtension() {
         val game = temp.newFolder()
         val saves = game.resolve("sav").apply { check(mkdir()) }
