@@ -77,6 +77,7 @@ import com.tyranor.next.ui.common.motion.pressSquish
 import com.tyranor.next.ui.common.motion.pressSquishGroup
 import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.common.shouldShowSaveSyncFeedback
+import com.tyranor.next.ui.common.noticeKind
 import com.tyranor.next.ui.common.toSaveSyncMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -102,6 +103,11 @@ class WebDavSettingsActivity : AppScreenActivity() {
     companion object {
         fun createIntent(context: Context): Intent = Intent(context, WebDavSettingsActivity::class.java)
     }
+}
+
+/** 一次 WebDAV 操作的结果：提示文案与提示类型；类型为失败时按失败处理（驱动失败抖动，而不是成功落点）。 */
+private class WebDavOperationResult(val message: String, val kind: AppNotice.Kind) {
+    val succeeded: Boolean get() = kind != AppNotice.Kind.Failure
 }
 
 private enum class WebDavTextField(
@@ -239,7 +245,7 @@ private fun WebDavSettingsScreen() {
         // 仅供动效：操作真正开始时 / 结束时（true 成功、false 失败、null 取消或被开关中止）
         onStart: () -> Unit = {},
         onFinish: (Boolean?) -> Unit = {},
-        block: suspend (WebDavConfig) -> String,
+        block: suspend (WebDavConfig) -> WebDavOperationResult,
     ) {
         if (!canInteract()) return
         val value = config
@@ -255,8 +261,9 @@ private fun WebDavSettingsScreen() {
                     block(value)
                 }
                 if (!config.enabled || !WebDavSettingsStore.isEnabled(context)) return@launch
-                outcome = true
-                if (!syncOperation || shouldShowSaveSyncFeedback(context)) showToast(result, AppNotice.Kind.Success)
+                // 同步报告里的失败不会抛异常：提示类型与成败都按结果本身决定，不能只凭「没抛异常」判成功
+                outcome = result.succeeded
+                if (!syncOperation || shouldShowSaveSyncFeedback(context)) showToast(result.message, result.kind)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -496,7 +503,7 @@ private fun WebDavSettingsScreen() {
                                     ) { value ->
                                         WebDavClient(value, context.cacheDir) { WebDavSettingsStore.isEnabled(context) }
                                             .use { it.testConnection() }
-                                        connectionOkMessage
+                                        WebDavOperationResult(connectionOkMessage, AppNotice.Kind.Success)
                                     }
                                 }),
                             )
@@ -614,9 +621,8 @@ private fun WebDavSettingsScreen() {
                                             if (ok == true) syncAllSucceeded++ else if (ok == false) syncAllFailed++
                                         },
                                     ) {
-                                        SaveSyncService(context)
-                                            .syncAll(direction)
-                                            .toSaveSyncMessage(context)
+                                        val report = SaveSyncService(context).syncAll(direction)
+                                        WebDavOperationResult(report.toSaveSyncMessage(context), report.noticeKind())
                                     }
                                 }),
                             )
