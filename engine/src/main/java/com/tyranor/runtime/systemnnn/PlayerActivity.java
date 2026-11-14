@@ -1213,7 +1213,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                     if(drawChoices)choices.drawFloating(floatingCanvas);
                 }
                 NativeGame.pushStoryPlanes(token.value(),bitmap,drawFloating?floatingBitmap:null,key,!uiHidden);
-                if(liveCursor&&(drawDialogue&&dialoguePanel.animating()||drawChoices&&choices.animating()))schedulePush();
+                if(liveCursor&&(drawDialogue&&dialoguePanel.portraitAnimating()||drawChoices&&choices.animating()))schedulePush();
             }catch(RuntimeException|OutOfMemoryError e){
                 Log.w("SystemNNN","Unable to rasterize story UI plane",e);
             }

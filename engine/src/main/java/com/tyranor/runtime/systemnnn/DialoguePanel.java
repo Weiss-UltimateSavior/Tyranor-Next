@@ -77,8 +77,8 @@ final class DialoguePanel extends FrameLayout implements StoryPlaneView.Host {
         if(directDraw!=value){directDraw=value;invalidate();}
     }
     boolean waitingCursorVisible(){return cursor.getVisibility()==VISIBLE;}
-    boolean animating(){
-        return getVisibility()!=GONE&&(cursor.moving()||belowWindow.moving()||aboveWindow.moving());
+    boolean portraitAnimating(){
+        return getVisibility()!=GONE&&(belowWindow.moving()||aboveWindow.moving());
     }
     void drawPlane(Canvas canvas,boolean withCursor){
         if(getVisibility()==GONE)return;
@@ -486,10 +486,24 @@ final class DialoguePanel extends FrameLayout implements StoryPlaneView.Host {
         private int period=20,mode;
         private int variant,scriptVariant;
         private GameUiAssets assets;
-        private boolean enabled,fixX,fixY,moving;
-        private long since;
+        private boolean enabled,fixX,fixY;
+        private long since,wakeTime;
+        private final Runnable wake=()->{wakeTime=0;invalidate();};
         MessageCursor(){super(DialoguePanel.this.getContext());setVisibility(GONE);setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);}
-        boolean moving(){return getVisibility()==VISIBLE&&moving;}
+        private void cancelWake(){
+            if(wake!=null)removeCallbacks(wake);
+            wakeTime=0;
+        }
+        @Override protected void onDetachedFromWindow(){cancelWake();super.onDetachedFromWindow();}
+        @Override protected void onVisibilityChanged(View view,int visibility){
+            super.onVisibilityChanged(view,visibility);
+            if(visibility!=VISIBLE)cancelWake();
+        }
+        @Override protected void onWindowVisibilityChanged(int visibility){
+            super.onWindowVisibilityChanged(visibility);
+            if(visibility==VISIBLE&&getVisibility()==VISIBLE)invalidate();
+            else cancelWake();
+        }
         void assets(GameUiAssets assets){
             this.assets=assets;
             GameUiAssets.Config cfg=assets.messageCursor;
@@ -526,15 +540,14 @@ final class DialoguePanel extends FrameLayout implements StoryPlaneView.Host {
             boolean show=visible&&enabled&&images[selected]!=null;
             if(show&&(getVisibility()!=VISIBLE||selected!=mode))since=SystemClock.uptimeMillis();
             mode=selected;period=Math.max(1,frameMs);
-            SpriteAnimation clip=clips[selected];
-            moving=show&&clip!=null&&(clip.active((SystemClock.uptimeMillis()-since)/period)||startAlpha[selected]!=endAlpha[selected]);
             setVisibility(show?VISIBLE:GONE);
             if(show)invalidate();
         }
         @Override protected void onDraw(Canvas canvas){
-            if(clips[mode]==null){moving=false;return;}
+            SpriteAnimation clip=clips[mode];
+            if(clip==null)return;
             float sx=getWidth()/(float)canvasWidth,sy=getHeight()/(float)canvasHeight;
-            if(sx<=0||sy<=0){moving=false;return;}
+            if(sx<=0||sy<=0)return;
             float px=x[mode]*sx,py=y[mode]*sy;
             android.text.Layout lines=body.getLayout();
             if(mode>=2&&decorations.cutin){
@@ -547,14 +560,24 @@ final class DialoguePanel extends FrameLayout implements StoryPlaneView.Host {
                     body.getLeft()+lines.getLineRight(line);
                 if(!fixY)py+=body.getTop()+body.getTotalPaddingTop()+lines.getLineTop(line)-body.getScrollY();
             }
-            SpriteAnimation clip=clips[mode];dest.set(px,py,px+clip.w*sx,py+clip.h*sy);
-            long frame=(SystemClock.uptimeMillis()-since)/period;
+            dest.set(px,py,px+clip.w*sx,py+clip.h*sy);
+            long now=SystemClock.uptimeMillis();
+            long frame=(now-since)/period;
             int duration=alphaLoop[mode],n=(int)(frame%(reverse[mode]?2L*duration:duration));
             if(n>duration)n=2*duration-n;
             int alpha=startAlpha[mode]+(endAlpha[mode]-startAlpha[mode])*n/duration;
             clip.draw(canvas,images[mode],dest,paint,frame,alpha*255/100);
-            moving=images[mode]!=null&&(clip.active(frame)||startAlpha[mode]!=endAlpha[mode]);
-            if(moving)postInvalidateOnAnimation();
+            // A fixed-alpha cursor changes only on the configured atlas step.
+            long next=0;
+            if(images[mode]!=null&&isShown()&&getWindowVisibility()==VISIBLE){
+                if(startAlpha[mode]!=endAlpha[mode])next=frame+1;
+                else if(clip.active(frame))next=clip.blend?frame+1:(frame/clip.speed+1)*clip.speed;
+            }
+            long deadline=next==0?0:since+next*period;
+            if(wakeTime!=deadline){
+                cancelWake();
+                if(deadline!=0){wakeTime=deadline;postDelayed(wake,Math.max(1,deadline-now));}
+            }
         }
     }
 }
