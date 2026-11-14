@@ -8,12 +8,13 @@ import androidx.compose.ui.layout.onGloballyPositioned
 /** 引导步骤与主界面页面/真实控件锚点的稳定映射。 */
 internal object CoachAnchor {
     const val HOME = 0
-    const val GAME_ADD = 1
-    const val GAME_SEARCH = 2
-    const val GAME_COVER = 3
-    const val GAME_SCAN = 4
-    const val ENGINE = 5
-    const val SETTINGS = 6
+    const val GAME_FOLDER = 1
+    const val GAME_ADD = 2
+    const val GAME_SEARCH = 3
+    const val GAME_COVER = 4
+    const val GAME_SCAN = 5
+    const val ENGINE = 6
+    const val SETTINGS = 7
 }
 
 internal fun Modifier.coachAnchor(enabled: Boolean, onBounds: (Rect) -> Unit): Modifier =

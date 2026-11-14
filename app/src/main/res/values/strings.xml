@@ -950,8 +950,10 @@
     <string name="onboarding_coach_home_body">这里可以快速进入常玩游戏，也能查看最近打开的内容。</string>
     <string name="onboarding_coach_home_web_title">浏览网页首页</string>
     <string name="onboarding_coach_home_web_body">这里展示你配置的网页首页内容。</string>
-    <string name="onboarding_coach_games_title">添加你的游戏</string>
-    <string name="onboarding_coach_games_body">点击“添加游戏”手动添加 PC 或安卓游戏。扫描目录请使用空游戏库的“添加文件夹”，或前往设置中的“游戏目录添加”。</string>
+    <string name="onboarding_coach_games_folder_title">先添加游戏文件夹</string>
+    <string name="onboarding_coach_games_folder_body">首次使用点击“添加文件夹”添加游戏目录，自动扫描支持的游戏</string>
+    <string name="onboarding_coach_games_title">需要手动添加时用加号</string>
+    <string name="onboarding_coach_games_body">顶部加号用于手动添加电脑游戏（指定 exe）或已安装的安卓应用。支持的引擎游戏请通过“添加文件夹”扫描入库。</string>
     <string name="onboarding_coach_games_search_title">查找游戏</string>
     <string name="onboarding_coach_games_search_body">用搜索框按名称筛选游戏库中的内容。</string>
     <string name="onboarding_coach_games_cover_title">补全封面</string>
@@ -959,9 +961,9 @@
     <string name="onboarding_coach_games_scan_title">重新扫描目录</string>
     <string name="onboarding_coach_games_scan_body">点击循环箭头重新检查已经添加的目录，不会新增目录。</string>
     <string name="onboarding_coach_engine_title">查看运行环境</string>
-    <string name="onboarding_coach_engine_body">在“引擎”页查看内置引擎、外置模块和模拟器。</string>
+    <string name="onboarding_coach_engine_body">在“引擎”页查看支持的引擎、外置模块和模拟器。不确定游戏使用哪种引擎时，可向社区求助。</string>
     <string name="onboarding_coach_settings_title">随时调整设置</string>
-    <string name="onboarding_coach_settings_body">这里可以添加游戏目录、调整扫描深度和游戏排序。</string>
+    <string name="onboarding_coach_settings_body">这里可以添加、移除扫描目录，调整扫描深度和游戏排序。移除扫描目录不会删除游戏文件。</string>
     <string name="webdav_title">WebDAV 存档同步</string>
     <string name="webdav_enabled">启用 WebDAV 存档同步</string>
     <string name="webdav_server_url">服务器地址</string>

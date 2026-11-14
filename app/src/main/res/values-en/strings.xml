@@ -950,8 +950,10 @@
     <string name="onboarding_coach_home_body">Jump back into favorites here and see what you opened recently.</string>
     <string name="onboarding_coach_home_web_title">Explore the web home</string>
     <string name="onboarding_coach_home_web_body">Your configured web home is shown here.</string>
-    <string name="onboarding_coach_games_title">Add your games</string>
-    <string name="onboarding_coach_games_body">Use Add game to add a PC or Android game manually. To scan a folder, use Add folder in an empty library or Game folders in Settings.</string>
+    <string name="onboarding_coach_games_folder_title">Start by adding a folder</string>
+    <string name="onboarding_coach_games_folder_body">On first use, tap Add folder to add a game directory and automatically scan for supported games.</string>
+    <string name="onboarding_coach_games_title">Use plus for manual entries</string>
+    <string name="onboarding_coach_games_body">The top plus button adds a PC game with an exe or an installed Android app manually. For supported engine games, use Add folder to scan them into the library.</string>
     <string name="onboarding_coach_games_search_title">Find a game</string>
     <string name="onboarding_coach_games_search_body">Use search to filter the games in your library by name.</string>
     <string name="onboarding_coach_games_cover_title">Fill in covers</string>
@@ -959,9 +961,9 @@
     <string name="onboarding_coach_games_scan_title">Rescan folders</string>
     <string name="onboarding_coach_games_scan_body">Tap the circular arrows to recheck folders you already added. It does not add folders.</string>
     <string name="onboarding_coach_engine_title">Check runtimes</string>
-    <string name="onboarding_coach_engine_body">Check built-in engines, external modules, and emulators here.</string>
+    <string name="onboarding_coach_engine_body">Check supported engines, external modules, and emulators here. Ask the community if you are unsure which engine a game uses.</string>
     <string name="onboarding_coach_settings_title">Adjust settings anytime</string>
-    <string name="onboarding_coach_settings_body">Add game directories here, then adjust scan depth and game sorting.</string>
+    <string name="onboarding_coach_settings_body">Add or remove scan folders here, and adjust scan depth and game sorting. Removing a scan folder does not delete game files.</string>
     <string name="webdav_title">WebDAV save sync</string>
     <string name="webdav_enabled">Enable WebDAV save sync</string>
     <string name="webdav_server_url">Server URL</string>

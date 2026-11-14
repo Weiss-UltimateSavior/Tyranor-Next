@@ -1,7 +1,6 @@
 package com.tyranor.next.ui.onboarding
 
 import androidx.annotation.StringRes
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,6 +8,8 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -47,6 +48,8 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.layout
+import kotlin.math.roundToInt
 import com.tyranor.next.R
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AppComponentShape
@@ -72,6 +75,7 @@ private data class CoachStep(
 
 private val coachSteps = listOf(
     CoachStep(R.string.onboarding_coach_home_title, R.string.onboarding_coach_home_body),
+    CoachStep(R.string.onboarding_coach_games_folder_title, R.string.onboarding_coach_games_folder_body),
     CoachStep(R.string.onboarding_coach_games_title, R.string.onboarding_coach_games_body),
     CoachStep(R.string.onboarding_coach_games_search_title, R.string.onboarding_coach_games_search_body),
     CoachStep(R.string.onboarding_coach_games_cover_title, R.string.onboarding_coach_games_cover_body),
@@ -174,15 +178,47 @@ fun OnboardingCoachOverlay(
                 bottom = targetBounds.bottom - overlayOrigin.y,
             )
         }
-        val targetLeft = targetRect.left.coerceIn(0f, overlayWidthPx)
-        val targetTop = targetRect.top.coerceIn(0f, overlayHeightPx)
-        val targetRight = targetRect.right.coerceIn(targetLeft, overlayWidthPx)
-        val targetBottom = targetRect.bottom.coerceIn(targetTop, overlayHeightPx)
+        // 文件夹按钮四周留出呼吸空间，避免高亮描边紧贴按钮边缘。
+        val targetPadding = if (safeStep == CoachAnchor.GAME_FOLDER && hasMeasuredTarget) {
+            with(density) { 8.dp.toPx() }
+        } else {
+            0f
+        }
+        val targetLeft = (targetRect.left - targetPadding).coerceIn(0f, overlayWidthPx)
+        val targetTop = (targetRect.top - targetPadding).coerceIn(0f, overlayHeightPx)
+        val targetRight = (targetRect.right + targetPadding).coerceIn(targetLeft, overlayWidthPx)
+        val targetBottom = (targetRect.bottom + targetPadding).coerceIn(targetTop, overlayHeightPx)
         val targetLeftDp = with(density) { targetLeft.toDp() }
         val targetTopDp = with(density) { targetTop.toDp() }
         val targetRightDp = with(density) { targetRight.toDp() }
         val targetBottomDp = with(density) { targetBottom.toDp() }
         val targetHeightDp = with(density) { (targetBottom - targetTop).toDp() }
+        val safeTop = WindowInsets.safeDrawing.getTop(density)
+        val safeBottom = WindowInsets.safeDrawing.getBottom(density)
+        val tooltipPlacement = if (safeStep == CoachAnchor.GAME_FOLDER && showTarget) {
+            Modifier.layout { measurable, constraints ->
+                val gap = 20.dp.roundToPx()
+                val edge = 16.dp.roundToPx()
+                val upperEdge = (safeTop + edge).coerceAtMost(constraints.maxHeight)
+                val lowerEdge = (constraints.maxHeight - safeBottom - edge).coerceAtLeast(upperEdge)
+                val belowStart = (targetBottom.roundToInt() + gap).coerceIn(upperEdge, lowerEdge)
+                val aboveEnd = (targetTop.roundToInt() - gap).coerceIn(upperEdge, lowerEdge)
+                val belowSpace = lowerEdge - belowStart
+                val aboveSpace = aboveEnd - upperEdge
+                val card = measurable.measure(
+                    constraints.copy(minHeight = 0, maxHeight = maxOf(aboveSpace, belowSpace).coerceAtLeast(1)),
+                )
+                // 优先紧贴按钮下方；放不下时转到上方，卡片仍可在可用空间内滚动。
+                val cardTop = if (card.height <= belowSpace || belowSpace >= aboveSpace) {
+                    belowStart
+                } else {
+                    aboveEnd - card.height
+                }
+                layout(card.width, constraints.maxHeight) { card.placeRelative(0, cardTop) }
+            }
+        } else {
+            cardPlacement.position(Modifier, maxHeight, overlayHeightPx)
+        }
 
         spotlight.Draw(
             safeStep, Rect(targetLeft, targetTop, targetRight, targetBottom), showTarget,
@@ -229,9 +265,8 @@ fun OnboardingCoachOverlay(
                 .widthIn(max = 320.dp)
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
-                .then(cardPlacement.position(Modifier, maxHeight, overlayHeightPx))
-                // 连接线锚点取「入场图层之外」的最终布局矩形：onGloballyPositioned 只在布局变化时回调，
-                // 若放在入场图层内侧，首次回调会记下隐藏态（下移 / 缩小）的位置并一直沿用
+                .then(tooltipPlacement)
+                // 连接线锚点取入场图层之外的最终布局矩形，避免沿用隐藏态坐标。
                 .onGloballyPositioned { coordinates ->
                     val bounds = coordinates.boundsInRoot()
                     if (tooltipBounds != bounds) tooltipBounds = bounds

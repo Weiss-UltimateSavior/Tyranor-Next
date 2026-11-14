@@ -577,7 +577,12 @@ private fun GameLibraryContent(
                     LibraryPane.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         DelayedProgress { CircularProgressIndicator() }
                     }
-                    LibraryPane.Empty -> EmptyGameLibrary(onAddFolder = { dirPickerLaunch() })
+                    LibraryPane.Empty -> EmptyGameLibrary(
+                        onAddFolder = { dirPickerLaunch() },
+                        // 等空态的缩放入场结束后再测量，避免缓存动画中的控件位置。
+                        isActive = isActive && pane == LibraryPane.Empty && !transition.isRunning,
+                        onCoachAnchorChanged = { onCoachAnchorChanged(CoachAnchor.GAME_FOLDER, it) },
+                    )
                     LibraryPane.NoMatch -> Column(
                         modifier = Modifier.fillMaxSize(),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -695,7 +700,14 @@ private fun GameFilterActionIcon(
 }
 
 @Composable
-private fun EmptyGameLibrary(onAddFolder: () -> Unit) {
+private fun EmptyGameLibrary(
+    onAddFolder: () -> Unit,
+    isActive: Boolean,
+    onCoachAnchorChanged: (Rect) -> Unit,
+) {
+    DisposableEffect(isActive) {
+        onDispose { onCoachAnchorChanged(Rect.Zero) }
+    }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         // 空态每次出现都自带一轮入场：标题 → 说明 → 主按钮依次升起（主按钮行程更长，作为落点）
         ProvideEntrance {
@@ -714,7 +726,10 @@ private fun EmptyGameLibrary(onAddFolder: () -> Unit) {
                 com.tyranor.next.ui.common.NoRippleButton(
                     text = stringResource(R.string.game_add_folder),
                     onClick = onAddFolder,
-                    modifier = Modifier.staggeredEntrance(2, distance = 20.dp, stepMillis = 55L).padding(top = 16.dp),
+                    modifier = Modifier
+                        .padding(top = 16.dp)
+                        .coachAnchor(isActive, onCoachAnchorChanged)
+                        .staggeredEntrance(2, distance = 20.dp, stepMillis = 55L),
                 )
             }
         }
