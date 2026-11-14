@@ -101,14 +101,16 @@ internal class SystemNnnSaveStore(
             Files.createDirectory(before.toPath())
             for ((name, file) in existing) copySynced(file, File(before, name))
             FileOutputStream(pending).use {
-                it.write(2)
+                it.write(3)
                 it.fd.sync()
             }
-            // Older backups omit PC slots or PC global archives.
+            // Older backups omit PC slots, global archives, or an entire chart family.
             apply(
                 incoming,
                 preservePcSlots = source != null && incoming.keys.none(SystemNnnHost::isPcStorySave),
-                preservePcGlobal = source != null && incoming.keys.none(SystemNnnHost::isPcGlobalSave),
+                preservePcGlobal = source != null && incoming.keys.none(SystemNnnHost::isPcGlobalArchive),
+                preserveModernChart = source != null && incoming.keys.none(SystemNnnHost::isModernChartProgress),
+                preserveLegacyChart = source != null && incoming.keys.none(SystemNnnHost::isLegacyChartSave),
             )
             Files.delete(pending.toPath())
         } catch (failure: Exception) {
@@ -145,16 +147,18 @@ internal class SystemNnnSaveStore(
             if (!Files.isDirectory(before.toPath(), NOFOLLOW_LINKS)) {
                 throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
             }
-            // Old pending markers were empty, and their rollback copy excluded PC slots.
+            // Empty markers predate PC slots; versions before 3 did not collect PC chart families.
             val version = Files.newInputStream(pending.toPath(), NOFOLLOW_LINKS).use {
                 val version = it.read()
-                if (version == -1 || version in 1..2 && it.read() == -1) version
+                if (version == -1 || version in 1..3 && it.read() == -1) version
                 else throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
             }
             apply(
                 saveFiles(before, restoreRetired = version == -1),
                 preservePcSlots = version == -1,
                 preservePcGlobal = version < 2,
+                preserveModernChart = version < 3,
+                preserveLegacyChart = version < 3,
             )
             Files.delete(pending.toPath())
         }
@@ -166,7 +170,13 @@ internal class SystemNnnSaveStore(
         Files.delete(migration.toPath())
     }
 
-    private fun apply(snapshot: Map<String, File>, preservePcSlots: Boolean, preservePcGlobal: Boolean) {
+    private fun apply(
+        snapshot: Map<String, File>,
+        preservePcSlots: Boolean,
+        preservePcGlobal: Boolean,
+        preserveModernChart: Boolean,
+        preserveLegacyChart: Boolean,
+    ) {
         val live = files()
         for ((name, file) in snapshot) {
             val target = File(directory, name)
@@ -183,7 +193,9 @@ internal class SystemNnnSaveStore(
         for ((name, file) in live) {
             if (name !in snapshot &&
                 !(preservePcSlots && SystemNnnHost.isPcStorySave(name)) &&
-                !(preservePcGlobal && SystemNnnHost.isPcGlobalSave(name))
+                !(preservePcGlobal && SystemNnnHost.isPcGlobalArchive(name)) &&
+                !(preserveModernChart && SystemNnnHost.isModernChartProgress(name)) &&
+                !(preserveLegacyChart && SystemNnnHost.isLegacyChartSave(name))
             ) {
                 Files.delete(file.toPath())
             }

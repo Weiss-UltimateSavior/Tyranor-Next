@@ -64,9 +64,13 @@ public final class SystemNnnSaveValidationService extends Service {
         try {
             Bundle data = request.getData();
             Map<String, File> files = stagedFiles(data.getString("stage"));
+            String path=data.getString("game");
+            if(path==null)throw new IOException("Missing target game directory");
+            File game=new File(path);
+            if(!SystemNnnHost.canOpen(game))throw new IOException("Unreadable target game directory");
             NativeGame.load(this);
             try {
-                result = SystemNnnHost.canReplaceSaveSnapshot(files, data.getBoolean("requiresStory")) ? VALID : INVALID;
+                result = SystemNnnHost.canReplaceSaveSnapshot(game,files, data.getBoolean("requiresStory")) ? VALID : INVALID;
             } catch (IOException failure) {
                 result = failure.getCause() instanceof LinkageError || failure.getCause() instanceof OutOfMemoryError
                     ? UNAVAILABLE : INVALID;
@@ -112,22 +116,38 @@ public final class SystemNnnSaveValidationService extends Service {
         }
         Path root = getCacheDir().getCanonicalFile().toPath().resolve(stage);
         if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) throw new IOException("Missing save staging directory");
+        return stagedFiles(root);
+    }
+
+    static Map<String,File> stagedFiles(Path root) throws IOException {
+        if(!Files.isDirectory(root,LinkOption.NOFOLLOW_LINKS))throw new IOException("Invalid save staging directory");
         Map<String, File> files = new LinkedHashMap<>();
-        try (DirectoryStream<Path> entries = Files.newDirectoryStream(root)) {
-            for (Path file : entries) {
-                if (!SystemNnnHost.isManagedSaveFile(file.getFileName())) continue;
-                if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) throw new IOException("Invalid staged save");
-                files.put(file.getFileName().toString(), file.toFile());
-            }
-        }
+        collectStagedFiles(root,root,files);
         return files;
     }
 
-    static boolean validate(Context context, File stage, boolean requiresStory, Runnable checkCancelled) throws IOException {
+    private static void collectStagedFiles(Path root,Path folder,Map<String,File> files) throws IOException {
+        try (DirectoryStream<Path> entries = Files.newDirectoryStream(folder)) {
+            for (Path file : entries) {
+                Path relative=root.relativize(file);
+                if(SystemNnnHost.isManagedSaveDirectory(relative)){
+                    if(!Files.isDirectory(file,LinkOption.NOFOLLOW_LINKS))throw new IOException("Invalid staged save directory");
+                    collectStagedFiles(root,file,files);
+                    continue;
+                }
+                if (!SystemNnnHost.isManagedSaveFile(relative)) continue;
+                if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) throw new IOException("Invalid staged save");
+                files.put(relative.toString().replace(File.separatorChar,'/'),file.toFile());
+            }
+        }
+    }
+
+    static boolean validate(Context context,File game,File stage,boolean requiresStory,Runnable checkCancelled) throws IOException {
         Context app = context.getApplicationContext();
         if (!app.getCacheDir().getCanonicalFile().equals(stage.getParentFile())) throw new IOException("Invalid save staging path");
         Bundle args=new Bundle();
         args.putString("stage",stage.getName());
+        args.putString("game",game.getPath());
         args.putBoolean("requiresStory",requiresStory);
         return request(app,VALIDATE,args,checkCancelled).status==VALID;
     }

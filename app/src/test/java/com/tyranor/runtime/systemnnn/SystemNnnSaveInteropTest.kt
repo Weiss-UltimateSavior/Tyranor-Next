@@ -11,6 +11,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeNoException
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -18,6 +19,7 @@ import java.io.DataOutputStream
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.Paths
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.nio.file.attribute.BasicFileAttributes
@@ -52,7 +54,7 @@ class SystemNnnSaveInteropTest {
         putLegacySlot(incoming)
         val story = putPcSlot(incoming, "data0.sav")
         val backup = putPcSlot(incoming, "data3.sav.bak")
-        put(incoming, "emberfall.chart/chart1/slot0.dat", "chart")
+        putChartNode(incoming, "emberfall.chart/chart1/slot0.dat")
         val highSlot = putPcSlot(incoming, "data118.sav")
         put(incoming, "emberfall.last-slot", "last selection")
         put(incoming, "emberfall.last-slot.new", "interrupted selection")
@@ -321,7 +323,10 @@ class SystemNnnSaveInteropTest {
         val pc = saves.resolve("sysfile3.sav").apply { writeText("PC") }
         val incoming = temp.newFolder().canonicalFile
         val replacement = putPcSlot(incoming, "data0.sav")
-        for (name in original.keys - setOf(replacement.name, "emberfall.read")) put(incoming, name, "replacement $name")
+        for (name in original.keys - setOf(replacement.name, "emberfall.read")) {
+            if (SystemNnnHost.isChartNodeSave(name)) putChartNode(incoming, name)
+            else put(incoming, name, "replacement $name")
+        }
         putProgress(incoming, 34)
         putPcSlot(incoming, "data3.sav")
         var interrupted = false
@@ -968,13 +973,226 @@ class SystemNnnSaveInteropTest {
         assertFalse(SystemNnnHost.hasActiveSaveAccess())
     }
 
+    @Test fun chartOwnershipIsBoundedAndSeparateFromLegacyMigration() {
+        for (name in listOf("mita.dat", "tsuka.dat", "mushiex/mita.dat", "mushiex/tsuka.dat",
+            "mushiex/chart1/slot1001.dat", "mushiex/chart9/slot9999.dat", "emberfall.chart/chart32/slot262143.dat")) {
+            assertTrue(name, SystemNnnHost.isManagedSaveFile(Paths.get(name)))
+        }
+        for (name in listOf("mushiex/chart10/slot9999.dat", "mushiex/chart1/slot10000.dat",
+            "mushiex/chart01/slot1001.dat", "mushiex/chart1/slot01001.dat", "mushiex/chart1/slot1001.dat.new",
+            "mushiex/chart1/extra/slot1001.dat", "emberfall.chart/chart33/slot0.dat", "emberfall.chart/chart1/slot262144.dat",
+            "mushiex/../mita.dat", "../mita.dat")) {
+            assertFalse(name, SystemNnnHost.isManagedSaveFile(Paths.get(name)))
+        }
+        assertTrue(SystemNnnHost.isManagedSaveDirectory(Paths.get("mushiex/chart9")))
+        assertFalse(SystemNnnHost.isManagedSaveDirectory(Paths.get("mushiex/chart10")))
+        assertFalse(LegacySaveMigration.ownedFile(Paths.get("mushiex/chart1/slot1001.dat")))
+        assertFalse(LegacySaveMigration.chartDirectory(Paths.get("mushiex")))
+    }
+
+    @Test fun chartSnapshotEnumerationMatchesTheRecursiveValidator() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
+        val expected = putChartFlags(saves, false) + putChartFlags(saves, true)
+        putChartNode(saves, "mushiex/chart1/slot1001.dat")
+        putChartNode(saves, "emberfall.chart/chart1/slot0.dat")
+        put(saves, "mushiex/chart1/slot1001.dat.new", "pending")
+        put(saves, "mushiex/chart01/slot1001.dat", "alias")
+        val files = store.files()
+        assertEquals(expected.keys + setOf("mushiex/chart1/slot1001.dat", "emberfall.chart/chart1/slot0.dat"), files.keys)
+        assertEquals(files, SystemNnnSaveValidationService.stagedFiles(saves.toPath()))
+        for ((name, bytes) in expected) assertArrayEquals(bytes, files.getValue(name).readBytes())
+    }
+
+    @Test fun chartGlobalsDoNotAuthorizeOverwritingAnExistingNode() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        val node = putChartNode(saves, "mushiex/chart1/slot1001.dat")
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
+        val incoming = temp.newFolder().canonicalFile
+        putChartFlags(incoming, true)
+        assertTrue(SystemNnnHost.requiresStorySnapshot(store.files().keys))
+        assertThrows(GameSaveException::class.java) { store.access { store.replace(incoming) } }
+        assertArrayEquals(CHART_NODE_FIXTURE, node.readBytes())
+        val blank = temp.newFolder().canonicalFile
+        val emptySaves = blank.resolve("sav").apply { check(mkdir()) }
+        val emptyStore = SystemNnnSaveStore(blank, emptySaves, ::validateFixture)
+        emptyStore.access { assertEquals(2, emptyStore.replace(incoming)) }
+        assertEquals(10004, emptySaves.resolve("mushiex/mita.dat").length().toInt())
+    }
+
+    @Test fun chartValidationRejectsBadNodesAndLengthsBeforeAnyReplacement() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        val current = putChartNode(saves, "mushiex/chart1/slot1001.dat")
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
+        val incoming = temp.newFolder().canonicalFile
+        putPcSlot(incoming, "data0.sav")
+        val node = putChartNode(incoming, "mushiex/chart1/slot1001.dat")
+        for (invalid in listOf(byteArrayOf(0), CHART_NODE_FIXTURE + byteArrayOf(0), ByteArray(2 * 1024 * 1024 + 1))) {
+            node.writeBytes(invalid)
+            assertThrows(GameSaveException::class.java) { store.access { store.replace(incoming) } }
+            assertArrayEquals(CHART_NODE_FIXTURE, current.readBytes())
+        }
+        node.writeBytes(CHART_NODE_FIXTURE)
+        putChartFlags(incoming, true)
+        incoming.resolve("mushiex/mita.dat").writeBytes(ByteArray(10000))
+        assertThrows(GameSaveException::class.java) { store.access { store.replace(incoming) } }
+        assertArrayEquals(CHART_NODE_FIXTURE, current.readBytes())
+        assertFalse(saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY).exists())
+    }
+
+    @Test fun chartValidatorsReceiveEveryRelativePathWithoutTreatingGlobalsAsNodes() {
+        val directory = temp.newFolder().canonicalFile
+        putChartFlags(directory, true)
+        putChartNode(directory, "mushiex/chart1/slot1001.dat")
+        val files = SystemNnnSaveValidationService.stagedFiles(directory.toPath())
+        val inspected = linkedSetOf<String>()
+        assertTrue(SystemNnnHost.canReplaceSaveSnapshot(files, true, { false }) { path, _ ->
+            inspected.add(path)
+            true
+        })
+        assertEquals(files.keys, inspected)
+        assertFalse(SystemNnnHost.canReplaceSaveSnapshot(files, true, { false }) { path, _ ->
+            !SystemNnnHost.isChartNodeSave(path)
+        })
+        val aliased = files + ("MUSHIEX/MITA.DAT" to files.getValue("mushiex/mita.dat"))
+        assertFalse(SystemNnnHost.canReplaceSaveSnapshot(aliased, true, { false }) { _, _ -> true })
+    }
+
+    @Test fun olderBackupsPreserveAbsentChartFamiliesButExplicitClearDeletesThem() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        val original = putChartFlags(saves, false) + putChartFlags(saves, true)
+        putChartNode(saves, "mushiex/chart1/slot1001.dat")
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
+        val older = temp.newFolder().canonicalFile
+        putPcSlot(older, "data0.sav")
+        val state = GameProgress.State(intArrayOf(), IntArray(1000), IntArray(2048), Array(102) { byteArrayOf() },
+            IntArray(NativeGame.OPTIONAL_PROGRESS_WORDS), null, emptyList())
+        PcSystemSave.open(game, older, GameUiAssets.readConfig(game, "game"), intArrayOf(3, 0)).write(state, intArrayOf())
+        store.access { store.replace(older) }
+        for ((name, bytes) in original) assertArrayEquals(bytes, saves.resolve(name).readBytes())
+        assertArrayEquals(CHART_NODE_FIXTURE, saves.resolve("mushiex/chart1/slot1001.dat").readBytes())
+
+        val modern = temp.newFolder().canonicalFile
+        putPcSlot(modern, "data0.sav")
+        val replacement = putChartFlags(modern, false, 7)
+        store.access { store.replace(modern) }
+        for ((name, bytes) in replacement) assertArrayEquals(bytes, saves.resolve(name).readBytes())
+        for ((name, bytes) in original.filterKeys { it.startsWith("mushiex/") })
+            assertArrayEquals(bytes, saves.resolve(name).readBytes())
+
+        val legacy = temp.newFolder().canonicalFile
+        putChartFlags(legacy, true, 9)
+        putChartNode(legacy, "mushiex/chart1/slot1002.dat")
+        store.access { store.replace(legacy) }
+        assertFalse(saves.resolve("mushiex/chart1/slot1001.dat").exists())
+        assertArrayEquals(CHART_NODE_FIXTURE, saves.resolve("mushiex/chart1/slot1002.dat").readBytes())
+        for ((name, bytes) in replacement) assertArrayEquals(bytes, saves.resolve(name).readBytes())
+        store.access { store.replace(null) }
+        assertTrue(store.files().isEmpty())
+        for (name in original.keys + "mushiex/chart1/slot1002.dat") assertFalse(saves.resolve(name).exists())
+    }
+
+    @Test fun olderRollbackMarkersPreserveChartFamiliesTheyNeverBackedUp() {
+        for (version in 1..2) {
+            val game = temp.newFolder().canonicalFile
+            val saves = game.resolve("sav").apply { check(mkdir()) }
+            val flags = putChartFlags(saves, false) + putChartFlags(saves, true)
+            putChartNode(saves, "mushiex/chart1/slot1001.dat")
+            val restore = saves.resolve("${SystemNnnHost.SAVE_MIGRATION_DIRECTORY}/${SystemNnnHost.SAVE_RESTORE_DIRECTORY}")
+            put(restore, "before/data0.sav", "old slot")
+            restore.resolve("pending").writeBytes(byteArrayOf(version.toByte()))
+            put(saves, "data0.sav", "partial slot")
+            SystemNnnSaveStore(game, saves, ::validateFixture).recoverForLaunch()
+            assertEquals("old slot", saves.resolve("data0.sav").readText())
+            for ((name, bytes) in flags) assertArrayEquals(bytes, saves.resolve(name).readBytes())
+            assertArrayEquals(CHART_NODE_FIXTURE, saves.resolve("mushiex/chart1/slot1001.dat").readBytes())
+            assertFalse(restore.exists())
+        }
+    }
+
+    @Test fun versionThreeRollbackRestoresOldChartBytesAndRemovesNewNodes() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        putChartFlags(saves, false)
+        putChartFlags(saves, true)
+        putChartNode(saves, "mushiex/chart1/slot1001.dat")
+        val incoming = temp.newFolder().canonicalFile
+        putChartFlags(incoming, false, 4)
+        putChartFlags(incoming, true, 5)
+        val newNode = "mushiex/chart1/slot1002.dat"
+        putChartNode(incoming, newNode)
+        var interrupted = false
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture) { source, target ->
+            Files.move(source.toPath(), target.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
+            if (!interrupted && target == saves.resolve(newNode)) {
+                interrupted = true
+                val marker = saves.resolve("${SystemNnnHost.SAVE_MIGRATION_DIRECTORY}/${SystemNnnHost.SAVE_RESTORE_DIRECTORY}/pending")
+                assertArrayEquals(byteArrayOf(3), marker.readBytes())
+                throw IOException("Interrupted after publishing a chart node")
+            }
+        }
+        val original = store.files().mapValues { it.value.readBytes() }
+        assertThrows(GameSaveException::class.java) { store.access { store.replace(incoming) } }
+        assertTrue(interrupted)
+        assertEquals(original.keys, store.files().keys)
+        for ((name, bytes) in original) assertArrayEquals(bytes, saves.resolve(name).readBytes())
+        assertFalse(saves.resolve(newNode).exists())
+        assertFalse(saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY).exists())
+    }
+
+    @Test fun chartSnapshotNeverTraversesSymbolicDirectoriesOrFiles() {
+        val stage = temp.newFolder().canonicalFile
+        val outside = temp.newFolder().canonicalFile
+        putChartFlags(outside, false)
+        try { Files.createSymbolicLink(stage.resolve("mushiex").toPath(), outside.toPath()) }
+        catch (failure: IOException) { assumeNoException(failure); return }
+        catch (failure: UnsupportedOperationException) { assumeNoException(failure); return }
+        catch (failure: SecurityException) { assumeNoException(failure); return }
+        assertThrows(IOException::class.java) { SystemNnnSaveValidationService.stagedFiles(stage.toPath()) }
+        Files.delete(stage.resolve("mushiex").toPath())
+        Files.createSymbolicLink(stage.resolve("mita.dat").toPath(), outside.resolve("mita.dat").toPath())
+        assertThrows(IOException::class.java) { SystemNnnSaveValidationService.stagedFiles(stage.toPath()) }
+        assertEquals(8, outside.resolve("mita.dat").length().toInt())
+    }
+
     // The Android service runs the native decoder. Transaction tests isolate it from the filesystem moves.
     private val PC_SLOT_FIXTURE = "validated slot fixture".toByteArray()
+    private val CHART_NODE_FIXTURE = "validated chart node fixture".toByteArray()
 
     private fun validateFixtureFiles(incoming: Map<String, File>, existing: Set<String>): Boolean =
-        SystemNnnHost.canReplaceSaveSnapshot(incoming, SystemNnnHost.requiresStorySnapshot(existing)) {
-            it.readBytes().contentEquals(PC_SLOT_FIXTURE)
-        }
+        SystemNnnHost.canReplaceSaveSnapshot(
+            incoming, SystemNnnHost.requiresStorySnapshot(existing),
+            { it.readBytes().contentEquals(PC_SLOT_FIXTURE) },
+            { name, bytes ->
+                when {
+                    SystemNnnHost.isChartNodeSave(name) -> bytes.contentEquals(CHART_NODE_FIXTURE)
+                    name.equals("mushiex/mita.dat", true) -> bytes.size == 10004
+                    name.equals("mushiex/tsuka.dat", true) -> bytes.size == 10000
+                    name.equals("mita.dat", true) -> bytes.size == 8
+                    name.equals("tsuka.dat", true) -> bytes.size == 5
+                    else -> false
+                }
+            },
+        )
+
+    private fun putChartNode(root: File, name: String): File = root.resolve(name).apply {
+        parentFile.mkdirs()
+        writeBytes(CHART_NODE_FIXTURE)
+    }
+
+    private fun putChartFlags(root: File, legacy: Boolean, value: Byte = 1): Map<String, ByteArray> {
+        val prefix = if (legacy) "mushiex/" else ""
+        val files = linkedMapOf(
+            "${prefix}mita.dat" to ByteArray(if (legacy) 10004 else 8) { value },
+            "${prefix}tsuka.dat" to ByteArray(if (legacy) 10000 else 5) { value },
+        )
+        for ((name, bytes) in files) root.resolve(name).apply { parentFile.mkdirs(); writeBytes(bytes) }
+        return files
+    }
 
     private fun putPcSlot(root: File, name: String): File =
         root.resolve(name).apply { writeBytes(PC_SLOT_FIXTURE) }

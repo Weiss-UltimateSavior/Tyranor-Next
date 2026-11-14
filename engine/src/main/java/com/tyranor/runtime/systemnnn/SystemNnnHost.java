@@ -6,21 +6,29 @@ import android.content.Intent;
 import com.core.engine.LaunchContract;
 import com.core.nativeplugin.NativeRuntimePack;
 import java.io.Closeable;
+import java.io.DataInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileLock;
 import java.nio.channels.OverlappingFileLockException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Host entry point for the built-in Tyranor-Next engine. */
 public final class SystemNnnHost {
@@ -41,6 +49,8 @@ public final class SystemNnnHost {
     // Player task writers live in :systemnnn. The launcher opens records only to check liveness.
     private static final Map<File,RandomAccessFile> PLAYER_TASKS = new HashMap<>();
     private static boolean taskRecordsSwept;
+    private static final Pattern CHART_NODE=Pattern.compile(
+        "(emberfall\\.chart|mushiex)/chart([1-9][0-9]?)/slot(0|[1-9][0-9]{0,5})\\.dat",Pattern.CASE_INSENSITIVE);
 
     private SystemNnnHost() {}
 
@@ -161,7 +171,10 @@ public final class SystemNnnHost {
     }
 
     public static boolean isManagedSaveFile(Path relative) {
-        if (relative.isAbsolute() || relative.getFileName() == null) return false;
+        String path=relativeSaveName(relative);
+        if(path.isEmpty())return false;
+        if(isChartSave(path))return true;
+        if(relative.getNameCount()!=1)return false;
         String name = relative.getFileName().toString();
         if (relative.getNameCount() == 1 && (isPcStorySave(name)||isPcGlobalSave(name))) return true;
         if (relative.getNameCount() == 1 && name.endsWith(".bak")) {
@@ -177,7 +190,40 @@ public final class SystemNnnHost {
     }
 
     public static boolean isPcGlobalSave(String name) {
+        return isPcGlobalArchive(name)||isModernChartProgress(name)||isLegacyChartProgress(name);
+    }
+
+    public static boolean isPcGlobalArchive(String name) {
         return PcSystemSave.isSystemFile(name)||PcSystemSave.isResultFile(name);
+    }
+
+    public static boolean isModernChartProgress(String name) {
+        return PcSystemSave.isChartFile(name);
+    }
+
+    private static boolean isLegacyChartProgress(String name) {
+        return name.regionMatches(true,0,"mushiex/",0,8)&&PcSystemSave.isChartFile(name.substring(8));
+    }
+
+    public static boolean isLegacyChartSave(String name) {
+        return isLegacyChartProgress(name)||name.regionMatches(true,0,"mushiex/",0,8)&&isChartNodeSave(name);
+    }
+
+    public static boolean isChartNodeSave(String name) {
+        Matcher match=CHART_NODE.matcher(name);
+        if(!match.matches())return false;
+        boolean legacy=match.group(1).equalsIgnoreCase("mushiex");
+        return Integer.parseInt(match.group(2))<=(legacy?9:32)&&Integer.parseInt(match.group(3))<(legacy?10000:262144);
+    }
+
+    private static boolean isChartSave(String name) {
+        return isModernChartProgress(name)||isLegacyChartSave(name)||isChartNodeSave(name);
+    }
+
+    private static String relativeSaveName(Path relative) {
+        if(relative.isAbsolute()||relative.getFileName()==null||!relative.normalize().equals(relative))return "";
+        for(Path part:relative)if(part.toString().equals(".")||part.toString().equals(".."))return "";
+        return relative.toString().replace(File.separatorChar,'/');
     }
 
     /** Retired slots can still be put back by an interrupted older transaction. */
@@ -189,28 +235,46 @@ public final class SystemNnnHost {
     }
 
     public static boolean isManagedSaveDirectory(Path relative) {
-        return !relative.isAbsolute() && LegacySaveMigration.chartDirectory(relative);
+        String name=relativeSaveName(relative);
+        if(name.equalsIgnoreCase("mushiex")||name.equalsIgnoreCase(GameSavePaths.PREFIX+GameSavePaths.CHART))return true;
+        return isChartNodeSave(name+"/slot0.dat");
     }
 
     /** Checks the staged snapshot without promoting its backup files. */
-    public static boolean validateStagedSaveSnapshot(Context context,File stage,Set<String> existing,Runnable checkCancelled)
+    public static boolean validateStagedSaveSnapshot(Context context,File game,File stage,Set<String> existing,Runnable checkCancelled)
         throws IOException {
-        return SystemNnnSaveValidationService.validate(context,stage,requiresStorySnapshot(existing),checkCancelled);
+        return SystemNnnSaveValidationService.validate(context,canonicalRoot(game),stage,requiresStorySnapshot(existing),checkCancelled);
     }
 
-    static boolean canReplaceSaveSnapshot(Map<String,File> incoming,boolean requiresStory) throws IOException {
-        return canReplaceSaveSnapshot(incoming,requiresStory,PcStorySave::valid);
+    static boolean canReplaceSaveSnapshot(File game,Map<String,File> incoming,boolean requiresStory) throws IOException {
+        byte[] root=canonicalRoot(game).getPath().getBytes(StandardCharsets.UTF_8);
+        return canReplaceSaveSnapshot(incoming,requiresStory,PcStorySave::valid,
+            (name,data)->NativeGame.validateChartFile(root,name.getBytes(StandardCharsets.UTF_8),data));
     }
 
     interface SlotValidator {
         boolean valid(InputStream input) throws IOException;
     }
+    interface ChartValidator {
+        boolean valid(String relative,byte[] data) throws IOException;
+    }
 
-    static boolean canReplaceSaveSnapshot(Map<String,File> incoming,boolean requiresStory,SlotValidator validator)
+    static boolean canReplaceSaveSnapshot(Map<String,File> incoming,boolean requiresStory,SlotValidator validator,ChartValidator chartValidator)
         throws IOException {
         boolean hasStory=false,hasPcProgress=false;
+        Set<String> chartPaths=new HashSet<>();
         for(Map.Entry<String,File> entry:incoming.entrySet()){
             String name=entry.getKey();
+            Path relative=Paths.get(name);
+            if(!name.equals(relativeSaveName(relative))||!isManagedSaveFile(relative))return false;
+            if(isChartSave(name)){
+                if(!chartPaths.add(name.toLowerCase(Locale.ROOT)))return false;
+                byte[] bytes=readChartFile(name,entry.getValue());
+                if(bytes==null||!chartValidator.valid(name,bytes))return false;
+                if(isChartNodeSave(name))hasStory=true;
+                else hasPcProgress=true;
+                continue;
+            }
             if(isPcGlobalSave(name)){
                 if(!PcSystemSave.valid(entry.getValue()))return false;
                 hasPcProgress|=PcSystemSave.isSystemFile(name);
@@ -233,8 +297,20 @@ public final class SystemNnnHost {
     }
 
     static boolean requiresStorySnapshot(Set<String> existing){
-        String chart=GameSavePaths.PREFIX+GameSavePaths.CHART+"/";
-        return existing.stream().anyMatch(name->isPcStorySave(name)||name.startsWith(chart));
+        return existing.stream().anyMatch(name->isPcStorySave(name)||isChartNodeSave(name));
+    }
+
+    private static byte[] readChartFile(String name,File file) throws IOException {
+        BasicFileAttributes info=Files.readAttributes(file.toPath(),BasicFileAttributes.class,LinkOption.NOFOLLOW_LINKS);
+        long maximum=isChartNodeSave(name)?2L*1024*1024:262144;
+        if(!info.isRegularFile()||info.size()<1||info.size()>maximum)return null;
+        if(isLegacyChartProgress(name)&&info.size()!=(name.substring(8).equalsIgnoreCase("mita.dat")?10004:10000))return null;
+        byte[] bytes=new byte[(int)info.size()];
+        try(DataInputStream input=new DataInputStream(Files.newInputStream(file.toPath(),LinkOption.NOFOLLOW_LINKS))){
+            input.readFully(bytes);
+            if(input.read()!=-1)return null;
+        }
+        return bytes;
     }
 
     /** Caller holds the game's shared save lock. Retired backups stay outside ZIP imports. */

@@ -818,7 +818,7 @@ class GameSaveManager(private val context: Context) {
             throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
         }
         return SystemNnnSaveStore(root, directory, validateSnapshot = { stage, _, existing, checkCancelled ->
-            SystemNnnHost.validateStagedSaveSnapshot(appContext, stage, existing, checkCancelled)
+            SystemNnnHost.validateStagedSaveSnapshot(appContext, root, stage, existing, checkCancelled)
         })
     }
 
