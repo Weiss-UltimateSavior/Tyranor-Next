@@ -11,6 +11,9 @@
 
 ### 新增
 
+- 修复 BGI 游戏位于公共共享存储时因 `flock` 返回不支持而无法启动：仅对不支持锁操作的错误回退到 OFD 非阻塞写入锁，保留占用与权限错误的拒绝行为。
+- BGI / Ethornell 存档改到游戏目录内的 `savedata/`，启动、宿主与存档管理共用同一位置；旧私有数据一次性迁入且不覆盖目标同名文件，目录不可写时不回退私有存档。移除游戏库条目保留游戏目录中的存档。
+
 - 所有内置引擎播放器及视频窗口固定标准横屏，禁止传感器与 180° 翻转；清单、启动参数及运行时方向请求保持一致。移除 Artemis 全局与单游戏旋转选项，旧值不再生效；播放器单独保留 Android 16 大屏方向兼容限制。
 
 - 内置引擎宿主接入共用启动加载界面，保留 krkr 专用场景兼容逻辑；Surface 宿主按当前代际的可复制缓冲区结束等待，Web 按初次页面可见、SystemNNN 按游戏自身启动内容呈现结束等待。统一触摸拦截、失败提示及生命周期清理；未改动预编译运行库，真实游戏与设备覆盖以专项验收记录为准。
@@ -127,7 +130,8 @@
 - 修复封面刮削页卡片材质偏白、与其它页面不一致：移除 `MiuixCard` 内重复的 `Column.background(NavWhite)` 与来源行背景，避免 70% 白纱叠加成 91% / 97%；现在封面来源、开关、写入内容三张卡都只使用卡片自身的单层 70% 白雾材质。
 - 修复「液态玻璃 · 经典」在高圆角下栏体内侧出现第二层白色弧线：移除库 `Highlight`，边缘改为单层 `glassEdgeStroke` 发丝描边（深色档白色、浅色档中性黑），并以圆角值为 `key` 在运行期改圆角时重建栏体，避免旧裁剪层残留。
 - 合并 Ethornell 存档 capability 开放后，严格同步快照复用现有存档操作门禁并校验固定目录；宿主忙碌、目录错误或读取失败会向上传播，不再被当作空存档而结束待上传任务。普通存档列表的容错显示保持不变。
-- 修复 Ethornell 启动期全局数据写入路径：`Sys80:32` 把已含 `bgi-resource\` 前缀的 `UserData` 路径再次拼上资源根；在语言选择页点击语言还会触发 `SaveGlobalUserData` 写 `bgi-resource\BGI.gdb`（旧 `7ee` 写裸 `BGI.gdb`），而旧策略只放行 `UserData`，写入因此落到只读资源根并以 `PermissionDenied` 失败。本地补丁 `0001-user-data-double-bgi-resource.patch`（SHA-256 `77b99d93…`）在 `file_policy.rs` 中收敛一层重复前缀，并仅把顶层 `bgi-resource/BGI.gdb` 与 `bgi-resource/BGI####.cad`（四位数字、大小写不敏感）映射到私有 `bgi-user/`；其它资源名、子目录与路径逃逸仍拒绝。当前库 `043fef05…`（27,259,224 B）基于 `0cfff1d` + 该补丁，provenance `dirty=true`；`--local-static` 通过，严格来源审计因 dirty 不能通过。上一版 `541bf6` 只覆盖 `UserData`，点击语言后仍失败，已由本库取代。Amairo 私有 Activity 30s/45s 含语言点击存活、无 `failed_detail`，私有 user-root 生成 `BGI.gdb`（约 123,802 B）；新夹具下 `UserData` 可能为空，不声称槽位。标题/对白/槽位保存与读回、`Sys80:34`、`Sys80:30/31/35` 等存在性读取未验证。
+- Ethornell 本地补丁 `0004-virtual-user-file-reads.patch`：VM 读取/存在性入口识别带分隔符的精确 `bgi-resource` / `bgi-user` 虚拟根；受限运行时仅对获准非命名归档的 scoped `bgi-user/` 别名调用改写 `load_file_bytes`、`read_disk_file` 与 `disk_file_exists` 路径，mapped missing 不回退到 raw resource；普通资源与命名归档仍走原路径，`FilePolicy` raw helper 不变。原创 VM fixture覆盖 Sys80 slot IO 与 Sys81:32/35 Generic Header读取；商业游戏槽位UI与存档重开仍按其验收范围单独评估。
+- 修复 Ethornell 启动期全局数据写入路径：`Sys80:32` 把已含 `bgi-resource\` 前缀的 `UserData` 路径再次拼上资源根；在语言选择页点击语言还会触发 `SaveGlobalUserData` 写 `bgi-resource\BGI.gdb`（旧 `7ee` 写裸 `BGI.gdb`），而旧策略只放行 `UserData`，写入因此落到只读资源根并以 `PermissionDenied` 失败。本地补丁 `0001-user-data-double-bgi-resource.patch`（SHA-256 `77b99d93…`）在 `file_policy.rs` 中收敛一层重复前缀，并仅把顶层 `bgi-resource/BGI.gdb` 与 `bgi-resource/BGI####.cad`（四位数字、大小写不敏感）映射到私有 `bgi-user/`；其它资源名、子目录与路径逃逸仍拒绝。当前库 `043fef05…`（27,259,224 B）基于 `0cfff1d` + 该补丁，provenance `dirty=true`；`--local-static` 通过，严格来源审计因 dirty 不能通过。上一版 `541bf6` 只覆盖 `UserData`，点击语言后仍失败，已由本库取代。Amairo 私有 Activity 30s/45s 含语言点击存活、无 `failed_detail`，私有 user-root 生成 `BGI.gdb`（约 123,802 B）；新夹具下 `UserData` 可能为空，不声称槽位。该历史产物未覆盖标题/对白/槽位保存与读回、`Sys80:34`、`Sys80:30/31/35` 等存在性读取；这些边界由后续补丁与独立验收处理。
 
 - 修复已启用 WebDAV 的游戏启动准入：已解析的存档目录及父子相交目录存在未完成切换时，手动、仅拉取、仅上传及双向模式均在启动前阻止进入引擎；错误通过已有启动提示展示，不再被可选上传记账吞掉。
 - 修复 ZIP 目录项校验：中央目录和本地记录中的目录必须无内容，带载荷的目录项立即拒绝，不再在 `closeEntry` 中越过大小与取消检查排空。

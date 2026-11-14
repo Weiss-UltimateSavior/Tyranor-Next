@@ -182,8 +182,8 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 - MV/MZ 标准格式与 Tyranor 格式仅作文件名映射，不重新编码内容；MV 支持哈希名及历史键名，MZ 使用 `fileN.bin` 等 ASCII 键名。
 - 启动时发现适用标准存档可询问转化，已有目标不覆盖，原件留在 `original/`。
 - MV/MZ 存档互通默认关闭，支持全局/单游戏设置；开启后启动前与回前台进行双向同步，并等待引擎会话结束。按槽位比较时间与哈希；删除副本隔离到 `deleted/`，同步清单损坏时中止文件修改。
-- Ethornell 的 App 存档管理已开放，范围仅限 App 私有 user-root 的备份/恢复/删除；运行时用户数据不等于 PC 存档镜像，也不包含游戏资源根 `UserData` 的自动导入。
-- Ethornell 私有 user-root 的 ZIP 导入/导出另受 native 原子写上限约束：单个文件不得超过 **64 MiB**；超限返回类型化 `SAVE_FILE_TOO_LARGE`，导入不替换旧存档，导出不先截断目标。ZIP 总量 **1 GiB** 预算不等于该 native 单次写上限。
+- Ethornell 的 App 存档管理已开放，生效目录为 `<游戏根>/savedata`，提供备份/恢复/删除；运行时的 `UserData/**`、`BGI.gdb` 和 `BGI####.cad` 相对路径位于该目录中，不自动导入资源根原有的 `UserData`，不承诺 PC 存档格式互通。旧私有数据在启动或存档操作前一次性迁入，不覆盖目标同名文件，完成后删档不会再次恢复旧数据；旧源保留以防迁移冲突。游戏目录不可用或不可写时失败，不回退私有目录；移除游戏库条目不删除游戏目录内的存档。
+- Ethornell 游戏目录内 user-root 的 ZIP 导入/导出另受 native 原子写上限约束：单个文件不得超过 **64 MiB**；超限返回类型化 `SAVE_FILE_TOO_LARGE`，导入不替换旧存档，导出不先截断目标。ZIP 总量 **1 GiB** 预算不等于该 native 单次写上限。
 
 ### 存档同步（WebDAV）
 
@@ -251,11 +251,13 @@ Hikarinagi OAuth 支持授权、回调校验及 token 刷新。应用检查 GitH
 
 ## 10. 实验能力与证据边界
 
-Ethornell 已接入扫描、设置与内置宿主，并已升级到上游 `0cfff1d` 的 ABI v1 接口面：15 个导出（含 `request_payload`）、Event kind 5 输入对话框与 JSON 回答。当前随包库为 `043fef05…`（27,259,224 B），在上游基础上带 1 个本地补丁（SHA-256 `77b99d93…`；修复启动期 `Sys80:32` 双重 `bgi-resource` 前缀的 `UserData` 写入，并把顶层 `bgi-resource/BGI.gdb` 与 `bgi-resource/BGI####.cad` 全局数据映射到私有 user-root），provenance `dirty=true`、`local_patches=1`；`--local-static`、debug/release APK 精确库字节与 release zipalign（build-tools 36.0.0）通过，**严格来源审计因 dirty 未通过**、`release_ready=false`。`EthornellDeviceTest` 全类 6/6 通过（1.426s；15 符号/ABI、UTF-8 与线程/token、原创 GPU 像素与 Surface 重挂、脚本 Closed、合成 VM 全局 user-data 写入/重开/空根反例），`EthornellPauseDeviceTest` 3/3 通过（2.999s，仅暂停/恢复与 Surface），`EthornellSaveDeviceTest` 9/9（`pm clear` 后，2.047s），Release R8 probe SJIS/GBK 各 3/3。真实样本私有 Activity 在 30s/45s 含语言点击后仍存活、无 `failed_detail`，私有 user-root 生成 `BGI.gdb`（约 123,802 B）；新夹具下 `UserData` 可能为空，不据此声称存档槽位。标题/对白/输入对话框、商业槽位保存/读回与 `Sys80:34`、`Sys80:30/31/35` 等读取 API 未验证，不能据此宣称完整兼容。
+Ethornell 已接入扫描、设置与内置宿主，仍属于实验运行时。当前 ABI、来源 revision、本地补丁与库身份以 `engine/src/main/jniLibs/arm64-v8a/libethornell.provenance.json` 为准；预编译来源与哈希检查不能证明商业游戏兼容性。
 
-App 私有 user-root 存档管理与 native 全局 user-data 已通过设备验收（`EthornellSaveDeviceTest` 9/9：ZIP/列表/删除/回滚/原子导入、64 MiB 单文件、恶意 ZIP、busy 拒绝；native write/read/empty negative 通过），`DEVICE_SAVE_IO_VERIFIED=true`、`HOST_DISPATCH_PROTOCOL_VERIFIED=true`，故 `available=true`。该验收不宣称商业游戏内槽位保存/读回、槽位元数据/索引兼容或 PC 存档格式互通；这些仍未闭环。私有 user-root 也不自动导入游戏资源根的 `UserData`；本次补丁只修启动期/全局数据写入（双重 `UserData` 与顶层 `BGI.gdb`/`BGI####.cad`），读取/存在性 API 不在覆盖范围。
+App 存档管理与 native 共用 `<游戏根>/savedata` user-root。宿主和 native 仅为这个固定子目录放行资源根与用户根的包含关系；其它重叠根、符号链接、资源写入和路径逃逸仍拒绝。共享存储不支持 `flock` 时，Android/Linux 宿主改用 OFD 非阻塞文件锁；锁被占用、权限错误或 OFD 同样不可用时仍拒绝启动，不跳过写入者排他保护。虚拟用户路径映射不等于 PC 存档格式转换，商业游戏内槽位保存/读回、字体、电影和长稳需分别验收。历史私有 user-root 的设备结果不代表新存储位置或当前产物已通过同样验收。
 
-既有 [验收记录](docs/Ethornell测试验收记录.md) 只对其标注的产物/设备/样本有效；本次新增的是 `043fef05` 本地补丁库的本地静态/APK 字节、暂停、存档与语言点击后启动存活证据。上一版 `541bf6` 只收敛双重 `UserData`、仍只放行 `UserData` 子树，点击语言后因 `bgi-resource\BGI.gdb` 的 `PermissionDenied` 失败，已由本库取代，不能当作最终候选。Amairo 未到标题/对白，商业槽位保存/重启读回、真实对白/输入 dialog 未验证；Jewel 样本仍停在 `system.arc:ipl._bp` 未知 opcode（旧 `7ee` 同样失败，不是新回归）；16KB/API26 完整游戏本轮未重跑，音频路由、字体、电影与长稳也需分别判断。预编译来源与哈希检查不能证明所有商业游戏可玩。
+本地内核补丁 `0004-virtual-user-file-reads.patch` 修正了这条路径：VM 只把带分隔符的精确 `bgi-resource/` 与 `bgi-user/` 作为虚拟根放行，普通任意相对路径仍按原规则拒绝。在受限 `RuntimeTraceApi` 中，`read_disk_file` 与 `disk_file_exists` 仅在 `user_data_alias` 的结果以 `bgi-user/` 开头时使用该映射路径；其它路径仍交给原路径处理。受限 `load_file_bytes` 只对获准的非命名归档调用应用作用域内的用户别名；映射文件不存在时直接返回缺失，不回退到原始资源路径。其它通用加载仍用 `read_runtime_bytes` 原路径，普通命名归档加载保持原有路径。`FilePolicy` 原始资源读取 helper 未改变。该修复覆盖 VM 虚拟根、用户文件读/查及通用 Header 加载路径；不表示所有游戏的槽位格式或读档行为已验证。
+
+游戏目录 `savedata/` user-root、文件白名单与回退行为仍按 native FilePolicy 约束。通过别名查找的用户槽位若在 `savedata` 中缺失，不会回退读取资源中的同名槽位；普通资源及命名归档继续走原路径。验收范围包括槽位保存、界面识别、立即读回与退出后重开读回；宿主文件打开钩子不是此修复的一部分。
 
 ## 11. 回归验收清单
 
@@ -276,7 +278,7 @@ App 私有 user-root 存档管理与 native 全局 user-data 已通过设备验�
 | Ruffle / SWF | 一 SWF 一条与包装目录边界（根 index、唯一 SWF、无子目录、既有引擎信号优先）、文件 URI→父目录、`game`/`settings` 契约与类型包装、模块未安装/入口缺失、全局与单游戏覆盖、`configuration.json` 只同步不创建、无存档入口与横屏限制；设备/插件验证待执行 |
 | 第三方运行时模块 | action/前缀发现、默认关闭、启用只写开关、仅已启用模块参与扫描、描述匹配只补 `UNKNOWN`/`WEB_OTHER`、旧绑定优先、改名/封面更新不丢绑定、卸载/禁用降级与重扫恢复、显式组件交棒、无存档/按键/设置入口 |
 | 宿主/JNI | 暂停恢复、Surface 重挂/旧世代、正常退出 ACK 后重入、owner 线程与资源释放 |
-| 存档 | ZIP 路径/数量/体积限制、目标冲突、MV/MZ 名称与目录、互通删除/清单损坏、Ethornell capability 开放与私有 user-root 导入导出/门禁拒绝 |
+| 存档 | ZIP 路径/数量/体积限制、目标冲突、MV/MZ 名称与目录、互通删除/清单损坏、Ethornell 游戏目录存档、旧私有迁移/冲突/中断恢复、导入导出/门禁拒绝及移除条目保留存档 |
 | 存档同步 | WebDAV 总开关默认关、关闭时不联网/隐藏版本同步身份但保留恢复入口/保留独立配置、关闭在同一 prefs 提交中持久化 `enabled=false` 与 `disable_generation`、session 记录 enabledGeneration 且旧 ticket 立即失效并跨重启保持失效、新 launch 不继承关闭前 pending baseline、启动前忙碌判定忽略旧 ticket/grace 但保留独立宿主探测、关闭同步捕获旧 token 且异步清理不误删 replacement、`whileEnabled` 复核持久 generation、每个顶层及嵌套 DAV exchange 按持久 generation 与当前 revision 重新准入且响应等待不持本地锁、整库手动三方向与单游戏固定双向、只拉取每个游戏最新云端版本且不批量恢复远端历史、打开/退出即时与 fallback 四条任务链相互独立、每游戏至多一份待处理记录与 staging ZIP、导入前持久目录 owner/token/revision、owner 保留到 journal 清理成功、journal 删除前持久 completionCommitted、journal 已删后的残留 owner 可按已知结果释放、旧 token 只续接自身或 legacy 空 epoch、同一及父子相交目录的入口等到清理成功后才放行、清理扫描持久 activeKey 包含不可解析 alias、committed 完成保留 revision 使旧传输失效、已证明 precommit abort 恢复 previousRevision 并保留旧链 epoch、promotionActiveKey + promotionDirectoryRevision 绑定目录与目录 epoch、另一 URI 成功选择后暂停旧 alias promotion、跨目录或旧 revision 以 SAVE_LOCATION_CHANGED 暂停、导入前同字节不算提交证据、不同 uncommitted token 不清除更早 completed S→N、完成 token 防重复 promotion、恢复重试只补元数据不自动导入、completed promotion 的目录/revision 缺失、为空或不匹配均暴露“处理未完成切换”、恢复捕获 active N 与已验证历史 S 且不导入、清除未知 ancestry 后普通 N 同步且不误替换远端 S、当前同版本显式重选作为可选重建路径、10/20/无上限保留与旧值迁移不删历史、新旧云端目录合并读取且按时间+哈希比较、内容哈希幂等去重、标识冲突拒答、运行中禁止上传/切换而拉取放行、5 版上限只计 ZIP 版本且维护/新增前保护 pending selected、beforeHash 与可恢复 promotion source、无独立保存版本入口、旧版本 S 恢复后保存 N 仍按 S→N 单一更新链处理、普通 ZIP 导入保持原行为、早期 Debug 选择标记与保留量迁移、结果 Toast 受同步提示开关控制、YU-RIS 需先退出外部游戏且 PC 不参与 |
 | 存档同步增量 | WebDAV 关闭时不解析同步目录、不进同步目录锁，关闭或回退启动仍与在途激活/恢复的目录变更共享 mutation 门禁、类型化启动准入区分不受管理引擎与目录解析失败而正常同步仍严格校验目录、`config_revision` 与加密 payload 同次提交且在本地事务与真实 HTTP enqueue 前复核、配置保存/重置不推进 `disable_generation`、`LOCAL_STATE_CHANGED` 不冒充 `GAME_RUNNING`、删除保留类型化 `SaveSyncError` 并按码映射、下载空间预检与 `STORAGE_FULL`/`LOCAL_IO` 分类、上传 pin 复制失败清理临时文件、每游戏每轮经 `SaveSyncService` 发起的所有远程 DELETE 合计不超过 20 次以及超限 `cleanupPending` 保留 checkpoint/session 并由 fallback 继续 |
 | 图形/外观 | 支持/不支持内核、无效/空链回退、关闭滤镜原路径、GPU 数据缺失、手机/平板和深浅色 |

@@ -934,11 +934,11 @@
     <string name="ethornell_nls_title">描画テキストの文字コード</string>
     <string name="ethornell_font_title">カスタムフォント</string>
     <string name="ethornell_font_default">エンジンのフォント候補を使用</string>
-    <string name="ethornell_settings_note">文字コードは描画テキストのみに適用され、リソース名には影響しません。変更後はゲームを再起動してください。ユーザーデータはアプリ専用領域に保存され、セーブ管理はまだ利用できません。</string>
+    <string name="ethornell_settings_note">文字コードは描画テキストにのみ適用され、リソース名には影響しません。変更後はゲームを再起動してください。セーブデータはゲームフォルダー内の savedata に保存されます。</string>
     <string name="ethornell_error_root">ゲームフォルダーを読み取れません。アクセス可能なローカルフォルダーを選び、再度許可してください。</string>
     <string name="ethornell_error_bootstrap">ipl._bp 起動項目を含む対応 system.arc 索引が見つかりません。</string>
     <string name="ethornell_error_font">フォントが無効、または読み取れません。TTF、TTC、OTF、OTC フォントを再度取り込んでください。</string>
-    <string name="ethornell_error_userdata">Ethornell 専用ユーザーデータを作成できません。空き容量を確認してください。</string>
+    <string name="ethornell_error_userdata">ゲームフォルダー内の Ethornell セーブデータを準備できません。書き込み権限と空き容量を確認してください。</string>
     <!-- First-launch quick start -->
     <string name="onboarding_title">クイックスタート</string>
     <string name="onboarding_progress">%1$d / %2$d ページ</string>

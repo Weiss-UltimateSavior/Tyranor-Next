@@ -2,15 +2,33 @@
 
 `EthornellActivity` is a fullscreen native game host, not an app management page.
 It consumes `LaunchContract.LAUNCH_MODE_ETHORNELL`, `ROOT_URI` (identity), `PATH`
-(absolute readable resource directory), `ETHORNELL_USER_DATA_DIR` (explicit app-private
+(absolute readable resource directory), `ETHORNELL_USER_DATA_DIR` (fixed game-local
 writable directory), `ETHORNELL_NLS` (`sjis`/`gbk`), optional `ETHORNELL_FONT_PATH`
 (imported private `files/fonts` file), and `UI_LANGUAGE_TAG` (host UI only).
 Same payload re-entry resumes the current session; changed payloads are rejected.
-`EthornellPaths.userDataDir(filesDir, ROOT_URI)` is the single path contract:
-`<canonical filesDir>/ethornell/userdata/<SHA-256(ROOT_URI standard UTF-8)>`.
-`validateUserDataDir(filesDir, ROOT_URI, suppliedPath)` requires both exact absolute
-spelling and canonical destination, rejecting symlinks, aliases and cross-identity roots.
-The host checks onCreate/onNewIntent and again on the worker before native creation.
+`EthornellPaths.gameUserDataDir(resourceRoot)` defines the active user root:
+`<canonical game directory>/savedata`. `validateGameUserDataDir` requires exact
+absolute spelling and canonical destination, rejecting symlinks and aliases.
+The host validates the root on entry and again before native creation. The native
+policy permits only this fixed child as a nested user root; it excludes that tree
+from ordinary resource reads. `userDataDir(filesDir, ROOT_URI)` remains the legacy
+migration source and identity hashing contract, not the active write destination.
+App save operations migrate legacy data without replacing existing target files;
+removing a library entry retains game-local saves.
+
+The local runtime patch `0004-virtual-user-file-reads.patch` recognizes only
+exact `bgi-resource/` and `bgi-user/` virtual roots followed by a path separator
+at the VM read/existence gate. In restricted `RuntimeTraceApi`, `read_disk_file`
+and `disk_file_exists` use `user_data_alias` only when the mapped path begins
+with `bgi-user/`; other paths keep their original meaning. Restricted
+`load_file_bytes` applies the scoped user alias only to authorized non-named
+archive calls. A missing mapped save does not fall back to the raw resource path;
+other `read_runtime_bytes` calls and ordinary named-archive loads retain their
+original path. The raw `FilePolicy` read helper is unchanged. The device fixture
+exercises Sys81:32/35 generic Header loading as well as the Sys80 loose-file API.
+Commercial-game slot save/readback and format compatibility remain experimental
+and require separate acceptance; this is a runtime patch, not a host `openat`
+shim.
 
 `LaunchContract.ETHORNELL_DISPATCH_TOKEN` is a required one-shot random launch token.
 `EthornellDispatchRegistry` persists ISSUED/CLAIMED/TERMINAL/REVOKED under the same JVM
@@ -61,7 +79,9 @@ and releases it only on safe library unload or VM/process teardown.
 
 This implementation and JVM/native builds do **not** establish game compatibility,
 16KB-device compliance, API26 runtime loading, release R8 loading, or licensing.
-User-data save import/export must remain disabled until its actual layout is verified.
+Game-local save import/export is enabled through the fixed `<game>/savedata` user-root
+capability; this management scope does not establish commercial-game slot save/readback
+or PC-format compatibility. Those runtime behaviors require separate acceptance.
 
 ## Opt-in private Debug input-route diagnostics
 

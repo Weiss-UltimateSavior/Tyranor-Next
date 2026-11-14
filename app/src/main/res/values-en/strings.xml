@@ -934,11 +934,11 @@
     <string name="ethornell_nls_title">Graphics text encoding</string>
     <string name="ethornell_font_title">Custom font</string>
     <string name="ethornell_font_default">Use engine font fallback</string>
-    <string name="ethornell_settings_note">Encoding affects graphics text only, not resource names. Restart the game after changes. User data is app-private; save management is not yet available.</string>
+    <string name="ethornell_settings_note">Encoding affects graphics text only, not resource names. Restart the game after changes. Saves are stored in the savedata folder inside the game directory.</string>
     <string name="ethornell_error_root">Cannot read the game directory. Select an accessible local directory and grant access again.</string>
     <string name="ethornell_error_bootstrap">No supported system.arc index with an ipl._bp bootstrap was found.</string>
     <string name="ethornell_error_font">Invalid or unreadable font. Import a TTF, TTC, OTF or OTC font again.</string>
-    <string name="ethornell_error_userdata">Cannot create private Ethornell user data. Check available storage space.</string>
+    <string name="ethornell_error_userdata">Cannot prepare Ethornell saves in the game directory. Check write permission and available storage space.</string>
     <!-- First-launch quick start -->
     <string name="onboarding_title">Quick start</string>
     <string name="onboarding_progress">Page %1$d of %2$d</string>

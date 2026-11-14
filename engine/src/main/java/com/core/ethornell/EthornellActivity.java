@@ -94,14 +94,15 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
     };
 
     private static final class Payload {
-        final String identity, root, user, font, nls;
-        Payload(Intent intent, File filesDir) throws IOException {
+        final String identity, identityHash, root, user, font, nls;
+        Payload(Intent intent) throws IOException {
             if (intent == null || !LaunchContract.LAUNCH_MODE_ETHORNELL.equals(intent.getStringExtra(LaunchContract.LAUNCH_MODE)))
                 throw new IllegalArgumentException("mode");
             identity = required(intent, LaunchContract.ROOT_URI);
+            identityHash = EthornellPaths.identitySha256(identity);
             root = required(intent, LaunchContract.PATH);
             user = required(intent, LaunchContract.ETHORNELL_USER_DATA_DIR);
-            EthornellPaths.validateUserDataDir(filesDir, identity, user);
+            EthornellPaths.validateGameUserDataDir(new File(root), user);
             String selected = intent.getStringExtra(LaunchContract.ETHORNELL_NLS);
             nls = selected == null ? "sjis" : selected;
             if (!nls.equals("sjis") && !nls.equals("gbk")) throw new IllegalArgumentException("encoding");
@@ -135,7 +136,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
                 processExit.afterCleanup(processVerified, true, this::finish, this::terminateOwnProcess);
                 return; // revoked/terminal/missing/old Recents dispatch never creates a runtime
             }
-            payload = new Payload(incoming, getFilesDir());
+            payload = new Payload(incoming);
         }
         catch (RuntimeException | IOException e) {
             toast(R.string.engine_ethornell_invalid_config);
@@ -163,8 +164,8 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
             }
         });
         long sessionToken = TOKENS.getAndIncrement();
-        // Payload validation already bound this exact basename to SHA-256(ROOT_URI UTF-8).
-        EthornellLifecycle lifecycle = new EthornellLifecycle(new File(payload.user).getName(), sessionToken,
+        // Lifecycle identity remains SHA-256(ROOT_URI UTF-8), independent of the game-local save path.
+        EthornellLifecycle lifecycle = new EthornellLifecycle(payload.identityHash, sessionToken,
                 message -> android.util.Log.i(EthornellLifecycle.TAG, message));
         EthornellInputTrace inputTrace = new EthornellInputTrace(
                 message -> android.util.Log.i(EthornellInputTrace.TAG, message));
@@ -228,19 +229,16 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
                 if (!new File(config.root).isAbsolute() || !new File(config.user).isAbsolute()
                         || (!config.font.isEmpty() && !new File(config.font).isAbsolute())) throw new IOException("absolute paths required");
                 File resource = new File(config.root).getCanonicalFile();
-                File user = EthornellPaths.validateUserDataDir(application.getFilesDir(), config.identity, config.user);
+                File user = EthornellPaths.validateGameUserDataDir(resource, config.user);
                 if (!resource.isDirectory() || !resource.canRead() || config.root.startsWith("content:")) throw new IOException("resource");
-                // Identity-bound private user root only; never make resource or external roots writable.
-                File privateRoot = application.getFilesDir().getCanonicalFile();
-                if (user.equals(resource) || within(resource, user) || within(user, resource)) throw new IOException("overlapping roots");
                 if (!user.isDirectory() && !user.mkdirs()) throw new IOException("user directory");
-                EthornellPaths.validateUserDataDir(application.getFilesDir(), config.identity, config.user);
+                user = EthornellPaths.validateGameUserDataDir(resource, config.user);
                 File probe = File.createTempFile(".ethornell-probe-", ".tmp", user);
                 if (!probe.delete()) throw new IOException("user write");
                 String font = "";
                 if (!config.font.isEmpty()) {
                     File chosen = new File(config.font).getCanonicalFile();
-                    File fontRoot = new File(privateRoot, "fonts");
+                    File fontRoot = new File(application.getFilesDir().getCanonicalFile(), "fonts");
                     if (!fontRoot.equals(fontRoot.getCanonicalFile()) || !within(chosen, fontRoot) || !chosen.isFile()
                             || !chosen.canRead() || chosen.length() == 0 || chosen.length() > 64L * 1024 * 1024) throw new IOException("font policy");
                     font = chosen.getPath();
@@ -271,7 +269,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
         try {
             if (dispatchClaimed && !dispatchToken.equals(intent.getStringExtra(LaunchContract.ETHORNELL_DISPATCH_TOKEN)))
                 throw new IllegalArgumentException("different dispatch");
-            Payload candidate = new Payload(intent, getFilesDir());
+            Payload candidate = new Payload(intent);
             if (payload != null && payload.same(candidate) && !destroyed && session != null
                     && session.state() != EthornellSession.State.CLOSED && session.state() != EthornellSession.State.FAILED) {
                 surface.requestFocus(); return;

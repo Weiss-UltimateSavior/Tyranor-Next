@@ -55,17 +55,9 @@ public final class EthornellStartupActivityTest {
 
         UiAutomation automation = instrumentation.getUiAutomation();
         String identity = "ethornell-startup-render://" + UUID.randomUUID();
-        File userRoot = expectedUserRoot(app, identity);
-        assertTrue("Private identity-bound user root creation failed", userRoot.mkdirs());
         String dispatch = issueDispatch(app, identity);
         String runtimePath = runtimeLibrary(app);
         String runtimeHash = sha256(Files.readAllBytes(new File(runtimePath).toPath()));
-        File evidence = new File(userRoot, "startup-runtimeidentity-report.txt");
-        Files.write(evidence.toPath(), ("result=PENDING\npackage=" + app.getPackageName()
-                + "\nidentity=" + identity + "\ndispatch=" + dispatch
-                + "\nruntime_library=" + runtimePath + "\nruntime_library_sha256=" + runtimeHash
-                + "\nabi=" + android.os.Build.SUPPORTED_ABIS[0] + " sdk=" + android.os.Build.VERSION.SDK_INT + "\n")
-                .getBytes(StandardCharsets.UTF_8));
         String resourceHash;
         int hostPid = 0;
         EthornellDispatchRegistry.Record claimed = null;
@@ -74,9 +66,14 @@ public final class EthornellStartupActivityTest {
         try (EthornellDeviceTest.Fixture fixture = new EthornellDeviceTest.Fixture("render-close")) {
             assertTrue("Render fixture resource must be private to the target app",
                     fixture.resource.getCanonicalFile().toPath().startsWith(app.getFilesDir().getCanonicalFile().toPath()));
-            assertFalse("Resource and user roots must remain disjoint",
-                    fixture.resource.getCanonicalFile().toPath().startsWith(userRoot.getCanonicalFile().toPath())
-                            || userRoot.getCanonicalFile().toPath().startsWith(fixture.resource.getCanonicalFile().toPath()));
+            File userRoot = expectedGameUserRoot(fixture.resource);
+            assertFalse("Fixture savedata must begin absent so host creation is observable", userRoot.exists());
+            File evidence = new File(fixture.base, "startup-runtimeidentity-report.txt");
+            Files.write(evidence.toPath(), ("result=PENDING\npackage=" + app.getPackageName()
+                    + "\nidentity=" + identity + "\ndispatch=" + dispatch
+                    + "\nruntime_library=" + runtimePath + "\nruntime_library_sha256=" + runtimeHash
+                    + "\nabi=" + android.os.Build.SUPPORTED_ABIS[0] + " sdk=" + android.os.Build.VERSION.SDK_INT + "\n")
+                    .getBytes(StandardCharsets.UTF_8));
             resourceHash = sha256(Files.readAllBytes(new File(fixture.resource, "system.arc").toPath()));
             appendReport(evidence, "fixture_profile=render-close\n"
                     + "fixture_derived_from_profile=render\n"
@@ -133,9 +130,11 @@ public final class EthornellStartupActivityTest {
             assertNotNull("Dispatch disappeared after native registration", registeredDispatch);
             assertEquals(EthornellDispatchRegistry.Stage.CLAIMED, registeredDispatch.stage);
             assertEquals(hostPid, registeredDispatch.pid);
-            assertEquals("Private user root must be the identity-derived directory", userRoot.getCanonicalFile(),
-                    EthornellPaths.userDataDir(app.getFilesDir(), identity).getCanonicalFile());
-            assertTrue("Native create must establish private user root", userRoot.isDirectory());
+            assertEquals("Game user root must be savedata beneath the game root",
+                    fixture.resource.getCanonicalFile(), userRoot.getCanonicalFile().getParentFile());
+            assertEquals(userRoot.getCanonicalFile(), EthornellPaths.validateGameUserDataDir(
+                    fixture.resource, userRoot.getPath()).getCanonicalFile());
+            assertTrue("Native create must retain game savedata root", userRoot.isDirectory());
 
             long surfaceDeadline = startupDeadline;
             Bitmap presented = null;
@@ -151,7 +150,7 @@ public final class EthornellStartupActivityTest {
                 SystemClock.sleep(150);
             }
             assertNotNull("Render fixture's checkerboard never reached the foreground display", presented);
-            try (FileOutputStream out = new FileOutputStream(new File(userRoot, "startup-presented.png"))) {
+            try (FileOutputStream out = new FileOutputStream(new File(fixture.base, "startup-presented.png"))) {
                 assertTrue("Startup screenshot encoding failed", presented.compress(Bitmap.CompressFormat.PNG, 100, out));
             } finally {
                 presented.recycle();
@@ -159,14 +158,14 @@ public final class EthornellStartupActivityTest {
             assertTrue("Native output was visible but startup title remained exposed",
                     awaitTextAbsent(automation, app.getString(com.core.engine.R.string.engine_starting_game), 2500));
             assertForegroundHost(automation, app, hostPid);
-            fixture.assertResourceUnchanged();
+            assertGameResourceUnchanged(fixture, userRoot);
 
             String report = "result=PIXELCOPY_REVEAL_WITH_NATIVE_RENDER_FIXTURE\n"
                     + "package=" + app.getPackageName() + "\n"
                     + "activity=" + EthornellActivity.class.getName() + "\n"
                     + "process=" + activityInfo.processName + " pid=" + hostPid + "\n"
                     + "dispatch=" + dispatch + " stage=" + claimed.stage + " identity=" + identity + "\n"
-                    + "private_user_root=" + userRoot.getCanonicalPath() + "\n"
+                    + "game_user_root=" + userRoot.getCanonicalPath() + "\n"
                     + "fixture_resource=" + fixture.resource.getCanonicalPath() + "\n"
                     + "fixture_system_arc_sha256=" + resourceHash + "\n"
                     + "runtime_library=" + runtimePath + "\n"
@@ -187,7 +186,7 @@ public final class EthornellStartupActivityTest {
             assertNotNull("Normal dispatch record must be retained as terminal proof", terminal);
             assertEquals(EthornellDispatchRegistry.Stage.TERMINAL, terminal.stage);
             assertEquals(hostPid, terminal.pid);
-            Files.write(new File(userRoot, "startup-exit-ack.txt").toPath(),
+            Files.write(new File(fixture.base, "startup-exit-ack.txt").toPath(),
                     ("dispatch=" + dispatch + " stage=" + terminal.stage + " owner_pid=" + terminal.pid
                             + " owner_starttime=" + terminal.startTime + " host_process_exited=true\n")
                             .getBytes(StandardCharsets.UTF_8));
@@ -237,12 +236,23 @@ public final class EthornellStartupActivityTest {
         return token;
     }
 
-    private static File expectedUserRoot(Context app, String identity) throws Exception {
-        File root = new File(new File(app.getFilesDir().getCanonicalFile(), "ethornell/userdata"),
-                sha256(identity.getBytes(StandardCharsets.UTF_8)));
-        assertEquals(root.getCanonicalFile(),
-                EthornellPaths.userDataDir(app.getFilesDir(), identity).getCanonicalFile());
-        return root;
+    private static File expectedGameUserRoot(File gameRoot) throws Exception {
+        File canonicalRoot = gameRoot.getCanonicalFile();
+        assertTrue("Game root must exist", canonicalRoot.isDirectory());
+        File expected = new File(canonicalRoot, "savedata");
+        assertEquals(expected.getCanonicalFile(), EthornellPaths.gameUserDataDir(gameRoot).getCanonicalFile());
+        assertEquals(expected.getCanonicalFile(), EthornellPaths.validateGameUserDataDir(
+                gameRoot, expected.getPath()).getCanonicalFile());
+        return expected;
+    }
+
+    private static void assertGameResourceUnchanged(EthornellDeviceTest.Fixture fixture, File userRoot)
+            throws Exception {
+        assertArrayEquals("The game archive changed", fixture.expected,
+                Files.readAllBytes(new File(fixture.resource, "system.arc").toPath()));
+        assertTrue("Game savedata directory must remain beneath the resource root", userRoot.isDirectory());
+        assertEquals("Only the archive and game savedata may exist at the resource root",
+                2, fixture.resource.list().length);
     }
 
     private static void awaitNormalExit(Context app, String dispatch, String identity, int pid, long timeoutMs) throws Exception {

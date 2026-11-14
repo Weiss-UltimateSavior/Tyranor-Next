@@ -93,12 +93,14 @@ class GameSaveManager(private val context: Context) {
                 directory.isDirectory || directory.mkdirs(),
             )
         }
-        // Exact private identity root even when the resource volume is absent.
-        // Admission remains disabled until the device save-IO fixture is accepted.
+        // The same game-local root is used by preflight, the player and save management.
         if (game.engine == EngineType.ETHORNELL) {
             val directory = try {
-                val expected = EthornellPaths.userDataDir(appContext.filesDir, game.uri)
-                EthornellPaths.validateUserDataDir(appContext.filesDir, game.uri, expected.absolutePath)
+                val root = resolveGameDirectory(game)?.let(::File)
+                root?.let {
+                    val expected = EthornellPaths.gameUserDataDir(it)
+                    EthornellPaths.validateGameUserDataDir(it, expected.absolutePath)
+                }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (_: IOException) {
@@ -108,7 +110,7 @@ class GameSaveManager(private val context: Context) {
             }
             return SaveLocation(
                 directory,
-                R.string.save_location_engine_scoped,
+                R.string.save_location_engine_game_dir,
                 directory != null && EthornellSaveCapability.available,
             )
         }
@@ -187,7 +189,7 @@ class GameSaveManager(private val context: Context) {
             EngineType.RUFFLE,
             // 第三方运行时模块无统一存档接口，此分支仅为 when 完备性
             EngineType.RUNTIME_MODULE,
-            // ETHORNELL returns its exact private user root above; exhaustive fallback only.
+            // ETHORNELL returns its game-local user root above; exhaustive fallback only.
             EngineType.ETHORNELL,
             EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.CATSYSTEM2, EngineType.PC,
             // ANDROID_APP 在函数开头已提前返回（无文件存档接口），此分支仅为 when 完备性
@@ -635,18 +637,8 @@ class GameSaveManager(private val context: Context) {
             return
         }
         if (game.engine == EngineType.ETHORNELL) {
-            // Retain on busy, disabled, damaged path, or incomplete recovery.
-            // Library removal is not permission to delete an uncertain tree.
-            if (!EthornellSaveCapability.available) return
-            try {
-                EthornellOperationGate.cleanupIfIdle(appContext) { ethornellStore(game).delete() }
-            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                throw cancelled
-            } catch (_: IOException) {
-                // Best effort cleanup: never redirect or broaden deletion.
-            } catch (_: SecurityException) {
-                // Permission failure retains the private tree.
-            }
+            // Removing a library entry must retain saves in the game's own directory.
+            // Retain the legacy migration source as well; an unavailable volume may return.
             return
         }
         if (game.engine == EngineType.CMVS) {
@@ -762,7 +754,11 @@ class GameSaveManager(private val context: Context) {
         }
     }
 
-    private fun ethornellStore(game: ScanGame) = EthornellSaveStore(appContext.filesDir, game.uri)
+    private fun ethornellStore(game: ScanGame, checkCancelled: () -> Unit = {}): EthornellSaveStore {
+        val root = resolveGameDirectory(game)?.let(::File)
+            ?: throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+        return EthornellSaveStore(appContext.filesDir, game.uri, root, checkCancelled = checkCancelled)
+    }
 
     /** CMVS 运行中由引擎独占 `.cmvs-system.lock` 并持续写槽位；手动覆盖/导出/删除必须先停引擎。 */
     private fun requireCmvsIdle(engine: EngineType) {
@@ -779,7 +775,7 @@ class GameSaveManager(private val context: Context) {
             val coroutine = kotlinx.coroutines.currentCoroutineContext()
             try {
                 EthornellOperationGate.requireIdle(appContext)
-                block(EthornellSaveStore(appContext.filesDir, game.uri, checkCancelled = {
+                block(ethornellStore(game, checkCancelled = {
                     coroutine.ensureActive()
                 }))
             } catch (cancelled: kotlinx.coroutines.CancellationException) {

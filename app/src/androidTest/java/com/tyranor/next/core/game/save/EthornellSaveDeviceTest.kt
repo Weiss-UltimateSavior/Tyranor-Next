@@ -37,17 +37,33 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 /**
- * Real Android private-files backend IO, not native VM slots, PC interoperability,
+ * Real Android game-directory backend IO, not native VM slots, PC interoperability,
  * or cross-process host acceptance. Tiny, self-contained byte fixtures only.
  * The release capability is enabled after device acceptance; direct backend
  * construction is scoped to an isolated private fixture, never used to bypass
- * public API admission. Coverage includes the private tree round-trip, empty
+ * public API admission. Coverage includes the shared game tree, legacy private migration, empty
  * export, malicious ZIPs, the 64 MiB per-file boundary, and gate refusal. The
  * public manager lifecycle case runs with the gate enabled.
  */
 @RunWith(AndroidJUnit4::class)
 class EthornellSaveDeviceTest {
-    @Test fun privateTreeZipRoundTripPreservesMetadataResourcesAndInternalInodes() = fixture { f ->
+    @Test fun legacyPrivateDataMigratesToSharedGameDirectoryOnceWithoutReplacingNewerSaves() = fixture { f ->
+        val legacy = EthornellPaths.userDataDir(f.files, f.identity)
+        write(legacy, "UserData/slot.bin", byteArrayOf(1, 2, 3))
+        write(legacy, "BGI.gdb", byteArrayOf(4, 5))
+        val store = f.store()
+        write(store.root, "BGI.gdb", byteArrayOf(9))
+        store.recoverForLaunch()
+        assertArrayEquals(byteArrayOf(1, 2, 3), File(store.root, "UserData/slot.bin").readBytes())
+        assertArrayEquals("Existing game save must win", byteArrayOf(9), File(store.root, "BGI.gdb").readBytes())
+        assertArrayEquals("Legacy backup is retained", byteArrayOf(4, 5), File(legacy, "BGI.gdb").readBytes())
+        assertEquals(2, store.delete())
+        store.recoverForLaunch()
+        assertTrue("Completed migration must not resurrect deleted saves", store.listFiles().isEmpty())
+        assertArrayEquals(byteArrayOf(4, 5, 6), File(f.resources, "UserData/resource-sentinel.bin").readBytes())
+    }
+
+    @Test fun gameTreeZipRoundTripPreservesMetadataResourcesAndInternalInodes() = fixture { f ->
         val store = f.store()
         val expected = linkedMapOf(
             "UserData/slot-fixture.bin" to byteArrayOf(0, 1, 2, -1, 0, 42),
@@ -60,8 +76,8 @@ class EthornellSaveDeviceTest {
         val other = write(f.store("other identity").root, "untouched.bin", byteArrayOf(5))
         val otherBefore = metadata(other)
         val resourceBefore = snapshot(f.resources)
-        assertEquals(EthornellPaths.userDataDir(f.files, f.identity), store.root)
-        assertEquals(64, store.root.name.length)
+        assertEquals(EthornellPaths.gameUserDataDir(f.resources), store.root)
+        assertEquals("savedata", store.root.name)
         expect(SaveErrorCode.SAVE_DIR_UNAVAILABLE) { store.validateRoot(f.resources) }
 
         // Keep the actual lock descriptor open across rename/import/delete. The
@@ -176,7 +192,7 @@ class EthornellSaveDeviceTest {
     }
 
     @Test fun failedCommitRenameRollsBackRealPrivateTree() = fixture { f ->
-        val store = EthornellSaveStore(f.files, f.identity, rename = { from, to ->
+        val store = EthornellSaveStore(f.files, f.identity, f.resources, rename = { from, to ->
             // Fail only the second commit step; all performed renames are real.
             !from.name.endsWith("-import-staging") && from.renameTo(to)
         })
@@ -198,7 +214,7 @@ class EthornellSaveDeviceTest {
         var inputOpened = false
         var inputClosed = false
         val cancelled = CancellationException("device fixture cancellation")
-        val store = EthornellSaveStore(f.files, f.identity, checkCancelled = {
+        val store = EthornellSaveStore(f.files, f.identity, f.resources, checkCancelled = {
             if (inputOpened) throw cancelled
         })
         val old = write(store.root, "old.bin", byteArrayOf(1))
@@ -228,7 +244,7 @@ class EthornellSaveDeviceTest {
 
         var outputOpened = false
         var outputClosed = false
-        val exporting = EthornellSaveStore(f.files, f.identity, checkCancelled = {
+        val exporting = EthornellSaveStore(f.files, f.identity, f.resources, checkCancelled = {
             if (outputOpened) throw cancelled
         })
         try {
@@ -370,7 +386,7 @@ class EthornellSaveDeviceTest {
                 assertEquals(resourcesBefore, snapshot(f.resources))
 
                 manager.cleanupAppData(game)
-                assertTrue(manager.listSaveFiles(game).isEmpty())
+                assertEquals("Removing a library entry retains game-local saves", 2, manager.listSaveFiles(game).size)
                 assertArrayEquals(byteArrayOf(3), lock.readBytes())
                 assertEquals(resourcesBefore, snapshot(f.resources))
             }
@@ -438,8 +454,9 @@ class EthornellSaveDeviceTest {
         private val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
         val base: File = Files.createTempDirectory(app.filesDir.toPath(), "ethornell-save-device-").toFile().canonicalFile
         val files = File(base, "private-files").apply { check(mkdir()) }
-        val resources = File(base, "resource-日本語😀").apply { check(mkdir()) }
-        val identity = "content://device-fixture/tree/日本語😀/${UUID.randomUUID()}"
+        val external = requireNotNull(app.getExternalFilesDir(null)).canonicalFile
+        val resources = File(external, "ethornell-save-device-${UUID.randomUUID()}-日本語😀").apply { check(mkdir()) }
+        val identity = Uri.fromFile(resources).toString()
         val context: Context = object : ContextWrapper(app) {
             override fun getFilesDir(): File = files
             override fun getApplicationContext(): Context = this
@@ -451,7 +468,8 @@ class EthornellSaveDeviceTest {
         }
 
         fun store(gameIdentity: String = identity, maxNodes: Int = 100_000) =
-            EthornellSaveStore(files, gameIdentity, maxNodes = maxNodes)
+            EthornellSaveStore(files, gameIdentity, if (gameIdentity == identity) resources else
+                File(base, "other-game").apply { check(isDirectory || mkdir()) }, maxNodes = maxNodes)
 
         fun archive(vararg entries: Pair<String, ByteArray>): File = File(base, "input.zip").also { archive ->
             ZipOutputStream(FileOutputStream(archive)).use { zip ->
@@ -482,7 +500,8 @@ class EthornellSaveDeviceTest {
             // does not follow symlinks; never recurse through a redirected root.
             check(base.parentFile == app.filesDir.canonicalFile)
             check(base.name.startsWith("ethornell-save-device-"))
-            Files.walkFileTree(base.toPath(), object : java.nio.file.SimpleFileVisitor<java.nio.file.Path>() {
+            check(resources.parentFile == external && resources.name.startsWith("ethornell-save-device-"))
+            for (scope in listOf(resources, base)) Files.walkFileTree(scope.toPath(), object : java.nio.file.SimpleFileVisitor<java.nio.file.Path>() {
                 override fun visitFile(file: java.nio.file.Path, attrs: java.nio.file.attribute.BasicFileAttributes): java.nio.file.FileVisitResult {
                     Files.delete(file)
                     return java.nio.file.FileVisitResult.CONTINUE
@@ -537,7 +556,9 @@ class EthornellSaveDeviceTest {
             return Metadata(stat.st_dev, stat.st_ino, stat.st_size, file.lastModified(), digest)
         }
 
-        fun snapshot(root: File): Map<String, Metadata> = root.walkTopDown().associate {
+        fun snapshot(root: File): Map<String, Metadata> = root.walkTopDown()
+            .onEnter { it == root || (it.name != "savedata" && !it.name.startsWith(".ethornell-savedata-")) }
+            .filter { it != root }.associate {
             it.relativeTo(root).invariantSeparatorsPath to metadata(it)
         }
 

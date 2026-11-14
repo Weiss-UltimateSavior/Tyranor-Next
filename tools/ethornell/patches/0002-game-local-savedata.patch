@@ -1,0 +1,211 @@
+--- a/crates/ethornell-app/src/file_policy.rs
++++ b/crates/ethornell-app/src/file_policy.rs
+@@ -49,6 +49,7 @@
+     resource_dir: std::sync::Arc<std::fs::File>,
+     #[cfg(fd_policy)]
+     user_dir: std::sync::Arc<std::fs::File>,
++    savedata_user_root: bool,
+     #[cfg(hosted_files)]
+     hosted: std::sync::Arc<hosted::HostedRoots>,
+ }
+@@ -165,6 +166,7 @@
+     depth: usize,
+     count: &mut usize,
+     recurse: bool,
++    exclude_savedata: bool,
+     visit: &mut impl FnMut(&Path, &std::fs::File) -> io::Result<()>,
+ ) -> io::Result<()> {
+     use std::{
+@@ -226,6 +228,9 @@
+     }
+     names.sort_by_key(|n| n.to_bytes().to_ascii_lowercase());
+     for name in names {
++        if exclude_savedata && prefix.as_os_str().is_empty() && name.to_bytes().eq_ignore_ascii_case(b"savedata") {
++            continue;
++        }
+         if name
+             .to_bytes()
+             .to_ascii_lowercase()
+@@ -254,7 +259,7 @@
+         let path = prefix.join(std::ffi::OsStr::from_bytes(name.as_bytes()));
+         visit(&path, &file)?;
+         if metadata.is_dir() && recurse {
+-            walk_directory(&file, &path, depth + 1, count, recurse, visit)?;
++            walk_directory(&file, &path, depth + 1, count, recurse, exclude_savedata, visit)?;
+         }
+     }
+     Ok(())
+@@ -370,6 +375,10 @@
+     #[cfg(fd_policy)]
+     pub fn open_resource(&self, name: &str) -> io::Result<std::fs::File> {
+         let normalized = name.replace('\\', "/");
++        let resource_name = normalized.strip_prefix("bgi-resource/").unwrap_or(&normalized);
++        if self.savedata_user_root && resource_name.split('/').next().is_some_and(|part| part.eq_ignore_ascii_case("savedata")) {
++            return Err(io::Error::from(io::ErrorKind::PermissionDenied));
++        }
+         if normalized.starts_with("bgi-user/") {
+             return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+         }
+@@ -472,6 +481,7 @@
+             0,
+             &mut 0,
+             true,
++            self.savedata_user_root,
+             &mut |rel, file| {
+                 if !file.metadata()?.is_file() {
+                     return Ok(());
+@@ -570,8 +580,41 @@
+             Ok((normalized, dir))
+         }
+         let (resource, resource_dir) = open_root(resource,101)?;
++        let requested_savedata_child = user.file_name().is_some_and(|name| name == "savedata")
++            && user.parent().and_then(|parent| parent.canonicalize().ok()).as_deref()
++                == Some(resource.as_path());
+         let (user, user_dir) = open_root(user,111)?;
+-        if user.starts_with(&resource) || resource.starts_with(&user) {
++        // Permit only the canonical, descriptor-verified direct savedata child.
++        // openat(O_NOFOLLOW) prevents a symlink at resource/savedata from
++        // converting this exception into a second root alias.
++        use std::os::fd::{AsRawFd, FromRawFd};
++        use std::os::unix::{ffi::OsStrExt, fs::MetadataExt};
++        let savedata_name = std::ffi::CString::new("savedata").unwrap();
++        let savedata_fd = unsafe {
++            libc::openat(
++                resource_dir.as_raw_fd(),
++                savedata_name.as_ptr(),
++                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
++            )
++        };
++        let savedata_user_root = if savedata_fd >= 0 {
++            let savedata_dir = unsafe { std::fs::File::from_raw_fd(savedata_fd) };
++            let resource_child = resource.join("savedata");
++            let child_meta = savedata_dir.metadata()?;
++            let user_meta = user_dir.metadata()?;
++            user == resource_child
++                && child_meta.dev() == user_meta.dev()
++                && child_meta.ino() == user_meta.ino()
++        } else {
++            false
++        };
++        if requested_savedata_child && !savedata_user_root {
++            return Err(io::Error::new(
++                io::ErrorKind::PermissionDenied,
++                "host_policy:120:0",
++            ));
++        }
++        if (user.starts_with(&resource) || resource.starts_with(&user)) && !savedata_user_root {
+             return Err(io::Error::new(
+                 io::ErrorKind::PermissionDenied,
+                 "host_policy:120:0",
+@@ -584,6 +627,7 @@
+             user,
+             resource_dir: std::sync::Arc::new(resource_dir),
+             user_dir: std::sync::Arc::new(user_dir),
++            savedata_user_root,
+         })
+     }
+     /// ResourceManager caches archive descriptors. Reject links before opening
+@@ -598,6 +642,7 @@
+             0,
+             &mut 0,
+             true,
++            self.savedata_user_root,
+             &mut |_, _| Ok(()),
+         )
+     }
+@@ -615,6 +660,7 @@
+         let (root, name, explicit) = if let Some(name) = normalized.strip_prefix("bgi-user/") {
+             (&self.user_dir, name, true)
+         } else if let Some(name) = normalized.strip_prefix("bgi-resource/") {
++            if self.savedata_user_root && name.split('/').next().is_some_and(|part| part.eq_ignore_ascii_case("savedata")) { return None; }
+             (&self.resource_dir, name, true)
+         } else {
+             (&self.user_dir, normalized.as_str(), false)
+@@ -703,6 +749,10 @@
+                 normalized.strip_prefix("bgi-user/").unwrap_or(&normalized),
+             )
+         };
++        if std::ptr::eq(base, &self.resource_dir) && self.savedata_user_root
++            && name.split('/').next().is_some_and(|part| part.eq_ignore_ascii_case("savedata")) {
++            return Err(io::Error::from(io::ErrorKind::PermissionDenied));
++        }
+         let path =
+             relative(name).ok_or_else(|| io::Error::from(io::ErrorKind::PermissionDenied))?;
+         let parent = path.parent().unwrap_or(Path::new(""));
+@@ -715,6 +765,7 @@
+             0,
+             &mut 0,
+             recursive,
++            self.savedata_user_root && std::ptr::eq(base, &self.resource_dir),
+             &mut |name, file| {
+                 if (!recursive && name.components().count() != 1)
+                     || output.len() >= max_count.clamp(1, 10_000) && max_count != 0
+@@ -1059,7 +1110,68 @@
+         assert_eq!(
+             std::fs::read(p.resource.join("story")).unwrap(),
+             b"resource"
++        );
++        std::fs::remove_dir_all(base).unwrap();
++    }
++    #[test]
++    #[cfg(fd_policy)]
++    fn exact_game_savedata_root_is_user_only_and_persists_real_saves() {
++        use std::os::unix::fs::symlink;
++        let base = std::env::temp_dir().join(format!(
++            "ethornell-policy-{}-savedata",
++            std::process::id()
++        ));
++        let resource = base.join("game");
++        let savedata = resource.join("savedata");
++        std::fs::create_dir_all(&savedata).unwrap();
++        std::fs::write(resource.join("story.dat"), b"game asset").unwrap();
++        let p = FilePolicy::new(&resource, &savedata).unwrap();
++        p.atomic_write("UserData/slot.sud", b"save bytes").unwrap();
++        p.atomic_write("BGI.gdb", b"global data").unwrap();
++        p.atomic_write("BGI0007.cad", b"config").unwrap();
++        assert_eq!(p.read_user("UserData/slot.sud").unwrap(), b"save bytes");
++        assert_eq!(p.read_user("BGI.gdb").unwrap(), b"global data");
++        assert_eq!(p.read_user("BGI0007.cad").unwrap(), b"config");
++        assert_eq!(
++            std::fs::read(savedata.join("UserData/slot.sud")).unwrap(),
++            b"save bytes"
+         );
++        assert_eq!(p.read_resource("story.dat", 100).unwrap(), b"game asset");
++        assert!(p.read_resource("savedata/UserData/slot.sud", 100).is_err());
++        assert!(p.read_loose("bgi-resource/savedata/UserData/slot.sud").is_err());
++        assert!(p.metadata("bgi-resource/savedata/UserData/slot.sud").is_none());
++        assert!(p.enumerate("bgi-resource/savedata/*", false, 0, false).is_err());
++        assert!(p.validate_resource_tree().is_ok());
++
++        // The resource walk must not descend into the user tree, while writes
++        // still reject symlink parents through the user-root descriptor.
++        std::fs::create_dir_all(savedata.join("escape")).unwrap();
++        let outside = base.join("outside");
++        std::fs::create_dir(&outside).unwrap();
++        symlink(&outside, savedata.join("link")).unwrap();
++        assert!(p.atomic_write("link/escaped", b"no").is_err());
++        assert!(!outside.join("escaped").exists());
++        std::fs::remove_dir_all(base).unwrap();
++    }
++    #[test]
++    #[cfg(fd_policy)]
++    fn only_non_symlink_direct_savedata_is_an_allowed_nested_root() {
++        use std::os::unix::fs::symlink;
++        let base = std::env::temp_dir().join(format!(
++            "ethornell-policy-{}-savedata-roots",
++            std::process::id()
++        ));
++        std::fs::create_dir_all(base.join("game/savedata")).unwrap();
++        std::fs::create_dir_all(base.join("game/other")).unwrap();
++        std::fs::create_dir_all(base.join("user")).unwrap();
++        let resource = base.join("game");
++        assert!(FilePolicy::new(&resource, &resource).is_err());
++        assert!(FilePolicy::new(&resource, &resource.join("other")).is_err());
++        assert!(FilePolicy::new(&resource, &base).is_err());
++        let symlink_game = base.join("symlink-game");
++        std::fs::create_dir(&symlink_game).unwrap();
++        symlink(resource.join("savedata"), symlink_game.join("savedata")).unwrap();
++        assert!(FilePolicy::new(&symlink_game, &symlink_game.join("savedata")).is_err());
+         std::fs::remove_dir_all(base).unwrap();
+     }
+     #[test]

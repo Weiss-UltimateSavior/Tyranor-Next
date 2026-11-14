@@ -1492,7 +1492,7 @@ object EngineLauncher {
         }
     }
 
-    /** Ethornell preflight never writes to the resource root or guesses a save subdirectory. */
+    /** Resolve the resource volume before preparing the fixed game-local save directory. */
     private fun ethornellStorageRoot(path: String): File? {
         val primaryRoot = PrimaryStorageRoot.get()
         if (path == primaryRoot || path.startsWith("$primaryRoot/")) return File(primaryRoot)
@@ -1521,11 +1521,10 @@ object EngineLauncher {
                 return failed(EthornellPrepareError.FONT)
             }
             stage = EthornellPrepareError.USER_DATA
-            com.tyranor.next.core.game.save.EthornellSaveStore(context.filesDir, game.uri).recoverForLaunch()
-            val dir = EthornellPaths.userDataDir(context.filesDir, game.uri)
-            EthornellPaths.validateUserDataDir(context.filesDir, game.uri, dir.absolutePath)
-            if ((!dir.isDirectory && !dir.mkdirs()) || !dir.canWrite() ||
-                !dir.canonicalFile.toPath().startsWith(context.filesDir.canonicalFile.toPath())) {
+            com.tyranor.next.core.game.save.EthornellSaveStore(context.filesDir, game.uri, root).recoverForLaunch()
+            val dir = EthornellPaths.gameUserDataDir(root)
+            EthornellPaths.validateGameUserDataDir(root, dir.absolutePath)
+            if ((!dir.isDirectory && !dir.mkdirs()) || !dir.canWrite()) {
                 return failed(EthornellPrepareError.USER_DATA)
             }
             null
@@ -1564,7 +1563,7 @@ object EngineLauncher {
         putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_ETHORNELL)
         putExtra(LaunchContract.ETHORNELL_NLS, settings.ethornellNls)
         putExtra(LaunchContract.ETHORNELL_FONT_PATH, EthornellPaths.validatedFont(context.filesDir, settings.ethornellFont))
-        putExtra(LaunchContract.ETHORNELL_USER_DATA_DIR, EthornellPaths.userDataDir(context.filesDir, game.uri).absolutePath)
+        putExtra(LaunchContract.ETHORNELL_USER_DATA_DIR, EthornellPaths.gameUserDataDir(File(path)).absolutePath)
         putExtra(LaunchContract.UI_LANGUAGE_TAG, com.tyranor.next.core.i18n.AppLocaleController.wrap(context).resources.configuration.locales[0].toLanguageTag())
     }
 

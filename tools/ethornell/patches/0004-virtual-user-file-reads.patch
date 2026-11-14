@@ -1,0 +1,241 @@
+diff --git a/crates/ethornell-app/src/lib.rs b/crates/ethornell-app/src/lib.rs
+index 7d586eb..883e74e 100644
+--- a/crates/ethornell-app/src/lib.rs
++++ b/crates/ethornell-app/src/lib.rs
+@@ -22018,7 +22018,17 @@ impl ethornell_vm::SysApi for RuntimeTraceApi {
+     }
+ 
+     fn load_file_bytes(&mut self, archive: &str, file: &str) -> Option<Vec<u8>> {
+-        let bytes = read_runtime_bytes(&self.manager, archive, file);
++        // User-data headers use this generic loader as well as read_disk_file.
++        // Keep a mapped-but-missing user file distinct from an unmapped resource.
++        let user_bytes = file_policy::active().and_then(|policy| {
++            if !user_files::authorized_archive_arg(archive) || user_files::named_archive(archive) {
++                return None;
++            }
++            let path = user_files::scoped_name(archive, file)?;
++            let alias = file_policy::user_data_alias(&path);
++            alias.starts_with("bgi-user/").then(|| policy.read_loose(&alias).ok())
++        });
++        let bytes = user_bytes.unwrap_or_else(|| read_runtime_bytes(&self.manager, archive, file));
+         let resolved_archive = find_runtime_resource(&self.manager, archive, file)
+             .and_then(|entry| {
+                 entry
+@@ -22065,7 +22075,13 @@ impl ethornell_vm::SysApi for RuntimeTraceApi {
+ 
+     fn read_disk_file(&mut self, path: &str) -> Option<Vec<u8>> {
+         if let Some(policy) = file_policy::active() {
+-            return policy.read_loose(path).ok();
++            let alias = file_policy::user_data_alias(path);
++            let mapped = if alias.starts_with("bgi-user/") {
++                alias.as_str()
++            } else {
++                path
++            };
++            return policy.read_loose(mapped).ok();
+         }
+         let host = find_runtime_file_from_root(&self.manager, &self.native_root, "", path)?;
+         host.is_file().then(|| std::fs::read(&host).ok()).flatten()
+@@ -22073,7 +22089,13 @@ impl ethornell_vm::SysApi for RuntimeTraceApi {
+ 
+     fn disk_file_exists(&mut self, path: &str) -> bool {
+         if let Some(policy) = file_policy::active() {
+-            return policy.metadata(path).is_some_and(|meta| !meta.is_dir());
++            let alias = file_policy::user_data_alias(path);
++            let mapped = if alias.starts_with("bgi-user/") {
++                alias.as_str()
++            } else {
++                path
++            };
++            return policy.metadata(mapped).is_some_and(|meta| meta.is_file());
+         }
+         find_runtime_file_from_root(&self.manager, &self.native_root, "", path)
+             .is_some_and(|host| host.is_file())
+@@ -30082,6 +30104,57 @@ fn push_fit_texture_command(
+ #[cfg(test)]
+ mod save_repro;
+ 
++#[cfg(all(test, fd_policy))]
++mod virtual_user_file_read_tests {
++    use super::*;
++
++    #[test]
++    fn runtime_disk_callbacks_map_save_aliases_without_collapsing_other_resources() {
++        use ethornell_vm::SysApi;
++
++        let base = std::env::temp_dir().join(format!(
++            "ethornell-runtime-disk-alias-{}",
++            std::process::id()
++        ));
++        let resource = base.join("resource");
++        let user = base.join("user");
++        std::fs::create_dir_all(resource.join("UserData")).unwrap();
++        std::fs::create_dir_all(&user).unwrap();
++        std::fs::write(resource.join("UserData/7.sud"), b"resource save").unwrap();
++        std::fs::write(resource.join("UserData/missing.sud"), b"resource-only save").unwrap();
++        std::fs::write(resource.join("story.arc"), b"ordinary resource").unwrap();
++        let policy = file_policy::FilePolicy::new(&resource, &user).unwrap();
++        policy
++            .atomic_write("bgi-resource\\UserData\\7.sud", b"private save")
++            .unwrap();
++
++        let mut api = RuntimeTraceApi::new_with_native_root(policy.open_manager().unwrap(), resource.clone());
++        api.host.enabled = true;
++        file_policy::scope(&policy, || {
++            assert_eq!(api.read_disk_file("bgi-resource\\UserData\\7.sud").unwrap(), b"private save");
++            assert!(api.disk_file_exists("bgi-resource\\UserData\\7.sud"));
++            assert_eq!(api.load_file_bytes("", "bgi-resource/UserData/7.sud").unwrap(), b"private save");
++            assert_eq!(api.load_file_bytes("bgi-resource/", "UserData/7.sud").unwrap(), b"private save");
++            assert!(api.load_file_bytes("", "bgi-resource/UserData/missing.sud").is_none());
++            assert!(!api.disk_file_exists("bgi-resource\\UserData\\missing.sud"));
++            assert_eq!(api.read_disk_file("bgi-resource\\bgi-resource\\story.arc").unwrap(), b"ordinary resource");
++            // Keep the existing metadata view even where raw read_loose strips
++            // another virtual prefix: this change only maps user-file aliases.
++            assert_eq!(
++                api.disk_file_exists("bgi-resource\\bgi-resource\\story.arc"),
++                policy.metadata("bgi-resource\\bgi-resource\\story.arc")
++                    .is_some_and(|meta| meta.is_file())
++            );
++            assert_eq!(
++                api.read_disk_file("bgi-resource\\bgi-resource\\story.arc").unwrap(),
++                policy.read_loose("bgi-resource\\bgi-resource\\story.arc").unwrap()
++            );
++            assert_eq!(policy.read_loose("bgi-resource\\UserData\\7.sud").unwrap(), b"resource save");
++        });
++        std::fs::remove_dir_all(base).unwrap();
++    }
++}
++
+ #[cfg(test)]
+ mod selector_audit {
+     use ethornell_script::{BpInstruction, BpOpcode};
+diff --git a/crates/ethornell-vm/src/resource_io.rs b/crates/ethornell-vm/src/resource_io.rs
+index 66ff9fe..f31339d 100644
+--- a/crates/ethornell-vm/src/resource_io.rs
++++ b/crates/ethornell-vm/src/resource_io.rs
+@@ -20,6 +20,17 @@ pub(crate) fn is_absolute_resource_path(path: &str) -> bool {
+     path.starts_with(['/', '\\']) || bytes.get(1) == Some(&b':')
+ }
+ 
++/// A hosted BGI root is relative, but it is a virtual root understood by the
++/// host's restricted file policy. Keep this allowlist exact and require a
++/// separator boundary so lookalike roots (for example `bgi-resource-old`)
++/// never bypass the absolute-path guard.
++fn is_virtual_resource_path(path: &str) -> bool {
++    ["bgi-resource", "bgi-user"].iter().any(|root| {
++        path.strip_prefix(root)
++            .is_some_and(|suffix| suffix.starts_with(['\\', '/']))
++    })
++}
++
+ /// sub_470070(src, dst, n): copies `src` up to and including its n-th
+ /// backslash (DBCS aware); `None` when `src` has fewer components. For
+ /// n > 0 with text left over the last copied byte (that backslash) is
+@@ -123,7 +134,16 @@ impl Vm {
+         offset: u32,
+         length: u32,
+     ) -> Result<Vec<u8>, i32> {
+-        if !is_absolute_resource_path(path) && !std::path::Path::new(path).is_absolute() {
++        if !is_absolute_resource_path(path)
++            && !std::path::Path::new(path).is_absolute()
++            && !(is_virtual_resource_path(path)
++                && path
++                    .strip_prefix("bgi-resource\\")
++                    .or_else(|| path.strip_prefix("bgi-resource/"))
++                    .or_else(|| path.strip_prefix("bgi-user\\"))
++                    .or_else(|| path.strip_prefix("bgi-user/"))
++                    .is_some_and(|suffix| !suffix.is_empty()))
++        {
+             return Err(RESOURCE_MISSING);
+         }
+         let bytes = api.read_disk_file(path).ok_or(RESOURCE_MISSING)?;
+@@ -166,7 +186,10 @@ impl Vm {
+     /// sub_4669A0: root + name, then the search directories, exists as a
+     /// non-directory.
+     fn loose_resource_exists<A: SysApi>(&self, api: &mut A, root: &str, file: &str) -> bool {
+-        if !is_absolute_resource_path(root) && !std::path::Path::new(root).is_absolute() {
++        if !is_absolute_resource_path(root)
++            && !std::path::Path::new(root).is_absolute()
++            && !is_virtual_resource_path(root)
++        {
+             return false;
+         }
+         if api.disk_file_exists(&format!("{root}{file}")) {
+@@ -509,6 +532,77 @@ mod tests {
+         assert_eq!(marker_directory_prefix(b"\x83\x5C\\a.arc"), b"\x83\x5C\\");
+     }
+ 
++    #[derive(Default)]
++    struct VirtualRootApi {
++        reads: Vec<String>,
++        exists: Vec<String>,
++    }
++
++    impl SysApi for VirtualRootApi {
++        fn call_sys(&mut self, _call: &mut NativeCallFrame) -> VmResult<Value> {
++            Ok(Value::None)
++        }
++        fn read_disk_file(&mut self, path: &str) -> Option<Vec<u8>> {
++            self.reads.push(path.to_owned());
++            [
++                "bgi-resource\\UserData\\7.sud",
++                "bgi-resource\\Subdir\\UserData\\7.sud",
++            ]
++            .contains(&path)
++            .then(|| b"save".to_vec())
++        }
++        fn disk_file_exists(&mut self, path: &str) -> bool {
++            self.exists.push(path.to_owned());
++            [
++                "bgi-resource\\UserData\\7.sud",
++                "bgi-resource\\Subdir\\UserData\\7.sud",
++            ]
++            .contains(&path)
++        }
++    }
++
++    #[test]
++    fn exact_virtual_roots_reach_disk_callbacks_but_lookalikes_do_not() {
++        let vm = Vm::new();
++        let mut api = VirtualRootApi::default();
++
++        assert_eq!(
++            vm.read_resource_path(&mut api, "bgi-resource\\UserData\\7.sud", 0, 0)
++                .unwrap(),
++            b"save"
++        );
++        assert_eq!(api.reads, ["bgi-resource\\UserData\\7.sud"]);
++        assert!(vm.loose_resource_exists(
++            &mut api,
++            "bgi-resource\\",
++            "UserData\\7.sud"
++        ));
++        assert_eq!(api.exists, ["bgi-resource\\UserData\\7.sud"]);
++        assert!(vm.loose_resource_exists(
++            &mut api,
++            "bgi-resource\\Subdir\\",
++            "UserData\\7.sud"
++        ));
++        assert_eq!(api.exists[1], "bgi-resource\\Subdir\\UserData\\7.sud");
++
++        assert_eq!(
++            vm.read_resource_path(&mut api, "bgi-resource-old\\UserData\\7.sud", 0, 0),
++            Err(RESOURCE_MISSING)
++        );
++        assert!(!vm.loose_resource_exists(
++            &mut api,
++            "bgi-resource-old\\",
++            "UserData\\7.sud"
++        ));
++        assert_eq!(api.reads.len(), 1);
++        assert_eq!(api.exists.len(), 2);
++        assert!(is_virtual_resource_path("bgi-user\\UserData\\7.sud"));
++        assert!(!is_virtual_resource_path("bgi-userX\\UserData\\7.sud"));
++        assert!(is_virtual_resource_path("bgi-user\\"));
++        assert!(is_virtual_resource_path("bgi-user\\Subdir\\"));
++        assert!(!is_virtual_resource_path("bgi-userX\\"));
++    }
++
+     #[derive(Default)]
+     struct MediaApi {
+         drives: Vec<String>,

@@ -934,11 +934,11 @@
     <string name="ethornell_nls_title">图形文本编码</string>
     <string name="ethornell_font_title">自定义字体</string>
     <string name="ethornell_font_default">使用引擎字体回退</string>
-    <string name="ethornell_settings_note">编码仅影响图形文本，不改变资源名编码。修改后需重启游戏。用户数据使用应用私有目录；存档管理尚未开放。</string>
+    <string name="ethornell_settings_note">编码仅影响图形文本，不改变资源名编码。修改后需重启游戏。存档保存在游戏目录的 savedata 文件夹中。</string>
     <string name="ethornell_error_root">游戏目录不可读取。请选择可访问的本地目录并重新授权。</string>
     <string name="ethornell_error_bootstrap">未找到受支持的 system.arc 与 ipl._bp 启动索引。</string>
     <string name="ethornell_error_font">字体无效或不可读取，请重新导入 TTF、TTC、OTF 或 OTC 字体。</string>
-    <string name="ethornell_error_userdata">无法创建 Ethornell 私有用户数据目录，请检查可用空间。</string>
+    <string name="ethornell_error_userdata">无法准备游戏目录中的 Ethornell 存档，请检查目录写入权限和可用空间。</string>
     <!-- First-launch quick start -->
     <string name="onboarding_title">快速入门</string>
     <string name="onboarding_progress">第 %1$d 页，共 %2$d 页</string>

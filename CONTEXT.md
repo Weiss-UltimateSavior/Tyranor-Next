@@ -21,7 +21,7 @@ _Avoid_: 预制引擎、捆绑引擎
 _Avoid_: 运行时模块、内置引擎、原生插件
 
 **Ethornell / BGI（ETHORNELL）**:
-以 ethornell-rs 重实现承载的内置引擎家族，已接入扫描、启动、设置与上游 `0cfff1d` 的 ABI v1 宿主（15 导出、kind 5 输入对话框）；目前仍属实验运行时、兼容性未验收，不能据此声明全家族可玩。App 存档管理已开放但范围仅限 App 私有 user-root 的备份/恢复/删除，不能把该范围与商业游戏内槽位、游戏资源根 `UserData` 或 PC 存档互通等同。
+以 ethornell-rs 重实现承载的实验性内置引擎家族，支持扫描、启动、设置及存档备份/恢复/删除；存档位于游戏目录内的 `savedata`，旧私有存档仅作为一次性迁移来源。该能力不等于商业游戏完整兼容或 PC 存档互通。
 _Avoid_: Winlator BGI 插件、完整 BGI 支持
 
 **System3.x / System4（XSYS35 / XSYS4）**:

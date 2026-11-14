@@ -2,8 +2,13 @@ package com.tyranor.next.core.game.model
 
 import java.io.File
 
-/** Private writable root only; resource directories must never be mirrored as user data. */
+/** Shared save-location contract; the legacy private root is only a migration source. */
 object EthornellPaths {
+    fun gameUserDataDir(gameRoot: File): File = com.core.ethornell.EthornellPaths.gameUserDataDir(gameRoot)
+
+    fun validateGameUserDataDir(gameRoot: File, suppliedPath: String): File =
+        com.core.ethornell.EthornellPaths.validateGameUserDataDir(gameRoot, suppliedPath)
+
     fun userDataDir(filesDir: File, gameIdentity: String): File {
         return com.core.ethornell.EthornellPaths.userDataDir(filesDir, gameIdentity)
     }

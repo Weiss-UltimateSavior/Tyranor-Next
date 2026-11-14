@@ -1,10 +1,10 @@
 diff --git a/crates/ethornell-app/src/file_policy.rs b/crates/ethornell-app/src/file_policy.rs
-index 340474f..5285124 100644
+index e6fe8ac..d4f0bfe 100644
 --- a/crates/ethornell-app/src/file_policy.rs
 +++ b/crates/ethornell-app/src/file_policy.rs
-@@ -88,10 +88,32 @@ fn relative(name: &str) -> Option<PathBuf> {
- // arbitrary resource-root names remain read-only. It never denotes host IO in
- // the resource directory and never imports original save bytes.
+@@ -94,12 +94,32 @@ fn relative(name: &str) -> Option<PathBuf> {
+ // Arbitrary resource-root names remain read-only. These aliases never denote
+ // host IO in the resource directory and never import original save bytes.
  pub(crate) fn user_data_alias(name: &str) -> String {
 -    let normalized=name.replace('\\',"/");
 +    let mut normalized=name.replace('\\',"/");
@@ -18,13 +18,13 @@ index 340474f..5285124 100644
 +    }
      if let Some(rest)=normalized.strip_prefix("bgi-resource/") {
          let first=rest.split('/').next().unwrap_or("");
-         if first.eq_ignore_ascii_case("UserData") {return format!("bgi-user/{rest}");}
-+        // `Sys80:80/81` load and save global data as validated-root +
-+        // `BGI.gdb`, and `Sys80:78/79` use validated-root + `BGI%04d.cad` for
-+        // config slots. Once composed with the primary root those are explicit
-+        // resource-root names. Alias only these exact top-level files; no
-+        // other resource name, subdirectory, or traversal is writable.
-+        if rest.eq_ignore_ascii_case("BGI.gdb") {return "bgi-user/BGI.gdb".to_string();}
+         if first.eq_ignore_ascii_case("UserData") || rest.eq_ignore_ascii_case("BGI.gdb") {
+             return format!("bgi-user/{rest}");
+         }
++        // `Sys80:78/79` load and save config slots as validated-root +
++        // `BGI%04d.cad`. Once composed with the primary root those are explicit
++        // top-level resource names. Alias only these exact files; no other
++        // resource name, subdirectory, or traversal is writable.
 +        let bytes=rest.as_bytes();
 +        if bytes.len()==11
 +            && bytes[..3].eq_ignore_ascii_case(b"BGI")
@@ -36,10 +36,11 @@ index 340474f..5285124 100644
      }
      normalized
  }
-@@ -1023,6 +1045,87 @@ mod tests {
+@@ -1137,6 +1157,109 @@ mod tests {
+         }
          std::fs::remove_dir_all(base).unwrap();
      }
-     #[test]
++    #[test]
 +    fn doubled_resource_prefix_only_aliases_the_conventional_userdata_subtree() {
 +        let (base,p)=roots("userdata-double-prefix");
 +        std::fs::create_dir_all(p.resource.join("UserData")).unwrap();
@@ -94,6 +95,24 @@ index 340474f..5285124 100644
 +        std::fs::remove_dir_all(base).unwrap();
 +    }
 +    #[test]
++    fn doubled_resource_global_data_aliases_to_private_user_root() {
++        let (base,p)=roots("bgi-global-data-double");
++        std::fs::write(p.resource.join("BGI.gdb"),b"resource gdb").unwrap();
++        std::fs::write(p.resource.join("BGI0001.cad"),b"resource slot").unwrap();
++        assert!(p.read_user("bgi-resource\\bgi-resource\\BGI.gdb").is_err());
++        assert!(p.user_metadata("bgi-resource\\bgi-resource\\BGI.gdb").is_none());
++        p.atomic_write("bgi-resource\\bgi-resource\\BGI.gdb",b"private gdb").unwrap();
++        p.atomic_write("bgi-resource\\bgi-resource\\bgi0001.CAD",b"private slot").unwrap();
++        assert_eq!(p.read_user("bgi-user\\BGI.gdb").unwrap(),b"private gdb");
++        assert_eq!(p.read_user("bgi-user\\BGI0001.cad").unwrap(),b"private slot");
++        assert_eq!(p.read_user("bgi-resource\\bgi-resource\\BGI.gdb").unwrap(),b"private gdb");
++        assert_eq!(p.read_user("bgi-resource\\bgi-resource\\BGI0001.cad").unwrap(),b"private slot");
++        assert_eq!(std::fs::read(p.resource.join("BGI.gdb")).unwrap(),b"resource gdb");
++        assert_eq!(std::fs::read(p.resource.join("BGI0001.cad")).unwrap(),b"resource slot");
++        assert!(!p.resource.join("bgi-resource").exists());
++        std::fs::remove_dir_all(base).unwrap();
++    }
++    #[test]
 +    fn resource_root_global_data_lookalikes_stay_read_only() {
 +        let (base,p)=roots("bgi-global-data-denied");
 +        std::fs::create_dir(p.resource.join("foo")).unwrap();
@@ -106,6 +125,10 @@ index 340474f..5285124 100644
 +                       "bgi-resource/BGI.gdb/child",
 +                       "bgi-resource/foo/BGI.gdb",
 +                       "bgi-resource/foo/BGI0001.cad",
++                       "bgi-resource/bgi-resource/BGI99999.cad",
++                       "bgi-resource/bgi-resource/BGI.gdbx",
++                       "bgi-resource/bgi-resource/foo/BGI.gdb",
++                       "bgi-resource/bgi-resource/foo/BGI0001.cad",
 +                       "bgi-resource/story.arc"] {
 +            assert!(p.atomic_write(denied,b"bad").is_err(),"{denied}");
 +            assert!(p.read_user(denied).is_err(),"{denied}");
@@ -120,7 +143,6 @@ index 340474f..5285124 100644
 +        assert!(!p.user.join("foo").exists());
 +        std::fs::remove_dir_all(base).unwrap();
 +    }
-+    #[test]
+ 
+     #[test]
      fn ambiguous_ascii_case_alias_does_not_select_arbitrary_directory_entry() {
-         let (base, p) = roots("case-ambiguity");
-         std::fs::write(p.user.join("Save"), b"first").unwrap();

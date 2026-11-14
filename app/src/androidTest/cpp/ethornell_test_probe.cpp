@@ -5,6 +5,40 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
+
+#ifndef F_OFD_SETLK
+#define F_OFD_SETLK 37
+#endif
+
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_core_ethornell_EthornellDeviceTest_probeWriterLocks(JNIEnv* env, jclass, jstring path) {
+    const char* text = env->GetStringUTFChars(path, nullptr);
+    int first = open(text, O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0600);
+    int second = first < 0 ? -1 : open(text, O_RDWR | O_CLOEXEC | O_NOFOLLOW);
+    env->ReleaseStringUTFChars(path, text);
+    jint result[4] = {-1, -1, -1, -1};
+    if (first >= 0 && second >= 0) {
+        result[0] = flock(first, LOCK_EX | LOCK_NB) == 0 ? 0 : errno;
+        if (result[0] == 0) flock(first, LOCK_UN);
+        struct flock lock = {};
+        lock.l_type = F_WRLCK;
+        lock.l_whence = SEEK_SET;
+        result[1] = fcntl(first, F_OFD_SETLK, &lock) == 0 ? 0 : errno;
+        result[2] = fcntl(second, F_OFD_SETLK, &lock) == 0 ? 0 : errno;
+        close(first);
+        first = -1;
+        result[3] = fcntl(second, F_OFD_SETLK, &lock) == 0 ? 0 : errno;
+    }
+    if (first >= 0) close(first);
+    if (second >= 0) close(second);
+    jintArray output = env->NewIntArray(4);
+    env->SetIntArrayRegion(output, 0, 4, result);
+    return output;
+}
 
 static_assert(sizeof(EthornellStringV1) == 16);
 static_assert(sizeof(EthornellConfigV1) == 88);

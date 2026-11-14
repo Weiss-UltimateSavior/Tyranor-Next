@@ -21,7 +21,10 @@ class EthornellSaveStoreTest {
     @get:Rule val temporary = TemporaryFolder()
     private val identity = "content://provider/tree/游戏😀"
 
-    private fun store(files: File = temporary.newFolder()): EthornellSaveStore = EthornellSaveStore(files, identity)
+    private fun gameDirectory(files: File): File = File(files, "game").apply { mkdirs() }
+
+    private fun store(files: File = temporary.newFolder()): EthornellSaveStore =
+        EthornellSaveStore(files, identity, gameDirectory(files))
 
     private fun write(root: File, name: String, value: String): File = File(root, name).apply {
         parentFile!!.mkdirs()
@@ -52,18 +55,104 @@ class EthornellSaveStoreTest {
     @Test fun exactRootUsesFullIdentityHashAndNeverResourceUserData() {
         val files = temporary.newFolder()
         val store = store(files)
-        val resource = temporary.newFolder()
-        val original = write(resource, "UserData/save.bin", "original")
-        assertEquals(EthornellPaths.userDataDir(files, identity), store.root)
-        assertEquals(64, store.root.name.length)
-        assertEquals(File(files.canonicalFile, "ethornell/userdata"), store.root.parentFile)
+        val resource = write(gameDirectory(files), "UserData/save.bin", "original")
+        assertEquals(EthornellPaths.gameUserDataDir(gameDirectory(files)), store.root)
+        assertEquals("savedata", store.root.name)
+        assertEquals(gameDirectory(files).canonicalFile, store.root.parentFile)
         assertTrue(store.listFiles().isEmpty())
         assertEquals(0, store.delete())
-        assertEquals("original", original.readText())
-        expect(SaveErrorCode.SAVE_DIR_UNAVAILABLE) { store.validateRoot(resource) }
+        assertEquals("original", resource.readText())
+        expect(SaveErrorCode.SAVE_DIR_UNAVAILABLE) { store.validateRoot(gameDirectory(files)) }
         expect(SaveErrorCode.SAVE_DIR_UNAVAILABLE) {
             store.validateRoot(EthornellPaths.userDataDir(files, "$identity/other"))
         }
+    }
+
+    @Test fun legacyPrivateFilesMigrateWithoutOverwritingGameSavesAndMarkerIsNotExported() {
+        val files = temporary.newFolder()
+        val store = store(files)
+        val legacy = EthornellPaths.userDataDir(files, identity)
+        write(legacy, "UserData/slot.dat", "legacy-slot")
+        write(legacy, "config.bin", "legacy-config")
+        write(store.root, "config.bin", "game-directory-wins")
+
+        store.recoverForLaunch()
+
+        assertEquals("legacy-slot", File(store.root, "UserData/slot.dat").readText())
+        assertEquals("game-directory-wins", File(store.root, "config.bin").readText())
+        assertEquals("legacy-config", File(legacy, "config.bin").readText())
+        assertTrue(File(legacy, ".ethornell-migrated-to-game-savedata-v1").isFile)
+        assertEquals(setOf("UserData/slot.dat", "config.bin"), store.listFiles().map {
+            store.root.toPath().relativize(it.toPath()).toString().replace(File.separatorChar, '/')
+        }.toSet())
+
+        write(legacy, "added-after-migration", "must-not-resurrect")
+        store.recoverForLaunch()
+        assertFalse(File(store.root, "added-after-migration").exists())
+    }
+
+    @Test fun interruptedLegacyCopyCanRetryAndNeverOverwritesAlreadyCommittedFiles() {
+        val files = temporary.newFolder()
+        val store = store(files)
+        val legacy = EthornellPaths.userDataDir(files, identity)
+        write(legacy, "one", "old-one")
+        write(legacy, "nested/two", "old-two")
+        write(store.root, "one", "new-one")
+        val interruptedStage = File(store.root.parentFile, ".ethornell-${store.root.name}-legacy-migration-staging")
+        write(interruptedStage, "partial", "incomplete")
+
+        store.recoverForLaunch()
+
+        assertEquals("new-one", File(store.root, "one").readText())
+        assertEquals("old-two", File(store.root, "nested/two").readText())
+        assertFalse(interruptedStage.exists())
+        assertTrue(File(legacy, "one").isFile)
+        assertTrue(File(legacy, "nested/two").isFile)
+    }
+
+    @Test fun deletingMigratedSavesDoesNotCauseLegacyFilesToReturn() {
+        val files = temporary.newFolder()
+        val store = store(files)
+        val legacy = EthornellPaths.userDataDir(files, identity)
+        write(legacy, "slot.dat", "legacy")
+
+        assertEquals(1, store.delete())
+        assertFalse(File(store.root, "slot.dat").exists())
+        assertEquals("legacy", File(legacy, "slot.dat").readText())
+
+        assertTrue(store.listFiles().isEmpty())
+        assertFalse(File(store.root, "slot.dat").exists())
+    }
+
+    @Test fun emptyOrCorruptLegacyMigrationMarkerFailsClosed() {
+        for (markerContents in listOf("", "wrong-version")) {
+            val files = temporary.newFolder()
+            val store = store(files)
+            val legacy = EthornellPaths.userDataDir(files, identity)
+            write(legacy, "slot.dat", "legacy")
+            write(legacy, ".ethornell-migrated-to-game-savedata-v1", markerContents)
+
+            expect(SaveErrorCode.SAVE_DIR_UNAVAILABLE) { store.recoverForLaunch() }
+            assertFalse(File(store.root, "slot.dat").exists())
+            assertEquals("legacy", File(legacy, "slot.dat").readText())
+        }
+    }
+
+    @Test fun migrationCountsImplicitTargetParentsBeforeWriting() {
+        val files = temporary.newFolder()
+        val game = gameDirectory(files)
+        val constrained = EthornellSaveStore(files, identity, game, maxNodes = 4)
+        val legacy = EthornellPaths.userDataDir(files, identity)
+        write(legacy, "a/b/c", "legacy")
+        write(constrained.root, "a/existing", "new")
+
+        expect(SaveErrorCode.TOO_MANY_ZIP_FILES) { constrained.recoverForLaunch() }
+        assertFalse(File(constrained.root, "a/b/c").exists())
+        assertFalse(File(constrained.root.parentFile, ".ethornell-${constrained.root.name}-legacy-migration-staging").exists())
+
+        store(files).recoverForLaunch()
+        assertEquals("legacy", File(constrained.root, "a/b/c").readText())
+        assertEquals("new", File(constrained.root, "a/existing").readText())
     }
 
     @Test fun absentEmptyAndOnlyInternalHaveNoExportableFilesWithoutOpeningOutput() {
@@ -87,7 +176,7 @@ class EthornellSaveStoreTest {
     @Test fun exportAndDeleteExcludeReservedAtEveryDepthAndLeaveOtherIdentityAndResources() {
         val files = temporary.newFolder()
         val store = store(files)
-        val another = EthornellSaveStore(files, "other")
+        val another = EthornellSaveStore(files, "other", File(files, "other-game").apply { mkdirs() })
         val otherFile = write(another.root, "progress", "other")
         val resource = write(temporary.newFolder(), "data.arc", "resource")
         write(store.root, "UserData/slot.dat", "slot")
@@ -138,7 +227,7 @@ class EthornellSaveStoreTest {
     @Test fun emptyAndBudgetExceededArchivesDoNotReplaceOldData() {
         val files = temporary.newFolder()
         // maxFileBytes keeps the 64 MiB default; this exercises the separate total ZIP budget.
-        val store = EthornellSaveStore(files, identity, maxFiles = 2, maxBytes = 4)
+        val store = EthornellSaveStore(files, identity, gameDirectory(files), maxFiles = 2, maxBytes = 4)
         val old = write(store.root, "old", "old")
         expect(SaveErrorCode.NO_FILES_IN_ZIP) { import(store) }
         expect(SaveErrorCode.ZIP_TOO_LARGE) { import(store, "new" to "12345") }
@@ -148,7 +237,7 @@ class EthornellSaveStoreTest {
 
     @Test fun perFileBudgetRejectsOversizedEntryAndKeepsOldTree() {
         val files = temporary.newFolder()
-        val store = EthornellSaveStore(files, identity, maxFileBytes = 4)
+        val store = EthornellSaveStore(files, identity, gameDirectory(files), maxFileBytes = 4)
         val old = write(store.root, "old", "old")
         expect(SaveErrorCode.SAVE_FILE_TOO_LARGE) {
             import(store, "exact" to "1234", "oversized" to "12345")
@@ -161,7 +250,7 @@ class EthornellSaveStoreTest {
 
     @Test fun perFileBudgetRejectsOversizedExportBeforeOpeningDestination() {
         val files = temporary.newFolder()
-        val store = EthornellSaveStore(files, identity, maxFileBytes = 4)
+        val store = EthornellSaveStore(files, identity, gameDirectory(files), maxFileBytes = 4)
         write(store.root, "exact", "1234")
         var exactOpened = false
         assertEquals(1, store.export { exactOpened = true; ByteArrayOutputStream() })
@@ -191,7 +280,7 @@ class EthornellSaveStoreTest {
 
     @Test fun failedSecondRenameRollsBackOldTreeWithoutChangingResources() {
         val files = temporary.newFolder()
-        val store = EthornellSaveStore(files, identity, rename = { from, to ->
+        val store = EthornellSaveStore(files, identity, gameDirectory(files), rename = { from, to ->
             if (from.name.endsWith("-import-staging")) false else from.renameTo(to)
         })
         val old = write(store.root, "old", "old")
@@ -206,7 +295,7 @@ class EthornellSaveStoreTest {
 
     @Test fun failedRollbackRetainsBackupAndNextLaunchRecoversIt() {
         val files = temporary.newFolder()
-        val store = EthornellSaveStore(files, identity, rename = { from, to ->
+        val store = EthornellSaveStore(files, identity, gameDirectory(files), rename = { from, to ->
             if (from.name.endsWith("-import-staging") || from.name.endsWith("-import-backup")) false
             else from.renameTo(to)
         })
@@ -238,7 +327,9 @@ class EthornellSaveStoreTest {
             val untouched = write(outside, "untouched", "outside")
             when (kind) {
                 "root" -> { store.root.parentFile!!.mkdirs(); Files.createSymbolicLink(store.root.toPath(), outside.toPath()) }
-                "parent" -> { File(files, "ethornell").mkdirs(); Files.createSymbolicLink(store.root.parentFile!!.toPath(), outside.toPath()) }
+                "parent" -> {
+                    Files.createSymbolicLink(File(files, "ethornell").toPath(), outside.toPath())
+                }
                 "child", "reserved" -> {
                     store.root.mkdirs()
                     Files.createSymbolicLink(File(store.root, if (kind == "child") "link" else ".ethornell-link").toPath(), outside.toPath())
@@ -288,7 +379,7 @@ class EthornellSaveStoreTest {
         val files = temporary.newFolder()
         var calls = 0
         val cancelled = CancellationException("test cancellation")
-        val store = EthornellSaveStore(files, identity, checkCancelled = { if (++calls >= 4) throw cancelled })
+        val store = EthornellSaveStore(files, identity, gameDirectory(files), checkCancelled = { if (++calls >= 4) throw cancelled })
         val old = write(store.root, "old", "old")
         try { import(store, "new" to "new"); fail("Expected cancellation") }
         catch (error: CancellationException) { assertSame(cancelled, error) }
@@ -299,7 +390,7 @@ class EthornellSaveStoreTest {
         val files = temporary.newFolder()
         // Small injected bound exercises the production 100k bound without
         // generating 100k physical nodes on the developer's filesystem.
-        val store = EthornellSaveStore(files, identity, maxNodes = 65)
+        val store = EthornellSaveStore(files, identity, gameDirectory(files), maxNodes = 65)
         val old = write(store.root, "old", "old")
         fun deep(branch: String) = (listOf(branch) + List(62) { "d" } + "save").joinToString("/")
         expect(SaveErrorCode.TOO_MANY_ZIP_FILES) {
@@ -330,7 +421,7 @@ class EthornellSaveStoreTest {
 
     @Test fun reservedMetadataIsIncludedInFinalTreeBudgetBeforeCommit() {
         val files = temporary.newFolder()
-        val store = EthornellSaveStore(files, identity, maxNodes = 5)
+        val store = EthornellSaveStore(files, identity, gameDirectory(files), maxNodes = 5)
         val old = write(store.root, "old", "old")
         val internal = write(store.root, "nested/.ethornell-state", "keep")
         expect(SaveErrorCode.TOO_MANY_ZIP_FILES) { import(store, "a/b/c" to "new") }
@@ -347,7 +438,7 @@ class EthornellSaveStoreTest {
         var closed = false
         var reads = 0
         val cancelled = CancellationException("internal reservation")
-        val store = EthornellSaveStore(files, identity, checkCancelled = {
+        val store = EthornellSaveStore(files, identity, gameDirectory(files), checkCancelled = {
             if (opened) throw cancelled
         })
         val internal = write(store.root, ".ethornell-session.lock", "keep")
@@ -452,7 +543,7 @@ class EthornellSaveStoreTest {
         val old = File(store.root, "save")
         var cancel = false
         val cancelled = CancellationException("directory read")
-        val cancellable = EthornellSaveStore(files, identity, checkCancelled = { if (cancel) throw cancelled })
+        val cancellable = EthornellSaveStore(files, identity, gameDirectory(files), checkCancelled = { if (cancel) throw cancelled })
         val bytes = zip("other/" to "", "new" to "no")
         val input = object : ByteArrayInputStream(bytes) {
             override fun read(b: ByteArray, off: Int, len: Int): Int {
