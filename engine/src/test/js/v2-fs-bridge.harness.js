@@ -42,30 +42,51 @@ global.TyranorEnv = envBridge;
 // ---- 最小 DOM/window 桩 ----
 global.window = global;
 global.TyranorFs = bridge;
+// 事件监听注册表：兼容层会在 window 上挂 pagehide/pageshow/beforeunload、在 document 上
+// 挂 visibilitychange。真实 WebView 会派发这些事件，桩里必须能捕获并主动触发，否则
+// 「文档销毁前是否真的抽干了脏键」根本无法回归。
+const listeners = { window: {}, document: {} };
+function onWindow(type, fn) { (listeners.window[type] = listeners.window[type] || []).push(fn); }
+function onDocument(type, fn) { (listeners.document[type] = listeners.document[type] || []).push(fn); }
+function fireWindow(type, event) {
+    (listeners.window[type] || []).forEach((fn) => fn(event || {}));
+}
+function fireDocument(type, event) {
+    (listeners.document[type] || []).forEach((fn) => fn(event || {}));
+}
+function resetListeners() {
+    listeners.window = {};
+    listeners.document = {};
+}
 global.document = {
     readyState: 'loading',
     documentElement: { style: {} },
     createElement: () => ({ style: {}, getContext: () => null, addEventListener: () => {}, appendChild: () => {} }),
     getElementById: () => null,
-    addEventListener: () => {},
+    addEventListener: onDocument,
     fonts: undefined,
 };
 global.screen = {};
 global.navigator = global.navigator || { userAgent: 'stub' };
 // WebView 的 window 事件接口（兼容层会挂 load/pagehide）
-global.addEventListener = () => {};
+global.addEventListener = onWindow;
 global.removeEventListener = () => {};
 global.dispatchEvent = () => true;
 global.location = global.location || { href: 'http://localhost/index.html', reload: () => {} };
 // Storage/localStorage：WebView 必有的宿主存储接口（兼容层会劫持其 prototype）
-global.localStorage = {
-    _d: {},
-    setItem(k, v) { this._d[k] = String(v); },
-    getItem(k) { return Object.prototype.hasOwnProperty.call(this._d, k) ? this._d[k] : null; },
-    removeItem(k) { delete this._d[k]; },
-};
-global.Storage = function Storage() {};
-global.Storage.prototype = global.localStorage;
+// 每装一次都给一份**干净的原生桩**：否则新会话捕获到的 nativeSet/nativeGet 是上一会话
+// 已被 polyfill 改写的方法，原生兜底与「读不到磁盘」的断言就都不再可信。
+function installStorageStub() {
+    global.localStorage = {
+        _d: {},
+        setItem(k, v) { this._d[k] = String(v); },
+        getItem(k) { return Object.prototype.hasOwnProperty.call(this._d, k) ? this._d[k] : null; },
+        removeItem(k) { delete this._d[k]; },
+    };
+    global.Storage = function Storage() {};
+    global.Storage.prototype = global.localStorage;
+}
+installStorageStub();
 global.setTimeout_ = setTimeout;
 global.setInterval_ = setInterval;
 
@@ -75,8 +96,35 @@ const run = (file) => {
     // 用间接 eval 在全局作用域执行，模拟 <script> 注入
     (0, eval)(code);
 };
-run(process.env.POLY_BASE || nodePath.join(__dirname, '..', '..', 'main', 'assets', 'rpgmaker', '__nwjs_polyfill.js'));
-run(process.env.POLY_V2 || nodePath.join(__dirname, '..', '..', 'main', 'assets', 'rpgmaker', '__nwjs_polyfill_v2.js'));
+const BASE_ASSET = process.env.POLY_BASE || nodePath.join(__dirname, '..', '..', 'main', 'assets', 'rpgmaker', '__nwjs_polyfill.js');
+const V2_ASSET = process.env.POLY_V2 || nodePath.join(__dirname, '..', '..', 'main', 'assets', 'rpgmaker', '__nwjs_polyfill_v2.js');
+run(BASE_ASSET);
+run(V2_ASSET);
+
+// 模拟「重启」：两层 polyfill 的安装标记与 localStorage 闭包状态都是进程内的，
+// 清掉标记 + 重建干净的原生 Storage 桩后按真实注入顺序重新执行 = 新会话（磁盘目录保持不变）。
+// 这正是超长键（哈希文件名）跨会话回归唯一能被发现的形态。
+function newSession() {
+    delete global.__tyranorNwPolyfill;
+    delete global.__tyranorNwPolyfillV2;
+    delete global.__tyranorLocalStoragePersisted;
+    delete global.__tyranorLocalStorageFlush;
+    delete global.__tyranorLocalStorageFlushAll;
+    delete global.__tyranorLocalStorageMode;
+    // 基础层把 nw.gui 桩缓存在 window.nw 上（单例）：不删掉的话，新会话拿到的是上一
+    // 文档已经 patch 过的 winStub，reload 会去 flush 上一文档的空 dirty 表。
+    delete global.nw;
+    // 删除/清除意图的登记表是进程级替身状态，跨会话保留会让断言吃到旧记录
+    try {
+        global.TyranorFs.__recorded.deletes.clear();
+        global.TyranorFs.__recorded.clears.clear();
+    } catch (e) { /* 桥尚未创建 */ }
+    // 旧文档的事件监听随文档一起消失：不重置会让新会话的断言触发上一会话的闭包
+    resetListeners();
+    installStorageStub();
+    run(BASE_ASSET);
+    run(V2_ASSET);
+}
 
 // ---- 断言 ----
 let failed = 0;
@@ -391,37 +439,106 @@ check(
     })(),
 );
 
-console.log('\n== localStorage 落地（修随机端口导致的清空）==');
+console.log('\n== localStorage 落地（内存镜像 + 合并落盘）==');
 check('Storage.prototype 已被接管', window.__tyranorLocalStoragePersisted === true);
+const storeDir = nodePath.join(gameRoot, 'AppData', 'Local Storage');
 check(
-    'setItem 落盘到游戏目录',
+    'setItem 返回即已落盘（不再等 200ms 定时器）',
     (() => {
-        const store = {};
-        const fakeStorage = Object.create(global.Storage.prototype);
-        fakeStorage.setItem('ConfigManager.data', '{"volume":80}');
-        return fs.existsSync(nodePath.join(gameRoot, 'AppData', 'Local Storage'));
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('ConfigManager.data', '{"volume":80}');
+        const target = nodePath.join(storeDir, '436f6e6669674d616e616765722e64617461.dat');
+        // 返回前已持久接收并物化：此刻盘上就必须是完整内容，页面被销毁也不影响
+        return s.getItem('ConfigManager.data') === '{"volume":80}' &&
+            fs.existsSync(target) && fs.readFileSync(target, 'utf8') === '{"volume":80}';
     })(),
 );
 check(
-    '换一个「会话」（新 origin）仍能读到',
+    '重复 getItem 不再过桥（读一次后走内存镜像）',
     (() => {
-        const reader = Object.create(global.Storage.prototype);
-        return reader.getItem('ConfigManager.data') === '{"volume":80}';
+        // 新文档读盘上已有的键：首读必须过桥，第二次必须命中镜像（`values` 只留这一次）
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        const bridgeFs = global.TyranorFs;
+        const origExists = bridgeFs.exists;
+        const origReadText = bridgeFs.readText;
+        let calls = 0;
+        bridgeFs.exists = function (p) { calls++; return origExists.call(this, p); };
+        bridgeFs.readText = function (p) { calls++; return origReadText.call(this, p); };
+        try {
+            const first = s.getItem('ConfigManager.data');
+            const afterFirst = calls;
+            const second = s.getItem('ConfigManager.data');
+            return first === '{"volume":80}' && second === first && afterFirst > 0 && calls === afterFirst;
+        } finally {
+            bridgeFs.exists = origExists;
+            bridgeFs.readText = origReadText;
+        }
     })(),
-    (() => { const r = Object.create(global.Storage.prototype); return r.getItem('ConfigManager.data'); })(),
 );
 check(
-    'removeItem 删除后读不到',
+    'flush 后落盘到游戏目录（键 → 一个 .dat 文件）',
+    (() => {
+        window.__tyranorLocalStorageFlush();
+        if (!fs.existsSync(storeDir)) return false;
+        // 文件名是键的 UTF-8 十六进制 + .dat（可逆，便于排查）
+        return fs.readdirSync(storeDir).indexOf('436f6e6669674d616e616765722e64617461.dat') >= 0;
+    })(),
+);
+check(
+    '落盘内容可直接读回',
+    (() => {
+        const path = nodePath.join(storeDir, '436f6e6669674d616e616765722e64617461.dat');
+        return fs.existsSync(path) && fs.readFileSync(path, 'utf8') === '{"volume":80}';
+    })(),
+);
+check(
+    '旧会话刷盘让位给已写过同一文件的新会话',
+    (() => {
+        // 模拟「同一游戏快速重启」：该路径已归新会话，旧文档的 setItem 必须被**拒绝**
+        // （抛 QuotaExceededError），而不是静默写入后被覆盖，也不是谎称成功。
+        const key = 'ConfigManager.data';
+        const target = nodePath.join(storeDir, '436f6e6669674d616e616765722e64617461.dat');
+        fs.writeFileSync(target, '{"volume":10}');   // 新会话写入的新值
+        const bridgeFs = global.TyranorFs;
+        const orig = bridgeFs.isSuperseded;
+        bridgeFs.isSuperseded = function (p) { return nodePath.resolve(p) === nodePath.resolve(target); };
+        const s = Object.create(global.Storage.prototype);
+        let rejected = false;
+        try {
+            s.setItem(key, '{"volume":80}');
+        } catch (error) {
+            rejected = error && error.name === 'QuotaExceededError';
+        } finally {
+            bridgeFs.isSuperseded = orig;
+        }
+        return rejected && fs.readFileSync(target, 'utf8') === '{"volume":10}';
+    })(),
+);
+check(
+    'length/key 走内存键集合',
+    (() => {
+        const s = Object.create(global.Storage.prototype);
+        const n = s.length;
+        const keys = [];
+        for (let i = 0; i < n; i++) keys.push(s.key(i));
+        return n >= 1 && keys.indexOf('ConfigManager.data') >= 0;
+    })(),
+);
+check(
+    'removeItem 同步删除磁盘文件并读不到',
     (() => {
         const s = Object.create(global.Storage.prototype);
         s.setItem('temp.key', 'x');
-        const before = s.getItem('temp.key');
+        window.__tyranorLocalStorageFlush();
+        const file = nodePath.join(storeDir, '74656d702e6b6579.dat');
+        const existed = fs.existsSync(file);
         s.removeItem('temp.key');
-        return before === 'x' && s.getItem('temp.key') === null;
+        return existed && !fs.existsSync(file) && s.getItem('temp.key') === null;
     })(),
 );
 check(
-    '超长键名（整段 JSON 当键）不崩且可读回',
+    '超长键名（整段 JSON 当键）同会话可读回',
     (() => {
         const s = Object.create(global.Storage.prototype);
         const longKey = 'k' + 'x'.repeat(4000);
@@ -1227,6 +1344,481 @@ check('不再渲染出 001undefined', rendered !== '[001undefined]', rendered);
         const big = nodePath.join(contentRoot, 'data', 'append-big.bin');
         return fs.existsSync(big) ? 'size=' + fs.statSync(big).size : '已删除';
     })());
+
+console.log('\n== localStorage 跨会话（模拟重启）==');
+{
+    const longKey = 'cache.' + 'k'.repeat(400);
+    const s = Object.create(global.Storage.prototype);
+    s.setItem('restart.short', 'SHORT');
+    s.setItem(longKey, 'LONG');
+    window.__tyranorLocalStorageFlush();
+
+    newSession();
+    const after = Object.create(global.Storage.prototype);
+    check('短键重启后读回', after.getItem('restart.short') === 'SHORT',
+        String(after.getItem('restart.short')));
+    // 回归：超长键落盘成哈希名，索引反推不出原键；读取必须按 key 直接算路径兜底
+    check('超长键（哈希文件名）重启后读回', after.getItem(longKey) === 'LONG',
+        String(after.getItem(longKey)));
+
+    const keys = [];
+    for (let i = 0; i < after.length; i++) keys.push(after.key(i));
+    check('重启后枚举含短键、不含无法反推的哈希键',
+        keys.indexOf('restart.short') >= 0 && keys.indexOf(longKey) < 0,
+        JSON.stringify(keys.slice(0, 5)));
+
+    check('clear() 同步清空磁盘（含哈希文件）', (() => {
+        after.clear();
+        const names = fs.existsSync(storeDir) ? fs.readdirSync(storeDir).filter((n) => n.endsWith('.dat')) : [];
+        return names.length === 0;
+    })());
+
+    check('clear() 后重启读不到旧值', (() => {
+        newSession();
+        const fresh = Object.create(global.Storage.prototype);
+        return fresh.getItem('restart.short') === null && fresh.getItem(longKey) === null;
+    })());
+
+    // 回归：Storage 规范允许空字符串作键；空键落盘成 `.dat`，重启后必须仍能被枚举到
+    // （旧实现 `hexToText("")` 直接返回 null，length/key() 会漏掉它）
+    check('空键跨会话可枚举且可读回', (() => {
+        newSession();
+        const empty = Object.create(global.Storage.prototype);
+        empty.setItem('', 'EMPTY');
+        window.__tyranorLocalStorageFlushAll();
+        newSession();
+        const back = Object.create(global.Storage.prototype);
+        const keys = [];
+        for (let i = 0; i < back.length; i++) keys.push(back.key(i));
+        return back.getItem('') === 'EMPTY' && keys.indexOf('') >= 0;
+    })(), (() => {
+        const back = Object.create(global.Storage.prototype);
+        const keys = [];
+        for (let i = 0; i < back.length; i++) keys.push(back.key(i));
+        return JSON.stringify(keys);
+    })());
+}
+
+console.log('\n== localStorage 退出刷盘的失败路径 ==');
+{
+    // 回归：64 个键在预算模式下全部已接收——接收发生在每次 setItem 返回前，与批次大小
+    // 和退出预算无关；宿主拿到的是「既未落盘也未入队」的真实丢失数，因此是 0。
+    check('64 键在预算模式下也不丢（返回 0 表示无未接收项）', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        for (let i = 0; i < 64; i++) s.setItem('budget.key.' + i, 'v' + i);
+        const remaining = window.__tyranorLocalStorageFlushAll();
+        newSession();
+        const recovered = Object.create(global.Storage.prototype);
+        return remaining === 0 &&
+            Array.from({ length: 64 }, (_, i) => recovered.getItem('budget.key.' + i) === 'v' + i).every(Boolean);
+    })(), (() => {
+        const journal = nodePath.join(storeDir, '.tyranor-pending.json');
+        return 'journal=' + (fs.existsSync(journal) ? 'present' : 'absent');
+    })());
+
+    // 回归：removeItem 删除失败后同键重新 setItem，待删重试不得把新值删掉
+    check('删除失败后重新 setItem：新值不会被待删重试抹掉', (() => {
+        const key = 'recreate.after.failed.delete';
+        const name = HostBuffer.from(key, 'utf8').toString('hex') + '.dat';
+        const target = nodePath.join(storeDir, name);
+        const s = Object.create(global.Storage.prototype);
+
+        s.setItem(key, 'OLD');
+        window.__tyranorLocalStorageFlushAll();
+
+        // 让删除失败，触发 suppressedNames 登记
+        const bridgeFs = global.TyranorFs;
+        const origRemove = bridgeFs.remove;
+        bridgeFs.remove = function () { return false; };
+        try { s.removeItem(key); } finally { bridgeFs.remove = origRemove; }
+        if (!fs.existsSync(target)) return false;   // 删除失败，旧文件应仍在
+
+        // 同键重新保存：新值必须能落盘，并且不被随后的「待删重试」清掉
+        s.setItem(key, 'NEW');
+        window.__tyranorLocalStorageFlushAll();
+        window.__tyranorLocalStorageFlushAll();
+        return fs.existsSync(target) && fs.readFileSync(target, 'utf8') === 'NEW';
+    })(), (() => {
+        const name = HostBuffer.from('recreate.after.failed.delete', 'utf8').toString('hex') + '.dat';
+        const target = nodePath.join(storeDir, name);
+        return fs.existsSync(target) ? 'disk=' + fs.readFileSync(target, 'utf8') : 'disk=<missing>';
+    })());
+}
+
+console.log('\n== localStorage 文档销毁前的收尾（复审修复项）==');
+{
+    const journalPath = nodePath.join(storeDir, '.tyranor-pending.json');
+    const fileOf = (key) => nodePath.join(storeDir, HostBuffer.from(String(key), 'utf8').toString('hex') + '.dat');
+    const nameOf = (key) => HostBuffer.from(String(key), 'utf8').toString('hex') + '.dat';
+
+    // 回归 1（复审问题 2）：页面卸载不再依赖定时器。旧实现三个文档钩子都只调 flush()，
+    // 每批 32 个键、其余交给 setTimeout，文档销毁后定时器不执行 → 超过 32 个脏键就会丢。
+    check('页面卸载不做批量 I/O，新文档恢复全部已接收的值', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        for (let i = 0; i < 128; i++) s.setItem('unload.key.' + i, 'V' + i);
+        fireWindow('pagehide', { persisted: false });
+        newSession();
+        let written = 0;
+        for (let i = 0; i < 128; i++) {
+            const p = fileOf('unload.key.' + i);
+            if (fs.existsSync(p) && fs.readFileSync(p, 'utf8') === 'V' + i) written++;
+        }
+        return written === 128;
+    })(), (() => {
+        let written = 0;
+        for (let i = 0; i < 128; i++) if (fs.existsSync(fileOf('unload.key.' + i))) written++;
+        return 'written=' + written;
+    })());
+
+    // 回归 1b（复审问题 2）：可控重载入口（nw.Window.get().reload）必须在导航前抽干脏键，
+    // 不能只依赖 pagehide 是否被触发。
+    check('nw.Window.reload 先完整收尾再导航', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        for (let i = 0; i < 40; i++) s.setItem('reload.entry.' + i, 'R' + i);
+        let navigated = false;
+        const origReload = global.location.reload;
+        global.location.reload = () => { navigated = true; };
+        try { global.nw.Window.get().reload(); } finally { global.location.reload = origReload; }
+        newSession();
+        let written = 0;
+        for (let i = 0; i < 40; i++) if (fs.existsSync(fileOf('reload.entry.' + i))) written++;
+        return navigated && written === 40;
+    })(), (() => {
+        let written = 0;
+        for (let i = 0; i < 40; i++) if (fs.existsSync(fileOf('reload.entry.' + i))) written++;
+        return 'written=' + written;
+    })());
+
+    // 回归：宿主销毁时最终钩子只报告状态；64 个键都已在此前的 setItem 里接收并落盘。
+    check('64 键全部可恢复，最终钩子返回 0 且不留队列', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        for (let i = 0; i < 64; i++) s.setItem('journal.key.' + i, 'J' + i);
+        const remaining = window.__tyranorLocalStorageFlushAll(true);
+        newSession();   // 下一次文档初始化
+        let written = 0;
+        for (let i = 0; i < 64; i++) {
+            const p = fileOf('journal.key.' + i);
+            if (fs.existsSync(p) && fs.readFileSync(p, 'utf8') === 'J' + i) written++;
+        }
+        return remaining === 0 && written === 64 && !fs.existsSync(journalPath);
+    })(), (() => {
+        let written = 0;
+        for (let i = 0; i < 64; i++) if (fs.existsSync(fileOf('journal.key.' + i))) written++;
+        return 'journal=' + (fs.existsSync(journalPath) ? 'left' : 'cleared') + ' written=' + written;
+    })());
+
+    // 回归 3（复审问题 3）：removeItem 必须对「磁盘上还没有文件」的键也登记删除意图，
+    // 否则旧会话随后的合并写会把已删的键写回来。
+    check('removeItem 对尚未落盘的键也登记删除墓碑', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        const key = 'pending.remove.tombstone';
+        s.setItem(key, 'X');
+        const target = fileOf(key);
+        s.removeItem(key);
+        const recorded = [...global.TyranorFs.__recorded.deletes]
+            .some((p) => nodePath.basename(p) === nameOf(key));
+        return !fs.existsSync(target) && recorded;
+    })());
+
+    // 回归 4（复审问题 3）：clear() 看不到旧会话尚未落盘的键，必须登记目录级清除版本。
+    check('clear() 登记目录级清除版本', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('clear.marker', '1');
+        window.__tyranorLocalStorageFlushAll();
+        s.clear();
+        const cleared = [...global.TyranorFs.__recorded.clears]
+            .some((p) => nodePath.normalize(p).replace(/[\\/]+$/, '') === nodePath.normalize(storeDir));
+        const left = fs.existsSync(storeDir) ? fs.readdirSync(storeDir).filter((n) => n.endsWith('.dat')) : [];
+        return cleared && left.length === 0;
+    })(), (() => {
+        const left = fs.existsSync(storeDir) ? fs.readdirSync(storeDir).filter((n) => n.endsWith('.dat')) : [];
+        return 'dat=' + left.length;
+    })());
+
+    // 回归 5（复审问题 4）：旧会话的删除重试必须遵守会话版本，不得删掉新会话已落盘的值。
+    check('旧会话的删除重试不删新会话的新值', (() => {
+        newSession();
+        const key = 'old.session.delete.retry';
+        const target = fileOf(key);
+        const s = Object.create(global.Storage.prototype);
+
+        s.setItem(key, 'OLD');
+        window.__tyranorLocalStorageFlushAll();
+        if (!fs.existsSync(target)) return false;
+
+        // 删不掉时已接收的墓碑必须仍在队列里，物化重试也应继续被排队。
+        const bridgeFs = global.TyranorFs;
+        const origRemove = bridgeFs.remove;
+        let retries = 0;
+        bridgeFs.remove = () => { retries++; return false; };
+        try {
+            s.removeItem(key);
+            window.__tyranorLocalStorageFlush();
+        } finally { bridgeFs.remove = origRemove; }
+        if (!fs.existsSync(target) || retries < 2) return false;
+        // 模拟新文档已接收 NEW，但旧文档的抑制表还在。
+        const writes = {};
+        writes[nameOf(key)] = 'NEW';
+        if (!bridgeFs.commitStorageMutation(JSON.stringify({ values: writes }))) return false;
+
+        // 新会话把同一路径写成 NEW，账本随之表明「已被更新的会话写过」
+        fs.writeFileSync(target, 'NEW');
+        const origSuperseded = bridgeFs.isSuperseded;
+        bridgeFs.isSuperseded = (p) => nodePath.resolve(p) === nodePath.resolve(target);
+        // 计数：JS 侧必须先判定「已被更新会话写过」，根本不去调删除（原生侧也有兜底，
+        // 只断言「文件还在」会掩盖 JS 判定被删掉的情况）
+        const origRemoveAgain = bridgeFs.remove;
+        let removeCalls = 0;
+        bridgeFs.remove = function (p) { removeCalls++; return origRemoveAgain.apply(this, arguments); };
+        try { window.__tyranorLocalStorageFlush(); } finally {
+            bridgeFs.remove = origRemoveAgain;
+            bridgeFs.isSuperseded = origSuperseded;
+        }
+
+        return removeCalls === 0 && fs.existsSync(target) && fs.readFileSync(target, 'utf8') === 'NEW';
+    })(), (() => {
+        const target = fileOf('old.session.delete.retry');
+        return fs.existsSync(target) ? 'disk=' + fs.readFileSync(target, 'utf8') : 'disk=<missing>';
+    })());
+
+    // 回归 6b：入队之后同一个键又被 removeItem，队列里的旧值必须作废——否则重放会
+    // 因为「目标文件仍不存在、快照照旧匹配」把已删的键写回来。队列里同时留另一个键，
+    // 用来区分「按名丢弃」与「整份清空」（后者会把别人的条目一起删掉）。
+    check('入队后被删除的键不会被重放复活（且不影响其它条目）', (() => {
+        newSession();
+        const key = 'staged.then.removed';
+        const kept = 'staged.then.kept';
+        const target = fileOf(key);
+        const s = Object.create(global.Storage.prototype);
+        const bridgeFs = global.TyranorFs;
+        const origWrite = bridgeFs.writeText;
+        let staged = false;
+        bridgeFs.writeText = () => false;   // 让落盘失败，迫使 pagehide 收尾时入队
+        try {
+            s.setItem(key, 'PENDING');
+            s.setItem(kept, 'KEPT');
+            fireWindow('pagehide', { persisted: false });
+            staged = fs.existsSync(journalPath);
+            s.removeItem(key);
+        } finally {
+            bridgeFs.writeText = origWrite;
+        }
+        newSession();
+        const fresh = Object.create(global.Storage.prototype);
+        return staged && !fs.existsSync(target) && fresh.getItem(key) === null &&
+            fresh.getItem(kept) === 'KEPT';
+    })(), (() => {
+        const fresh = Object.create(global.Storage.prototype);
+        return 'journal=' + (fs.existsSync(journalPath) ? 'left' : 'cleared') +
+            ' removed=' + String(fresh.getItem('staged.then.removed')) +
+            ' kept=' + String(fresh.getItem('staged.then.kept'));
+    })());
+
+    // 回归 6（复审问题 5）：删除尚未完成时 flushAll 不能报 0。恢复队列也不可用时，
+    // 必须把未完成的删除计入返回值，宿主的 incomplete 检测才不会漏报。
+    check('已接收的删除不依赖退出时再次入队', (() => {
+        newSession();
+        const key = 'unfinished.delete';
+        const target = fileOf(key);
+        const s = Object.create(global.Storage.prototype);
+        s.setItem(key, 'KEEP');
+        window.__tyranorLocalStorageFlushAll();
+
+        const bridgeFs = global.TyranorFs;
+        const origRemove = bridgeFs.remove;
+        const origStage = bridgeFs.stagePendingStorage;
+        let remaining = -1;
+        const origWarn = console.warn;
+        bridgeFs.remove = () => false;
+        bridgeFs.stagePendingStorage = () => false;
+        console.warn = () => {};
+        try {
+            s.removeItem(key);
+            remaining = window.__tyranorLocalStorageFlushAll(true);
+        } finally {
+            bridgeFs.remove = origRemove;
+            bridgeFs.stagePendingStorage = origStage;
+            console.warn = origWarn;
+        }
+        const entry = JSON.parse(fs.readFileSync(journalPath, 'utf8')).entries[nameOf(key)];
+        const durableDelete = entry && entry.d === true;
+        newSession();
+        return remaining === 0 && durableDelete && Object.create(global.Storage.prototype).getItem(key) === null;
+    })(), (() => {
+        const target = fileOf('unfinished.delete');
+        return fs.existsSync(target) ? 'disk=' + fs.readFileSync(target, 'utf8') : 'disk=<missing>';
+    })());
+}
+
+console.log('\n== Storage 修改返回前持久交接 ==');
+{
+    check('没有卸载事件和定时器，新文档也能读回已返回的 setItem', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('accepted.without.events', 'LATEST');
+        // 丢弃旧文档，不执行 flush / pagehide / beforeunload。
+        newSession();
+        return Object.create(global.Storage.prototype).getItem('accepted.without.events') === 'LATEST';
+    })());
+    check('没有退出事件，已返回的 removeItem 不会在新文档复活', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('accepted.delete', 'OLD');
+        window.__tyranorLocalStorageFlush();
+        const original = bridge.remove;
+        bridge.remove = () => false;
+        try { s.removeItem('accepted.delete'); } finally { bridge.remove = original; }
+        newSession();
+        return Object.create(global.Storage.prototype).getItem('accepted.delete') === null;
+    })());
+    check('持久接收失败时 setItem 抛错且原镜像保持不变', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('accepted.failure', 'OLD');
+        const original = bridge.commitStorageMutation;
+        bridge.commitStorageMutation = () => 0;
+        let threw = false;
+        try { s.setItem('accepted.failure', 'NEW'); } catch (error) { threw = true; }
+        finally { bridge.commitStorageMutation = original; }
+        return threw && s.getItem('accepted.failure') === 'OLD';
+    })());
+    check('连续物化失败后 final flush 不删除有效队列副本', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('fallback.keeps.journal', 'NEW');
+        const original = bridge.writeText;
+        bridge.writeText = () => false;
+        try {
+            window.__tyranorLocalStorageFlush();
+            window.__tyranorLocalStorageFlush();
+            if (window.__tyranorLocalStorageFlushAll(true) !== 0) return false;
+        } finally { bridge.writeText = original; }
+        newSession();
+        return Object.create(global.Storage.prototype).getItem('fallback.keeps.journal') === 'NEW';
+    })());
+    check('两键入队取消失败时抛错保留旧状态，重试成功后不复活', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('cancel.failed', 'OLD_PENDING');
+        s.setItem('cancel.kept', 'KEPT');
+        const original = bridge.commitStorageMutation;
+        bridge.commitStorageMutation = () => 0;
+        let failures = 0;
+        try {
+            try { s.removeItem('cancel.failed'); } catch (error) { if (error.name === 'QuotaExceededError') failures++; }
+            try { s.clear(); } catch (error) { if (error.name === 'QuotaExceededError') failures++; }
+        } finally { bridge.commitStorageMutation = original; }
+        if (failures !== 2 || s.getItem('cancel.failed') !== 'OLD_PENDING' || s.getItem('cancel.kept') !== 'KEPT') return false;
+        s.removeItem('cancel.failed');
+        newSession();
+        const recovered = Object.create(global.Storage.prototype);
+        return recovered.getItem('cancel.failed') === null && recovered.getItem('cancel.kept') === 'KEPT';
+    })());
+    check('clear 接收后目录读取失败，当前镜像与重启结果仍为空', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('clear.after.accept', 'OLD');
+        window.__tyranorLocalStorageFlushAll();
+        const original = bridge.readdir;
+        bridge.readdir = () => '';
+        let threw = false;
+        try { s.clear(); } catch (error) { threw = true; }
+        finally { bridge.readdir = original; }
+        const emptyNow = s.getItem('clear.after.accept') === null && s.length === 0;
+        newSession();
+        return !threw && emptyNow && Object.create(global.Storage.prototype).getItem('clear.after.accept') === null;
+    })());
+    check('恢复未完成时所有 Storage API 显式报错，恢复后可重试', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('recovery.pending', 'LATEST');
+        const original = bridge.replayPendingStorage;
+        // 队列本身读不出来 → fatal：所有 Storage API 必须报错而不是读旧值
+        bridge.replayPendingStorage = () => JSON.stringify({ applied: 0, fatal: true, failed: [] });
+        let thrown = 0;
+        try {
+            newSession();
+            const pending = Object.create(global.Storage.prototype);
+            const operations = [
+                () => pending.getItem('recovery.pending'),
+                () => pending.setItem('recovery.pending', 'WRONG'),
+                () => pending.removeItem('recovery.pending'),
+                () => pending.clear(),
+                () => pending.length,
+                () => pending.key(0),
+            ];
+            operations.forEach((operation) => {
+                try { operation(); } catch (error) { if (error.name === 'InvalidStateError') thrown++; }
+            });
+        } finally { bridge.replayPendingStorage = original; }
+        // 恢复可用的新文档必须能读回已落盘的值（失败态只属于上一个文档）
+        newSession();
+        return thrown === 6 && Object.create(global.Storage.prototype).getItem('recovery.pending') === 'LATEST';
+    })());
+    const nameToFile = (key) => nodePath.join(storeDir, HostBuffer.from(String(key), 'utf8').toString('hex') + '.dat');
+    check('物化被推迟时 200ms flush 会补写并清空队列', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        const key = 'deferred.flush';
+        const target = nameToFile(key);
+        const original = bridge.writeText;
+        let failures = 1;
+        bridge.writeText = function (p2, data) {
+            if (failures-- > 0 && nodePath.resolve(p2) === nodePath.resolve(target)) return false;
+            return original.apply(this, arguments);
+        };
+        try {
+            s.setItem(key, 'DEFERRED');
+        } finally { bridge.writeText = original; }
+        // 接收成功但物化失败：值在队列里，盘上还没有
+        if (fs.existsSync(target)) return false;
+        window.__tyranorLocalStorageFlush();   // 200ms 定时器走的就是这个函数
+        return fs.existsSync(target) && fs.readFileSync(target, 'utf8') === 'DEFERRED' &&
+            !fs.existsSync(nodePath.join(storeDir, '.tyranor-pending.json'));
+    })());
+    check('单条物化失败只阻塞该键，其余键照常可读', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('healthy.key', 'OK');
+        const blocked = nameToFile('blocked.write');
+        fs.mkdirSync(blocked, { recursive: true });
+        const blockedDelete = nameToFile('blocked.delete');
+        fs.mkdirSync(blockedDelete, { recursive: true });
+        fs.writeFileSync(nodePath.join(blockedDelete, 'child'), 'x');
+        s.setItem('blocked.write', 'B');
+        s.removeItem('blocked.delete');
+
+        newSession();   // 下一次文档：重放只应把这两条列进失败名单
+        const fresh = Object.create(global.Storage.prototype);
+        let writeBlocked = false;
+        let deleteReadable = false;
+        try { fresh.getItem('blocked.write'); } catch (error) { writeBlocked = error.name === 'InvalidStateError'; }
+        try { deleteReadable = fresh.getItem('blocked.delete') === null; } catch (error) { deleteReadable = false; }
+        const healthy = fresh.getItem('healthy.key') === 'OK';
+        fs.rmdirSync(blocked, { recursive: true });
+        fs.rmdirSync(blockedDelete, { recursive: true });
+        return healthy && writeBlocked && deleteReadable;
+    })());
+    check('final flush 只报告已接收状态，不触发跨桥磁盘 I/O', (() => {
+        newSession();
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('accepted.final', 'PERSISTED');
+        const methods = Object.keys(bridge).filter((name) => typeof bridge[name] === 'function');
+        const originals = {};
+        let calls = 0;
+        methods.forEach((name) => { originals[name] = bridge[name]; bridge[name] = () => { calls++; return false; }; });
+        let remaining;
+        try { remaining = window.__tyranorLocalStorageFlushAll(true); }
+        finally { methods.forEach((name) => { bridge[name] = originals[name]; }); }
+        return remaining === 0 && calls === 0;
+    })());
+}
 
     console.log(failed === 0 ? '\n全部通过' : '\n失败 ' + failed + ' 项');
     process.exit(failed === 0 ? 0 : 1);

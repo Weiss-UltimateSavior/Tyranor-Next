@@ -39,7 +39,6 @@ class RpgMakerHtmlInjectionTest {
                 "window.__early=1;".toByteArray(),
                 "window.__late=1;".toByteArray(),
                 "",
-                injectBeforeBody = true,
             ),
             StandardCharsets.UTF_8,
         )
@@ -52,7 +51,7 @@ class RpgMakerHtmlInjectionTest {
     @Test
     fun lateHookAppendsAtEndWhenBodyMarkerMissing() {
         // 页面无 </body>（压缩/精简 HTML）时 late 段必须尾插，
-        // 保证 polyfill（early）仍先于引擎 hook（late）执行
+        // 保证兼容层（early，含外链与内联两种形态）仍先于引擎 hook（late）执行
         val html = "<html><head></head><canvas></canvas>"
         val result = String(
             buildInjectedHtmlTwoPhase(
@@ -60,14 +59,54 @@ class RpgMakerHtmlInjectionTest {
                 "window.__early=1;".toByteArray(),
                 "window.__late=1;".toByteArray(),
                 "",
-                injectBeforeBody = true,
+                earlyHtml = "<script src='/__tyranor__/polyfill.js'></script>",
             ),
             StandardCharsets.UTF_8,
         )
 
-        assertTrue(result.indexOf("window.__early=1;") < result.indexOf("window.__late=1;"))
-        assertTrue(result.trimEnd().endsWith("</script>"))
+        assertTrue("外链兼容层先于内联兼容层", result.indexOf("/__tyranor__/polyfill.js") < result.indexOf("window.__early=1;"))
+        assertTrue("内联兼容层先于 late hook", result.indexOf("window.__early=1;") < result.indexOf("window.__late=1;"))
+        assertTrue("late 段必须尾插（页面没有 </body>）", result.trimEnd().endsWith("</script>"))
         assertTrue(result.lastIndexOf("window.__late=1;") > result.lastIndexOf("</head>"))
+    }
+
+    @Test
+    fun externalEarlyScriptsLandInHeadInOrderBeforeLateHook() {
+        // v1/v2 的兼容层改为外链脚本：顺序必须保持 a → b → late，
+        // 且全部早于 </head>（否则游戏脚本会先跑，兼容层失效）
+        val html = "<html><head></head><body><canvas></canvas></body></html>"
+        val result = String(
+            buildInjectedHtmlTwoPhase(
+                html,
+                ByteArray(0),
+                "window.__late=1;".toByteArray(),
+                "",
+                earlyHtml = "<script src='/__tyranor__/a.js'></script><script src='/__tyranor__/b.js'></script>",
+            ),
+            StandardCharsets.UTF_8,
+        )
+
+        assertTrue("外链脚本必须按注册顺序出现", result.indexOf("/__tyranor__/a.js") < result.indexOf("/__tyranor__/b.js"))
+        assertTrue("外链脚本必须在 </head> 之前", result.indexOf("/__tyranor__/b.js") < result.indexOf("</head>"))
+        assertTrue("late hook 仍在 body 内", result.indexOf("</head>") < result.indexOf("window.__late=1;"))
+    }
+
+    /**
+     * 回归：注入 URL 必须能被服务器按 internalResources 的键解析。
+     *
+     * 资源键本身已含 `__tyranor__/` 前缀，宿主拼 `<script src>` 时只能补前导 `/`。
+     * 曾把模板写成 `'/__tyranor__/$key'`，拼出 `/__tyranor__/__tyranor__/nwjs_polyfill.js`
+     * → 服务器查不到键、磁盘也没有该文件 → 三个兼容层脚本全部 404（v1/v2 会话失去兼容层）。
+     */
+    @Test
+    fun internalResourceUrlMatchesServerLookupKey() {
+        val key = "__tyranor__/nwjs_polyfill.js"
+        val url = internalResourceUrl(key)
+        assertEquals("/$key", url)
+        // 服务器把请求 URI 去掉前导 '/' 后作为 internalResources 的键
+        assertEquals(key, url.trimStart('/'))
+        // 不允许出现双前缀
+        assertTrue("不得重复拼接 __tyranor__ 前缀", !url.contains("__tyranor__/__tyranor__"))
     }
 
     @Test

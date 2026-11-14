@@ -79,4 +79,23 @@ class RpgMakerNameMatcherTest {
         assertEquals("a.png", RpgMakerNameMatcher.trailingWhitespaceTrimmedKey("a  .png"))
         assertEquals("a.png", RpgMakerNameMatcher.trailingWhitespaceTrimmedKey("a.png"))
     }
+
+    /**
+     * 超过条目上限：只保留精确与大小写不敏感两级。
+     *
+     * 这条策略必须由服务器与 fs 桥共用同一实现——否则同一路径会出现
+     * 「XHR 404、fs.existsSync 为真」的分裂（旧注释里禁止的形态）。
+     */
+    @Test
+    fun oversizedDirectoryKeepsOnlyExactAndCaseInsensitive() {
+        val dir = listOf("a.png", "B.PNG", "c .png")
+        // 上限以内：空白容忍生效
+        assertEquals("c .png", RpgMakerNameMatcher.match(dir, "c  .png", maxFuzzyEntries = 10))
+        // 超过上限：空白容忍被关闭（精确/大小写不敏感仍可用）
+        assertNull(RpgMakerNameMatcher.match(dir, "c  .png", maxFuzzyEntries = 2))
+        assertEquals("a.png", RpgMakerNameMatcher.match(dir, "a.png", maxFuzzyEntries = 2))
+        assertEquals("B.PNG", RpgMakerNameMatcher.match(dir, "b.png", maxFuzzyEntries = 2))
+        // ≤ 0 表示不设上限（仅测试/特殊场景）
+        assertEquals("c .png", RpgMakerNameMatcher.match(dir, "c  .png", maxFuzzyEntries = 0))
+    }
 }

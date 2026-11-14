@@ -4,8 +4,11 @@ import android.util.Log
 import android.webkit.JavascriptInterface
 import com.core.web.AsarWebRoot
 import java.io.File
-import java.util.Base64
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.nio.charset.StandardCharsets
+import java.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -26,8 +29,33 @@ internal class RpgMakerFsBridge(
     gameRoot: File,
     private val contentRoot: File,
     private val asar: AsarArchive? = null,
+    /**
+     * 与本地 HTTP 服务器**共享**的目录名索引。
+     *
+     * 必须共用同一个实例：本桥的写/删/建目录只会失效自己持有的索引，而服务器用另一份
+     * 索引做 `fuzzyNames` 回退。两份互不失效时，插件写出「需要宽松名匹配才能命中」的
+     * 新文件后会出现「XHR 404、`fs.existsSync` 为真」的分裂（仅在 mtime 同刻度时）。
+     */
+    private val dirIndex: RpgMakerDirIndex = RpgMakerDirIndex(),
+    /**
+     * 本桥所属的会话期号（`RpgMakerSessionOwnership`）。
+     *
+     * 用于写入记录：同一游戏的旧会话可能在新会话之后才把 localStorage 刷到磁盘，
+     * 旧会话刷盘前会问 [isSuperseded]，发现该路径已被更高期号写过就让位。
+     */
+    private val session: Long = 0L,
 ) {
     private val root: File = gameRoot.canonicalFile
+
+
+    /**
+     * localStorage 的落盘目录（`AppData/Local Storage`）。
+     *
+     * 必须与兼容层里的 `joinPath(dataDir, "Local Storage")` 完全一致：恢复队列
+     * （[RpgMakerStoragePendingJournal]）就放在这个目录里，重放的目标文件也由这里的
+     * 文件名推出，两边任何一处改名都会让恢复静默失效。
+     */
+    private val storeDir: File = File(File(root, "AppData"), "Local Storage")
 
     /**
      * asar 会话里网页根相对压缩包的路径前缀（`www/` 等）；无 asar 时为空。
@@ -62,54 +90,55 @@ internal class RpgMakerFsBridge(
     }
 
     /**
-     * 覆盖层优先级必须是**磁盘优先**，理由有二：
-     *  1. 与本地 HTTP 服务器一致——服务器承载引擎全部资源加载（XHR 取 data/、图片、音频），
-     *     其 `canonicalIfValid` 要求磁盘命中且是**文件**（`isFile`）才返回，asar 仅兜底。
-     *     若桥反过来，同一个路径经 XHR 与经 fs 会解析出不同内容。
-     *  2. 写入必须可读回——插件写出的文件若被同名 asar 条目遮蔽，读回的是包内旧值，
-     *     表现为「配置/数据表改了却不生效」，且写入本身没有报错。
-     */
-
-    /**
-     * 读路径解析：精确优先，未命中时逐段宽松匹配——与 HTTP 服务器的 `fuzzyNames`
-     * 行为保持一致（bridges 仅在 v2 会话注册，故这里等价于服务器的容忍分支）。
+     * 宽松名解析（仅精确路径未命中时使用）：逐段用目录索引匹配磁盘名。
      *
-     * 为何必须一致：服务器承载引擎的全部资源加载，若同一路径经 XHR 得 200、经 fs 得 null，
-     * 就会出现「引擎能加载素材、插件读不到同一文件」的矛盾（素材名被规范化时必然触发）。
-     * 写入**不做**宽松匹配：写请求应当创建/覆盖它明确指定的名字，避免误改相邻文件。
+     * 与旧实现的差别：目录名来自 [RpgMakerDirIndex]（按「目录 + mtime」缓存），且不再为
+     * 每个子项构造 `File`。语义不变：含 `..`/控制字符的路径、越界结果一律 null。
      */
-    private fun resolveForRead(path: String?): File? {
-        resolve(path)?.takeIf { it.exists() }?.let { return it }
+    private fun fuzzyEntry(path: String?): File? {
         val raw = path?.takeIf { it.isNotEmpty() && it.any { c -> !c.isWhitespace() } } ?: return null
         if (raw.any { it == '\u0000' || it.isISOControl() }) return null
         val normalized = raw.removePrefix("file://").replace('\\', '/')
         val relative = if (normalized.startsWith("/")) relativeFor(normalized) ?: return null else normalized
         if (relative.isEmpty()) return null
 
-        var current: File = contentRoot
+        // 从规范化根开始逐段匹配：目录索引的键是 `dir.path`，而本桥的写/删/建目录用
+        // `resolve()` 的 canonical 路径去失效。若根路径含符号链接（外置目录软链、
+        // macOS /var → /private/var），两套键永不相等，定向失效会静默落空。
+        var current: File = try { contentRoot.canonicalFile } catch (error: Throwable) { contentRoot }
         for (part in relative.split("/")) {
             if (part.isEmpty() || part == ".") continue
             if (part == "..") return null
-            val children = current.listFiles() ?: return null
-            // 逐段解析一律走 RpgMakerNameMatcher（首级即精确匹配，与「先精确」等价），
-            // 不再自留「大小写首中优先」分支——该分支在目录内同时存在 `A.json`/`a.json`
-            // 时会任选其一命中，而服务器对同一情形返回 404；两边结论不一致会导致
-            // 「引擎加载得到、插件读到另一个或读不到」。
-            val matchedName = RpgMakerNameMatcher.match(children.map { it.name }, part) ?: return null
-            current = children.firstOrNull { it.name == matchedName } ?: return null
+            val children = dirIndex.children(current) ?: return null
+            val matchedName = RpgMakerNameMatcher.match(children, part) ?: return null
+            current = File(current, matchedName)
         }
         return try {
-            current.canonicalFile.takeIf { isInsideRoot(it) }
+            current.canonicalFile.takeIf { isInsideRoot(it) && it.exists() }
         } catch (error: Throwable) {
             null
         }
     }
 
-    /** 磁盘上的同名**文件**（与服务器的命中条件一致）；目录不算命中，会继续检查 asar。 */
-    private fun diskFile(path: String?): File? = resolveForRead(path)?.takeIf { it.isFile }
+    /** 磁盘上的**文件**（与服务器的命中条件一致）；目录不算命中，会继续检查 asar。 */
+    private fun diskFileFast(path: String?): File? = diskEntryFast(path)?.takeIf { it.isFile }
 
-    /** 磁盘上的同名条目（文件或目录），用于存在性/类型/stat 判定。 */
-    private fun diskEntry(path: String?): File? = resolveForRead(path)?.takeIf { it.exists() }
+    /**
+     * 磁盘条目解析（存在性/类型/读写的统一入口）。
+     *
+     * 精确路径优先——[resolve] 每次都重新 canonicalize（不缓存 realpath，防祖先目录被
+     * 换成越界符号链接），成本是一次 realpath + `exists()`；未命中再走 [fuzzyEntry]。旧的 `resolveForRead` 把这两步做了两遍（`readText`
+     * 甚至在模糊命中后又精确解析一次），这里收敛为一次。
+     *
+     * **磁盘优先**（先磁盘、后 asar）是覆盖层契约，两个理由：
+     *  1. 与本地 HTTP 服务器一致——服务器同样要求磁盘命中且是**文件**才返回，否则同一路径
+     *     经 XHR 与经 fs 会解析出不同内容（素材名被规范化时必然触发）；
+     *  2. 写入必须可读回——插件写出的文件若被同名 asar 条目遮蔽，读回的是包内旧值。
+     */
+    private fun diskEntryFast(path: String?): File? {
+        resolve(path)?.takeIf { it.exists() }?.let { return it }
+        return fuzzyEntry(path)
+    }
 
     /** __dirname 的取值：网页根（游戏 www/ 目录）。 */
     @JavascriptInterface
@@ -119,16 +148,362 @@ internal class RpgMakerFsBridge(
     @JavascriptInterface
     fun dataDir(): String = File(root, "AppData").absolutePath
 
+    /**
+     * 该路径是否已被**更新的会话**写过。
+     *
+     * 只给 localStorage 退出刷盘用：同一游戏快速重启时，旧 WebView 的异步刷盘可能晚于
+     * 新会话写入同一个 `.dat`（两个会话共用 `<gameDir>/AppData`）。旧会话据此跳过，
+     * 否则会把新值覆盖成旧值。新会话还没写过的键返回 false，照常落盘。
+     */
+    @JavascriptInterface
+    fun isSuperseded(path: String?): Boolean {
+        val file = resolve(path) ?: return false
+        return RpgMakerStorageWriteLedger.isSuperseded(file.path, session)
+    }
+
+    /**
+     * 接收一次 Storage 修改。返回值：0 = 未接收，1 = 已接收并落盘，2 = 已接收待物化。
+     *
+     * 只有非 0 时才可更新 JS 镜像；队列持久化成功即视为已接收，落盘失败只是延后。
+     * 接收后立即尝试物化，队列通常保持为空，避免「每次修改整份重写队列」的平方级写放大。
+     * 目录锁贯穿接收/重放/物化，不能再依赖退出回调或不同 bridge 的实例锁交接。
+     */
+    @JavascriptInterface
+    fun commitStorageMutation(payload: String?): Int = try {
+        RpgMakerStorageWriteLedger.withStorageLock(storeDir.path) {
+            requireStorageDirectory()
+            val raw = payload ?: return@withStorageLock 0
+            if (raw.length > MAX_PENDING_PAYLOAD_CHARS) return@withStorageLock 0
+            val json = JSONObject(raw)
+            val writes = LinkedHashMap<String, String>()
+            json.optJSONObject("values")?.let { objectValue ->
+                val names = objectValue.keys()
+                while (names.hasNext()) {
+                    val name = names.next()
+                    requireStorageFile(name)
+                    writes[name] = objectValue.getString(name)
+                }
+            }
+            val deletes = LinkedHashSet<String>()
+            json.optJSONArray("deletes")?.let { array ->
+                for (index in 0 until array.length()) {
+                    val name = array.getString(index)
+                    requireStorageFile(name)
+                    deletes.add(name)
+                }
+            }
+            val clear = json.optBoolean("clear", false)
+            if (clear) {
+                // 旧清除不得撤销新会话的接收；包括尚无 .dat 的条目和崩溃遗留 claim。
+                RpgMakerStoragePendingJournal.pendingEntries(storeDir).forEach { (name, entry) ->
+                    if (entry.session <= session) deletes.add(name)
+                }
+                if (storeDir.exists()) {
+                    val files = storeDir.listFiles() ?: throw IOException("Storage directory unreadable")
+                    files.filter { it.isFile && it.name.endsWith(".dat") }.forEach { file ->
+                        if (RpgMakerStoragePendingJournal.isStorageName(file.name)) {
+                            deletes.add(file.name)
+                        } else {
+                            // 旧版本用 `_`/`%` 命名的历史文件无法进队列（名字不合协议）：
+                            // 只能当场删，否则 clear 之后磁盘上永远留一份不会再被索引的残骸
+                            if (!file.delete()) Log.w(TAG, "legacy Storage file not removable: ${file.path}")
+                        }
+                    }
+                }
+            }
+            if (writes.keys.any { RpgMakerStorageWriteLedger.isSuperseded(requireStorageFile(it).path, session) }) {
+                return@withStorageLock 0
+            }
+            if (!clear && deletes.any { RpgMakerStorageWriteLedger.isSuperseded(requireStorageFile(it).path, session) }) {
+                return@withStorageLock 0
+            }
+            deletes.removeAll { RpgMakerStorageWriteLedger.isSuperseded(requireStorageFile(it).path, session) }
+            if (!RpgMakerStoragePendingJournal.stage(storeDir, session, writes, deletes, accepted = true)) {
+                return@withStorageLock 0
+            }
+            // 接收即记账；等 .dat 写完才记会留下「新已接收，旧仍能回写」的窗口。
+            writes.keys.forEach { RpgMakerStorageWriteLedger.record(requireStorageFile(it).path, session) }
+            deletes.forEach { RpgMakerStorageWriteLedger.record(requireStorageFile(it).path, session) }
+            if (clear) RpgMakerStorageWriteLedger.recordDirectory(storeDir.canonicalPath, session)
+            // 立刻物化：成功则队列回到空态，队列文件不再随写入次数增长
+            var deferred = false
+            for ((name, value) in writes) {
+                if (!applyQueuedEntry(name, value)) deferred = true
+            }
+            for (name in deletes) {
+                if (!applyQueuedEntry(name, null)) deferred = true
+            }
+            if (deferred) 2 else 1
+        }
+    } catch (error: Throwable) {
+        Log.w(TAG, "Storage mutation was not accepted", error)
+        0
+    }
+
+    /** 按内容核对最新接收条目后物化并确认；过时 JS 定时器不能覆盖新修改。 */
+    @JavascriptInterface
+    fun flushStorageMutation(name: String?, value: String?): Boolean = try {
+        RpgMakerStorageWriteLedger.withStorageLock(storeDir.path) {
+            requireStorageDirectory()
+            applyQueuedEntry(name ?: return@withStorageLock false, value)
+        }
+    } catch (error: Throwable) {
+        Log.w(TAG, "Storage materialization failed", error)
+        false
+    }
+
+    /**
+     * 把队列里与 [value] 一致的最新条目落盘并确认。
+     *
+     * 队列里没有该条目（已物化、已被更新会话接管、内容已被改写）时直接算完成：不写盘，
+     * 这样晚到的旧定时器既不会覆盖新值，也不会复活已确认的删除。
+     */
+    private fun applyQueuedEntry(name: String, value: String?): Boolean {
+        val file = requireStorageFile(name)
+        if (RpgMakerStorageWriteLedger.isSuperseded(file.path, session)) return true
+        val pending = RpgMakerStoragePendingJournal.pendingEntries(storeDir)[name] ?: return true
+        if (pending.session > session || pending.value != value) return true
+        val bytes = value?.toByteArray(StandardCharsets.UTF_8)
+        if (bytes != null && bytes.size > MAX_WRITE_BYTES) {
+            Log.w(TAG, "Storage value too large to materialize (${bytes.size}): ${file.path}")
+            return false
+        }
+        val done = if (bytes == null) removeResolved(file) else writeResolved(file) { it.write(bytes) }
+        return done && RpgMakerStoragePendingJournal.discard(storeDir, session, mapOf(name to value))
+    }
+
+    private fun requireStorageDirectory() {
+        if (!isInsideRoot(storeDir.canonicalFile)) throw IOException("Storage directory outside game root")
+    }
+
+    private fun requireStorageFile(name: String): File {
+        if (!RpgMakerStoragePendingJournal.isStorageName(name)) throw IOException("Invalid Storage key filename")
+        val file = File(storeDir, name).canonicalFile
+        if (!isInsideRoot(file) || file.parentFile != storeDir.canonicalFile) {
+            throw IOException("Storage file outside storage directory")
+        }
+        return file
+    }
+
+    /**
+     * 把仍未落盘的键交给原生恢复队列（见 [RpgMakerStoragePendingJournal]）。
+     *
+     * 载荷：`{"values": {文件名: 值}, "deletes": [文件名]}`。返回 true 表示已持久化到
+     * 队列，下次文档初始化时重放；false 表示连队列都写不进去，调用方应把数量报给宿主。
+     * 空载荷代表「没有待写项」，按已持久化处理。
+     */
+    @JavascriptInterface
+    fun stagePendingStorage(payload: String?): Boolean {
+        val raw = payload?.takeIf { it.isNotBlank() } ?: return true
+        return try {
+            RpgMakerStorageWriteLedger.withStorageLock(storeDir.path) {
+                requireStorageDirectory()
+                stagePendingStorageOrThrow(raw)
+            }
+        } catch (error: Throwable) {
+            // @JavascriptInterface 里抛出的异常会穿过 WebView 的桥接层：一律吞掉并返回失败
+            Log.w(TAG, "pending storage staging failed", error)
+            false
+        }
+    }
+
+    private fun stagePendingStorageOrThrow(raw: String): Boolean {
+        // 解析前的粗筛：队列本身有字符上限，先按长度挡掉明显超限的载荷，
+        // 不给页面留「一个超长字符串就能让桥分配整份 JSON 树」的口子
+        if (raw.length > MAX_PENDING_PAYLOAD_CHARS) {
+            Log.w(TAG, "pending storage payload rejected (too large ${raw.length})")
+            return false
+        }
+        val json = try {
+            JSONObject(raw)
+        } catch (error: Throwable) {
+            Log.w(TAG, "pending storage payload rejected (bad json)")
+            return false
+        }
+        val writes = LinkedHashMap<String, String>()
+        json.optJSONObject("values")?.let { obj ->
+            val names = obj.keys()
+            while (names.hasNext()) {
+                val name = names.next()
+                writes[name] = obj.optString(name, "")
+            }
+        }
+        val deletes = ArrayList<String>()
+        json.optJSONArray("deletes")?.let { array ->
+            for (index in 0 until array.length()) {
+                array.optString(index)?.takeIf { it.isNotEmpty() }?.let { deletes.add(it) }
+            }
+        }
+        return RpgMakerStoragePendingJournal.stage(storeDir, session, writes, deletes)
+    }
+
+    /**
+     * 游戏脚本运行前重放，返回 JSON：`{"applied":n,"failed":[{"n":名字,"d":是否删除}],"fatal":bool}`。
+     *
+     * 单条落盘失败只是「该键暂时不可用」（`failed` 名单里带删除意图，页面据此返回 null 或
+     * 报错），不能让整个 Storage 不可用；只有队列本身读写失败（`fatal`）才全局阻塞。
+     * 共享目录锁贯穿 claim → 应用 → finish，两个桥不会同时消费同一 claim。
+     * 接收也使用此锁，只有持久成功才向 JS 返回；退出不再临时等待这把锁交接旧值。
+     */
+    @JavascriptInterface
+    fun replayPendingStorage(): String = try {
+        RpgMakerStorageWriteLedger.withStorageLock(storeDir.path) {
+            requireStorageDirectory()
+            replayPendingStorageOrThrow()
+        }
+    } catch (error: Throwable) {
+        Log.w(TAG, "pending storage replay failed", error)
+        replayReport(0, emptyList(), fatal = true)
+    }
+
+    private fun replayReport(
+        applied: Int,
+        failed: Collection<Pair<String, Boolean>>,
+        fatal: Boolean,
+    ): String {
+        val entries = JSONArray()
+        failed.forEach { (name, deleted) ->
+            entries.put(JSONObject().put("n", name).put("d", deleted))
+        }
+        return JSONObject()
+            .put("applied", applied)
+            .put("fatal", fatal)
+            .put("failed", entries)
+            .toString()
+    }
+
+    private fun replayPendingStorageOrThrow(): String {
+        val snapshot = RpgMakerStoragePendingJournal.claim(storeDir) ?: return replayReport(0, emptyList(), false)
+        var applied = 0
+        var dropped = 0
+        val failed = LinkedHashMap<String, RpgMakerStoragePendingJournal.Entry>()
+        for ((name, entry) in snapshot.entries) {
+            val file = requireStorageFile(name)
+            RpgMakerStorageWriteLedger.withPathLock(file.path) {
+                if (entry.session > session) {
+                    failed[name] = entry
+                    return@withPathLock
+                }
+                when (if (entry.accepted) SNAPSHOT_MATCH else matchesSnapshot(entry, file)) {
+                    SNAPSHOT_UNREADABLE -> {
+                        // 读不出目标文件内容：不能当成「已过期」丢掉，留到下次重放
+                        failed[name] = entry
+                        return@withPathLock
+                    }
+                    SNAPSHOT_CHANGED -> {
+                        dropped++
+                        return@withPathLock
+                    }
+                }
+                if (RpgMakerStorageWriteLedger.isSuperseded(file.path, entry.session)) {
+                    dropped++
+                    return@withPathLock
+                }
+                val value = entry.value
+                if (value != null && value.length.toLong() > MAX_WRITE_BYTES) {
+                    Log.w(TAG, "pending storage replay rejected (too large ${value.length}): ${file.path}")
+                    failed[name] = entry
+                    return@withPathLock
+                }
+                val done = if (value == null) {
+                    !file.exists() || file.delete()
+                } else {
+                    writeResolved(file) { it.write(value.toByteArray(StandardCharsets.UTF_8)) }
+                }
+                if (!done) {
+                    Log.w(TAG, "pending storage replay failed: ${file.path}")
+                    failed[name] = entry
+                    return@withPathLock
+                }
+                dirIndex.invalidate(file.parentFile ?: storeDir)
+                RpgMakerStorageWriteLedger.record(file.path, session)
+                applied++
+            }
+        }
+        // 没恢复成功的条目并回队列，下次文档初始化再试；成功恢复的条目会因指纹不再匹配
+        // 而被跳过，重复重放是幂等的
+        if (failed.isNotEmpty()) {
+            Log.w(TAG, "pending storage replay kept ${failed.size} entr(ies) for the next document")
+        }
+        val finished = RpgMakerStoragePendingJournal.finish(storeDir, failed)
+        if (dropped > 0) Log.i(TAG, "pending storage replay skipped $dropped stale entr(ies)")
+        // 收尾失败（claim 写不回去）说明队列状态未知：全局阻塞，下次文档再试
+        if (!finished) return replayReport(applied, emptyList(), fatal = true)
+        val pendingNames = failed.map { (name, entry) -> name to (entry.value == null) }
+        return replayReport(applied, pendingNames, fatal = false)
+    }
+
+    /** 丢弃本会话及更旧会话在队列里的条目（`Storage.clear()` 用）。 */
+    @JavascriptInterface
+    fun clearPendingStorage(): Boolean = try {
+        RpgMakerStorageWriteLedger.withStorageLock(storeDir.path) {
+            requireStorageDirectory()
+            RpgMakerStoragePendingJournal.clearUpTo(storeDir, session)
+        }
+    } catch (error: Throwable) {
+        Log.w(TAG, "pending storage clear failed", error)
+        false
+    }
+
+    /**
+     * 丢弃队列中指定的条目。
+     *
+     * 载荷是 `{文件名: 内容或 null}`：内容一致才丢弃（避免误删另一个文档刚交进来的同名
+     * 条目），null 表示不比对内容直接丢弃；两种情况下都只处理本会话及更旧会话的条目。
+     * 空串表示丢弃本会话及更旧会话的全部条目（`Storage.clear()` 用）。
+     */
+    @JavascriptInterface
+    fun discardPendingStorage(payload: String?): Boolean = try {
+        RpgMakerStorageWriteLedger.withStorageLock(storeDir.path) {
+        requireStorageDirectory()
+        val raw = payload?.trim().orEmpty()
+        if (raw.isEmpty()) {
+            RpgMakerStoragePendingJournal.clearUpTo(storeDir, session)
+        } else {
+            val json = JSONObject(raw)
+            val expectations = LinkedHashMap<String, String?>()
+            val names = json.keys()
+            while (names.hasNext()) {
+                val name = names.next()
+                expectations[name] = if (json.isNull(name)) null else json.optString(name, "")
+            }
+            RpgMakerStoragePendingJournal.discard(storeDir, session, expectations)
+        }
+        }
+    } catch (error: Throwable) {
+        Log.w(TAG, "pending storage discard failed", error)
+        false
+    }
+
+    /**
+     * 目标文件是否仍与入队时的快照一致。
+     *
+     * `(存在, size, mtime)` 之外再比对内容 CRC32：FAT/exFAT 的 mtime 粒度约 2s，同一毫秒
+     * 内的等长改写只靠 mtime/size 分不出来，那会把新值盖回旧值。
+     *
+     * 三态：读不出内容（暂时性 I/O 错误）时返回 [SNAPSHOT_UNREADABLE]，不能当成「已过期」
+     * 把可恢复数据丢掉。
+     */
+    private fun matchesSnapshot(entry: RpgMakerStoragePendingJournal.Entry, file: File): Int {
+        val exists = file.exists()
+        if (exists != entry.existed) return SNAPSHOT_CHANGED
+        if (!exists) return SNAPSHOT_MATCH
+        if (file.length() != entry.size || file.lastModified() != entry.mtime) return SNAPSHOT_CHANGED
+        val expected = entry.crc ?: return SNAPSHOT_MATCH
+        val actual = RpgMakerStoragePendingJournal.crc32Of(file) ?: return SNAPSHOT_UNREADABLE
+        return if (actual == expected) SNAPSHOT_MATCH else SNAPSHOT_CHANGED
+    }
+
     @JavascriptInterface
     fun exists(path: String?): Boolean {
-        if (diskEntry(path) != null) return true
+        if (diskEntryFast(path) != null) return true
         asarKey(path?.let { relativeFor(it) })?.let { if (asar?.has(it) == true) return true }
         return false
     }
 
     @JavascriptInterface
     fun isFile(path: String?): Boolean {
-        diskEntry(path)?.let { return it.isFile }
+        diskEntryFast(path)?.let { return it.isFile }
         asarKey(path?.let { relativeFor(it) })?.let { key ->
             if (asar?.has(key) == true) return asar.isDirectory(key).not()
         }
@@ -137,7 +512,7 @@ internal class RpgMakerFsBridge(
 
     @JavascriptInterface
     fun isDir(path: String?): Boolean {
-        diskEntry(path)?.let { return it.isDirectory }
+        diskEntryFast(path)?.let { return it.isDirectory }
         asarKey(path?.let { relativeFor(it) })?.let { key ->
             if (asar?.has(key) == true) return asar.isDirectory(key)
         }
@@ -154,7 +529,7 @@ internal class RpgMakerFsBridge(
     @JavascriptInterface
     fun errorFor(path: String?): String {
         // 磁盘优先：磁盘有同名条目时按磁盘判定（与读路径同一顺序）
-        diskEntry(path)?.let { entry ->
+        diskEntryFast(path)?.let { entry ->
             if (entry.isDirectory) return "EISDIR"
             if (entry.length() > MAX_READ_BYTES) return "E2BIG"
             return "ENOENT"
@@ -176,14 +551,14 @@ internal class RpgMakerFsBridge(
     fun readText(path: String?): String? {
         // 磁盘优先（与 HTTP 服务器及写入语义一致）：磁盘无同名文件时才回退 asar。
         // 顺序反了会让「插件写入的文件」被 asar 遮蔽，读回包内旧值。
-        if (diskFile(path) != null) return readDiskText(path)
+        // 只解析一次：旧实现先 diskFile() 再 readDiskText() 又解析一遍（realpath ×2）。
+        val file = diskFileFast(path)
+        if (file != null) return readResolvedText(file)
         return readAsarBytes(path)?.let { String(it, StandardCharsets.UTF_8) }
     }
 
-    private fun readDiskText(path: String?): String? {
-        // 与 diskFile 同一解析：用 resolve 会在模糊命中后重新精确解析而落空
-        val file = resolveForRead(path) ?: return null
-        if (!file.isFile) return null
+    /** 已在 [diskFileFast] 里解析完成的文件读取（不再做路径解析）。 */
+    private fun readResolvedText(file: File): String? {
         if (file.length() > MAX_READ_BYTES) {
             Log.w(TAG, "fs read rejected (too large ${file.length()}): ${file.path}")
             return null
@@ -225,16 +600,14 @@ internal class RpgMakerFsBridge(
     /** 读二进制（base64）；Buffer 语义用，避免桥只能传字符串的限制。 */
     @JavascriptInterface
     fun readBase64(path: String?): String? {
-        // 磁盘优先（见 readText 的说明）：磁盘无同名文件时才回退 asar
-        if (diskFile(path) != null) return readDiskBase64(path)
+        // 磁盘优先（见 readText 的说明），且与读文本一样只解析一次
+        val file = diskFileFast(path)
+        if (file != null) return readResolvedBase64(file)
         readAsarBytes(path)?.let { return Base64.getEncoder().encodeToString(it) }
-        return readDiskBase64(path)
+        return null
     }
 
-    private fun readDiskBase64(path: String?): String? {
-        // 同 readDiskText：必须与 diskFile 的解析一致
-        val file = resolveForRead(path) ?: return null
-        if (!file.isFile) return null
+    private fun readResolvedBase64(file: File): String? {
         if (file.length() > MAX_READ_BYTES) {
             Log.w(TAG, "fs read(Buffer) rejected (too large ${file.length()}): ${file.path}")
             return null
@@ -253,7 +626,7 @@ internal class RpgMakerFsBridge(
         // 磁盘上有同名条目即不再回退 asar——覆盖层规则必须与 exists/isFile/isDir/stat
         // 完全一致，否则同一路径会「既是文件又是目录」：例如磁盘有文件 `data`、
         // asar 内有目录 `data/`，若这里回退 asar 就会列出子项，而 isDir 返回 false。
-        diskEntry(path)?.let { entry ->
+        diskEntryFast(path)?.let { entry ->
             if (!entry.isDirectory) return "[]"   // 磁盘是文件（或其它非目录）→ 不是目录
             // list() 为 null 是 IO 错误（权限/句柄耗尽等），与「空目录」语义不同：
             // 折叠成 [] 会让插件以为目录真的空了（并可能据此清空自建索引）。
@@ -282,7 +655,7 @@ internal class RpgMakerFsBridge(
     @JavascriptInterface
     fun stat(path: String?): String {
         // 磁盘优先：写入后 size/mtime 必须来自磁盘，否则插件按 asar 的旧 size 判断会误判
-        diskEntry(path)?.let { file ->
+        diskEntryFast(path)?.let { file ->
             return try {
                 JSONObject()
                     .put("file", file.isFile)
@@ -310,18 +683,9 @@ internal class RpgMakerFsBridge(
                     .toString()
             }
         }
-        val file = resolveForRead(path) ?: return ""
-        return try {
-            JSONObject()
-                .put("file", file.isFile)
-                .put("dir", file.isDirectory)
-                .put("size", file.length())
-                .put("mtime", file.lastModified())
-                .toString()
-        } catch (error: Throwable) {
-            Log.w(TAG, "fs stat failed: ${file.path}", error)
-            ""
-        }
+        // 磁盘与 asar 都没有：空串（JS 侧按 `{file:false,dir:false,size:0}` 兜底，
+        // 与旧实现把「可解析但不存在」的路径也报成同形结果等价，省掉一次解析）
+        return ""
     }
 
     @JavascriptInterface
@@ -369,7 +733,18 @@ internal class RpgMakerFsBridge(
     fun makeDirs(path: String?): Boolean {
         val dir = resolve(path) ?: return false
         return try {
-            dir.isDirectory || dir.mkdirs() || dir.isDirectory
+            val existed = dir.isDirectory
+            // mkdirs() 可能一次创建多级：上级目录也变了，与 write 一样退回整表失效
+            val parentExisted = dir.parentFile?.isDirectory == true
+            val done = existed || dir.mkdirs() || dir.isDirectory
+            if (done && !existed) {
+                // 上级目录也变了（parentExisted 已保证 parentFile 非空）；多级创建则整表失效
+                val parent = dir.parentFile
+                if (parentExisted && parent != null) dirIndex.invalidate(parent) else dirIndex.invalidateAll()
+                // 新目录自身的条目也是空的（缓存里可能还留着同名旧目录的名字列表）
+                dirIndex.invalidate(dir)
+            }
+            done
         } catch (error: Throwable) {
             Log.w(TAG, "fs mkdir failed: ${dir.path}", error)
             false
@@ -379,13 +754,37 @@ internal class RpgMakerFsBridge(
     @JavascriptInterface
     fun remove(path: String?): Boolean {
         val file = resolve(path) ?: return false
-        return try {
-            !file.exists() || file.delete()
+        return removeResolved(file)
+    }
+
+    private fun removeResolved(file: File): Boolean = try {
+            withMutationLock(file) {
+                // 旧会话的删除重试不得删掉新会话已经落盘的值：账本已表明该路径归更新的
+                // 会话所有时，删除意图作废并返回 true，让调用方停止重试（而不是把新值删掉）。
+                if (RpgMakerStorageWriteLedger.isSuperseded(file.path, session)) {
+                    Log.i(TAG, "fs remove skipped (a newer session owns this path): ${file.path}")
+                    return@withMutationLock true
+                }
+                val removed = if (!file.exists()) {
+                    true
+                } else {
+                    file.delete().also { ok ->
+                        if (ok) {
+                            // 父目录少了一个条目；若删的是目录，它自身的名字列表缓存也要丢
+                            dirIndex.invalidate(file.parentFile ?: file)
+                            dirIndex.invalidate(file)
+                        }
+                    }
+                }
+                // 删除也要记版本（墓碑）：否则旧会话的退出刷盘看到「没人写过」就把旧值写回来，
+                // 新会话的删除等于被撤销。文件本来就不存在时同样要记——旧会话可能正准备创建它。
+                RpgMakerStorageWriteLedger.record(file.path, session)
+                removed
+            }
         } catch (error: Throwable) {
             Log.w(TAG, "fs remove failed: ${file.path}", error)
             false
         }
-    }
 
     /** utimesSync：Android 只能设 mtime（无 atime），够插件做「最近修改」判断。 */
     @JavascriptInterface
@@ -408,49 +807,87 @@ internal class RpgMakerFsBridge(
      */
     private inline fun write(path: String?, block: (java.io.FileOutputStream) -> Unit): Boolean {
         val file = resolve(path) ?: return false
+        return writeResolved(file, block)
+    }
+
+    /**
+     * [write] 的「已解析路径」版本：恢复队列重放（目标文件由文件名直接推出）也走这里，
+     * 保证落盘、记账与删除复核在同一把按路径的锁内，不会与另一会话的删除交错。
+     */
+    private inline fun <T> withMutationLock(file: File, block: () -> T): T {
+        val storage = storeDir.canonicalPath
+        return if (file.path == storage || file.path.startsWith(storage + File.separator)) {
+            RpgMakerStorageWriteLedger.withStorageLock(storeDir.path) {
+                RpgMakerStorageWriteLedger.withPathLock(file.path, block)
+            }
+        } else RpgMakerStorageWriteLedger.withPathLock(file.path, block)
+    }
+
+    private inline fun writeResolved(file: File, block: (java.io.FileOutputStream) -> Unit): Boolean {
         val parent = file.parentFile ?: return false
-        var tmp: File? = null
-        return try {
-            if (!parent.isDirectory && !parent.mkdirs() && !parent.isDirectory) return false
-            val temp = File(parent, file.name + ".tmp." + System.nanoTime())
-            tmp = temp
-            java.io.FileOutputStream(temp).use { out ->
-                block(out)
-                out.fd.sync()
+        return withMutationLock(file) {
+            // 落盘前在同一把锁里复核会话版本：JS 侧的 isSuperseded 与 writeFileSync 是两次
+            // 独立的跨语言调用，中间可能被更新的会话抢先写入。命中即让位并返回 true——
+            // 该路径已归更新的会话负责，旧会话再写就是拿旧值覆盖新值。
+            if (RpgMakerStorageWriteLedger.isSuperseded(file.path, session)) {
+                Log.i(TAG, "fs write skipped (a newer session owns this path): ${file.path}")
+                return@withMutationLock true
             }
-            if (!temp.renameTo(file)) {
-                // rename 失败（目标被占用/跨卷）：改用「先删再移」而不是
-                // `file.outputStream()` 直写 —— 后者会**先截断目标**，拷贝中途失败即
-                // 丢掉旧内容（temp 虽在，但目标已空，等于半损）。删掉目标再 rename
-                // 让复用成为原子操作，失败时 temp 仍在、可重试。
-                val moved = file.delete().let { temp.renameTo(file) }
-                if (!moved) {
-                    // 仍失败：回退为原地拷贝。**此时 temp 是唯一完整副本**，
-                    // 拷贝失败必须保留它（否则 finally 删掉后数据彻底消失），
-                    // 因此这里自行决定是否清理，并让 finally 不再删除。
-                    if (!temp.isFile) return false
-                    try {
-                        file.outputStream().use { out ->
-                            temp.inputStream().use { input -> input.copyTo(out) }
-                            out.fd.sync()
-                        }
-                    } catch (copyError: Throwable) {
-                        // 保持 temp 落盘，便于排查与手工恢复；下次写入会生成新的 temp
-                        Log.w(TAG, "fs write fallback failed; kept temp copy: ${temp.path}", copyError)
-                        tmp = null
-                        return false
-                    }
-                    temp.delete()
+            var tmp: File? = null
+            try {
+                val parentExisted = parent.isDirectory
+                if (!parentExisted && !parent.mkdirs() && !parent.isDirectory) return@withMutationLock false
+                val temp = File(parent, file.name + ".tmp." + System.nanoTime())
+                tmp = temp
+                java.io.FileOutputStream(temp).use { out ->
+                    block(out)
+                    out.fd.sync()
                 }
+                if (file.parentFile == storeDir.canonicalFile) {
+                    try {
+                        Files.move(temp.toPath(), file.toPath(),
+                            StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+                    } catch (unsupported: java.nio.file.AtomicMoveNotSupportedException) {
+                        Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                    }
+                } else if (!temp.renameTo(file)) {
+                    // rename 失败（目标被占用/跨卷）：改用「先删再移」而不是
+                    // `file.outputStream()` 直写 —— 后者会**先截断目标**，拷贝中途失败即
+                    // 丢掉旧内容（temp 虽在，但目标已空，等于半损）。删掉目标再 rename
+                    // 让复用成为原子操作，失败时 temp 仍在、可重试。
+                    val moved = file.delete().let { temp.renameTo(file) }
+                    if (!moved) {
+                        // 仍失败：回退为原地拷贝。**此时 temp 是唯一完整副本**，
+                        // 拷贝失败必须保留它（否则 finally 删掉后数据彻底消失），
+                        // 因此这里自行决定是否清理，并让 finally 不再删除。
+                        if (!temp.isFile) return@withMutationLock false
+                        try {
+                            file.outputStream().use { out ->
+                                temp.inputStream().use { input -> input.copyTo(out) }
+                                out.fd.sync()
+                            }
+                        } catch (copyError: Throwable) {
+                            // 保持 temp 落盘，便于排查与手工恢复；下次写入会生成新的 temp
+                            Log.w(TAG, "fs write fallback failed; kept temp copy: ${temp.path}", copyError)
+                            tmp = null
+                            return@withMutationLock false
+                        }
+                        temp.delete()
+                    }
+                }
+                tmp = null
+                // 目录条目已变：只失效这一层；若刚补建了整条路径（上级目录也变了）则整体失效
+                if (parentExisted) dirIndex.invalidate(parent) else dirIndex.invalidateAll()
+                // 记账：让更早的会话在退出刷盘时不要覆盖这次写入
+                RpgMakerStorageWriteLedger.record(file.path, session)
+                true
+            } catch (error: Throwable) {
+                Log.w(TAG, "fs write failed: ${file.path}", error)
+                false
+            } finally {
+                // 仅在成功路径上已被置空；失败路径若需保留副本会提前把 tmp 置空
+                tmp?.let { runCatching { it.delete() } }
             }
-            tmp = null
-            true
-        } catch (error: Throwable) {
-            Log.w(TAG, "fs write failed: ${file.path}", error)
-            false
-        } finally {
-            // 仅在成功路径上已被置空；失败路径若需保留副本会提前把 tmp 置空
-            tmp?.let { runCatching { it.delete() } }
         }
     }
 
@@ -481,6 +918,13 @@ internal class RpgMakerFsBridge(
         // 注意不要 trim()：文件名里的尾随空格是真实存在的（部分素材名带尾随空格），
         // trim 会让这类文件永远无法访问（Node 的 fs 同样不做 trim）。
         val raw = path?.takeIf { it.isNotEmpty() && it.any { c -> !c.isWhitespace() } } ?: return null
+        // 每次访问都重新 canonicalize（realpath），**不缓存**结果。
+        //
+        // 缓存看似能省 realpath，但它会把「填充时合法」当成「现在仍合法」：若祖先目录在
+        // 缓存之后被替换成指向游戏根之外的符号链接，缓存 File 的字符串仍以 root 开头，
+        // isInsideRoot 照样通过，而实际读写会跟随新链接越界（可复现：先读根内文件，
+        // 再把该目录换成指向根外的 symlink，缓存命中后读到根外内容；新建 bridge 则正确拒绝）。
+        // 每次重算 realpath 只多几次 lstat，相对一次 WebView 请求的往返可以忽略。
         if (raw.any { it == '\u0000' || it.isISOControl() }) return null
         val normalized = raw.removePrefix("file://").replace('\\', '/')
         val candidate = if (normalized.startsWith("/")) File(normalized) else File(contentRoot, normalized)
@@ -512,5 +956,13 @@ internal class RpgMakerFsBridge(
 
         /** 单次写入上限；与读取上限分开命名以便独立调整（当前同值）。 */
         private const val MAX_WRITE_BYTES = 16L * 1024L * 1024L
+
+        /** 恢复队列载荷上限：略大于队列自身的字符上限（含 JSON 转义与键名开销）。 */
+        private const val MAX_PENDING_PAYLOAD_CHARS = 32 * 1024 * 1024
+
+        /** 快照比对结果：一致 / 已变化（条目作废）/ 读不出内容（保留条目下次再试）。 */
+        private const val SNAPSHOT_MATCH = 0
+        private const val SNAPSHOT_CHANGED = 1
+        private const val SNAPSHOT_UNREADABLE = 2
     }
 }

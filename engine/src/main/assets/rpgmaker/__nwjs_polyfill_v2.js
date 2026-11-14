@@ -859,7 +859,41 @@
         }
 
         var realFs = {
+            commitStorageMutation: function (payload) {
+                try {
+                    return typeof bridge.commitStorageMutation === "function"
+                        ? Number(bridge.commitStorageMutation(payload)) || 0
+                        : 0;
+                } catch (e) { return 0; }
+            },
+            flushStorageMutation: function (name, value) {
+                return typeof bridge.flushStorageMutation === "function" && bridge.flushStorageMutation(name, value) === true;
+            },
             existsSync: function (p) { try { return bridge.exists(p) === true; } catch (e) { return false; } },
+            // 该路径是否已被更新的会话写过（只有 v2 桥提供；旧桥/桩返回 false）。
+            // localStorage 退出刷盘据此让位，避免旧值覆盖新值（两个会话共用 AppData）。
+            isSuperseded: function (p) {
+                try { return typeof bridge.isSuperseded === "function" && bridge.isSuperseded(p) === true; }
+                catch (e) { return false; }
+            },
+            // 无条件登记删除意图（墓碑）：文件可能还没被合并写落盘，existsSync 为假也要记，
+            // 否则旧会话随后的合并写会把已经 removeItem 的键写回来。
+            recordDelete: function (p) {
+                try { return typeof bridge.recordDelete === "function" && bridge.recordDelete(p) === true; }
+                catch (e) { return false; }
+            },
+            // 目录级清除版本：clear() 看不到旧会话仍在内存里的待写键，只能按目录记版本
+            recordClear: function (p) {
+                try { return typeof bridge.recordClear === "function" && bridge.recordClear(p) === true; }
+                catch (e) { return false; }
+            },
+            replayPendingStorage: function () {
+                try {
+                    if (typeof bridge.replayPendingStorage !== "function") return null;
+                    var report = JSON.parse(String(bridge.replayPendingStorage()));
+                    return report && typeof report === "object" ? report : null;
+                } catch (e) { return null; }
+            },
             exists: function (p, cb) { if (typeof cb === "function") setTimeout(function () { cb(realFs.existsSync(p)); }, 0); },
             readFileSync: function (p, enc) {
                 // Node 语义：无编码 → Buffer；有编码 → 字符串（与 JoiPlay 的 "\b\b\b" 抛错等价）
@@ -3278,18 +3312,29 @@
 
         // ---- 环境路径修正：把基础层的占位路径换成真实值 ----
         // ---- localStorage 落地到游戏目录 ----
-        // 本宿主的 origin 是 http://localhost:<随机端口>（ServerSocket(0) 每次启动不同），
-        // 而 WebView 的 localStorage 按 origin 隔离 —— 插件用 localStorage 存配置/数据表
-        // 缓存时，**每次启动都会丢**（表现为设置不记住、反复重建缓存）。
-        // JoiPlay 的做法是把 Storage.prototype 劫持到游戏 save/ 目录。
-        // 这里同样劫持，但保留 WebView 原生存储作为兜底：原生读写异常时退回，
-        // 保证不会因为文件层问题让插件数据彻底不可用。
+        // 本宿主的 origin 是 http://localhost:<随机端口>（每次启动不同），而 WebView 的
+        // localStorage 按 origin 隔离 —— 插件用它存配置/数据表缓存时**每次启动都会丢**
+        // （表现为设置不记住、反复重建缓存）。JoiPlay 同样把 Storage 劫持到游戏目录，
+        // 这里保持一致，但把访问模式改成「内存镜像 + 合并落盘」：
+        //
+        // 返回前通过原生 journal 持久接收；失败抛 Storage 错误且镜像不变。
+        // 索引和值仍缓存，.dat 保留 200ms 合并物化；超长键/空键沿用确定性的文件名协议。
+        // 退出/重载钩子只报告交接状态；页面初始化在游戏脚本之前恢复，失败时阻止旧值读取。
         (function () {
             if (typeof Storage === "undefined" || !Storage.prototype) {
                 console.log("[nw-polyfill-v2] Storage unavailable; localStorage persist skipped");
                 return;
             }
             var STORE_DIR = joinPath(dataDir, "Local Storage");
+            var FLUSH_DELAY_MS = 200;
+            var FLUSH_RETRY_MS = 1000;
+            // 物化失败后再试一次；仍失败则保留已接收队列，等待后续恢复。
+            var MAX_FLUSH_RETRY = 1;
+            // 单次 flush 的键数上限：切后台/退出时 flush 跑在渲染线程上，连续 fsync 会卡界面
+            var MAX_FLUSH_KEYS = 32;
+            // flushAll 的总耗时预算（毫秒）：宿主在 onPause 同步调用它，不能无限占住渲染线程
+            var FLUSH_ALL_BUDGET_MS = 800;
+
             // 键名 → 文件名。用「UTF-8 字节的十六进制」编码：
             // 之前用 encodeURIComponent 再替换 '%' 为 '_' 的方案有歧义——
             // "a b"（→ a_20b）与字面量 "a_20b" 会映射到同一个文件（实测互相覆盖）。
@@ -3304,7 +3349,19 @@
                 }
                 return out;
             }
-            function fileFor(key) {
+            // 文件名 → 键（哈希名无法还原，返回 null 由调用方跳过枚举）。
+            // 空文件名（`.dat`）合法：Storage 规范允许空字符串作键，因此只拒绝奇数长度。
+            function hexToText(hex) {
+                if (hex === null || hex === undefined || hex.length % 2 !== 0) return null;
+                var bin = "";
+                for (var i = 0; i < hex.length; i += 2) {
+                    var code = parseInt(hex.substr(i, 2), 16);
+                    if (isNaN(code)) return null;
+                    bin += String.fromCharCode(code);
+                }
+                try { return decodeURIComponent(escape(bin)); } catch (e) { return bin; }
+            }
+            function fileNameFor(key) {
                 var hex = utf8Hex(String(key));
                 if (hex.length > 180) {
                     // 超长键名（有些插件直接用整段 JSON 当键）→ 前缀 + 定长哈希
@@ -3314,38 +3371,259 @@
                     for (var j = hex.length - 1; j >= 0; j -= 7) { hash2 = ((hash2 << 5) - hash2 + hex.charCodeAt(j)) | 0; }
                     hex = "h" + (hash >>> 0).toString(36) + (hash2 >>> 0).toString(36);
                 }
-                return joinPath(STORE_DIR, hex + ".dat");
+                return hex + ".dat";
             }
-            function readItem(key) {
-                var path = fileFor(key);
+            function pathFor(key) { return joinPath(STORE_DIR, fileNameFor(key)); }
+
+            function hasOwn(obj, key) { return Object.prototype.hasOwnProperty.call(obj, key); }
+
+            function readFileIfExists(path) {
                 try {
-                    if (realFs.existsSync(path)) {
-                        var value = realFs.readFileSync(path, { encoding: "utf8" });
-                        if (value !== null && value !== undefined) return String(value);
-                    }
-                } catch (e) {}
-                return null;
-            }
-            function writeItem(key, value) {
-                try {
-                    if (!realFs.existsSync(STORE_DIR)) realFs.mkdirSync(STORE_DIR);
-                    realFs.writeFileSync(fileFor(key), String(value));
-                    return true;
+                    if (!realFs.existsSync(path)) return null;
+                    var text = realFs.readFileSync(path, { encoding: "utf8" });
+                    return (text === null || text === undefined) ? null : String(text);
                 } catch (e) {
-                    console.warn("[nw-polyfill-v2] localStorage persist failed for key '" + key + "': " + (e && e.message));
-                    return false;
+                    return null;
                 }
             }
-            function removeItemFile(key) {
-                try { if (realFs.existsSync(fileFor(key))) realFs.rmSync(fileFor(key), { force: true }); return true; }
-                catch (e) { return false; }
+
+            // 内存镜像：files 是索引（键 → 文件名），values 是已读/待写的值
+            var indexLoaded = false;
+            var storageCleared = false;
+            var files = Object.create(null);
+            var values = Object.create(null);
+            var removedKeys = Object.create(null);
+            var order = [];
+            var dirty = Object.create(null);
+            // 删除失败的文件名：镜像里已经没有这个键，但磁盘文件还在。必须挡住
+            // 「按文件名重新索引」与「按 key 直接读」两条路径，否则旧值会复活；
+            // 每次 flush 再尝试删一次，成功后移出。
+            var suppressedNames = Object.create(null);
+            var flushTimer = null;
+            var flushRetries = 0;
+            var recoveryFatal = false;
+            // 已接收但没能落盘的条目：文件名 -> true(待删除) / false(待写入)。
+            // 只影响这一个键：待删除的读回 null，待写入的报未就绪，其余键照常可用。
+            var unrecovered = Object.create(null);
+
+            function storageError(name, message) {
+                var error = new Error(message);
+                error.name = name;
+                return error;
+            }
+            function ensureStorageReady() {
+                if (recoveryFatal) throw storageError("InvalidStateError", "Persistent Storage recovery failed");
+            }
+            /** 该文件名在队列里是否还有未落盘的意图：null=没有，true=待删除，false=待写入。 */
+            function pendingIntent(name) {
+                return hasOwn(unrecovered, name) ? unrecovered[name] : null;
+            }
+            function acceptMutation(payload) {
+                ensureStorageReady();
+                var code = realFs.commitStorageMutation(JSON.stringify(payload));
+                if (!code) throw storageError("QuotaExceededError", "Persistent Storage mutation was not accepted");
+                return code;
             }
 
-            var nativeSet = null, nativeGet = null, nativeRemove = null, nativeKey = null;
+            function rememberKey(key) {
+                if (files[key]) return;
+                var name = fileNameFor(key);
+                files[key] = name;
+                // 哈希名无法从文件名反推原键：不进枚举（与旧实现 listKeys 跳过 h* 一致），
+                // 否则 length/key 会随「本次会话读过哪些长键」而变化
+                if (name.charAt(0) !== "h" && order.indexOf(key) < 0) order.push(key);
+            }
+
+            function ensureIndex() {
+                if (indexLoaded) return;
+                var names = null;
+                try {
+                    if (realFs.existsSync(STORE_DIR)) names = realFs.readdirSync(STORE_DIR);
+                } catch (e) { names = null; }
+                // 只有真的读到目录才置位：瞬时 IO 失败若把 indexLoaded 置 true，整会话
+                // 都不会再建索引，length/key() 恒为空，只能靠重启恢复
+                if (names === null) return;
+                indexLoaded = true;
+                if (!names.length) return;
+                for (var i = 0; i < names.length; i++) {
+                    var name = String(names[i]);
+                    if (!/\.dat$/.test(name)) continue;
+                    // 删除失败留下的文件：镜像里已无此键，不能再索引回来
+                    if (suppressedNames[name]) continue;
+                    // 队列里还有未落盘意图的键：待删除的不能索引回来，待写入的磁盘上还是旧值
+                    if (pendingIntent(name) !== null) continue;
+                    var hex = name.slice(0, -4);
+                    if (hex.charAt(0) === "h") continue;   // 哈希名无法还原原键，读取时按 key 兜底
+                    var key = hexToText(hex);
+                    if (key === null || files[key]) continue;
+                    files[key] = name;
+                    order.push(key);
+                }
+            }
+
+            /**
+             * 重试删除失败的文件；成功后移出抑制表（失败的下次 flush 再试）。
+             *
+             * 重试前必须复核会话版本：新会话可能已经在同一个 `.dat` 上写了新值，此时这个
+             * 删除意图属于旧会话、已经过时，继续删就是把新值删掉。原生 `remove` 也做了同一
+             * 层保护（删除与记账在同一把按路径的锁里），这里先判定可以少一次跨语言调用。
+             */
+            function retrySuppressedDeletes() {
+                var names = Object.keys(suppressedNames);
+                for (var i = 0; i < names.length; i++) {
+                    var name = names[i];
+                    var path = joinPath(STORE_DIR, name);
+                    if (realFs.isSuperseded(path)) {
+                        delete suppressedNames[name];
+                        continue;
+                    }
+                    try {
+                        if (!realFs.flushStorageMutation(name, null)) throw new Error("Storage delete pending");
+                        delete suppressedNames[name];
+                    } catch (e) {}
+                }
+            }
+
+            function readValue(key) {
+                ensureStorageReady();
+                if (hasOwn(values, key)) return values[key];
+                if (removedKeys[key] || (storageCleared && !files[key])) return null;
+                var expected = fileNameFor(key);
+                var intent = pendingIntent(expected);
+                // 已接收的删除还没落盘：磁盘上那份旧值必须当作已删除
+                if (intent === true) return null;
+                // 已接收的写入还没落盘：磁盘上是旧值，读出来会被当成新值
+                if (intent === false) {
+                    throw storageError("InvalidStateError", "Storage value is not recovered yet: " + key);
+                }
+                ensureIndex();
+                var name = files[key];
+                if (name) {
+                    var indexed = readFileIfExists(joinPath(STORE_DIR, name));
+                    if (indexed !== null) {
+                        values[key] = indexed;
+                        return indexed;
+                    }
+                }
+                // 超长键的文件名是哈希、索引里没有原键：直接按 key 算路径再试一次。
+                // 少了这一步，跨会话（重启后）长键内容永久读不回（旧实现按 key 算路径，没有该缺陷）。
+                // 但删除失败的文件必须挡住：否则 clear()/removeItem() 之后旧值会从这里复活。
+                if (!name && !suppressedNames[fileNameFor(key)]) {
+                    var fallback = readFileIfExists(pathFor(key));
+                    if (fallback !== null) {
+                        values[key] = fallback;
+                        rememberKey(key);
+                        return fallback;
+                    }
+                }
+                return null;
+            }
+
+            function markDirty(key) {
+                dirty[key] = true;
+                if (flushTimer === null) flushTimer = setTimeout(flush, FLUSH_DELAY_MS);
+            }
+
+            /**
+             * 写一批键，返回失败列表。
+             *
+             * 调用方负责先把这批键从 dirty 摘掉：这样「某批全失败」不会让后续批次永远排在
+             * 它后面（旧实现按 dirty 数量判断是否有进展，首批失败就整体放弃）。
+             */
+            function writeBatch(keys) {
+                var failed = [];
+                var superseded = 0;
+                try {
+                    try { if (!realFs.existsSync(STORE_DIR)) realFs.mkdirSync(STORE_DIR); } catch (eDir) {}
+                    for (var i = 0; i < keys.length; i++) {
+                        var key = keys[i];
+                        if (!hasOwn(values, key)) continue;
+                        var target = pathFor(key);
+                        // 同一游戏快速重启：旧会话在 onDestroy 才异步刷盘，而新会话可能已经
+                        // 写过同一个 .dat（共用 AppData）。旧值必须让位，否则会覆盖成旧值。
+                        // 这不是丢数据：该键的最新值已经在盘上。
+                        if (realFs.isSuperseded(target)) {
+                            delete values[key];
+                            superseded++;
+                            continue;
+                        }
+                        try {
+                            if (!realFs.flushStorageMutation(fileNameFor(key), values[key])) {
+                                throw new Error("Storage materialization pending");
+                            }
+                            rememberKey(key);
+                            // 该键已经有新值了：之前 removeItem 失败留下的「待删」标记必须作废，
+                            // 否则下一次 flush 的 retrySuppressedDeletes 会把刚写的新值删掉
+                            delete suppressedNames[fileNameFor(key)];
+                            // 已落盘：回到「按需读」，避免整份存档/数据表常驻内存
+                            delete values[key];
+                        } catch (e) {
+                            failed.push(key);
+                        }
+                    }
+                } catch (eOuter) {
+                    for (var j = 0; j < keys.length; j++) if (hasOwn(values, keys[j])) failed.push(keys[j]);
+                }
+                if (superseded > 0) {
+                    console.warn("[nw-polyfill-v2] localStorage skipped " + superseded + " key(s) already written by a newer session");
+                }
+                return failed;
+            }
+
+            /** 失败处理：先排一次重试，连续失败则写原生存储保住当前会话（原生跨启动无效）。 */
+            function handleFailed(failed) {
+                if (!failed.length) { flushRetries = 0; return; }
+                for (var f = 0; f < failed.length; f++) dirty[failed[f]] = true;
+                flushRetries++;
+                if (flushRetries <= MAX_FLUSH_RETRY) {
+                    if (flushTimer === null) flushTimer = setTimeout(flush, FLUSH_RETRY_MS);
+                    return;
+                }
+                flushRetries = 0;
+                // 意图已在原生队列中持久接收；停止紧密重试，但保留 dirty 供以后物化。
+                console.warn("[nw-polyfill-v2] Storage materialization deferred for " + failed.length + " key(s)");
+            }
+
+            function flush() {
+                flushTimer = null;
+                retrySuppressedDeletes();
+                var pending = Object.keys(dirty);
+                if (!pending.length) return;
+                // 单次最多写 MAX_FLUSH_KEYS 个键：flush 跑在渲染线程上，连续几十次 fsync
+                // 会卡住界面（甚至 ANR）。剩余批次用 0ms 定时器续跑。
+                var keys = pending.slice(0, MAX_FLUSH_KEYS);
+                for (var d = 0; d < keys.length; d++) delete dirty[keys[d]];
+                if (pending.length > keys.length && flushTimer === null) flushTimer = setTimeout(flush, 0);
+                handleFailed(writeBatch(keys));
+            }
+
+            /**
+             * 所有成功返回的修改均已同步交给原生持久队列。销毁/导航只报告状态，不做 I/O，
+             * 因而不再受退出看门狗、旧文档定时器与 pagehide 触发顺序影响。
+             * 非最终调用可尽力物化；未完成的 .dat 工作已在队列里，不计为未接收数据。
+             */
+            function flushAll(finalizing) {
+                if (finalizing === true) return recoveryFatal ? 1 : 0;
+                ensureStorageReady();
+                if (flushTimer !== null) { clearTimeout(flushTimer); flushTimer = null; }
+                retrySuppressedDeletes();
+                var pending = Object.keys(dirty);
+                var deadline = Date.now() + FLUSH_ALL_BUDGET_MS;
+                for (var i = 0; i < pending.length; i += MAX_FLUSH_KEYS) {
+                    if (Date.now() > deadline) break;
+                    var batch = pending.slice(i, i + MAX_FLUSH_KEYS);
+                    for (var d = 0; d < batch.length; d++) delete dirty[batch[d]];
+                    var failed = writeBatch(batch);
+                    for (var f = 0; f < failed.length; f++) dirty[failed[f]] = true;
+                }
+                if (Object.keys(dirty).length && flushTimer === null) flushTimer = setTimeout(flush, 0);
+                return 0;
+            }
+
+            var nativeGet = null, nativeRemove = null, nativeKey = null;
             var nativeStorageLength = function () { return 0; };
             var nativeStorageKey = function () { return null; };
             try {
-                nativeSet = Storage.prototype.setItem;
                 nativeGet = Storage.prototype.getItem;
                 nativeRemove = Storage.prototype.removeItem;
                 nativeKey = Storage.prototype.key;
@@ -3358,60 +3636,181 @@
                 }
             } catch (e) {}
 
+            // 安装顺序刻意如此：先挂落盘钩子与调试入口，再逐个 patch。
+            // 任何单个 patch 失败（例如某些实现把 Storage.prototype.length 设为不可重定义）
+            // 都只失去那一项能力，不会出现「setItem 已接管但没有 flush 出口」的半安装态。
             try {
-                Storage.prototype.setItem = function (key, value) {
-                    var stored = writeItem(key, value === undefined ? "undefined" : value);
-                    if (!stored && nativeSet) { try { return nativeSet.call(this, key, value); } catch (e) {} }
-                };
-                Storage.prototype.getItem = function (key) {
-                    var value = readItem(key);
-                    if (value !== null) return value;
-                    if (nativeGet) { try { return nativeGet.call(this, key); } catch (e) {} }
-                    return null;
-                };
-                Storage.prototype.removeItem = function (key) {
-                    var removed = removeItemFile(key);
-                    if (nativeRemove) { try { return nativeRemove.call(this, key); } catch (e) {} }
-                    if (!removed) return undefined;
-                };
-                Storage.prototype.clear = function () {
-                    try {
-                        if (realFs.existsSync(STORE_DIR)) {
-                            realFs.readdirSync(STORE_DIR).forEach(function (name) { realFs.rmSync(joinPath(STORE_DIR, name), { force: true }); });
+                // 上一次文档销毁/重载时交给原生恢复队列的待写数据：必须在页面脚本读取
+                // localStorage 之前落地（本段在首页任何游戏脚本之前执行），否则插件读到的
+                // 仍是旧值，随后的合并写会把恢复出来的值覆盖掉。
+                try {
+                    var replayReport = realFs.replayPendingStorage();
+                    if (!replayReport || replayReport.fatal) {
+                        recoveryFatal = true;
+                    } else {
+                        var failedEntries = replayReport.failed || [];
+                        for (var r = 0; r < failedEntries.length; r++) {
+                            var failedEntry = failedEntries[r];
+                            if (failedEntry && failedEntry.n) {
+                                unrecovered[String(failedEntry.n)] = failedEntry.d === true;
+                            }
                         }
-                    } catch (e) {}
-                    // 原生存储也要清：否则 getItem 的兜底会把「已清掉」的值复活
-                    try { if (nativeRemove) for (var i = 0; i < nativeStorageLength(); i++) nativeRemove.call(this, nativeStorageKey(i)); } catch (e2) {}
-                };
-                // 枚举一致性：length/key() 读文件存储，否则
-                // `for (i=0;i<localStorage.length;i++)` 看不到任何落盘的数据。
-                function listKeys() {
-                    var keys = [];
-                    try {
-                        if (realFs.existsSync(STORE_DIR)) {
-                            realFs.readdirSync(STORE_DIR).forEach(function (name) {
-                                if (!/\.dat$/.test(name)) return;
-                                var hex = name.slice(0, -4);
-                                if (hex.charAt(0) === "h") return;   // 哈希名无法还原原键，跳过
-                                var bin = "";
-                                for (var i = 0; i + 1 < hex.length; i += 2) bin += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
-                                try { keys.push(decodeURIComponent(escape(bin))); } catch (e) { keys.push(bin); }
-                            });
-                        }
-                    } catch (e) {}
-                    return keys;
-                }
-                Object.defineProperty(Storage.prototype, "length", {
-                    get: function () { return listKeys().length; },
-                    configurable: true
-                });
-                Storage.prototype.key = function (index) {
-                    var keys = listKeys();
-                    var i = Number(index) || 0;
-                    return i >= 0 && i < keys.length ? keys[i] : null;
-                };
+                    }
+                } catch (eReplay) { recoveryFatal = true; }
+                // 最终钩子只报告持久交接状态：此前的 Storage 成功返回已完成接收。
+                try {
+                    window.addEventListener("pagehide", function (event) {
+                        // 往返缓存保留原文档及其镜像，持久队列仍保留已接收意图。
+                        if (event && event.persisted) return;
+                        flushAll(true);
+                    });
+                } catch (ePh) {}
+                try { window.addEventListener("beforeunload", function () { flushAll(true); }); } catch (eBu) {}
+                try {
+                    document.addEventListener("visibilitychange", function () {
+                        // 切后台后进程可能被杀：用完整批次（预算是 800ms）而不是单批 32 个键
+                        if (document.visibilityState === "hidden") flushAll(false);
+                    });
+                } catch (eVis) {}
+                // 宿主可触发尽力物化；最终参数 true 只报告状态，不再执行磁盘 I/O。
+                window.__tyranorLocalStorageFlushAll = flushAll;
+                // 兼容入口：只刷一批，供页面内脚本使用
+                window.__tyranorLocalStorageFlush = flush;
                 window.__tyranorLocalStoragePersisted = true;
-                console.log("[nw-polyfill-v2] localStorage persisted to " + STORE_DIR);
+                window.__tyranorLocalStorageMode = "file-backed";
+                // NW 重载保持既有入口。接收已在修改返回前完成，无卸载事件导航同样可恢复。
+                try {
+                    var nwWindow = window.nw && window.nw.Window;
+                    if (nwWindow && typeof nwWindow.get === "function") {
+                        var patchReload = function (win) {
+                            if (!win || win.__tyranorReloadPatched) return win;
+                            win.__tyranorReloadPatched = true;
+                            var baseReload = win.reload;
+                            var baseReloadIgnoringCache = win.reloadIgnoringCache;
+                            win.reload = function () {
+                                try { flushAll(true); } catch (eR1) {}
+                                return typeof baseReload === "function" ? baseReload.apply(this, arguments) : undefined;
+                            };
+                            win.reloadIgnoringCache = function () {
+                                try { flushAll(true); } catch (eR2) {}
+                                return typeof baseReloadIgnoringCache === "function" ? baseReloadIgnoringCache.apply(this, arguments) : undefined;
+                            };
+                            return win;
+                        };
+                        var baseGet = nwWindow.get;
+                        nwWindow.get = function () { return patchReload(baseGet.apply(this, arguments)); };
+                        try { patchReload(baseGet.call(nwWindow)); } catch (eR3) {}
+                    }
+                } catch (eReload) {}
+
+                try {
+                    Storage.prototype.setItem = function (key, value) {
+                        var k = String(key);
+                        var text = String(value);
+                        var writes = Object.create(null);
+                        var name = fileNameFor(k);
+                        writes[name] = text;
+                        // 接收失败时抛错，镜像、索引和 native fallback 都保持原状。
+                        var code = acceptMutation({ values: writes, deletes: [] });
+                        delete unrecovered[name];
+                        ensureIndex();
+                        values[k] = text;
+                        delete removedKeys[k];
+                        delete suppressedNames[fileNameFor(k)];
+                        rememberKey(k);
+                        // 已接收且已落盘就不必再排物化；只有落盘被推迟时才留着重试
+                        if (code === 2) markDirty(k); else delete dirty[k];
+                    };
+                } catch (eSet) {}
+                try {
+                    Storage.prototype.getItem = function (key) {
+                        ensureStorageReady();
+                        try {
+                            var value = readValue(String(key));
+                            if (value !== null && value !== undefined) return value;
+                            if (removedKeys[String(key)] || storageCleared) return null;
+                        } catch (e) {
+                            if (e && e.name === "InvalidStateError") throw e;
+                        }
+                        if (nativeGet) { try { return nativeGet.call(this, key); } catch (e2) {} }
+                        return null;
+                    };
+                } catch (eGet) {}
+                try {
+                    Storage.prototype.removeItem = function (key) {
+                        var k = String(key);
+                        var name = fileNameFor(k);
+                        var code = acceptMutation({ values: {}, deletes: [name] });
+                        if (code === 2) unrecovered[name] = true; else delete unrecovered[name];
+                        ensureIndex();
+                        delete values[k];
+                        delete dirty[k];
+                        delete files[k];
+                        var at = order.indexOf(k);
+                        if (at >= 0) order.splice(at, 1);
+                        removedKeys[k] = true;
+                        // 接收时已尝试物化：文件还在就挡住读，避免旧值复活
+                        var stillThere = false;
+                        try { stillThere = realFs.existsSync(pathFor(k)); } catch (e) {}
+                        if (stillThere) suppressedNames[name] = true; else delete suppressedNames[name];
+                        if (nativeRemove) { try { nativeRemove.call(this, k); } catch (e) {} }
+                    };
+                } catch (eRemove) {}
+                try {
+                    Storage.prototype.clear = function () {
+                        // 原生在同一目录锁内把磁盘、journal 与遗留 claim 中的键一起登记删除，
+                        // 并尽力当场物化；这里只清镜像，不再逐文件过桥。
+                        acceptMutation({ clear: true });
+                        unrecovered = Object.create(null);
+                        // 接收之后的物化是尽力而为；即使二次目录读取失败，镜像也已经清空。
+                        if (flushTimer !== null) { clearTimeout(flushTimer); flushTimer = null; }
+                        values = Object.create(null);
+                        files = Object.create(null);
+                        removedKeys = Object.create(null);
+                        dirty = Object.create(null);
+                        order = [];
+                        indexLoaded = true;
+                        storageCleared = true;
+                        try {
+                            var names = [];
+                            for (var i = 0; i < names.length; i++) {
+                                var name = String(names[i]);
+                                if (!/\.dat$/.test(name)) continue;
+                                if (!realFs.flushStorageMutation(name, null)) suppressedNames[name] = true;
+                                else delete suppressedNames[name];
+                            }
+                        } catch (eMaterialize) {}
+                        try {
+                            if (nativeRemove) {
+                                for (var j = nativeStorageLength() - 1; j >= 0; j--) nativeRemove.call(this, nativeStorageKey(j));
+                            }
+                        } catch (e) {}
+                    };
+                } catch (eClear) {}
+                // 枚举与 length 最后装：即使这里失败，读写删与落盘仍然可用
+                try {
+                    Object.defineProperty(Storage.prototype, "length", {
+                        get: function () {
+                            ensureStorageReady();
+                            try { ensureIndex(); } catch (e) {}
+                            return order.length;
+                        },
+                        configurable: true
+                    });
+                } catch (eLen) {
+                    console.warn("[nw-polyfill-v2] Storage.prototype.length not overridable; length/key stay native");
+                }
+                try {
+                    Storage.prototype.key = function (index) {
+                        ensureStorageReady();
+                        try { ensureIndex(); } catch (e) {}
+                        var i = Number(index) || 0;
+                        return i >= 0 && i < order.length ? order[i] : null;
+                    };
+                } catch (eKey) {}
+
+                console.log("[nw-polyfill-v2] localStorage persisted to " + STORE_DIR +
+                    " (memory-backed, flush " + FLUSH_DELAY_MS + "ms)");
             } catch (eStorage) {
                 console.warn("[nw-polyfill-v2] localStorage persist not installed: " + (eStorage && eStorage.message));
             }
