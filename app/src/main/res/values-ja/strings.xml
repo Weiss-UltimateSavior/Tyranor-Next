@@ -950,8 +950,10 @@
     <string name="onboarding_coach_home_body">ここからお気に入りを起動し、最近開いたゲームも確認できます。</string>
     <string name="onboarding_coach_home_web_title">ウェブホームを見る</string>
     <string name="onboarding_coach_home_web_body">設定したウェブホームをここに表示します。</string>
-    <string name="onboarding_coach_games_title">ゲームを追加</string>
-    <string name="onboarding_coach_games_body">「ゲームを追加」から PC ゲームまたは Android ゲームを手動で追加できます。フォルダをスキャンするには、空のゲーム一覧の「フォルダを追加」、または設定の「ゲームフォルダを追加」を使用します。</string>
+    <string name="onboarding_coach_games_folder_title">まずフォルダーを追加</string>
+    <string name="onboarding_coach_games_folder_body">初めて使うときは「フォルダーを追加」でゲームフォルダーを追加すると、対応ゲームを自動スキャンします。</string>
+    <string name="onboarding_coach_games_title">手動追加が必要なとき</string>
+    <string name="onboarding_coach_games_body">上部のプラスは、exe を指定する PC ゲームやインストール済み Android アプリの手動追加用です。対応エンジンのゲームは「フォルダーを追加」からスキャンして登録してください。</string>
     <string name="onboarding_coach_games_search_title">ゲームを探す</string>
     <string name="onboarding_coach_games_search_body">検索欄でライブラリ内のゲームを名前から絞り込めます。</string>
     <string name="onboarding_coach_games_cover_title">カバーを補完</string>
@@ -959,9 +961,9 @@
     <string name="onboarding_coach_games_scan_title">フォルダーを再スキャン</string>
     <string name="onboarding_coach_games_scan_body">循環矢印で登録済みフォルダーを再確認します。フォルダーの追加は行いません。</string>
     <string name="onboarding_coach_engine_title">実行環境を確認</string>
-    <string name="onboarding_coach_engine_body">ここで内蔵エンジン、外部モジュール、エミュレーターを確認できます。</string>
+    <string name="onboarding_coach_engine_body">対応エンジン、外部モジュール、エミュレーターを確認できます。ゲームのエンジンが不明な場合はコミュニティに相談してください。</string>
     <string name="onboarding_coach_settings_title">設定はいつでも変更可能</string>
-    <string name="onboarding_coach_settings_body">ここでゲームフォルダーを追加し、スキャンの深さとゲームの並び順を調整できます。</string>
+    <string name="onboarding_coach_settings_body">スキャン対象フォルダーの追加・解除、スキャンの深さとゲームの並び順を調整できます。対象から外してもゲームファイルは削除されません。</string>
     <string name="webdav_title">WebDAV セーブ同期</string>
     <string name="webdav_enabled">WebDAV セーブ同期を有効化</string>
     <string name="webdav_server_url">サーバー URL</string>

@@ -44,7 +44,7 @@ import com.tyranor.next.ui.common.observeSaveSyncFeedback
 
 private fun coachPageOf(index: Int): Int = when (index) {
   CoachAnchor.HOME -> 0
-  in CoachAnchor.GAME_ADD..CoachAnchor.GAME_SCAN -> 1
+  in CoachAnchor.GAME_FOLDER..CoachAnchor.GAME_SCAN -> 1
   CoachAnchor.ENGINE -> 2
   else -> 3
 }
