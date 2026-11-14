@@ -242,20 +242,30 @@ _Avoid_: 版本列表（与弹窗条目混淆时）
 ## 封面
 
 **封面来源（Cover Source）**:
-获取封面的数据源（VNDB / 未萌NextMoe / Hikarinagi / Bangumi / Steam / Local / Custom），可自定义顺序；Hikarinagi 需 OAuth Client ID，未萌NextMoe 匿名无登录。
+获取封面的数据源（VNDB / 未萌NextMoe / Hikarinagi / Bangumi / Steam / Local / Custom），可自定义顺序与来源凭据；其中 Hikarinagi、Bangumi、未萌NextMoe 支持网页授权（Bangumi 亦支持个人访问令牌，未萌NextMoe 目录封面亦可匿名无登录读取），VNDB 支持可选个人访问令牌。
 _Avoid_: 图源、壁纸源
 
 **封面抓取（Cover Scraping）**:
-为游戏库批量或按需获取封面元数据的流程（CoverScraperService + 批量任务管理器 + 来源聚合），仅覆写 coverUri/coverSource 等封面字段。
+为游戏库批量或按需获取封面元数据的流程；以既有的手工条目绑定为先，仅在绑定缺失时以刮削结果补全。
 _Avoid_: 下载封面、封面更新
 
 **手动绑定（Bind Candidate）**:
-用户从候选封面中选择并落库单游戏封面的动作；VNDB 候选同时携带 vndbId / metadataTitle（未萌NextMoe 候选命中 VNDB ref 时同样携带）。
+用户从候选搜索结果中选择并确认某作品为游戏关联封面与远端条目的动作；按来源携带对应作品标识与元数据标题。
 _Avoid_: 选封面、替换
 
 **两级封面选择（Cover Drill-down）**:
 部分来源（未萌NextMoe）一个作品有多张封面时，先在作品候选列表选中作品、再从可获取的封面中挑选的流程；不支持该流程的来源点选候选即直接绑定。
 _Avoid_: 二段选择、多图选择
+
+## 游玩状态
+
+**条目绑定（Entry Binding）**:
+把游戏库条目关联到远端作品条目的持久化关系（覆盖 VNDB / Bangumi / Hikarinagi / 未萌NextMoe）。手工绑定由用户搜索后显式确认；批量刮削仅在对应来源尚无绑定时按首条命中自动补全。
+_Avoid_: 关联、绑定（泛指 UI 控件绑定）
+
+**游玩状态（同步）（Play Status Sync）**:
+用户手动触发的远端游玩状态操作：对 VNDB、Hikarinagi 与未萌NextMoe 支持远端状态回读与显式写入，Bangumi 为只写模型（仅显式写入、不做 GET 回读，写后乐观更新）。
+_Avoid_: 进度同步（各站均无逐章进度概念）、成就同步
 
 **封面缓存（CoverImageCache / CoverThumbnailLoader）**:
 封面缩略图的内存 + 磁盘持久化缓存与受限并发解码器；滚动感知解码配合批量回填避免滑动卡顿。

@@ -85,7 +85,7 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 - 规则：可以依赖 `engine` 模块；不得依赖 Compose（含 `androidx.compose.ui/foundation/material*` UI 组件，以及 `androidx.compose.runtime` 的状态原语与 `@Immutable` 注解）；不得把页面类作为普通业务依赖。
   全局可观察状态一律用 `kotlinx.coroutines.flow`（`StateFlow`）或纯数据载荷（`ThemeColorPayload` 模式）由 UI 层 `collectAsState` 订阅。
 
-- 新增功能按域放入 `core/game`、`core/engine`、`core/cover`、`core/patch`、`core/unpack`、`core/settings`、`core/auth`、`core/updater`、`core/process` 等包；其中 `core/engine/runtime` 承载第三方 APK 运行时模块，`core/game/playtime` 采集游戏时长，`core/game/save/sync` 管理 WebDAV 存档同步。
+- 新增功能按域放入 `core/game`、`core/engine`、`core/cover`、`core/patch`、`core/unpack`、`core/settings`、`core/auth`、`core/status`、`core/updater`、`core/process` 等包；其中 `core/engine/runtime` 承载第三方 APK 运行时模块，`core/game/playtime` 采集游戏时长，`core/game/save/sync` 管理 WebDAV 存档同步；`core/net` 为各业务域共用的中性 HTTP/JSON 帮助层，不得依赖任何业务域包（auth/cover/status 等仅可单向引用）。
 
 ### 3. 界面 UI 交互层
 
@@ -133,7 +133,9 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 - 新增错误分支时优先扩展已有 sealed 类型/错误码枚举，不新增并行协议。
 - 取消（`CancellationException`）不属于失败，必须原样向上传播。
 
-存量偏差：`HikarinagiAuthService` 和 `KrkrOnlinePatchService` 仍有本地化字符串载荷。上述协议是新增/改动代码的约束，并非全仓已完成迁移；修改相关接口时连同 UI 映射和调用方一起对齐，不新增并行错误风格。
+存量偏差：`GameSaveManager.SaveLocation.description` 和 `KrkrOnlinePatchService` 仍有本地化字符串载荷。上述协议是新增/改动代码的约束，并非全仓已完成迁移；修改相关接口时连同 UI 映射和调用方一起对齐，不新增并行错误风格。
+
+游玩状态错误词表 `play_error_*`（`core/status/PlayStatusErrors.kt`）为 status 域文案，授权域 UI（设置页摘要/凭据弹窗兜底）按语义借用为既有约定，不为授权域另设同义键（对照 PlayStatusErrors.kt KDoc 同款注记）。
 
 ***
 
@@ -328,7 +330,7 @@ Column(fillMaxSize)                                // 页面根
 
 - **禁止**使用 `bodySmall` / `bodyLarge` / `labelMedium` / `labelLarge` / `headlineMedium` / `headlineSmall` 等其它排版尺寸。
 
-- 存量组件例外：`AppNavItem` 内部摘要当前使用 `bodySmall`，仅限该共享组件既有实现；页面不得据此新增第三档字号。
+- 存量组件例外：`AppNavItem` 内部摘要及其行尾 `trailingText` 当前使用 `bodySmall`，仅限该共享组件既有实现；页面不得据此新增第三档字号。
 
 - Miuix preference 组件标题默认用 `headline1`(17sp)，已在 `MiuixSettingsTheme` 中全局覆盖为 15sp（`defaultTextStyles(headline1 = TextStyle(fontSize = 15.sp))`），使其严格落入两档并匹配 `titleMedium`；不要自行在单行上改字号。
 
@@ -401,6 +403,9 @@ Column(fillMaxSize)                                // 页面根
 | 名称修改        | `GameQuickActionsDialog.kt`（RenameGameDialog） | `ic_sheet_rename` | Done，内容有效即保存 |
 | WebDAV 地址/用户名/密码 | `WebDavSettingsActivity.kt` | 对应字段语义图标 | Done，显式 Uri/Text/Password 与身份 autofill |
 | 云端游戏标识 | `SaveVersionsPanel.kt`（身份编辑） | `ic_sheet_rename` | Done，内容有效即保存 |
+| 条目绑定搜索 | `PlayStatusDialog.kt`（SubjectBindDialog） | `ic_game_search` | `search()` 网络请求 |
+| VNDB token 粘贴 | `CredentialTokenDialog.kt`（VndbTokenDialog，入口在 `CoverScraperSettingsActivity.kt`） | `ic_cover_source` | Done；Password 掩码 + Password 键盘与 autofill 身份 |
+| Bangumi 个人令牌粘贴 | `CredentialTokenDialog.kt`（BangumiTokenDialog，入口在 `CoverScraperSettingsActivity.kt`） | `ic_cover_source` | Done；Password 掩码 + Password 键盘与 autofill 身份 |
 | 图形倍率 | `GraphicsNodeParameters.kt` | `ic_graphics_parameters` | Done，Decimal 键盘 |
 | 输入目录 | `SettingsScreen.kt`（路径弹窗） | `ic_sheet_folder` | Done，内容有效即保存 |
 | 目录/方案名称/端口/自定义 URL | `SettingsScreen.kt`（通用文本弹窗）、`PerGameSettingsScreen.kt`（`OverrideText`）、`InputSettingsScreen.kt`、`AppSettingsActivity.kt` | 当前为 `ic_sheet_rename` | Done；URL 为 Uri，端口为 Number |
@@ -729,7 +734,7 @@ Room schema 变更须提交 `app/schemas/` 并添加显式 `Migration`；仅既�
 
 Windows PowerShell 使用 `./gradlew.bat`；Linux/macOS 使用 `./gradlew`。Python、Node、Rust 按相关任务安装；普通 Gradle 构建不运行 Rust 重编。执行 `check` 时仅在明确缺 Node 的场景可用 `-PskipJsHarness` 跳过，并在验证记录中说明。
 
-`HIKARINAGI_CLIENT_ID` 可由环境、`local.properties` 或 Gradle 属性提供（按此顺序取值）；它配置 OAuth 客户端，不应填写用户 token。不要提交签名密钥、认证数据或商业游戏资产。测试安装采用隔离包名 `TYRANOR_APPLICATION_ID=com.tyranor.next.ethornelltest`，避免覆盖正式安装；PowerShell 用 `$env:TYRANOR_APPLICATION_ID = 'com.tyranor.next.ethornelltest'`，操作后恢复。
+`HIKARINAGI_CLIENT_ID` 可由环境、`local.properties` 或 Gradle 属性提供（按此顺序取值）；它配置 OAuth 客户端，不应填写用户 token。`BANGUMI_CLIENT_ID` / `BANGUMI_CLIENT_SECRET` 同理（Bangumi OAuth 令牌交换必须携带 client_secret，经 BuildConfig 注入、不入库；第三方使用者需在 bgm.tv/dev/app 自行注册，**应用回调地址必须登记为 `tyranornext://oauth/bangumi`**——授权为浏览器一次性网页流程，授权后浏览器跳转该 scheme，由 AppAuth 的 `RedirectUriReceiverActivity`（exported）接收并转发至应用内回调 Activity（exported=false）完成校验；不注册应用的用户可在应用内粘贴个人访问令牌，next.bgm.tv/demo/access-token 生成、无需应用凭据）。`NEXTMOE_CLIENT_ID` 同理（未萌 NextMoe 为 Public Client + 强制 PKCE S256，不携带 client_secret；NextMoe 禁止自定义 scheme 与 `localhost`，在开发者控制台「用户登录」卡片开启后将回调地址登记为 **`http://127.0.0.1/callback`**，scope 勾选 `openid`、`profile`、`catalog:read`，应用运行期监听 `127.0.0.1:0` 临时环回端口接收回调并换码）。不要提交签名密钥、认证数据或商业游戏资产。测试安装采用隔离包名 `TYRANOR_APPLICATION_ID=com.tyranor.next.ethornelltest`，避免覆盖正式安装；PowerShell 用 `$env:TYRANOR_APPLICATION_ID = 'com.tyranor.next.ethornelltest'`，操作后恢复。`TYRANOR_APP_LABEL` 可按同一来源（环境/local.properties/Gradle 属性）注入 launcher 应用名占位符，默认回落 `@string/app_name`（见 `app/build.gradle.kts` 的 `launcherLabel`）。
 
 - 发版规则（issue #79）：只修改 `app/build.gradle.kts` 的 `appVersionName`；`versionCode` 由 `versionCodeOf()` 自动推导
   （`major*1_000_000 + minor*1_000 + patch`，minor/patch 必须 < 1000），禁止手写或回退 `versionCode`。

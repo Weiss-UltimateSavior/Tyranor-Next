@@ -132,7 +132,7 @@ CI 使用 JDK 17；还需 engine 的 Android 36 平台、Build Tools 37.0.0、ND
 ```
 app/
 ├── src/main/java/com/tyranor/next/
-│   ├── core/      功能抽象层：扫描、启动、引擎模块、封面、存档、补丁、拆封包、配置、授权、更新
+│   ├── core/      功能抽象层：扫描、启动、引擎模块、封面、游玩状态、存档、补丁、拆封包、配置、授权、网络（各域共享 HTTP 层）、更新
 │   ├── ui/        界面 UI 交互层：主界面、游戏页、设置页、弹窗、公共组件
 │   └── theme/     Compose / Miuix 主题、色调、深浅色适配
 ├── src/main/assets/rtp/    App 自有 RTP 资源
