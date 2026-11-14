@@ -3,7 +3,12 @@ package com.tyranor.next.core.cover
 import android.content.Context
 import android.net.Uri
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.net.MAX_JSON_CHARS
+import com.tyranor.next.core.net.RequestThrottle
+import com.tyranor.next.core.net.optNonBlankString
+import com.tyranor.next.core.net.readTextCapped
 import com.tyranor.next.core.settings.AppSettingsStore
+import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -28,8 +33,12 @@ object VndbCoverService {
     private const val ENDPOINT = "https://api.vndb.org/kana/vn"
     private const val FIELDS =
         "title,alttitle,titles.lang,titles.title,titles.latin,titles.official,titles.main,released,image.url,image.thumbnail,developers.name,developers.original"
-    /** 限流：与未萌 NextMoe 共用 RequestThrottle（都属「单机串行 + 服务端限流」来源）。 */
-    private val throttle = RequestThrottle(1100L)
+    /**
+     * 限流：与未萌 NextMoe 共用 RequestThrottle（都属「单机串行 + 服务端限流」来源）。
+     * internal：api.vndb.org 的全部请求（含游玩状态的 ulist 读写）共用这一条串行队列，
+     * 避免两套节流叠加超出 VNDB「200 请求/5 分钟」的软上限。
+     */
+    internal val throttle = RequestThrottle(1550L)
 
     fun fetchBestCover(context: Context, game: ScanGame): ScanGame? {
         if (!game.coverUri.isNullOrBlank()) return game
@@ -43,25 +52,10 @@ object VndbCoverService {
         return game.copy(
             coverUri = cover,
             coverSource = AppSettingsStore.COVER_SOURCE_VNDB,
-            // 空串不得覆盖库中已有元数据（异常响应可能给出空 id/标题）
-            vndbId = candidate.id.takeIf { it.isNotBlank() } ?: game.vndbId,
-            metadataTitle = candidate.displayTitle().takeIf { it.isNotBlank() } ?: game.metadataTitle,
-        )
-    }
-
-    fun bindCandidate(context: Context, game: ScanGame, candidate: VndbCandidate): ScanGame? {
-        val cover = CoverImageCache.download(
-            context,
-            candidate.coverUrl,
-            "vndb_${stableKey(game.uri)}",
-            source = AppSettingsStore.COVER_SOURCE_VNDB,
-        ) ?: return null
-        CoverImageCache.deleteCachedCover(context, game.coverUri, exceptUri = cover)
-        return game.copy(
-            coverUri = cover,
-            coverSource = AppSettingsStore.COVER_SOURCE_VNDB,
-            vndbId = candidate.id.takeIf { it.isNotBlank() } ?: game.vndbId,
-            metadataTitle = candidate.displayTitle().takeIf { it.isNotBlank() } ?: game.metadataTitle,
+            // 已有绑定优先：搜索首条命中可能与手工绑定不是同一条目，覆盖会让状态写入打到错误条目
+            vndbId = game.vndbId?.takeIf { it.isNotBlank() } ?: candidate.id.takeIf { it.isNotBlank() },
+            metadataTitle = game.metadataTitle?.takeIf { it.isNotBlank() }
+                ?: candidate.displayTitle().takeIf { it.isNotBlank() },
         )
     }
 
@@ -114,7 +108,9 @@ object VndbCoverService {
             }
             conn.outputStream.use { it.write(body.toString().toByteArray(StandardCharsets.UTF_8)) }
             if (conn.responseCode !in 200..299) throw CoverSearchException(CoverErrorCode.VNDB_NETWORK)
-            val text = conn.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+            // 与 httpJson 的 readTextCapped 同上限（BK-22）：超大响应触顶抛 IllegalStateException
+            // → 下方既有泛 catch → CoverSearchException(VNDB_NETWORK)，无新失败形态
+            val text = conn.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readTextCapped(MAX_JSON_CHARS) }
             val results = JSONObject(text).optJSONArray("results") ?: return emptyList()
             val preferLarge = AppSettingsStore.isVndbLargeCover(context)
             buildList {
@@ -123,6 +119,8 @@ object VndbCoverService {
                 }
             }
         } catch (e: CoverSearchException) {
+            throw e
+        } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
             throw CoverSearchException(CoverErrorCode.VNDB_NETWORK)
@@ -133,12 +131,12 @@ object VndbCoverService {
 
     private fun parseCandidate(o: JSONObject, preferLarge: Boolean): VndbCandidate {
         var chineseTitle = ""
-        var originalTitle = o.optString("alttitle", "")
+        var originalTitle = o.optNonBlankString("alttitle").orEmpty()
         o.optJSONArray("titles")?.let { titles ->
             for (i in 0 until titles.length()) {
                 val t = titles.optJSONObject(i) ?: continue
-                val lang = t.optString("lang", "")
-                val title = t.optString("title", "")
+                val lang = t.optNonBlankString("lang").orEmpty()
+                val title = t.optNonBlankString("title").orEmpty()
                 if ((lang == "zh-Hans" || lang == "zh-Hant" || lang == "zh") && chineseTitle.isEmpty()) {
                     chineseTitle = title
                 }
@@ -148,25 +146,26 @@ object VndbCoverService {
         val image = o.optJSONObject("image")
         // image.url 为原图（实测 v17 1080×1529），image.thumbnail 仅 256×362；
         // 大图开关关闭时沿用缩略图，避免额外流量。
-        val largeUrl = image?.optString("url", "").orEmpty()
-        val thumbnailUrl = firstNonEmpty(image?.optString("thumbnail", ""), largeUrl)
+        val largeUrl = image?.optNonBlankString("url").orEmpty()
+        val thumbnailUrl = firstNonEmpty(image?.optNonBlankString("thumbnail"), largeUrl)
         val devs = o.optJSONArray("developers")
         val developers = buildList {
             if (devs != null) {
                 for (i in 0 until devs.length()) {
                     if (size >= 3) break
                     val d = devs.optJSONObject(i) ?: continue
-                    val name = firstNonEmpty(d.optString("original", ""), d.optString("name", ""))
+                    val name = firstNonEmpty(d.optNonBlankString("original"), d.optNonBlankString("name"))
                     if (name.isNotBlank()) add(name)
                 }
             }
         }.joinToString(" / ")
+        val fallbackTitle = o.optNonBlankString("title")
         return VndbCandidate(
-            id = o.optString("id", ""),
-            title = firstNonEmpty(chineseTitle, o.optString("title", "")),
-            originalTitle = firstNonEmpty(originalTitle, o.optString("title", "")),
+            id = o.optNonBlankString("id").orEmpty(),
+            title = firstNonEmpty(chineseTitle, fallbackTitle),
+            originalTitle = firstNonEmpty(originalTitle, fallbackTitle),
             developer = developers,
-            released = o.optString("released", ""),
+            released = o.optNonBlankString("released").orEmpty(),
             coverUrl = if (preferLarge) firstNonEmpty(largeUrl, thumbnailUrl) else thumbnailUrl,
             thumbnailUrl = thumbnailUrl,
         )

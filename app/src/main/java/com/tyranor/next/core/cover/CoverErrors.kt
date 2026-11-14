@@ -16,6 +16,9 @@ enum class CoverErrorCode {
     /** 未预期失败的兜底（底层异常 message 只作日志线索）。 */
     UNKNOWN,
 
+    /** Hikarinagi 尚未授权（需在封面刮削设置中登录）。 */
+    HIKARINAGI_AUTH_MISSING,
+
     /** Hikarinagi 授权已失效，需要重新登录。 */
     HIKARINAGI_AUTH_EXPIRED,
 

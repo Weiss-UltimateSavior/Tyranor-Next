@@ -3,14 +3,18 @@ package com.tyranor.next.core.cover
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import com.tyranor.next.core.auth.HikarinagiAccessTokenResult
+import com.tyranor.next.core.auth.HikarinagiAuthError
 import com.tyranor.next.core.auth.HikarinagiAuthService
+import com.tyranor.next.core.auth.HikarinagiAuthStore
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.scan.EngineScanner
+import com.tyranor.next.core.net.httpJson
+import com.tyranor.next.core.net.httpJsonResult
+import com.tyranor.next.core.net.urlEncode
 import com.tyranor.next.core.settings.AppSettingsStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
-import org.json.JSONArray
-import org.json.JSONObject
 import kotlin.coroutines.coroutineContext
 
 data class CoverScrapeResult(
@@ -33,6 +37,12 @@ data class CoverSearchCandidate(
     val downloadUrl: String? = null,
     /** VNDB 候选携带的元数据（绑定后可写入游戏库）；带 `vndb:v…` ref 的未萌 NextMoe 候选同样携带。 */
     val vndbId: String? = null,
+    /** Bangumi 候选携带的条目 id（绑定后可写入游戏库）。 */
+    val bangumiId: String? = null,
+    /** Hikarinagi 候选携带的条目 id（绑定后可写入游戏库）。 */
+    val hikarinagiId: String? = null,
+    /** 未萌 NextMoe 候选携带的作品 id（catalog work id，绑定后可写入游戏库）。 */
+    val nextmoeId: String? = null,
     val metadataTitle: String? = null,
 )
 
@@ -87,9 +97,11 @@ object CoverScraperService {
                     resolved
                 }
             }
-            // 封面或 VNDB 元数据任一变化都要回调持久化（仅元数据变化时封面 URI 可能不变）
+            // 封面或 VNDB/Bangumi/Hikarinagi/NextMoe 元数据任一变化都要回调持久化（仅元数据变化时封面 URI 可能不变）
             if (updated.coverUri != game.coverUri || updated.coverSource != game.coverSource ||
-                updated.vndbId != game.vndbId || updated.metadataTitle != game.metadataTitle
+                updated.vndbId != game.vndbId || updated.bangumiId != game.bangumiId ||
+                updated.hikarinagiId != game.hikarinagiId || updated.nextmoeId != game.nextmoeId ||
+                updated.metadataTitle != game.metadataTitle
             ) {
                 onCoverUpdated(game, updated)
             }
@@ -151,7 +163,7 @@ object CoverScraperService {
             return CoverSearchResult.Failure(CoverErrorCode.SOURCE_DISABLED)
         }
         if (!supportsCoverDrillDown(source)) return CoverSearchResult.Success(emptyList())
-        return runCatchingCancellable { searchWorkCoversWithSource(source, work, limit) }
+        return runCatchingCancellable { searchWorkCoversWithSource(context, source, work, limit) }
             .fold(
                 onSuccess = { CoverSearchResult.Success(it) },
                 onFailure = { failure -> CoverSearchResult.Failure(failure.toCoverErrorCode()) },
@@ -159,12 +171,35 @@ object CoverScraperService {
     }
 
     private fun searchWorkCoversWithSource(
+        context: Context,
         source: String,
         work: CoverSearchCandidate,
         limit: Int,
     ): List<CoverSearchCandidate> = when (source) {
-        AppSettingsStore.COVER_SOURCE_NEXTMOE -> NextMoeCoverService.listCovers(work, limit)
+        AppSettingsStore.COVER_SOURCE_NEXTMOE -> NextMoeCoverService.listCovers(work, limit, context)
         else -> emptyList()
+    }
+
+    /**
+     * 条目绑定搜索（游玩状态）：接受 VNDB/Bangumi/Hikarinagi/NextMoe 可绑定来源，与封面搜索共用候选
+     * 清洗/映射，但不校验封面来源启用开关（绑定能力独立于封面刮削开关）。失败抛出
+     * [CoverSearchException]，由 [PlayStatusService.searchBindingCandidates] 收敛为错误码。
+     */
+    fun searchCandidatesForBinding(
+        context: Context,
+        source: String,
+        keyword: String,
+        limit: Int,
+    ): List<CoverSearchCandidate> {
+        require(
+            source == AppSettingsStore.COVER_SOURCE_VNDB ||
+                source == AppSettingsStore.COVER_SOURCE_BANGUMI ||
+                source == AppSettingsStore.COVER_SOURCE_HIKARINAGI ||
+                source == AppSettingsStore.COVER_SOURCE_NEXTMOE,
+        ) {
+            "unsupported binding source: $source"
+        }
+        return searchWithSource(context, source, keyword, limit, requireCover = false)
     }
 
     /** 该来源是否支持「作品 → 多封面」的两级选择。 */
@@ -191,8 +226,11 @@ object CoverScraperService {
             game.copy(
                 coverUri = it,
                 coverSource = candidate.source,
-                // 携带 vndbId 的来源（VNDB、命中所属作品的 NextMoe）同时落库元数据；其余来源保留原值
+                // 携带绑定 id 的来源（VNDB、Bangumi、Hikarinagi、NextMoe）同时落库元数据；其余来源保留原值
                 vndbId = candidate.vndbId ?: game.vndbId,
+                bangumiId = candidate.bangumiId ?: game.bangumiId,
+                hikarinagiId = candidate.hikarinagiId ?: game.hikarinagiId,
+                nextmoeId = candidate.nextmoeId ?: game.nextmoeId,
                 metadataTitle = candidate.metadataTitle ?: game.metadataTitle,
             )
         }
@@ -201,7 +239,7 @@ object CoverScraperService {
     private fun scrapeWithSource(context: Context, game: ScanGame, source: String): ScanGame? =
         when (source) {
             AppSettingsStore.COVER_SOURCE_HIKARINAGI -> HikarinagiCoverSource.fetchBestCover(context, game)
-            AppSettingsStore.COVER_SOURCE_BANGUMI -> BangumiCoverSource.fetchBestCover(context, game)
+            AppSettingsStore.COVER_SOURCE_BANGUMI -> BangumiCoverService.fetchBestCover(context, game)
             AppSettingsStore.COVER_SOURCE_STEAM -> SteamCoverSource.fetchBestCover(context, game)
             AppSettingsStore.COVER_SOURCE_VNDB -> VndbCoverService.fetchBestCover(context, game)
             AppSettingsStore.COVER_SOURCE_NEXTMOE -> NextMoeCoverService.fetchBestCover(context, game)
@@ -214,10 +252,13 @@ object CoverScraperService {
         keyword: String,
         limit: Int,
         vndbId: String? = null,
+        requireCover: Boolean = true,
     ): List<CoverSearchCandidate> =
         when (source) {
-            AppSettingsStore.COVER_SOURCE_HIKARINAGI -> HikarinagiCoverSource.searchCandidates(context, keyword, limit)
-            AppSettingsStore.COVER_SOURCE_BANGUMI -> BangumiCoverSource.searchCandidates(keyword, limit)
+            AppSettingsStore.COVER_SOURCE_HIKARINAGI -> HikarinagiCoverSource.searchCandidates(context, keyword, limit, requireCover)
+            // 条目绑定搜索（requireCover=false）下 Bangumi 不丢弃无封面条目：绑定只消费
+            // 条目 id 与标题（与 Hikarinagi 分支的 requireCover 透传一致）
+            AppSettingsStore.COVER_SOURCE_BANGUMI -> BangumiCoverService.searchCandidates(keyword, limit, requireCover)
             AppSettingsStore.COVER_SOURCE_STEAM -> SteamCoverSource.searchCandidates(keyword, limit)
             AppSettingsStore.COVER_SOURCE_VNDB -> VndbCoverService.searchCandidates(context, keyword, limit).map {
                 CoverSearchCandidate(
@@ -233,10 +274,20 @@ object CoverScraperService {
                     metadataTitle = it.title.ifBlank { it.originalTitle }.trim().ifBlank { null },
                 )
             }
-            AppSettingsStore.COVER_SOURCE_NEXTMOE -> NextMoeCoverService.searchCandidates(keyword, vndbId, limit)
+            AppSettingsStore.COVER_SOURCE_NEXTMOE -> NextMoeCoverService.searchCandidates(keyword, vndbId, limit, context)
             else -> emptyList()
         }
 
+    internal fun hikarinagiTokenFailureToCoverError(
+        result: HikarinagiAccessTokenResult,
+        needsReauth: Boolean,
+    ): CoverErrorCode = when (result) {
+        is HikarinagiAccessTokenResult.Success ->
+            error("Success has no CoverErrorCode")
+        HikarinagiAccessTokenResult.ConfigMissing -> CoverErrorCode.HIKARINAGI_AUTH_EXPIRED
+        HikarinagiAccessTokenResult.RefreshFailed ->
+            if (needsReauth) CoverErrorCode.HIKARINAGI_AUTH_EXPIRED else CoverErrorCode.HIKARINAGI_NETWORK
+    }
 }
 
 private object HikarinagiCoverSource {
@@ -248,7 +299,7 @@ private object HikarinagiCoverSource {
         val query = cleanTitle(game.title)
         if (query.isBlank()) return null
 
-        val candidate = searchRawCandidates(token, query, 5)
+        val candidate = searchRawCandidates(context, token, query, 5, requireCover = true)
             .maxByOrNull { it.score }
             ?: return null
 
@@ -262,31 +313,69 @@ private object HikarinagiCoverSource {
         return game.copy(
             coverUri = cover,
             coverSource = AppSettingsStore.COVER_SOURCE_HIKARINAGI,
+            // 已有绑定优先：搜索首条命中可能与手工绑定不是同一条目，覆盖会让状态写入打到错误条目
+            hikarinagiId = game.hikarinagiId?.takeIf { it.isNotBlank() } ?: candidate.id.takeIf { it.isNotBlank() },
+            metadataTitle = game.metadataTitle?.takeIf { it.isNotBlank() }
+                ?: candidate.title.trim().ifBlank { null },
         )
     }
 
-    fun searchCandidates(context: Context, keyword: String, limit: Int): List<CoverSearchCandidate> {
-        val token = HikarinagiAuthService.getValidAccessToken(context)
-            ?: throw CoverSearchException(CoverErrorCode.HIKARINAGI_AUTH_EXPIRED)
+    fun searchCandidates(
+        context: Context,
+        keyword: String,
+        limit: Int,
+        requireCover: Boolean = true,
+    ): List<CoverSearchCandidate> {
+        if (!HikarinagiAuthStore.getStatus(context).authorized) {
+            throw CoverSearchException(CoverErrorCode.HIKARINAGI_AUTH_MISSING)
+        }
+        val token = when (val tokenResult = HikarinagiAuthService.getValidAccessTokenResult(context)) {
+            is HikarinagiAccessTokenResult.Success -> tokenResult.accessToken
+            else -> throw CoverSearchException(
+                CoverScraperService.hikarinagiTokenFailureToCoverError(
+                    tokenResult,
+                    needsReauth = HikarinagiAuthStore.getStatus(context).needsReauth,
+                ),
+            )
+        }
         val query = cleanTitle(keyword)
         if (query.isBlank()) return emptyList()
-        return searchRawCandidates(token, query, limit).map {
+        return searchRawCandidates(context, token, query, limit, requireCover = requireCover).map {
             CoverSearchCandidate(
                 source = AppSettingsStore.COVER_SOURCE_HIKARINAGI,
                 id = it.id,
                 title = it.title,
-                subtitle = "",
+                subtitle = firstNonEmpty(it.developer, it.subtitle),
                 // 票数由 UI 依据 score 渲染（见 CoverCandidateOverlay），core 不组装本地化文案
-                detail = detailText("Hikarinagi", it.id),
+                detail = detailText("Hikarinagi", it.id, it.subtitle, it.developer),
                 score = it.score,
                 coverUrl = it.coverUrl,
+                hikarinagiId = it.id.takeIf { id -> id.isNotBlank() },
+                metadataTitle = it.title.trim().ifBlank { null },
             )
         }
     }
 
-    private fun searchRawCandidates(token: String, query: String, limit: Int): List<CoverCandidate> {
+    private fun searchRawCandidates(
+        context: Context,
+        token: String,
+        query: String,
+        limit: Int,
+        requireCover: Boolean,
+    ): List<CoverCandidate> {
         val url = "$SEARCH_URL?q=${query.urlEncode()}&types=galgame&page=1&page_size=${limit.coerceIn(1, 10)}"
-        val json = httpJson(url, headers = mapOf("Authorization" to "Bearer $token"))
+        val result = httpJsonResult(url, headers = mapOf("Authorization" to "Bearer $token"))
+        if (result.status == 401) {
+            // 令牌失效与权限缺失分位：401 = 令牌被服务端明确拒绝，属令牌失效语义，在发起请求时
+            // 所持令牌尚未被并发刷新/重登替换的前提下置位 needsReauth；权限缺失（403）不在
+            // 搜索路径置位，与游玩状态读路径的独立 permission_error 位互不影响
+            HikarinagiAuthStore.markNeedsReauthIfAccessTokenMatches(context, token, HikarinagiAuthError.EXPIRED.name)
+            throw CoverSearchException(CoverErrorCode.HIKARINAGI_AUTH_EXPIRED)
+        }
+        if (result.status == 429) {
+            throw CoverSearchException(CoverErrorCode.HIKARINAGI_RETRY)
+        }
+        val json = result.json?.takeIf { result.status in 200..299 }
             ?: throw CoverSearchException(CoverErrorCode.HIKARINAGI_NETWORK)
         if (!json.optBoolean("success", false)) throw CoverSearchException(CoverErrorCode.HIKARINAGI_RETRY)
         val items = json.optJSONObject("data")?.optJSONArray("items") ?: return emptyList()
@@ -294,14 +383,20 @@ private object HikarinagiCoverSource {
             .mapNotNull { items.optJSONObject(it) }
             .filter { it.optString("type") == "galgame" }
             .mapNotNull { item ->
-                val cover = item.optJSONObject("cover") ?: return@mapNotNull null
-                val coverUrl = resolveHikarinagiImageUrl(cover.optString("url", ""))
-                if (coverUrl.isBlank()) return@mapNotNull null
+                val id = if (item.isNull("id")) "" else item.optString("id", "").trim()
+                if (id.isBlank()) return@mapNotNull null
+                val cover = item.optJSONObject("cover")
+                val coverUrl = cover?.let { resolveHikarinagiImageUrl(it.optString("url", "")) }.orEmpty()
+                if (requireCover && coverUrl.isBlank()) return@mapNotNull null
+                val subtitle = if (item.isNull("subtitle")) "" else item.optString("subtitle", "").trim()
+                val developer = if (item.isNull("developer")) "" else item.optString("developer", "").trim()
                 CoverCandidate(
-                    id = item.optString("id", ""),
-                    title = firstNonEmpty(item.optString("title", ""), item.optString("subtitle", "")),
+                    id = id,
+                    title = firstNonEmpty(item.optString("title", ""), subtitle),
+                    subtitle = subtitle,
+                    developer = developer,
                     coverUrl = coverUrl,
-                    score = cover.optInt("votes", 0),
+                    score = cover?.optInt("votes", 0) ?: 0,
                 )
             }
             .toList()
@@ -313,60 +408,6 @@ private object HikarinagiCoverSource {
         val parsed = runCatching { Uri.parse(value) }.getOrNull() ?: return ""
         if (parsed.isAbsolute) return parsed.toString()
         return Uri.parse(IMAGE_BASE_URL).buildUpon().appendEncodedPath(value.trimStart('/')).build().toString()
-    }
-}
-
-private object BangumiCoverSource {
-    private const val SEARCH_URL = "https://api.bgm.tv/v0/search/subjects"
-
-    fun fetchBestCover(context: Context, game: ScanGame): ScanGame? {
-        val query = cleanTitle(game.title)
-        if (query.isBlank()) return null
-        val candidate = searchCandidates(query, 1).firstOrNull() ?: return null
-        val cover = CoverImageCache.download(context, candidate.coverUrl, "bangumi_${stableKey(game.uri)}", source = AppSettingsStore.COVER_SOURCE_BANGUMI)
-            ?: return null
-        return game.copy(
-            coverUri = cover,
-            coverSource = AppSettingsStore.COVER_SOURCE_BANGUMI,
-        )
-    }
-
-    fun searchCandidates(keyword: String, limit: Int): List<CoverSearchCandidate> {
-        val query = cleanTitle(keyword)
-        if (query.isBlank()) return emptyList()
-        val body = JSONObject()
-            .put("keyword", query)
-            .put("sort", "rank")
-            .put(
-                "filter",
-                JSONObject()
-                    .put("type", JSONArray().put(4))
-                    .put("nsfw", true),
-            )
-            .toString()
-        val url = "$SEARCH_URL?limit=${limit.coerceIn(1, 10)}&offset=0"
-        val json = httpJson(url, method = "POST", body = body)
-            ?: throw CoverSearchException(CoverErrorCode.BANGUMI_NETWORK)
-        val data = json.optJSONArray("data") ?: return emptyList()
-        return (0 until data.length()).asSequence()
-            .mapNotNull { data.optJSONObject(it) }
-            .filter { it.optInt("type") == 4 }
-            .mapNotNull { item ->
-                val images = item.optJSONObject("images") ?: return@mapNotNull null
-                val coverUrl = firstNonEmpty(images.optString("large", ""), images.optString("common", ""))
-                if (coverUrl.isBlank()) return@mapNotNull null
-                val name = item.optString("name", "")
-                val nameCn = item.optString("name_cn", "")
-                CoverSearchCandidate(
-                    source = AppSettingsStore.COVER_SOURCE_BANGUMI,
-                    id = item.optString("id", ""),
-                    title = firstNonEmpty(nameCn, name),
-                    subtitle = name,
-                    detail = detailText("Bangumi", item.optString("id", ""), item.optString("date", "")),
-                    coverUrl = coverUrl,
-                )
-            }
-            .toList()
     }
 }
 
@@ -426,6 +467,8 @@ private object SteamCoverSource {
 private data class CoverCandidate(
     val id: String,
     val title: String,
+    val subtitle: String,
+    val developer: String,
     val coverUrl: String,
     val score: Int,
 )
@@ -460,11 +503,16 @@ private fun Throwable.toCoverErrorCode(): CoverErrorCode {
 internal fun keepsLocalCover(onlyMissing: Boolean, localCoverUri: String?): Boolean =
     onlyMissing && !localCoverUri.isNullOrBlank()
 
-private fun ScanGame.asCoverOnlyUpdateFrom(base: ScanGame): ScanGame =
+/** 批量刮削单游戏结果（纯函数，JVM 可测）：已有绑定优先，仅在为空时以刮削命中填充。 */
+internal fun ScanGame.asCoverOnlyUpdateFrom(base: ScanGame): ScanGame =
     base.copy(
         coverUri = coverUri,
         coverSource = coverSource,
-        // 批量刮削：来源带出的 VNDB 元数据必须随封面一起保留（非空才覆盖，避免清掉已有值）
-        vndbId = vndbId?.takeIf { it.isNotBlank() } ?: base.vndbId,
-        metadataTitle = metadataTitle?.takeIf { it.isNotBlank() } ?: base.metadataTitle,
+        // 已有绑定优先：刮削命中可能与手工绑定不是同一条目，覆盖会让状态写入打到错误条目
+        vndbId = base.vndbId?.takeIf { it.isNotBlank() } ?: vndbId?.takeIf { it.isNotBlank() },
+        bangumiId = base.bangumiId?.takeIf { it.isNotBlank() } ?: bangumiId?.takeIf { it.isNotBlank() },
+        hikarinagiId = base.hikarinagiId?.takeIf { it.isNotBlank() } ?: hikarinagiId?.takeIf { it.isNotBlank() },
+        nextmoeId = base.nextmoeId?.takeIf { it.isNotBlank() } ?: nextmoeId?.takeIf { it.isNotBlank() },
+        metadataTitle = base.metadataTitle?.takeIf { it.isNotBlank() }
+            ?: metadataTitle?.takeIf { it.isNotBlank() },
     )
