@@ -51,6 +51,15 @@ class DissolveState {
         progress.animateTo(REMOVE_AT, tween(DISSOLVE_MILLIS, easing = LinearEasing))
     }
 
+    /**
+     * 退出「已删除」状态：恢复触摸并把形变收回。删除成功时卡片早已离开组合，这只是对象上的空操作；
+     * 但删除失败被回滚（同一个游戏又回到库里）时，退场中的卡片可能还留在组合里，不放回来就会一直吞触摸、停在半消散的样子。
+     */
+    suspend fun release() {
+        if (!running) return
+        running = false
+        progress.animateTo(0f, tween(RELEASE_MILLIS, easing = LinearEasing))
+    }
 }
 
 /** 游戏库里正在播放删除消散的游戏（uri → 状态）；卡片按自己的 uri 查找，不必逐层传参。 */
@@ -139,6 +148,7 @@ private fun fract(x: Float): Float = x - kotlin.math.floor(x)
 
 private const val DISSOLVE_MILLIS = 260
 private const val REMOVE_AT = 0.55f
+private const val RELEASE_MILLIS = 240
 private const val SHAKE_END = 0.2f
 private const val SHAKE_FREQ = 95f
 private const val FADE_START = 0.28f
