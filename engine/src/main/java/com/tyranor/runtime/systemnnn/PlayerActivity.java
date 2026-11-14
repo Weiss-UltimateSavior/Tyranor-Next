@@ -348,6 +348,24 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         runOnUiThread(()->applyFrame(frame,initialVisible));
     }
     @Override public void planeChanged(){runOnUiThread(storyPlane::onTokenAvailable);}
+    @Override public void nativePanelMenu(GameRunner owner,GameRunner.Frame frame,int mode){runOnUiThread(()->{
+        if(owner!=runner||currentFrame!=frame||isDestroyed()||isFinishing())return;
+        try{
+            if(uiAssets==null)throw new IllegalStateException("Native panel menu resources are unavailable");
+            switch(mode){
+                case 5:showSlots(false);break;
+                case 6:showSlots(true);break;
+                case 12:
+                    if(!uiAssets.config.has("modename")&&!uiAssets.settingsModel(width,height).original)
+                        throw new IllegalStateException("Original configuration menu is unavailable");
+                    showSettings();break;
+                case 13:
+                    if(!uiAssets.system.has("Menu1Button1FileName"))throw new IllegalStateException("Original system menu is unavailable");
+                    showOriginalMenu();break;
+                default:throw new IllegalStateException("Unknown native panel menu request");
+            }
+        }catch(RuntimeException|OutOfMemoryError error){owner.storyPlaneFailed(frame.generation,error);}
+    });}
     private void applyFrame(GameRunner.Frame frame,int initialVisible){
         if (isDestroyed() || stage==null) return;
         if (titlePanel!=null) {stage.removeView(titlePanel); titlePanel=null; titleModel=null;}
@@ -361,6 +379,14 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             return;
         }
         modeUnderPanel=null;
+        if(frame.wait==NativeGame.NATIVE_PANEL){
+            currentFrame=frame;typing=false;fullBody="";uiHidden=false;refreshAfterLoad=false;
+            clearCtrlSkip();storyPlane.frame(null);
+            if(choices!=null){stage.removeView(choices);choices=null;}
+            dialoguePanel.setVisibility(View.GONE);
+            if(controls!=null)controls.setVisibility(View.GONE);
+            updateVisibility();updateStatus();return;
+        }
         boolean changed=refreshAfterLoad || currentFrame==null || currentFrame.wait!=frame.wait || currentFrame.line!=frame.line ||
             currentFrame.word!=frame.word || !currentFrame.script.equals(frame.script) ||
             !currentFrame.body.equals(frame.body) || !currentFrame.speaker.equals(frame.speaker) ||
@@ -511,6 +537,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }
     private void advance() {
         if(runner==null || launchingGame || panelsOpen>0)return;
+        if(nativePanelActive()){runner.nativePanelInput(currentFrame,lastX,lastY,true,false);return;}
         if(autoMode)runner.auto(false);
         if(skipMode)runner.skip(false);
         autoMode=false;skipMode=false;updateStatus();
@@ -525,7 +552,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         boolean storySession=!launchingGame&&titlePanel==null&&moviePlayback==null&&movieErrorPanel==null&&!storyMovieExitActive;
         boolean storyVisible=panelsOpen==0||gamePanel!=null&&gamePanel.awaitingCapturedBackdrop();
         boolean inGame=storySession&&storyVisible;
-        if(!storySession||currentFrame!=null&&currentFrame.wait==NativeGame.MODAL)storyPlane.frame(null);
+        if(!storySession||currentFrame!=null&&(currentFrame.wait==NativeGame.MODAL||currentFrame.wait==NativeGame.NATIVE_PANEL))storyPlane.frame(null);
         boolean hasDialogue=currentFrame!=null&&(currentFrame.showsDialogue()||
             currentFrame.wait==NativeGame.END);
         boolean hasChoices=currentFrame!=null&&currentFrame.wait==NativeGame.CHOICE;
@@ -551,11 +578,17 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             case NativeGame.DRAW:return 11;
             case NativeGame.OVERLAP:return 14;
             case NativeGame.PLACE:return currentFrame.placeMode;
+            case NativeGame.NATIVE_PANEL:return currentFrame.nativePanelMode;
             default:return 1;
         }
     }
     private void syncIndependentStatus(){
         if(runner==null||uiAssets==null||!uiAssets.statusOverlays||stage==null)return;
+        if(currentFrame!=null&&currentFrame.wait==NativeGame.NATIVE_PANEL&&gamePanel==null){
+            independentMode=0;runner.statusMode(0);
+            if(independentStatus!=null)independentStatus.setVisibility(View.GONE);
+            return;
+        }
         int mode=visiblePrintMode();
         if(mode!=independentMode){
             independentMode=mode;
@@ -959,6 +992,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private void showMenu() {
         if(runner==null){finish();return;}
         if(moviePlayback!=null||movieErrorPanel!=null||storyMovieExitActive)return;
+        if(nativePanelActive()){runner.nativePanelMenu(currentFrame,13);return;}
         boolean modalOptions=visibleModal!=null&&(visibleModal.advancedSelection()||
             visibleModal.mode==GameRunner.Modal.SELECT_CHART||visibleModal.mode==GameRunner.Modal.SELECT_PLACE2);
         if(currentFrame!=null&&currentFrame.wait==NativeGame.MODAL&&!modalOptions)return;
@@ -1341,6 +1375,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }
     private void enterStory(Bitmap previous){enterStory(previous,false);}
     private void enterStory(Bitmap previous,boolean filledChildPanel){
+        if(currentFrame!=null&&currentFrame.wait==NativeGame.NATIVE_PANEL){
+            closeOriginalPanel(false);runner.menu(false);return;
+        }
         if(currentFrame!=null&&currentFrame.wait==NativeGame.MODAL){closeOriginalPanel(false);showScriptModal(previous);return;}
         if(currentFrame!=null&&currentFrame.wait==NativeGame.PLACE){closeOriginalPanel(false);showPlace(previous);return;}
         if(previous==null||currentFrame==null){closeOriginalPanel(false);runner.menu(false);return;}
@@ -1645,6 +1682,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         Set<Integer> standardSlots=new HashSet<>();
         for(int i=0;i<keys.length;i++){
             int n=cfg.number(keys[i],i+1);if(n<=0||i==5&&choices!=null&&!choices.backlogAllowed())continue;
+            if(currentFrame!=null&&currentFrame.wait==NativeGame.NATIVE_PANEL&&(i==3||i==4||i==5||i==6))continue;
             if(currentFrame!=null&&currentFrame.placeMode!=0&&
                 (i==3||i==4||i==6||i==5&&uiAssets.place(currentFrame.placeMode).number("backLogOk",0)==0))continue;
             if(modeUnderPanel!=null&&(i==3||i==4||i==6||i==5&&modeUnderPanel.assets.config.number("backLogOk",0)==0))continue;
@@ -1654,8 +1692,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             if(i==1&&!replay)button.prepare(()->warmStoryPanel(GameStoryControlsModel.Action.LOAD));
             if(i==2)button.prepare(()->warmStoryPanel(GameStoryControlsModel.Action.CONFIG));
         }
-        panel.addExtendedModes(standardSlots,GameRunner.Modal::systemMenuMode,mode->!replay&&runner!=null&&runner.systemMenuModeEnabled(mode),
-            mode->openSystemMenuMode(panel,mode));
+        if(currentFrame==null||currentFrame.wait!=NativeGame.NATIVE_PANEL)
+            panel.addExtendedModes(standardSlots,GameRunner.Modal::systemMenuMode,mode->!replay&&runner!=null&&runner.systemMenuModeEnabled(mode),
+                mode->openSystemMenuMode(panel,mode));
         showOriginalPanel(panel,back,capture?cfg:null);
         if(runner!=null)runner.suspendScriptAudio();
     }
@@ -1769,6 +1808,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(panel instanceof GameBacklogPanel)((GameBacklogPanel)panel).entries(lines);
     });}
     private void showSlots(boolean saving) {
+        if(saving&&currentFrame!=null&&currentFrame.wait==NativeGame.NATIVE_PANEL&&!currentFrame.nativePanelSavable)return;
         if(runner==null)return;savingSlots=saving;
         if(saving&&titlePanel==null)storyPlane.flushForCapture();
         if(uiAssets!=null){
@@ -1954,7 +1994,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 Math.hypot(event.getRawX()-storyDownX,event.getRawY()-storyDownY)>storyTouchSlop)storyDrag=true;
             if(action==MotionEvent.ACTION_DOWN||action==MotionEvent.ACTION_MOVE||action==MotionEvent.ACTION_UP)storyPointer(event);
         }
-        if(action==MotionEvent.ACTION_UP&&storyDrag){
+        if(action==MotionEvent.ACTION_UP&&storyDrag&&!nativePanelActive()){
             storyDrag=false;
             MotionEvent cancel=MotionEvent.obtain(event);cancel.setAction(MotionEvent.ACTION_CANCEL);
             try{super.dispatchTouchEvent(cancel);}finally{cancel.recycle();}
@@ -1965,6 +2005,19 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }
     @Override public boolean dispatchKeyEvent(KeyEvent event){
         int key=event.getKeyCode();
+        if(nativePanelActive()){
+            int mode=key==KeyEvent.KEYCODE_L?5:key==KeyEvent.KEYCODE_S?6:key==KeyEvent.KEYCODE_C?12:
+                key==KeyEvent.KEYCODE_M||key==KeyEvent.KEYCODE_O?13:0;
+            if(mode!=0){
+                if(event.getAction()==KeyEvent.ACTION_DOWN&&event.getRepeatCount()==0)runner.nativePanelMenu(currentFrame,mode);
+                return true;
+            }
+            if(key==KeyEvent.KEYCODE_ESCAPE){
+                if(event.getAction()==KeyEvent.ACTION_DOWN&&event.getRepeatCount()==0)nativePanelBack();
+                return true;
+            }
+            if(key==KeyEvent.KEYCODE_CTRL_LEFT||key==KeyEvent.KEYCODE_CTRL_RIGHT)return true;
+        }
         if(movieErrorPanel!=null){
             int direction=key==KeyEvent.KEYCODE_DPAD_DOWN?View.FOCUS_DOWN:key==KeyEvent.KEYCODE_DPAD_UP?View.FOCUS_UP:
                 key==KeyEvent.KEYCODE_DPAD_LEFT?View.FOCUS_LEFT:key==KeyEvent.KEYCODE_DPAD_RIGHT?View.FOCUS_RIGHT:0;
@@ -2004,11 +2057,29 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private boolean storyPointerActive(){
         return runner!=null&&stage!=null&&titlePanel==null&&logoPanel==null&&panelsOpen==0&&moviePlayback==null&&movieErrorPanel==null&&!storyMovieExitActive;
     }
+    private boolean nativePanelActive(){
+        return currentFrame!=null&&currentFrame.wait==NativeGame.NATIVE_PANEL&&storyPointerActive();
+    }
+    private void nativePanelBack(){
+        if(!nativePanelActive())return;
+        if(currentFrame.nativePanelMode==51&&currentFrame.nativePanelSavable)runner.nativePanelMenu(currentFrame,13);
+        else runner.nativePanelInput(currentFrame,lastX,lastY,false,true);
+    }
+    static int pointerCoordinate(float raw,int origin,int logicalSize,int viewportSize,boolean clip){
+        double scaled=((double)raw-origin)*logicalSize/Math.max(1,viewportSize);
+        int value=Double.isNaN(scaled)?-1:(int)Math.max(Integer.MIN_VALUE,Math.min(Integer.MAX_VALUE,Math.floor(scaled)));
+        return clip?Math.max(0,Math.min(logicalSize-1,value)):value;
+    }
     private void storyPointer(MotionEvent event){
         stage.getLocationOnScreen(storyOrigin);
-        int x=Math.max(0,Math.min(width-1,(int)((event.getRawX()-storyOrigin[0])*width/Math.max(1,stage.getWidth()))));
-        int y=Math.max(0,Math.min(height-1,(int)((event.getRawY()-storyOrigin[1])*height/Math.max(1,stage.getHeight()))));
-        if(x!=lastX||y!=lastY){lastX=x;lastY=y;runner.pointer(x,y);}
+        boolean nativePanel=nativePanelActive();
+        int x=pointerCoordinate(event.getRawX(),storyOrigin[0],width,stage.getWidth(),!nativePanel);
+        int y=pointerCoordinate(event.getRawY(),storyOrigin[1],height,stage.getHeight(),!nativePanel);
+        if(x!=lastX||y!=lastY){
+            lastX=x;lastY=y;
+            if(nativePanel)runner.nativePanelInput(currentFrame,x,y,false,false);
+            else runner.pointer(x,y);
+        }
     }
     @Override public void onBackPressed() {
         panelWarmup=null;
@@ -2035,7 +2106,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             if(!(gamePanel instanceof GameBacklogPanel)&&
                 !(gamePanel instanceof GameGalleryPanel&&((GameGalleryPanel)gamePanel).screen()==GalleryCatalog.Screen.VIEW))systemClick();
             if(panelBack!=null)panelBack.run();else closeOriginalPanel();
-        }else if(uiHidden){uiHidden=false;updateVisibility();}
+        }else if(nativePanelActive()){nativePanelBack();}
+        else if(uiHidden){uiHidden=false;updateVisibility();}
         else if(runner==null||titlePanel!=null)finish();
         else showMenu();
     }

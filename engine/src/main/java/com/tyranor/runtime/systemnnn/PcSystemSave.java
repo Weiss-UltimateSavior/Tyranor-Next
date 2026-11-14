@@ -25,7 +25,8 @@ import java.util.regex.Pattern;
 final class PcSystemSave {
     private static final Logger LOG=Logger.getLogger(PcSystemSave.class.getName());
     private static final Pattern SYSTEM_NAME=Pattern.compile("t?sysfile[23]?\\.sav",Pattern.CASE_INSENSITIVE);
-    private static final int HEADER=32, RESULT_WORDS=1024, TERM_WORDS=1024, MAX_BYTES=147456;
+    private static final int HEADER=32, RESULT_WORDS=1024, TERM_WORDS=1024, MAX_BYTES=147456,
+        MAX_CHART_NODES=256*1024;
     private static final int DATA=1, READ=5, VAR=6, CG=7, FILM=9, VOICE=10, MOVIE=11, MUSIC=12,
         TEXT=13, ACHIEVEMENT=14, TERM=15, VOICE_LINE=16, FLAG2=17, CHOICE=18;
     // FILE INFO counts itself. Classic games can end at MUSICFLAG.
@@ -41,10 +42,19 @@ final class PcSystemSave {
         {210,-10},{211,-16},{212,-11},{213,-15},{214,-9}};
 
     private final Path file, factory, result;
+    private final ChartFiles chartFiles;
     private final int version, variables, scripts, albums, messageStride, filmStride, cgStride, movieStride;
     private boolean damaged,damagedResult;
 
     static PcSystemSave open(File root,File directory,GameUiAssets.Config game,int[] format) throws IOException {
+        return open(root,directory,game,null,format,false);
+    }
+    static PcSystemSave open(File root,File directory,GameUiAssets.Config game,GameUiAssets.Config chart,
+                             int[] format) throws IOException {
+        return open(root,directory,game,chart,format,false);
+    }
+    static PcSystemSave open(File root,File directory,GameUiAssets.Config game,GameUiAssets.Config chart,
+                             int[] format,boolean legacyChart) throws IOException {
         if(format==null || format.length!=2 || format[0]<1 || format[0]>3 || (format[1]!=0 && format[1]!=1))
             throw new IOException("Invalid cached PC system save format");
         int version=format[0];
@@ -60,12 +70,27 @@ final class PcSystemSave {
             if(GameResourcePaths.file(root,"spt","cglist"+suffix+".xtx")==null)break;
             albums++;
         }
+        ChartFiles chartFiles=null;
+        int chartDefault=game.number("SelectChartIsDefault",0)!=0?0:1;
+        if(legacyChart){
+            if(chart==null)throw new IOException("Missing legacy chart configuration");
+            File folder=GameResourcePaths.directory(directory,"mushiex");
+            chartFiles=new ChartFiles(folder==null?new File(directory,"mushiex"):folder,10000,true);
+        }else if(chart!=null && game.number("SelectChartClassDisable",chartDefault)==0 &&
+           (GameResourcePaths.file(root,"init","selectChart.xtx")!=null ||
+            GameResourcePaths.file(root,"init2","selectChart.fxf")!=null)){
+            int pages=chart.number("chartListNumber",1),block=chart.number("chartBlockSize",1000);
+            long slots=(long)pages*block;
+            if(pages>=1&&pages<=32&&block>=1&&slots<=MAX_CHART_NODES)
+                chartFiles=new ChartFiles(directory,(int)slots,false);
+        }
         return new PcSystemSave(path(directory,stem+".sav"),path(directory,stem+".org"),
-            game.number("resultFlag",0)==0?null:path(directory,"result.sav"),version,scripts,albums);
+            game.number("resultFlag",0)==0?null:path(directory,"result.sav"),version,scripts,albums,chartFiles);
     }
 
-    private PcSystemSave(Path file,Path factory,Path result,int version,int scripts,int albums){
+    private PcSystemSave(Path file,Path factory,Path result,int version,int scripts,int albums,ChartFiles chartFiles){
         this.file=file;this.factory=factory;this.result=result;this.version=version;
+        this.chartFiles=chartFiles;
         variables=version==1?100:1000;
         this.scripts=Math.max(2,Math.min(256,scripts));
         this.albums=albums==0?20:albums;
@@ -88,10 +113,19 @@ final class PcSystemSave {
         return SYSTEM_NAME.matcher(name).matches();
     }
     static boolean isResultFile(String name){return "result.sav".equalsIgnoreCase(name);}
+    static boolean isChartFile(String name){
+        if(name==null)return false;
+        for(int i=0;i<name.length();i++)if(name.charAt(i)>127)return false;
+        return "mita.dat".equalsIgnoreCase(name)||"tsuka.dat".equalsIgnoreCase(name);
+    }
 
     static boolean valid(File file) throws IOException {
         String name=file.getName().toLowerCase(Locale.ROOT);
         try{
+            if(isChartFile(name)){
+                byte[] flags=read(file.toPath(),MAX_CHART_NODES);
+                return flags!=null&&flags.length>0&&(!name.equals("mita.dat")||flags.length%4==0);
+            }
             byte[] bytes=read(file.toPath());
             if(bytes==null)return false;
             if(isResultFile(name))return bytes.length==RESULT_WORDS*4;
@@ -169,9 +203,11 @@ final class PcSystemSave {
         return new Initial(live==null?factoryArchive():live,live!=null,results);
     }
 
-    GameProgress.State restore(Initial initial,GameProgress.State old){
+    GameProgress.State restore(Initial initial,GameProgress.State old) throws IOException {
         Archive archive=initial.archive;
-        if(archive==null && initial.results==null)return old;
+        byte[] chart=old==null?null:old.chart;
+        if(chartFiles!=null)chart=chartFiles.restore(chart);
+        if(archive==null && initial.results==null && chart==null)return old;
         int[] read=old==null?null:old.read;
         int[] vars=old==null?null:old.variables;
         int[] results=old==null?null:old.results;
@@ -205,7 +241,7 @@ final class PcSystemSave {
             if(initial.results!=null)System.arraycopy(initial.results,0,results,0,RESULT_WORDS);
             if(initial.live && archive.has(ACHIEVEMENT))archive.getWords(ACHIEVEMENT,results,RESULT_WORDS,1024);
         }
-        return new GameProgress.State(read,vars,results,text,optional,old==null?null:old.chart,
+        return new GameProgress.State(read,vars,results,text,optional,chart,
             old==null?Collections.emptyList():old.legacy);
     }
 
@@ -370,6 +406,7 @@ final class PcSystemSave {
                 }
             }catch(InvalidFile invalid){damagedResult=true;LOG.warning(invalid.getMessage());}
         }
+        if(chartFiles!=null)chartFiles.write(state.chart);
     }
 
     private void update(Archive archive,GameProgress.State state,int[] gallery){
@@ -462,10 +499,14 @@ final class PcSystemSave {
     }
 
     private static byte[] read(Path path) throws IOException {
+        return read(path,MAX_BYTES);
+    }
+
+    private static byte[] read(Path path,int limit) throws IOException {
         BasicFileAttributes attributes;
         try{attributes=Files.readAttributes(path,BasicFileAttributes.class,LinkOption.NOFOLLOW_LINKS);}
         catch(NoSuchFileException absent){return null;}
-        if(!attributes.isRegularFile() || attributes.size()>MAX_BYTES)throw new InvalidFile(path,null);
+        if(!attributes.isRegularFile() || attributes.size()>limit)throw new InvalidFile(path,null);
         byte[] bytes=new byte[(int)attributes.size()];
         try(DataInputStream in=new DataInputStream(Files.newInputStream(path,LinkOption.NOFOLLOW_LINKS))){
             in.readFully(bytes);
@@ -488,6 +529,61 @@ final class PcSystemSave {
     static final class InvalidFile extends IOException {
         InvalidFile(Path path,Throwable cause){super("Invalid PC global save: "+path.getFileName(),cause);}
         InvalidFile(){super("Invalid PC global save record");}
+    }
+
+    private static final class ChartFiles {
+        private final Path directory,seen,roads;
+        private final int seenBytes,roadBytes;
+        ChartFiles(File directory,int slots,boolean legacy) throws IOException {
+            this.directory=directory.toPath();
+            validateDirectory();
+            seen=path(directory,"mita.dat");roads=path(directory,"tsuka.dat");
+            seenBytes=legacy?10004:(slots+3)&~3;roadBytes=slots;
+        }
+        private void validateDirectory() throws IOException {
+            try {
+                if(!Files.readAttributes(directory,BasicFileAttributes.class,LinkOption.NOFOLLOW_LINKS).isDirectory())
+                    throw new InvalidFile(directory,null);
+            }catch(NoSuchFileException absent){ /* Created only when progress is written. */ }
+        }
+        private boolean matches(byte[] flags){
+            if(flags==null||flags.length!=8+seenBytes+roadBytes)return false;
+            ByteBuffer header=ByteBuffer.wrap(flags).order(ByteOrder.LITTLE_ENDIAN);
+            return header.getInt()==seenBytes&&header.getInt()==roadBytes;
+        }
+        private static byte[] readFlags(Path path,int size) throws IOException {
+            byte[] bytes=read(path,size);
+            if(bytes!=null&&bytes.length!=size)throw new InvalidFile(path,null);
+            return bytes;
+        }
+        private static byte[] importFlags(Path path,int size) throws IOException {
+            try{return readFlags(path,size);}
+            catch(InvalidFile invalid){LOG.warning(invalid.getMessage());return null;}
+        }
+        byte[] restore(byte[] fallback) throws IOException {
+            validateDirectory();
+            byte[] pcSeen=importFlags(seen,seenBytes),pcRoads=importFlags(roads,roadBytes);
+            if(pcSeen==null&&pcRoads==null)return fallback;
+            byte[] flags=matches(fallback)?fallback.clone():
+                ByteBuffer.allocate(8+seenBytes+roadBytes).order(ByteOrder.LITTLE_ENDIAN)
+                    .putInt(seenBytes).putInt(roadBytes).array();
+            if(pcSeen!=null)System.arraycopy(pcSeen,0,flags,8,seenBytes);
+            if(pcRoads!=null)System.arraycopy(pcRoads,0,flags,8+seenBytes,roadBytes);
+            return flags;
+        }
+        private static void writeFlags(Path path,byte[] flags) throws IOException {
+            try{
+                if(!Arrays.equals(readFlags(path,flags.length),flags))commit(path,flags);
+            }catch(InvalidFile invalid){LOG.warning(invalid.getMessage());}
+        }
+        void write(byte[] flags) throws IOException {
+            if(!matches(flags))return;
+            validateDirectory();
+            Files.createDirectories(directory);
+            validateDirectory();
+            writeFlags(seen,Arrays.copyOfRange(flags,8,8+seenBytes));
+            writeFlags(roads,Arrays.copyOfRange(flags,8+seenBytes,flags.length));
+        }
     }
 
     private static final class Archive {

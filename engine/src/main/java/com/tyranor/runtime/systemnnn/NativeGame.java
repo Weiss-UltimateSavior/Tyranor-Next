@@ -17,9 +17,10 @@ final class NativeGame {
         System.load(path);
         loaded = true;
     }
-    static final int RUNNING=0, DRAW=1, OVERLAP=2, DIALOGUE=3, CHOICE=4, END=5, TITLE=6, MOVIE=7, PLACE=8, MODAL=9;
-    static final int META_SIZE=16, CLOCK_DATE=7, CLOCK_MILLISECONDS=8, SCRIPT_CURSOR=9, DRAW_MESSAGE=10,
-        TITLE_BACKGROUND_ENDED=11, PACED_MS=12, FILM_SKIP_ENABLED=13, SCRIPT_MOUSE=14, TICK_EXECUTED=15;
+    static final int RUNNING=0, DRAW=1, OVERLAP=2, DIALOGUE=3, CHOICE=4, END=5, TITLE=6, MOVIE=7, PLACE=8, MODAL=9, NATIVE_PANEL=10;
+    static final int META_SIZE=18, CLOCK_DATE=7, CLOCK_MILLISECONDS=8, SCRIPT_CURSOR=9, DRAW_MESSAGE=10,
+        TITLE_BACKGROUND_ENDED=11, PACED_MS=12, FILM_SKIP_ENABLED=13, SCRIPT_MOUSE=14, TICK_EXECUTED=15,
+        NATIVE_PANEL_MODE=16, NATIVE_PANEL_SAVABLE=17;
     static final int SELECT_PLACE_MODE=22,SELECT_PLACE2_MODE=35;
     static native long openWithOptions(byte[] path,int sampleRate,long contextToken,boolean analyzeExecutable,boolean debugMode);
     static native long openReplay(byte[] path,int sampleRate,long contextToken,byte[] script,int[] films,int hiddenLayers);
@@ -63,6 +64,10 @@ final class NativeGame {
     static native byte[][] content(long handle);
     static native void frameInfo(long handle,int[] meta);
     static native int runtimeMode(long handle);
+    static native void nativePanelInput(long handle,int x,int y,boolean click,boolean cancel);
+    static native boolean nativePanelMenu(long handle,int mode);
+    static native int takeNativePanelMenu(long handle);
+    static native boolean resumeNativePanel(long handle);
     // Int fields, raw script name, raw BGM name, and pending script DEBUG messages.
     static native Object[] debugSnapshot(long handle);
     static native long systemMenuModes(long handle,long requested);
@@ -75,6 +80,9 @@ final class NativeGame {
     // Each row contributes a raw label, asset name and detail string.
     static native byte[][] modalRows(long handle);
     static native int[] chartGeometry(long handle);
+    static native boolean legacyChart(long handle);
+    static native boolean legacyChartDirectory(byte[] root);
+    static native boolean validateChartFile(byte[] root,byte[] relativePath,byte[] data);
     static native byte[][] chartText(long handle);
     static native void setChartStorage(long handle,byte[] path);
     static native byte[][] statusOverlay(long handle,int type,int mode);

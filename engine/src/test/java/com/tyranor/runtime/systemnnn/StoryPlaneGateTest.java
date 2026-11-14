@@ -4,6 +4,15 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public final class StoryPlaneGateTest {
+    @Test public void nativePanelPointerKeepsOutsideCanvasCoordinates(){
+        assertEquals(200,PlayerActivity.pointerCoordinate(500,100,800,1600,false));
+        assertEquals(-1,PlayerActivity.pointerCoordinate(99.5f,100,800,1600,false));
+        assertEquals(800,PlayerActivity.pointerCoordinate(1700,100,800,1600,false));
+        assertEquals(0,PlayerActivity.pointerCoordinate(99.5f,100,800,1600,true));
+        assertEquals(799,PlayerActivity.pointerCoordinate(1700,100,800,1600,true));
+        assertEquals(Integer.MAX_VALUE,PlayerActivity.pointerCoordinate(Float.MAX_VALUE,Integer.MIN_VALUE,800,1,false));
+        assertEquals(Integer.MIN_VALUE,PlayerActivity.pointerCoordinate(-Float.MAX_VALUE,Integer.MAX_VALUE,800,1,false));
+    }
     @Test public void onlyActuallyPresentedFullTextAcknowledgesDialogue(){
         int[] expected={3,12,1,0,0,0};
         int[] partial=DialogueLayout.composePlaneKey(expected,false,0,false);

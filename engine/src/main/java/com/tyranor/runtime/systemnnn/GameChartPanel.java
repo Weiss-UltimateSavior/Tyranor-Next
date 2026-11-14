@@ -173,6 +173,7 @@ final class GameChartPanel extends GameUiPanel {
             else count=common;
             count=clamp(count,1,1024);
         }
+        // Native keeps this internal mode and exposes the detected game's original MODE to its script.
         chartBackground(config,SELECT_CHART,page,centerLayer,count,frame->{
             if(usesComposer(backdropFrame)!=usesComposer(frame))compositionEpoch++;
             backdropFrame=frame;

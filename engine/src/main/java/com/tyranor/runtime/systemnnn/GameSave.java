@@ -242,7 +242,7 @@ final class GameSave {
         Metadata at=metadata(slot,System.currentTimeMillis(),GameResourcePaths.displayScript(content[0]),savedMeta,speaker,body);
         GameSave journal=new GameSave();
         Run tail=lastInput();
-        if(meta[0]==NativeGame.MODAL)journal.useNativeBaseline(tail.x,tail.y);
+        if(meta[0]==NativeGame.MODAL||meta[0]==NativeGame.NATIVE_PANEL)journal.useNativeBaseline(tail.x,tail.y);
         else{
             journal.runs.addAll(runs);journal.ticks=ticks;
             // The live journal can only extend its final run. Earlier runs are
@@ -503,7 +503,7 @@ final class GameSave {
         byte[] snapshot=null;
         if(order!=null&&!needsSnapshot&&replayFailure==null)try{order.finish();}
         catch(IOException invalid){replayFailure=invalid;}
-        if(metadata.wait==NativeGame.MODAL && !needsSnapshot)
+        if((metadata.wait==NativeGame.MODAL||metadata.wait==NativeGame.NATIVE_PANEL) && !needsSnapshot)
             throw new IOException("Modal save has no native baseline");
         boolean nativeRequired=needsSnapshot||replayFailure!=null;
         boolean validatedSnapshot=false;
@@ -525,7 +525,7 @@ final class GameSave {
         if(!keepRuns && nativeRequired && !validatedSnapshot)
             throw new IOException("Missing or invalid required native save snapshot");
         if (save!=null) {
-            if(metadata.wait==NativeGame.MODAL&&(!save.requiresSnapshot()||snapshot==null))
+            if((metadata.wait==NativeGame.MODAL||metadata.wait==NativeGame.NATIVE_PANEL)&&(!save.requiresSnapshot()||snapshot==null))
                 throw new IOException("选择场景存档缺少有效原生快照");
             save.ticks=total;
             if(save.requiresSnapshot()){
@@ -702,7 +702,7 @@ final class GameSave {
     }
     private static void validateMetadata(Metadata m) throws IOException {
         if (!SaveSlots.valid(m.slot) || m.savedAt<0 || m.script==null || m.script.isEmpty() || m.script.length()>4096 ||
-            m.script.indexOf('\0')>=0 || m.wait<0 || m.wait>NativeGame.TITLE&&m.wait!=NativeGame.PLACE&&m.wait!=NativeGame.MODAL || m.word<0 || m.line<0 ||
+            m.script.indexOf('\0')>=0 || m.wait<0 || m.wait>NativeGame.TITLE&&m.wait!=NativeGame.PLACE&&m.wait!=NativeGame.MODAL&&m.wait!=NativeGame.NATIVE_PANEL || m.word<0 || m.line<0 ||
             m.speaker==null || m.summary==null || m.speaker.codePointCount(0,m.speaker.length())>256 ||
             m.summary.codePointCount(0,m.summary.length())>40 || m.speaker.indexOf('\0')>=0 || m.summary.indexOf('\0')>=0)
             throw new IOException("存档摘要无效");

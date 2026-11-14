@@ -475,7 +475,9 @@ final class GameProgress {
         if(chart.length<8||chart.length>MAX_CHART)throw new InvalidExtension("Invalid chart progress length");
         ByteBuffer header=ByteBuffer.wrap(chart).order(ByteOrder.LITTLE_ENDIAN);
         int seen=header.getInt(),traversed=header.getInt();
-        if(traversed<1||traversed>MAX_CHART_NODES||seen!=((traversed+3)&~3)||chart.length!=8+seen+traversed)
+        // Accept the two explicit wire layouts; the bound native graph validates which one this game uses.
+        boolean knownLayout=seen==((traversed+3)&~3)||traversed==10000&&seen==10004;
+        if(traversed<1||traversed>MAX_CHART_NODES||!knownLayout||chart.length!=8+seen+traversed)
             throw new InvalidExtension("Invalid chart progress blocks");
     }
 }

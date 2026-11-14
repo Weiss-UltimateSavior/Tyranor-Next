@@ -41,7 +41,8 @@ final class GameRunner {
     static final class Frame {
         static final int DRAW_NO_MESSAGE=0,DRAW_WINDOW=1,DRAW_RETAINED_MESSAGE=2,DRAW_LONG_BACKGROUND=3;
         final int wait,width,height,line,word,messageId,windowType,fontType,scriptCursor,command,layoutCommand,drawMessage,frameMs,placeMode;
-        final boolean windowVisible,nameWindow,optionsAllowed,filmSkip;
+        final boolean windowVisible,nameWindow,optionsAllowed,filmSkip,nativePanelSavable;
+        final int nativePanelMode;
         final String script,speaker,body;
         final DialogueMarkup displayBody;
         final DialogueDecorations decorations;
@@ -54,7 +55,7 @@ final class GameRunner {
         Frame(int wait,int width,int height,String script,int line,int word,String speaker,String body,DialogueMarkup displayBody,String[] choices,boolean read,
               int messageId,int windowType,int fontType,int scriptCursor,boolean windowVisible,boolean nameWindow,boolean optionsAllowed,int command,int layoutCommand,int drawMessage,int frameMs,
               String[] choiceMessages,int[] choiceInfo,int[] places,int placeMode,int[] placeCharacters,Bitmap[] placePortraits,Modal modal,
-              DialogueDecorations decorations,boolean filmSkip,int[] planeKey,long generation) {
+              DialogueDecorations decorations,boolean filmSkip,int[] planeKey,long generation,int nativePanelMode,boolean nativePanelSavable) {
             this.wait=wait;this.width=width;this.height=height;this.script=script;this.line=line;this.word=word;
             this.speaker=speaker;this.body=body;this.choices=choices;this.alreadyRead=read;
             this.displayBody=displayBody;
@@ -62,6 +63,7 @@ final class GameRunner {
             this.filmSkip=filmSkip;
             this.planeKey=planeKey;
             this.generation=generation;
+            this.nativePanelMode=nativePanelMode;this.nativePanelSavable=nativePanelSavable;
             this.messageId=messageId;this.windowType=windowType;this.fontType=fontType;this.scriptCursor=scriptCursor;this.windowVisible=windowVisible;
             this.nameWindow=nameWindow;this.optionsAllowed=optionsAllowed;this.command=command;this.layoutCommand=layoutCommand;this.drawMessage=drawMessage;this.frameMs=frameMs;
             this.choiceMessages=choiceMessages;this.choiceInfo=choiceInfo;this.places=places;
@@ -149,6 +151,7 @@ final class GameRunner {
     interface Listener {
         void frame(Frame frame,int initialVisible);
         void planeChanged();
+        void nativePanelMenu(GameRunner owner,Frame frame,int mode);
         void debugFrame(int[] state,String script,String bgm);
         void logo(List<LogoPanel.Slide> slides,int width,int height,int frameMs);
         void opening(GameUiAssets.Config config,int frameMs,Capture initial,Capture previous);
@@ -249,6 +252,7 @@ final class GameRunner {
     private GameSave history;
     private GameTextDecoder codec;
     private Frame current;
+    private Frame nativePanelMenuFrame;
     private byte[][] dialogueVisualFields;
     private DialogueDecorations dialogueDecorations=DialogueDecorations.EMPTY;
     private DialogueStyle dialogueStyle;
@@ -311,7 +315,8 @@ final class GameRunner {
             long candidate=NativeGame.openWithOptions(path,rate,token,analyzeExecutable,debugMode);
             if(candidate==0)throw new IllegalStateException("Native game open returned a zero handle");
             try{
-                NativeGame.setChartStorage(candidate,chartDirectory.getPath().getBytes(StandardCharsets.UTF_8));
+                File storage=NativeGame.legacyChart(candidate)?savePaths.directory():chartDirectory;
+                NativeGame.setChartStorage(candidate,storage.getPath().getBytes(StandardCharsets.UTF_8));
                 return candidate;
             }catch(RuntimeException|LinkageError e){
                 NativeGame.close(candidate);
@@ -378,9 +383,14 @@ final class GameRunner {
         try{
             int[] format=NativeGame.currentPcSystemSaveFormat(candidate);
             int[] rawShared=NativeGame.sharedConfigSnapshot(candidate);
+            boolean legacyChart=NativeGame.legacyChartDirectory(root.getPath().getBytes(StandardCharsets.UTF_8));
             saveResult(SAVE_FILES.submit(()->{
-                GameUiAssets.Config game=GameUiAssets.readConfig(root,"game",codec);
-                pcSystemSave=PcSystemSave.open(root,savePaths.directory(),game,format);
+                GameUiAssets.Config game=GameUiAssets.readConfig(root,"game",codec),chart=null;
+                int chartDefault=game.number("SelectChartIsDefault",0)!=0?0:1;
+                if(legacyChart||game.number("SelectChartClassDisable",chartDefault)==0)try{
+                    chart=GameUiAssets.readChartConfig(root,codec,legacyChart);
+                }catch(IOException invalid){Log.w("SystemNNN","Unable to read PC chart configuration",invalid);}
+                pcSystemSave=PcSystemSave.open(root,savePaths.directory(),game,chart,format,legacyChart);
                 if(pending==null)readReadLines();else recoverProgress(previousProgress,pending);
                 slots.preload(root,codec,GameUiAssets.SharedConfig.from(rawShared,root,game,null));
                 return true;
@@ -1123,6 +1133,15 @@ final class GameRunner {
         });
     }
     void menu(boolean open){tasks.post(() -> {
+        if(!open&&nativePanelMenuFrame!=null){
+            Frame source=nativePanelMenuFrame;nativePanelMenuFrame=null;
+            if(!closing&&!failed&&handle!=0&&source.generation==sessionGeneration&&meta[0]==NativeGame.NATIVE_PANEL){
+                try{
+                    if(!NativeGame.resumeNativePanel(handle))throw new IllegalStateException("Native panel did not resume");
+                    NativeGame.frameInfo(handle,meta);shownWait=-1;updateUi();startFrameClock();
+                }catch(RuntimeException error){broken(error);return;}
+            }
+        }
         menuOpen=open;
         if(open&&handle!=0&&!onTitle)refreshSystemMenuModes();
         Modal modal=activeModal();
@@ -1269,6 +1288,7 @@ final class GameRunner {
     }
     void input(Frame frame,int atX,int atY,int choice){tasks.post(() -> {
         if(frame==null||frame.generation!=sessionGeneration)return;
+        if(frame.wait==NativeGame.NATIVE_PANEL)return;
         if(choice>0)choiceClicking=false;
         if(onTitle||menuOpen||quickLoadFramePending||!playing()||meta[0]==NativeGame.MODAL||
             (choice==0&&meta[0]==NativeGame.CHOICE)||(choice>0&&meta[0]!=NativeGame.CHOICE))return;
@@ -1294,6 +1314,35 @@ final class GameRunner {
         if(frame.generation==sessionGeneration&&!onTitle&&!menuOpen&&!quickLoadFramePending&&
             meta[0]==NativeGame.CHOICE&&meta[1]==frame.word)choiceClicking=true;
     });}
+    private boolean acceptsNativePanel(Frame frame){
+        return frame!=null&&frame==current&&frame.generation==sessionGeneration&&
+            !closing&&!failed&&!onTitle&&!menuOpen&&!quickLoadFramePending&&playing()&&meta[0]==NativeGame.NATIVE_PANEL;
+    }
+    void nativePanelInput(Frame frame,int atX,int atY,boolean click,boolean cancel){tasks.post(()->{
+        if(!acceptsNativePanel(frame))return;
+        try{
+            x=atX;y=atY;
+            NativeGame.nativePanelInput(handle,x,y,click,cancel);
+            dispatchNativePanelMenu();
+        }catch(RuntimeException error){broken(error);}
+    });}
+    void nativePanelMenu(Frame frame,int mode){tasks.post(()->{
+        if(!acceptsNativePanel(frame))return;
+        try{
+            if(NativeGame.nativePanelMenu(handle,mode))dispatchNativePanelMenu();
+        }catch(RuntimeException error){broken(error);}
+    });}
+    private void dispatchNativePanelMenu(){
+        if(handle==0||onTitle||menuOpen||failed||closing||meta[0]!=NativeGame.NATIVE_PANEL)return;
+        int mode=NativeGame.takeNativePanelMenu(handle);
+        if(mode==0)return;
+        if(mode!=5&&mode!=6&&mode!=12&&mode!=13)throw new IllegalStateException("Unknown native panel menu request");
+        NativeGame.suspendScriptAudio(handle);
+        updateUi();
+        nativePanelMenuFrame=current;
+        menuOpen=true;setModes(false,false);
+        ui.nativePanelMenu(this,current,mode);
+    }
     void choosePlace(int place,java.util.function.Consumer<Boolean> done){tasks.post(()->{
         if(handle==0||onTitle||failed||meta[0]!=NativeGame.PLACE){done.accept(false);return;}
         int[] states=NativeGame.placeStates(handle);
@@ -1432,7 +1481,7 @@ final class GameRunner {
     });}
     void ctrlSkip(boolean enabled){tasks.post(() -> {
         if(handle==0||onTitle||replaying||failed||closing)return;
-        if(enabled&&(menuOpen||meta[0]==NativeGame.CHOICE||meta[0]==NativeGame.MODAL))return;
+        if(enabled&&(menuOpen||meta[0]==NativeGame.CHOICE||meta[0]==NativeGame.MODAL||meta[0]==NativeGame.NATIVE_PANEL))return;
         NativeGame.setCtrlSkip(handle,enabled);
         if(enabled&&history!=null)history.recordNativeBoundary(x,y);
     });}
@@ -1946,8 +1995,12 @@ final class GameRunner {
     private void save(int slot,boolean quick,int marker){
         Modal modal=activeModal();
         boolean chart=modal!=null&&modal.mode==Modal.SELECT_CHART;
+        if(handle!=0&&meta[0]==NativeGame.NATIVE_PANEL)try{NativeGame.frameInfo(handle,meta);}
+        catch(RuntimeException error){saveFailed(error);return;}
+        boolean nativePanel=meta[0]==NativeGame.NATIVE_PANEL&&meta[NativeGame.NATIVE_PANEL_MODE]==51&&
+            meta[NativeGame.NATIVE_PANEL_SAVABLE]!=0;
         if(handle==0||failed||onTitle||replaying||
-           (!chart&&meta[0]!=NativeGame.DIALOGUE&&meta[0]!=NativeGame.CHOICE&&meta[0]!=NativeGame.PLACE)){
+           (!chart&&!nativePanel&&meta[0]!=NativeGame.DIALOGUE&&meta[0]!=NativeGame.CHOICE&&meta[0]!=NativeGame.PLACE)){
             ui.notice(text(R.string.engine_systemnnn_host_cannot_save));
             return;
         }
@@ -2132,11 +2185,13 @@ final class GameRunner {
             if(onTitle){publishScriptMouse();return;}
             if(finishEndedRun())return;
             scriptUiEvents();
+            if(meta[0]==NativeGame.NATIVE_PANEL&&history!=null)history.recordNativeBoundary(x,y);
             if(history!=null)history.appendWithClock(ms,meta[NativeGame.PACED_MS],x,y,advance,
                 timedSelection&&NativeGame.choiceTimedOut(handle)?GameSave.TIMED_OUT:choice,recordedSkip,
                 meta[NativeGame.CLOCK_DATE],meta[NativeGame.CLOCK_MILLISECONDS]);
             if(meta[0]==NativeGame.MOVIE){startStoryMovie();return;}
             syncModes();updateUi();
+            dispatchNativePanelMenu();
             boolean animation=meta[0]==NativeGame.OVERLAP||meta[0]==NativeGame.DRAW;
             boolean startsAnimation=animation&&(oldWait!=meta[0]||oldWord!=meta[1]||oldRemaining<meta[6]);
             boolean startsDialogue=meta[0]==NativeGame.DIALOGUE&&(oldWait!=meta[0]||oldLine!=meta[2]||oldWord!=meta[1]);
@@ -2183,11 +2238,13 @@ final class GameRunner {
         }
         GameUiAssets.ModeAssets data=null;
         ChartView chart=null;
+        boolean legacyChart=false;
         String problem=null;
         Modal previous=onTitle?menuModal:current==null?null:current.modal;
         int mode=info[1];
         try{
             if(mode==Modal.SELECT_CHART){
+                legacyChart=NativeGame.legacyChart(handle);
                 chart=new ChartView(NativeGame.chartGeometry(handle),NativeGame.chartText(handle),rawText->decode(rawText,true));
             }
             boolean sameArt=previous!=null&&previous.mode==mode&&previous.assets!=null&&mode!=Modal.PRINT_HINT&&
@@ -2240,7 +2297,7 @@ final class GameRunner {
                 data=uiAssets.statusAssets(handle,codec,mode==Modal.PRINT_PARTY);
                 break;
             case Modal.SELECT_CHART:
-                data=uiAssets.chartAssets(handle,codec,chart,previous!=null&&previous.mode==mode?previous.assets:null);
+                data=uiAssets.chartAssets(handle,codec,chart,legacyChart,previous!=null&&previous.mode==mode?previous.assets:null);
                 break;
             case Modal.SELECT_PLACE2:
                 data=new GameUiAssets.ModeAssets(uiAssets.place(mode),java.util.Collections.emptyMap());
@@ -2329,6 +2386,7 @@ final class GameRunner {
     });}
     private void offerPlaneToken(long value){
         quickLoadFramePending=false;
+        nativePanelMenuFrame=null;
         chartSavePicture=null;
         MessagePlaneToken token=MessagePlaneToken.adopt(value,++sessionGeneration,NativeGame::releaseMessagePlane);
         if(token==null)return;
@@ -2359,9 +2417,12 @@ final class GameRunner {
         int scriptCursor=meta[NativeGame.SCRIPT_CURSOR];
         int drawMessage=meta[NativeGame.DRAW_MESSAGE];
         boolean filmSkip=meta[NativeGame.FILM_SKIP_ENABLED]!=0;
+        int nativePanelMode=meta[NativeGame.NATIVE_PANEL_MODE];
+        boolean nativePanelSavable=meta[0]==NativeGame.NATIVE_PANEL&&nativePanelMode==51&&meta[NativeGame.NATIVE_PANEL_SAVABLE]!=0;
         int[] planeKey=NativeGame.expectedPlaneKey(handle);
         if(current!=null&&shownWait==meta[0]&&shownWord==meta[1]&&shownLine==meta[2]&&
             current.scriptCursor==scriptCursor&&current.drawMessage==drawMessage&&current.filmSkip==filmSkip&&
+            current.nativePanelMode==nativePanelMode&&current.nativePanelSavable==nativePanelSavable&&
             Arrays.equals(current.planeKey,planeKey)){
             if(shownWait==NativeGame.CHOICE&&current.choiceInfo[0]>0)ui.choiceTime(current,meta[6]);
             return;
@@ -2369,6 +2430,14 @@ final class GameRunner {
         shownWait=meta[0];shownWord=meta[1];shownLine=meta[2];
         byte[][] raw=NativeGame.content(handle);
         String script=GameResourcePaths.displayScript(raw[0]);
+        if(shownWait==NativeGame.NATIVE_PANEL){
+            if(history!=null)history.recordNativeBoundary(x,y);
+            current=new Frame(shownWait,meta[3],meta[4],script,shownLine,shownWord,"","",DialogueMarkup.EMPTY,new String[0],false,
+                0,0,0,scriptCursor,false,false,nativePanelSavable,0,0,0,meta[5],new String[0],new int[4],new int[0],0,
+                new int[0],new Bitmap[0],null,DialogueDecorations.EMPTY,false,planeKey,sessionGeneration,nativePanelMode,nativePanelSavable);
+            textDone=true;visibleText=0;ui.frame(current,0);
+            return;
+        }
         int[] properties=NativeGame.dialogueProperties(handle);
         boolean retained=drawMessage==Frame.DRAW_RETAINED_MESSAGE;
         String decoded=shownWait==NativeGame.DIALOGUE||retained?decode(raw[1]):"";
@@ -2387,7 +2456,7 @@ final class GameRunner {
         Bitmap[] portraits=placeMode!=0?placePortraits(placeMode,placeCharacters):new Bitmap[0];
         Modal modal=shownWait==NativeGame.MODAL?readModal():null;
         Frame next=new Frame(shownWait,meta[3],meta[4],script,shownLine,shownWord,speaker,body,displayBody,options,false,properties[0],properties[1],properties[2],scriptCursor,
-            properties[3]!=0,message.nameWindow,properties[4]!=0,properties[5],properties[6],drawMessage,meta[5],messages,choice,places,placeMode,placeCharacters,portraits,modal,decorations,filmSkip,planeKey,sessionGeneration);
+            properties[3]!=0,message.nameWindow,properties[4]!=0,properties[5],properties[6],drawMessage,meta[5],messages,choice,places,placeMode,placeCharacters,portraits,modal,decorations,filmSkip,planeKey,sessionGeneration,nativePanelMode,nativePanelSavable);
         if(!replaying&&shownWait==NativeGame.DIALOGUE&&!readLines.isEmpty()){
             String previousBody=decode(NativeGame.dialogue(handle)[1]);
             if(readLines.remove(next.legacyReadKey(raw[0],previousBody)))NativeGame.markRead(handle,next.messageId);
@@ -2397,7 +2466,7 @@ final class GameRunner {
                 current.alreadyRead:NativeGame.isRead(handle,next.messageId));
         current=new Frame(next.wait,next.width,next.height,next.script,next.line,next.word,next.speaker,next.body,next.displayBody,next.choices,
             read,next.messageId,next.windowType,next.fontType,next.scriptCursor,
-            next.windowVisible,next.nameWindow,next.optionsAllowed,next.command,next.layoutCommand,next.drawMessage,next.frameMs,messages,choice,places,placeMode,placeCharacters,portraits,modal,decorations,filmSkip,planeKey,sessionGeneration);
+            next.windowVisible,next.nameWindow,next.optionsAllowed,next.command,next.layoutCommand,next.drawMessage,next.frameMs,messages,choice,places,placeMode,placeCharacters,portraits,modal,decorations,filmSkip,planeKey,sessionGeneration,nativePanelMode,nativePanelSavable);
         planeEnteredAt=SystemClock.uptimeMillis();
         planeGateTimeoutLogged=false;
         textDone=false;visibleText=0;

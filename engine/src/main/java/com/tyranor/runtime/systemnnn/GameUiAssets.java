@@ -234,8 +234,11 @@ final class GameUiAssets {
         requested.addAll(rows);
         return new ModeAssets(config,variant,modeSprites(handle,requested));
     }
-    ModeAssets chartAssets(long handle,GameTextDecoder decoder,ChartView chart,ModeAssets previous) throws IOException {
-        Config config=previous==null?readConfig(root,"selectChart",decoder):previous.config;
+    static Config readChartConfig(File root,GameTextDecoder decoder,boolean legacy) throws IOException {
+        return readConfig(root,legacy?"chart":"selectChart",decoder);
+    }
+    ModeAssets chartAssets(long handle,GameTextDecoder decoder,ChartView chart,boolean legacy,ModeAssets previous) throws IOException {
+        Config config=previous==null?readChartConfig(root,decoder,legacy):previous.config;
         Set<String> opaque=new LinkedHashSet<>();
         for(ChartView.Tile tile:chart.tiles)opaque.add(tile.asset);
         Set<String> requested=new LinkedHashSet<>(chart.images());
