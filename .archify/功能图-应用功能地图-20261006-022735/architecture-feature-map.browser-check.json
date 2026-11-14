@@ -6,11 +6,11 @@
   "status": "pass",
   "visualReview": "not-requested",
   "provenance": "current",
-  "deliveryReceiptId": "43216b77-2fc2-43c0-bcd1-8767d6feeb9d",
+  "deliveryReceiptId": "fc2b5732-e822-49cc-948d-9963658d6e47",
   "artifact": {
     "path": "/Users/weiss/opencode/rma/TyranorNext/.archify/功能图-应用功能地图-20261006-022735/architecture-feature-map.html",
-    "sha256": "e6ff1179137e6c986bddb9fb006abd1640e91d53f2f17ee2c28257abbd1dcc41",
-    "bytes": 797954
+    "sha256": "83c374ca81384c2e874b2455829c5c57c5770a6f5bc413b3cafa05a428ae11b1",
+    "bytes": 802242
   },
   "state": {
     "detail": "read",
@@ -47,19 +47,19 @@
           "bodyPaddingPx": 12,
           "headerPx": 52,
           "diagramChromePx": 78,
-          "svgPx": 535,
+          "svgPx": 668,
           "cardsPx": 0,
-          "viewBoxHeight": 604
+          "viewBoxHeight": 680
         },
-        "viewBoxWidth": 1520,
-        "minimumProjectedNodeTextPx": 7.969736842105263,
-        "minimumProjectedNonEdgeTextPx": 7.969736842105263,
+        "viewBoxWidth": 1370,
+        "minimumProjectedNodeTextPx": 6.975620437956204,
+        "minimumProjectedNonEdgeTextPx": 6.975620437956204,
         "minimumProjectedEdgeTextPx": null,
-        "minimumProjectedNodeText": "扫描 · 入库 · 检索",
+        "minimumProjectedNodeText": "五级分流 · 会话 · 时长 · 快捷方式",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "d_library"
+          "id": "d_launch"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -97,19 +97,19 @@
           "bodyPaddingPx": 64,
           "headerPx": 60,
           "diagramChromePx": 84,
-          "svgPx": 598,
+          "svgPx": 748,
           "cardsPx": 0,
-          "viewBoxHeight": 604
+          "viewBoxHeight": 680
         },
-        "viewBoxWidth": 1520,
-        "minimumProjectedNodeTextPx": 8.917105263157895,
-        "minimumProjectedNonEdgeTextPx": 8.917105263157895,
+        "viewBoxWidth": 1370,
+        "minimumProjectedNodeTextPx": 7.1,
+        "minimumProjectedNonEdgeTextPx": 7.1,
         "minimumProjectedEdgeTextPx": null,
-        "minimumProjectedNodeText": "扫描 · 入库 · 检索",
+        "minimumProjectedNodeText": "五级分流 · 会话 · 时长 · 快捷方式",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "d_library"
+          "id": "d_launch"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -141,25 +141,25 @@
         "readerOverflow": null,
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1856,
-        "diagramWidth": 1826,
+        "readerWidth": 1763,
+        "diagramWidth": 1733,
         "pageComposition": {
           "bodyPaddingPx": 64,
           "headerPx": 60,
           "diagramChromePx": 84,
-          "svgPx": 726,
+          "svgPx": 860,
           "cardsPx": 0,
-          "viewBoxHeight": 604
+          "viewBoxHeight": 680
         },
-        "viewBoxWidth": 1520,
-        "minimumProjectedNodeTextPx": 9,
-        "minimumProjectedNonEdgeTextPx": 9,
+        "viewBoxWidth": 1370,
+        "minimumProjectedNodeTextPx": 7.1,
+        "minimumProjectedNonEdgeTextPx": 7.1,
         "minimumProjectedEdgeTextPx": null,
-        "minimumProjectedNodeText": "扫描 · 入库 · 检索",
+        "minimumProjectedNodeText": "五级分流 · 会话 · 时长 · 快捷方式",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "d_library"
+          "id": "d_launch"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -197,19 +197,19 @@
           "bodyPaddingPx": 64,
           "headerPx": 68,
           "diagramChromePx": 94,
-          "svgPx": 743,
+          "svgPx": 928,
           "cardsPx": 0,
-          "viewBoxHeight": 604
+          "viewBoxHeight": 680
         },
-        "viewBoxWidth": 1520,
-        "minimumProjectedNodeTextPx": 9,
-        "minimumProjectedNonEdgeTextPx": 9,
+        "viewBoxWidth": 1370,
+        "minimumProjectedNodeTextPx": 7.1,
+        "minimumProjectedNonEdgeTextPx": 7.1,
         "minimumProjectedEdgeTextPx": null,
-        "minimumProjectedNodeText": "扫描 · 入库 · 检索",
+        "minimumProjectedNodeText": "五级分流 · 会话 · 时长 · 快捷方式",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "d_library"
+          "id": "d_launch"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -300,19 +300,19 @@
           "bodyPaddingPx": 12,
           "headerPx": 52,
           "diagramChromePx": 78,
-          "svgPx": 535,
+          "svgPx": 668,
           "cardsPx": 0,
-          "viewBoxHeight": 604
+          "viewBoxHeight": 680
         },
-        "viewBoxWidth": 1520,
-        "minimumProjectedNodeTextPx": 7.969736842105263,
-        "minimumProjectedNonEdgeTextPx": 7.969736842105263,
+        "viewBoxWidth": 1370,
+        "minimumProjectedNodeTextPx": 6.975620437956204,
+        "minimumProjectedNonEdgeTextPx": 6.975620437956204,
         "minimumProjectedEdgeTextPx": null,
-        "minimumProjectedNodeText": "扫描 · 入库 · 检索",
+        "minimumProjectedNodeText": "五级分流 · 会话 · 时长 · 快捷方式",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "d_library"
+          "id": "d_launch"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -350,19 +350,19 @@
           "bodyPaddingPx": 64,
           "headerPx": 60,
           "diagramChromePx": 84,
-          "svgPx": 598,
+          "svgPx": 748,
           "cardsPx": 0,
-          "viewBoxHeight": 604
+          "viewBoxHeight": 680
         },
-        "viewBoxWidth": 1520,
-        "minimumProjectedNodeTextPx": 8.917105263157895,
-        "minimumProjectedNonEdgeTextPx": 8.917105263157895,
+        "viewBoxWidth": 1370,
+        "minimumProjectedNodeTextPx": 7.1,
+        "minimumProjectedNonEdgeTextPx": 7.1,
         "minimumProjectedEdgeTextPx": null,
-        "minimumProjectedNodeText": "扫描 · 入库 · 检索",
+        "minimumProjectedNodeText": "五级分流 · 会话 · 时长 · 快捷方式",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "d_library"
+          "id": "d_launch"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -394,25 +394,25 @@
         "readerOverflow": null,
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1856,
-        "diagramWidth": 1826,
+        "readerWidth": 1763,
+        "diagramWidth": 1733,
         "pageComposition": {
           "bodyPaddingPx": 64,
           "headerPx": 60,
           "diagramChromePx": 84,
-          "svgPx": 726,
+          "svgPx": 860,
           "cardsPx": 0,
-          "viewBoxHeight": 604
+          "viewBoxHeight": 680
         },
-        "viewBoxWidth": 1520,
-        "minimumProjectedNodeTextPx": 9,
-        "minimumProjectedNonEdgeTextPx": 9,
+        "viewBoxWidth": 1370,
+        "minimumProjectedNodeTextPx": 7.1,
+        "minimumProjectedNonEdgeTextPx": 7.1,
         "minimumProjectedEdgeTextPx": null,
-        "minimumProjectedNodeText": "扫描 · 入库 · 检索",
+        "minimumProjectedNodeText": "五级分流 · 会话 · 时长 · 快捷方式",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "d_library"
+          "id": "d_launch"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -450,19 +450,19 @@
           "bodyPaddingPx": 64,
           "headerPx": 68,
           "diagramChromePx": 94,
-          "svgPx": 743,
+          "svgPx": 928,
           "cardsPx": 0,
-          "viewBoxHeight": 604
+          "viewBoxHeight": 680
         },
-        "viewBoxWidth": 1520,
-        "minimumProjectedNodeTextPx": 9,
-        "minimumProjectedNonEdgeTextPx": 9,
+        "viewBoxWidth": 1370,
+        "minimumProjectedNodeTextPx": 7.1,
+        "minimumProjectedNonEdgeTextPx": 7.1,
         "minimumProjectedEdgeTextPx": null,
-        "minimumProjectedNodeText": "扫描 · 入库 · 检索",
+        "minimumProjectedNodeText": "五级分流 · 会话 · 时长 · 快捷方式",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "d_library"
+          "id": "d_launch"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -505,19 +505,19 @@
           "bodyPaddingPx": 12,
           "headerPx": 52,
           "diagramChromePx": 78,
-          "svgPx": 535,
+          "svgPx": 668,
           "cardsPx": 0,
-          "viewBoxHeight": 604
+          "viewBoxHeight": 680
         },
-        "viewBoxWidth": 1520,
-        "minimumProjectedNodeTextPx": 7.969736842105263,
-        "minimumProjectedNonEdgeTextPx": 7.969736842105263,
+        "viewBoxWidth": 1370,
+        "minimumProjectedNodeTextPx": 6.975620437956204,
+        "minimumProjectedNonEdgeTextPx": 6.975620437956204,
         "minimumProjectedEdgeTextPx": null,
-        "minimumProjectedNodeText": "扫描 · 入库 · 检索",
+        "minimumProjectedNodeText": "五级分流 · 会话 · 时长 · 快捷方式",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "d_library"
+          "id": "d_launch"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -555,19 +555,19 @@
           "bodyPaddingPx": 64,
           "headerPx": 60,
           "diagramChromePx": 84,
-          "svgPx": 598,
+          "svgPx": 748,
           "cardsPx": 0,
-          "viewBoxHeight": 604
+          "viewBoxHeight": 680
         },
-        "viewBoxWidth": 1520,
-        "minimumProjectedNodeTextPx": 8.917105263157895,
-        "minimumProjectedNonEdgeTextPx": 8.917105263157895,
+        "viewBoxWidth": 1370,
+        "minimumProjectedNodeTextPx": 7.1,
+        "minimumProjectedNonEdgeTextPx": 7.1,
         "minimumProjectedEdgeTextPx": null,
-        "minimumProjectedNodeText": "扫描 · 入库 · 检索",
+        "minimumProjectedNodeText": "五级分流 · 会话 · 时长 · 快捷方式",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "d_library"
+          "id": "d_launch"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -599,25 +599,25 @@
         "readerOverflow": null,
         "readerFit": "intrinsic-height",
         "ok": true,
-        "readerWidth": 1856,
-        "diagramWidth": 1826,
+        "readerWidth": 1763,
+        "diagramWidth": 1733,
         "pageComposition": {
           "bodyPaddingPx": 64,
           "headerPx": 60,
           "diagramChromePx": 84,
-          "svgPx": 726,
+          "svgPx": 860,
           "cardsPx": 0,
-          "viewBoxHeight": 604
+          "viewBoxHeight": 680
         },
-        "viewBoxWidth": 1520,
-        "minimumProjectedNodeTextPx": 9,
-        "minimumProjectedNonEdgeTextPx": 9,
+        "viewBoxWidth": 1370,
+        "minimumProjectedNodeTextPx": 7.1,
+        "minimumProjectedNonEdgeTextPx": 7.1,
         "minimumProjectedEdgeTextPx": null,
-        "minimumProjectedNodeText": "扫描 · 入库 · 检索",
+        "minimumProjectedNodeText": "五级分流 · 会话 · 时长 · 快捷方式",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "d_library"
+          "id": "d_launch"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -655,19 +655,19 @@
           "bodyPaddingPx": 64,
           "headerPx": 68,
           "diagramChromePx": 94,
-          "svgPx": 743,
+          "svgPx": 928,
           "cardsPx": 0,
-          "viewBoxHeight": 604
+          "viewBoxHeight": 680
         },
-        "viewBoxWidth": 1520,
-        "minimumProjectedNodeTextPx": 9,
-        "minimumProjectedNonEdgeTextPx": 9,
+        "viewBoxWidth": 1370,
+        "minimumProjectedNodeTextPx": 7.1,
+        "minimumProjectedNonEdgeTextPx": 7.1,
         "minimumProjectedEdgeTextPx": null,
-        "minimumProjectedNodeText": "扫描 · 入库 · 检索",
+        "minimumProjectedNodeText": "五级分流 · 会话 · 时长 · 快捷方式",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "d_library"
+          "id": "d_launch"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,

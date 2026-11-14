@@ -5,16 +5,16 @@
   "status": "pass",
   "type": "architecture",
   "quality": "showcase",
-  "startedAt": "2026-10-05T19:01:08.826Z",
+  "startedAt": "2026-11-14T12:03:49.129Z",
   "specification": {
     "path": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-引擎运行时-20261006-022735/candidate.json",
-    "sha256": "8811b44decded0f1c83aa182a635a661ef332cbc6714050d10029369b8cb3cec",
-    "bytes": 10850
+    "sha256": "3f98f0923049f5762be76b25cee17eb3caa41abe87eeeff807dacec64c4ea7e2",
+    "bytes": 11022
   },
   "artifact": {
     "path": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-引擎运行时-20261006-022735/architecture-engine-runtime.html",
-    "sha256": "ac5c1085f9752be32ba7373001c9c358258943852d63da66778030114f7c0e8c",
-    "bytes": 776807
+    "sha256": "7b6792b3a0e407d0a4b11d5c30f88484d5ab6d90ec68fb0b38ffd0f05c7ebd84",
+    "bytes": 776917
   },
   "stages": {
     "validate": {
@@ -40,8 +40,8 @@
         "ok": true,
         "command": "validate",
         "specification": {
-          "sha256": "8811b44decded0f1c83aa182a635a661ef332cbc6714050d10029369b8cb3cec",
-          "bytes": 10850
+          "sha256": "3f98f0923049f5762be76b25cee17eb3caa41abe87eeeff807dacec64c4ea7e2",
+          "bytes": 11022
         },
         "validation": {
           "checksPassed": 9,
@@ -56,7 +56,7 @@
     "deliver": {
       "status": "pass",
       "exitCode": 0,
-      "durationMs": 809,
+      "durationMs": 528,
       "command": [
         "/opt/homebrew/Cellar/node/26.0.0/bin/node",
         "/Users/weiss/.agents/skills/archify/bin/archify.mjs",
@@ -72,19 +72,19 @@
       ],
       "receipt": {
         "schemaVersion": 1,
-        "receiptId": "278d77e2-4998-4e84-a8d8-9741e5f15739",
+        "receiptId": "12d8e28c-b0c8-4002-90e6-e966590f6ffb",
         "ok": true,
         "command": "deliver",
         "type": "architecture",
         "input": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-引擎运行时-20261006-022735/candidate.json",
         "output": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-引擎运行时-20261006-022735/architecture-engine-runtime.html",
         "specification": {
-          "sha256": "8811b44decded0f1c83aa182a635a661ef332cbc6714050d10029369b8cb3cec",
-          "bytes": 10850
+          "sha256": "3f98f0923049f5762be76b25cee17eb3caa41abe87eeeff807dacec64c4ea7e2",
+          "bytes": 11022
         },
         "artifact": {
-          "sha256": "ac5c1085f9752be32ba7373001c9c358258943852d63da66778030114f7c0e8c",
-          "bytes": 776807
+          "sha256": "7b6792b3a0e407d0a4b11d5c30f88484d5ab6d90ec68fb0b38ffd0f05c7ebd84",
+          "bytes": 776917
         },
         "validation": {
           "checksPassed": 9,
@@ -97,8 +97,8 @@
         "evidence": {
           "verified": true,
           "repository": "https://github.com/Weiss-UltimateSavior/Tyranor-Next",
-          "revision": "1d6b9db336dc42e30c8b61edf5b4e075b80f295b",
-          "references": 28
+          "revision": "f15d5f94b8fb20ff752d22b57293c732f7281414",
+          "references": 27
         },
         "update": {
           "status": "unavailable",
@@ -116,7 +116,7 @@
     "check": {
       "status": "pass",
       "exitCode": 0,
-      "durationMs": 221,
+      "durationMs": 328,
       "command": [
         "/opt/homebrew/Cellar/node/26.0.0/bin/node",
         "/Users/weiss/.agents/skills/archify/bin/archify.mjs",
@@ -128,8 +128,8 @@
         "ok": true,
         "file": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-引擎运行时-20261006-022735/architecture-engine-runtime.html",
         "artifact": {
-          "sha256": "ac5c1085f9752be32ba7373001c9c358258943852d63da66778030114f7c0e8c",
-          "bytes": 776807
+          "sha256": "7b6792b3a0e407d0a4b11d5c30f88484d5ab6d90ec68fb0b38ffd0f05c7ebd84",
+          "bytes": 776917
         },
         "checks": [
           {
@@ -257,13 +257,13 @@
           "issues": []
         },
         "provenance": "current",
-        "deliveryReceiptId": "278d77e2-4998-4e84-a8d8-9741e5f15739"
+        "deliveryReceiptId": "12d8e28c-b0c8-4002-90e6-e966590f6ffb"
       }
     },
     "browser-check": {
       "status": "pass",
       "exitCode": 0,
-      "durationMs": 938,
+      "durationMs": 1481,
       "command": [
         "/opt/homebrew/Cellar/node/26.0.0/bin/node",
         "/Users/weiss/.agents/skills/archify/bin/archify.mjs",
@@ -281,11 +281,11 @@
         "status": "pass",
         "visualReview": "not-requested",
         "provenance": "current",
-        "deliveryReceiptId": "278d77e2-4998-4e84-a8d8-9741e5f15739",
+        "deliveryReceiptId": "12d8e28c-b0c8-4002-90e6-e966590f6ffb",
         "artifact": {
           "path": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-引擎运行时-20261006-022735/architecture-engine-runtime.html",
-          "sha256": "ac5c1085f9752be32ba7373001c9c358258943852d63da66778030114f7c0e8c",
-          "bytes": 776807
+          "sha256": "7b6792b3a0e407d0a4b11d5c30f88484d5ab6d90ec68fb0b38ffd0f05c7ebd84",
+          "bytes": 776917
         },
         "state": {
           "detail": "read",
@@ -328,7 +328,7 @@
               },
               "viewBoxWidth": 1532,
               "minimumProjectedNodeTextPx": 7.028720626631854,
-              "minimumProjectedNonEdgeTextPx": 7.907310704960835,
+              "minimumProjectedNonEdgeTextPx": 7.8194516971279375,
               "minimumProjectedEdgeTextPx": 7.028720626631854,
               "minimumProjectedNodeText": "幂等解压",
               "minimumProjectedNodeTextDetail": "edge",
@@ -380,7 +380,7 @@
               },
               "viewBoxWidth": 1532,
               "minimumProjectedNodeTextPx": 7.864229765013055,
-              "minimumProjectedNonEdgeTextPx": 8.847258485639687,
+              "minimumProjectedNonEdgeTextPx": 8.748955613577024,
               "minimumProjectedEdgeTextPx": 7.864229765013055,
               "minimumProjectedNodeText": "幂等解压",
               "minimumProjectedNodeTextDetail": "edge",
@@ -432,7 +432,7 @@
               },
               "viewBoxWidth": 1532,
               "minimumProjectedNodeTextPx": 8,
-              "minimumProjectedNonEdgeTextPx": 9,
+              "minimumProjectedNonEdgeTextPx": 8.9,
               "minimumProjectedEdgeTextPx": 8,
               "minimumProjectedNodeText": "幂等解压",
               "minimumProjectedNodeTextDetail": "edge",
@@ -484,7 +484,7 @@
               },
               "viewBoxWidth": 1532,
               "minimumProjectedNodeTextPx": 8,
-              "minimumProjectedNonEdgeTextPx": 9,
+              "minimumProjectedNonEdgeTextPx": 8.9,
               "minimumProjectedEdgeTextPx": 8,
               "minimumProjectedNodeText": "幂等解压",
               "minimumProjectedNodeTextDetail": "edge",
@@ -589,7 +589,7 @@
               },
               "viewBoxWidth": 1532,
               "minimumProjectedNodeTextPx": 7.028720626631854,
-              "minimumProjectedNonEdgeTextPx": 7.907310704960835,
+              "minimumProjectedNonEdgeTextPx": 7.8194516971279375,
               "minimumProjectedEdgeTextPx": 7.028720626631854,
               "minimumProjectedNodeText": "幂等解压",
               "minimumProjectedNodeTextDetail": "edge",
@@ -641,7 +641,7 @@
               },
               "viewBoxWidth": 1532,
               "minimumProjectedNodeTextPx": 7.864229765013055,
-              "minimumProjectedNonEdgeTextPx": 8.847258485639687,
+              "minimumProjectedNonEdgeTextPx": 8.748955613577024,
               "minimumProjectedEdgeTextPx": 7.864229765013055,
               "minimumProjectedNodeText": "幂等解压",
               "minimumProjectedNodeTextDetail": "edge",
@@ -693,7 +693,7 @@
               },
               "viewBoxWidth": 1532,
               "minimumProjectedNodeTextPx": 8,
-              "minimumProjectedNonEdgeTextPx": 9,
+              "minimumProjectedNonEdgeTextPx": 8.9,
               "minimumProjectedEdgeTextPx": 8,
               "minimumProjectedNodeText": "幂等解压",
               "minimumProjectedNodeTextDetail": "edge",
@@ -745,7 +745,7 @@
               },
               "viewBoxWidth": 1532,
               "minimumProjectedNodeTextPx": 8,
-              "minimumProjectedNonEdgeTextPx": 9,
+              "minimumProjectedNonEdgeTextPx": 8.9,
               "minimumProjectedEdgeTextPx": 8,
               "minimumProjectedNodeText": "幂等解压",
               "minimumProjectedNodeTextDetail": "edge",
@@ -802,7 +802,7 @@
               },
               "viewBoxWidth": 1532,
               "minimumProjectedNodeTextPx": 7.028720626631854,
-              "minimumProjectedNonEdgeTextPx": 7.907310704960835,
+              "minimumProjectedNonEdgeTextPx": 7.8194516971279375,
               "minimumProjectedEdgeTextPx": 7.028720626631854,
               "minimumProjectedNodeText": "幂等解压",
               "minimumProjectedNodeTextDetail": "edge",
@@ -854,7 +854,7 @@
               },
               "viewBoxWidth": 1532,
               "minimumProjectedNodeTextPx": 7.864229765013055,
-              "minimumProjectedNonEdgeTextPx": 8.847258485639687,
+              "minimumProjectedNonEdgeTextPx": 8.748955613577024,
               "minimumProjectedEdgeTextPx": 7.864229765013055,
               "minimumProjectedNodeText": "幂等解压",
               "minimumProjectedNodeTextDetail": "edge",
@@ -906,7 +906,7 @@
               },
               "viewBoxWidth": 1532,
               "minimumProjectedNodeTextPx": 8,
-              "minimumProjectedNonEdgeTextPx": 9,
+              "minimumProjectedNonEdgeTextPx": 8.9,
               "minimumProjectedEdgeTextPx": 8,
               "minimumProjectedNodeText": "幂等解压",
               "minimumProjectedNodeTextDetail": "edge",
@@ -958,7 +958,7 @@
               },
               "viewBoxWidth": 1532,
               "minimumProjectedNodeTextPx": 8,
-              "minimumProjectedNonEdgeTextPx": 9,
+              "minimumProjectedNonEdgeTextPx": 8.9,
               "minimumProjectedEdgeTextPx": 8,
               "minimumProjectedNodeText": "幂等解压",
               "minimumProjectedNodeTextDetail": "edge",
@@ -1003,16 +1003,18 @@
     "browserCheckReceipt": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-引擎运行时-20261006-022735/architecture-engine-runtime.browser-check.json"
   },
   "visualReview": "not-requested",
-  "finishedAt": "2026-10-05T19:01:10.979Z",
-  "durationMs": 2153,
+  "finishedAt": "2026-11-14T12:03:51.639Z",
+  "durationMs": 2510,
   "update": {
-    "status": "current",
+    "status": "update_available",
     "installedVersion": "3.0.1",
-    "availableVersion": "3.0.1",
-    "releaseNotes": null,
-    "checkedAt": "2026-10-05T18:30:17.890Z",
+    "availableVersion": "3.2.0",
+    "releaseNotes": "https://github.com/tt-a1i/archify/releases/tag/v3.2.0",
+    "severity": "normal",
+    "checkedAt": "2026-11-14T12:00:02.300Z",
     "source": "cache",
-    "noticeRequired": false,
-    "noticeText": null
+    "noticeRequired": true,
+    "noticeText": "Archify update: 3.0.1 → 3.2.0. A previous check at 2026-11-14T12:00:02.300Z found a newer release. Release notes: https://github.com/tt-a1i/archify/releases/tag/v3.2.0. The installed Skill has not changed; ask to snooze or ignore this reminder.",
+    "eventKey": "archify@sha256:70e210265c59f24dcbdf2a502ff671104b5454e7ee7d3554aecd86bad32384f5"
   }
 }

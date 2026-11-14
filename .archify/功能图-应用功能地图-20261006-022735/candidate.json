@@ -9,7 +9,7 @@
       "url": "https://github.com/Weiss-UltimateSavior/Tyranor-Next.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "1d6b9db336dc42e30c8b61edf5b4e075b80f295b"
+      "revision": "f15d5f94b8fb20ff752d22b57293c732f7281414"
     },
     "output": ".archify/功能图-应用功能地图-20261006-022735/architecture-feature-map.html"
   },
@@ -18,13 +18,13 @@
       "id": "d_library",
       "type": "backend",
       "label": "游戏库管理",
-      "sublabel": "扫描 · 入库 · 检索",
+      "sublabel": "扫描 · 入库 · 筛选 · 时长",
       "pos": [
-        40,
+        20,
         116
       ],
       "size": [
-        160,
+        150,
         64
       ],
       "sources": [
@@ -45,7 +45,7 @@
       "sublabel": "SAF 遍历 + 特征判定",
       "tag": "EngineScanner",
       "pos": [
-        270,
+        220,
         40
       ],
       "size": [
@@ -55,7 +55,7 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt",
-          "line": 87
+          "line": 86
         }
       ]
     },
@@ -66,7 +66,7 @@
       "sublabel": "PC / 安卓游戏",
       "tag": "AndroidAppGames",
       "pos": [
-        270,
+        220,
         116
       ],
       "size": [
@@ -87,11 +87,11 @@
     {
       "id": "f_query",
       "type": "frontend",
-      "label": "搜索 · 排序 · 最近",
-      "sublabel": "网格 / 封面流 / 快捷启动",
+      "label": "搜索 · 筛选 · 排序",
+      "sublabel": "网格 / 封面流 / 快捷启动 / 最近",
       "tag": "Room + Facade",
       "pos": [
-        270,
+        220,
         192
       ],
       "size": [
@@ -101,11 +101,11 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/ui/main/MainLibraryViewModel.kt",
-          "line": 129
+          "line": 57
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryRepository.kt",
-          "line": 240
+          "line": 37
         }
       ]
     },
@@ -113,13 +113,13 @@
       "id": "d_launch",
       "type": "backend",
       "label": "启动运行",
-      "sublabel": "分流 · 会话 · 快捷方式",
+      "sublabel": "五级分流 · 会话 · 时长 · 快捷方式",
       "pos": [
-        540,
+        470,
         116
       ],
       "size": [
-        160,
+        150,
         64
       ],
       "sources": [
@@ -132,11 +132,11 @@
     {
       "id": "f_launch",
       "type": "frontend",
-      "label": "四级分流启动",
-      "sublabel": "安卓 / 模拟器 / 模块 / 内置",
+      "label": "五级分流启动",
+      "sublabel": "安卓 / 模块 / 模拟器 / 外置 / 内置",
       "tag": "EngineLauncher",
       "pos": [
-        770,
+        670,
         40
       ],
       "size": [
@@ -146,7 +146,7 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 208
+          "line": 345
         }
       ]
     },
@@ -154,10 +154,10 @@
       "id": "f_gate",
       "type": "frontend",
       "label": "启动前确认",
-      "sublabel": "补丁策略 · 存档格式",
+      "sublabel": "补丁策略 · 存档格式 · 引擎预检",
       "tag": "按需弹窗",
       "pos": [
-        770,
+        670,
         116
       ],
       "size": [
@@ -167,11 +167,11 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 366
+          "line": 688
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 385
+          "line": 707
         }
       ]
     },
@@ -182,7 +182,7 @@
       "sublabel": "图钉 + 反查游戏",
       "tag": "PinShortcut",
       "pos": [
-        770,
+        670,
         192
       ],
       "size": [
@@ -202,11 +202,11 @@
       "label": "封面",
       "sublabel": "检索 · 绑定 · 缓存",
       "pos": [
-        1040,
+        920,
         116
       ],
       "size": [
-        160,
+        150,
         64
       ],
       "sources": [
@@ -220,10 +220,10 @@
       "id": "f_scrape",
       "type": "frontend",
       "label": "来源检索与绑定",
-      "sublabel": "VNDB / Bangumi / Steam 等",
+      "sublabel": "VNDB / NextMoe 等 · 两级选图",
       "tag": "CoverScraper",
       "pos": [
-        1270,
+        1120,
         40
       ],
       "size": [
@@ -233,11 +233,11 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/cover/CoverScraperService.kt",
-          "line": 102
+          "line": 47
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/cover/CoverScraperService.kt",
-          "line": 123
+          "line": 113
         }
       ]
     },
@@ -248,7 +248,7 @@
       "sublabel": "单飞 · 防覆盖",
       "tag": "TaskManager",
       "pos": [
-        1270,
+        1120,
         116
       ],
       "size": [
@@ -266,10 +266,10 @@
       "id": "f_covercache",
       "type": "frontend",
       "label": "封面缓存",
-      "sublabel": "本地封面 + 磁盘缓存",
+      "sublabel": "本地封面 + 磁盘缓存 + XSYS4 图标兜底",
       "tag": "CoverImageCache",
       "pos": [
-        1270,
+        1120,
         192
       ],
       "size": [
@@ -287,13 +287,13 @@
       "id": "d_save",
       "type": "backend",
       "label": "存档",
-      "sublabel": "定位 · 备份 · 互通",
+      "sublabel": "定位 · 版本 · 互通 · 云同步",
       "pos": [
-        40,
+        20,
         396
       ],
       "size": [
-        160,
+        150,
         64
       ],
       "sources": [
@@ -310,7 +310,7 @@
       "sublabel": "按引擎 + scoped 开关",
       "tag": "GameSaveManager",
       "pos": [
-        270,
+        220,
         320
       ],
       "size": [
@@ -320,7 +320,7 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/save/GameSaveManager.kt",
-          "line": 35
+          "line": 48
         },
         {
           "path": "engine/src/main/java/bridge/KrSafMirror.kt",
@@ -331,11 +331,11 @@
     {
       "id": "f_saveio",
       "type": "frontend",
-      "label": "导出 / 导入 ZIP",
-      "sublabel": "原子交换 + 留底",
-      "tag": "zip 备份",
+      "label": "导入 / 导出 / 版本激活",
+      "sublabel": "ZIP · 原子交换 · 留底",
+      "tag": "SaveSyncService",
       "pos": [
-        270,
+        220,
         396
       ],
       "size": [
@@ -344,12 +344,12 @@
       ],
       "sources": [
         {
-          "path": "app/src/main/java/com/tyranor/next/core/game/save/GameSaveManager.kt",
-          "line": 178
+          "path": "app/src/main/java/com/tyranor/next/core/game/save/sync/SaveSyncService.kt",
+          "line": 24
         },
         {
-          "path": "app/src/main/java/com/tyranor/next/core/game/save/GameSaveManager.kt",
-          "line": 211
+          "path": "app/src/main/java/com/tyranor/next/core/game/save/sync/SaveActivationJournal.kt",
+          "line": 13
         }
       ]
     },
@@ -357,10 +357,10 @@
       "id": "f_interop",
       "type": "frontend",
       "label": "MV/MZ 转化与互通",
-      "sublabel": "标准侧 ⇄ Tyranor 侧",
+      "sublabel": "标准侧 ⇄ Tyranor 侧 · 手动选版",
       "tag": "RpgSaveSync",
       "pos": [
-        270,
+        220,
         472
       ],
       "size": [
@@ -370,11 +370,36 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 431
+          "line": 447
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 497
+          "line": 753
+        }
+      ]
+    },
+    {
+      "id": "f_webdav",
+      "type": "frontend",
+      "label": "WebDAV 云存档",
+      "sublabel": "手动 / 拉取 / 上传 / 双向 · 版本保留",
+      "tag": "SaveSyncService",
+      "pos": [
+        220,
+        548
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/save/sync/SaveSyncService.kt",
+          "line": 24
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/save/sync/WebDavSettingsStore.kt",
+          "line": 19
         }
       ]
     },
@@ -382,13 +407,13 @@
       "id": "d_engine",
       "type": "backend",
       "label": "引擎与设置",
-      "sublabel": "三级设置 · 模块 · 模拟器",
+      "sublabel": "三级设置 · 外置模块 · 运行时模块",
       "pos": [
-        540,
+        470,
         396
       ],
       "size": [
-        160,
+        150,
         64
       ],
       "sources": [
@@ -398,7 +423,7 @@
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/engine/external/ExternalEngineModuleRegistry.kt",
-          "line": 22
+          "line": 8
         }
       ]
     },
@@ -409,7 +434,7 @@
       "sublabel": "应用 / 引擎 / 单游戏",
       "tag": "Resolver",
       "pos": [
-        770,
+        670,
         320
       ],
       "size": [
@@ -431,10 +456,10 @@
       "id": "f_engineopts",
       "type": "frontend",
       "label": "引擎设置项",
-      "sublabel": "11 类设置入口",
+      "sublabel": "按引擎分组 · 全局 / 单游戏覆盖",
       "tag": "EngineSettings",
       "pos": [
-        770,
+        670,
         396
       ],
       "size": [
@@ -447,8 +472,8 @@
           "line": 16
         },
         {
-          "path": "app/src/main/java/com/tyranor/next/ui/settings/EngineSettingsMenuActivity.kt",
-          "line": 111
+          "path": "app/src/main/java/com/tyranor/next/ui/settings/EngineSettingsActivity.kt",
+          "line": 1
         }
       ]
     },
@@ -456,10 +481,10 @@
       "id": "f_external",
       "type": "frontend",
       "label": "外置模块与模拟器",
-      "sublabel": "安装探测 + Intent 跳转",
+      "sublabel": "安装探测 · Intent · 模块管理",
       "tag": "Registry",
       "pos": [
-        770,
+        670,
         472
       ],
       "size": [
@@ -469,11 +494,11 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/engine/external/ExternalEngineModuleRegistry.kt",
-          "line": 22
+          "line": 8
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/engine/external/ExternalEmulatorRegistry.kt",
-          "line": 38
+          "line": 8
         }
       ]
     },
@@ -483,11 +508,11 @@
       "label": "工具与维护",
       "sublabel": "补丁 · 拆封包 · 更新",
       "pos": [
-        1040,
+        920,
         396
       ],
       "size": [
-        160,
+        150,
         64
       ],
       "sources": [
@@ -512,7 +537,7 @@
       "sublabel": "索引检索 · 下载安装",
       "tag": "KrkrPatch",
       "pos": [
-        1270,
+        1120,
         320
       ],
       "size": [
@@ -533,7 +558,7 @@
       "sublabel": "列举 / 解包 / 封包",
       "tag": "Xp3Archive",
       "pos": [
-        1270,
+        1120,
         396
       ],
       "size": [
@@ -558,7 +583,7 @@
       "sublabel": "Release 通知 + 下载校验",
       "tag": "GitHubChecker",
       "pos": [
-        1270,
+        1120,
         472
       ],
       "size": [
@@ -659,6 +684,13 @@
       "toSide": "left"
     },
     {
+      "id": "save-webdav",
+      "from": "d_save",
+      "to": "f_webdav",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
       "id": "engine-settings",
       "from": "d_engine",
       "to": "f_settings3",
@@ -706,8 +738,9 @@
       "dot": "cyan",
       "title": "页面骨架",
       "items": [
-        "四 Tab 常驻组合：首页（默认 / 网页）、游戏、引擎、设置",
-        "八类二级页面（设置 / 封面 / 补丁 / 存档 / 拆封包等）统一经 AppScreenActivity + AppScreenScaffold 宿主",
+        "四 Tab 组合：首页（默认 / 可关闭）、游戏、引擎、设置；首页关闭后游戏页作为第一页",
+        "二级页面（设置 / 封面 / 补丁 / 存档 / WebDAV / 拆封包 / 运行时模块 / 关于等）统一经 AppScreenActivity + AppScreenScaffold 宿主",
+        "妙妙工具侧栏提供原生 Kirikiroid2 界面、拆封包、WebDAV、输入与手柄、引擎模块管理入口",
         "平板 / 大窗口自动切换侧栏导航，导航样式三档全局生效"
       ]
     },
@@ -716,7 +749,8 @@
       "title": "跨域能力",
       "items": [
         "三语言（zh / ja / en）由检查工具强制键值一致，禁止源码硬编码 CJK",
-        "外观风格两档玻璃 + 导航玻璃两档为全局视觉能力，作用于所有页面",
+        "外观风格两档玻璃 + 导航玻璃两档与增强动效为全局视觉能力，作用于所有页面",
+        "游戏时长由 playtime_records 记录，首页最近游玩卡片直接展示；筛选/排序偏好持久化",
         "封面抓取与后台更新在任务管理器 / WorkManager 中持续，不阻塞页面"
       ]
     },
@@ -724,9 +758,9 @@
       "dot": "amber",
       "title": "外置语义",
       "items": [
-        "PC 游戏手动入库经外置 Winlator 启动；安卓游戏按包名直接跳转",
-        "外置 APK 模块（Ren'Py / RPGM）与模拟器（PPSSPP / Eden）只做安装探测与 Intent 跳转",
-        "主 App 不接管外置运行时的存档与设置，仅在 UI 提供跳转入口"
+        "PC / YU-RIS / CatSystem2 经外置 Winlator 启动；安卓游戏按包名直接跳转",
+        "外置 APK 模块（Ren'Py / RPGM / Ruffle）、第三方 RuntimeModule 与模拟器（PPSSPP / Eden）只做安装探测与 Intent 跳转",
+        "外置模拟器与 RuntimeModule 的存档不由主 App 接管；Ren'Py 仅在 Android 11+ 统一管理游戏根 saves/"
       ]
     }
   ]

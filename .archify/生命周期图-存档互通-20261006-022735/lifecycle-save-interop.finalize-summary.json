@@ -7,13 +7,13 @@
   "quality": "showcase",
   "specification": {
     "path": "/Users/weiss/opencode/rma/TyranorNext/.archify/生命周期图-存档互通-20261006-022735/candidate.json",
-    "sha256": "6848b78020d1702585eb29389dd396acce2b778a1283a9aa0bc5fc97f128748e",
-    "bytes": 7300
+    "sha256": "a613e2aa78ffda38ce30c068da70b9ee65da950e4817d25e2d86aa694de161b1",
+    "bytes": 7779
   },
   "artifact": {
     "path": "/Users/weiss/opencode/rma/TyranorNext/.archify/生命周期图-存档互通-20261006-022735/lifecycle-save-interop.html",
-    "sha256": "9955f24d330db31255e242f2789301bacd410fd3b8cce917aef6382f2df8da66",
-    "bytes": 771080
+    "sha256": "b5ae922c0c14b06833d918bc5d81d3572963dfba2523141a2c2bad98f1285e3f",
+    "bytes": 771593
   },
   "gates": {
     "validate": "pass",
@@ -33,17 +33,19 @@
     "browserCheckReceipt": "/Users/weiss/opencode/rma/TyranorNext/.archify/生命周期图-存档互通-20261006-022735/lifecycle-save-interop.browser-check.json"
   },
   "update": {
-    "status": "current",
+    "status": "update_available",
     "installedVersion": "3.0.1",
-    "availableVersion": "3.0.1",
-    "releaseNotes": null,
-    "checkedAt": "2026-10-05T18:30:17.890Z",
+    "availableVersion": "3.2.0",
+    "releaseNotes": "https://github.com/tt-a1i/archify/releases/tag/v3.2.0",
+    "severity": "normal",
+    "checkedAt": "2026-11-14T12:00:02.300Z",
     "source": "cache",
-    "noticeRequired": false,
-    "noticeText": null
+    "noticeRequired": true,
+    "noticeText": "Archify update: 3.0.1 → 3.2.0. A previous check at 2026-11-14T12:00:02.300Z found a newer release. Release notes: https://github.com/tt-a1i/archify/releases/tag/v3.2.0. The installed Skill has not changed; ask to snooze or ignore this reminder.",
+    "eventKey": "archify@sha256:70e210265c59f24dcbdf2a502ff671104b5454e7ee7d3554aecd86bad32384f5"
   },
   "visualReview": "not-requested",
-  "durationMs": 3992,
+  "durationMs": 3378,
   "visualReviewRecommendation": {
     "action": "inspect-route-readability",
     "signals": {

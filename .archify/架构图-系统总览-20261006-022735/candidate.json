@@ -9,7 +9,7 @@
       "url": "https://github.com/Weiss-UltimateSavior/Tyranor-Next.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "1d6b9db336dc42e30c8b61edf5b4e075b80f295b"
+      "revision": "f15d5f94b8fb20ff752d22b57293c732f7281414"
     },
     "output": ".archify/架构图-系统总览-20261006-022735/architecture-overview.html"
   },
@@ -21,11 +21,11 @@
       "label": "玩家",
       "sublabel": "手机用户",
       "pos": [
-        40,
+        20,
         320
       ],
       "size": [
-        120,
+        110,
         60
       ]
     },
@@ -35,21 +35,21 @@
       "label": "界面 UI 交互层",
       "sublabel": "Compose + Miuix · 四 Tab",
       "pos": [
-        250,
+        210,
         316
       ],
       "size": [
-        150,
+        135,
         68
       ],
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/ui/main/MainScreen.kt",
-          "line": 105
+          "line": 145
         },
         {
           "path": "app/src/main/java/com/tyranor/next/ui/main/MainScreen.kt",
-          "line": 113
+          "line": 168
         },
         {
           "path": "app/src/main/java/com/tyranor/next/MainActivity.kt",
@@ -63,25 +63,25 @@
       "label": "MainLibraryViewModel",
       "sublabel": "FIFO 命令队列 · 状态订阅",
       "pos": [
-        490,
+        425,
         316
       ],
       "size": [
-        150,
+        135,
         68
       ],
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/ui/main/MainLibraryViewModel.kt",
-          "line": 51
+          "line": 57
         },
         {
           "path": "app/src/main/java/com/tyranor/next/ui/main/MainLibraryViewModel.kt",
-          "line": 129
+          "line": 60
         },
         {
           "path": "app/src/main/java/com/tyranor/next/ui/main/MainLibraryViewModel.kt",
-          "line": 223
+          "line": 163
         }
       ]
     },
@@ -89,13 +89,13 @@
       "id": "core",
       "type": "backend",
       "label": "功能抽象层 core",
-      "sublabel": "扫描/启动/存档/封面/设置",
+      "sublabel": "扫描/启动/存档/设置/时长",
       "pos": [
-        730,
+        640,
         312
       ],
       "size": [
-        160,
+        140,
         78
       ],
       "sources": [
@@ -105,11 +105,11 @@
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/cover/CoverScraperService.kt",
-          "line": 50
+          "line": 46
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/save/GameSaveManager.kt",
-          "line": 24
+          "line": 48
         }
       ]
     },
@@ -119,25 +119,25 @@
       "label": "EngineLauncher",
       "sublabel": "引擎分流 · Intent 编排",
       "pos": [
-        980,
+        860,
         312
       ],
       "size": [
-        160,
+        140,
         78
       ],
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 141
+          "line": 183
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 208
+          "line": 345
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 732
+          "line": 742
         }
       ]
     },
@@ -145,20 +145,20 @@
       "id": "hosts",
       "type": "backend",
       "label": "引擎宿主进程",
-      "sublabel": "11 个独立 : 进程",
+      "sublabel": "18 个进程 · 14 引擎族",
       "pos": [
-        1240,
+        1080,
         312
       ],
       "size": [
-        160,
+        140,
         78
       ],
       "sources": [
         {
           "path": "engine/src/main/AndroidManifest.xml",
           "line": 14,
-          "end_line": 206
+          "end_line": 267
         },
         {
           "path": "engine/src/main/java/com/core/engine/LaunchContract.kt",
@@ -170,20 +170,20 @@
       "id": "native",
       "type": "backend",
       "label": "原生运行时与桥接",
-      "sublabel": "SDL2/3 · TVP · Rust · JNI",
+      "sublabel": "10 桥 · SDL2/3 · TVP · Rust",
       "pos": [
-        1500,
+        1300,
         312
       ],
       "size": [
-        150,
+        140,
         78
       ],
       "sources": [
         {
           "path": "engine/src/main/cpp/CMakeLists.txt",
           "line": 4,
-          "end_line": 9
+          "end_line": 12
         },
         {
           "path": "engine/rust/src/lib.rs",
@@ -199,13 +199,13 @@
       "id": "coverapi",
       "type": "cloud",
       "label": "封面元数据服务",
-      "sublabel": "VNDB · Bangumi · Steam 等",
+      "sublabel": "VNDB · Bangumi · NextMoe 等",
       "pos": [
-        735,
+        640,
         120
       ],
       "size": [
-        150,
+        140,
         62
       ],
       "sources": [
@@ -228,13 +228,13 @@
       "id": "online",
       "type": "cloud",
       "label": "在线分发源",
-      "sublabel": "Releases · 补丁索引",
+      "sublabel": "Releases · 补丁 · WebDAV",
       "pos": [
-        985,
+        860,
         120
       ],
       "size": [
-        150,
+        140,
         62
       ],
       "sources": [
@@ -258,11 +258,11 @@
       "label": "外置模拟器",
       "sublabel": "PPSSPP · Eden · Winlator",
       "pos": [
-        1210,
+        1080,
         120
       ],
       "size": [
-        160,
+        140,
         62
       ],
       "sources": [
@@ -284,27 +284,27 @@
       "id": "ext_modules",
       "type": "external",
       "label": "外置 APK 引擎模块",
-      "sublabel": "JoiPlay Ren'Py / RPGM",
+      "sublabel": "JoiPlay · Ruffle · 模块",
       "pos": [
-        1400,
+        1300,
         120
       ],
       "size": [
-        160,
+        140,
         62
       ],
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/engine/external/ExternalEngineModuleRegistry.kt",
-          "line": 22
+          "line": 8
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/engine/external/RpgMakerExternalEngineModule.kt",
           "line": 144
         },
         {
-          "path": "app/src/main/java/com/tyranor/next/core/engine/external/RenPyExternalEngineModule.kt",
-          "line": 29
+          "path": "app/src/main/java/com/tyranor/next/core/engine/external/RuffleExternalEngineModule.kt",
+          "line": 26
         }
       ]
     },
@@ -312,9 +312,9 @@
       "id": "room",
       "type": "database",
       "label": "Room 游戏库",
-      "sublabel": "game_library.db · 5 表",
+      "sublabel": "5 表 + 时长库",
       "pos": [
-        470,
+        420,
         490
       ],
       "size": [
@@ -324,16 +324,16 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryDatabase.kt",
-          "line": 21,
-          "end_line": 29
+          "line": 25,
+          "end_line": 35
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryRepository.kt",
           "line": 37
         },
         {
-          "path": "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryRepository.kt",
-          "line": 158
+          "path": "app/src/main/java/com/tyranor/next/core/game/playtime/GamePlaytimeDatabase.kt",
+          "line": 51
         }
       ]
     },
@@ -343,11 +343,11 @@
       "label": "三级设置存储",
       "sublabel": "应用/引擎/单游戏覆盖",
       "pos": [
-        680,
+        640,
         490
       ],
       "size": [
-        150,
+        140,
         62
       ],
       "sources": [
@@ -371,11 +371,11 @@
       "label": "SAF 游戏目录与存档",
       "sublabel": "SAF URI ⇄ 真实路径",
       "pos": [
-        890,
+        860,
         490
       ],
       "size": [
-        160,
+        150,
         62
       ],
       "sources": [
@@ -389,7 +389,7 @@
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/save/GameSaveManager.kt",
-          "line": 35
+          "line": 48
         }
       ]
     }
@@ -557,7 +557,7 @@
       "title": "三层架构与依赖纪律",
       "items": [
         "ui → core → engine 三层固定依赖方向，core 不得依赖 Compose，engine 不得关心应用页面",
-        "二级页面（设置/封面/补丁/存档/拆封包）统一经 AppScreenActivity + AppScreenScaffold 宿主",
+        "二级页面（设置/封面/补丁/存档/WebDAV/拆封包/运行时模块等）统一经 AppScreenActivity + AppScreenScaffold 宿主",
         "错误协议统一：类型化 LaunchResult / 带错误码异常，本地化文案一律上移 UI 层"
       ]
     },
@@ -565,8 +565,8 @@
       "dot": "emerald",
       "title": "启动编排与进程隔离",
       "items": [
-        "EngineLauncher 按引擎分流：手动安卓游戏、外置模拟器、外置 APK 模块、内置宿主",
-        "内置宿主运行于 :kirikiri2、:krkrsdl3、:ons、:artemis 等 11 个独立进程，主进程只做编排",
+        "EngineLauncher 按引擎分流：手动安卓游戏、第三方 RuntimeModule、外置模拟器、外置 APK 模块、内置宿主",
+        "内置宿主运行于 :kirikiri2、:krkrsdl3、:ons、:artemis、:siglus、:cmvs、:xsys35、:xsys4、:systemnnn 等 18 个独立进程（14 引擎族），主进程只做编排",
         "LaunchContract 是 App ↔ 引擎宿主 Intent 契约的唯一常量源，禁止裸字符串"
       ]
     },
@@ -576,7 +576,7 @@
       "items": [
         "Room（game_library.db）为唯一事实源，旧 SharedPreferences 仅作迁移导入与回滚镜像",
         "SAF 授权目录经 GamePathUtils 映射真实路径，引擎进程据此读写游戏与存档",
-        "封面（VNDB / Bangumi / Steam / Hikarinagi OAuth）、更新（GitHub Releases）、KRKR 补丁索引均为在线服务"
+        "封面（VNDB / NextMoe / Bangumi / Steam / Hikarinagi OAuth）、更新（GitHub Releases）、KRKR 补丁索引与 WebDAV 云存档均为在线服务"
       ]
     }
   ]

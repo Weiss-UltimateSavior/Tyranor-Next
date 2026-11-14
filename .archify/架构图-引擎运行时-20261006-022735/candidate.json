@@ -9,7 +9,7 @@
       "url": "https://github.com/Weiss-UltimateSavior/Tyranor-Next.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "1d6b9db336dc42e30c8b61edf5b4e075b80f295b"
+      "revision": "f15d5f94b8fb20ff752d22b57293c732f7281414"
     },
     "output": ".archify/架构图-引擎运行时-20261006-022735/architecture-engine-runtime.html"
   },
@@ -30,15 +30,15 @@
       "sources": [
         {
           "path": "app/build.gradle.kts",
-          "line": 82
+          "line": 98
         },
         {
           "path": "app/build.gradle.kts",
-          "line": 104
+          "line": 157
         },
         {
           "path": "app/build.gradle.kts",
-          "line": 117
+          "line": 187
         }
       ]
     },
@@ -58,11 +58,11 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/engine/plugin/EnginePluginBootstrap.kt",
-          "line": 68
+          "line": 43
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/engine/plugin/EnginePluginBootstrap.kt",
-          "line": 77
+          "line": 82
         }
       ]
     },
@@ -87,7 +87,7 @@
         },
         {
           "path": "engine/src/main/java/com/core/nativeplugin/NativePluginManager.kt",
-          "line": 482
+          "line": 96
         }
       ]
     },
@@ -107,11 +107,11 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 141
+          "line": 183
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 208
+          "line": 345
         }
       ]
     },
@@ -119,7 +119,7 @@
       "id": "hosts_native",
       "type": "backend",
       "label": "原生宿主 Activity 族",
-      "sublabel": "6 个引擎族 · 独立 : 进程",
+      "sublabel": "14 个引擎族 · 18 个独立 : 进程",
       "pos": [
         530,
         385
@@ -132,7 +132,7 @@
         {
           "path": "engine/src/main/AndroidManifest.xml",
           "line": 14,
-          "end_line": 206
+          "end_line": 267
         },
         {
           "path": "engine/src/main/java/com/core/engine/LaunchContract.kt",
@@ -144,7 +144,7 @@
       "id": "bridges",
       "type": "backend",
       "label": "JNI 桥接 .so",
-      "sublabel": "krkr_bridge_v2 等 6 个桥",
+      "sublabel": "krkr_bridge_v2 等 10 个桥/加载器",
       "pos": [
         790,
         385
@@ -157,15 +157,15 @@
         {
           "path": "engine/src/main/cpp/CMakeLists.txt",
           "line": 4,
-          "end_line": 9
+          "end_line": 12
         },
         {
           "path": "engine/src/main/cpp/krkr_bridge.cpp",
-          "line": 690
+          "line": 384
         },
         {
-          "path": "engine/src/main/cpp/krkr_bridge.cpp",
-          "line": 780
+          "path": "engine/src/main/cpp/artemis_loader.cpp",
+          "line": 109
         }
       ]
     },
@@ -173,7 +173,7 @@
       "id": "runtimes",
       "type": "backend",
       "label": "引擎运行库",
-      "sublabel": "预编译 so · 仅 arm64-v8a",
+      "sublabel": "8 个运行库包 · 仅 arm64-v8a",
       "pos": [
         1050,
         385
@@ -184,16 +184,13 @@
       ],
       "sources": [
         {
-          "path": "engine/build.gradle",
-          "line": 28
+          "path": "app/build.gradle.kts",
+          "line": 103,
+          "end_line": 112
         },
         {
           "path": "engine/src/main/java/com/core/nativeplugin/NativePluginConstants.kt",
           "line": 50
-        },
-        {
-          "path": "engine/src/main/java/com/core/nativeplugin/NativePluginConstants.kt",
-          "line": 71
         }
       ]
     },
@@ -217,7 +214,7 @@
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/save/GameSaveManager.kt",
-          "line": 35
+          "line": 48
         }
       ]
     },
@@ -443,17 +440,18 @@
       "dot": "cyan",
       "title": "插件安装生命周期",
       "items": [
-        "Gradle 合并 engine / app 两处 nativeplugins 源，打成 assets/nativeplugins/*.zip 随 APK 分发",
+        "Gradle 合并 engine / app 两处 nativeplugins 源，按 kirikiroid2 / ons / artemis 打成 assets/nativeplugins/*.zip.xz 随 APK 分发",
         "首启 EnginePluginBootstrap 按 manifest 的 pluginVersion 幂等解压到 filesDir/engine_plugins/<engine>/current/arm64-v8a",
-        "版本过期删除 current 重装；用户手动导入 zip 走 SHA-256 校验、zip-slip 防护与 staging 原子换名"
+        "版本过期删除 current 重装；用户手动导入 zip 走 SHA-256 校验、zip-slip 防护与 staging 原子换名",
+        "第三方 APK 运行时模块不进入 native plugin 链：RuntimeModuleRegistry 发现、绑定，RuntimeModuleLauncher 按显式组件启动"
       ]
     },
     {
       "dot": "emerald",
       "title": "宿主与桥接机制",
       "items": [
-        "宿主 Activity 各自独立 : 进程、singleInstance、sensorLandscape；主进程只负责编排",
-        "Artemis 为 NativeActivity：系统 dlopen artemis_loader，按 engineLibName 白名单转发真实库",
+        "14 个引擎族分布在 18 个独立 : 进程，singleInstance + 固定横屏；主进程只负责编排",
+        "Artemis 与 CMVS 为 NativeActivity：系统 dlopen artemis_loader / cmvs_loader，再转发真实引擎库",
         "krkr_bridge_v2 以 GOT/PLT patch 拦截 open/rename 等调用，实现 scopedSave、SAF 镜像与 patch overlay 重定向"
       ]
     },
@@ -461,7 +459,7 @@
       "dot": "amber",
       "title": "Web 壳与 Rust 工具链",
       "items": [
-        "Tyrano / RPG Maker 宿主自带本地 HTTP 服务（固定端口被占用回退随机）、asar 随机读与 JS 钩子注入",
+        "Tyrano / RPG Maker 宿主自带本地 HTTP 服务（固定端口被占用回退随机）、asar 随机读与 JS 钩子注入；SystemNNN 由独立运行时 APK 协议接入",
         "Rust XP3 核心提供列举 / 解包 / 封包 JNI，附带进度原子槽与取消；catch_unwind 兜底 panic",
         "KSD mode-2 文本包裹在解包时顺带解开，krkrsdl3 引擎 TextStream 亦原生支持"
       ]

@@ -9,7 +9,7 @@
       "url": "https://github.com/Weiss-UltimateSavior/Tyranor-Next.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "1d6b9db336dc42e30c8b61edf5b4e075b80f295b"
+      "revision": "f15d5f94b8fb20ff752d22b57293c732f7281414"
     },
     "output": ".archify/流程图-游戏启动编排-20261006-022735/workflow-launch-orchestration.html"
   },
@@ -62,11 +62,11 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 366
+          "line": 688
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 385
+          "line": 707
         }
       ]
     },
@@ -76,16 +76,16 @@
       "col": 2,
       "type": "backend",
       "label": "EngineLauncher.launch",
-      "sublabel": "四级分流判定",
+      "sublabel": "五级分流判定",
       "width": 170,
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 141
+          "line": 183
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 208
+          "line": 345
         }
       ]
     },
@@ -100,7 +100,7 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/engine/external/ExternalEmulatorRegistry.kt",
-          "line": 38
+          "line": 8
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/engine/external/ExternalEmulatorLauncher.kt",
@@ -109,6 +109,30 @@
         {
           "path": "app/src/main/java/com/tyranor/next/core/engine/external/ExternalEmulatorLauncher.kt",
           "line": 81
+        }
+      ]
+    },
+    {
+      "id": "runtime_module",
+      "lane": "external",
+      "col": 2,
+      "type": "external",
+      "label": "第三方运行时模块",
+      "sublabel": "com.tyranor.runtime.* · 显式组件",
+      "width": 160,
+      "yOffset": 110,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 627
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/engine/runtime/RuntimeModuleRegistry.kt",
+          "line": 1
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/engine/runtime/RuntimeModuleLauncher.kt",
+          "line": 1
         }
       ]
     },
@@ -137,12 +161,12 @@
       "col": 3,
       "type": "external",
       "label": "外置 APK 引擎模块",
-      "sublabel": "JoiPlay Ren'Py / RPGM",
+      "sublabel": "JoiPlay Ren'Py / RPGM / Ruffle",
       "width": 160,
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/engine/external/ExternalEngineModuleRegistry.kt",
-          "line": 22
+          "line": 8
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/engine/external/ExternalEngineLauncher.kt",
@@ -160,12 +184,12 @@
       "col": 4,
       "type": "backend",
       "label": "内置启动保障",
-      "sublabel": "插件 · 镜像 · 互通同步",
+      "sublabel": "插件 · 互通 · 镜像 · 预检 · 运行库",
       "width": 170,
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/engine/plugin/EnginePluginBootstrap.kt",
-          "line": 77
+          "line": 82
         },
         {
           "path": "engine/src/main/java/bridge/KrSafMirror.kt",
@@ -173,7 +197,7 @@
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 1126
+          "line": 442
         }
       ]
     },
@@ -183,13 +207,13 @@
       "col": 5,
       "type": "backend",
       "label": "引擎宿主进程",
-      "sublabel": "Intent · 独立 : 进程",
+      "sublabel": "Intent · 18 个独立 : 进程",
       "width": 160,
       "sources": [
         {
           "path": "engine/src/main/AndroidManifest.xml",
           "line": 14,
-          "end_line": 206
+          "end_line": 267
         },
         {
           "path": "engine/src/main/java/com/core/engine/LaunchContract.kt",
@@ -197,7 +221,7 @@
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 350
+          "line": 345
         }
       ]
     }
@@ -234,6 +258,14 @@
       "toSide": "top"
     },
     {
+      "id": "dispatch-runtime-module",
+      "from": "dispatch",
+      "to": "runtime_module",
+      "label": "第三方模块",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
       "id": "resolve-module",
       "from": "resolve",
       "to": "module",
@@ -263,9 +295,10 @@
       "title": "分流判定顺序（EngineLauncher）",
       "items": [
         "手动安卓游戏：按包名 getLaunchIntentForPackage 直接跳转",
-        "外置模拟器：PSP/Switch 显式组件 + ROM URI；Winlator 走 ExternalLaunchActivity 协议",
-        "外置 APK 模块：需目录时先申请所有文件访问，再走 JoiPlay Intent 协议",
-        "其余进入内置引擎：插件保障 → 互通同步 → 镜像准备 → buildIntent"
+        "第三方 RuntimeModule：刷新发现后按显式组件启动；缺失/禁用即降级为 UNKNOWN",
+        "外置模拟器：PSP/Switch 显式组件 + ROM URI；Winlator 承载 PC / YU-RIS / CatSystem2",
+        "外置 APK 模块：Ren'Py / RPGM / Ruffle，需目录时先申请所有文件访问",
+        "其余内置：Ethornell 会话检查 → 插件保障 → 互通同步 → 镜像/预检 → 运行库 → buildIntent"
       ]
     },
     {
@@ -274,16 +307,17 @@
       "items": [
         "Artemis 补丁策略三选：启动时询问 / 自动 / 关闭（默认关闭）",
         "MV/MZ 互通关闭时检测标准存档并询问转化；开启时跳过弹窗",
-        "同游戏会话运行中阻止重复启动（perGameLock + 进程后缀探测），取消异常原样传播"
+        "Ethornell 先做会话恢复/忙碌检查；System4 预检 ini 与 GLES 3.0；CMVS 检查旧实例与 launch.cfg",
+        "同游戏会话运行中阻止重复启动（perGameLock + 进程后缀探测），锁序固定 perGameLock → INTEROP_LOCK"
       ]
     },
     {
       "dot": "amber",
       "title": "类型化结果与失败",
       "items": [
-        "LaunchResult：Success / GameDirUnresolved / AllFilesAccessMissing / PluginBootstrapFailed 等 13 种",
-        "外置错误码：模块未安装 / Activity 未找到 / 授权异常 / 启动异常",
-        "core 只返回错误类型与错误码，本地化文案由 UI 层映射"
+        "LaunchResult：Success + 34 种类型化失败（含 CMVS / System35 / System4 / Ethornell / RuntimeModule 专属错误）",
+        "外置错误码 7 类：路径无效 / 未安装 / 版本过旧 / 准备失败 / Activity 未找到 / 授权异常 / 启动异常",
+        "core 只返回错误类型与错误码，本地化文案由 UI 层映射；CMVS 异步失败经 LaunchFailureBus 回传"
       ]
     }
   ]
