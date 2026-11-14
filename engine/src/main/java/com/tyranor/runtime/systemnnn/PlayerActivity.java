@@ -126,7 +126,6 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         readingSize=i.hasExtra(SystemNnnHost.EXTRA_READING_SIZE)
             ? SystemNnnHost.normalizeReadingSize(i.getIntExtra(SystemNnnHost.EXTRA_READING_SIZE,SystemNnnHost.DEFAULT_READING_SIZE))
             : SystemNnnHost.legacyReadingSize(this);
-        if(!fullscreen)getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
         WindowCompat.setDecorFitsSystemWindows(getWindow(),false);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if(Build.VERSION.SDK_INT>=28){
@@ -250,13 +249,14 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             stage.addView(debugOverlay,params);
         }
         preferences=PlayerSettings.displayPreferences(this,legacySource);
+        preferences.edit().putBoolean(RuntimeSettingsAdapter.FULLSCREEN,fullscreen).apply();
         settings=PlayerSettings.read(preferences,readingSize);
         dialoguePanel.settings(settings);
         preferences.registerOnSharedPreferenceChangeListener(settingsListener);
         try{playerTask=SystemNnnHost.registerPlayerTask(this,game,sourceUri);}
         catch(IOException|RuntimeException e){android.util.Log.w("SystemNNN","Unable to register player task",e);}
         try{runner=new GameRunner(uiContext,game,legacySource,saves,getFilesDir(),preferences,userPreferences,settings,
-            analyzeExecutable,debugMode,this);}
+            fullscreen,analyzeExecutable,debugMode,this);}
         catch(RuntimeException|Error e){closePlayerTask();throw e;}
         GameRunner surfaceOwner=runner;
         screen.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
@@ -496,6 +496,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 if(mouseVariant!=aux[35]){mouseVariant=aux[35];updatePointerIcon();}
             }
             if(choices!=null)choices.changeColor(preferences.getBoolean("changeSelectColor",false));
+            boolean fullscreenMode=preferences.getBoolean(RuntimeSettingsAdapter.FULLSCREEN,fullscreen);
+            if(fullscreen!=fullscreenMode){fullscreen=fullscreenMode;immersive();}
             selectDialogueVariant();updateStatus();
         }finally{syncingRuntime=false;}
     }};
@@ -1600,7 +1602,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private void showSettings() {
         if(uiAssets!=null&&(uiAssets.config.has("modename")||uiAssets.settingsModel(width,height).original)){
             Runnable back=()->leaveOriginalPanel(uiAssets.config);
-            showOriginalPanel(new GameSettingsPanel(this,uiAssets,preferences,runner,this::systemClick,back,width,height,fullscreen,runner.configMask(),takePanelWarmup(),settingsPage,page->settingsPage=page),back);return;
+            showOriginalPanel(new GameSettingsPanel(this,uiAssets,preferences,runner,this::systemClick,back,width,height,runner.configMask(),takePanelWarmup(),settingsPage,page->settingsPage=page),back);return;
         }
         LinearLayout box=column();
         TextView hint=hostLabel(text(R.string.engine_systemnnn_host_settings_hint),14);hint.setPadding(0,0,0,dp(10));box.addView(hint);
@@ -1817,6 +1819,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(dialog.getWindow()!=null)applyFullscreen(dialog.getWindow());
     }
     private void applyFullscreen(Window window) {
+        if(fullscreen)window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
         WindowInsetsControllerCompat controller=WindowCompat.getInsetsController(window,window.getDecorView());
         if(fullscreen){
             controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);

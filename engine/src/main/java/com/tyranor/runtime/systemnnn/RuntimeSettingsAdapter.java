@@ -11,8 +11,10 @@ final class RuntimeSettingsAdapter {
     // commonSystemParamName.h; same order as commonConfig::m_volumeName.
     private static final int[] VOLUME_IDS={105,100,101,102,103,104,106,107,108,109};
     private static final int[] SWITCH_IDS={-1,200,201,202,203,204,-1,-1,208,209};
-    private static final String[] BOOLEAN_KEYS={"skipReadOnly","fullscreen","autoEnabled","autoContinue","autoSkip","changeReadColor","changeSelectColor","continueVoice"};
-    private static final int[] BOOLEAN_IDS={2,4,6,210,211,212,213,214};
+    static final String FULLSCREEN="fullscreen";
+    private static final int SCREEN_MODE=4;
+    private static final String[] BOOLEAN_KEYS={"skipReadOnly",FULLSCREEN,"autoEnabled","autoContinue","autoSkip","changeReadColor","changeSelectColor","continueVoice"};
+    private static final int[] BOOLEAN_IDS={2,SCREEN_MODE,6,210,211,212,213,214};
     private static final int[] EMPTY=new int[0];
     private static final String RAW_PREFIX="runtime.raw.";
 
@@ -35,14 +37,20 @@ final class RuntimeSettingsAdapter {
 
     /** Only explicit, game-scoped raw overrides. No display values become factory defaults. */
     static int[] persistedOverrides(SharedPreferences preferences,File game){
+        return persistedOverrides(preferences,game,true);
+    }
+
+    static int[] persistedOverrides(SharedPreferences preferences,File game,boolean includeScreenMode){
         String prefix=namespace(game);Map<String,?> all=preferences.getAll();List<Integer> result=new ArrayList<>();
-        for(int id=0;id<572;id++)if(supported(id)){
+        for(int id=0;id<572;id++)if(supported(id)&&(includeScreenMode||id!=SCREEN_MODE)){
             Integer value=integer(all,prefix+id);if(value!=null){result.add(id);result.add(value);}
         }
         // Migration TODO: old global eight-setting values used different units
         // and defaults. Import requires an explicit migration policy, not a guess.
         return array(result);
     }
+
+    static int[] screenMode(boolean fullscreen){return new int[]{SCREEN_MODE,fullscreen?1:0};}
 
     /** Persist accepted raw changes/snapshots supplied by the owner, never a converted UI cache. */
     static void persistRawOverrides(SharedPreferences preferences,File game,int[] actualPairs){
@@ -128,6 +136,10 @@ final class RuntimeSettingsAdapter {
                 return extended(id)&&value!=null?new int[]{id,value}:EMPTY;
             }catch(NumberFormatException e){return EMPTY;}
         }
+        for(int i=0;i<BOOLEAN_KEYS.length;i++)if(key.equals(BOOLEAN_KEYS[i])){
+            Boolean value=bool(values,key);if(value==null)return EMPTY;
+            return new int[]{BOOLEAN_IDS[i],i==0?(value?0:1):(value?1:0)};
+        }
         OriginalSettingsModel model=assets.settingsModel(1280,720);
         for(int i=0;i<OriginalSettingsModel.KEYS.length;i++){
             String display=OriginalSettingsModel.KEYS[i],exact="originalSlider."+OriginalSettingsModel.VOLUMES[i];
@@ -150,10 +162,6 @@ final class RuntimeSettingsAdapter {
             if(SWITCH_IDS[i]>=0&&key.equals("enabled."+display)){
                 Boolean value=bool(values,key);return value==null?EMPTY:new int[]{SWITCH_IDS[i],value?1:0};
             }
-        }
-        for(int i=0;i<BOOLEAN_KEYS.length;i++)if(key.equals(BOOLEAN_KEYS[i])){
-            Boolean value=bool(values,key);if(value==null)return EMPTY;
-            return new int[]{BOOLEAN_IDS[i],i==0?(value?0:1):(value?1:0)};
         }
         if(key.startsWith("character.")&&key.endsWith(".steps")){
             Integer value=integer(values,key);if(value==null)return EMPTY;

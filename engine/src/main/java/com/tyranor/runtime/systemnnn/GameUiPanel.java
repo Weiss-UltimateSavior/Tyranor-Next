@@ -66,7 +66,6 @@ class GameUiPanel extends FrameLayout {
     boolean openingRunning(){return opening!=null&&opening.running();}
     boolean activeFrameReady(){return !waitingForBackground()&&(opening==null||!opening.fading());}
     boolean controlsBusy(){return leaving||changingPage||pendingButton!=null;}
-    boolean pageChanging(){return changingPage;}
     void previous(Bitmap picture){if(opening!=null)opening.previous(picture);}
     void capture(Consumer<Bitmap> done){
         capture(false,done);

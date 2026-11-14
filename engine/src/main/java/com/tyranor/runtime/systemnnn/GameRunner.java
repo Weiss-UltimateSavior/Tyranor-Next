@@ -209,6 +209,7 @@ final class GameRunner {
     private final Listener ui;
     private final Context context;
     private final SharedPreferences preferences,userPreferences;
+    private final boolean launchFullscreen;
     private final boolean analyzeExecutable,debugMode;
     private final int rate=DeviceAudio.rate();
     private final int[] meta=new int[NativeGame.META_SIZE];
@@ -310,10 +311,11 @@ final class GameRunner {
     private final GameSavePaths.Owner saveOwner;
 
     GameRunner(Context context,File folder,File legacySource,GameSavePaths paths,File legacyFiles,SharedPreferences preferences,
-               SharedPreferences userPreferences,PlayerSettings initial,boolean analyzeExecutable,boolean debugMode,
+               SharedPreferences userPreferences,PlayerSettings initial,boolean launchFullscreen,boolean analyzeExecutable,boolean debugMode,
                Listener listener) {
         this.context=context;
         this.legacySource=legacySource;
+        this.launchFullscreen=launchFullscreen;
         this.analyzeExecutable=analyzeExecutable;
         this.debugMode=debugMode;
         root=folder;ui=listener;this.preferences=preferences;this.userPreferences=userPreferences;settings=initial;
@@ -386,7 +388,10 @@ final class GameRunner {
                 }
             }
         }
-        NativeGame.setParameters(candidate,RuntimeSettingsAdapter.persistedOverrides(userPreferences,legacySource));
+        // TYN sets the initial display mode. Later candidates inherit the live
+        // mode from their fork, even while a disk write is still pending.
+        NativeGame.setParameters(candidate,RuntimeSettingsAdapter.persistedOverrides(userPreferences,legacySource,false));
+        if(runtime==null)NativeGame.setParameters(candidate,RuntimeSettingsAdapter.screenMode(launchFullscreen));
         if(runtime==null&&initialProgress!=null){
             if(initialProgress.read!=null)NativeGame.restoreReadState(candidate,initialProgress.read);
             if(initialProgress.variables!=null)NativeGame.setSystemVariables(candidate,initialProgress.variables);

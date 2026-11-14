@@ -27,7 +27,6 @@ final class GameSettingsPanel extends GameUiPanel {
     private final Runnable close;
     private final IntConsumer onPageChanged;
     private final boolean previewMutedVoice;
-    private final boolean fullscreen;
     private final int configMask;
     private final DialogueMarkup.Style previewMarkup;
     private OriginalSettingsModel model;
@@ -37,7 +36,7 @@ final class GameSettingsPanel extends GameUiPanel {
     private boolean[] characterVoiceChanges;
     private GameRunner.SettingsCharacterArt[] characterArt;
     private int page,backgroundPage=-1;
-    private boolean writingPreferences,watchingPreferences;
+    private boolean writingPreferences,watchingPreferences,ignoreTouch;
     private final ArrayList<TextView> sampleRows=new ArrayList<>();
     private final ArrayList<DialogueMarkup> sampleLines=new ArrayList<>();
     private int sampleSpeed,sampleLine;
@@ -47,7 +46,7 @@ final class GameSettingsPanel extends GameUiPanel {
         @Override public void run(){
             // A worker parameter echo must not detach a pressed button or a
             // captured slider before its action has committed.
-            if(controlsBusy()||isAdjusting())postDelayed(this,frameMs);
+            if(isAdjusting())postDelayed(this,frameMs);
             else showPage(page);
         }
     };
@@ -59,14 +58,13 @@ final class GameSettingsPanel extends GameUiPanel {
     static int openingPage(GameUiAssets.Config config,int pages,int rememberedPage){
         return config.number("mustStartPage1Flag",0)!=0?0:Math.max(0,Math.min(rememberedPage,Math.max(1,pages)-1));
     }
-    GameSettingsPanel(Context context,GameUiAssets assets,SharedPreferences prefs,GameRunner runner,Runnable click,Runnable close,int width,int height,boolean fullscreen,int configMask,
+    GameSettingsPanel(Context context,GameUiAssets assets,SharedPreferences prefs,GameRunner runner,Runnable click,Runnable close,int width,int height,int configMask,
                       UiPreviewPool.Warmup warmup){
-        this(context,assets,prefs,runner,click,close,width,height,fullscreen,configMask,warmup,0,null);
+        this(context,assets,prefs,runner,click,close,width,height,configMask,warmup,0,null);
     }
-    GameSettingsPanel(Context context,GameUiAssets assets,SharedPreferences prefs,GameRunner runner,Runnable click,Runnable close,int width,int height,boolean fullscreen,int configMask,
+    GameSettingsPanel(Context context,GameUiAssets assets,SharedPreferences prefs,GameRunner runner,Runnable click,Runnable close,int width,int height,int configMask,
                       UiPreviewPool.Warmup warmup,int initialPage,IntConsumer onPageChanged){
         super(context,assets,"ta_cnf_bg01",click);preferences=prefs;this.runner=runner;this.close=close;this.configMask=configMask;
-        this.fullscreen=fullscreen;
         this.onPageChanged=onPageChanged;
         languageContext=EngineUiText.localizedContext(context);
         previewMutedVoice=assets.config.number("playOffToOnSoundFlag",0)!=0;
@@ -112,6 +110,10 @@ final class GameSettingsPanel extends GameUiPanel {
         // A blank tap belongs to this panel. Controls handle their own press.
         if(!pressed)super.dispatchSetPressed(false);
     }
+    @Override public boolean dispatchTouchEvent(MotionEvent event){
+        if(event.getActionMasked()==MotionEvent.ACTION_DOWN)ignoreTouch=controlsBusy();
+        return ignoreTouch||super.dispatchTouchEvent(event);
+    }
     private void write(Runnable change){writingPreferences=true;try{change.run();}finally{writingPreferences=false;}}
     private void writeInt(String key,int value){write(()->preferences.edit().putInt(key,value).apply());}
     private void writeBoolean(String key,boolean value){write(()->preferences.edit().putBoolean(key,value).apply());}
@@ -129,7 +131,10 @@ final class GameSettingsPanel extends GameUiPanel {
         background(model.background(page+1));
         if(!model.original){fallback();return;}
         if(backgroundPage!=page){uiBackground(assets.config,12,page+1);backgroundPage=page;}
-        if(model.pageMode==2)for(int i=0;i<model.tabs.size();i++){final int target=i;drawButton(model.tabs.get(i),page==i,string(R.string.engine_systemnnn_ctl_settings_page,i+1),()->selectPage(target));}
+        if(model.pageMode==2)for(int i=0;i<model.tabs.size();i++){
+            final int target=i;boolean active=page==i;
+            drawButton(model.tabs.get(i),active,string(R.string.engine_systemnnn_ctl_settings_page,i+1),radioAction(active,()->selectPage(target)));
+        }
         else if(model.pageMode==1)pageArrows(assets.config,page,model.pages,616,16,646,this::selectPage);
         for(OriginalSettingsModel.Slider s:model.sliders)if(s.page==page+1)volume(s);
         for(OriginalSettingsModel.CharacterControl c:model.characters)if(c.page==page+1)character(c);
@@ -143,7 +148,8 @@ final class GameSettingsPanel extends GameUiPanel {
         preview();
         returnButton=back(assets.config,close);
     }
-    @Override boolean backOverlay(){return pageChanging()||returnButton!=null&&returnButton.performClick();}
+    @Override boolean backOverlay(){return controlsBusy()||returnButton!=null&&returnButton.performClick();}
+    static Runnable radioAction(boolean selected,Runnable select){return selected?null:select;}
     private void systemVoices(){
         int selected=preferences.getInt("systemVoiceSelection",0);
         for(int i=0;i<model.systemVoices.size();i++){
@@ -157,12 +163,11 @@ final class GameSettingsPanel extends GameUiPanel {
             Runnable cue=()->play(setup,false,previewMutedVoice);
             // STARTCLICK sounds before NUMBER changes the radio selection. An
             // immediate button combines both events and uses the new theme.
-            GameButton button=drawButton(art,active,string(R.string.engine_systemnnn_ctl_settings_voice_theme,theme),()->{
+            drawButton(art,active,string(R.string.engine_systemnnn_ctl_settings_voice_theme,theme),radioAction(active,()->{
                 writeInt("systemVoiceSelection",theme);
                 if(setup.clickTime==0)cue.run();
                 showPage(page);
-            },setup.clickTime==0?()->{}:cue);
-            if(active){button.setOnClickListener(null);button.setClickable(false);}
+            }),setup.clickTime==0?()->{}:cue);
         }
     }
     private String settingLabel(String key){
@@ -243,16 +248,15 @@ final class GameSettingsPanel extends GameUiPanel {
         runner.playSettingsClick(characterSound(control,enabled,event),setup.voice(event),setup.volumeType,false,previewMutedVoice);
     }
     private void mode(OriginalSettingsModel.Choice c){
-        boolean displayMode=c.key.equals("fullscreen");
-        boolean value=displayMode?fullscreen:preferences.getBoolean(c.key,c.defaultValue);
+        boolean value=preferences.getBoolean(c.key,c.defaultValue);
         boolean skipReadOnly=c.key.equals("skipReadOnly");
         int selected=skipReadOnly?(value?0:1):(value?1:0);
         for(int i=0;i<c.buttons.length;i++){final int option=i;
-            // The game's artwork reflects the Android window mode chosen in TYN.
-            drawButton(c.buttons[i],selected==i,modeLabel(c.key,i),displayMode?null:()->{
+            boolean active=selected==i;
+            drawButton(c.buttons[i],active,modeLabel(c.key,i),radioAction(active,()->{
                 writeBoolean(c.key,skipReadOnly?option==0:option!=0);
                 showPage(page);
-            });
+            }));
         }
     }
     private String modeLabel(String key,int choice){
@@ -276,10 +280,10 @@ final class GameSettingsPanel extends GameUiPanel {
         }
         for(int i=0;i<group.buttons.length;i++){
             final int option=i;
-            GameButton button=drawButton(group.buttons[i],value==i,label+" · "+(i+1),
-                ()->{writeInt(key,option);showPage(page);});
+            boolean active=value==i;
+            GameButton button=drawButton(group.buttons[i],active,label+" · "+(i+1),
+                radioAction(active,()->{writeInt(key,option);showPage(page);}));
             button.setEnabled(!group.locked(configMask));
-            if(value==i){button.setOnClickListener(null);button.setClickable(false);}
         }
     }
     private void play(ButtonArt.Setup setup,boolean ignoreSwitch,boolean ignoreRole){
@@ -436,6 +440,7 @@ final class GameSettingsPanel extends GameUiPanel {
         return new ValueBar(getContext(),assets.image(image),label,min,max,value,w,h,20,click,change);
     }
     @Override boolean isAdjusting(){
+        if(controlsBusy())return true;
         for(int i=0;i<getChildCount();i++){
             View control=getChildAt(i);
             if(control instanceof ValueBar&&((ValueBar)control).tracking||control instanceof GameButton&&control.isPressed())return true;
