@@ -71,7 +71,6 @@ import com.tyranor.next.ui.common.motion.MotionSprings
 import com.tyranor.next.ui.common.motion.ExitTapReplay
 import com.tyranor.next.ui.common.motion.PageTransitions
 import com.tyranor.next.ui.common.motion.beginDialogDimExit
-import com.tyranor.next.ui.common.motion.passThroughTouches
 import com.tyranor.next.ui.common.motion.restoreInteraction
 import com.tyranor.next.ui.common.motion.DialogWindowScrim
 import com.tyranor.next.ui.common.motion.nestedPanelDim
@@ -157,9 +156,9 @@ internal fun AppAlertDialog(
     fun releaseInputFocus() {
         (dialogFocus[0] ?: focusManager).clearFocus(force = true)
     }
-    // 退场协程与弹窗根 View：退场期间落在遮罩上的点击要「立刻收尾 + 补发给下层页面」（见 ExitTapReplay）
+    // 退场动画与弹窗根 View：退场期间落在窗口上的单击，先中止退场动画，再在弹窗确认离开后补发给下层页面（见 ExitTapReplay）
     val exitAnimation = remember { arrayOfNulls<kotlinx.coroutines.Job>(1) }
-    /** 退场动画：遮罩淡出与面板下沉；返回时动画已结束或被 [scrimDownDuringExit] 中止（中止不是协程取消，不会抛出）。 */
+    /** 退场动画：遮罩淡出与面板下沉；返回时动画已结束或被 [scrimTapDuringExit] 中止（中止不是协程取消，不会抛出）。 */
     suspend fun playExit(dimSpec: AnimationSpec<Float>, slideSpec: AnimationSpec<Float>) = coroutineScope {
         val job = launch {
             launch { dimAlpha.animateTo(0f, dimSpec) }
@@ -170,30 +169,43 @@ internal fun AppAlertDialog(
     }
     val dialogView = remember { arrayOfNulls<android.view.View>(1) }
     val pendingExitTap = remember { arrayOfNulls<PendingExitTap>(1) }
+    val disposed = remember { BooleanArray(1) }
+    val originCache = remember { IntArray(2) }
     // 关闭回调交付之后、窗口真正被移除之前还有一两帧：这段「尾巴」里的按下同样要转交给下层页面，
     // 否则恰好落在这一两帧里的点击会被正在消失的弹窗吞掉。
     val deliveredAt = remember { LongArray(1) }
     fun inTail(): Boolean =
         deliveredAt[0] != 0L && android.os.SystemClock.uptimeMillis() - deliveredAt[0] < ExitTailMillis
-    fun scrimDownDuringExit(position: androidx.compose.ui.geometry.Offset) {
+    fun scrimTapDuringExit(position: androidx.compose.ui.geometry.Offset) {
         if (!dismissing.value && !inTail()) return
         val view = dialogView[0] ?: return
         val activity = PageTransitions.findActivity(view.context)
+        // 弹窗窗口已被移除时（按下落在窗口消失前、抬起时已不在）View 取不到屏幕坐标，改用最近一次缓存的原点
         val origin = IntArray(2)
-        view.getLocationOnScreen(origin)
+        if (view.isAttachedToWindow) {
+            view.getLocationOnScreen(origin)
+            originCache[0] = origin[0]
+            originCache[1] = origin[1]
+        } else {
+            origin[0] = originCache[0]
+            origin[1] = originCache[1]
+        }
         // 只中止退场动画（不取消整个退场协程）：协程随后照常交付已接受的动作，动作若没有关闭弹窗，
         // 仍走 afterAction 恢复显示；取消整个协程会跳过恢复流程，面板停在半途、遮罩不再亮回来。
         if (dismissing.value) exitAnimation[0]?.cancel()
         // 不在这里立刻回放：动作若没有关闭弹窗（校验未通过），弹窗会被恢复显示，点击就不该落到它下面的页面。
         // 先记下，弹窗真正离开组合时才发（见下方 DisposableEffect）；恢复显示则丢弃。
         if (activity != null) {
-            pendingExitTap[0] = PendingExitTap(
+            val tap = PendingExitTap(
                 activity, origin[0] + position.x, origin[1] + position.y, android.os.SystemClock.uptimeMillis(),
             )
+            // 弹窗已经离开组合（手势中途被移除）：不会再有「离开」事件，直接补发；否则等离开时再发
+            if (disposed[0]) ExitTapReplay.replay(tap.activity, tap.screenX, tap.screenY) else pendingExitTap[0] = tap
         }
     }
     DisposableEffect(Unit) {
         onDispose {
+            disposed[0] = true
             val tap = pendingExitTap[0]
             pendingExitTap[0] = null
             // 记下后很快（一两帧）就该离开组合；隔得太久说明弹窗其实留下了（调用方没移除它），这次点击已经过期
@@ -231,10 +243,11 @@ internal fun AppAlertDialog(
                     action = action,
                     afterAction = {
                         // 仍在组合中：动作没有关闭弹窗，恢复显示。
-                        restored = true
                         deliveredAt[0] = 0L
                         delay(80)
-                        // 弹窗确实留下了：退场期间记下的那次点击不再转交下层页面
+                        // 走到这里说明弹窗确实留下了（若被移除，协程在上面的 delay 里就被取消了）：
+                        // 退场期间记下的那次点击不再转交下层页面，也不进入「退场尾段」
+                        restored = true
                         pendingExitTap[0] = null
                         dialogWindow[0].restoreInteraction()
                         dismissing.value = false
@@ -304,7 +317,7 @@ internal fun AppAlertDialog(
             onWindow = { dialogWindow[0] = it },
             onDismissRequest = { dismiss() },
             dismissEnabled = currentDismissEnabled,
-            onScrimDown = { scrimDownDuringExit(it) },
+            onScrimTap = { scrimTapDuringExit(it) },
         ) {
             // 弹窗整体（卡片 + 可选的超框内容）：底部对齐，从屏底弹入
             Box(
