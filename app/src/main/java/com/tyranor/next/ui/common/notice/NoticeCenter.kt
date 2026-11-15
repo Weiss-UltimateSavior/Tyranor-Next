@@ -17,7 +17,7 @@ private object MainNoticeClock : NoticeClock {
 
 /** 所有窗口共用一个提示状态和一个主线程闹钟。 */
 internal object NoticeCenter : NoticeState(MainNoticeClock, { notice ->
-    if (!notice.strong) MotionHaptics.perform(MotionHaptics.Kind.Tick)
+    if (!notice.strong) MotionHaptics.perform(MotionHaptics.Kind.Notice)
 }) {
     private var nextId = 1L
 

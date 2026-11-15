@@ -3,6 +3,7 @@ package com.tyranor.next.ui.common
 import android.view.Window
 import android.util.Log
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.spring
@@ -32,6 +33,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -47,6 +49,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -66,7 +69,9 @@ import com.tyranor.next.ui.common.motion.DialogSinkStrength
 import com.tyranor.next.ui.common.motion.LocalSheetBackdrop
 import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.MotionSprings
-import com.tyranor.next.ui.common.motion.passThroughTouches
+import com.tyranor.next.ui.common.motion.ExitTapReplay
+import com.tyranor.next.ui.common.motion.PageTransitions
+import com.tyranor.next.ui.common.motion.beginDialogDimExit
 import com.tyranor.next.ui.common.motion.restoreInteraction
 import com.tyranor.next.ui.common.motion.DialogWindowScrim
 import com.tyranor.next.ui.common.motion.nestedPanelDim
@@ -83,6 +88,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.staticCompositionLocalOf
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import android.view.WindowManager
 
@@ -145,6 +151,70 @@ internal fun AppAlertDialog(
     val currentOnDismiss by rememberUpdatedState(onDismissRequest)
     val currentDismissEnabled by rememberUpdatedState(dismissEnabled)
     val focusManager = LocalFocusManager.current
+    // Dialog 内容是独立的 Compose 根，自带一个焦点管理器；这里拿到的 focusManager 只管页面层。
+    // 输入框的光标水滴柄是弹窗根里的独立 Popup，必须清弹窗根的焦点才会立刻收掉（否则面板已经下沉淡出，水滴柄还孤零零悬在原处）。
+    val dialogFocus = remember { arrayOfNulls<androidx.compose.ui.focus.FocusManager>(1) }
+    fun releaseInputFocus() {
+        (dialogFocus[0] ?: focusManager).clearFocus(force = true)
+    }
+    // 退场动画与弹窗根 View：退场期间落在窗口上的单击，先中止退场动画，再在弹窗确认离开后补发给下层页面（见 ExitTapReplay）
+    val exitAnimation = remember { arrayOfNulls<kotlinx.coroutines.Job>(1) }
+    /** 退场动画：遮罩淡出与面板下沉；返回时动画已结束或被 [scrimTapDuringExit] 中止（中止不是协程取消，不会抛出）。 */
+    suspend fun playExit(dimSpec: AnimationSpec<Float>, slideSpec: AnimationSpec<Float>) = coroutineScope {
+        val job = launch {
+            launch { dimAlpha.animateTo(0f, dimSpec) }
+            slideFraction.animateTo(1f, slideSpec)
+        }
+        exitAnimation[0] = job
+        job.join()
+    }
+    val dialogView = remember { arrayOfNulls<android.view.View>(1) }
+    val pendingExitTap = remember { arrayOfNulls<PendingExitTap>(1) }
+    val disposed = remember { BooleanArray(1) }
+    val originCache = remember { IntArray(2) }
+    // 关闭回调交付之后、窗口真正被移除之前还有一两帧：这段「尾巴」里的按下同样要转交给下层页面，
+    // 否则恰好落在这一两帧里的点击会被正在消失的弹窗吞掉。
+    val deliveredAt = remember { LongArray(1) }
+    fun inTail(): Boolean =
+        deliveredAt[0] != 0L && android.os.SystemClock.uptimeMillis() - deliveredAt[0] < ExitTailMillis
+    fun scrimTapDuringExit(position: androidx.compose.ui.geometry.Offset) {
+        if (!dismissing.value && !inTail()) return
+        val view = dialogView[0] ?: return
+        val activity = PageTransitions.findActivity(view.context)
+        // 弹窗窗口已被移除时（按下落在窗口消失前、抬起时已不在）View 取不到屏幕坐标，改用最近一次缓存的原点
+        val origin = IntArray(2)
+        if (view.isAttachedToWindow) {
+            view.getLocationOnScreen(origin)
+            originCache[0] = origin[0]
+            originCache[1] = origin[1]
+        } else {
+            origin[0] = originCache[0]
+            origin[1] = originCache[1]
+        }
+        // 只中止退场动画（不取消整个退场协程）：协程随后照常交付已接受的动作，动作若没有关闭弹窗，
+        // 仍走 afterAction 恢复显示；取消整个协程会跳过恢复流程，面板停在半途、遮罩不再亮回来。
+        if (dismissing.value) exitAnimation[0]?.cancel()
+        // 不在这里立刻回放：动作若没有关闭弹窗（校验未通过），弹窗会被恢复显示，点击就不该落到它下面的页面。
+        // 先记下，弹窗真正离开组合时才发（见下方 DisposableEffect）；恢复显示则丢弃。
+        if (activity != null) {
+            val tap = PendingExitTap(
+                activity, origin[0] + position.x, origin[1] + position.y, android.os.SystemClock.uptimeMillis(),
+            )
+            // 弹窗已经离开组合（手势中途被移除）：不会再有「离开」事件，直接补发；否则等离开时再发
+            if (disposed[0]) ExitTapReplay.replay(tap.activity, tap.screenX, tap.screenY) else pendingExitTap[0] = tap
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            disposed[0] = true
+            val tap = pendingExitTap[0]
+            pendingExitTap[0] = null
+            // 记下后很快（一两帧）就该离开组合；隔得太久说明弹窗其实留下了（调用方没移除它），这次点击已经过期
+            if (tap != null && android.os.SystemClock.uptimeMillis() - tap.at < PendingExitTapMaxAgeMillis) {
+                ExitTapReplay.replay(tap.activity, tap.screenX, tap.screenY)
+            }
+        }
+    }
 
     fun actionFailed(failure: Exception) {
         Log.e("AppAlertDialog", "Dialog exit action failed", failure)
@@ -163,20 +233,23 @@ internal fun AppAlertDialog(
         DialogExitController { action ->
             if (dismissing.value) return@DialogExitController
             dismissing.value = true
-            focusManager.clearFocus(force = true)
-            dialogWindow[0].passThroughTouches()
+            releaseInputFocus()
+            dialogWindow[0].beginDialogDimExit()
+            var restored = false
             scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 runDialogExitAction(
                     animateExit = {
-                        if (enhanced) {
-                            launch { dimAlpha.animateTo(0f, MotionTokens.fadeOut(0.001f)) }
-                            slideFraction.animateTo(1f, MotionTokens.surfaceExit(0.001f))
-                        }
+                        if (enhanced) playExit(MotionTokens.fadeOut(0.001f), MotionTokens.surfaceExit(0.001f))
                     },
                     action = action,
                     afterAction = {
                         // 仍在组合中：动作没有关闭弹窗，恢复显示。
+                        deliveredAt[0] = 0L
                         delay(80)
+                        // 走到这里说明弹窗确实留下了（若被移除，协程在上面的 delay 里就被取消了）：
+                        // 退场期间记下的那次点击不再转交下层页面，也不进入「退场尾段」
+                        restored = true
+                        pendingExitTap[0] = null
                         dialogWindow[0].restoreInteraction()
                         dismissing.value = false
                         if (enhanced) {
@@ -189,6 +262,8 @@ internal fun AppAlertDialog(
                         try {
                             dialogWindow[0]?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
                         } finally {
+                            // 只有真正交付了关闭才进入「退场尾段」；动作没关弹窗、已恢复显示的，不能再按尾段处理遮罩按下与关闭请求
+                            if (!restored) deliveredAt[0] = android.os.SystemClock.uptimeMillis()
                             dismissing.value = false
                         }
                     },
@@ -199,19 +274,17 @@ internal fun AppAlertDialog(
 
     /** 接受一次允许的关闭请求，先释放触摸并同步退场，再交付最新关闭回调。 */
     fun dismiss() {
-        if (!currentDismissEnabled || dismissing.value) return
+        if (!currentDismissEnabled || dismissing.value || inTail()) return
         dismissing.value = true
-        focusManager.clearFocus(force = true)
-        dialogWindow[0].passThroughTouches()
+        releaseInputFocus()
+        dialogWindow[0].beginDialogDimExit()
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             runDialogExitAction(
                 animateExit = {
                     if (enhanced) {
-                        launch { dimAlpha.animateTo(0f, MotionTokens.fadeOut(0.001f)) }
-                        slideFraction.animateTo(1f, MotionTokens.surfaceExit(0.001f))
+                        playExit(MotionTokens.fadeOut(0.001f), MotionTokens.surfaceExit(0.001f))
                     } else {
-                        launch { dimAlpha.animateTo(0f, tween(250, easing = FastOutLinearInEasing)) }
-                        slideFraction.animateTo(1f, tween(260, easing = FastOutLinearInEasing))
+                        playExit(tween(250, easing = FastOutLinearInEasing), tween(260, easing = FastOutLinearInEasing))
                     }
                 },
                 action = { currentOnDismiss() },
@@ -221,6 +294,7 @@ internal fun AppAlertDialog(
                     try {
                         dialogWindow[0]?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
                     } finally {
+                        deliveredAt[0] = android.os.SystemClock.uptimeMillis()
                         dismissing.value = false
                     }
                 },
@@ -239,12 +313,15 @@ internal fun AppAlertDialog(
         // 弹窗是独立窗口，层级在解锁门之上：应用锁生效时自动收起，
         // 避免锁定状态下仍可操作弹窗内条目（含 NavItem / 输入框）
         DismissOnAppLockEffect(onDismissRequest)
+        dialogFocus[0] = LocalFocusManager.current
+        dialogView[0] = LocalView.current
         DialogWindowScrim(
             enhanced = enhanced,
             progress = { dimAlpha.value },
             onWindow = { dialogWindow[0] = it },
             onDismissRequest = { dismiss() },
             dismissEnabled = currentDismissEnabled,
+            onScrimTap = { scrimTapDuringExit(it) },
         ) {
             // 弹窗整体（卡片 + 可选的超框内容）：底部对齐，从屏底弹入
             Box(
@@ -333,8 +410,13 @@ internal fun AppAlertDialog(
                                             )
                                             .padding(top = 14.dp),
                                     ) {
-                                        if (showButtonRow) text() else {
-                                            CompositionLocalProvider(LocalDialogExit provides exitController) { text() }
+                                        if (showButtonRow) {
+                                            CompositionLocalProvider(LocalDialogBodyExit provides exitController) { text() }
+                                        } else {
+                                            CompositionLocalProvider(
+                                                LocalDialogExit provides exitController,
+                                                LocalDialogBodyExit provides exitController,
+                                            ) { text() }
                                         }
                                     }
                                     if (showButtonRow) {
@@ -400,6 +482,15 @@ internal fun AppAlertDialog(
  */
 private val DialogEnterSpec = MotionSprings.response<Float>(0.42f, 0.74f, 0.0001f)
 
+/** 退场期间在遮罩上记下的一次点击（屏幕坐标），等弹窗确认关闭后再转交给下层页面。 */
+private class PendingExitTap(val activity: android.app.Activity, val screenX: Float, val screenY: Float, val at: Long)
+
+/** 记下的点击超过这个时长还没等到弹窗离开组合，就视为弹窗留下了，点击作废。 */
+private const val PendingExitTapMaxAgeMillis = 600L
+
+/** 关闭回调交付后，窗口还可能多留一两帧：这段时间内的按下仍按「退场中」转交给下层页面。 */
+private const val ExitTailMillis = 250L
+
 /** 弹窗入场时从底边略微放大的幅度（停稳时缩放为 1）。 */
 private const val DialogEnterScaleDelta = 0.06f
 
@@ -408,6 +499,13 @@ internal class DialogExitController(val closeThen: (action: () -> Unit) -> Unit)
 
 /** 当前按钮所在弹窗的退场控制器；为 null 时按钮直接执行动作。 */
 internal val LocalDialogExit = staticCompositionLocalOf<DialogExitController?> { null }
+
+/**
+ * 弹窗正文内「点一下就关闭弹窗」的条目所用的退场控制器（正文槽恒有，不论是否带按钮行）。
+ * 与 [LocalDialogExit] 分开：正文里的 [com.tyranor.next.ui.common.DialogTextButton] 等
+ * 仍按各自语义决定是否先退场，不会被连带改成先退场再执行。
+ */
+internal val LocalDialogBodyExit = staticCompositionLocalOf<DialogExitController?> { null }
 
 /** Deliver an accepted action once even when exit is cancelled, then always release the exit guard. */
 internal suspend fun runDialogExitAction(

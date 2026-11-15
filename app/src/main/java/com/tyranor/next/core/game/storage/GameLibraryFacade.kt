@@ -2,7 +2,12 @@ package com.tyranor.next.core.game.storage
 
 import android.content.Context
 import android.net.Uri
+import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.save.SystemNnnCleanupQueue
+import com.tyranor.next.core.game.save.sync.SaveSyncError
+import com.tyranor.next.core.game.save.sync.SaveSyncException
 import com.tyranor.next.core.game.scan.GameRootMatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -12,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
+import java.io.IOException
 
 /**
  * 游戏库门面：对 UI / 启动编排暴露同步的内存缓存读与「缓存先行、FIFO 落库」写。
@@ -50,12 +56,13 @@ object GameLibraryFacade {
     @Volatile
     private var persistFailureListenerInstalled = false
 
-    /** 持久化写失败后的自愈入口：清空派生自 DB 的缓存（roots 单独管理，不受影响）。 */
+    /** 持久化写失败后，从 Room 重新读取可能已经先行发布的缓存。 */
     private fun invalidatePersistenceCaches() {
         synchronized(cacheLock) {
             gamesCache = null
             recentGamesCache = null
             quickLaunchCache = null
+            rootsCache = null
         }
         // 单游戏覆盖同样走「缓存先行、post 落库」模式，一并回源
         GameOverridesRepository.invalidateRowCache()
@@ -107,20 +114,31 @@ object GameLibraryFacade {
             val coroutine = currentCoroutineContext()
             gameWrites.update {
                 coroutine.ensureActive()
-                updateGames(context, transform)
+                updateGames(context) { current ->
+                    val registered = transform(current)
+                    val known = current.mapTo(HashSet(), ScanGame::uri)
+                    val sources = registered.asSequence().filter { it.uri !in known }
+                        .mapNotNull { SystemNnnGameDirectory.sourceIdentity(it.uri) }.distinct()
+                        .filter { SystemNnnCopyStore.activeRoot(context, it) != null }.toSet()
+                    if (sources.isNotEmpty()) SystemNnnCleanupQueue.open(context).retainCopies {
+                        SystemNnnGameDirectory.sourceIdentity(it) in sources
+                    }
+                    registered
+                }
             }
         }
 
-    /** The caller has already obtained any save-sync admission. The callback only evicts resources. */
+    /** An asynchronous Room failure may leave an old reference after the cache changed. */
     internal fun evictUnusedSystemNnnCopy(
         context: Context,
         sourceId: String,
-        excludingUri: String? = null,
         evict: () -> Boolean,
-    ): Boolean = gameWrites.evictIfUnused(
+    ): Boolean? = gameWrites.evictIfUnused(
         referenced = {
-            loadGames(context).any { game ->
-                game.uri != excludingUri && SystemNnnGameDirectory.sourceIdentity(game.uri) == sourceId
+            // The writer does not take gameWrites. Do not hold cacheLock while waiting for it.
+            val durable = GameLibraryRepository.readBlocking(context, GameLibraryRepository::loadGamesAfterWrites)
+            (durable.asSequence() + loadGames(context).asSequence()).map(ScanGame::uri).distinct().any {
+                SystemNnnGameDirectory.sourceIdentity(it) == sourceId
             }
         },
         evict = evict,
@@ -164,8 +182,43 @@ object GameLibraryFacade {
     }
 
     /** 从持久游戏库中移除指定游戏（在游戏页或首页删除游戏时调用，保证库与最近列表一致）。 */
-    fun removeGame(context: Context, uri: String) {
-        updateGames(context) { games -> games.filterNot { it.uri == uri } }
+    internal fun removeGame(context: Context, uri: String): Boolean = gameWrites.update {
+        var queued = false
+        updateGames(context) { games ->
+            val targets = games.filter { it.uri == uri }
+            val remaining = games.filterNot { it.uri == uri }
+            queued = enqueueSystemNnnRemoval(context, targets, retireCopy = true, remaining = remaining)
+            remaining
+        }
+        queued
+    }
+
+    internal fun enqueueSystemNnnRemoval(
+        context: Context,
+        games: List<ScanGame>,
+        retireCopy: Boolean,
+        remaining: List<ScanGame> = emptyList(),
+    ): Boolean {
+        val targets = try {
+            games.asSequence().map(RuntimeModuleBindings::builtInSystemNnn)
+                .filter { it.engine == EngineType.SYSTEMNNN && SystemNnnGameDirectory.committed(context, it.uri) != null }
+                .map(ScanGame::uri).toList()
+        } catch (failure: IOException) {
+            throw SaveSyncException(SaveSyncError.SAVE_UNAVAILABLE, cause = failure)
+        } catch (failure: SecurityException) {
+            throw SaveSyncException(SaveSyncError.SAVE_UNAVAILABLE, cause = failure)
+        }
+        if (targets.isEmpty()) return false
+        val queue = SystemNnnCleanupQueue.open(context)
+        val referenced = remaining.mapNotNull { SystemNnnGameDirectory.sourceIdentity(it.uri) }.toSet()
+        val sources = targets.associateWith { SystemNnnGameDirectory.sourceIdentity(it) }
+        val retain = sources.values.filterNotNull()
+            .filter { !retireCopy || it in referenced }.toSet()
+        if (retain.isNotEmpty()) queue.retainCopies { SystemNnnGameDirectory.sourceIdentity(it) in retain }
+        queue.add(sources.map { (uri, source) ->
+            SystemNnnCleanupQueue.Target(uri, retireCopy && source != null && source !in referenced)
+        })
+        return true
     }
 
     // ============ 最近打开 ============
@@ -306,35 +359,25 @@ object GameLibraryFacade {
         }
     }
 
-    fun removeRoot(context: Context, uri: Uri) {
+    internal fun removeRootAndGames(context: Context, uri: Uri) = gameWrites.update {
         synchronized(cacheLock) {
-            val current = loadRootsLocked(context)
-            val existing = current.filterNot { it == uri.toString() }
-            if (existing.size == current.size) return
-            rootsCache = existing
-            GameLibraryRepository.post(context) { GameLibraryRepository.removeRoot(it, uri.toString()) }
-            _rootsRevision.value++
-        }
-    }
-
-    fun removeRootAndGames(context: Context, uri: Uri): List<ScanGame> {
-        removeRoot(context, uri)
-        val root = uri.toString()
-        var removed = emptyList<ScanGame>()
-        updateGames(context) { games ->
-            removed = games.filter { isGameUnderRoot(root, it.uri) }
+            val root = uri.toString()
+            val roots = loadRootsLocked(context)
+            val games = loadGamesLocked(context)
+            val removed = games.filter { isGameUnderRoot(root, it.uri) }
+            if (root !in roots && removed.isEmpty()) return@synchronized
             val removedUris = removed.mapTo(HashSet()) { it.uri }
-            games.filterNot { it.uri in removedUris }
-        }
-        if (removed.isEmpty()) return emptyList()
-        val removedUris = removed.mapTo(HashSet()) { it.uri }
-        // 最近打开/快捷启动的 DB 行已随游戏行删除（派生视图 + 级联），这里只需同步内存缓存。
-        synchronized(cacheLock) {
+            val remaining = games.filterNot { it.uri in removedUris }
+            enqueueSystemNnnRemoval(context, removed, retireCopy = true, remaining = remaining)
+            rootsCache = roots - root
+            gamesCache = remaining
             recentGamesCache = recentGamesCache?.filterNot { it.uri in removedUris }
+            quickLaunchCache = quickLaunchCache?.filterNot { it.uri in removedUris }
+            GameLibraryRepository.post(context) { GameLibraryRepository.removeRootAndGames(it, root, removedUris) }
+            _quickLaunchRevision.value++
+            _rootsRevision.value++
+            _libraryRevision.value++
         }
-        updateQuickLaunch(context) { list -> list.filterNot { it.uri in removedUris } }
-        notifyGamesChanged()
-        return removed
     }
 
     /** 外部逻辑（如运行时模块降级）直接改库后通知 UI 重新读取派生列表。 */

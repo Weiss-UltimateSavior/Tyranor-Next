@@ -10,7 +10,6 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
 import bridge.PrimaryStorageRoot
 import com.tyranor.next.core.game.save.GameSaveManager
-import com.tyranor.next.core.game.save.SystemNnnCleanupQueue
 import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.process.AppProcess
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
@@ -92,8 +91,14 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
             }
             AppLockController.install(this)
             // 上次删除游戏/目录或重扫丢弃条目时未完成的副本回收在这里续做；引擎侧不保存这些路径。
-            if (!SystemNnnCleanupQueue.isEmpty(this)) background.launch {
-                runCatching { GameSaveManager(this@TyranorNextApplication).drainSystemNnnCleanupQueue() }
+            background.launch {
+                try {
+                    GameSaveManager(this@TyranorNextApplication).drainSystemNnnCleanupQueue()
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    android.util.Log.w("SystemNNN", "Could not resume copy resource cleanup", failure)
+                }
             }
         }
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)

@@ -198,7 +198,7 @@ object EngineLauncher {
                 result = if (entry.engine == EngineType.SYSTEMNNN) {
                     restoreSystemNnn(context, entry)?.let { return@withContext it }
                     prepareSystemNnnResources(context, entry)?.let { return@withContext it }
-                    // A source-to-copy rebind also writes the URI's version checkpoint.
+                    // SystemNNN launch and save synchronization share the version checkpoint.
                     SaveSyncLocks.versions(entry.uri) { launchAdmitted() }
                 } else launchAdmitted()
             } while (result == null)
@@ -223,7 +223,7 @@ object EngineLauncher {
         if (game.engine == EngineType.SYSTEMNNN &&
             SystemNnnGameDirectory.accessible(context, game.uri)?.let(SystemNnnCopyStore::resourcesEvicted) == true
         ) {
-            // Cleanup won after the initial resource check. Restage outside the save fence.
+            // Cleanup won after the initial check. Recheck the current resource directory.
             return null
         }
         recoverSystemNnnSaves(context, game)?.let { return it }
@@ -1273,7 +1273,10 @@ object EngineLauncher {
             EngineType.XSYS35 -> buildXs35Intent(context, path, game, settings)
 
             EngineType.XSYS4 -> buildXs4Intent(context, path, game, settings)
-            EngineType.SYSTEMNNN -> SystemNnnHost.createLaunchIntent(context, File(path), game.title).apply {
+            EngineType.SYSTEMNNN -> SystemNnnHost.createLaunchIntent(
+                context, File(path), game.title, game.uri, settings.systemNnnFullscreen, settings.systemNnnReadingSize,
+                settings.systemNnnExeAnalysis, settings.systemNnnDebugMode,
+            ).apply {
                 // The engine keeps no copy identity; pass the original directory as the legacy key.
                 SystemNnnGameDirectory.resolve(game.uri)?.absolutePath?.let {
                     putExtra(LaunchContract.RUNTIME_MODULE_SOURCE_IDENTITY_PATH, it)

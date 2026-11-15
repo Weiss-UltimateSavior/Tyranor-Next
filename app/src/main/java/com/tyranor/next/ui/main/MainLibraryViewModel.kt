@@ -14,6 +14,9 @@ import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.scan.SiglusTitleFeedback
 import com.tyranor.next.core.game.scan.Xs35TitleFeedback
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.save.GameSaveManager
+import com.tyranor.next.core.game.save.sync.SaveSyncError
+import com.tyranor.next.core.game.save.sync.SaveSyncException
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.ui.cover.coverErrorMessage
 import com.tyranor.next.ui.game.cleanupDeletedGame
@@ -21,6 +24,7 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,6 +44,9 @@ data class MainLibraryUiState(
     val scanning: Boolean = false,
     val scrapeEventId: Long = 0L,
     val scrapeMessage: String? = null,
+    val cleanupError: SaveSyncError? = null,
+    val cleanupGameTitle: String? = null,
+    val copyCleanupPending: Boolean = false,
     /** 最新搜索词；与页面当前搜索词一致时才可采用 [searchHitUris]。 */
     val searchQuery: String = "",
     /** 当前游戏标题快照的 Room 命中集；null 表示尚无结果，空集合表示没有命中。 */
@@ -230,12 +237,20 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
         return true
     }
 
-    /** 强制删除：先移除库条目，关联数据清理失败只记日志，不再保留条目或弹窗阻拦。 */
+    /** 先移除库条目，再尽力清理关联数据。SystemNNN 副本的清理任务随移除一起登记。 */
     fun deleteGame(target: ScanGame) {
         val revision = stateRevision.incrementAndGet()
         _uiState.update { MainLibraryStateReducer.deleteGame(it, target.uri) }
         enqueuePersistence(revision) {
-            GameLibraryFacade.removeGame(appContext, target.uri)
+            val queued = try {
+                withContext(NonCancellable) {
+                    GameLibraryFacade.removeGame(appContext, target.uri)
+                }
+            } catch (failure: SaveSyncException) {
+                // 副本清理请求尚未持久化，保留库条目供重试。
+                _uiState.update { it.copy(cleanupError = failure.code, cleanupGameTitle = target.title, copyCleanupPending = false) }
+                return@enqueuePersistence
+            }
             try {
                 cleanupDeletedGame(appContext, target)
             } catch (cancelled: CancellationException) {
@@ -243,7 +258,21 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
             } catch (failure: Exception) {
                 Log.w(TAG, "Best-effort cleanup failed for deleted game ${target.uri}", failure)
             }
+            // 关联数据清理失败时，仍继续处理已登记的资源清理。
+            if (queued) try {
+                val cleanup = GameSaveManager(appContext).drainSystemNnnCleanupQueue(target.uri)
+                if (cleanup.failed != 0) {
+                    _uiState.update { it.copy(copyCleanupPending = true) }
+                }
+            } catch (failure: SaveSyncException) {
+                Log.w(TAG, "Could not resume SystemNNN copy cleanup", failure)
+                _uiState.update { it.copy(copyCleanupPending = true) }
+            }
         }
+    }
+
+    fun dismissCleanupError() {
+        _uiState.update { it.copy(cleanupError = null, cleanupGameTitle = null, copyCleanupPending = false) }
     }
 
     fun removeRecentGame(target: ScanGame) {

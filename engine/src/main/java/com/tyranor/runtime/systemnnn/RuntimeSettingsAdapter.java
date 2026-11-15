@@ -11,10 +11,23 @@ final class RuntimeSettingsAdapter {
     // commonSystemParamName.h; same order as commonConfig::m_volumeName.
     private static final int[] VOLUME_IDS={105,100,101,102,103,104,106,107,108,109};
     private static final int[] SWITCH_IDS={-1,200,201,202,203,204,-1,-1,208,209};
-    private static final String[] BOOLEAN_KEYS={"skipReadOnly","fullscreen","autoEnabled","autoContinue","autoSkip","changeReadColor","changeSelectColor","continueVoice"};
-    private static final int[] BOOLEAN_IDS={2,4,6,210,211,212,213,214};
+    static final String FULLSCREEN="fullscreen";
+    private static final int SCREEN_MODE=4;
+    private static final String[] BOOLEAN_KEYS={"skipReadOnly",FULLSCREEN,"autoEnabled","autoContinue","autoSkip","changeReadColor","changeSelectColor","continueVoice"};
+    private static final int[] BOOLEAN_IDS={2,SCREEN_MODE,6,210,211,212,213,214};
     private static final int[] EMPTY=new int[0];
     private static final String RAW_PREFIX="runtime.raw.";
+    private static final String REVISION="revision";
+
+    static final class AudioOverrides {
+        final int[] raw,owners;
+        private final String prefix;
+        private final long revision;
+
+        private AudioOverrides(String prefix,long revision,int[] raw,int[] owners){
+            this.prefix=prefix;this.revision=revision;this.raw=raw;this.owners=owners;
+        }
+    }
 
     private static String namespace(File game){
         try{return RAW_PREFIX+UUID.nameUUIDFromBytes(game.getCanonicalPath().getBytes(StandardCharsets.UTF_8))+".";}
@@ -35,20 +48,77 @@ final class RuntimeSettingsAdapter {
 
     /** Only explicit, game-scoped raw overrides. No display values become factory defaults. */
     static int[] persistedOverrides(SharedPreferences preferences,File game){
-        String prefix=namespace(game);Map<String,?> all=preferences.getAll();List<Integer> result=new ArrayList<>();
-        for(int id=0;id<572;id++)if(supported(id)){
-            Integer value=integer(all,prefix+id);if(value!=null){result.add(id);result.add(value);}
+        return persistedOverrides(preferences,game,true);
+    }
+
+    static int[] persistedOverrides(SharedPreferences preferences,File game,boolean includeScreenMode){
+        return persistedOverrides(preferences,game,includeScreenMode,true);
+    }
+    static int[] persistedOverrides(SharedPreferences preferences,File game,boolean includeScreenMode,boolean includeAutoMode){
+        return rawOverrides(preferences.getAll(),namespace(game),includeScreenMode,includeAutoMode);
+    }
+    private static int[] rawOverrides(Map<String,?> values,String prefix,boolean includeScreenMode,boolean includeAutoMode){
+        List<Integer> result=new ArrayList<>();
+        for(int id=0;id<572;id++)if(supported(id)&&(includeScreenMode||id!=SCREEN_MODE)&&(includeAutoMode||id!=6)){
+            Integer value=integer(values,prefix+id);if(value!=null){result.add(id);result.add(value);}
         }
         // Migration TODO: old global eight-setting values used different units
         // and defaults. Import requires an explicit migration policy, not a guess.
         return array(result);
     }
 
+    static int[] screenMode(boolean fullscreen){return new int[]{SCREEN_MODE,fullscreen?1:0};}
+
     /** Persist accepted raw changes/snapshots supplied by the owner, never a converted UI cache. */
     static void persistRawOverrides(SharedPreferences preferences,File game,int[] actualPairs){
-        pairs(actualPairs);String prefix=namespace(game);SharedPreferences.Editor edit=preferences.edit();
-        for(int i=0;i<actualPairs.length;i+=2)if(supported(actualPairs[i]))edit.putInt(prefix+actualPairs[i],actualPairs[i+1]);
-        edit.apply();
+        pairs(actualPairs);String prefix=namespace(game);
+        synchronized(preferences){
+            SharedPreferences.Editor edit=editOverrides(preferences,prefix);
+            for(int i=0;i<actualPairs.length;i+=2)if(supported(actualPairs[i]))edit.putInt(prefix+actualPairs[i],actualPairs[i+1]);
+            edit.apply();
+        }
+    }
+
+    static int[] persistedOwners(SharedPreferences preferences,File game){
+        return ownerOverrides(preferences.getAll(),namespace(game));
+    }
+    private static int[] ownerOverrides(Map<String,?> values,String prefix){
+        String ownerPrefix=prefix+"owner.";
+        List<Integer> result=new ArrayList<>();
+        for(int id=0;id<34;id++){
+            Integer value=integer(values,ownerPrefix+id);
+            if(value!=null){result.add(id);result.add(value);}
+        }
+        return array(result);
+    }
+
+    static void persistOwner(SharedPreferences preferences,File game,int id,int value){
+        String prefix=namespace(game);
+        synchronized(preferences){editOverrides(preferences,prefix).putInt(prefix+"owner."+id,value).apply();}
+    }
+    private static SharedPreferences.Editor editOverrides(SharedPreferences preferences,String prefix){
+        String key=prefix+REVISION;
+        return preferences.edit().putLong(key,preferences.getLong(key,0L)+1);
+    }
+    static AudioOverrides audioOverrides(SharedPreferences preferences,File game){
+        String prefix=namespace(game);
+        synchronized(preferences){
+            Map<String,?> values=preferences.getAll();
+            long revision=preferences.getLong(prefix+REVISION,0L);
+            return new AudioOverrides(prefix,revision,rawOverrides(values,prefix,true,true),ownerOverrides(values,prefix));
+        }
+    }
+    static void clearSavedAudioOverrides(SharedPreferences preferences,AudioOverrides saved,int[] raw,int[] owners){
+        synchronized(preferences){
+            if(preferences.getLong(saved.prefix+REVISION,0L)!=saved.revision)return;
+            SharedPreferences.Editor edit=preferences.edit();
+            clearSavedPairs(edit,saved.prefix,raw);
+            clearSavedPairs(edit,saved.prefix+"owner.",owners);
+            edit.apply();
+        }
+    }
+    private static void clearSavedPairs(SharedPreferences.Editor edit,String prefix,int[] pairs){
+        for(int i=0;i<pairs.length;i+=2)edit.remove(prefix+pairs[i]);
     }
 
     private static OriginalSettingsModel.Slider slider(OriginalSettingsModel model,int index){
@@ -59,8 +129,8 @@ final class RuntimeSettingsAdapter {
         GameUiAssets.Config config=model.config;
         return new OriginalSettingsModel.Slider(index,0,0,0,1,1,
             bound(config.number(kind+"VolumeDevide",index==0||index==7?4:100),1,10000),
-            config.number(kind+"RealVolumeMin",config.number("volumeMin",80)),
-            config.number(kind+"RealVolumeMax",config.number("volumeMax",100)),"",null);
+            config.number(kind+"RealVolumeMin",model.volumeMin),
+            config.number(kind+"RealVolumeMax",model.volumeMax),"",null);
     }
 
     // commonConfig::Calcu: total is unadjusted, window is reversed, speed is
@@ -93,31 +163,32 @@ final class RuntimeSettingsAdapter {
                 return extended(id)&&value!=null?new int[]{id,value}:EMPTY;
             }catch(NumberFormatException e){return EMPTY;}
         }
+        for(int i=0;i<BOOLEAN_KEYS.length;i++)if(key.equals(BOOLEAN_KEYS[i])){
+            Boolean value=bool(values,key);if(value==null)return EMPTY;
+            return new int[]{BOOLEAN_IDS[i],i==0?(value?0:1):(value?1:0)};
+        }
         OriginalSettingsModel model=assets.settingsModel(1280,720);
         for(int i=0;i<OriginalSettingsModel.KEYS.length;i++){
             String display=OriginalSettingsModel.KEYS[i],exact="originalSlider."+OriginalSettingsModel.VOLUMES[i];
-            if((i==0||i==7)&&key.equals(exact)){
+            boolean exactPosition=model.original||i==0||i==6||i==7;
+            if(exactPosition&&key.equals(exact)){
                 Integer value=integer(values,exact);
-                if(value!=null)return new int[]{VOLUME_IDS[i],value};
+                if(value!=null)return new int[]{VOLUME_IDS[i],raw(slider(model,i),value)};
                 // Removing the exact key is an explicit switch to the mobile fallback.
                 Integer mobile=integer(values,display);
                 if(mobile==null)return EMPTY;
                 OriginalSettingsModel.Slider s=slider(model,i);
-                return new int[]{VOLUME_IDS[i],raw(s,s.fromPreference(mobile))};
+                return new int[]{VOLUME_IDS[i],i==6?100-bound(mobile,0,100):raw(s,s.fromPreference(mobile))};
             }
             if(key.equals(display)){
-                if((i==0||i==7)&&integer(values,exact)!=null)return EMPTY;
+                if(exactPosition&&integer(values,exact)!=null)return EMPTY;
                 Integer value=integer(values,display);if(value==null)return EMPTY;
                 OriginalSettingsModel.Slider s=slider(model,i);
-                return new int[]{VOLUME_IDS[i],raw(s,s.fromPreference(value))};
+                return new int[]{VOLUME_IDS[i],i==6?100-bound(value,0,100):raw(s,s.fromPreference(value))};
             }
             if(SWITCH_IDS[i]>=0&&key.equals("enabled."+display)){
                 Boolean value=bool(values,key);return value==null?EMPTY:new int[]{SWITCH_IDS[i],value?1:0};
             }
-        }
-        for(int i=0;i<BOOLEAN_KEYS.length;i++)if(key.equals(BOOLEAN_KEYS[i])){
-            Boolean value=bool(values,key);if(value==null)return EMPTY;
-            return new int[]{BOOLEAN_IDS[i],i==0?(value?0:1):(value?1:0)};
         }
         if(key.startsWith("character.")&&key.endsWith(".steps")){
             Integer value=integer(values,key);if(value==null)return EMPTY;
@@ -138,8 +209,15 @@ final class RuntimeSettingsAdapter {
             for(int i=0;i<VOLUME_IDS.length;i++){
                 if(id==VOLUME_IDS[i]){
                     OriginalSettingsModel.Slider s=slider(model,i);
-                    edit.putInt(OriginalSettingsModel.KEYS[i],s.toPreference(position(s,value)));
-                    if(i==0||i==7)edit.putInt("originalSlider."+s.kind,value);
+                    String exact="originalSlider."+s.kind;
+                    int position=position(s,value);
+                    if(model.original||i==0||i==6||i==7){
+                        int previous=preferences.getInt(exact,position);
+                        // Several slider positions can produce the same integer PC volume.
+                        if(i!=6&&previous>=0&&previous<=s.steps&&raw(s,previous)==value)position=previous;
+                        edit.putInt(exact,position);
+                    }else edit.remove(exact);
+                    edit.putInt(OriginalSettingsModel.KEYS[i],s.toPreference(position));
                 }
                 if(SWITCH_IDS[i]>=0&&id==SWITCH_IDS[i])edit.putBoolean("enabled."+OriginalSettingsModel.KEYS[i],value!=0);
             }

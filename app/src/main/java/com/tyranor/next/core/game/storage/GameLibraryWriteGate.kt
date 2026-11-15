@@ -6,6 +6,6 @@ internal class GameLibraryWriteGate {
 
     fun <T> update(action: () -> T): T = synchronized(lock, action)
 
-    fun evictIfUnused(referenced: () -> Boolean, evict: () -> Boolean): Boolean =
-        synchronized(lock) { !referenced() && evict() }
+    fun <T> evictIfUnused(referenced: () -> Boolean, evict: () -> T): T? =
+        synchronized(lock) { if (referenced()) null else evict() }
 }

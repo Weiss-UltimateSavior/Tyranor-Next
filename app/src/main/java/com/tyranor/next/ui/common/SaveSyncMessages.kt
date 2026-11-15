@@ -8,6 +8,7 @@ import com.tyranor.next.core.game.save.sync.SaveSyncReport
 import com.tyranor.next.core.game.save.sync.SaveSyncService
 import com.tyranor.next.core.game.save.sync.WebDavSettingsStore
 import com.tyranor.next.core.i18n.AppLocaleController
+import com.tyranor.next.ui.common.notice.AppNotice
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -70,6 +71,16 @@ internal fun SaveSyncReport.syncMessageResource(): Int {
         busy > 0 -> R.string.webdav_error_game_running
         else -> R.string.webdav_sync_unchanged
     }
+}
+
+/**
+ * 同步报告对应的提示类型：有失败（含部分失败）是失败；清理待处理 / 有游戏运行中被跳过是需要留意的提示；其余为成功。
+ * `syncAll()` 遇到远端身份冲突等问题时把错误放进报告并正常返回，调用方不能只凭「没抛异常」就当成功。
+ */
+internal fun SaveSyncReport.noticeKind(): AppNotice.Kind = when {
+    failures.isNotEmpty() -> AppNotice.Kind.Failure
+    cleanupPending > 0 || busy > 0 -> AppNotice.Kind.Info
+    else -> AppNotice.Kind.Success
 }
 
 internal fun SaveSyncReport.toSaveSyncMessage(context: Context): String {

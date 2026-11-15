@@ -12,10 +12,10 @@ internal object SystemNnnGameDirectory {
     private const val STORAGE_PROVIDER = SystemNnnCopyStore.STORAGE_PROVIDER
     private val volumeName = SystemNnnCopyStore.VOLUME_NAME
 
-    /** A committed local copy remains authoritative even if direct source access later returns. */
+    /** The active copy remains authoritative until explicit removal retires its binding. */
     fun committed(context: Context, uriText: String): File? {
         val sourceId = sourceIdentity(uriText) ?: return null
-        return SystemNnnCopyStore.committedRoot(context, sourceId)
+        return SystemNnnCopyStore.activeRoot(context, sourceId)
     }
 
     fun sourceIdentity(uriText: String): String? =
