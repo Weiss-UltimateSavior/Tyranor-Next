@@ -40,7 +40,7 @@ diff --git a/crates/ethornell-app/src/lib.rs b/crates/ethornell-app/src/lib.rs
 +    (1920, 1080), (2560, 1920), (2560, 1440), (3840, 2880),
 +    (3840, 2160), (1600, 900), (1366, 768), (960, 540),
 +];
- 
+
  const CONFIRMED_BOOTSTRAP_FNV: u64 = 0x9f5e9248ec3ad577;
  const CONFIRMED_TITLE_FNV: u64 = 0xc6bdd0d97d4f4893;
 @@ -2755,7 +2783,7 @@
@@ -81,10 +81,10 @@ diff --git a/crates/ethornell-image/src/cbg.rs b/crates/ethornell-image/src/cbg.
 +++ b/crates/ethornell-image/src/cbg.rs
 @@ -2,8 +2,12 @@
  use ethornell_core::{EthornellError, Result};
- 
+
  pub(crate) mod bf_movie;
 +pub(crate) mod mt;
- 
+
  pub fn decode_cbg(data: &[u8]) -> Result<DecodedImage> {
 +    if data.starts_with(b"CompressedBG_MT\0") {
 +        return mt::decode(data);
@@ -107,7 +107,7 @@ diff --git a/crates/ethornell-image/src/lib.rs b/crates/ethornell-image/src/lib.
 +++ b/crates/ethornell-image/src/lib.rs
 @@ -92,7 +92,7 @@
  }
- 
+
  pub fn detect_image_format(buf: &[u8]) -> ImageFormat {
 -    if buf.starts_with(b"CompressedBG___") {
 +    if buf.starts_with(b"CompressedBG___") || buf.starts_with(b"CompressedBG_MT\0") {
@@ -116,7 +116,7 @@ diff --git a/crates/ethornell-image/src/lib.rs b/crates/ethornell-image/src/lib.
          ImageFormat::Png
 @@ -432,6 +432,9 @@
  }
- 
+
  pub fn parse_cbg_metadata(buf: &[u8]) -> Result<CbgMetadata> {
 +    if buf.starts_with(b"CompressedBG_MT\0") {
 +        return cbg::mt::metadata(buf);
@@ -128,7 +128,7 @@ diff --git a/crates/ethornell-script/src/lib.rs b/crates/ethornell-script/src/li
 --- a/crates/ethornell-script/src/lib.rs
 +++ b/crates/ethornell-script/src/lib.rs
 @@ -1460,7 +1460,7 @@
- 
+
      #[test]
      fn names_every_opcode_registered_by_the_native_interpreter() {
 -        assert_eq!(NATIVE_REGISTERED_OPCODES.len(), 136);
@@ -139,7 +139,18 @@ diff --git a/crates/ethornell-script/src/lib.rs b/crates/ethornell-script/src/li
 diff --git a/crates/ethornell-vm/src/lib.rs b/crates/ethornell-vm/src/lib.rs
 --- a/crates/ethornell-vm/src/lib.rs
 +++ b/crates/ethornell-vm/src/lib.rs
-@@ -12231,7 +12231,8 @@
+@@ -10939,7 +10939,9 @@
+                         if input.get(20..24).is_some_and(|v| u32::from_le_bytes(v.try_into().unwrap()) <= 0x400_0000) {
+                             ethornell_archive::dsc_decode(input).unwrap_or_default()
+                         } else { Vec::new() }
+-                    } else if input.starts_with(b"CompressedBG___") {
++                    } else if ethornell_image::detect_image_format(input)
++                        == ethornell_image::ImageFormat::CompressedBg
++                    {
+                         ethornell_image::decode_cbg_native_buffer(input).unwrap_or_default()
+                     } else { input.to_vec() };
+                     let count = decoded.len();
+@@ -12231,7 +12233,8 @@
              // plausibility test because they may be plain numbers.
              let non_null_pointer = matches!(original, Value::Ptr(ptr) if ptr != 0);
              let text_pointer = text_slot && matches!(original, Value::Ptr(ptr) if ptr != 0)
@@ -149,6 +160,97 @@ diff --git a/crates/ethornell-vm/src/lib.rs b/crates/ethornell-vm/src/lib.rs
              if text_pointer {
                  self.replace_operand(operand, Value::Str(text));
              } else if non_null_pointer && !text.starts_with("0x") {
+@@ -20251,6 +20254,90 @@
+         assert_eq!(report.stop_reason,VmStopReason::Completed);
+     }
+
++    pub(super) fn single_pixel_cbg_mt() -> Vec<u8> {
++        let mut input = vec![0; 52 + 4 + 256 + 1];
++        input[..16].copy_from_slice(b"CompressedBG_MT\0");
++        for (offset, value) in [(16, 1u32), (20, 1), (24, 1), (28, 8), (48, 52), (52, 2)] {
++            input[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
++        }
++        // One literal byte. The two equally weighted symbols are 1 and
++        // 0x7f, with the lower one on the left. Bits are read LSB first.
++        input[56 + 1] = 1;
++        input[56 + 0x7f] = 1;
++        input[56 + 256] = 0b10;
++        input
++    }
++
++    pub(super) const SINGLE_PIXEL_CBG_NATIVE: [u8; 17] = [
++        1, 0, 1, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x7f,
++    ];
++
++    #[test]
++    fn sys80_30_decodes_cbg_mt_archive_resource() {
++        let mut vm = Vm::new();
++        let mut api = ArchiveBytesApi {
++            expected_archive: "sample.arc".into(),
++            expected_file: "pixel.cbg".into(),
++            bytes: single_pixel_cbg_mt(),
++            calls: Vec::new(),
++        };
++        vm.stack.extend([
++            Value::Ptr(0x1800),
++            Value::Str("sample.arc".into()),
++            Value::Str("pixel.cbg".into()),
++        ]);
++        let instruction =
++            test_instruction(0, 0x80, "sys1", vec![0x80, 0x30], vec![BpOperand::U8(0x30)]);
++
++        vm.dispatch(&instruction, &mut api).unwrap();
++
++        assert_eq!(vm.stack, [Value::Int(SINGLE_PIXEL_CBG_NATIVE.len() as i32)]);
++        assert_eq!(&vm.memory[0x1800..0x1811], &SINGLE_PIXEL_CBG_NATIVE);
++    }
++
++    #[test]
++    fn sys80_31_slices_cbg_mt_after_decoding() {
++        let mut vm = Vm::new();
++        let mut api = RootFileBytesApi {
++            expected_file: format!("{}pixel.cbg", ensure_trailing_separator("/game")),
++            bytes: single_pixel_cbg_mt(),
++            primary_root: Some("/game".into()),
++        };
++        vm.stack.extend([
++            Value::Ptr(0x1800),
++            Value::Int(0),
++            Value::Str("pixel.cbg".into()),
++            Value::Int(15),
++            Value::Int(2),
++        ]);
++        let instruction =
++            test_instruction(0, 0x80, "sys1", vec![0x80, 0x31], vec![BpOperand::U8(0x31)]);
++
++        vm.dispatch(&instruction, &mut api).unwrap();
++
++        assert_eq!(vm.stack, [Value::Int(0)]);
++        assert_eq!(&vm.memory[0x1800..0x1802], &SINGLE_PIXEL_CBG_NATIVE[15..]);
++    }
++
++    #[test]
++    fn sys80_cf_decodes_cbg_mt_from_vm_memory() {
++        let mut vm = Vm::new();
++        let input = single_pixel_cbg_mt();
++        vm.memory[0x1000..0x1000 + input.len()].copy_from_slice(&input);
++        vm.stack.extend([
++            Value::Ptr(0x2000),
++            Value::Ptr(0x1000),
++            Value::Int(input.len() as i32),
++        ]);
++        let instruction = test_instruction(0, 0x80, "sys1", vec![0x80, 0xcf], Vec::new());
++
++        vm.dispatch(&instruction, &mut TraceApi).unwrap();
++
++        assert_eq!(&vm.memory[0x2000..0x2011], &SINGLE_PIXEL_CBG_NATIVE);
++        assert_eq!(vm.poll_current_procedure(&mut TraceApi, false), None);
++        assert_eq!(vm.stack, [Value::Int(SINGLE_PIXEL_CBG_NATIVE.len() as i32)]);
++    }
++
+     #[test]
+     fn sys80_cf_resolves_tagged_raw_input_and_returns_decoded_length() {
+         let mut vm=Vm::new();
 diff --git a/crates/ethornell-image/src/cbg/mt.rs b/crates/ethornell-image/src/cbg/mt.rs
 new file mode 100644
 --- /dev/null
@@ -545,3 +647,79 @@ new file mode 100644
 +        assert_eq!(output, [5, 7, 0, 0, 9]);
 +    }
 +}
+diff --git a/crates/ethornell-vm/src/resource_io.rs b/crates/ethornell-vm/src/resource_io.rs
+--- a/crates/ethornell-vm/src/resource_io.rs
++++ b/crates/ethornell-vm/src/resource_io.rs
+@@ -66,7 +66,7 @@
+     copy_path_components(marker, count - 2).unwrap_or_default()
+ }
+
+-/// sub_465880: decode a loaded file (DSC, CBG v1/v2 into the 16-byte header
++/// sub_465880: decode a loaded file (DSC, CBG into the 16-byte header
+ /// plus pixels, otherwise raw) and take `length` bytes at `offset`; both 0
+ /// select the whole result. Errors are the target statuses 2/3/5/6.
+ pub(crate) fn target_decode_resource(bytes: &[u8], offset: u32, length: u32) -> Result<Vec<u8>, i32> {
+@@ -82,7 +82,9 @@
+             Ok(decoded) if decoded.len() == size => Cow::Owned(decoded),
+             _ => return Err(5),
+         }
+-    } else if bytes.starts_with(b"CompressedBG___") {
++    } else if ethornell_image::detect_image_format(bytes)
++        == ethornell_image::ImageFormat::CompressedBg
++    {
+         match ethornell_image::decode_cbg_native_buffer(bytes) {
+             Ok(decoded) => Cow::Owned(decoded),
+             Err(_) => return Err(5),
+diff --git a/crates/ethornell-vm/src/native_version.rs b/crates/ethornell-vm/src/native_version.rs
+--- a/crates/ethornell-vm/src/native_version.rs
++++ b/crates/ethornell-vm/src/native_version.rs
+@@ -10,7 +10,8 @@
+     fn native_bitmap_source_range(&self,source:u32,size:i32)->VmResult<std::ops::Range<usize>> {
+         let prefix=self.resolve_range(source,16)?;
+         let compressed=self.memory[prefix.clone()].starts_with(b"DSC FORMAT 1.00")
+-            || self.memory[prefix.clone()].starts_with(b"CompressedBG___");
++            || ethornell_image::detect_image_format(&self.memory[prefix.clone()])
++                == ethornell_image::ImageFormat::CompressedBg;
+         if !compressed && size>0 {return self.resolve_range(source,size as usize)}
+         let available=if let Some(buffer)=self.native_buffer(source) {Some(buffer.size as usize)}
+             else if let Some((base,offset))=self.target_heap.translate(source) {
+@@ -370,6 +371,39 @@
+     }
+
+     #[test]
++    fn version_native_bitmap_registration_decodes_cbg_mt_with_short_byte_count() {
++        let mut vm = Vm::new();
++        vm.set_native_abi_profile(NativeAbiProfile::ModernFused);
++        vm.start(&ethornell_script::parse_bp_program(None, &[0x91, 4, 0x17]));
++        let input = crate::tests::single_pixel_cbg_mt();
++        let source = vm.alloc_heap(input.len() as u32);
++        let range = vm.resolve_write_range(source, input.len()).unwrap();
++        vm.memory[range].copy_from_slice(&input);
++        vm.stack = vec![
++            Value::Int(3),
++            Value::Ptr(source),
++            Value::Int(16),
++            Value::Int(0),
++            Value::Int(0),
++            Value::Int(1),
++        ];
++        let mut host = BitmapHost::default();
++        assert_eq!(
++            vm.run_loaded(&mut host, &VmRunOptions::default()).stop_reason,
++            VmStopReason::WaitingForProcedure
++        );
++        assert_eq!(
++            host.observed,
++            Some((3, crate::tests::SINGLE_PIXEL_CBG_NATIVE.to_vec(), None, None, true))
++        );
++        assert_eq!(
++            vm.run_loaded(&mut host, &VmRunOptions::default()).stop_reason,
++            VmStopReason::Completed
++        );
++        assert_eq!(vm.stack, [Value::Int(0)]);
++    }
++
++    #[test]
+     fn version_native_projection_uses_signed_depth_and_checked_output_memory() {
+         let mut vm = Vm::new();
+         for (at, v) in [(64, 100), (68, -50), (72, -65536)] {

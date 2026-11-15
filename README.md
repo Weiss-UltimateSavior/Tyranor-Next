@@ -48,7 +48,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | -------------------- | ------------------------------------------------------------------- | ---------------------------- |
 | Kirikiri / Kirikiri2 | `.xp3`、`startup.tjs`                                                | Kirikiroid2 / krkrsdl3 原生运行时 |
 | ONScripter           | `nscript.dat`、`.nsa`                                                | ONScripter 原生运行时             |
-| Ethornell / BGI       | `system.arc`、`sysprg.arc` 等 BGI 资源组合                            | 内置实验运行时，支持 CBG_MT，兼容边界见 SPEC 第 10 节 |
+| Ethornell / BGI       | `system.arc`、`sysprg.arc` 等 BGI 资源组合                            | 内置实验运行时，支持 CBG_MT 资源与内存解码，兼容边界见 SPEC 第 10 节 |
 | Artemis              | `system.ini`、`.pfs`                                                 | Artemis 原生运行时                |
 | SiglusEngine         | `Gameexe.dat`/`Gameexe.ini`、`Scene.pck`（根或 `Data/`）                | Siglus 原生运行时（siglus_rs）      |
 | RealLive             | `Gameexe.ini` + `SEEN.TXT`（10000 项 TOC）或 `SEEN####.TXT`             | 内置视觉小说运行时（game_launcher）  |
