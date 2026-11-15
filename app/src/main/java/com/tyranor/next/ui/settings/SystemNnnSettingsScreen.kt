@@ -34,11 +34,13 @@ import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.NoRippleButton
+import com.tyranor.next.ui.common.SwitchPreference
 import com.tyranor.next.ui.common.TopBarIcon
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.ExpandVisibility
 import com.tyranor.next.ui.common.notice.AppNotice
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -132,99 +134,12 @@ internal fun SystemNnnSaveLayoutSettings(gameUri: String) {
     ) {
         Text(stringResource(R.string.engine_settings_systemnnn_layout), style = MaterialTheme.typography.titleMedium)
         val current = result
-        if (current is SystemNnnSaveLayout.Result.Available) {
-            SelectionContainer {
-                Text(current.path, style = MaterialTheme.typography.bodyMedium)
+        BlurCrossfade(targetState = current, modifier = Modifier.fillMaxWidth()) { displayed ->
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                SystemNnnSaveLayoutDetails(displayed)
             }
-            val exe = stringResource(R.string.engine_settings_systemnnn_exe_analysis)
-            val files = stringResource(R.string.engine_settings_systemnnn_layout_fallback)
-            Text(
-                stringResource(
-                    R.string.engine_settings_systemnnn_layout_layers, current.layerRecords,
-                    if (current.executableLayout) exe else files,
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                stringResource(
-                    R.string.engine_settings_systemnnn_layout_dialogue, current.messageWidth,
-                    if (current.executableMessageWidth) exe else files,
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                stringResource(
-                    R.string.engine_settings_systemnnn_layout_story_state, current.statusBytes,
-                    if (current.executableStatusBytes) exe else files,
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                if (current.systemSaveVersion == 0) stringResource(R.string.engine_settings_systemnnn_layout_system_pending)
-                else stringResource(
-                    R.string.engine_settings_systemnnn_layout_system_version,
-                    current.systemSaveVersion, if (current.systemSaveFromExecutable) exe else files,
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            val extStatus = when (current.extensionEnabled) {
-                1 -> R.string.engine_settings_systemnnn_layout_ext_on
-                0 -> R.string.engine_settings_systemnnn_layout_ext_off
-                else -> R.string.engine_settings_systemnnn_layout_ext_pending
-            }
-            Text(
-                stringResource(R.string.engine_settings_systemnnn_layout_ext_status, stringResource(extStatus)),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            val okikae = if (current.okikae) R.string.engine_settings_systemnnn_layout_okikae_on
-                else R.string.engine_settings_systemnnn_layout_okikae_off
-            Text(
-                stringResource(
-                    R.string.engine_settings_systemnnn_layout_replacements, stringResource(okikae),
-                    if (current.executableOkikae) exe else files,
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            val extensionBlocks = when (current.extensionStartCode) {
-                -1 -> stringResource(
-                    if (current.extensionEnabled == 1) R.string.engine_settings_systemnnn_layout_ext_unknown
-                    else R.string.engine_settings_systemnnn_layout_ext_pending,
-                )
-                0 -> stringResource(R.string.engine_settings_systemnnn_layout_ext_none)
-                else -> {
-                    val unknown = stringResource(R.string.engine_settings_systemnnn_layout_ext_length_unknown)
-                    val separator = stringResource(R.string.engine_settings_systemnnn_layout_ext_separator)
-                    current.extensionSizes.ifEmpty { listOf(-1) }.mapIndexed { index, size ->
-                        val length = if (size < 0) unknown
-                        else stringResource(R.string.engine_settings_systemnnn_layout_ext_length, size)
-                        stringResource(R.string.engine_settings_systemnnn_layout_ext_block, current.extensionStartCode + index, length)
-                    }.joinToString(separator)
-                }
-            }
-            Text(
-                stringResource(R.string.engine_settings_systemnnn_layout_ext, extensionBlocks),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            if (current.extensionStartCode == -1 && current.extensionEnabled == 1) {
-                Text(
-                    stringResource(R.string.engine_settings_systemnnn_layout_ext_hint),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            } else if (current.extensionStartCode > 0 && current.extensionSizes.isEmpty()) {
-                Text(
-                    stringResource(R.string.engine_settings_systemnnn_layout_ext_refresh),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-        } else {
-            val status = when (current) {
-                null -> R.string.engine_settings_systemnnn_layout_loading
-                SystemNnnSaveLayout.Result.Missing -> R.string.engine_settings_systemnnn_layout_missing
-                else -> R.string.engine_settings_systemnnn_layout_unavailable
-            }
-            Text(stringResource(status), style = MaterialTheme.typography.bodyMedium)
         }
-        if (generationFailed) {
+        ExpandVisibility(visible = generationFailed) {
             Text(
                 stringResource(R.string.engine_settings_systemnnn_layout_write_failed),
                 style = MaterialTheme.typography.bodyMedium,
@@ -236,7 +151,7 @@ internal fun SystemNnnSaveLayoutSettings(gameUri: String) {
                 if (generating) R.string.engine_settings_systemnnn_layout_generating
                 else R.string.engine_settings_systemnnn_layout_generate,
             ),
-            tonal = true,
+            modifier = Modifier.fillMaxWidth(),
             enabled = current != null && current != SystemNnnSaveLayout.Result.Unavailable && !generating,
             onClick = {
                 generating = true
@@ -249,5 +164,101 @@ internal fun SystemNnnSaveLayoutSettings(gameUri: String) {
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun SystemNnnSaveLayoutDetails(current: SystemNnnSaveLayout.Result?) {
+    if (current is SystemNnnSaveLayout.Result.Available) {
+        SelectionContainer {
+            Text(current.path, style = MaterialTheme.typography.bodyMedium)
+        }
+        val exe = stringResource(R.string.engine_settings_systemnnn_exe_analysis)
+        val files = stringResource(R.string.engine_settings_systemnnn_layout_fallback)
+        Text(
+            stringResource(
+                R.string.engine_settings_systemnnn_layout_layers, current.layerRecords,
+                if (current.executableLayout) exe else files,
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Text(
+            stringResource(
+                R.string.engine_settings_systemnnn_layout_dialogue, current.messageWidth,
+                if (current.executableMessageWidth) exe else files,
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Text(
+            stringResource(
+                R.string.engine_settings_systemnnn_layout_story_state, current.statusBytes,
+                if (current.executableStatusBytes) exe else files,
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Text(
+            if (current.systemSaveVersion == 0) stringResource(R.string.engine_settings_systemnnn_layout_system_pending)
+            else stringResource(
+                R.string.engine_settings_systemnnn_layout_system_version,
+                current.systemSaveVersion, if (current.systemSaveFromExecutable) exe else files,
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        val extStatus = when (current.extensionEnabled) {
+            1 -> R.string.engine_settings_systemnnn_layout_ext_on
+            0 -> R.string.engine_settings_systemnnn_layout_ext_off
+            else -> R.string.engine_settings_systemnnn_layout_ext_pending
+        }
+        Text(
+            stringResource(R.string.engine_settings_systemnnn_layout_ext_status, stringResource(extStatus)),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        val okikae = if (current.okikae) R.string.engine_settings_systemnnn_layout_okikae_on
+            else R.string.engine_settings_systemnnn_layout_okikae_off
+        Text(
+            stringResource(
+                R.string.engine_settings_systemnnn_layout_replacements, stringResource(okikae),
+                if (current.executableOkikae) exe else files,
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        val extensionBlocks = when (current.extensionStartCode) {
+            -1 -> stringResource(
+                if (current.extensionEnabled == 1) R.string.engine_settings_systemnnn_layout_ext_unknown
+                else R.string.engine_settings_systemnnn_layout_ext_pending,
+            )
+            0 -> stringResource(R.string.engine_settings_systemnnn_layout_ext_none)
+            else -> {
+                val unknown = stringResource(R.string.engine_settings_systemnnn_layout_ext_length_unknown)
+                val separator = stringResource(R.string.engine_settings_systemnnn_layout_ext_separator)
+                current.extensionSizes.ifEmpty { listOf(-1) }.mapIndexed { index, size ->
+                    val length = if (size < 0) unknown
+                    else stringResource(R.string.engine_settings_systemnnn_layout_ext_length, size)
+                    stringResource(R.string.engine_settings_systemnnn_layout_ext_block, current.extensionStartCode + index, length)
+                }.joinToString(separator)
+            }
+        }
+        Text(
+            stringResource(R.string.engine_settings_systemnnn_layout_ext, extensionBlocks),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        if (current.extensionStartCode == -1 && current.extensionEnabled == 1) {
+            Text(
+                stringResource(R.string.engine_settings_systemnnn_layout_ext_hint),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        } else if (current.extensionStartCode > 0 && current.extensionSizes.isEmpty()) {
+            Text(
+                stringResource(R.string.engine_settings_systemnnn_layout_ext_refresh),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    } else {
+        val status = when (current) {
+            null -> R.string.engine_settings_systemnnn_layout_loading
+            SystemNnnSaveLayout.Result.Missing -> R.string.engine_settings_systemnnn_layout_missing
+            else -> R.string.engine_settings_systemnnn_layout_unavailable
+        }
+        Text(stringResource(status), style = MaterialTheme.typography.bodyMedium)
     }
 }
