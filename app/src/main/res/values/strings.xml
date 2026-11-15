@@ -1090,4 +1090,14 @@
     <string name="save_systemnnn_clear_resources">清理导入的游戏资源</string>
     <string name="save_systemnnn_clear_resources_message">清理应用内副本的游戏资源可以释放空间，原游戏目录和副本中的全部存档都会保留。下次启动时需要从原目录重新导入资源。</string>
     <string name="save_systemnnn_clear_resources_done">已清理导入的游戏资源</string>
+
+    <!-- 自定义背景图 -->
+    <string name="settings_background_image">背景图片</string>
+    <string name="settings_background_image_none">未设置，点击选择图片</string>
+    <string name="settings_background_image_selected">已设置，点击更换</string>
+    <string name="settings_background_image_alpha">背景图不透明度</string>
+    <string name="settings_background_image_alpha_value">%1$d%%</string>
+    <string name="settings_background_image_blur">背景图模糊</string>
+    <string name="settings_background_image_blur_value">%1$d%%</string>
+    <string name="settings_background_image_clear">清除背景图</string>
 </resources>

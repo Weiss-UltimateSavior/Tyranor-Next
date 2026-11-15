@@ -22,6 +22,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -75,6 +78,7 @@ import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.HomeWebUrls
 import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.AppThemeColors
+import com.tyranor.next.theme.BackgroundImageCache
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.glassBorder
@@ -119,6 +123,9 @@ internal fun AppSettingsScreen() {
     val hideCardTitleTag by AppSettingsStore.gameCardTitleTagState.collectSettingAsState()
     val gameCardStyle by AppSettingsStore.gameCardStyleState.collectSettingAsState()
     val gameCardBadge by AppSettingsStore.gameCardBadgeState.collectSettingAsState()
+    val backgroundImageUri by AppSettingsStore.backgroundImageUriState.collectSettingAsState()
+    val backgroundImageAlpha by AppSettingsStore.backgroundImageAlphaState.collectSettingAsState()
+    val backgroundImageBlur by AppSettingsStore.backgroundImageBlurState.collectSettingAsState()
     val homeStyle by AppSettingsStore.homeStyleState.collectSettingAsState()
     val homePageEnabled by AppSettingsStore.homePageEnabledState.collectSettingAsState()
     val classicIcon by AppSettingsStore.classicIconEnabledState.collectSettingAsState()
@@ -129,6 +136,12 @@ internal fun AppSettingsScreen() {
     var dialog by rememberSaveable { mutableStateOf<SettingsDialog?>(null) }
     // 「重置悬浮按钮位置」点击次数：驱动该行的落点回弹（第一次组合不弹）
     var floatingNavResetTick by remember { mutableIntStateOf(0) }
+    // 换图后立刻解码（不等下次进入页面）：写入 BackgroundImageCache 的同一个 State，
+    // 所有正在显示背景的页面会即时重组换图
+    LaunchedEffect(backgroundImageUri) {
+        // 空 uri 也要走一次：ensureLoaded 会清空缓存，释放旧位图（清除背景图后不再滞留内存）
+        runCatching { BackgroundImageCache.ensureLoaded(ctx.applicationContext, backgroundImageUri) }
+    }
     // 本页可能先于主界面被组合（进程重建后直接恢复到设置页）：主动加载一次持久化值，
     // 否则下拉/开关会显示成默认档（与磁盘上的真实取值不一致）
     LaunchedEffect(Unit) {
@@ -139,6 +152,7 @@ internal fun AppSettingsScreen() {
             AppSettingsStore.initGameCardHideTitleTag(ctx)
             AppSettingsStore.initGameCardStyle(ctx)
             AppSettingsStore.initGameCardBadge(ctx)
+            AppSettingsStore.initBackgroundImage(ctx)
             AppSettingsStore.initHomeStyle(ctx)
             AppSettingsStore.initHomePageEnabled(ctx)
             AppSettingsStore.initClassicIcon(ctx)
@@ -146,7 +160,8 @@ internal fun AppSettingsScreen() {
     }
 
     // 进场分帧组合：第一帧只组合骨架与最上面几项，其余每帧补一组（见 StagedCompose）
-    val staged = rememberStagedCompose(last = 6)
+    // 分组数与最大 stagedItem 序号一致（新增设置卡片时必须同步递增，否则布局阶段越界崩溃）
+    val staged = rememberStagedCompose(last = 10)
 
     MiuixSettingsTheme {
       ProvideEntrance {
@@ -171,7 +186,7 @@ internal fun AppSettingsScreen() {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 stagedItem(1, staged) {
-                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(0).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(1).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             var language by remember { mutableStateOf(AppSettingsStore.getLanguage(ctx)) }
                             val languageModes = listOf(
@@ -323,6 +338,103 @@ internal fun AppSettingsScreen() {
                 stagedItem(4, staged) {
                     MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(4).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
+                            // 自定义背景图：铺在页面背景之上、主题色粒子之下
+                            val backgroundPicker = rememberLauncherForActivityResult(
+                                ActivityResultContracts.OpenDocument(),
+                            ) { uri: Uri? ->
+                                if (uri != null) {
+                                    val previous = AppSettingsStore.getBackgroundImageUri(ctx)
+                                    // 释放旧图的持久授权：系统对每个应用有配额上限（约 128 个），
+                                    // 反复换图不释放会耗尽配额导致后续 take 静默失败
+                                    if (previous.isNotBlank() && previous != uri.toString()) {
+                                        runCatching {
+                                            ctx.contentResolver.releasePersistableUriPermission(
+                                                Uri.parse(previous),
+                                                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                                            )
+                                        }
+                                    }
+                                    runCatching {
+                                        ctx.contentResolver.takePersistableUriPermission(
+                                            uri,
+                                            Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                                        )
+                                    }
+                                    AppSettingsStore.setBackgroundImageUri(ctx, uri.toString())
+                                }
+                            }
+                            ArrowPreference(
+                                title = stringResource(R.string.settings_background_image),
+                                summary = if (backgroundImageUri.isBlank()) {
+                                    stringResource(R.string.settings_background_image_none)
+                                } else {
+                                    stringResource(R.string.settings_background_image_selected)
+                                },
+                                onClick = { backgroundPicker.launch(arrayOf("image/*")) },
+                            )
+                            ExpandVisibility(visible = backgroundImageUri.isNotBlank()) {
+                                Column {
+                                    val alphaLabel = stringResource(R.string.settings_background_image_alpha)
+                                    SliderValueHeader(
+                                        title = alphaLabel,
+                                        value = stringResource(R.string.settings_background_image_alpha_value, backgroundImageAlpha),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(start = 16.dp, end = 16.dp, top = 10.dp),
+                                    )
+                                    // 拖动过程中只更新内存态（即时预览），松手才落盘：
+                                    // 每 tick 写 prefs + 广播会让 RenderEffect 重算最高 24dp 的整屏模糊，
+                                    // 拖动明显掉帧（同「扫描深度」滑条的既有做法）
+                                    Slider(
+                                        value = backgroundImageAlpha.toFloat(),
+                                        onValueChange = { raw ->
+                                            AppSettingsStore.previewBackgroundImageAlpha(raw.roundToInt().coerceIn(0, 100))
+                                        },
+                                        onValueChangeFinished = {
+                                            AppSettingsStore.setBackgroundImageAlpha(ctx, backgroundImageAlpha)
+                                        },
+                                        valueRange = 0f..100f,
+                                        steps = 0,
+                                        hapticEffect = SliderDefaults.SliderHapticEffect.Step,
+                                        modifier = Modifier
+                                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                                            .semantics { contentDescription = alphaLabel },
+                                    )
+                                    val blurLabel = stringResource(R.string.settings_background_image_blur)
+                                    SliderValueHeader(
+                                        title = blurLabel,
+                                        value = stringResource(R.string.settings_background_image_blur_value, backgroundImageBlur),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(start = 16.dp, end = 16.dp, top = 10.dp),
+                                    )
+                                    Slider(
+                                        value = backgroundImageBlur.toFloat(),
+                                        onValueChange = { raw ->
+                                            AppSettingsStore.previewBackgroundImageBlur(raw.roundToInt().coerceIn(0, 100))
+                                        },
+                                        onValueChangeFinished = {
+                                            AppSettingsStore.setBackgroundImageBlur(ctx, backgroundImageBlur)
+                                        },
+                                        valueRange = 0f..100f,
+                                        steps = 0,
+                                        hapticEffect = SliderDefaults.SliderHapticEffect.Step,
+                                        modifier = Modifier
+                                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                                            .semantics { contentDescription = blurLabel },
+                                    )
+                                    ArrowPreference(
+                                        title = stringResource(R.string.settings_background_image_clear),
+                                        onClick = { AppSettingsStore.setBackgroundImageUri(ctx, "") },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                stagedItem(5, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(5).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                        Column(Modifier.padding(vertical = 4.dp)) {
                             // 导航栏样式：经典 MD / 液态玻璃 · 经典 / 液态玻璃 · 透镜 / 悬浮按钮。
                             // 未显式选择时使用液态玻璃 · 经典；玻璃系外观保留经典 MD 的悬浮玻璃条。
                             // 「透镜」档需要 Android 13+ 的 RuntimeShader，低版本不提供该选项（列表里不出现）。
@@ -390,8 +502,8 @@ internal fun AppSettingsScreen() {
                         }
                     }
                 }
-                stagedItem(5, staged) {
-                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(5).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                stagedItem(6, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(6).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 显示首页：关闭后首页与导航栏首页入口隐藏，游戏页成为第一页
                             SwitchPreference(
@@ -439,8 +551,8 @@ internal fun AppSettingsScreen() {
                         }
                     }
                 }
-                stagedItem(6, staged) {
-                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(6).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                stagedItem(7, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(7).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 经典应用图标：开启后启用旧图标别名，关闭恢复当前新图标（默认关）
                             SwitchPreference(
@@ -455,8 +567,8 @@ internal fun AppSettingsScreen() {
                         }
                     }
                 }
-                stagedItem(6, staged) {
-                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(7).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                stagedItem(8, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(8).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 平板侧边栏：开启时平板/大窗口下导航移到侧边，关闭则保持底部导航
                             SwitchPreference(
@@ -470,8 +582,8 @@ internal fun AppSettingsScreen() {
                         }
                     }
                 }
-                stagedItem(6, staged) {
-                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(8).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                stagedItem(9, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(9).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             SwitchPreference(
                                 title = stringResource(R.string.settings_engine_tabs),
@@ -490,8 +602,8 @@ internal fun AppSettingsScreen() {
                         }
                     }
                 }
-                stagedItem(6, staged) {
-                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(9).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                stagedItem(10, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(10).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 游戏页卡片风格：瀑布（默认）/ 网格 / 列表（封面流）
                             val cardStyleModes = listOf(

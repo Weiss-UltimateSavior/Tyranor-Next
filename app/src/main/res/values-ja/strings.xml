@@ -1090,4 +1090,14 @@
     <string name="save_systemnnn_clear_resources">取り込んだゲームデータを削除</string>
     <string name="save_systemnnn_clear_resources_message">アプリ内のコピーからゲームデータを削除して空き容量を増やします。元のゲームフォルダーとコピー内のすべてのセーブデータは残ります。次回の起動時に元のフォルダーからゲームデータを取り込み直します。</string>
     <string name="save_systemnnn_clear_resources_done">取り込んだゲームデータを削除しました</string>
+
+    <!-- 自定义背景图 -->
+    <string name="settings_background_image">背景画像</string>
+    <string name="settings_background_image_none">未設定。タップして画像を選択</string>
+    <string name="settings_background_image_selected">設定済み。タップして変更</string>
+    <string name="settings_background_image_alpha">背景画像の不透明度</string>
+    <string name="settings_background_image_alpha_value">%1$d%%</string>
+    <string name="settings_background_image_blur">背景画像のぼかし</string>
+    <string name="settings_background_image_blur_value">%1$d%%</string>
+    <string name="settings_background_image_clear">背景画像を削除</string>
 </resources>

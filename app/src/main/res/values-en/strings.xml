@@ -1090,4 +1090,14 @@
     <string name="save_systemnnn_clear_resources">Clear imported game resources</string>
     <string name="save_systemnnn_clear_resources_message">Free space by clearing resources from the imported copy. The original game folder and all saves in the copy will be kept. The next launch imports the resources again from the original folder.</string>
     <string name="save_systemnnn_clear_resources_done">Imported game resources cleared</string>
+
+    <!-- 自定义背景图 -->
+    <string name="settings_background_image">Background image</string>
+    <string name="settings_background_image_none">Not set. Tap to choose an image</string>
+    <string name="settings_background_image_selected">Set. Tap to change</string>
+    <string name="settings_background_image_alpha">Background opacity</string>
+    <string name="settings_background_image_alpha_value">%1$d%%</string>
+    <string name="settings_background_image_blur">Background blur</string>
+    <string name="settings_background_image_blur_value">%1$d%%</string>
+    <string name="settings_background_image_clear">Clear background image</string>
 </resources>

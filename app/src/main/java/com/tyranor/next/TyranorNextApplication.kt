@@ -16,9 +16,11 @@ import com.tyranor.next.core.process.AppProcess
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
 import com.tyranor.next.core.game.playtime.GamePlaytimeRepository
 import com.tyranor.next.core.game.playtime.GamePlaytimeRuntime
+import com.tyranor.next.core.privacy.AppLockController
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.AppIconSwitcher
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.theme.BackgroundImageCache
 import com.tyranor.next.core.settings.PrefsRenameMigration
 import com.tyranor.next.core.updater.BackgroundUpdateWorker
 import com.tyranor.next.core.updater.GitHubUpdateChecker
@@ -76,6 +78,19 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         // 游戏库 Room 迁移检查 + 首页缓存预热在启动阶段触发，避免首帧 SettingsScreen 同步开库。
         if (mainProcess) {
             initializeMainLibrary()
+            // 隐私设置与窗口级效果（FLAG_SECURE / 通知隐藏）在页面创建前就要读到正确值；
+            // 应用锁只装主进程（引擎宿主为独立进程，不在锁定范围）。
+            AppSettingsStore.initPrivacySettings(this)
+            // 自定义背景图（URI/透明度/模糊）要在首帧前就绪，否则冷启动会先画默认背景再淡入
+            AppSettingsStore.initBackgroundImage(this)
+            // 启动即预热背景图：解码完成后所有页面同步可用，进入二级页不会"先空后闪"
+            val backgroundUri = AppSettingsStore.getBackgroundImageUri(this)
+            if (backgroundUri.isNotBlank()) {
+                background.launch {
+                    runCatching { BackgroundImageCache.ensureLoaded(applicationContext, backgroundUri) }
+                }
+            }
+            AppLockController.install(this)
             // 上次删除游戏/目录或重扫丢弃条目时未完成的副本回收在这里续做；引擎侧不保存这些路径。
             if (!SystemNnnCleanupQueue.isEmpty(this)) background.launch {
                 runCatching { GameSaveManager(this@TyranorNextApplication).drainSystemNnnCleanupQueue() }
@@ -93,6 +108,8 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
     }
 
     override fun onStart(owner: LifecycleOwner) {
+        // 应用锁：回前台按解锁延迟档位判定是否上锁（未安装的子进程为空操作）
+        AppLockController.onLauncherEntering()
         SaveSyncRuntime.onForeground(this)
         if (AppProcess.isMain(this)) background.launch {
             GamePlaytimeRepository.refresh(this@TyranorNextApplication)
@@ -100,6 +117,8 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
     }
 
     override fun onStop(owner: LifecycleOwner) {
+        // 应用锁：退后台开始离开计时（熄屏由 AppLockController 自注册的广播驱动）
+        AppLockController.onLauncherLeft()
         SaveSyncRuntime.onBackground(this)
         if (AppSettingsStore.isOnboardingCompleted(this)) BackgroundUpdateWorker.enqueue(this)
     }

@@ -65,6 +65,7 @@ fun DefaultPageBackgroundLayer(modifier: Modifier = Modifier) {
     var elapsedSeconds by remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(Unit) {
+
         if (!ValueAnimator.areAnimatorsEnabled()) return@LaunchedEffect
         var startNanos = 0L
         var lastUpdateNanos = 0L
@@ -79,12 +80,12 @@ fun DefaultPageBackgroundLayer(modifier: Modifier = Modifier) {
         }
     }
 
-    Box(
-        modifier
-            .fillMaxSize()
-            .background(base)
-            .drawBehind { drawFloatingParticles(particles, elapsedSeconds) },
-    )
+    Box(modifier.fillMaxSize().background(base)) {
+        // 自定义背景图在最底层（粒子之下）；透明度与模糊由应用设置控制
+        CustomBackgroundImageLayer()
+        // 粒子覆盖在背景图之上
+        Box(Modifier.fillMaxSize().drawBehind { drawFloatingParticles(particles, elapsedSeconds) })
+    }
 }
 
 /** 以主题色为基准生成同色系粒子（色相偏移 +36° / -36°），保证随「色调轮盘」整体换色。 */
