@@ -34,15 +34,23 @@ object AppLockController {
     /** 当前是否要求解锁（true 时启动器界面的所有窗口渲染解锁门）。 */
     val lockedState: StateFlow<Boolean> = mutableLocked.asStateFlow()
 
+    private val mutableCredentialUnreadable = MutableStateFlow(false)
+
+    /**
+     * 图案凭据「存在但读取失败」（Keystore 瞬时异常）：锁门据此给出设备凭据恢复路径。
+     * 读取失败时**保持锁定**（不能 fail-open），图案校验每次都会重新读取，恢复后即可正常解锁。
+     */
+    val credentialUnreadableState: StateFlow<Boolean> = mutableCredentialUnreadable.asStateFlow()
+
     private var installed = false
     private var appContext: Context? = null
 
     /**
      * 是否需要在本进程首个「回前台」时重查一次图案凭据。
      *
-     * `install()` 在 Application.onCreate 极早期读取 Keystore，冷启动时可能瞬时失败而被判成
-     * 「无凭据」→ 锁被 fail-open（宁可不锁也不能把人锁在外面）。首个 onLauncherEntering 时
-     * Keystore 已就绪，重查一次即可把这种瞬时失败纠正回来。
+     * `install()` 在 Application.onCreate 极早期读取 Keystore，冷启动时可能瞬时失败。首个
+     * onLauncherEntering 时 Keystore 已就绪，重查一次即可把这种瞬时失败纠正回来。
+     * 锁已启用时总是重查：凭据存在（含暂时读取失败）保持锁定，凭据确实不存在才解除锁定。
      */
     private var recheckPatternOnEnter = false
 
@@ -58,12 +66,15 @@ object AppLockController {
             if (installed) return
             installed = true
             appContext = application.applicationContext
-            // 进程冷启动（被杀后重开）先要求解锁；锁未启用或没有图案凭据时不上锁
+            // 进程冷启动（被杀后重开）先要求解锁：凭据存在（含暂时读取失败）就保持锁定，
+            // 凭据确实不存在时不上锁——否则用户永远无法解锁
             val enabled = AppSettingsStore.isPrivacyAppLockEnabled(application)
-            val hasPattern = AppLockCredentialStore.hasPattern(application)
-            mutableLocked.value = enabled && hasPattern
-            // 启用中但没有凭据 → 可能是 Keystore 瞬时异常，首个回前台时重查
-            recheckPatternOnEnter = enabled && !hasPattern
+            val credential = AppLockCredentialStore.credentialState(application)
+            mutableCredentialUnreadable.value = credential == PatternCredentialState.UNREADABLE
+            mutableLocked.value = enabled && credential != PatternCredentialState.ABSENT
+            // 首个回前台时再确认一次：纠正 install() 阶段可能的 Keystore 瞬时失败，
+            // 或凭据确已不存在（备份恢复 / 数据被清）
+            recheckPatternOnEnter = enabled
             val receiver = object : BroadcastReceiver() {
                 override fun onReceive(context: Context, intent: Intent) {
                     when (intent.action) {
@@ -111,7 +122,9 @@ object AppLockController {
             if (!installed || !away) return
             val context = appContext ?: return
             if (!AppSettingsStore.isPrivacyAppLockEnabled(context)) return
-            if (!AppLockCredentialStore.hasPattern(context)) return
+            val credential = AppLockCredentialStore.credentialState(context)
+            mutableCredentialUnreadable.value = credential == PatternCredentialState.UNREADABLE
+            if (credential == PatternCredentialState.ABSENT) return
             val timeout = PrivacyLockTimeout.fromStorageIndex(
                 AppSettingsStore.getPrivacyAppLockTimeoutIndex(context),
             )
@@ -133,29 +146,34 @@ object AppLockController {
      * 启动器回到前台（仅 ProcessLifecycleOwner.onStart；亮屏走 peekLockOnScreenOn，不消费计时器）：
      * 按延迟档位判定是否上锁（并消费计时器）。
      *
-     * 「锁已启用但没有凭据」统一按**关闭**处理：Keystore 在冷启动极早期读取失败时会
-     * 造成这种状态，此时不能上锁（否则用户永远无法解锁），用户可在隐私设置重新设置图案。
+     * 冷启动口径优先于延迟档：进程首次回前台时凭据存在（含暂时读取失败）就**直接保持锁定**，
+     * 不按离开时长判定（否则选了 1/5/15 分钟档时冷启动会漏锁）。凭据确实不存在时不能上锁
+     * （否则用户永远无法解锁），用户可在隐私设置重新设置图案。
      */
     fun onLauncherEntering() {
         synchronized(this) {
             if (!installed) return
             val context = appContext ?: return
-            // 进程内首个回前台：纠正 install() 阶段可能的 Keystore 瞬时失败
+            // 进程内首个回前台：重查凭据，纠正 install() 阶段可能的 Keystore 瞬时失败
             if (recheckPatternOnEnter) {
                 recheckPatternOnEnter = false
-                if (AppSettingsStore.isPrivacyAppLockEnabled(context) &&
-                    AppLockCredentialStore.hasPattern(context)
-                ) {
-                    // 凭据补齐：按「刚离开」处理，让本次进入按延迟档判定
-                    if (!away) {
-                        away = true
-                        leftAtMillis = SystemClock.elapsedRealtime()
-                    }
+                val enabled = AppSettingsStore.isPrivacyAppLockEnabled(context)
+                val credential = AppLockCredentialStore.credentialState(context)
+                mutableCredentialUnreadable.value = credential == PatternCredentialState.UNREADABLE
+                if (enabled) {
+                    // 冷启动一律要求解锁：凭据存在（或暂时读不出来）就锁定；
+                    // 凭据确实不存在才放行，失败方向是「可用」而不是「永久锁死」
+                    mutableLocked.value = credential != PatternCredentialState.ABSENT
                 }
+                // 本次判定已覆盖冷启动语义，之前的离开计时一并作废
+                away = false
+                leftAtMillis = 0L
             }
             if (!away) return
             if (!AppSettingsStore.isPrivacyAppLockEnabled(context)) return
-            if (!AppLockCredentialStore.hasPattern(context)) return
+            val credential = AppLockCredentialStore.credentialState(context)
+            mutableCredentialUnreadable.value = credential == PatternCredentialState.UNREADABLE
+            if (credential == PatternCredentialState.ABSENT) return
             val timeout = PrivacyLockTimeout.fromStorageIndex(
                 AppSettingsStore.getPrivacyAppLockTimeoutIndex(context),
             )
@@ -189,29 +207,43 @@ object AppLockController {
     /**
      * 图案校验并解锁（UI 的唯一入口）：校验与状态变更都归本控制器，
      * 避免页面直接触碰凭据存储后再单独调 [unlock]，绕过门面。
+     *
+     * 读取失败不算「图案错误」：置 [credentialUnreadableState]，锁门据此显示设备凭据恢复路径。
      */
-    fun verifyAndUnlock(context: Context, points: List<Int>): Boolean {
-        if (!AppLockCredentialStore.verifyPattern(context, points)) return false
-        unlock()
-        return true
-    }
+    fun verifyAndUnlock(context: Context, points: List<Int>): Boolean =
+        when (AppLockCredentialStore.verifyPattern(context, points)) {
+            PatternVerifyResult.SUCCESS -> {
+                mutableCredentialUnreadable.value = false
+                unlock()
+                true
+            }
+            PatternVerifyResult.MISMATCH -> false
+            PatternVerifyResult.UNREADABLE -> {
+                mutableCredentialUnreadable.value = true
+                false
+            }
+        }
 
     /**
      * 设置图案并启用应用锁（设置门确认后调用的唯一入口）：凭据保存成功才落开关，
      * 并丢弃进行中的计时；保存失败返回 false 且不改任何状态。
+     *
+     * 阻塞调用（Keystore 加密 + commit 落盘），必须在后台线程执行。
      */
     fun savePatternAndEnable(context: Context, points: List<Int>): Boolean {
         val saved = AppLockCredentialStore.savePattern(context, points)
         if (!saved) return false
         AppSettingsStore.setPrivacyAppLockEnabled(context, true)
+        mutableCredentialUnreadable.value = false
         resetTimer()
         return true
     }
 
-    /** 清除图案并关闭应用锁（设置页关闭开关或修改凭据失败回退时调用）。 */
+    /** 清除图案并关闭应用锁（设置页关闭开关或修改凭据失败回退时调用）。阻塞调用，需在后台线程执行。 */
     fun clearPatternAndDisable(context: Context) {
         AppSettingsStore.setPrivacyAppLockEnabled(context, false)
         AppLockCredentialStore.clearPattern(context)
+        mutableCredentialUnreadable.value = false
         unlock()
     }
 }

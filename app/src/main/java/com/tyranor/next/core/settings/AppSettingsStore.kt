@@ -416,6 +416,13 @@ object AppSettingsStore {
     private val homeStyleLock = Any()
 
     /**
+     * 隐私设置读写的串行锁：[initPrivacySettings] 可能在 IO 线程执行，与用户在同一时刻
+     * 拨动的开关必须互斥——否则 init 读到旧值、在用户写入之后才回填 StateFlow，
+     * 会把刚打开的 FLAG_SECURE 又关回 false。
+     */
+    private val privacyLock = Any()
+
+    /**
      * 首次组合时从持久化加载导航栏样式到内存态（幂等）。
      *
      * 与 [setNavStyle] 共用 [navStyleLock]：设置页在 IO 线程调用本方法的同时，下拉仍可交互，
@@ -876,13 +883,18 @@ object AppSettingsStore {
      * Application 启动阶段一次性加载全部隐私设置（幂等）。
      * FLAG_SECURE / 通知构建都要在页面或窗口尚不可见时读到正确值，
      * 不能等隐私设置页首次组合才加载。
+     *
+     * 与各 setter 共用 [privacyLock]：本方法可能在 IO 线程执行，若不加锁，
+     * 读到旧值后回填 StateFlow 会覆盖用户在这段时间里刚改的设置。
      */
     fun initPrivacySettings(c: Context) {
-        privacyPreventScreenshotState.value = isPrivacyPreventScreenshot(c)
-        privacyHideNotificationState.value = isPrivacyHideNotification(c)
-        privacyAppLockEnabledState.value = isPrivacyAppLockEnabled(c)
-        privacyAppLockBiometricState.value = isPrivacyAppLockBiometric(c)
-        privacyAppLockTimeoutIndexState.value = getPrivacyAppLockTimeoutIndex(c)
+        synchronized(privacyLock) {
+            privacyPreventScreenshotState.value = isPrivacyPreventScreenshot(c)
+            privacyHideNotificationState.value = isPrivacyHideNotification(c)
+            privacyAppLockEnabledState.value = isPrivacyAppLockEnabled(c)
+            privacyAppLockBiometricState.value = isPrivacyAppLockBiometric(c)
+            privacyAppLockTimeoutIndexState.value = getPrivacyAppLockTimeoutIndex(c)
+        }
     }
 
     /** 防止截图（FLAG_SECURE）。 */
@@ -890,8 +902,10 @@ object AppSettingsStore {
         prefs(c).getBoolean(KEY_PRIVACY_PREVENT_SCREENSHOT, DEFAULT_PRIVACY_PREVENT_SCREENSHOT)
 
     fun setPrivacyPreventScreenshot(c: Context, enabled: Boolean) {
-        prefs(c).edit().putBoolean(KEY_PRIVACY_PREVENT_SCREENSHOT, enabled).apply()
-        privacyPreventScreenshotState.value = enabled
+        synchronized(privacyLock) {
+            prefs(c).edit().putBoolean(KEY_PRIVACY_PREVENT_SCREENSHOT, enabled).apply()
+            privacyPreventScreenshotState.value = enabled
+        }
     }
 
     /** 隐藏通知内容（更新通知在系统锁屏上不显示）。 */
@@ -899,8 +913,10 @@ object AppSettingsStore {
         prefs(c).getBoolean(KEY_PRIVACY_HIDE_NOTIFICATION, DEFAULT_PRIVACY_HIDE_NOTIFICATION)
 
     fun setPrivacyHideNotification(c: Context, enabled: Boolean) {
-        prefs(c).edit().putBoolean(KEY_PRIVACY_HIDE_NOTIFICATION, enabled).apply()
-        privacyHideNotificationState.value = enabled
+        synchronized(privacyLock) {
+            prefs(c).edit().putBoolean(KEY_PRIVACY_HIDE_NOTIFICATION, enabled).apply()
+            privacyHideNotificationState.value = enabled
+        }
     }
 
     /** 应用锁开关（图案凭据由 core/privacy 的 AppLockCredentialStore 单独保管）。 */
@@ -908,8 +924,10 @@ object AppSettingsStore {
         prefs(c).getBoolean(KEY_PRIVACY_APP_LOCK_ENABLED, DEFAULT_PRIVACY_APP_LOCK_ENABLED)
 
     fun setPrivacyAppLockEnabled(c: Context, enabled: Boolean) {
-        prefs(c).edit().putBoolean(KEY_PRIVACY_APP_LOCK_ENABLED, enabled).apply()
-        privacyAppLockEnabledState.value = enabled
+        synchronized(privacyLock) {
+            prefs(c).edit().putBoolean(KEY_PRIVACY_APP_LOCK_ENABLED, enabled).apply()
+            privacyAppLockEnabledState.value = enabled
+        }
     }
 
     /** 允许「设备凭据」（指纹/人脸/PIN）快捷解锁。 */
@@ -917,8 +935,10 @@ object AppSettingsStore {
         prefs(c).getBoolean(KEY_PRIVACY_APP_LOCK_BIOMETRIC, DEFAULT_PRIVACY_APP_LOCK_BIOMETRIC)
 
     fun setPrivacyAppLockBiometric(c: Context, enabled: Boolean) {
-        prefs(c).edit().putBoolean(KEY_PRIVACY_APP_LOCK_BIOMETRIC, enabled).apply()
-        privacyAppLockBiometricState.value = enabled
+        synchronized(privacyLock) {
+            prefs(c).edit().putBoolean(KEY_PRIVACY_APP_LOCK_BIOMETRIC, enabled).apply()
+            privacyAppLockBiometricState.value = enabled
+        }
     }
 
     /** 解锁延迟档位（0..3，与 PrivacyLockTimeout 的 storageIndex 对应）。 */
@@ -927,8 +947,10 @@ object AppSettingsStore {
 
     fun setPrivacyAppLockTimeoutIndex(c: Context, index: Int) {
         val normalized = normalizePrivacyLockTimeoutIndex(index)
-        prefs(c).edit().putInt(KEY_PRIVACY_APP_LOCK_TIMEOUT, normalized).apply()
-        privacyAppLockTimeoutIndexState.value = normalized
+        synchronized(privacyLock) {
+            prefs(c).edit().putInt(KEY_PRIVACY_APP_LOCK_TIMEOUT, normalized).apply()
+            privacyAppLockTimeoutIndexState.value = normalized
+        }
     }
 
     /**

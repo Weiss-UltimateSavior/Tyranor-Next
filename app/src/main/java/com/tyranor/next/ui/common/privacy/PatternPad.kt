@@ -58,10 +58,21 @@ fun PatternPad(
             .pointerInput(enabled) {
                 if (!enabled) return@pointerInput
                 awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false)
+                    val down = awaitFirstDown(requireUnconsumed = false)
                     // 触点半径按盘面尺寸推导，与绘制保持同一几何
                     val cell = size.width / 3f
                     val hitRadius = cell * HIT_RADIUS_FACTOR
+                    // 按下位置本身就是一次选点：awaitFirstDown 的事件不会再进入下面的
+                    // 移动循环，不在这里处理的话「起点正好落在点上」的图案会丢首点
+                    // （例如 [0,1,2,5] 被收成 [1,2,5]，点数不足而被静默拒绝）。
+                    fingerState.value = down.position
+                    hitTest(down.position, cell, hitRadius)?.let { point ->
+                        if (point !in selected.value) {
+                            selected.value = selected.value + point
+                            MotionHaptics.perform(MotionHaptics.Kind.Tick)
+                        }
+                    }
+                    down.consume()
                     while (true) {
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull { it.pressed }

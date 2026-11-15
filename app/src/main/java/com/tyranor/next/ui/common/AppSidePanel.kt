@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.tyranor.next.R
+import com.tyranor.next.core.privacy.AppLockController
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassPanel
@@ -134,10 +135,12 @@ internal fun AppSidePanel(
     // 而不是整窗瞬间消失；「普通」档保持原版立即移除
     var mounted by remember { mutableStateOf(open) }
     LaunchedEffect(open) { if (open) mounted = true }
-    // 侧栏是独立窗口，层级在解锁门之上：应用锁生效时**立即**移除（不做滑出动画，
-    // 锁定时首要是不可操作）
+    // 侧栏是独立窗口，层级在解锁门之上：应用锁生效时**立即**移除，不做滑出动画——
+    // 增强档的 mounted 会让它在退场期间继续悬在锁门上方（可操作），锁定时首要不可操作
+    val locked by AppLockController.lockedState.collectSettingAsState()
+    LaunchedEffect(locked) { if (locked) mounted = false }
     DismissOnAppLockEffect(onDismiss)
-    val show = open || (mounted && MotionMode.enhanced)
+    val show = !locked && (open || (mounted && MotionMode.enhanced))
     if (!show) {
         if (mounted) mounted = false
         return

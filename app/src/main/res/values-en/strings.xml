@@ -1113,6 +1113,7 @@
     <string name="privacy_gate_hint_draw">Draw your pattern to unlock</string>
     <string name="privacy_gate_hint_wrong">Pattern didn\'t match, try again</string>
     <string name="privacy_gate_pattern_desc">App lock pattern</string>
+    <string name="privacy_gate_credential_unreadable">Pattern data is temporarily unavailable. Retry or use device unlock</string>
     <string name="privacy_gate_device_title">Verify with device unlock</string>
     <string name="privacy_gate_device_description">Verify to enter the app</string>
     <string name="privacy_gate_device_unlock">Use device unlock</string>
@@ -1130,4 +1131,5 @@
     <string name="settings_background_image_blur">Background blur</string>
     <string name="settings_background_image_blur_value">%1$d%%</string>
     <string name="settings_background_image_clear">Clear background image</string>
+    <string name="settings_background_image_take_failed">Cannot keep access to this image, please pick again</string>
 </resources>

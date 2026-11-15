@@ -21,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,6 +48,9 @@ import com.tyranor.next.ui.common.collectSettingAsState
 import com.tyranor.next.ui.common.motion.BlurCrossfade
 import com.tyranor.next.ui.common.motion.MotionHaptics
 import com.tyranor.next.ui.common.motion.shakeOnTrigger
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 应用锁解锁门：[AppLockController.lockedState] 为 true 时盖在启动器界面上方的进程内覆盖层
@@ -59,15 +63,25 @@ import com.tyranor.next.ui.common.motion.shakeOnTrigger
 fun PrivacyLockGate(modifier: Modifier = Modifier) {
     val locked by AppLockController.lockedState.collectSettingAsState()
     if (!locked) return
+    val context = LocalContext.current
+    // 取消不困住用户：返回 = 退到后台并保持锁定（背景加载期间同样生效）
+    BackHandler {
+        AppLocaleController.findActivity(context)?.moveTaskToBack(true)
+    }
     // 与页面背景对齐到同一帧：门自带完整背景（含自定义背景图），冷启动时背景图可能
     // 还在异步解码——若不等，门会先带纯色底出现、背景随后弹出。超时兜底保证上锁不被拖延。
     // 注意：安全屏幕（FLAG_SECURE）是窗口级、由 FlagSecureEffect 独立生效，不依赖本门渲染。
     val backgroundReady = rememberBackgroundImageReady()
     if (!backgroundReady) {
-        // 等背景期间下层已被隐藏（skipDrawWhenHidden），这里必须画底：
-        // 否则会出现「白屏一帧 → 背景 + 门一起出现」的另一种闪。
-        // 用纯色底而不是简化门：此时只是把底色先铺上，图案盘随后与背景同帧出现。
-        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+        // 等背景期间下层页面已被隐藏（skipDrawWhenHidden），但输入**从锁定成立的第一帧起
+        // 就必须拦住**：不能因为背景图还在解码而把点击交给被隐藏的页面控件。
+        // 这里用纯色底而不是简化门：图案盘随后与背景同帧出现。
+        Box(
+            modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .pointerInput(Unit) { detectTapGestures { } },
+        )
         return
     }
     PrivacyUnlockGateContent(modifier)
@@ -80,11 +94,8 @@ private fun PrivacyUnlockGateContent(modifier: Modifier = Modifier) {
     // 失败计数驱动横摇与图案盘复位（shakeOnTrigger / resetKey 的共享 trigger）
     var failCount by remember { mutableIntStateOf(0) }
     var hint by remember { mutableStateOf(GateHint(localizedContext.getString(R.string.privacy_gate_hint_draw), false)) }
-
-    // 取消不困住用户：返回 = 退到后台并保持锁定（下次进入仍需解锁）
-    BackHandler {
-        AppLocaleController.findActivity(context)?.moveTaskToBack(true)
-    }
+    // 凭据存在但当前读不出来（Keystore 瞬时异常）：给出设备凭据恢复路径，图案仍可重试
+    val credentialUnreadable by AppLockController.credentialUnreadableState.collectSettingAsState()
 
     val onPattern: (List<Int>) -> Unit = { pattern ->
         // 校验 + 解锁统一经控制器门面（UI 不直接触碰凭据存储）
@@ -93,17 +104,28 @@ private fun PrivacyUnlockGateContent(modifier: Modifier = Modifier) {
             hint = GateHint(localizedContext.getString(R.string.privacy_gate_hint_draw), false)
         } else {
             failCount += 1
-            hint = GateHint(localizedContext.getString(R.string.privacy_gate_hint_wrong), true)
+            // 读取失败不是「图案错误」：控制器已在本次校验中更新状态（同步），直接读当前值
+            val unreadable = AppLockController.credentialUnreadableState.value
+            hint = GateHint(
+                localizedContext.getString(
+                    if (unreadable) R.string.privacy_gate_credential_unreadable
+                    else R.string.privacy_gate_hint_wrong,
+                ),
+                true,
+            )
         }
     }
 
     GateSurface(modifier) {
         GateColumn(title = stringResource(R.string.privacy_gate_title)) {
             GatePatternSection(failCount = failCount, hint = hint, onPatternEntered = onPattern)
-            DeviceCredentialSection(onAuthError = { message ->
-                failCount += 1
-                hint = GateHint(message, true)
-            })
+            DeviceCredentialSection(
+                forceShow = credentialUnreadable,
+                onAuthError = { message ->
+                    failCount += 1
+                    hint = GateHint(message, true)
+                },
+            )
         }
     }
 }
@@ -120,8 +142,11 @@ fun PrivacyLockSetupGate(
 ) {
     val context = LocalContext.current
     val localizedContext = remember(context) { AppLocaleController.wrap(context) }
+    val scope = rememberCoroutineScope()
     var failCount by remember { mutableIntStateOf(0) }
     var firstPattern by remember { mutableStateOf<List<Int>?>(null) }
+    // 保存进行中：凭据写入是阻塞 IO，期间不再接受新的图案（避免重复提交）
+    var saving by remember { mutableStateOf(false) }
     // null = 按当前阶段显示默认提示；错误时覆盖
     var hint by remember { mutableStateOf<GateHint?>(null) }
 
@@ -137,18 +162,26 @@ fun PrivacyLockSetupGate(
                 firstPattern = pattern
                 hint = null
             }
-            pattern == first -> {
-                if (AppLockController.savePatternAndEnable(context, pattern)) {
-                    MotionHaptics.perform(MotionHaptics.Kind.Confirm)
-                    onCompleted()
-                } else {
-                    // Keystore 瞬时异常导致保存失败：回退到首次绘制，凭据保持不变
-                    firstPattern = null
-                    failCount += 1
-                    hint = GateHint(localizedContext.getString(R.string.privacy_gate_setup_save_failed), true)
+            pattern == first && !saving -> {
+                saving = true
+                scope.launch {
+                    // Keystore 加密 + commit 是阻塞落盘，必须在后台线程执行
+                    val saved = withContext(Dispatchers.IO) {
+                        AppLockController.savePatternAndEnable(context, pattern)
+                    }
+                    saving = false
+                    if (saved) {
+                        MotionHaptics.perform(MotionHaptics.Kind.Confirm)
+                        onCompleted()
+                    } else {
+                        // Keystore 瞬时异常导致保存失败：回退到首次绘制，凭据保持不变
+                        firstPattern = null
+                        failCount += 1
+                        hint = GateHint(localizedContext.getString(R.string.privacy_gate_setup_save_failed), true)
+                    }
                 }
             }
-            else -> {
+            pattern != first -> {
                 firstPattern = null
                 failCount += 1
                 hint = GateHint(localizedContext.getString(R.string.privacy_gate_setup_mismatch), true)
@@ -161,6 +194,7 @@ fun PrivacyLockSetupGate(
             GatePatternSection(
                 failCount = failCount,
                 hint = hint ?: GateHint(if (firstPattern == null) drawHint else confirmHint, false),
+                enabled = !saving,
                 onPatternEntered = onPattern,
             )
             NoRippleTextButton(text = stringResource(R.string.common_cancel), onClick = onCancelled)
@@ -223,6 +257,7 @@ private fun GateColumn(
 private fun GatePatternSection(
     failCount: Int,
     hint: GateHint,
+    enabled: Boolean = true,
     onPatternEntered: (List<Int>) -> Unit,
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -234,6 +269,7 @@ private fun GatePatternSection(
             PatternPad(
                 resetKey = failCount,
                 modifier = Modifier.size(256.dp),
+                enabled = enabled,
                 contentDescription = stringResource(R.string.privacy_gate_pattern_desc),
                 onPatternEntered = onPatternEntered,
             )
@@ -251,9 +287,15 @@ private fun GatePatternSection(
 /**
  * 设备凭据快捷解锁：开关允许且设备可用（弱生物识别或锁屏凭据任一）时显示按钮，
  * 经系统 BiometricPrompt 验证（API 28/29 的凭据回退由库内部处理）。
+ *
+ * @param forceShow 凭据读取失败时强制显示：此时图案无法校验，设备凭据是唯一的恢复路径，
+ *   即使「设备凭据快捷解锁」开关关闭也要给出口（否则 Keystore 密钥失效会把应用永久锁死）。
  */
 @Composable
-private fun DeviceCredentialSection(onAuthError: (String) -> Unit) {
+private fun DeviceCredentialSection(
+    onAuthError: (String) -> Unit,
+    forceShow: Boolean = false,
+) {
     val allowBiometric by AppSettingsStore.privacyAppLockBiometricState.collectSettingAsState()
     val context = LocalContext.current
     val localizedContext = remember(context) { AppLocaleController.wrap(context) }
@@ -261,7 +303,7 @@ private fun DeviceCredentialSection(onAuthError: (String) -> Unit) {
     val credentialUsable = remember(fragmentActivity) {
         fragmentActivity != null && isDeviceCredentialUsable(fragmentActivity)
     }
-    if (!allowBiometric || !credentialUsable) return
+    if ((!allowBiometric && !forceShow) || !credentialUsable) return
 
     val prompt = remember(fragmentActivity) {
         val activity = fragmentActivity ?: return@remember null

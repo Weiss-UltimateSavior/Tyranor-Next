@@ -2244,11 +2244,18 @@ internal fun rememberCoverBitmap(
     val context = LocalContext.current
     val cached = coverUri?.let(CoverBitmapCache::get)
     return produceState<ImageBitmap?>(initialValue = cached?.asImageBitmap(), coverUri) {
-        if (cached != null || coverUri.isNullOrBlank()) return@produceState
+        val uri = coverUri
+        if (uri.isNullOrBlank()) return@produceState
+        if (cached != null) {
+            // 缓存命中也要登记：解码写入缓存后、回到调用方调度器前协程可能被取消
+            // （withContext 丢弃结果），不登记则位图被 LRU 逐出后占位文字会重新出现
+            CoverAvailability.markKnown(uri)
+            return@produceState
+        }
         // 滑动/惯性中不启动解码，避免解码完成 → 重组/纹理上传挤占滑动帧
         awaitScrollIdle(isScrolling)
-        val bitmap = CoverThumbnailLoader.load(context.applicationContext, coverUri) ?: return@produceState
-        CoverAvailability.markKnown(coverUri)
+        val bitmap = CoverThumbnailLoader.load(context.applicationContext, uri) ?: return@produceState
+        CoverAvailability.markKnown(uri)
         // 解码期间可能又开始了新的滑动：等再次静止后逐帧回填，滑动帧不承担纹理上传
         CoverPublishGate.awaitTurn(isScrolling)
         value = bitmap.asImageBitmap()

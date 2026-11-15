@@ -19,6 +19,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -45,6 +46,7 @@ import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.common.privacy.PrivacyLockSetupGate
 import com.tyranor.next.ui.common.privacy.isDeviceCredentialUsable
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
@@ -95,6 +97,7 @@ internal fun PrivacySettingsScreen() {
 
     // 应用锁设置门（绘制图案 → 确认 → 保存并启用 / 修改图案）
     var showSetupGate by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     Box(Modifier.fillMaxSize()) {
         MiuixSettingsTheme {
@@ -173,7 +176,12 @@ internal fun PrivacySettingsScreen() {
                                                         showSetupGate = true
                                                     }
                                                 }
-                                                else -> AppLockController.clearPatternAndDisable(ctx)
+                                                else -> scope.launch {
+                                                    // 凭据清除是阻塞的 Keystore 加密 + commit 落盘，不能占主线程
+                                                    withContext(Dispatchers.IO) {
+                                                        AppLockController.clearPatternAndDisable(ctx)
+                                                    }
+                                                }
                                             }
                                         },
                                     )

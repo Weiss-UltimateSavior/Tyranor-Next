@@ -26,6 +26,9 @@ import com.tyranor.next.ui.common.CoachAnchor
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.geometry.Rect
 import kotlinx.coroutines.Dispatchers
@@ -75,6 +78,9 @@ class MainActivity : FragmentActivity() {
     // 「显示首页」决定主导航条目与可见页集合，必须在首帧组合前同步加载：
     // 留到 MainScreen 的异步 init 会让冷启动先按默认值（开）绘制、随后再纠正，产生闪动。
     AppSettingsStore.initHomePageEnabled(this)
+    // 首页样式同样在首帧前加载：应用锁的「跳过绘制」判定要知道当前是否 Web 首页
+    // （WebView 靠原生绘制回调输出，不能被 skipDrawWhenHidden 罩住）
+    AppSettingsStore.initHomeStyle(this)
 
     enableEdgeToEdge(
       statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
@@ -110,14 +116,29 @@ class MainActivity : FragmentActivity() {
             // 应用锁生效时只隐藏**页面内容**：背景（含粒子 / 自定义背景图）必须继续绘制，
             // 否则锁定时整屏背景与粒子一起消失（门本身不画背景）
             val locked by AppLockController.lockedState.collectSettingAsState()
+            // Web 首页的 WebView 靠原生绘制回调输出，skipDrawWhenHidden 不适用（见 PageVisibility.kt）；
+            // 锁定隐藏因此排除「启用中的 Web 首页」，否则上锁一次再解锁后 WebView 可能空白或不再刷新
+            val homeStyle by AppSettingsStore.homeStyleState.collectSettingAsState()
+            val homePageEnabled by AppSettingsStore.homePageEnabledState.collectSettingAsState()
+            val webHomeInPages =
+                homeStyle == AppSettingsStore.HOME_STYLE_WEB && homePageEnabled
             CompositionLocalProvider(LocalPageDepth provides depth) {
               PageTransitionBackground(depth) {
                 Box(
                   Modifier
                     .fillMaxSize()
-                    .skipDrawWhenHidden { !locked }
+                    .skipDrawWhenHidden { !locked || webHomeInPages }
                     // 锁定时页面内容退出无障碍树（门自身语义保留）
-                    .then(if (locked) Modifier.clearAndSetSemantics { } else Modifier),
+                    .then(if (locked) Modifier.clearAndSetSemantics { } else Modifier)
+                    // 外接键盘：无障碍屏蔽只挡语义，已聚焦的控件仍能被 Enter 激活；
+                    // 预览阶段拦下除 Back 外的按键（Back 放行给锁门的 BackHandler）
+                    .then(
+                      if (locked) {
+                        Modifier.onPreviewKeyEvent { event -> event.key != Key.Back }
+                      } else {
+                        Modifier
+                      },
+                    ),
                 ) {
                   AppEntry()
                 }

@@ -3,6 +3,7 @@ package com.tyranor.next.ui.settings
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.layout.Arrangement
@@ -74,6 +75,7 @@ import com.tyranor.next.ui.common.motion.pressSquish
 import com.tyranor.next.ui.common.motion.pressSquishGroup
 import com.tyranor.next.ui.common.motion.shakeOnTrigger
 import com.tyranor.next.ui.common.motion.staggeredEntrance
+import com.tyranor.next.ui.common.notice.AppNotice
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.HomeWebUrls
 import com.tyranor.next.theme.PageTextColor
@@ -343,24 +345,39 @@ internal fun AppSettingsScreen() {
                                 ActivityResultContracts.OpenDocument(),
                             ) { uri: Uri? ->
                                 if (uri != null) {
+                                    val uriText = uri.toString()
                                     val previous = AppSettingsStore.getBackgroundImageUri(ctx)
-                                    // 释放旧图的持久授权：系统对每个应用有配额上限（约 128 个），
-                                    // 反复换图不释放会耗尽配额导致后续 take 静默失败
-                                    if (previous.isNotBlank() && previous != uri.toString()) {
-                                        runCatching {
-                                            ctx.contentResolver.releasePersistableUriPermission(
-                                                Uri.parse(previous),
+                                    // 重选同一张图：授权本来就在，无需重新 take / release
+                                    if (previous != uriText) {
+                                        // 先确认新授权拿到了再动旧状态：take 失败时若已释放旧授权
+                                        // 并保存新 uri，重启后新图读不到、旧图权限也没了
+                                        val taken = runCatching {
+                                            ctx.contentResolver.takePersistableUriPermission(
+                                                uri,
                                                 Intent.FLAG_GRANT_READ_URI_PERMISSION,
                                             )
+                                        }.isSuccess
+                                        if (!taken) {
+                                            AppNotice.makeText(
+                                                ctx,
+                                                R.string.settings_background_image_take_failed,
+                                                Toast.LENGTH_SHORT,
+                                                AppNotice.Kind.Failure,
+                                            ).show()
+                                            return@rememberLauncherForActivityResult
+                                        }
+                                        AppSettingsStore.setBackgroundImageUri(ctx, uriText)
+                                        // 新图保存成功后再释放旧图的持久授权：系统对每个应用有
+                                        // 配额上限（约 128 个），反复换图不释放会耗尽配额
+                                        if (previous.isNotBlank()) {
+                                            runCatching {
+                                                ctx.contentResolver.releasePersistableUriPermission(
+                                                    Uri.parse(previous),
+                                                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                                                )
+                                            }
                                         }
                                     }
-                                    runCatching {
-                                        ctx.contentResolver.takePersistableUriPermission(
-                                            uri,
-                                            Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                                        )
-                                    }
-                                    AppSettingsStore.setBackgroundImageUri(ctx, uri.toString())
                                 }
                             }
                             ArrowPreference(
@@ -425,7 +442,20 @@ internal fun AppSettingsScreen() {
                                     )
                                     ArrowPreference(
                                         title = stringResource(R.string.settings_background_image_clear),
-                                        onClick = { AppSettingsStore.setBackgroundImageUri(ctx, "") },
+                                        onClick = {
+                                            val previous = AppSettingsStore.getBackgroundImageUri(ctx)
+                                            AppSettingsStore.setBackgroundImageUri(ctx, "")
+                                            // 清除后 previous 已为空，这里必须趁现在释放该 uri 的
+                                            // 持久授权，否则每清除一次就泄漏一个授权配额槽位
+                                            if (previous.isNotBlank()) {
+                                                runCatching {
+                                                    ctx.contentResolver.releasePersistableUriPermission(
+                                                        Uri.parse(previous),
+                                                        Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                                                    )
+                                                }
+                                            }
+                                        },
                                     )
                                 }
                             }

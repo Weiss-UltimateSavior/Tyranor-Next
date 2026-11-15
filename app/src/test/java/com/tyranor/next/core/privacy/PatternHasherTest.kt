@@ -88,6 +88,23 @@ class PatternHasherTest {
     }
 
     @Test
+    fun `归一化不会重复追加已隐式补入的中点`() {
+        // 0→2 已隐式补入 1；用户随后显式经过 1 时不能再追加一次（否则点序变成 0,1,2,1,4）
+        assertEquals(listOf(0, 1, 2, 4), PatternHasher.normalize(listOf(0, 2, 1, 4)))
+        assertEquals(
+            PatternHasher.hash(salt, listOf(0, 2, 1, 4)),
+            PatternHasher.hash(salt, listOf(0, 1, 2, 4)),
+        )
+        // 后续段从归一化序列的末点起算：0→8 已补 4，用户再显式经过 4，
+        // 下一段 8→2 的中间点 5 仍要补（若从原始上一点 4 起算就漏掉了）
+        assertEquals(listOf(0, 4, 8, 5, 2), PatternHasher.normalize(listOf(0, 8, 4, 2)))
+        assertEquals(
+            PatternHasher.hash(salt, listOf(0, 8, 4, 2)),
+            PatternHasher.hash(salt, listOf(0, 4, 8, 5, 2)),
+        )
+    }
+
+    @Test
     fun `归一化对非法点序返回 null`() {
         assertNull(PatternHasher.normalize(emptyList()))
         assertNull(PatternHasher.normalize(listOf(0, 9)))

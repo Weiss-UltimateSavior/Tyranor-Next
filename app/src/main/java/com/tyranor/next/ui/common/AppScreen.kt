@@ -23,6 +23,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -268,7 +271,16 @@ fun AppScreenScaffold(
                                 .skipDrawWhenHidden { !locked }
                                 // 锁定时页面内容退出无障碍树：TalkBack 不能聚焦或激活门下节点
                                 // （门自身语义保留，见 PrivacyLockGate）
-                                .then(if (locked) Modifier.clearAndSetSemantics { } else Modifier),
+                                .then(if (locked) Modifier.clearAndSetSemantics { } else Modifier)
+                                // 外接键盘：无障碍屏蔽只挡语义，已聚焦的按钮仍能被 Enter 激活。
+                                // 预览阶段拦下除 Back 外的按键（Back 放行给锁门的 BackHandler 退到后台）。
+                                .then(
+                                    if (locked) {
+                                        Modifier.onPreviewKeyEvent { event -> event.key != Key.Back }
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
                         ) {
                             CompositionLocalProvider(
                                 LocalEntranceGate provides entranceGate,

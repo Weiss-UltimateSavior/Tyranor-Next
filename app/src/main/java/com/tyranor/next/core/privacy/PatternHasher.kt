@@ -42,6 +42,11 @@ internal object PatternHasher {
      * 把中间点补进去。系统图案锁同样会途经中间点，用户手指划过时也可能不精确经过中心，
      * 不归一化会让同一形状产生不同点序，导致保存与校验不一致而误拒。
      *
+     * 两点说明（用户可能手动经过已被隐式补上的中间点）：
+     * - 待追加的原始点若已在归一化结果中，**跳过**（如 `[0,2,1,4]` 的 `1` 已由 0→2 补入）；
+     * - 每段始终从**归一化序列的最后一个点**起算，而不是原始上一点。
+     * 这样 `[0,2,1,4]` 与完整采样 `[0,1,2,4]` 得到同一点序。
+     *
      * 保存与校验共用本函数。非法输入（越界 / 重复点）返回 null。
      */
     fun normalize(points: List<Int>): List<Int>? {
@@ -49,13 +54,16 @@ internal object PatternHasher {
         if (points.any { it !in 0 until PATTERN_POINT_COUNT }) return null
         if (points.size != points.distinct().size) return null
         val result = ArrayList<Int>(points.size + 2)
-        result += points.first()
-        for (index in 1 until points.size) {
-            val from = points[index - 1]
-            val to = points[index]
-            val mid = middlePoint(from, to)
+        for (point in points) {
+            if (result.isEmpty()) {
+                result += point
+                continue
+            }
+            val from = result.last()
+            val mid = middlePoint(from, point)
             if (mid != null && mid !in result) result += mid
-            result += to
+            // 已被隐式补入（或作为上一步的终点）的点不再重复追加
+            if (point !in result) result += point
         }
         return result
     }

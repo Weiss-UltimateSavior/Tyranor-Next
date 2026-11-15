@@ -1112,6 +1112,7 @@
     <string name="privacy_gate_title">アプリロック</string>
     <string name="privacy_gate_hint_draw">パターンを描いて解錠</string>
     <string name="privacy_gate_hint_wrong">パターンが一致しません。もう一度お試しください</string>
+    <string name="privacy_gate_credential_unreadable">パターン情報を読み取れません。再試行するか端末の解錠方法で入ってください</string>
     <string name="privacy_gate_pattern_desc">アプリロックパターン</string>
     <string name="privacy_gate_device_title">端末の解錠方法を確認</string>
     <string name="privacy_gate_device_description">確認が成功するとアプリに入れます</string>
@@ -1130,4 +1131,5 @@
     <string name="settings_background_image_blur">背景画像のぼかし</string>
     <string name="settings_background_image_blur_value">%1$d%%</string>
     <string name="settings_background_image_clear">背景画像を削除</string>
+    <string name="settings_background_image_take_failed">画像へのアクセス権を保持できませんでした。選び直してください</string>
 </resources>
