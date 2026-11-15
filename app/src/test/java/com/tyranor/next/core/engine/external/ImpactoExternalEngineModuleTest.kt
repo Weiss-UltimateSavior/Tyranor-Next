@@ -27,10 +27,9 @@ class ImpactoExternalEngineModuleTest {
             ImpactoHostContract.EXTRA_GAME_KEY,
             ImpactoHostContract.EXTRA_TITLE,
         ).forEach { assertTrue(it, it.startsWith(ImpactoHostContract.PACKAGE + ".")) }
-        // Points at the release page of exactly the host version this app build expects.
+        // Always the latest published host APK (fixed asset name), so new host releases need no app change.
         assertEquals(
-            "https://github.com/yuukana1/Tyranor-Next-Impacto/releases/tag/impacto-host-" +
-                ImpactoHostContract.VERSION_NAME,
+            "https://github.com/yuukana1/Tyranor-Next-Impacto/releases/latest/download/impacto-host.apk",
             ImpactoExternalEngineModule.installUrl,
         )
         assertEquals(ImpactoHostContract.VERSION_CODE.toLong(), ImpactoExternalEngineModule.minimumVersionCode)

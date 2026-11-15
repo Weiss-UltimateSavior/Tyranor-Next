@@ -26,10 +26,9 @@ object ImpactoExternalEngineModule : ExternalEngineModule {
     override val defaultAlias: String = "internal.impacto"
     override val supportedAliases: Set<String> = setOf("external.impacto")
 
-    /** 与宿主 APK 同版本的发布页；宿主在独立仓库构建发布，抬高期望版本前必须先在那里发布对应版本。 */
+    /** 宿主仓库最新发布的 APK 直链（资产名固定）；宿主每发布新版本，这里自动指向它，无需改动本 App。 */
     override val installUrl: String =
-        "https://github.com/yuukana1/Tyranor-Next-Impacto/releases/tag/" +
-            ImpactoHostContract.RELEASE_TAG_PREFIX + ImpactoHostContract.VERSION_NAME
+        "https://github.com/yuukana1/Tyranor-Next-Impacto/releases/latest/download/impacto-host.apk"
 
     /** 低于本版本的宿主不认识当前请求协议，按「已过期」处理并引导更新。 */
     override val minimumVersionCode: Long = ImpactoHostContract.VERSION_CODE.toLong()
@@ -75,10 +74,8 @@ object ImpactoExternalEngineModule : ExternalEngineModule {
 object ImpactoHostContract {
     const val PACKAGE = "com.tyranor.next.impacto"
 
-    /** 本版 App 期望的宿主版本；须不高于宿主仓库已发布的版本，并与其 `engine/impacto/host-apk/app/build.gradle.kts` 一致。 */
+    /** 本版 App 需要的最低宿主 versionCode；须不高于宿主仓库最新发布的版本。只在请求协议不兼容时才需要抬高。 */
     const val VERSION_CODE = 1
-    const val VERSION_NAME = "0.1.0"
-    const val RELEASE_TAG_PREFIX = "impacto-host-"
 
     const val ACTION_RUN = "com.tyranor.next.impacto.action.RUN"
     const val EXTRA_GAME_DIR = "com.tyranor.next.impacto.extra.GAME_DIR"
