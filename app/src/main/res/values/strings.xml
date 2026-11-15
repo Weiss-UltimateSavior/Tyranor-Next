@@ -1155,6 +1155,8 @@
     <string name="privacy_gate_reset_confirm_message">清除后将关闭应用锁并删除图案，需要重新设置才能再次启用。</string>
     <string name="privacy_gate_reset_confirm">确认清除</string>
     <string name="privacy_gate_reset_failed">清除失败，请重试</string>
+    <string name="privacy_gate_reset_device_title">验证身份后清除应用锁</string>
+    <string name="privacy_gate_reset_device_description">验证通过后将关闭应用锁并删除图案</string>
     <string name="privacy_gate_pattern_desc">应用锁图案</string>
     <string name="privacy_gate_device_title">验证设备解锁方式</string>
     <string name="privacy_gate_device_description">验证通过后即可进入应用</string>

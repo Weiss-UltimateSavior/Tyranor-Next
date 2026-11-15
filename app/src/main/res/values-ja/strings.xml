@@ -1142,6 +1142,8 @@
     <string name="privacy_gate_reset_confirm_message">解除するとアプリロックがオフになり、パターンが削除されます。再度有効にするには設定し直してください。</string>
     <string name="privacy_gate_reset_confirm">解除する</string>
     <string name="privacy_gate_reset_failed">解除できませんでした。もう一度お試しください</string>
+    <string name="privacy_gate_reset_device_title">端末の解錠方法で確認</string>
+    <string name="privacy_gate_reset_device_description">確認が成功するとアプリロックを解除してパターンを削除します</string>
     <string name="privacy_gate_pattern_desc">アプリロックパターン</string>
     <string name="privacy_gate_device_title">端末の解錠方法を確認</string>
     <string name="privacy_gate_device_description">確認が成功するとアプリに入れます</string>

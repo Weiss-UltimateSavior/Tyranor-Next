@@ -70,6 +70,13 @@ object AppLockController {
     /** 离开前台的代数：每次从「在应用内」转为「已离开」时递增（被最早离开时刻守卫挡下的重复信号不递增）。 */
     private var leaveGeneration = 0L
 
+    /**
+     * 凭据操作 + 开关更新的串行锁：保存（修改图案）与清除（关开关 / 锁门重置）不能交错，
+     * 否则最终可能停在「开关已开、凭据已被清掉」的状态，冷启动会因凭据不存在而放行。
+     * 不并入 `synchronized(this)`：这里要持有整段阻塞的 Keystore 操作，会挡住计时状态同步。
+     */
+    private val credentialOpLock = Any()
+
     /** 主进程 Application 启动阶段调用（幂等）：注册熄屏 / 亮屏广播，并恢复进程级锁定状态。 */
     fun install(application: Application) {
         synchronized(this) {
@@ -257,32 +264,37 @@ object AppLockController {
      * 阻塞调用（Keystore 加密 + commit 落盘），必须在后台线程执行。保存期间用户可能按 Home
      * 退到后台：只有代数未变（保存期间没有发生新的离开）才作废计时，否则那次离开会被抹掉，
      * 回前台时 `!away` 早退，立即档也不锁。
+     *
+     * 与 [clearPatternAndDisable] 经 [credentialOpLock] 互斥：整段「凭据 + 开关」不被清除操作插队。
      */
-    fun savePatternAndEnable(context: Context, points: List<Int>): Boolean {
-        val generation = synchronized(this) { leaveGeneration }
-        val saved = AppLockCredentialStore.savePattern(context, points)
-        if (!saved) return false
-        AppSettingsStore.setPrivacyAppLockEnabled(context, true)
-        synchronized(this) {
-            mutableCredentialUnreadable.value = false
-            if (leaveGeneration == generation) {
-                away = false
-                leftAtMillis = 0L
+    fun savePatternAndEnable(context: Context, points: List<Int>): Boolean =
+        synchronized(credentialOpLock) {
+            val generation = synchronized(this) { leaveGeneration }
+            val saved = AppLockCredentialStore.savePattern(context, points)
+            if (!saved) return@synchronized false
+            AppSettingsStore.setPrivacyAppLockEnabled(context, true)
+            synchronized(this) {
+                mutableCredentialUnreadable.value = false
+                if (leaveGeneration == generation) {
+                    away = false
+                    leftAtMillis = 0L
+                }
             }
+            true
         }
-        return true
-    }
 
     /**
      * 清除图案并关闭应用锁（设置页关闭开关 / 锁门重置共用）。
      * 清除凭据失败时**不改开关、不解锁**并返回 false：避免「清除假象」——用户以为锁已关闭，
      * 重启后旧图案又复活。阻塞调用，需在后台线程执行。
+     *
+     * 与 [savePatternAndEnable] 经 [credentialOpLock] 互斥：整段「凭据 + 开关」不被保存操作插队。
      */
-    fun clearPatternAndDisable(context: Context): Boolean {
-        if (!AppLockCredentialStore.clearPattern(context)) return false
+    fun clearPatternAndDisable(context: Context): Boolean = synchronized(credentialOpLock) {
+        if (!AppLockCredentialStore.clearPattern(context)) return@synchronized false
         AppSettingsStore.setPrivacyAppLockEnabled(context, false)
         mutableCredentialUnreadable.value = false
         unlock()
-        return true
+        true
     }
 }

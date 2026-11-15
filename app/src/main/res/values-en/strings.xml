@@ -1143,6 +1143,8 @@
     <string name="privacy_gate_reset_confirm_message">Clearing turns off the app lock and removes the pattern. Set it up again to re-enable.</string>
     <string name="privacy_gate_reset_confirm">Clear</string>
     <string name="privacy_gate_reset_failed">Failed to clear, please try again</string>
+    <string name="privacy_gate_reset_device_title">Verify to clear app lock</string>
+    <string name="privacy_gate_reset_device_description">After verification, the app lock will be turned off and the pattern removed</string>
     <string name="privacy_gate_device_title">Verify with device unlock</string>
     <string name="privacy_gate_device_description">Verify to enter the app</string>
     <string name="privacy_gate_device_unlock">Use device unlock</string>

@@ -105,13 +105,46 @@ private fun PrivacyUnlockGateContent(modifier: Modifier = Modifier) {
     var hint by remember { mutableStateOf(GateHint(localizedContext.getString(R.string.privacy_gate_hint_draw), false)) }
     // 凭据存在但当前读不出来（Keystore 瞬时异常）：给出设备凭据恢复路径，图案仍可重试
     val credentialUnreadable by AppLockController.credentialUnreadableState.collectSettingAsState()
-    val showReset = credentialUnreadable && unreadableFailures >= CREDENTIAL_RESET_FAILURE_THRESHOLD
+    // 设备凭据可用性在此算一次，锁门的快捷解锁与重置入口共用
+    val fragmentActivity = remember(context) { AppLocaleController.findActivity(context) as? FragmentActivity }
+    val deviceCredentialUsable = remember(fragmentActivity) {
+        fragmentActivity != null && isDeviceCredentialUsable(fragmentActivity)
+    }
+    // 重置会解除保护，必须能通过设备凭据确认身份；设备未录入凭据时不提供该入口
+    val resetAvailable = credentialUnreadable &&
+        unreadableFailures >= CREDENTIAL_RESET_FAILURE_THRESHOLD &&
+        deviceCredentialUsable
     LaunchedEffect(credentialUnreadable) {
         // 凭据重新可读（例如本次校验能读到、只是图案不对）：清空连续失败计数
         if (!credentialUnreadable) unreadableFailures = 0
     }
-    LaunchedEffect(showReset) {
-        if (!showReset) resetConfirming = false
+    LaunchedEffect(resetAvailable) {
+        if (!resetAvailable) resetConfirming = false
+    }
+
+    // 通过设备凭据认证后执行重置（认证成功才会走到这里）
+    val startReset: () -> Unit = {
+        if (!resetting) {
+            resetting = true
+            scope.launch {
+                // 清除凭据是阻塞的 Keystore + commit：放到后台线程。清除成功时控制器
+                // 在后台解锁、门随 lockedState 变 false 离开组合；协程若因此被取消，
+                // 清除要么没写、要么已经写完，不会留下半套。
+                val cleared = withContext(Dispatchers.IO) {
+                    AppLockController.clearPatternAndDisable(context)
+                }
+                if (cleared) {
+                    MotionHaptics.perform(MotionHaptics.Kind.Confirm)
+                } else {
+                    // 清除失败：控制器保持锁定与开关，给出可重试提示
+                    resetting = false
+                    hint = GateHint(
+                        localizedContext.getString(R.string.privacy_gate_reset_failed),
+                        true,
+                    )
+                }
+            }
+        }
     }
 
     val onPattern: (List<Int>) -> Unit = { pattern ->
@@ -138,6 +171,7 @@ private fun PrivacyUnlockGateContent(modifier: Modifier = Modifier) {
         GateColumn(title = stringResource(R.string.privacy_gate_title)) {
             GatePatternSection(failCount = failCount, hint = hint, onPatternEntered = onPattern)
             DeviceCredentialSection(
+                credentialUsable = deviceCredentialUsable,
                 forceShow = credentialUnreadable,
                 onAuthError = { message ->
                     failCount += 1
@@ -145,32 +179,27 @@ private fun PrivacyUnlockGateContent(modifier: Modifier = Modifier) {
                 },
             )
             CredentialResetSection(
-                visible = showReset,
+                visible = resetAvailable,
                 confirming = resetConfirming,
                 busy = resetting,
                 onRequestConfirm = { resetConfirming = true },
                 onCancel = { resetConfirming = false },
                 onConfirm = {
-                    if (!resetting) {
-                        resetting = true
-                        scope.launch {
-                            // 清除凭据是阻塞的 Keystore + commit：放到后台线程。清除成功时控制器
-                            // 在后台解锁、门随 lockedState 变 false 离开组合；协程若因此被取消，
-                            // 清除要么没写、要么已经写完，不会留下半套。
-                            val cleared = withContext(Dispatchers.IO) {
-                                AppLockController.clearPatternAndDisable(context)
-                            }
-                            if (cleared) {
-                                MotionHaptics.perform(MotionHaptics.Kind.Confirm)
-                            } else {
-                                // 清除失败：控制器保持锁定与开关，给出可重试提示
-                                resetting = false
-                                hint = GateHint(
-                                    localizedContext.getString(R.string.privacy_gate_reset_failed),
-                                    true,
-                                )
-                            }
-                        }
+                    val activity = fragmentActivity
+                    if (!resetting && activity != null) {
+                        // 重置会关闭应用锁：先通过设备凭据确认身份，成功后才执行清除
+                        createDeviceCredentialPrompt(
+                            activity = activity,
+                            onSuccess = startReset,
+                            onError = { message -> hint = GateHint(message, true) },
+                        ).authenticate(
+                            deviceCredentialPromptInfo(
+                                title = localizedContext.getString(R.string.privacy_gate_reset_device_title),
+                                description = localizedContext.getString(
+                                    R.string.privacy_gate_reset_device_description,
+                                ),
+                            ),
+                        )
                     }
                 },
             )
@@ -347,11 +376,13 @@ private fun GatePatternSection(
  * 设备凭据快捷解锁：开关允许且设备可用（弱生物识别或锁屏凭据任一）时显示按钮，
  * 经系统 BiometricPrompt 验证（API 28/29 的凭据回退由库内部处理）。
  *
+ * @param credentialUsable 父层算好的设备凭据可用性（与重置入口共用同一次查询）。
  * @param forceShow 凭据读取失败时强制显示：此时图案无法校验，设备凭据是唯一的恢复路径，
  *   即使「设备凭据快捷解锁」开关关闭也要给出口（否则 Keystore 密钥失效会把应用永久锁死）。
  */
 @Composable
 private fun DeviceCredentialSection(
+    credentialUsable: Boolean,
     onAuthError: (String) -> Unit,
     forceShow: Boolean = false,
 ) {
@@ -359,50 +390,27 @@ private fun DeviceCredentialSection(
     val context = LocalContext.current
     val localizedContext = remember(context) { AppLocaleController.wrap(context) }
     val fragmentActivity = remember(context) { AppLocaleController.findActivity(context) as? FragmentActivity }
-    val credentialUsable = remember(fragmentActivity) {
-        fragmentActivity != null && isDeviceCredentialUsable(fragmentActivity)
-    }
     if ((!allowBiometric && !forceShow) || !credentialUsable) return
 
     val prompt = remember(fragmentActivity) {
         val activity = fragmentActivity ?: return@remember null
-        BiometricPrompt(
-            activity,
-            ContextCompat.getMainExecutor(activity),
-            object : BiometricPrompt.AuthenticationCallback() {
-                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                    MotionHaptics.perform(MotionHaptics.Kind.Confirm)
-                    AppLockController.unlock()
-                }
-
-                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                    // 用户主动取消 / 选了「使用图案」负按钮：静默留在锁门，不算失败
-                    if (errorCode == BiometricPrompt.ERROR_USER_CANCELED ||
-                        errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON
-                    ) {
-                        return
-                    }
-                    onAuthError(errString.toString())
-                }
-
-                override fun onAuthenticationFailed() {
-                    // 生物识别未匹配：系统对话框会自动重试，这里只补一次拒绝触觉
-                    MotionHaptics.perform(MotionHaptics.Kind.Reject)
-                }
+        createDeviceCredentialPrompt(
+            activity = activity,
+            onSuccess = {
+                MotionHaptics.perform(MotionHaptics.Kind.Confirm)
+                AppLockController.unlock()
             },
+            onError = onAuthError,
         )
     }
 
     val authenticate: () -> Unit = {
-        val info = BiometricPrompt.PromptInfo.Builder()
-            .setTitle(localizedContext.getString(R.string.privacy_gate_device_title))
-            .setDescription(localizedContext.getString(R.string.privacy_gate_device_description))
-            .setAllowedAuthenticators(
-                BiometricManager.Authenticators.BIOMETRIC_WEAK or
-                    BiometricManager.Authenticators.DEVICE_CREDENTIAL,
-            )
-            .build()
-        prompt?.authenticate(info)
+        prompt?.authenticate(
+            deviceCredentialPromptInfo(
+                title = localizedContext.getString(R.string.privacy_gate_device_title),
+                description = localizedContext.getString(R.string.privacy_gate_device_description),
+            ),
+        )
     }
     NoRippleButton(
         text = stringResource(R.string.privacy_gate_device_unlock),
@@ -411,10 +419,54 @@ private fun DeviceCredentialSection(
 }
 
 /**
- * 凭据持续不可读时的恢复入口（不依赖设备凭据）：连续若干次校验都读不到凭据后显示，
- * 二次确认后清除凭据并关闭应用锁。该状态通常由换机迁移 / 系统重置导致 Keystore 密钥
- * 永久失效——此时任何人都无法解锁，密钥永久失效时重置不降低安全性；若只是瞬时读取失败，
- * 图案重试或设备凭据仍可正常解锁，入口会在凭据重新可读后自动消失。
+ * 门内设备凭据验证（快捷解锁与「清除应用锁」前的身份确认共用）：
+ * 取消 / 负按钮静默留在门内，其余错误回调给调用方；生物识别未匹配补一次拒绝触觉。
+ */
+private fun createDeviceCredentialPrompt(
+    activity: FragmentActivity,
+    onSuccess: () -> Unit,
+    onError: (String) -> Unit,
+): BiometricPrompt = BiometricPrompt(
+    activity,
+    ContextCompat.getMainExecutor(activity),
+    object : BiometricPrompt.AuthenticationCallback() {
+        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+            onSuccess()
+        }
+
+        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+            // 用户主动取消 / 选了「使用图案」负按钮：静默留在锁门 / 确认态，不算失败
+            if (errorCode == BiometricPrompt.ERROR_USER_CANCELED ||
+                errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON
+            ) {
+                return
+            }
+            onError(errString.toString())
+        }
+
+        override fun onAuthenticationFailed() {
+            // 生物识别未匹配：系统对话框会自动重试，这里只补一次拒绝触觉
+            MotionHaptics.perform(MotionHaptics.Kind.Reject)
+        }
+    },
+)
+
+/** 设备凭据 PromptInfo：弱生物识别或锁屏凭据任一（API 28/29 的凭据回退由库内部处理）。 */
+private fun deviceCredentialPromptInfo(title: String, description: String): BiometricPrompt.PromptInfo =
+    BiometricPrompt.PromptInfo.Builder()
+        .setTitle(title)
+        .setDescription(description)
+        .setAllowedAuthenticators(
+            BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                BiometricManager.Authenticators.DEVICE_CREDENTIAL,
+        )
+        .build()
+
+/**
+ * 凭据持续不可读时的恢复入口：连续若干次图案校验都读不到凭据、且设备已录入凭据时显示。
+ * 门内二次确认后还要通过设备凭据认证（BiometricPrompt，BIOMETRIC_WEAK | DEVICE_CREDENTIAL），
+ * 认证成功才清除凭据并关闭应用锁——重置会解除保护，不能只凭「读不到凭据」就执行。
+ * 设备未录入凭据时不显示该入口：此时无法在应用内重置，只能在系统设置中清除应用数据。
  *
  * 确认流程留在门内，不用 `AppAlertDialog`：门是覆盖在页面上的特殊全屏层，弹窗是独立 Window、
  * 层级在门之上，且宿主的 `DismissOnAppLockEffect` 会在 locked 时立即把它收起；内联确认最稳定。

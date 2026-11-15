@@ -42,6 +42,9 @@ private const val DecodedBytesPerPixel = 4L
  */
 private const val MaxDecodedBytes = 64L * 1024 * 1024
 
+/** 解码后按实际字节数重采样的最大次数（超出仍超预算则放弃背景，不把超限位图交给绘制）。 */
+private const val MaxDecodeResampleAttempts = 3
+
 /**
  * 自定义背景图的进程级缓存。
  *
@@ -95,7 +98,13 @@ internal object BackgroundImageCache {
         mutableImage.value = decoded.asImageBitmap()
     }
 
-    /** 走与卡片封面相同的采样解码：只按需尺寸解码，避免整张大图进内存。 */
+    /**
+     * 走与卡片封面相同的采样解码：只按需尺寸解码，避免整张大图进内存。
+     *
+     * Android 10+ 的 BitmapFactory 对 16 位高精度源图（如 16-bit PNG）可能自动选择
+     * RGBA_F16（8 字节/像素），只按 4 字节/像素计算的预算会低估一倍（4000×4000 可解出
+     * 128MB）。因此显式要求 ARGB_8888，并在解码后按实际 `byteCount` 兜底重采样。
+     */
     private fun decode(context: Context, uriText: String): Bitmap? = runCatching {
         val uri = Uri.parse(uriText)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -110,10 +119,7 @@ internal object BackgroundImageCache {
         val maxEdge = context.resources.displayMetrics.let { maxOf(it.widthPixels, it.heightPixels) }
             .coerceAtLeast(1)
         val sample = backgroundSampleSize(bounds.outWidth, bounds.outHeight, maxEdge)
-        val options = BitmapFactory.Options().apply { inSampleSize = sample }
-        val decoded = context.contentResolver.openInputStream(uri)?.use {
-            BitmapFactory.decodeStream(it, null, options)
-        } ?: return@runCatching null
+        val decoded = decodeWithinBudget(context, uri, sample) ?: return@runCatching null
         // 按 EXIF 方向摆正：旋转与镜像都要处理——只映射三个纯旋转方向时，
         // TRANSPOSE / TRANSVERSE 这类「旋转 + 翻转」的照片会侧转且镜像错误
         runCatching {
@@ -128,6 +134,31 @@ internal object BackgroundImageCache {
                 .also { transformed -> if (transformed !== decoded) decoded.recycle() }
         } ?: decoded
     }.getOrNull()
+
+    /**
+     * 按 [initialSample] 解码，并确保实际字节数不超过 [MaxDecodedBytes]。
+     *
+     * 显式 `inPreferredConfig = ARGB_8888` 消除 Android 10+ 的 RGBA_F16 分支；解码后再按
+     * 真实 `byteCount` 兜底：仍超预算就加大 sample 重解（有界循环，超限则放弃背景，
+     * 宁可不显示也不把超限位图交给绘制）。旧位图在重解前回收，避免两份大图同时驻留。
+     */
+    private fun decodeWithinBudget(context: Context, uri: Uri, initialSample: Int): Bitmap? {
+        var sample = initialSample
+        var attempts = 0
+        while (true) {
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = sample
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            val candidate = context.contentResolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, options)
+            } ?: return null
+            if (candidate.byteCount <= MaxDecodedBytes) return candidate
+            candidate.recycle()
+            if (++attempts > MaxDecodeResampleAttempts) return null
+            sample *= 2
+        }
+    }
 
     /**
      * EXIF 方向 → 位图变换矩阵；NORMAL / UNDEFINED 返回 null（无需变换）。
