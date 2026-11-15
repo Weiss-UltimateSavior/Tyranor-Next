@@ -123,8 +123,6 @@
     <string name="engine_input_binding_empty">Not bound</string>
     <string name="engine_input_delete">Delete</string>
     <string name="engine_input_reset">Reset</string>
-    <string name="engine_systemnnn_reading_default">%1$s (default)</string>
-    <string name="engine_systemnnn_reading_original">%1$s (original)</string>
     <string name="engine_input_save">Save</string>
     <string name="engine_input_cancel">Cancel</string>
     <string name="engine_input_confirm">OK</string>
@@ -154,4 +152,5 @@
     <string name="engine_cmvs_audio_failed">CMVS audio initialization failed</string>
     <string name="engine_cmvs_font_index_title">Font collection index</string>
     <string name="engine_cmvs_font_index_message">Use 0 for a normal font file</string>
+    <string name="engine_systemnnn_host_ext_unresolved">The EXT starting code required by this game could not be determined. Launch has stopped. Open this game\'s engine settings and select Analyze and generate configuration. If it remains Analysis failed, this EXE\'s save writer is not recognized yet.</string>
 </resources>

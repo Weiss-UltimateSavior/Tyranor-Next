@@ -2,51 +2,44 @@ package com.tyranor.runtime.systemnnn;
 
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
-import android.graphics.Paint;
-import android.graphics.RectF;
 import android.graphics.SurfaceTexture;
 
-import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.ActivityNotFoundException;
+import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.DialogInterface;
+import android.content.res.ColorStateList;
 import android.content.pm.ActivityInfo;
-import android.content.pm.PackageManager;
 import android.graphics.Color;
-import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.os.*;
-import android.provider.Settings;
-import android.provider.DocumentsContract;
-import android.os.storage.StorageManager;
-import android.os.storage.StorageVolume;
 import android.util.TypedValue;
 import android.util.Log;
 import android.view.*;
 import android.widget.*;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
+import com.core.engine.EngineThemeColors;
 import com.core.engine.EngineUiText;
 import com.core.engine.EngineStartupOverlay;
 import com.core.engine.LaunchContract;
 import com.core.engine.R;
 import java.io.Closeable;
 import java.io.File;
-import java.io.ByteArrayOutputStream;
-import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.tvp.kirikiri2.KrDialogStyle;
 
 public final class PlayerActivity extends Activity implements GameRunner.Listener {
     @Override
@@ -61,10 +54,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private final EngineStartupGeneration startupGeneration=new EngineStartupGeneration();
     private TextureView screen;
     private Surface storySurface;
-    private Button panelActionButton,otherSavesButton;
-    private TextView status;
-    private View longPrintBackdrop;
-    private volatile StoryScreen storyScreen;
+    private final StoryPlane storyPlane=new StoryPlane();
     private DialoguePanel dialoguePanel;
     private GameStoryControls controls;
     private FrameLayout independentStatus;
@@ -85,59 +75,66 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private Bitmap titlePrevious;
     private SceneEntrance sceneEntrance;
     private MoviePlayback moviePlayback;
+    private boolean storyMovieExitActive;
     private GameSlotsPanel gameSlots;
-    private GalleryCatalog.Page galleryPage,replayReturn;
+    private GalleryCatalog.Page galleryPage;
     private long galleryRequest;
-    private int galleryCgPage;
+    private int galleryCgPage,settingsPage;
     private boolean sceneReplay;
     private Runnable panelBack;
-    private boolean fromTyn;
     private int width=1280,height=720,lastX=0,lastY=0;
     private final int[] storyOrigin=new int[2];
     private float storyDownX,storyDownY;
     private int storyTouchSlop;
     private boolean storyDrag;
-    private boolean foreground,permissionPending;
+    private boolean foreground;
     private boolean uiHidden,autoMode,skipMode,typing,refreshAfterLoad;
     private int panelsOpen,revealed;
     private String fullBody="";
     private GameRunner.Frame currentFrame;
-    private GameRunner.Frame drawnStoryFrame;
     private GameRunner.Modal visibleModal,modeUnderPanel;
     private Bitmap optionalGalleryPrevious;
     private boolean openGalleryAfterTitle;
     private SharedPreferences preferences,userPreferences;
     private Closeable playerTask;
-    private Context uiContext;
+    private Context uiContext,hostDialogContext;
+    private EngineThemeColors.Palette dialogColors;
     private PlayerSettings settings;
+    private boolean fullscreen;
+    private boolean analyzeExecutable,debugMode;
+    private int readingSize;
+    private GameDebugOverlay debugOverlay;
     private final Handler ui=new Handler(Looper.getMainLooper());
-    private final ArrayList<AlertDialog> openedPanels=new ArrayList<>();
+    private final ArrayList<Dialog> openedDialogs=new ArrayList<>();
     private AlertDialog slotsDialog;
     private LinearLayout slotRows;
     private boolean savingSlots;
     private boolean syncingRuntime;
     private int[] pendingDisplay,pendingAuxiliary;
-    private int mouseVariant=Integer.MIN_VALUE;
-    private boolean pcSaveBusy;
-    private byte[] pendingPcExport;
+    private int mouseVariant=Integer.MIN_VALUE,scriptMouse,ctrlKeys;
     private final SharedPreferences.OnSharedPreferenceChangeListener settingsListener=(p,key) -> {
         if(syncingRuntime||p!=preferences)return;
-        settings=PlayerSettings.read(p,userPreferences);
+        settings=PlayerSettings.read(p,readingSize);
         if (dialoguePanel!=null) dialoguePanel.settings(settings);
         selectDialogueVariant();
         if (runner!=null) runner.settings(key,settings);
-        immersive();
         updateStatus();
-    };
-    private final SharedPreferences.OnSharedPreferenceChangeListener readingListener=(p,key)->{
-        if(preferences==null||!PlayerSettings.READING_SIZE.equals(key))return;
-        settings=PlayerSettings.read(preferences,p);
-        if(dialoguePanel!=null)dialoguePanel.settings(settings);
     };
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
         uiContext=EngineUiText.localizedContext(this);
+        Intent i=getIntent();
+        dialogColors=EngineThemeColors.fromIntent(i);
+        hostDialogContext=new ContextThemeWrapper(this,i.getBooleanExtra(LaunchContract.DARK_MODE,false)
+            ?android.R.style.Theme_Material:android.R.style.Theme_Material_Light);
+        fullscreen=i.getBooleanExtra(SystemNnnHost.EXTRA_FULLSCREEN,SystemNnnHost.DEFAULT_FULLSCREEN);
+        analyzeExecutable=i.getBooleanExtra(SystemNnnHost.EXTRA_EXE_ANALYSIS,SystemNnnHost.DEFAULT_EXE_ANALYSIS);
+        debugMode=i.getBooleanExtra(SystemNnnHost.EXTRA_DEBUG_MODE,SystemNnnHost.DEFAULT_DEBUG_MODE);
+        readingSize=i.hasExtra(SystemNnnHost.EXTRA_READING_SIZE)
+            ? SystemNnnHost.normalizeReadingSize(i.getIntExtra(SystemNnnHost.EXTRA_READING_SIZE,SystemNnnHost.DEFAULT_READING_SIZE))
+            : SystemNnnHost.legacyReadingSize(this);
+        WindowCompat.setDecorFitsSystemWindows(getWindow(),false);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if(Build.VERSION.SDK_INT>=28){
             WindowManager.LayoutParams window=getWindow().getAttributes();
@@ -171,155 +168,34 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         });
         root.requestApplyInsets();
         userPreferences=PlayerSettings.preferences(this);
-        userPreferences.registerOnSharedPreferenceChangeListener(readingListener);
-        Intent i=getIntent();
         String path=i.getStringExtra(LaunchContract.RUNTIME_MODULE_FOLDER_PATH);
-        fromTyn=LaunchContract.RUNTIME_MODULE_ACTION.equals(i.getAction());
-        if (!fromTyn) {
-            if (saved!=null) path=saved.getString("selectedGame");
-            if (path==null || path.isEmpty()) { chooseHome(null); return; }
-        } else if (path==null || path.isEmpty()) {
-            chooseHome(text(R.string.engine_systemnnn_host_launch_path_missing)); return;
+        String sourceUri=i.getStringExtra(LaunchContract.ROOT_URI);
+        if(!LaunchContract.RUNTIME_MODULE_ACTION.equals(i.getAction())||
+            path==null||path.trim().isEmpty()){
+            returnToLibrary(R.string.engine_systemnnn_host_open_failed,R.string.engine_systemnnn_host_launch_path_missing);
+            return;
         }
-        if (i.getIntExtra(LaunchContract.RUNTIME_MODULE_PROTOCOL_VERSION,LaunchContract.RUNTIME_MODULE_VERSION)!=LaunchContract.RUNTIME_MODULE_VERSION) {
-            message(text(R.string.engine_systemnnn_host_protocol_unsupported),text(R.string.engine_systemnnn_host_check_versions),null,null); return;
+        if(i.getIntExtra(LaunchContract.RUNTIME_MODULE_PROTOCOL_VERSION,LaunchContract.RUNTIME_MODULE_VERSION)!=LaunchContract.RUNTIME_MODULE_VERSION){
+            returnToLibrary(R.string.engine_systemnnn_host_protocol_unsupported,R.string.engine_systemnnn_host_check_versions);
+            return;
         }
-        try {
+        try{
             File input=new File(path);
             if(!input.isAbsolute()){
-                message(text(R.string.engine_systemnnn_host_open_failed),text(R.string.engine_systemnnn_host_path_not_absolute),null,null);
+                returnToLibrary(R.string.engine_systemnnn_host_open_failed,R.string.engine_systemnnn_host_path_not_absolute);
                 return;
             }
             game=input.getCanonicalFile();
         }catch(IOException|SecurityException e){
             Log.w("SystemNNN","Unable to resolve the game path",e);
-            message(text(R.string.engine_systemnnn_host_open_failed),text(R.string.engine_systemnnn_host_unreadable_directory),null,null);
+            returnToLibrary(R.string.engine_systemnnn_host_open_failed,R.string.engine_systemnnn_host_unreadable_directory);
             return;
         }
-        inspectAccess();
-    }
-    private void chooseHome(String reason) {
-        String hint=text(R.string.engine_systemnnn_host_pick_hint);
-        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q) {
-            hint += "\n" + text(R.string.engine_systemnnn_host_pick_copy_hint);
-        }
-        message(getApplicationInfo().loadLabel(getPackageManager()).toString(),reason==null?hint:reason+"\n"+hint,text(R.string.engine_systemnnn_host_pick_directory),
-            v -> startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE),32));
-    }
-    @Override protected void onActivityResult(int request,int result,Intent data) {
-        super.onActivityResult(request,result,data);
-        if(request==33){
-            if(result==RESULT_OK&&data!=null&&data.getData()!=null)importPcSave(data.getData());
-            else setPcSaveBusy(false);
+        if(!SystemNnnHost.canOpen(game)){
+            returnToLibrary(R.string.engine_systemnnn_host_open_failed,R.string.engine_systemnnn_host_marker_missing);
             return;
         }
-        if(request==34){
-            byte[] contents=pendingPcExport;pendingPcExport=null;
-            if(result==RESULT_OK&&data!=null&&data.getData()!=null&&contents!=null&&runner!=null){
-                Uri uri=data.getData();
-                runner.writePcExport(()->{
-                    try(OutputStream out=getContentResolver().openOutputStream(uri,"wt")){
-                        if(out==null)throw new IOException(text(R.string.engine_systemnnn_host_open_selected_failed));
-                        out.write(contents);
-                    }
-                    return null;
-                },()->runOnUiThread(()->setPcSaveBusy(false)));
-            }else setPcSaveBusy(false);
-            return;
-        }
-        if (request!=32 || result!=RESULT_OK || data==null || data.getData()==null) return;
-        try {
-            Uri uri=data.getData();
-            if(!"com.android.externalstorage.documents".equals(uri.getAuthority())){
-                chooseHome(text(R.string.engine_systemnnn_host_local_directory_only));
-                return;
-            }
-            String[] id=DocumentsContract.getTreeDocumentId(uri).split(":",2);
-            if(id.length!=2){
-                chooseHome(text(R.string.engine_systemnnn_host_unreadable_directory));
-                return;
-            }
-            File volume=null;
-            if ("primary".equalsIgnoreCase(id[0])) volume=Environment.getExternalStorageDirectory();
-            else for (StorageVolume v:getSystemService(StorageManager.class).getStorageVolumes())
-                if (id[0].equalsIgnoreCase(v.getUuid())) {
-                    volume=Build.VERSION.SDK_INT>=30?v.getDirectory():new File("/storage",v.getUuid()); break;
-                }
-            if(volume==null){
-                chooseHome(text(R.string.engine_systemnnn_host_missing_volume));
-                return;
-            }
-            File selected=new File(volume,id[1]).getCanonicalFile();
-            if(!selected.toPath().startsWith(volume.getCanonicalFile().toPath())){
-                chooseHome(text(R.string.engine_systemnnn_host_invalid_directory));
-                return;
-            }
-            game=selected; inspectAccess();
-        }catch(IOException|IllegalArgumentException|SecurityException e){
-            Log.w("SystemNNN","Unable to resolve the selected game directory",e);
-            chooseHome(text(R.string.engine_systemnnn_host_unreadable_directory));
-        }
-    }
-    private void choosePcSave(){
-        if(runner==null||pcSaveBusy)return;
-        Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE);
-        setPcSaveBusy(true);
-        try{startActivityForResult(picker,33);}
-        catch(ActivityNotFoundException e){setPcSaveBusy(false);notice(text(R.string.engine_systemnnn_host_picker_failed));}
-    }
-    private void choosePcExport(){
-        GameRunner owner=runner;
-        if(owner==null||pcSaveBusy)return;
-        setPcSaveBusy(true);
-        owner.preparePcExport(contents->runOnUiThread(()->{
-            if(contents==null||owner!=runner||isDestroyed()||isFinishing()){setPcSaveBusy(false);return;}
-            pendingPcExport=contents;
-            Intent picker=new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/octet-stream")
-                .addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_TITLE,"data1.sav");
-            try{startActivityForResult(picker,34);}
-            catch(ActivityNotFoundException e){pendingPcExport=null;setPcSaveBusy(false);notice(text(R.string.engine_systemnnn_host_picker_failed));}
-        }));
-    }
-    private void setPcSaveBusy(boolean busy){pcSaveBusy=busy;updatePanelActionEnabled();}
-    private byte[] readPcSave(Uri uri) throws IOException {
-        try(InputStream input=getContentResolver().openInputStream(uri)){
-            if(input==null)throw new IOException(text(R.string.engine_systemnnn_host_open_selected_failed));
-            ByteArrayOutputStream data=new ByteArrayOutputStream();byte[] buffer=new byte[8192];
-            for(int n;(n=input.read(buffer))!=-1;){
-                if(n>16*1024*1024-data.size())throw new GameRunner.PcSaveTooLarge();
-                data.write(buffer,0,n);
-            }
-            return data.toByteArray();
-        }
-    }
-    private void importPcSave(Uri uri){
-        GameRunner owner=runner;
-        if(owner==null){setPcSaveBusy(false);return;}
-        GameUiPanel panel=gamePanel;
-        setPcSaveBusy(true);
-        owner.importPcSave(()->readPcSave(uri),success->runOnUiThread(()->{
-            setPcSaveBusy(false);
-            if(!success||owner!=runner||isDestroyed()||isFinishing())return;
-            if(panel!=null&&panel==gamePanel)panel.leave(uiAssets.load,false,(picture,filled)->enterStory(picture,filled));
-            else enterStory(null);
-        }));
-    }
-    @Override protected void onSaveInstanceState(Bundle state) {
-        super.onSaveInstanceState(state);
-        if (!fromTyn && game!=null) state.putString("selectedGame",game.getPath());
-    }
-    private void inspectAccess() {
-        if (game==null || runner!=null) return;
-        File script=GameResourcePaths.file(game,"spt","sys.spt");
-        if (script!=null) {
-            // Scoped storage may allow stat() and directory listings while denying open().
-            try (FileInputStream probe=new FileInputStream(script)) {
-                File mapping=GameResourcePaths.file(game,"sjis_ext.bin");
-                if (mapping!=null) try (FileInputStream map=new FileInputStream(mapping)) { map.read(); }
-                if (probe.read()!=-1) { startGame(); return; }
-            } catch (IOException ignored) { /* Show the appropriate storage action below. */ }
-        }
-        if(!requestStorageAccess(false))chooseHome(text(R.string.engine_systemnnn_host_marker_missing));
+        startGame(sourceUri);
     }
     /** The caller passes the original directory as the legacy settings/save-migration key. */
     private File legacyIdentity() {
@@ -332,47 +208,28 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             return game;
         }
     }
-    private boolean requestStorageAccess(boolean writing) {
-        String permission=writing?Manifest.permission.WRITE_EXTERNAL_STORAGE:Manifest.permission.READ_EXTERNAL_STORAGE;
-        boolean needsGrant=Build.VERSION.SDK_INT>=30 ? !Environment.isExternalStorageManager() :
-                checkSelfPermission(permission)!=PackageManager.PERMISSION_GRANTED;
-        if (needsGrant) {
-            message(text(R.string.engine_systemnnn_host_storage_permission),text(R.string.engine_systemnnn_host_storage_permission_hint),
-                text(R.string.engine_systemnnn_host_open_permissions),v -> {
-                    permissionPending=true;
-                    if (Build.VERSION.SDK_INT>=30) {
-                        Intent settings=new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                            Uri.parse("package:"+getPackageName()));
-                        try { startActivity(settings); }
-                        catch (android.content.ActivityNotFoundException e) { startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)); }
-                    } else requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE,
-                        Manifest.permission.WRITE_EXTERNAL_STORAGE},21);
-                });
-        }
-        return needsGrant;
-    }
-    private void startGame() {
+    private void startGame(String sourceUri) {
         GameSavePaths saves;
         File legacySource;
         try{
             saves=GameSavePaths.forGame(game);
+            File directory=saves.directory();
+            if(!(directory.isDirectory()?directory:game).canWrite()){
+                throw new IOException("The save directory is not writable");
+            }
             legacySource=legacyIdentity();
-        }
-        catch(IOException|SecurityException e){
+        }catch(IOException|SecurityException e){
             Log.w("SystemNNN","Unable to open the save directory",e);
-            message(text(R.string.engine_systemnnn_host_save_directory_failed),text(R.string.engine_systemnnn_host_check_save_access),
-                text(R.string.engine_systemnnn_host_retry),v->inspectAccess());
+            returnToLibrary(R.string.engine_systemnnn_host_save_directory_failed,R.string.engine_systemnnn_host_check_save_access);
             return;
         }
-        File directory=saves.directory();
-        if(!(directory.isDirectory()?directory:game).canWrite() && requestStorageAccess(true))return;
         try{NativeGame.load(this);}
         catch(IOException|LinkageError e){
             Log.w("SystemNNN","Unable to load the runtime pack",e);
-            message(text(R.string.engine_systemnnn_host_game_interrupted),text(R.string.engine_systemnnn_host_check_versions),
-                text(R.string.engine_systemnnn_host_exit_to_tyn),v->finish());
+            returnToLibrary(R.string.engine_systemnnn_host_game_interrupted,R.string.engine_systemnnn_host_check_versions);
             return;
         }
+        storyPlane.release();
         startupOverlay=new EngineStartupOverlay(this);
         startupOverlay.attachTo(root);
         contentHost.removeAllViews();
@@ -380,92 +237,56 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         stage=new FrameLayout(this){
             @Override public void onDescendantInvalidated(View child,View target){
                 super.onDescendantInvalidated(child,target);
-                StoryScreen foreground=storyScreen;
-                if(foreground==null)return;
-                if(child==dialoguePanel||child==choices||child==longPrintBackdrop){
-                    boolean separateCursor=dialoguePanel!=null&&dialoguePanel.isMessageCursor(target);
-                    boolean separateTimer=choices!=null&&choices.isTimer(target);
-                    foreground.messageChanged(!separateCursor&&!separateTimer);
-                }
+                if(child==dialoguePanel||child==choices)storyPlane.schedulePush();
             }
         };
+        stage.getViewTreeObserver().addOnPreDrawListener(()->{storyPlane.onPreDraw();return true;});
         launchingGame=true;
         stage.setForeground(new ColorDrawable(Color.BLACK));
         contentHost.addView(stage,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
-        panelActionButton=new Button(this);
-        panelActionButton.setSingleLine(true);
-        panelActionButton.setSoundEffectsEnabled(false);
-        panelActionButton.setVisibility(View.GONE);
-        panelActionButton.setOnClickListener(v->{
-            if(!panelActionReady())return;
-            if(gamePanel instanceof GameSettingsPanel)showReadingSettings();
-            else if(gamePanel instanceof GameSlotsPanel)((GameSlotsPanel)gamePanel).performPcTransfer();
-        });
-        FrameLayout.LayoutParams actionPosition=new FrameLayout.LayoutParams(-2,dp(48),Gravity.TOP|Gravity.END);
-        actionPosition.setMargins(dp(4),dp(4),dp(4),0);
-        contentHost.addView(panelActionButton,actionPosition);
-        otherSavesButton=new Button(this);
-        otherSavesButton.setText(text(R.string.engine_systemnnn_ctl_other_saves));
-        otherSavesButton.setSingleLine(true);
-        otherSavesButton.setSoundEffectsEnabled(false);
-        otherSavesButton.setVisibility(View.GONE);
-        otherSavesButton.setOnClickListener(v->{if(panelActionReady())showOtherSaves();});
-        FrameLayout.LayoutParams otherPosition=new FrameLayout.LayoutParams(-2,dp(48),Gravity.TOP|Gravity.END);
-        otherPosition.setMargins(dp(4),dp(52),dp(4),0);
-        contentHost.addView(otherSavesButton,otherPosition);
-        root.getViewTreeObserver().addOnPreDrawListener(()->{updatePanelActionEnabled();return true;});
-        root.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> layoutStage());
+        contentHost.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> layoutStage());
         screen=new TextureView(this); screen.setContentDescription(text(R.string.engine_systemnnn_host_game_display));screen.setSoundEffectsEnabled(false);
         stage.addView(screen,new FrameLayout.LayoutParams(-1,-1));
         screen.setOnTouchListener((view,event) -> {
             if (event.getActionMasked()==MotionEvent.ACTION_UP) {advance();view.performClick();}
             return true;
         });
-        longPrintBackdrop=new View(this){
-            private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
-            private final RectF destination=new RectF();
-            @Override protected void onDraw(Canvas canvas){
-                Bitmap bitmap=uiAssets==null?null:uiAssets.longPrintImage;
-                if(bitmap==null)return;
-                float sx=getWidth()/(float)width,sy=getHeight()/(float)height;
-                destination.set(0,0,bitmap.getWidth()*sx,bitmap.getHeight()*sy);
-                canvas.drawBitmap(bitmap,null,destination,paint);
-            }
-        };
-        longPrintBackdrop.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        longPrintBackdrop.setVisibility(View.GONE);
-        stage.addView(longPrintBackdrop,new FrameLayout.LayoutParams(-1,-1));
         dialoguePanel=new DialoguePanel(this,v -> advance());
+        dialoguePanel.planeInvalidated(storyPlane::schedulePush);
         stage.addView(dialoguePanel,new FrameLayout.LayoutParams(-1,-1)); dialoguePanel.setVisibility(View.GONE);
-        storyScreen=new StoryScreen();
-        stage.addView(storyScreen,new FrameLayout.LayoutParams(-1,-1));
-        status=label("",12); status.setGravity(Gravity.CENTER); status.setPadding(dp(8),dp(3),dp(8),dp(3));
-        status.setBackground(rounded(0xb51a2030,6));
-        FrameLayout.LayoutParams statusParams=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.START);
-        statusParams.setMargins(dp(8),dp(8),0,0); stage.addView(status,statusParams); status.setVisibility(View.GONE);
+        if(debugMode){
+            debugOverlay=new GameDebugOverlay(new ContextThemeWrapper(uiContext,R.style.SystemNnnPlayerTheme));
+            debugOverlay.setTranslationZ(dp(8));
+            FrameLayout.LayoutParams params=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.START);
+            params.setMargins(dp(8),dp(8),dp(8),0);
+            stage.addView(debugOverlay,params);
+        }
         preferences=PlayerSettings.displayPreferences(this,legacySource);
-        settings=PlayerSettings.read(preferences,userPreferences);
+        preferences.edit().putBoolean(RuntimeSettingsAdapter.FULLSCREEN,fullscreen).apply();
+        settings=PlayerSettings.read(preferences,readingSize);
         dialoguePanel.settings(settings);
         preferences.registerOnSharedPreferenceChangeListener(settingsListener);
-        if(fromTyn)try{playerTask=SystemNnnHost.registerPlayerTask(this,game,getIntent().getStringExtra(LaunchContract.ROOT_URI));}
+        try{playerTask=SystemNnnHost.registerPlayerTask(this,game,sourceUri);}
         catch(IOException|RuntimeException e){android.util.Log.w("SystemNNN","Unable to register player task",e);}
-        try{runner=new GameRunner(uiContext,game,legacySource,saves,getFilesDir(),preferences,userPreferences,settings,this);}
+        try{runner=new GameRunner(uiContext,game,legacySource,saves,getFilesDir(),preferences,userPreferences,settings,
+            fullscreen,analyzeExecutable,debugMode,this);}
         catch(RuntimeException|Error e){closePlayerTask();throw e;}
         GameRunner surfaceOwner=runner;
         screen.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
             private Surface attached;
             @Override public void onSurfaceTextureAvailable(SurfaceTexture texture,int width,int height){
+                storyPlane.textureReset();
                 attached=new Surface(texture);
                 storySurface=attached;
                 surfaceOwner.surface(attached);
             }
             @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture,int width,int height){
-                if(attached!=null)surfaceOwner.surface(attached);
+                // Only the viewport changed; retain the producer and its logical game buffers.
             }
             @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture){
                 Surface old=attached;
                 attached=null;
-                if(storySurface==old)storySurface=null;
+                if(storySurface==old){storySurface=null;storyPlane.textureReset();}
                 surfaceOwner.surface(null);
                 // Abandon the consumer after TextureView detaches it. A blocked producer wakes
                 // without making the UI thread wait for the current native buffer submission.
@@ -475,7 +296,10 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 });
                 return false;
             }
-            @Override public void onSurfaceTextureUpdated(SurfaceTexture texture){}
+            @Override public void onSurfaceTextureUpdated(SurfaceTexture texture){
+                if(runner==surfaceOwner&&attached!=null&&storySurface==attached)
+                    storyPlane.textureUpdated(texture.getTimestamp());
+            }
         });
         if (foreground) runner.active(true);
         layoutStage();
@@ -485,9 +309,21 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private DialogInterface.OnClickListener dialogClick(DialogInterface.OnClickListener action) {
         return (dialog,which) -> {systemClick();if(action!=null)action.onClick(dialog,which);};
     }
+    private void scaleLogicalView(View view,int stageW,int stageH){
+        if(view==null)return;
+        FrameLayout.LayoutParams params=(FrameLayout.LayoutParams)view.getLayoutParams();
+        if(params.width!=width||params.height!=height){
+            params.width=width;params.height=height;
+            view.setLayoutParams(params);
+        }
+        view.setPivotX(0);
+        view.setPivotY(0);
+        view.setScaleX(stageW/(float)width);
+        view.setScaleY(stageH/(float)height);
+    }
     private void layoutStage() {
         if(stage==null)return;
-        if(longPrintBackdrop!=null)longPrintBackdrop.invalidate();
+        storyPlane.schedulePush();
         if(dialoguePanel!=null)dialoguePanel.canvas(width,height);
         if(controls!=null)controls.canvas(width,height);
         if(quickNoticeView!=null)quickNoticeView.canvas(width,height);
@@ -499,6 +335,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(availableWidth<=0||availableHeight<=0)return;
         float scale=Math.min((float)availableWidth/width,(float)availableHeight/height);
         int w=Math.max(1,Math.round(width*scale)),h=Math.max(1,Math.round(height*scale));
+        scaleLogicalView(dialoguePanel,w,h);
+        scaleLogicalView(choices,w,h);
         int left=(availableWidth-w)/2;
         int top=(availableHeight-h)/2;
         FrameLayout.LayoutParams params=(FrameLayout.LayoutParams)stage.getLayoutParams();
@@ -508,85 +346,127 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             stage.setLayoutParams(params);
         }
     }
-    @Override public void loaded() {runOnUiThread(() -> {refreshAfterLoad=true;modeUnderPanel=null;});}
-    private void revealStartupOverlayAfterLayout(View content) {
-        if (startupOverlay==null || !startupOverlay.isLoading() || content==null) return;
+    @Override public void loaded() {runOnUiThread(() -> {
+        refreshAfterLoad=true;modeUnderPanel=null;
+        if(quickNoticeView!=null)quickNoticeView.clear();
+    });}
+    @Override public void debugFrame(int[] state,String script,String bgm) {
+        ui.post(() -> {
+            if(!foreground||debugOverlay==null)return;
+            int textWidth=dialoguePanel.getVisibility()==View.VISIBLE ? dialoguePanel.measuredBodyWidth() : 0;
+            debugOverlay.update(state,script,bgm,textWidth,readingSize);
+        });
+    }
+    private void revealStartupOverlayAfterLayout(View content,long generation) {
         EngineStartupOverlay expected=startupOverlay;
+        if(expected==null||!expected.isLoading()||content==null)return;
         ViewTreeObserver observer=content.getViewTreeObserver();
-        if (!observer.isAlive()) return;
-        observer.addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
-            @Override public boolean onPreDraw() {
+        if(!observer.isAlive())return;
+        observer.addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener(){
+            @Override public boolean onPreDraw(){
                 ViewTreeObserver current=content.getViewTreeObserver();
-                if (current.isAlive()) current.removeOnPreDrawListener(this);
-                content.post(() -> {
-                    if (!isDestroyed()&&!isFinishing()&&startupOverlay==expected) expected.reveal();
+                if(current.isAlive())current.removeOnPreDrawListener(this);
+                ui.post(()->{
+                    if(startupOverlay==expected&&startupGeneration.accepts(generation)&&
+                        content.isAttachedToWindow()&&!isDestroyed()&&!isFinishing())expected.reveal();
                 });
                 return true;
             }
         });
-        content.requestLayout();
         content.invalidate();
     }
     @Override public void frame(GameRunner.Frame frame,int initialVisible,long generation) {
-        runOnUiThread(() -> {
-            if (!startupGeneration.accepts(generation)) return;
-            if (isDestroyed() || stage==null) return;
-            if (titlePanel!=null) {stage.removeView(titlePanel); titlePanel=null; titleModel=null;}
-            clearStartupForStory();
-            if (frame.width>0&&frame.height>0&&(width!=frame.width || height!=frame.height)) {width=frame.width;height=frame.height;layoutStage();}
-            if(frame.wait==NativeGame.MODAL){
-                currentFrame=frame;
-                // Preserve the last story composition until the modal has captured it.
-                if(gamePanel==null&&preparingPanel==null)showScriptModal(null);
-                revealStartupOverlayAfterLayout(stage);
-                return;
-            }
-            modeUnderPanel=null;
-            boolean changed=refreshAfterLoad || currentFrame==null || currentFrame.wait!=frame.wait || currentFrame.line!=frame.line ||
-                currentFrame.word!=frame.word || !currentFrame.script.equals(frame.script) ||
-                !currentFrame.body.equals(frame.body) || !currentFrame.speaker.equals(frame.speaker) || currentFrame.nameWindow!=frame.nameWindow;
-            currentFrame=drawnStoryFrame=frame;
-            dialoguePanel.scriptCursorVariant(frame.scriptCursor);
-            dialoguePanel.storyBody(frame.hasDialogueText());
-            dialoguePanel.passive(frame.wait==NativeGame.DRAW);
-            selectDialogueVariant();
-            if (changed) {
-                refreshAfterLoad=false;
-                typing=false; fullBody=frame.displayBody.text;
-                dialoguePanel.speaker(frame.speaker,frame.nameWindow);dialoguePanel.read(frame.alreadyRead);
-                if(choices!=null){stage.removeView(choices);choices=null;}
-                boolean dialogue=frame.wait==NativeGame.DIALOGUE;
-                typing=dialogue&&initialVisible<frame.displayBody.glyphCount;
-                revealed=dialogue?fullBody.offsetByCodePoints(0,initialVisible):fullBody.length();
-                dialoguePanel.message(frame.displayBody,revealed);
-                if(frame.wait==NativeGame.CHOICE&&uiAssets!=null){
-                    choices=new GameChoicePanel(this,uiAssets,frame,preferences.getBoolean("changeSelectColor",false),
-                        ()->{
-                            if(runner==null||controls!=null&&controls.clicking())return false;
-                            runner.choicePressed(frame.word);
-                            return true;
-                        },
-                        number->{if(runner!=null)runner.input(lastX,lastY,number);});
-                    choices.sound((se,voice)->{if(runner!=null)runner.playClick(se,voice);});
-                    stage.addView(choices,stage.indexOfChild(storyScreen),new FrameLayout.LayoutParams(-1,-1));
-                }
-                if(frame.wait==NativeGame.END){
-                    String end=text(R.string.engine_systemnnn_host_story_ended);
-                    dialoguePanel.speaker("",false);dialoguePanel.message(end,end.length());
-                }
-            }
-            updateVisibility(); updateStatus();
-            if(frame.wait==NativeGame.PLACE&&gamePanel==null&&preparingPanel==null)showPlace(null);
-            revealStartupOverlayAfterLayout(stage);
+        runOnUiThread(()->{
+            if(isDestroyed()||isFinishing()||stage==null||!startupGeneration.accepts(generation))return;
+            applyFrame(frame,initialVisible);
+            revealStartupOverlayAfterLayout(stage,generation);
         });
     }
-    @Override public void screenLayerChanged(){
-        StoryScreen view=storyScreen;
-        if(view!=null)view.postInvalidate();
+    @Override public void planeChanged(){runOnUiThread(storyPlane::onTokenAvailable);}
+    @Override public void nativePanelMenu(GameRunner owner,GameRunner.Frame frame,int mode){runOnUiThread(()->{
+        if(owner!=runner||currentFrame!=frame||isDestroyed()||isFinishing())return;
+        try{
+            if(uiAssets==null)throw new IllegalStateException("Native panel menu resources are unavailable");
+            switch(mode){
+                case 5:showSlots(false);break;
+                case 6:showSlots(true);break;
+                case 12:
+                    if(!uiAssets.config.has("modename")&&!uiAssets.settingsModel(width,height).original)
+                        throw new IllegalStateException("Original configuration menu is unavailable");
+                    showSettings();break;
+                case 13:
+                    if(!uiAssets.system.has("Menu1Button1FileName"))throw new IllegalStateException("Original system menu is unavailable");
+                    showOriginalMenu();break;
+                default:throw new IllegalStateException("Unknown native panel menu request");
+            }
+        }catch(RuntimeException|OutOfMemoryError error){owner.storyPlaneFailed(frame.generation,error);}
+    });}
+    private void applyFrame(GameRunner.Frame frame,int initialVisible){
+        if (titlePanel!=null) {stage.removeView(titlePanel); titlePanel=null; titleModel=null;}
+        clearStartupForStory();
+        if(storyMovieExitActive){storyMovieExitActive=false;stage.setForeground(null);}
+        if (frame.width>0&&frame.height>0&&(width!=frame.width || height!=frame.height)) {width=frame.width;height=frame.height;layoutStage();}
+        if(frame.wait==NativeGame.MODAL){
+            currentFrame=frame;
+            // Preserve the last story composition until the modal has captured it.
+            if(gamePanel==null&&preparingPanel==null)showScriptModal(null);
+            return;
+        }
+        modeUnderPanel=null;
+        if(frame.wait==NativeGame.NATIVE_PANEL){
+            currentFrame=frame;typing=false;fullBody="";uiHidden=false;refreshAfterLoad=false;
+            clearCtrlSkip();storyPlane.frame(null);
+            if(choices!=null){stage.removeView(choices);choices=null;}
+            dialoguePanel.setVisibility(View.GONE);
+            if(controls!=null)controls.setVisibility(View.GONE);
+            updateVisibility();updateStatus();return;
+        }
+        boolean changed=refreshAfterLoad || currentFrame==null || currentFrame.wait!=frame.wait || currentFrame.line!=frame.line ||
+            currentFrame.word!=frame.word || !currentFrame.script.equals(frame.script) ||
+            !currentFrame.body.equals(frame.body) || !currentFrame.speaker.equals(frame.speaker) ||
+            currentFrame.nameWindow!=frame.nameWindow || currentFrame.decorations!=frame.decorations ||
+            DialogueLayout.choiceSetId(currentFrame.planeKey)!=DialogueLayout.choiceSetId(frame.planeKey);
+        currentFrame=frame;
+        storyPlane.frame(frame);
+        dialoguePanel.directDraw(frame.wait==NativeGame.END);
+        dialoguePanel.scriptCursorVariant(frame.scriptCursor);
+        dialoguePanel.storyBody(frame.hasDialogueText());
+        dialoguePanel.passive(frame.wait==NativeGame.DRAW);
+        dialoguePanel.decorations(frame.decorations,frame.frameMs,refreshAfterLoad);
+        selectDialogueVariant();
+        if (changed) {
+            refreshAfterLoad=false;
+            typing=false; fullBody=frame.displayBody.text;
+            dialoguePanel.speaker(frame.speaker,frame.nameWindow);dialoguePanel.read(frame.alreadyRead);
+            if(choices!=null){stage.removeView(choices);choices=null;}
+            boolean dialogue=frame.wait==NativeGame.DIALOGUE;
+            typing=dialogue&&initialVisible<frame.displayBody.glyphCount;
+            revealed=dialogue?frame.displayBody.offsetForGlyphs(initialVisible):fullBody.length();
+            dialoguePanel.message(frame.displayBody,revealed);
+            if(frame.wait==NativeGame.CHOICE&&uiAssets!=null){
+                choices=new GameChoicePanel(this,uiAssets,frame,preferences.getBoolean("changeSelectColor",false),
+                    ()->{
+                        if(runner==null||controls!=null&&controls.clicking())return false;
+                        runner.choicePressed(frame);
+                        return true;
+                    },
+                    number->{if(runner!=null)runner.input(frame,lastX,lastY,number);});
+                choices.planeInvalidated(storyPlane::schedulePush);
+                choices.sound((se,voice)->{if(runner!=null)runner.playClick(se,voice);});
+                stage.addView(choices,stage.indexOfChild(dialoguePanel)+1,new FrameLayout.LayoutParams(width,height));
+                if(stage.getWidth()>0&&stage.getHeight()>0)scaleLogicalView(choices,stage.getWidth(),stage.getHeight());
+            }
+            if(frame.wait==NativeGame.END){
+                String end=text(R.string.engine_systemnnn_host_story_ended);
+                dialoguePanel.speaker("",false);dialoguePanel.message(end,end.length());
+            }
+        }
+        updateVisibility(); updateStatus();
+        if(frame.wait==NativeGame.PLACE&&gamePanel==null&&preparingPanel==null)showPlace(null);
     }
-    @Override public void style(DialogueStyle style) {runOnUiThread(() -> {dialogueStyle=style;if(dialoguePanel!=null){dialoguePanel.style(style);reserveCommandSpace();}});}
+    @Override public void style(DialogueStyle style) {runOnUiThread(() -> {dialogueStyle=style;if(dialoguePanel!=null){dialoguePanel.style(style);reserveCommandSpace();storyPlane.schedulePush();}});}
     @Override public void choiceTime(GameRunner.Frame frame,int remaining){runOnUiThread(()->{
-        if(choices!=null&&currentFrame==frame)choices.remaining(remaining);
+        if(choices!=null&&currentFrame==frame){choices.remaining(remaining);storyPlane.schedulePush();}
     });}
     private void selectDialogueVariant(){
         if(dialoguePanel==null||preferences==null)return;
@@ -596,6 +476,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             preferences.getInt("messageWindowIndex",0),line&&currentFrame.layoutCommand==0x22220002,
             draw?currentFrame.showsDialogue():!line||currentFrame.windowVisible);
         reserveCommandSpace();
+        storyPlane.schedulePush();
     }
     private void reserveCommandSpace(){
         if(dialoguePanel!=null&&controls!=null)dialoguePanel.contentRight(controls.contentRight(dialoguePanel.bodyX(),dialoguePanel.bodyY(),
@@ -603,7 +484,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }
     @Override public void panels(GameUiAssets assets) {runOnUiThread(() -> {
         uiAssets=assets;if(isDestroyed()||stage==null)return;
-        longPrintBackdrop.invalidate();
+        width=assets.sharedConfig.screenWidth;height=assets.sharedConfig.screenHeight;layoutStage();
+        updatePointerIcon();
+        storyPlane.schedulePush();
         dialoguePanel.cursorAssets(assets);
         if(controls!=null)stage.removeView(controls);
         controls=new GameStoryControls(this,assets,new GameStoryControls.Listener(){
@@ -619,10 +502,11 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 case BACKLOG:showBacklog();break;
                 case SAVE:runner.suspendScriptAudio();showSlots(true);break;
                 case LOAD:runner.suspendScriptAudio();showSlots(false);break;
-                case QUICK_SAVE:runner.quickSave();break;
-                case QUICK_LOAD:runner.quickLoad();break;
+                case QUICK_SAVE:runner.quickSave(currentFrame);break;
+                case QUICK_LOAD:runner.quickLoad(currentFrame);break;
                 case AUTO:runner.auto(target);break;
                 case SKIP:runner.skip(target);break;
+                case FILM_SKIP:runner.skipFilm();break;
                 case HIDE:hideUi();break;
                 }
                 if(panelsOpen==0&&preparingPanel==null)runner.menu(false);
@@ -638,17 +522,22 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     @Override public void quickNotice(int number,int frameMs){runOnUiThread(()->{
         if(quickNoticeView!=null&&titlePanel==null&&panelsOpen==0&&!uiHidden)quickNoticeView.show(number,frameMs);
     });}
+    @Override public void quickLoadNotice(int number,int frameMs,long generation,long submittedAt){
+        runOnUiThread(()->storyPlane.afterTextureUpdate(generation,submittedAt,()->quickNotice(number,frameMs)));
+    }
     @Override public void mode(boolean automatic,boolean skipping) {runOnUiThread(() -> {
         autoMode=automatic;skipMode=skipping;
         updateVisibility();updateStatus();
     });}
-    @Override public void text(GameRunner.Frame frame,int visible,int total){runOnUiThread(()->{
-        if(currentFrame==null||currentFrame.line!=frame.line||currentFrame.word!=frame.word||!currentFrame.script.equals(frame.script))return;
+    @Override public void text(GameRunner.Frame frame,int visible,int total,int effect,int progress){runOnUiThread(()->{
+        if(currentFrame!=frame)return;
         int count=Math.min(Math.max(0,visible),fullBody.codePointCount(0,fullBody.length()));
-        revealed=fullBody.offsetByCodePoints(0,count);typing=count<total;dialoguePanel.reveal(revealed);
-        updateVisibility();
+        revealed=frame.displayBody.offsetForGlyphs(count);dialoguePanel.reveal(revealed,effect,progress);
+        boolean printing=count<total;
+        if(typing!=printing){typing=printing;updateVisibility();}
+        else storyPlane.schedulePush();
     });}
-    @Override public void parameters(int[] raw,int[] display,int[] auxiliary){runOnUiThread(()->{
+    @Override public void parameters(int[] display,int[] auxiliary){runOnUiThread(()->{
         pendingDisplay=display;pendingAuxiliary=auxiliary;ui.removeCallbacks(syncRuntimeDisplay);ui.post(syncRuntimeDisplay);
     });}
     private final Runnable syncRuntimeDisplay=new Runnable(){public void run(){
@@ -662,68 +551,55 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 for(OriginalSettingsModel.CharacterControl group:model.characters){boolean enabled=(aux[2+(group.index&31)]&(1<<(group.index/32)))==0;
                     for(int id:group.ids)edit.putBoolean("character."+id+".enabled",enabled);}
                 edit.apply();}
-            settings=PlayerSettings.read(preferences,userPreferences);if(dialoguePanel!=null)dialoguePanel.settings(settings);
+            settings=PlayerSettings.read(preferences,readingSize);if(dialoguePanel!=null)dialoguePanel.settings(settings);
             if(aux!=null&&aux.length>=36){
                 if(dialoguePanel!=null)dialoguePanel.cursorVariant(aux[34]);
-                if(stage!=null&&mouseVariant!=aux[35]){mouseVariant=aux[35];stage.setPointerIcon(uiAssets.pointer(mouseVariant));}
+                if(mouseVariant!=aux[35]){mouseVariant=aux[35];updatePointerIcon();}
             }
             if(choices!=null)choices.changeColor(preferences.getBoolean("changeSelectColor",false));
-            selectDialogueVariant();immersive();updateStatus();
+            boolean fullscreenMode=preferences.getBoolean(RuntimeSettingsAdapter.FULLSCREEN,fullscreen);
+            if(fullscreen!=fullscreenMode){fullscreen=fullscreenMode;immersive();}
+            selectDialogueVariant();updateStatus();
         }finally{syncingRuntime=false;}
     }};
+    @Override public void scriptMouse(int variant){runOnUiThread(()->{
+        if(scriptMouse!=variant){scriptMouse=variant;updatePointerIcon();}
+    });}
+    private void updatePointerIcon(){
+        if(!isDestroyed()&&stage!=null&&uiAssets!=null&&mouseVariant!=Integer.MIN_VALUE)
+            stage.setPointerIcon(uiAssets.pointer(mouseVariant,scriptMouse));
+    }
     private void advance() {
         if(runner==null || launchingGame || panelsOpen>0)return;
+        if(nativePanelActive()){runner.nativePanelInput(currentFrame,lastX,lastY,true,false);return;}
         if(autoMode)runner.auto(false);
         if(skipMode)runner.skip(false);
         autoMode=false;skipMode=false;updateStatus();
         if(uiHidden){uiHidden=false;updateVisibility();return;}
         if(currentFrame!=null && currentFrame.wait==NativeGame.END){showMenu();return;}
-        runner.input(lastX,lastY,0);
+        runner.input(currentFrame,lastX,lastY,0);
     }
     private void hideUi() {if(runner==null)return;runner.auto(false);runner.skip(false);if(quickNoticeView!=null)quickNoticeView.clear();uiHidden=true;updateVisibility();}
-    private boolean panelActionReady(){
-        return runner!=null&&preparingPanel==null&&!returningToTitle&&!pcSaveBusy&&gamePanel!=null&&
-            gamePanel.activeFrameReady()&&!gamePanel.openingRunning()&&!gamePanel.controlsBusy();
-    }
-    private void updatePanelActionEnabled(){
-        if(panelActionButton==null)return;
-        boolean ready=panelActionReady();
-        if(panelActionButton.getVisibility()==View.VISIBLE&&panelActionButton.isEnabled()!=ready)
-            panelActionButton.setEnabled(ready);
-        if(otherSavesButton.getVisibility()==View.VISIBLE&&otherSavesButton.isEnabled()!=ready)
-            otherSavesButton.setEnabled(ready);
-    }
-    private void updatePanelAction(){
-        String label=gamePanel instanceof GameSettingsPanel?text(R.string.engine_systemnnn_host_reading_size):
-            gamePanel instanceof GameSlotsPanel?((GameSlotsPanel)gamePanel).pcTransferLabel():null;
-        if(label!=null&&!label.contentEquals(panelActionButton.getText()))panelActionButton.setText(label);
-        panelActionButton.setVisibility(label==null?View.GONE:View.VISIBLE);
-        otherSavesButton.setVisibility(gamePanel instanceof GameSlotsPanel&&
-            ((GameSlotsPanel)gamePanel).hasOtherSaves()?View.VISIBLE:View.GONE);
-        updatePanelActionEnabled();
-    }
     private void updateVisibility() {
         if(dialoguePanel==null)return;
-        updatePanelAction();
         if(gamePanel==null&&isModalPanel(preparingPanel))return;
+        boolean storySession=!launchingGame&&titlePanel==null&&moviePlayback==null&&movieErrorPanel==null&&!storyMovieExitActive;
         boolean storyVisible=panelsOpen==0||gamePanel!=null&&gamePanel.awaitingCapturedBackdrop();
-        boolean inGame=!launchingGame&&titlePanel==null&&storyVisible&&moviePlayback==null;
-        storyScreen.setVisibility(inGame?View.VISIBLE:View.GONE);
-        storyScreen.windowChanged();
-        boolean line=currentFrame!=null&&currentFrame.wait==NativeGame.DIALOGUE;
-        boolean showBackdrop=inGame&&line&&currentFrame.layoutCommand==0x22220002&&uiAssets!=null&&
-            uiAssets.longPrintImage!=null&&(!uiHidden||!uiAssets.longPrintImageOffWithWindow);
-        longPrintBackdrop.setVisibility(showBackdrop?View.VISIBLE:View.GONE);
-        boolean hasDialogue=currentFrame!=null&&(currentFrame.showsDialogue()&&(!line||!fullBody.isEmpty())||currentFrame.wait==NativeGame.END);
-        dialoguePanel.setVisibility(inGame&&!uiHidden&&hasDialogue?View.VISIBLE:View.GONE);
+        boolean inGame=storySession&&storyVisible;
+        if(!storySession||currentFrame!=null&&(currentFrame.wait==NativeGame.MODAL||currentFrame.wait==NativeGame.NATIVE_PANEL))storyPlane.frame(null);
+        boolean hasDialogue=currentFrame!=null&&(currentFrame.showsDialogue()||
+            currentFrame.wait==NativeGame.END);
+        boolean hasChoices=currentFrame!=null&&currentFrame.wait==NativeGame.CHOICE;
+        dialoguePanel.setVisibility(!storySession||!hasDialogue?View.GONE:inGame&&!uiHidden?View.VISIBLE:View.INVISIBLE);
         dialoguePanel.waiting(inGame&&!uiHidden&&hasDialogue&&!typing&&!skipMode&&currentFrame.wait==NativeGame.DIALOGUE,
             autoMode,currentFrame==null?0:currentFrame.layoutCommand,currentFrame==null?20:currentFrame.frameMs);
-        if(controls!=null){if(inGame&&!uiHidden&&!sceneReplay)controls.frame(currentFrame,typing,choices);else controls.setVisibility(View.GONE);}
-        if(choices!=null)choices.setVisibility(inGame&&!uiHidden?View.VISIBLE:View.GONE);
-        if(uiHidden||!storyVisible)status.setVisibility(View.GONE);
+        if(controls!=null){if(inGame&&!uiHidden)controls.frame(currentFrame,typing,choices,sceneReplay);else controls.setVisibility(View.GONE);}
+        if(choices!=null)choices.setVisibility(!storySession||!hasChoices?View.GONE:inGame&&!uiHidden?View.VISIBLE:View.INVISIBLE);
+        storyPlane.schedulePush();
         syncIndependentStatus();
     }
     private int visiblePrintMode(){
+        if(movieErrorPanel!=null)return GameCodecErrorPanel.MODE;
         if(moviePlayback!=null)return 27;
         if(logoPanel!=null)return 2;
         if(startupOpening!=null)return 3;
@@ -736,11 +612,17 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             case NativeGame.DRAW:return 11;
             case NativeGame.OVERLAP:return 14;
             case NativeGame.PLACE:return currentFrame.placeMode;
+            case NativeGame.NATIVE_PANEL:return currentFrame.nativePanelMode;
             default:return 1;
         }
     }
     private void syncIndependentStatus(){
-        if(runner==null||uiAssets==null||!uiAssets.freeStatus||stage==null)return;
+        if(runner==null||uiAssets==null||!uiAssets.statusOverlays||stage==null)return;
+        if(currentFrame!=null&&currentFrame.wait==NativeGame.NATIVE_PANEL&&gamePanel==null){
+            independentMode=0;runner.statusMode(0);
+            if(independentStatus!=null)independentStatus.setVisibility(View.GONE);
+            return;
+        }
         int mode=visiblePrintMode();
         if(mode!=independentMode){
             independentMode=mode;
@@ -766,20 +648,25 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         runOnUiThread(()->{
             if(stage==null||uiAssets==null||mode!=independentMode||isDestroyed()||isFinishing())return;
             if(independentStatus==null){
-                if(overlays[0]==null&&overlays[1]==null)return;
+                if(overlays.length==0)return;
                 independentStatus=new FrameLayout(this);
                 independentStatus.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
             }
-            for(int i=0;i<overlays.length;i++){
-                GameStatusPartyPanel part=independentParts[i];
-                if(overlays[i]==null){
-                    if(part!=null)independentStatus.removeView(part);
-                    independentParts[i]=null;
-                }else if(part==null){
-                    part=new GameStatusPartyPanel(this,uiAssets,overlays[i],width,height);
-                    independentParts[i]=part;
-                    independentStatus.addView(part,i==1?independentStatus.getChildCount():0,new FrameLayout.LayoutParams(-1,-1));
-                }else {part.canvas(width,height);part.update(overlays[i]);}
+            int used=0;
+            for(GameRunner.Modal overlay:overlays){
+                int index=overlay.mode==GameRunner.Modal.PRINT_PARTY?1:0;
+                used|=1<<index;
+                GameStatusPartyPanel part=independentParts[index];
+                if(part==null){
+                    part=new GameStatusPartyPanel(this,uiAssets,overlay,width,height);
+                    independentParts[index]=part;
+                    independentStatus.addView(part,new FrameLayout.LayoutParams(-1,-1));
+                }else {part.canvas(width,height);part.update(overlay);}
+                independentStatus.bringChildToFront(part);
+            }
+            for(int i=0;i<independentParts.length;i++)if((used&(1<<i))==0&&independentParts[i]!=null){
+                independentStatus.removeView(independentParts[i]);
+                independentParts[i]=null;
             }
             independentStatus.setVisibility(independentStatus.getChildCount()==0?View.GONE:View.VISIBLE);
             placeIndependentStatus();
@@ -790,15 +677,12 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         for(GameStatusPartyPanel panel:independentParts)if(panel!=null)panel.uiActive(active);
     }
     private void updateStatus() {
-        if(status==null)return;
         if(controls!=null)controls.modes(autoMode,skipMode);
-        String text=skipMode?(settings.skipReadOnly?text(R.string.engine_systemnnn_host_skip_read):text(R.string.engine_systemnnn_host_skip_all)):
-            autoMode?text(R.string.engine_systemnnn_host_auto):currentFrame!=null&&currentFrame.alreadyRead?text(R.string.engine_systemnnn_host_already_read):"";
-        status.setText(text);status.setVisibility((controls==null||!controls.original())&&!uiHidden&&panelsOpen==0&&titlePanel==null&&!text.isEmpty()?View.VISIBLE:View.GONE);
     }
     private void clearStartupViews(){
         if(logoPanel!=null){stage.removeView(logoPanel);logoPanel=null;}
         if(startupOpening!=null){stage.removeView(startupOpening);startupOpening=null;}
+        storyMovieExitActive=false;
         stage.setForeground(null);
     }
     private void removeTitleForStartup(){
@@ -825,14 +709,14 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             if(slides.isEmpty())return;
             clearStartupViews();
             logoPanel=new LogoPanel(this,slides,frameMs,()->{
-                if(isDestroyed()||isFinishing()||runner!=owner||logoPanel==null)return;
+                if(isDestroyed()||isFinishing()||runner!=owner||logoPanel==null||!startupGeneration.accepts(generation))return;
                 titlePrevious=logoPanel.exitScreen();
                 owner.finishLogo();
             });
             stage.addView(logoPanel,new FrameLayout.LayoutParams(-1,-1));
             removeTitleForStartup();
             updateVisibility();
-            revealStartupOverlayAfterLayout(logoPanel);
+            revealStartupOverlayAfterLayout(logoPanel,generation);
         });
     }
     @Override public void opening(GameUiAssets.Config config,int frameMs,GameRunner.Capture initial,GameRunner.Capture previous,long generation){
@@ -846,7 +730,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             stage.addView(startupOpening,new FrameLayout.LayoutParams(-1,-1));
             removeTitleForStartup();
             updateVisibility();
-            revealStartupOverlayAfterLayout(startupOpening);
+            revealStartupOverlayAfterLayout(startupOpening,generation);
         });
     }
     private final class OpeningScreen extends View {
@@ -901,18 +785,17 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             if(titleModel!=model||returningToTitle)modeUnderPanel=null;
             if(returningToTitle){returningToTitle=false;closeOriginalPanel(false);}
             if(previous!=null){closeOriginalPanel(false);titlePrevious=previous.bitmap();}
-            typing=false;currentFrame=drawnStoryFrame=null;fullBody="";uiHidden=false;refreshAfterLoad=false;
+            typing=false;currentFrame=null;fullBody="";uiHidden=false;refreshAfterLoad=false;
             if(titlePanel!=null)stage.removeView(titlePanel);
             titleModel=model;if(w>0&&h>0){width=w;height=h;}layoutStage();
-            storyScreen.clear();
-            storyScreen.setVisibility(View.GONE);
-            longPrintBackdrop.setVisibility(View.GONE);
-            dialoguePanel.setVisibility(View.GONE);if(controls!=null)controls.setVisibility(View.GONE);status.setVisibility(View.GONE);
+            dialoguePanel.directDraw(false);
+            dialoguePanel.setVisibility(View.GONE);if(controls!=null)controls.setVisibility(View.GONE);
             if(choices!=null){stage.removeView(choices);choices=null;}
+            storyPlane.clear();
             launchingGame=false;
             clearStartupViews();
             showTitlePanel(model,initial);
-            revealStartupOverlayAfterLayout(titlePanel);
+            revealStartupOverlayAfterLayout(titlePanel,generation);
         });
     }
     private void showTitlePanel(TitleMenu model,GameRunner.Capture initial){
@@ -933,16 +816,23 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(action==TitleMenu.Action.SETTINGS)warmStoryPanel(GameStoryControlsModel.Action.CONFIG);
         else if(action==TitleMenu.Action.LOAD)warmStoryPanel(GameStoryControlsModel.Action.LOAD);
     }
+    private int openingSettingsPage(){
+        return GameSettingsPanel.openingPage(uiAssets.config,
+            GameSettingsPanel.pageCount(uiAssets.settingsModel(width,height)),settingsPage);
+    }
+    private boolean inSceneReplay(){
+        return sceneReplay||runner!=null&&runner.isGallerySceneReplay();
+    }
     private void warmStoryPanel(GameStoryControlsModel.Action action){
         if(uiAssets==null||uiAssets.runtime==null)return;
         UiPreviewPool.Request request;
         switch(action){
-        case CONFIG:request=UiPreviewPool.Request.read(uiAssets.config,12,1);break;
+        case CONFIG:request=UiPreviewPool.Request.read(uiAssets.config,12,openingSettingsPage()+1);break;
         case SAVE:case LOAD:
             boolean saving=action==GameStoryControlsModel.Action.SAVE;
             GameUiAssets.Config config=saving?uiAssets.save:uiAssets.load;
             SaveSlots.Layout layout=new SaveSlots.Layout(config,uiAssets.game,uiAssets.dataFile,saving);
-            request=UiPreviewPool.Request.read(config,saving?6:5,layout.openingPage(runner.lastSelectedSlot())+1);
+            request=UiPreviewPool.Request.read(config,saving?6:5,layout.openingPcPage(runner.lastSelectedSlot())+1);
             break;
         default:return;
         }
@@ -956,10 +846,10 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(runner==null || titleModel==null)return;
         TitleMenu.Action action=item.action;
         switch(action) {
-        case START:case CONTINUE:case LAST_LOAD:
+        case START:case CONTINUE:case LAST_LOAD:case SCENARIO:
             TitlePanel source=titlePanel;
             GameRunner owner=runner;
-            owner.enter(action,()->runOnUiThread(()->{
+            owner.enter(action,titleModel.scenarioVariable,item.scenario,()->runOnUiThread(()->{
                 if(source!=null&&source==titlePanel&&owner==runner&&!isDestroyed())source.entryFailed();
             }));
             break;
@@ -971,6 +861,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(titleModel.website)));}
             catch(android.content.ActivityNotFoundException e){notice(text(R.string.engine_systemnnn_host_browser_missing));}break;
         case MODE:openMenuMode(item.mode,GameRunner.Modal.TITLE);break;
+        case MINIGAME:openMiniGame(item.mode,false);break;
         default:break;
         }
     }
@@ -983,9 +874,10 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private final GameGalleryPanel.Actions galleryActions=new GameGalleryPanel.Actions() {
         public void open(GalleryCatalog.Screen screen,int group,int page,int index) { openGallery(screen,group,page,index); }
         public void mode(int mode) {openMenuMode(mode,GameRunner.Modal.OMAKE);}
+        public void miniGame(int index) {openMiniGame(index,true);}
         public void back() { galleryBack(); }
         public void replay(int group,int index) {
-            if (runner!=null) { replayReturn=galleryPage; runner.replayGallery(group,index); }
+            if (runner!=null)runner.replayGallery(group,index);
         }
         public void movie(int index) { if(runner!=null)runner.playGalleryMovie(index); }
         public void play(int index) { if (runner!=null) runner.playGallerySong(index); }
@@ -999,6 +891,18 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             owner.requestCgFrame(page,frame,bitmap->runOnUiThread(()->done.accept(owner==runner?bitmap:null)));
         }
     };
+    private void openMiniGame(int index,boolean omake){
+        GameRunner owner=runner;
+        if(owner==null||uiAssets==null)return;
+        GameUiPanel previous=gamePanel;
+        owner.requestMiniGame(index,game->runOnUiThread(()->{
+            if(game==null||runner!=owner||isDestroyed()||isFinishing()||gamePanel!=previous)return;
+            Runnable back=omake?()->openGallery(GalleryCatalog.Screen.OMAKE,0,0,-1):()->leaveOriginalPanel(game.config);
+            GameMiniGamePanel panel=new GameMiniGamePanel(this,uiAssets,game,width,height,
+                sound->owner.playClick(sound,-1),()->owner.completeMiniGame(index),back);
+            showOriginalPanel(panel,back);
+        }));
+    }
     @Override public void gallery(GalleryCatalog.Page page,long request) {
         runOnUiThread(() -> {
             if (request!=galleryRequest || isDestroyed() || isFinishing() || titlePanel==null || uiAssets==null) return;
@@ -1037,46 +941,108 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         runOnUiThread(() -> {
             if (isDestroyed() || isFinishing()) return;
             sceneReplay=true; galleryPage=null; ++galleryRequest;
-            closeOriginalPanel();
+            closeOriginalPanel(false);
         });
     }
-    @Override public void movie(File file,int volume,boolean canSkip,boolean startup){runOnUiThread(()->{
-        if(isFinishing()||isDestroyed()||stage==null||runner==null)return;
+    private GameCodecErrorPanel movieErrorPanel;
+    @Override public void movieError(GameRunner.MovieError error){runOnUiThread(()->{
+        if(isFinishing()||isDestroyed()||runner!=error.owner||stage==null||!startupGeneration.accepts(error.generation))return;
+        width=uiAssets.sharedConfig.screenWidth;height=uiAssets.sharedConfig.screenHeight;layoutStage();
+        clearCtrlSkip();
+        clearStartupViews();
+        if(gamePanel!=null)gamePanel.uiActive(false);
+        for(int i=0;i<stage.getChildCount();i++)
+            stage.getChildAt(i).setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        GameCodecErrorPanel panel=new GameCodecErrorPanel(this,uiAssets,error,action->{
+            if(runner!=error.owner||movieErrorPanel==null||movieErrorPanel.error!=error)return;
+            if(action==2){finish();return;}
+            GameCodecErrorPanel current=movieErrorPanel;
+            current.leave(error.data.config,false,(picture,filled)->{
+                if(runner!=error.owner||movieErrorPanel!=current||isFinishing()||isDestroyed())return;
+                current.discardBackground();stage.removeView(current);movieErrorPanel=null;
+                if(!error.startup&&titlePanel==null&&gamePanel==null)storyMovieExitActive=true;
+                restoreAccessibilityAfterMovie();
+                if(gamePanel!=null)gamePanel.uiActive(foreground);
+                error.owner.resolveMovieError(error,action==1);
+                updateVisibility();
+            });
+        });
+        movieErrorPanel=panel;
+        panel.setFocusableInTouchMode(true);
+        panel.sound((se,voice)->error.owner.playClick(se,voice));
+        panel.uiActive(foreground);
+        stage.addView(panel,new FrameLayout.LayoutParams(-1,-1));
+        panel.requestFocus();
+        updateVisibility();immersive();
+        if(error.startup)revealStartupOverlayAfterLayout(panel,error.generation);
+    });}
+    @Override public void movie(File file,float gain,boolean canSkip,boolean startup,Integer exitColor,int tracks,long generation){runOnUiThread(()->{
+        if(isFinishing()||isDestroyed()||stage==null||runner==null||!startupGeneration.accepts(generation))return;
         GameRunner owner=runner;
         if(!startup)clearStartupForStory();
         if(gamePanel!=null)gamePanel.uiActive(false);
         for(int i=0;i<stage.getChildCount();i++)
             stage.getChildAt(i).setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-        moviePlayback=new MoviePlayback(this,file,volume,canSkip,(source,outcome,failure)->{
-            if(owner!=runner||source!=moviePlayback)return;
+        moviePlayback=new MoviePlayback(this,file,gain,canSkip,tracks,(source,outcome,failure)->{
+            if(owner!=runner||source!=moviePlayback||!startupGeneration.accepts(generation))return;
             moviePlayback=null;
-            if(startup)stage.setForeground(new ColorDrawable(Color.BLACK));
+            if(exitColor!=null){
+                storyMovieExitActive=!startup;
+                stage.setForeground(new ColorDrawable(exitColor));
+            }else if(storyMovieExitActive){
+                storyMovieExitActive=false;
+                stage.setForeground(null);
+            }
             stage.removeView(source);
-            for(int i=0;i<stage.getChildCount();i++)
-                stage.getChildAt(i).setImportantForAccessibility(gamePanel==null||stage.getChildAt(i)==gamePanel
-                    ?View.IMPORTANT_FOR_ACCESSIBILITY_AUTO:View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-            if(gamePanel!=null)gamePanel.uiActive(foreground);
+            restoreAccessibilityAfterMovie();
+            if(gamePanel!=null)gamePanel.uiActive(outcome!=MoviePlayback.Outcome.FAILED&&foreground);
             owner.finishMovie(outcome,failure);
             updateVisibility();
         });
         if(!foreground)moviePlayback.pause();
+        if(storyMovieExitActive){storyMovieExitActive=false;stage.setForeground(null);}
         stage.addView(moviePlayback,new FrameLayout.LayoutParams(-1,-1));
         if(startup){
             clearStartupViews();
             removeTitleForStartup();
+            if(startupOverlay!=null&&startupOverlay.isLoading()){
+                MoviePlayback openingMovie=moviePlayback;
+                if(tracks==1)revealStartupOverlayAfterLayout(openingMovie,generation);
+                else openingMovie.onFirstVideoFrame(()->revealStartupOverlayAfterLayout(openingMovie,generation));
+            }
         }
         updateVisibility();immersive();
     });}
-    @Override public void galleryReplayFinished() {
+    private void restoreAccessibilityAfterMovie(){
+        for(int i=0;i<stage.getChildCount();i++){
+            View child=stage.getChildAt(i);
+            child.setImportantForAccessibility(gamePanel==null||child==gamePanel
+                ?View.IMPORTANT_FOR_ACCESSIBILITY_AUTO:View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        }
+    }
+    @Override public void galleryReplayFinished(GameRunner owner,TitleMenu title,GalleryCatalog.Page page,int w,int h) {
         runOnUiThread(() -> {
-            if (isDestroyed() || isFinishing()) return;
-            sceneReplay=false;
-            GalleryCatalog.Page page=replayReturn; replayReturn=null;
-            if (page!=null) openGallery(GalleryCatalog.Screen.SCENE,page.group,page.page,-1);
+            if (isDestroyed() || isFinishing() || runner!=owner) return;
+            sceneReplay=false;currentFrame=null;typing=false;fullBody="";uiHidden=false;
+            modeUnderPanel=null;visibleModal=null;refreshAfterLoad=false;
+            closeOriginalPanel(false);clearStartupViews();storyPlane.clear();
+            if(titlePanel!=null)stage.removeView(titlePanel);
+            titleModel=title;width=w;height=h;layoutStage();
+            showTitlePanel(title,null);
+            // Keep the title model for gallery navigation; its background starts only on an actual return to title.
+            titlePanel.setVisibility(View.INVISIBLE);
+            galleryPage=page;++galleryRequest;
+            GameGalleryPanel panel=new GameGalleryPanel(this,uiAssets,page,this::systemClick,galleryActions,width,height);
+            Bitmap previous=optionalGalleryPrevious;optionalGalleryPrevious=null;
+            if(previous!=null)panel.previous(previous);
+            mountOriginalPanel(panel,this::galleryBack);
+            owner.titleShown();
         });
     }
     private void showMenu() {
         if(runner==null){finish();return;}
+        if(moviePlayback!=null||movieErrorPanel!=null||storyMovieExitActive)return;
+        if(nativePanelActive()){runner.nativePanelMenu(currentFrame,13);return;}
         boolean modalOptions=visibleModal!=null&&(visibleModal.advancedSelection()||
             visibleModal.mode==GameRunner.Modal.SELECT_CHART||visibleModal.mode==GameRunner.Modal.SELECT_PLACE2);
         if(currentFrame!=null&&currentFrame.wait==NativeGame.MODAL&&!modalOptions)return;
@@ -1085,31 +1051,28 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             if(!choices.menuAllowed()){if(choices.backlogAllowed())showBacklog();return;}
         }else if(currentFrame!=null&&!currentFrame.optionsAllowed)return;
         if(controls!=null)controls.cancelClick();
+        if(titlePanel==null)storyPlane.flushForCapture();
         if(uiAssets!=null&&uiAssets.system.has("Menu1Button1FileName")){showOriginalMenu();return;}
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_host_game_menu))
-            .setItems(new String[]{text(R.string.engine_systemnnn_host_continue_game),text(R.string.engine_systemnnn_host_save_progress),text(R.string.engine_systemnnn_host_load_save),text(R.string.engine_systemnnn_host_settings),text(R.string.engine_systemnnn_host_backlog),text(R.string.engine_systemnnn_host_title),fromTyn?text(R.string.engine_systemnnn_host_exit_to_tyn):text(R.string.engine_systemnnn_host_exit_game)},(d,item) -> {
+        AlertDialog dialog=hostDialog().setTitle(text(R.string.engine_systemnnn_host_game_menu))
+            .setItems(new String[]{text(R.string.engine_systemnnn_host_continue_game),text(R.string.engine_systemnnn_host_save_progress),text(R.string.engine_systemnnn_host_load_save),text(R.string.engine_systemnnn_host_settings),text(R.string.engine_systemnnn_host_backlog),text(R.string.engine_systemnnn_host_title),text(R.string.engine_systemnnn_host_exit_to_tyn)},(d,item) -> {
                 systemClick();
-                switch(item){case 1:showSlots(true);break;case 2:showSlots(false);break;case 3:showSettings();break;
-                case 4:showBacklog();break;case 5:runner.returnToTitle();break;case 6:finish();break;default:break;}
+                switch(item){case 1:if(!inSceneReplay())showSlots(true);break;case 2:if(!inSceneReplay())showSlots(false);break;case 3:showSettings();break;
+                case 4:showBacklog();break;case 5:if(inSceneReplay())runner.endGalleryReplay();else runner.returnToTitle();break;case 6:finish();break;default:break;}
             }).setNegativeButton(text(R.string.engine_systemnnn_host_close),dialogClick(null)).create();
         showPanel(dialog);
         runner.suspendScriptAudio();
     }
     private void showPanel(AlertDialog dialog) {
-        panelsOpen++;openedPanels.add(dialog);if(runner!=null)runner.menu(true);updateVisibility();
-        dialog.setOnDismissListener(d -> {
-            openedPanels.remove(dialog);panelsOpen=Math.max(0,panelsOpen-1);
-            if(isOverlayMode(gamePanel)&&modeUnderPanel!=null&&openedPanels.isEmpty()){
+        panelsOpen++;if(runner!=null)runner.menu(true);updateVisibility();
+        showHostDialog(dialog,() -> {
+            panelsOpen=Math.max(0,panelsOpen-1);
+            if(isOverlayMode(gamePanel)&&modeUnderPanel!=null&&panelsOpen==0){
                 if(resumeModeAfterPanel(null))return;
                 lockModalOverlay(gamePanel,false);
             }
             if(runner!=null&&panelsOpen==0&&!isFinishing())runner.menu(false);
-            updateVisibility();updateStatus();immersive();
+            updateVisibility();updateStatus();
         });
-        dialog.show();
-        for(int which:new int[]{DialogInterface.BUTTON_POSITIVE,DialogInterface.BUTTON_NEGATIVE,DialogInterface.BUTTON_NEUTRAL})
-            if(dialog.getButton(which)!=null)dialog.getButton(which).setSoundEffectsEnabled(false);
-        if(dialog.getListView()!=null)dialog.getListView().setSoundEffectsEnabled(false);
         if(dialog.getWindow()!=null)dialog.getWindow().setLayout(Math.min(dp(720),Math.max(dp(280),root.getWidth()-dp(40))),-2);
     }
     private void showOriginalPanel(GameUiPanel panel,Runnable back) {
@@ -1177,25 +1140,27 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }
     private boolean captureStoryUi(GameUiAssets.Config config){
         if(config==null||titlePanel!=null||currentFrame==null||uiAssets==null)return false;
+        if(config==uiAssets.backlog&&config.number("backScriptFlag",0)==0)return false;
         if(config.number("backScriptFlag",0)!=0&&config.number("getWithMessageFlag",1)==0)return false;
         String eraseFlag=currentFrame.wait==NativeGame.CHOICE?"selectMiniCGNoMessageFlag":"messageMiniCGNoMessageFlag";
         return uiAssets.game.number(eraseFlag,0)==0;
     }
     private void captureForPanel(GameUiPanel panel,Runnable back,GameUiAssets.Config sceneEffect,boolean needsPrevious,GameRunner owner){
         boolean withStoryUi=captureStoryUi(sceneEffect);
-        owner.capture(withStoryUi?null:sceneEffect,needsPrevious||withStoryUi,(previous,scene)->runOnUiThread(()->{
+        if(titlePanel==null)storyPlane.flushForCapture();
+        owner.capture(sceneEffect,withStoryUi,needsPrevious,(previous,scene)->runOnUiThread(()->{
             if(preparingPanel!=panel)return;
             Bitmap before=null;
             try{
                 TitlePanel title=titlePanel;
-                if(previous!=null)before=title==null?snapshotStory(previous,true,withStoryUi):
-                    UiOpening.snapshot(title,previous.bitmap(),canvas->drawTitleCapture(title,canvas));
+                if(previous!=null){
+                    if(title!=null)before=UiOpening.snapshot(title,previous.bitmap(),canvas->drawTitleCapture(title,canvas));
+                    else before=snapshotStory(previous,true);
+                }
             }catch(RuntimeException|OutOfMemoryError e){
                 Log.w("SystemNNN","Unable to capture the full menu screen",e);
             }
-            if(withStoryUi&&before!=null)filterCapturedPanel(panel,back,sceneEffect,needsPrevious,owner,before);
-            else if(withStoryUi)captureNativeBackground(panel,back,sceneEffect,owner,null);
-            else finishCapturedPanel(panel,back,sceneEffect,owner,before,scene);
+            finishCapturedPanel(panel,back,sceneEffect,owner,before,scene);
         }));
     }
     private void filterCapturedPanel(GameUiPanel panel,Runnable back,GameUiAssets.Config effect,boolean needsPrevious,
@@ -1208,7 +1173,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         }));
     }
     private void captureNativeBackground(GameUiPanel panel,Runnable back,GameUiAssets.Config effect,GameRunner owner,Bitmap before){
-        owner.capture(effect,false,(unused,scene)->runOnUiThread(()->finishCapturedPanel(panel,back,effect,owner,before,scene)));
+        owner.capture(effect,false,false,(unused,scene)->runOnUiThread(()->finishCapturedPanel(panel,back,effect,owner,before,scene)));
     }
     private void finishCapturedPanel(GameUiPanel panel,Runnable back,GameUiAssets.Config effect,GameRunner owner,
                                      Bitmap before,GameRunner.Capture scene){
@@ -1218,40 +1183,24 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         mountOriginalPanel(panel,back);
     }
     private void installCapturedBackground(GameUiPanel panel,GameUiAssets.Config config,GameRunner.Capture scene){
-        if(scene==null){panel.uiBackground(config,13,1);return;}
+        int mode=panel instanceof GameBacklogPanel?7:13;
+        if(scene==null){panel.uiBackground(config,mode,1);return;}
         panel.capturedBackground(scene.bitmap(),()->{if(gamePanel==panel)updateVisibility();});
-        panel.uiBackground(config,13,1,scene.pixels,scene.width,scene.height);
+        panel.uiBackground(config,mode,1,scene.pixels,scene.width,scene.height);
     }
     private void drawTitleCapture(TitlePanel title,Canvas canvas){
         title.draw(canvas);
         if(independentMode==4&&independentStatus!=null&&independentStatus.getVisibility()==View.VISIBLE)
             independentStatus.draw(canvas);
     }
-    private Bitmap snapshotStory(GameRunner.Capture picture,boolean withUi){
-        return snapshotStory(picture,withUi,false);
-    }
-    private Bitmap snapshotStory(GameRunner.Capture picture,boolean withUi,boolean logicalSize){
-        if(logicalSize){
-            Bitmap base=picture.mutableBitmap();
-            if(stage.getWidth()>0&&stage.getHeight()>0)
-                UiOpening.drawOnto(stage,base,canvas->drawStorySnapshot(canvas,withUi,false));
-            return base;
-        }
-        return UiOpening.snapshot(stage,picture.bitmap(),canvas->drawStorySnapshot(canvas,withUi,true));
-    }
-    private void drawStorySnapshot(Canvas canvas,boolean withUi,boolean withFloatingUi){
-        boolean screenComposited=storyScreen.paint(canvas,withUi,withFloatingUi,false);
-        for(int i=0;i<stage.getChildCount();i++){
-            View child=stage.getChildAt(i);
-            if(child==dialoguePanel&&!withFloatingUi){
-                // The PC removes the wait cursor and quick buttons before capturing the menu background.
-                if(!screenComposited&&withUi)dialoguePanel.drawMessagePlane(canvas);
-            }else if(child==longPrintBackdrop||child==dialoguePanel||child==choices){
-                if(!screenComposited&&(withUi||child==longPrintBackdrop))drawStageChild(canvas,child);
-            }else if(withUi&&withFloatingUi&&(child==controls||child==status||child==quickNoticeView||child==independentStatus)){
-                drawStageChild(canvas,child);
+    private Bitmap snapshotStory(GameRunner.Capture picture,boolean withFloatingUi){
+        return UiOpening.snapshot(stage,picture.bitmap(),canvas->{
+            if(!withFloatingUi||uiHidden)return;
+            for(int i=0;i<stage.getChildCount();i++){
+                View child=stage.getChildAt(i);
+                if(child==controls||child==quickNoticeView||child==independentStatus)drawStageChild(canvas,child);
             }
-        }
+        });
     }
     private static void drawStageChild(Canvas canvas,View child){
         if(child==null||child.getVisibility()!=View.VISIBLE||child.getAlpha()<=0)return;
@@ -1264,97 +1213,157 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         canvas.restoreToCount(saved);
     }
 
-    // Slot 31 is a screen effect. It sees the game and message art together,
-    // while the option buttons keep their original drawing and hit positions.
-    private final class StoryScreen extends View {
-        private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
-        private final RectF destination=new RectF();
+    private final class StoryPlane {
         private GameRunner owner;
-        private long layer;
-        private Bitmap image;
-        private Canvas messagePlane;
-        private GameRunner.Frame composedFrame;
-        private boolean composedWithUi,composedWithBackdrop,composedForStory,compositionDirty=true;
+        private GameRunner.Frame frame;
+        private MessagePlaneToken token;
+        private Bitmap bitmap;
+        private Canvas canvas;
+        private Bitmap floatingBitmap;
+        private Canvas floatingCanvas;
+        private long textureTimestamp,noticeTimestamp;
+        private Runnable pendingLoadNotice;
+        private boolean dirty,scheduled;
+        private int rasterFailures;
+        private boolean rasterFailed;
+        private final Runnable retryRaster=this::schedulePush;
+        private final Runnable animationFlush=()->{
+            scheduled=false;
+            if(!isDestroyed()&&!isFinishing())pushNow();
+        };
 
-        StoryScreen(){
-            super(PlayerActivity.this);
-            setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        void frame(GameRunner.Frame next){
+            if(frame!=next){rasterFailures=0;rasterFailed=false;ui.removeCallbacks(retryRaster);}
+            frame=next;
         }
-        private void releaseLayer(){
-            if(layer>0)NativeGame.releaseScreenLayer(layer);
-            layer=0;
+        void onTokenAvailable(){
+            if(runner==null){release();return;}
+            if(owner!=runner){release();owner=runner;}
+            MessagePlaneToken next=runner.takePlaneToken();
+            if(next!=null){
+                if(token!=null&&token!=next)token.close();
+                token=next;
+                rasterFailures=0;rasterFailed=false;ui.removeCallbacks(retryRaster);
+                pendingLoadNotice=null;
+                schedulePush();
+            }
+        }
+        void textureReset(){textureTimestamp=0;}
+        void textureUpdated(long timestamp){
+            textureTimestamp=timestamp;
+            if(pendingLoadNotice!=null&&timestamp>=noticeTimestamp){
+                Runnable notice=pendingLoadNotice;
+                pendingLoadNotice=null;
+                notice.run();
+            }
+        }
+        void afterTextureUpdate(long generation,long timestamp,Runnable notice){
+            onTokenAvailable();
+            if(token==null||!token.acceptsFrame(generation)||isDestroyed()||isFinishing())return;
+            if(textureTimestamp>=timestamp)notice.run();
+            else{noticeTimestamp=timestamp;pendingLoadNotice=notice;}
+        }
+        void schedulePush(){
+            dirty=true;
+            if(scheduled||stage==null||isDestroyed()||isFinishing())return;
+            scheduled=true;
+            if(stage.isAttachedToWindow())stage.postOnAnimation(animationFlush);
+            else ui.post(animationFlush);
+        }
+        void onPreDraw(){
+            if(dirty&&!isDestroyed()&&!isFinishing())pushNow();
+        }
+        void flushForCapture(){
+            if(isDestroyed()||isFinishing())return;
+            // Native captures use the clean plane; the separate floating plane stays visible.
+            pushNow();
         }
         void clear(){
-            releaseLayer();
-            owner=null;image=null;messagePlane=null;composedFrame=null;compositionDirty=true;
+            frame=null;
+            onTokenAvailable();
+            pendingLoadNotice=null;
+            dirty=false;
+            if(token!=null)NativeGame.pushMessagePlane(token.value(),null,new int[6],false);
         }
-        void messageChanged(boolean recomposite){
-            if(recomposite)compositionDirty=true;
-            if(layer>0)invalidate();
+        void release(){
+            if(stage!=null)stage.removeCallbacks(animationFlush);
+            ui.removeCallbacks(animationFlush);
+            ui.removeCallbacks(retryRaster);
+            if(token!=null)token.close();
+            pendingLoadNotice=null;textureReset();
+            token=null;owner=null;frame=null;bitmap=null;canvas=null;floatingBitmap=null;floatingCanvas=null;dirty=false;scheduled=false;
+            rasterFailures=0;rasterFailed=false;
         }
-        void windowChanged(){
-            if(layer!=0&&composedWithBackdrop==uiHidden)invalidate();
-        }
-        @Override protected void onSizeChanged(int w,int h,int oldw,int oldh){
-            super.onSizeChanged(w,h,oldw,oldh);
-            compositionDirty=true;
-        }
-        boolean paint(Canvas canvas,boolean withUi,boolean withFloatingUi,boolean live){
-            if(owner!=runner){clear();owner=runner;}
-            if(owner==null)return false;
-            long update=owner.takeScreenLayer();
-            if(update!=0){
-                releaseLayer();
-                layer=update>0?update:0;
-                compositionDirty=true;
-                if(layer==0){image=null;messagePlane=null;}
+        private void ensureLaidOut(View view){
+            if(view==null||view.getVisibility()==View.GONE)return;
+            if(view.getWidth()!=width||view.getHeight()!=height||view.isLayoutRequested()){
+                view.measure(View.MeasureSpec.makeMeasureSpec(width,View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(height,View.MeasureSpec.EXACTLY));
+                view.layout(0,0,width,height);
             }
-            GameRunner.Frame visible=drawnStoryFrame;
-            if(layer==0||visible==null||getWidth()<=0||getHeight()<=0)return false;
+        }
+        private void pushNow(){
+            onTokenAvailable();
+            dirty=false;
+            if(token==null||rasterFailed)return;
+            boolean storySession=!launchingGame&&titlePanel==null&&moviePlayback==null&&movieErrorPanel==null&&!storyMovieExitActive;
+            GameRunner.Frame target=frame;
+            if(!storySession||target==null||target.wait==NativeGame.END){
+                NativeGame.pushMessagePlane(token.value(),null,new int[6],false);
+                return;
+            }
+            if(!token.acceptsFrame(target.generation))return;
+            int choicePage=choices==null?0:choices.page();
+            int[] key=DialogueLayout.composePlaneKey(target.planeKey,uiHidden,choicePage);
+            boolean drawDialogue=!uiHidden&&dialoguePanel!=null&&dialoguePanel.getVisibility()!=View.GONE;
+            boolean drawChoices=!uiHidden&&choices!=null&&choices.getVisibility()!=View.GONE;
+            if(!drawDialogue&&!drawChoices){
+                if(target.wait==NativeGame.DIALOGUE&&target.displayBody.glyphCount==0&&!uiHidden)
+                    key[5]|=DialogueLayout.PLANE_TEXT_COMPLETE;
+                NativeGame.pushMessagePlane(token.value(),null,key,!uiHidden);
+                return;
+            }
+            boolean liveCursor=panelsOpen==0&&preparingPanel==null&&!uiHidden;
             try{
-                if(image==null||image.getWidth()!=width||image.getHeight()!=height){
-                    image=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888);
-                    messagePlane=new Canvas(image);
-                    compositionDirty=true;
+                int w=Math.max(1,width),h=Math.max(1,height);
+                if(bitmap==null||bitmap.getWidth()!=w||bitmap.getHeight()!=h){
+                    bitmap=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);
+                    canvas=new Canvas(bitmap);
+                }else bitmap.eraseColor(Color.TRANSPARENT);
+                if(drawDialogue){
+                    ensureLaidOut(dialoguePanel);
+                    dialoguePanel.drawPlane(canvas,false);
                 }
-                boolean withBackdrop=withUi&&!uiHidden;
-                if(compositionDirty||composedWithUi!=withUi||composedWithBackdrop!=withBackdrop||
-                    composedFrame!=visible||live&&!composedForStory){
-                    compositionDirty=false;
-                    image.eraseColor(Color.TRANSPARENT);
-                    int saved=messagePlane.save();
-                    messagePlane.scale(width/(float)getWidth(),height/(float)getHeight());
-                    drawStageChild(messagePlane,longPrintBackdrop);
-                    if(withUi){
-                        dialoguePanel.drawMessagePlane(messagePlane);
-                        if(choices!=null)choices.drawOptions(messagePlane);
-                    }
-                    messagePlane.restoreToCount(saved);
-                    if(!NativeGame.compositeScreenLayer(layer,image,visible.wait,visible.word,visible.line,withBackdrop,live)){
-                        compositionDirty=true;
-                        return false;
-                    }
-                    composedFrame=visible;
-                    composedWithUi=withUi;
-                    composedWithBackdrop=withBackdrop;composedForStory=live;
+                if(drawChoices){
+                    ensureLaidOut(choices);
+                    choices.drawPlane(canvas,false);
                 }
-                destination.set(0,0,getWidth(),getHeight());
-                canvas.drawBitmap(image,null,destination,paint);
-                if(withUi){
-                    if(choices!=null)choices.drawTimer(canvas);
-                    if(withFloatingUi)dialoguePanel.drawMessageCursor(canvas);
+                boolean drawFloating=liveCursor&&(drawDialogue&&dialoguePanel.waitingCursorVisible()||
+                    drawChoices&&choices.hasFloating());
+                if(drawFloating){
+                    if(floatingBitmap==null||floatingBitmap.getWidth()!=w||floatingBitmap.getHeight()!=h){
+                        floatingBitmap=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);
+                        floatingCanvas=new Canvas(floatingBitmap);
+                    }else floatingBitmap.eraseColor(Color.TRANSPARENT);
+                    if(drawDialogue)dialoguePanel.drawFloating(floatingCanvas);
+                    if(drawChoices)choices.drawFloating(floatingCanvas);
                 }
-                return true;
+                // A completion acknowledgement describes the pixels just drawn, not the worker's reveal budget.
+                if(target.wait==NativeGame.DIALOGUE&&drawDialogue&&!uiHidden&&dialoguePanel.textComplete())
+                    key[5]|=DialogueLayout.PLANE_TEXT_COMPLETE;
+                NativeGame.pushStoryPlanes(token.value(),bitmap,drawFloating?floatingBitmap:null,key,!uiHidden);
+                rasterFailures=0;ui.removeCallbacks(retryRaster);
+                if(liveCursor&&(drawDialogue&&dialoguePanel.portraitAnimating()||drawChoices&&choices.animating()))schedulePush();
             }catch(RuntimeException|OutOfMemoryError e){
-                clear();
-                Log.w("SystemNNN","Unable to compose the message screen layer",e);
-                return false;
+                Log.w("SystemNNN","Unable to rasterize story UI plane",e);
+                ui.removeCallbacks(retryRaster);
+                if(++rasterFailures<3)ui.postDelayed(retryRaster,Math.max(16,target.frameMs));
+                else{
+                    rasterFailed=true;
+                    if(owner!=null)owner.storyPlaneFailed(target.generation,e);
+                }
             }
         }
-        @Override protected void onDraw(Canvas canvas){
-            paint(canvas,true,true,true);
-        }
-        @Override protected void onDetachedFromWindow(){clear();super.onDetachedFromWindow();}
     }
     private boolean acceptPreparedPanel(GameUiPanel panel,GameRunner owner){
         if(preparingPanel!=panel)return false;
@@ -1389,7 +1398,6 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         discardPanelPreparation();
         if(gamePanel==null)return;
         stage.removeView(gamePanel);gamePanel=null;gameSlots=null;panelBack=null;visibleModal=null;
-        updatePanelAction();
         for(int i=0;i<stage.getChildCount();i++)stage.getChildAt(i).setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
         panelsOpen=Math.max(0,panelsOpen-1);
         if(resume&&runner!=null&&panelsOpen==0){
@@ -1414,10 +1422,12 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             titlePrevious=picture;returningToTitle=true;
             runner.reenterTitle();
         });
-        updatePanelActionEnabled();
     }
     private void enterStory(Bitmap previous){enterStory(previous,false);}
     private void enterStory(Bitmap previous,boolean filledChildPanel){
+        if(currentFrame!=null&&currentFrame.wait==NativeGame.NATIVE_PANEL){
+            closeOriginalPanel(false);runner.menu(false);return;
+        }
         if(currentFrame!=null&&currentFrame.wait==NativeGame.MODAL){closeOriginalPanel(false);showScriptModal(previous);return;}
         if(currentFrame!=null&&currentFrame.wait==NativeGame.PLACE){closeOriginalPanel(false);showPlace(previous);return;}
         if(previous==null||currentFrame==null){closeOriginalPanel(false);runner.menu(false);return;}
@@ -1427,8 +1437,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         UiOpening opening=new UiOpening(config,currentFrame.frameMs,false);
         if(!opening.hasFade()){closeOriginalPanel(false);runner.menu(false);return;}
         if(opening.needsWipeTarget()){
+            storyPlane.flushForCapture();
             GameRunner owner=runner;GameUiPanel panel=gamePanel;
-            owner.capture(null,true,(picture,ignored)->runOnUiThread(()->{
+            owner.capture(null,true,true,(picture,ignored)->runOnUiThread(()->{
                 if(owner==runner&&panel==gamePanel&&!isFinishing()&&!isDestroyed())finishEnteringStory(opening,previous,picture);
             }));
         }else finishEnteringStory(opening,previous,null);
@@ -1459,9 +1470,38 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }
     private void overlayModal(Runnable action){
         if(!isOverlayMode(gamePanel)||visibleModal==null)return;
-        lockModalOverlay(gamePanel,true);
-        modeUnderPanel=visibleModal;
-        action.run();
+        GameUiPanel panel=gamePanel;
+        GameRunner.Modal modal=visibleModal;
+        GameRunner owner=runner;
+        GameRunner.Frame frame=currentFrame;
+        lockModalOverlay(panel,true);
+        if(panel instanceof GameChartPanel&&owner!=null){
+            ((GameChartPanel)panel).captureSave(picture->{
+                if(panel!=gamePanel||owner!=runner||modal!=visibleModal||isDestroyed()||isFinishing()){
+                    if(picture!=null)picture.recycle();
+                    if(panel==gamePanel)lockModalOverlay(panel,false);
+                    return;
+                }
+                GameRunner.Capture capture=null;
+                if(picture!=null)try{
+                    int w=DialogueLayout.clamp(uiAssets.dataFile.number("picSizeX",uiAssets.dataFile.number("areaSizeX",132)),1,512);
+                    int h=DialogueLayout.clamp(uiAssets.dataFile.number("picSizeY",uiAssets.dataFile.number("areaSizeY",100)),1,512);
+                    Bitmap thumbnail=Bitmap.createScaledBitmap(picture,w,h,true);
+                    int[] pixels=new int[w*h];thumbnail.getPixels(pixels,0,w,0,0,w,h);
+                    capture=new GameRunner.Capture(pixels,w,h);
+                    if(thumbnail!=picture)thumbnail.recycle();
+                }catch(RuntimeException|OutOfMemoryError error){Log.w("SystemNNN","Chart save thumbnail unavailable",error);}
+                finally{picture.recycle();}
+                owner.chartSavePicture(frame,modal,capture,accepted->runOnUiThread(()->{
+                    if(panel!=gamePanel||owner!=runner||modal!=visibleModal||isDestroyed()||isFinishing()){
+                        if(panel==gamePanel)lockModalOverlay(panel,false);
+                        return;
+                    }
+                    if(!accepted){lockModalOverlay(panel,false);return;}
+                    modeUnderPanel=modal;action.run();
+                }));
+            });
+        }else{modeUnderPanel=modal;action.run();}
     }
     private boolean resumeModeAfterPanel(Bitmap previous){
         GameRunner.Modal pending=modeUnderPanel;
@@ -1688,20 +1728,23 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         Runnable[] actions={()->showSlots(true),()->showSlots(false),this::showSettings,
             ()->{closeOriginalPanel();hideUi();},()->{closeOriginalPanel();runner.skip(true);},this::showBacklog,
             ()->{closeOriginalPanel();runner.auto(true);},back,()->confirmOriginalExit(panel)};
+        boolean replay=inSceneReplay();
         Set<Integer> standardSlots=new HashSet<>();
         for(int i=0;i<keys.length;i++){
             int n=cfg.number(keys[i],i+1);if(n<=0||i==5&&choices!=null&&!choices.backlogAllowed())continue;
+            if(currentFrame!=null&&currentFrame.wait==NativeGame.NATIVE_PANEL&&(i==3||i==4||i==5||i==6))continue;
             if(currentFrame!=null&&currentFrame.placeMode!=0&&
                 (i==3||i==4||i==6||i==5&&uiAssets.place(currentFrame.placeMode).number("backLogOk",0)==0))continue;
             if(modeUnderPanel!=null&&(i==3||i==4||i==6||i==5&&modeUnderPanel.assets.config.number("backLogOk",0)==0))continue;
-            GameButton button=panel.button(cfg,"Menu1Button"+n,"Menu1Button1",labels[i],actions[i],940,ys[i],320,72);
+            GameButton button=panel.standardButton(cfg,i,replay,"Menu1Button"+n,"Menu1Button1",labels[i],actions[i],940,ys[i],320,72);
             standardSlots.add(n);
-            if(i==0)button.prepare(()->warmStoryPanel(GameStoryControlsModel.Action.SAVE));
-            if(i==1)button.prepare(()->warmStoryPanel(GameStoryControlsModel.Action.LOAD));
+            if(i==0&&!replay)button.prepare(()->warmStoryPanel(GameStoryControlsModel.Action.SAVE));
+            if(i==1&&!replay)button.prepare(()->warmStoryPanel(GameStoryControlsModel.Action.LOAD));
             if(i==2)button.prepare(()->warmStoryPanel(GameStoryControlsModel.Action.CONFIG));
         }
-        panel.addExtendedModes(standardSlots,GameRunner.Modal::systemMenuMode,mode->!sceneReplay&&runner!=null&&runner.systemMenuModeEnabled(mode),
-            mode->openSystemMenuMode(panel,mode));
+        if(currentFrame==null||currentFrame.wait!=NativeGame.NATIVE_PANEL)
+            panel.addExtendedModes(standardSlots,GameRunner.Modal::systemMenuMode,mode->!replay&&runner!=null&&runner.systemMenuModeEnabled(mode),
+                mode->openSystemMenuMode(panel,mode));
         showOriginalPanel(panel,back,capture?cfg:null);
         if(runner!=null)runner.suspendScriptAudio();
     }
@@ -1722,7 +1765,14 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private void confirmOriginalExit(GameSystemMenuPanel panel) {
         if(gamePanel!=panel||runner==null)return;
         Runnable confirm=()->{
-            if(sceneReplay){closeOriginalPanel();runner.returnToTitle();return;}
+            if(inSceneReplay()){
+                GameRunner owner=runner;
+                panel.leave(uiAssets.system,true,picture->{
+                    if(owner!=runner||panel!=gamePanel||isDestroyed()||isFinishing())return;
+                    optionalGalleryPrevious=picture;owner.endGalleryReplay();
+                });
+                return;
+            }
             if(returningToTitle)return;
             panel.leave(uiAssets.system,true,picture->{
                 if(isDestroyed()||isFinishing()||gamePanel!=panel||runner==null)return;
@@ -1730,17 +1780,17 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 runner.returnToTitle();
             });
         };
-        if(sceneReplay||uiAssets.system.number("warningPrintFlag",1)==0){confirm.run();return;}
+        if(inSceneReplay()||uiAssets.system.number("warningPrintFlag",1)==0){confirm.run();return;}
         panel.confirmExit(confirm,()->leaveOriginalPanel(uiAssets.system));
     }
-    private LinearLayout column() {LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(18),dp(8),dp(18),dp(14));return box;}
+    private LinearLayout column() {LinearLayout box=new LinearLayout(hostDialogContext);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(18),dp(8),dp(18),dp(14));return box;}
     private void showSettings() {
         if(uiAssets!=null&&(uiAssets.config.has("modename")||uiAssets.settingsModel(width,height).original)){
             Runnable back=()->leaveOriginalPanel(uiAssets.config);
-            showOriginalPanel(new GameSettingsPanel(this,uiAssets,preferences,runner,this::systemClick,back,width,height,runner.configMask(),takePanelWarmup()),back);return;
+            showOriginalPanel(new GameSettingsPanel(this,uiAssets,preferences,runner,this::systemClick,back,width,height,runner.configMask(),takePanelWarmup(),settingsPage,page->settingsPage=page),back);return;
         }
         LinearLayout box=column();
-        TextView hint=label(text(R.string.engine_systemnnn_host_settings_hint),14);hint.setPadding(0,0,0,dp(10));box.addView(hint);
+        TextView hint=hostLabel(text(R.string.engine_systemnnn_host_settings_hint),14);hint.setPadding(0,0,0,dp(10));box.addView(hint);
         volumeSetting(box,text(R.string.engine_systemnnn_host_music),PlayerSettings.MUSIC,settings.musicVolume);
         volumeSetting(box,text(R.string.engine_systemnnn_host_sound),PlayerSettings.SOUND,settings.soundVolume);
         volumeSetting(box,text(R.string.engine_systemnnn_host_voice),PlayerSettings.VOICE,settings.voiceVolume);
@@ -1748,41 +1798,32 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         choiceSetting(box,text(R.string.engine_systemnnn_host_text_speed),PlayerSettings.TEXT_SPEED,new String[]{text(R.string.engine_systemnnn_host_slow),text(R.string.engine_systemnnn_host_normal),text(R.string.engine_systemnnn_host_fast),text(R.string.engine_systemnnn_host_instant)},settings.textSpeed,false);
         choiceSetting(box,text(R.string.engine_systemnnn_host_auto_speed),PlayerSettings.AUTO_SPEED,new String[]{text(R.string.engine_systemnnn_host_slow),text(R.string.engine_systemnnn_host_normal),text(R.string.engine_systemnnn_host_fast)},settings.autoSpeed,false);
         choiceSetting(box,text(R.string.engine_systemnnn_host_skip_range),PlayerSettings.SKIP_READ_ONLY,new String[]{text(R.string.engine_systemnnn_host_read_only),text(R.string.engine_systemnnn_host_all_text)},settings.skipReadOnly?0:1,true);
-        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.addView(box);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_host_settings)).setView(scroll)
-            .setNeutralButton(text(R.string.engine_systemnnn_host_reading_size),null).setPositiveButton(text(R.string.engine_systemnnn_host_done),dialogClick(null)).create();
+        ScrollView scroll=new ScrollView(hostDialogContext);scroll.setFillViewport(true);scroll.addView(box);
+        AlertDialog dialog=hostDialog().setTitle(text(R.string.engine_systemnnn_host_settings)).setView(scroll)
+            .setPositiveButton(text(R.string.engine_systemnnn_host_done),dialogClick(null)).create();
         showPanel(dialog);
-        dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setOnClickListener(v->showReadingSettings());
         if(dialog.getWindow()!=null)dialog.getWindow().setLayout(Math.min(dp(760),root.getWidth()-dp(32)),Math.max(dp(200),root.getHeight()-dp(32)));
     }
-    private void showReadingSettings() {
-        int[] sizes=PlayerSettings.READING_SIZES;
-        String[] labels=new String[sizes.length];
-        int selected=0;
-        for(int i=0;i<sizes.length;i++){
-            int size=sizes[i];
-            labels[i]=size+"%";
-            if(size==PlayerSettings.DEFAULT_READING_SIZE)labels[i]=text(R.string.engine_systemnnn_reading_default,labels[i]);
-            else if(size==100)labels[i]=text(R.string.engine_systemnnn_reading_original,labels[i]);
-            if(size==settings.readingSize)selected=i;
-        }
-        showPanel(new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_host_reading_title))
-            .setSingleChoiceItems(labels,selected,(d,i)->userPreferences.edit().putInt(PlayerSettings.READING_SIZE,sizes[i]).apply())
-            .setNeutralButton(text(R.string.engine_input_reset),(d,i)->userPreferences.edit().remove(PlayerSettings.READING_SIZE).apply())
-            .setPositiveButton(text(R.string.engine_systemnnn_host_done),null).create());
-    }
     private void volumeSetting(LinearLayout box,String title,String key,int current) {
-        TextView value=label(title+"  "+current+"%",15);box.addView(value);
-        SeekBar slider=new SeekBar(this);slider.setMax(100);slider.setProgress(current);slider.setContentDescription(text(R.string.engine_systemnnn_host_volume_label,title));slider.setSoundEffectsEnabled(false);
+        TextView value=hostLabel(title+"  "+current+"%",15);box.addView(value);
+        SeekBar slider=new SeekBar(hostDialogContext);slider.setMax(100);slider.setProgress(current);slider.setContentDescription(text(R.string.engine_systemnnn_host_volume_label,title));slider.setSoundEffectsEnabled(false);
+        ColorStateList accent=ColorStateList.valueOf(dialogColors.getPrimary());
+        slider.setProgressTintList(accent);
+        slider.setThumbTintList(accent);
         slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
             public void onProgressChanged(SeekBar seek,int progress,boolean user){value.setText(title+"  "+progress+"%");if(user)preferences.edit().putInt(key,progress).apply();}
             public void onStartTrackingTouch(SeekBar seek){systemClick();}public void onStopTrackingTouch(SeekBar seek){}
         });box.addView(slider,new LinearLayout.LayoutParams(-1,dp(40)));
     }
     private void choiceSetting(LinearLayout box,String title,String key,String[] labels,int selected,boolean bool) {
-        TextView heading=label(title,15);heading.setPadding(0,dp(8),0,0);box.addView(heading);
-        RadioGroup group=new RadioGroup(this);group.setOrientation(LinearLayout.HORIZONTAL);
-        for(int i=0;i<labels.length;i++){RadioButton button=new RadioButton(this);button.setId(View.generateViewId());button.setText(labels[i]);button.setTextColor(Color.WHITE);button.setTextSize(14);button.setSoundEffectsEnabled(false);button.setOnClickListener(clicked(null));button.setTag(i);group.addView(button);if(i==selected)button.setChecked(true);}
+        TextView heading=hostLabel(title,15);heading.setPadding(0,dp(8),0,0);box.addView(heading);
+        RadioGroup group=new RadioGroup(hostDialogContext);group.setOrientation(LinearLayout.HORIZONTAL);
+        for(int i=0;i<labels.length;i++){
+            RadioButton button=new RadioButton(hostDialogContext);
+            button.setId(View.generateViewId());button.setText(labels[i]);button.setTextColor(dialogColors.getText());
+            button.setTextSize(14);button.setSoundEffectsEnabled(false);button.setOnClickListener(clicked(null));
+            button.setTag(i);group.addView(button);if(i==selected)button.setChecked(true);
+        }
         group.setOnCheckedChangeListener((g,id) -> {View selectedView=g.findViewById(id);if(selectedView==null)return;int index=(Integer)selectedView.getTag();
             if(bool)preferences.edit().putBoolean(key,index==0).apply();else preferences.edit().putInt(key,index).apply();});
         box.addView(group);
@@ -1791,9 +1832,12 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(uiAssets==null||runner==null)return;
         if(choices!=null&&(choices.confirming()||!choices.backlogAllowed()))return;
         if(currentFrame!=null&&currentFrame.placeMode!=0&&uiAssets.place(currentFrame.placeMode).number("backLogOk",0)==0)return;
-        Runnable back=()->{if(runner!=null)runner.closeBacklog();leaveOriginalPanel(uiAssets.backlog);};
+        GameUiAssets.Config cfg=uiAssets.backlog;
+        int bgMode=GameBacklogPanel.bgMode(cfg);
+        boolean capture=bgMode==2||bgMode==3&&cfg.number("screenToGetPutFlag",0)!=0;
+        Runnable back=()->{if(runner!=null)runner.closeBacklog();leaveOriginalPanel(cfg);};
         showOriginalPanel(new GameBacklogPanel(this,uiAssets,dialogueStyle,width,height,back,
-            name->{if(runner!=null)runner.replayBacklogVoice(name);},this::jumpBacklog),back);
+            name->{if(runner!=null)runner.replayBacklogVoice(name);},this::jumpBacklog),back,capture?cfg:null);
         runner.requestBacklog();
     }
     private void jumpBacklog(long id){
@@ -1814,7 +1858,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(panel instanceof GameBacklogPanel)((GameBacklogPanel)panel).entries(lines);
     });}
     private void showSlots(boolean saving) {
+        if(saving&&currentFrame!=null&&currentFrame.wait==NativeGame.NATIVE_PANEL&&!currentFrame.nativePanelSavable)return;
         if(runner==null)return;savingSlots=saving;
+        if(saving&&titlePanel==null)storyPlane.flushForCapture();
         if(uiAssets!=null){
             GameUiAssets.Config config=saving?uiAssets.save:uiAssets.load;
             Runnable back=()->leaveOriginalPanel(config);
@@ -1830,48 +1876,30 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                         }));
                     });
                 }
-            },saving?this::choosePcExport:this::choosePcSave,takePanelWarmup());showOriginalPanel(gameSlots,back);return;
+            },takePanelWarmup());showOriginalPanel(gameSlots,back);return;
         }
-        slotRows=column();ScrollView scroll=new ScrollView(this);scroll.addView(slotRows);
-        AlertDialog.Builder slotDialog=new AlertDialog.Builder(this).setTitle(saving?text(R.string.engine_systemnnn_host_save_progress):text(R.string.engine_systemnnn_host_load_save)).setView(scroll).setNegativeButton(text(R.string.engine_systemnnn_host_back),dialogClick(null));
-        slotDialog.setNeutralButton(GameSlotsPanel.pcTransferLabel(this,saving),(dialog,which)->{
-            if(saving)choosePcExport();else choosePcSave();
-        });
+        slotRows=column();ScrollView scroll=new ScrollView(hostDialogContext);scroll.addView(slotRows);
+        AlertDialog.Builder slotDialog=hostDialog().setTitle(saving?text(R.string.engine_systemnnn_host_save_progress):text(R.string.engine_systemnnn_host_load_save)).setView(scroll).setNegativeButton(text(R.string.engine_systemnnn_host_back),dialogClick(null));
         slotsDialog=slotDialog.create();
         showPanel(slotsDialog);if(slotsDialog.getWindow()!=null)slotsDialog.getWindow().setLayout(Math.min(dp(850),root.getWidth()-dp(32)),Math.max(dp(200),root.getHeight()-dp(32)));
         slotsChanged();
     }
-    private void showOtherSaves(){
-        if(!(gamePanel instanceof GameSlotsPanel))return;
-        GameSlotsPanel panel=(GameSlotsPanel)gamePanel;
-        List<SaveSlots.Entry> entries=panel.otherSaves();
-        if(entries.isEmpty())return;
-        CharSequence[] labels=new CharSequence[entries.size()];
-        DateFormat format=DateFormat.getDateTimeInstance(DateFormat.SHORT,DateFormat.SHORT);
-        for(int i=0;i<entries.size();i++){
-            SaveSlots.Entry entry=entries.get(i);
-            labels[i]=entry.label(this)+" · "+format.format(new Date(entry.savedAt))+"\n"+entry.displaySummary(this);
-        }
-        showPanel(new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_ctl_other_saves)).setItems(labels,(dialog,index)->{
-            if(panel==gamePanel){systemClick();panel.loadOther(entries.get(index).slot);}
-        }).setNegativeButton(text(R.string.engine_systemnnn_host_back),dialogClick(null)).create());
-    }
     @Override public void slotsChanged() {runOnUiThread(() -> {
         if(runner==null||isDestroyed()||isFinishing())return;
         if(gameSlots!=null&&(gamePanel==gameSlots||preparingPanel==gameSlots)){
-            gameSlots.entries(runner.slotEntries());updatePanelAction();return;
+            gameSlots.entries(runner.slotEntries());return;
         }
         if(slotRows==null || slotsDialog==null || !slotsDialog.isShowing())return;slotRows.removeAllViews();
-        TextView hint=label(savingSlots?text(R.string.engine_systemnnn_host_save_hint):text(R.string.engine_systemnnn_host_load_hint),14);hint.setPadding(0,0,0,dp(10));slotRows.addView(hint);
+        TextView hint=hostLabel(savingSlots?text(R.string.engine_systemnnn_host_save_hint):text(R.string.engine_systemnnn_host_load_hint),14);hint.setPadding(0,0,0,dp(10));slotRows.addView(hint);
         for(SaveSlots.Entry entry:runner.slotEntries()){
+            String summary=entry.displaySummary(this);
             String detail=entry.corrupt?text(R.string.engine_systemnnn_host_save_corrupt):!entry.exists?text(R.string.engine_systemnnn_host_save_empty):DateFormat.getDateTimeInstance(DateFormat.SHORT,DateFormat.SHORT).format(new Date(entry.savedAt))+
-                "\n"+text(R.string.engine_systemnnn_host_save_location,entry.script,entry.line)+
-                (entry.speaker.isEmpty()?"":"  ·  "+entry.speaker)+(entry.displaySummary(this).isEmpty()?"":"\n"+entry.displaySummary(this));
-            Button button=new Button(this);button.setAllCaps(false);button.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);
+                (summary.isEmpty()?"":"\n"+summary);
+            Button button=new Button(hostDialogContext);button.setAllCaps(false);button.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);
             button.setPadding(dp(14),dp(8),dp(14),dp(8));button.setText(entry.label(this)+"\n"+detail);
-            button.setEnabled(savingSlots?entry.slot!=SaveSlots.AUTO:entry.exists&&!entry.corrupt);
+            button.setEnabled(savingSlots||entry.exists&&!entry.corrupt);
             button.setSoundEffectsEnabled(false);button.setOnClickListener(clicked(v -> {
-                if(savingSlots && entry.exists){AlertDialog confirm=new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_host_overwrite_prompt,entry.label(this))).setMessage(detail)
+                if(savingSlots && entry.exists){AlertDialog confirm=hostDialog().setTitle(text(R.string.engine_systemnnn_host_overwrite_prompt,entry.label(this))).setMessage(detail)
                     .setNegativeButton(text(R.string.engine_cancel),dialogClick(null)).setPositiveButton(text(R.string.engine_systemnnn_host_overwrite_save),dialogClick((d,which) -> runner.saveSlot(entry.slot))).create();showPanel(confirm);}
                 else if(savingSlots)runner.saveSlot(entry.slot);
                 else {runner.loadSlot(entry.slot);slotsDialog.dismiss();}
@@ -1891,16 +1919,18 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     @Override public void notice(String text) { runOnUiThread(() -> {
         if(!isDestroyed()) Toast.makeText(this,text,Toast.LENGTH_SHORT).show();
     }); }
-    @Override public void progressCorrupt(){runOnUiThread(()->{
+    @Override public void progressCorrupt(long generation){runOnUiThread(()->{
         GameRunner owner=runner;
-        if(isDestroyed()||isFinishing()||owner==null)return;
-        new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_host_progress_corrupt))
+        if(isDestroyed()||isFinishing()||owner==null||!startupGeneration.fail(generation))return;
+        if(startupOverlay!=null&&startupOverlay.isLoading())startupOverlay.fail(null);
+        AlertDialog dialog=hostDialog().setTitle(text(R.string.engine_systemnnn_host_progress_corrupt))
             .setMessage(text(R.string.engine_systemnnn_host_progress_recovery_hint))
             .setCancelable(false)
             .setNegativeButton(text(R.string.engine_systemnnn_host_back),dialogClick((d,w)->finish()))
             .setPositiveButton(text(R.string.engine_systemnnn_host_progress_recover),
-                dialogClick((d,w)->{if(owner==runner)owner.recoverCorruptProgress();}))
-            .show();
+                dialogClick((d,w)->{if(owner==runner)owner.recoverCorruptProgress(resetStartupOverlayForRetry());}))
+            .create();
+        showHostDialog(dialog,null);
     });}
     @Override public void error(Throwable reason,long generation) { runOnUiThread(() -> {
         if (!startupGeneration.fail(generation)) return;
@@ -1909,68 +1939,103 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             startupOverlay.fail(null);
         if(returningToTitle){returningToTitle=false;titlePrevious=null;closeOriginalPanel(false);}
         String detail=reason.getMessage();
+        if(detail!=null&&detail.contains("EXT_START_UNRESOLVED")){
+            returnToLibrary(R.string.engine_systemnnn_host_game_interrupted,R.string.engine_systemnnn_host_ext_unresolved);
+            return;
+        }
         if(detail!=null&&detail.contains("spt/sys.spt")&&
             (detail.contains("SPT header")||detail.contains("SPTHEADER0")||detail.contains("Record length"))) {
-            new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_host_invalid_script_title))
-                .setMessage(text(R.string.engine_systemnnn_host_invalid_script_hint))
-                .setNegativeButton(text(R.string.engine_systemnnn_host_back),dialogClick((d,w) -> finish())).setPositiveButton(text(R.string.engine_systemnnn_host_pick_other),dialogClick((d,w) -> {
-                    startActivity(new Intent(this,PlayerActivity.class).setAction(Intent.ACTION_MAIN)
-                        .putExtra(LaunchContract.UI_LANGUAGE_TAG,getIntent().getStringExtra(LaunchContract.UI_LANGUAGE_TAG)));
-                    finish();
-                })).show(); return;
+            returnToLibrary(R.string.engine_systemnnn_host_invalid_script_title,R.string.engine_systemnnn_host_invalid_script_hint);
+            return;
         }
         GameRunner owner=runner;
         boolean startOver=owner!=null&&owner.initialized();
         String message=text(reason instanceof SystemNnnHost.SaveBusyException?R.string.engine_systemnnn_host_save_busy:
             startOver?R.string.engine_systemnnn_host_runtime_interrupted:R.string.engine_systemnnn_host_startup_retry_hint);
-        if(startOver)message+="\n\n"+text(R.string.engine_systemnnn_host_start_over_warning);
-        new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_host_game_interrupted)).setMessage(message)
+        AlertDialog dialog=hostDialog().setTitle(text(R.string.engine_systemnnn_host_game_interrupted)).setMessage(message)
             .setCancelable(false)
             .setNegativeButton(text(R.string.engine_systemnnn_host_exit_to_tyn),dialogClick((d,w) -> finish()))
             .setPositiveButton(startOver?text(R.string.engine_systemnnn_host_start_over):text(R.string.engine_systemnnn_host_retry_load),
-                dialogClick((d,w) -> {if(owner!=null&&owner==runner){resetStartupOverlayForRetry();owner.restart(startOver);}})).show();
+                dialogClick((d,w) -> {if(owner!=null&&owner==runner)owner.restart(startOver,resetStartupOverlayForRetry());})).create();
+        showHostDialog(dialog,null);
     }); }
     private String text(int resource,Object... arguments){return uiContext.getString(resource,arguments);}
-    private void resetStartupOverlayForRetry() {
-        startupGeneration.advance();
+    private long resetStartupOverlayForRetry() {
+        long generation=startupGeneration.advance();
+        if(moviePlayback!=null||movieErrorPanel!=null){
+            MoviePlayback previousMovie=moviePlayback;moviePlayback=null;
+            GameCodecErrorPanel previousError=movieErrorPanel;movieErrorPanel=null;
+            if(previousMovie!=null){previousMovie.dispose();stage.removeView(previousMovie);}
+            if(previousError!=null){previousError.discardBackground();stage.removeView(previousError);}
+            restoreAccessibilityAfterMovie();
+            if(gamePanel!=null)gamePanel.uiActive(foreground);
+        }
         if(startupOverlay!=null)startupOverlay.dispose();
         startupOverlay=new EngineStartupOverlay(this);
         startupOverlay.attachTo(root);
+        return generation;
     }
     private int dp(int n) {return Math.round(n*getResources().getDisplayMetrics().density);}
     private TextView label(String s,int size) {
         TextView t=new TextView(this); t.setTextColor(Color.WHITE);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP,size); t.setText(s); return t;
     }
+    private TextView hostLabel(String s,int size) {
+        TextView t=new TextView(hostDialogContext);t.setTextColor(dialogColors.getText());
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP,size);t.setText(s);return t;
+    }
     private GradientDrawable rounded(int color,int radius) {
         GradientDrawable bg=new GradientDrawable(); bg.setColor(color); bg.setCornerRadius(dp(radius)); return bg;
     }
-    private void message(String title,String body,String action,View.OnClickListener listener) {
-        contentHost.removeAllViews(); LinearLayout box=new LinearLayout(this); box.setGravity(Gravity.CENTER);
-        box.setPadding(dp(32),dp(16),dp(32),dp(16)); box.setOrientation(LinearLayout.VERTICAL);
-        TextView heading=label(title,22); heading.setTypeface(Typeface.DEFAULT,Typeface.BOLD); box.addView(heading);
-        TextView description=label(body,16); description.setPadding(0,dp(12),0,dp(12)); box.addView(description);
-        if (action!=null) {Button b=new Button(this); b.setText(action);b.setSoundEffectsEnabled(false);b.setOnClickListener(clicked(listener)); box.addView(b);}
-        Button back=new Button(this); back.setText(text(R.string.engine_systemnnn_host_back));back.setSoundEffectsEnabled(false);back.setOnClickListener(clicked(v -> finish())); box.addView(back);
-        contentHost.addView(box,new FrameLayout.LayoutParams(-1,-1));
+    private AlertDialog.Builder hostDialog() {
+        return new AlertDialog.Builder(hostDialogContext);
     }
-    private void immersive() {
-        boolean full=settings==null||settings.fullscreen;
-        View decor=getWindow().getDecorView();
-        if(full)getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        // Handle insets ourselves on every supported version. Android15+
-        // enforces edge-to-edge for target35, including the non-fullscreen mode.
-        if(Build.VERSION.SDK_INT>=30){
-            getWindow().setDecorFitsSystemWindows(false);
-            WindowInsetsController controller=decor.getWindowInsetsController();
-            if(controller!=null){
-                controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-                if(full)controller.hide(WindowInsets.Type.systemBars());else controller.show(WindowInsets.Type.systemBars());
+    private void trackDialog(Dialog dialog,Runnable onDismiss) {
+        openedDialogs.add(dialog);
+        dialog.setOnDismissListener(d->{
+            openedDialogs.remove(dialog);
+            if(onDismiss!=null)onDismiss.run();
+            if(!isDestroyed()&&!isFinishing())immersive();
+        });
+    }
+    private void showHostDialog(AlertDialog dialog,Runnable onDismiss) {
+        trackDialog(dialog,onDismiss);
+        dialog.show();
+        for(int which:new int[]{DialogInterface.BUTTON_POSITIVE,DialogInterface.BUTTON_NEGATIVE,DialogInterface.BUTTON_NEUTRAL}){
+            Button button=dialog.getButton(which);
+            if(button!=null){
+                button.setTextColor(dialogColors.getPrimary());
+                button.setSoundEffectsEnabled(false);
             }
         }
-        decor.setSystemUiVisibility(full?View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
-            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION:View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+        if(dialog.getListView()!=null)dialog.getListView().setSoundEffectsEnabled(false);
+        TextView message=dialog.findViewById(android.R.id.message);
+        if(message!=null)message.setTextColor(dialogColors.getText());
+        Window window=dialog.getWindow();
+        if(window!=null){
+            window.setBackgroundDrawable(rounded(dialogColors.getCard(),20));
+            applyFullscreen(window);
+        }
+    }
+    private void returnToLibrary(int title,int detail) {
+        Dialog dialog=KrDialogStyle.showMessageBox(this,text(title),text(detail),
+            new String[]{text(R.string.engine_systemnnn_host_exit_to_tyn)},(which,input)->finish());
+        trackDialog(dialog,null);
+        if(dialog.getWindow()!=null)applyFullscreen(dialog.getWindow());
+    }
+    private void applyFullscreen(Window window) {
+        if(fullscreen)window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        WindowInsetsControllerCompat controller=WindowCompat.getInsetsController(window,window.getDecorView());
+        if(fullscreen){
+            controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            controller.hide(WindowInsetsCompat.Type.systemBars());
+        }else{
+            controller.show(WindowInsetsCompat.Type.systemBars());
+        }
+    }
+    private void immersive() {
+        applyFullscreen(getWindow());
         if(root!=null)root.requestApplyInsets();
     }
     @Override public void onWindowFocusChanged(boolean focus) {
@@ -1978,7 +2043,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(focus){
             immersive();
             retryAudioFocus();
-        }
+        }else clearCtrlSkip();
     }
     @Override public void onUserInteraction(){
         super.onUserInteraction();
@@ -1990,7 +2055,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         else if(runner!=null)runner.windowFocused();
     }
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
-        if(pcSaveBusy||returningToTitle||preparingPanel!=null)return true;
+        if(returningToTitle||preparingPanel!=null)return true;
         int action=event.getActionMasked();
         if(action==MotionEvent.ACTION_DOWN){storyDownX=event.getRawX();storyDownY=event.getRawY();storyDrag=false;}
         if(storyPointerActive()){
@@ -1998,7 +2063,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 Math.hypot(event.getRawX()-storyDownX,event.getRawY()-storyDownY)>storyTouchSlop)storyDrag=true;
             if(action==MotionEvent.ACTION_DOWN||action==MotionEvent.ACTION_MOVE||action==MotionEvent.ACTION_UP)storyPointer(event);
         }
-        if(action==MotionEvent.ACTION_UP&&storyDrag){
+        if(action==MotionEvent.ACTION_UP&&storyDrag&&!nativePanelActive()){
             storyDrag=false;
             MotionEvent cancel=MotionEvent.obtain(event);cancel.setAction(MotionEvent.ACTION_CANCEL);
             try{super.dispatchTouchEvent(cancel);}finally{cancel.recycle();}
@@ -2007,23 +2072,89 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(action==MotionEvent.ACTION_CANCEL)storyDrag=false;
         return super.dispatchTouchEvent(event);
     }
+    @Override public boolean dispatchKeyEvent(KeyEvent event){
+        int key=event.getKeyCode();
+        if(nativePanelActive()){
+            int mode=key==KeyEvent.KEYCODE_L?5:key==KeyEvent.KEYCODE_S?6:key==KeyEvent.KEYCODE_C?12:
+                key==KeyEvent.KEYCODE_M||key==KeyEvent.KEYCODE_O?13:0;
+            if(mode!=0){
+                if(event.getAction()==KeyEvent.ACTION_DOWN&&event.getRepeatCount()==0)runner.nativePanelMenu(currentFrame,mode);
+                return true;
+            }
+            if(key==KeyEvent.KEYCODE_ESCAPE){
+                if(event.getAction()==KeyEvent.ACTION_DOWN&&event.getRepeatCount()==0)nativePanelBack();
+                return true;
+            }
+            if(key==KeyEvent.KEYCODE_CTRL_LEFT||key==KeyEvent.KEYCODE_CTRL_RIGHT)return true;
+        }
+        if(movieErrorPanel!=null){
+            int direction=key==KeyEvent.KEYCODE_DPAD_DOWN?View.FOCUS_DOWN:key==KeyEvent.KEYCODE_DPAD_UP?View.FOCUS_UP:
+                key==KeyEvent.KEYCODE_DPAD_LEFT?View.FOCUS_LEFT:key==KeyEvent.KEYCODE_DPAD_RIGHT?View.FOCUS_RIGHT:0;
+            if(direction!=0){
+                if(event.getAction()==KeyEvent.ACTION_DOWN){
+                    View next=FocusFinder.getInstance().findNextFocus(movieErrorPanel,movieErrorPanel.findFocus(),direction);
+                    if(next!=null)next.requestFocus();
+                }
+                return true;
+            }
+            if(key==KeyEvent.KEYCODE_ENTER||key==KeyEvent.KEYCODE_DPAD_CENTER||key==KeyEvent.KEYCODE_SPACE){
+                movieErrorPanel.dispatchKeyEvent(event);return true;
+            }
+        }
+        int bit=key==KeyEvent.KEYCODE_CTRL_LEFT?1:key==KeyEvent.KEYCODE_CTRL_RIGHT?2:0;
+        if(bit!=0&&event.getAction()==KeyEvent.ACTION_DOWN&&storyPointerActive()){
+            if(ctrlKeys==0)runner.ctrlSkip(true);
+            ctrlKeys|=bit;
+            return true;
+        }
+        if(bit!=0&&event.getAction()==KeyEvent.ACTION_UP&&(ctrlKeys&bit)!=0){
+            ctrlKeys&=~bit;
+            if(ctrlKeys==0&&runner!=null)runner.ctrlSkip(false);
+            return true;
+        }
+        return super.dispatchKeyEvent(event);
+    }
+    private void clearCtrlSkip(){
+        if(ctrlKeys==0)return;
+        ctrlKeys=0;
+        if(runner!=null)runner.ctrlSkip(false);
+    }
     @Override public boolean dispatchGenericMotionEvent(MotionEvent event){
         if(event.getActionMasked()==MotionEvent.ACTION_HOVER_MOVE&&storyPointerActive())storyPointer(event);
         return super.dispatchGenericMotionEvent(event);
     }
     private boolean storyPointerActive(){
-        return runner!=null&&stage!=null&&titlePanel==null&&logoPanel==null&&panelsOpen==0&&moviePlayback==null;
+        return runner!=null&&stage!=null&&titlePanel==null&&logoPanel==null&&panelsOpen==0&&moviePlayback==null&&movieErrorPanel==null&&!storyMovieExitActive;
+    }
+    private boolean nativePanelActive(){
+        return currentFrame!=null&&currentFrame.wait==NativeGame.NATIVE_PANEL&&storyPointerActive();
+    }
+    private void nativePanelBack(){
+        if(!nativePanelActive())return;
+        if(currentFrame.nativePanelMode==51&&currentFrame.nativePanelSavable)runner.nativePanelMenu(currentFrame,13);
+        else runner.nativePanelInput(currentFrame,lastX,lastY,false,true);
+    }
+    static int pointerCoordinate(float raw,int origin,int logicalSize,int viewportSize,boolean clip){
+        double scaled=((double)raw-origin)*logicalSize/Math.max(1,viewportSize);
+        int value=Double.isNaN(scaled)?-1:(int)Math.max(Integer.MIN_VALUE,Math.min(Integer.MAX_VALUE,Math.floor(scaled)));
+        return clip?Math.max(0,Math.min(logicalSize-1,value)):value;
     }
     private void storyPointer(MotionEvent event){
         stage.getLocationOnScreen(storyOrigin);
-        int x=Math.max(0,Math.min(width-1,(int)((event.getRawX()-storyOrigin[0])*width/Math.max(1,stage.getWidth()))));
-        int y=Math.max(0,Math.min(height-1,(int)((event.getRawY()-storyOrigin[1])*height/Math.max(1,stage.getHeight()))));
-        if(x!=lastX||y!=lastY){lastX=x;lastY=y;runner.pointer(x,y);}
+        boolean nativePanel=nativePanelActive();
+        int x=pointerCoordinate(event.getRawX(),storyOrigin[0],width,stage.getWidth(),!nativePanel);
+        int y=pointerCoordinate(event.getRawY(),storyOrigin[1],height,stage.getHeight(),!nativePanel);
+        if(x!=lastX||y!=lastY){
+            lastX=x;lastY=y;
+            if(nativePanel)runner.nativePanelInput(currentFrame,x,y,false,false);
+            else runner.pointer(x,y);
+        }
     }
     @Override public void onBackPressed() {
-        if(pcSaveBusy)return;
         panelWarmup=null;
+        if(movieErrorPanel!=null)return;
         if(moviePlayback!=null){moviePlayback.skip();return;}
+        if(storyMovieExitActive)return;
         if(logoPanel!=null){logoPanel.skip();return;}
         if(startupOpening!=null){startupOpening.skip();return;}
         if(titlePanel!=null&&titlePanel.skipRestartExit())return;
@@ -2044,34 +2175,36 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             if(!(gamePanel instanceof GameBacklogPanel)&&
                 !(gamePanel instanceof GameGalleryPanel&&((GameGalleryPanel)gamePanel).screen()==GalleryCatalog.Screen.VIEW))systemClick();
             if(panelBack!=null)panelBack.run();else closeOriginalPanel();
-        }else if(sceneReplay){if(runner!=null)runner.endGalleryReplay();}
+        }else if(nativePanelActive()){nativePanelBack();}
         else if(uiHidden){uiHidden=false;updateVisibility();}
         else if(runner==null||titlePanel!=null)finish();
         else showMenu();
     }
     @Override protected void onResume() { super.onResume(); foreground=true; immersive();
-        if(gamePanel!=null)gamePanel.uiActive(true);
+        if(gamePanel!=null)gamePanel.uiActive(moviePlayback==null&&movieErrorPanel==null);
         statusActive(true);
-        if(permissionPending) {permissionPending=false; inspectAccess();}
         if(runner!=null) runner.active(true);
         if(moviePlayback!=null)moviePlayback.resume();
+        if(movieErrorPanel!=null)movieErrorPanel.uiActive(true);
     }
-    @Override protected void onPause() {foreground=false;if(gamePanel!=null)gamePanel.uiActive(false);statusActive(false); if(runner!=null) runner.active(false);
-        if(moviePlayback!=null)moviePlayback.pause();super.onPause();}
+    @Override protected void onPause() {foreground=false;clearCtrlSkip();if(gamePanel!=null)gamePanel.uiActive(false);statusActive(false); if(runner!=null) runner.active(false);
+        if(moviePlayback!=null)moviePlayback.pause();
+        if(movieErrorPanel!=null)movieErrorPanel.uiActive(false);super.onPause();}
     @Override protected void onDestroy() {
         startupGeneration.dispose();
         if(startupOverlay!=null)startupOverlay.dispose();
         startupOverlay=null;
         if(moviePlayback!=null){moviePlayback.dispose();moviePlayback=null;}
+        if(movieErrorPanel!=null){movieErrorPanel.discardBackground();movieErrorPanel=null;}
         ui.removeCallbacksAndMessages(null);
         discardPanelPreparation();
         if(preferences!=null)preferences.unregisterOnSharedPreferenceChangeListener(settingsListener);
-        if(userPreferences!=null)userPreferences.unregisterOnSharedPreferenceChangeListener(readingListener);
-        for(AlertDialog dialog:new ArrayList<>(openedPanels))dialog.dismiss();
+        for(Dialog dialog:new ArrayList<>(openedDialogs))dialog.dismiss();
         closeRunner();
         super.onDestroy();
     }
     private void closeRunner(){
+        storyPlane.release();
         if(runner==null){closePlayerTask();return;}
         runner.close(playerTask);
         playerTask=null;
@@ -2081,9 +2214,5 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(playerTask==null)return;
         try{playerTask.close();}catch(IOException e){android.util.Log.w("SystemNNN","Unable to release player task",e);}
         playerTask=null;
-    }
-    @Override public void onRequestPermissionsResult(int code,String[] perms,int[] grants) {
-        super.onRequestPermissionsResult(code,perms,grants);
-        if(code==21 && runner==null) {permissionPending=false; inspectAccess();}
     }
 }

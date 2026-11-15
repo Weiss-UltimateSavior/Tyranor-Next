@@ -85,7 +85,7 @@ Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并�
 
 大体积引擎运行库（`libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、`libcmvs_android.so`、IJK 三件套、System35/4 与 `libSDL2x.so`、`libsystemnnn.so`）不随 `lib/` 在安装期解压：构建期打成 `assets/engine-runtime/<pack>.zip.xz`，`EngineLauncher` 在拉起对应引擎前于 IO 线程调用 `NativeRuntimePack.ensure` 解压到 `files/engine_runtime/<pack>/`（以 APK `lastUpdateTime:versionName` 判定是否重新解压），宿主进程再按绝对路径 `dlopen`；除 IJK 仅服务视频覆盖层、解压失败只记日志继续启动外，其余分片失败返回 `LaunchResult.Failure.EngineLibraryPackFailed`。`libSDL3.so`、`libSDL2_mixer_xs35.so` 仍留在 `lib/` 作为依赖；CMVS 另在 `lib/` 保留 `libcmvs_loader.so`（NativeActivity `android.app.lib_name`），由 loader 从 `files/engine_runtime/cmvs/` dlopen 真实库并转发 `ANativeActivity_onCreate`。这与 native plugin（Kirikiroid2 / ONS / Artemis）的资产形态一致，但分片按引擎家族划分，为后续单独下载留出入口。
 
-- SystemNNN 在读取游戏文件前解析真实路径并完成共享存储授权。支持绝对路径、文件 URI 及系统外部存储文档 URI。私有 `:systemnnn` 宿主通过显式 Intent 启动，原 Emberfall 独立 APK 的绑定迁为内置类型。游戏目录一律原地读写，不做整目录复制；原目录不可访问即返回类型化启动错误。旧版本遗留的副本由 App 的 `SystemNnnCopyStore` 只读识别与回收，引擎只接收绝对路径，不持久化游戏路径或副本清单；待回收项由 App 侧持久队列保存并在启动时续做。
+- SystemNNN 在读取游戏文件前解析真实路径并完成共享存储授权。支持绝对路径、文件 URI 及系统外部存储文档 URI。私有 `:systemnnn` 宿主通过显式 Intent 启动，原 Emberfall 独立 APK 的绑定迁为内置类型。游戏资源和存档从生效目录原地读取，存档写回生效目录。原目录不可访问时返回类型化启动错误。App 的 `SystemNnnCopyStore` 负责识别与回收旧副本；宿主接收绝对路径及任务身份，运行中的任务记录随会话退出清理。应用持有副本状态和回收队列。
 
 ### 第三方 APK 运行时模块
 
@@ -147,9 +147,10 @@ WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano
 
 ## 7. 其它功能边界
 
-- SystemNNN 在同一 `sav` 目录中通过 `emberfall.lock` 与独立播放器协调存档访问。TYN 只替换自身格式的白名单文件，目录、锁及 PC 数据原地保留。中断恢复材料保存在 `emberfall.migrate/tyn-restore`，独立播放器会拒绝打开该未完成事务，TYN 在持锁时恢复。清理旧副本资源时同时持有来源锁和游戏存档锁，并写入逐出标记；带标记的副本不再启动，由用户删除并从可访问的原目录重新添加。存档管理与同步在此期间仍使用同一 `sav`。
-- SystemNNN 不再创建 SAF 副本；`SystemNnnCopyStore` 仅保留旧副本的识别与资源回收。ZIP 恢复和删档在同一来源锁内解析并锁定当前 `sav`。
-- SystemNNN 的 ZIP 导入在私有 `:systemnnn_validator` 进程通过绑定服务校验。主进程只传应用缓存中的暂存目录名及校验条件，服务只返回结果。服务死亡、校验超时或快照无效时不会替换活动存档。WebDAV 对已核对同源的副本迁移会话基线和已提交的恢复记录，仍有待提交的恢复事务时返回类型化错误。
+- SystemNNN 在同一 `sav` 目录中通过 `emberfall.lock` 与独立播放器协调存档访问。TYN 管理原版编号剧情槽和 Emberfall 的全局进度及扩展文件。旧手机剧情档留在游戏目录。恢复旧版未提交事务时保留原版槽位。中断恢复材料保存在 `emberfall.migrate/tyn-restore`，独立播放器会拒绝打开该未完成事务，TYN 在持锁时恢复。副本资源回收持有来源锁和游戏存档锁，绑定仍生效时可以备份已回收副本的 `sav`。应用先持久化回收请求，再提交库条目移除。回收前检查 Room 与内存库的同源引用，在启动和打开「游戏目录」时重试未完成请求。
+- 只有用户显式删除最后一个同源游戏或所在扫描目录时，成功回收才会退役旧副本绑定。退役前在版本锁、活动目录锁和写入准入期间检查未完成的 WebDAV 切换，在存档锁内检查 `emberfall.migrate`。发现待恢复事务时保留旧绑定和回收请求。退役后重新添加时，启动、ZIP 恢复和 WebDAV 统一使用通过授权的原目录。旧副本的 `sav` 保存在应用管理的副本目录中。普通重扫仅登记资源回收。ZIP 恢复和删档在同一来源锁内解析并锁定当前 `sav`。
+- SystemNNN 的 ZIP 导入在私有 `:systemnnn_validator` 进程通过绑定服务校验。主进程传应用缓存中的暂存目录名、目标游戏目录及校验条件，服务返回结果。普通存档校验可使用资源已清理的目录，流程图节点仍依赖游戏的图结构。服务死亡、校验超时或快照无效时不会替换活动存档。WebDAV 在暂存 ZIP 移入恢复区之前保存活动目录范围，用于在恢复记录损坏时保护该目录。副本迁移会话基线和已提交的恢复记录前须核对同源，仍有待提交的恢复事务时返回类型化错误。
+- SystemNNN 单游戏引擎设置通过同一私有进程读取或重新生成存档格式配置。App 解析游戏目录，Emberfall 在该目录读写 `emberfall-system.cfg` 并返回展示字段。
 
 - 封面：`CoverScraperService` 聚合在线来源，`CoverScrapeTaskManager` 管理应用级批量任务；UI 使用缩略图缓存，不在重组期同步抓取/解码。
 - 存档：`GameSaveManager` 解析位置并导入/导出 ZIP；MV/MZ 的格式转化与互通独立于存档镜像，均采用同源目录解析。Ethornell 存档管理已按 capability 开放（`DEVICE_SAVE_IO_VERIFIED=true` 与 `HOST_DISPATCH_PROTOCOL_VERIFIED=true`）；范围为游戏目录 `savedata` user-root 的备份/恢复/删除；旧私有树在同一操作门禁内迁入，目标同名文件优先，完成标记避免后续删档复活，ZIP 单个文件上限 64 MiB（与 native 原子写一致），总量 1 GiB 预算不等于该上限；不自动导入资源根 `UserData`。运行时的用户槽位读/查/通用加载走授权别名，别名缺失不会回退到资源槽位；普通资源与命名归档保持原路径。商业游戏槽位保存与重开读档仍是独立验收范围，PC 格式互通不在本 capability 内。

@@ -2,6 +2,13 @@ package com.tyranor.runtime.systemnnn;
 
 /** The four original CCommonButton atlas states, independent of Android views. */
 final class ButtonArt {
+    enum SoundEvent {
+        CLICK("Click","Click"), CANNOT_CLICK("Bad","Cannot"), ENTER("Enter","Enter"), EXIT("Exit","Exit");
+
+        final String field, changeField;
+        SoundEvent(String field,String changeField){this.field=field;this.changeField=changeField;}
+    }
+
     static final class State {
         final int x,y,type,frames,speed;
         State(int x,int y,int type,int frames,int speed) {
@@ -13,6 +20,8 @@ final class ButtonArt {
     static final class Setup {
         final ButtonArt art;
         final int width,height,clickTime,sound,voice,volumeType;
+        final int enterWait,exitWait;
+        private final int[] sounds=new int[SoundEvent.values().length],voices=new int[sounds.length];
         final int hitX,hitY,hitPicX,hitPicY,hitWidth,hitHeight;
         final boolean pixelHit;
 
@@ -21,9 +30,17 @@ final class ButtonArt {
             height=dimension(config.number(key+"SizeY",previous==null?16:previous.height));
             art=new ButtonArt(config,key,width,previous==null?null:previous.art,resetSource);
             clickTime=Math.max(0,Math.min(1000,config.number(key+"ClickTime",previous==null?8:previous.clickTime)));
-            sound=config.number(key+"ClickSound",previous==null?0:previous.sound+1)-1;
-            voice=config.number(key+"ClickVoice",previous==null?0:previous.voice+1)-1;
+            for(SoundEvent event:SoundEvent.values()){
+                int id=event.ordinal();
+                sounds[id]=cue(config.number(key+event.field+"Sound",previous==null?0:previous.sounds[id]+1));
+                voices[id]=cue(config.number(key+event.field+"Voice",previous==null?0:previous.voices[id]+1));
+            }
+            sound=sound(SoundEvent.CLICK);
+            voice=voice(SoundEvent.CLICK);
             volumeType=config.number(key+"VolumeType",previous==null?0:previous.volumeType);
+            enterWait=config.number(key+"EnterWait",previous==null?0:previous.enterWait);
+            // CSuperButtonSetup copies EnterWait into both fields before applying overrides.
+            exitWait=config.number(key+"ExitWait",previous==null?0:previous.enterWait);
             hitX=config.number(key+"CheckDeltaX",previous==null?0:previous.hitX);
             hitY=config.number(key+"CheckDeltaY",previous==null?0:previous.hitY);
             hitPicX=config.number(key+"CheckPicX",previous==null?0:previous.hitPicX);
@@ -34,6 +51,9 @@ final class ButtonArt {
             pixelHit=config.number(key+"PrintMode",previous!=null&&!previous.pixelHit?0:2)!=0;
         }
 
+        int sound(SoundEvent event){return sounds[event.ordinal()];}
+        int voice(SoundEvent event){return voices[event.ordinal()];}
+        private static int cue(int number){return number>0?number-1:-1;}
         private static int dimension(int size){return Math.max(1,Math.min(4096,size));}
     }
 

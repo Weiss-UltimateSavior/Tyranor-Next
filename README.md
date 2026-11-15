@@ -57,7 +57,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | CMVS                 | `data/pack/script.cpz` + `start.ps3/ps2`（仅 19 部登记作品）              | 内置 CMVS 原生运行时（cmvs-rs，NativeActivity） |
 | System35             | `*.ALD`（`SA.ALD` 等；根目录或 `GAMEDATA/`）、`System39.ain`/`System39.ini`/`*.wai`/`*.bgi`/`*.alk` | 内置 System3.x 运行时（xsystem35） |
 | System4              | `System40.ini` 或 `AliceStart.ini`（根目录；`*.ain` 为辅助特征）                    | 内置 System4 运行时（xsystem4）      |
-| SystemNNN            | 游戏目录下的 `spt/sys.spt`（不区分大小写）                            | 内置 [SystemNNN-Emberfall 0.6.14](https://github.com/PorisRora/SystemNNN-Emberfall)（ARM64） |
+| SystemNNN            | 游戏目录下的 `spt/sys.spt`（不区分大小写）                            | 内置 [SystemNNN-Emberfall 0.8.1](https://github.com/PorisRora/SystemNNN-Emberfall)（ARM64） |
 | YU-RIS               | `yscfg.dat`、`pac/*.ypf`、`YS*.DLL`、`.ymv`                          | 外置 Winlator（winlator-cn）        |
 | CatSystem2           | `config/startup.xml`、`*.int`、`*.cst`、`*.hg3`、`*.kcs` 等组合         | 外置 Winlator（winlator-cn）        |
 | PC（手动添加）        | 游戏页顶栏「添加 PC 游戏」选择目录并指定启动 exe                          | 外置 Winlator（winlator-cn）        |
@@ -165,7 +165,7 @@ docs/、.archify/                     专题方案、审查记录与可视化
 | Siglus / RealLive / AVG32 / UK2 | [siglus_rs](https://github.com/xmoezzz/siglus_rs) | MPL-2.0 | 上游仓库 |
 | FVP | [rfvp](https://github.com/xmoezzz/rfvp) | MPL-2.0 | 上游仓库 |
 | CMVS | [cmvs-rs](https://github.com/Weiss-UltimateSavior/cmvs-rs) | MIT OR Apache-2.0 | `tools/cmvs/` |
-| SystemNNN | [SystemNNN-Emberfall](https://github.com/PorisRora/SystemNNN-Emberfall)（原版 SystemNNN 由 tinyan 开发） | GPL-2.0-only | `engine/src/main/assets/licenses/systemnnn/` |
+| SystemNNN | [SystemNNN-Emberfall](https://github.com/PorisRora/SystemNNN-Emberfall)（原版 SystemNNN 由 tinyan 开发） | GPL-2.0-only | [对应源码及构建记录](engine/src/main/assets/licenses/systemnnn/ffmpeg-source.txt)、[归属与许可](engine/src/main/assets/licenses/systemnnn/upstream-source.txt) |
 | System35 | [xsystem35-sdl2](https://github.com/kichikuou/xsystem35-sdl2) | GPL-2.0-or-later | `engine/xsystem35/BUILD.md`、`engine/xsystem35/licenses/` |
 | System4 | [xsystem4](https://github.com/nunuhara/xsystem4) / [libsys4](https://github.com/nunuhara/libsys4) | GPL-2.0-or-later | `engine/xsystem4/BUILD.md`、`engine/xsystem4/licenses/` |
 | Anime4K 着色器 | [bloc97/Anime4K](https://github.com/bloc97/Anime4K) | MIT | `engine/src/main/assets/anime4k/` |

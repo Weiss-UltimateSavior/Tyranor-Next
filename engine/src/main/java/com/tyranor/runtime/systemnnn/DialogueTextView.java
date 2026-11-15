@@ -20,12 +20,18 @@ final class DialogueTextView extends AppCompatTextView {
     }
 
     private final Paint annotationPaint=new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint effectPaint=new Paint(Paint.ANTI_ALIAS_FLAG);
     private DialogueMarkup markup=DialogueMarkup.EMPTY;
     private DialogueMarkup.Style annotationStyle;
     private float canvasFont=24;
     private int revealed;
+    private int effect,progress,effectColor=0x64ffffff;
     private boolean annotationFollowsTextColor;
     private HiddenText previewHidden;
+
+    @Override public void invalidate(){super.invalidate();StoryPlaneView.changed(this);}
+    @Override public void invalidate(android.graphics.Rect dirty){super.invalidate(dirty);StoryPlaneView.changed(this);}
+    @Override public void invalidate(int l,int t,int r,int b){super.invalidate(l,t,r,b);StoryPlaneView.changed(this);}
 
     DialogueTextView(Context context){super(context);setEmojiCompatEnabled(false);}
 
@@ -46,6 +52,16 @@ final class DialogueTextView extends AppCompatTextView {
     }
     void markupFont(float font){canvasFont=Math.max(1,font);}
     void markupReveal(int end){if(revealed!=end){revealed=end;invalidate();}}
+    void effectColors(GameUiAssets.Config config){
+        effectColor=Color.argb(DialogueLayout.clamp(config.number("effectFontColorA",100),0,255),
+            DialogueLayout.clamp(config.number("effectFontColorR",255),0,255),
+            DialogueLayout.clamp(config.number("effectFontColorG",255),0,255),
+            DialogueLayout.clamp(config.number("effectFontColorB",255),0,255));
+    }
+    void messageEffect(int type,int count){
+        if(effect==type&&progress==count)return;
+        effect=type;progress=count;invalidate();
+    }
     void markupTextColor(boolean follow){
         if(annotationFollowsTextColor!=follow){annotationFollowsTextColor=follow;invalidate();}
     }
@@ -82,20 +98,52 @@ final class DialogueTextView extends AppCompatTextView {
 
     @Override protected void onDraw(Canvas canvas){
         super.onDraw(canvas);
-        if(!hasAnnotations()||revealed==0)return;
+        boolean annotate=hasAnnotations()&&revealed>0;
+        boolean animate=effect>0&&progress>0&&revealed<markup.text.length();
+        if(!annotate&&!animate)return;
         Layout lines=getLayout();
         if(lines==null)return;
         float scale=getTextSize()/canvasFont;
-        sizeAnnotations(getTextSize());
-        annotationPaint.setColor(annotationFollowsTextColor?getCurrentTextColor():annotationStyle.color);
-        annotationPaint.setShadowLayer(1,1,1,Color.BLACK);
         int saved=canvas.save();
         canvas.clipRect(getScrollX(),getScrollY(),getScrollX()+getWidth(),getScrollY()+getHeight());
         canvas.translate(getCompoundPaddingLeft(),getTotalPaddingTop());
-        for(DialogueMarkup.Annotation span:markup.annotations){
-            if(span.start>=revealed||span.start>=lines.getText().length())continue;
-            if(span.emphasis)drawEmphasis(canvas,lines,span,scale);
-            else drawRuby(canvas,lines,span,scale);
+        if(animate)drawMessageEffect(canvas,lines);
+        if(annotate){
+            sizeAnnotations(getTextSize());
+            annotationPaint.setColor(annotationFollowsTextColor?getCurrentTextColor():annotationStyle.color);
+            annotationPaint.setShadowLayer(1,1,1,Color.BLACK);
+            for(DialogueMarkup.Annotation span:markup.annotations){
+                if(span.start>=revealed||span.start>=lines.getText().length())continue;
+                if(span.emphasis)drawEmphasis(canvas,lines,span,scale);
+                else drawRuby(canvas,lines,span,scale);
+            }
+        }
+        canvas.restoreToCount(saved);
+    }
+
+    private void drawMessageEffect(Canvas canvas,Layout lines){
+        if(revealed>=lines.getText().length()||markup.text.charAt(revealed)=='\n')return;
+        int end=markup.text.offsetByCodePoints(revealed,1);
+        int line=lines.getLineForOffset(revealed);
+        float x=edge(lines,line,revealed),baseline=lines.getLineBaseline(line);
+        float width=Math.abs(edge(lines,line,end)-x),height=getTextSize();
+        if(width<=0)return;
+        float fraction=progress/1000f;
+        float w=(effect&1)!=0?(int)(width*fraction):width;
+        float h=(effect&2)!=0?(int)(height*fraction):height;
+        int alpha=Color.alpha(effectColor);
+        if((effect&8)!=0)alpha=alpha*progress/1000;
+        if(w<=0||h<=0||alpha==0)return;
+        float top=baseline+getPaint().ascent(),cx=x+width/2f,cy=top+height/2f;
+        int saved=canvas.save();
+        canvas.clipRect(cx-w/2f,cy-h/2f,cx+w/2f,cy+h/2f);
+        if((effect&16)!=0){
+            effectPaint.setColor(effectColor);effectPaint.setAlpha(alpha);effectPaint.clearShadowLayer();
+            canvas.drawRect(cx-w/2f,cy-h/2f,cx+w/2f,cy+h/2f,effectPaint);
+        }else{
+            if((effect&4)!=0)canvas.scale(w/width,h/height,cx,cy);
+            effectPaint.set(getPaint());effectPaint.setColor(getCurrentTextColor());effectPaint.setAlpha(alpha);
+            canvas.drawText(markup.text,revealed,end,x,baseline,effectPaint);
         }
         canvas.restoreToCount(saved);
     }

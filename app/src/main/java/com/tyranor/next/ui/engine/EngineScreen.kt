@@ -973,6 +973,7 @@ private fun engineIconRes(engine: EngineType): Int = when (engine) {
     EngineType.FVP -> R.drawable.ic_engine_card_fvp
     EngineType.ETHORNELL -> R.drawable.ic_engine_card_ethornell
     EngineType.CMVS -> R.drawable.ic_engine_card_cmvs
+    EngineType.SYSTEMNNN -> R.drawable.ic_engine_card_systemnnn
     EngineType.RENPY -> R.drawable.ic_engine_card_renpy
     EngineType.RUFFLE -> R.drawable.ic_engine_card_ruffle
     EngineType.YURIS -> R.drawable.ic_engine_card_yuris
@@ -980,7 +981,7 @@ private fun engineIconRes(engine: EngineType): Int = when (engine) {
     EngineType.PC -> R.drawable.ic_engine_card_pc
     EngineType.PSP -> R.drawable.ic_engine_card_psp
     EngineType.NINTENDO_SWITCH -> R.drawable.ic_engine_card_switch
-    EngineType.SYSTEMNNN, EngineType.ANDROID_APP, EngineType.RUNTIME_MODULE, EngineType.UNKNOWN -> R.drawable.ic_engine_icon
+    EngineType.ANDROID_APP, EngineType.RUNTIME_MODULE, EngineType.UNKNOWN -> R.drawable.ic_engine_icon
 }
 
 /** 引擎页顶部分页（顺序即展示顺序）：GAL / RPGM / 主机 / 网页。 */
@@ -1084,7 +1085,7 @@ private val rpgMakerWebBuiltin = listOf(
 /** 各内置引擎的「版本条目」弹窗内容（条目顺序即展示顺序）。 */
 private val builtinDialogEntries: Map<EngineType, List<EngineDialogEntry>> = mapOf(
     EngineType.ETHORNELL to listOf(builtinEntry("internal.ethornell", "ethornell-rs / Android host ABI 1")),
-    EngineType.SYSTEMNNN to listOf(builtinEntry("internal.systemnnn", "SystemNNN-Emberfall 0.6.14")),
+    EngineType.SYSTEMNNN to listOf(builtinEntry("internal.systemnnn", "SystemNNN-Emberfall 0.8.1")),
     EngineType.TYRANO to tyranorWebBuiltin,
     EngineType.WEB_OTHER to tyranorWebBuiltin,
     EngineType.VN to tyranorWebBuiltin,
