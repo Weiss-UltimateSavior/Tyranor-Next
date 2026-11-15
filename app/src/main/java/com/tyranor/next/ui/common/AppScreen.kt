@@ -107,7 +107,13 @@ abstract class AppScreenActivity : ComponentActivity() {
     @Suppress("OVERRIDE_DEPRECATION")
     override fun startActivityForResult(intent: Intent, requestCode: Int, options: Bundle?) {
         childLaunched = true
-        super.startActivityForResult(intent, requestCode, options)
+        try {
+            super.startActivityForResult(intent, requestCode, options)
+        } catch (failure: RuntimeException) {
+            // 没有真的拉起子页（如 ActivityNotFoundException）：别让旗标残留，免得下一次真正的热启动漏掉返回拦截
+            childLaunched = false
+            throw failure
+        }
     }
 
     override fun onResume() {
