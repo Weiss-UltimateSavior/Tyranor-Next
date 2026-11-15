@@ -53,7 +53,7 @@ def _cstr(buf, strings_off, rel):
     return buf[start:end].decode("utf-8", "replace")
 
 
-def _read_value(buf, pos, typ, strings_off, data_off):
+def _read_value(buf, pos, typ, strings_off, data_off, budget=None):
     if typ in STRUCT_FMT:
         size = struct.calcsize(STRUCT_FMT[typ])
         _need(buf, pos, size)
@@ -65,6 +65,11 @@ def _read_value(buf, pos, typ, strings_off, data_off):
         _need(buf, pos, 8)
         off, size = struct.unpack_from(">II", buf, pos)
         _need(buf, data_off + off, size)
+        if budget is not None:
+            # Many rows may point at one large range; bound the total copied, before copying.
+            budget[0] -= size
+            if budget[0] < 0:
+                raise CpkError("@UTF data cells copy more bytes than the allowed total")
         return bytes(buf[data_off + off:data_off + off + size]), pos + 8
     raise CpkError(f"unknown @UTF value type {typ}")
 
@@ -78,13 +83,14 @@ def _decrypt(data):
     return data
 
 
-def parse_utf(block):
+def parse_utf(block, max_copy=MAX_UTF_BYTES):
     """Parse an @UTF table. Returns (columns, rows, notes); columns are (name, storage, type).
 
     Like upstream, a block whose first four bytes are not '@UTF' is tried again after the mask.
     """
     block = bytearray(block)
     notes = []
+    budget = [max_copy]
     if block[:4] != b"@UTF":
         block = _decrypt(block)
         notes.append("masked")
@@ -112,7 +118,7 @@ def parse_utf(block):
         storage, typ = flag & 0xF0, flag & 0x0F
         const = None
         if storage == 0x30:
-            const, pos = _read_value(t, pos, typ, str_off, data_off)
+            const, pos = _read_value(t, pos, typ, str_off, data_off, budget)
         cols.append((name, storage, typ, const))
     _need(t, rows_off, nrows * row_w)
     rows = []
@@ -123,7 +129,7 @@ def parse_utf(block):
             if storage == 0x30:
                 row[name] = const
             elif storage == 0x50:
-                row[name], q = _read_value(t, q, typ, str_off, data_off)
+                row[name], q = _read_value(t, q, typ, str_off, data_off, budget)
             else:
                 row[name] = None  # 0x10: stored as default/zero
         rows.append(row)
@@ -245,14 +251,30 @@ def inspect(path, sniff_limit=200):
 
         by_ext = collections.defaultdict(collections.Counter)
         layla = 0
+        file_size = report["bytes"]
+        out_of_range, first_out = 0, None
         for i, r in enumerate(sorted(trows, key=lambda x: x["ID"])):
-            f.seek(base + r["FileOffset"])
-            head = f.read(8)
+            start = base + r["FileOffset"]
+            stored = r["FileSize"] or r["ExtractSize"]
+            if start + stored > file_size:
+                # The member's stored bytes are not all in the file (truncated or offset beyond EOF).
+                out_of_range += 1
+                first_out = first_out or {"id": r["ID"], "name": r["FileName"], "start": start,
+                                          "stored": stored, "file": file_size}
+            if start >= file_size:
+                head = b""
+            else:
+                f.seek(start)
+                head = f.read(min(8, stored, file_size - start))
             if head == LAYLA and r["ExtractSize"] in (0, r["FileSize"]):
                 layla += 1  # upstream Open() treats these as compressed although the TOC does not
             if i < sniff_limit:
                 by_ext[os.path.splitext(r["FileName"])[1].lower() or "(none)"][head[:4].hex()] += 1
         report["layla_magic_not_marked_compressed"] = layla
+        report["members_out_of_range"] = out_of_range
+        if first_out:
+            report["members_out_of_range_first"] = first_out
+            problems.append(f"{out_of_range} member(s) extend past the end of the file (truncated archive?)")
         report["members"] = {e: {"count": sum(c.values()), "magic4": dict(c.most_common(4))}
                              for e, c in by_ext.items()}
         report["ids"] = [[r["ID"], r["FileName"], r["FileSize"]] for r in sorted(trows, key=lambda x: x["ID"])]

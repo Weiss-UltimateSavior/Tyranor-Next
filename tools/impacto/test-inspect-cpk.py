@@ -112,6 +112,20 @@ def build_cpk(files, *, shift=None, id_type="u32", encrypted=False, flag=None, w
     return bytes(image) + bytes(body)
 
 
+def shared_range_table(rows, range_bytes=1024):
+    """A @UTF table whose every row has a data cell pointing at the same byte range."""
+    strings = b"<NULL>\0blob\0"
+    rows_off = 24 + 5
+    row_w = 8
+    str_off = rows_off + rows * row_w
+    data_off = str_off + len(strings)
+    t = struct.pack(">HHIIIHHI", 0, rows_off, str_off, data_off, 0, 1, row_w, rows)
+    t += bytes([0x50 | 11]) + struct.pack(">I", 7)
+    t += struct.pack(">II", 0, range_bytes) * rows
+    t += strings + b"\xAA" * range_bytes
+    return b"@UTF" + struct.pack(">I", len(t)) + t
+
+
 class InspectCpkTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -209,6 +223,34 @@ class InspectCpkTests(unittest.TestCase):
                                   capture_output=True, text=True, timeout=30)
             self.assertEqual(proc.returncode, 1, name + proc.stderr)
             self.assertNotIn("Traceback", proc.stderr, name)
+
+    def test_repeated_data_cell_ranges_hit_the_total_copy_limit(self):
+        # 1000 rows x the same 1 KiB range is a ~1 MiB copy from a ~10 KiB table; the limit is on the total copied.
+        block = shared_range_table(1000)
+        with self.assertRaises(inspect_cpk.CpkError):
+            inspect_cpk.parse_utf(block, max_copy=64 * 1024)
+        _, rows, _ = inspect_cpk.parse_utf(shared_range_table(10), max_copy=64 * 1024)
+        self.assertEqual(len(rows), 10)
+        self.assertEqual(len(rows[0]["blob"]), 1024)
+
+    def test_truncated_last_member_is_reported(self):
+        blob = build_cpk(self.files)
+        clean = inspect_cpk.inspect(self.write("whole.cpk", blob))
+        self.assertEqual(clean["members_out_of_range"], 0)
+        self.assertEqual(clean["problems"], [])
+        # Members start at 6144, 12288 and 14336 (c.scx holds 4 bytes). Keep two of c's four bytes.
+        rep = inspect_cpk.inspect(self.write("cut-last.cpk", blob[:14336 + 2]))
+        self.assertEqual(rep["members_out_of_range"], 1)
+        self.assertEqual(rep["members_out_of_range_first"]["name"], "c.scx")
+        self.assertTrue(any("past the end" in item for item in rep["problems"]))
+        # Cut inside b.png as well: both b and c are incomplete.
+        rep = inspect_cpk.inspect(self.write("cut-two.cpk", blob[:12288 + 3]))
+        self.assertEqual(rep["members_out_of_range"], 2)
+
+    def test_member_offset_beyond_the_file_does_not_crash(self):
+        blob = build_cpk(self.files, shift=(2, 1 << 40))
+        rep = inspect_cpk.inspect(self.write("far.cpk", blob))
+        self.assertGreaterEqual(rep["members_out_of_range"], 1)
 
     def test_not_a_cpk_fails_cleanly(self):
         path = self.write("junk.cpk", b"NOPE" * 100)
