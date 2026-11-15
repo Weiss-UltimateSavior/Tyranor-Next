@@ -176,8 +176,8 @@ public final class SystemNnnHost {
         if(isChartSave(path))return true;
         if(relative.getNameCount()!=1)return false;
         String name = relative.getFileName().toString();
-        if (relative.getNameCount() == 1 && (isPcStorySave(name)||isPcGlobalSave(name))) return true;
-        if (relative.getNameCount() == 1 && name.endsWith(".bak")) {
+        if (isPcStorySave(name)||isPcGlobalSave(name)) return true;
+        if (name.endsWith(".bak")) {
             name = name.substring(0, name.length() - 4);
             if (name.equals(SAVE_SLOT_PRESENTATION_FILE)) return false;
             relative = relative.resolveSibling(name);
@@ -226,23 +226,31 @@ public final class SystemNnnHost {
         return true;
     }
 
+    /** Directory entries can have a Unicode spelling whose displayed Path string is ASCII. */
+    public static boolean hasExactAsciiSaveSpelling(Path path) {
+        String name=path.toString();
+        return asciiChartPath(name)&&path.equals(path.getFileSystem().getPath(name));
+    }
+
     private static String relativeSaveName(Path relative) {
-        if(relative.isAbsolute()||relative.getFileName()==null||!relative.normalize().equals(relative))return "";
+        if(relative.isAbsolute()||relative.getFileName()==null||!relative.normalize().equals(relative)||
+            !hasExactAsciiSaveSpelling(relative))return "";
         for(Path part:relative)if(part.toString().equals(".")||part.toString().equals(".."))return "";
         return relative.toString().replace(File.separatorChar,'/');
     }
 
     /** Retired slots can still be put back by an interrupted older transaction. */
     public static boolean isRetiredRollbackFile(Path relative) {
-        if(relative.isAbsolute()||relative.getNameCount()!=1)return false;
-        String name=relative.getFileName().toString();
+        if(relative.getNameCount()!=1)return false;
+        String name=relativeSaveName(relative);
+        if(name.isEmpty())return false;
         if(name.endsWith(".bak"))relative=relative.resolveSibling(name.substring(0,name.length()-4));
         return LegacySaveMigration.retiredSlot(relative);
     }
 
     public static boolean isManagedSaveDirectory(Path relative) {
         String name=relativeSaveName(relative);
-        if(!asciiChartPath(name))return false;
+        if(name.isEmpty())return false;
         if(name.equalsIgnoreCase("mushiex")||name.equalsIgnoreCase(GameSavePaths.PREFIX+GameSavePaths.CHART))return true;
         return isChartNodeSave(name+"/slot0.dat");
     }

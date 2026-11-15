@@ -117,12 +117,12 @@ class SystemNnnSaveInteropTest {
         val current = saves.resolve("sysfile.sav")
         val original = current.readBytes()
         assertTrue(store.files().containsKey(current.name))
-        val older = temp.newFolder()
+        val older = GameSaveManager.createZipStaging(temp.root)
         putProgress(older, 11)
         store.access { store.replace(older) }
         assertArrayEquals(original, current.readBytes())
 
-        val newer = temp.newFolder()
+        val newer = GameSaveManager.createZipStaging(temp.root)
         state.variables[5] = 1
         PcSystemSave.open(game, newer, config, intArrayOf(1, 0)).write(state, intArrayOf())
         val replacement = newer.resolve(current.name)
@@ -741,7 +741,7 @@ class SystemNnnSaveInteropTest {
         val saves = game.resolve("sav").apply { check(mkdir()) }
         val pc = putPcSlot(saves, "data3.sav")
         val onDisk = putLegacySlot(saves)
-        val stage = temp.newFolder()
+        val stage = GameSaveManager.createZipStaging(temp.root)
         val legacy = putLegacySlot(stage)
         val store = SystemNnnSaveStore(game, saves, ::validateFixture)
 
@@ -1342,7 +1342,12 @@ class SystemNnnSaveInteropTest {
             assertFalse(SystemNnnHost.isManagedSaveFile(Paths.get("$name/mita.dat")))
             assertFalse(SystemNnnHost.isManagedSaveFile(Paths.get("$name/chart1/slot1001.dat")))
         }
+        // Check the literal archive names before macOS Path normalizes the Kelvin sign to K.
         for (name in listOf("m\u0131ta.dat", "t\u017fuka.dat", "tsu\u212aa.dat")) {
+            assertFalse(SystemNnnHost.isPcGlobalSave(name))
+            assertFalse(SystemNnnHost.isPcGlobalSave("mushiex/$name"))
+        }
+        for (name in listOf("m\u0131ta.dat", "t\u017fuka.dat")) {
             assertFalse(SystemNnnHost.isManagedSaveFile(Paths.get(name)))
             assertFalse(SystemNnnHost.isManagedSaveFile(Paths.get("mushiex/$name")))
         }
@@ -1354,14 +1359,21 @@ class SystemNnnSaveInteropTest {
         )
         val original = untouched.associateWith(File::readBytes)
         val incoming = temp.newFolder().canonicalFile
-        putChartFlags(incoming, true)
-        putChartNode(incoming, "mushiex/chart1/slot1001.dat")
+        val flags = putChartFlags(incoming, true)
+        val nodeName = "mushiex/chart1/slot1001.dat"
+        putChartNode(incoming, nodeName)
         val store = SystemNnnSaveStore(game, saves, ::validateFixture)
-        // A volume may itself alias Unicode spellings. Either retain that unowned entry
-        // and reject the target, or commit to a distinct ASCII path; never overwrite it.
-        val failure = runCatching { store.access { store.replace(incoming) } }.exceptionOrNull()
-        if (failure != null) assertTrue(failure is GameSaveException)
-        else assertArrayEquals(CHART_NODE_FIXTURE, saves.resolve("mushiex/chart1/slot1001.dat").readBytes())
+        assertTrue(store.files().isEmpty())
+        assertTrue(SystemNnnSaveValidationService.stagedFiles(saves.toPath()).isEmpty())
+        val restoredNames = flags.keys + nodeName
+        if (restoredNames.any { saves.resolve(it).exists() }) {
+            val failure = assertThrows(GameSaveException::class.java) { store.access { store.replace(incoming) } }
+            assertEquals(SaveErrorCode.SAVE_DIR_UNAVAILABLE, failure.code)
+        } else {
+            store.access { assertEquals(restoredNames.size, store.replace(incoming)) }
+            for ((name, bytes) in flags) assertArrayEquals(bytes, saves.resolve(name).readBytes())
+            assertArrayEquals(CHART_NODE_FIXTURE, saves.resolve(nodeName).readBytes())
+        }
         for ((file, bytes) in original) assertArrayEquals(bytes, file.readBytes())
         assertFalse(saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY).exists())
     }

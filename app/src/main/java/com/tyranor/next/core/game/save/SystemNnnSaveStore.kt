@@ -7,8 +7,10 @@ import java.io.Closeable
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.nio.file.DirectoryIteratorException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
+import java.nio.file.Path
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 
@@ -57,24 +59,24 @@ internal class SystemNnnSaveStore(
 
     private fun saveFiles(root: File, restoreRetired: Boolean): Map<String, File> {
         val safeRoot = SavePathSafety.requireSafeRoot(root)
-        if (Files.notExists(safeRoot.toPath(), NOFOLLOW_LINKS)) return emptyMap()
+        val rootPath = safeRoot.toPath()
+        if (Files.notExists(rootPath, NOFOLLOW_LINKS)) return emptyMap()
         val result = linkedMapOf<String, File>()
         fun visit(folder: File) {
-            val children = folder.listFiles() ?: throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
             val names = hashSetOf<String>()
-            for (child in children) {
-                val relative = safeRoot.toPath().relativize(child.toPath())
+            for (child in directoryEntries(folder.toPath())) {
+                val relative = rootPath.relativize(child)
                 val directory = SystemNnnHost.isManagedSaveDirectory(relative)
                 val file = SystemNnnHost.isManagedSaveFile(relative) ||
                     restoreRetired && SystemNnnHost.isRetiredRollbackFile(relative)
                 if (!directory && !file) continue
-                if (!names.add(foldSaveName(child.name))) {
+                if (!names.add(foldSaveName(child.fileName.toString()))) {
                     throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
                 }
                 when {
-                    directory -> visit(SavePathSafety.requireSafeRoot(child, safeRoot))
+                    directory -> visit(SavePathSafety.requireSafeRoot(child.toFile(), safeRoot))
                     file ->
-                        result[relative.toString().replace(File.separatorChar, '/')] = SavePathSafety.requireSafeFile(safeRoot, child)
+                        result[relative.toString().replace(File.separatorChar, '/')] = SavePathSafety.requireSafeFile(safeRoot, child.toFile())
                 }
             }
         }
@@ -227,20 +229,38 @@ internal class SystemNnnSaveStore(
         var target = SavePathSafety.requireSafeRoot(directory, game)
         val parts = name.split('/')
         for ((index, part) in parts.withIndex()) {
-            val children = if (Files.notExists(target.toPath(), NOFOLLOW_LINKS)) emptyArray()
-            else target.listFiles() ?: throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            val directoryPath = target.toPath()
+            val children = if (Files.notExists(directoryPath, NOFOLLOW_LINKS)) emptyList()
+            else directoryEntries(directoryPath)
             val folded = foldSaveName(part)
-            val aliases = children.filter { foldSaveName(it.name) == folded }
+            val aliases = children.filter {
+                val filename = it.fileName
+                foldSaveName(filename.toString()) == folded && SystemNnnHost.hasExactAsciiSaveSpelling(filename)
+            }
             if (aliases.size > 1) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
-            target = aliases.singleOrNull() ?: File(target, part)
-            if (index < parts.lastIndex) target = SavePathSafety.requireSafeRoot(target, directory)
-            else if (!Files.notExists(target.toPath(), NOFOLLOW_LINKS)) {
-                target = SavePathSafety.requireSafeFile(directory, target)
+            val existing = aliases.singleOrNull()
+            target = when {
+                existing == null -> File(target, part).also {
+                    // The volume may resolve a spelling outside the managed ASCII names.
+                    if (!Files.notExists(it.toPath(), NOFOLLOW_LINKS)) {
+                        throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+                    }
+                }
+                index < parts.lastIndex -> SavePathSafety.requireSafeRoot(existing.toFile(), directory)
+                else -> SavePathSafety.requireSafeFile(directory, existing.toFile())
             }
         }
         val relative = SavePathSafety.requireSafeRoot(directory, game).toPath().relativize(target.toPath())
         if (!SystemNnnHost.isManagedSaveFile(relative)) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
         return target
+    }
+
+    private fun directoryEntries(directory: Path): List<Path> = try {
+        Files.newDirectoryStream(directory).use { it.toList() }
+    } catch (failure: DirectoryIteratorException) {
+        throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = failure.cause)
+    } catch (failure: IOException) {
+        throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = failure)
     }
 
     private fun foldSaveName(name: String): String = buildString(name.length) {
