@@ -221,7 +221,12 @@ final class GameRunner {
     private final LinkedHashSet<String> readLines=new LinkedHashSet<>();
     private GameProgress.State initialProgress;
     private PcSystemSave.Initial initialPcSystem;
-    private int pcMessageCursor=Integer.MIN_VALUE,pendingMessageCursor=Integer.MIN_VALUE,pendingMouseCursor=Integer.MIN_VALUE;
+    private int pcMessageCursor=Integer.MIN_VALUE;
+    private final AtomicReference<PendingCursors> pendingCursors=new AtomicReference<>();
+    private static final class PendingCursors {
+        final int message,mouse;
+        PendingCursors(int message,int mouse){this.message=message;this.mouse=mouse;}
+    }
     private int publishedScriptMouse=Integer.MIN_VALUE;
     private Modal menuModal;
     private ChartSavePicture chartSavePicture;
@@ -535,7 +540,7 @@ final class GameRunner {
             if(extendedMode){
                 int[] aux=NativeGame.auxiliaryState(handle);
                 if(aux!=null&&aux.length>=36){
-                    pendingMessageCursor=aux[34];pendingMouseCursor=aux[35];
+                    pendingCursors.set(new PendingCursors(aux[34],aux[35]));
                     if(uiAssets.game.number("expModeButtonIsMessageCursor",0)!=0)pcMessageCursor=aux[34];
                 }
             }
@@ -567,8 +572,8 @@ final class GameRunner {
         tasks.removeCallbacks(flushAudioSettings);
         PcSystemSave archive=pcSystemSave;
         if(archive==null)return;
-        int[] raw=RuntimeSettingsAdapter.persistedOverrides(userPreferences,legacySource);
-        int[] owners=RuntimeSettingsAdapter.persistedOwners(userPreferences,legacySource);
+        RuntimeSettingsAdapter.AudioOverrides overrides=RuntimeSettingsAdapter.audioOverrides(userPreferences,legacySource);
+        int[] raw=overrides.raw,owners=overrides.owners;
         int rawCount=0,ownerCount=0;
         for(int i=0;i<raw.length;i+=2)if(archive.storesAudioParameter(raw[i])){
             raw[rawCount++]=raw[i];raw[rawCount++]=raw[i+1];
@@ -576,14 +581,17 @@ final class GameRunner {
         for(int i=0;i<owners.length;i+=2)if(archive.storesAudioOwner(owners[i])){
             owners[ownerCount++]=owners[i];owners[ownerCount++]=owners[i+1];
         }
-        int msgCursor=pendingMessageCursor,mouseCursor=pendingMouseCursor;
-        pendingMessageCursor=pendingMouseCursor=Integer.MIN_VALUE;
+        PendingCursors cursors=pendingCursors.get();
+        int msgCursor=cursors==null?Integer.MIN_VALUE:cursors.message;
+        int mouseCursor=cursors==null?Integer.MIN_VALUE:cursors.mouse;
         if(rawCount+ownerCount==0&&msgCursor==Integer.MIN_VALUE&&mouseCursor==Integer.MIN_VALUE)return;
         int[] parameters=Arrays.copyOf(raw,rawCount),auxiliary=Arrays.copyOf(owners,ownerCount);
         SAVE_FILES.execute(()->{
             try{
-                if(archive.writeSystemSettings(parameters,auxiliary,msgCursor,mouseCursor))
-                    RuntimeSettingsAdapter.clearSavedAudioOverrides(userPreferences,legacySource,parameters,auxiliary);
+                if(archive.writeSystemSettings(parameters,auxiliary,msgCursor,mouseCursor)){
+                    pendingCursors.compareAndSet(cursors,null);
+                    RuntimeSettingsAdapter.clearSavedAudioOverrides(userPreferences,overrides,parameters,auxiliary);
+                }
             }catch(IOException|RuntimeException failure){
                 Log.w("SystemNNN","PC system settings save failed",failure);
             }

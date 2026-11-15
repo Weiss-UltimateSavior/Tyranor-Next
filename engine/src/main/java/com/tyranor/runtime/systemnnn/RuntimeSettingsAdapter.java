@@ -17,6 +17,17 @@ final class RuntimeSettingsAdapter {
     private static final int[] BOOLEAN_IDS={2,SCREEN_MODE,6,210,211,212,213,214};
     private static final int[] EMPTY=new int[0];
     private static final String RAW_PREFIX="runtime.raw.";
+    private static final String REVISION="revision";
+
+    static final class AudioOverrides {
+        final int[] raw,owners;
+        private final String prefix;
+        private final long revision;
+
+        private AudioOverrides(String prefix,long revision,int[] raw,int[] owners){
+            this.prefix=prefix;this.revision=revision;this.raw=raw;this.owners=owners;
+        }
+    }
 
     private static String namespace(File game){
         try{return RAW_PREFIX+UUID.nameUUIDFromBytes(game.getCanonicalPath().getBytes(StandardCharsets.UTF_8))+".";}
@@ -44,9 +55,12 @@ final class RuntimeSettingsAdapter {
         return persistedOverrides(preferences,game,includeScreenMode,true);
     }
     static int[] persistedOverrides(SharedPreferences preferences,File game,boolean includeScreenMode,boolean includeAutoMode){
-        String prefix=namespace(game);Map<String,?> all=preferences.getAll();List<Integer> result=new ArrayList<>();
+        return rawOverrides(preferences.getAll(),namespace(game),includeScreenMode,includeAutoMode);
+    }
+    private static int[] rawOverrides(Map<String,?> values,String prefix,boolean includeScreenMode,boolean includeAutoMode){
+        List<Integer> result=new ArrayList<>();
         for(int id=0;id<572;id++)if(supported(id)&&(includeScreenMode||id!=SCREEN_MODE)&&(includeAutoMode||id!=6)){
-            Integer value=integer(all,prefix+id);if(value!=null){result.add(id);result.add(value);}
+            Integer value=integer(values,prefix+id);if(value!=null){result.add(id);result.add(value);}
         }
         // Migration TODO: old global eight-setting values used different units
         // and defaults. Import requires an explicit migration policy, not a guess.
@@ -59,42 +73,52 @@ final class RuntimeSettingsAdapter {
     static void persistRawOverrides(SharedPreferences preferences,File game,int[] actualPairs){
         pairs(actualPairs);String prefix=namespace(game);
         synchronized(preferences){
-            SharedPreferences.Editor edit=preferences.edit();
+            SharedPreferences.Editor edit=editOverrides(preferences,prefix);
             for(int i=0;i<actualPairs.length;i+=2)if(supported(actualPairs[i]))edit.putInt(prefix+actualPairs[i],actualPairs[i+1]);
             edit.apply();
         }
     }
 
     static int[] persistedOwners(SharedPreferences preferences,File game){
-        Map<String,?> values=preferences.getAll();
-        String prefix=namespace(game)+"owner.";
+        return ownerOverrides(preferences.getAll(),namespace(game));
+    }
+    private static int[] ownerOverrides(Map<String,?> values,String prefix){
+        String ownerPrefix=prefix+"owner.";
         List<Integer> result=new ArrayList<>();
         for(int id=0;id<34;id++){
-            Integer value=integer(values,prefix+id);
+            Integer value=integer(values,ownerPrefix+id);
             if(value!=null){result.add(id);result.add(value);}
         }
         return array(result);
     }
 
     static void persistOwner(SharedPreferences preferences,File game,int id,int value){
-        synchronized(preferences){preferences.edit().putInt(ownerKey(game,id),value).apply();}
+        String prefix=namespace(game);
+        synchronized(preferences){editOverrides(preferences,prefix).putInt(prefix+"owner."+id,value).apply();}
     }
-
-    static void clearSavedAudioOverrides(SharedPreferences preferences,File game,int[] raw,int[] owners){
+    private static SharedPreferences.Editor editOverrides(SharedPreferences preferences,String prefix){
+        String key=prefix+REVISION;
+        return preferences.edit().putLong(key,preferences.getLong(key,0L)+1);
+    }
+    static AudioOverrides audioOverrides(SharedPreferences preferences,File game){
         String prefix=namespace(game);
         synchronized(preferences){
             Map<String,?> values=preferences.getAll();
+            long revision=preferences.getLong(prefix+REVISION,0L);
+            return new AudioOverrides(prefix,revision,rawOverrides(values,prefix,true,true),ownerOverrides(values,prefix));
+        }
+    }
+    static void clearSavedAudioOverrides(SharedPreferences preferences,AudioOverrides saved,int[] raw,int[] owners){
+        synchronized(preferences){
+            if(preferences.getLong(saved.prefix+REVISION,0L)!=saved.revision)return;
             SharedPreferences.Editor edit=preferences.edit();
-            clearSavedPairs(values,edit,prefix,raw);
-            clearSavedPairs(values,edit,prefix+"owner.",owners);
+            clearSavedPairs(edit,saved.prefix,raw);
+            clearSavedPairs(edit,saved.prefix+"owner.",owners);
             edit.apply();
         }
     }
-    private static void clearSavedPairs(Map<String,?> values,SharedPreferences.Editor edit,String prefix,int[] pairs){
-        for(int i=0;i<pairs.length;i+=2){
-            String key=prefix+pairs[i];
-            if(Objects.equals(integer(values,key),pairs[i+1]))edit.remove(key);
-        }
+    private static void clearSavedPairs(SharedPreferences.Editor edit,String prefix,int[] pairs){
+        for(int i=0;i<pairs.length;i+=2)edit.remove(prefix+pairs[i]);
     }
 
     private static OriginalSettingsModel.Slider slider(OriginalSettingsModel model,int index){

@@ -10,6 +10,7 @@ import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.Assert.assertArrayEquals;
@@ -53,9 +54,61 @@ public final class OriginalSettingsModelTest {
         assertArrayEquals(new int[]{105,2},RuntimeSettingsAdapter.persistedOverrides(pending,game,false));
     }
 
+    @Test public void finishingOlderWritesKeepsTheRepeatedSettingsChange(){
+        File game=folder.getRoot(),other=new File(game,"other");
+        SharedPreferences preferences=values(Map.of());
+        RuntimeSettingsAdapter.persistRawOverrides(preferences,game,new int[]{105,20});
+        RuntimeSettingsAdapter.persistOwner(preferences,game,1,7);
+        RuntimeSettingsAdapter.AudioOverrides first=RuntimeSettingsAdapter.audioOverrides(preferences,game);
+        RuntimeSettingsAdapter.persistRawOverrides(preferences,game,new int[]{105,30});
+        RuntimeSettingsAdapter.AudioOverrides second=RuntimeSettingsAdapter.audioOverrides(preferences,game);
+        RuntimeSettingsAdapter.persistRawOverrides(preferences,game,new int[]{105,20});
+        RuntimeSettingsAdapter.AudioOverrides latest=RuntimeSettingsAdapter.audioOverrides(preferences,game);
+
+        RuntimeSettingsAdapter.clearSavedAudioOverrides(preferences,first,first.raw,first.owners);
+        RuntimeSettingsAdapter.clearSavedAudioOverrides(preferences,second,second.raw,second.owners);
+        assertArrayEquals(new int[]{105,20},RuntimeSettingsAdapter.persistedOverrides(preferences,game));
+        assertArrayEquals(new int[]{1,7},RuntimeSettingsAdapter.persistedOwners(preferences,game));
+
+        RuntimeSettingsAdapter.persistOwner(preferences,game,1,7);
+        RuntimeSettingsAdapter.clearSavedAudioOverrides(preferences,latest,latest.raw,latest.owners);
+        assertArrayEquals(new int[]{1,7},RuntimeSettingsAdapter.persistedOwners(preferences,game));
+        assertArrayEquals(new int[]{105,20},RuntimeSettingsAdapter.persistedOverrides(preferences,game));
+
+        RuntimeSettingsAdapter.AudioOverrides saved=RuntimeSettingsAdapter.audioOverrides(preferences,game);
+        RuntimeSettingsAdapter.persistRawOverrides(preferences,other,new int[]{105,60});
+        RuntimeSettingsAdapter.clearSavedAudioOverrides(preferences,saved,saved.raw,saved.owners);
+        assertArrayEquals(new int[0],RuntimeSettingsAdapter.persistedOverrides(preferences,game));
+        assertArrayEquals(new int[0],RuntimeSettingsAdapter.persistedOwners(preferences,game));
+        assertArrayEquals(new int[]{105,60},RuntimeSettingsAdapter.persistedOverrides(preferences,other));
+    }
+
     private static SharedPreferences values(Map<String,?> entries){
+        Map<String,Object> store=new HashMap<>(entries);
         return (SharedPreferences)Proxy.newProxyInstance(SharedPreferences.class.getClassLoader(),
-            new Class<?>[]{SharedPreferences.class},(prefs,method,args)->entries);
+            new Class<?>[]{SharedPreferences.class},(prefs,method,args)->{
+                switch(method.getName()){
+                case "getAll":return new HashMap<>(store);
+                case "getLong":return store.getOrDefault((String)args[0],args[1]);
+                case "edit":return edit(store);
+                default:throw new AssertionError(method);
+                }
+            });
+    }
+
+    private static SharedPreferences.Editor edit(Map<String,Object> store){
+        Map<String,Object> updates=new HashMap<>();
+        return (SharedPreferences.Editor)Proxy.newProxyInstance(SharedPreferences.Editor.class.getClassLoader(),
+            new Class<?>[]{SharedPreferences.Editor.class},(editor,method,args)->{
+                switch(method.getName()){
+                case "putInt":case "putLong":updates.put((String)args[0],args[1]);return editor;
+                case "remove":updates.put((String)args[0],null);return editor;
+                case "apply":
+                    updates.forEach((key,value)->{if(value==null)store.remove(key);else store.put(key,value);});
+                    return null;
+                default:throw new AssertionError(method);
+                }
+            });
     }
 
     @Test public void pcLoadKeepsItsAutoDecisionInsteadOfReapplyingPreferences(){
