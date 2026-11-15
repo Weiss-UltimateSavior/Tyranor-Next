@@ -27,6 +27,16 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.platform.InspectorInfo
+import androidx.compose.ui.node.requireGraphicsContext
+import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.node.DrawModifierNode
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.TransformOrigin
@@ -51,10 +61,8 @@ import com.tyranor.next.theme.AppSheetTopShape
 import kotlinx.coroutines.withTimeoutOrNull
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.Lifecycle
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.addOutline
-import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.animation.core.tween
@@ -689,13 +697,9 @@ fun Modifier.motionSheetSurface(controller: MotionSheetController, scrim: Color)
         }
     }
     .sheetPanelDim(controller)
-    // 压暗与褪色盖在抽屉上，并且在图层里面画——跟着抽屉一起翻折，不会留下一块没翻的方形暗影。
-    // （褪色不用渲染效果：渲染效果的离屏缓冲只有本布局框那么大，抽屉画在 Material3 的偏移之后，会被裁掉一大块）
+    // 压暗盖在抽屉上，并且在图层里面画——跟着抽屉一起翻折，不会留下一块没翻的方形暗影。
     .drawWithCache {
         val outline = AppSheetTopShape.createOutline(size, layoutDirection, this)
-        val path = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            androidx.compose.ui.graphics.Path().apply { addOutline(outline) }
-        } else null
         onDrawWithContent {
             drawContent()
             val depth = controller.pageDepth?.progress?.value ?: 0f
@@ -707,16 +711,12 @@ fun Modifier.motionSheetSurface(controller: MotionSheetController, scrim: Color)
                 // 按抽屉的圆角轮廓画：直接画矩形会在圆角外露出深色直角
                 translate(top = top) {
                     drawOutline(outline = outline, color = Color.Black.copy(alpha = pageDimMaxAlpha() * d))
-                    // 褪色：用「饱和度」混合模式盖一层灰（饱和度为 0），只改抽屉内容的饱和度、不改亮度；API 31+（与页面区的褪色同档，低版本两边都只有压暗和翻折）
-                    if (depth > 0.01f && path != null) {
-                        clipPath(path) {
-                            drawRect(color = Color.Gray, alpha = 0.5f * depth.coerceAtMost(1f), blendMode = BlendMode.Saturation)
-                        }
-                    }
                 }
             }
         }
     }
+    // 褪色放在压暗的内侧：先把抽屉内容褪色，压暗再盖在上面（两者都是线性变换，先后顺序结果相同）
+    .then(SheetDepthDesaturateElement(controller))
 
 /**
  * 抽屉内容 / 把手上的跟手下拉手势。必须放在抽屉**内部**（内容根节点、把手），不要放在 `ModalBottomSheet` 的 modifier 上：
@@ -804,3 +804,63 @@ internal class SheetDragConnection(private val c: MotionSheetController) : Neste
         return available
     }
 }
+
+/** 抽屉随页面景深褪色的最大程度：饱和度从 1 降到 1 - 这个值（与页面区的褪色一致）。 */
+private const val SheetDesaturation = 0.5f
+private const val SheetDesaturationSteps = 20
+
+/** 褪色用的色彩矩阵滤镜按 5% 一档预先建好，进度每帧都在变，查表即可。 */
+private val SheetDesaturationFilters: Array<ColorFilter> by lazy {
+    Array(SheetDesaturationSteps + 1) { i ->
+        ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(1f - SheetDesaturation * i / SheetDesaturationSteps) })
+    }
+}
+
+private data class SheetDepthDesaturateElement(
+    private val controller: MotionSheetController,
+) : ModifierNodeElement<SheetDepthDesaturateNode>() {
+    override fun create() = SheetDepthDesaturateNode(controller)
+    override fun update(node: SheetDepthDesaturateNode) {
+        node.controller = controller
+    }
+    override fun InspectorInfo.inspectableProperties() {
+        name = "sheetDepthDesaturate"
+    }
+}
+
+/**
+ * 抽屉进入二级页面时的褪色。
+ *
+ * 不用 `BlendMode.Saturation`：非可分离混合模式在联发科天玑（Mali GPU）机型上会把纯白画成黑色（抽屉条目整块变黑）；
+ * 也不用 `graphicsLayer { renderEffect }`：离屏缓冲只有本布局框那么大，而抽屉画在 Material3 的纵向偏移之后，会被裁掉一大块。
+ * 这里把内容录进自己的图层，图层向下加高到覆盖偏移后的抽屉，再给图层挂色彩矩阵滤镜（普通的图层绘制，不涉及混合模式）。
+ * 进度为 0 时不走图层，直接绘制，没有额外开销。API 31 以下只有压暗和翻折，与页面区同档。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+private class SheetDepthDesaturateNode(var controller: MotionSheetController) : Modifier.Node(), DrawModifierNode {
+    private var layer: GraphicsLayer? = null
+
+    override fun ContentDrawScope.draw() {
+        val depth = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) controller.pageDepth?.progress?.value ?: 0f else 0f
+        val step = kotlin.math.round(depth.coerceIn(0f, 1f) * SheetDesaturationSteps).toInt()
+        if (step == 0) {
+            drawContent()
+            return
+        }
+        val top = runCatching { controller.sheetState?.requireOffset() }.getOrNull() ?: 0f
+        val width = size.width.toInt().coerceAtLeast(1)
+        val height = (size.height + top.coerceAtLeast(0f)).toInt().coerceIn(1, MaxDesaturationLayerHeight)
+        val target = layer ?: requireGraphicsContext().createGraphicsLayer().also { layer = it }
+        target.colorFilter = SheetDesaturationFilters[step]
+        // 必须用 DrawScope 里的成员扩展 GraphicsLayer.record(size) { }：里面的 drawContent() 才会画进图层
+        target.record(IntSize(width, height)) { this@draw.drawContent() }
+        drawLayer(target)
+    }
+
+    override fun onDetach() {
+        layer?.let { requireGraphicsContext().releaseGraphicsLayer(it) }
+        layer = null
+    }
+}
+
+private const val MaxDesaturationLayerHeight = 8192
