@@ -68,6 +68,21 @@ final class SpriteAnimation {
         // Original DWQ hit masks treat even alpha 1 as an active pixel.
         return first.contains(px,py)&&(image.getPixel(px,py)>>>24)!=0;
     }
+    boolean hasHitPixels(Bitmap image,int left,int top,int right,int bottom){
+        if(!rect(image,0,first))return false;
+        int x=(int)Math.min(first.right,first.left+(long)left);
+        int y=(int)Math.min(first.bottom,first.top+(long)top);
+        int width=(int)Math.min(first.right,first.left+(long)right)-x;
+        int endY=(int)Math.min(first.bottom,first.top+(long)bottom);
+        if(width<=0||y>=endY)return false;
+        if(!image.hasAlpha())return true;
+        int[] row=new int[width];
+        for(;y<endY;y++){
+            image.getPixels(row,0,width,x,y,width,1);
+            for(int pixel:row)if((pixel>>>24)!=0)return true;
+        }
+        return false;
+    }
     private void blit(Canvas c,Bitmap image,int index,Rect source,RectF dest,Paint paint){
         Bitmap frame=image;
         // Filtering a source rectangle can read neighboring atlas pixels.

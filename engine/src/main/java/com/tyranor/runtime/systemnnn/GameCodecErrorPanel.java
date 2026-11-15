@@ -15,15 +15,40 @@ final class GameCodecErrorPanel extends GameUiPanel {
     final GameRunner.MovieError error;
     private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
 
+    private static final class ButtonPosition {
+        final ButtonArt.Setup setup;
+        final int x,y;
+        ButtonPosition(ButtonArt.Setup setup,int x,int y){this.setup=setup;this.x=x;this.y=y;}
+    }
+
+    private static ButtonPosition[] buttonPositions(GameUiAssets.Config cfg){
+        ButtonPosition[] positions=new ButtonPosition[TAGS.length];
+        ButtonArt.Setup previous=null;
+        int x=0,y=0;
+        for(int i=0;i<TAGS.length;i++){
+            String key=TAGS[i];
+            ButtonArt.Setup setup=new ButtonArt.Setup(cfg,key,previous,false);
+            x=cfg.number(key+"PrintX",previous==null?0:x+previous.width);
+            y=cfg.number(key+"PrintY",previous==null?0:y+previous.height);
+            positions[i]=new ButtonPosition(setup,x,y);
+            previous=setup;
+        }
+        return positions;
+    }
+
     static boolean available(GameUiAssets assets,GameUiAssets.ModeAssets data){
         GameUiAssets.Config cfg=data.config;
         if(cfg.number("backScriptFlag",0)==0&&image(assets,data,cfg.value("filenameBG","CodecError"))==null)return false;
         if(cfg.number("dialogFlag",1)!=0&&image(assets,data,cfg.value("filenameDialog","ta_dialog5"))==null)return false;
-        ButtonArt.Setup previous=null;
-        for(int i=0;i<TAGS.length;i++){
-            ButtonArt.Setup setup=new ButtonArt.Setup(cfg,TAGS[i],previous,false);
-            if(i!=1&&image(assets,data,setup.art.image)==null)return false;
-            previous=setup;
+        ButtonPosition[] positions=buttonPositions(cfg);
+        for(int i=0;i<positions.length;i++){
+            if(i!=1){
+                ButtonPosition position=positions[i];
+                ButtonArt.Setup setup=position.setup;
+                Bitmap bitmap=image(assets,data,setup.art.image);
+                if(!new GameButton.Spec(setup).hasTouchTarget(bitmap,position.x,position.y,
+                    assets.sharedConfig.screenWidth,assets.sharedConfig.screenHeight))return false;
+            }
         }
         return true;
     }
@@ -48,25 +73,21 @@ final class GameCodecErrorPanel extends GameUiPanel {
             }
         }
         String[] labels={context.getString(R.string.engine_systemnnn_movie_skip),context.getString(R.string.engine_systemnnn_movie_available),context.getString(R.string.engine_systemnnn_movie_exit)};
-        ButtonArt.Setup previous=null;
-        int x=0,y=0;
-        for(int i=0;i<TAGS.length;i++){
-            String key=TAGS[i];
-            ButtonArt.Setup setup=new ButtonArt.Setup(cfg,key,previous,false);
+        ButtonPosition[] positions=buttonPositions(cfg);
+        for(int i=0;i<positions.length;i++){
+            ButtonPosition position=positions[i];
+            ButtonArt.Setup setup=position.setup;
             Bitmap image=sprite(setup.art.image);
-            x=cfg.number(key+"PrintX",previous==null?0:x+previous.width);
-            y=cfg.number(key+"PrintY",previous==null?0:y+previous.height);
             GameButton.Spec spec=new GameButton.Spec(setup);
             int action=i;
             boolean enabled=i!=1||error.capability!=0;
             if(image!=null){
                 GameButton button=animatedButton(spec,image,labels[i],()->sound(spec.sound,spec.voice),
-                    ()->choose.accept(action),x,y,setup.width,setup.height);
+                    ()->choose.accept(action),position.x,position.y,setup.width,setup.height);
                 ButtonArt.Setup feedback=setup;
                 button.feedback(event->sound(feedback.sound(event),feedback.voice(event)),setup.enterWait,setup.exitWait);
                 button.setEnabled(enabled);button.setClickable(enabled);
             }
-            previous=setup;
         }
         opening(cfg,false);
         uiBackground(cfg,MODE,0);

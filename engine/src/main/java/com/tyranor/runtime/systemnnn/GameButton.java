@@ -38,6 +38,17 @@ final class GameButton extends StoryPlaneView {
             this.image=image;states=new SpriteAnimation[]{normal,hover,pressed,null};
             hit=normal;hitX=hitY=0;pixelHit=true;clickTime=frames;sound=voice=-1;
         }
+
+        boolean hasTouchTarget(Bitmap bitmap,int x,int y,int canvasWidth,int canvasHeight){
+            if(bitmap==null||bitmap.isRecycled())return false;
+            long visibleLeft=Math.max(0L,-(long)x),visibleTop=Math.max(0L,-(long)y);
+            long visibleRight=Math.min(states[0].w,(long)canvasWidth-x);
+            long visibleBottom=Math.min(states[0].h,(long)canvasHeight-y);
+            long left=Math.max(0L,visibleLeft-hitX),top=Math.max(0L,visibleTop-hitY);
+            long right=Math.min(hit.w,visibleRight-hitX),bottom=Math.min(hit.h,visibleBottom-hitY);
+            return left<right&&top<bottom&&
+                (!pixelHit||hit.hasHitPixels(bitmap,(int)left,(int)top,(int)right,(int)bottom));
+        }
     }
     final Spec spec;
     private final Bitmap image;

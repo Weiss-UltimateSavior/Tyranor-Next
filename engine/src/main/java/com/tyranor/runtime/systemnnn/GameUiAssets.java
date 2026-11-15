@@ -378,6 +378,9 @@ final class GameUiAssets {
             if (!name.isEmpty()) names.add(systemImageKey(name));
         }
     }
+    static String backlogVoicePicture(Config backlog){
+        return backlog.value("filenameVoice","ta_backlogvoice");
+    }
     private static void common(Set<String> names,Config config) {
         request(names,config,"BackFileName","UpFileName","DownFileName","fileNamePageFont",
             "filenameDialog","fileNameDialog2","dialogOkFileName","dialogCancelFileName",
@@ -432,7 +435,11 @@ final class GameUiAssets {
         for (String kind:new String[]{"skip1","skip2","auto1","auto2"})
             request(names,config,kind+"Button1FileName",kind+"Button2FileName");
         request(names,config,"messageSpeedBarFileName","autoSpeedBarFileName");
-        request(names,backlog,"backlogBGFileName","titlePicFileName","filenameUpdownArrow","upArrowFileName","downArrowFileName","filenameVoice","filenameJump");
+        request(names,backlog,"backlogBGFileName","titlePicFileName","filenameUpdownArrow","upArrowFileName","downArrowFileName","filenameJump");
+        if(backlog.number("voicePicFlag",0)!=0){
+            String voice=backlogVoicePicture(backlog);
+            if(!voice.isEmpty())names.add(systemImageKey(voice));
+        }
         Config data=readConfig(root,"dataFile"),notice=readConfig(root,"notice");
         request(names,save,"filenameBG");request(names,load,"filenameBG");
         request(names,data,"fileNameSelectPic","filenameSaveCursor","filenameLoadCursor","filenameOverwriteCursor","fileNameSaveTimeFont",

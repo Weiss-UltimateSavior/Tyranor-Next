@@ -223,7 +223,7 @@ final class GameBacklogPanel extends GameUiPanel {
         Runnable action=()->{replay.play(row.voices.get(row.nextVoice));row.nextVoice=(row.nextVoice+1)%row.voices.size();};
         String description=hostText(R.string.engine_systemnnn_ctl_backlog_voice);
         if(cfg.number("voicePicFlag",0)!=0){
-            animateIcon(cfg.value("filenameVoice","ta_backlogvoice"),"voicePic",w,h,description,vx,vy,()->{},action);
+            animateIcon(GameUiAssets.backlogVoicePicture(cfg),"voicePic",w,h,description,vx,vy,()->{},action);
             return;
         }
         String def=assets.sharedConfig.singleByteText()?"SD":"♪";

@@ -97,10 +97,13 @@ final class GameGalleryPanel extends GameUiPanel {
                 ()->actions.mode(entry.mode),entry.x,entry.y,entry.setup.width,entry.setup.height).setEnabled(entry.enabled);
         }
         for(GameMiniGames.Entry entry:page.miniGames){
+            String label=EngineUiText.get(getContext(),R.string.engine_systemnnn_ctl_title_minigame);
             if(entry.spec==null){
-                View area=new View(getContext());area.setOnClickListener(v->actions.miniGame(entry.index));
+                View area=new View(getContext());
+                area.setContentDescription(label);
+                area.setOnClickListener(v->actions.miniGame(entry.index));
                 put(area,entry.x,entry.y,entry.w,entry.h);
-            }else animatedButton(entry.spec,entry.image,EngineUiText.get(getContext(),R.string.engine_systemnnn_ctl_title_minigame),
+            }else animatedButton(entry.spec,entry.image,label,
                 ()->sound(entry.spec.sound,entry.spec.voice),()->actions.miniGame(entry.index),entry.x,entry.y,entry.w,entry.h);
         }
     }

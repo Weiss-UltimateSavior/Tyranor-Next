@@ -12,6 +12,27 @@ import static org.junit.Assert.*;
 public final class TitleMenuTest {
     @Rule public TemporaryFolder folder=new TemporaryFolder();
 
+    @Test public void extensionModesFollowEachPcMenuAndKeepTitleScenarioNumbers() throws Exception {
+        Path init=folder.newFolder("init").toPath();
+        String setup="extModeNumber 1\nextButtonNumber 3\n"+
+            "menu1Button8ExistFlag 1\nmenu1Button9ExistFlag 1\n"+
+            "extButtonSpecialMode1 34\nextButtonSpecialMode3 44\n";
+        Files.write(init.resolve("title.xtx"),setup.getBytes(StandardCharsets.UTF_8));
+        GameUiAssets.Config config=GameUiAssets.readConfig(folder.getRoot(),"title");
+
+        MenuModeButton titleEntry=MenuModeButton.readTitle(config,0,7,5).stream()
+            .filter(button->button.index==7).findFirst().orElseThrow();
+        MenuModeButton omakeEntry=MenuModeButton.read(config,0,7,5).stream()
+            .filter(button->button.index==7).findFirst().orElseThrow();
+        MenuModeButton fallback=MenuModeButton.readTitle(config,0,7,5).stream()
+            .filter(button->button.index==8).findFirst().orElseThrow();
+
+        assertEquals(44,titleEntry.mode);
+        assertEquals(34,omakeEntry.mode);
+        assertEquals(0,fallback.mode);
+        assertEquals(4,fallback.scenario);
+    }
+
     @Test public void loadMaskKeepsAnySaveSeparateFromLastSelection() throws Exception {
         File root=folder.getRoot();
         GameUiAssets.Config defaults=GameUiAssets.readConfig(root,"title");

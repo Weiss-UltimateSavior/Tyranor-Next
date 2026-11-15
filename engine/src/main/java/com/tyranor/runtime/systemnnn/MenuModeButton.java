@@ -30,7 +30,7 @@ final class MenuModeButton {
         return read(config,handle,basic,builtIn,true);
     }
 
-    private static List<MenuModeButton> read(GameUiAssets.Config config,long handle,int basic,int builtIn,boolean includeBasic){
+    private static List<MenuModeButton> read(GameUiAssets.Config config,long handle,int basic,int builtIn,boolean title){
         int modes=DialogueLayout.clamp(config.number("extModeNumber",0),0,32);
         int extra=modes==0?0:DialogueLayout.clamp(config.number("extButtonNumber",1),0,64);
         String variable=config.value("extModeCheckVarName","");
@@ -45,16 +45,23 @@ final class MenuModeButton {
             if(index>0){x+=nextX;y+=nextY;}
             x=config.number(tag+"PrintX",x);y=config.number(tag+"PrintY",y);
             previous=new ButtonArt.Setup(config,tag,previous,false);
-            int target=index<basic?config.number("basicButtonSpecialMode"+(index+1),-1):
-                config.number("extButtonSpecialMode"+(index-basic+1),-1);
+            int target;
+            if(index<basic){
+                target=config.number("basicButtonSpecialMode"+(index+1),-1);
+            }else{
+                // TITLE indexes from the five built-in actions. OMAKE indexes from the configured basic count.
+                int extensionIndex=index-(title?builtIn:basic);
+                target=extensionIndex>=0&&extensionIndex<extra?
+                    config.number("extButtonSpecialMode"+(extensionIndex+1),-1):-1;
+            }
             // CCommonTitle starts a story from a button without a mode. Extension buttons
             // count up from one and added basic buttons count down from minus one.
             int scenario=0;
             if(index<builtIn){
-                if(!includeBasic||index>=basic)continue;
+                if(!title||index>=basic)continue;
             }else if(target>49)continue;
             else if(target<=0){
-                if(!includeBasic)continue;
+                if(!title)continue;
                 scenario=index<basic?-(index-builtIn+1):index-builtIn+1;
             }
             boolean exists=config.number(tag+"ExistFlag",index<basic?1:0)!=0;
