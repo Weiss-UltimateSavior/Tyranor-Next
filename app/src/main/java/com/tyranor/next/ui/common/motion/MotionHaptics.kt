@@ -13,6 +13,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
  *    需要无条件震的调用传 `requireTouch = false`；
  * 3. 限频：任意两次间隔 >= [MIN_GAP_MILLIS]，同类刻度（[Kind.Tick]）间隔 >= [TICK_GAP_MILLIS]，
  *    [Kind.Reject] 在 [REJECT_GAP_MILLIS] 内只震一次（抖动与提示同时触发时不会震两下）；
+ * 3.5 一次操作只给一次「结果触觉」：[Kind.Reject] / [Kind.Confirm] / [Kind.Notice] 同属结果类，
+ *    [RESULT_GAP_MILLIS] 内只放行第一次（一次点按的失败既抖一下又弹提示时，不会因两种触觉类型不同而震两下）；
  * 4. 尊重系统触感开关（经平台 `performHapticFeedback`，系统关了就不会震）。
  *
  * 原则（与底栏透镜一致）：**只在「提交」和「越过离散边界」时震**，连续接近 / 悬停 / 普通点按 / 滚动都不震。
@@ -28,6 +30,9 @@ object MotionHaptics {
         /** 一次确认：保存成功、选定。 */
         Confirm(HapticFeedbackType.Confirm),
 
+        /** 应用内提示条出现（成功 / 信息类）：属于「结果触觉」，与同一次操作的拒绝 / 确认合并为一次。 */
+        Notice(HapticFeedbackType.SegmentTick),
+
         /** 拒绝：输入无效、不可点元素被按。 */
         Reject(HapticFeedbackType.Reject),
 
@@ -38,6 +43,7 @@ object MotionHaptics {
     const val MIN_GAP_MILLIS: Long = 30L
     const val TICK_GAP_MILLIS: Long = 50L
     const val REJECT_GAP_MILLIS: Long = 200L
+    const val RESULT_GAP_MILLIS: Long = 300L
 
     /** 当前可用的触觉宿主（由 `ProvideMotionEnvironment` 绑定，栈顶 = 最近组合的页面）。 */
     private val hosts = ArrayList<HapticFeedback>(2)
@@ -53,6 +59,9 @@ object MotionHaptics {
     private var lastAt: Long = 0L
     private var lastTickAt: Long = 0L
     private var lastRejectAt: Long = 0L
+    private var lastResultAt: Long = 0L
+
+    private fun Kind.isResult(): Boolean = this == Kind.Reject || this == Kind.Confirm || this == Kind.Notice
 
     /** 按 [kind] 触发一次触觉；被门控拦下（或没有宿主）返回 false。 */
     fun perform(kind: Kind, requireTouch: Boolean = true): Boolean {
@@ -65,6 +74,9 @@ object MotionHaptics {
         if (requireTouch && !MotionIntent.touchedRecently()) return false
         val now = SystemClock.uptimeMillis()
         if (now - lastAt < MIN_GAP_MILLIS) return false
+        if (kind.isResult()) {
+            if (now - lastResultAt < RESULT_GAP_MILLIS) return false
+        }
         when (kind) {
             Kind.Tick -> {
                 if (now - lastTickAt < TICK_GAP_MILLIS) return false
@@ -77,6 +89,7 @@ object MotionHaptics {
             else -> Unit
         }
         lastAt = now
+        if (kind.isResult()) lastResultAt = now
         haptic.performHapticFeedback(kind.type)
         return true
     }

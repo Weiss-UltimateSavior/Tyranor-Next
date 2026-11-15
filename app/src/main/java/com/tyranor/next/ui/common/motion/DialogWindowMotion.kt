@@ -1,5 +1,11 @@
 package com.tyranor.next.ui.common.motion
 
+import android.app.Activity
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.view.InputDevice
+import android.view.MotionEvent
 import android.view.View
 import android.view.Window
 import android.view.WindowManager
@@ -19,7 +25,12 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
@@ -30,10 +41,12 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
+import kotlinx.coroutines.CancellationException
 import java.util.IdentityHashMap
 import kotlin.math.roundToInt
 
@@ -45,6 +58,8 @@ internal fun DialogWindowScrim(
     onWindow: (Window?) -> Unit,
     onDismissRequest: () -> Unit,
     dismissEnabled: Boolean = true,
+    /** 手指在弹窗窗口任意位置完成一次点击（未移动、未长按、单指）时的按下位置（弹窗根坐标）；不消费事件。退场期间据此把这次点击转交给下层页面。 */
+    onScrimTap: ((Offset) -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val window = syncDialogWindow(
@@ -53,19 +68,115 @@ internal fun DialogWindowScrim(
         dimProgress = progress,
     )
     SideEffect { onWindow(window) }
+    // 回调每次重组都是新的 lambda：用 rememberUpdatedState 读最新值，手势协程不随重组重启（否则退场开始引起的重组会打断正在进行的手势）
+    val latestScrimTap by rememberUpdatedState(onScrimTap)
+    val hasScrimTap = onScrimTap != null
+    val viewConfiguration = LocalViewConfiguration.current
+    val tapSlop = viewConfiguration.touchSlop
+    val longPressMillis = viewConfiguration.longPressTimeoutMillis
     val scrim = Modifier.drawBehind {
         val alpha = window.dialogScrimAlpha()
         if (alpha > 0f) drawRect(Color.Black.copy(alpha = alpha))
     }
     Box(
-        Modifier.fillMaxSize().then(scrim).clickable(
-            enabled = dismissEnabled,
-            interactionSource = remember { MutableInteractionSource() },
-            indication = null,
-            onClick = onDismissRequest,
-        ),
+        Modifier.fillMaxSize().then(scrim)
+            .clickable(
+                enabled = dismissEnabled,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onDismissRequest,
+            )
+            // Initial 阶段观察所有按下（含落在卡片上的）：退场刚开始的前几帧卡片还盖在原处，用户重新点下层控件的位置
+            // 往往正好落在这张卡片上，卡片会把按下消费掉——只看遮罩区域就漏了这一类点击。只观察，不消费。
+            .then(
+                if (!hasScrimTap) Modifier else Modifier.pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        // 只有一次真正的点击才转交：移动超过触摸容差、按住超过长按时长、多指都说明用户在滑动 / 长按，
+                        // 若无条件回放一次「按下 + 抬起」，下层的行会被当成点击打开，而不是滚动。
+                        var isTap = true
+                        try {
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                if (change == null) {
+                                    isTap = false
+                                    break
+                                }
+                                if (event.changes.size > 1) isTap = false
+                                if ((change.position - down.position).getDistance() > tapSlop) isTap = false
+                                if (change.uptimeMillis - down.uptimeMillis > longPressMillis) isTap = false
+                                if (!change.pressed) break
+                            }
+                        } catch (cancelled: CancellationException) {
+                            // 手势进行中弹窗窗口被移除（按下落在窗口消失前的最后几帧）：抬起事件到不了任何窗口，这次点击会整个丢掉。
+                            // 到目前为止仍是一次可能的点击，就按点击处理（弹窗已不在，补发给下层页面）。
+                            if (isTap) latestScrimTap?.invoke(down.position)
+                            throw cancelled
+                        }
+                        if (isTap) latestScrimTap?.invoke(down.position)
+                    }
+                },
+            ),
         content = content,
     )
+}
+
+/**
+ * 弹窗退场期间落在遮罩上的点击，退场结束、窗口移除之后补发给 Activity。
+ *
+ * 为什么：弹窗的关闭回调要等退场动画（约 0.25s）放完才交付给调用方；这段时间里窗口若放行触摸，用户点下层页面上的
+ * 控件（比如刚才打开这个弹窗的那一行）只会让控件把「显示弹窗」置为 true——它此刻本来就是 true，没有任何变化——
+ * 随后退场结束，关闭回调又把它置回 false，弹窗再也出不来，只剩按压动效。所以退场期间窗口接住触摸，
+ * 这次点击改为「立刻收尾 → 弹窗移除 → 在同一个位置补发一次点击」，行为等同于用户在弹窗消失之后才点下去。
+ */
+internal object ExitTapReplay {
+    private val handler = Handler(Looper.getMainLooper())
+
+    fun replay(activity: Activity, screenX: Float, screenY: Float) {
+        // 等 2~3 帧：关闭回调交付后调用方在下一帧重组并移除弹窗窗口，补发的点击才落得到下层页面
+        handler.postDelayed({
+            if (activity.isFinishing || activity.isDestroyed) return@postDelayed
+            // 同一 Activity 上还有别的弹窗窗口（叠层弹窗：上层关闭时下层仍在）：补发会绕过它直接点到页面上，丢弃这次点击
+            if (DialogWindowDims.hasWindows(activity)) return@postDelayed
+            val origin = IntArray(2)
+            activity.window.decorView.getLocationOnScreen(origin)
+            val x = screenX - origin[0]
+            val y = screenY - origin[1]
+            val down = SystemClock.uptimeMillis()
+            dispatch(activity, down, down, MotionEvent.ACTION_DOWN, x, y)
+            handler.postDelayed({
+                if (activity.isDestroyed) return@postDelayed
+                val up = SystemClock.uptimeMillis()
+                dispatch(activity, down, up, MotionEvent.ACTION_UP, x, y)
+            }, TAP_HOLD_MILLIS)
+        }, REPLAY_DELAY_MILLIS)
+    }
+
+    private fun dispatch(activity: Activity, downTime: Long, eventTime: Long, action: Int, x: Float, y: Float) {
+        val properties = arrayOf(MotionEvent.PointerProperties().apply {
+            id = 0
+            toolType = MotionEvent.TOOL_TYPE_FINGER
+        })
+        val coords = arrayOf(MotionEvent.PointerCoords().apply {
+            this.x = x
+            this.y = y
+            pressure = 1f
+            size = 1f
+        })
+        val event = MotionEvent.obtain(
+            downTime, eventTime, action, 1, properties, coords,
+            0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0,
+        )
+        try {
+            activity.dispatchTouchEvent(event)
+        } finally {
+            event.recycle()
+        }
+    }
+
+    private const val REPLAY_DELAY_MILLIS = 50L
+    private const val TAP_HOLD_MILLIS = 40L
 }
 
 private const val DIALOG_SCRIM_ALPHA = 0.5f
@@ -175,6 +286,9 @@ private object DialogWindowDims {
         else binding.release()
     }
 
+    /** [owner]（Activity）名下是否还有已挂载的弹窗窗口。 */
+    fun hasWindows(owner: Any): Boolean = bindings.values.any { it.owner === owner && it.window.decorView.isAttachedToWindow }
+
     fun beginExit(window: Window) { bindings[window]?.beginExit() }
 
     fun restore(window: Window) { bindings[window]?.restore() }
@@ -184,8 +298,8 @@ private object DialogWindowDims {
     fun panelDimAlpha(window: Window?): Float = bindings[window]?.appliedPanelDim ?: 0f
 
     class Binding(
-        private val owner: Any,
-        private val window: Window,
+        val owner: Any,
+        val window: Window,
         var dim: Float,
         var enabled: Boolean,
         var animations: Int,

@@ -1,6 +1,7 @@
 package com.tyranor.next.ui.home
 
 import com.tyranor.next.ui.game.openPerGameSettingsFromSheet
+import com.tyranor.next.ui.game.removeLibraryGame
 import com.tyranor.next.ui.game.removeRecentGame
 import com.tyranor.next.ui.game.gameRemovalDust
 import com.tyranor.next.ui.common.motion.CoverSurface
@@ -101,6 +102,7 @@ import com.tyranor.next.ui.common.motion.scrollJelly
 import com.tyranor.next.ui.common.motion.scrollJellyHost
 import com.tyranor.next.ui.common.motion.dissolve
 import com.tyranor.next.ui.common.motion.dissolveTint
+import com.tyranor.next.ui.common.motion.dissolvingGames
 import com.tyranor.next.ui.common.motion.rememberDissolveState
 import com.tyranor.next.ui.common.motion.PressSquishDefaults
 import com.tyranor.next.ui.common.motion.pressSquish
@@ -137,6 +139,7 @@ fun HomeScreen(
     isActive: Boolean = true,
 ) {
     val context = LocalContext.current
+    val deleteScope = rememberCoroutineScope()
     val quickLaunch = libraryState.quickLaunch
     val homeStyle by AppSettingsStore.homeStyleState.collectSettingAsState()
     LaunchedEffect(isActive, homeStyle) {
@@ -240,7 +243,8 @@ fun HomeScreen(
             quickLaunched = quickLaunch.any { it.uri == game.uri },
             onDismiss = { quickActionsGameUri = null },
             onGameUpdated = { replaceGame(it) },
-            onDeleteGame = { onGameDeleted(game) },
+            // 与游戏页同一入口：增强档先播放消散再删库，补位的卡片随后才顶上来
+            onDeleteGame = { deleteScope.removeLibraryGame(game.uri) { onGameDeleted(game) } },
             onQuickLaunchToggle = { onQuickLaunchToggle(game) },
         )
     }
@@ -445,13 +449,19 @@ private fun QuickLaunchSection(
             ) {
                 ParallaxCardPager(pagerState, Modifier.fillMaxWidth()) { page, layers ->
                     val game = shownQuickLaunch.getOrNull(page) ?: return@ParallaxCardPager
-                    // 按游戏 uri 做 key：删除卡片后页面状态跟随游戏而不是按位置复用，
-                    // 避免复用被删卡的封面 MutableState（上一个封面串到另一张卡）。
-                    key(game.uri) {
+                    // 按游戏 uri 做 contentKey：删除卡片后页面状态跟随游戏而不是按位置复用，
+                    // 避免复用被删卡的封面 MutableState（上一个封面串到另一张卡）；
+                    // 同一页上的游戏被换掉（删除当前卡后下一张顶上来）时新旧卡模糊交叉替换，与大屏三卡槽位一致，
+                    // 不能瞬间换掉。
+                    BlurCrossfade(
+                        targetState = game,
+                        contentKey = { it.uri },
+                        label = "quickLaunchPage",
+                    ) { pageGame ->
                         QuickLaunchCard(
-                            game = game,
-                            onClick = { onGameClick(game) },
-                            onLongClick = { onGameLongClick(game) },
+                            game = pageGame,
+                            onClick = { onGameClick(pageGame) },
+                            onLongClick = { onGameLongClick(pageGame) },
                             layers = layers,
                             modifier = layers.depth(Modifier.fillMaxWidth()),
                             jelly = jelly,
@@ -494,13 +504,19 @@ private fun QuickLaunchCard(
     } else {
         Modifier.clickable(onClick = onClick)
     }
+    // 删除消散：游戏库删除确认后登记在 dissolvingGames 里，快捷启动卡与游戏页的卡片播放同一个消散效果
+    // 记住最近登记过的状态：库里的数据删掉后登记立刻被清掉，但卡片还要作为退场内容留在屏幕上淡出，
+    // 不记住的话退场的卡片会先恢复成完好无损的样子再消失（闪一下）。
+    val dissolve = rememberLastNonNull(dissolvingGames[game.uri])
     BoxWithConstraints(
         modifier = modifier
+            .gameRemovalDust(dissolve)
             .pressSquish(scale = PressSquishDefaults.CardScale, charge = onLongClick != null)
             // 滚动果冻：快速滚动时沿滚动方向轻微拉长，停下回弹（静止 = 原样）
             .scrollJelly(jelly)
             .height(172.dp)
             .clip(AppComponentShape)
+            .dissolveTint(dissolve, MaterialTheme.colorScheme.error)
             .background(QuickLaunchFallback)
             .glassBorder(),
     ) {
@@ -670,7 +686,9 @@ private fun RecentGameCard(
 ) {
     // 长按删除：「增强」档先播放消散（晃动 → 缩小变红 → 化成碎屑），播完再移除这条记录；「普通」档直接移除
     val dissolveScope = rememberCoroutineScope()
-    val dissolve = rememberDissolveState()
+    val localDissolve = rememberDissolveState()
+    // 从快捷启动弹窗删除游戏时登记在 dissolvingGames 里：同一个游戏出现在最近打开里也一起消散
+    val dissolve = rememberLastNonNull(dissolvingGames[game.uri]) ?: localDissolve
     val playtimeEngine = RuntimeModuleBindings.builtInSystemNnn(game).engine
     val showPlaytime = GamePlaytimeRepository.supports(playtimeEngine)
     val titleStyle = MaterialTheme.typography.bodyMedium

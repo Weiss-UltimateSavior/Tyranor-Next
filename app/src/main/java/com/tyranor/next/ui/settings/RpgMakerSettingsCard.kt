@@ -181,7 +181,10 @@ internal fun RpgMakerRgssSettingsCard(
             val message = rejection?.let {
                 resources.getString(R.string.engine_settings_rpgm_rtp_import_failed, it.userMessage(ctx))
             } ?: resources.getString(R.string.engine_settings_rpgm_rtp_imported)
-            AppNotice.makeText(ctx, message, Toast.LENGTH_LONG, AppNotice.Kind.Info).show()
+            AppNotice.makeText(
+                ctx, message, Toast.LENGTH_LONG,
+                if (rejection != null) AppNotice.Kind.Failure else AppNotice.Kind.Success,
+            ).show()
         } finally {
             localImportingRtpTypes = localImportingRtpTypes - type
         }
