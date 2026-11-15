@@ -127,20 +127,24 @@ object AppLockController {
     /**
      * 亮屏窥视判定（SCREEN_ON）：不修改 [away] / [leftAtMillis]，仅在已离开、锁已启用且
      * 已超过延迟档时直接上锁。真实回前台的计时消费在 [onLauncherEntering]。
+     *
+     * 先算离开时长、不超档直接返回：亮屏广播可能很频繁，Keystore 解密（[credentialState]）
+     * 是主线程热点，没必要为一次注定不上锁的窥视付这笔开销。
      */
     private fun peekLockOnScreenOn() {
         synchronized(this) {
             if (!installed || !away) return
             val context = appContext ?: return
             if (!AppSettingsStore.isPrivacyAppLockEnabled(context)) return
-            val credential = AppLockCredentialStore.credentialState(context)
-            mutableCredentialUnreadable.value = credential == PatternCredentialState.UNREADABLE
-            if (credential == PatternCredentialState.ABSENT) return
             val timeout = PrivacyLockTimeout.fromStorageIndex(
                 AppSettingsStore.getPrivacyAppLockTimeoutIndex(context),
             )
             val elapsed = SystemClock.elapsedRealtime() - leftAtMillis
-            if (shouldRequireUnlock(elapsed, timeout)) mutableLocked.value = true
+            if (!shouldRequireUnlock(elapsed, timeout)) return
+            val credential = AppLockCredentialStore.credentialState(context)
+            mutableCredentialUnreadable.value = credential == PatternCredentialState.UNREADABLE
+            if (credential == PatternCredentialState.ABSENT) return
+            mutableLocked.value = true
         }
     }
 
@@ -234,7 +238,12 @@ object AppLockController {
                 unlock()
                 true
             }
-            PatternVerifyResult.MISMATCH -> false
+            PatternVerifyResult.MISMATCH -> {
+                // 能读出凭据、只是与图案不匹配：清除「读取失败」标记，
+                // 否则锁门会一直显示设备凭据 / 重置恢复入口
+                mutableCredentialUnreadable.value = false
+                false
+            }
             PatternVerifyResult.UNREADABLE -> {
                 mutableCredentialUnreadable.value = true
                 false
@@ -264,11 +273,16 @@ object AppLockController {
         return true
     }
 
-    /** 清除图案并关闭应用锁（设置页关闭开关或修改凭据失败回退时调用）。阻塞调用，需在后台线程执行。 */
-    fun clearPatternAndDisable(context: Context) {
+    /**
+     * 清除图案并关闭应用锁（设置页关闭开关 / 锁门重置共用）。
+     * 清除凭据失败时**不改开关、不解锁**并返回 false：避免「清除假象」——用户以为锁已关闭，
+     * 重启后旧图案又复活。阻塞调用，需在后台线程执行。
+     */
+    fun clearPatternAndDisable(context: Context): Boolean {
+        if (!AppLockCredentialStore.clearPattern(context)) return false
         AppSettingsStore.setPrivacyAppLockEnabled(context, false)
-        AppLockCredentialStore.clearPattern(context)
         mutableCredentialUnreadable.value = false
         unlock()
+        return true
     }
 }

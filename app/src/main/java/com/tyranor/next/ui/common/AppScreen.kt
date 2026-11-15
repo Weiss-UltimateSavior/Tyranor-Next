@@ -348,17 +348,21 @@ fun AppScreenScaffold(
                 val pageLayers = remember(enhanced, overlayBackdrop, depth, pageEnter) {
                     Modifier.depthFoldStack(overlay = overlayBackdrop, panel = null, push = depth, enter = pageEnter)
                 }
-                // 应用锁生效时页面内容不参与绘制：锁门自己带完整背景（与页面一致），
-                // 下层若继续绘制，自定义背景图与粒子会各多一份（空闲功耗翻倍）
+                // 应用锁生效时**整块页面（根背景 + 内容）**都不参与绘制：锁门自带同样的完整背景，
+                // 下层继续画只会让粒子 / 自定义背景图各多一份（30fps 重绘白白消耗）。
+                // 跳过挂在 PageTransitionBackground 外层，连同它在 skipDrawWhenHidden 之外的
+                // 背景 / 粒子层一起跳过（内层不再重复挂）。
                 val locked by AppLockController.lockedState.collectSettingAsState()
-                PageTransitionBackground(depth, modifier) {
+                PageTransitionBackground(
+                    depth = depth,
+                    modifier = modifier.skipDrawWhenHidden { !locked },
+                ) {
                     WithoutPressIndication {
                         // 翻折只作用在内容上：页面根背景不动
                         Box(
                             Modifier
                                 .fillMaxSize()
                                 .then(pageLayers)
-                                .skipDrawWhenHidden { !locked }
                                 // 锁定时页面内容退出无障碍树：TalkBack 不能聚焦或激活门下节点
                                 // （门自身语义保留，见 PrivacyLockGate）
                                 .then(if (locked) Modifier.clearAndSetSemantics { } else Modifier)

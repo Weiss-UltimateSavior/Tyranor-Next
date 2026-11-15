@@ -408,7 +408,7 @@ internal fun AppSettingsScreen() {
                                             .padding(start = 16.dp, end = 16.dp, top = 10.dp),
                                     )
                                     // 拖动过程中只更新内存态（即时预览），松手才落盘：
-                                    // 每 tick 写 prefs + 广播会让 RenderEffect 重算最高 24dp 的整屏模糊，
+                                    // 每 tick 写 prefs 会广播设置状态、触发整页重组（含背景图层），
                                     // 拖动明显掉帧（同「扫描深度」滑条的既有做法）
                                     Slider(
                                         value = backgroundImageAlpha.toFloat(),
@@ -433,6 +433,8 @@ internal fun AppSettingsScreen() {
                                             .fillMaxWidth()
                                             .padding(start = 16.dp, end = 16.dp, top = 10.dp),
                                     )
+                                    // 同样只改内存态：模糊半径每 tick 变化会让整屏 RenderEffect 重算，
+                                    // 叠加 prefs 写入 / 广播更卡，松手才落盘
                                     Slider(
                                         value = backgroundImageBlur.toFloat(),
                                         onValueChange = { raw ->

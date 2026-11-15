@@ -28,7 +28,9 @@ internal enum class PatternVerifyResult {
  *
  * 写入（[savePattern] / [clearPattern]）是阻塞调用（Keystore 加密 + commit 落盘），
  * 调用方必须在后台线程执行。读写共用 [credentialLock] 串行化：`commit()` 先把新值写进
- * 内存再落盘，失败时内存已是新值——恢复旧密文与校验不能交错。
+ * 内存再落盘，失败时内存已是新值——恢复旧密文与校验不能交错。读路径（[credentialState] /
+ * [verifyPattern]）在同一把锁内做 Keystore 解密，单次约毫秒级；锁序单向（控制器 → 凭据锁，
+ * 反向没有获取），因此锁门的主线程校验与后台保存不会互相死锁。
  */
 internal object AppLockCredentialStore {
 
@@ -138,16 +140,28 @@ internal object AppLockCredentialStore {
             if (matched) PatternVerifyResult.SUCCESS else PatternVerifyResult.MISMATCH
         }
 
-    /** 清除凭据（应用锁关闭时由调用方决定是否一并清除）；两个字段在同一次提交中移除。 */
-    fun clearPattern(context: Context) {
-        synchronized(credentialLock) {
-            KeystoreFieldCipher.writeFields(
-                context,
-                PREFS,
-                KEY_ALIAS,
-                mapOf(FIELD_SALT to "", FIELD_HASH to ""),
-            )
+    /**
+     * 清除凭据（应用锁关闭时由调用方决定是否一并清除）；两个字段在同一次提交中移除。
+     * 返回是否成功落盘。与 [savePattern] 一样，`commit()` 失败时内存已被清空、磁盘可能仍是
+     * 旧凭据——此时把旧密文写回，避免「清除假象」与重启后旧图案复活的不一致。
+     */
+    fun clearPattern(context: Context): Boolean = synchronized(credentialLock) {
+        val prefs = prefs(context)
+        val previousSalt = prefs.getString(FIELD_SALT, null)
+        val previousHash = prefs.getString(FIELD_HASH, null)
+        val cleared = KeystoreFieldCipher.writeFields(
+            context,
+            PREFS,
+            KEY_ALIAS,
+            mapOf(FIELD_SALT to "", FIELD_HASH to ""),
+        )
+        if (!cleared) {
+            val restore = prefs.edit()
+            if (previousSalt.isNullOrEmpty()) restore.remove(FIELD_SALT) else restore.putString(FIELD_SALT, previousSalt)
+            if (previousHash.isNullOrEmpty()) restore.remove(FIELD_HASH) else restore.putString(FIELD_HASH, previousHash)
+            restore.commit()
         }
+        cleared
     }
 
     private fun readState(context: Context, field: String): KeystoreFieldCipher.FieldRead =

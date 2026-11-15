@@ -33,6 +33,15 @@ import kotlinx.coroutines.withContext
 /** 模糊强度换算上限：100 → 24dp 高斯模糊。 */
 private const val MaxBlurDp = 24f
 
+/** ARGB_8888 每像素字节数。 */
+private const val DecodedBytesPerPixel = 4L
+
+/**
+ * 背景图解码字节上限（64MiB）：独立于屏幕长边预算，同时低于 API 29 约 100MiB 的绘制限制
+ * 与 Android 16 的 150MiB 硬件位图上限。
+ */
+private const val MaxDecodedBytes = 64L * 1024 * 1024
+
 /**
  * 自定义背景图的进程级缓存。
  *
@@ -56,14 +65,10 @@ internal object BackgroundImageCache {
     /** 正在解码中的 uri：避免同图重复解码。 */
     private var loadingUri: String = ""
 
-    /** 已就绪且与 [uri] 对应的位图；不匹配返回 null。 */
-    fun cachedFor(uri: String): ImageBitmap? =
-        if (uri == currentUri) mutableImage.value else null
-
-    /** 应用启动或设置里换图时调用：解码完成后一次性替换缓存（旧图保留到新图就绪）。 */
     /** 串行化：并发调用（启动预热 + 设置页 effect）会同时读写 currentUri/loadingUri。 */
     private val loadMutex = Mutex()
 
+    /** 应用启动或设置里换图时调用：解码完成后一次性替换缓存（旧图保留到新图就绪）。 */
     suspend fun ensureLoaded(context: Context, uri: String) = loadMutex.withLock {
         ensureLoadedLocked(context, uri)
     }
@@ -104,19 +109,7 @@ internal object BackgroundImageCache {
         // 下限 1 防止极端窗口上报 0 时采样循环永不退出。
         val maxEdge = context.resources.displayMetrics.let { maxOf(it.widthPixels, it.heightPixels) }
             .coerceAtLeast(1)
-        // 按**长边**采样（短边等比缩小），并叠加总像素上限双保险：
-        // 原实现要求宽高同时超限才减半，30000×2000 这类极端宽高比第一次迭代就停，
-        // 按原尺寸解码约 229MiB，超过硬件位图上限后绘制期抛 Canvas: trying to draw too large。
-        var sample = 1
-        val maxPixels = 4L * maxEdge * maxEdge
-        while (true) {
-            val sampledWidth = bounds.outWidth.toLong() / sample
-            val sampledHeight = bounds.outHeight.toLong() / sample
-            // 长边降到 2×屏长边以内（再减半就会低于屏长边），且总像素不超过上限
-            val longEdgeInBounds = maxOf(sampledWidth, sampledHeight) < 2L * maxEdge
-            if (longEdgeInBounds && sampledWidth * sampledHeight <= maxPixels) break
-            sample *= 2
-        }
+        val sample = backgroundSampleSize(bounds.outWidth, bounds.outHeight, maxEdge)
         val options = BitmapFactory.Options().apply { inSampleSize = sample }
         val decoded = context.contentResolver.openInputStream(uri)?.use {
             BitmapFactory.decodeStream(it, null, options)
@@ -160,6 +153,30 @@ internal object BackgroundImageCache {
             ExifInterface.ORIENTATION_ROTATE_270 -> setRotate(-90f)
             else -> return null
         }
+    }
+}
+
+/**
+ * 背景图采样档位：同时满足两个预算才停止——
+ * 1) 长边 < 2×屏长边（再减半就会低于屏长边）；
+ * 2) 解码字节 ≤ [MaxDecodedBytes]。只按长边不够：3200 长边的屏幕上 6000×6000 的长边仍在
+ *    2× 以内，会解出约 144MiB，超过 API 29 的绘制上限与 Android 16 的硬件位图上限。
+ *
+ * 纯函数（便于单测）：原实现要求宽高同时超限才减半，30000×2000 这类极端宽高比第一次迭代
+ * 就停，按原尺寸解码约 229MiB。
+ */
+internal fun backgroundSampleSize(width: Int, height: Int, maxEdge: Int): Int {
+    // 当前调用方已把 maxEdge 收敛到 >= 1；这里再防一手，避免预算为 0 时循环不终止
+    if (width <= 0 || height <= 0 || maxEdge <= 0) return 1
+    var sample = 1
+    while (true) {
+        val sampledWidth = width.toLong() / sample
+        val sampledHeight = height.toLong() / sample
+        val longEdgeInBounds = maxOf(sampledWidth, sampledHeight) < 2L * maxEdge
+        val bytesInBudget =
+            sampledWidth * sampledHeight * DecodedBytesPerPixel <= MaxDecodedBytes
+        if (longEdgeInBounds && bytesInBudget) return sample
+        sample *= 2
     }
 }
 

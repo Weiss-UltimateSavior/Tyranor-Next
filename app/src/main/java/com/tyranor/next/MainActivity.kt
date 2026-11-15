@@ -113,21 +113,23 @@ class MainActivity : FragmentActivity() {
           }
           ProvideMotionEnvironment {
             val depth = rememberPageDepth()
-            // 应用锁生效时只隐藏**页面内容**：背景（含粒子 / 自定义背景图）必须继续绘制，
-            // 否则锁定时整屏背景与粒子一起消失（门本身不画背景）
+            // 应用锁生效时**整块页面（含根背景 / 粒子）**都不参与绘制：锁门自带完整背景，
+            // 下层继续画只会让粒子 / 背景图多一份 30fps 重绘。
+            // Web 首页例外：WebView 靠原生绘制回调输出，不能被 skipDrawWhenHidden 罩住
+            // （见 PageVisibility.kt），启用 Web 首页时锁定时保留整块绘制。
             val locked by AppLockController.lockedState.collectSettingAsState()
-            // Web 首页的 WebView 靠原生绘制回调输出，skipDrawWhenHidden 不适用（见 PageVisibility.kt）；
-            // 锁定隐藏因此排除「启用中的 Web 首页」，否则上锁一次再解锁后 WebView 可能空白或不再刷新
             val homeStyle by AppSettingsStore.homeStyleState.collectSettingAsState()
             val homePageEnabled by AppSettingsStore.homePageEnabledState.collectSettingAsState()
-            val webHomeInPages =
-                homeStyle == AppSettingsStore.HOME_STYLE_WEB && homePageEnabled
+            val pageDrawable =
+              !locked || (homeStyle == AppSettingsStore.HOME_STYLE_WEB && homePageEnabled)
             CompositionLocalProvider(LocalPageDepth provides depth) {
-              PageTransitionBackground(depth) {
+              PageTransitionBackground(
+                depth = depth,
+                modifier = Modifier.fillMaxSize().skipDrawWhenHidden { pageDrawable },
+              ) {
                 Box(
                   Modifier
                     .fillMaxSize()
-                    .skipDrawWhenHidden { !locked || webHomeInPages }
                     // 锁定时页面内容退出无障碍树（门自身语义保留）
                     .then(if (locked) Modifier.clearAndSetSemantics { } else Modifier)
                     // 外接键盘：无障碍屏蔽只挡语义，已聚焦的控件仍能被 Enter 激活；

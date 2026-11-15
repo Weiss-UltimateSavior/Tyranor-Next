@@ -72,6 +72,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -2204,22 +2205,28 @@ private fun GameCoverEngineBadge(
 /**
  * 「该封面曾经成功解码并显示过」的轻量标记（只存 uri，不存位图，不受 LRU 逐出影响）。
  * 滚动回来、位图已被 LRU 挤出时用它避免卡片先闪回占位兜底再等重新解码。
+ *
+ * 每个 uri 持有独立的快照状态：卡片在组合期只读自己那一个，`forget` 只令对应卡片立即重组；
+ * 若换成全局可观察集合，任意一张封面解码成功都会让整屏卡片一起重组。
  */
 internal object CoverAvailability {
-    private val known = java.util.Collections.newSetFromMap(
-        java.util.concurrent.ConcurrentHashMap<String, Boolean>(),
-    )
+    private val known = java.util.concurrent.ConcurrentHashMap<String, MutableState<Boolean>>()
 
     fun markKnown(uri: String) {
-        if (uri.isNotBlank()) known.add(uri)
+        if (uri.isBlank()) return
+        known.computeIfAbsent(uri) { mutableStateOf(true) }.value = true
     }
 
-    /** 撤销登记：封面文件被删 / 损坏、解码返回 null 时调用，让占位兜底重新出现。 */
+    /** 撤销登记：封面文件被删 / 损坏、解码返回 null 时调用，让对应卡片立即重组回占位兜底。 */
     fun forget(uri: String) {
-        if (uri.isNotBlank()) known.remove(uri)
+        if (uri.isBlank()) return
+        // 先写 false 通知当前卡片重组（快照失效已入队），再移除条目，避免失败 uri 无界累积；
+        // 之后重新解码成功时 markKnown 会重建状态。
+        known[uri]?.value = false
+        known.remove(uri)
     }
 
-    fun isKnown(uri: String): Boolean = known.contains(uri)
+    fun isKnown(uri: String): Boolean = known[uri]?.value == true
 }
 
 /** 该封面是否已成功显示过（调用方据此跳过占位兜底，避免"显示过又变回兜底"）。 */

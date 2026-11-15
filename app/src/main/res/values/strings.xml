@@ -1150,6 +1150,11 @@
     <string name="privacy_gate_hint_draw">绘制图案以解锁</string>
     <string name="privacy_gate_hint_wrong">图案不匹配，请重试</string>
     <string name="privacy_gate_credential_unreadable">图案凭据暂时无法读取，请重试或用设备解锁方式进入</string>
+    <string name="privacy_gate_reset_hint">图案凭据无法读取，通常由换机迁移或系统重置导致密钥失效，图案已无法校验。</string>
+    <string name="privacy_gate_reset_action">清除应用锁</string>
+    <string name="privacy_gate_reset_confirm_message">清除后将关闭应用锁并删除图案，需要重新设置才能再次启用。</string>
+    <string name="privacy_gate_reset_confirm">确认清除</string>
+    <string name="privacy_gate_reset_failed">清除失败，请重试</string>
     <string name="privacy_gate_pattern_desc">应用锁图案</string>
     <string name="privacy_gate_device_title">验证设备解锁方式</string>
     <string name="privacy_gate_device_description">验证通过后即可进入应用</string>

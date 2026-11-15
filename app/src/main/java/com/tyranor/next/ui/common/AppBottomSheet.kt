@@ -77,8 +77,8 @@ internal fun AppBottomSheet(
 ) {
     val sheetState = rememberMotionSheetState(controller, confirmValueChange)
     LocalSheetBackdrop.current?.let { controller.BindBackdrop(it) }
-    // 抽屉是独立窗口，层级在解锁门之上：应用锁生效时**立即**移除（不做退出动画，
-    // 锁定时首要是不可操作）
+    // 抽屉是独立窗口，层级在解锁门之上：应用锁生效时立即请求收起（锁定时首要不可操作，
+    // 不等页面侧编排的退场动画，避免抽屉留在门上方仍可点）
     DismissOnAppLockEffect(onDismissRequest)
     ModalBottomSheet(
         onDismissRequest = {

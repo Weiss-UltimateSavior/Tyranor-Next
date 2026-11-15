@@ -1137,6 +1137,11 @@
     <string name="privacy_gate_hint_draw">パターンを描いて解錠</string>
     <string name="privacy_gate_hint_wrong">パターンが一致しません。もう一度お試しください</string>
     <string name="privacy_gate_credential_unreadable">パターン情報を読み取れません。再試行するか端末の解錠方法で入ってください</string>
+    <string name="privacy_gate_reset_hint">パターン情報を読み取れません（機種変更やシステムリセットでキーが無効になった可能性があります）。パターンは検証できません。</string>
+    <string name="privacy_gate_reset_action">アプリロックを解除</string>
+    <string name="privacy_gate_reset_confirm_message">解除するとアプリロックがオフになり、パターンが削除されます。再度有効にするには設定し直してください。</string>
+    <string name="privacy_gate_reset_confirm">解除する</string>
+    <string name="privacy_gate_reset_failed">解除できませんでした。もう一度お試しください</string>
     <string name="privacy_gate_pattern_desc">アプリロックパターン</string>
     <string name="privacy_gate_device_title">端末の解錠方法を確認</string>
     <string name="privacy_gate_device_description">確認が成功するとアプリに入れます</string>

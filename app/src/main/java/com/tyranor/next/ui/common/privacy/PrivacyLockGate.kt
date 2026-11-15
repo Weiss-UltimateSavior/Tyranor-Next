@@ -11,6 +11,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -19,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -31,15 +33,14 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import com.tyranor.next.R
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.privacy.AppLockController
-import com.tyranor.next.core.privacy.AppLockCredentialStore
 import com.tyranor.next.core.settings.AppSettingsStore
-import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.rememberBackgroundImageReady
 import com.tyranor.next.theme.PageSecondaryTextColor
 import com.tyranor.next.theme.GlassBackground
@@ -48,6 +49,7 @@ import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.NoRippleTextButton
 import com.tyranor.next.ui.common.collectSettingAsState
 import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.ExpandVisibility
 import com.tyranor.next.ui.common.motion.MotionHaptics
 import com.tyranor.next.ui.common.motion.shakeOnTrigger
 import kotlinx.coroutines.Dispatchers
@@ -93,11 +95,24 @@ fun PrivacyLockGate(modifier: Modifier = Modifier) {
 private fun PrivacyUnlockGateContent(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val localizedContext = remember(context) { AppLocaleController.wrap(context) }
+    val scope = rememberCoroutineScope()
     // 失败计数驱动横摇与图案盘复位（shakeOnTrigger / resetKey 的共享 trigger）
     var failCount by remember { mutableIntStateOf(0) }
+    // 连续「凭据读取失败」的次数：与普通图案错误分开计数，达到阈值才给「清除应用锁」入口
+    var unreadableFailures by remember { mutableIntStateOf(0) }
+    var resetConfirming by remember { mutableStateOf(false) }
+    var resetting by remember { mutableStateOf(false) }
     var hint by remember { mutableStateOf(GateHint(localizedContext.getString(R.string.privacy_gate_hint_draw), false)) }
     // 凭据存在但当前读不出来（Keystore 瞬时异常）：给出设备凭据恢复路径，图案仍可重试
     val credentialUnreadable by AppLockController.credentialUnreadableState.collectSettingAsState()
+    val showReset = credentialUnreadable && unreadableFailures >= CREDENTIAL_RESET_FAILURE_THRESHOLD
+    LaunchedEffect(credentialUnreadable) {
+        // 凭据重新可读（例如本次校验能读到、只是图案不对）：清空连续失败计数
+        if (!credentialUnreadable) unreadableFailures = 0
+    }
+    LaunchedEffect(showReset) {
+        if (!showReset) resetConfirming = false
+    }
 
     val onPattern: (List<Int>) -> Unit = { pattern ->
         // 校验 + 解锁统一经控制器门面（UI 不直接触碰凭据存储）
@@ -108,6 +123,7 @@ private fun PrivacyUnlockGateContent(modifier: Modifier = Modifier) {
             failCount += 1
             // 读取失败不是「图案错误」：控制器已在本次校验中更新状态（同步），直接读当前值
             val unreadable = AppLockController.credentialUnreadableState.value
+            if (unreadable) unreadableFailures += 1 else unreadableFailures = 0
             hint = GateHint(
                 localizedContext.getString(
                     if (unreadable) R.string.privacy_gate_credential_unreadable
@@ -126,6 +142,36 @@ private fun PrivacyUnlockGateContent(modifier: Modifier = Modifier) {
                 onAuthError = { message ->
                     failCount += 1
                     hint = GateHint(message, true)
+                },
+            )
+            CredentialResetSection(
+                visible = showReset,
+                confirming = resetConfirming,
+                busy = resetting,
+                onRequestConfirm = { resetConfirming = true },
+                onCancel = { resetConfirming = false },
+                onConfirm = {
+                    if (!resetting) {
+                        resetting = true
+                        scope.launch {
+                            // 清除凭据是阻塞的 Keystore + commit：放到后台线程。清除成功时控制器
+                            // 在后台解锁、门随 lockedState 变 false 离开组合；协程若因此被取消，
+                            // 清除要么没写、要么已经写完，不会留下半套。
+                            val cleared = withContext(Dispatchers.IO) {
+                                AppLockController.clearPatternAndDisable(context)
+                            }
+                            if (cleared) {
+                                MotionHaptics.perform(MotionHaptics.Kind.Confirm)
+                            } else {
+                                // 清除失败：控制器保持锁定与开关，给出可重试提示
+                                resetting = false
+                                hint = GateHint(
+                                    localizedContext.getString(R.string.privacy_gate_reset_failed),
+                                    true,
+                                )
+                            }
+                        }
+                    }
                 },
             )
         }
@@ -219,7 +265,8 @@ fun PrivacyLockSetupGate(
  * `clearAndSetSemantics`，门自身子树（图案盘 / 按钮）保持 TalkBack 可达。
  *
  * 背景与页面完全一致（`GlassBackground`，含自定义背景图与粒子）。为避免背景重复绘制
- * （空闲功耗翻倍），下层页面内容在锁定期间不参与绘制——见两个挂载点的 `skipDrawWhileLocked`。
+ * （空闲功耗翻倍），两个挂载点都在锁定期间用 `skipDrawWhenHidden` 跳过整块页面
+ * （含根背景与粒子）——门是唯一绘制的一层。
  */
 @Composable
 private fun GateSurface(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
@@ -362,6 +409,76 @@ private fun DeviceCredentialSection(
         onClick = authenticate,
     )
 }
+
+/**
+ * 凭据持续不可读时的恢复入口（不依赖设备凭据）：连续若干次校验都读不到凭据后显示，
+ * 二次确认后清除凭据并关闭应用锁。该状态通常由换机迁移 / 系统重置导致 Keystore 密钥
+ * 永久失效——此时任何人都无法解锁，密钥永久失效时重置不降低安全性；若只是瞬时读取失败，
+ * 图案重试或设备凭据仍可正常解锁，入口会在凭据重新可读后自动消失。
+ *
+ * 确认流程留在门内，不用 `AppAlertDialog`：门是覆盖在页面上的特殊全屏层，弹窗是独立 Window、
+ * 层级在门之上，且宿主的 `DismissOnAppLockEffect` 会在 locked 时立即把它收起；内联确认最稳定。
+ */
+@Composable
+private fun CredentialResetSection(
+    visible: Boolean,
+    confirming: Boolean,
+    busy: Boolean,
+    onRequestConfirm: () -> Unit,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    ExpandVisibility(visible = visible) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                stringResource(R.string.privacy_gate_reset_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = PageSecondaryTextColor,
+                textAlign = TextAlign.Center,
+            )
+            BlurCrossfade(targetState = confirming) { nowConfirming ->
+                if (nowConfirming) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text(
+                            stringResource(R.string.privacy_gate_reset_confirm_message),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                            textAlign = TextAlign.Center,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            NoRippleTextButton(
+                                text = stringResource(R.string.common_cancel),
+                                enabled = !busy,
+                                onClick = onCancel,
+                            )
+                            NoRippleTextButton(
+                                text = stringResource(R.string.privacy_gate_reset_confirm),
+                                enabled = !busy,
+                                contentColor = MaterialTheme.colorScheme.error,
+                                onClick = onConfirm,
+                            )
+                        }
+                    }
+                } else {
+                    NoRippleTextButton(
+                        text = stringResource(R.string.privacy_gate_reset_action),
+                        enabled = !busy,
+                        onClick = onRequestConfirm,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 连续多少次「凭据读取失败」后开放「清除应用锁」恢复入口。 */
+private const val CREDENTIAL_RESET_FAILURE_THRESHOLD = 3
 
 /** 设备凭据可用性：弱生物识别或锁屏凭据任一可用（API 30- 按两路分别判定）。 */
 internal fun isDeviceCredentialUsable(context: Context): Boolean {

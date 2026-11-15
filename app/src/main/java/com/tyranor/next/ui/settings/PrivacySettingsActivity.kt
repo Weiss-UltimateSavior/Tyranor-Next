@@ -3,6 +3,7 @@ package com.tyranor.next.ui.settings
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,6 +44,7 @@ import com.tyranor.next.ui.common.motion.ProvideEntrance
 import com.tyranor.next.ui.common.motion.pressSquishGroup
 import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import com.tyranor.next.ui.common.motion.staggeredEntrance
+import com.tyranor.next.ui.common.notice.AppNotice
 import com.tyranor.next.ui.common.privacy.PrivacyLockSetupGate
 import com.tyranor.next.ui.common.privacy.isDeviceCredentialUsable
 import kotlinx.coroutines.Dispatchers
@@ -167,9 +169,13 @@ internal fun PrivacySettingsScreen() {
                                         checked = appLockEnabled,
                                         onCheckedChange = { checked ->
                                             when {
-                                                checked -> {
-                                                    // 已有图案凭据直接启用；否则拉起设置门，确认后再落开关
-                                                    if (AppLockCredentialStore.hasPattern(ctx)) {
+                                                checked -> scope.launch {
+                                                    // 已有图案凭据直接启用；否则拉起设置门，确认后再落开关。
+                                                    // Keystore 解密挪到 IO，主线程只处理开关状态与设置门
+                                                    val hasPattern = withContext(Dispatchers.IO) {
+                                                        AppLockCredentialStore.hasPattern(ctx)
+                                                    }
+                                                    if (hasPattern) {
                                                         AppSettingsStore.setPrivacyAppLockEnabled(ctx, true)
                                                         AppLockController.resetTimer()
                                                     } else {
@@ -177,9 +183,18 @@ internal fun PrivacySettingsScreen() {
                                                     }
                                                 }
                                                 else -> scope.launch {
-                                                    // 凭据清除是阻塞的 Keystore 加密 + commit 落盘，不能占主线程
-                                                    withContext(Dispatchers.IO) {
+                                                    // 凭据清除是阻塞的 Keystore + commit 落盘，不能占主线程
+                                                    val cleared = withContext(Dispatchers.IO) {
                                                         AppLockController.clearPatternAndDisable(ctx)
+                                                    }
+                                                    if (!cleared) {
+                                                        // 清除失败时控制器保持开关与锁定，给出可重试提示
+                                                        AppNotice.makeText(
+                                                            ctx,
+                                                            R.string.privacy_gate_reset_failed,
+                                                            Toast.LENGTH_SHORT,
+                                                            AppNotice.Kind.Failure,
+                                                        ).show()
                                                     }
                                                 }
                                             }
