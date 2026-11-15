@@ -39,8 +39,12 @@ Siglus 之外由 game_launcher 运行库承载的三个软件渲染引擎（Real
 _Avoid_: 软渲染引擎、game_fb 引擎
 
 **外置 APK 引擎模块（External Engine Module）**:
-以独立 Android 应用形式分发、由用户另行安装的引擎运行时，用于承载 Ren'Py、RPG Maker RGSS、Ruffle（SWF / Flash）与 Impacto 等游戏，由固定包名与静态注册表管理，与动态发现的「第三方 APK 运行时模块」是两套体系。游戏由模块运行，主 App 管理扫描、安装状态与启动协议，并对 Android 11 及以上 Ren’Py 的游戏目录存档提供统一管理。
+以独立 Android 应用形式分发、由用户另行安装的引擎运行时，用于承载 Ren'Py、RPG Maker RGSS、Ruffle（SWF / Flash）与 MAGES. 等游戏，由固定包名与静态注册表管理，与动态发现的「第三方 APK 运行时模块」是两套体系。游戏由模块运行，主 App 管理扫描、安装状态与启动协议，并对 Android 11 及以上 Ren’Py 的游戏目录存档提供统一管理。
 _Avoid_: 插件、引擎 DLC、第三方 APK 运行时模块（另一体系）
+
+**MAGES. 引擎（EngineType.IMPACTO）**:
+MAGES.（前 5pb.）的视觉小说引擎（SC3 脚本，如 Memories Off 6、Chaos;Child、Robotics;Notes 等）；Tyranor 通过外置 Impacto 宿主 APK 承载其开源重新实现 impacto 来运行这类游戏。「impacto」是项目 / 宿主名，不是引擎名；`EngineType.IMPACTO` 等代码标识沿用项目名。
+_Avoid_: 把 Impacto 当作引擎名（界面、文档中的引擎名一律写 MAGES.）
 
 **第三方 APK 运行时模块（Third-party APK Runtime Module）**:
 用户自行安装、以 `com.tyranor.runtime.` 包名前缀并声明 `com.tyranor.runtime.action.LAUNCH` 的独立 APK，接收游戏文件夹路径自行运行游戏；主 App 只负责发现、启用、扫描描述解释与交棒。

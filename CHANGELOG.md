@@ -52,7 +52,7 @@
 
 ### 新增
 
-- 新增 Impacto 外置引擎（承载未改动的上游 CommitteeOfZero/impacto）：引擎类型与图标、按精确大小写识别七个上游 profile（`mo6tw` 等，PS3 数据布局）、外置模块启动协议；引擎页点击跳转下载宿主 APK，链接指向宿主仓库 https://github.com/yuukana1/Tyranor-Next-Impacto 的最新发布（`releases/latest/download/impacto-host.apk`，新版本发布后自动指向），与其他外置引擎一致，不内置；宿主没有桌面入口。宿主引擎库已在一台真机上加载并跑到读脚本为止，**没有任何游戏进到画面，渲染、声音、输入、存读档均未验证**；Windows／Steam 版数据与上游 PS3 配置不一致，不识别。另增只读工具：CPK 结构检查与 profile 目录表校验。
+- 新增 MAGES. 外置引擎（经开源重新实现项目 impacto 承载，未改动的上游 CommitteeOfZero/impacto；impacto 是项目名，不是引擎名）：引擎类型与图标、按精确大小写识别七个上游 profile（`mo6tw` 等，PS3 数据布局）、外置模块启动协议；引擎页点击跳转下载宿主 APK，链接指向宿主仓库 https://github.com/yuukana1/Tyranor-Next-Impacto 的最新发布（`releases/latest/download/impacto-host.apk`，新版本发布后自动指向），与其他外置引擎一致，不内置；宿主没有桌面入口。宿主引擎库已在一台真机上加载并跑到读脚本为止，**没有任何游戏进到画面，渲染、声音、输入、存读档均未验证**；Windows／Steam 版数据与上游 PS3 配置不一致，不识别。另增只读工具：CPK 结构检查与 profile 目录表校验。
 - 修复 BGI 游戏位于公共共享存储时因 `flock` 返回不支持而无法启动：仅对不支持锁操作的错误回退到 OFD 非阻塞写入锁，保留占用与权限错误的拒绝行为。
 - BGI / Ethornell 存档改到游戏目录内的 `savedata/`，启动、宿主与存档管理共用同一位置；旧私有数据一次性迁入且不覆盖目标同名文件，目录不可写时不回退私有存档。移除游戏库条目保留游戏目录中的存档。
 

@@ -19,7 +19,7 @@ import java.security.MessageDigest
 object ImpactoExternalEngineModule : ExternalEngineModule {
     override val id: String = "impacto"
     override val engine: EngineType = EngineType.IMPACTO
-    override val displayName: String = "Impacto"
+    override val displayName: String = "MAGES."
     override val displayNameRes: Int = R.string.external_impacto_module_name
     override val packageName: String = ImpactoHostContract.PACKAGE
     override val action: String = ImpactoHostContract.ACTION_RUN

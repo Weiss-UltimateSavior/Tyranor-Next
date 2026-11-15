@@ -1,4 +1,6 @@
-# Impacto 外置引擎接入记录
+# MAGES. 外置引擎（impacto 项目）接入记录
+
+> **命名**：引擎名是 **MAGES.**（界面与文档中一律这样写）；**impacto** 是重新实现该引擎的开源项目，也是宿主 APK 的名字。代码里的 `IMPACTO` / `Impacto*` 标识沿用项目名。
 
 > **宿主 APK 已迁出（2026-11-15）**：宿主 APK 的源码、固定来源 `source-lock.json`、构建脚本、发布工作流与许可说明现在在独立公开仓库 [yuukana1/Tyranor-Next-Impacto](https://github.com/yuukana1/Tyranor-Next-Impacto)，由它构建、签名并发布 APK。本仓库只保留主 App 一侧的接入（引擎类型、扫描、外置模块、文案）和 `tools/impacto/` 里与游戏数据有关的两个只读工具。下文中带日期的构建、宿主与真机记录是迁出前的历史记录，其中提到的 `engine/impacto/`、`tools/impacto/build-upstream.sh` 等路径已不在本仓库，请到上述仓库查看。
 
@@ -96,7 +98,7 @@
 
 ## 主 App 与宿主 APK 接入
 
-主 App 把 Impacto 当作外置 APK 引擎（与 Ren'Py、Ruffle 同一机制）：
+主 App 把 MAGES. 引擎（经 impacto 项目的宿主 APK）当作外置 APK 引擎（与 Ren'Py、Ruffle 同一机制）：
 
 - `EngineType.IMPACTO` 属 GAL 分类，卡片图标为 `ic_engine_card_impacto`，封面色 `#B3123A`。
 - 扫描：`ImpactoGameCatalog` 按**精确大小写**的根目录条目名识别上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`），恰好一个 profile 全部命中才识别；`darling` 的要求集合与全小写的 mo6tw 完全相同，无法区分，所以这种布局一律不识别，不猜；`launchTarget` 保存 profile id（即 `-g` 参数）。影片档不作为特征。该表由 `tools/impacto/check-game-catalog.py` 对照固定提交（见宿主仓库的 `source-lock.json`）的 `gamedefinitions.lua` 和各 `vfs.lua` 校验。
