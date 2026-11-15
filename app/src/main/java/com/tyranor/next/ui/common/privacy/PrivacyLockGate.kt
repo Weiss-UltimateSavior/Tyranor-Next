@@ -376,6 +376,11 @@ private fun GatePatternSection(
  * 设备凭据快捷解锁：开关允许且设备可用（弱生物识别或锁屏凭据任一）时显示按钮，
  * 经系统 BiometricPrompt 验证（API 28/29 的凭据回退由库内部处理）。
  *
+ * **每次点击都新建 BiometricPrompt 并立即 authenticate()**：androidx.biometric 在同一
+ * Fragment 内只把认证结果派发给**最后创建**的实例；若复用缓存实例，用户先后打开过重置确认
+ * （创建了 callback = 重置的实例）后再点快捷解锁，结果仍会进入重置回调——只想解锁却清除了
+ * 应用锁。官方指引同样是每次认证新建实例。
+ *
  * @param credentialUsable 父层算好的设备凭据可用性（与重置入口共用同一次查询）。
  * @param forceShow 凭据读取失败时强制显示：此时图案无法校验，设备凭据是唯一的恢复路径，
  *   即使「设备凭据快捷解锁」开关关闭也要给出口（否则 Keystore 密钥失效会把应用永久锁死）。
@@ -392,25 +397,24 @@ private fun DeviceCredentialSection(
     val fragmentActivity = remember(context) { AppLocaleController.findActivity(context) as? FragmentActivity }
     if ((!allowBiometric && !forceShow) || !credentialUsable) return
 
-    val prompt = remember(fragmentActivity) {
-        val activity = fragmentActivity ?: return@remember null
-        createDeviceCredentialPrompt(
-            activity = activity,
-            onSuccess = {
-                MotionHaptics.perform(MotionHaptics.Kind.Confirm)
-                AppLockController.unlock()
-            },
-            onError = onAuthError,
-        )
-    }
-
     val authenticate: () -> Unit = {
-        prompt?.authenticate(
-            deviceCredentialPromptInfo(
-                title = localizedContext.getString(R.string.privacy_gate_device_title),
-                description = localizedContext.getString(R.string.privacy_gate_device_description),
-            ),
-        )
+        val activity = fragmentActivity
+        if (activity != null) {
+            // 新建实例的构造会把 Fragment 的回调换成解锁回调（后创建者生效），再立即认证
+            createDeviceCredentialPrompt(
+                activity = activity,
+                onSuccess = {
+                    MotionHaptics.perform(MotionHaptics.Kind.Confirm)
+                    AppLockController.unlock()
+                },
+                onError = onAuthError,
+            ).authenticate(
+                deviceCredentialPromptInfo(
+                    title = localizedContext.getString(R.string.privacy_gate_device_title),
+                    description = localizedContext.getString(R.string.privacy_gate_device_description),
+                ),
+            )
+        }
     }
     NoRippleButton(
         text = stringResource(R.string.privacy_gate_device_unlock),
