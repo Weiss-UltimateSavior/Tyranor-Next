@@ -136,6 +136,22 @@
 
 结论：这是引擎库第一次在设备上运行，到上游启动流程的脚本读取为止；**没有任何游戏进到画面**。上游 `mo6tw` 配置要 PS3 版 `SCRIPT.cls`，该样本是 PC 版（`script.cpk`、SC3 `.scx` 加 `.msb`、PNG 图集），需要 TYN 自有、标明实验性的 PC profile 才可能继续，目前没有证据表明可行。渲染、声音、输入、存读档均未验证。
 
+### 真机 App 层核对（2026-11-15，合并上游 main 后的主 App 测试包 + 已发布宿主）
+
+主 App 用隔离包名 `com.tyranor.next.impactotest` 的 debug 包；宿主为发布的 `impacto-host-0.1.0`。游戏目录是自建的占位目录（`mo6tw` 布局，三个真实小档案的改名拷贝 + 零字节占位），从 App 的「输入路径」添加并扫描。
+
+| 项目 | 结果 |
+| --- | --- |
+| 引擎页显示 | Impacto 卡片带指定图标；宿主未安装为红 ✕、已安装为蓝 ✓；弹窗条目“模块未安装或需要更新” |
+| 引擎页入口 | 点弹窗条目跳转到宿主仓库最新发布的 APK 直链，浏览器开始下载 |
+| 游戏库 | 扫描识别为 “Memories Off 6 ~T-Wave~”，深红 Impacto 占位封面；点卡片出操作面板（搜索封面 / 引擎设置 / 启动游戏）；“引擎设置”为说明页 |
+| 启动 | “启动游戏”拉起宿主，`TyranorImpactoActivity` 到前台，引擎读取目录；对零字节占位文件报 `Invalid argument`（预期） |
+| 桌面入口 | 宿主在手机上没有任何启动器入口，仅有 `ImpactoLaunchActivity` 响应 `RUN` |
+
+**发现并修复的问题**：主 App 清单 `<queries>` 缺宿主包名 `com.tyranor.next.impacto`，Android 11+ 下 App 看不到宿主，装了也显示“未安装”（此前真机核对用 `am start` 绕过了 App，没有发现）。已补声明，并新增 `ExternalEngineManifestQueriesTest`：要求注册表里每个外置模块的包名都在 `<queries>` 中（撤掉修复时它会失败）。
+
+**仍未覆盖**：引擎渲染、声音、输入、存读档；没有受支持的游戏数据进到画面。
+
 ## 本轮检查
 
 - 20 项真实 Git 仓库回归通过，包含“父仓库冒充源码 checkout”和 Git replace refs 替换锁定提交的拒绝测试。
