@@ -32,9 +32,10 @@ import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.SystemNnnSaveLayout
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.PageTextColor
-import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.TopBarIcon
+import com.tyranor.next.ui.common.notice.AppNotice
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.preference.SwitchPreference
@@ -52,7 +53,7 @@ internal fun SystemNnnSettingsScreen() {
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
-                AppTopBar(
+                AppSecondaryTopBar(
                     title = stringResource(R.string.engine_settings_systemnnn_title),
                     background = Color.Transparent,
                     contentColor = PageTextColor,
@@ -63,7 +64,7 @@ internal fun SystemNnnSettingsScreen() {
                             MiuixTheme.colorScheme.primary,
                         ) {
                             EngineSettingsStore.saveSystemNnnSettings(context, fullscreen, readingSize, exeAnalysis, debugMode)
-                            Toast.makeText(context, R.string.engine_settings_saved, Toast.LENGTH_SHORT).show()
+                            AppNotice.makeText(context, R.string.engine_settings_saved, Toast.LENGTH_SHORT, AppNotice.Kind.Success).show()
                         }
                     },
                 )

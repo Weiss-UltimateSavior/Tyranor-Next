@@ -1,5 +1,10 @@
 package com.tyranor.next.ui.settings
 
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.breathing
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -91,13 +96,16 @@ internal fun FontPreference(
         summary = if (valueInSummary) value else null,
         endActions = {
             if (!valueInSummary) {
-                Text(
-                    value,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                // 导入字体在途（入口禁用）时当前值缓缓明灭，导入结束平滑回到不透明；新值模糊替换
+                BlurCrossfade(value, Modifier.breathing(active = !enabled)) { shown ->
+                    Text(
+                        shown,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         },
         enabled = enabled,
@@ -108,11 +116,14 @@ internal fun FontPreference(
             onDismissRequest = { open = false },
             title = { Text(label, style = MaterialTheme.typography.titleMedium) },
             text = {
+                // 两个选项依次弹入（与添加游戏弹窗同一写法）
+                ProvideEntrance {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().skipEntranceOnDrag(),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     AppNavItem(
+                        modifier = Modifier.staggeredEntrance(0),
                         title = followLabel,
                         leadingIcon = R.drawable.ic_font_bookmark,
                         containerColor = DialogItemSurface,
@@ -122,6 +133,7 @@ internal fun FontPreference(
                         open = false
                     }
                     AppNavItem(
+                        modifier = Modifier.staggeredEntrance(1),
                         title = stringResource(R.string.engine_settings_select_font_file),
                         leadingIcon = R.drawable.ic_font_bookmark,
                         containerColor = DialogItemSurface,
@@ -130,6 +142,7 @@ internal fun FontPreference(
                         open = false
                         onPick()
                     }
+                }
                 }
             },
             confirmButton = { DialogTextButton(text = stringResource(R.string.common_cancel), onClick = { open = false }) },

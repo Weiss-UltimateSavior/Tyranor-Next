@@ -18,6 +18,10 @@ object LaunchContract {
     const val PROJECT_ROOT = "projectRoot"
     const val GAME_DIR = "gamedir"
     const val ROOT_URI = "rootUri"
+    /** Stable identifier shared by activities belonging to one game launch for playtime attribution. */
+    const val PLAYTIME_SESSION_ID = "playtimeSessionId"
+    /** Monotonic launch ordering timestamp shared by activities in a playtime session. */
+    const val PLAYTIME_SESSION_STARTED_AT = "playtimeSessionStartedAt"
     const val LAUNCH_TARGET = "launchTarget"
     const val LAUNCH_MODE = "launchMode"
     const val ORIGINAL_PROJECT_ROOT = "originalProjectRoot"

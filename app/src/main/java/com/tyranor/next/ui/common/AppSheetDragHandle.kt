@@ -26,9 +26,12 @@ import com.tyranor.next.theme.PageSecondaryTextColor
  * 布局位置落到背景里形成白线）。
  */
 @Composable
-internal fun AppSheetDragHandle(showGlassTopBorder: Boolean = false) {
+internal fun AppSheetDragHandle(
+    showGlassTopBorder: Boolean = false,
+    modifier: Modifier = Modifier,
+) {
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         if (showGlassTopBorder && AppThemeColors.isGlass) {

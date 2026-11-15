@@ -1,5 +1,8 @@
 package com.tyranor.next.ui.settings
 
+import com.tyranor.next.ui.common.motion.ExpandVisibility
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.pressSquish
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -15,9 +18,13 @@ import com.tyranor.next.core.settings.GraphicsCapabilities
 import com.tyranor.next.core.settings.GraphicsOverride
 import com.tyranor.next.core.settings.GraphicsSettings
 import com.tyranor.next.core.settings.GraphicsSettingsCodec
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
+import com.tyranor.next.ui.common.OverlayDropdownPreference
+import com.tyranor.next.ui.common.SwitchPreference
 
+/**
+ * 按引擎图形能力编辑全局滤镜与分析器设置，只通过 [onChange] 回传副本。
+ * 不支持或依赖运行库的能力以提示说明，分析器相关入口遵循解析后的有效启用状态。
+ */
 @Composable
 internal fun GlobalGraphicsSettings(
     settings: GraphicsSettings,
@@ -25,12 +32,13 @@ internal fun GlobalGraphicsSettings(
     onChange: (GraphicsSettings) -> Unit,
 ) {
     EngineCard(stringResource(R.string.graphics_settings_title)) {
-        if (!capability.supported || capability.runtimeDependent) {
+        ExpandVisibility(!capability.supported || capability.runtimeDependent) {
             Text(stringResource(if (capability.runtimeDependent) R.string.graphics_settings_runtime_dependent
                 else R.string.graphics_settings_unsupported), style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         }
         SwitchPreference(
+            modifier = Modifier.pressSquish(enabled = capability.supported, scale = PressSquishDefaults.RowScale),
             title = stringResource(R.string.graphics_settings_enabled),
             checked = settings.enabled,
             enabled = capability.supported,
@@ -38,12 +46,14 @@ internal fun GlobalGraphicsSettings(
         )
         GraphicsChainEditor(settings.chain, capability.supported) { onChange(settings.copy(chain = it)) }
         SwitchPreference(
+            modifier = Modifier.pressSquish(enabled = GraphicsSettingsCodec.effectiveEnabled(settings, capability), scale = PressSquishDefaults.RowScale),
             title = stringResource(R.string.graphics_analyzer_title),
             checked = settings.analyzer,
             enabled = GraphicsSettingsCodec.effectiveEnabled(settings, capability),
             onCheckedChange = { onChange(settings.copy(analyzer = it)) },
         )
         OverlayDropdownPreference(
+            modifier = Modifier.pressSquish(enabled = GraphicsSettingsCodec.effectiveAnalyzer(settings, capability), scale = PressSquishDefaults.RowScale),
             title = stringResource(R.string.graphics_analyzer_position),
             items = graphicsPositionLabels(), selectedIndex = settings.analyzerPosition.ordinal,
             enabled = GraphicsSettingsCodec.effectiveAnalyzer(settings, capability),
@@ -61,6 +71,10 @@ internal fun GlobalGraphicsSettings(
     }
 }
 
+/**
+ * 编辑单游戏图形覆盖；null 表示跟随全局，展示和入口可用性使用解析后的有效设置。
+ * 自定义滤镜链与继承切换由编解码门面处理，避免把继承状态误写为固定副本。
+ */
 @Composable
 internal fun PerGameGraphicsSettings(
     global: GraphicsSettings,
@@ -70,7 +84,7 @@ internal fun PerGameGraphicsSettings(
 ) {
     val resolved = GraphicsSettingsCodec.resolve(global, override)
     EngineCard(stringResource(R.string.graphics_settings_title)) {
-        if (!capability.supported || capability.runtimeDependent) {
+        ExpandVisibility(!capability.supported || capability.runtimeDependent) {
             Text(stringResource(if (capability.runtimeDependent) R.string.graphics_settings_runtime_dependent
                 else R.string.graphics_settings_unsupported), style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
@@ -80,6 +94,7 @@ internal fun PerGameGraphicsSettings(
             enabled = capability.supported,
         ) { onChange(override.copy(enabled = it)) }
         OverlayDropdownPreference(
+            modifier = Modifier.pressSquish(enabled = capability.supported, scale = PressSquishDefaults.RowScale),
             title = stringResource(R.string.graphics_chain_title),
             items = listOf(stringResource(R.string.engine_settings_follow_global), stringResource(R.string.graphics_chain_custom)),
             selectedIndex = if (override.chain == null) 0 else 1,
@@ -96,6 +111,7 @@ internal fun PerGameGraphicsSettings(
             enabled = GraphicsSettingsCodec.effectiveEnabled(resolved, capability),
         ) { onChange(override.copy(analyzer = it)) }
         OverlayDropdownPreference(
+            modifier = Modifier.pressSquish(enabled = GraphicsSettingsCodec.effectiveAnalyzer(resolved, capability), scale = PressSquishDefaults.RowScale),
             title = stringResource(R.string.graphics_analyzer_position),
             items = listOf(stringResource(R.string.engine_settings_follow_global)) + graphicsPositionLabels(),
             selectedIndex = override.analyzerPosition?.let { it.ordinal + 1 } ?: 0,

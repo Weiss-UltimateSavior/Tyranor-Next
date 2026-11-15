@@ -40,6 +40,9 @@
     <string name="settings_appearance_style_default">Default</string>
     <string name="settings_appearance_style_glass">Retro glass</string>
     <string name="settings_appearance_style_milk">White mist glass</string>
+    <string name="settings_motion_mode">Interface motion</string>
+    <string name="settings_motion_enhanced">Enhanced</string>
+    <string name="settings_motion_normal">Standard</string>
     <string name="settings_app_corner_radius">App corner radius</string>
     <string name="settings_app_corner_radius_value">%1$d dp</string>
     <string name="settings_disabled_in_glass_style">Unavailable in glass appearance themes</string>
@@ -237,6 +240,7 @@
     <string name="game_launch_failed">Launch failed</string>
     <string name="game_cover_set_failed">Failed to set cover</string>
     <string name="game_launch_action">Launch game</string>
+    <string name="game_playtime_total_accessibility">Total play time: %1$s</string>
     <string name="game_launch_file">Launch file</string>
     <string name="game_launch_file_auto_summary">Auto - choose a launch file manually if startup fails</string>
     <string name="game_remove_quick_launch">Remove from Home</string>
@@ -493,7 +497,6 @@
     <string name="engine_settings_sharpness">Image sharpening</string>
     <string name="engine_settings_sharpness_strength">Sharpness strength</string>
     <string name="engine_settings_text_encoding">Text encoding</string>
-    <string name="engine_settings_rotate_screen">Rotate screen</string>
     <string name="engine_settings_auto_patch">Automatic patch</string>
     <string name="engine_settings_artemis_resolution">Stage resolution</string>
     <string name="engine_settings_artemis_side_cut">Crop to fill</string>
@@ -931,11 +934,11 @@
     <string name="ethornell_nls_title">Graphics text encoding</string>
     <string name="ethornell_font_title">Custom font</string>
     <string name="ethornell_font_default">Use engine font fallback</string>
-    <string name="ethornell_settings_note">Encoding affects graphics text only, not resource names. Restart the game after changes. User data is app-private; save management is not yet available.</string>
+    <string name="ethornell_settings_note">Encoding affects graphics text only, not resource names. Restart the game after changes. Saves are stored in the savedata folder inside the game directory.</string>
     <string name="ethornell_error_root">Cannot read the game directory. Select an accessible local directory and grant access again.</string>
     <string name="ethornell_error_bootstrap">No supported system.arc index with an ipl._bp bootstrap was found.</string>
     <string name="ethornell_error_font">Invalid or unreadable font. Import a TTF, TTC, OTF or OTC font again.</string>
-    <string name="ethornell_error_userdata">Cannot create private Ethornell user data. Check available storage space.</string>
+    <string name="ethornell_error_userdata">Cannot prepare Ethornell saves in the game directory. Check write permission and available storage space.</string>
     <!-- First-launch quick start -->
     <string name="onboarding_title">Quick start</string>
     <string name="onboarding_progress">Page %1$d of %2$d</string>
@@ -947,8 +950,10 @@
     <string name="onboarding_coach_home_body">Jump back into favorites here and see what you opened recently.</string>
     <string name="onboarding_coach_home_web_title">Explore the web home</string>
     <string name="onboarding_coach_home_web_body">Your configured web home is shown here.</string>
-    <string name="onboarding_coach_games_title">Add your games</string>
-    <string name="onboarding_coach_games_body">Use Add game to choose and save a game folder. It is scanned after you add it.</string>
+    <string name="onboarding_coach_games_folder_title">Start by adding a folder</string>
+    <string name="onboarding_coach_games_folder_body">On first use, tap Add folder to add a game directory and automatically scan for supported games.</string>
+    <string name="onboarding_coach_games_title">When manual addition is needed</string>
+    <string name="onboarding_coach_games_body">The top plus button adds a PC game with an exe or an installed Android app manually. For supported engine games, use Add folder to scan them into the library.</string>
     <string name="onboarding_coach_games_search_title">Find a game</string>
     <string name="onboarding_coach_games_search_body">Use search to filter the games in your library by name.</string>
     <string name="onboarding_coach_games_cover_title">Fill in covers</string>
@@ -956,9 +961,9 @@
     <string name="onboarding_coach_games_scan_title">Rescan folders</string>
     <string name="onboarding_coach_games_scan_body">Tap the circular arrows to recheck folders you already added. It does not add folders.</string>
     <string name="onboarding_coach_engine_title">Check runtimes</string>
-    <string name="onboarding_coach_engine_body">Check built-in engines, external modules, and emulators here.</string>
+    <string name="onboarding_coach_engine_body">Check supported engines, external modules, and emulators here. Ask the community if you are unsure which engine a game uses.</string>
     <string name="onboarding_coach_settings_title">Adjust settings anytime</string>
-    <string name="onboarding_coach_settings_body">Add game directories here, then adjust scan depth and game sorting.</string>
+    <string name="onboarding_coach_settings_body">Add or remove scan folders here, and adjust scan depth and game sorting. Removing a scan folder does not delete game files.</string>
     <string name="webdav_title">WebDAV save sync</string>
     <string name="webdav_enabled">Enable WebDAV save sync</string>
     <string name="webdav_server_url">Server URL</string>
@@ -1026,7 +1031,7 @@
     <string name="save_version_recover">Resolve incomplete switch</string>
     <string name="save_version_recovery_policy">Keep the current saves and any valid historical sources; only interrupted switch records are cleared. No version is imported. Future WebDAV syncs use the current save contents.</string>
     <string name="webdav_error_cloud_repair">Remove the damaged cloud save and retry</string>
-    <string name="save_sync_cleanup_failed">“%1$s” remains in the library. Save sync data cleanup failed: %2$s</string>
+    <string name="settings_systemnnn_copy_cleanup_schedule_failed">“%1$s” remains in the library. Could not schedule resource cleanup: %2$s</string>
     <string name="webdav_error_local_state_changed">Local state changed. Try syncing again.</string>
     <string name="webdav_sync_cleanup_pending">Cloud history cleanup is not complete yet. It will continue with a later sync.</string>
     <string name="webdav_sync_partial_cleanup_pending">Some syncs completed; cloud history cleanup is not complete yet. It will continue with a later sync.</string>

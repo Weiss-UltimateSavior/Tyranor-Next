@@ -38,6 +38,11 @@ jobs:
           persist-credentials: false
           fetch-depth: 2
 
+      - name: Check motion ownership boundaries
+        run: |
+          python3 -B tools/test_motion_boundaries.py
+          python3 -B tools/check-motion-boundaries.py
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -153,6 +158,9 @@ jobs:
 
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --no-daemon
+
+      - name: Compile release baseline profile
+        run: ./gradlew :app:compileReleaseArtProfile --no-daemon
 
       - name: Check packaged SystemNNN runtime
         run: python3 tools/check-systemnnn-runtime.py --apk app/build/outputs/apk/debug/app-debug.apk

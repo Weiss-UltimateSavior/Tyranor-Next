@@ -20,6 +20,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -56,10 +57,24 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppSearchField
-import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.ExpandVisibility
+import com.tyranor.next.ui.common.motion.listItemMotion
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.animateContentSizeSpring
+import com.tyranor.next.ui.common.motion.bounceOnChange
+import com.tyranor.next.ui.common.motion.breathing
+import com.tyranor.next.ui.common.motion.rememberLastNonNull
+import com.tyranor.next.ui.common.motion.shakeOnTrigger
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.pressSquishGroup
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.common.shouldShowSaveSyncFeedback
 import com.tyranor.next.ui.common.toSaveSyncMessage
 import kotlinx.coroutines.CancellationException
@@ -71,9 +86,11 @@ import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import com.tyranor.next.ui.common.ArrowPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
+import com.tyranor.next.ui.common.OverlayDropdownPreference
+import com.tyranor.next.ui.common.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.tyranor.next.ui.common.collectSettingAsState
+import com.tyranor.next.ui.common.notice.AppNotice
 
 class WebDavSettingsActivity : AppScreenActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -107,11 +124,15 @@ private enum class WebDavTextField(
     ),
 }
 
+/**
+ * Edits encrypted WebDAV configuration and runs connection or synchronization operations under one
+ * interaction gate. Credentials remain in composition memory rather than saved instance state.
+ */
 @Composable
 private fun WebDavSettingsScreen() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val enabled by WebDavSettingsStore.enabled.collectAsState()
+    val enabled by WebDavSettingsStore.enabled.collectSettingAsState()
     // Credentials deliberately stay out of saved instance state.
     var config by remember { mutableStateOf(WebDavConfig()) }
     var loaded by remember { mutableStateOf(false) }
@@ -137,6 +158,13 @@ private fun WebDavSettingsScreen() {
     val masterAvailable = loaded && masterTarget == null
     val masterChecked = masterTarget ?: enabled
     val pageError = if (editing == null) configError ?: loadError else null
+    // 仅供动效：连接测试 / 全部同步是否在途，以及各自成功、失败的次数（呼吸 / 落点弹一下 / 失败抖一下）
+    var testing by remember { mutableStateOf(false) }
+    var testSucceeded by remember { mutableIntStateOf(0) }
+    var testFailed by remember { mutableIntStateOf(0) }
+    var syncingAll by remember { mutableStateOf(false) }
+    var syncAllSucceeded by remember { mutableIntStateOf(0) }
+    var syncAllFailed by remember { mutableIntStateOf(0) }
 
     fun failureMessage(failure: Exception): String = when (failure) {
         is SaveSyncException -> failure.code.toSaveSyncMessage(context)
@@ -170,7 +198,7 @@ private fun WebDavSettingsScreen() {
     }
 
     fun showToast(message: String) {
-        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        AppNotice.makeText(context, message, Toast.LENGTH_SHORT, AppNotice.Kind.Info).show()
     }
 
     fun canInteract(): Boolean = enabled && config.enabled && loaded && loadError == null && !busy &&
@@ -204,11 +232,16 @@ private fun WebDavSettingsScreen() {
     fun runOperation(
         requireServer: Boolean,
         syncOperation: Boolean = false,
+        // 仅供动效：操作真正开始时 / 结束时（true 成功、false 失败、null 取消或被开关中止）
+        onStart: () -> Unit = {},
+        onFinish: (Boolean?) -> Unit = {},
         block: suspend (WebDavConfig) -> String,
     ) {
         if (!canInteract()) return
         val value = config
         busy = true
+        onStart()
+        var outcome: Boolean? = null
         val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 val result = withContext(Dispatchers.IO) {
@@ -218,17 +251,20 @@ private fun WebDavSettingsScreen() {
                     block(value)
                 }
                 if (!config.enabled || !WebDavSettingsStore.isEnabled(context)) return@launch
+                outcome = true
                 if (!syncOperation || shouldShowSaveSyncFeedback(context)) showToast(result)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
                 if (!config.enabled || !WebDavSettingsStore.isEnabled(context)) return@launch
+                outcome = false
                 if (!syncOperation || shouldShowSaveSyncFeedback(context)) {
                     showToast(failureMessage(failure))
                 }
             } finally {
                 busy = false
                 operationJob = null
+                onFinish(outcome)
             }
         }
         operationJob = job
@@ -316,6 +352,14 @@ private fun WebDavSettingsScreen() {
         }
     }
 
+    // 动效兜底：任务门闩放开时，在途标记一定收回（避免未启动即被取消的任务留下呼吸）
+    LaunchedEffect(busy) {
+        if (!busy) {
+            testing = false
+            syncingAll = false
+        }
+    }
+
     LaunchedEffect(enabled) {
         config = config.copy(enabled = enabled)
         if (!enabled) {
@@ -327,12 +371,13 @@ private fun WebDavSettingsScreen() {
     }
 
     MiuixSettingsTheme {
+        ProvideEntrance {
         MiuixScaffold(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
             containerColor = ComposeColor.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
-                AppTopBar(
+                AppSecondaryTopBar(
                     title = stringResource(R.string.webdav_title),
                     background = ComposeColor.Transparent,
                     contentColor = PageTextColor,
@@ -346,13 +391,15 @@ private fun WebDavSettingsScreen() {
                 contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item {
+                // 稳定 key + 统一弹簧位移：错误卡片插入 / 移除时下方卡片平滑让位，而不是整列跳动
+                item(key = "webdavMaster") {
                     MiuixCard(
-                        modifier = Modifier.fillMaxWidth().glassBorder(),
+                        modifier = Modifier.pressSquishGroup().then(listItemMotion()).staggeredEntrance(0).fillMaxWidth().glassBorder(),
                         cornerRadius = AppComponentCornerRadius,
                     ) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             SwitchPreference(
+                                modifier = Modifier.pressSquish(masterAvailable, PressSquishDefaults.RowScale),
                                 title = stringResource(R.string.webdav_enabled),
                                 checked = masterChecked,
                                 enabled = masterAvailable,
@@ -362,20 +409,23 @@ private fun WebDavSettingsScreen() {
                     }
                 }
                 pageError?.let { error ->
-                    item {
+                    item(key = "webdavPageError") {
                         MiuixCard(
-                            modifier = Modifier.fillMaxWidth().glassBorder(),
+                            modifier = Modifier.pressSquishGroup().then(listItemMotion()).staggeredEntrance(1).fillMaxWidth().glassBorder(),
                             cornerRadius = AppComponentCornerRadius,
                         ) {
                             Column {
-                                Text(
-                                    error,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                                )
+                                // 配置错误 ↔ 读取错误互换时模糊替换
+                                BlurCrossfade(targetState = error, label = "webdavPageError") { shownError ->
+                                    Text(
+                                        shownError,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                    )
+                                }
                                 // 仅在「本机读不出已存加密载荷」时提供恢复入口；总开关关闭或有任务在途时禁用
-                                if (loadError != null) {
+                                ExpandVisibility(visible = loadError != null) {
                                     AppNavItem(
                                         title = stringResource(R.string.webdav_reset_config),
                                         showLeadingIcon = false,
@@ -389,9 +439,9 @@ private fun WebDavSettingsScreen() {
                         }
                     }
                 }
-                item {
+                item(key = "webdavServer") {
                     MiuixCard(
-                        modifier = Modifier.fillMaxWidth().glassBorder(),
+                        modifier = Modifier.pressSquishGroup().then(listItemMotion()).staggeredEntrance(2).fillMaxWidth().glassBorder(),
                         cornerRadius = AppComponentCornerRadius,
                     ) {
                         Column(Modifier.padding(vertical = 4.dp)) {
@@ -423,11 +473,23 @@ private fun WebDavSettingsScreen() {
                             )
                             AppNavItem(
                                 title = stringResource(R.string.webdav_test_connection),
+                                // 测试中缓缓明灭；连上时轻轻落一下，失败时左右抖一下
+                                modifier = Modifier
+                                    .breathing(testing && busy)
+                                    .bounceOnChange(testSucceeded.takeIf { it > 0 }, depth = 0.05f)
+                                    .shakeOnTrigger(testFailed.takeIf { it > 0 }),
                                 showLeadingIcon = false,
                                 showArrow = false,
                                 drawSurface = false,
                                 onClick = if (!available) null else ({
-                                    runOperation(requireServer = true) { value ->
+                                    runOperation(
+                                        requireServer = true,
+                                        onStart = { testing = true },
+                                        onFinish = { ok ->
+                                            testing = false
+                                            if (ok == true) testSucceeded++ else if (ok == false) testFailed++
+                                        },
+                                    ) { value ->
                                         WebDavClient(value, context.cacheDir) { WebDavSettingsStore.isEnabled(context) }
                                             .use { it.testConnection() }
                                         connectionOkMessage
@@ -437,14 +499,16 @@ private fun WebDavSettingsScreen() {
                         }
                     }
                 }
-                item {
+                item(key = "webdavMode") {
                     MiuixCard(
-                        modifier = Modifier.fillMaxWidth().glassBorder(),
+                        modifier = Modifier.pressSquishGroup().then(listItemMotion()).staggeredEntrance(3).fillMaxWidth().glassBorder(),
                         cornerRadius = AppComponentCornerRadius,
                     ) {
-                        Column(Modifier.padding(vertical = 4.dp)) {
+                        // 「手动」模式的说明摘要出现 / 消失时，卡片高度弹簧过渡而不是瞬间跳变
+                        Column(Modifier.animateContentSizeSpring().padding(vertical = 4.dp)) {
                             val modes = SaveSyncMode.entries
                             OverlayDropdownPreference(
+                                modifier = Modifier.pressSquish(available, PressSquishDefaults.RowScale),
                                 title = stringResource(R.string.webdav_mode),
                                 summary = if (config.mode == SaveSyncMode.MANUAL) {
                                     stringResource(R.string.webdav_manual_note)
@@ -466,6 +530,7 @@ private fun WebDavSettingsScreen() {
                             )
                             val retentionOptions = SaveSyncRetention.choices
                             OverlayDropdownPreference(
+                                modifier = Modifier.pressSquish(available, PressSquishDefaults.RowScale),
                                 title = stringResource(R.string.webdav_retention),
                                 summary = stringResource(R.string.webdav_retention_hint),
                                 items = retentionOptions.map { limit ->
@@ -490,6 +555,7 @@ private fun WebDavSettingsScreen() {
                                 },
                             )
                             SwitchPreference(
+                                modifier = Modifier.pressSquish(available, PressSquishDefaults.RowScale),
                                 title = stringResource(R.string.webdav_show_sync_feedback),
                                 checked = config.showSyncFeedback,
                                 enabled = available,
@@ -504,14 +570,15 @@ private fun WebDavSettingsScreen() {
                         }
                     }
                 }
-                item {
+                item(key = "webdavManual") {
                     MiuixCard(
-                        modifier = Modifier.fillMaxWidth().glassBorder(),
+                        modifier = Modifier.pressSquishGroup().then(listItemMotion()).staggeredEntrance(4).fillMaxWidth().glassBorder(),
                         cornerRadius = AppComponentCornerRadius,
                     ) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             val directions = SaveSyncDirection.entries
                             OverlayDropdownPreference(
+                                modifier = Modifier.pressSquish(available, PressSquishDefaults.RowScale),
                                 title = stringResource(R.string.webdav_manual_all),
                                 items = directions.map { stringResource(it.labelResource()) },
                                 selectedIndex = directions.indexOf(manualDirection).coerceAtLeast(0),
@@ -524,12 +591,25 @@ private fun WebDavSettingsScreen() {
                             )
                             AppNavItem(
                                 title = stringResource(R.string.save_sync_execute),
+                                // 同步中缓缓明灭；完成时轻轻落一下，失败时左右抖一下
+                                modifier = Modifier
+                                    .breathing(syncingAll && busy)
+                                    .bounceOnChange(syncAllSucceeded.takeIf { it > 0 }, depth = 0.05f)
+                                    .shakeOnTrigger(syncAllFailed.takeIf { it > 0 }),
                                 showLeadingIcon = false,
                                 showArrow = false,
                                 drawSurface = false,
                                 onClick = if (!available) null else ({
                                     val direction = manualDirection
-                                    runOperation(requireServer = true, syncOperation = true) {
+                                    runOperation(
+                                        requireServer = true,
+                                        syncOperation = true,
+                                        onStart = { syncingAll = true },
+                                        onFinish = { ok ->
+                                            syncingAll = false
+                                            if (ok == true) syncAllSucceeded++ else if (ok == false) syncAllFailed++
+                                        },
+                                    ) {
                                         SaveSyncService(context)
                                             .syncAll(direction)
                                             .toSaveSyncMessage(context)
@@ -539,8 +619,9 @@ private fun WebDavSettingsScreen() {
                         }
                     }
                 }
-                item { BottomInsetSpacer() }
+                item(key = "webdavBottomInset") { BottomInsetSpacer() }
             }
+        }
         }
     }
 
@@ -557,8 +638,10 @@ private fun WebDavSettingsScreen() {
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    // 保存被拒绝（地址校验 / 写入失败）时左右抖一下
                     CompositionLocalProvider(LocalIndication provides NoIndication) {
                         AppSearchField(
+                            modifier = Modifier.shakeOnTrigger(configError),
                             query = editText,
                             onQueryChange = {
                                 editText = it
@@ -578,12 +661,16 @@ private fun WebDavSettingsScreen() {
                             },
                         )
                     }
-                    configError?.let { error ->
-                        Text(
-                            error,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error,
-                        )
+                    // 校验失败提示原位展开，弹窗高度平滑长高；收起途中保留最后一条文案
+                    val shownConfigError = rememberLastNonNull(configError)
+                    ExpandVisibility(visible = configError != null, label = "webdavEditError") {
+                        shownConfigError?.let { error ->
+                            Text(
+                                error,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
                     }
                 }
             },
@@ -617,15 +704,18 @@ private fun WebDavSettingsScreen() {
     }
 }
 
+/** Shows a single-line setting value, using the mode-aware content transition when it changes. */
 @Composable
 private fun PreferenceValue(value: String) {
-    Text(
-        value,
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
+    BlurCrossfade(targetState = value) { shown ->
+        Text(
+            shown,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 private fun SaveSyncMode.titleResource(): Int = when (this) {

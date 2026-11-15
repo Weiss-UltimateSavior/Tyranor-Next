@@ -46,6 +46,6 @@ fun isTabletScreen(): Boolean {
  */
 @Composable
 fun isSideRailLayout(): Boolean {
-    val enabled by AppSettingsStore.sideRailState.collectAsState()
+    val enabled by AppSettingsStore.sideRailState.collectSettingAsState()
     return isTabletScreen() && enabled
 }

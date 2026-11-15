@@ -12,6 +12,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.DialogInterface;
 import android.content.res.ColorStateList;
+import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.ColorDrawable;
@@ -26,6 +27,7 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import com.core.engine.EngineThemeColors;
 import com.core.engine.EngineUiText;
+import com.core.engine.EngineStartupOverlay;
 import com.core.engine.LaunchContract;
 import com.core.engine.R;
 import java.io.Closeable;
@@ -40,9 +42,16 @@ import java.util.Set;
 import org.tvp.kirikiri2.KrDialogStyle;
 
 public final class PlayerActivity extends Activity implements GameRunner.Listener {
+    @Override
+    public void setRequestedOrientation(int requestedOrientation) {
+        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+    }
+
     private File game;
     private GameRunner runner;
-    private FrameLayout root,stage;
+    private FrameLayout root,contentHost,stage;
+    private EngineStartupOverlay startupOverlay;
+    private final EngineStartupGeneration startupGeneration=new EngineStartupGeneration();
     private TextureView screen;
     private Surface storySurface;
     private final StoryPlane storyPlane=new StoryPlane();
@@ -134,7 +143,10 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         }
         setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);
         immersive();
-        root=new FrameLayout(this); root.setBackgroundColor(Color.BLACK); setContentView(root);
+        root=new FrameLayout(this); root.setBackgroundColor(Color.BLACK);
+        contentHost=new FrameLayout(this);
+        root.addView(contentHost,new FrameLayout.LayoutParams(-1,-1));
+        setContentView(root);
         root.setOnApplyWindowInsetsListener((view,insets)->{
             int left,top,right,bottom;
             if(Build.VERSION.SDK_INT>=30){
@@ -218,7 +230,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             return;
         }
         storyPlane.release();
-        root.removeAllViews();
+        startupOverlay=new EngineStartupOverlay(this);
+        startupOverlay.attachTo(root);
+        contentHost.removeAllViews();
         storyTouchSlop=ViewConfiguration.get(this).getScaledTouchSlop();
         stage=new FrameLayout(this){
             @Override public void onDescendantInvalidated(View child,View target){
@@ -229,8 +243,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         stage.getViewTreeObserver().addOnPreDrawListener(()->{storyPlane.onPreDraw();return true;});
         launchingGame=true;
         stage.setForeground(new ColorDrawable(Color.BLACK));
-        root.addView(stage,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
-        root.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> layoutStage());
+        contentHost.addView(stage,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
+        contentHost.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> layoutStage());
         screen=new TextureView(this); screen.setContentDescription(text(R.string.engine_systemnnn_host_game_display));screen.setSoundEffectsEnabled(false);
         stage.addView(screen,new FrameLayout.LayoutParams(-1,-1));
         screen.setOnTouchListener((view,event) -> {
@@ -316,8 +330,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(gamePanel!=null)gamePanel.canvas(width,height);
         reserveCommandSpace();
         if(root.getWidth()==0 || root.getHeight()==0)return;
-        int availableWidth=root.getWidth()-root.getPaddingLeft()-root.getPaddingRight();
-        int availableHeight=root.getHeight()-root.getPaddingTop()-root.getPaddingBottom();
+        int availableWidth=contentHost.getWidth()-contentHost.getPaddingLeft()-contentHost.getPaddingRight();
+        int availableHeight=contentHost.getHeight()-contentHost.getPaddingTop()-contentHost.getPaddingBottom();
         if(availableWidth<=0||availableHeight<=0)return;
         float scale=Math.min((float)availableWidth/width,(float)availableHeight/height);
         int w=Math.max(1,Math.round(width*scale)),h=Math.max(1,Math.round(height*scale));
@@ -343,8 +357,30 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             debugOverlay.update(state,script,bgm,textWidth,readingSize);
         });
     }
-    @Override public void frame(GameRunner.Frame frame,int initialVisible) {
-        runOnUiThread(()->applyFrame(frame,initialVisible));
+    private void revealStartupOverlayAfterLayout(View content,long generation) {
+        EngineStartupOverlay expected=startupOverlay;
+        if(expected==null||!expected.isLoading()||content==null)return;
+        ViewTreeObserver observer=content.getViewTreeObserver();
+        if(!observer.isAlive())return;
+        observer.addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener(){
+            @Override public boolean onPreDraw(){
+                ViewTreeObserver current=content.getViewTreeObserver();
+                if(current.isAlive())current.removeOnPreDrawListener(this);
+                ui.post(()->{
+                    if(startupOverlay==expected&&startupGeneration.accepts(generation)&&
+                        content.isAttachedToWindow()&&!isDestroyed()&&!isFinishing())expected.reveal();
+                });
+                return true;
+            }
+        });
+        content.invalidate();
+    }
+    @Override public void frame(GameRunner.Frame frame,int initialVisible,long generation) {
+        runOnUiThread(()->{
+            if(isDestroyed()||isFinishing()||stage==null||!startupGeneration.accepts(generation))return;
+            applyFrame(frame,initialVisible);
+            revealStartupOverlayAfterLayout(stage,generation);
+        });
     }
     @Override public void planeChanged(){runOnUiThread(storyPlane::onTokenAvailable);}
     @Override public void nativePanelMenu(GameRunner owner,GameRunner.Frame frame,int mode){runOnUiThread(()->{
@@ -366,7 +402,6 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         }catch(RuntimeException|OutOfMemoryError error){owner.storyPlaneFailed(frame.generation,error);}
     });}
     private void applyFrame(GameRunner.Frame frame,int initialVisible){
-        if (isDestroyed() || stage==null) return;
         if (titlePanel!=null) {stage.removeView(titlePanel); titlePanel=null; titleModel=null;}
         clearStartupForStory();
         if(storyMovieExitActive){storyMovieExitActive=false;stage.setForeground(null);}
@@ -665,25 +700,28 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         MoviePlayback previous=moviePlayback;moviePlayback=null;
         if(previous!=null){previous.dispose();stage.removeView(previous);}
     }
-    @Override public void logo(List<LogoPanel.Slide> slides,int w,int h,int frameMs){
+    @Override public void logo(List<LogoPanel.Slide> slides,int w,int h,int frameMs,long generation){
         runOnUiThread(()->{
+            if (!startupGeneration.accepts(generation)) return;
             GameRunner owner=runner;
             if(isDestroyed()||isFinishing()||stage==null||owner==null)return;
             if(w>0&&h>0){width=w;height=h;}layoutStage();
             if(slides.isEmpty())return;
             clearStartupViews();
             logoPanel=new LogoPanel(this,slides,frameMs,()->{
-                if(isDestroyed()||isFinishing()||runner!=owner||logoPanel==null)return;
+                if(isDestroyed()||isFinishing()||runner!=owner||logoPanel==null||!startupGeneration.accepts(generation))return;
                 titlePrevious=logoPanel.exitScreen();
                 owner.finishLogo();
             });
             stage.addView(logoPanel,new FrameLayout.LayoutParams(-1,-1));
             removeTitleForStartup();
             updateVisibility();
+            revealStartupOverlayAfterLayout(logoPanel,generation);
         });
     }
-    @Override public void opening(GameUiAssets.Config config,int frameMs,GameRunner.Capture initial,GameRunner.Capture previous){
+    @Override public void opening(GameUiAssets.Config config,int frameMs,GameRunner.Capture initial,GameRunner.Capture previous,long generation){
         runOnUiThread(()->{
+            if (!startupGeneration.accepts(generation)) return;
             GameRunner owner=runner;
             if(isDestroyed()||isFinishing()||stage==null||owner==null)return;
             clearStartupViews();
@@ -692,6 +730,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             stage.addView(startupOpening,new FrameLayout.LayoutParams(-1,-1));
             removeTitleForStartup();
             updateVisibility();
+            revealStartupOverlayAfterLayout(startupOpening,generation);
         });
     }
     private final class OpeningScreen extends View {
@@ -739,8 +778,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 }))owner.finishTitleRestart(model,false);
         });
     }
-    @Override public void title(TitleMenu model,int w,int h,GameRunner.Capture initial,GameRunner.Capture previous) {
+    @Override public void title(TitleMenu model,int w,int h,GameRunner.Capture initial,GameRunner.Capture previous,long generation) {
         runOnUiThread(() -> {
+            if (!startupGeneration.accepts(generation)) return;
             if(isDestroyed() || isFinishing() || stage==null)return;
             if(titleModel!=model||returningToTitle)modeUnderPanel=null;
             if(returningToTitle){returningToTitle=false;closeOriginalPanel(false);}
@@ -755,6 +795,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             launchingGame=false;
             clearStartupViews();
             showTitlePanel(model,initial);
+            revealStartupOverlayAfterLayout(titlePanel,generation);
         });
     }
     private void showTitlePanel(TitleMenu model,GameRunner.Capture initial){
@@ -905,7 +946,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }
     private GameCodecErrorPanel movieErrorPanel;
     @Override public void movieError(GameRunner.MovieError error){runOnUiThread(()->{
-        if(isFinishing()||isDestroyed()||runner!=error.owner||stage==null)return;
+        if(isFinishing()||isDestroyed()||runner!=error.owner||stage==null||!startupGeneration.accepts(error.generation))return;
         width=uiAssets.sharedConfig.screenWidth;height=uiAssets.sharedConfig.screenHeight;layoutStage();
         clearCtrlSkip();
         clearStartupViews();
@@ -920,9 +961,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 if(runner!=error.owner||movieErrorPanel!=current||isFinishing()||isDestroyed())return;
                 current.discardBackground();stage.removeView(current);movieErrorPanel=null;
                 if(!error.startup&&titlePanel==null&&gamePanel==null)storyMovieExitActive=true;
-                for(int i=0;i<stage.getChildCount();i++)
-                    stage.getChildAt(i).setImportantForAccessibility(gamePanel==null||stage.getChildAt(i)==gamePanel
-                        ?View.IMPORTANT_FOR_ACCESSIBILITY_AUTO:View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+                restoreAccessibilityAfterMovie();
                 if(gamePanel!=null)gamePanel.uiActive(foreground);
                 error.owner.resolveMovieError(error,action==1);
                 updateVisibility();
@@ -935,16 +974,17 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         stage.addView(panel,new FrameLayout.LayoutParams(-1,-1));
         panel.requestFocus();
         updateVisibility();immersive();
+        if(error.startup)revealStartupOverlayAfterLayout(panel,error.generation);
     });}
-    @Override public void movie(File file,float gain,boolean canSkip,boolean startup,Integer exitColor,int tracks){runOnUiThread(()->{
-        if(isFinishing()||isDestroyed()||stage==null||runner==null)return;
+    @Override public void movie(File file,float gain,boolean canSkip,boolean startup,Integer exitColor,int tracks,long generation){runOnUiThread(()->{
+        if(isFinishing()||isDestroyed()||stage==null||runner==null||!startupGeneration.accepts(generation))return;
         GameRunner owner=runner;
         if(!startup)clearStartupForStory();
         if(gamePanel!=null)gamePanel.uiActive(false);
         for(int i=0;i<stage.getChildCount();i++)
             stage.getChildAt(i).setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         moviePlayback=new MoviePlayback(this,file,gain,canSkip,tracks,(source,outcome,failure)->{
-            if(owner!=runner||source!=moviePlayback)return;
+            if(owner!=runner||source!=moviePlayback||!startupGeneration.accepts(generation))return;
             moviePlayback=null;
             if(exitColor!=null){
                 storyMovieExitActive=!startup;
@@ -954,9 +994,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 stage.setForeground(null);
             }
             stage.removeView(source);
-            for(int i=0;i<stage.getChildCount();i++)
-                stage.getChildAt(i).setImportantForAccessibility(gamePanel==null||stage.getChildAt(i)==gamePanel
-                    ?View.IMPORTANT_FOR_ACCESSIBILITY_AUTO:View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+            restoreAccessibilityAfterMovie();
             if(gamePanel!=null)gamePanel.uiActive(outcome!=MoviePlayback.Outcome.FAILED&&foreground);
             owner.finishMovie(outcome,failure);
             updateVisibility();
@@ -966,9 +1004,21 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(startup){
             clearStartupViews();
             removeTitleForStartup();
+            if(startupOverlay!=null&&startupOverlay.isLoading()){
+                MoviePlayback openingMovie=moviePlayback;
+                if(tracks==1)revealStartupOverlayAfterLayout(openingMovie,generation);
+                else openingMovie.onFirstVideoFrame(()->revealStartupOverlayAfterLayout(openingMovie,generation));
+            }
         }
         updateVisibility();immersive();
     });}
+    private void restoreAccessibilityAfterMovie(){
+        for(int i=0;i<stage.getChildCount();i++){
+            View child=stage.getChildAt(i);
+            child.setImportantForAccessibility(gamePanel==null||child==gamePanel
+                ?View.IMPORTANT_FOR_ACCESSIBILITY_AUTO:View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        }
+    }
     @Override public void galleryReplayFinished(GameRunner owner,TitleMenu title,GalleryCatalog.Page page,int w,int h) {
         runOnUiThread(() -> {
             if (isDestroyed() || isFinishing() || runner!=owner) return;
@@ -1868,20 +1918,24 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     @Override public void notice(String text) { runOnUiThread(() -> {
         if(!isDestroyed()) Toast.makeText(this,text,Toast.LENGTH_SHORT).show();
     }); }
-    @Override public void progressCorrupt(){runOnUiThread(()->{
+    @Override public void progressCorrupt(long generation){runOnUiThread(()->{
         GameRunner owner=runner;
-        if(isDestroyed()||isFinishing()||owner==null)return;
+        if(isDestroyed()||isFinishing()||owner==null||!startupGeneration.fail(generation))return;
+        if(startupOverlay!=null&&startupOverlay.isLoading())startupOverlay.fail(null);
         AlertDialog dialog=hostDialog().setTitle(text(R.string.engine_systemnnn_host_progress_corrupt))
             .setMessage(text(R.string.engine_systemnnn_host_progress_recovery_hint))
             .setCancelable(false)
             .setNegativeButton(text(R.string.engine_systemnnn_host_back),dialogClick((d,w)->finish()))
             .setPositiveButton(text(R.string.engine_systemnnn_host_progress_recover),
-                dialogClick((d,w)->{if(owner==runner)owner.recoverCorruptProgress();}))
+                dialogClick((d,w)->{if(owner==runner)owner.recoverCorruptProgress(resetStartupOverlayForRetry());}))
             .create();
         showHostDialog(dialog,null);
     });}
-    @Override public void error(Throwable reason) { runOnUiThread(() -> {
+    @Override public void error(Throwable reason,long generation) { runOnUiThread(() -> {
+        if (!startupGeneration.fail(generation)) return;
         if (isDestroyed() || isFinishing()) return;
+        if(startupOverlay!=null&&startupOverlay.isLoading())
+            startupOverlay.fail(null);
         if(returningToTitle){returningToTitle=false;titlePrevious=null;closeOriginalPanel(false);}
         String detail=reason.getMessage();
         if(detail!=null&&detail.contains("EXT_START_UNRESOLVED")){
@@ -1901,10 +1955,25 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             .setCancelable(false)
             .setNegativeButton(text(R.string.engine_systemnnn_host_exit_to_tyn),dialogClick((d,w) -> finish()))
             .setPositiveButton(startOver?text(R.string.engine_systemnnn_host_start_over):text(R.string.engine_systemnnn_host_retry_load),
-                dialogClick((d,w) -> {if(owner!=null&&owner==runner)owner.restart(startOver);})).create();
+                dialogClick((d,w) -> {if(owner!=null&&owner==runner)owner.restart(startOver,resetStartupOverlayForRetry());})).create();
         showHostDialog(dialog,null);
     }); }
     private String text(int resource,Object... arguments){return uiContext.getString(resource,arguments);}
+    private long resetStartupOverlayForRetry() {
+        long generation=startupGeneration.advance();
+        if(moviePlayback!=null||movieErrorPanel!=null){
+            MoviePlayback previousMovie=moviePlayback;moviePlayback=null;
+            GameCodecErrorPanel previousError=movieErrorPanel;movieErrorPanel=null;
+            if(previousMovie!=null){previousMovie.dispose();stage.removeView(previousMovie);}
+            if(previousError!=null){previousError.discardBackground();stage.removeView(previousError);}
+            restoreAccessibilityAfterMovie();
+            if(gamePanel!=null)gamePanel.uiActive(foreground);
+        }
+        if(startupOverlay!=null)startupOverlay.dispose();
+        startupOverlay=new EngineStartupOverlay(this);
+        startupOverlay.attachTo(root);
+        return generation;
+    }
     private int dp(int n) {return Math.round(n*getResources().getDisplayMetrics().density);}
     private TextView label(String s,int size) {
         TextView t=new TextView(this); t.setTextColor(Color.WHITE);
@@ -2121,6 +2190,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(moviePlayback!=null)moviePlayback.pause();
         if(movieErrorPanel!=null)movieErrorPanel.uiActive(false);super.onPause();}
     @Override protected void onDestroy() {
+        startupGeneration.dispose();
+        if(startupOverlay!=null)startupOverlay.dispose();
+        startupOverlay=null;
         if(moviePlayback!=null){moviePlayback.dispose();moviePlayback=null;}
         if(movieErrorPanel!=null){movieErrorPanel.discardBackground();movieErrorPanel=null;}
         ui.removeCallbacksAndMessages(null);

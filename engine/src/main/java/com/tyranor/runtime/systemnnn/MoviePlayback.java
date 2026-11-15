@@ -48,6 +48,7 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
     private boolean started;
     private Outcome pendingOutcome;
     private String pendingFailure;
+    private Runnable firstVideoFrame;
     private int videoWidth, videoHeight;
 
     MoviePlayback(Context context, File file, float gain, boolean canSkip, int tracks, Listener listener) {
@@ -110,6 +111,10 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
         if (mayRequestFocus()) audioFocus.request();
     }
 
+    void onFirstVideoFrame(Runnable callback) {
+        firstVideoFrame = callback;
+    }
+
     void dispose() {
         synchronized (gate) {
             if (stopped) return;
@@ -119,6 +124,7 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
         }
         pendingOutcome = null;
         pendingFailure = null;
+        firstVideoFrame = null;
         audioFocus.abandon();
     }
 
@@ -158,7 +164,16 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
     }
 
     @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture, int width, int height) {}
-    @Override public void onSurfaceTextureUpdated(SurfaceTexture texture) {}
+    @Override public void onSurfaceTextureUpdated(SurfaceTexture texture) {
+        if (firstVideoFrame == null) return;
+        // Layout can request an update before decoding. Read the latched buffer after the draw.
+        owner.post(() -> {
+            if (firstVideoFrame == null || stopped || texture != requestedTexture || texture.getTimestamp() == 0) return;
+            Runnable callback = firstVideoFrame;
+            firstVideoFrame = null;
+            callback.run();
+        });
+    }
 
     @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) {
         boolean stillPlaying;

@@ -2,7 +2,13 @@
 
 Tyranor Next 是面向 Android 的多引擎视觉小说（Galgame）聚合启动器。本上下文定义游戏库、运行环境及应用侧工具使用的项目术语。
 
+相关文档：[SPEC.md](SPEC.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [AGENTS.md](AGENTS.md)
+
 ## 引擎与运行时
+
+**游戏时长**:
+从 Tyranor Next 启动的内置引擎游戏在前台运行的累计时间，包含加载、标题菜单、自动播放与游戏内视频，后台及锁屏时间不计入。它与「最近打开」记录独立，不代表玩家持续操作或游戏已成功显示首帧。
+_Avoid_: 在线时长、进程存活时间、存档时长
 
 **引擎（EngineType）**:
 游戏库用于区分游戏运行时家族与外部启动类别的分类。
@@ -13,11 +19,11 @@ _Avoid_: 游戏类型、格式
 _Avoid_: 预制引擎、捆绑引擎
 
 **引擎运行库包（Runtime Pack）**:
-`NativeRuntimePack` 按引擎家族把大体积预编译库（`libsiglus` / `librfvp` / `libethornell` / `libkrkrsdl3` / IJK 三件套 / System35/4）打成 `assets/engine-runtime/<pack>.zip.xz`，首次启动对应引擎时解压到 `files/engine_runtime/<pack>/` 供宿主按绝对路径 dlopen 的分发单位；`libSDL3.so` 与 `libSDL2_mixer_xs35.so` 不属于运行库包，仍随 APK `lib/`。
+`NativeRuntimePack` 按引擎家族把大体积预编译库（`libsiglus` / `librfvp` / `libethornell` / `libkrkrsdl3` / IJK 三件套 / System35/4 / `libcmvs_android` / `libsystemnnn`）打成 `assets/engine-runtime/<pack>.zip.xz`，首次启动对应引擎时解压到 `files/engine_runtime/<pack>/` 供宿主按绝对路径 dlopen 的分发单位；`libSDL3.so` 与 `libSDL2_mixer_xs35.so` 不属于运行库包，仍随 APK `lib/`。
 _Avoid_: 运行时模块、内置引擎、原生插件
 
 **Ethornell / BGI（ETHORNELL）**:
-以 ethornell-rs 重实现承载的内置引擎家族，已接入扫描、启动、设置与上游 `0cfff1d` 的 ABI v1 宿主（15 导出、kind 5 输入对话框）；目前仍属实验运行时、兼容性未验收，不能据此声明全家族可玩。App 存档管理已开放但范围仅限 App 私有 user-root 的备份/恢复/删除，不能把该范围与商业游戏内槽位、游戏资源根 `UserData` 或 PC 存档互通等同。
+以 ethornell-rs 重实现承载的实验性内置引擎家族，支持扫描、启动、设置及存档备份/恢复/删除；存档位于游戏目录内的 `savedata`，旧私有存档仅作为一次性迁移来源。该能力不等于商业游戏完整兼容或 PC 存档互通。
 _Avoid_: Winlator BGI 插件、完整 BGI 支持
 
 **System3.x / System4（XSYS35 / XSYS4）**:
@@ -168,7 +174,7 @@ _Avoid_: 删除、清理
 _Avoid_: Scanner 缓存、图库仓库（Repository 指落库层）
 
 **快速入门（Quick Start）**:
-新安装或未检测到既有应用数据时展示的七步首次使用流程，依次介绍首页、游戏页、引擎页和设置页的真实入口；完成或跳过后写入引导完成标记。
+面向首次使用者的功能入门引导，帮助用户熟悉应用的主要界面与功能入口。
 _Avoid_: 欢迎页、演示页（快速入门不创建独立页面）
 
 **教练层（Onboarding Coach）**:
@@ -356,7 +362,7 @@ _Avoid_: ListItem、手写条目
 _Avoid_: 随意字号、item 用 title
 
 **标签栏（SlidingTabRow）**:
-横向单选标签栏的统一组件：选中项为独立背景指示器，切换时 200ms 线性滑动（宽度同步动画）；等分宽度与内容宽度横向滚动两种形态；指示器颜色/圆角/描边按外观风格由组件内部分派，调用方不传色值；弹窗内由 AppAlertDialog 提供颜色上下文，指示器取动态 DialogItemSurface，与面板形成反差。引擎页玻璃系分类栏使用；新增标签/分类栏必须复用。
+横向单选标签栏的统一组件：选中项为独立背景指示器，切换时增强档弹簧蠕动、普通档 200ms 线性（宽度同步动画）；等分宽度与内容宽度横向滚动两种形态；指示器颜色/圆角/描边按外观风格由组件内部分派，调用方不传色值；弹窗内由 AppAlertDialog 提供颜色上下文，指示器取动态 DialogItemSurface，与面板形成反差。引擎页所有外观风格均使用该组件；新增标签/分类栏必须复用。
 _Avoid_: 手写指示器、自拼 TabRow
 
 **液态玻璃导航（LiquidGlassNavigationBar）**:
@@ -372,8 +378,20 @@ _Avoid_: 液态玻璃 2.0、增强玻璃
 _Avoid_: FAB 导航、悬浮菜单
 
 **主界面常驻组合**:
-主界面可见 Tab（首页 / 游戏 / 引擎 / 设置；应用设置关闭「显示首页」后为游戏 / 引擎 / 设置三页）常驻组合、隐藏页置 alpha=0 保留节点，切换仅做水平 alpha 动画避免重建列表。
+主界面可见 Tab（首页 / 游戏 / 引擎 / 设置；关闭「显示首页」后为三页）保留组合与列表状态；增强档按方向水平弹簧切换、淡化并带轻微景深，普通档保留原补间。增强档在允许隐藏绘制的 Compose 页完全离屏后跳过正文绘制，网页首页等需保持绘制的宿主例外；切换期间未停稳的页面不接收触摸与无障碍操作。
 _Avoid_: 懒加载页、Fragment
+
+**界面动效档**:
+应用设置中的全局两档选项，默认「增强」、可即时切到「普通」；由公共具名效果负责两档行为，业务页面只提交状态和操作。
+_Avoid_: 性能模式、渲染模式
+
+**增强动效 / 普通动效**:
+增强动效提供页面侧推、弹簧反馈和浮层景深；普通动效保留各控件原有转场。遮罩交接、输入释放等正确性修复同时作用于两档。
+_Avoid_: 开启动画 / 关闭动画（普通档仍有原有动画）
+
+**提示胶囊**:
+增强档在当前可绘制窗口顶部显示的短暂提示，由 `NoticeCenter` 和 `NoticeHost` 管理排队、续显与离页；普通档及无可用宿主时使用系统提示。
+_Avoid_: 通知栏、系统通知
 
 **首页样式（Home Style）**:
 首页的两种形态：「默认」（最近打开 + 快捷启动）与「网页」（内置 WebView 展示用户所选地址：预设鲲Gal/一起萌或自定义）。由应用设置切换、即时生效；仅 http/https 在 WebView 内加载，http(s) 下载交系统浏览器，主框架非 http(s) 链接仅白名单 scheme（mailto/tel 等）交系统、其余拦截；Web 首页在首页不在前台或应用退后台时暂停 JS 与页面媒体，避免后台耗电。

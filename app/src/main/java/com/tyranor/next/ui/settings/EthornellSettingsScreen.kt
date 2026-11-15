@@ -26,11 +26,15 @@ import com.tyranor.next.R
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.MiuixSettingsTheme
-import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.TopBarIcon
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
+import com.tyranor.next.ui.common.motion.staggeredEntrance
+import androidx.compose.foundation.layout.Box
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlinx.coroutines.launch
+import com.tyranor.next.ui.common.notice.AppNotice
 
 @Composable
 internal fun ethornellNlsOptions(): List<Pair<String, String>> = listOf(
@@ -38,6 +42,10 @@ internal fun ethornellNlsOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.ETHORNELL_NLS_GBK to "GBK / CP936",
 )
 
+/**
+ * 编辑 Ethornell 编码与字体，顶栏保存时统一写入偏好；字体文件先导入应用私有目录。
+ * 导入在途禁用字体入口，并在结束或取消时恢复；用户开始拖动页面即停止未完成的入场。
+ */
 @Composable
 internal fun EthornellSettingsScreen() {
     val context = LocalContext.current
@@ -51,17 +59,18 @@ internal fun EthornellSettingsScreen() {
             scope.launch {
                 try {
                     val imported = FontImport.importToPrivate(context, uri)
-                    if (imported != null) font = imported else Toast.makeText(context, R.string.ethornell_error_font, Toast.LENGTH_SHORT).show()
+                    if (imported != null) font = imported else AppNotice.makeText(context, R.string.ethornell_error_font, Toast.LENGTH_SHORT).show()
                 } finally { importingFont = false }
             }
         }
     }
     MiuixSettingsTheme {
         Scaffold(
+            modifier = Modifier.skipEntranceOnDrag(),
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
-                AppTopBar(
+                AppSecondaryTopBar(
                     title = stringResource(R.string.ethornell_settings_title),
                     background = Color.Transparent,
                     contentColor = PageTextColor,
@@ -69,7 +78,7 @@ internal fun EthornellSettingsScreen() {
                         TopBarIcon(painterResource(R.drawable.ic_save), stringResource(R.string.engine_settings_save_content_description), MiuixTheme.colorScheme.primary) {
                             EngineSettingsStore.setEthornellNls(context, nls)
                             EngineSettingsStore.setEthornellFont(context, font)
-                            Toast.makeText(context, R.string.engine_settings_saved, Toast.LENGTH_SHORT).show()
+                            AppNotice.makeText(context, R.string.engine_settings_saved, Toast.LENGTH_SHORT).show()
                         }
                     },
                 )
@@ -80,6 +89,8 @@ internal fun EthornellSettingsScreen() {
                 contentPadding = PaddingValues(16.dp),
             ) {
                 item {
+                    // 设置卡片随页面入场弹入（与其他引擎设置页的卡片同一节奏）
+                    Box(Modifier.staggeredEntrance(0)) {
                     EngineCard("Ethornell / BGI") {
                         DropdownRow(stringResource(R.string.ethornell_nls_title), ethornellNlsOptions(), nls) { nls = it }
                         FontPreference(
@@ -91,6 +102,7 @@ internal fun EthornellSettingsScreen() {
                             enabled = !importingFont,
                         )
                         Text(stringResource(R.string.ethornell_settings_note), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
+                    }
                     }
                 }
             }

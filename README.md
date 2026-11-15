@@ -4,10 +4,6 @@
 
 基于 **Tyranor 模拟器逆向重写** 的多引擎视觉小说（Galgame）模拟器，面向 Android 平台。具体功能与兼容边界见 [SPEC.md](SPEC.md)。
 
-游戏页搜索栏旁的筛选按钮可按引擎类型和游玩状态筛选标题搜索结果，或按字母、括号标签、引擎、最近游玩排序；筛选按钮与搜索栏随列表滚动一起收起，滚回顶部后一起显示。筛选与排序会保留到下次启动；筛选抽屉会按横竖屏可用高度调整。
-
-设置主页面的扫描卡片在扫描深度滑杆下方提供「外观主题」切换，选择后即时生效并持久化。
-
 iOS版本计划中...  鸿蒙设备可使用卓易通安装
 主打轻便、简单、快捷，不引入其他冗余功能的简约设计思路
 
@@ -61,7 +57,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | CMVS                 | `data/pack/script.cpz` + `start.ps3/ps2`（仅 19 部登记作品）              | 内置 CMVS 原生运行时（cmvs-rs，NativeActivity） |
 | System35             | `*.ALD`（`SA.ALD` 等；根目录或 `GAMEDATA/`）、`System39.ain`/`System39.ini`/`*.wai`/`*.bgi`/`*.alk` | 内置 System3.x 运行时（xsystem35） |
 | System4              | `System40.ini` 或 `AliceStart.ini`（根目录；`*.ain` 为辅助特征）                    | 内置 System4 运行时（xsystem4）      |
-| SystemNNN            | 游戏目录下的 `spt/sys.spt`（不区分大小写）                            | 内置 [SystemNNN-Emberfall 0.6.22](https://github.com/PorisRora/SystemNNN-Emberfall)（ARM64） |
+| SystemNNN            | 游戏目录下的 `spt/sys.spt`（不区分大小写）                            | 内置 [SystemNNN-Emberfall 0.8.1](https://github.com/PorisRora/SystemNNN-Emberfall)（ARM64） |
 | YU-RIS               | `yscfg.dat`、`pac/*.ypf`、`YS*.DLL`、`.ymv`                          | 外置 Winlator（winlator-cn）        |
 | CatSystem2           | `config/startup.xml`、`*.int`、`*.cst`、`*.hg3`、`*.kcs` 等组合         | 外置 Winlator（winlator-cn）        |
 | PC（手动添加）        | 游戏页顶栏「添加 PC 游戏」选择目录并指定启动 exe                          | 外置 Winlator（winlator-cn）        |
@@ -79,37 +75,16 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | PSP                  | `.pbp`、`.cso`、`.iso`、`.chd`                                         | 外置 PPSSPP 模拟器                 |
 | Nintendo Switch      | `.nsp`、`.xci`、`.nca`、`.nro`                                         | 外置 Eden 模拟器                   |
 
-
-Ren’Py 在 Android 11 及以上支持统一管理游戏根目录的 `saves/`（导入、导出、删除、存档版本与 WebDAV 同步）。退出外置播放器后，需在存档管理页确认已退出，再进行存档操作；Android 10 及以下不接入。
-
 ### 平台与文件要求
 
 - Android 8.0（API 26）及以上。
 - 当前原生引擎库仅提供 `arm64-v8a`，设备需为 64 位 ARM 架构。
-- SystemNNN 的启动全屏模式和阅读字号可在引擎页设置。单游戏可以覆盖全局，重新启动游戏后生效。默认全屏并保持游戏比例，剧情正文字号默认 85%。游戏环境设置里的窗口选项显示系统栏，全屏选项隐藏系统栏，切换立即在当前游戏中生效。
-- SystemNNN 的游戏设置支持随剧情变量切换角色试听音，按游戏原版配置生效。
-- SystemNNN 的分类音量范围与衰减按游戏原版设置。滑条最左端对应配置下限，分类开关控制是否播放，总音量也作用于影片。
-- SystemNNN 引擎设置提供 EXE 解析器和调试模式。EXE 解析器默认开启。开启调试模式后，游戏左上角显示脚本、图层、存档文字行宽及音频状态，脚本 DEBUG 消息可在系统 Logcat 的 SystemNNN 标签下查看。单游戏可分别覆盖两项设置。
-- SystemNNN 单游戏引擎设置在「配置文件信息」下显示完整配置路径、存档图层槽、台词行宽、剧情状态块、全局档版本、EXT 状态、文本替换表及各 EXT 编号与数据块长度。可手动重新分析并生成配置。需要 EXT 却无法确定编号时，启动会提示重新分析。
-- SystemNNN 标题和菜单背景按 PC 的补帧规则推进。圆形擦入等仅替换同一位置像素的转场使用原尺寸画面合成。
-- SystemNNN 连续转场会重新抓取当前对白。抓图失败时沿用上一帧的原生画面。动态背景模糊使用整数滑动窗口计算。
-- SystemNNN 本地源码校准了完整对白上屏后推进、短 DRAW 等待、回想返回鉴赏及流程图原画面缩略图；这些改动已同步本地试装运行库，设备验收另行记录。
-- SystemNNN 剧情正文缩小字号时保留游戏设定的行距。原版全局档的自动速度超出档位范围时，自动播放沿用文字速度的档位。
-- SystemNNN 手动档和快存直接使用游戏 `sav` 的原版槽位文件，缩略图存入该文件。剧情读档使用原版槽位，旧手机剧情文件留在磁盘上。标题的读取按钮按游戏配置判断无存档时是否禁用，上次读取单独判断。
-- SystemNNN 保存后原位更新存档卡片，保留返回和翻页按钮的点击，不因异步刷新中断操作。
-- SystemNNN 保存时直接用当前正文生成摘要，不弹出备注输入框；已有 PC 备注仍按原内容显示。
-- SystemNNN 缩放原版按钮和动画时隔离每一帧，修复相邻贴图像素在边缘形成的色线。
-- SystemNNN 存读档源码已校准回看与语音：没有保存回看的槽位在游戏内读取时保留本次历史，含回看的槽位按存档替换；标题进入时使用游戏配置的开场文字和分隔线。该修正已同步本地试装运行库。
-- SystemNNN 的已读、鉴赏和跨周目系统变量可随同一游戏的原版全局档在 PC 和 Android 之间交换。
-- SystemNNN 影片切到后台后暂停，返回时接着播放。影片结束或跳过后的退场等待只在前台计时。剧情音频未取得焦点时，回到播放器或操作即可重试。
-- SystemNNN 的纸牌和麻将小游戏按原版时序发牌、消牌和落牌。
-- SystemNNN 本地源码按命令、变量、配置与资源组合识别已核实的旧流程图及日期／地图／结算玩法，使用原素材。支持范围限于这些契约，设备验收随试装包更新；不会按游戏名套用，也不会自动解释未知私有 EXT。
-- SystemNNN 首次使用时解压运行库包。ZIP 导入和 WebDAV 恢复在独立校验进程检查原版档的数据块和随包全局进度，通过后再替换存档。仅含有效全局进度的备份可恢复到没有剧情档和流程图检查点的目录。
-- SystemNNN 直接在生效的游戏目录读写。原目录需要授权，无法读写时会显示错误。旧版副本可在存档管理中备份存档和清理资源。删除游戏、游戏目录或重扫移除条目时会登记对应的副本回收任务，下次启动和打开「游戏目录」时会重试。存在未完成的存档恢复时保留旧副本绑定，重新添加游戏可以处理恢复。显式删除最后一个同源条目并完成回收后，可以从已授权的原目录重新添加。原目录和旧副本里的存档都会保留，各自留在原位。
-- SystemNNN 的宿主提示跟随 TYN 语言和主题。游戏提供的界面文字和贴图按游戏配置显示。启动目录或脚本校验失败时，播放器提示返回游戏库。
-- SystemNNN 不再进行整目录复制，WebDAV 直接使用游戏目录下的 `sav`。手动恢复 ZIP 会在解包后确认当前存档目录。
 - 游戏目录需位于 Android 可访问的本地存储，并通过系统文件选择器（SAF）授权；启动时目录必须能够映射为真实文件路径，外置存储上的部分引擎可能需要“所有文件访问”权限。
-- 实际兼容性取决于游戏使用的引擎版本、封包/加密方式和脚本特性；特殊修改版可能需要调整引擎设置或补丁。KRKR 游戏的渲染器、FPS 限制、内存占用等引擎偏好按 Kirikiroid2 内核原生键名写入引擎偏好文件，全局与单游戏覆盖均可生效。
+- 实际兼容性取决于游戏使用的引擎版本、封包/加密方式和脚本特性；特殊修改版可能需要调整引擎设置或补丁。
+
+## 首次使用
+
+新安装或清除数据后首次打开，会在真实主界面上叠加八步「快速入门」教练层，用连接线和提示气泡讲解首页、添加文件夹、手动添加、搜索、封面、重新扫描、引擎与设置入口，不会创建独立的引导页面。支持的引擎游戏应从空游戏库的「添加文件夹」选择包含多个游戏的总目录，自动扫描入库；顶部加号用于指定 exe 手动添加电脑游戏或添加已安装的安卓应用。点击「跳过引导」或「开始使用」后移除提示并保留当前主界面状态，之后不再自动显示；已有设置或游戏库的升级用户默认跳过。新用户在完成引导后请求通知权限，升级用户跳过引导后沿用既有通知权限请求策略。
 
 ## 参与贡献
 
@@ -181,19 +156,24 @@ docs/、.archify/                     专题方案、审查记录与可视化
 
 ## 许可证
 
-本项目基于 **GNU General Public License v2.0** 发布，详见 [LICENSE](LICENSE)（GPL-2.0-only）。
+本项目基于 **GNU General Public License v2.0** 发布（GPL-2.0-only），详见 [LICENSE](LICENSE)。
 
-- `engine/` 引擎运行时基于 Tyranor 模拟器逆向重写，上游涉及 Kirikiroid2 / ONScripter 等 GPL-2.0 项目，因此整个项目以 GPL-2.0 授权分发
-- 基于本项目发布的衍生作品须遵循 GPL-2.0 条款，并随发行物提供完整源码
-- Miuix 等第三方依赖按各自许可证引入
-- Siglus / RealLive / AVG32 / UK2 引擎运行库来自 [siglus_rs](https://github.com/xmoezzz/siglus_rs)（MPL-2.0，上述引擎的非官方 Rust 重写/移植），以其自身许可证引入；相应源码可于上游或其 fork 仓库获取
-- FVP 引擎运行库来自 [rfvp](https://github.com/xmoezzz/rfvp)（MPL-2.0，FVP 引擎的非官方 Rust 重写/移植），以其自身许可证引入；相应源码可于上游或其 fork 仓库获取
-- CMVS 引擎运行库来自 fork [cmvs-rs](https://github.com/Weiss-UltimateSavior/cmvs-rs)（上游 MIT OR Apache-2.0，Purple SOFTWARE CMVS 引擎的 Rust 重实现），固定上游 commit 并在构建时应用绝对路径补丁；源码与补丁清单见 `tools/cmvs/`
-- SystemNNN 运行库 `libsystemnnn.so` 由 PorisRora（Rooboko）维护的 Emberfall 源码构建。Emberfall 自有代码采用 GPL-2.0-only。原版 SystemNNN 由 tinyan 开发。默认碎裂网格由 Emberfall 自行生成，供全屏转场和图层碎裂共用。 [对应源码与构建记录](engine/src/main/assets/licenses/systemnnn/ffmpeg-source.txt) · [归属与许可](engine/src/main/assets/licenses/systemnnn/upstream-source.txt)
-- System35 引擎运行库来自 [xsystem35-sdl2](https://github.com/kichikuou/xsystem35-sdl2)（GPL-2.0-or-later，AliceSoft System 3.x 开源重实现的 SDL2 移植），引擎源码与修改声明见 fork [xsystem35-sdl2](https://github.com/Weiss-UltimateSavior/xsystem35-sdl2)；本仓库仅保留预构建运行库、构建剧本与补丁记录（见 `engine/xsystem35/BUILD.md`）；其依赖 SDL2 / SDL2_mixer（zlib）、freetype（FTL/GPLv2）、libwebp（BSD-3-Clause）按各自许可证引入，许可证文本随 `engine/xsystem35/licenses/` 保留
-- System4 引擎运行库来自 [xsystem4](https://github.com/nunuhara/xsystem4)（GPL-2.0-or-later，AliceSoft System 4 引擎的开源重实现），引擎源码与修改声明见 fork [xsystem4](https://github.com/Weiss-UltimateSavior/xsystem4)；其依赖 libsys4（GPL-2.0-or-later，上游 [libsys4](https://github.com/nunuhara/libsys4)）同样取自 fork [libsys4](https://github.com/Weiss-UltimateSavior/libsys4)。Android 构建仅参考 `kichikuou/xsystem4-android` 的事实信息，未拷贝其任何文件。静态链入的依赖包括 libsndfile fork [libsndfile](https://github.com/Weiss-UltimateSavior/libsndfile)（`xsystem4` 分支，LGPL-2.1-or-later）、libogg / libvorbis / libwebp（BSD-3-Clause）、libjpeg-turbo（BSD-3-Clause / IJG）、libpng、libffi / libdeflate / cglm（MIT）及 freetype（同 System35）；SDL2（zlib）与 System35 共用 `libSDL2x.so`；xsystem4 与 libsys4 内的第三方例外（如 cJSON、pl_mpeg（MIT）、queue.h、base64.c（BSD）、kvec.h（MIT；`vector.h` 与之同声明）、sts_mixer（Unlicense，公有领域）、mt19937int（libsys4，LGPL-2.0-or-later 声明））按各自许可证引入。预构建运行库、构建剧本与补丁记录见 `engine/xsystem4/BUILD.md`，许可证文本随 `engine/xsystem4/licenses/` 保留
-- Anime4K GLSL 着色器（`engine/src/main/assets/anime4k/`）来自 [bloc97/Anime4K](https://github.com/bloc97/Anime4K)，按其 MIT 许可证引入（版权声明保留于各着色器文件头部）
-- VN-SR C08 / C12 / C16 原生2X滤镜来自 [AAAA1111-Lab/VN-SR](https://github.com/AAAA1111-Lab/VN-SR)，按 MIT 许可证引入；资源与许可说明见[VN-SR滤镜集](docs/vnsr-filters.md)。
+`engine/` 引擎运行时基于 Tyranor 模拟器逆向重写，上游涉及 Kirikiroid2 / ONScripter 等 GPL-2.0 项目，因此整个项目以 GPL-2.0 分发；衍生作品须遵循 GPL-2.0 条款，并随发行物提供完整源码。Miuix 等第三方依赖按各自许可证引入；代码/资产级第三方声明汇总见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+| 运行库 | 上游 | 许可证 | 溯源与许可文本 |
+| --- | --- | --- | --- |
+| Siglus / RealLive / AVG32 / UK2 | [siglus_rs](https://github.com/xmoezzz/siglus_rs) | MPL-2.0 | 上游仓库 |
+| FVP | [rfvp](https://github.com/xmoezzz/rfvp) | MPL-2.0 | 上游仓库 |
+| CMVS | [cmvs-rs](https://github.com/Weiss-UltimateSavior/cmvs-rs) | MIT OR Apache-2.0 | `tools/cmvs/` |
+| SystemNNN | [SystemNNN-Emberfall](https://github.com/PorisRora/SystemNNN-Emberfall)（原版 SystemNNN 由 tinyan 开发） | GPL-2.0-only | [对应源码及构建记录](engine/src/main/assets/licenses/systemnnn/ffmpeg-source.txt)、[归属与许可](engine/src/main/assets/licenses/systemnnn/upstream-source.txt) |
+| System35 | [xsystem35-sdl2](https://github.com/kichikuou/xsystem35-sdl2) | GPL-2.0-or-later | `engine/xsystem35/BUILD.md`、`engine/xsystem35/licenses/` |
+| System4 | [xsystem4](https://github.com/nunuhara/xsystem4) / [libsys4](https://github.com/nunuhara/libsys4) | GPL-2.0-or-later | `engine/xsystem4/BUILD.md`、`engine/xsystem4/licenses/` |
+| Anime4K 着色器 | [bloc97/Anime4K](https://github.com/bloc97/Anime4K) | MIT | `engine/src/main/assets/anime4k/` |
+| VN-SR C08 / C12 / C16 | [AAAA1111-Lab/VN-SR](https://github.com/AAAA1111-Lab/VN-SR) | MIT | [VN-SR滤镜集](docs/vnsr-filters.md) |
+
+System35 / System4 的源码取自对应 fork（固定 commit），构建剧本、补丁记录与静态依赖（SDL2、freetype、libwebp、libsndfile 等）的完整许可证文本见上述 BUILD.md 与 `licenses/` 目录。
+
+System4 运行时包含 libjpeg-turbo；依 IJG 许可要求，随分发文档声明：**This software is based in part on the work of the Independent JPEG Group.**（原文见 `engine/xsystem4/licenses/README.ijg`，许可说明见 `engine/xsystem4/licenses/libjpeg-turbo-LICENSE.md`）
 
 ## 致谢
 - [Kirikiroid2](https://github.com/zeas2/Kirikiroid2): Kirikiroid2引擎

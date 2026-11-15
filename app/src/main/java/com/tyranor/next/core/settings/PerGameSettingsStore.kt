@@ -47,6 +47,7 @@ object PerGameSettingsStore {
     // Artemis
     const val F_ART_VERSION = "art_engine_version"
     const val F_ART_KERNEL = "artemis_kernel"
+    /** Legacy per-game override retained in the stored settings shape; no longer affects launches. */
     const val F_ART_ROTATE = "art_rotate_screen"
     const val F_ART_PATCH = "art_auto_patch"
     const val F_ART_RESOLUTION = "art_resolution"

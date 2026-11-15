@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.BroadcastReceiver;
 import android.content.IntentFilter;
+import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.media.AudioAttributes;
@@ -36,6 +37,8 @@ import androidx.core.content.ContextCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import com.core.engine.EngineSessionRegistry;
+import com.core.engine.EngineStartupOverlay;
+import com.core.engine.EngineSurfaceReadyProbe;
 import com.core.engine.EngineThemeColors;
 import com.core.engine.EngineUiText;
 import com.core.engine.LaunchContract;
@@ -51,6 +54,11 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /** Fullscreen game host, not an application management page. VM/GPU/IO never run on UI. */
 public final class EthornellActivity extends AppCompatActivity implements SurfaceHolder.Callback, Choreographer.FrameCallback {
+    @Override
+    public void setRequestedOrientation(int requestedOrientation) {
+        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+    }
+
     private static final AtomicLong TOKENS = new AtomicLong(1);
     private final Handler ui = new Handler(Looper.getMainLooper());
     private EthornellSession session;
@@ -58,7 +66,8 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
     private InputRemapController remap;
     private SurfaceView surface;
     private FrameLayout root;
-    private TextView loading;
+    private EngineStartupOverlay loading;
+    private EngineSurfaceReadyProbe startupProbe;
     private Payload payload;
     private long generation, attachedGeneration;
     private boolean resumed, destroyed, frameScheduled, processVerified;
@@ -85,14 +94,15 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
     };
 
     private static final class Payload {
-        final String identity, root, user, font, nls;
-        Payload(Intent intent, File filesDir) throws IOException {
+        final String identity, identityHash, root, user, font, nls;
+        Payload(Intent intent) throws IOException {
             if (intent == null || !LaunchContract.LAUNCH_MODE_ETHORNELL.equals(intent.getStringExtra(LaunchContract.LAUNCH_MODE)))
                 throw new IllegalArgumentException("mode");
             identity = required(intent, LaunchContract.ROOT_URI);
+            identityHash = EthornellPaths.identitySha256(identity);
             root = required(intent, LaunchContract.PATH);
             user = required(intent, LaunchContract.ETHORNELL_USER_DATA_DIR);
-            EthornellPaths.validateUserDataDir(filesDir, identity, user);
+            EthornellPaths.validateGameUserDataDir(new File(root), user);
             String selected = intent.getStringExtra(LaunchContract.ETHORNELL_NLS);
             nls = selected == null ? "sjis" : selected;
             if (!nls.equals("sjis") && !nls.equals("gbk")) throw new IllegalArgumentException("encoding");
@@ -126,7 +136,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
                 processExit.afterCleanup(processVerified, true, this::finish, this::terminateOwnProcess);
                 return; // revoked/terminal/missing/old Recents dispatch never creates a runtime
             }
-            payload = new Payload(incoming, getFilesDir());
+            payload = new Payload(incoming);
         }
         catch (RuntimeException | IOException e) {
             toast(R.string.engine_ethornell_invalid_config);
@@ -139,13 +149,23 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
         surface = new SurfaceView(this); surface.setKeepScreenOn(true);
         surface.setFocusableInTouchMode(true);
         root.addView(surface, new FrameLayout.LayoutParams(-1, -1));
-        loading = new TextView(this); loading.setText(text(R.string.engine_starting_game));
-        loading.setTextColor(Color.WHITE); loading.setTextSize(14); loading.setGravity(android.view.Gravity.CENTER);
-        root.addView(loading, new FrameLayout.LayoutParams(-1, -1));
+        loading = new EngineStartupOverlay(this);
+        loading.attachTo(root);
         setContentView(root);
+        startupProbe = new EngineSurfaceReadyProbe(this, new EngineSurfaceReadyProbe.SurfaceProvider() {
+            @Override public android.view.Surface currentSurface() { return surface.getHolder().getSurface(); }
+            @Override public long currentGeneration() { return attachedGeneration; }
+        }, new EngineSurfaceReadyProbe.Listener() {
+            @Override public void onReady(long sourceGeneration) {
+                if (!destroyed && sourceGeneration == attachedGeneration && loading != null) loading.reveal();
+            }
+            @Override public void onFailure(EngineSurfaceReadyProbe.Failure failure) {
+                if (!destroyed && loading != null) loading.fail(null);
+            }
+        });
         long sessionToken = TOKENS.getAndIncrement();
-        // Payload validation already bound this exact basename to SHA-256(ROOT_URI UTF-8).
-        EthornellLifecycle lifecycle = new EthornellLifecycle(new File(payload.user).getName(), sessionToken,
+        // Lifecycle identity remains SHA-256(ROOT_URI UTF-8), independent of the game-local save path.
+        EthornellLifecycle lifecycle = new EthornellLifecycle(payload.identityHash, sessionToken,
                 message -> android.util.Log.i(EthornellLifecycle.TAG, message));
         EthornellInputTrace inputTrace = new EthornellInputTrace(
                 message -> android.util.Log.i(EthornellInputTrace.TAG, message));
@@ -157,7 +177,12 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
             }
             @Override public void failed(long token) {
                 lifecycle.failed();
-                ui.post(() -> { if (alive(token)) toast(R.string.engine_ethornell_failed); });
+                ui.post(() -> {
+                    if (alive(token)) {
+                        if (loading != null && loading.isLoading()) loading.fail(text(R.string.engine_ethornell_failed));
+                        toast(R.string.engine_ethornell_failed);
+                    }
+                });
             }
             @Override public void failedDetail(long token, String safeDetail) { lifecycle.failedDetail(safeDetail); }
             @Override public void forcedExit(long token, String safeReason) { lifecycle.forcedExit(safeReason); }
@@ -204,19 +229,16 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
                 if (!new File(config.root).isAbsolute() || !new File(config.user).isAbsolute()
                         || (!config.font.isEmpty() && !new File(config.font).isAbsolute())) throw new IOException("absolute paths required");
                 File resource = new File(config.root).getCanonicalFile();
-                File user = EthornellPaths.validateUserDataDir(application.getFilesDir(), config.identity, config.user);
+                File user = EthornellPaths.validateGameUserDataDir(resource, config.user);
                 if (!resource.isDirectory() || !resource.canRead() || config.root.startsWith("content:")) throw new IOException("resource");
-                // Identity-bound private user root only; never make resource or external roots writable.
-                File privateRoot = application.getFilesDir().getCanonicalFile();
-                if (user.equals(resource) || within(resource, user) || within(user, resource)) throw new IOException("overlapping roots");
                 if (!user.isDirectory() && !user.mkdirs()) throw new IOException("user directory");
-                EthornellPaths.validateUserDataDir(application.getFilesDir(), config.identity, config.user);
+                user = EthornellPaths.validateGameUserDataDir(resource, config.user);
                 File probe = File.createTempFile(".ethornell-probe-", ".tmp", user);
                 if (!probe.delete()) throw new IOException("user write");
                 String font = "";
                 if (!config.font.isEmpty()) {
                     File chosen = new File(config.font).getCanonicalFile();
-                    File fontRoot = new File(privateRoot, "fonts");
+                    File fontRoot = new File(application.getFilesDir().getCanonicalFile(), "fonts");
                     if (!fontRoot.equals(fontRoot.getCanonicalFile()) || !within(chosen, fontRoot) || !chosen.isFile()
                             || !chosen.canRead() || chosen.length() == 0 || chosen.length() > 64L * 1024 * 1024) throw new IOException("font policy");
                     font = chosen.getPath();
@@ -247,7 +269,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
         try {
             if (dispatchClaimed && !dispatchToken.equals(intent.getStringExtra(LaunchContract.ETHORNELL_DISPATCH_TOKEN)))
                 throw new IllegalArgumentException("different dispatch");
-            Payload candidate = new Payload(intent, getFilesDir());
+            Payload candidate = new Payload(intent);
             if (payload != null && payload.same(candidate) && !destroyed && session != null
                     && session.state() != EthornellSession.State.CLOSED && session.state() != EthornellSession.State.FAILED) {
                 surface.requestFocus(); return;
@@ -260,7 +282,9 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
         if (session == null) return;
         if (remap != null) remap.onResume();
         session.pause(EthornellSession.PAUSE_ACTIVITY, false);
-        requestAudio(); scheduleFrame(); immersive();
+        requestAudio();
+        updateStartupProbe();
+        scheduleFrame(); immersive();
     }
     private void requestAudio() {
         boolean granted = false;
@@ -270,6 +294,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
     }
     @Override protected void onPause() {
         resumed = false; stopFrames();
+        if (startupProbe != null) startupProbe.stop();
         if (remap != null) remap.onPause();
         releaseInput();
         if (session != null) {
@@ -286,6 +311,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
             releaseInput();
         }
         if (session != null) session.pause(EthornellSession.PAUSE_FOCUS, !focus);
+        updateStartupProbe();
         if (focus) {
             immersive();
             if (pendingFocusAction != null && resumed && !destroyed) {
@@ -298,6 +324,8 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
         if (noisyRegistered) { unregisterReceiver(noisyReceiver); noisyRegistered = false; }
         if (remap != null) remap.onDestroy();
         releaseInput();
+        if (startupProbe != null) startupProbe.dispose();
+        if (loading != null) loading.dispose();
         if (session != null) session.close();
         // Never clear the registry until native destroy has actually completed.
         super.onDestroy();
@@ -313,20 +341,24 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
             // Touch-free right-click/backlog controls must also work before the first pointer event.
             input.position(width / 2f, height / 2f);
             scheduleFrame();
+            updateStartupProbe();
         }
     }
     @Override public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
         stopFrames(); releaseInput();
+        if (startupProbe != null) startupProbe.stop();
         if (session != null && attachedGeneration != 0) session.detachAndWait(attachedGeneration);
         attachedGeneration = 0;
+    }
+    private void updateStartupProbe() {
+        if (startupProbe == null) return;
+        if (resumed && hasWindowFocus() && attachedGeneration != 0) startupProbe.start();
+        else startupProbe.stop();
     }
     @Override public void doFrame(long timeNs) {
         frameScheduled = false;
         if (!resumed || destroyed || attachedGeneration == 0 || session == null) return;
         session.frame(timeNs, attachedGeneration);
-        if (loading != null && session.state() == EthornellSession.State.RUNNING) {
-            root.removeView(loading); loading = null;
-        }
         scheduleFrame();
     }
     private void scheduleFrame() {

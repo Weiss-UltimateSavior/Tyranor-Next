@@ -6,11 +6,11 @@
   "status": "pass",
   "visualReview": "not-requested",
   "provenance": "current",
-  "deliveryReceiptId": "06fcf956-4143-4639-8766-4fcb9c48f769",
+  "deliveryReceiptId": "94b32260-c534-42b4-80e4-173e24271b64",
   "artifact": {
     "path": "/Users/weiss/opencode/rma/TyranorNext/.archify/数据流图-游戏库与封面-20261006-022735/dataflow-library-covers.html",
-    "sha256": "7949b738138baf43585ad05d2dc2c9c415d8dbfb98c38cd71cc99156a29d65c5",
-    "bytes": 774882
+    "sha256": "97ba384f8acc8dd709e21e19e545f8b3d35977c44e496ddd4b2b8774aea5cdd9",
+    "bytes": 775805
   },
   "state": {
     "detail": "read",
@@ -55,7 +55,7 @@
         "minimumProjectedNodeTextPx": 7,
         "minimumProjectedNonEdgeTextPx": 7,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "VNDB · Bangumi · Steam 等",
+        "minimumProjectedNodeText": "VNDB / NextMoe / Bangumi / Steam",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
@@ -105,7 +105,7 @@
         "minimumProjectedNodeTextPx": 7,
         "minimumProjectedNonEdgeTextPx": 7,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "VNDB · Bangumi · Steam 等",
+        "minimumProjectedNodeText": "VNDB / NextMoe / Bangumi / Steam",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
@@ -155,7 +155,7 @@
         "minimumProjectedNodeTextPx": 7,
         "minimumProjectedNonEdgeTextPx": 7,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "VNDB · Bangumi · Steam 等",
+        "minimumProjectedNodeText": "VNDB / NextMoe / Bangumi / Steam",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
@@ -205,7 +205,7 @@
         "minimumProjectedNodeTextPx": 7,
         "minimumProjectedNonEdgeTextPx": 7,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "VNDB · Bangumi · Steam 等",
+        "minimumProjectedNodeText": "VNDB / NextMoe / Bangumi / Steam",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
@@ -308,7 +308,7 @@
         "minimumProjectedNodeTextPx": 7,
         "minimumProjectedNonEdgeTextPx": 7,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "VNDB · Bangumi · Steam 等",
+        "minimumProjectedNodeText": "VNDB / NextMoe / Bangumi / Steam",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
@@ -358,7 +358,7 @@
         "minimumProjectedNodeTextPx": 7,
         "minimumProjectedNonEdgeTextPx": 7,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "VNDB · Bangumi · Steam 等",
+        "minimumProjectedNodeText": "VNDB / NextMoe / Bangumi / Steam",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
@@ -408,7 +408,7 @@
         "minimumProjectedNodeTextPx": 7,
         "minimumProjectedNonEdgeTextPx": 7,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "VNDB · Bangumi · Steam 等",
+        "minimumProjectedNodeText": "VNDB / NextMoe / Bangumi / Steam",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
@@ -458,7 +458,7 @@
         "minimumProjectedNodeTextPx": 7,
         "minimumProjectedNonEdgeTextPx": 7,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "VNDB · Bangumi · Steam 等",
+        "minimumProjectedNodeText": "VNDB / NextMoe / Bangumi / Steam",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
@@ -513,7 +513,7 @@
         "minimumProjectedNodeTextPx": 7,
         "minimumProjectedNonEdgeTextPx": 7,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "VNDB · Bangumi · Steam 等",
+        "minimumProjectedNodeText": "VNDB / NextMoe / Bangumi / Steam",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
@@ -563,7 +563,7 @@
         "minimumProjectedNodeTextPx": 7,
         "minimumProjectedNonEdgeTextPx": 7,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "VNDB · Bangumi · Steam 等",
+        "minimumProjectedNodeText": "VNDB / NextMoe / Bangumi / Steam",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
@@ -613,7 +613,7 @@
         "minimumProjectedNodeTextPx": 7,
         "minimumProjectedNonEdgeTextPx": 7,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "VNDB · Bangumi · Steam 等",
+        "minimumProjectedNodeText": "VNDB / NextMoe / Bangumi / Steam",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
@@ -663,7 +663,7 @@
         "minimumProjectedNodeTextPx": 7,
         "minimumProjectedNonEdgeTextPx": 7,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "VNDB · Bangumi · Steam 等",
+        "minimumProjectedNodeText": "VNDB / NextMoe / Bangumi / Steam",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",

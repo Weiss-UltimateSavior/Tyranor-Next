@@ -144,13 +144,13 @@ final class GameRunner {
         Bitmap bitmap(){return Bitmap.createBitmap(pixels,width,height,Bitmap.Config.ARGB_8888);}
     }
     interface Listener {
-        void frame(Frame frame,int initialVisible);
+        void frame(Frame frame,int initialVisible,long startupGeneration);
         void planeChanged();
         void nativePanelMenu(GameRunner owner,Frame frame,int mode);
         void debugFrame(int[] state,String script,String bgm);
-        void logo(List<LogoPanel.Slide> slides,int width,int height,int frameMs);
-        void opening(GameUiAssets.Config config,int frameMs,Capture initial,Capture previous);
-        void title(TitleMenu title,int width,int height,Capture initial,Capture previous);
+        void logo(List<LogoPanel.Slide> slides,int width,int height,int frameMs,long startupGeneration);
+        void opening(GameUiAssets.Config config,int frameMs,Capture initial,Capture previous,long startupGeneration);
+        void title(TitleMenu title,int width,int height,Capture initial,Capture previous,long startupGeneration);
         void titleRestart(TitleMenu title,Capture background);
         void style(DialogueStyle style);
         void panels(GameUiAssets assets);
@@ -168,14 +168,14 @@ final class GameRunner {
         void spectrum(int[] bands);
         void galleryReplayStarted();
         void galleryReplayFinished(GameRunner owner,TitleMenu title,GalleryCatalog.Page page,int width,int height);
-        void movie(File file,float gain,boolean canSkip,boolean startup,Integer exitColor,int tracks);
+        void movie(File file,float gain,boolean canSkip,boolean startup,Integer exitColor,int tracks,long startupGeneration);
         void movieError(MovieError error);
         void loaded();
         void statusOverlays(int mode,Modal[] overlays);
         void titleReturnCancelled();
         void notice(String message);
-        void progressCorrupt();
-        void error(Throwable reason);
+        void progressCorrupt(long startupGeneration);
+        void error(Throwable reason,long startupGeneration);
     }
     private final HandlerThread worker=new HandlerThread("SystemNNN-Game");
     private final AtomicReference<MessagePlaneToken> pendingPlaneToken=new AtomicReference<>();
@@ -198,6 +198,7 @@ final class GameRunner {
     }
     private volatile boolean closing;
     private volatile boolean foreground;
+    private long startupGeneration;
     private final GalleryStore galleryStore;
     private final GameProgress progressStore;
     private PcSystemSave pcSystemSave;
@@ -293,8 +294,10 @@ final class GameRunner {
         final GameUiAssets.ModeAssets data;
         final int capability;
         final boolean startup;
-        MovieError(GameRunner owner,GameUiAssets.ModeAssets data,int capability,boolean startup){
+        final long generation;
+        MovieError(GameRunner owner,GameUiAssets.ModeAssets data,int capability,boolean startup,long generation){
             this.owner=owner;this.data=data;this.capability=capability;this.startup=startup;
+            this.generation=generation;
         }
     }
     private Integer pendingMovieExitColor;
@@ -651,7 +654,7 @@ final class GameRunner {
             if(checkStartupCodec())return;
             StartupStage first=StartupStage.fromMode(GameUiAssets.readConfig(root,"nothing",codec).value("nextMode","logo"));
             if(first!=StartupStage.LOGO){startupVisited.clear();runStartup(first,null);return;}
-            ui.logo(logos,meta[3],meta[4],meta[5]);
+            ui.logo(logos,meta[3],meta[4],meta[5],startupGeneration);
             if(logos.isEmpty()&&completeStartupLogo())return;
         }else publishTitle(previous);
         schedule();
@@ -675,7 +678,7 @@ final class GameRunner {
         Capture initial=captureEntranceFrame(currentTitle.config);
         startupTitleFramePending=afterStartup&&initial!=null;
         if(afterStartup&&!startupTitleFramePending)bindSurface(true);
-        ui.title(currentTitle,meta[3],meta[4],initial,previous);
+        ui.title(currentTitle,meta[3],meta[4],initial,previous,startupGeneration);
         Log.i("SystemNNN","Title "+root.getName()+" buttons="+currentTitle.items.size());
         UiPreviewPool.Request settings=UiPreviewPool.Request.read(uiAssets.config,12,1);
         if(settings!=null){
@@ -814,7 +817,7 @@ final class GameRunner {
         NativeGame.configureMenuBackground(handle,2,null,null,false);
         startupLogoFinished=false;
         titleBackgroundHeld=true;
-        ui.logo(logos,meta[3],meta[4],meta[5]);
+        ui.logo(logos,meta[3],meta[4],meta[5],startupGeneration);
         schedule();
         return true;
     }
@@ -838,7 +841,7 @@ final class GameRunner {
         }catch(RuntimeException e){Log.w("SystemNNN","Startup opening background unavailable",e);return false;}
         titleBackgroundHeld=true;
         NativeGame.tick(handle,0,0,0,false,0,false,meta);
-        ui.opening(cfg,meta[5],captureEntranceFrame(cfg),previous);
+        ui.opening(cfg,meta[5],captureEntranceFrame(cfg),previous,startupGeneration);
         Log.i("SystemNNN","Startup opening "+(script.isEmpty()?image:script));
         schedule();
         return true;
@@ -870,7 +873,7 @@ final class GameRunner {
         moviePlaying=true;
         stopSound();
         Log.i("SystemNNN","Startup movie requested "+movie.file.getName());
-        ui.movie(movie.file,NativeGame.movieGain(handle),cfg.number("noSkipFlag",0)==0,true,0xff000000,tracks);
+        ui.movie(movie.file,NativeGame.movieGain(handle),cfg.number("noSkipFlag",0)==0,true,0xff000000,tracks,startupGeneration);
         return true;
     }
     private boolean checkStartupCodec(){
@@ -900,7 +903,7 @@ final class GameRunner {
             Log.w("SystemNNN","Movie error artwork unavailable",e);
             data=new GameUiAssets.ModeAssets(GameUiAssets.Config.empty(),java.util.Collections.emptyMap());
         }
-        movieError=new MovieError(this,data,capability,startup);
+        movieError=new MovieError(this,data,capability,startup,startupGeneration);
         if(!GameCodecErrorPanel.available(uiAssets,data)){
             Log.w("SystemNNN","Movie error interface resources unavailable; skipping movies");
             ui.notice(text(R.string.engine_systemnnn_movie_skipped));
@@ -1626,7 +1629,7 @@ final class GameRunner {
         pendingMovieExitColor=exit==null?null:exit.pixels[0];
         int tracks=playableMoviesOnly?MoviePlayback.checkCodec(movie.file):4;
         if(tracks==0){tasks.post(()->completeMovie(MoviePlayback.Outcome.SKIPPED,null));return;}
-        ui.movie(movie.file,NativeGame.movieGain(handle),printCfg.number("noSkipFlag",0)==0,false,pendingMovieExitColor,tracks);
+        ui.movie(movie.file,NativeGame.movieGain(handle),printCfg.number("noSkipFlag",0)==0,false,pendingMovieExitColor,tracks,startupGeneration);
     }
     void finishMovie(MoviePlayback.Outcome outcome,String failure){tasks.post(()->completeMovie(outcome,failure));}
     private void completeMovie(MoviePlayback.Outcome outcome,String failure){
@@ -1997,15 +2000,17 @@ final class GameRunner {
         int cue=config.number(key,fallback);
         if(cue>0)NativeGame.playSystemSe(handle,cue-1);
     }
-    void restart(boolean startOver){tasks.post(()->{
+    void restart(boolean startOver,long generation){tasks.post(()->{
         if(closing)return;
+        startupGeneration=generation;
         try{
             if(!initialized)initialize();
             else if(startOver){open(null,false);writeReadLines();}
         }catch(Exception|LinkageError e){broken(e);}
     });}
-    void recoverCorruptProgress(){tasks.post(()->{
+    void recoverCorruptProgress(long generation){tasks.post(()->{
         if(closing||initialized||saveAccess==null)return;
+        startupGeneration=generation;
         try{
             saveResult(SAVE_FILES.submit(()->{GameProgress.recoverCorruptBase(readFile);return null;}));
             initialize();
@@ -2454,7 +2459,7 @@ final class GameRunner {
             current=new Frame(shownWait,meta[3],meta[4],script,shownLine,shownWord,"","",DialogueMarkup.EMPTY,new String[0],false,
                 0,0,0,scriptCursor,false,false,nativePanelSavable,0,0,0,meta[5],new String[0],new int[4],new int[0],0,
                 new int[0],new Bitmap[0],null,DialogueDecorations.EMPTY,false,planeKey,sessionGeneration,nativePanelMode,nativePanelSavable);
-            textDone=true;visibleText=0;ui.frame(current,0);
+            textDone=true;visibleText=0;ui.frame(current,0,startupGeneration);
             return;
         }
         int[] properties=NativeGame.dialogueProperties(handle);
@@ -2509,7 +2514,7 @@ final class GameRunner {
             Log.i("SystemNNN","script="+script+" line="+shownLine+" word="+shownWord+" speaker="+speaker+" choices="+options.length);
         Log.i("SystemNNN","frame wait="+shownWait+" word="+shownWord+" line="+shownLine+" remaining="+meta[6]+
             " options="+(current.optionsAllowed?1:0)+" window="+current.windowType+" font="+current.fontType);
-        if(!systemMenuModal||shownWait!=NativeGame.MODAL||placeMode!=0)ui.frame(current,visibleText);
+        if(!systemMenuModal||shownWait!=NativeGame.MODAL||placeMode!=0)ui.frame(current,visibleText,startupGeneration);
     }
     private void readReadLines() throws IOException {
         PcSystemSave.Initial pc=pcSystemSave.load();
@@ -2583,8 +2588,8 @@ final class GameRunner {
     private void broken(Throwable reason){
         tasks.removeCallbacks(ticker);cancelMovieContinuation();failed=true;stopSound();
         Log.e("SystemNNN","Game session failed",reason);
-        if(!initialized&&reason instanceof GameProgress.InvalidBase)ui.progressCorrupt();
-        else ui.error(reason);
+        if(!initialized&&reason instanceof GameProgress.InvalidBase)ui.progressCorrupt(startupGeneration);
+        else ui.error(reason,startupGeneration);
     }
     private void releaseSaveAccess(Closeable playerTask,CompletableFuture<Void> release){
         SAVE_FILES.execute(()->{

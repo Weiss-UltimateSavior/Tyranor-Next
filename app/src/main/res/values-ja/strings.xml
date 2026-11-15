@@ -40,6 +40,9 @@
     <string name="settings_appearance_style_default">デフォルト</string>
     <string name="settings_appearance_style_glass">レトロガラス</string>
     <string name="settings_appearance_style_milk">白霧ガラス</string>
+    <string name="settings_motion_mode">画面のアニメーション</string>
+    <string name="settings_motion_enhanced">強化</string>
+    <string name="settings_motion_normal">標準</string>
     <string name="settings_app_corner_radius">アプリの角丸調整</string>
     <string name="settings_app_corner_radius_value">%1$d dp</string>
     <string name="settings_disabled_in_glass_style">ガラス外観テーマでは使用できません</string>
@@ -237,6 +240,7 @@
     <string name="game_launch_failed">起動に失敗しました</string>
     <string name="game_cover_set_failed">カバー画像の設定に失敗しました</string>
     <string name="game_launch_action">ゲームを起動</string>
+    <string name="game_playtime_total_accessibility">累計プレイ時間：%1$s</string>
     <string name="game_launch_file">起動ファイル</string>
     <string name="game_launch_file_auto_summary">自動 - 問題がある場合は手動で起動ファイルを選択</string>
     <string name="game_remove_quick_launch">ホームから削除</string>
@@ -493,7 +497,6 @@
     <string name="engine_settings_sharpness">画面シャープ化</string>
     <string name="engine_settings_sharpness_strength">シャープ化強度</string>
     <string name="engine_settings_text_encoding">テキストエンコード</string>
-    <string name="engine_settings_rotate_screen">画面を反転</string>
     <string name="engine_settings_auto_patch">自動パッチ</string>
     <string name="engine_settings_artemis_resolution">ステージ解像度</string>
     <string name="engine_settings_artemis_side_cut">切り抜いて全画面表示</string>
@@ -931,11 +934,11 @@
     <string name="ethornell_nls_title">描画テキストの文字コード</string>
     <string name="ethornell_font_title">カスタムフォント</string>
     <string name="ethornell_font_default">エンジンのフォント候補を使用</string>
-    <string name="ethornell_settings_note">文字コードは描画テキストのみに適用され、リソース名には影響しません。変更後はゲームを再起動してください。ユーザーデータはアプリ専用領域に保存され、セーブ管理はまだ利用できません。</string>
+    <string name="ethornell_settings_note">文字コードは描画テキストにのみ適用され、リソース名には影響しません。変更後はゲームを再起動してください。セーブデータはゲームフォルダー内の savedata に保存されます。</string>
     <string name="ethornell_error_root">ゲームフォルダーを読み取れません。アクセス可能なローカルフォルダーを選び、再度許可してください。</string>
     <string name="ethornell_error_bootstrap">ipl._bp 起動項目を含む対応 system.arc 索引が見つかりません。</string>
     <string name="ethornell_error_font">フォントが無効、または読み取れません。TTF、TTC、OTF、OTC フォントを再度取り込んでください。</string>
-    <string name="ethornell_error_userdata">Ethornell 専用ユーザーデータを作成できません。空き容量を確認してください。</string>
+    <string name="ethornell_error_userdata">ゲームフォルダー内の Ethornell セーブデータを準備できません。書き込み権限と空き容量を確認してください。</string>
     <!-- First-launch quick start -->
     <string name="onboarding_title">クイックスタート</string>
     <string name="onboarding_progress">%1$d / %2$d ページ</string>
@@ -947,8 +950,10 @@
     <string name="onboarding_coach_home_body">ここからお気に入りを起動し、最近開いたゲームも確認できます。</string>
     <string name="onboarding_coach_home_web_title">ウェブホームを見る</string>
     <string name="onboarding_coach_home_web_body">設定したウェブホームをここに表示します。</string>
-    <string name="onboarding_coach_games_title">ゲームを追加</string>
-    <string name="onboarding_coach_games_body">「ゲームを追加」でゲームフォルダーを選択して保存します。追加後に自動でスキャンされます。</string>
+    <string name="onboarding_coach_games_folder_title">まずフォルダーを追加</string>
+    <string name="onboarding_coach_games_folder_body">初めて使うときは「フォルダーを追加」でゲームフォルダーを追加すると、対応ゲームを自動スキャンします。</string>
+    <string name="onboarding_coach_games_title">手動追加が必要なとき</string>
+    <string name="onboarding_coach_games_body">上部のプラスは、exe を指定する PC ゲームやインストール済み Android アプリの手動追加用です。対応エンジンのゲームは「フォルダーを追加」からスキャンして登録してください。</string>
     <string name="onboarding_coach_games_search_title">ゲームを探す</string>
     <string name="onboarding_coach_games_search_body">検索欄でライブラリ内のゲームを名前から絞り込めます。</string>
     <string name="onboarding_coach_games_cover_title">カバーを補完</string>
@@ -956,9 +961,9 @@
     <string name="onboarding_coach_games_scan_title">フォルダーを再スキャン</string>
     <string name="onboarding_coach_games_scan_body">循環矢印で登録済みフォルダーを再確認します。フォルダーの追加は行いません。</string>
     <string name="onboarding_coach_engine_title">実行環境を確認</string>
-    <string name="onboarding_coach_engine_body">ここで内蔵エンジン、外部モジュール、エミュレーターを確認できます。</string>
+    <string name="onboarding_coach_engine_body">対応エンジン、外部モジュール、エミュレーターを確認できます。ゲームのエンジンが不明な場合はコミュニティに相談してください。</string>
     <string name="onboarding_coach_settings_title">設定はいつでも変更可能</string>
-    <string name="onboarding_coach_settings_body">ここでゲームフォルダーを追加し、スキャンの深さとゲームの並び順を調整できます。</string>
+    <string name="onboarding_coach_settings_body">スキャン対象フォルダーの追加・解除、スキャンの深さとゲームの並び順を調整できます。対象から外してもゲームファイルは削除されません。</string>
     <string name="webdav_title">WebDAV セーブ同期</string>
     <string name="webdav_enabled">WebDAV セーブ同期を有効化</string>
     <string name="webdav_server_url">サーバー URL</string>
@@ -1026,7 +1031,7 @@
     <string name="save_version_recover">未完了の切り替えを修復</string>
     <string name="save_version_recovery_policy">現在のセーブと有効な過去のソースを保持し、中断された切り替え記録だけを削除します。バージョンはインポートされません。以降の WebDAV 同期では現在のセーブ内容を使用します。</string>
     <string name="webdav_error_cloud_repair">クラウドの破損セーブを削除して再試行してください</string>
-    <string name="save_sync_cleanup_failed">「%1$s」はライブラリに保持されています。セーブ同期データの削除に失敗しました：%2$s</string>
+    <string name="settings_systemnnn_copy_cleanup_schedule_failed">「%1$s」はライブラリに残っています。リソースのクリーンアップを登録できませんでした：%2$s</string>
     <string name="webdav_error_local_state_changed">ローカル状態が変更されました。同期を再試行してください。</string>
     <string name="webdav_sync_cleanup_pending">クラウド履歴の整理はまだ完了していません。次回以降の同期で続行します。</string>
     <string name="webdav_sync_partial_cleanup_pending">一部の同期が完了しました。クラウド履歴の整理はまだ完了していません。次回以降の同期で続行します。</string>

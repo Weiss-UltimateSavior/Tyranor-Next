@@ -24,6 +24,12 @@ object AppThemeColors {
     var isDark by mutableStateOf(false)
         private set
 
+    /**
+     * 系统深浅色变化的自动换皮过程中暂时保持的旧值（见 SystemThemeSync）：截完旧画面前，refresh 不能改成新的系统深浅色，
+     * 否则新主题会先于覆盖层出现一帧。非 null 期间「跟随系统」解析为该值；换皮应用时清空。
+     */
+    var systemDarkHold: Boolean? = null
+
     /** 外观风格（默认 / 复古玻璃 / 白雾玻璃）；变化时全 App 重组（背景/容器/文字随之切换）。 */
     var appearanceStyle by mutableStateOf(AppearanceStyle.DEFAULT)
         private set
@@ -67,6 +73,13 @@ object AppThemeColors {
         }
     }
 
+    private fun systemIsDark(context: Context): Boolean = try {
+        (android.content.res.Resources.getSystem().configuration.uiMode and
+            android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+    } catch (_: RuntimeException) {
+        AppSettingsStore.isDarkEffective(context)
+    }
+
     /** 从存储重读主题色与外观风格并广播变更（system 模式按系统当前深/浅解析）。
      *  复古玻璃固定深色；白雾玻璃固定浅色（条目为亮面黑字），两者都禁用深浅色切换。 */
     fun refresh(context: Context) {
@@ -75,6 +88,9 @@ object AppThemeColors {
         isDark = when {
             appearanceStyle.isGlass -> true
             appearanceStyle.isMilkGlass -> false
+            AppSettingsStore.getThemeMode(context) == AppSettingsStore.THEME_MODE_SYSTEM ->
+                // 跟随系统：直接读系统全局配置（始终是最新的，不依赖可能过期的包装 context）；换皮过渡期间保持旧值
+                systemDarkHold ?: systemIsDark(context)
             else -> AppSettingsStore.isDarkEffective(context)
         }
         appCornerRadius = AppSettingsStore.getAppCornerRadius(context)

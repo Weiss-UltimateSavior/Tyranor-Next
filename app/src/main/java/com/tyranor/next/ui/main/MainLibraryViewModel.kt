@@ -237,21 +237,28 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
         return true
     }
 
+    /** 先移除库条目，再尽力清理关联数据。SystemNNN 副本的清理任务随移除一起登记。 */
     fun deleteGame(target: ScanGame) {
         val revision = stateRevision.incrementAndGet()
         _uiState.update { MainLibraryStateReducer.deleteGame(it, target.uri) }
         enqueuePersistence(revision) {
             val queued = try {
-                cleanupDeletedGame(appContext, target)
                 withContext(NonCancellable) {
                     GameLibraryFacade.removeGame(appContext, target.uri)
                 }
             } catch (failure: SaveSyncException) {
-                // Keep the persistent library entry as the retry route when cleanup is blocked.
+                // 副本清理请求尚未持久化，保留库条目供重试。
                 _uiState.update { it.copy(cleanupError = failure.code, cleanupGameTitle = target.title, copyCleanupPending = false) }
                 return@enqueuePersistence
             }
-            // The library entry has been removed and its durable request survives failures here.
+            try {
+                cleanupDeletedGame(appContext, target)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Log.w(TAG, "Best-effort cleanup failed for deleted game ${target.uri}", failure)
+            }
+            // 关联数据清理失败时，仍继续处理已登记的资源清理。
             if (queued) try {
                 val cleanup = GameSaveManager(appContext).drainSystemNnnCleanupQueue(target.uri)
                 if (cleanup.failed != 0) {
