@@ -21,8 +21,13 @@ fun ProvideAppLocale(content: @Composable () -> Unit) {
     val localizedContext = remember(baseContext, language) {
         AppLocaleController.wrap(baseContext, language)
     }
-    val localizedConfiguration = remember(localizedContext, language) {
-        Configuration(localizedContext.resources.configuration)
+    // 以平台当前的窗口配置为底（MainActivity 自行处理尺寸 / 方向 / 密度变化、不再重建，
+    // 小窗或折叠屏尺寸变化时 isTabletScreen() 等读取的 LocalConfiguration 必须随之更新），只叠加应用所选语言。
+    val baseConfiguration = LocalConfiguration.current
+    val localizedConfiguration = remember(baseConfiguration, localizedContext, language) {
+        Configuration(baseConfiguration).apply {
+            setLocales(localizedContext.resources.configuration.locales)
+        }
     }
     CompositionLocalProvider(
         LocalContext provides localizedContext,
