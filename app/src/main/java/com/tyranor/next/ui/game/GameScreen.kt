@@ -1983,7 +1983,8 @@ internal fun GameCard(
                 .background(game.engine.coverColor()),
             contentAlignment = Alignment.Center,
         ) {
-            GameCoverPlaceholder(engineName)
+            // 位图被 LRU 逐出后重新进入视口：已知该封面存在，先留底色等重解码，不再闪占位文字
+            if (bmp == null && !isCoverKnown(game.coverUri)) GameCoverPlaceholder(engineName)
             if (bmp != null) {
                 Image(
                     bitmap = bmp,
@@ -2116,7 +2117,8 @@ internal fun UniformGameCard(
                 .glassBorder(),
             contentAlignment = Alignment.Center,
         ) {
-            GameCoverPlaceholder(engineName)
+            // 位图被 LRU 逐出后重新进入视口：已知该封面存在，先留底色等重解码，不再闪占位文字
+            if (bmp == null && !isCoverKnown(game.coverUri)) GameCoverPlaceholder(engineName)
             if (bmp != null) {
                 Image(
                     bitmap = bmp,
@@ -2199,6 +2201,26 @@ private fun GameCoverEngineBadge(
     )
 }
 
+/**
+ * 「该封面曾经成功解码并显示过」的轻量标记（只存 uri，不存位图，不受 LRU 逐出影响）。
+ * 滚动回来、位图已被 LRU 挤出时用它避免卡片先闪回占位兜底再等重新解码。
+ */
+internal object CoverAvailability {
+    private val known = java.util.Collections.newSetFromMap(
+        java.util.concurrent.ConcurrentHashMap<String, Boolean>(),
+    )
+
+    fun markKnown(uri: String) {
+        if (uri.isNotBlank()) known.add(uri)
+    }
+
+    fun isKnown(uri: String): Boolean = known.contains(uri)
+}
+
+/** 该封面是否已成功显示过（调用方据此跳过占位兜底，避免"显示过又变回兜底"）。 */
+internal fun isCoverKnown(coverUri: String?): Boolean =
+    coverUri != null && CoverAvailability.isKnown(coverUri)
+
 /** 不感知滚动的默认查询（首页/封面流等非网格调用方复用，避免默认参数每次新建 lambda）。 */
 private val neverScrolling: () -> Boolean = { false }
 
@@ -2226,6 +2248,7 @@ internal fun rememberCoverBitmap(
         // 滑动/惯性中不启动解码，避免解码完成 → 重组/纹理上传挤占滑动帧
         awaitScrollIdle(isScrolling)
         val bitmap = CoverThumbnailLoader.load(context.applicationContext, coverUri) ?: return@produceState
+        CoverAvailability.markKnown(coverUri)
         // 解码期间可能又开始了新的滑动：等再次静止后逐帧回填，滑动帧不承担纹理上传
         CoverPublishGate.awaitTurn(isScrolling)
         value = bitmap.asImageBitmap()
@@ -2317,11 +2340,25 @@ private fun decodeCoverThumbnail(context: android.content.Context, uriText: Stri
     context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
 }.getOrNull()
 
-private const val CoverDecodeMaxWidthPx = 512
-private const val CoverDecodeMaxHeightPx = 683
+// 卡片宽度：窄屏 3 列约 340px、大屏 6 列约 180px；解码到 384×512 已足够清晰，
+// 但内存占用约为 512×683 的 55%，同样是 64MB 能容纳的封面数几乎翻倍（减少往返滚动重解码）。
+private const val CoverDecodeMaxWidthPx = 384
+private const val CoverDecodeMaxHeightPx = 512
 
-private object CoverBitmapCache : LruCache<String, Bitmap>(24 * 1024 * 1024) {
+/**
+ * 封面缩略图内存缓存。
+ *
+ * 容量按进程可用堆的 1/6 计算（下限 32MB、上限 128MB）：固定的 24MB 在 5 列以上或几十款游戏时
+ * 不足两屏，`LruCache` 会把"刚显示过"的封面挤出去，滚回来只能重新解码——表现为封面反复闪回占位。
+ * `sizeOf` 用真实分配字节数（含行对齐），避免估算偏差导致实际占用远超预算。
+ */
+private object CoverBitmapCache : LruCache<String, Bitmap>(coverCacheBytes()) {
     override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
+}
+
+private fun coverCacheBytes(): Int {
+    val heap = Runtime.getRuntime().maxMemory()
+    return (heap / 6).coerceIn(32L * 1024 * 1024, 128L * 1024 * 1024).toInt()
 }
 
 /**
