@@ -116,6 +116,23 @@ object AppSettingsStore {
 
     /** 引擎页条目左侧图标（引擎横幅图）开关；默认开。 */
     const val KEY_ENGINE_CARD_ICON = "engine_card_icon"
+
+    // ---- 自定义背景图片（应用设置 → 外观）----
+
+    /** 自定义背景图 URI（SAF 持久授权）；空 = 未设置。 */
+    const val KEY_BACKGROUND_IMAGE_URI = "background_image_uri"
+
+    /** 自定义背景图默认 URI：空。 */
+    const val DEFAULT_BACKGROUND_IMAGE_URI = ""
+
+    /** 背景图透明度（0..100，100 = 完全不透明）；默认 100。 */
+    const val KEY_BACKGROUND_IMAGE_ALPHA = "background_image_alpha"
+    const val DEFAULT_BACKGROUND_IMAGE_ALPHA = 100
+
+    /** 背景图模糊强度（0..100，0 = 不模糊）；默认 30。 */
+    const val KEY_BACKGROUND_IMAGE_BLUR = "background_image_blur"
+    const val DEFAULT_BACKGROUND_IMAGE_BLUR = 30
+
     const val KEY_SIDE_RAIL = "side_rail"
 
     /** 界面动效档位：true = 增强（默认），false = 普通。 */
@@ -130,6 +147,47 @@ object AppSettingsStore {
 
     /** VNDB 大图开关默认值：开（缩略图仅 256×362，默认直接取原图保证清晰度）。 */
     const val DEFAULT_VNDB_LARGE_COVER = true
+
+    // ---- 隐私设置（ui/settings/PrivacySettingsActivity；运行时归 core/privacy）----
+
+    /** 安全屏幕：窗口 FLAG_SECURE——最近任务显示空白卡，应用内无法截屏；默认关。 */
+    const val KEY_PRIVACY_PREVENT_SCREENSHOT = "privacy_prevent_screenshot"
+
+    /** 安全屏幕默认值：关。 */
+    const val DEFAULT_PRIVACY_PREVENT_SCREENSHOT = false
+
+    /** 隐藏通知内容：应用更新通知在系统锁屏上不显示（VISIBILITY_SECRET）；默认关。 */
+    const val KEY_PRIVACY_HIDE_NOTIFICATION = "privacy_hide_notification"
+
+    /** 隐藏通知内容默认值：关。 */
+    const val DEFAULT_PRIVACY_HIDE_NOTIFICATION = false
+
+    /** 应用锁：启动器界面回前台前要求解锁；默认关。 */
+    const val KEY_PRIVACY_APP_LOCK_ENABLED = "privacy_app_lock_enabled"
+
+    /** 应用锁默认值：关。 */
+    const val DEFAULT_PRIVACY_APP_LOCK_ENABLED = false
+
+    /** 应用锁允许「设备凭据」（指纹/人脸/PIN）快捷解锁；默认开。 */
+    const val KEY_PRIVACY_APP_LOCK_BIOMETRIC = "privacy_app_lock_biometric"
+
+    /** 设备凭据快捷解锁默认值：开。 */
+    const val DEFAULT_PRIVACY_APP_LOCK_BIOMETRIC = true
+
+    /**
+     * 应用锁解锁延迟档位：存 [PrivacyLockTimeout] 的 storageIndex（0..3），默认 0（立即）。
+     * 立即档下任何退后台（含路径选择器等系统界面往返）都会在回前台时要求解锁，
+     * 这是应用锁的标准语义；不想被系统界面打扰时选 1 分钟及以上。
+     * 归一化见 [normalizePrivacyLockTimeoutIndex]；枚举本体在 core/privacy，
+     * 避免与存储互相依赖。
+     */
+    const val KEY_PRIVACY_APP_LOCK_TIMEOUT = "privacy_app_lock_timeout"
+
+    /** 解锁延迟默认档位：立即。 */
+    const val DEFAULT_PRIVACY_APP_LOCK_TIMEOUT_INDEX = 0
+
+    /** 应用锁延迟档位总数（与 PrivacyLockTimeout.entries 一致；存储层只做范围钳制）。 */
+    const val PRIVACY_APP_LOCK_TIMEOUT_COUNT = 4
 
     const val COVER_SOURCE_HIKARINAGI = "hikarinagi"
     const val COVER_SOURCE_BANGUMI = "bangumi"
@@ -204,6 +262,7 @@ object AppSettingsStore {
 
     /** 列表：封面流横向轮播。 */
     const val GAME_CARD_STYLE_COVER_FLOW = "cover_flow"
+
 
     /** 卡片风格默认值：瀑布。 */
     const val DEFAULT_GAME_CARD_STYLE = GAME_CARD_STYLE_WATERFALL
@@ -286,6 +345,18 @@ object AppSettingsStore {
     /** 引擎页条目左侧图标内存态：设置页切换后引擎页即时重组。 */
     val engineCardIconState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_ENGINE_CARD_ICON)
 
+    /** 自定义背景图 URI 内存态（空 = 不启用）；切换后所有页面背景即时重组。 */
+    val backgroundImageUriState: MutableStateFlow<String> =
+        MutableStateFlow(DEFAULT_BACKGROUND_IMAGE_URI)
+
+    /** 背景图透明度内存态（0..100）。 */
+    val backgroundImageAlphaState: MutableStateFlow<Int> =
+        MutableStateFlow(DEFAULT_BACKGROUND_IMAGE_ALPHA)
+
+    /** 背景图模糊强度内存态（0..100）。 */
+    val backgroundImageBlurState: MutableStateFlow<Int> =
+        MutableStateFlow(DEFAULT_BACKGROUND_IMAGE_BLUR)
+
     private val gameConditionsLock = Any()
     private val mutableGameConditions = MutableStateFlow(GameLibraryConditions())
 
@@ -312,6 +383,28 @@ object AppSettingsStore {
 
     /** Web 首页地址内存态：设置页修改后网页首页即时加载新地址。 */
     val homeWebUrlState: MutableStateFlow<String> = MutableStateFlow(DEFAULT_HOME_WEB_URL)
+
+    // ---- 隐私设置内存态：设置页切换后各挂载点（主界面 / 二级页 / 通知）即时生效 ----
+
+    /** 安全屏幕内存态：窗口 FLAG_SECURE 的开关，随 [AppLockController.lockedState] 一并参与判定。 */
+    val privacyPreventScreenshotState: MutableStateFlow<Boolean> =
+        MutableStateFlow(DEFAULT_PRIVACY_PREVENT_SCREENSHOT)
+
+    /** 隐藏通知内容内存态：更新通知构建时读取，不在 Compose 侧订阅。 */
+    val privacyHideNotificationState: MutableStateFlow<Boolean> =
+        MutableStateFlow(DEFAULT_PRIVACY_HIDE_NOTIFICATION)
+
+    /** 应用锁开关内存态：锁门与解锁延迟判定读取。 */
+    val privacyAppLockEnabledState: MutableStateFlow<Boolean> =
+        MutableStateFlow(DEFAULT_PRIVACY_APP_LOCK_ENABLED)
+
+    /** 设备凭据快捷解锁内存态：锁门上「使用设备解锁方式」按钮的显隐。 */
+    val privacyAppLockBiometricState: MutableStateFlow<Boolean> =
+        MutableStateFlow(DEFAULT_PRIVACY_APP_LOCK_BIOMETRIC)
+
+    /** 解锁延迟档位内存态：下拉选择后即时广播（0..3，归一化见 [normalizePrivacyLockTimeoutIndex]）。 */
+    val privacyAppLockTimeoutIndexState: MutableStateFlow<Int> =
+        MutableStateFlow(DEFAULT_PRIVACY_APP_LOCK_TIMEOUT_INDEX)
 
     /** 封面刮削设置内存态：设置页修改后游戏页可即时读取。 */
     val coverScraperSettingsVersion: MutableStateFlow<Int> = MutableStateFlow(0)
@@ -375,6 +468,52 @@ object AppSettingsStore {
     /** 首次组合时从持久化加载引擎页条目图标开关到内存态（幂等）。 */
     fun initEngineCardIcon(c: Context) {
         engineCardIconState.value = isEngineCardIconEnabled(c)
+    }
+
+    /** 首次组合时从持久化加载自定义背景图设置到内存态（幂等）。 */
+    fun initBackgroundImage(c: Context) {
+        backgroundImageUriState.value = getBackgroundImageUri(c)
+        backgroundImageAlphaState.value = getBackgroundImageAlpha(c)
+        backgroundImageBlurState.value = getBackgroundImageBlur(c)
+    }
+
+    /** 自定义背景图 URI（空 = 未设置，使用外观风格自带背景）。 */
+    fun getBackgroundImageUri(c: Context): String =
+        prefs(c).getString(KEY_BACKGROUND_IMAGE_URI, DEFAULT_BACKGROUND_IMAGE_URI).orEmpty()
+
+    fun setBackgroundImageUri(c: Context, uri: String) {
+        prefs(c).edit().putString(KEY_BACKGROUND_IMAGE_URI, uri).apply()
+        backgroundImageUriState.value = uri
+    }
+
+    /** 背景图透明度（0..100）。 */
+    fun getBackgroundImageAlpha(c: Context): Int =
+        prefs(c).getInt(KEY_BACKGROUND_IMAGE_ALPHA, DEFAULT_BACKGROUND_IMAGE_ALPHA).coerceIn(0, 100)
+
+    /** 拖动预览：只更新内存态（不写盘），松手后再用 [setBackgroundImageAlpha] 落盘。 */
+    fun previewBackgroundImageAlpha(alpha: Int) {
+        backgroundImageAlphaState.value = alpha.coerceIn(0, 100)
+    }
+
+    fun setBackgroundImageAlpha(c: Context, alpha: Int) {
+        val normalized = alpha.coerceIn(0, 100)
+        prefs(c).edit().putInt(KEY_BACKGROUND_IMAGE_ALPHA, normalized).apply()
+        backgroundImageAlphaState.value = normalized
+    }
+
+    /** 背景图模糊强度（0..100）。 */
+    fun getBackgroundImageBlur(c: Context): Int =
+        prefs(c).getInt(KEY_BACKGROUND_IMAGE_BLUR, DEFAULT_BACKGROUND_IMAGE_BLUR).coerceIn(0, 100)
+
+    /** 拖动预览：只更新内存态（不写盘），松手后再用 [setBackgroundImageBlur] 落盘。 */
+    fun previewBackgroundImageBlur(blur: Int) {
+        backgroundImageBlurState.value = blur.coerceIn(0, 100)
+    }
+
+    fun setBackgroundImageBlur(c: Context, blur: Int) {
+        val normalized = blur.coerceIn(0, 100)
+        prefs(c).edit().putInt(KEY_BACKGROUND_IMAGE_BLUR, normalized).apply()
+        backgroundImageBlurState.value = normalized
     }
 
     /** 首次组合时从持久化加载平板侧边栏开关到内存态（幂等）。 */
@@ -730,6 +869,74 @@ object AppSettingsStore {
         prefs(c).edit().putBoolean(KEY_MOTION_ENHANCED, enhanced).apply()
         motionEnhancedState.value = enhanced
     }
+
+    // ---- 隐私设置：Application 启动阶段经 [initPrivacySettings] 一次加载，读写即写即广播 ----
+
+    /**
+     * Application 启动阶段一次性加载全部隐私设置（幂等）。
+     * FLAG_SECURE / 通知构建都要在页面或窗口尚不可见时读到正确值，
+     * 不能等隐私设置页首次组合才加载。
+     */
+    fun initPrivacySettings(c: Context) {
+        privacyPreventScreenshotState.value = isPrivacyPreventScreenshot(c)
+        privacyHideNotificationState.value = isPrivacyHideNotification(c)
+        privacyAppLockEnabledState.value = isPrivacyAppLockEnabled(c)
+        privacyAppLockBiometricState.value = isPrivacyAppLockBiometric(c)
+        privacyAppLockTimeoutIndexState.value = getPrivacyAppLockTimeoutIndex(c)
+    }
+
+    /** 防止截图（FLAG_SECURE）。 */
+    fun isPrivacyPreventScreenshot(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_PRIVACY_PREVENT_SCREENSHOT, DEFAULT_PRIVACY_PREVENT_SCREENSHOT)
+
+    fun setPrivacyPreventScreenshot(c: Context, enabled: Boolean) {
+        prefs(c).edit().putBoolean(KEY_PRIVACY_PREVENT_SCREENSHOT, enabled).apply()
+        privacyPreventScreenshotState.value = enabled
+    }
+
+    /** 隐藏通知内容（更新通知在系统锁屏上不显示）。 */
+    fun isPrivacyHideNotification(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_PRIVACY_HIDE_NOTIFICATION, DEFAULT_PRIVACY_HIDE_NOTIFICATION)
+
+    fun setPrivacyHideNotification(c: Context, enabled: Boolean) {
+        prefs(c).edit().putBoolean(KEY_PRIVACY_HIDE_NOTIFICATION, enabled).apply()
+        privacyHideNotificationState.value = enabled
+    }
+
+    /** 应用锁开关（图案凭据由 core/privacy 的 AppLockCredentialStore 单独保管）。 */
+    fun isPrivacyAppLockEnabled(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_PRIVACY_APP_LOCK_ENABLED, DEFAULT_PRIVACY_APP_LOCK_ENABLED)
+
+    fun setPrivacyAppLockEnabled(c: Context, enabled: Boolean) {
+        prefs(c).edit().putBoolean(KEY_PRIVACY_APP_LOCK_ENABLED, enabled).apply()
+        privacyAppLockEnabledState.value = enabled
+    }
+
+    /** 允许「设备凭据」（指纹/人脸/PIN）快捷解锁。 */
+    fun isPrivacyAppLockBiometric(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_PRIVACY_APP_LOCK_BIOMETRIC, DEFAULT_PRIVACY_APP_LOCK_BIOMETRIC)
+
+    fun setPrivacyAppLockBiometric(c: Context, enabled: Boolean) {
+        prefs(c).edit().putBoolean(KEY_PRIVACY_APP_LOCK_BIOMETRIC, enabled).apply()
+        privacyAppLockBiometricState.value = enabled
+    }
+
+    /** 解锁延迟档位（0..3，与 PrivacyLockTimeout 的 storageIndex 对应）。 */
+    fun getPrivacyAppLockTimeoutIndex(c: Context): Int =
+        normalizePrivacyLockTimeoutIndex(prefs(c).getInt(KEY_PRIVACY_APP_LOCK_TIMEOUT, DEFAULT_PRIVACY_APP_LOCK_TIMEOUT_INDEX))
+
+    fun setPrivacyAppLockTimeoutIndex(c: Context, index: Int) {
+        val normalized = normalizePrivacyLockTimeoutIndex(index)
+        prefs(c).edit().putInt(KEY_PRIVACY_APP_LOCK_TIMEOUT, normalized).apply()
+        privacyAppLockTimeoutIndexState.value = normalized
+    }
+
+    /**
+     * 解锁延迟档位归一（纯函数，便于单测）：越界 / 非法档位收敛到立即档，
+     * 从更新的设备备份恢复时不会读到越界索引。
+     */
+    fun normalizePrivacyLockTimeoutIndex(index: Int): Int =
+        if (index in 0 until PRIVACY_APP_LOCK_TIMEOUT_COUNT) index else 0
 
     fun isCoverScraperOnlyMissing(c: Context): Boolean =
         prefs(c).getBoolean(KEY_COVER_SCRAPER_ONLY_MISSING, true)
