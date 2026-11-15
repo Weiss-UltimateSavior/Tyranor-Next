@@ -17,6 +17,9 @@ interface ExternalEngineModule {
     val supportedAliases: Set<String>
     val installUrl: String?
 
+    /** Minimum installed APK versionCode accepted by this module; zero means any version. */
+    val minimumVersionCode: Long get() = 0L
+
     @get:StringRes
     val displayNameRes: Int? get() = null
 

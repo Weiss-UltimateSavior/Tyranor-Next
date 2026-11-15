@@ -217,9 +217,9 @@ object SaveSyncRuntime {
             val config = WebDavSettingsStore.load(context)
             val token = UUID.randomUUID().toString()
             if (!config.active || !config.mode.uploads) {
-                // Manual/pull-only launches, including YURIS, still need the handoff hint.
+                // Manual/pull-only external launches still need the durable handoff hint.
                 return WebDavSettingsStore.whileEnabled(context, enabledGeneration) {
-                    if (game.engine != EngineType.YURIS) markNativeLaunchGrace(game.uri, enabledGeneration, token)
+                    if (!requiresExternalSaveExitConfirmation(game.engine)) markNativeLaunchGrace(game.uri, enabledGeneration, token)
                     LaunchTicket(token, null, enabledGeneration, tracksSession = false)
                 }
             }
@@ -278,8 +278,8 @@ object SaveSyncRuntime {
                     .put("enabledGeneration", enabledGeneration)
                     .put("baselineMetadata", baselineMetadata)
                     .put("token", token).put("startedAt", System.currentTimeMillis()).put("ownerPid", Process.myPid()))
-                // External YURIS needs independent exit evidence or explicit confirmation.
-                if (game.engine != EngineType.YURIS) markNativeLaunchGrace(game.uri, enabledGeneration, token)
+                // External players need independent exit evidence or explicit confirmation.
+                if (!requiresExternalSaveExitConfirmation(game.engine)) markNativeLaunchGrace(game.uri, enabledGeneration, token)
                 LaunchTicket(token, previous, enabledGeneration)
             }
         } catch (cancelled: CancellationException) {
@@ -671,7 +671,8 @@ object SaveSyncRuntime {
             // Unreadable external-owner evidence cannot establish that Winlator has exited.
             return true
         }
-        val external = library.filter { it.uri in related && it.engine == EngineType.YURIS }.mapTo(HashSet()) { it.uri }
+        val external = library.filter { it.uri in related && requiresExternalSaveExitConfirmation(it.engine) }
+            .mapTo(HashSet()) { it.uri }
         val generation = WebDavSettingsStore.sessionGeneration(context)
         val store = sessions(context)
         val entries = generationFilteredSessionEvidence(related, generation) { uri ->
@@ -729,9 +730,9 @@ object SaveSyncRuntime {
         return hasRunningSaveHost(probe, game.uri, needsHostEvidence, inGrace, SystemClock.elapsedRealtime(), related)
     }
 
-    /** Read on IO before showing the explicit Winlator-exit dialog, even with WebDAV disabled. */
+    /** Read on IO before showing the external-player exit dialog, even with WebDAV disabled. */
     internal fun externalExitConfirmation(context: Context, game: ScanGame): ExternalExitConfirmation? {
-        if (game.engine != EngineType.YURIS) return null
+        if (!requiresExternalSaveExitConfirmation(game.engine)) return null
         val directoryKey = activeKey(context, game)
         return synchronized(externalLaunchLock) {
             val marker = externalLaunchStore(context).confirmation(game.uri)
@@ -749,7 +750,7 @@ object SaveSyncRuntime {
         game: ScanGame,
         confirmation: ExternalExitConfirmation,
     ) = withContext(Dispatchers.IO) {
-        if (game.engine != EngineType.YURIS || game.uri != confirmation.uri) {
+        if (!requiresExternalSaveExitConfirmation(game.engine) || game.uri != confirmation.uri) {
             throw SaveSyncException(SaveSyncError.LOCAL_STATE_CHANGED)
         }
         SaveSyncLocks.active(confirmation.activeKey) {
@@ -798,7 +799,7 @@ object SaveSyncRuntime {
      */
     internal fun prepareOptionalLaunchGrace(context: Context, game: ScanGame, directoryKey: String? = null): String {
         val token = UUID.randomUUID().toString()
-        if (game.engine == EngineType.YURIS) {
+        if (requiresExternalSaveExitConfirmation(game.engine)) {
             synchronized(externalLaunchLock) {
                 externalLaunches[token] = ExternalSaveLaunch(game.uri, token, directoryKey, externalLaunchOwner)
                 try {
@@ -826,7 +827,7 @@ object SaveSyncRuntime {
 
     internal fun optionalLaunchDispatched(context: Context, game: ScanGame, token: String?, directoryKey: String?) {
         if (token == null) return
-        if (game.engine == EngineType.YURIS) {
+        if (requiresExternalSaveExitConfirmation(game.engine)) {
             synchronized(externalLaunchLock) {
                 val sequence = externalDispatchSequence.incrementAndGet()
                 externalLaunches[token] = ExternalSaveLaunch(game.uri, token, directoryKey, externalLaunchOwner, sequence)
@@ -847,7 +848,7 @@ object SaveSyncRuntime {
     internal fun finishOptionalLaunchGrace(context: Context, game: ScanGame, token: String?, success: Boolean) {
         if (success || token == null) return
         nativeLaunchGraces.clear(game.uri, token)
-        if (game.engine == EngineType.YURIS) {
+        if (requiresExternalSaveExitConfirmation(game.engine)) {
             synchronized(externalLaunchLock) {
                 updateExternalLaunch(game) { externalLaunchStore(context).failed(game.uri, token) }
                 externalLaunches.remove(token)

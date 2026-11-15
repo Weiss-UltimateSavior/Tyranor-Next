@@ -4,6 +4,8 @@ import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -61,7 +63,7 @@ class MainLibraryStateReducerTest {
         val removed = MainLibraryStateReducer.toggleQuickLaunch(added, first)
         assertEquals(listOf(second), removed.quickLaunch)
 
-        val withoutRecent = MainLibraryStateReducer.removeRecent(removed, second.uri)
+        val withoutRecent = MainLibraryStateReducer.removeRecent(removed, second)
         assertTrue(withoutRecent.recentGames.none { it.uri == second.uri })
         assertTrue(withoutRecent.games.any { it.uri == second.uri })
 
@@ -69,6 +71,95 @@ class MainLibraryStateReducerTest {
         assertFalse(deleted.games.any { it.uri == first.uri })
         assertFalse(deleted.recentGames.any { it.uri == first.uri })
         assertFalse(deleted.quickLaunch.any { it.uri == first.uri })
+    }
+
+    @Test
+    fun removeRecentClearsOnlyThatGamesOpenTimeAndKeepsSearchHits() {
+        val other = first.copy(openTime = 120L)
+        val played = second.copy(openTime = 300L)
+        val state = MainLibraryUiState(
+            games = listOf(other, played),
+            recentGames = listOf(played, other),
+            searchQuery = "第二个",
+            searchHitUris = setOf(played.uri),
+        )
+
+        val result = MainLibraryStateReducer.removeRecent(state, played)
+
+        assertEquals(listOf(other), result.recentGames)
+        assertEquals(listOf(other, played.copy(openTime = 0L)), result.games)
+        assertEquals(setOf(played.uri), result.searchHitUris)
+        assertSame(result, MainLibraryStateReducer.removeRecent(result, played))
+    }
+
+    @Test
+    fun clearingAnOlderRecentEntryPreservesANewerLaunch() {
+        val previous = first.copy(openTime = 100L)
+        val relaunched = first.copy(openTime = 200L)
+        val state = MainLibraryUiState(games = listOf(relaunched), recentGames = listOf(relaunched))
+
+        assertSame(state, MainLibraryStateReducer.removeRecent(state, previous))
+    }
+
+    @Test
+    fun titleChangesInvalidateSearchHitsWithTheNewGameSnapshot() {
+        val state = MainLibraryUiState(
+            games = listOf(first, second),
+            searchQuery = "旧标题",
+            searchHitUris = setOf(first.uri),
+        )
+        val renamed = first.copy(title = "新标题")
+        val covered = first.copy(coverUri = "file:///cover.jpg")
+
+        val localRename = MainLibraryStateReducer.replaceGame(state, renamed)
+        assertEquals("旧标题", localRename.searchQuery)
+        assertNull(localRename.searchHitUris)
+        assertNull(MainLibraryStateReducer.acceptGames(state, listOf(renamed, second)).searchHitUris)
+        assertNull(MainLibraryStateReducer.acceptStorageSnapshot(
+            state, listOf(renamed, second), emptyList(), emptyList(), false, null,
+        ).searchHitUris)
+        assertEquals(state.searchHitUris, MainLibraryStateReducer.replaceGame(state, covered).searchHitUris)
+    }
+
+    @Test
+    fun staleMetadataDoesNotRestoreAClearedPlayTime() {
+        val cleared = MainLibraryUiState(games = listOf(first))
+        val scraped = first.copy(coverUri = "file:///cover.jpg", openTime = 300L)
+        val expected = scraped.copy(openTime = 0L)
+
+        assertEquals(expected, MainLibraryStateReducer.replaceGame(cleared, scraped).games.single())
+        assertEquals(expected, MainLibraryStateReducer.acceptGames(cleared, listOf(scraped)).games.single())
+        assertEquals(expected, mergeChangedGameFields(first, first, scraped))
+    }
+
+    @Test
+    fun optimisticDeletionDoesNotRemoveTheEngineUntilStorageConfirms() {
+        val state = MainLibraryUiState(games = listOf(first), confirmedEngineTypes = setOf(first.engine))
+
+        val pending = MainLibraryStateReducer.deleteGame(state, first.uri)
+
+        assertTrue(pending.games.isEmpty())
+        assertEquals(setOf(first.engine), pending.confirmedEngineTypes)
+
+        val failed = MainLibraryStateReducer.acceptStorageSnapshot(
+            pending, listOf(first), emptyList(), emptyList(), false, setOf(first.engine),
+        )
+        val succeeded = MainLibraryStateReducer.acceptStorageSnapshot(
+            pending, emptyList(), emptyList(), emptyList(), false, emptySet(),
+        )
+
+        assertEquals(listOf(first), failed.games)
+        assertEquals(setOf(first.engine), failed.confirmedEngineTypes)
+        assertEquals(emptySet<EngineType>(), succeeded.confirmedEngineTypes)
+    }
+
+    @Test
+    fun deletingAnUnconfirmedNewGameWaitsForAStorageSnapshot() {
+        val state = MainLibraryUiState(games = listOf(first), confirmedEngineTypes = emptySet())
+
+        val result = MainLibraryStateReducer.deleteGame(state, first.uri)
+
+        assertNull(result.confirmedEngineTypes)
     }
 
     @Test

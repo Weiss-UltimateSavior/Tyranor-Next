@@ -112,7 +112,7 @@ internal fun artKernelOptions(): List<Pair<String, String>> = listOf(
 @Composable
 internal fun renpyVersionOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.RENPY_AUTO to stringResource(R.string.common_auto),
-    EngineSettingsStore.RENPY_85 to "8.5",
+    EngineSettingsStore.RENPY_853 to "8.5.3",
     EngineSettingsStore.RENPY_77 to "7.7.1",
 )
 

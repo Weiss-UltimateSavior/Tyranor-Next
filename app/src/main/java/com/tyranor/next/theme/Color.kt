@@ -207,6 +207,20 @@ val PageSecondaryTextColor: Color
         else -> TextColorLight.copy(alpha = 0.6f)
     }
 
+/** 抽屉辅助文字：白雾玻璃的亮面板使用深色正文。 */
+val SheetSecondaryTextColor: Color
+    get() = if (AppThemeColors.isMilkGlass) TextColor else PageSecondaryTextColor
+
+/** 抽屉遮罩：玻璃面板需要加深与页面之间的层次。 */
+val SheetScrimColor: Color
+    get() = Color.Black.copy(
+        alpha = when {
+            AppThemeColors.isGlass -> 0.6f
+            AppThemeColors.isMilkGlass -> 0.45f
+            else -> 0.32f
+        },
+    )
+
 /** 首次使用教练层的统一遮罩色。 */
 val CoachOverlayScrim: Color = Color.Black.copy(alpha = 0.46f)
 

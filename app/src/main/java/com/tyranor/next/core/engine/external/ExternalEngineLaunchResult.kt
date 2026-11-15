@@ -9,6 +9,7 @@ import androidx.annotation.StringRes
 enum class ExternalEngineErrorCode {
     INVALID_GAME_PATH,
     PACKAGE_NOT_INSTALLED,
+    PACKAGE_OUTDATED,
     PREPARE_FAILED,
     ACTIVITY_NOT_FOUND,
     SECURITY_EXCEPTION,

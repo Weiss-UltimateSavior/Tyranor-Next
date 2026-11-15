@@ -1,5 +1,6 @@
 package com.tyranor.next.core.game.save.sync
 
+import com.tyranor.next.core.engine.EngineType
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -7,6 +8,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SaveSyncRuntimePolicyTest {
+    @Test
+    fun externalExitConfirmationKeepsYurisAndGatesRenPyAtAndroid11() {
+        assertTrue(requiresExternalSaveExitConfirmation(EngineType.YURIS, sdkInt = 29))
+        assertTrue(requiresExternalSaveExitConfirmation(EngineType.YURIS, sdkInt = 30))
+        assertFalse(requiresExternalSaveExitConfirmation(EngineType.RENPY, sdkInt = 29))
+        assertTrue(requiresExternalSaveExitConfirmation(EngineType.RENPY, sdkInt = 30))
+        assertFalse(requiresExternalSaveExitConfirmation(EngineType.KIRIKIRI, sdkInt = 35))
+    }
+
     @Test
     fun explicitRestoreBookkeepingDoesNotRequireAHostThatWasNeverLaunched() {
         assertFalse(sessionRequiresHostEvidence(true, 0L, true))

@@ -1,5 +1,6 @@
 package com.tyranor.next.core.game.save.sync
 
+import android.os.Build
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.save.EthornellSaveCapability
@@ -27,9 +28,15 @@ internal fun saveDirectoryScopesOverlap(first: String, second: String): Boolean 
     }
 }
 
+/** External players cannot report host-process lifetime to Tyranor and require explicit exit confirmation. */
+internal fun requiresExternalSaveExitConfirmation(
+    engine: EngineType,
+    sdkInt: Int = Build.VERSION.SDK_INT,
+): Boolean = engine == EngineType.YURIS || (engine == EngineType.RENPY && sdkInt >= Build.VERSION_CODES.R)
+
 /** Launch admission and whole-library sync only manage engines with a usable save interface. */
-internal fun supportsManagedSave(engine: EngineType): Boolean =
-    GameSaveManager.supportsFileSaves(engine) &&
+internal fun supportsManagedSave(engine: EngineType, sdkInt: Int = Build.VERSION.SDK_INT): Boolean =
+    GameSaveManager.supportsFileSaves(engine, sdkInt) &&
         (engine != EngineType.ETHORNELL || EthornellSaveCapability.available)
 
 internal sealed interface SaveSyncLaunchAdmission {

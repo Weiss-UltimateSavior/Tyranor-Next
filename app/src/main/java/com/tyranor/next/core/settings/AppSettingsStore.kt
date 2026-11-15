@@ -4,8 +4,11 @@ import android.content.Context
 import android.content.res.Configuration
 import android.os.Build
 import androidx.annotation.VisibleForTesting
+import com.tyranor.next.core.game.model.GameFilterOptions
+import com.tyranor.next.core.game.model.GameLibraryConditions
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * 应用设置存储层：与引擎无关的应用级偏好（如主题色、导航栏样式）。
@@ -76,6 +79,12 @@ object AppSettingsStore {
     const val KEY_THEME_MODE = "theme_mode"
     const val KEY_GAME_SORT = "game_sort"
 
+    /** 游戏页引擎筛选（存 `EngineType.name`；[GAME_FILTER_ENGINE_ALL] = 全部）。 */
+    const val KEY_GAME_FILTER_ENGINE = "game_filter_engine"
+
+    /** 游戏页游玩状态筛选（[GAME_FILTER_PLAYED_ALL] / [GAME_FILTER_PLAYED_ONLY] / [GAME_FILTER_PLAYED_NONE]）。 */
+    const val KEY_GAME_FILTER_PLAYED = "game_filter_played"
+
     /** 已启用的第三方 APK 运行时模块包名集合；默认空集（新发现模块默认关闭）。 */
     const val KEY_RUNTIME_MODULE_ENABLED = "runtime_module_enabled"
 
@@ -87,6 +96,9 @@ object AppSettingsStore {
 
     /** 显示首页：关闭后首页与导航栏首页入口隐藏，游戏页作为第一页；默认开。 */
     const val KEY_HOME_PAGE_ENABLED = "home_page_enabled"
+
+    /** 经典应用图标：开启后启动器显示旧版图标；默认关。 */
+    const val KEY_CLASSIC_ICON = "classic_icon_enabled"
 
     /** Web 首页展示的地址。 */
     const val KEY_HOME_WEB_URL = "home_web_url"
@@ -168,11 +180,14 @@ object AppSettingsStore {
     /** 应用统一圆角默认值（dp）：15dp 档。 */
     const val DEFAULT_APP_CORNER_RADIUS = 15
 
-    /** 游戏排序：按标题字母/字符顺序。 */
-    const val GAME_SORT_ALPHA = "alpha"
-
-    /** 游戏排序：按标题中 【】/[] 标签内容分组。 */
-    const val GAME_SORT_BRACKET_TAG = "bracket_tag"
+    const val GAME_SORT_ALPHA = GameFilterOptions.GAME_SORT_ALPHA
+    const val GAME_SORT_BRACKET_TAG = GameFilterOptions.GAME_SORT_BRACKET_TAG
+    const val GAME_SORT_ENGINE = GameFilterOptions.GAME_SORT_ENGINE
+    const val GAME_SORT_RECENT = GameFilterOptions.GAME_SORT_RECENT
+    const val GAME_FILTER_ENGINE_ALL = GameFilterOptions.GAME_FILTER_ENGINE_ALL
+    const val GAME_FILTER_PLAYED_ALL = GameFilterOptions.GAME_FILTER_PLAYED_ALL
+    const val GAME_FILTER_PLAYED_ONLY = GameFilterOptions.GAME_FILTER_PLAYED_ONLY
+    const val GAME_FILTER_PLAYED_NONE = GameFilterOptions.GAME_FILTER_PLAYED_NONE
 
     /** 卡片隐藏名称标签默认值：开。 */
     const val DEFAULT_GAME_CARD_HIDE_TITLE_TAG = true
@@ -226,6 +241,9 @@ object AppSettingsStore {
     /** 显示首页默认值：开。 */
     const val DEFAULT_HOME_PAGE_ENABLED = true
 
+    /** 经典应用图标默认值：关（使用当前新图标）。 */
+    const val DEFAULT_CLASSIC_ICON = false
+
     /** Web 首页预设：鲲Gal。 */
     const val HOME_WEB_URL_KUNGAL = "https://www.kungal.com"
 
@@ -261,8 +279,11 @@ object AppSettingsStore {
     /** 引擎页条目左侧图标内存态：设置页切换后引擎页即时重组。 */
     val engineCardIconState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_ENGINE_CARD_ICON)
 
-    /** 游戏排序内存态：设置页切换后游戏页可随重组读取。 */
-    val gameSortState: MutableStateFlow<String> = MutableStateFlow(GAME_SORT_ALPHA)
+    private val gameConditionsLock = Any()
+    private val mutableGameConditions = MutableStateFlow(GameLibraryConditions())
+
+    /** 游戏页抽屉与设置页共用的排序和筛选快照，重置时一次发布。 */
+    internal val gameConditions = mutableGameConditions.asStateFlow()
 
     /** 卡片隐藏名称标签内存态：设置页切换后游戏页卡片即时重组。 */
     val gameCardTitleTagState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_GAME_CARD_HIDE_TITLE_TAG)
@@ -278,6 +299,9 @@ object AppSettingsStore {
 
     /** 首页显示内存态：设置页切换后主导航即时隐藏/恢复首页入口。 */
     val homePageEnabledState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_HOME_PAGE_ENABLED)
+
+    /** 经典应用图标内存态：设置页切换后由 [AppIconSwitcher] 同步启动器别名。 */
+    val classicIconEnabledState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_CLASSIC_ICON)
 
     /** Web 首页地址内存态：设置页修改后网页首页即时加载新地址。 */
     val homeWebUrlState: MutableStateFlow<String> = MutableStateFlow(DEFAULT_HOME_WEB_URL)
@@ -329,8 +353,11 @@ object AppSettingsStore {
         languageState.value = getLanguage(c)
     }
 
-    fun initGameSort(c: Context) {
-        gameSortState.value = getGameSort(c)
+    /** 主进程在 Application 启动阶段调用，恢复条件后页面才会创建。 */
+    internal fun initGameConditions(c: Context) {
+        synchronized(gameConditionsLock) {
+            mutableGameConditions.value = decodeGameConditions(prefs(c).all)
+        }
     }
 
     /** 首次组合时从持久化加载引擎页分类显示开关到内存态（幂等）。 */
@@ -527,6 +554,11 @@ object AppSettingsStore {
         homePageEnabledState.value = isHomePageEnabled(c)
     }
 
+    /** 启动/设置页读取时把经典应用图标开关同步到内存态（幂等）。 */
+    fun initClassicIcon(c: Context) {
+        classicIconEnabledState.value = isClassicIconEnabled(c)
+    }
+
     /**
      * 首页样式归一：仅 web 精确接受，其余（含空/未知/历史值 "category"）回退原生
      * （纯函数，便于单测）。
@@ -554,6 +586,15 @@ object AppSettingsStore {
     fun setHomePageEnabled(c: Context, enabled: Boolean) {
         prefs(c).edit().putBoolean(KEY_HOME_PAGE_ENABLED, enabled).apply()
         homePageEnabledState.value = enabled
+    }
+
+    /** 是否使用经典应用图标（旧版图标）；启动器别名状态由 [AppIconSwitcher] 负责。 */
+    fun isClassicIconEnabled(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_CLASSIC_ICON, DEFAULT_CLASSIC_ICON)
+
+    fun setClassicIconEnabled(c: Context, enabled: Boolean) {
+        prefs(c).edit().putBoolean(KEY_CLASSIC_ICON, enabled).apply()
+        classicIconEnabledState.value = enabled
     }
 
     /** 当前 Web 首页地址；磁盘值非法/为空时回退默认（一起萌）。 */
@@ -600,19 +641,48 @@ object AppSettingsStore {
         gameCardStyleState.value = normalized
     }
 
-    fun getGameSort(c: Context): String =
-        when (prefs(c).getString(KEY_GAME_SORT, GAME_SORT_ALPHA)) {
-            GAME_SORT_BRACKET_TAG -> GAME_SORT_BRACKET_TAG
-            else -> GAME_SORT_ALPHA
-        }
-
     fun setGameSort(c: Context, sort: String) {
-        val normalized = when (sort) {
-            GAME_SORT_BRACKET_TAG -> GAME_SORT_BRACKET_TAG
-            else -> GAME_SORT_ALPHA
+        updateGameConditions(c) { it.copy(sortMode = normalizeGameSort(sort)) }
+    }
+
+    fun setGameFilterEngine(c: Context, engine: String) {
+        updateGameConditions(c) { it.copy(engineFilter = GameFilterOptions.normalizeEngineFilter(engine)) }
+    }
+
+    fun setGameFilterPlayed(c: Context, played: String) {
+        updateGameConditions(c) { it.copy(playedFilter = normalizeGameFilterPlayed(played)) }
+    }
+
+    fun resetGameConditions(c: Context) {
+        updateGameConditions(c) { GameLibraryConditions() }
+    }
+
+    private fun updateGameConditions(c: Context, transform: (GameLibraryConditions) -> GameLibraryConditions) {
+        synchronized(gameConditionsLock) {
+            val next = transform(mutableGameConditions.value)
+            prefs(c).edit()
+                .putString(KEY_GAME_SORT, next.sortMode)
+                .putString(KEY_GAME_FILTER_ENGINE, next.engineFilter)
+                .putString(KEY_GAME_FILTER_PLAYED, next.playedFilter)
+                .apply()
+            mutableGameConditions.value = next
         }
-        prefs(c).edit().putString(KEY_GAME_SORT, normalized).apply()
-        gameSortState.value = normalized
+    }
+
+    internal fun decodeGameConditions(values: Map<String, *>): GameLibraryConditions = GameLibraryConditions(
+        sortMode = normalizeGameSort(values[KEY_GAME_SORT] as? String),
+        engineFilter = GameFilterOptions.normalizeEngineFilter(values[KEY_GAME_FILTER_ENGINE] as? String),
+        playedFilter = normalizeGameFilterPlayed(values[KEY_GAME_FILTER_PLAYED] as? String),
+    )
+
+    private fun normalizeGameSort(sort: String?): String = when (val value = sort.orEmpty()) {
+        GAME_SORT_BRACKET_TAG, GAME_SORT_ENGINE, GAME_SORT_RECENT -> value
+        else -> GAME_SORT_ALPHA
+    }
+
+    private fun normalizeGameFilterPlayed(played: String?): String = when (val value = played.orEmpty()) {
+        GAME_FILTER_PLAYED_ONLY, GAME_FILTER_PLAYED_NONE -> value
+        else -> GAME_FILTER_PLAYED_ALL
     }
 
     /** 引擎页是否按分类（GAL / RPGM / 主机 / 网页）分页展示。 */
