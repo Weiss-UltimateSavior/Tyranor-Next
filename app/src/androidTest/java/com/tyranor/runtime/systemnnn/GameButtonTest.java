@@ -1,6 +1,10 @@
 package com.tyranor.runtime.systemnnn;
 
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import java.nio.charset.StandardCharsets;
@@ -11,6 +15,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -47,6 +52,32 @@ public final class GameButtonTest {
             assertFalse(masked.hasTouchTarget(bitmap,-4,0,8,8));
         }finally{
             bitmap.recycle();
+        }
+    }
+
+    @Test public void clippedSpriteFrameRefreshesAfterAtlasChanges() {
+        Bitmap atlas=Bitmap.createBitmap(4,3,Bitmap.Config.ARGB_8888);
+        Bitmap output=Bitmap.createBitmap(6,4,Bitmap.Config.ARGB_8888);
+        try{
+            // The 3-pixel frame extends beyond the atlas, leaving 2 pixels to scale.
+            SpriteAnimation sprite=new SpriteAnimation(2,1,3,2,1,1,1,true);
+            Canvas canvas=new Canvas(output);
+            Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
+            RectF dest=new RectF(0,0,6,4);
+
+            atlas.eraseColor(Color.RED);
+            assertTrue(sprite.draw(canvas,atlas,dest,paint,0,255));
+            assertEquals(Color.RED,output.getPixel(3,2));
+            assertEquals(Color.TRANSPARENT,output.getPixel(4,2));
+
+            atlas.eraseColor(Color.BLUE);
+            output.eraseColor(Color.TRANSPARENT);
+            assertTrue(sprite.draw(canvas,atlas,dest,paint,0,255));
+            assertEquals(Color.BLUE,output.getPixel(3,2));
+            assertEquals(Color.TRANSPARENT,output.getPixel(4,2));
+        }finally{
+            output.recycle();
+            atlas.recycle();
         }
     }
 }
