@@ -81,7 +81,7 @@ class EntranceState internal constructor() {
     private var nextSlot = 0
 
     /**
-     * 本轮入场的屏幕次序：按元素启动入场的先后发放（与组合顺序一致，即屏幕上从上到下）。
+     * 首次挂载路径下本轮入场的屏幕次序：按元素启动入场的先后发放（与组合顺序一致，即屏幕上从上到下）；重播不走这里。
      * 不能只用调用方传的列表下标：列表滚到中下部时，屏幕上第一行的下标已经很大，
      * 按下标算延迟会让整屏内容一起空等到封顶延迟。
      */
@@ -434,7 +434,7 @@ internal class StaggeredEntranceNode(
         // 立刻按隐藏画：协程还没来得及运行的那几帧也不会先以原样闪一下
         an.mode = MODE_HIDDEN
         val generation = st.generation
-        // 屏幕次序：按元素启动入场的先后发放（与组合 / 挂载顺序一致）
+        // 屏幕次序：首次挂载时按元素启动入场的先后发放（与组合 / 挂载顺序一致）；重播由 replay 按屏幕位置算好后经 slotOverride 传入
         val slot = if (slotOverride >= 0) slotOverride else st.takeSlot(generation)
         val newLayer = !layerActive
         layerActive = true
