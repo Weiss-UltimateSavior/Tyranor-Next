@@ -105,7 +105,7 @@
 - 现有 Windows／Steam 样本（小写 `.cpk`、`script.cpk`、无 `SCRIPT.cls`）**不会**被识别为 Impacto，也不会被误判成大写布局的 `chlcc`。
 - 启动：`ImpactoExternalEngineModule` 发 `com.tyranor.next.impacto.action.RUN`，携带游戏目录、profile、`gameKey` 与标题；游戏目录需要主 App 已取得的路径与「所有文件访问」。宿主未安装或版本低于 `ImpactoHostContract.VERSION_CODE` 时，提示并引导下载宿主仓库最新发布的 APK（`releases/latest/download/impacto-host.apk`，资产名固定，新版本发布后自动指向）。
 - 存档：存在于宿主 APK 的内部私有目录（`files/games/<gameKey>/saves`），主 App 不提供文件存档管理；单游戏设置页只显示说明，没有可调项。
-- 宿主 APK 见 [yuukana1/Tyranor-Next-Impacto](https://github.com/yuukana1/Tyranor-Next-Impacto)：只用上游公开钩子，直接引用已校验的上游 Java 源码，不复制、不修改；需要候选库 `libimpacto.so` 才能打包，只能在 Linux（或 WSL）构建。**不内置进 Tyranor Next**：宿主 APK 约 90 MB（其中 CJK 字体与各游戏字体贴图占大头，均已是压缩格式），内置会让所有用户多下载约 100 MB；且上游自带的 SDL3 `org.libsdl.app` 与 TYN 内置的 SDL2 同名，代码无法合并进主 APK。获取方式与其他外置 APK 模块相同：该仓库的 CI 构建、发布到 GitHub Release（`impacto-host-0.1.0` 已发布并为最新版），引擎页点击跳转下载最新版 APK。
+- 宿主 APK 见 [yuukana1/Tyranor-Next-Impacto](https://github.com/yuukana1/Tyranor-Next-Impacto)：只用上游公开钩子，直接引用已校验的上游 Java 源码，不复制、不修改；需要候选库 `libimpacto.so` 才能打包，只能在 Linux（或 WSL）构建。**不内置进 Tyranor Next**：宿主 APK 约 90 MB（其中 CJK 字体与各游戏字体贴图占大头，均已是压缩格式），内置会让所有用户多下载约 100 MB；且上游自带的 SDL3 `org.libsdl.app` 与 TYN 内置的 SDL2 同名，代码无法合并进主 APK。获取方式与其他外置 APK 模块相同：该仓库的 CI 构建、发布到 GitHub Release（已发布，下载链接始终指向最新版（0.1.1 起宿主应用名为“MAGES.（impacto）”）），引擎页点击跳转下载最新版 APK。
 
 这是接入代码，**不是兼容性验收**：带真实引擎库的宿主 APK 已能在电脑上打包，但没有装到任何设备上，引擎没有运行过，也没有对任何游戏数据验证过。
 
