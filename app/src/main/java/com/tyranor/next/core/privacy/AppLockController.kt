@@ -24,6 +24,13 @@ import kotlinx.coroutines.flow.asStateFlow
  * 路径选择器等系统界面往返同样计入，这是应用锁的标准语义；不想被打扰就选 1/5/15 分钟。
  * 熄屏（SCREEN_OFF 广播）无论原因都开始计时；亮屏不改变 Activity 生命周期，由广播驱动判定。
  *
+ * **已知边界（700ms 防抖窗口）**：ProcessLifecycleOwner 对 ON_STOP 有约 700ms 的延迟派发
+ * （用于排除配置变更等瞬时停止），若在这段时间内回到前台，ON_STOP 会被取消，本次离开不计时。
+ * 该窗口通常短于「按 Home 再切回」的往返耗时；它只影响返回后是否弹出解锁门，不改变切后台
+ * 瞬间的任务快照（快照是否置空由安全屏幕 FLAG_SECURE 单独决定）；熄屏不走这条路径，始终计时。
+ * 不改用 Activity.onPause 作为离开信号：切换二级页、系统权限弹窗 / 生物识别弹层同样会触发
+ * onPause，会把应用内操作误记成离场，并让 1/5/15 分钟的离开时长从错误时刻起算。
+ *
  * 锁定范围仅启动器界面：引擎宿主为独立进程（不安装本控制器），运行中的游戏不受影响；
  * 从游戏回到启动器同样视为「回前台」按延迟档位判定（启动器曾被退后台）。
  */
@@ -59,6 +66,9 @@ object AppLockController {
 
     /** 离开前台的时间戳（`SystemClock.elapsedRealtime()`；0 = 不在离开计时中）。 */
     private var leftAtMillis = 0L
+
+    /** 离开前台的代数：每次从「在应用内」转为「已离开」时递增（被最早离开时刻守卫挡下的重复信号不递增）。 */
+    private var leaveGeneration = 0L
 
     /** 主进程 Application 启动阶段调用（幂等）：注册熄屏 / 亮屏广播，并恢复进程级锁定状态。 */
     fun install(application: Application) {
@@ -110,6 +120,7 @@ object AppLockController {
             if (away) return
             away = true
             leftAtMillis = SystemClock.elapsedRealtime()
+            leaveGeneration++
         }
     }
 
@@ -133,12 +144,18 @@ object AppLockController {
         }
     }
 
-    /** 启动器退后台（ProcessLifecycleOwner.onStop）：开始离开计时。未安装（引擎子进程）为空操作。 */
+    /**
+     * 启动器退后台（ProcessLifecycleOwner.onStop）：开始离开计时。未安装（引擎子进程）为空操作。
+     * 已处于离开状态时保留最早的离开时刻：熄屏后约 0.7s 才到的 onStop 不能把起点改晚，
+     * 否则一分钟档下 60.1s 的往返会被算成 59.4s 而不上锁。
+     */
     fun onLauncherLeft() {
         synchronized(this) {
             if (!installed) return
+            if (away) return
             away = true
             leftAtMillis = SystemClock.elapsedRealtime()
+            leaveGeneration++
         }
     }
 
@@ -228,14 +245,22 @@ object AppLockController {
      * 设置图案并启用应用锁（设置门确认后调用的唯一入口）：凭据保存成功才落开关，
      * 并丢弃进行中的计时；保存失败返回 false 且不改任何状态。
      *
-     * 阻塞调用（Keystore 加密 + commit 落盘），必须在后台线程执行。
+     * 阻塞调用（Keystore 加密 + commit 落盘），必须在后台线程执行。保存期间用户可能按 Home
+     * 退到后台：只有代数未变（保存期间没有发生新的离开）才作废计时，否则那次离开会被抹掉，
+     * 回前台时 `!away` 早退，立即档也不锁。
      */
     fun savePatternAndEnable(context: Context, points: List<Int>): Boolean {
+        val generation = synchronized(this) { leaveGeneration }
         val saved = AppLockCredentialStore.savePattern(context, points)
         if (!saved) return false
         AppSettingsStore.setPrivacyAppLockEnabled(context, true)
-        mutableCredentialUnreadable.value = false
-        resetTimer()
+        synchronized(this) {
+            mutableCredentialUnreadable.value = false
+            if (leaveGeneration == generation) {
+                away = false
+                leftAtMillis = 0L
+            }
+        }
         return true
     }
 

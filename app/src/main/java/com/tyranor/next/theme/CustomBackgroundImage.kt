@@ -101,13 +101,20 @@ internal object BackgroundImageCache {
 
         // 采样上限按**屏幕长边**而不是固定宽度：背景只需铺满当前屏幕，
         // 固定 1440 宽在平板上偏小、在高分屏上又可能超出 2 倍。
+        // 下限 1 防止极端窗口上报 0 时采样循环永不退出。
         val maxEdge = context.resources.displayMetrics.let { maxOf(it.widthPixels, it.heightPixels) }
-        // 宽高双向采样（与 GameScreen.decodeCoverThumbnail 同一判定）：只按宽算会让
-        // 竖图解码后仍接近原高，可能达到目标尺寸的两倍。
+            .coerceAtLeast(1)
+        // 按**长边**采样（短边等比缩小），并叠加总像素上限双保险：
+        // 原实现要求宽高同时超限才减半，30000×2000 这类极端宽高比第一次迭代就停，
+        // 按原尺寸解码约 229MiB，超过硬件位图上限后绘制期抛 Canvas: trying to draw too large。
         var sample = 1
-        while (bounds.outWidth / (sample * 2) >= maxEdge &&
-            bounds.outHeight / (sample * 2) >= maxEdge
-        ) {
+        val maxPixels = 4L * maxEdge * maxEdge
+        while (true) {
+            val sampledWidth = bounds.outWidth.toLong() / sample
+            val sampledHeight = bounds.outHeight.toLong() / sample
+            // 长边降到 2×屏长边以内（再减半就会低于屏长边），且总像素不超过上限
+            val longEdgeInBounds = maxOf(sampledWidth, sampledHeight) < 2L * maxEdge
+            if (longEdgeInBounds && sampledWidth * sampledHeight <= maxPixels) break
             sample *= 2
         }
         val options = BitmapFactory.Options().apply { inSampleSize = sample }

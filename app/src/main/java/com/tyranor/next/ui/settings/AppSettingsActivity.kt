@@ -87,6 +87,7 @@ import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.ui.common.AppAlertDialog
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
@@ -142,7 +143,14 @@ internal fun AppSettingsScreen() {
     // 所有正在显示背景的页面会即时重组换图
     LaunchedEffect(backgroundImageUri) {
         // 空 uri 也要走一次：ensureLoaded 会清空缓存，释放旧位图（清除背景图后不再滞留内存）
-        runCatching { BackgroundImageCache.ensureLoaded(ctx.applicationContext, backgroundImageUri) }
+        try {
+            BackgroundImageCache.ensureLoaded(ctx.applicationContext, backgroundImageUri)
+        } catch (cancellation: CancellationException) {
+            // 取消不是解码失败，必须原样向上传播（runCatching 会把它一并吞掉）
+            throw cancellation
+        } catch (_: Exception) {
+            // 解码失败按未就绪处理：下次 uri 变化或重新进入页面会再次尝试
+        }
     }
     // 本页可能先于主界面被组合（进程重建后直接恢复到设置页）：主动加载一次持久化值，
     // 否则下拉/开关会显示成默认档（与磁盘上的真实取值不一致）

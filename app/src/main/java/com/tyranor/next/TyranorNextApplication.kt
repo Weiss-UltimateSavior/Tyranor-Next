@@ -82,11 +82,19 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
             AppSettingsStore.initPrivacySettings(this)
             // 自定义背景图（URI/透明度/模糊）要在首帧前就绪，否则冷启动会先画默认背景再淡入
             AppSettingsStore.initBackgroundImage(this)
-            // 启动即预热背景图：解码完成后所有页面同步可用，进入二级页不会"先空后闪"
+            // 启动即预热背景图：解码完成后所有页面同步可用（冷启动首帧可能早于解码完成，
+            // 此时背景为空、解码完成后自动出现；只有锁门会等待就绪以对齐首帧）
             val backgroundUri = AppSettingsStore.getBackgroundImageUri(this)
             if (backgroundUri.isNotBlank()) {
                 background.launch {
-                    runCatching { BackgroundImageCache.ensureLoaded(applicationContext, backgroundUri) }
+                    try {
+                        BackgroundImageCache.ensureLoaded(applicationContext, backgroundUri)
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        // 取消不是解码失败，必须原样向上传播（取消语义）
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // 解码失败按未就绪处理：进入页面时 ensureLoaded 会再次尝试
+                    }
                 }
             }
             AppLockController.install(this)

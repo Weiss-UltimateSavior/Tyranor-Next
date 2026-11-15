@@ -105,6 +105,17 @@ class PatternHasherTest {
     }
 
     @Test
+    fun `归一化让快速划过的少点图案与完整采样等价`() {
+        // 用户快速划 0→2→8 时中间点 1、5 由归一化补上，等价于完整采样 0→1→2→5→8；
+        // 图案盘按归一化结果判点数，否则 3 个原始点会被当成不足 4 点而静默拒绝
+        assertEquals(listOf(0, 1, 2, 5, 8), PatternHasher.normalize(listOf(0, 2, 8)))
+        assertEquals(
+            PatternHasher.hash(salt, listOf(0, 2, 8)),
+            PatternHasher.hash(salt, listOf(0, 1, 2, 5, 8)),
+        )
+    }
+
+    @Test
     fun `归一化对非法点序返回 null`() {
         assertNull(PatternHasher.normalize(emptyList()))
         assertNull(PatternHasher.normalize(listOf(0, 9)))

@@ -2214,6 +2214,11 @@ internal object CoverAvailability {
         if (uri.isNotBlank()) known.add(uri)
     }
 
+    /** 撤销登记：封面文件被删 / 损坏、解码返回 null 时调用，让占位兜底重新出现。 */
+    fun forget(uri: String) {
+        if (uri.isNotBlank()) known.remove(uri)
+    }
+
     fun isKnown(uri: String): Boolean = known.contains(uri)
 }
 
@@ -2254,7 +2259,13 @@ internal fun rememberCoverBitmap(
         }
         // 滑动/惯性中不启动解码，避免解码完成 → 重组/纹理上传挤占滑动帧
         awaitScrollIdle(isScrolling)
-        val bitmap = CoverThumbnailLoader.load(context.applicationContext, uri) ?: return@produceState
+        val bitmap = CoverThumbnailLoader.load(context.applicationContext, uri)
+        if (bitmap == null) {
+            // 已登记过的封面文件可能被删 / 损坏：撤销登记，否则卡片只剩底色、
+            // 占位文字在重启前不会再出现；下次仍会重新尝试解码
+            CoverAvailability.forget(uri)
+            return@produceState
+        }
         CoverAvailability.markKnown(uri)
         // 解码期间可能又开始了新的滑动：等再次静止后逐帧回填，滑动帧不承担纹理上传
         CoverPublishGate.awaitTurn(isScrolling)

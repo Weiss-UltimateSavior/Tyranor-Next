@@ -27,7 +27,8 @@ internal enum class PatternVerifyResult {
  * 换机后凭据自然失效，用户重新设置图案即可（与安全目标一致）。
  *
  * 写入（[savePattern] / [clearPattern]）是阻塞调用（Keystore 加密 + commit 落盘），
- * 调用方必须在后台线程执行。
+ * 调用方必须在后台线程执行。读写共用 [credentialLock] 串行化：`commit()` 先把新值写进
+ * 内存再落盘，失败时内存已是新值——恢复旧密文与校验不能交错。
  */
 internal object AppLockCredentialStore {
 
@@ -36,6 +37,9 @@ internal object AppLockCredentialStore {
 
     private const val FIELD_SALT = "pattern_salt"
     private const val FIELD_HASH = "pattern_hash"
+
+    /** 凭据读写的串行锁（见类型 KDoc）。 */
+    private val credentialLock = Any()
 
     fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -50,17 +54,17 @@ internal object AppLockCredentialStore {
      *
      * 半套凭据无法校验，按未设置处理，避免永久锁死；下次保存会整体覆盖。
      */
-    fun credentialState(context: Context): PatternCredentialState {
+    fun credentialState(context: Context): PatternCredentialState = synchronized(credentialLock) {
         val salt = readState(context, FIELD_SALT)
         val hash = readState(context, FIELD_HASH)
         if (salt is KeystoreFieldCipher.FieldRead.Failed ||
             hash is KeystoreFieldCipher.FieldRead.Failed
         ) {
-            return PatternCredentialState.UNREADABLE
+            return@synchronized PatternCredentialState.UNREADABLE
         }
         val saltPresent = salt is KeystoreFieldCipher.FieldRead.Value
         val hashPresent = hash is KeystoreFieldCipher.FieldRead.Value
-        return if (saltPresent && hashPresent) {
+        if (saltPresent && hashPresent) {
             PatternCredentialState.PRESENT
         } else {
             PatternCredentialState.ABSENT
@@ -74,11 +78,18 @@ internal object AppLockCredentialStore {
     /**
      * 保存新图案（覆盖旧凭据）。盐与哈希经**同一个 Editor 原子提交**：分两次落盘时进程若在
      * 中间被杀，会留下「新盐 + 旧哈希」，新旧图案都无法校验。任一字段加密失败则整体不写。
+     *
+     * `commit()` 返回 false 时，SharedPreferences 的内存值**已经**更新为新凭据（AOSP 实现先
+     * 写内存再落盘）；这里用提交前记录的旧密文原文把内存与磁盘一起恢复，否则旧图案在本进程
+     * 内已经校验不过、要等重启才恢复。
      */
-    fun savePattern(context: Context, points: List<Int>): Boolean {
+    fun savePattern(context: Context, points: List<Int>): Boolean = synchronized(credentialLock) {
         val salt = PatternHasher.newSalt()
-        val hash = PatternHasher.hash(salt, points) ?: return false
-        return KeystoreFieldCipher.writeFields(
+        val hash = PatternHasher.hash(salt, points) ?: return@synchronized false
+        val prefs = prefs(context)
+        val previousSalt = prefs.getString(FIELD_SALT, null)
+        val previousHash = prefs.getString(FIELD_HASH, null)
+        val saved = KeystoreFieldCipher.writeFields(
             context,
             PREFS,
             KEY_ALIAS,
@@ -87,42 +98,56 @@ internal object AppLockCredentialStore {
                 FIELD_HASH to hash,
             ),
         )
+        if (!saved) {
+            // 密文含 IV，可原样写回；旧字段不存在时移除，恢复成保存前的半套/空状态
+            val restore = prefs.edit()
+            if (previousSalt.isNullOrEmpty()) restore.remove(FIELD_SALT) else restore.putString(FIELD_SALT, previousSalt)
+            if (previousHash.isNullOrEmpty()) restore.remove(FIELD_HASH) else restore.putString(FIELD_HASH, previousHash)
+            restore.commit()
+        }
+        saved
     }
 
     /** 校验图案；未设置凭据 / 图案非法 / 比对不一致返回 [PatternVerifyResult.MISMATCH]。 */
-    fun verifyPattern(context: Context, points: List<Int>): PatternVerifyResult {
-        val saltRead = readState(context, FIELD_SALT)
-        val hashRead = readState(context, FIELD_HASH)
-        if (saltRead is KeystoreFieldCipher.FieldRead.Failed ||
-            hashRead is KeystoreFieldCipher.FieldRead.Failed
-        ) {
-            return PatternVerifyResult.UNREADABLE
-        }
-        val salt = runCatching {
-            Base64.decode(
-                (saltRead as? KeystoreFieldCipher.FieldRead.Value)?.text.orEmpty(),
-                Base64.NO_WRAP,
+    fun verifyPattern(context: Context, points: List<Int>): PatternVerifyResult =
+        synchronized(credentialLock) {
+            val saltRead = readState(context, FIELD_SALT)
+            val hashRead = readState(context, FIELD_HASH)
+            if (saltRead is KeystoreFieldCipher.FieldRead.Failed ||
+                hashRead is KeystoreFieldCipher.FieldRead.Failed
+            ) {
+                return@synchronized PatternVerifyResult.UNREADABLE
+            }
+            val salt = runCatching {
+                Base64.decode(
+                    (saltRead as? KeystoreFieldCipher.FieldRead.Value)?.text.orEmpty(),
+                    Base64.NO_WRAP,
+                )
+            }.getOrNull() ?: return@synchronized PatternVerifyResult.MISMATCH
+            val storedHash = (hashRead as? KeystoreFieldCipher.FieldRead.Value)?.text.orEmpty()
+            if (salt.isEmpty() || storedHash.isEmpty()) {
+                return@synchronized PatternVerifyResult.MISMATCH
+            }
+            val candidate = PatternHasher.hash(salt, points)
+                ?: return@synchronized PatternVerifyResult.MISMATCH
+            // 常数时间比较：逐字节早退的 equals 会带来时序侧信道
+            val matched = MessageDigest.isEqual(
+                candidate.toByteArray(Charsets.US_ASCII),
+                storedHash.toByteArray(Charsets.US_ASCII),
             )
-        }.getOrNull() ?: return PatternVerifyResult.MISMATCH
-        val storedHash = (hashRead as? KeystoreFieldCipher.FieldRead.Value)?.text.orEmpty()
-        if (salt.isEmpty() || storedHash.isEmpty()) return PatternVerifyResult.MISMATCH
-        val candidate = PatternHasher.hash(salt, points) ?: return PatternVerifyResult.MISMATCH
-        // 常数时间比较：逐字节早退的 equals 会带来时序侧信道
-        val matched = MessageDigest.isEqual(
-            candidate.toByteArray(Charsets.US_ASCII),
-            storedHash.toByteArray(Charsets.US_ASCII),
-        )
-        return if (matched) PatternVerifyResult.SUCCESS else PatternVerifyResult.MISMATCH
-    }
+            if (matched) PatternVerifyResult.SUCCESS else PatternVerifyResult.MISMATCH
+        }
 
     /** 清除凭据（应用锁关闭时由调用方决定是否一并清除）；两个字段在同一次提交中移除。 */
     fun clearPattern(context: Context) {
-        KeystoreFieldCipher.writeFields(
-            context,
-            PREFS,
-            KEY_ALIAS,
-            mapOf(FIELD_SALT to "", FIELD_HASH to ""),
-        )
+        synchronized(credentialLock) {
+            KeystoreFieldCipher.writeFields(
+                context,
+                PREFS,
+                KEY_ALIAS,
+                mapOf(FIELD_SALT to "", FIELD_HASH to ""),
+            )
+        }
     }
 
     private fun readState(context: Context, field: String): KeystoreFieldCipher.FieldRead =

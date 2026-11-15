@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -150,7 +152,8 @@ fun PrivacyLockSetupGate(
     // null = 按当前阶段显示默认提示；错误时覆盖
     var hint by remember { mutableStateOf<GateHint?>(null) }
 
-    BackHandler { onCancelled() }
+    // 保存进行中禁止取消 / 返回：落盘完成前关掉门会让保存回调与门状态错拍
+    BackHandler { if (!saving) onCancelled() }
 
     val drawHint = stringResource(R.string.privacy_gate_setup_draw)
     val confirmHint = stringResource(R.string.privacy_gate_setup_confirm)
@@ -197,7 +200,11 @@ fun PrivacyLockSetupGate(
                 enabled = !saving,
                 onPatternEntered = onPattern,
             )
-            NoRippleTextButton(text = stringResource(R.string.common_cancel), onClick = onCancelled)
+            NoRippleTextButton(
+                text = stringResource(R.string.common_cancel),
+                enabled = !saving,
+                onClick = onCancelled,
+            )
         }
     }
 }
@@ -237,7 +244,12 @@ private fun GateColumn(
 ) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
-            modifier = Modifier.padding(horizontal = 32.dp, vertical = 24.dp),
+            // 矮横屏 / 大字体下内容可能超过窗口（256dp 图案盘 + 提示 + 按钮），
+            // 允许滚动，避免提示与设备凭据按钮被裁到屏幕外；内容放得下时布局不变。
+            // 图案盘自己消费手势，从盘面起手的拖动不会滚走。
+            modifier = Modifier
+                .padding(horizontal = 32.dp, vertical = 24.dp)
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {

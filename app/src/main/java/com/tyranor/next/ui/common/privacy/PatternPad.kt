@@ -24,7 +24,8 @@ import com.tyranor.next.ui.common.motion.MotionHaptics
 
 /**
  * 3×3 图案输入盘（应用锁的自绘控件，设置与解锁共用）：
- * 按下拾取圆点、连线跟随手指，松手时点数足够（[PatternHasher.MIN_POINTS]）则回调点序，否则静默复位
+ * 按下拾取圆点、连线跟随手指，松手时先按 [PatternHasher.normalize] 补上隐式经过的中间点，
+ * 归一化后点数足够（[PatternHasher.MIN_POINTS]）则回调归一化点序，否则静默复位
  * （错误反馈由父层统一做：横摇 + 拒绝触觉 + 提示文案）。
  *
  * 拾取新点给一次刻度触觉（越过离散边界）；当前图案与手指位置只在绘制阶段读取，手势期间不重组。
@@ -85,10 +86,12 @@ fun PatternPad(
                         }
                         change.consume()
                     }
-                    // 松手 / 取消：点数足够则回调，随后一律复位
+                    // 松手 / 取消：先归一化（补上隐式经过的中间点）再判点数——
+                    // 快速划 [0,2,8] 与完整采样 [0,1,2,5,8] 是同一图案，按原始点数会被静默拒绝；
+                    // 设置门两次绘制的相等比较也依赖归一化后的点序。非法输入（null）静默复位。
                     fingerState.value = null
-                    val pattern = selected.value
-                    if (pattern.size >= PatternHasher.MIN_POINTS) {
+                    val pattern = PatternHasher.normalize(selected.value)
+                    if (pattern != null && pattern.size >= PatternHasher.MIN_POINTS) {
                         onPatternEntered(pattern)
                     }
                     selected.value = emptyList()
