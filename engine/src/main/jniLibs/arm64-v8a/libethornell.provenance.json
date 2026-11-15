@@ -45,11 +45,11 @@
     },
     {
       "path": "tools/ethornell/patches/0006-bgi-version-compat.patch",
-      "sha256": "c8b7c6d386f7db250b45f6dd44a3548fffdf10a903efb584c8027582df7e1823",
+      "sha256": "eab134ac72588eacc61f56372b1dfa7d77895aa0e514782f58be70651db6d9cd",
       "target_source_file": "crates/ethornell-app/src/lib.rs",
       "target_file_sha256": "d2e2c4aedec5256336be16a1bc0a3ffdfed607782dbf2d6367d4689c08a446e0",
       "base_revision": "a6c925e566f6bc1f7d60ab31afaec1d04dbfa8ab",
-      "reason": "Select verified extended display/sound/memory and graph profiles for paired Cinderella/Pure HD resources; retain resource display fallback, preserve invalid integer text operands, synchronize the native opcode regression count, and decode native CBG MT stripes with bounded Huffman/RLE input. Route MT images through Sys80:30/31/CF and the ModernFused bitmap pointer bridge using the shared image format detector, with VM dispatch regressions.",
+      "reason": "Select verified extended display/sound/memory and graph profiles for paired Cinderella/Pure HD resources; retain resource display fallback, preserve invalid integer text operands, synchronize the native opcode regression count, and decode native CBG MT stripes with bounded Huffman/RLE input. Route MT images through Sys80:30/31/CF and the ModernFused bitmap pointer bridge using the shared image format detector, with VM dispatch regressions. Bound static compressed bitmap input to its checked segment even with a short positive byte count.",
       "target_source_file_sha256": {
         "crates/ethornell-app/src/lib.rs": "d2e2c4aedec5256336be16a1bc0a3ffdfed607782dbf2d6367d4689c08a446e0",
         "crates/ethornell-app/src/native_graph.rs": "b395b29f13548c9a35b78cea73cfce36bc562299fb48dbb0f766adc63a78fce8",
@@ -60,13 +60,13 @@
         "crates/ethornell-vm/src/lib.rs": "5f739d05a81267c51c6b21d4b673263b924380ffb46960ba2778ebe673ddcb5c",
         "crates/ethornell-image/src/cbg/mt.rs": "cb607caca40fd0e4822f00e1ea5a5971ea27882f78ee40033add17af8a3a0394",
         "crates/ethornell-vm/src/resource_io.rs": "a37ad89ecb26c8dc03d8277aaff5907b8068746fabc1171fc90fdb4ede191869",
-        "crates/ethornell-vm/src/native_version.rs": "c132148195758525c3aee396cbd308a665c9511bbf782f8681582b7357a39c9e"
+        "crates/ethornell-vm/src/native_version.rs": "b6eeecb3d00db5c8b218b21041609aa555369987070e2b1c5ea84c1ff9b217a0"
       },
       "applies_after": "tools/ethornell/patches/0005-amachoco-graph-startup-compat.patch"
     }
   ],
   "source_inventory_policy": "cargo-workspace-build-inputs-v1",
-  "source_inventory_sha256": "cdef277cbb7d9679fa421def92d3c7ad82d5ac7bb103b66b240573ae6964aae6",
+  "source_inventory_sha256": "4746444b0056ceaa33bbba754f2155e14aae2c23b37696ba92a718b56fd38a62",
   "source_inventory_file_count": 408,
   "source_file_sha256": {
     ".cargo/config.toml": "6901a0456153bc20219ef29bc261424f659a68307018f289704b8129f50c0035",
@@ -244,7 +244,7 @@
     "crates/ethornell-vm/src/native_selection.rs": "7e0294258e281a956ffffa111540e3b04bfd17617cb13422e3d76725ebc85ab9",
     "crates/ethornell-vm/src/native_strings.rs": "acf45107bb5f49c64a472b9e4e33eb7bb330bf7f7e07566f2fd6fc3cd9d63bd8",
     "crates/ethornell-vm/src/native_thread.rs": "84e71af8eacd769e77cf213023013884b1f2c841373eff991d56765c0ff12807",
-    "crates/ethornell-vm/src/native_version.rs": "c132148195758525c3aee396cbd308a665c9511bbf782f8681582b7357a39c9e",
+    "crates/ethornell-vm/src/native_version.rs": "b6eeecb3d00db5c8b218b21041609aa555369987070e2b1c5ea84c1ff9b217a0",
     "crates/ethornell-vm/src/parallel_call.rs": "987b128a99109e5a8a6377c789d8b1e77d9f033cb451eadb02ba308f09b99240",
     "crates/ethornell-vm/src/procedure_class_map.rs": "d10163249994bbd99bcdf25a194a2e02ea59faa5f83ff070f40a8f689f366039",
     "crates/ethornell-vm/src/profile.rs": "a20a55d7f89b20e19d058fd7ef873cdae72257556c2bded4c6593f6482202c34",
@@ -484,9 +484,9 @@
   "packaged_name": "libethornell.so",
   "build_command": "Windows NDK 28.0.13004108; CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=clang.exe; CC_aarch64_linux_android=aarch64-linux-android26-clang.cmd; CXX_aarch64_linux_android=aarch64-linux-android26-clang++.cmd; AR_aarch64_linux_android=llvm-ar.exe; CARGO_BUILD_JOBS=8; CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS=\"-C link-arg=--target=aarch64-linux-android26 -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wl,-z,common-page-size=16384 -C link-arg=-Wl,-z,relro -C link-arg=-Wl,-z,now -C link-arg=-Wl,--no-undefined\"; cargo +1.96.0 build -p ethornell-mobile --target aarch64-linux-android --release --locked; llvm-strip --strip-unneeded -o libethornell.so libethornell_mobile.so",
   "build_log": "build.log",
-  "build_log_sha256": "32ef963a5c12eedd4e4bee982d9a965a448aa8a518ebbd7d3bb0bfcf286a9852",
-  "build_time_utc": "2026-11-15T16:18:57.351798+00:00",
-  "library_sha256": "84376203015d1bbb0294dd5cbc3b80ac84d81d8b352e7560a4aba1306fb7bfb4",
+  "build_log_sha256": "f7ed75a001e0cd99b7b82ad9d05e67797483d3b90e59df0ac75f74dd300fdcb6",
+  "build_time_utc": "2026-11-15T17:21:34.989375+00:00",
+  "library_sha256": "bd384cdbce8c31469650bd02c26ccb68f0357911d320c96c3695e8a38c9771ca",
   "library_bytes": 26738304,
   "build_verification": {
     "source_state": "a6c925e566f6bc1f7d60ab31afaec1d04dbfa8ab plus 0001, 0002, 0003, 0005, 0006",

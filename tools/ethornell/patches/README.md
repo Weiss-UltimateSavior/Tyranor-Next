@@ -8,7 +8,7 @@
 2. `0002-game-local-savedata.patch`：允许经过文件描述符与 inode 校验的 `<resource>/savedata` 直接子目录作为 user-root；该子树不参与普通资源读取、存在性检查、枚举和资源扫描。其它重叠根及符号链接仍拒绝，分离的 user-root 继续供 JNI 回归夹具使用。
 3. `0003-public-storage-ofd-writer-lock.patch`：当 `flock(LOCK_EX | LOCK_NB)` 仅返回 `ENOSYS`、`EOPNOTSUPP` 或 `ENOTSUP` 时，在 Android/Linux 尝试全文件非阻塞 `F_OFD_SETLK` 写锁。忙锁、权限错误与其他失败原样拒绝；OFD 失败也拒绝。OFD 锁随宿主持有的文件描述符关闭而释放。
 4. `0005-amachoco-graph-startup-compat.patch`：仅对经资源指纹识别的 Amachoco ABI 恢复 `Graph91:00` 旧版空操作行为，避免启动时因上游未知调用处理收紧而退出；该原生调用的完整语义仍未核实。
-5. `0006-bgi-version-compat.patch` 通过 IPL 与标题双指纹，为核实过的 Cinderella 与 Pure HD 版本选择 HoukagoFd ABI、原版 16 项显示模式、128 个音效通道和主线程内存规格。PE 未检出显示表时保留资源指纹配置。保留图形文本归一化中越界整数的原有载荷，更新上游指令数量回归，并增加有界的 CBG_MT 分块图片解码及原创回归夹具。Sys80:30/31/CF 与 ModernFused 位图指针入口共用图片格式识别，MT 输入按所属分配范围解码。
+5. `0006-bgi-version-compat.patch` 通过 IPL 与标题双指纹，为核实过的 Cinderella 与 Pure HD 版本选择 HoukagoFd ABI、原版 16 项显示模式、128 个音效通道和主线程内存规格。PE 未检出显示表时保留资源指纹配置。保留图形文本归一化中越界整数的原有载荷，更新上游指令数量回归，并增加有界的 CBG_MT 分块图片解码及原创回归夹具。Sys80:30/31/CF 与 ModernFused 位图指针入口共用图片格式识别，MT 输入按所属分配范围解码，静态输入的正计数不再截断压缩数据，全局输入限制在全局区末端。
 
 历史补丁 `0004-virtual-user-file-reads.patch` 仅用于旧基线；新版上游已实现虚拟根与存档读取映射，不再应用该补丁。
 
@@ -46,7 +46,7 @@ python3 tools/ethornell/verify_provenance.py --local-static \
 
 ## 启动兼容验证
 
-2026-11-16 复验运行库 SHA-256 为 `84376203015d1bbb0294dd5cbc3b80ac84d81d8b352e7560a4aba1306fb7bfb4`，26,738,304 字节。固定上游提交加五份补丁，来源清单为 408 项，整条补丁链重放后的文件逐字节匹配构建源码。Android ARM64 / API 26 构建、ELF/ABI、16KB 对齐及 APK 内库字节校验通过，`release_ready=false`。
+2026-11-16 复验运行库 SHA-256 为 `bd384cdbce8c31469650bd02c26ccb68f0357911d320c96c3695e8a38c9771ca`，26,738,304 字节。固定上游提交加五份补丁，来源清单为 408 项，整条补丁链重放后的文件逐字节匹配构建源码。Android ARM64 / API 26 构建、ELF/ABI、16KB 对齐及 APK 内库字节校验通过，`release_ready=false`。
 
 测试设备为 iQOO 12（vivo V2307A，Android 15 / API 35，ARM64，4KB 页）。测试 APK 基于原版 Tyranor Next 1.65 替换运行库资产并以隔离包 `com.tyranor.test` 安装。第一轮启用测试 APK 的 debuggable 属性以读取解压库 SHA-256 与宿主 `/proc/<pid>/maps`，确认实际映射到 `files/engine_runtime/ethornell/libethornell.so`，哈希与本次产物一致。之后使用相同库的非 debuggable 测试 APK 运行原生探针。
 
@@ -60,15 +60,16 @@ python3 tools/ethornell/verify_provenance.py --local-static \
 
 本轮回归结果如下。
 
-- `cargo +1.96.0 test -p ethornell-app -p ethornell-image -p ethornell-script -p ethornell-vm --lib --target x86_64-pc-windows-gnu --locked` 分别通过 532、26、29、357 项，共 944 项，11 项按既有条件忽略。
-- 四个新增 VM 回归覆盖 Sys80:30 归档读取、Sys80:31 解码后切片、Sys80:CF 内存解码和 ModernFused 短计数位图注册，断言完整图片描述头、像素和返回值。恢复旧分派条件后四项全部失败，修正后全部通过。
+- `cargo +1.96.0 test -p ethornell-app -p ethornell-image -p ethornell-script -p ethornell-vm --lib --target x86_64-pc-windows-gnu --locked` 分别通过 532、26、29、359 项，共 946 项，11 项按既有条件忽略。
+- 六个新增 VM 回归覆盖 Sys80:30 归档读取、Sys80:31 解码后切片、Sys80:CF 内存解码和 ModernFused 堆/静态代码区短计数位图注册及全局区跨界拒绝，断言完整图片描述头、像素和返回值。恢复旧分派条件后四项全部失败，修正后全部通过。静态短计数与全局跨界两项也分别确认在撤销对应修正后失败。
 - 仓库 `EthornellReleaseInstrumentation` 源码单独编译为框架探针，使用仓库 C++ probe 和生产 ABI header。SJIS、GBK 各 3/3，通过非 debuggable 目标身份、RTLD_NOW / 15 导出 / ABI / build_info，以及生产 JNI create/poll/destroy、无效 token 与请求校验。编译专用 API stub 未进入测试 DEX，目标生产类来自目标 APK。该探针只覆盖加载和会话创建范围。
 - `python -m unittest discover -s tools/ethornell/tests` 在 UTF-8 与 `core.autocrlf=false` 环境下为 78 通过、1 跳过、1 失败。失败为既有 Windows 文本夹具写入 CRLF 后与 LF 常量比较 header SHA-256，当前改动未修改该工具或夹具。
+- 相同来源工具与测试在主工作树的 WSL 环境中 80/80 通过。工具文件与本 PR 完全一致。Windows 下的单项换行失败保留为平台差异记录。
 - 两份独立只读审核核对分派逻辑、旧 CBG/DSC 回归风险、补丁重放与来源哈希，均无阻断发现。
 
 完整当前源码 APK、AndroidX 设备测试、Surface/暂停/存档全套回归、API 26 / 16KB 设备及长稳尚未完成。本机 Gradle 在补齐 JDK 17 后仍无法识别已解压的 `android-37.0` 平台，故使用上述原有框架探针单独复验，未把历史设备通过数计入本轮。Android CLI 审查工具和适用技能在本会话未发现，设备操作使用 ADB。
 
-本地证据的 SHA-256 如下，原始商业游戏截图保留在本地。
+本地证据的 SHA-256 如下，原始商业游戏截图保留在本地。下列三张截图属于先行修正库 `84376203…`，最终 `bd384cdb…` 的复验另记。
 
 | 证据 | SHA-256 |
 | --- | --- |
@@ -77,3 +78,19 @@ python3 tools/ethornell/verify_provenance.py --local-static \
 | `onenight-title2.png` | `adaccc146c7889f136b4e4c1ef4d7472f463028bfd4381bfddce9e613dc38afb` |
 | `probe-sjis.log` | `96370c7fe858ab8afe8dea0e5d0b5e4509ec53ec10a4353cc0199f061486f67c` |
 | `probe-gbk.log` | `96370c7fe858ab8afe8dea0e5d0b5e4509ec53ec10a4353cc0199f061486f67c` |
+
+### 最终静态输入修正复验
+
+最终库 `bd384cdbce8c31469650bd02c26ccb68f0357911d320c96c3695e8a38c9771ca` 在同一手机复查 Cinderella 的室内对白与 Pure HD 姓名确认后的对白。两次均读取宿主 maps 与实际解压文件 SHA-256，确认映射当前库。原有框架探针 SJIS、GBK 各 3/3，静态门禁通过。《一夜之后》体验版也从标题进入列车开场动态画面与对白框，当前库哈希及映射同样核对。
+
+| 最终证据 | SHA-256 |
+| --- | --- |
+| `cinderella-final-body.png` | `907d13d2d8f59e011e7f2a5eae3b1eb473f25277b3deca4da09d59a5408e619e` |
+| `pure-final-body.png` | `44e25a9dff8e86f4cc6e81b401caf49588c6c43e108c15f2966fe45968e7e122` |
+| `cinderella-final-library.txt` | `4426119fa7cd3ee574b91023ee940d81b82910cb54dca82ce4edef11ad6b741e` |
+| `pure-final-library.txt` | `4426119fa7cd3ee574b91023ee940d81b82910cb54dca82ce4edef11ad6b741e` |
+| `probe-final-sjis.log` | `96370c7fe858ab8afe8dea0e5d0b5e4509ec53ec10a4353cc0199f061486f67c` |
+| `probe-final-gbk.log` | `96370c7fe858ab8afe8dea0e5d0b5e4509ec53ec10a4353cc0199f061486f67c` |
+| `onenight-final-name.png` | `1b3867115cf2f3a00b433e4a255bcbbf717db75c1c12da0b14889e80e14b55a8` |
+| `onenight-final-body.png` | `d837e7f96e08f02043575989dbd3ca78b8095e68c90808d817493989903643a7` |
+| `onenight-final-library.txt` | `4426119fa7cd3ee574b91023ee940d81b82910cb54dca82ce4edef11ad6b741e` |

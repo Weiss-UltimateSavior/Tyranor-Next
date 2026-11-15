@@ -683,7 +683,26 @@ diff --git a/crates/ethornell-vm/src/native_version.rs b/crates/ethornell-vm/src
          if !compressed && size>0 {return self.resolve_range(source,size as usize)}
          let available=if let Some(buffer)=self.native_buffer(source) {Some(buffer.size as usize)}
              else if let Some((base,offset))=self.target_heap.translate(source) {
-@@ -370,6 +371,39 @@
+@@ -20,11 +21,16 @@
+             if available>0x04000000 {return Err(VmError::Runtime("native bitmap source allocation limit".into()))}
+             return self.resolve_range(source,available);
+         }
+-        if size>0 {return self.resolve_range(source,size as usize)}
+         // A static/unallocated input still has a checked code/data region.
+         // Locate its readable extent without crossing a segment or exposing
+         // the next heap allocation. Failed decoders retain native failure.
+-        let mut low=16usize;let mut high=(self.memory.len()-prefix.start).min(0x04000000);
++        let limit = if source < LOCAL_MEMORY_BASE {
++            (LOCAL_MEMORY_BASE - source) as usize
++        } else {
++            0x04000000
++        };
++        let mut low=16usize;let mut high=(self.memory.len()-prefix.start).min(limit);
++        if high < low { return Err(Self::invalid_pointer(source)); }
+         while low<high {
+             let mid=low+(high-low).div_ceil(2);
+             if self.resolve_range(source,mid).is_ok() {low=mid} else {high=mid-1}
+@@ -370,6 +376,106 @@
      }
 
      #[test]
@@ -717,6 +736,73 @@ diff --git a/crates/ethornell-vm/src/native_version.rs b/crates/ethornell-vm/src
 +            VmStopReason::Completed
 +        );
 +        assert_eq!(vm.stack, [Value::Int(0)]);
++    }
++
++    #[test]
++    fn version_native_bitmap_registration_decodes_static_cbg_mt_with_short_byte_count() {
++        let mut vm = Vm::new();
++        vm.set_native_abi_profile(NativeAbiProfile::ModernFused);
++        vm.start(&ethornell_script::parse_bp_program(None, &[0x91, 4, 0x17]));
++        let input = crate::tests::single_pixel_cbg_mt();
++        let source = crate::CODE_SEGMENT | 64;
++        let range = vm.resolve_write_range(source, input.len()).unwrap();
++        vm.memory[range].copy_from_slice(&input);
++        vm.stack = vec![
++            Value::Int(3),
++            Value::Ptr(source),
++            Value::Int(16),
++            Value::Int(0),
++            Value::Int(0),
++            Value::Int(1),
++        ];
++        let mut host = BitmapHost::default();
++        assert_eq!(
++            vm.run_loaded(&mut host, &VmRunOptions::default()).stop_reason,
++            VmStopReason::WaitingForProcedure
++        );
++        assert_eq!(
++            host.observed,
++            Some((3, crate::tests::SINGLE_PIXEL_CBG_NATIVE.to_vec(), None, None, true))
++        );
++        assert_eq!(
++            vm.run_loaded(&mut host, &VmRunOptions::default()).stop_reason,
++            VmStopReason::Completed
++        );
++        assert_eq!(vm.stack, [Value::Int(0)]);
++    }
++
++    #[test]
++    fn version_native_bitmap_registration_rejects_cbg_mt_crossing_global_boundary() {
++        let mut vm = Vm::new();
++        vm.set_native_abi_profile(NativeAbiProfile::ModernFused);
++        vm.start(&ethornell_script::parse_bp_program(None, &[0x91, 4, 0x17]));
++        let input = crate::tests::single_pixel_cbg_mt();
++        let source = LOCAL_MEMORY_BASE - 52;
++        let range = vm.resolve_write_range(source, input.len()).unwrap();
++        vm.memory[range].copy_from_slice(&input);
++        vm.stack = vec![
++            Value::Int(3),
++            Value::Ptr(source),
++            Value::Int(16),
++            Value::Int(0),
++            Value::Int(0),
++            Value::Int(1),
++        ];
++        assert_eq!(vm.native_bitmap_source_range(source, 16).unwrap().len(), 52);
++        let mut host = BitmapHost::default();
++        assert_eq!(
++            vm.run_loaded(&mut host, &VmRunOptions::default()).stop_reason,
++            VmStopReason::WaitingForProcedure
++        );
++        assert_eq!(
++            host.observed,
++            None
++        );
++        assert_eq!(
++            vm.run_loaded(&mut host, &VmRunOptions::default()).stop_reason,
++            VmStopReason::Completed
++        );
++        assert_eq!(vm.stack, [Value::Int(-1)]);
 +    }
 +
 +    #[test]
