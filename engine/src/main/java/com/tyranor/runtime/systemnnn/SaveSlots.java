@@ -280,12 +280,15 @@ final class SaveSlots {
     }
     private Entry readEntry(int slot,int remainingPixels) {
         File file=pcFile(slot);
-        if(!exists(file))return empty(slot);
+        boolean present=exists(file);
+        File backup=present?null:PcStorySave.backupWithoutBase(file);
+        if(!present&&backup==null)return empty(slot);
+        File timestamp=backup==null?file:backup;
         try{
             byte[] bytes=PcStorySave.read(file);
-            return pcEntry(slot,PcStorySave.preview(bytes,file.lastModified(),decoder,remainingPixels,gameDateVars));
+            return pcEntry(slot,PcStorySave.preview(bytes,timestamp.lastModified(),decoder,remainingPixels,gameDateVars));
         }catch(IOException|RuntimeException e){
-            return new Entry(slot,true,true,Math.max(0,file.lastModified()),"",null);
+            return new Entry(slot,true,true,Math.max(0,timestamp.lastModified()),"",null);
         }
     }
     static boolean valid(int slot) { return slot==AUTO || slot==QUICK || slot>=0 && slot<MAX_MANUAL_SLOTS; }

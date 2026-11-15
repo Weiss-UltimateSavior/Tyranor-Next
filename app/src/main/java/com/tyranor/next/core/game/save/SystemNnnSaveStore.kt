@@ -196,7 +196,8 @@ internal class SystemNnnSaveStore(
     ) {
         val live = files()
         val names = snapshot.keys.mapTo(hashSetOf(), ::foldSaveName)
-        val targets = snapshot.keys.associateWith(::targetFile)
+        val directories = hashMapOf<Path, Map<String, List<Path>>>()
+        val targets = snapshot.keys.associateWith { targetFile(it, directories) }
         for ((name, file) in snapshot) {
             val target = targets.getValue(name)
             val parent = SavePathSafety.requireSafeRoot(target.parentFile!!, directory)
@@ -222,7 +223,7 @@ internal class SystemNnnSaveStore(
     }
 
     /** Keep the existing PC spelling on both case-sensitive and case-insensitive volumes. */
-    private fun targetFile(name: String): File {
+    private fun targetFile(name: String, directories: MutableMap<Path, Map<String, List<Path>>>): File {
         if (!SystemNnnHost.isPcStorySave(name) && !SystemNnnHost.isPcGlobalSave(name) &&
             !SystemNnnHost.isChartNodeSave(name)
         ) return File(directory, name)
@@ -230,13 +231,13 @@ internal class SystemNnnSaveStore(
         val parts = name.split('/')
         for ((index, part) in parts.withIndex()) {
             val directoryPath = target.toPath()
-            val children = if (Files.notExists(directoryPath, NOFOLLOW_LINKS)) emptyList()
-            else directoryEntries(directoryPath)
-            val folded = foldSaveName(part)
-            val aliases = children.filter {
-                val filename = it.fileName
-                foldSaveName(filename.toString()) == folded && SystemNnnHost.hasExactAsciiSaveSpelling(filename)
+            val names = directories.getOrPut(directoryPath) {
+                if (Files.notExists(directoryPath, NOFOLLOW_LINKS)) emptyMap()
+                else directoryEntries(directoryPath)
+                    .filter { SystemNnnHost.hasExactAsciiSaveSpelling(it.fileName) }
+                    .groupBy { foldSaveName(it.fileName.toString()) }
             }
+            val aliases = names[foldSaveName(part)].orEmpty()
             if (aliases.size > 1) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
             val existing = aliases.singleOrNull()
             target = when {

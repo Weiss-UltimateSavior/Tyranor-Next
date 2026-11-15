@@ -53,7 +53,19 @@ final class PcStorySave {
 
     static byte[] read(File file) throws IOException {
         checkEntries(file);
+        File backup=backupWithoutBase(file);
+        if(backup!=null){
+            checkFile(backup);
+            try(InputStream in=Files.newInputStream(backup.toPath(),LinkOption.NOFOLLOW_LINKS)){return read(in);}
+        }
         try(InputStream in=new AtomicFile(file).openRead()){return read(in);}
+    }
+
+    static File backupWithoutBase(File file){
+        File ordinary=new File(file.getPath()+".bak");
+        if(!Files.notExists(file.toPath(),LinkOption.NOFOLLOW_LINKS)||
+            !Files.notExists(ordinary.toPath(),LinkOption.NOFOLLOW_LINKS))return null;
+        return GameResourcePaths.file(file.getParentFile(),ordinary.getName());
     }
 
     static byte[] read(InputStream in) throws IOException {

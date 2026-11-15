@@ -85,6 +85,10 @@ class SaveSyncServiceTest {
         val pending = harness.journal.prepare(key, harness.versionFor(aliasStage), aliasStage, null, aliasDirectory)
         assertPinned()
         assertNull(owners.owned(alias.uri).singleOrNull())
+        val activationRoot = harness.journal.archive(key).parentFile!!.parentFile!!
+        File(activationRoot, "records/$key.json").writeText("broken journal")
+        assertPinned() // The prepared ZIP remains pinned by its separately persisted directory scope.
+        harness.service.requireSaveDirectoryRetirementAvailable(game, unrelatedDirectory)
         owners.begin(aliasDirectory, alias.uri, pending.token)
         harness.journal.clear(key)
         assertPinned() // The owner alone still fences retirement while completion is pending.

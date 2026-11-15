@@ -13,6 +13,7 @@ import java.util.UUID
 internal class SaveActivationJournal(private val directory: File) {
     private val recordDirectory = File(directory, "records")
     private val records = SaveSyncStateStore(recordDirectory)
+    private val scopes = SaveSyncStateStore(File(directory, "scopes"))
 
     data class Pending(
         val token: String,
@@ -60,18 +61,25 @@ internal class SaveActivationJournal(private val directory: File) {
         } else if (!Files.notExists(archive(key).toPath(), NOFOLLOW_LINKS)) {
             return true
         }
+        // The scope is written before moving the ZIP. It protects an orphan or a damaged per-URI record.
+        if (scopes.keys().any { other ->
+                val directory = inspectOther(scopes, other)?.opt("activeKey") as? String
+                directory != null && saveDirectoryScopesOverlap(directory, activeKey) &&
+                    !Files.notExists(archive(other).toPath(), NOFOLLOW_LINKS)
+            }) return true
         return records.keys().any { other ->
             if (other == key) return@any false
-            val state = try {
-                records.inspect(other)
-            } catch (failure: SaveSyncException) {
-                if (failure.code != SaveSyncError.LOCAL_IO) throw failure
-                // An unreadable entry for another URI supplies no evidence of ownership.
-                return@any false
-            }
+            val state = inspectOther(records, other) ?: return@any false
             val directory = state.opt("activeKey") as? String
             state.has("token") && !directory.isNullOrBlank() && saveDirectoryScopesOverlap(directory, activeKey)
         }
+    }
+
+    private fun inspectOther(store: SaveSyncStateStore, key: String): JSONObject? = try {
+        store.inspect(key)
+    } catch (failure: SaveSyncException) {
+        if (failure.code != SaveSyncError.LOCAL_IO) throw failure
+        null
     }
 
     /** Consumes an already-private staging ZIP after validating it; never pass a history file. */
@@ -97,6 +105,8 @@ internal class SaveActivationJournal(private val directory: File) {
         val parent = target.parentFile!!
         if (!parent.isDirectory && !parent.mkdirs()) throw SaveSyncException(SaveSyncError.LOCAL_IO)
         check()
+        if (activeKey != null) scopes.save(key, JSONObject().put("activeKey", activeKey))
+        else scopes.remove(key)
         try {
             Files.move(staging.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
         } catch (_: AtomicMoveNotSupportedException) {
@@ -130,6 +140,12 @@ internal class SaveActivationJournal(private val directory: File) {
         if (source.exists() && !source.delete()) throw SaveSyncException(SaveSyncError.LOCAL_IO)
         // Keep the token if deleting staging fails; a retry must retain the completed chain.
         records.remove(key)
+        try {
+            scopes.remove(key)
+        } catch (failure: SaveSyncException) {
+            if (failure.code != SaveSyncError.LOCAL_IO) throw failure
+            // A scope with no archive cannot pin a directory and is replaced by the next preparation.
+        }
     }
 
     private fun encode(pending: Pending) = JSONObject()

@@ -17,6 +17,7 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeNoException
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -572,10 +573,10 @@ class SystemNnnSaveInteropTest {
         val uri = "primary:Games/Explicit"
         fun queue() = SystemNnnCleanupQueue(directory) { listOf(legacyUri) }
 
-        queue().add(listOf(uri), retireCopy = false)
+        queue().add(listOf(SystemNnnCleanupQueue.Target(uri, false)))
         val oldAttempt = queue().pending().last()
-        queue().add(listOf(uri), retireCopy = true)
-        queue().add(listOf(uri), retireCopy = false)
+        queue().add(listOf(SystemNnnCleanupQueue.Target(uri, true)))
+        queue().add(listOf(SystemNnnCleanupQueue.Target(uri, false)))
         queue().complete(oldAttempt)
         val pending = queue().pending()
         assertEquals(listOf(SystemNnnCleanupQueue.Target(legacyUri, false), SystemNnnCleanupQueue.Target(uri, true)), pending)
@@ -588,11 +589,11 @@ class SystemNnnSaveInteropTest {
         val directory = temp.newFile("cleanup")
         val uri = "primary:Games/Explicit"
         val queue = SystemNnnCleanupQueue(directory)
-        val failure = assertThrows(SaveSyncException::class.java) { queue.add(listOf(uri), retireCopy = true) }
+        val failure = assertThrows(SaveSyncException::class.java) { queue.add(listOf(SystemNnnCleanupQueue.Target(uri, true))) }
         assertEquals(SaveSyncError.LOCAL_IO, failure.code)
         assertTrue(directory.isFile)
         assertTrue(directory.delete())
-        queue.add(listOf(uri), retireCopy = true)
+        queue.add(listOf(SystemNnnCleanupQueue.Target(uri, true)))
         assertEquals(listOf(SystemNnnCleanupQueue.Target(uri, true)), SystemNnnCleanupQueue(directory).pending())
     }
 
@@ -608,7 +609,7 @@ class SystemNnnSaveInteropTest {
         assertEquals(copy, SystemNnnCopyStore.activeRoot(SystemNnnCopyStore.committedRoot(base, identity)))
 
         val queueDirectory = temp.newFolder("cleanup")
-        SystemNnnCleanupQueue(queueDirectory).add(listOf(identity), retireCopy = true)
+        SystemNnnCleanupQueue(queueDirectory).add(listOf(SystemNnnCleanupQueue.Target(identity, true)))
         val gate = GameLibraryWriteGate()
         val pending = SystemNnnCleanupQueue(queueDirectory).pending().single()
         val retire = { SystemNnnCopyStore.clearResources(base, identity, pending.retireCopy) }
@@ -649,7 +650,7 @@ class SystemNnnSaveInteropTest {
         put(saves, "$migration/$restore/before/data1.sav", "old save")
         put(saves, "$migration/$restore/pending", "")
         val queue = SystemNnnCleanupQueue(temp.newFolder("cleanup"))
-        queue.add(listOf(source), retireCopy = true)
+        queue.add(listOf(SystemNnnCleanupQueue.Target(source, true)))
         fun drain() {
             val target = queue.pending().single()
             SystemNnnCopyStore.clearResources(base, source, target.retireCopy)
@@ -761,6 +762,28 @@ class SystemNnnSaveInteropTest {
         assertArrayEquals(PC_SLOT_FIXTURE, pc.readBytes())
         assertEquals("retired rollback slot", onDisk.readText())
         assertFalse(store.files().containsKey(onDisk.name))
+    }
+
+    @Test fun pcStoryBackupOnlySlotRetainsItsActualCase() {
+        val saves = temp.newFolder().canonicalFile
+        val backup = putPcSlot(saves, "DATA0.SAV.BAK")
+        val base = PcStorySave(saves, false).file(0)
+        assumeTrue(!File(base.path + ".bak").exists())
+        assertEquals(backup, PcStorySave.backupWithoutBase(base))
+        assertArrayEquals(PC_SLOT_FIXTURE, PcStorySave.read(base))
+        assertFalse(base.exists())
+        assertTrue(backup.isFile)
+    }
+
+    @Test fun registeringAnAliasRevokesRetirementButKeepsItsCleanup() {
+        val directory = temp.newFolder().canonicalFile
+        val first = SystemNnnCleanupQueue.Target("content://copy/first", true)
+        val other = SystemNnnCleanupQueue.Target("content://other/second", true)
+        val queue = SystemNnnCleanupQueue(directory)
+        queue.add(listOf(first, other))
+        queue.retainCopies { it.startsWith("content://copy/") }
+        queue.complete(first)
+        assertEquals(listOf(first.copy(retireCopy = false), other), SystemNnnCleanupQueue(directory).pending())
     }
 
     @Test fun unavailableSnapshotValidatorLeavesLiveSavesUntouched() {

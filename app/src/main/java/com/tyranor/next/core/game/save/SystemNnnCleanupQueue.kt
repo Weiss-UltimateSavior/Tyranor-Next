@@ -26,16 +26,26 @@ internal class SystemNnnCleanupQueue(
 
     fun pending(): List<Target> = synchronized(lock) { read() }
 
-    fun add(uris: Collection<String>, retireCopy: Boolean) {
-        if (uris.isEmpty()) return
+    fun add(targets: Collection<Target>) {
+        if (targets.isEmpty()) return
         synchronized(lock) {
             val merged = read().associateByTo(linkedMapOf<String, Target>(), Target::uri)
-            for (uri in uris) {
-                require(uri.isNotBlank())
-                merged[uri] = Target(uri, retireCopy || merged[uri]?.retireCopy == true)
+            for (target in targets) {
+                require(target.uri.isNotBlank())
+                merged[target.uri] = target.copy(retireCopy = target.retireCopy || merged[target.uri]?.retireCopy == true)
             }
             // Repeated requests still have to reach disk before the library write.
             write(merged.values)
+        }
+    }
+
+    fun retainCopies(matches: (String) -> Boolean) {
+        synchronized(lock) {
+            val current = read()
+            val updated = current.map { target ->
+                if (target.retireCopy && matches(target.uri)) target.copy(retireCopy = false) else target
+            }
+            if (updated != current) write(updated)
         }
     }
 
@@ -50,12 +60,13 @@ internal class SystemNnnCleanupQueue(
         val state = store.inspect(KEY)
         try {
             if (state.length() == 0) return legacyPending().distinct().map { Target(it, false) }
+            val verifiedRetirement = state.optInt("version") == CURRENT_VERSION
             val targets = state.getJSONArray("pending")
             return List(targets.length()) { index ->
                 val target = targets.getJSONObject(index)
                 val uri = target.getString("uri")
                 if (uri.isBlank()) throw JSONException("Empty cleanup target URI")
-                Target(uri, target.getBoolean("retire"))
+                Target(uri, target.getBoolean("retire") && verifiedRetirement)
             }
         } catch (failure: JSONException) {
             throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)
@@ -67,7 +78,7 @@ internal class SystemNnnCleanupQueue(
         targets.forEach { pending.put(JSONObject().put("uri", it.uri).put("retire", it.retireCopy)) }
         try {
             // An empty record also retires the old preference queue after migration.
-            store.save(KEY, JSONObject().put("pending", pending))
+            store.save(KEY, JSONObject().put("version", CURRENT_VERSION).put("pending", pending))
         } catch (failure: IOException) {
             if (failure is SaveSyncException) throw failure
             throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)
@@ -78,6 +89,7 @@ internal class SystemNnnCleanupQueue(
 
     companion object {
         private const val PREFS = "systemnnn_cleanup"
+        private const val CURRENT_VERSION = 2
         private val KEY = "0".repeat(64)
         private val lock = Any()
 

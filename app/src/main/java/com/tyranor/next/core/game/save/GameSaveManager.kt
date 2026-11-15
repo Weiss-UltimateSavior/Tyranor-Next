@@ -883,13 +883,16 @@ class GameSaveManager(private val context: Context) {
                 ensureActive()
                 try {
                     val sourceId = SystemNnnGameDirectory.sourceIdentity(target.uri)
-                    val result = if (sourceId == null) false else clearQueuedSystemNnnResources(target, sourceId)
+                    if (sourceId == null) {
+                        queue.complete(target)
+                        continue
+                    }
+                    val result = clearQueuedSystemNnnResources(queue, target, sourceId)
                     if (result == null) {
                         failed++
                         continue
                     }
                     if (result) cleared++
-                    queue.complete(target)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
@@ -900,27 +903,37 @@ class GameSaveManager(private val context: Context) {
             SystemNnnResourceCleanup(cleared, failed)
         }
 
-    private suspend fun clearQueuedSystemNnnResources(target: SystemNnnCleanupQueue.Target, sourceId: String): Boolean? =
+    private suspend fun clearQueuedSystemNnnResources(
+        queue: SystemNnnCleanupQueue,
+        target: SystemNnnCleanupQueue.Target,
+        sourceId: String,
+    ): Boolean? =
         SaveSyncLocks.versions(target.uri) {
-            if (SystemNnnCopyStore.activeRoot(appContext, sourceId) == null) return@versions false
             val game = ScanGame(target.uri, target.uri, EngineType.SYSTEMNNN, EngineScanner.LAUNCH_TARGET_GAME_DIR)
             val key = SaveSyncRuntime.activeKey(appContext, game)
             val coroutine = currentCoroutineContext()
             SaveSyncLocks.active(key) {
                 // A retire marker switches directory authority, so exclude mutations of either directory.
                 SaveSyncLocks.mutation {
-                    if (SystemNnnCopyStore.activeRoot(appContext, sourceId) == null) return@mutation false
-                    if (SaveSyncRuntime.activeKey(appContext, game) != key || target.retireCopy && key == game.uri) {
+                    if (SaveSyncRuntime.activeKey(appContext, game) != key) {
                         throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
                     }
                     val running = SaveSyncRuntime.isGameRunning(appContext, game)
                     GameLibraryFacade.evictUnusedSystemNnnCopy(appContext, sourceId) {
                         coroutine.ensureActive()
-                        if (running) throw GameSaveException(SaveErrorCode.ENGINE_RUNNING)
-                        if (target.retireCopy) {
-                            SaveSyncService(appContext).requireSaveDirectoryRetirementAvailable(game, key)
+                        if (target !in queue.pending()) return@evictUnusedSystemNnnCopy false
+                        val cleared = if (SystemNnnCopyStore.activeRoot(appContext, sourceId) != null) {
+                            if (running) throw GameSaveException(SaveErrorCode.ENGINE_RUNNING)
+                            if (target.retireCopy) {
+                                if (key == game.uri) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+                                SaveSyncService(appContext).requireSaveDirectoryRetirementAvailable(game, key)
+                            }
+                            evictSystemNnnResources(sourceId, target.retireCopy)
+                        } else {
+                            false
                         }
-                        evictSystemNnnResources(sourceId, target.retireCopy)
+                        queue.complete(target)
+                        cleared
                     }
                 }
             }

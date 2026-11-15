@@ -67,7 +67,8 @@ public final class SystemNnnSaveValidationService extends Service {
             String path=data.getString("game");
             if(path==null)throw new IOException("Missing target game directory");
             File game=new File(path);
-            if(!SystemNnnHost.canOpen(game))throw new IOException("Unreadable target game directory");
+            // Ordinary save blocks can be validated after the copied game resources were cleared.
+            if(!game.isAbsolute()||!game.isDirectory()||!game.canRead())throw new IOException("Unreadable target game directory");
             NativeGame.load(this);
             try {
                 result = SystemNnnHost.canReplaceSaveSnapshot(game,files, data.getBoolean("requiresStory")) ? VALID : INVALID;

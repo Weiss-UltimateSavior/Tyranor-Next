@@ -114,7 +114,17 @@ object GameLibraryFacade {
             val coroutine = currentCoroutineContext()
             gameWrites.update {
                 coroutine.ensureActive()
-                updateGames(context, transform)
+                updateGames(context) { current ->
+                    val registered = transform(current)
+                    val known = current.mapTo(HashSet(), ScanGame::uri)
+                    val sources = registered.asSequence().filter { it.uri !in known }
+                        .mapNotNull { SystemNnnGameDirectory.sourceIdentity(it.uri) }.distinct()
+                        .filter { SystemNnnCopyStore.activeRoot(context, it) != null }.toSet()
+                    if (sources.isNotEmpty()) SystemNnnCleanupQueue.open(context).retainCopies {
+                        SystemNnnGameDirectory.sourceIdentity(it) in sources
+                    }
+                    registered
+                }
             }
         }
 
@@ -176,13 +186,19 @@ object GameLibraryFacade {
         var queued = false
         updateGames(context) { games ->
             val targets = games.filter { it.uri == uri }
-            queued = enqueueSystemNnnRemoval(context, targets, retireCopy = true)
-            games.filterNot { it.uri == uri }
+            val remaining = games.filterNot { it.uri == uri }
+            queued = enqueueSystemNnnRemoval(context, targets, retireCopy = true, remaining = remaining)
+            remaining
         }
         queued
     }
 
-    internal fun enqueueSystemNnnRemoval(context: Context, games: List<ScanGame>, retireCopy: Boolean): Boolean {
+    internal fun enqueueSystemNnnRemoval(
+        context: Context,
+        games: List<ScanGame>,
+        retireCopy: Boolean,
+        remaining: List<ScanGame> = emptyList(),
+    ): Boolean {
         val targets = try {
             games.asSequence().map(RuntimeModuleBindings::builtInSystemNnn)
                 .filter { it.engine == EngineType.SYSTEMNNN && SystemNnnGameDirectory.committed(context, it.uri) != null }
@@ -193,7 +209,15 @@ object GameLibraryFacade {
             throw SaveSyncException(SaveSyncError.SAVE_UNAVAILABLE, cause = failure)
         }
         if (targets.isEmpty()) return false
-        SystemNnnCleanupQueue.open(context).add(targets, retireCopy)
+        val queue = SystemNnnCleanupQueue.open(context)
+        val referenced = remaining.mapNotNull { SystemNnnGameDirectory.sourceIdentity(it.uri) }.toSet()
+        val sources = targets.associateWith { SystemNnnGameDirectory.sourceIdentity(it) }
+        val retain = sources.values.filterNotNull()
+            .filter { !retireCopy || it in referenced }.toSet()
+        if (retain.isNotEmpty()) queue.retainCopies { SystemNnnGameDirectory.sourceIdentity(it) in retain }
+        queue.add(sources.map { (uri, source) ->
+            SystemNnnCleanupQueue.Target(uri, retireCopy && source != null && source !in referenced)
+        })
         return true
     }
 
@@ -342,10 +366,11 @@ object GameLibraryFacade {
             val games = loadGamesLocked(context)
             val removed = games.filter { isGameUnderRoot(root, it.uri) }
             if (root !in roots && removed.isEmpty()) return@synchronized
-            enqueueSystemNnnRemoval(context, removed, retireCopy = true)
             val removedUris = removed.mapTo(HashSet()) { it.uri }
+            val remaining = games.filterNot { it.uri in removedUris }
+            enqueueSystemNnnRemoval(context, removed, retireCopy = true, remaining = remaining)
             rootsCache = roots - root
-            gamesCache = games.filterNot { it.uri in removedUris }
+            gamesCache = remaining
             recentGamesCache = recentGamesCache?.filterNot { it.uri in removedUris }
             quickLaunchCache = quickLaunchCache?.filterNot { it.uri in removedUris }
             GameLibraryRepository.post(context) { GameLibraryRepository.removeRootAndGames(it, root, removedUris) }

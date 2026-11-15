@@ -109,11 +109,7 @@ class SystemNnnSaveValidationDeviceTest {
         val workspace = Files.createTempDirectory(app.cacheDir.toPath(), "systemnnn-validation-").toFile()
         try {
             val gameDir = File(workspace, "game").apply { check(mkdir()) }
-            // Admission requires the startup marker; this test validates progress, not script execution.
-            File(gameDir, "spt/sys.spt").apply {
-                check(parentFile!!.mkdir())
-                writeBytes(byteArrayOf())
-            }
+            // A save-only directory still accepts progress after copied resources have been cleared.
             val game = ScanGame(
                 title = "SystemNNN ZIP validation",
                 uri = Uri.fromFile(gameDir).toString(),
