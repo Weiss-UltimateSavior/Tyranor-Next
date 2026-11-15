@@ -1,0 +1,547 @@
+diff --git a/crates/ethornell-app/src/lib.rs b/crates/ethornell-app/src/lib.rs
+--- a/crates/ethornell-app/src/lib.rs
++++ b/crates/ethornell-app/src/lib.rs
+@@ -294,6 +294,26 @@
+         // selector matches, without importing unrelated later text signatures.
+         (7664, 0x8ba4d6240ac73523) => Some((26064, 0xec4630efb73656f1,
+             NativeRuntimeProfile { abi: ethornell_vm::NativeAbiProfile::Anipani, ..NativeRuntimeProfile::default() })),
++        // Paired resources identify the extended graph ABI and native
++        // 16-mode display table verified in both retail executables.
++        (11952, 0x912bc91f71821a65) => Some((18640, 0x3c2bae81495cf990,
++            NativeRuntimeProfile {
++                abi: ethornell_vm::NativeAbiProfile::HoukagoFd,
++                display_modes: Some(EXTENDED_DISPLAY_MODES),
++                se_channels: 128,
++                main_code_bytes: 0x800000,
++                main_data_bytes: 0x400000,
++                ..NativeRuntimeProfile::default()
++            })),
++        (12608, 0x465ade6f2b64f1a2) => Some((20512, 0x7cf25aced72e59b8,
++            NativeRuntimeProfile {
++                abi: ethornell_vm::NativeAbiProfile::HoukagoFd,
++                display_modes: Some(EXTENDED_DISPLAY_MODES),
++                se_channels: 128,
++                main_code_bytes: 0x800000,
++                main_data_bytes: 0x400000,
++                ..NativeRuntimeProfile::default()
++            })),
+         // Japanese retail release, system.arc dated 2019-12-10.
+         (7536, 0xaa1f17da017b7c27) => Some((24368, 0xe221d8b4be4f097a, amachoco)),
+         // Houkago Cinderella FD's validator sub_4A6C30 accepts SE 0..128.
+@@ -361,6 +381,14 @@
+     }
+     NativeRuntimeProfile::default()
+ }
++
++// Sys80:60 and Sys81:60 in the two confirmed 32-bit executables.
++const EXTENDED_DISPLAY_MODES: [(i32, i32); 16] = [
++    (320, 240), (640, 480), (800, 600), (1024, 768),
++    (1024, 576), (1280, 960), (1280, 720), (1920, 1440),
++    (1920, 1080), (2560, 1920), (2560, 1440), (3840, 2880),
++    (3840, 2160), (1600, 900), (1366, 768), (960, 540),
++];
+ 
+ const CONFIRMED_BOOTSTRAP_FNV: u64 = 0x9f5e9248ec3ad577;
+ const CONFIRMED_TITLE_FNV: u64 = 0xc6bdd0d97d4f4893;
+@@ -2755,7 +2783,7 @@
+         // header. sub_401EF0 accepts embedded-point flags 0/1 and, for flag 1,
+         // copies +0x1C/+0x1E into bitmap-registry DWORDs +0x28/+0x2C.
+         let (native_bitmap_format, auxiliary_pair, cbg_format_trace) =
+-            if bytes.starts_with(b"CompressedBG___") {
++            if (bytes.starts_with(b"CompressedBG___") || bytes.starts_with(b"CompressedBG_MT\0")) {
+                 let Ok(metadata) = parse_cbg_metadata(&bytes) else {
+                     return false;
+                 };
+diff --git a/crates/ethornell-app/src/native_graph.rs b/crates/ethornell-app/src/native_graph.rs
+--- a/crates/ethornell-app/src/native_graph.rs
++++ b/crates/ethornell-app/src/native_graph.rs
+@@ -4214,7 +4214,7 @@
+                     ))));
+                 };
+                 let is_bg = self.manager.read_by_entry_raw(&entry).is_ok_and(|bytes| {
+-                    bytes.starts_with(b"CompressedBG___") || bytes.starts_with(b"BM")
++                    (bytes.starts_with(b"CompressedBG___") || bytes.starts_with(b"CompressedBG_MT\0")) || bytes.starts_with(b"BM")
+                 });
+                 if !is_bg || !self.load_graph_image_resource(target, &archive, &file) {
+                     return Some(Err(ethornell_vm::VmError::Runtime(format!(
+diff --git a/crates/ethornell-app/src/native_profile.rs b/crates/ethornell-app/src/native_profile.rs
+--- a/crates/ethornell-app/src/native_profile.rs
++++ b/crates/ethornell-app/src/native_profile.rs
+@@ -424,7 +424,7 @@
+         profile.se_channels = channels;
+     }
+     profile.modern_pointer_tags = caps.modern_tags;
+-    profile.display_modes = caps.display_modes;
++    profile.display_modes = caps.display_modes.or(profile.display_modes);
+     if caps.legacy_graph_extensions && profile.abi == ethornell_vm::NativeAbiProfile::Tayutama {
+         profile.abi = ethornell_vm::NativeAbiProfile::Anipani;
+     }
+diff --git a/crates/ethornell-image/src/cbg.rs b/crates/ethornell-image/src/cbg.rs
+--- a/crates/ethornell-image/src/cbg.rs
++++ b/crates/ethornell-image/src/cbg.rs
+@@ -2,8 +2,12 @@
+ use ethornell_core::{EthornellError, Result};
+ 
+ pub(crate) mod bf_movie;
++pub(crate) mod mt;
+ 
+ pub fn decode_cbg(data: &[u8]) -> Result<DecodedImage> {
++    if data.starts_with(b"CompressedBG_MT\0") {
++        return mt::decode(data);
++    }
+     let meta = parse_cbg_metadata(data)?;
+     let version = meta.version.unwrap_or(0);
+     if version > 2 {
+@@ -28,6 +32,9 @@
+ /// followed by native BGR/word/gray bytes. This deliberately avoids a display
+ /// RGBA round-trip for 16-bit data.
+ pub fn decode_native_buffer(data: &[u8]) -> Result<Vec<u8>> {
++    if data.starts_with(b"CompressedBG_MT\0") {
++        return mt::decode_native_buffer(data);
++    }
+     let meta = parse_cbg_metadata(data)?;
+     let mut decoder = CbgV2Decoder::new(data)?;
+     let pixels = if meta.version.unwrap_or(0) < 2 {
+diff --git a/crates/ethornell-image/src/lib.rs b/crates/ethornell-image/src/lib.rs
+--- a/crates/ethornell-image/src/lib.rs
++++ b/crates/ethornell-image/src/lib.rs
+@@ -92,7 +92,7 @@
+ }
+ 
+ pub fn detect_image_format(buf: &[u8]) -> ImageFormat {
+-    if buf.starts_with(b"CompressedBG___") {
++    if buf.starts_with(b"CompressedBG___") || buf.starts_with(b"CompressedBG_MT\0") {
+         ImageFormat::CompressedBg
+     } else if buf.starts_with(b"\x89PNG\r\n\x1a\n") {
+         ImageFormat::Png
+@@ -432,6 +432,9 @@
+ }
+ 
+ pub fn parse_cbg_metadata(buf: &[u8]) -> Result<CbgMetadata> {
++    if buf.starts_with(b"CompressedBG_MT\0") {
++        return cbg::mt::metadata(buf);
++    }
+     if !buf.starts_with(b"CompressedBG___") {
+         return Err(EthornellError::UnsupportedFormat(
+             "missing CompressedBG___ header".into(),
+diff --git a/crates/ethornell-script/src/lib.rs b/crates/ethornell-script/src/lib.rs
+--- a/crates/ethornell-script/src/lib.rs
++++ b/crates/ethornell-script/src/lib.rs
+@@ -1460,7 +1460,7 @@
+ 
+     #[test]
+     fn names_every_opcode_registered_by_the_native_interpreter() {
+-        assert_eq!(NATIVE_REGISTERED_OPCODES.len(), 136);
++        assert_eq!(NATIVE_REGISTERED_OPCODES.len(), 161);
+         assert!(
+             NATIVE_REGISTERED_OPCODES
+                 .iter()
+diff --git a/crates/ethornell-vm/src/lib.rs b/crates/ethornell-vm/src/lib.rs
+--- a/crates/ethornell-vm/src/lib.rs
++++ b/crates/ethornell-vm/src/lib.rs
+@@ -12231,7 +12231,8 @@
+             // plausibility test because they may be plain numbers.
+             let non_null_pointer = matches!(original, Value::Ptr(ptr) if ptr != 0);
+             let text_pointer = text_slot && matches!(original, Value::Ptr(ptr) if ptr != 0)
+-                || text_slot && matches!(original, Value::Int(ptr) if ptr != 0);
++                || text_slot && matches!(original, Value::Int(ptr) if ptr != 0
++                    && self.read_c_string_bytes(ptr as u32).is_ok());
+             if text_pointer {
+                 self.replace_operand(operand, Value::Str(text));
+             } else if non_null_pointer && !text.starts_with("0x") {
+diff --git a/crates/ethornell-image/src/cbg/mt.rs b/crates/ethornell-image/src/cbg/mt.rs
+new file mode 100644
+--- /dev/null
++++ b/crates/ethornell-image/src/cbg/mt.rs
+@@ -0,0 +1,391 @@
++//! Independently coded stripes in the 1.689 CompressedBG_MT decoder.
++//! The native decoder uses LSB-first Huffman bits and restarts its average
++//! predictor at every stripe (0x1400BEA80 / 0x1400BE6B0 in the tested binary).
++use super::{CbgV2Decoder, HuffmanTree, Reader};
++use crate::{CbgMetadata, DecodedImage};
++use ethornell_core::{EthornellError, Result};
++
++const MAX_PIXELS: usize = 64 * 1024 * 1024;
++const MAX_PACKED_BYTES: usize = 64 * 1024 * 1024;
++
++fn invalid(message: &str) -> EthornellError {
++    EthornellError::Parse(format!("CBG MT {message}"))
++}
++
++fn word(data: &[u8], at: usize) -> Result<u32> {
++    let bytes = data
++        .get(at..at + 4)
++        .ok_or_else(|| invalid("header is truncated"))?;
++    Ok(u32::from_le_bytes(bytes.try_into().unwrap()))
++}
++
++pub(crate) fn metadata(data: &[u8]) -> Result<CbgMetadata> {
++    if data.len() < 48 || !data.starts_with(b"CompressedBG_MT\0") {
++        return Err(invalid("header is missing or truncated"));
++    }
++    let width = word(data, 16)?;
++    let height = word(data, 20)?;
++    let rows = word(data, 24)?;
++    let bpp = word(data, 28)?;
++    if width == 0
++        || height == 0
++        || rows == 0
++        || width > u16::MAX as u32
++        || height > u16::MAX as u32
++        || (width as usize)
++            .checked_mul(height as usize)
++            .is_none_or(|n| n > MAX_PIXELS)
++    {
++        return Err(invalid("dimensions exceed the image budget"));
++    }
++    if !matches!(bpp, 8 | 24 | 32) {
++        return Err(EthornellError::UnsupportedFormat(
++            "CBG MT bit depth is unsupported".into(),
++        ));
++    }
++    Ok(CbgMetadata {
++        width,
++        height,
++        bpp,
++        image_subtype: 0,
++        embedded_point_flag: 0,
++        embedded_x: 0,
++        embedded_y: 0,
++        version: None,
++        intermediate_length: None,
++        encoded_length: None,
++        key: None,
++        checksum: None,
++        xor_check: None,
++    })
++}
++
++fn varint(input: &mut Reader<'_>) -> Result<u32> {
++    let mut value = 0u32;
++    for shift in (0..35).step_by(7) {
++        let byte = input.read_u8()?;
++        if shift == 28 && byte > 15 {
++            return Err(invalid("variable integer overflows"));
++        }
++        value |= u32::from(byte & 127) << shift;
++        if byte & 128 == 0 {
++            return Ok(value);
++        }
++    }
++    Err(invalid("variable integer is unterminated"))
++}
++
++fn unpack_runs(packed: &[u8], output: &mut [u8]) -> Result<()> {
++    let mut input = Reader::new(packed);
++    let mut position = 0usize;
++    let mut zero_run = false;
++    while input.pos < packed.len() {
++        let count = varint(&mut input)? as usize;
++        let end = position
++            .checked_add(count)
++            .filter(|&end| end <= output.len())
++            .ok_or_else(|| invalid("run exceeds its stripe"))?;
++        if !zero_run {
++            let bytes = packed
++                .get(input.pos..input.pos + count)
++                .ok_or_else(|| invalid("literal run is truncated"))?;
++            output[position..end].copy_from_slice(bytes);
++            input.pos += count;
++        }
++        position = end;
++        zero_run = !zero_run;
++    }
++    if position != output.len() {
++        return Err(invalid("run stream does not fill its stripe"));
++    }
++    Ok(())
++}
++
++fn stripe(data: &[u8], output: &mut [u8]) -> Result<()> {
++    let mut input = Reader::new(data);
++    let packed_len = word(data, 0)? as usize;
++    // Alternating one-byte runs are the largest valid representation, with
++    // at most one five-byte run length per literal byte and a final run.
++    if packed_len == 0
++        || packed_len > MAX_PACKED_BYTES
++        || packed_len > output.len().saturating_mul(6).saturating_add(10)
++    {
++        return Err(invalid("packed stripe exceeds its decoded budget"));
++    }
++    input.pos = 4;
++    let mut weights = Vec::with_capacity(256);
++    let mut total = 0u64;
++    for _ in 0..256 {
++        let weight = varint(&mut input)?;
++        total += u64::from(weight);
++        weights.push(weight);
++    }
++    if total != packed_len as u64 {
++        return Err(invalid(
++            "Huffman frequencies disagree with the stripe length",
++        ));
++    }
++    let tree = HuffmanTree::new(&weights, true);
++    let bits = input.remaining();
++    if packed_len > bits.len().saturating_mul(8) {
++        return Err(invalid(
++            "Huffman stripe cannot contain the declared symbol count",
++        ));
++    }
++    let mut bit_position = 0usize;
++    let mut packed = Vec::with_capacity(packed_len);
++    for _ in 0..packed_len {
++        let mut node = tree.nodes.len() - 1;
++        while tree.nodes[node].is_parent {
++            let byte = *bits
++                .get(bit_position / 8)
++                .ok_or_else(|| invalid("Huffman bitstream is truncated"))?;
++            let bit = byte >> (bit_position % 8) & 1;
++            bit_position += 1;
++            node = if bit == 0 {
++                tree.nodes[node].left_index
++            } else {
++                tree.nodes[node].right_index
++            };
++            if node >= tree.nodes.len() {
++                return Err(invalid("Huffman tree has an invalid child"));
++            }
++        }
++        packed.push(node as u8);
++    }
++    unpack_runs(&packed, output)
++}
++
++fn pixels(data: &[u8], meta: &CbgMetadata) -> Result<Vec<u8>> {
++    let rows = word(data, 24)? as usize;
++    let width = meta.width as usize;
++    let height = meta.height as usize;
++    let pixel_size = meta.bpp as usize / 8;
++    let stride = width * pixel_size;
++    let count = height.div_ceil(rows);
++    let header_end = 48 + count * 4;
++    if header_end > data.len() {
++        return Err(invalid("stripe offset table is truncated"));
++    }
++    let mut output = vec![0u8; stride * height];
++    for index in 0..count {
++        let start = word(data, 48 + index * 4)? as usize;
++        let end = if index + 1 == count {
++            data.len()
++        } else {
++            word(data, 52 + index * 4)? as usize
++        };
++        if start < header_end || start >= end || end > data.len() {
++            return Err(invalid("stripe offsets are invalid"));
++        }
++        let first_row = index * rows;
++        let stripe_rows = rows.min(height - first_row);
++        let target = &mut output[first_row * stride..(first_row + stripe_rows) * stride];
++        stripe(&data[start..end], target)?;
++        CbgV2Decoder::reverse_average_sampling(target, width, stripe_rows, stride, pixel_size);
++    }
++    Ok(output)
++}
++
++pub(crate) fn decode(data: &[u8]) -> Result<DecodedImage> {
++    let meta = metadata(data)?;
++    let pixels = pixels(data, &meta)?;
++    let mut rgba = Vec::with_capacity(meta.width as usize * meta.height as usize * 4);
++    for pixel in pixels.chunks_exact(meta.bpp as usize / 8) {
++        match meta.bpp {
++            8 => rgba.extend_from_slice(&[pixel[0], pixel[0], pixel[0], 255]),
++            24 => rgba.extend_from_slice(&[pixel[2], pixel[1], pixel[0], 255]),
++            32 => rgba.extend_from_slice(&[pixel[2], pixel[1], pixel[0], pixel[3]]),
++            _ => unreachable!("metadata validates the bit depth"),
++        }
++    }
++    Ok(DecodedImage {
++        width: meta.width,
++        height: meta.height,
++        rgba,
++    })
++}
++
++pub(crate) fn decode_native_buffer(data: &[u8]) -> Result<Vec<u8>> {
++    let meta = metadata(data)?;
++    let pixels = pixels(data, &meta)?;
++    let mut output = vec![0u8; 16];
++    output[..2].copy_from_slice(&(meta.width as u16).to_le_bytes());
++    output[2..4].copy_from_slice(&(meta.height as u16).to_le_bytes());
++    let bpp = if meta.bpp == 24 { 32 } else { meta.bpp as u16 };
++    output[4..6].copy_from_slice(&bpp.to_le_bytes());
++    if meta.bpp == 24 {
++        output[8..10].copy_from_slice(&7u16.to_le_bytes());
++        for pixel in pixels.chunks_exact(3) {
++            output.extend_from_slice(&[pixel[0], pixel[1], pixel[2], 0]);
++        }
++    } else {
++        output.extend_from_slice(&pixels);
++    }
++    Ok(output)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn push_varint(output: &mut Vec<u8>, mut value: u32) {
++        loop {
++            let byte = (value & 127) as u8;
++            value >>= 7;
++            output.push(byte | if value == 0 { 0 } else { 128 });
++            if value == 0 {
++                break;
++            }
++        }
++    }
++
++    fn paths(tree: &HuffmanTree, node: usize, path: &mut Vec<bool>, codes: &mut [Vec<bool>]) {
++        let current = &tree.nodes[node];
++        if !current.is_parent {
++            codes[node] = path.clone();
++            return;
++        }
++        path.push(false);
++        paths(tree, current.left_index, path, codes);
++        *path.last_mut().unwrap() = true;
++        paths(tree, current.right_index, path, codes);
++        path.pop();
++    }
++
++    fn encode_stripe(raw: &[u8], width: usize, pixel_size: usize) -> Vec<u8> {
++        let mut predicted = Vec::with_capacity(raw.len());
++        let stride = width * pixel_size;
++        for (at, &value) in raw.iter().enumerate() {
++            let x = at % stride / pixel_size;
++            let y = at / stride;
++            let prediction = match (x > 0, y > 0) {
++                (false, false) => 0,
++                (true, false) => u32::from(raw[at - pixel_size]),
++                (false, true) => u32::from(raw[at - stride]),
++                (true, true) => (u32::from(raw[at - pixel_size]) + u32::from(raw[at - stride])) / 2,
++            };
++            predicted.push(value.wrapping_sub(prediction as u8));
++        }
++        let mut packed = Vec::new();
++        push_varint(&mut packed, predicted.len() as u32);
++        packed.extend_from_slice(&predicted);
++        let mut weights = vec![0; 256];
++        for &byte in &packed {
++            weights[byte as usize] += 1;
++        }
++        let tree = HuffmanTree::new(&weights, true);
++        let mut codes = vec![Vec::new(); 256];
++        paths(&tree, tree.nodes.len() - 1, &mut Vec::new(), &mut codes);
++        let mut output = (packed.len() as u32).to_le_bytes().to_vec();
++        for weight in weights {
++            push_varint(&mut output, weight);
++        }
++        let mut bit = 0usize;
++        let mut bytes = Vec::new();
++        for byte in packed {
++            for &value in &codes[byte as usize] {
++                if bit % 8 == 0 {
++                    bytes.push(0);
++                }
++                bytes[bit / 8] |= u8::from(value) << (bit % 8);
++                bit += 1;
++            }
++        }
++        output.extend_from_slice(&bytes);
++        output
++    }
++
++    fn fixture(bpp: u32) -> (Vec<u8>, Vec<u8>) {
++        let pixel_size = bpp as usize / 8;
++        let raw: Vec<u8> = (0..6 * pixel_size)
++            .map(|index| (index * 19 + 3) as u8)
++            .collect();
++        let mut output = vec![0u8; 56];
++        output[..16].copy_from_slice(b"CompressedBG_MT\0");
++        for (offset, value) in [(16, 2u32), (20, 3), (24, 2), (28, bpp)] {
++            output[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
++        }
++        for (index, stripe) in raw.chunks(4 * pixel_size).enumerate() {
++            let offset = output.len() as u32;
++            output[48 + index * 4..52 + index * 4].copy_from_slice(&offset.to_le_bytes());
++            output.extend_from_slice(&encode_stripe(stripe, 2, pixel_size));
++        }
++        (output, raw)
++    }
++
++    #[test]
++    fn decodes_lsb_stripes_and_resets_the_predictor_at_partial_last_stripe() {
++        for bpp in [8, 24, 32] {
++            let (bytes, raw) = fixture(bpp);
++            assert_eq!(
++                crate::detect_image_format(&bytes),
++                crate::ImageFormat::CompressedBg
++            );
++            let meta = crate::parse_cbg_metadata(&bytes).unwrap();
++            assert_eq!((meta.width, meta.height, meta.bpp), (2, 3, bpp));
++            assert_eq!(pixels(&bytes, &meta).unwrap(), raw);
++            let decoded = crate::decode_image(&bytes).unwrap();
++            let expected: Vec<u8> = raw
++                .chunks(bpp as usize / 8)
++                .flat_map(|p| match bpp {
++                    8 => [p[0], p[0], p[0], 255],
++                    24 => [p[2], p[1], p[0], 255],
++                    _ => [p[2], p[1], p[0], p[3]],
++                })
++                .collect();
++            assert_eq!(decoded.rgba, expected);
++            let native = crate::decode_cbg_native_buffer(&bytes).unwrap();
++            assert_eq!(&native[..4], &[2, 0, 3, 0]);
++            assert_eq!(native.len(), 16 + 6 * if bpp == 8 { 1 } else { 4 });
++            if bpp == 24 {
++                assert_eq!(&native[4..6], &32u16.to_le_bytes());
++                assert_eq!(&native[8..10], &7u16.to_le_bytes());
++                let expected: Vec<u8> = raw
++                    .chunks_exact(3)
++                    .flat_map(|p| [p[0], p[1], p[2], 0])
++                    .collect();
++                assert_eq!(&native[16..], expected);
++            } else {
++                assert_eq!(&native[16..], raw);
++            }
++        }
++    }
++
++    #[test]
++    fn rejects_bad_dimensions_offsets_frequencies_and_truncated_bits() {
++        let (bytes, _) = fixture(24);
++        for offset in [16, 20, 24] {
++            let mut invalid = bytes.clone();
++            invalid[offset..offset + 4].fill(0);
++            assert!(decode(&invalid).is_err());
++        }
++        for value in [0u32, 48, bytes.len() as u32, u32::MAX] {
++            let mut invalid = bytes.clone();
++            invalid[48..52].copy_from_slice(&value.to_le_bytes());
++            assert!(decode(&invalid).is_err());
++        }
++        let mut invalid = bytes.clone();
++        invalid[32] = 1;
++        assert_eq!(decode(&invalid).unwrap(), decode(&bytes).unwrap());
++        let mut invalid = bytes.clone();
++        invalid[56..60].copy_from_slice(&u32::MAX.to_le_bytes());
++        assert!(decode(&invalid).is_err());
++        let mut invalid = bytes.clone();
++        invalid[60] = 1;
++        assert!(decode(&invalid).is_err());
++        let mut invalid = bytes.clone();
++        invalid[52..56].copy_from_slice(&56u32.to_le_bytes());
++        assert!(decode(&invalid).is_err());
++        let mut invalid = bytes.clone();
++        invalid[28..32].copy_from_slice(&16u32.to_le_bytes());
++        assert!(decode(&invalid).is_err());
++        assert!(decode(&bytes[..bytes.len() - 3]).is_err());
++        assert!(unpack_runs(&[128, 128, 128, 128, 16], &mut [0; 2]).is_err());
++        assert!(unpack_runs(&[3, 1], &mut [0; 3]).is_err());
++        assert!(unpack_runs(&[1, 9], &mut [0; 3]).is_err());
++        let mut output = [0; 5];
++        unpack_runs(&[2, 5, 7, 2, 1, 9], &mut output).unwrap();
++        assert_eq!(output, [5, 7, 0, 0, 9]);
++    }
++}

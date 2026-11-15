@@ -48,6 +48,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | -------------------- | ------------------------------------------------------------------- | ---------------------------- |
 | Kirikiri / Kirikiri2 | `.xp3`、`startup.tjs`                                                | Kirikiroid2 / krkrsdl3 原生运行时 |
 | ONScripter           | `nscript.dat`、`.nsa`                                                | ONScripter 原生运行时             |
+| Ethornell / BGI       | `system.arc`、`sysprg.arc` 等 BGI 资源组合                            | 内置实验运行时，支持 CBG_MT，兼容边界见 SPEC 第 10 节 |
 | Artemis              | `system.ini`、`.pfs`                                                 | Artemis 原生运行时                |
 | SiglusEngine         | `Gameexe.dat`/`Gameexe.ini`、`Scene.pck`（根或 `Data/`）                | Siglus 原生运行时（siglus_rs）      |
 | RealLive             | `Gameexe.ini` + `SEEN.TXT`（10000 项 TOC）或 `SEEN####.TXT`             | 内置视觉小说运行时（game_launcher）  |
@@ -162,6 +163,7 @@ docs/、.archify/                     专题方案、审查记录与可视化
 
 | 运行库 | 上游 | 许可证 | 溯源与许可文本 |
 | --- | --- | --- | --- |
+| Ethornell / BGI | [ethornell-rs 固定源码](https://github.com/Weiss-UltimateSavior/ethornell-rs/tree/a6c925e566f6bc1f7d60ab31afaec1d04dbfa8ab) | 上游 Cargo workspace 声明 MPL-2.0 | [本地补丁与构建记录](tools/ethornell/patches/README.md) |
 | Siglus / RealLive / AVG32 / UK2 | [siglus_rs](https://github.com/xmoezzz/siglus_rs) | MPL-2.0 | 上游仓库 |
 | FVP | [rfvp](https://github.com/xmoezzz/rfvp) | MPL-2.0 | 上游仓库 |
 | CMVS | [cmvs-rs](https://github.com/Weiss-UltimateSavior/cmvs-rs) | MIT OR Apache-2.0 | `tools/cmvs/` |
