@@ -48,13 +48,15 @@ final class GalleryCatalog {
     }
     static final class Song {
         final String title,name,lockedTitle,variable,duration;
-        final int unlockNumber;
+        final int titleBytes,lockedTitleBytes,unlockNumber;
 
         Song(List<String> fields,int row,GameTextDecoder codec,long handle) throws IOException {
-            title=decode(codec,fields.get(row)); name=fields.get(row+1);
+            String rawTitle=fields.get(row),rawLockedTitle=fields.get(row+4);
+            title=decode(codec,rawTitle); titleBytes=rawTitle.length(); name=fields.get(row+1);
             int minute=integer(fields.get(row+2),0),second=integer(fields.get(row+3),0);
             duration=String.format(Locale.ROOT,"%02d:%02d",minute,second);
-            lockedTitle=fields.get(row+4).equals("@") ? "" : decode(codec,fields.get(row+4));
+            lockedTitle=rawLockedTitle.equals("@") ? "" : decode(codec,rawLockedTitle);
+            lockedTitleBytes=lockedTitle.isEmpty()?0:rawLockedTitle.length();
             String key=fields.get(row+5);
             unlockNumber=key.equals("*") ? 0 : (integer(key,0)>0 ? integer(key,0) : NativeGame.musicNumber(handle,raw(name)));
             variable=fields.get(row+6).equals("@") ? "" : fields.get(row+6);
@@ -158,7 +160,7 @@ final class GalleryCatalog {
         final int index;
         final String label,picture,detail;
         final boolean enabled,animated,missingMovie;
-        final int unlockedVariants,totalVariants;
+        final int unlockedVariants,totalVariants,musicNameBytes;
 
         Cell(int index,String label,String picture,String detail,boolean enabled) {
             this(index,label,picture,detail,enabled,false);
@@ -172,9 +174,17 @@ final class GalleryCatalog {
         /** CG cells also keep the original block counters behind the "got/total" detail text. */
         Cell(int index,String label,String picture,String detail,boolean enabled,boolean animated,boolean missingMovie,
              int unlockedVariants,int totalVariants) {
+            this(index,label,picture,detail,enabled,animated,missingMovie,unlockedVariants,totalVariants,0);
+        }
+        Cell(int index,String label,String duration,boolean enabled,int musicNameBytes) {
+            this(index,label,"",duration,enabled,false,false,0,0,musicNameBytes);
+        }
+        private Cell(int index,String label,String picture,String detail,boolean enabled,boolean animated,boolean missingMovie,
+                     int unlockedVariants,int totalVariants,int musicNameBytes) {
             this.index=index; this.label=label; this.picture=picture; this.detail=detail; this.enabled=enabled;this.animated=animated;
             this.missingMovie=missingMovie;
             this.unlockedVariants=Math.max(0,unlockedVariants);this.totalVariants=Math.max(0,totalVariants);
+            this.musicNameBytes=musicNameBytes;
         }
     }
     static final class Page {
@@ -213,6 +223,7 @@ final class GalleryCatalog {
     private final GameUiAssets.Config miniGames;
     private final boolean showOpening;
     private final boolean animeEnabled;
+    private final boolean singleByteText;
     private final int animeBufferMax;
     private final LinkedHashMap<String,Bitmap> sprites=new LinkedHashMap<>(64,.75f,true);
     private final Set<String> missingSprites=new LinkedHashSet<>();
@@ -224,6 +235,7 @@ final class GalleryCatalog {
         this.movies=movies;
         miniGames=config(Screen.OMAKE).number("miniGameFlag",0)!=0?GameUiAssets.readConfig(root,"minigame",codec):null;
         GameUiAssets.Config game=GameUiAssets.readConfig(root,"game",codec);
+        singleByteText=game.number("codeByte",2)==1;
         animeEnabled=game.number("animeEffectEnable",0)!=0;
         animeBufferMax=bound(game.number("animeBufferMax",60),1,MAX_ANIMATION_FRAMES);
         showOpening=config(Screen.MOVIE).number("UseOpeningMovie",0)!=0;
@@ -231,8 +243,10 @@ final class GalleryCatalog {
         if (config(Screen.OMAKE).number("sceneModeExistFlag",1)!=0) readScenes(root,codec);
         if (config(Screen.OMAKE).number("bgmModeExistFlag",1)!=0) {
             List<String> rows=tokens(root,"nya","listenbgmlist.xtx");
-            if (rows.size()%8!=0 || rows.size()/8>4096) throw new IOException("音乐鉴赏列表格式无效");
-            for (int row=0;row<rows.size();row+=8) songs.add(new Song(rows,row,codec,handle));
+            // CCommonListenBGM reads GetNameKosuu() / 8 complete records.
+            int count=rows.size()/8;
+            if (count>4096) throw new IOException("音乐鉴赏列表格式无效");
+            for (int i=0;i<count;i++) songs.add(new Song(rows,i*8,codec,handle));
         }
     }
     GameUiAssets.Config config(Screen screen) { return configs.get(screen); }
@@ -443,6 +457,12 @@ final class GalleryCatalog {
     }
     static byte[] raw(String text) { return text.getBytes(StandardCharsets.ISO_8859_1); }
     private static String decode(GameTextDecoder codec,String raw) throws IOException { return codec.decodeConfiguration(raw(raw)); }
+    static int musicNameOffset(int align,int max,int font,boolean singleByte,int bytes) {
+        int spare=max-(singleByte?bytes:bytes/2);
+        if(align==1)return spare*((singleByte?font/2:font)+1)/2;
+        if(align==2)return spare*font/(singleByte?2:1);
+        return 0;
+    }
     private static int integer(String value,int fallback) {
         try { return Integer.parseInt(value); }
         catch (NumberFormatException e) { return fallback; }
@@ -526,7 +546,7 @@ final class GalleryCatalog {
             rows=Math.max(1,Math.min(16,cfg.number("blockNumberY",3)));
             size=cg?albums.get(group).size():scenes.get(group).size();
         } else if (screen==Screen.MUSIC) {
-            size=songs.size(); rows=Math.max(1,Math.min(32,cfg.number("musicPrintNumber",18)));
+            size=songs.size(); rows=Math.max(1,Math.min(32,cfg.number("musicPrintNumber",8)));
         } else if (screen==Screen.CG_GROUP || screen==Screen.SCENE_GROUP) {
             size=screen==Screen.CG_GROUP?albums.size():scenes.size(); rows=Math.max(1,size);
         }
@@ -573,11 +593,17 @@ final class GalleryCatalog {
             }
         } else if (screen==Screen.MUSIC) {
             boolean check=cfg.number("checkListen",0)!=0;
+            boolean lockedByList=cfg.number("useCannotByList",0)!=0;
+            String defaultLocked=cfg.text("cannotMusicName",singleByteText?"???":"？？？");
+            String rawLocked=cfg.value("cannotMusicName","");
+            int defaultLockedBytes=rawLocked.isEmpty()?(singleByteText?3:6):rawLocked.length();
             for (int i=from;i<to;i++) {
                 Song song=songs.get(i);
                 boolean open=song.unlocked(keys,handle,check);
-                String locked=cfg.number("useCannotByList",0)!=0&&!song.lockedTitle.isEmpty()?song.lockedTitle:cfg.text("cannotMusicName","???");
-                cells.add(new Cell(i,open?song.title:locked,"",song.duration,open));
+                boolean useListTitle=lockedByList&&!song.lockedTitle.isEmpty();
+                String label=open?song.title:useListTitle?song.lockedTitle:defaultLocked;
+                int bytes=open?song.titleBytes:useListTitle?song.lockedTitleBytes:defaultLockedBytes;
+                cells.add(new Cell(i,label,song.duration,open,bytes));
             }
         } else if (screen==Screen.CG_GROUP || screen==Screen.SCENE_GROUP) {
             for (int i=0;i<size;i++) cells.add(new Cell(i,screen==Screen.CG_GROUP?"":sceneNames.get(i),"","",true));

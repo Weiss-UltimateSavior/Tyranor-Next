@@ -37,6 +37,7 @@ final class GameGalleryPanel extends GameUiPanel {
     private final Actions actions;
     private SpectrumView spectrum;
     private CgView cgView;
+    private MusicCursor musicCursor;
     private boolean foreground=true;
 
     GameGalleryPanel(Context context,GameUiAssets assets,GalleryCatalog.Page page,Runnable click,Actions actions,
@@ -51,6 +52,7 @@ final class GameGalleryPanel extends GameUiPanel {
         super.uiActive(active);
         foreground=active;
         if(cgView!=null)cgView.foregroundChanged();
+        if(musicCursor!=null)musicCursor.playing(active&&page.musicState==1);
     }
     GalleryCatalog.Screen screen() { return page.screen; }
     @Override Bitmap sprite(String name) {
@@ -59,7 +61,10 @@ final class GameGalleryPanel extends GameUiPanel {
         return picture!=null?picture:super.sprite(name);
     }
     void update(GalleryCatalog.Page value) {
-        if(page==null||page.screen!=value.screen)opening(value.config,false);
+        if(page==null||page.screen!=value.screen){
+            opening(value.config,false);
+            musicCursor=null;
+        }
         page=value;
         setClipChildren(page.screen!=GalleryCatalog.Screen.CG);
         background(page.background);
@@ -369,30 +374,53 @@ final class GameGalleryPanel extends GameUiPanel {
     }
     private void music() {
         GameUiAssets.Config cfg=page.config;
-        int x=cfg.number("cursorPrintX",440),y=cfg.number("cursorPrintY",206);
-        int w=dimension(cfg,"cursorSizeX",480),h=dimension(cfg,"cursorSizeY",24);
-        int dx=cfg.number("cursorNextX",0),dy=cfg.number("cursorNextY",h);
-        int labelX=cfg.number("musicNamePrintX",30),labelY=cfg.number("musicNamePrintY",0);
-        int first=-1;
+        int x=cfg.number("cursorPrintX",76),y=cfg.number("cursorPrintY",199);
+        int w=dimension(cfg,"cursorSizeX",294),h=dimension(cfg,"cursorSizeY",27);
+        int dx=cfg.number("cursorNextX",0),dy=cfg.number("cursorNextY",26);
+        int labelX=cfg.number("musicNamePrintX",0),labelY=cfg.number("musicNamePrintY",0);
+        int font=dimension(cfg,"messageFontSize",22),align=cfg.number("musicNameCenterFlag",1);
+        int maxName=bounded(cfg.number("musicNameMax",12),0,4096);
+        boolean singleByte=assets.game.number("codeByte",2)==1;
+        boolean cursorOnTop=cfg.number("cursorIsUpper",0)!=0;
+        Bitmap cursorArt=sprite(cfg.value("filenameCursor","ta_bgm_selc"));
+        final int selected=page.index>=0?page.index:page.cells.isEmpty()?-1:page.cells.get(0).index;
         int enabledColor=Color.rgb(bounded(cfg.number("messageColorR",255),0,255),bounded(cfg.number("messageColorG",255),0,255),
             bounded(cfg.number("messageColorB",255),0,255));
         // CommonListenBGM m_cannotMusicNameColor*: 128 unless cannotColorR/G/B overrides it.
         int cannot=Color.rgb(bounded(cfg.number("cannotColorR",128),0,255),bounded(cfg.number("cannotColorG",128),0,255),
             bounded(cfg.number("cannotColorB",128),0,255));
+        MusicCursor cursor=null;
+        TextView selectedName=null;
         for (int i=0;i<page.cells.size();i++) {
             GalleryCatalog.Cell cell=page.cells.get(i);
-            if (cell.enabled && first==-1) first=cell.index;
             int atX=x+i*dx,atY=y+i*dy;
-            if (cell.index==page.index) picture(cfg.value("filenameCursor","ta_bgm_selc"),atX,atY,w,h);
-            TextView name=text(cell.label,dimension(cfg,"messageFontSize",22),cell.enabled?enabledColor:cannot);
+            boolean selectedRow=cell.index==selected;
+            if(selectedRow&&cursorArt!=null){
+                if(musicCursor==null||musicCursor.image!=cursorArt)musicCursor=new MusicCursor(cursorArt,cfg,w,h);
+                cursor=musicCursor;
+                put(cursor,atX,atY,w,h);
+            }
+            int textX=atX+labelX+GalleryCatalog.musicNameOffset(align,maxName,font,singleByte,cell.musicNameBytes);
+            TextView name=text(cell.label,font,cell.enabled?enabledColor:cannot);
             name.setSingleLine(true);
-            name.setGravity(cfg.number("musicNameCenterFlag",0)!=0?Gravity.CENTER:Gravity.CENTER_VERTICAL);
-            name.setSoundEffectsEnabled(false);
-            name.setOnClickListener(v -> {click.run(); actions.play(cell.index);});
-            name.setEnabled(cell.enabled);
-            put(name,atX+labelX,atY+labelY,Math.max(1,w-labelX),h);
+            name.setGravity(Gravity.TOP|Gravity.LEFT);
+            put(name,textX,atY+labelY,Math.max(1,canvasWidth-textX),Math.max(h,font*2));
+            if(selectedRow)selectedName=name;
+
+            if(dy>0){
+                name.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+                View hit=new View(getContext());
+                hit.setContentDescription(cell.label);
+                hit.setSoundEffectsEnabled(false);
+                hit.setOnClickListener(v -> {click.run(); actions.play(cell.index);});
+                hit.setEnabled(cell.enabled);
+                put(hit,atX,atY,w,dy);
+            }
         }
-        final int selected=page.index>=0?page.index:first;
+        // PrintMusicName draws the selected row again after the rest of the list.
+        if(cursor!=null&&!cursorOnTop)cursor.bringToFront();
+        if(selectedName!=null)selectedName.bringToFront();
+        if(cursor!=null&&cursorOnTop)cursor.bringToFront();
         button(cfg,"rew1","rew1",hostText(R.string.engine_systemnnn_ctl_gallery_previous_song),() -> actions.moveSong(-1),359,72,67,38);
         button(cfg,page.musicState==1?"play2":"play1","play1",hostText(R.string.engine_systemnnn_ctl_gallery_play),() -> actions.play(selected),
             cfg.number("play1PrintX",425),cfg.number("play1PrintY",72),82,38).setEnabled(selected>=0);
@@ -415,6 +443,45 @@ final class GameGalleryPanel extends GameUiPanel {
                 spectrum.extent,spectrum.height+spectrum.cap);
         }
         pageButtons();
+    }
+    private final class MusicCursor extends View {
+        private final Bitmap image;
+        private final SpriteAnimation animation;
+        private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
+        private final RectF dest=new RectF();
+        private long elapsed,resumedAt=-1;
+
+        MusicCursor(Bitmap image,GameUiAssets.Config cfg,int w,int h){
+            super(GameGalleryPanel.this.getContext());
+            this.image=image;
+            int frames=cfg.number("cursorAnimeFlag",1)==0?1:
+                Math.min(cfg.number("cursorAnimePattern",8),Math.max(1,image.getHeight()/h));
+            animation=new SpriteAnimation(0,0,w,h,cfg.number("cursorAnimeType",5),
+                frames,cfg.number("cursorAnimeSpeed",1),false);
+            setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+        void playing(boolean active){
+            if(active&&!isAttachedToWindow())return;
+            if(active==(resumedAt>=0))return;
+            long now=SystemClock.uptimeMillis();
+            if(active)resumedAt=now;
+            else {elapsed+=now-resumedAt;resumedAt=-1;}
+            invalidate();
+        }
+        @Override protected void onAttachedToWindow(){
+            super.onAttachedToWindow();
+            playing(foreground&&page.musicState==1);
+        }
+        @Override protected void onDetachedFromWindow(){
+            playing(false);
+            super.onDetachedFromWindow();
+        }
+        @Override protected void onDraw(Canvas canvas){
+            long frame=(elapsed+(resumedAt<0?0:SystemClock.uptimeMillis()-resumedAt))/frameMs;
+            dest.set(0,0,getWidth(),getHeight());
+            animation.draw(canvas,image,dest,paint,frame,255);
+            if(resumedAt>=0&&animation.active(frame))postInvalidateDelayed(frameMs);
+        }
     }
     private final class SpectrumView extends View {
         final int height,extent,cap;
