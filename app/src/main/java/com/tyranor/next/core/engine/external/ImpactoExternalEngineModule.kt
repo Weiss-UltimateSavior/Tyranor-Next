@@ -11,9 +11,9 @@ import java.security.MessageDigest
 /**
  * Impacto 外置 APK 引擎模块。
  *
- * 被承载的是**未改动**的 CommitteeOfZero/impacto（固定提交见 `engine/impacto/source-lock.json`）。它自带 SDL3
+ * 被承载的是**未改动**的 CommitteeOfZero/impacto（固定提交见宿主仓库 yuukana1/Tyranor-Next-Impacto 的 `engine/impacto/source-lock.json`）。它自带 SDL3
  * 的 `org.libsdl.app`，与主 APK 内置的 SDL2 同名 Java 类冲突，所以必须是独立 APK：
- * 由 `engine/impacto/host-apk` 构建，包内只有上游 Java 源码、上游库 `libimpacto.so` 和 TYN 自有的启动子类。
+ * 由宿主仓库 yuukana1/Tyranor-Next-Impacto 构建发布，包内只有上游 Java 源码、上游库 `libimpacto.so` 和 TYN 自有的启动子类。
  * 启动协议集中在本文件和 [ImpactoHostContract] 内，扫描器 / UI 不散落 package/action/extra 字符串。
  */
 object ImpactoExternalEngineModule : ExternalEngineModule {
@@ -26,9 +26,9 @@ object ImpactoExternalEngineModule : ExternalEngineModule {
     override val defaultAlias: String = "internal.impacto"
     override val supportedAliases: Set<String> = setOf("external.impacto")
 
-    /** 与宿主 APK 同版本的发布页；发布由 `impacto-host-release` 工作流完成，合并前必须先发布。 */
+    /** 与宿主 APK 同版本的发布页；宿主在独立仓库构建发布，抬高期望版本前必须先在那里发布对应版本。 */
     override val installUrl: String =
-        "https://github.com/Weiss-UltimateSavior/Tyranor-Next/releases/tag/" +
+        "https://github.com/yuukana1/Tyranor-Next-Impacto/releases/tag/" +
             ImpactoHostContract.RELEASE_TAG_PREFIX + ImpactoHostContract.VERSION_NAME
 
     /** 低于本版本的宿主不认识当前请求协议，按「已过期」处理并引导更新。 */
@@ -71,11 +71,11 @@ object ImpactoExternalEngineModule : ExternalEngineModule {
     }
 }
 
-/** Impacto 宿主 APK 的 Intent 协议键；两端（本 App 与 `engine/impacto/host-apk`）各持一份常量，改动须同步。 */
+/** Impacto 宿主 APK 的 Intent 协议键；两端（本 App 与宿主仓库 yuukana1/Tyranor-Next-Impacto）各持一份常量，改动须同步。 */
 object ImpactoHostContract {
     const val PACKAGE = "com.tyranor.next.impacto"
 
-    /** 本版 App 期望的宿主版本；须与 `engine/impacto/host-apk/app/build.gradle.kts` 一致（`check-host-contract.py` 校验）。 */
+    /** 本版 App 期望的宿主版本；须不高于宿主仓库已发布的版本，并与其 `engine/impacto/host-apk/app/build.gradle.kts` 一致。 */
     const val VERSION_CODE = 1
     const val VERSION_NAME = "0.1.0"
     const val RELEASE_TAG_PREFIX = "impacto-host-"

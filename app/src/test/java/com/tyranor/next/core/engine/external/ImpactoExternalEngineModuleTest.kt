@@ -29,7 +29,7 @@ class ImpactoExternalEngineModuleTest {
         ).forEach { assertTrue(it, it.startsWith(ImpactoHostContract.PACKAGE + ".")) }
         // Points at the release page of exactly the host version this app build expects.
         assertEquals(
-            "https://github.com/Weiss-UltimateSavior/Tyranor-Next/releases/tag/impacto-host-" +
+            "https://github.com/yuukana1/Tyranor-Next-Impacto/releases/tag/impacto-host-" +
                 ImpactoHostContract.VERSION_NAME,
             ImpactoExternalEngineModule.installUrl,
         )

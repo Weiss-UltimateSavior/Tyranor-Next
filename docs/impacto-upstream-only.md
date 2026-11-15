@@ -1,5 +1,7 @@
 # Impacto 原版上游接入草稿
 
+> **宿主 APK 已迁出（2026-11-15）**：宿主 APK 的源码、固定来源 `source-lock.json`、构建脚本、发布工作流与许可说明现在在独立公开仓库 [yuukana1/Tyranor-Next-Impacto](https://github.com/yuukana1/Tyranor-Next-Impacto)，由它构建、签名并发布 APK。本仓库只保留主 App 一侧的接入（引擎类型、扫描、外置模块、文案）和 `tools/impacto/` 里与游戏数据有关的两个只读工具。下文中带日期的构建、宿主与真机记录是迁出前的历史记录，其中提到的 `engine/impacto/`、`tools/impacto/build-upstream.sh` 等路径已不在本仓库，请到上述仓库查看。
+
 此草稿面向 `Weiss-UltimateSavior/Tyranor-Next` 的 `main`，从当前上游基线
 `e04f9a15` 建立。它取代已关闭的 [PR #161](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/161)
 的引擎补丁路线。本 PR 先建立引用、编译和来源验证工具，宿主接入在同一 PR 内继续推进。
@@ -52,42 +54,9 @@
 
 ## 构建和更新
 
-`engine/impacto/source-lock.json` 固定引擎和构建依赖版本。
-源码必须是独立 Git checkout：校验器拒绝父仓库冒充、错误 HEAD、暂存或未暂存修改、
-未跟踪或忽略文件、稀疏检出、隐藏 index 标记及未初始化/已修改的子模块。
+已迁到 [yuukana1/Tyranor-Next-Impacto](https://github.com/yuukana1/Tyranor-Next-Impacto)：该仓库的 `engine/impacto/source-lock.json` 固定引擎、vcpkg 与工具链版本（NDK `27.3.13750724`，上游官方 CI 默认使用的版本），`tools/impacto/` 里的脚本负责校验上游 checkout、从固定提交编译库、暂存与校验候选库，发布工作流打包签名宿主 APK。构建与升级流程见该仓库的 README 与 `engine/impacto/host-apk/README.md`。
+
 这是固定 revision 和 Git 洁净性检查，不是游戏兼容性测试。
-
-```sh
-python3 tools/impacto/verify-upstream.py --source /path/to/impacto
-python3 tools/impacto/test-upstream-integrity.py
-python3 tools/impacto/test-git-environment.py
-python3 tools/impacto/test-build-preflight.py
-python3 tools/impacto/test-stage-upstream.py
-```
-
-候选库构建目前要求 Linux、Python 3.10+、Git、C/C++、make、Ninja、pkg-config、
-Perl、autoconf、automake、libtool、m4、NASM、Bison、Flex、CMake 3.31.1+ 和 Android NDK 27.3.13750724（r27d，即上游官方 CI 在 `ubuntu-24.04` 上默认使用的版本；`tools/impacto/setup-linux-tools.sh` 会按来源锁安装并校验它与 CMake）：
-
-```sh
-export ANDROID_NDK_HOME=/path/to/android-ndk/27.3.13750724
-export IMPACTO_CMAKE=/path/to/cmake/bin/cmake
-export VCPKG_MAX_CONCURRENCY=4
-bash tools/impacto/build-upstream.sh
-```
-
-默认写入 `.impacto-upstream-build/<revision>/`；可设置 `IMPACTO_UPSTREAM_BUILD_ROOT` 指向新的独立目录。
-宿主 CMake 钩子固定 FetchContent 依赖，保留上游自己的 LibAtrac9 构建配方，不编辑上游文件。
-使用单独的 vcpkg 缓存，构建前后和失败退出时检查引擎源码。禁止调用上游的 Android install 目标，因为它会写回源码目录。
-Git 子进程会清除继承的仓库定位与配置注入环境，避免跨仓库调用误读或误写调用方仓库。
-当前不复用已有 `build/_deps` 或 `build/CMakeCache.txt`：配置后再次构建须选新的构建目录，防止锁定 SHA 掩盖依赖缓存中的本地修改。
-构建目录由 `.build.lock` 互斥；取得锁后先撤销旧候选状态，再检查 NDK、CMake 和 Ninja，失败记录为 `build-failed`。
-独立暂存命令也获取同一 `.build.lock`；构建内部调用须验证直接父进程身份及锁 owner 后继承锁，避免重复获取或提前释放。
-发布时另用 `candidate/.publish.lock`，对独占临时快照进行 ELF 检查和哈希计算，原子替换库后最后发布报告。
-异常会释放锁；进程被强制终止留下的锁须确认没有相关进程后手动移除，不自动抢占。
-成功后 `candidate/` 保存未集成的库、ELF 报告和身份记录；不会拷入 APK，也不代表已满足对应源码分发或设备验收要求。
-
-升级流程：更新完整 SHA 和必要的依赖锁，使用新构建目录，重新编译原版库，核对 JNI/CLI/资源契约，
-更新运行库与配套源码，执行真实游戏和生命周期测试。任何阶段失败都保留日志并停止替换运行库。
 
 ## 宿主迁移待办
 
@@ -130,11 +99,11 @@ Git 子进程会清除继承的仓库定位与配置注入环境，避免跨仓�
 主 App 把 Impacto 当作外置 APK 引擎（与 Ren'Py、Ruffle 同一机制）：
 
 - `EngineType.IMPACTO` 属 GAL 分类，卡片图标为 `ic_engine_card_impacto`，封面色 `#B3123A`。
-- 扫描：`ImpactoGameCatalog` 按**精确大小写**的根目录条目名识别上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`），恰好一个 profile 全部命中才识别；`darling` 的要求集合与全小写的 mo6tw 完全相同，无法区分，所以这种布局一律不识别，不猜；`launchTarget` 保存 profile id（即 `-g` 参数）。影片档不作为特征。该表由 `tools/impacto/check-game-catalog.py` 对照固定提交的 `gamedefinitions.lua` 和各 `vfs.lua` 校验。
+- 扫描：`ImpactoGameCatalog` 按**精确大小写**的根目录条目名识别上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`），恰好一个 profile 全部命中才识别；`darling` 的要求集合与全小写的 mo6tw 完全相同，无法区分，所以这种布局一律不识别，不猜；`launchTarget` 保存 profile id（即 `-g` 参数）。影片档不作为特征。该表由 `tools/impacto/check-game-catalog.py` 对照固定提交（见宿主仓库的 `source-lock.json`）的 `gamedefinitions.lua` 和各 `vfs.lua` 校验。
 - 现有 Windows／Steam 样本（小写 `.cpk`、`script.cpk`、无 `SCRIPT.cls`）**不会**被识别为 Impacto，也不会被误判成大写布局的 `chlcc`。
 - 启动：`ImpactoExternalEngineModule` 发 `com.tyranor.next.impacto.action.RUN`，携带游戏目录、profile、`gameKey` 与标题；游戏目录需要主 App 已取得的路径与「所有文件访问」。宿主未安装或版本低于 `ImpactoHostContract.VERSION_CODE` 时，提示并引导到与期望版本对应的发布页（`impacto-host-<版本>`）。
 - 存档：存在于宿主 APK 的内部私有目录（`files/games/<gameKey>/saves`），主 App 不提供文件存档管理；单游戏设置页只显示说明，没有可调项。
-- 宿主 APK 见 [`engine/impacto/host-apk/README.md`](../engine/impacto/host-apk/README.md)：只用上游公开钩子，直接引用已校验的上游 Java 源码，不复制、不修改；需要候选库 `libimpacto.so` 才能打包，只能在 Linux（或 WSL）构建。**不内置进 Tyranor Next**：宿主 APK 约 90 MB（其中 CJK 字体与各游戏字体贴图占大头，均已是压缩格式），内置会让所有用户多下载约 100 MB；且上游自带的 SDL3 `org.libsdl.app` 与 TYN 内置的 SDL2 同名，代码无法合并进主 APK。获取方式与其他外置 APK 模块相同：CI 构建、发布到 GitHub Release、主 App 链接过去。
+- 宿主 APK 见 [yuukana1/Tyranor-Next-Impacto](https://github.com/yuukana1/Tyranor-Next-Impacto)：只用上游公开钩子，直接引用已校验的上游 Java 源码，不复制、不修改；需要候选库 `libimpacto.so` 才能打包，只能在 Linux（或 WSL）构建。**不内置进 Tyranor Next**：宿主 APK 约 90 MB（其中 CJK 字体与各游戏字体贴图占大头，均已是压缩格式），内置会让所有用户多下载约 100 MB；且上游自带的 SDL3 `org.libsdl.app` 与 TYN 内置的 SDL2 同名，代码无法合并进主 APK。获取方式与其他外置 APK 模块相同：该仓库的 CI 构建、发布到 GitHub Release、主 App 链接过去。**首个发布（`impacto-host-0.1.0`）尚未产出，在它出现之前链接指向的发布页不存在。**
 
 这是接入代码，**不是兼容性验收**：带真实引擎库的宿主 APK 已能在电脑上打包，但没有装到任何设备上，引擎没有运行过，也没有对任何游戏数据验证过。
 
