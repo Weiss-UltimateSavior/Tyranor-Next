@@ -44,9 +44,6 @@ final class UiPreviewPool {
         private final Request request;
         private Warmup(Request request){this.request=request;}
     }
-    static int stepLimit(GameUiAssets.Config game){
-        return Math.max(1,Math.min(64,game.number("maxSkipFrameBackScript",game.number("maxSkipFrame",2))));
-    }
     private static final class Entry {
         final long handle;
         Surface surface;

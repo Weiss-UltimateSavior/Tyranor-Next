@@ -199,7 +199,7 @@ object EngineLauncher {
                 result = if (entry.engine == EngineType.SYSTEMNNN) {
                     restoreSystemNnn(context, entry)?.let { return@withContext it }
                     prepareSystemNnnResources(context, entry)?.let { return@withContext it }
-                    // A source-to-copy rebind also writes the URI's version checkpoint.
+                    // SystemNNN launch and save synchronization share the version checkpoint.
                     SaveSyncLocks.versions(entry.uri) { launchAdmitted() }
                 } else launchAdmitted()
             } while (result == null)
@@ -224,7 +224,7 @@ object EngineLauncher {
         if (game.engine == EngineType.SYSTEMNNN &&
             SystemNnnGameDirectory.accessible(context, game.uri)?.let(SystemNnnCopyStore::resourcesEvicted) == true
         ) {
-            // Cleanup won after the initial resource check. Restage outside the save fence.
+            // Cleanup won after the initial check. Recheck the current resource directory.
             return null
         }
         recoverSystemNnnSaves(context, game)?.let { return it }
@@ -1274,7 +1274,10 @@ object EngineLauncher {
             EngineType.XSYS35 -> buildXs35Intent(context, path, game, settings)
 
             EngineType.XSYS4 -> buildXs4Intent(context, path, game, settings)
-            EngineType.SYSTEMNNN -> SystemNnnHost.createLaunchIntent(context, File(path), game.title).apply {
+            EngineType.SYSTEMNNN -> SystemNnnHost.createLaunchIntent(
+                context, File(path), game.title, game.uri, settings.systemNnnFullscreen, settings.systemNnnReadingSize,
+                settings.systemNnnExeAnalysis, settings.systemNnnDebugMode,
+            ).apply {
                 // The engine keeps no copy identity; pass the original directory as the legacy key.
                 SystemNnnGameDirectory.resolve(game.uri)?.absolutePath?.let {
                     putExtra(LaunchContract.RUNTIME_MODULE_SOURCE_IDENTITY_PATH, it)
@@ -1494,7 +1497,7 @@ object EngineLauncher {
         }
     }
 
-    /** Ethornell preflight never writes to the resource root or guesses a save subdirectory. */
+    /** Resolve the resource volume before preparing the fixed game-local save directory. */
     private fun ethornellStorageRoot(path: String): File? {
         val primaryRoot = PrimaryStorageRoot.get()
         if (path == primaryRoot || path.startsWith("$primaryRoot/")) return File(primaryRoot)
@@ -1523,11 +1526,10 @@ object EngineLauncher {
                 return failed(EthornellPrepareError.FONT)
             }
             stage = EthornellPrepareError.USER_DATA
-            com.tyranor.next.core.game.save.EthornellSaveStore(context.filesDir, game.uri).recoverForLaunch()
-            val dir = EthornellPaths.userDataDir(context.filesDir, game.uri)
-            EthornellPaths.validateUserDataDir(context.filesDir, game.uri, dir.absolutePath)
-            if ((!dir.isDirectory && !dir.mkdirs()) || !dir.canWrite() ||
-                !dir.canonicalFile.toPath().startsWith(context.filesDir.canonicalFile.toPath())) {
+            com.tyranor.next.core.game.save.EthornellSaveStore(context.filesDir, game.uri, root).recoverForLaunch()
+            val dir = EthornellPaths.gameUserDataDir(root)
+            EthornellPaths.validateGameUserDataDir(root, dir.absolutePath)
+            if ((!dir.isDirectory && !dir.mkdirs()) || !dir.canWrite()) {
                 return failed(EthornellPrepareError.USER_DATA)
             }
             null
@@ -1566,7 +1568,7 @@ object EngineLauncher {
         putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_ETHORNELL)
         putExtra(LaunchContract.ETHORNELL_NLS, settings.ethornellNls)
         putExtra(LaunchContract.ETHORNELL_FONT_PATH, EthornellPaths.validatedFont(context.filesDir, settings.ethornellFont))
-        putExtra(LaunchContract.ETHORNELL_USER_DATA_DIR, EthornellPaths.userDataDir(context.filesDir, game.uri).absolutePath)
+        putExtra(LaunchContract.ETHORNELL_USER_DATA_DIR, EthornellPaths.gameUserDataDir(File(path)).absolutePath)
         putExtra(LaunchContract.UI_LANGUAGE_TAG, com.tyranor.next.core.i18n.AppLocaleController.wrap(context).resources.configuration.locales[0].toLanguageTag())
     }
 

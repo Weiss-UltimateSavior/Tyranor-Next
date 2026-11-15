@@ -9,7 +9,7 @@
       "url": "https://github.com/Weiss-UltimateSavior/Tyranor-Next.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "1d6b9db336dc42e30c8b61edf5b4e075b80f295b"
+      "revision": "f15d5f94b8fb20ff752d22b57293c732f7281414"
     },
     "output": ".archify/生命周期图-存档互通-20261006-022735/lifecycle-save-interop.html"
   },
@@ -43,11 +43,11 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/save/RpgSaveFormat.kt",
-          "line": 107
+          "line": 18
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/save/RpgSaveFormat.kt",
-          "line": 216
+          "line": 277
         }
       ]
     },
@@ -62,7 +62,7 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 497
+          "line": 447
         }
       ]
     },
@@ -77,7 +77,7 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/save/RpgSaveSync.kt",
-          "line": 107
+          "line": 95
         }
       ]
     },
@@ -92,7 +92,7 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/save/RpgSaveSync.kt",
-          "line": 456
+          "line": 498
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/save/RpgSaveSync.kt",
@@ -111,7 +111,7 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 385
+          "line": 707
         }
       ]
     },
@@ -125,11 +125,11 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 557
+          "line": 447
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 577
+          "line": 474
         }
       ]
     },
@@ -143,7 +143,7 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/save/RpgSaveSyncState.kt",
-          "line": 35
+          "line": 56
         }
       ]
     },
@@ -189,11 +189,11 @@
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/save/RpgSaveFormat.kt",
-          "line": 296
+          "line": 277
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/save/RpgSaveFormat.kt",
-          "line": 61
+          "line": 18
         }
       ]
     }
@@ -269,7 +269,8 @@
       "items": [
         "标准侧：PC / JoiPlay 的 save 或 Save 目录（.rpgsave / .rmmzsave）",
         "Tyranor 侧：生效存档目录（独立存档开关决定）；MV 用 key_<sha256>.bin，MZ 固定原名",
-        "逐槽位较新者胜；mtime 相同必须内容哈希一致才跳过"
+        "逐槽位较新者胜；mtime 相同必须内容哈希一致才跳过；清单额外记录两侧是否存在",
+        "其他引擎：Ren'Py 在 Android 11+ 管理游戏根 saves/；Ethornell 用游戏目录 savedata/；SystemNNN 用私有副本"
       ]
     },
     {
@@ -278,7 +279,8 @@
       "items": [
         "输家写入 original/（Tyranor 侧）或 deleted/（标准侧），不直接删除",
         "临时文件 + fsync + 原子替换，失败回滚；同步清单损坏即中止",
-        "导入导出与互通共用 INTEROP_LOCK，引擎退出后约 500ms 强杀，因此回前台兜底"
+        "导入导出与互通共用 INTEROP_LOCK；手动选版标记落在 noBackupFilesDir，失败关闭不误覆盖",
+        "引擎退出后约 500ms 强杀，因此回前台兜底"
       ]
     },
     {
@@ -287,7 +289,9 @@
       "items": [
         "启动前：登记 pending；仅当会话未运行才立即同步",
         "回前台：轮询等待会话退出后 flush，全部成功才移除登记",
-        "手动：存档管理页「立即同步」，忙碌时拒绝操作"
+        "手动：存档管理页「立即同步」，忙碌时拒绝操作",
+        "显式选版：下一轮同步以 Tyranor 侧为准，成功后自动清除标记",
+        "存档版本与 WebDAV 由 SaveSyncService 独立管理：ZIP 先暂存，用户在版本面板显式激活后才导入"
       ]
     }
   ]

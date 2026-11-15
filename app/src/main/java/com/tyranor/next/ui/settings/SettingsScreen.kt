@@ -187,6 +187,9 @@ fun SettingsScreen(
     var scanDirs by remember { mutableStateOf(emptyList<String>()) }
     val resourceCleanup: SystemNnnCleanupViewModel = viewModel()
     val cleanupState by resourceCleanup.state.collectAsStateWithLifecycle()
+    LaunchedEffect(showScanDirs) {
+        if (showScanDirs) resourceCleanup.retry()
+    }
     // 首次读取目录完成后才让「目录数量」行响应数量变化（避免页面入场时因异步加载弹一下）
     var scanDirsLoaded by remember { mutableStateOf(false) }
     var showPathDialog by remember { mutableStateOf(false) }
@@ -879,6 +882,10 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     }
     if (kind == EngineSettingsKind.CMVS) {
         CmvsSettingsScreen()
+        return
+    }
+    if (kind == EngineSettingsKind.SYSTEMNNN) {
+        SystemNnnSettingsScreen()
         return
     }
     val ctx = LocalContext.current

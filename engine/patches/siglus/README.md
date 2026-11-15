@@ -49,7 +49,7 @@ GLES owner 资源席位同时限制正常、关闭中和永久故障保留资源
 兼容性取舍：只有开启有效滤镜链的路径新增 GLES 3.0 与 external OES 依赖及显示拷贝开销。关闭、空链和无效链均使用上游原版显示逻辑。
 启动消费者不可用时显示既有初始化失败提示并结束；没有原生直连回退。永久故障驱动不保证自动恢复。
 提交者 2026-10-18 的原库候选验收不覆盖这次 TextureView 改动；本轮只运行 CI，无新的实机结果。
-当前修复详情见 [关闭路径报告](../../../docs/reviews/PR108-siglus-disabled-review-20261019.md)；此前窗口报告以其固定 head 为历史范围。
+当前修复详情见 [PR #108](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/108)；此前窗口报告以其固定 head 为历史范围。
 
 ## 关闭滤镜的原版路径
 

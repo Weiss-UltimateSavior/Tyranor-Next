@@ -76,7 +76,7 @@ public final class EthornellDispatchDeviceTest {
             assertEquals(EthornellDispatchRegistry.Stage.REVOKED, rejected.stage);
             assertEquals(0, rejected.pid);
             assertEquals("", rejected.startTime);
-            assertFalse("Revoked delivery created private user data", run.user.exists());
+            assertFalse("Revoked delivery created game savedata", run.user.exists());
             assertNull("Revoked delivery must not publish a native-create registry entry",
                     EngineSessionRegistry.currentGame(run.app, EngineSessionRegistry.HOST_ETHORNELL));
             String logs = run.logs(owner);
@@ -98,7 +98,7 @@ public final class EthornellDispatchDeviceTest {
             EthornellDispatchRegistry.Record terminal = run.assertTerminal(token, owner);
             String logs = run.logs(owner);
             assertNormalClosed(logs, run.hash, owner.pid);
-            assertTrue("Successful native create must establish the identity-bound private root", run.user.isDirectory());
+            assertTrue("Successful native create must establish game-root savedata", run.user.isDirectory());
             assertNull("Native registry must clear after destroy ACK",
                     EngineSessionRegistry.currentGame(run.app, EngineSessionRegistry.HOST_ETHORNELL));
             assertFalse("TERMINAL alone is not process death", ownerAlive(run.app, owner));
@@ -127,15 +127,15 @@ public final class EthornellDispatchDeviceTest {
             Owner owner = run.deliverBehindMetadataLock(failed, missing);
             run.awaitExit(owner, true);
             run.assertTerminal(failed, owner);
-            assertFalse("Resource validation failure must precede user directory creation", run.user.exists());
+            assertFalse("Invalid resource must not create user directory", run.user.exists());
             assertNull("No native-create ACK for nonexistent resource",
                     EngineSessionRegistry.currentGame(run.app, EngineSessionRegistry.HOST_ETHORNELL));
             String logs = run.logs(owner);
-            assertTrue("Missing resource must report actual failed initialization", lifecycle(logs, "failed", run.hash, owner.pid).find());
+            // The fixed game-root contract rejects this payload before a lifecycle is created.
             assertFalse("Failed pre-native init is not a native destroy ACK", lifecycle(logs, "destroy_ack", run.hash, owner.pid).find());
             assertFalse("Failed init is not script-generated Closed", lifecycle(logs, "closed_event", run.hash, owner.pid).find());
             run.evidence("CLAIM_THEN_FAILED_INIT_TERMINAL", failed, owner,
-                    "TERMINAL has real host owner (thus claim occurred); failed init; no native destroy/Closed claimed");
+                    "TERMINAL has real host owner (thus claim occurred); invalid game root rejected before runtime; no native destroy/Closed claimed");
             String next = run.issue();
             assertNotEquals(failed, next);
             assertNull(EthornellDispatchRegistry.status(run.app.getFilesDir(), failed));
@@ -175,6 +175,8 @@ public final class EthornellDispatchDeviceTest {
             hardDeadline = watchdog.schedule(() -> abort("scenario exceeded independent 85s deadline"), 85, TimeUnit.SECONDS);
             try {
                 assertEquals(app.getApplicationInfo().uid, Process.myUid());
+                // A fresh test installation has not run App-side launch preflight.
+                com.core.nativeplugin.NativeRuntimePack.ensure(app, com.core.nativeplugin.NativeRuntimePack.PACK_ETHORNELL);
                 ComponentName component = new ComponentName(app.getPackageName(), "com.core.ethornell.EthornellActivity");
                 ActivityInfo info = app.getPackageManager().getActivityInfo(component, 0);
                 assertFalse("Production host must remain private", info.exported);
@@ -192,11 +194,9 @@ public final class EthornellDispatchDeviceTest {
                 base = new File(files, "ethornell-dispatch-fixture-" + UUID.randomUUID());
                 resource = new File(base, "resource");
                 assertTrue(resource.mkdirs());
-                user = new File(new File(files, "ethornell/userdata"), hash);
-                assertEquals("Independently derived SHA-256 identity contract", user, EthornellPaths.userDataDir(files, identity));
-                assertFalse("Dedicated user root must begin absent", user.exists());
-                assertFalse(user.toPath().startsWith(resource.toPath()));
-                assertFalse(resource.toPath().startsWith(user.toPath()));
+                user = new File(resource.getCanonicalFile(), "savedata");
+                assertEquals("Production game-root path contract", user, EthornellPaths.gameUserDataDir(resource));
+                assertFalse("Dedicated game savedata must begin absent", user.exists());
                 archive = new File(resource, "system.arc");
                 // Original minimal BP: push_byte(1), Sys80:68 native close mode,
                 // Sys80:69 request close, ret. No game/font assets or game_path input.
@@ -210,7 +210,7 @@ public final class EthornellDispatchDeviceTest {
                 pack.put(name).putInt(0).putInt(bp.capacity()).putInt(0).putInt(0).put(bp.array());
                 expected = pack.array();
                 Files.write(archive.toPath(), expected);
-                report("FIXTURE identity_sha256=" + hash + " resource=" + resource + " private_user=" + user
+                report("FIXTURE identity_sha256=" + hash + " resource=" + resource + " game_user=" + user
                         + " original_archive_sha256=" + sha256(expected));
             } catch (Exception | Error failure) {
                 hardDeadline.cancel(false); watchdog.shutdownNow(); throw failure;
@@ -341,7 +341,12 @@ public final class EthornellDispatchDeviceTest {
 
         void assertResourceUnchanged() throws Exception {
             assertArrayEquals(expected, Files.readAllBytes(archive.toPath()));
-            assertArrayEquals("Writes leaked to resource root", new String[]{"system.arc"}, resource.list());
+            String[] entries = resource.list();
+            assertNotNull(entries);
+            assertEquals("Only the archive and optional game savedata may exist at resource root",
+                    user.exists() ? 2 : 1, entries.length);
+            assertTrue("Archive missing from resource root", java.util.Arrays.asList(entries).contains("system.arc"));
+            if (user.exists()) assertTrue("Unexpected resource-root entry", java.util.Arrays.asList(entries).contains("savedata"));
         }
 
         void evidence(String phase, String token, Owner owner, String detail) throws Exception {

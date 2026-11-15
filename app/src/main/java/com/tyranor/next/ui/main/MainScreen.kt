@@ -52,8 +52,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
-import com.tyranor.next.ui.common.AppAlertDialog
-import com.tyranor.next.ui.common.DialogTextButton
 import androidx.annotation.StringRes
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -79,8 +77,10 @@ import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.ui.archive.ArchiveUnpackActivity
 import com.tyranor.next.ui.common.LiquidGlassNavItem
 import com.tyranor.next.ui.common.AppNavItem
+import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavigationRail
 import com.tyranor.next.ui.common.AppSidePanel
+import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.motion.LocalPageDepth
 import com.tyranor.next.ui.common.motion.depthFoldStack
 import com.tyranor.next.ui.common.motion.LocalSheetBackdrop
@@ -98,8 +98,8 @@ import com.tyranor.next.ui.common.SidePanelEdgeExclusionBar
 import com.tyranor.next.ui.common.effectiveNavStyle
 import com.tyranor.next.ui.common.isSideRailLayout
 import com.tyranor.next.ui.common.rememberSidePanelSwipeModifier
-import com.tyranor.next.ui.common.syncErrorResource
 import com.tyranor.next.ui.common.toErrorState
+import com.tyranor.next.ui.common.syncErrorResource
 import com.tyranor.next.ui.common.glass.EnhancedLiquidGlassNavigationBar
 import com.tyranor.next.ui.common.glass.GlassShaderSupport
 import com.tyranor.next.ui.common.glass.GlassBottomBarSpec
@@ -188,20 +188,6 @@ fun MainScreen(
   val activeIndex = if (!homePageEnabled && requestedIndex == 0) 1 else requestedIndex
   val libraryViewModel: MainLibraryViewModel = viewModel()
   val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
-  val cleanupError = libraryState.cleanupError
-  if (cleanupError != null) {
-    val cleanupReason = stringResource(cleanupError.syncErrorResource())
-    AppAlertDialog(
-      onDismissRequest = libraryViewModel::dismissCleanupError,
-      title = { Text(stringResource(R.string.save_operation_failed), style = MaterialTheme.typography.titleMedium) },
-      text = { Text(stringResource(R.string.save_sync_cleanup_failed, libraryState.cleanupGameTitle.orEmpty(), cleanupReason),
-        style = MaterialTheme.typography.bodyMedium) },
-      textScrollEnabled = true,
-      confirmButton = {
-        DialogTextButton(stringResource(R.string.common_confirm), onClick = libraryViewModel::dismissCleanupError)
-      },
-    )
-  }
   val interactScope = rememberCoroutineScope()
   val unselectedColor = UnselectedGrey
   // 导航栏样式：应用设置 → 默认 / 液态玻璃 · 经典 / 液态玻璃 · 透镜（内存态，设置页切换即时生效）
@@ -276,6 +262,26 @@ fun MainScreen(
   val panelBackdrop = rememberSheetBackdrop()
   // 页面区里的抽屉与弹窗（AppAlertDialog）升起时，页面区只褪色、不再上下翻折
   val overlayBackdrop = rememberSheetBackdrop()
+  val cleanupError = libraryState.cleanupError
+  if (cleanupError != null || libraryState.copyCleanupPending) {
+    val cleanupMessage = if (cleanupError != null) {
+      stringResource(R.string.settings_systemnnn_copy_cleanup_schedule_failed, libraryState.cleanupGameTitle.orEmpty(),
+        stringResource(cleanupError.syncErrorResource()))
+    } else {
+      stringResource(R.string.settings_systemnnn_copy_cleanup_pending)
+    }
+    CompositionLocalProvider(LocalSheetBackdrop provides overlayBackdrop) {
+      AppAlertDialog(
+        onDismissRequest = libraryViewModel::dismissCleanupError,
+        title = { Text(stringResource(R.string.save_operation_failed), style = MaterialTheme.typography.titleMedium) },
+        text = { Text(cleanupMessage, style = MaterialTheme.typography.bodyMedium) },
+        textScrollEnabled = true,
+        confirmButton = {
+          DialogTextButton(stringResource(R.string.common_confirm), onClick = libraryViewModel::dismissCleanupError)
+        },
+      )
+    }
+  }
   AppSidePanel(open = sidePanelOpen, backdrop = panelBackdrop, onDismiss = {
     sidePanelOpen = false
     panelNavigation.cancel()

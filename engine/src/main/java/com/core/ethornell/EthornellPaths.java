@@ -6,11 +6,18 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
-/** Single identity-to-user-root contract shared by launcher, host and device harness. */
+/** Ethornell save-path contracts for legacy dispatch roots and game-directory saves. */
 public final class EthornellPaths {
     private EthornellPaths() {}
 
+    /** Legacy app-private root retained for identity-bound dispatch metadata and older callers. */
     public static File userDataDir(File filesDir, String gameIdentity) throws IOException {
+        String identityHash = identitySha256(gameIdentity);
+        return new File(new File(new File(filesDir.getCanonicalFile(), "ethornell"), "userdata"), identityHash);
+    }
+
+    /** Stable UTF-8 SHA-256 identity retained by dispatch and lifecycle evidence. */
+    public static String identitySha256(String gameIdentity) throws IOException {
         if (gameIdentity == null || gameIdentity.trim().isEmpty() || gameIdentity.length() > 8192
                 || gameIdentity.indexOf('\0') >= 0) throw new IOException("Invalid game identity");
         // CharsetEncoder defaults must not silently replace malformed identity surrogates.
@@ -28,7 +35,7 @@ public final class EthornellPaths {
                 hex.append(Character.forDigit((b & 255) >>> 4, 16));
                 hex.append(Character.forDigit(b & 15, 16));
             }
-            return new File(new File(new File(filesDir.getCanonicalFile(), "ethornell"), "userdata"), hex.toString());
+            return hex.toString();
         } catch (NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
     }
 
@@ -40,6 +47,31 @@ public final class EthornellPaths {
         File supplied = new File(suppliedPath);
         if (!supplied.isAbsolute() || !supplied.getAbsolutePath().equals(expected.getAbsolutePath())
                 || !supplied.getCanonicalFile().equals(expected)) throw new IOException("Identity/user-root mismatch");
+        return expected;
+    }
+
+    /** The game-owned save root: {@code <canonical gameRoot>/savedata}. */
+    public static File gameUserDataDir(File gameRoot) throws IOException {
+        if (gameRoot == null) throw new IOException("Invalid game root");
+        File canonicalRoot = gameRoot.getCanonicalFile();
+        if (!canonicalRoot.exists() || !canonicalRoot.isDirectory())
+            throw new IOException("Game root must be an existing directory");
+        return new File(canonicalRoot, "savedata");
+    }
+
+    /**
+     * Validates the exact canonical spelling of the game-owned savedata path.
+     * Canonical comparison rejects a savedata symlink and any path alias.
+     */
+    public static File validateGameUserDataDir(File gameRoot, String suppliedPath) throws IOException {
+        if (suppliedPath == null || suppliedPath.isEmpty()
+                || suppliedPath.indexOf('\0') >= 0 || suppliedPath.length() > 8192)
+            throw new IOException("Invalid game user path");
+        File expected = gameUserDataDir(gameRoot);
+        File supplied = new File(suppliedPath);
+        if (!supplied.isAbsolute() || !supplied.getAbsolutePath().equals(expected.getAbsolutePath())
+                || !supplied.getCanonicalFile().equals(expected))
+            throw new IOException("Game user-root mismatch");
         return expected;
     }
 }

@@ -18,6 +18,7 @@ enum class EngineSettingsKind(@param:StringRes val titleRes: Int) {
     FVP(R.string.engine_settings_fvp_title),
     ETHORNELL(R.string.ethornell_settings_title),
     CMVS(R.string.engine_settings_cmvs_title),
+    SYSTEMNNN(R.string.engine_settings_systemnnn_title),
     XSYS35(R.string.engine_settings_xsys35_title),
     XSYS4(R.string.engine_settings_xsys4_title),
     PPSSPP(R.string.engine_settings_ppsspp_title),
@@ -26,7 +27,7 @@ enum class EngineSettingsKind(@param:StringRes val titleRes: Int) {
 
 /**
  * 引擎页条目对应的全局引擎设置页；返回 null 表示该引擎没有全局设置入口
- * （SystemNNN / Switch / 第三方运行时模块 / 安卓游戏 / 未知引擎）。
+ * （Switch / 第三方运行时模块 / 安卓游戏 / 未知引擎）。
  */
 internal fun engineSettingsKindOf(engine: EngineType): EngineSettingsKind? = when (engine) {
     EngineType.KIRIKIRI -> EngineSettingsKind.KRKR
@@ -41,11 +42,11 @@ internal fun engineSettingsKindOf(engine: EngineType): EngineSettingsKind? = whe
     EngineType.FVP -> EngineSettingsKind.FVP
     EngineType.ETHORNELL -> EngineSettingsKind.ETHORNELL
     EngineType.CMVS -> EngineSettingsKind.CMVS
+    EngineType.SYSTEMNNN -> EngineSettingsKind.SYSTEMNNN
     EngineType.XSYS35 -> EngineSettingsKind.XSYS35
     EngineType.XSYS4 -> EngineSettingsKind.XSYS4
     EngineType.PSP -> EngineSettingsKind.PPSSPP
     EngineType.YURIS, EngineType.CATSYSTEM2, EngineType.PC -> EngineSettingsKind.WINLATOR
-    EngineType.SYSTEMNNN,
     EngineType.IMPACTO,
     EngineType.NINTENDO_SWITCH,
     EngineType.RUNTIME_MODULE,

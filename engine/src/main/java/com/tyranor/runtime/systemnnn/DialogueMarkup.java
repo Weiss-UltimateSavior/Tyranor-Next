@@ -27,6 +27,7 @@ final class DialogueMarkup {
         }
 
         DialogueMarkup parse(String source){return DialogueMarkup.parse(source,singleByte,enabled&&percent>0);}
+        DialogueMarkup backlog(String source){return DialogueMarkup.parse(source,singleByte,enabled&&percent>0,true);}
     }
 
     static final class Annotation {
@@ -51,24 +52,91 @@ final class DialogueMarkup {
     final String text;
     final int glyphCount;
     final List<Annotation> annotations;
+    static final class ColorRun {
+        final int start,end,color;
+        ColorRun(int start,int end,int color){this.start=start;this.end=end;this.color=color;}
+    }
+    final List<ColorRun> colors;
+    final boolean omittedSymbol;
 
     private DialogueMarkup(String text,List<Annotation> annotations){
-        this.text=text;this.glyphCount=text.codePointCount(0,text.length());
+        this(text,annotations,Collections.emptyList(),false);
+    }
+    private DialogueMarkup(String text,List<Annotation> annotations,List<ColorRun> colors,boolean omittedSymbol){
+        this.text=text;
+        int glyphs=0;
+        for(int offset=0;offset<text.length();){
+            int code=text.codePointAt(offset);
+            if(code!='\n'&&code!='\r')glyphs++;
+            offset+=Character.charCount(code);
+        }
+        this.glyphCount=glyphs;
         this.annotations=Collections.unmodifiableList(annotations);
+        this.colors=Collections.unmodifiableList(colors);this.omittedSymbol=omittedSymbol;
+    }
+
+    // The PC reveal budget is shared by rows. The line separators take no time.
+    int offsetForGlyphs(int count){
+        if(count>=glyphCount)return text.length();
+        int offset=0;
+        while(offset<text.length()){
+            int code=text.codePointAt(offset);
+            if(code!='\n'&&code!='\r'){
+                if(count<=0)break;
+                count--;
+            }
+            offset+=Character.charCount(code);
+        }
+        return offset;
+    }
+
+    DialogueMarkup withoutFinalLineBreak(){
+        int end=text.length();
+        if(end>0&&text.charAt(end-1)=='\n')end--;
+        if(end>0&&text.charAt(end-1)=='\r')end--;
+        return slice(0,end);
     }
 
     static DialogueMarkup plain(String text){return new DialogueMarkup(text,Collections.emptyList());}
 
     static DialogueMarkup parse(String source,boolean singleByte,boolean showAnnotations){
+        return parse(source,singleByte,showAnnotations,false);
+    }
+    static int colorTag(char tag){
+        switch(tag){
+        case 'B':case 0x9ed2:return 0xff000000;
+        case 'U':case 0x9752:return 0xff0000ff;
+        case 'R':case 0x8d64:return 0xffff0000;
+        case 'P':case 0x7d2b:return 0xffff00ff;
+        case 'G':case 0x7dd1:return 0xff00ff00;
+        case 'C':case 0x6c34:return 0xff00ffff;
+        case 'Y':case 0x9ec4:return 0xffffff00;
+        case 'W':case 0x767d:return 0xffffffff;
+        case 'O':case 0x6a59:return 0xffff8000;
+        default:return 0;
+        }
+    }
+    private static DialogueMarkup parse(String source,boolean singleByte,boolean showAnnotations,boolean backlog){
         if(source.indexOf('#')<0)return plain(source);
         char ruby=singleByte?'[':'\uff3b', emphasis=singleByte?'.':'\u5f37', close=singleByte?']':'\uff3d';
         StringBuilder visible=new StringBuilder(source.length());
         List<Annotation> spans=new ArrayList<>();
+        List<ColorRun> colors=new ArrayList<>();
+        int color=0,colorStart=0;
+        boolean omittedSymbol=false;
         int lineGlyphs=0,lineAnnotations=0;
         for(int i=0;i<source.length();){
             int character=source.codePointAt(i);
             if(character=='#'&&i+1<source.length()){
                 char command=source.charAt(i+1);
+                int nextColor=backlog?colorTag(command):0;
+                if(nextColor!=0){
+                    if(color!=0&&visible.length()>colorStart)colors.add(new ColorRun(colorStart,visible.length(),color));
+                    color=nextColor;colorStart=visible.length();i+=2;continue;
+                }
+                if(backlog&&command==(singleByte?'c':'\u732b')){
+                    omittedSymbol=true;i+=2;continue;
+                }
                 if(command==close){i+=2;continue;}
                 if(command==ruby||command==emphasis){
                     boolean marks=command==emphasis;
@@ -103,12 +171,12 @@ final class DialogueMarkup {
             else lineGlyphs++;
             i+=Character.charCount(character);
         }
-        return new DialogueMarkup(visible.toString(),spans);
+        if(color!=0&&visible.length()>colorStart)colors.add(new ColorRun(colorStart,visible.length(),color));
+        return new DialogueMarkup(visible.toString(),spans,colors,omittedSymbol);
     }
 
     DialogueMarkup slice(int start,int end){
         if(start==0&&end==text.length())return this;
-        if(annotations.isEmpty())return plain(text.substring(start,end));
         List<Annotation> spans=new ArrayList<>();
         for(Annotation annotation:annotations){
             int first=Math.max(start,annotation.start),last=Math.min(end,annotation.end);
@@ -117,6 +185,11 @@ final class DialogueMarkup {
             if(labelStart<labelEnd)spans.add(new Annotation(first-start,last-start,
                 annotation.label.substring(labelStart,labelEnd),annotation.emphasis));
         }
-        return new DialogueMarkup(text.substring(start,end),spans);
+        List<ColorRun> kept=new ArrayList<>();
+        for(ColorRun run:colors){
+            int from=Math.max(start,run.start),to=Math.min(end,run.end);
+            if(from<to)kept.add(new ColorRun(from-start,to-start,run.color));
+        }
+        return new DialogueMarkup(text.substring(start,end),spans,kept,omittedSymbol);
     }
 }

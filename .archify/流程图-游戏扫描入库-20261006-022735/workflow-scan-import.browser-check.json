@@ -6,11 +6,11 @@
   "status": "pass",
   "visualReview": "not-requested",
   "provenance": "current",
-  "deliveryReceiptId": "164deff6-cee5-493d-a49b-7619282278a5",
+  "deliveryReceiptId": "1f639939-ec77-4c36-8e79-d03e607cec2a",
   "artifact": {
     "path": "/Users/weiss/opencode/rma/TyranorNext/.archify/流程图-游戏扫描入库-20261006-022735/workflow-scan-import.html",
-    "sha256": "cefa61b623111eede8a2eaadc3c3d3563541afc87a8a9dd2273ee9242b59a072",
-    "bytes": 769130
+    "sha256": "5919aa2fdb2e8de684a7f52e675b00353095a9f7eabd7ddb8e6212a3013ca9cf",
+    "bytes": 769728
   },
   "state": {
     "detail": "read",
@@ -32,22 +32,22 @@
         "innerWidth": 1440,
         "innerHeight": 900,
         "scrollWidth": 1440,
-        "scrollHeight": 900,
+        "scrollHeight": 904,
         "overflowX": false,
-        "overflowY": false,
-        "verticalScrollAccepted": false,
-        "overflowDisposition": "contained",
+        "overflowY": true,
+        "verticalScrollAccepted": true,
+        "overflowDisposition": "readable-vertical-scroll",
         "readerLayout": "adaptive",
-        "readerOverflow": null,
+        "readerOverflow": "authored",
         "readerFit": "intrinsic-height",
         "ok": true,
         "readerWidth": 960,
-        "diagramWidth": 785,
+        "diagramWidth": 802,
         "pageComposition": {
           "bodyPaddingPx": 12,
           "headerPx": 52,
           "diagramChromePx": 78,
-          "svgPx": 746,
+          "svgPx": 762,
           "cardsPx": 0,
           "viewBoxHeight": 964
         },
@@ -55,73 +55,73 @@
         "workflowLanes": [
           {
             "frameId": "lane-4",
-            "heightPx": 218,
+            "heightPx": 223,
             "nodeCount": 3,
             "nodeIds": [
               "roots",
               "mirror",
               "persist"
             ],
-            "nodeSpanPx": 114,
-            "spaceAboveNodesPx": 101,
+            "nodeSpanPx": 117,
+            "spaceAboveNodesPx": 103,
             "spaceBelowNodesPx": 3
           },
           {
             "frameId": "lane-2",
-            "heightPx": 87,
+            "heightPx": 88,
             "nodeCount": 3,
             "nodeIds": [
               "rescan",
               "traverse",
               "detect"
             ],
-            "nodeSpanPx": 53,
-            "spaceAboveNodesPx": 30,
+            "nodeSpanPx": 54,
+            "spaceAboveNodesPx": 31,
             "spaceBelowNodesPx": 4
           },
           {
             "frameId": "lane-0",
-            "heightPx": 82,
+            "heightPx": 84,
             "nodeCount": 1,
             "nodeIds": [
               "user_add"
             ],
-            "nodeSpanPx": 53,
-            "spaceAboveNodesPx": 26,
+            "nodeSpanPx": 54,
+            "spaceAboveNodesPx": 27,
             "spaceBelowNodesPx": 3
           },
           {
             "frameId": "lane-1",
-            "heightPx": 80,
+            "heightPx": 82,
             "nodeCount": 2,
             "nodeIds": [
               "ui_scan",
               "ui_refresh"
             ],
-            "nodeSpanPx": 40,
+            "nodeSpanPx": 41,
             "spaceAboveNodesPx": 32,
             "spaceBelowNodesPx": 9
           },
           {
             "frameId": "lane-3",
-            "heightPx": 80,
+            "heightPx": 82,
             "nodeCount": 1,
             "nodeIds": [
               "merge"
             ],
-            "nodeSpanPx": 40,
+            "nodeSpanPx": 41,
             "spaceAboveNodesPx": 32,
             "spaceBelowNodesPx": 9
           }
         ],
-        "minimumProjectedNodeTextPx": 6.187192118226601,
-        "minimumProjectedNonEdgeTextPx": 6.187192118226601,
-        "minimumProjectedEdgeTextPx": 6.187192118226601,
-        "minimumProjectedNodeText": "系统目录选择器",
+        "minimumProjectedNodeTextPx": 6.005123152709359,
+        "minimumProjectedNonEdgeTextPx": 6.005123152709359,
+        "minimumProjectedEdgeTextPx": 6.321182266009852,
+        "minimumProjectedNodeText": "保留手动/运行时模块条目与元数据",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "user_add"
+          "id": "merge"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -226,14 +226,14 @@
             "spaceBelowNodesPx": 9
           }
         ],
-        "minimumProjectedNodeTextPx": 6.470935960591133,
-        "minimumProjectedNonEdgeTextPx": 6.470935960591133,
+        "minimumProjectedNodeTextPx": 6.147389162561576,
+        "minimumProjectedNonEdgeTextPx": 6.147389162561576,
         "minimumProjectedEdgeTextPx": 6.470935960591133,
-        "minimumProjectedNodeText": "系统目录选择器",
+        "minimumProjectedNodeText": "保留手动/运行时模块条目与元数据",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "user_add"
+          "id": "merge"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -338,14 +338,14 @@
             "spaceBelowNodesPx": 10
           }
         ],
-        "minimumProjectedNodeTextPx": 7.1330049261083746,
-        "minimumProjectedNonEdgeTextPx": 7.1330049261083746,
+        "minimumProjectedNodeTextPx": 6.776354679802956,
+        "minimumProjectedNonEdgeTextPx": 6.776354679802956,
         "minimumProjectedEdgeTextPx": 7.1330049261083746,
-        "minimumProjectedNodeText": "系统目录选择器",
+        "minimumProjectedNodeText": "保留手动/运行时模块条目与元数据",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "user_add"
+          "id": "merge"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -450,14 +450,14 @@
             "spaceBelowNodesPx": 12
           }
         ],
-        "minimumProjectedNodeTextPx": 8,
-        "minimumProjectedNonEdgeTextPx": 8,
+        "minimumProjectedNodeTextPx": 7.6,
+        "minimumProjectedNonEdgeTextPx": 7.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "系统目录选择器",
+        "minimumProjectedNodeText": "保留手动/运行时模块条目与元数据",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "user_add"
+          "id": "merge"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -533,22 +533,22 @@
         "innerWidth": 1440,
         "innerHeight": 900,
         "scrollWidth": 1440,
-        "scrollHeight": 900,
+        "scrollHeight": 904,
         "overflowX": false,
-        "overflowY": false,
-        "verticalScrollAccepted": false,
-        "overflowDisposition": "contained",
+        "overflowY": true,
+        "verticalScrollAccepted": true,
+        "overflowDisposition": "readable-vertical-scroll",
         "readerLayout": "adaptive",
-        "readerOverflow": null,
+        "readerOverflow": "authored",
         "readerFit": "intrinsic-height",
         "ok": true,
         "readerWidth": 960,
-        "diagramWidth": 785,
+        "diagramWidth": 802,
         "pageComposition": {
           "bodyPaddingPx": 12,
           "headerPx": 52,
           "diagramChromePx": 78,
-          "svgPx": 746,
+          "svgPx": 762,
           "cardsPx": 0,
           "viewBoxHeight": 964
         },
@@ -556,73 +556,73 @@
         "workflowLanes": [
           {
             "frameId": "lane-4",
-            "heightPx": 218,
+            "heightPx": 223,
             "nodeCount": 3,
             "nodeIds": [
               "roots",
               "mirror",
               "persist"
             ],
-            "nodeSpanPx": 114,
-            "spaceAboveNodesPx": 101,
+            "nodeSpanPx": 117,
+            "spaceAboveNodesPx": 103,
             "spaceBelowNodesPx": 3
           },
           {
             "frameId": "lane-2",
-            "heightPx": 87,
+            "heightPx": 88,
             "nodeCount": 3,
             "nodeIds": [
               "rescan",
               "traverse",
               "detect"
             ],
-            "nodeSpanPx": 53,
-            "spaceAboveNodesPx": 30,
+            "nodeSpanPx": 54,
+            "spaceAboveNodesPx": 31,
             "spaceBelowNodesPx": 4
           },
           {
             "frameId": "lane-0",
-            "heightPx": 82,
+            "heightPx": 84,
             "nodeCount": 1,
             "nodeIds": [
               "user_add"
             ],
-            "nodeSpanPx": 53,
-            "spaceAboveNodesPx": 26,
+            "nodeSpanPx": 54,
+            "spaceAboveNodesPx": 27,
             "spaceBelowNodesPx": 3
           },
           {
             "frameId": "lane-1",
-            "heightPx": 80,
+            "heightPx": 82,
             "nodeCount": 2,
             "nodeIds": [
               "ui_scan",
               "ui_refresh"
             ],
-            "nodeSpanPx": 40,
+            "nodeSpanPx": 41,
             "spaceAboveNodesPx": 32,
             "spaceBelowNodesPx": 9
           },
           {
             "frameId": "lane-3",
-            "heightPx": 80,
+            "heightPx": 82,
             "nodeCount": 1,
             "nodeIds": [
               "merge"
             ],
-            "nodeSpanPx": 40,
+            "nodeSpanPx": 41,
             "spaceAboveNodesPx": 32,
             "spaceBelowNodesPx": 9
           }
         ],
-        "minimumProjectedNodeTextPx": 6.187192118226601,
-        "minimumProjectedNonEdgeTextPx": 6.187192118226601,
-        "minimumProjectedEdgeTextPx": 6.187192118226601,
-        "minimumProjectedNodeText": "系统目录选择器",
+        "minimumProjectedNodeTextPx": 6.005123152709359,
+        "minimumProjectedNonEdgeTextPx": 6.005123152709359,
+        "minimumProjectedEdgeTextPx": 6.321182266009852,
+        "minimumProjectedNodeText": "保留手动/运行时模块条目与元数据",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "user_add"
+          "id": "merge"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -727,14 +727,14 @@
             "spaceBelowNodesPx": 9
           }
         ],
-        "minimumProjectedNodeTextPx": 6.470935960591133,
-        "minimumProjectedNonEdgeTextPx": 6.470935960591133,
+        "minimumProjectedNodeTextPx": 6.147389162561576,
+        "minimumProjectedNonEdgeTextPx": 6.147389162561576,
         "minimumProjectedEdgeTextPx": 6.470935960591133,
-        "minimumProjectedNodeText": "系统目录选择器",
+        "minimumProjectedNodeText": "保留手动/运行时模块条目与元数据",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "user_add"
+          "id": "merge"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -839,14 +839,14 @@
             "spaceBelowNodesPx": 10
           }
         ],
-        "minimumProjectedNodeTextPx": 7.1330049261083746,
-        "minimumProjectedNonEdgeTextPx": 7.1330049261083746,
+        "minimumProjectedNodeTextPx": 6.776354679802956,
+        "minimumProjectedNonEdgeTextPx": 6.776354679802956,
         "minimumProjectedEdgeTextPx": 7.1330049261083746,
-        "minimumProjectedNodeText": "系统目录选择器",
+        "minimumProjectedNodeText": "保留手动/运行时模块条目与元数据",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "user_add"
+          "id": "merge"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -951,14 +951,14 @@
             "spaceBelowNodesPx": 12
           }
         ],
-        "minimumProjectedNodeTextPx": 8,
-        "minimumProjectedNonEdgeTextPx": 8,
+        "minimumProjectedNodeTextPx": 7.6,
+        "minimumProjectedNonEdgeTextPx": 7.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "系统目录选择器",
+        "minimumProjectedNodeText": "保留手动/运行时模块条目与元数据",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "user_add"
+          "id": "merge"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -986,22 +986,22 @@
         "innerWidth": 1440,
         "innerHeight": 900,
         "scrollWidth": 1440,
-        "scrollHeight": 900,
+        "scrollHeight": 904,
         "overflowX": false,
-        "overflowY": false,
-        "verticalScrollAccepted": false,
-        "overflowDisposition": "contained",
+        "overflowY": true,
+        "verticalScrollAccepted": true,
+        "overflowDisposition": "readable-vertical-scroll",
         "readerLayout": "adaptive",
-        "readerOverflow": null,
+        "readerOverflow": "authored",
         "readerFit": "intrinsic-height",
         "ok": true,
         "readerWidth": 960,
-        "diagramWidth": 785,
+        "diagramWidth": 802,
         "pageComposition": {
           "bodyPaddingPx": 12,
           "headerPx": 52,
           "diagramChromePx": 78,
-          "svgPx": 746,
+          "svgPx": 762,
           "cardsPx": 0,
           "viewBoxHeight": 964
         },
@@ -1009,73 +1009,73 @@
         "workflowLanes": [
           {
             "frameId": "lane-4",
-            "heightPx": 218,
+            "heightPx": 223,
             "nodeCount": 3,
             "nodeIds": [
               "roots",
               "mirror",
               "persist"
             ],
-            "nodeSpanPx": 114,
-            "spaceAboveNodesPx": 101,
+            "nodeSpanPx": 117,
+            "spaceAboveNodesPx": 103,
             "spaceBelowNodesPx": 3
           },
           {
             "frameId": "lane-2",
-            "heightPx": 87,
+            "heightPx": 88,
             "nodeCount": 3,
             "nodeIds": [
               "rescan",
               "traverse",
               "detect"
             ],
-            "nodeSpanPx": 53,
-            "spaceAboveNodesPx": 30,
+            "nodeSpanPx": 54,
+            "spaceAboveNodesPx": 31,
             "spaceBelowNodesPx": 4
           },
           {
             "frameId": "lane-0",
-            "heightPx": 82,
+            "heightPx": 84,
             "nodeCount": 1,
             "nodeIds": [
               "user_add"
             ],
-            "nodeSpanPx": 53,
-            "spaceAboveNodesPx": 26,
+            "nodeSpanPx": 54,
+            "spaceAboveNodesPx": 27,
             "spaceBelowNodesPx": 3
           },
           {
             "frameId": "lane-1",
-            "heightPx": 80,
+            "heightPx": 82,
             "nodeCount": 2,
             "nodeIds": [
               "ui_scan",
               "ui_refresh"
             ],
-            "nodeSpanPx": 40,
+            "nodeSpanPx": 41,
             "spaceAboveNodesPx": 32,
             "spaceBelowNodesPx": 9
           },
           {
             "frameId": "lane-3",
-            "heightPx": 80,
+            "heightPx": 82,
             "nodeCount": 1,
             "nodeIds": [
               "merge"
             ],
-            "nodeSpanPx": 40,
+            "nodeSpanPx": 41,
             "spaceAboveNodesPx": 32,
             "spaceBelowNodesPx": 9
           }
         ],
-        "minimumProjectedNodeTextPx": 6.187192118226601,
-        "minimumProjectedNonEdgeTextPx": 6.187192118226601,
-        "minimumProjectedEdgeTextPx": 6.187192118226601,
-        "minimumProjectedNodeText": "系统目录选择器",
+        "minimumProjectedNodeTextPx": 6.005123152709359,
+        "minimumProjectedNonEdgeTextPx": 6.005123152709359,
+        "minimumProjectedEdgeTextPx": 6.321182266009852,
+        "minimumProjectedNodeText": "保留手动/运行时模块条目与元数据",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "user_add"
+          "id": "merge"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -1180,14 +1180,14 @@
             "spaceBelowNodesPx": 9
           }
         ],
-        "minimumProjectedNodeTextPx": 6.470935960591133,
-        "minimumProjectedNonEdgeTextPx": 6.470935960591133,
+        "minimumProjectedNodeTextPx": 6.147389162561576,
+        "minimumProjectedNonEdgeTextPx": 6.147389162561576,
         "minimumProjectedEdgeTextPx": 6.470935960591133,
-        "minimumProjectedNodeText": "系统目录选择器",
+        "minimumProjectedNodeText": "保留手动/运行时模块条目与元数据",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "user_add"
+          "id": "merge"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -1292,14 +1292,14 @@
             "spaceBelowNodesPx": 10
           }
         ],
-        "minimumProjectedNodeTextPx": 7.1330049261083746,
-        "minimumProjectedNonEdgeTextPx": 7.1330049261083746,
+        "minimumProjectedNodeTextPx": 6.776354679802956,
+        "minimumProjectedNonEdgeTextPx": 6.776354679802956,
         "minimumProjectedEdgeTextPx": 7.1330049261083746,
-        "minimumProjectedNodeText": "系统目录选择器",
+        "minimumProjectedNodeText": "保留手动/运行时模块条目与元数据",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "user_add"
+          "id": "merge"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,
@@ -1404,14 +1404,14 @@
             "spaceBelowNodesPx": 12
           }
         ],
-        "minimumProjectedNodeTextPx": 8,
-        "minimumProjectedNonEdgeTextPx": 8,
+        "minimumProjectedNodeTextPx": 7.6,
+        "minimumProjectedNonEdgeTextPx": 7.6,
         "minimumProjectedEdgeTextPx": 8,
-        "minimumProjectedNodeText": "系统目录选择器",
+        "minimumProjectedNodeText": "保留手动/运行时模块条目与元数据",
         "minimumProjectedNodeTextDetail": "context",
         "minimumProjectedNodeTextOwner": {
           "kind": "node",
-          "id": "user_add"
+          "id": "merge"
         },
         "minimumRequiredNodeTextPx": 6,
         "readabilityOk": true,

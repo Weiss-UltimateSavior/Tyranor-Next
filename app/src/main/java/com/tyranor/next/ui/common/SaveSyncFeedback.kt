@@ -22,7 +22,9 @@ internal fun ComponentActivity.observeSaveSyncFeedback() {
                 if (SaveSyncFeedback.consume(notice) && enabled) {
                     val message = notice.report.toSaveSyncMessage(activity.applicationContext)
                     withContext(Dispatchers.Main.immediate) {
-                        AppNotice.makeText(activity, message, Toast.LENGTH_SHORT, AppNotice.Kind.Info).show()
+                        // 报告里的失败不是异常：按报告决定类型（失败 / 需要留意），干净的结果保持原来的「提示」
+                        val kind = notice.report.noticeKind().takeIf { it != AppNotice.Kind.Success } ?: AppNotice.Kind.Info
+                        AppNotice.makeText(activity, message, Toast.LENGTH_SHORT, kind).show()
                     }
                 }
             }

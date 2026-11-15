@@ -6,11 +6,11 @@
   "status": "pass",
   "visualReview": "not-requested",
   "provenance": "current",
-  "deliveryReceiptId": "b817ca90-0a77-402b-aa8c-74b3b7aec495",
+  "deliveryReceiptId": "bf2d0078-ff7b-4593-a11f-007c50150769",
   "artifact": {
     "path": "/Users/weiss/opencode/rma/TyranorNext/.archify/生命周期图-存档互通-20261006-022735/lifecycle-save-interop.html",
-    "sha256": "9955f24d330db31255e242f2789301bacd410fd3b8cce917aef6382f2df8da66",
-    "bytes": 771080
+    "sha256": "b5ae922c0c14b06833d918bc5d81d3572963dfba2523141a2c2bad98f1285e3f",
+    "bytes": 771593
   },
   "state": {
     "detail": "read",

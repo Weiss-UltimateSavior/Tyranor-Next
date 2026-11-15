@@ -152,7 +152,7 @@ final class UiOpening {
         if(tick==0){drawFrame(c,view,before,255);return true;}
         // These families only select/mix the same source pixel. Keep their geometry
         // at the game's logical size, but never downsample the captured UI art.
-        boolean masked=fadeType>=89&&fadeType<=96;
+        boolean masked=usesWipeMask(fadeType-1);
         try{
             if(wipeHandle==0){
                 double scale=Math.min(1,Math.min(4096.0/Math.max(width,height),Math.sqrt((2*1024*1024.0)/width/height)));
@@ -191,6 +191,12 @@ final class UiOpening {
             }finally{c.restoreToCount(saved);}
         }else drawFrame(c,view,wipeImage,255);
         return true;
+    }
+    private static boolean usesWipeMask(int type){
+        // These CAllSimpleWipe effects select or blend pixels at the same coordinates.
+        return type>=1&&type<=3||type==6||type==7||type==9||type==24||type==25||
+            type>=28&&type<=33||type==36||type==37||type==39||type>=48&&type<=59||
+            type>=65&&type<=68||type==78||type==79||type>=88&&type<=95;
     }
     private void drawFrame(Canvas canvas,View view,Bitmap image,int alpha){
         bounds.set(0,0,view.getWidth(),view.getHeight());paint.setAlpha(alpha);

@@ -78,7 +78,7 @@ fun Slider(
     val effectiveKeyPoints = keyPoints?.takeIf { it.isNotEmpty() }
     val discrete = effectiveKeyPoints != null || steps > 0
     if (!MotionMode.enhanced || !discrete) {
-        // 用户明确保留本批滑条外观：已覆盖区域的刻度与进度条同色，见 motion-v2-review.md。
+        // 用户明确保留本批滑条外观：已覆盖区域的刻度与进度条同色，见 PR #162。
         val coveredDotColor = if (enabled) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.disabledPrimarySlider
         MiuixSlider(
             value = value,

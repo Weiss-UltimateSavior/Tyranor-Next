@@ -5,16 +5,16 @@
   "status": "pass",
   "type": "architecture",
   "quality": "showcase",
-  "startedAt": "2026-10-05T19:01:05.869Z",
+  "startedAt": "2026-11-14T12:06:17.776Z",
   "specification": {
     "path": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-系统总览-20261006-022735/candidate.json",
-    "sha256": "6ff541c2ed087eb896be83ff9828c8fe6175a8ca0e3e0ee8d989d48c145f8751",
-    "bytes": 13778
+    "sha256": "d6d2fd509cd03a63aed98cdea718bfa637b6f576b5d6c7ff85847bc4e9f38584",
+    "bytes": 13942
   },
   "artifact": {
     "path": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-系统总览-20261006-022735/architecture-overview.html",
-    "sha256": "5c3504b54044df524d66cfb6091cc27c9c8ab41e513a1dd466f0f0daf176867e",
-    "bytes": 789771
+    "sha256": "1599e09e2eb1267a8b65a0527883cd58a731d5e0f44a1b525d252fb7991a0cf9",
+    "bytes": 790127
   },
   "stages": {
     "validate": {
@@ -40,8 +40,8 @@
         "ok": true,
         "command": "validate",
         "specification": {
-          "sha256": "6ff541c2ed087eb896be83ff9828c8fe6175a8ca0e3e0ee8d989d48c145f8751",
-          "bytes": 13778
+          "sha256": "d6d2fd509cd03a63aed98cdea718bfa637b6f576b5d6c7ff85847bc4e9f38584",
+          "bytes": 13942
         },
         "validation": {
           "checksPassed": 9,
@@ -56,7 +56,7 @@
     "deliver": {
       "status": "pass",
       "exitCode": 0,
-      "durationMs": 643,
+      "durationMs": 602,
       "command": [
         "/opt/homebrew/Cellar/node/26.0.0/bin/node",
         "/Users/weiss/.agents/skills/archify/bin/archify.mjs",
@@ -72,19 +72,19 @@
       ],
       "receipt": {
         "schemaVersion": 1,
-        "receiptId": "889fdf65-9beb-4b49-820c-3865ecf6e1b8",
+        "receiptId": "54aa72a9-87cb-4d10-b9a7-f8109eb233a1",
         "ok": true,
         "command": "deliver",
         "type": "architecture",
         "input": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-系统总览-20261006-022735/candidate.json",
         "output": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-系统总览-20261006-022735/architecture-overview.html",
         "specification": {
-          "sha256": "6ff541c2ed087eb896be83ff9828c8fe6175a8ca0e3e0ee8d989d48c145f8751",
-          "bytes": 13778
+          "sha256": "d6d2fd509cd03a63aed98cdea718bfa637b6f576b5d6c7ff85847bc4e9f38584",
+          "bytes": 13942
         },
         "artifact": {
-          "sha256": "5c3504b54044df524d66cfb6091cc27c9c8ab41e513a1dd466f0f0daf176867e",
-          "bytes": 789771
+          "sha256": "1599e09e2eb1267a8b65a0527883cd58a731d5e0f44a1b525d252fb7991a0cf9",
+          "bytes": 790127
         },
         "validation": {
           "checksPassed": 9,
@@ -97,7 +97,7 @@
         "evidence": {
           "verified": true,
           "repository": "https://github.com/Weiss-UltimateSavior/Tyranor-Next",
-          "revision": "1d6b9db336dc42e30c8b61edf5b4e075b80f295b",
+          "revision": "f15d5f94b8fb20ff752d22b57293c732f7281414",
           "references": 38
         },
         "update": {
@@ -116,7 +116,7 @@
     "check": {
       "status": "pass",
       "exitCode": 0,
-      "durationMs": 366,
+      "durationMs": 283,
       "command": [
         "/opt/homebrew/Cellar/node/26.0.0/bin/node",
         "/Users/weiss/.agents/skills/archify/bin/archify.mjs",
@@ -128,8 +128,8 @@
         "ok": true,
         "file": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-系统总览-20261006-022735/architecture-overview.html",
         "artifact": {
-          "sha256": "5c3504b54044df524d66cfb6091cc27c9c8ab41e513a1dd466f0f0daf176867e",
-          "bytes": 789771
+          "sha256": "1599e09e2eb1267a8b65a0527883cd58a731d5e0f44a1b525d252fb7991a0cf9",
+          "bytes": 790127
         },
         "checks": [
           {
@@ -190,22 +190,22 @@
           },
           "metrics": {
             "properCrossings": 0,
-            "resolvedCrossovers": 0,
+            "resolvedCrossovers": 1,
             "ambiguousCorridors": 0,
             "arrowheadCollisions": 0,
             "containerBorderRuns": 0,
             "labelRouteClearanceIssues": 0,
             "labelCanvasOverflowIssues": 0,
-            "minLabelRouteClearance": 14.3,
+            "minLabelRouteClearance": 5,
             "desktopReadabilityIssues": 0,
             "viewportHeightIssues": 0,
-            "minProjectedNodeTextPx": 6.304449648711944,
-            "maxBends": 3,
-            "routesOverSuggestedBends": 2,
-            "maxStretch": 1,
+            "minProjectedNodeTextPx": 7.1882510013351135,
+            "maxBends": 4,
+            "routesOverSuggestedBends": 4,
+            "maxStretch": 1.305,
             "routesOverSuggestedStretch": 0,
-            "minSegmentPx": 24,
-            "minInteriorSegmentPx": 25,
+            "minSegmentPx": 16,
+            "minInteriorSegmentPx": 16,
             "shortSegmentCount": 0,
             "shortEndpointSegmentCount": 0,
             "shortInteriorSegmentCount": 0,
@@ -218,8 +218,44 @@
             "microSegmentPx": 8
           },
           "routeReview": {
-            "crossings": [],
+            "crossings": [
+              {
+                "left": {
+                  "id": "launcher-emulators",
+                  "from": "launcher",
+                  "to": "emulators",
+                  "label": "显式组件跳转",
+                  "collectionIndex": 13,
+                  "artifactIndex": 14
+                },
+                "right": {
+                  "id": "launcher-modules",
+                  "from": "launcher",
+                  "to": "ext_modules",
+                  "label": "JoiPlay 协议",
+                  "collectionIndex": 14,
+                  "artifactIndex": 15
+                },
+                "point": [
+                  937,
+                  288
+                ],
+                "sharedNode": "launcher"
+              }
+            ],
             "detours": [
+              {
+                "relationship": {
+                  "id": "vm-room",
+                  "from": "vm",
+                  "to": "room",
+                  "label": "FIFO 落库",
+                  "collectionIndex": 6,
+                  "artifactIndex": 7
+                },
+                "bends": 4,
+                "stretch": 1.295
+              },
               {
                 "relationship": {
                   "id": "core-saf",
@@ -231,6 +267,18 @@
                 },
                 "bends": 3,
                 "stretch": 1
+              },
+              {
+                "relationship": {
+                  "id": "launcher-saf",
+                  "from": "launcher",
+                  "to": "safstore",
+                  "label": "路径解析",
+                  "collectionIndex": 9,
+                  "artifactIndex": 10
+                },
+                "bends": 4,
+                "stretch": 1.305
               },
               {
                 "relationship": {
@@ -248,9 +296,9 @@
           },
           "leadingSpace": {
             "measured": true,
-            "emptyTopPx": 93,
-            "emptyTopRatio": 0.145,
-            "occupiedTop": 93,
+            "emptyTopPx": 95,
+            "emptyTopRatio": 0.148,
+            "occupiedTop": 95,
             "viewBoxTop": 0,
             "canvasHeight": 640,
             "typicalNodeHeight": 62,
@@ -262,7 +310,7 @@
             "availableDiagramWidth": 1346,
             "actualBudgetPx": 1346,
             "actualReaderWidth": 1376,
-            "desiredReaderWidth": 1631.25,
+            "desiredReaderWidth": 1434.375,
             "viewportCap": 1376,
             "limit": "viewport-cap",
             "requestedTargetPx": 7.5,
@@ -276,19 +324,19 @@
               "to": "vm"
             },
             "minimumSourceTextPx": 8,
-            "minimumProjectedTextPx": 6.304449648711944,
+            "minimumProjectedTextPx": 7.1882510013351135,
             "semanticTextCount": 47
           },
           "issues": []
         },
         "provenance": "current",
-        "deliveryReceiptId": "889fdf65-9beb-4b49-820c-3865ecf6e1b8"
+        "deliveryReceiptId": "54aa72a9-87cb-4d10-b9a7-f8109eb233a1"
       }
     },
     "browser-check": {
       "status": "pass",
       "exitCode": 0,
-      "durationMs": 1482,
+      "durationMs": 1336,
       "command": [
         "/opt/homebrew/Cellar/node/26.0.0/bin/node",
         "/Users/weiss/.agents/skills/archify/bin/archify.mjs",
@@ -306,11 +354,11 @@
         "status": "pass",
         "visualReview": "not-requested",
         "provenance": "current",
-        "deliveryReceiptId": "889fdf65-9beb-4b49-820c-3865ecf6e1b8",
+        "deliveryReceiptId": "54aa72a9-87cb-4d10-b9a7-f8109eb233a1",
         "artifact": {
           "path": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-系统总览-20261006-022735/architecture-overview.html",
-          "sha256": "5c3504b54044df524d66cfb6091cc27c9c8ab41e513a1dd466f0f0daf176867e",
-          "bytes": 789771
+          "sha256": "1599e09e2eb1267a8b65a0527883cd58a731d5e0f44a1b525d252fb7991a0cf9",
+          "bytes": 790127
         },
         "state": {
           "detail": "read",
@@ -347,14 +395,14 @@
                 "bodyPaddingPx": 12,
                 "headerPx": 52,
                 "diagramChromePx": 78,
-                "svgPx": 504,
+                "svgPx": 575,
                 "cardsPx": 0,
                 "viewBoxHeight": 640
               },
-              "viewBoxWidth": 1708,
-              "minimumProjectedNodeTextPx": 6.304449648711944,
-              "minimumProjectedNonEdgeTextPx": 7.092505854800937,
-              "minimumProjectedEdgeTextPx": 6.304449648711944,
+              "viewBoxWidth": 1498,
+              "minimumProjectedNodeTextPx": 7.1882510013351135,
+              "minimumProjectedNonEdgeTextPx": 7.278104138851802,
+              "minimumProjectedEdgeTextPx": 7.1882510013351135,
               "minimumProjectedNodeText": "事件/状态",
               "minimumProjectedNodeTextDetail": "edge",
               "minimumProjectedNodeTextOwner": {
@@ -399,14 +447,14 @@
                 "bodyPaddingPx": 64,
                 "headerPx": 60,
                 "diagramChromePx": 84,
-                "svgPx": 564,
+                "svgPx": 643,
                 "cardsPx": 0,
                 "viewBoxHeight": 640
               },
-              "viewBoxWidth": 1708,
-              "minimumProjectedNodeTextPx": 7.053864168618267,
-              "minimumProjectedNonEdgeTextPx": 7.93559718969555,
-              "minimumProjectedEdgeTextPx": 7.053864168618267,
+              "viewBoxWidth": 1498,
+              "minimumProjectedNodeTextPx": 8,
+              "minimumProjectedNonEdgeTextPx": 8.1,
+              "minimumProjectedEdgeTextPx": 8,
               "minimumProjectedNodeText": "事件/状态",
               "minimumProjectedNodeTextDetail": "edge",
               "minimumProjectedNodeTextOwner": {
@@ -451,13 +499,13 @@
                 "bodyPaddingPx": 64,
                 "headerPx": 60,
                 "diagramChromePx": 84,
-                "svgPx": 684,
+                "svgPx": 780,
                 "cardsPx": 0,
                 "viewBoxHeight": 640
               },
-              "viewBoxWidth": 1708,
+              "viewBoxWidth": 1498,
               "minimumProjectedNodeTextPx": 8,
-              "minimumProjectedNonEdgeTextPx": 9,
+              "minimumProjectedNonEdgeTextPx": 8.1,
               "minimumProjectedEdgeTextPx": 8,
               "minimumProjectedNodeText": "事件/状态",
               "minimumProjectedNodeTextDetail": "edge",
@@ -503,13 +551,13 @@
                 "bodyPaddingPx": 64,
                 "headerPx": 68,
                 "diagramChromePx": 94,
-                "svgPx": 701,
+                "svgPx": 799,
                 "cardsPx": 0,
                 "viewBoxHeight": 640
               },
-              "viewBoxWidth": 1708,
+              "viewBoxWidth": 1498,
               "minimumProjectedNodeTextPx": 8,
-              "minimumProjectedNonEdgeTextPx": 9,
+              "minimumProjectedNonEdgeTextPx": 8.1,
               "minimumProjectedEdgeTextPx": 8,
               "minimumProjectedNodeText": "事件/状态",
               "minimumProjectedNodeTextDetail": "edge",
@@ -608,14 +656,14 @@
                 "bodyPaddingPx": 12,
                 "headerPx": 52,
                 "diagramChromePx": 78,
-                "svgPx": 504,
+                "svgPx": 575,
                 "cardsPx": 0,
                 "viewBoxHeight": 640
               },
-              "viewBoxWidth": 1708,
-              "minimumProjectedNodeTextPx": 6.304449648711944,
-              "minimumProjectedNonEdgeTextPx": 7.092505854800937,
-              "minimumProjectedEdgeTextPx": 6.304449648711944,
+              "viewBoxWidth": 1498,
+              "minimumProjectedNodeTextPx": 7.1882510013351135,
+              "minimumProjectedNonEdgeTextPx": 7.278104138851802,
+              "minimumProjectedEdgeTextPx": 7.1882510013351135,
               "minimumProjectedNodeText": "事件/状态",
               "minimumProjectedNodeTextDetail": "edge",
               "minimumProjectedNodeTextOwner": {
@@ -660,14 +708,14 @@
                 "bodyPaddingPx": 64,
                 "headerPx": 60,
                 "diagramChromePx": 84,
-                "svgPx": 564,
+                "svgPx": 643,
                 "cardsPx": 0,
                 "viewBoxHeight": 640
               },
-              "viewBoxWidth": 1708,
-              "minimumProjectedNodeTextPx": 7.053864168618267,
-              "minimumProjectedNonEdgeTextPx": 7.93559718969555,
-              "minimumProjectedEdgeTextPx": 7.053864168618267,
+              "viewBoxWidth": 1498,
+              "minimumProjectedNodeTextPx": 8,
+              "minimumProjectedNonEdgeTextPx": 8.1,
+              "minimumProjectedEdgeTextPx": 8,
               "minimumProjectedNodeText": "事件/状态",
               "minimumProjectedNodeTextDetail": "edge",
               "minimumProjectedNodeTextOwner": {
@@ -712,13 +760,13 @@
                 "bodyPaddingPx": 64,
                 "headerPx": 60,
                 "diagramChromePx": 84,
-                "svgPx": 684,
+                "svgPx": 780,
                 "cardsPx": 0,
                 "viewBoxHeight": 640
               },
-              "viewBoxWidth": 1708,
+              "viewBoxWidth": 1498,
               "minimumProjectedNodeTextPx": 8,
-              "minimumProjectedNonEdgeTextPx": 9,
+              "minimumProjectedNonEdgeTextPx": 8.1,
               "minimumProjectedEdgeTextPx": 8,
               "minimumProjectedNodeText": "事件/状态",
               "minimumProjectedNodeTextDetail": "edge",
@@ -764,13 +812,13 @@
                 "bodyPaddingPx": 64,
                 "headerPx": 68,
                 "diagramChromePx": 94,
-                "svgPx": 701,
+                "svgPx": 799,
                 "cardsPx": 0,
                 "viewBoxHeight": 640
               },
-              "viewBoxWidth": 1708,
+              "viewBoxWidth": 1498,
               "minimumProjectedNodeTextPx": 8,
-              "minimumProjectedNonEdgeTextPx": 9,
+              "minimumProjectedNonEdgeTextPx": 8.1,
               "minimumProjectedEdgeTextPx": 8,
               "minimumProjectedNodeText": "事件/状态",
               "minimumProjectedNodeTextDetail": "edge",
@@ -821,14 +869,14 @@
                 "bodyPaddingPx": 12,
                 "headerPx": 52,
                 "diagramChromePx": 78,
-                "svgPx": 504,
+                "svgPx": 575,
                 "cardsPx": 0,
                 "viewBoxHeight": 640
               },
-              "viewBoxWidth": 1708,
-              "minimumProjectedNodeTextPx": 6.304449648711944,
-              "minimumProjectedNonEdgeTextPx": 7.092505854800937,
-              "minimumProjectedEdgeTextPx": 6.304449648711944,
+              "viewBoxWidth": 1498,
+              "minimumProjectedNodeTextPx": 7.1882510013351135,
+              "minimumProjectedNonEdgeTextPx": 7.278104138851802,
+              "minimumProjectedEdgeTextPx": 7.1882510013351135,
               "minimumProjectedNodeText": "事件/状态",
               "minimumProjectedNodeTextDetail": "edge",
               "minimumProjectedNodeTextOwner": {
@@ -873,14 +921,14 @@
                 "bodyPaddingPx": 64,
                 "headerPx": 60,
                 "diagramChromePx": 84,
-                "svgPx": 564,
+                "svgPx": 643,
                 "cardsPx": 0,
                 "viewBoxHeight": 640
               },
-              "viewBoxWidth": 1708,
-              "minimumProjectedNodeTextPx": 7.053864168618267,
-              "minimumProjectedNonEdgeTextPx": 7.93559718969555,
-              "minimumProjectedEdgeTextPx": 7.053864168618267,
+              "viewBoxWidth": 1498,
+              "minimumProjectedNodeTextPx": 8,
+              "minimumProjectedNonEdgeTextPx": 8.1,
+              "minimumProjectedEdgeTextPx": 8,
               "minimumProjectedNodeText": "事件/状态",
               "minimumProjectedNodeTextDetail": "edge",
               "minimumProjectedNodeTextOwner": {
@@ -925,13 +973,13 @@
                 "bodyPaddingPx": 64,
                 "headerPx": 60,
                 "diagramChromePx": 84,
-                "svgPx": 684,
+                "svgPx": 780,
                 "cardsPx": 0,
                 "viewBoxHeight": 640
               },
-              "viewBoxWidth": 1708,
+              "viewBoxWidth": 1498,
               "minimumProjectedNodeTextPx": 8,
-              "minimumProjectedNonEdgeTextPx": 9,
+              "minimumProjectedNonEdgeTextPx": 8.1,
               "minimumProjectedEdgeTextPx": 8,
               "minimumProjectedNodeText": "事件/状态",
               "minimumProjectedNodeTextDetail": "edge",
@@ -977,13 +1025,13 @@
                 "bodyPaddingPx": 64,
                 "headerPx": 68,
                 "diagramChromePx": 94,
-                "svgPx": 701,
+                "svgPx": 799,
                 "cardsPx": 0,
                 "viewBoxHeight": 640
               },
-              "viewBoxWidth": 1708,
+              "viewBoxWidth": 1498,
               "minimumProjectedNodeTextPx": 8,
-              "minimumProjectedNonEdgeTextPx": 9,
+              "minimumProjectedNonEdgeTextPx": 8.1,
               "minimumProjectedEdgeTextPx": 8,
               "minimumProjectedNodeText": "事件/状态",
               "minimumProjectedNodeTextDetail": "edge",
@@ -1028,16 +1076,18 @@
     "browserCheckReceipt": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-系统总览-20261006-022735/architecture-overview.browser-check.json"
   },
   "visualReview": "not-requested",
-  "finishedAt": "2026-10-05T19:01:08.631Z",
-  "durationMs": 2762,
+  "finishedAt": "2026-11-14T12:06:20.233Z",
+  "durationMs": 2457,
   "update": {
-    "status": "current",
+    "status": "update_available",
     "installedVersion": "3.0.1",
-    "availableVersion": "3.0.1",
-    "releaseNotes": null,
-    "checkedAt": "2026-10-05T18:30:17.890Z",
+    "availableVersion": "3.2.0",
+    "releaseNotes": "https://github.com/tt-a1i/archify/releases/tag/v3.2.0",
+    "severity": "normal",
+    "checkedAt": "2026-11-14T12:00:02.300Z",
     "source": "cache",
-    "noticeRequired": false,
-    "noticeText": null
+    "noticeRequired": true,
+    "noticeText": "Archify update: 3.0.1 → 3.2.0. A previous check at 2026-11-14T12:00:02.300Z found a newer release. Release notes: https://github.com/tt-a1i/archify/releases/tag/v3.2.0. The installed Skill has not changed; ask to snooze or ignore this reminder.",
+    "eventKey": "archify@sha256:70e210265c59f24dcbdf2a502ff671104b5454e7ee7d3554aecd86bad32384f5"
   }
 }

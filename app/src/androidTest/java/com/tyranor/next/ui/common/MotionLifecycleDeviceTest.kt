@@ -269,9 +269,9 @@ class MotionLifecycleDeviceTest {
                     leaving.alpha.value <= 0f || abs(leaving.offset.value) >= 1f,
                 )
                 val generation = entrance.generation
-                leaving.replayEntranceIfHidden(entrance, timeSinceLeft = 400L)
+                leaving.replayEntranceIfHidden(entrance, timeSinceLeft = 120L)
                 assertEquals("The minimum replay gap must still apply to a hidden page", generation, entrance.generation)
-                leaving.replayEntranceIfHidden(entrance, timeSinceLeft = 401L)
+                leaving.replayEntranceIfHidden(entrance, timeSinceLeft = 121L)
                 assertEquals("A hidden page may replay once the minimum gap has elapsed", generation + 1, entrance.generation)
                 assertTrue("Returning to a previously shown tab must use its quick entrance", entrance.quick)
             }

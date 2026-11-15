@@ -55,7 +55,7 @@ options=(
     # MPEG-PS without a program map uses the elementary-video demuxer to identify its video codec.
     --enable-demuxer=asf,mpegps,mpegvideo --enable-protocol=file
     --enable-parser=mpegvideo,mpegaudio
-    --enable-decoder=wmv3,vc1,wmav2,wmapro,mpeg1video,mpeg2video,mp2
+    --enable-decoder=wmv3,vc1,wmav2,wmapro,msmpeg4v3,mpeg1video,mpeg2video,mp2
 )
 if [[ ! -f ffbuild/config.mak ]] || ! cmp -s ffbuild/emberfall-options <(printf '%s\n' "${options[@]}"); then
     if [[ -f ffbuild/config.mak ]]; then make -s distclean; fi

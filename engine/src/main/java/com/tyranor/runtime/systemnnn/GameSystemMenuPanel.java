@@ -9,6 +9,7 @@ import android.view.View;
 import java.util.Set;
 import java.util.function.IntConsumer;
 import java.util.function.IntPredicate;
+import java.util.function.Predicate;
 
 /** The exit warning shares the system menu's captured scene and background script. */
 final class GameSystemMenuPanel extends GameUiPanel {
@@ -18,6 +19,33 @@ final class GameSystemMenuPanel extends GameUiPanel {
 
     GameSystemMenuPanel(Context context,GameUiAssets assets,String background,Runnable click) {
         super(context,assets,background,click);
+    }
+
+    static boolean standardButtonEnabled(int index,boolean sceneReplay){
+        return !sceneReplay||index!=0&&index!=1;
+    }
+
+    static String standardButtonSprite(GameUiAssets.Config cfg,String tag,String fallbackTag,int index,boolean sceneReplay,
+                                       Predicate<String> available){
+        String base=new ButtonArt(cfg,tag,fallbackTag).image;
+        if(sceneReplay&&(index==7||index==8)){
+            String override=cfg.value(index==7?"systemMenuSceneBackFileName":"systemMenuSceneEndFileName","");
+            if(!override.isEmpty()&&available.test(override))return override;
+        }
+        return base;
+    }
+
+    GameButton standardButton(GameUiAssets.Config cfg,int index,boolean sceneReplay,String tag,String fallbackTag,
+                              String label,Runnable action,int dx,int dy,int dw,int dh){
+        int w=cfg.number(tag+"SizeX",cfg.number(fallbackTag+"SizeX",dw));
+        int h=cfg.number(tag+"SizeY",cfg.number(fallbackTag+"SizeY",dh));
+        w=Math.max(1,Math.min(4096,w));h=Math.max(1,Math.min(4096,h));
+        int x=cfg.number(tag+"PrintX",dx),y=cfg.number(tag+"PrintY",dy);
+        GameButton.Spec spec=new GameButton.Spec(cfg,tag,fallbackTag,w,h);
+        String imageName=standardButtonSprite(cfg,tag,fallbackTag,index,sceneReplay,name->sprite(name)!=null);
+        GameButton button=animatedButton(spec,sprite(imageName),label,()->sound(spec.sound,spec.voice),action,x,y,w,h);
+        button.setEnabled(standardButtonEnabled(index,sceneReplay));
+        return button;
     }
 
     static int optionCount(GameUiAssets.Config config){
