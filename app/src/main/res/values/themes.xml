@@ -1,6 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.TyranorNext" parent="android:Theme.Material.Light.NoActionBar" />
+    <!--
+        启动窗口（splash / 最近任务占位卡）用该主题绘制：状态栏透明 + 深色图标，
+        与页面白底连续。不写 statusBarColor 会继承 Material.Light 的深色状态栏，
+        系统占位卡顶上会出现一条深灰「标题条」（实测）。
+    -->
+    <style name="Theme.TyranorNext" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
     <style name="Theme.TyranorNext.Translucent" parent="android:style/Theme.Translucent.NoTitleBar" />
 </resources>

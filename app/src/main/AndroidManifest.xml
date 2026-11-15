@@ -131,6 +131,10 @@
             android:exported="false"
             android:configChanges="uiMode" />
         <activity
+            android:name=".ui.settings.PrivacySettingsActivity"
+            android:exported="false"
+            android:configChanges="uiMode" />
+        <activity
             android:name=".ui.auth.HikarinagiOAuthCallbackActivity"
             android:exported="false"
             android:theme="@style/Theme.TyranorNext.Translucent" />

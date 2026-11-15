@@ -60,6 +60,7 @@ import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.LocalAppDialogContent
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
+import com.tyranor.next.ui.common.privacy.DismissOnAppLockEffect
 import com.tyranor.next.ui.common.motion.Bind
 import com.tyranor.next.ui.common.motion.DialogSinkStrength
 import com.tyranor.next.ui.common.motion.LocalSheetBackdrop
@@ -235,6 +236,9 @@ internal fun AppAlertDialog(
             decorFitsSystemWindows = false,
             dismissOnBackPress = currentDismissEnabled, dismissOnClickOutside = currentDismissEnabled),
     ) {
+        // 弹窗是独立窗口，层级在解锁门之上：应用锁生效时自动收起，
+        // 避免锁定状态下仍可操作弹窗内条目（含 NavItem / 输入框）
+        DismissOnAppLockEffect(onDismissRequest)
         DialogWindowScrim(
             enhanced = enhanced,
             progress = { dimAlpha.value },

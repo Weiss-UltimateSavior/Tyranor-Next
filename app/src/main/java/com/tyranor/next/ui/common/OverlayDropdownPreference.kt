@@ -54,6 +54,7 @@ import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
 import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.basic.Text
+import com.tyranor.next.ui.common.privacy.DismissOnAppLockEffect
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowListPopup
@@ -278,6 +279,9 @@ private fun DropdownListPopup(
     renderInRootScaffold: Boolean,
     content: @Composable () -> Unit,
 ) {
+    // 下拉浮层可能是独立窗口（抽屉内为 WindowListPopup），层级在解锁门之上：
+    // 应用锁生效时收起，避免锁定状态下展开选项
+    DismissOnAppLockEffect(onDismissRequest)
     if (LocalAppSheetContent.current) {
         WindowListPopup(show = show, alignment = PopupPositionProvider.Align.End,
             onDismissRequest = onDismissRequest, onDismissFinished = onDismissFinished,

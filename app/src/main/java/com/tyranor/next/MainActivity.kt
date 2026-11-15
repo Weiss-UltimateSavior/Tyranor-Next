@@ -5,7 +5,6 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -18,6 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.fragment.app.FragmentActivity
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.OnboardingWriteResult
 import com.tyranor.next.ui.onboarding.CoachOverlayVisibility
@@ -26,6 +26,7 @@ import com.tyranor.next.ui.common.CoachAnchor
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.geometry.Rect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -33,6 +34,8 @@ import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 import com.tyranor.next.ui.common.ProvideAppLocale
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.ui.common.PageTransitionBackground
+import com.tyranor.next.core.privacy.AppLockController
+import com.tyranor.next.ui.common.motion.skipDrawWhenHidden
 import com.tyranor.next.ui.common.collectSettingAsState
 import com.tyranor.next.ui.common.motion.LocalPageDepth
 import com.tyranor.next.ui.common.motion.ProvideMotionEnvironment
@@ -41,6 +44,8 @@ import com.tyranor.next.ui.common.motion.rememberPageDepth
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.core.updater.UpdateNotificationManager
 import com.tyranor.next.ui.common.observeSaveSyncFeedback
+import com.tyranor.next.ui.common.privacy.FlagSecureEffect
+import com.tyranor.next.ui.common.privacy.PrivacyLockGate
 
 private fun coachPageOf(index: Int): Int = when (index) {
   CoachAnchor.HOME -> 0
@@ -49,7 +54,8 @@ private fun coachPageOf(index: Int): Int = when (index) {
   else -> 3
 }
 
-class MainActivity : ComponentActivity() {
+// FragmentActivity（ComponentActivity 的子类）：应用锁 BiometricPrompt 要求宿主提供 FragmentManager
+class MainActivity : FragmentActivity() {
   private val notificationPermissionLauncher =
     registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
@@ -78,6 +84,8 @@ class MainActivity : ComponentActivity() {
     // 状态栏/导航栏透明沉浸由 enableEdgeToEdge(transparent) 处理，无需再设置已弃用的 window.statusBarColor
 
     setContent {
+      // 防止截图 / 应用锁生效期间强制 FLAG_SECURE（窗口级，挂在主题包裹之外）
+      FlagSecureEffect(this)
       ProvideAppLocale {
         TyranorNextTheme {
           // 系统栏图标跟随实际背景：深色模式/深色底图用浅色图标（SystemBarStyle.dark）
@@ -99,14 +107,30 @@ class MainActivity : ComponentActivity() {
           }
           ProvideMotionEnvironment {
             val depth = rememberPageDepth()
+            // 应用锁生效时只隐藏**页面内容**：背景（含粒子 / 自定义背景图）必须继续绘制，
+            // 否则锁定时整屏背景与粒子一起消失（门本身不画背景）
+            val locked by AppLockController.lockedState.collectSettingAsState()
             CompositionLocalProvider(LocalPageDepth provides depth) {
-              PageTransitionBackground(depth) { AppEntry() }
+              PageTransitionBackground(depth) {
+                Box(
+                  Modifier
+                    .fillMaxSize()
+                    .skipDrawWhenHidden { !locked }
+                    // 锁定时页面内容退出无障碍树（门自身语义保留）
+                    .then(if (locked) Modifier.clearAndSetSemantics { } else Modifier),
+                ) {
+                  AppEntry()
+                }
+              }
             }
+            // 应用锁解锁门：进程内覆盖层（性质同弹窗，不设顶栏），盖在页面内容之上
+            PrivacyLockGate()
           }
         }
       }
     }
   }
+
 
   @Composable
   private fun AppEntry() {

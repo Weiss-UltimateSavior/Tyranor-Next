@@ -1091,6 +1091,36 @@
     <string name="save_systemnnn_clear_resources_message">アプリ内のコピーからゲームデータを削除して空き容量を増やします。元のゲームフォルダーとコピー内のすべてのセーブデータは残ります。次回の起動時に元のフォルダーからゲームデータを取り込み直します。</string>
     <string name="save_systemnnn_clear_resources_done">取り込んだゲームデータを削除しました</string>
 
+    <!-- プライバシー設定 -->
+    <string name="privacy_settings_title">プライバシー設定</string>
+    <string name="privacy_secure_screen_title">セキュアスクリーン</string>
+    <string name="privacy_secure_screen_summary">最近使ったタスクに空白カードを表示し、アプリ内のスクリーンショットを禁止します</string>
+    <string name="privacy_hide_notification_title">通知内容を隠す</string>
+    <string name="privacy_hide_notification_summary">ロック画面にアプリの通知を表示しません（ロック解除後のみ表示）</string>
+    <string name="privacy_app_lock_title">アプリロック</string>
+    <string name="privacy_app_lock_summary">アプリを開くときにパターンの描画が必要になります</string>
+    <string name="privacy_app_lock_timeout_title">ロックまでの時間</string>
+    <string name="privacy_app_lock_timeout_summary">選択した時間を超えて離れるとロックされます</string>
+    <string name="privacy_timeout_immediate">すぐに</string>
+    <string name="privacy_timeout_one_minute">1分</string>
+    <string name="privacy_timeout_five_minutes">5分</string>
+    <string name="privacy_timeout_fifteen_minutes">15分</string>
+    <string name="privacy_app_lock_biometric_title">端末の認証情報で解錠</string>
+    <string name="privacy_app_lock_biometric_summary">指紋・顔認証・画面ロックのパスワードでパターンの代わりに解錠できます</string>
+    <string name="privacy_app_lock_change_pattern">パターンを変更</string>
+    <string name="privacy_app_lock_change_pattern_summary">アプリロックのパターンを描き直します</string>
+    <string name="privacy_gate_title">アプリロック</string>
+    <string name="privacy_gate_hint_draw">パターンを描いて解錠</string>
+    <string name="privacy_gate_hint_wrong">パターンが一致しません。もう一度お試しください</string>
+    <string name="privacy_gate_pattern_desc">アプリロックパターン</string>
+    <string name="privacy_gate_device_title">端末の解錠方法を確認</string>
+    <string name="privacy_gate_device_description">確認が成功するとアプリに入れます</string>
+    <string name="privacy_gate_device_unlock">端末の解錠方法を使用</string>
+    <string name="privacy_gate_setup_title">アプリロックを設定</string>
+    <string name="privacy_gate_setup_draw">解錠パターンを描いてください（4つ以上の点をつなぐ）</string>
+    <string name="privacy_gate_setup_confirm">確認のためもう一度パターンを描いてください</string>
+    <string name="privacy_gate_setup_mismatch">2回のパターンが一致しません。描き直してください</string>
+    <string name="privacy_gate_setup_save_failed">パターンを保存できませんでした。もう一度お試しください</string>
     <!-- 自定义背景图 -->
     <string name="settings_background_image">背景画像</string>
     <string name="settings_background_image_none">未設定。タップして画像を選択</string>

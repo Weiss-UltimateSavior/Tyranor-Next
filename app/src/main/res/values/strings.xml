@@ -1091,6 +1091,36 @@
     <string name="save_systemnnn_clear_resources_message">清理应用内副本的游戏资源可以释放空间，原游戏目录和副本中的全部存档都会保留。下次启动时需要从原目录重新导入资源。</string>
     <string name="save_systemnnn_clear_resources_done">已清理导入的游戏资源</string>
 
+    <!-- 隐私设置 -->
+    <string name="privacy_settings_title">隐私设置</string>
+    <string name="privacy_secure_screen_title">安全屏幕</string>
+    <string name="privacy_secure_screen_summary">最近任务显示空白卡片，应用内无法截屏</string>
+    <string name="privacy_hide_notification_title">隐藏通知内容</string>
+    <string name="privacy_hide_notification_summary">锁屏上不显示应用通知，解锁后才可见</string>
+    <string name="privacy_app_lock_title">应用锁</string>
+    <string name="privacy_app_lock_summary">打开应用时需要绘制图案解锁</string>
+    <string name="privacy_app_lock_timeout_title">解锁延迟</string>
+    <string name="privacy_app_lock_timeout_summary">离开应用超过所选时间后需要解锁</string>
+    <string name="privacy_timeout_immediate">立即</string>
+    <string name="privacy_timeout_one_minute">1 分钟</string>
+    <string name="privacy_timeout_five_minutes">5 分钟</string>
+    <string name="privacy_timeout_fifteen_minutes">15 分钟</string>
+    <string name="privacy_app_lock_biometric_title">设备凭据快捷解锁</string>
+    <string name="privacy_app_lock_biometric_summary">允许使用指纹、人脸或锁屏密码代替图案解锁</string>
+    <string name="privacy_app_lock_change_pattern">修改图案</string>
+    <string name="privacy_app_lock_change_pattern_summary">重新绘制应用锁图案</string>
+    <string name="privacy_gate_title">应用锁</string>
+    <string name="privacy_gate_hint_draw">绘制图案以解锁</string>
+    <string name="privacy_gate_hint_wrong">图案不匹配，请重试</string>
+    <string name="privacy_gate_pattern_desc">应用锁图案</string>
+    <string name="privacy_gate_device_title">验证设备解锁方式</string>
+    <string name="privacy_gate_device_description">验证通过后即可进入应用</string>
+    <string name="privacy_gate_device_unlock">使用设备解锁方式</string>
+    <string name="privacy_gate_setup_title">设置应用锁</string>
+    <string name="privacy_gate_setup_draw">绘制解锁图案，至少连接 4 个点</string>
+    <string name="privacy_gate_setup_confirm">再次绘制图案以确认</string>
+    <string name="privacy_gate_setup_mismatch">两次图案不一致，请重新绘制</string>
+    <string name="privacy_gate_setup_save_failed">图案保存失败，请重试</string>
     <!-- 自定义背景图 -->
     <string name="settings_background_image">背景图片</string>
     <string name="settings_background_image_none">未设置，点击选择图片</string>

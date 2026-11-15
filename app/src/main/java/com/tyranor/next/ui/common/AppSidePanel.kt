@@ -27,6 +27,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,6 +60,7 @@ import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassPanel
 import com.tyranor.next.theme.MilkGlassPanelBackground
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.ui.common.privacy.DismissOnAppLockEffect
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.motion.MotionHaptics
@@ -132,6 +134,9 @@ internal fun AppSidePanel(
     // 而不是整窗瞬间消失；「普通」档保持原版立即移除
     var mounted by remember { mutableStateOf(open) }
     LaunchedEffect(open) { if (open) mounted = true }
+    // 侧栏是独立窗口，层级在解锁门之上：应用锁生效时**立即**移除（不做滑出动画，
+    // 锁定时首要是不可操作）
+    DismissOnAppLockEffect(onDismiss)
     val show = open || (mounted && MotionMode.enhanced)
     if (!show) {
         if (mounted) mounted = false

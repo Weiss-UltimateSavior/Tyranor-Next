@@ -16,6 +16,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.ModalBottomSheetProperties
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -25,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.theme.AppSheetTopShape
+import com.tyranor.next.ui.common.privacy.DismissOnAppLockEffect
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassPanelSolid
 import com.tyranor.next.theme.MilkGlassPanelBackground
@@ -73,6 +77,9 @@ internal fun AppBottomSheet(
 ) {
     val sheetState = rememberMotionSheetState(controller, confirmValueChange)
     LocalSheetBackdrop.current?.let { controller.BindBackdrop(it) }
+    // 抽屉是独立窗口，层级在解锁门之上：应用锁生效时**立即**移除（不做退出动画，
+    // 锁定时首要是不可操作）
+    DismissOnAppLockEffect(onDismissRequest)
     ModalBottomSheet(
         onDismissRequest = {
             if (controller.canClose()) {

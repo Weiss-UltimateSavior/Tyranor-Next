@@ -1091,6 +1091,36 @@
     <string name="save_systemnnn_clear_resources_message">Free space by clearing resources from the imported copy. The original game folder and all saves in the copy will be kept. The next launch imports the resources again from the original folder.</string>
     <string name="save_systemnnn_clear_resources_done">Imported game resources cleared</string>
 
+    <!-- Privacy settings -->
+    <string name="privacy_settings_title">Privacy settings</string>
+    <string name="privacy_secure_screen_title">Secure screen</string>
+    <string name="privacy_secure_screen_summary">Show a blank card in Recents and block screenshots of the app</string>
+    <string name="privacy_hide_notification_title">Hide notification content</string>
+    <string name="privacy_hide_notification_summary">Do not show app notifications on the lock screen; visible only after unlocking</string>
+    <string name="privacy_app_lock_title">App lock</string>
+    <string name="privacy_app_lock_summary">Require a pattern to open the app</string>
+    <string name="privacy_app_lock_timeout_title">Lock delay</string>
+    <string name="privacy_app_lock_timeout_summary">Lock after being away longer than the selected time</string>
+    <string name="privacy_timeout_immediate">Immediately</string>
+    <string name="privacy_timeout_one_minute">1 minute</string>
+    <string name="privacy_timeout_five_minutes">5 minutes</string>
+    <string name="privacy_timeout_fifteen_minutes">15 minutes</string>
+    <string name="privacy_app_lock_biometric_title">Device credential unlock</string>
+    <string name="privacy_app_lock_biometric_summary">Allow fingerprint, face, or screen lock to unlock instead of the pattern</string>
+    <string name="privacy_app_lock_change_pattern">Change pattern</string>
+    <string name="privacy_app_lock_change_pattern_summary">Redraw the app lock pattern</string>
+    <string name="privacy_gate_title">App lock</string>
+    <string name="privacy_gate_hint_draw">Draw your pattern to unlock</string>
+    <string name="privacy_gate_hint_wrong">Pattern didn\'t match, try again</string>
+    <string name="privacy_gate_pattern_desc">App lock pattern</string>
+    <string name="privacy_gate_device_title">Verify with device unlock</string>
+    <string name="privacy_gate_device_description">Verify to enter the app</string>
+    <string name="privacy_gate_device_unlock">Use device unlock</string>
+    <string name="privacy_gate_setup_title">Set up app lock</string>
+    <string name="privacy_gate_setup_draw">Draw an unlock pattern (connect at least 4 dots)</string>
+    <string name="privacy_gate_setup_confirm">Draw the pattern again to confirm</string>
+    <string name="privacy_gate_setup_mismatch">The two patterns didn\'t match, redraw</string>
+    <string name="privacy_gate_setup_save_failed">Couldn\'t save the pattern, try again</string>
     <!-- 自定义背景图 -->
     <string name="settings_background_image">Background image</string>
     <string name="settings_background_image_none">Not set. Tap to choose an image</string>
