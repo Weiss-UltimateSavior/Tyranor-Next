@@ -129,7 +129,9 @@ final class GameBacklogPanel extends GameUiPanel {
         int titleUpper=cfg.number("titlePicUpperFlag",0);
         if(cfg.number("titlePicPrintFlag",0)!=0&&titleUpper==0)drawTitlePicture();
         if(cfg.number("titlePrintFlag",1)!=0){
-            String rawTitle=cfg.text("titleMessage","");
+            int defaultTitle=assets.sharedConfig.singleByteText()?R.string.engine_systemnnn_backlog_title_single_byte:
+                R.string.engine_systemnnn_backlog_title_double_byte;
+            String rawTitle=cfg.text("titleMessage",getContext().getString(defaultTitle));
             if(!rawTitle.isEmpty()){
                 TextView title=styledLabel(rawTitle,Color.WHITE);
                 put(title,cfg.number("titlePrintX",canvasWidth/2-font*3),cfg.number("titlePrintY",printY),

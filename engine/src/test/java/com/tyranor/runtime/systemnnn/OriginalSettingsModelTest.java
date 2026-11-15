@@ -19,6 +19,14 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public final class OriginalSettingsModelTest {
+    @Test public void windowOpacityAlwaysUsesTheFullPercentScale() {
+        OriginalSettingsModel.Slider slider = new OriginalSettingsModel.Slider(
+            6, 1, 0, 0, 120, 20, 10, 0, 100, "", null
+        );
+        assertEquals(100, slider.steps);
+        assertEquals(100, slider.toPreference(slider.steps));
+        assertEquals(63, slider.fromPreference(63));
+    }
     @Rule public TemporaryFolder folder=new TemporaryFolder();
 
     @Test public void selectedRadioIgnoresRepeatedClick() {

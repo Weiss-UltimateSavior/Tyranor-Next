@@ -71,6 +71,11 @@ final class GameRunner {
         }
         boolean hasDialogueText(){return wait==NativeGame.DIALOGUE||drawMessage==DRAW_RETAINED_MESSAGE;}
         boolean showsDialogue(){return hasDialogueText()||drawMessage==DRAW_WINDOW;}
+        boolean sameChoiceSet(Frame other){
+            return other!=null&&wait==NativeGame.CHOICE&&other.wait==NativeGame.CHOICE&&
+                generation==other.generation&&word==other.word&&line==other.line&&script.equals(other.script)&&
+                DialogueLayout.choiceSetId(planeKey)==DialogueLayout.choiceSetId(other.planeKey);
+        }
         String legacyReadKey(byte[] rawScript,String legacyBody){
             return new String(rawScript,StandardCharsets.UTF_8)+"\u0001"+word+"\u0001"+
                 (legacyBody.length()>8192?legacyBody.substring(0,8192):legacyBody);
@@ -277,7 +282,7 @@ final class GameRunner {
     private StartupStage startupStage;
     private GameUiAssets.Config startupConfig;
     private boolean startupLogoFinished;
-    private boolean choiceClicking;
+    private Frame pressedChoice;
     private GalleryCatalog gallery;
     private GalleryCatalog.MovieList movieList;
     private GalleryCatalog.Page galleryPage;
@@ -641,7 +646,7 @@ final class GameRunner {
         if(retired!=0)NativeGame.close(retired);
         movieError=null;
         onTitle=true;menuOpen=false;menuModal=null;systemMenuModal=false;
-        choiceClicking=false;failed=false;history=null;current=null;shownWait=-1;resetDialogueDecorations();
+        pressedChoice=null;failed=false;history=null;current=null;shownWait=-1;resetDialogueDecorations();
         configMask=0;
         replaying=false; galleryPage=null; currentTitle=title; galleryWritten=unsaved?-1:stored;
         titleBackgroundConfigured=title!=null;
@@ -1011,7 +1016,7 @@ final class GameRunner {
         galleryWritten=unsaved?-1:stored;
         startupStage=null;startupConfig=null;titleBackgroundHeld=false;startupTitleFramePending=false;
         cancelMovieContinuation();pendingMovieExitColor=null;moviePlaying=false;movieError=null;
-        onTitle=false;menuOpen=holdStory;systemMenuModal=false;choiceClicking=false;history=next;System.arraycopy(state,0,meta,0,meta.length);
+        onTitle=false;menuOpen=holdStory;systemMenuModal=false;pressedChoice=null;history=next;System.arraycopy(state,0,meta,0,meta.length);
         failed=false;shownWait=-1;current=null;resetDialogueDecorations();autoMode=false;skipMode=false;
         offerPlaneToken(plane);
         if(finishEndedRun())return;
@@ -1161,6 +1166,7 @@ final class GameRunner {
         publishParameters();schedule();
     });}
     void statusMode(int mode){tasks.post(()->{
+        if(mode<=0){overlayRows=null;overlaysSentMode=0;}
         overlayMode=mode;
         publishStatusOverlays();
     });}
@@ -1291,21 +1297,25 @@ final class GameRunner {
         }
         return gate==DialogueLayout.GATE_MATCHED||gate==DialogueLayout.GATE_BYPASSED;
     }
+    private boolean acceptsChoiceInput(Frame frame){
+        return frame!=null&&frame.generation==sessionGeneration&&meta[0]==NativeGame.CHOICE&&
+            meta[1]==frame.word&&frame.sameChoiceSet(current);
+    }
     void input(Frame frame,int atX,int atY,int choice){tasks.post(() -> {
         if(frame==null||frame.generation!=sessionGeneration)return;
         if(frame.wait==NativeGame.NATIVE_PANEL)return;
-        if(choice>0)choiceClicking=false;
+        if(choice>0){
+            if(!acceptsChoiceInput(frame))return;
+            if(frame.sameChoiceSet(pressedChoice))pressedChoice=null;
+        }
         if(onTitle||menuOpen||quickLoadFramePending||!playing()||meta[0]==NativeGame.MODAL||
             (choice==0&&meta[0]==NativeGame.CHOICE)||(choice>0&&meta[0]!=NativeGame.CHOICE))return;
         if(choice==0)setModes(false,false);
         if(choice==0&&(meta[0]==NativeGame.DRAW||meta[0]==NativeGame.OVERLAP)&&!NativeGame.requestAdvance(handle))return;
         if(choice>0&&!canAdvanceCurrentPlane("choice")){
-            choiceClicking=true;
-            int expectedWord=meta[1];
+            pressedChoice=frame;
             tasks.postDelayed(()->{
-                if(frame.generation!=sessionGeneration)return;
-                if(meta[0]==NativeGame.CHOICE&&meta[1]==expectedWord)input(frame,atX,atY,choice);
-                else choiceClicking=false;
+                if(acceptsChoiceInput(frame))input(frame,atX,atY,choice);
             },Math.max(1,meta[5]));
             return;
         }
@@ -1316,8 +1326,7 @@ final class GameRunner {
         x=atX;y=atY;step(0,choice==0,choice);
     });}
     void choicePressed(Frame frame){tasks.post(()->{
-        if(frame.generation==sessionGeneration&&!onTitle&&!menuOpen&&!quickLoadFramePending&&
-            meta[0]==NativeGame.CHOICE&&meta[1]==frame.word)choiceClicking=true;
+        if(!onTitle&&!menuOpen&&!quickLoadFramePending&&acceptsChoiceInput(frame))pressedChoice=frame;
     });}
     private boolean acceptsNativePanel(Frame frame){
         return frame!=null&&frame==current&&frame.generation==sessionGeneration&&
@@ -1461,7 +1470,7 @@ final class GameRunner {
             ui.style(dialogueStyle);
             ui.loaded();
         }else if(history!=null)history.recordNativeBoundary(x,y);
-        menuOpen=true;shownWait=-1;current=null;resetDialogueDecorations();choiceClicking=false;
+        menuOpen=true;shownWait=-1;current=null;resetDialogueDecorations();pressedChoice=null;
         step(0,false,0);
         return failed?rejectedModal():new ModalUpdate(2,meta[0],0,current==null?null:current.modal);
     }
@@ -1854,7 +1863,7 @@ final class GameRunner {
         autoMode=false;skipMode=false;ui.mode(false,false);
         startupStage=null;startupConfig=null;titleBackgroundHeld=true;startupTitleFramePending=true;
         titleBackgroundConfigured=false;titleRestartPending=titleRestartReady=false;
-        history=null;current=null;shownWait=-1;resetDialogueDecorations();choiceClicking=false;
+        history=null;current=null;shownWait=-1;resetDialogueDecorations();pressedChoice=null;
         galleryMusicPlaying=galleryMusicPaused=false;gallerySong=-1;gallerySpectrum=null;galleryCue=-1;
         galleryPage=next;galleryWritten=-1;
         System.arraycopy(state,0,meta,0,meta.length);offerPlaneToken(plane);
@@ -1932,7 +1941,7 @@ final class GameRunner {
         // Both the engine and the staged journal have passed validation.
         history=prefix;
         GameSave.Run last=history.lastInput();x=last.x;y=last.y;
-        choiceClicking=false;shownWait=-1;current=null;resetDialogueDecorations();setModes(false,false);
+        pressedChoice=null;shownWait=-1;current=null;resetDialogueDecorations();setModes(false,false);
         publishParameters();ui.loaded();updateUi();
         Log.i("SystemNNN","Backlog jump restored line="+meta[2]+" word="+meta[1]+" cursor="+history.cursor());
         done.accept(true);
@@ -2149,6 +2158,7 @@ final class GameRunner {
             long late=Math.max(0,nowTick-deadline);
             deadline=nowTick-late%period+period;
         }
+        boolean choiceClicking=acceptsChoiceInput(pressedChoice);
         if(startupStage==StartupStage.OPENING&&!titleBackgroundHeld){
             int nextPeriod;
             try{nextPeriod=NativeGame.advanceOpening(handle,elapsed);}

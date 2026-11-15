@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="engine_systemnnn_backlog_title_single_byte">#RRecollection...</string>
+    <string name="engine_systemnnn_backlog_title_double_byte">#橙回想・・・・</string>
     <string name="engine_systemnnn_ctl_menu">メニュー</string>
     <string name="engine_systemnnn_ctl_quick_save">クイックセーブ</string>
     <string name="engine_systemnnn_ctl_quick_load">クイックロード</string>

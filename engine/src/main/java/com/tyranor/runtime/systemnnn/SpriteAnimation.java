@@ -62,7 +62,7 @@ final class SpriteAnimation {
         out.set((int)left,(int)top,(int)Math.min(left+w,image.getWidth()),(int)Math.min(top+h,image.getHeight()));return true;
     }
     boolean hit(Bitmap image,float rx,float ry){
-        if(!rect(image,0,first))return true;
+        if(!rect(image,0,first))return false;
         int px=first.left+Math.max(0,Math.min(w-1,(int)(rx*w)));
         int py=first.top+Math.max(0,Math.min(h-1,(int)(ry*h)));
         // Original DWQ hit masks treat even alpha 1 as an active pixel.

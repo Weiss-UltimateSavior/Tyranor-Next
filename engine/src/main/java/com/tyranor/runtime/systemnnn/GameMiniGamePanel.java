@@ -390,7 +390,7 @@ final class GameMiniGamePanel extends GameUiPanel {
                 }else if(stockArea.contains(x,y))board.drawStock();
                 else if(wasteArea.contains(x,y))board.choose(MiniGameBoard.WASTE);
                 else if(game.type>=MiniGameBoard.NIKAKU&&x>=hintX&&x<hintX+cardW*board.hintLeft&&
-                    y>=hintY&&y<hintY+cardW)board.showHint();
+                    y>=hintY&&y<hintY+cardH)board.showHint();
                 else {
                     int target=at(x,y);
                     if(game.type==MiniGameBoard.PUZZLE&&from>=0&&target>=0&&from!=target&&board.held<0)board.choose(from);

@@ -32,7 +32,7 @@ final class OriginalSettingsModel {
     static final class Slider {
         final int index,page,x,y,width,height,steps,realMin,realMax;final String kind,key,image;final Button button;
         Slider(int i,int page,int x,int y,int w,int h,int steps,int min,int max,String image,Button button){
-            index=i;kind=VOLUMES[i];key=KEYS[i];this.page=page;this.x=x;this.y=y;width=w;height=h;this.steps=steps;realMin=min;realMax=max;this.image=image;this.button=button;
+            index=i;kind=VOLUMES[i];key=KEYS[i];this.page=page;this.x=x;this.y=y;width=w;height=h;this.steps=i==6?100:steps;realMin=min;realMax=max;this.image=image;this.button=button;
         }
         int toPreference(int position){
             if(index==6)return bound(position,0,100);

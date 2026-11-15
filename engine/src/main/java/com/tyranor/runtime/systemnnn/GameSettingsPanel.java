@@ -437,7 +437,7 @@ final class GameSettingsPanel extends GameUiPanel {
         },330+i*(width+14),y+44,width,54);}
     }
     private ValueBar volumeBar(String image,String label,int min,int max,int value,int w,int h,java.util.function.IntConsumer change){
-        return new ValueBar(getContext(),assets.image(image),label,min,max,value,w,h,20,click,change);
+        return new ValueBar(getContext(),assets.image(image),label,min,max,value,w,h,20,click,change,true);
     }
     @Override boolean isAdjusting(){
         if(controlsBusy())return true;

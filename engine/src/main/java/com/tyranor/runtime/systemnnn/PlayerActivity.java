@@ -1000,6 +1000,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             updateVisibility();
         });
         if(!foreground)moviePlayback.pause();
+        if(storyMovieExitActive){storyMovieExitActive=false;stage.setForeground(null);}
         stage.addView(moviePlayback,new FrameLayout.LayoutParams(-1,-1));
         if(startup){
             clearStartupViews();

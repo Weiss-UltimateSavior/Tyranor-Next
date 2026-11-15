@@ -5,6 +5,9 @@
     <string name="engine_systemnnn_ctl_quick_load">快速读取</string>
     <string name="engine_systemnnn_ctl_config">环境设定</string>
     <string name="engine_systemnnn_ctl_backlog">回看</string>
+    <!-- Original game fallbacks are selected by script codeByte, independent of the host locale. -->
+    <string name="engine_systemnnn_backlog_title_single_byte">#RRecollection...</string>
+    <string name="engine_systemnnn_backlog_title_double_byte">#橙回想・・・・</string>
     <string name="engine_systemnnn_ctl_save">保存进度</string>
     <string name="engine_systemnnn_ctl_load">读取存档</string>
     <string name="engine_systemnnn_ctl_auto">自动播放</string>

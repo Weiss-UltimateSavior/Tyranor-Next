@@ -145,7 +145,9 @@ final class DialoguePanel extends FrameLayout implements StoryPlaneView.Host {
     }
     @Override public boolean dispatchTouchEvent(MotionEvent event){return !passive&&super.dispatchTouchEvent(event);}
     void read(boolean value){wasRead=value;colors();}
-    void cursorAssets(GameUiAssets assets){cursor.assets(assets);body.effectColors(assets.printMessage);}
+    void cursorAssets(GameUiAssets assets){
+        cursor.assets(assets);body.effectColors(assets.printMessage);cutinLayer.effectColors(assets.printMessage);
+    }
     void cursorVariant(int value){cursor.variant(value);}
     void scriptCursorVariant(int value){cursor.scriptVariant(value);}
     void waiting(boolean visible,boolean automatic,int command,int period){
@@ -196,7 +198,7 @@ final class DialoguePanel extends FrameLayout implements StoryPlaneView.Host {
         body.markupReveal(revealed);
         body.messageEffect(effect,progress);
         if(rendered!=null)applyReveal(rendered);
-        if(decorations.cutin)cutinLayer.reveal();
+        if(decorations.cutin)cutinLayer.reveal(effect,progress);
     }
     private void applyReveal(Spannable text){
         if(revealed<message.length())text.setSpan(hiddenText,revealed,message.length(),Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -383,6 +385,7 @@ final class DialoguePanel extends FrameLayout implements StoryPlaneView.Host {
         private final List<Integer> starts=new ArrayList<>();
         private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
         private final RectF dest=new RectF();
+        private GameUiAssets.Config effectConfig;
 
         CutinLayer(OnClickListener click){
             super(DialoguePanel.this.getContext());
@@ -400,6 +403,7 @@ final class DialoguePanel extends FrameLayout implements StoryPlaneView.Host {
                 if(end<0)end=message.text.length();
                 DialogueMarkup row=message.slice(start,end);
                 DialogueTextView line=DialogueTextView.panel(getContext(),row,style.markupStyle,layout.font,style.bodyColor);
+                if(effectConfig!=null)line.effectColors(effectConfig);
                 line.setGravity(Gravity.TOP|Gravity.LEFT);line.setMaxLines(1);line.setHorizontallyScrolling(true);
                 line.setTextDirection(TEXT_DIRECTION_LTR);line.setTypeface(body.getTypeface());
                 line.setSoundEffectsEnabled(false);line.setOnClickListener(click);
@@ -408,7 +412,11 @@ final class DialoguePanel extends FrameLayout implements StoryPlaneView.Host {
                 addView(line,new LayoutParams(1,1));
                 start=end+1;
             }
-            colors();reveal();requestLayout();
+            colors();reveal(0,0);requestLayout();
+        }
+        void effectColors(GameUiAssets.Config config){
+            effectConfig=config;
+            for(DialogueTextView line:lines)line.effectColors(config);
         }
         void colors(){
             for(DialogueTextView line:lines){
@@ -416,9 +424,14 @@ final class DialoguePanel extends FrameLayout implements StoryPlaneView.Host {
                 line.markupTextColor(wasRead&&settings.changeReadColor);
             }
         }
-        void reveal(){
-            for(int i=0;i<lines.size();i++)
-                lines.get(i).previewReveal(DialogueLayout.clamp(revealed-starts.get(i),0,text.get(i).text.length()));
+        void reveal(int effect,int progress){
+            for(int i=0;i<lines.size();i++){
+                DialogueTextView line=lines.get(i);
+                int count=revealed-starts.get(i),length=text.get(i).text.length();
+                line.previewReveal(DialogueLayout.clamp(count,0,length));
+                boolean revealing=count>=0&&count<length;
+                line.messageEffect(revealing?effect:0,revealing?progress:0);
+            }
             invalidate();
         }
         private DialogueDecorations.Row geometry(int index){

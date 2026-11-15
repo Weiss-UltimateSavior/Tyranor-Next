@@ -8,8 +8,14 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public final class GalleryCatalogTest {
+    @Test public void keepsTheJointUnlockMarkerSeparateFromTheImageName() {
+        GalleryCatalog.CgVariant variant = GalleryCatalog.cgVariant("*@!ev005", 9);
+        assertEquals("ev005", variant.name);
+        assertTrue(variant.jointUnlock);
+    }
     @Rule public TemporaryFolder folder=new TemporaryFolder();
 
     @Test public void ignoresFieldsAfterTheLastCompleteSong() throws Exception {

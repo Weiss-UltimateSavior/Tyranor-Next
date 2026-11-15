@@ -66,7 +66,7 @@ final class GameChoicePanel extends GameUiPanel implements StoryPlaneView.Host {
     boolean animating(){
         if(getVisibility()==GONE)return false;
         long now=SystemClock.uptimeMillis();
-        if(now<readyAt||focused>=0&&animation.active((now-readyAt)/Math.max(1,frame.frameMs))||
+        if(now<readyAt||cursor!=null&&focused>=0&&animation.active((now-readyAt)/Math.max(1,frame.frameMs))||
             controlsBusy()||confirming())return true;
         for(int i=0;i<getChildCount();i++){
             View child=getChildAt(i);
@@ -305,8 +305,7 @@ final class GameChoicePanel extends GameUiPanel implements StoryPlaneView.Host {
             if(focused==index&&now>=readyAt){
                 long elapsed=(now-readyAt)/Math.max(1,frame.frameMs);
                 dest.set(0,0,cursorW,cursorH);
-                animation.draw(canvas,cursor,dest,paint,elapsed,255);
-                if(animation.active(elapsed))postInvalidateOnAnimation();
+                if(animation.draw(canvas,cursor,dest,paint,elapsed,255)&&animation.active(elapsed))postInvalidateOnAnimation();
             }
             int tone=textColor(index);
             paint.setColor(tone);

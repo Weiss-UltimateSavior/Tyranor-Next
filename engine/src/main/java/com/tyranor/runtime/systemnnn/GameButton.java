@@ -115,6 +115,7 @@ final class GameButton extends StoryPlaneView {
     }
     private int drawState(){return !isEnabled()?3:pending!=null?2:isPressed()||isHovered()?1:0;}
     boolean isAnimating(){
+        if(image==null)return false;
         int mode=drawState();
         SpriteAnimation animation=spec.states[mode];
         long elapsed=mode==state?Math.max(0,(SystemClock.uptimeMillis()-stateSince)/period):0;
@@ -129,6 +130,6 @@ final class GameButton extends StoryPlaneView {
         dest.set(0,0,getWidth(),getHeight());
         boolean drawn=animation!=null&&animation.draw(c,image,dest,paint,elapsed,255);
         if(!drawn)spec.states[0].draw(c,image,dest,paint,0,isEnabled()?255:100);
-        if(animation!=null&&animation.active(elapsed))postInvalidateOnAnimation();
+        if(drawn&&animation.active(elapsed))postInvalidateOnAnimation();
     }
 }

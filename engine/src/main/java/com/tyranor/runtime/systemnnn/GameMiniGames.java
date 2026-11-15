@@ -6,7 +6,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /** The registration and controls in minigame.xtx / minigame.fxf. */
 final class GameMiniGames {
@@ -29,7 +31,7 @@ final class GameMiniGames {
         if(index<0||index>=config.number("addMiniGame",0)||type<1||type>10)throw new IOException("Invalid mini-game configuration");
         Bitmap fallback=picture(handle,config.value("noCGFileName","nnnlogo"),true);
         first=backgrounds.isEmpty()?fallback:backgrounds.get(0);
-        second=backgrounds.size()>1?backgrounds.get(1):null;
+        second=backgrounds.size()>1?backgrounds.get(1):first;
         trump=type>=MiniGameBoard.MONTE&&type<=MiniGameBoard.GOLF?
             picture(handle,config.value("trumpPicFileName",""),false):null;
         mahjong=type>=MiniGameBoard.NIKAKU?picture(handle,config.value("mahjongPicFileName",""),false):null;
@@ -49,6 +51,7 @@ final class GameMiniGames {
         int count=DialogueLayout.clamp(config.number("addMiniGame",0),0,64);
         int checks=DialogueLayout.clamp(config.number("miniGameCheckNumber",count),0,count);
         List<Entry> entries=new ArrayList<>();
+        Map<String,Bitmap> pictures=new HashMap<>();
         boolean buttons=config.number("areaButtonMode",0)!=0;
         ButtonArt.Setup previous=null;
         String caller="omake";
@@ -72,7 +75,12 @@ final class GameMiniGames {
                 if(NativeGame.menuVariable(handle,key)==0&&NativeGame.openingVariable(handle,key)!=-1)continue;
             }
             GameButton.Spec spec=buttons?new GameButton.Spec(previous):null;
-            Bitmap art=buttons?picture(handle,GameUiAssets.systemImageKey(previous.art.image),false):null;
+            Bitmap art=null;
+            if(buttons){
+                String key=GameUiAssets.systemImageKey(previous.art.image);
+                if(!pictures.containsKey(key))pictures.put(key,picture(handle,key,false));
+                art=pictures.get(key);
+            }
             entries.add(new Entry(i-1,type,x,y,buttons?previous.width:areaW,buttons?previous.height:areaH,spec,art));
         }
         return entries;

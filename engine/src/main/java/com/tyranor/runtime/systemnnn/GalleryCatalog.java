@@ -109,11 +109,11 @@ final class GalleryCatalog {
     static final class CgVariant {
         final String name;
         final int unlockIndex,start,frames;
-        final boolean difference,gore;
+        final boolean difference,gore,jointUnlock;
         final ScrollAxis x,y;
 
-        CgVariant(String name,int unlockIndex,boolean difference,boolean gore,int start,int frames,ScrollAxis x,ScrollAxis y) {
-            this.name=name;this.unlockIndex=unlockIndex;this.difference=difference;this.gore=gore;
+        CgVariant(String name,int unlockIndex,boolean difference,boolean gore,boolean jointUnlock,int start,int frames,ScrollAxis x,ScrollAxis y) {
+            this.name=name;this.unlockIndex=unlockIndex;this.difference=difference;this.gore=gore;this.jointUnlock=jointUnlock;
             this.start=start;this.frames=frames;this.x=x;this.y=y;
         }
         boolean unlocked(int[] keys,int group) {return contains(keys,1,group,unlockIndex);}
@@ -335,6 +335,7 @@ final class GalleryCatalog {
     static CgVariant cgVariant(String raw,int unlockIndex) {
         boolean gore=raw.startsWith("*");
         boolean difference=raw.startsWith("@",gore?1:0);
+        boolean jointUnlock=raw.startsWith("!",(gore?1:0)+(difference?1:0));
         int pos=cgPrefixEnd(raw,0);
         int start=0,frames=0;
         if (raw.startsWith("#",pos)) {
@@ -358,7 +359,7 @@ final class GalleryCatalog {
                 pos=end+1;
             }
         }
-        return new CgVariant(raw.substring(pos),unlockIndex,difference,gore,start,frames,
+        return new CgVariant(raw.substring(pos),unlockIndex,difference,gore,jointUnlock,start,frames,
             scrollAxis(scroll,true),scrollAxis(scroll,false));
     }
     private static ScrollAxis scrollAxis(String spec,boolean horizontal){
@@ -656,9 +657,9 @@ final class GalleryCatalog {
     List<Bitmap> miniGameBackgrounds(long handle,GameUiAssets.Config setup){
         int[] unlocked=NativeGame.galleryState(handle);
         Set<String> choices=new LinkedHashSet<>();
-        boolean variants=setup.number("sabunOkFlag",0)!=0,joint=setup.number("allOkFlag",0)!=0;
+        boolean variants=setup.number("sabunOkFlag",0)!=0,joint=setup.number("allOkFlag",1)!=0;
         for(int group=0;group<albums.size();group++)for(Cg cg:albums.get(group))for(CgVariant v:cg.unlocked(unlocked,group)){
-            if(v.difference&&!variants||!joint&&v.name.startsWith("!")||v.name.regionMatches(true,0,"ta",0,2))continue;
+            if(v.difference&&!variants||!joint&&v.jointUnlock||v.name.regionMatches(true,0,"ta",0,2))continue;
             choices.add(v.picture(false,"",0));
         }
         List<String> order=new ArrayList<>(choices);Collections.shuffle(order);

@@ -192,7 +192,7 @@ final class RuntimeSettingsAdapter {
                         // Several slider positions can produce the same integer PC volume.
                         if(i!=6&&previous>=0&&previous<=s.steps&&raw(s,previous)==value)position=previous;
                         edit.putInt(exact,position);
-                    }
+                    }else edit.remove(exact);
                     edit.putInt(OriginalSettingsModel.KEYS[i],s.toPreference(position));
                 }
                 if(SWITCH_IDS[i]>=0&&id==SWITCH_IDS[i])edit.putBoolean("enabled."+OriginalSettingsModel.KEYS[i],value!=0);
