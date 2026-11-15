@@ -123,6 +123,19 @@
 
 **未覆盖**：引擎启动、任何游戏数据、画面/声音/输入、存读档、从主 App 的游戏库点击启动的完整链路（用 `am start` 模拟了同样的 Intent，识别扫描用单测而非真机覆盖）、其他 Android 版本和机型。
 
+### 真机运行（2026-11-15，带引擎库的发布版宿主 + Windows／Steam 样本）
+
+宿主为 GitHub 发布的 `impacto-host-0.1.0`（签名 APK，含 `libimpacto.so`），设备同上（PPG-AN00，Android 17）。样本原件未改动；手机上只放了三个改成大写名的拷贝（`SYSTEM.CPK`、`MASK.CPK`、`SE.CPK`，约 94 MB），用 `am start` 发与主 App 相同的 Intent，profile 为 `mo6tw`。
+
+| 项目 | 结果 |
+| --- | --- |
+| 引擎库加载、`SDL_main`、窗口与音频 | 成功；两个进程都保持运行 |
+| 读到游戏数据 | 经 `gamedata/mo6tw` 链接找到已拷的三个档案；未拷的 `BG`/`BGM`/`CHARA`/`MOVIE`/`VOICE` 与 `SCRIPT.cls` 报缺失 |
+| 脚本 | `[VM] Could not read script file for 0`，引擎不再前进，画面全黑 |
+| 其他 | `resources/mo6tw/icondata/*.png` 不存在（上游自身没有该目录，仅警告）；日志里有一条 `Could not initialize OpenGL / GLES library`，随后引擎继续运行，但因黑屏无法确认 GL 是否真正初始化成功 |
+
+结论：这是引擎库第一次在设备上运行，到上游启动流程的脚本读取为止；**没有任何游戏进到画面**。上游 `mo6tw` 配置要 PS3 版 `SCRIPT.cls`，该样本是 PC 版（`script.cpk`、SC3 `.scx` 加 `.msb`、PNG 图集），需要 TYN 自有、标明实验性的 PC profile 才可能继续，目前没有证据表明可行。渲染、声音、输入、存读档均未验证。
+
 ## 本轮检查
 
 - 20 项真实 Git 仓库回归通过，包含“父仓库冒充源码 checkout”和 Git replace refs 替换锁定提交的拒绝测试。
