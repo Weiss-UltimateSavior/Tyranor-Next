@@ -94,6 +94,7 @@
 | Ren'Py | `.rpa`、`.rpy/.rpyc` 等组合 | 外置 Ren'Py APK；自动或指定 8.5.3 / 7.7.1 |
 | Ruffle / Flash | 顶层 `.swf`；根 `index.html/index.htm` + 唯一 SWF 的叶子目录 | 外置 Ruffle APK；一 SWF 一条记录 |
 | 第三方运行时模块 | 已安装的 `com.tyranor.runtime.*` APK + 模块 `res/raw` 扫描描述 | 显式组件交棒游戏文件夹，模块自行运行 |
+| Majiro | `majiro.env`、`.mjo` 或 `.arc` | 第三方 `majiro-emulator` APK 运行时模块 |
 | YU-RIS / CatSystem2 | YPF/DLL/配置或 INT/CST/HG3 等组合 | 外置 Winlator |
 | PC / 安卓游戏 | 手动添加目录+exe / 应用包名 | 外置 Winlator / 直接启动应用 |
 | PSP / Nintendo Switch | `.pbp/.cso/.iso/.chd` / `.nsp/.xci/.nca/.nro` | 外置 PPSSPP（标准/黄金）/ Eden，一 ROM 一条记录 |
