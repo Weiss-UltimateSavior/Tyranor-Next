@@ -3,6 +3,9 @@ package com.tyranor.next.core.game.storage
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import com.tyranor.next.core.game.save.GameSaveException
+import com.tyranor.next.core.game.save.SaveErrorCode
+import com.tyranor.next.core.game.save.SystemNnnSaveStore
 import com.tyranor.runtime.systemnnn.SystemNnnHost
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -13,8 +16,10 @@ import java.nio.channels.OverlappingFileLockException
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.LinkOption
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
 import java.security.NoSuchAlgorithmException
 import java.util.Locale
@@ -31,6 +36,7 @@ import java.util.regex.Pattern
  * - `<sha256(source.id)>/source.id`: normalized SAF document id that produced the copy
  * - `<sha256(source.id)>/game/`: game resources plus the shared `sav` directory
  * - `<sha256(source.id)>/resources-evicted`: resource-reclamation marker
+ * - `<sha256(source.id)>/retired`: explicit retirement of the old copy's binding
  */
 internal object SystemNnnCopyStore {
     enum class Reason {
@@ -53,10 +59,10 @@ internal object SystemNnnCopyStore {
     private const val IDENTITY = "source.id"
     private const val GAME = "game"
     private const val EVICTED = "resources-evicted"
+    private const val RETIRED = "retired"
     private val COPY_KEY: Pattern = Pattern.compile("[0-9a-f]{64}")
     internal val VOLUME_NAME: Regex = Regex("[A-Za-z0-9_-]+")
     private const val MAX_ID_BYTES = 8192
-    private const val TAG = "SystemNnnCopyStore"
     private val OPEN_COPIES: MutableSet<Path> = ConcurrentHashMap.newKeySet()
 
     fun sourceIdentity(directory: Uri?): String {
@@ -108,19 +114,32 @@ internal object SystemNnnCopyStore {
         return game
     }
 
-    private fun evictionMarker(game: File): Path? =
-        game.parentFile?.let { File(it, EVICTED).toPath() }
+    /** A retired copy keeps its saves in place and cannot become the active directory again. */
+    fun activeRoot(context: Context, sourceId: String): File? = activeRoot(committedRoot(context, sourceId))
+
+    internal fun activeRoot(copy: File?): File? = copy?.takeUnless { game ->
+        val path = marker(game, RETIRED)
+        val attributes = try {
+            Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+        } catch (_: NoSuchFileException) {
+            return@takeUnless false
+        }
+        if (!attributes.isRegularFile || attributes.size() != 0L) throw Failure(Reason.CORRUPT_COPY)
+        true
+    }
+
+    private fun marker(game: File, name: String): Path =
+        File(game.parentFile ?: throw Failure(Reason.CORRUPT_COPY), name).toPath()
 
     fun resourcesEvicted(game: File): Boolean {
         val entry = game.parentFile ?: return false
         val base = entry.parentFile ?: return false
-        val marker = evictionMarker(game) ?: return false
         return GAME == game.name && DIRECTORY == base.name &&
             COPY_KEY.matcher(entry.name).matches() &&
-            !Files.notExists(marker, LinkOption.NOFOLLOW_LINKS)
+            !Files.notExists(marker(game, EVICTED), LinkOption.NOFOLLOW_LINKS)
     }
 
-    fun hasImportedResources(game: File): Boolean = resourceChildren(game).isNotEmpty()
+    fun hasImportedResources(game: File): Boolean = copyContents(game).resources.isNotEmpty()
 
     fun readableBootstrap(root: File): Boolean = try {
         if (resourcesEvicted(root)) {
@@ -249,43 +268,50 @@ internal object SystemNnnCopyStore {
         return String(identity.toByteArray(), StandardCharsets.UTF_8)
     }
 
-    private fun resourceChildren(game: File): List<File> {
+    private data class CopyContents(val resources: List<File>, val saves: File?)
+
+    private fun copyContents(game: File): CopyContents {
         plainDirectory(game)
         val children = game.listFiles() ?: throw Failure(Reason.COPY_FAILED)
         val resources = ArrayList<File>()
-        var sawSaves = false
+        var saves: File? = null
         for (child in children) {
             if (!child.name.equals("sav", ignoreCase = true)) {
                 resources.add(child)
                 continue
             }
-            if (sawSaves) throw Failure(Reason.CORRUPT_COPY)
+            if (saves != null) throw Failure(Reason.CORRUPT_COPY)
             plainDirectory(child)
-            sawSaves = true
+            saves = child
         }
-        return resources
+        return CopyContents(resources, saves)
     }
 
     /** Removes imported game resources and keeps the whole `sav` directory in place. */
-    fun clearResources(context: Context, sourceId: String): Boolean {
+    fun clearResources(context: Context, sourceId: String, retireCopy: Boolean = false): Boolean {
         val external = context.getExternalFilesDir(null) ?: throw Failure(Reason.COPY_FAILED)
-        return clearResources(File(external, DIRECTORY), sourceId)
+        return clearResources(File(external, DIRECTORY), sourceId, retireCopy)
     }
 
-    fun clearResources(base: File, sourceId: String): Boolean {
+    fun clearResources(base: File, sourceId: String, retireCopy: Boolean = false): Boolean {
         val identity = normalizeIdentity(sourceId)
         if (committedRoot(base, identity) == null) return false
         return withImportLock(base, identity) {
-            val game = committedRoot(base, identity) ?: return@withImportLock false
-            val resources = resourceChildren(game)
-            if (resources.isEmpty()) return@withImportLock false
+            val game = activeRoot(committedRoot(base, identity)) ?: return@withImportLock false
+            val ordinaryContents = if (retireCopy) null else copyContents(game)
+            if (ordinaryContents?.resources?.isEmpty() == true) return@withImportLock false
             SystemNnnHost.lockSaveDirectory(game).use {
-                val marker = evictionMarker(game) ?: throw Failure(Reason.CORRUPT_COPY)
-                if (Files.notExists(marker, LinkOption.NOFOLLOW_LINKS)) Files.createFile(marker)
-                else if (!Files.isRegularFile(marker, LinkOption.NOFOLLOW_LINKS)) throw Failure(Reason.CORRUPT_COPY)
+                val (resources, saves) = ordinaryContents ?: copyContents(game)
+                if (retireCopy && saves != null && SystemNnnSaveStore.hasRecovery(saves)) {
+                    throw GameSaveException(SaveErrorCode.SAVE_SELECTION_INCOMPLETE)
+                }
+                val eviction = marker(game, EVICTED)
+                if (Files.notExists(eviction, LinkOption.NOFOLLOW_LINKS)) Files.createFile(eviction)
+                else if (!Files.isRegularFile(eviction, LinkOption.NOFOLLOW_LINKS)) throw Failure(Reason.CORRUPT_COPY)
                 for (resource in resources) deleteOwnedTree(resource)
+                if (retireCopy) Files.createFile(marker(game, RETIRED))
+                resources.isNotEmpty()
             }
-            true
         }
     }
 

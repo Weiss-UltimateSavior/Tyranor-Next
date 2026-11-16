@@ -26,11 +26,12 @@ import com.tyranor.next.R
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.MiuixSettingsTheme
-import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.TopBarIcon
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.tyranor.next.ui.common.notice.AppNotice
 
 @Composable
 internal fun CmvsSettingsScreen() {
@@ -47,7 +48,7 @@ internal fun CmvsSettingsScreen() {
                     if (imported != null) {
                         font = imported
                     } else {
-                        Toast.makeText(context, R.string.launch_cmvs_font_unavailable, Toast.LENGTH_SHORT).show()
+                        AppNotice.makeText(context, R.string.launch_cmvs_font_unavailable, Toast.LENGTH_SHORT).show()
                     }
                 } finally {
                     importing = false
@@ -60,7 +61,7 @@ internal fun CmvsSettingsScreen() {
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
-                AppTopBar(
+                AppSecondaryTopBar(
                     title = stringResource(R.string.engine_settings_cmvs_title),
                     background = Color.Transparent,
                     contentColor = PageTextColor,
@@ -71,7 +72,7 @@ internal fun CmvsSettingsScreen() {
                             MiuixTheme.colorScheme.primary,
                         ) {
                             EngineSettingsStore.setCmvsFont(context, font)
-                            Toast.makeText(context, R.string.engine_settings_saved, Toast.LENGTH_SHORT).show()
+                            AppNotice.makeText(context, R.string.engine_settings_saved, Toast.LENGTH_SHORT).show()
                         }
                     },
                 )

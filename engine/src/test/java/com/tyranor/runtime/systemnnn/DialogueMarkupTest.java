@@ -7,6 +7,22 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public final class DialogueMarkupTest {
+    @Test public void backlogConfigurationColorsSurviveWrapping(){
+        DialogueMarkup.Style style=new DialogueMarkup.Style(java.util.Collections.emptyMap());
+        DialogueMarkup text=style.backlog("#白開幕#赤𠀀終");
+        assertEquals("開幕𠀀終",text.text);
+        assertEquals(2,text.colors.size());
+        assertEquals(0xffffffff,text.colors.get(0).color);
+        DialogueMarkup tail=text.slice(2,5);
+        assertEquals(1,tail.colors.size());
+        assertEquals(0,tail.colors.get(0).start);
+        assertEquals(3,tail.colors.get(0).end);
+        assertEquals(0xffff0000,tail.colors.get(0).color);
+        DialogueMarkup symbol=style.backlog("#赤#猫#白開始#赤#猫");
+        assertEquals("開始",symbol.text);
+        assertTrue(symbol.omittedSymbol);
+        assertEquals(0xffffffff,symbol.colors.get(0).color);
+    }
     @Test public void rubyAndEmphasisDoNotConsumeDialogueTicks(){
         String source="漢字#［２かんじ］語#強・］。";
         DialogueMarkup body=DialogueMarkup.parse(source,false,true);

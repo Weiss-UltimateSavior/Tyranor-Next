@@ -35,6 +35,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+import com.tyranor.next.ui.common.notice.AppNotice
 
 enum class ArchiveMode { UNPACK, PACK }
 
@@ -158,7 +159,7 @@ class ArchiveViewModel : ViewModel() {
         if (!ArchiveOpGate.tryLock()) {
             message = busyMessage
             dialogVisible = false
-            Toast.makeText(appContext, busyMessage, Toast.LENGTH_LONG).show()
+            AppNotice.makeText(appContext, busyMessage, Toast.LENGTH_LONG, AppNotice.Kind.Limit).show()
             return false
         }
         working = true
@@ -192,7 +193,7 @@ class ArchiveViewModel : ViewModel() {
                     val text = conflictMessage(appContext, conflict)
                     message = text
                     dialogVisible = false
-                    Toast.makeText(appContext, text, Toast.LENGTH_LONG).show()
+                    AppNotice.makeText(appContext, text, Toast.LENGTH_LONG, AppNotice.Kind.Info).show()
                 } catch (empty: ArchiveEmptyInputException) {
                     message = appContext.getString(R.string.archive_input_empty)
                 } catch (error: Exception) {

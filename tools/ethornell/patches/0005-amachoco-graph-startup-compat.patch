@@ -1,0 +1,35 @@
+diff --git a/crates/ethornell-vm/src/lib.rs b/crates/ethornell-vm/src/lib.rs
+index d7afb16..7070609 100644
+--- a/crates/ethornell-vm/src/lib.rs
++++ b/crates/ethornell-vm/src/lib.rs
+@@ -4365,7 +4365,12 @@ impl Vm {
+                     self.note_stub("graph", code, id);
+                     return Err(VmError::UnknownDispatch { group: code, id });
+                 }
+-                let result = if (code, id) == (0x92, 0x0e) && matches!(self.native_abi_profile, NativeAbiProfile::HoukagoFd | NativeAbiProfile::Modern) {
++                // This title used the previous host's unimplemented Graph91:00
++                // fallback during bootstrap. Preserve that no-op only for its
++                // identified ABI; the underlying native operation is unaudited.
++                let result = if self.native_abi_profile == NativeAbiProfile::Amachoco && (code, id) == (0x91, 0x00) {
++                    Value::None
++                } else if (code, id) == (0x92, 0x0e) && matches!(self.native_abi_profile, NativeAbiProfile::HoukagoFd | NativeAbiProfile::Modern) {
+                     let pointer = self.pop_ptr()?;
+                     let count = self.pop_int()?;
+                     let name = self.pop_string_lossy()?;
+@@ -17160,6 +17165,16 @@ mod tests {
+         assert_eq!(vm.read_c_string(destination).unwrap(), "シナリオの台詞");
+     }
+ 
++    #[test]
++    fn amachoco_graph_91_00_preserves_operand_stack() {
++        let instruction = test_instruction(0, 0x91, "grp2", vec![0x91, 0x00], Vec::new());
++        let mut vm = Vm::new();
++        vm.set_native_abi_profile(super::NativeAbiProfile::Amachoco);
++        vm.stack = vec![Value::Int(123)];
++        vm.dispatch(&instruction, &mut TraceApi).unwrap();
++        assert_eq!(vm.stack, [Value::Int(123)]);
++    }
++
+     #[test]
+     fn amachoco_modes_preserve_arguments_and_reject_invalid_values() {
+         let mut vm = Vm::new();

@@ -2,6 +2,7 @@ package com.tyranor.next.core.engine.external
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.os.Environment
 import android.util.Log
 import com.tyranor.next.R
@@ -73,7 +74,7 @@ object RpgMakerExternalEngineModule : ExternalEngineModule {
                 ExternalEngineContract.SETTINGS,
                 buildSettingsJson(gameType, request.resolvedSettings?.rpg),
             )
-            putExtra(ExternalEngineContract.ORIENTATION, 6)
+            putExtra(ExternalEngineContract.ORIENTATION, ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
             putExtra(ExternalEngineContract.ROOT_URI, request.game.uri)
             putExtra(ExternalEngineContract.LAUNCH_TARGET, request.launchTarget)
         }

@@ -2,6 +2,7 @@ package com.tyranor.next
 
 import android.app.Application
 import android.os.Build
+import android.util.Log
 import android.webkit.WebView
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -9,10 +10,11 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
 import bridge.PrimaryStorageRoot
 import com.tyranor.next.core.game.save.GameSaveManager
-import com.tyranor.next.core.game.save.SystemNnnCleanupQueue
 import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.process.AppProcess
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
+import com.tyranor.next.core.game.playtime.GamePlaytimeRepository
+import com.tyranor.next.core.game.playtime.GamePlaytimeRuntime
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.AppIconSwitcher
 import com.tyranor.next.core.settings.AppSettingsStore
@@ -35,6 +37,8 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
 
     override fun onCreate() {
         super<Application>.onCreate()
+        runCatching { GamePlaytimeRuntime.install(this) }
+            .onFailure { Log.w("GamePlaytimeRuntime", "Could not install playtime tracking", it) }
         // 进程视角主存储挂载根尽早解析并缓存（issue #152）：每个进程（含引擎子进程）的挂载
         // 命名空间独立，StorageManager 视角 per-user 正确；解析失败由内部回退链兜底，不阻断启动。
         PrimaryStorageRoot.resolve(this)
@@ -72,8 +76,14 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         if (mainProcess) {
             initializeMainLibrary()
             // 上次删除游戏/目录或重扫丢弃条目时未完成的副本回收在这里续做；引擎侧不保存这些路径。
-            if (!SystemNnnCleanupQueue.isEmpty(this)) background.launch {
-                runCatching { GameSaveManager(this@TyranorNextApplication).drainSystemNnnCleanupQueue() }
+            background.launch {
+                try {
+                    GameSaveManager(this@TyranorNextApplication).drainSystemNnnCleanupQueue()
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    android.util.Log.w("SystemNNN", "Could not resume copy resource cleanup", failure)
+                }
             }
         }
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
@@ -89,6 +99,9 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
 
     override fun onStart(owner: LifecycleOwner) {
         SaveSyncRuntime.onForeground(this)
+        if (AppProcess.isMain(this)) background.launch {
+            GamePlaytimeRepository.refresh(this@TyranorNextApplication)
+        }
     }
 
     override fun onStop(owner: LifecycleOwner) {

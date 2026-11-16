@@ -20,6 +20,10 @@ import androidx.compose.ui.unit.dp
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.NoticeDotRed
 import com.tyranor.next.theme.glassBorder
+import com.tyranor.next.ui.common.motion.BlurVisibility
+import com.tyranor.next.ui.common.motion.bounceOnChange
+import com.tyranor.next.ui.common.motion.breathing
+import com.tyranor.next.ui.common.motion.pressSquishGroup
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -37,16 +41,18 @@ internal fun SettingsEntryCard(
     @DrawableRes iconRes: Int,
     modifier: Modifier = Modifier,
     showBadge: Boolean = false,
+    /** 该入口对应的操作正在进行（如检查更新）：图标呼吸并在开始 / 结束时弹一下。 */
+    busy: Boolean = false,
     onClick: () -> Unit,
 ) {
     MiuixCard(
-        modifier = modifier.fillMaxWidth().glassBorder(),
+        modifier = modifier.pressSquishGroup().fillMaxWidth().glassBorder(),
         cornerRadius = AppComponentCornerRadius,
     ) {
         Column(Modifier.padding(vertical = 4.dp)) {
             ArrowPreference(
                 title = title,
-                startAction = { SettingsItemIcon(iconRes, showBadge = showBadge) },
+                startAction = { SettingsItemIcon(iconRes, showBadge = showBadge, busy = busy) },
                 onClick = onClick,
             )
         }
@@ -54,24 +60,24 @@ internal fun SettingsEntryCard(
 }
 
 @Composable
-private fun SettingsItemIcon(@DrawableRes iconRes: Int, showBadge: Boolean = false) {
+private fun SettingsItemIcon(@DrawableRes iconRes: Int, showBadge: Boolean = false, busy: Boolean = false) {
     Box(modifier = Modifier.padding(end = 6.dp).size(24.dp)) {
         Image(
             painter = painterResource(iconRes),
             contentDescription = null,
             // 左侧图标统一跟随主题色调（Miuix 页面取 MiuixTheme 的 primary）
             colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.primary),
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.bounceOnChange(busy, depth = 0.18f).breathing(busy).fillMaxSize(),
         )
-        if (showBadge) {
-            // 红点提醒：固定亮红，不随主题色变化
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = 5.dp, y = (-5).dp)
-                    .size(8.dp)
-                    .background(NoticeDotRed, CircleShape),
-            )
+        // 红点提醒：固定亮红，不随主题色变化；显隐执行内容转场，不改变图标的布局尺寸
+        BlurVisibility(
+            visible = showBadge,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = 5.dp, y = (-5).dp)
+                .size(8.dp),
+        ) {
+            Box(Modifier.fillMaxSize().background(NoticeDotRed, CircleShape))
         }
     }
 }

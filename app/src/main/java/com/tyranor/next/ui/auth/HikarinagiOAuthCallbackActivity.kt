@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import com.tyranor.next.core.auth.HikarinagiAuthService
+import com.tyranor.next.ui.common.notice.AppNotice
 
 class HikarinagiOAuthCallbackActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -14,7 +15,7 @@ class HikarinagiOAuthCallbackActivity : ComponentActivity() {
         }
         HikarinagiAuthService.handleAuthorizationResponse(this, intent) { _, message ->
             if (!isFinishing && !isDestroyed) {
-                Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+                AppNotice.makeText(this, message, Toast.LENGTH_SHORT, AppNotice.Kind.Info).show()
             }
             finish()
         }

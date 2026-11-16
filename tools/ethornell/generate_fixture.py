@@ -10,7 +10,7 @@ import struct
 import zlib
 
 
-def _make_render_module():
+def _make_render_module(host_close_mode=False):
     """Assemble original BP against the current public parser/native contracts.
 
     Evidence (ethornell-rs crates, source inspection; not an execution claim):
@@ -69,6 +69,10 @@ def _make_render_module():
     sprite()
     graph(0x54, 1)          # show through the real sprite draw gate
     graph(0x00, 1)          # coalesced full redraw request
+    if host_close_mode:
+        # Reuse the original close fixture's native close-mode setup, but do
+        # not issue SYS_REQUEST_WINDOW_CLOSE until the host UI asks to exit.
+        code.extend(bytes.fromhex("00 01 80 68"))  # push_byte(1); Sys80:68 SetNativeCloseMode
     code.extend(bytes.fromhex("10 00 04 21 11 17"))  # base -= 4; top-level ret
     for name in ("system.arc", "checker.png"):
         target = len(code)
@@ -268,6 +272,7 @@ PROFILES = {
     "ret": bytes.fromhex("17"),
     "request-close": bytes.fromhex("80 69 17"),
     "render": _make_render_module(),
+    "render-close": _make_render_module(host_close_mode=True),
     "user-data-write": _make_user_data_module("write"),
     "user-data-read": _make_user_data_module("read"),
 }
@@ -482,7 +487,7 @@ def parse_packfile(data):
 
 def generate(output, profile="ret"):
     bp = make_bp(profile)
-    image = make_checker_png(256 if profile == "render" else 4)
+    image = make_checker_png(256 if profile.startswith("render") else 4)
     archive = make_packfile([("ipl._bp", bp), ("checker.png", image)])
     entries = parse_packfile(archive)
     parse_bp(entries["ipl._bp"])
@@ -490,8 +495,14 @@ def generate(output, profile="ret"):
     output.mkdir(parents=True, exist_ok=False)
     (output / "system.arc").write_bytes(archive)
     manifest = {
-        "schema": 1, "fixture": "original-generated-bgi-smoke", "profile": profile,
-        "origin": "Generated solely by tools/ethornell/generate_fixture.py; no commercial assets",
+        "schema": 1,
+        "fixture": "derived-render-host-close-smoke" if profile == "render-close" else "original-generated-bgi-smoke",
+        "profile": profile,
+        "origin": (
+            "Derived only from the original generated render fixture by inserting the existing "
+            "SetNativeCloseMode opcode before ret; no commercial assets"
+            if profile == "render-close" else
+            "Generated solely by tools/ethornell/generate_fixture.py; no commercial assets"),
         "format_evidence": ["ethornell-archive/src/lib.rs::read_packfile_index",
                             "ethornell-script/src/lib.rs::detect_code_range",
                             "ethornell-script/src/vm_opcode.rs::0x17",
@@ -507,10 +518,12 @@ def generate(output, profile="ret"):
                     for name, data in entries.items()},
         "bp": parse_bp(bp),
     }
-    if profile == "render":
+    if profile.startswith("render"):
         manifest["expected"] = (
             "Load checker.png through Graph90:10; create/configure/show a real native Sprite; "
-            "request redraw and ret; expect four colored quadrants on black after an active host tick")
+            "request redraw and ret; expect four colored quadrants on black after an active host tick"
+            + ("; SetNativeCloseMode allows a later standard host requestClose to produce Closed"
+               if profile == "render-close" else ""))
         manifest["limitations"] = [
             "Not a real game or compatibility evidence", "No text/audio/save coverage",
             "PNG is a portable ethornell-rs input, not a claim that original BGI supports PNG",
@@ -518,6 +531,17 @@ def generate(output, profile="ret"):
         ]
         manifest["raw_bp_hex"] = bp.hex()
         manifest["render_expectation"] = render_expectation()
+        if profile == "render-close":
+            manifest["limitations"].append(
+                "Generation does not certify production host-close ACK; verify through the private Activity test")
+            manifest["render_expectation"]["expected_vm"] = (
+                "Render bootstrap completes with four checkerboard quadrants; "
+                "SetNativeCloseMode is enabled before top-level ret so the production host may request normal close later")
+            manifest["derived_from"] = {
+                "profile": "render",
+                "system_arc_sha256": "f0d1d96ef30135c95bc722414a9d9572ec3f34952fb57ad9a1bfcf6adb8c06d8",
+                "derivation": "Same generated checker.png and render program; insert 00 01 80 68 (push_byte(1), Sys80:68 SetNativeCloseMode) immediately before stack restore and ret. Does not issue Sys80:69.",
+            }
     elif profile.startswith("user-data-"):
         phase = profile.removeprefix("user-data-")
         manifest["expected"] = (

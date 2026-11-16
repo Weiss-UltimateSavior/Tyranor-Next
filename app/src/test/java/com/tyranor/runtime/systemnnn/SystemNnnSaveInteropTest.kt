@@ -3,25 +3,29 @@ package com.tyranor.runtime.systemnnn
 import com.tyranor.next.core.game.save.GameSaveException
 import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.SaveErrorCode
+import com.tyranor.next.core.game.save.SystemNnnCleanupQueue
 import com.tyranor.next.core.game.save.SystemNnnSaveStore
+import com.tyranor.next.core.game.save.sync.SaveSyncError
+import com.tyranor.next.core.game.save.sync.SaveSyncException
+import com.tyranor.next.core.game.storage.GameLibraryWriteGate
 import com.tyranor.next.core.game.storage.SystemNnnCopyStore
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeNoException
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.io.ByteArrayInputStream
-import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
 import java.io.IOException
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.nio.file.Files
+import java.nio.file.Paths
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.nio.file.attribute.BasicFileAttributes
@@ -30,8 +34,6 @@ import java.util.UUID
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
-import java.util.zip.CRC32
-import kotlin.random.Random
 
 class SystemNnnSaveInteropTest {
     @get:Rule val temp = TemporaryFolder()
@@ -43,7 +45,7 @@ class SystemNnnSaveInteropTest {
         checkCancelled: () -> Unit,
     ): Boolean {
         checkCancelled()
-        return try { SystemNnnHost.canReplaceSaveSnapshot(incoming, existing) }
+        return try { validateFixtureFiles(incoming, existing) }
         catch (_: IOException) { false }
     }
 
@@ -51,37 +53,23 @@ class SystemNnnSaveInteropTest {
         val game = temp.newFolder().canonicalFile
         val saves = game.resolve("sav").apply { check(mkdir()) }
         val store = SystemNnnSaveStore(game, saves, ::validateFixture)
-        val pc = saves.resolve("sysfile3.sav").apply { writeText("PC") }
-        val temporary = saves.resolve("emberfall.sav.new").apply { writeText("temporary") }
+        val pc = saves.resolve("sysfile3.org").apply { writeText("PC") }
+        val temporary = saves.resolve("data0.sav.new").apply { writeText("temporary") }
+        val retired = putLegacySlot(saves)
         val incoming = temp.newFolder().canonicalFile
-        val story = incoming.resolve("emberfall.sav").apply {
-            DataOutputStream(outputStream()).use {
-                it.writeInt(GameSave.MAGIC_NS1)
-                it.writeInt(1)
-                it.writeInt(1)
-                it.writeInt(20)
-                it.writeInt(0)
-                it.writeInt(0)
-                it.writeBoolean(false)
-                it.writeInt(0)
-                it.writeUTF("start.spt")
-                it.writeInt(1)
-                it.writeInt(0)
-                it.writeInt(1)
-            }
-        }
-        val backup = putStory(incoming, "emberfall.quick.sav.bak", SaveSlots.QUICK)
-        put(incoming, "emberfall.chart/chart1/slot0.dat", "chart")
-        val highSlot = putStory(incoming, "emberfall.slot118.sav", 118)
-        put(incoming, "emberfall.slot118.sav.thumb", "high slot thumbnail")
+        putLegacySlot(incoming)
+        val story = putPcSlot(incoming, "data0.sav")
+        val backup = putPcSlot(incoming, "data3.sav.bak")
+        putChartNode(incoming, "emberfall.chart/chart1/slot0.dat")
+        val highSlot = putPcSlot(incoming, "data118.sav")
         put(incoming, "emberfall.last-slot", "last selection")
         put(incoming, "emberfall.last-slot.new", "interrupted selection")
         put(incoming, "emberfall.slot-ui", "slot presentation")
         put(incoming, "emberfall.slot-ui.new", "interrupted presentation")
         put(incoming, "emberfall.slot-ui.bak", "unknown presentation backup")
-        put(incoming, "emberfall.slot0118.sav", "noncanonical alias")
-        put(incoming, "emberfall.slot4096.sav", "outside range")
-        put(incoming, "sysfile3.sav", "excluded")
+        put(incoming, "data0118.sav", "noncanonical alias")
+        put(incoming, "data4096.sav", "outside range")
+        put(incoming, "sysfile3.org", "excluded")
         val metadataOnly = temp.newFolder().canonicalFile
         put(metadataOnly, "emberfall.slot-ui", "slot presentation only")
         val lock = saves.resolve("emberfall.lock").toPath()
@@ -90,38 +78,87 @@ class SystemNnnSaveInteropTest {
             val fileKey = Files.readAttributes(lock, BasicFileAttributes::class.java).fileKey()
             val busy = runCatching { SystemNnnHost.lockSaveDirectory(game).close() }.exceptionOrNull()
             assertTrue(busy is SystemNnnHost.SaveBusyException)
-            assertEquals(7, store.replace(incoming))
-            assertEquals(7, store.files().size)
+            assertEquals(6, store.replace(incoming))
+            assertEquals(6, store.files().size)
             assertArrayEquals(story.readBytes(), saves.resolve(story.name).readBytes())
             assertArrayEquals(backup.readBytes(), saves.resolve(backup.name).readBytes())
-            assertFalse(incoming.resolve("emberfall.quick.sav").exists())
-            assertFalse(saves.resolve("emberfall.quick.sav").exists())
+            assertFalse(incoming.resolve("data3.sav").exists())
+            assertFalse(saves.resolve("data3.sav").exists())
             assertArrayEquals(highSlot.readBytes(), saves.resolve(highSlot.name).readBytes())
-            assertEquals("high slot thumbnail", saves.resolve("emberfall.slot118.sav.thumb").readText())
             assertEquals("last selection", saves.resolve("emberfall.last-slot").readText())
             assertFalse(saves.resolve("emberfall.last-slot.new").exists())
             assertEquals("slot presentation", saves.resolve("emberfall.slot-ui").readText())
             assertFalse(saves.resolve("emberfall.slot-ui.new").exists())
             assertFalse(saves.resolve("emberfall.slot-ui.bak").exists())
-            assertFalse(saves.resolve("emberfall.slot0118.sav").exists())
-            assertFalse(saves.resolve("emberfall.slot4096.sav").exists())
+            assertFalse(saves.resolve("data0118.sav").exists())
+            assertFalse(saves.resolve("data4096.sav").exists())
             assertEquals(fileKey, Files.readAttributes(lock, BasicFileAttributes::class.java).fileKey())
             val error = assertThrows(GameSaveException::class.java) { store.replace(metadataOnly) }
             assertEquals(SaveErrorCode.NO_FILES_IN_ZIP, error.code)
             assertArrayEquals(story.readBytes(), saves.resolve(story.name).readBytes())
-            assertEquals(7, store.replace(null))
+            assertEquals(6, store.replace(null))
             assertTrue(store.files().isEmpty())
         }
         assertTrue(Files.isRegularFile(lock))
         assertEquals("PC", pc.readText())
         assertEquals("temporary", temporary.readText())
+        assertTrue(retired.isFile)
+    }
+
+    @Test fun includesPcGlobalProgressAndKeepsItWhenAnOlderBackupOmitsIt() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
+        val config = GameUiAssets.readConfig(game, "game")
+        val state = GameProgress.State(
+            intArrayOf(9), IntArray(1000), IntArray(2048), Array(102) { byteArrayOf() },
+            IntArray(NativeGame.OPTIONAL_PROGRESS_WORDS), null, emptyList(),
+        )
+        PcSystemSave.open(game, saves, config, intArrayOf(1, 0)).write(state, intArrayOf())
+        val current = saves.resolve("sysfile.sav")
+        val original = current.readBytes()
+        assertTrue(store.files().containsKey(current.name))
+        val older = GameSaveManager.createZipStaging(temp.root)
+        putProgress(older, 11)
+        store.access { store.replace(older) }
+        assertArrayEquals(original, current.readBytes())
+
+        val newer = GameSaveManager.createZipStaging(temp.root)
+        state.variables[5] = 1
+        PcSystemSave.open(game, newer, config, intArrayOf(1, 0)).write(state, intArrayOf())
+        val replacement = newer.resolve(current.name)
+        store.access { store.replace(newer) }
+        assertArrayEquals(replacement.readBytes(), current.readBytes())
+        replacement.writeText("damaged")
+        assertThrows(GameSaveException::class.java) { store.access { store.replace(newer) } }
+        assertTrue(PcSystemSave.valid(current))
+    }
+
+    @Test fun usesCachedGlobalArchiveEvenWhenAnotherVersionExists() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        val config = GameUiAssets.readConfig(game, "game")
+        val state = GameProgress.State(
+            intArrayOf(9), IntArray(1000), IntArray(2048), Array(102) { byteArrayOf() },
+            IntArray(NativeGame.OPTIONAL_PROGRESS_WORDS), null, emptyList(),
+        )
+        PcSystemSave.open(game, saves, config, intArrayOf(1, 0)).write(state, intArrayOf())
+        val previous = saves.resolve("sysfile.sav")
+        val bytes = previous.readBytes()
+        saves.resolve("sysfile.org").writeBytes(bytes)
+
+        val selected = PcSystemSave.open(game, saves, config, intArrayOf(2, 0))
+        assertFalse(selected.load().live)
+        selected.write(state, intArrayOf())
+        assertTrue(PcSystemSave.valid(saves.resolve("sysfile2.sav")))
+        assertArrayEquals(bytes, previous.readBytes())
     }
 
     @Test fun rejectsIncompleteOrDamagedSnapshotsBeforeChangingLiveSaves() {
         val game = temp.newFolder().canonicalFile
         val saves = game.resolve("sav").apply { check(mkdir()) }
         val store = SystemNnnSaveStore(game, saves, ::validateFixture)
-        val story = putStory(saves, "emberfall.resume.bak", SaveSlots.AUTO)
+        val story = putPcSlot(saves, "data1.sav.bak")
         val progress = putProgress(saves, 9)
         val storyBytes = story.readBytes()
         val progressBytes = progress.readBytes()
@@ -144,56 +181,16 @@ class SystemNnnSaveInteropTest {
         }
 
         rejectsSnapshot { put(it, "emberfall.last-slot", "index") }
-        rejectsSnapshot { put(it, "emberfall.sav.thumb", "thumbnail") }
+        rejectsSnapshot { put(it, "data0.sav.thumb", "thumbnail") }
         rejectsSnapshot { putProgress(it, 11) }
-        rejectsSnapshot { put(it, "emberfall.sav", "damaged") }
-        rejectsSnapshot { putStory(it, "emberfall.sav", 1) }
-        rejectsSnapshot { putStory(it, "emberfall.resume", SaveSlots.AUTO, byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9)) }
-        rejectsSnapshot { putStory(it, "emberfall.resume", SaveSlots.AUTO, snapshotPayload(version = 14)) }
-        rejectsSnapshot { putStory(it, "emberfall.resume", SaveSlots.AUTO, snapshotPayload()) }
+        rejectsSnapshot { putLegacySlot(it) }
+        rejectsSnapshot { put(it, "data0.sav", "damaged PC slot") }
         rejectsSnapshot {
-            val slot = putStory(it, "emberfall.sav", 0)
-            val bytes = slot.readBytes()
-            val raw = ByteArrayInputStream(bytes)
-            DataInputStream(raw).use { input ->
-                input.readInt()
-                input.readInt()
-                input.readLong()
-                input.readUTF()
-                repeat(3) { input.readInt() }
-                input.readUTF()
-                input.readUTF()
-                assertEquals(2, input.readInt())
-                assertEquals("start.spt".length, input.readInt())
-                bytes[bytes.size - raw.available()] = 'x'.code.toByte()
-            }
-            val crc = CRC32().apply { update(bytes, 0, bytes.size - Int.SIZE_BYTES) }
-            ByteBuffer.wrap(bytes, bytes.size - Int.SIZE_BYTES, Int.SIZE_BYTES).putInt(crc.value.toInt())
-            slot.writeBytes(bytes)
+            putPcSlot(it, "data0.sav")
+            put(it, "data0.sav.bak", "damaged backup preferred by AtomicFile")
         }
         rejectsSnapshot {
-            val journal = GameSave().apply {
-                runs.add(GameSave.Run(1, 0, 0, 25, false, -4))
-                ticks++
-                append(20, 0, 0, false, 0)
-            }
-            val metadata = GameSave.Metadata(0, 1L, "start.spt", 1, 0, 1, "", "Story", false)
-            val wrongOrder = GameSave.Loaded(journal, metadata, arrayOf("start.spt".toByteArray(), byteArrayOf()))
-            it.resolve("emberfall.sav").outputStream().use { output -> GameSave.writePayload(output, wrongOrder) }
-        }
-        rejectsSnapshot {
-            putStory(it, "emberfall.resume", SaveSlots.AUTO, snapshotPayload()).apply {
-                val bytes = readBytes()
-                writeBytes(bytes.copyOf(bytes.size - 1))
-            }
-        }
-        rejectsSnapshot {
-            putStory(it, "emberfall.sav", 0)
-            put(it, "emberfall.sav.bak", "damaged legacy backup")
-            putStory(it, "emberfall.slot01.sav", 1)
-        }
-        rejectsSnapshot {
-            putStory(it, "emberfall.sav", 0)
+            putPcSlot(it, "data0.sav")
             put(it, "emberfall.read", "damaged progress primary")
             put(it, "emberfall.read.bak", "damaged progress backup")
         }
@@ -201,14 +198,14 @@ class SystemNnnSaveInteropTest {
 
     @Test fun validatesStagedProgressPairsWithoutChangingEitherGeneration() {
         val incoming = temp.newFolder().canonicalFile
-        val story = putStory(incoming, "emberfall.sav", 0)
+        val story = putPcSlot(incoming, "data0.sav")
         val primary = putProgress(incoming, 21)
         val backup = incoming.resolve("emberfall.read.bak").apply { writeText("damaged backup") }
         val files = listOf(story, primary, backup).associateBy { it.name }
 
         fun validatesUnchanged() {
             val before = files.mapValues { (_, file) -> file.readBytes() }
-            assertTrue(SystemNnnHost.canReplaceSaveSnapshot(files, emptySet()))
+            assertTrue(validateFixtureFiles(files, emptySet()))
             assertEquals(files.keys, incoming.list()!!.toSet())
             for ((name, bytes) in before) assertArrayEquals(bytes, files.getValue(name).readBytes())
         }
@@ -228,13 +225,13 @@ class SystemNnnSaveInteropTest {
         val saves = game.resolve("sav").apply { check(mkdir()) }
         val store = SystemNnnSaveStore(game, saves, ::validateFixture)
         val incoming = temp.newFolder().canonicalFile
-        val backup = putStory(incoming, "emberfall.quick.sav.bak", SaveSlots.QUICK)
+        val backup = putPcSlot(incoming, "data3.sav.bak")
         store.access {
             assertEquals(1, store.replace(incoming))
             assertArrayEquals(backup.readBytes(), saves.resolve(backup.name).readBytes())
         }
-        assertFalse(incoming.resolve("emberfall.quick.sav").exists())
-        assertFalse(saves.resolve("emberfall.quick.sav").exists())
+        assertFalse(incoming.resolve("data3.sav").exists())
+        assertFalse(saves.resolve("data3.sav").exists())
     }
 
     @Test fun replacementKeepsValidPrimaryProgressAndItsOwnExtension() {
@@ -242,7 +239,7 @@ class SystemNnnSaveInteropTest {
         val saves = game.resolve("sav").apply { check(mkdir()) }
         putProgress(saves, 3)
         val incoming = GameSaveManager.createZipStaging(temp.root)
-        putStory(incoming, "emberfall.sav", 0)
+        putPcSlot(incoming, "data0.sav")
         val primary = putProgress(incoming, 21)
         val backup = putProgress(incoming, 9, "emberfall.read.bak")
         putExtension(incoming.resolve("emberfall.read.ext"), primary to 21)
@@ -280,18 +277,18 @@ class SystemNnnSaveInteropTest {
         val store = SystemNnnSaveStore(game, saves, ::validateFixture)
         val stage = saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY)
         val restore = stage.resolve(SystemNnnHost.SAVE_RESTORE_DIRECTORY)
-        put(restore, "before/emberfall.sav", "old")
-        put(restore, "pending", "")
-        put(saves, "emberfall.sav", "partial")
+        put(restore, "before/data0.sav", "old")
+        put(restore, "pending", "\u0001")
+        put(saves, "data0.sav", "partial")
         put(saves, "emberfall.read", "partial")
         val legacy = temp.newFolder()
         val refused = runCatching { GameSavePaths.forGame(game).open(legacy).close() }.exceptionOrNull()
         assertTrue(refused is IOException)
-        assertEquals("partial", saves.resolve("emberfall.sav").readText())
+        assertEquals("partial", saves.resolve("data0.sav").readText())
         assertTrue(restore.resolve("pending").isFile)
 
         store.recoverForLaunch()
-        assertEquals("old", saves.resolve("emberfall.sav").readText())
+        assertEquals("old", saves.resolve("data0.sav").readText())
         assertFalse(saves.resolve("emberfall.read").exists())
         assertFalse(stage.exists())
         GameSavePaths.forGame(game).open(legacy).close()
@@ -303,19 +300,19 @@ class SystemNnnSaveInteropTest {
         store.recoverForLaunch()
         assertEquals("legacy", stage.resolve("emberfall.quick.sav").readText())
         GameSavePaths.forGame(game).open(legacy).close()
-        assertEquals("legacy", saves.resolve("emberfall.quick.sav").readText())
+        assertFalse(saves.resolve("emberfall.quick.sav").exists())
     }
 
     @Test fun ordinaryAccessClearsAnEmptyMigrationDirectory() {
         val game = temp.newFolder().canonicalFile
         val saves = game.resolve("sav").apply { check(mkdir()) }
-        put(saves, "emberfall.sav", "saved")
+        put(saves, "data0.sav", "saved")
         val stage = saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY).apply { check(mkdir()) }
         val store = SystemNnnSaveStore(game, saves, ::validateFixture)
 
         store.access {
             assertFalse(stage.exists())
-            assertEquals("saved", store.files().getValue("emberfall.sav").readText())
+            assertEquals("saved", store.files().getValue("data0.sav").readText())
         }
     }
 
@@ -323,7 +320,7 @@ class SystemNnnSaveInteropTest {
         val game = temp.newFolder().canonicalFile
         val saves = game.resolve("sav").apply { check(mkdir()) }
         val original = linkedMapOf(
-            "emberfall.sav" to "original slot",
+            "data0.sav" to "original slot",
             "emberfall.read" to "original progress",
             "emberfall.read.ext" to "original extension",
             "emberfall.chart/chart1/slot0.dat" to "original chart",
@@ -331,14 +328,17 @@ class SystemNnnSaveInteropTest {
         for ((name, content) in original) put(saves, name, content)
         val pc = saves.resolve("sysfile3.sav").apply { writeText("PC") }
         val incoming = temp.newFolder().canonicalFile
-        val replacement = putStory(incoming, "emberfall.sav", 0)
-        for (name in original.keys - setOf(replacement.name, "emberfall.read")) put(incoming, name, "replacement $name")
+        val replacement = putPcSlot(incoming, "data0.sav")
+        for (name in original.keys - setOf(replacement.name, "emberfall.read")) {
+            if (SystemNnnHost.isChartNodeSave(name)) putChartNode(incoming, name)
+            else put(incoming, name, "replacement $name")
+        }
         putProgress(incoming, 34)
-        putStory(incoming, "emberfall.quick.sav", SaveSlots.QUICK)
+        putPcSlot(incoming, "data3.sav")
         var interrupted = false
         val store = SystemNnnSaveStore(game, saves, ::validateFixture) { source, target ->
             Files.move(source.toPath(), target.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
-            if (!interrupted && target == saves.resolve("emberfall.sav")) {
+            if (!interrupted && target == saves.resolve("data0.sav")) {
                 interrupted = true
                 assertArrayEquals(replacement.readBytes(), target.readBytes())
                 throw IOException("Interrupted after replacing an existing slot")
@@ -356,18 +356,18 @@ class SystemNnnSaveInteropTest {
         assertEquals(SaveErrorCode.SAVE_DIR_UNAVAILABLE, failure.code)
         assertTrue(interrupted)
         store.access {
-            assertEquals(original, store.files().mapValues { (_, file) -> file.readText() })
+            assertEquals(original + (pc.name to "PC"), store.files().mapValues { (_, file) -> file.readText() })
             assertEquals(lockKey, Files.readAttributes(lock, BasicFileAttributes::class.java).fileKey())
         }
-        assertFalse(saves.resolve("emberfall.quick.sav").exists())
+        assertFalse(saves.resolve("data3.sav").exists())
         assertFalse(saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY).exists())
         assertEquals("PC", pc.readText())
     }
 
-    @Test fun detectsAnUncommittedAutosaveWhenThePreviousFileStillExists() {
+    @Test fun detectsAnUncommittedPcSlotWhenThePreviousFileStillExists() {
         val saves = temp.newFolder()
-        val target = saves.resolve("emberfall.resume").apply { writeText("previous") }
-        val pending = saves.resolve("emberfall.resume.new").apply { writeText("next") }
+        val target = saves.resolve("data1.sav").apply { writeText("previous") }
+        val pending = saves.resolve("data1.sav.new").apply { writeText("next") }
 
         val failure = runCatching { GameSavePaths.verifyCommitted(target) }.exceptionOrNull()
         assertTrue(failure is IOException)
@@ -381,9 +381,9 @@ class SystemNnnSaveInteropTest {
     @Test fun committedCallbackFailureKeepsTheReplacementAndCleansTheStage() {
         val game = temp.newFolder().canonicalFile
         val saves = game.resolve("sav").apply { check(mkdir()) }
-        val previous = putStory(saves, "emberfall.sav", 0)
+        val previous = putPcSlot(saves, "data0.sav")
         val incoming = temp.newFolder().canonicalFile
-        val replacement = putStory(incoming, "emberfall.resume", SaveSlots.AUTO)
+        val replacement = putPcSlot(incoming, "data1.sav")
         val store = SystemNnnSaveStore(game, saves, ::validateFixture)
         val stage = saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY)
         val error = IOException("Could not record the committed save")
@@ -404,9 +404,9 @@ class SystemNnnSaveInteropTest {
     @Test fun committedCallbackCancellationKeepsTheReplacementAndPreservesCleanupFailure() {
         val game = temp.newFolder().canonicalFile
         val saves = game.resolve("sav").apply { check(mkdir()) }
-        val previous = putStory(saves, "emberfall.sav", 0)
+        val previous = putPcSlot(saves, "data0.sav")
         val incoming = temp.newFolder().canonicalFile
-        val replacement = putStory(incoming, "emberfall.resume", SaveSlots.AUTO)
+        val replacement = putPcSlot(incoming, "data1.sav")
         val store = SystemNnnSaveStore(game, saves, ::validateFixture)
         val stage = saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY)
         val restore = stage.resolve(SystemNnnHost.SAVE_RESTORE_DIRECTORY)
@@ -432,9 +432,9 @@ class SystemNnnSaveInteropTest {
     @Test fun aSeparateJvmLockBlocksSaveReplacementUntilTheHolderExits() {
         val game = temp.newFolder().canonicalFile
         val saves = game.resolve("sav").apply { check(mkdir()) }
-        val previous = putStory(saves, "emberfall.sav", 0)
+        val previous = putPcSlot(saves, "data0.sav")
         val incoming = temp.newFolder().canonicalFile
-        val replacement = putStory(incoming, "emberfall.resume", SaveSlots.AUTO)
+        val replacement = putPcSlot(incoming, "data1.sav")
         val store = SystemNnnSaveStore(game, saves, ::validateFixture)
 
         withExternalLock(saves.resolve("emberfall.lock")) {
@@ -478,7 +478,7 @@ class SystemNnnSaveInteropTest {
 
     }
 
-    @Test fun importedCopyUsesTheOriginalPathToFindPrivateLegacySaves() {
+    @Test fun importedCopyMigratesGlobalProgressAndLeavesRetiredSlotsInPlace() {
         val original = temp.newFolder().canonicalFile
         val imported = temp.newFolder().canonicalFile
         val legacy = temp.newFolder()
@@ -488,12 +488,14 @@ class SystemNnnSaveInteropTest {
         val high = legacy.resolve(oldKey + ".slot118.sav.bak").apply { writeText("old high slot backup") }
         val selected = legacy.resolve(oldKey + ".last-slot").apply { writeText("old last selection") }
 
+        val progress = putProgress(legacy, 13, oldKey + ".read")
         GameSavePaths.forGame(imported).open(legacy, original).use {
-            assertEquals(source.readText(), imported.resolve("sav/emberfall.resume").readText())
-            assertEquals(high.readText(), imported.resolve("sav/emberfall.slot118.sav").readText())
-            assertEquals(selected.readText(), imported.resolve("sav/emberfall.last-slot").readText())
+            assertFalse(imported.resolve("sav/emberfall.resume").exists())
+            assertFalse(imported.resolve("sav/emberfall.slot118.sav").exists())
+            assertFalse(imported.resolve("sav/emberfall.last-slot").exists())
+            assertArrayEquals(progress.readBytes(), imported.resolve("sav/emberfall.read").readBytes())
         }
-        assertTrue(source.isFile)
+        assertTrue(source.isFile && high.isFile && selected.isFile)
         assertFalse(original.resolve("sav").exists())
     }
 
@@ -565,6 +567,112 @@ class SystemNnnSaveInteropTest {
 
     }
 
+    @Test fun cleanupIntentSurvivesRestartAndAnOlderDrainCannotEraseExplicitRetirement() {
+        val directory = temp.newFolder("cleanup")
+        val legacyUri = "primary:Games/Legacy"
+        val uri = "primary:Games/Explicit"
+        fun queue() = SystemNnnCleanupQueue(directory) { listOf(legacyUri) }
+
+        queue().add(listOf(SystemNnnCleanupQueue.Target(uri, false)))
+        val oldAttempt = queue().pending().last()
+        queue().add(listOf(SystemNnnCleanupQueue.Target(uri, true)))
+        queue().add(listOf(SystemNnnCleanupQueue.Target(uri, false)))
+        queue().complete(oldAttempt)
+        val pending = queue().pending()
+        assertEquals(listOf(SystemNnnCleanupQueue.Target(legacyUri, false), SystemNnnCleanupQueue.Target(uri, true)), pending)
+
+        pending.forEach { queue().complete(it) }
+        assertTrue(queue().pending().isEmpty())
+    }
+
+    @Test fun cleanupQueueWriteFailureReportsTypedErrorAndCanBeRetried() {
+        val directory = temp.newFile("cleanup")
+        val uri = "primary:Games/Explicit"
+        val queue = SystemNnnCleanupQueue(directory)
+        val failure = assertThrows(SaveSyncException::class.java) { queue.add(listOf(SystemNnnCleanupQueue.Target(uri, true))) }
+        assertEquals(SaveSyncError.LOCAL_IO, failure.code)
+        assertTrue(directory.isFile)
+        assertTrue(directory.delete())
+        queue.add(listOf(SystemNnnCleanupQueue.Target(uri, true)))
+        assertEquals(listOf(SystemNnnCleanupQueue.Target(uri, true)), SystemNnnCleanupQueue(directory).pending())
+    }
+
+    @Test fun retiredCopyRemainsBackedUpWithoutSupersedingAnAuthorizedReaddedRoot() {
+        val base = temp.newFolder("systemnnn-imports").canonicalFile
+        val identity = "primary:Games/Sample"
+        val entry = base.resolve(SystemNnnCopyStore.key(identity))
+        val copy = entry.resolve("game")
+        put(entry, "source.id", identity)
+        put(copy, "spt/sys.spt", "old resources")
+        put(copy, "sav/data1.sav", "old saves")
+        assertTrue(SystemNnnCopyStore.clearResources(base, identity))
+        assertEquals(copy, SystemNnnCopyStore.activeRoot(SystemNnnCopyStore.committedRoot(base, identity)))
+
+        val queueDirectory = temp.newFolder("cleanup")
+        SystemNnnCleanupQueue(queueDirectory).add(listOf(SystemNnnCleanupQueue.Target(identity, true)))
+        val gate = GameLibraryWriteGate()
+        val pending = SystemNnnCleanupQueue(queueDirectory).pending().single()
+        val retire = { SystemNnnCopyStore.clearResources(base, identity, pending.retireCopy) }
+        var cachedReference = false
+        var committedReference = true
+        val referenced = { cachedReference || committedReference }
+        assertNull(gate.evictIfUnused(referenced, retire)) // Removal was published in memory only.
+        committedReference = false
+        cachedReference = true
+        assertNull(gate.evictIfUnused(referenced, retire)) // A same-source alias was registered.
+        assertEquals(copy, SystemNnnCopyStore.activeRoot(SystemNnnCopyStore.committedRoot(base, identity)))
+        assertEquals(listOf(pending), SystemNnnCleanupQueue(queueDirectory).pending())
+        cachedReference = false
+        SystemNnnHost.lockSaveDirectory(copy).use {
+            assertThrows(SystemNnnHost.SaveBusyException::class.java) { gate.evictIfUnused(referenced, retire) }
+        }
+        assertEquals(false, gate.evictIfUnused(referenced, retire))
+        assertEquals(false, gate.evictIfUnused(referenced, retire)) // Resume after retirement and before dequeue.
+        SystemNnnCleanupQueue(queueDirectory).complete(pending)
+
+        assertNull(SystemNnnCopyStore.activeRoot(SystemNnnCopyStore.committedRoot(base, identity)))
+        assertEquals(copy, SystemNnnCopyStore.committedRoot(base, identity))
+        assertEquals("old saves", copy.resolve("sav/data1.sav").readText())
+        assertTrue(SystemNnnCleanupQueue(queueDirectory).pending().isEmpty())
+    }
+
+    @Test fun pendingSaveRecoveryKeepsCopyAndCleanupRequestUntilRetry() {
+        val base = temp.newFolder("systemnnn-imports").canonicalFile
+        val source = "primary:Games/Pending"
+        val entry = base.resolve(SystemNnnCopyStore.key(source))
+        val copy = entry.resolve("game")
+        val saves = copy.resolve("SaV")
+        val migration = SystemNnnHost.SAVE_MIGRATION_DIRECTORY
+        val restore = SystemNnnHost.SAVE_RESTORE_DIRECTORY
+        put(entry, "source.id", source)
+        put(copy, "spt/sys.spt", "copy resource")
+        put(saves, "data1.sav", "partially restored")
+        put(saves, "$migration/$restore/before/data1.sav", "old save")
+        put(saves, "$migration/$restore/pending", "")
+        val queue = SystemNnnCleanupQueue(temp.newFolder("cleanup"))
+        queue.add(listOf(SystemNnnCleanupQueue.Target(source, true)))
+        fun drain() {
+            val target = queue.pending().single()
+            SystemNnnCopyStore.clearResources(base, source, target.retireCopy)
+            queue.complete(target)
+        }
+
+        val interrupted = assertThrows(GameSaveException::class.java) { drain() }
+        assertEquals(SaveErrorCode.SAVE_SELECTION_INCOMPLETE, interrupted.code)
+        assertEquals(copy, SystemNnnCopyStore.activeRoot(SystemNnnCopyStore.committedRoot(base, source)))
+        assertTrue(SystemNnnCopyStore.hasImportedResources(copy))
+        assertFalse(entry.resolve("resources-evicted").exists())
+        assertEquals("partially restored", saves.resolve("data1.sav").readText())
+        assertTrue(queue.pending().single().retireCopy)
+
+        SystemNnnSaveStore(copy, saves, ::validateFixture).recoverForLaunch()
+        assertEquals("old save", saves.resolve("data1.sav").readText())
+        drain()
+        assertTrue(queue.pending().isEmpty())
+        assertNull(SystemNnnCopyStore.activeRoot(SystemNnnCopyStore.committedRoot(base, source)))
+        assertEquals("old save", saves.resolve("data1.sav").readText())
+    }
+
     @Test fun readingCorruptProgressRestoresValidatedBackupAndItsExtension() {
         val game = temp.newFolder()
         val saves = game.resolve("sav").apply { check(mkdir()) }
@@ -629,13 +737,62 @@ class SystemNnnSaveInteropTest {
         assertFalse(saves.listFiles().orEmpty().any { ".corrupt-" in it.name })
     }
 
+    @Test fun retiredArchivesAreRejectedAndOldRollbackPreservesPcSlots() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        val pc = putPcSlot(saves, "data3.sav")
+        val onDisk = putLegacySlot(saves)
+        val stage = GameSaveManager.createZipStaging(temp.root)
+        val legacy = putLegacySlot(stage)
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
+
+        assertTrue(SystemNnnHost.isManagedSaveFile(pc.toPath().fileName))
+        assertFalse(SystemNnnHost.isManagedSaveFile(legacy.toPath().fileName))
+        val failure = assertThrows(GameSaveException::class.java) { store.access { store.replace(stage) } }
+        assertEquals(SaveErrorCode.NO_FILES_IN_ZIP, failure.code)
+        assertArrayEquals(PC_SLOT_FIXTURE, pc.readBytes())
+        assertArrayEquals(legacy.readBytes(), onDisk.readBytes())
+
+        val restore = saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY)
+            .resolve(SystemNnnHost.SAVE_RESTORE_DIRECTORY)
+        put(restore, "before/emberfall.sav", "retired rollback slot")
+        put(restore, "pending", "")
+        check(onDisk.delete())
+        store.recoverForLaunch()
+        assertArrayEquals(PC_SLOT_FIXTURE, pc.readBytes())
+        assertEquals("retired rollback slot", onDisk.readText())
+        assertFalse(store.files().containsKey(onDisk.name))
+    }
+
+    @Test fun pcStoryBackupOnlySlotRetainsItsActualCase() {
+        val saves = temp.newFolder().canonicalFile
+        val backup = putPcSlot(saves, "DATA0.SAV.BAK")
+        val base = PcStorySave(saves, false).file(0)
+        assumeTrue(!File(base.path + ".bak").exists())
+        assertEquals(backup, PcStorySave.backupWithoutBase(base))
+        assertArrayEquals(PC_SLOT_FIXTURE, PcStorySave.read(base))
+        assertFalse(base.exists())
+        assertTrue(backup.isFile)
+    }
+
+    @Test fun registeringAnAliasRevokesRetirementButKeepsItsCleanup() {
+        val directory = temp.newFolder().canonicalFile
+        val first = SystemNnnCleanupQueue.Target("content://copy/first", true)
+        val other = SystemNnnCleanupQueue.Target("content://other/second", true)
+        val queue = SystemNnnCleanupQueue(directory)
+        queue.add(listOf(first, other))
+        queue.retainCopies { it.startsWith("content://copy/") }
+        queue.complete(first)
+        assertEquals(listOf(first.copy(retireCopy = false), other), SystemNnnCleanupQueue(directory).pending())
+    }
+
     @Test fun unavailableSnapshotValidatorLeavesLiveSavesUntouched() {
         val game = temp.newFolder().canonicalFile
         val saves = game.resolve("sav").apply { check(mkdir()) }
-        val current = putStory(saves, "emberfall.sav", 0)
+        val current = putPcSlot(saves, "data0.sav")
         val old = current.readBytes()
         val stage = GameSaveManager.createZipStaging(temp.root)
-        putStory(stage, "emberfall.resume", SaveSlots.AUTO)
+        putPcSlot(stage, "data1.sav")
         val store = SystemNnnSaveStore(game, saves, validateSnapshot = { _, _, _, _ ->
             throw IOException("Validator disconnected")
         })
@@ -950,17 +1107,359 @@ class SystemNnnSaveInteropTest {
         assertFalse(SystemNnnHost.hasActiveSaveAccess())
     }
 
-    private fun snapshotPayload(version: Int = 13): ByteArray =
-        ByteBuffer.wrap(Random(7).nextBytes(32768)).order(ByteOrder.LITTLE_ENDIAN)
-            .putInt(0x31534e4e).putInt(version).array()
+    @Test fun chartOwnershipIsBoundedAndSeparateFromLegacyMigration() {
+        for (name in listOf("mita.dat", "tsuka.dat", "mushiex/mita.dat", "mushiex/tsuka.dat",
+            "mushiex/chart1/slot1001.dat", "mushiex/chart9/slot9999.dat", "emberfall.chart/chart32/slot262143.dat")) {
+            assertTrue(name, SystemNnnHost.isManagedSaveFile(Paths.get(name)))
+        }
+        for (name in listOf("mushiex/chart10/slot9999.dat", "mushiex/chart1/slot10000.dat",
+            "mushiex/chart01/slot1001.dat", "mushiex/chart1/slot01001.dat", "mushiex/chart1/slot1001.dat.new",
+            "mushiex/chart1/extra/slot1001.dat", "emberfall.chart/chart33/slot0.dat", "emberfall.chart/chart1/slot262144.dat",
+            "mushiex/../mita.dat", "../mita.dat")) {
+            assertFalse(name, SystemNnnHost.isManagedSaveFile(Paths.get(name)))
+        }
+        assertTrue(SystemNnnHost.isManagedSaveDirectory(Paths.get("mushiex/chart9")))
+        assertFalse(SystemNnnHost.isManagedSaveDirectory(Paths.get("mushiex/chart10")))
+        assertFalse(LegacySaveMigration.ownedFile(Paths.get("mushiex/chart1/slot1001.dat")))
+        assertFalse(LegacySaveMigration.chartDirectory(Paths.get("mushiex")))
+    }
 
-    private fun putStory(root: File, name: String, slot: Int, snapshot: ByteArray? = null): File {
+    @Test fun chartSnapshotEnumerationMatchesTheRecursiveValidator() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
+        val expected = putChartFlags(saves, false) + putChartFlags(saves, true)
+        putChartNode(saves, "mushiex/chart1/slot1001.dat")
+        putChartNode(saves, "emberfall.chart/chart1/slot0.dat")
+        put(saves, "mushiex/chart1/slot1001.dat.new", "pending")
+        put(saves, "mushiex/chart01/slot1001.dat", "alias")
+        val files = store.files()
+        assertEquals(expected.keys + setOf("mushiex/chart1/slot1001.dat", "emberfall.chart/chart1/slot0.dat"), files.keys)
+        assertEquals(files, SystemNnnSaveValidationService.stagedFiles(saves.toPath()))
+        for ((name, bytes) in expected) assertArrayEquals(bytes, files.getValue(name).readBytes())
+    }
+
+    @Test fun chartGlobalsDoNotAuthorizeOverwritingAnExistingNode() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        val node = putChartNode(saves, "mushiex/chart1/slot1001.dat")
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
+        val incoming = temp.newFolder().canonicalFile
+        putChartFlags(incoming, true)
+        assertTrue(SystemNnnHost.requiresStorySnapshot(store.files().keys))
+        assertThrows(GameSaveException::class.java) { store.access { store.replace(incoming) } }
+        assertArrayEquals(CHART_NODE_FIXTURE, node.readBytes())
+        val blank = temp.newFolder().canonicalFile
+        val emptySaves = blank.resolve("sav").apply { check(mkdir()) }
+        val emptyStore = SystemNnnSaveStore(blank, emptySaves, ::validateFixture)
+        emptyStore.access { assertEquals(2, emptyStore.replace(incoming)) }
+        assertEquals(10004, emptySaves.resolve("mushiex/mita.dat").length().toInt())
+    }
+
+    @Test fun chartValidationRejectsBadNodesAndLengthsBeforeAnyReplacement() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        val current = putChartNode(saves, "mushiex/chart1/slot1001.dat")
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
+        val incoming = temp.newFolder().canonicalFile
+        putPcSlot(incoming, "data0.sav")
+        val node = putChartNode(incoming, "mushiex/chart1/slot1001.dat")
+        for (invalid in listOf(byteArrayOf(0), CHART_NODE_FIXTURE + byteArrayOf(0), ByteArray(2 * 1024 * 1024 + 1))) {
+            node.writeBytes(invalid)
+            assertThrows(GameSaveException::class.java) { store.access { store.replace(incoming) } }
+            assertArrayEquals(CHART_NODE_FIXTURE, current.readBytes())
+        }
+        node.writeBytes(CHART_NODE_FIXTURE)
+        putChartFlags(incoming, true)
+        incoming.resolve("mushiex/mita.dat").writeBytes(ByteArray(10000))
+        assertThrows(GameSaveException::class.java) { store.access { store.replace(incoming) } }
+        assertArrayEquals(CHART_NODE_FIXTURE, current.readBytes())
+        assertFalse(saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY).exists())
+    }
+
+    @Test fun chartValidatorsReceiveEveryRelativePathWithoutTreatingGlobalsAsNodes() {
+        val directory = temp.newFolder().canonicalFile
+        putChartFlags(directory, true)
+        putChartNode(directory, "mushiex/chart1/slot1001.dat")
+        val files = SystemNnnSaveValidationService.stagedFiles(directory.toPath())
+        val inspected = linkedSetOf<String>()
+        assertTrue(SystemNnnHost.canReplaceSaveSnapshot(files, true, { false }) { path, _ ->
+            inspected.add(path)
+            true
+        })
+        assertEquals(files.keys, inspected)
+        assertFalse(SystemNnnHost.canReplaceSaveSnapshot(files, true, { false }) { path, _ ->
+            !SystemNnnHost.isChartNodeSave(path)
+        })
+        val aliased = files + ("MUSHIEX/MITA.DAT" to files.getValue("mushiex/mita.dat"))
+        assertFalse(SystemNnnHost.canReplaceSaveSnapshot(aliased, true, { false }) { _, _ -> true })
+    }
+
+    @Test fun olderBackupsPreserveAbsentChartFamiliesButExplicitClearDeletesThem() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        val original = putChartFlags(saves, false) + putChartFlags(saves, true)
+        putChartNode(saves, "mushiex/chart1/slot1001.dat")
+        val modernNode = putChartNode(saves, "emberfall.chart/chart1/slot0.dat")
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
+        val older = temp.newFolder().canonicalFile
+        putPcSlot(older, "data0.sav")
+        val state = GameProgress.State(intArrayOf(), IntArray(1000), IntArray(2048), Array(102) { byteArrayOf() },
+            IntArray(NativeGame.OPTIONAL_PROGRESS_WORDS), null, emptyList())
+        PcSystemSave.open(game, older, GameUiAssets.readConfig(game, "game"), intArrayOf(3, 0)).write(state, intArrayOf())
+        store.access { store.replace(older) }
+        for ((name, bytes) in original) assertArrayEquals(bytes, saves.resolve(name).readBytes())
+        assertArrayEquals(CHART_NODE_FIXTURE, saves.resolve("mushiex/chart1/slot1001.dat").readBytes())
+        assertFalse(modernNode.exists()) // Modern nodes were already part of older backups.
+
+        val modern = temp.newFolder().canonicalFile
+        putPcSlot(modern, "data0.sav")
+        val replacement = putChartFlags(modern, false, 7)
+        store.access { store.replace(modern) }
+        for ((name, bytes) in replacement) assertArrayEquals(bytes, saves.resolve(name).readBytes())
+        for ((name, bytes) in original.filterKeys { it.startsWith("mushiex/") })
+            assertArrayEquals(bytes, saves.resolve(name).readBytes())
+
+        val legacy = temp.newFolder().canonicalFile
+        putChartFlags(legacy, true, 9)
+        putChartNode(legacy, "mushiex/chart1/slot1002.dat")
+        store.access { store.replace(legacy) }
+        assertFalse(saves.resolve("mushiex/chart1/slot1001.dat").exists())
+        assertArrayEquals(CHART_NODE_FIXTURE, saves.resolve("mushiex/chart1/slot1002.dat").readBytes())
+        for ((name, bytes) in replacement) assertArrayEquals(bytes, saves.resolve(name).readBytes())
+        store.access { store.replace(null) }
+        assertTrue(store.files().isEmpty())
+        for (name in original.keys + "mushiex/chart1/slot1002.dat") assertFalse(saves.resolve(name).exists())
+    }
+
+    @Test fun olderRollbackMarkersPreserveChartFamiliesTheyNeverBackedUp() {
+        for (version in 1..2) {
+            val game = temp.newFolder().canonicalFile
+            val saves = game.resolve("sav").apply { check(mkdir()) }
+            val flags = putChartFlags(saves, false) + putChartFlags(saves, true)
+            putChartNode(saves, "mushiex/chart1/slot1001.dat")
+            put(saves, "emberfall.chart/chart1/slot0.dat", "partial modern node")
+            val addedModernNode = putChartNode(saves, "emberfall.chart/chart1/slot1.dat")
+            val restore = saves.resolve("${SystemNnnHost.SAVE_MIGRATION_DIRECTORY}/${SystemNnnHost.SAVE_RESTORE_DIRECTORY}")
+            put(restore, "before/data0.sav", "old slot")
+            put(restore, "before/emberfall.chart/chart1/slot0.dat", "original modern node")
+            restore.resolve("pending").writeBytes(byteArrayOf(version.toByte()))
+            put(saves, "data0.sav", "partial slot")
+            SystemNnnSaveStore(game, saves, ::validateFixture).recoverForLaunch()
+            assertEquals("old slot", saves.resolve("data0.sav").readText())
+            for ((name, bytes) in flags) assertArrayEquals(bytes, saves.resolve(name).readBytes())
+            assertArrayEquals(CHART_NODE_FIXTURE, saves.resolve("mushiex/chart1/slot1001.dat").readBytes())
+            assertEquals("original modern node", saves.resolve("emberfall.chart/chart1/slot0.dat").readText())
+            assertFalse(addedModernNode.exists())
+            assertFalse(restore.exists())
+        }
+    }
+
+    @Test fun versionThreeRollbackRestoresOldChartBytesAndRemovesNewNodes() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        putChartFlags(saves, false)
+        putChartFlags(saves, true)
+        putChartNode(saves, "mushiex/chart1/slot1001.dat")
+        val incoming = temp.newFolder().canonicalFile
+        putChartFlags(incoming, false, 4)
+        putChartFlags(incoming, true, 5)
+        val newNode = "mushiex/chart1/slot1002.dat"
+        putChartNode(incoming, newNode)
+        var interrupted = false
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture) { source, target ->
+            Files.move(source.toPath(), target.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
+            if (!interrupted && target == saves.resolve(newNode)) {
+                interrupted = true
+                val marker = saves.resolve("${SystemNnnHost.SAVE_MIGRATION_DIRECTORY}/${SystemNnnHost.SAVE_RESTORE_DIRECTORY}/pending")
+                assertArrayEquals(byteArrayOf(3), marker.readBytes())
+                throw IOException("Interrupted after publishing a chart node")
+            }
+        }
+        val original = store.files().mapValues { it.value.readBytes() }
+        assertThrows(GameSaveException::class.java) { store.access { store.replace(incoming) } }
+        assertTrue(interrupted)
+        assertEquals(original.keys, store.files().keys)
+        for ((name, bytes) in original) assertArrayEquals(bytes, saves.resolve(name).readBytes())
+        assertFalse(saves.resolve(newNode).exists())
+        assertFalse(saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY).exists())
+    }
+
+    @Test fun chartReplacementKeepsExistingCaseSpellingAndPublishedFiles() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        val node = put(saves, "MUSHIEX/CHART1/SLOT1001.DAT", "original node")
+        val flags = put(saves, "MUSHIEX/MITA.DAT", "").apply { writeBytes(ByteArray(10004) { 1 }) }
+        val incoming = temp.newFolder().canonicalFile
+        val replacement = putChartFlags(incoming, true, 7)
+        putChartNode(incoming, "mushiex/chart1/slot1001.dat")
+        putChartNode(incoming, "mushiex/chart1/slot1002.dat")
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
+
+        store.access { store.replace(incoming) }
+
+        assertArrayEquals(CHART_NODE_FIXTURE, node.readBytes())
+        assertArrayEquals(replacement.getValue("mushiex/mita.dat"), flags.readBytes())
+        assertArrayEquals(CHART_NODE_FIXTURE, saves.resolve("MUSHIEX/CHART1/slot1002.dat").readBytes())
+        assertEquals(listOf("MUSHIEX"), saves.listFiles()!!.filter { it.name.equals("mushiex", true) }.map { it.name })
+        assertEquals(listOf("CHART1"), saves.resolve("MUSHIEX").listFiles()!!
+            .filter { it.name.equals("chart1", true) }.map { it.name })
+        assertFalse(saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY).exists())
+    }
+
+    @Test fun chartRollbackKeepsCaseAliasedOriginalsAfterPublishing() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        put(saves, "MUSHIEX/CHART1/SLOT1001.DAT", "original node")
+        put(saves, "MUSHIEX/MITA.DAT", "").writeBytes(ByteArray(10004) { 1 })
+        val incoming = temp.newFolder().canonicalFile
+        putChartFlags(incoming, true, 7)
+        putChartNode(incoming, "mushiex/chart1/slot1001.dat")
+        putChartNode(incoming, "mushiex/chart1/slot1002.dat")
+        var interrupted = false
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture) { source, target ->
+            Files.move(source.toPath(), target.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
+            if (!interrupted && target.name.equals("slot1001.dat", true)) {
+                interrupted = true
+                throw IOException("Interrupted after publishing a case-aliased node")
+            }
+        }
+        val original = store.files().mapValues { it.value.readBytes() }
+
+        assertThrows(GameSaveException::class.java) { store.access { store.replace(incoming) } }
+
+        assertTrue(interrupted)
+        assertEquals(original.keys, store.files().keys)
+        for ((name, bytes) in original) assertArrayEquals(bytes, saves.resolve(name).readBytes())
+        assertFalse(saves.resolve("MUSHIEX/CHART1/slot1002.dat").exists())
+        assertFalse(saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY).exists())
+    }
+
+    @Test fun chartDirectoryCaseCollisionsFailBeforeChangingLiveFiles() {
+        for (collisionInSource in listOf(false, true)) {
+            val game = temp.newFolder().canonicalFile
+            val saves = game.resolve("sav").apply { check(mkdir()) }
+            val incoming = temp.newFolder().canonicalFile
+            putPcSlot(incoming, "data0.sav")
+            val source = if (collisionInSource) incoming else saves
+            source.resolve("mushiex").mkdir()
+            val alias = source.resolve("MUSHIEX")
+            org.junit.Assume.assumeTrue("Requires a case-sensitive filesystem", alias.mkdir())
+            val lower = putChartNode(source, "mushiex/chart1/slot1001.dat")
+            val upper = putChartNode(source, "MUSHIEX/chart1/slot1002.dat")
+            val existing = put(saves, "data0.sav", "original slot")
+            val store = SystemNnnSaveStore(game, saves, ::validateFixture)
+
+            assertThrows(GameSaveException::class.java) { store.access { store.replace(incoming) } }
+
+            assertEquals("original slot", existing.readText())
+            assertArrayEquals(CHART_NODE_FIXTURE, lower.readBytes())
+            assertArrayEquals(CHART_NODE_FIXTURE, upper.readBytes())
+            assertFalse(saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY).exists())
+        }
+    }
+
+    @Test fun chartPathsRejectUnicodeLookalikesAndNeverOverwriteTheirFiles() {
+        for (name in listOf("mush\u0131ex", "mu\u017fhiex")) {
+            assertFalse(SystemNnnHost.isManagedSaveDirectory(Paths.get(name)))
+            assertFalse(SystemNnnHost.isManagedSaveFile(Paths.get("$name/mita.dat")))
+            assertFalse(SystemNnnHost.isManagedSaveFile(Paths.get("$name/chart1/slot1001.dat")))
+        }
+        // Check the literal archive names before macOS Path normalizes the Kelvin sign to K.
+        for (name in listOf("m\u0131ta.dat", "t\u017fuka.dat", "tsu\u212aa.dat")) {
+            assertFalse(SystemNnnHost.isPcGlobalSave(name))
+            assertFalse(SystemNnnHost.isPcGlobalSave("mushiex/$name"))
+        }
+        for (name in listOf("m\u0131ta.dat", "t\u017fuka.dat")) {
+            assertFalse(SystemNnnHost.isManagedSaveFile(Paths.get(name)))
+            assertFalse(SystemNnnHost.isManagedSaveFile(Paths.get("mushiex/$name")))
+        }
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        val untouched = listOf(
+            put(saves, "mush\u0131ex/chart1/slot1001.dat", "unmanaged dotless-i node"),
+            put(saves, "mushiex/tsu\u212aa.dat", "unmanaged Kelvin-sign flags"),
+        )
+        val original = untouched.associateWith(File::readBytes)
+        val incoming = temp.newFolder().canonicalFile
+        val flags = putChartFlags(incoming, true)
+        val nodeName = "mushiex/chart1/slot1001.dat"
+        putChartNode(incoming, nodeName)
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
+        assertTrue(store.files().isEmpty())
+        assertTrue(SystemNnnSaveValidationService.stagedFiles(saves.toPath()).isEmpty())
+        val restoredNames = flags.keys + nodeName
+        if (restoredNames.any { saves.resolve(it).exists() }) {
+            val failure = assertThrows(GameSaveException::class.java) { store.access { store.replace(incoming) } }
+            assertEquals(SaveErrorCode.SAVE_DIR_UNAVAILABLE, failure.code)
+        } else {
+            store.access { assertEquals(restoredNames.size, store.replace(incoming)) }
+            for ((name, bytes) in flags) assertArrayEquals(bytes, saves.resolve(name).readBytes())
+            assertArrayEquals(CHART_NODE_FIXTURE, saves.resolve(nodeName).readBytes())
+        }
+        for ((file, bytes) in original) assertArrayEquals(bytes, file.readBytes())
+        assertFalse(saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY).exists())
+    }
+
+    @Test fun chartSnapshotNeverTraversesSymbolicDirectoriesOrFiles() {
+        val stage = temp.newFolder().canonicalFile
+        val outside = temp.newFolder().canonicalFile
+        putChartFlags(outside, false)
+        try { Files.createSymbolicLink(stage.resolve("mushiex").toPath(), outside.toPath()) }
+        catch (failure: IOException) { assumeNoException(failure); return }
+        catch (failure: UnsupportedOperationException) { assumeNoException(failure); return }
+        catch (failure: SecurityException) { assumeNoException(failure); return }
+        assertThrows(IOException::class.java) { SystemNnnSaveValidationService.stagedFiles(stage.toPath()) }
+        Files.delete(stage.resolve("mushiex").toPath())
+        Files.createSymbolicLink(stage.resolve("mita.dat").toPath(), outside.resolve("mita.dat").toPath())
+        assertThrows(IOException::class.java) { SystemNnnSaveValidationService.stagedFiles(stage.toPath()) }
+        assertEquals(8, outside.resolve("mita.dat").length().toInt())
+    }
+
+    // The Android service runs the native decoder. Transaction tests isolate it from the filesystem moves.
+    private val PC_SLOT_FIXTURE = "validated slot fixture".toByteArray()
+    private val CHART_NODE_FIXTURE = "validated chart node fixture".toByteArray()
+
+    private fun validateFixtureFiles(incoming: Map<String, File>, existing: Set<String>): Boolean =
+        SystemNnnHost.canReplaceSaveSnapshot(
+            incoming, SystemNnnHost.requiresStorySnapshot(existing),
+            { it.readBytes().contentEquals(PC_SLOT_FIXTURE) },
+            { name, bytes ->
+                when {
+                    SystemNnnHost.isChartNodeSave(name) -> bytes.contentEquals(CHART_NODE_FIXTURE)
+                    name.equals("mushiex/mita.dat", true) -> bytes.size == 10004
+                    name.equals("mushiex/tsuka.dat", true) -> bytes.size == 10000
+                    name.equals("mita.dat", true) -> bytes.size == 8
+                    name.equals("tsuka.dat", true) -> bytes.size == 5
+                    else -> false
+                }
+            },
+        )
+
+    private fun putChartNode(root: File, name: String): File = root.resolve(name).apply {
+        requireNotNull(parentFile).mkdirs()
+        writeBytes(CHART_NODE_FIXTURE)
+    }
+
+    private fun putChartFlags(root: File, legacy: Boolean, value: Byte = 1): Map<String, ByteArray> {
+        val prefix = if (legacy) "mushiex/" else ""
+        val files = linkedMapOf(
+            "${prefix}mita.dat" to ByteArray(if (legacy) 10004 else 8) { value },
+            "${prefix}tsuka.dat" to ByteArray(if (legacy) 10000 else 5) { value },
+        )
+        for ((name, bytes) in files) root.resolve(name).apply { requireNotNull(parentFile).mkdirs(); writeBytes(bytes) }
+        return files
+    }
+
+    private fun putPcSlot(root: File, name: String): File =
+        root.resolve(name).apply { writeBytes(PC_SLOT_FIXTURE) }
+
+    private fun putLegacySlot(root: File): File {
         val script = "start.spt"
-        val save = if (snapshot == null) GameSave().apply { append(20, 0, 0, false, 0) }
-        else GameSave.nativeBaseline()
-        val metadata = GameSave.Metadata(slot, 1L, script, 1, 0, 1, "", "Story", false)
-        val loaded = GameSave.Loaded(save, metadata, arrayOf(script.toByteArray(), byteArrayOf()), snapshot)
-        return root.resolve(name).apply { outputStream().use { GameSave.writePayload(it, loaded) } }
+        val save = GameSave().apply { append(20, 0, 0, false, 0) }
+        val metadata = GameSave.Metadata(0, 1L, script, 1, 0, 1, "", "Story", false)
+        val loaded = GameSave.Loaded(save, metadata, arrayOf(script.toByteArray(), byteArrayOf()))
+        return root.resolve("emberfall.sav").apply { outputStream().use { GameSave.writePayload(it, loaded) } }
     }
 
     private fun progressState(read: Int, text: Byte? = null): GameProgress.State =
@@ -989,10 +1488,9 @@ class SystemNnnSaveInteropTest {
         }
     }
 
-    private fun put(root: File, name: String, content: String) {
+    private fun put(root: File, name: String, content: String): File =
         root.resolve(name).apply {
-            parentFile.mkdirs()
+            requireNotNull(parentFile).mkdirs()
             writeText(content)
         }
-    }
 }

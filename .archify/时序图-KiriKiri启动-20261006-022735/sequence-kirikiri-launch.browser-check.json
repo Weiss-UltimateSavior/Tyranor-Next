@@ -6,11 +6,11 @@
   "status": "pass",
   "visualReview": "not-requested",
   "provenance": "current",
-  "deliveryReceiptId": "797ec7ff-e429-4aa4-8b25-374e9958f0d3",
+  "deliveryReceiptId": "291ee251-9f4a-466d-bfef-5d57cadda5d0",
   "artifact": {
     "path": "/Users/weiss/opencode/rma/TyranorNext/.archify/时序图-KiriKiri启动-20261006-022735/sequence-kirikiri-launch.html",
-    "sha256": "39d7cb8a8ec43b6e8902f6208f7962c22c964b81ff304817fd10e5cf3ce03050",
-    "bytes": 769983
+    "sha256": "8418ca1059a83e2755812d86fa6d9bf0b3dfeb47abe9354b062e2b0435592b44",
+    "bytes": 770373
   },
   "state": {
     "detail": "read",

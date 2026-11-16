@@ -12,29 +12,39 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.theme.PageSecondaryTextColor
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.rememberEntranceState
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 
 /**
- * 占位页面：顶部栏复用统一组件 [AppTopBar]，正文居中显示标题和一句用于区分的话。
- * 仅用于新页面骨架搭建；真实功能页必须直接使用 [AppTopBar] 而非本组件。
+ * 占位页面：顶部栏复用统一组件 [AppSecondaryTopBar]，正文居中显示标题和一句用于区分的话。
+ * 仅用于新页面骨架搭建；真实功能页必须直接使用 [AppSecondaryTopBar] 而非本组件。
  */
 @Composable
 internal fun PlaceholderPage(title: String, description: String, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxSize()) {
-        AppTopBar(title = title)
+    val entrance = rememberEntranceState()
+    Column(modifier.fillMaxSize().skipEntranceOnDrag(entrance)) {
+        // 顶部栏与正文共用同一份入场节拍：标题先升起，正文标题与说明随后依次跟上
+        ProvideEntrance(entrance) {
+            AppSecondaryTopBar(title = title)
+        }
         // 正文区域
         Column(
             modifier = Modifier.fillMaxSize().padding(24.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
+            ProvideEntrance(entrance) {
+            Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.staggeredEntrance(0))
             Text(
                 description,
                 style = MaterialTheme.typography.bodyMedium,
                 color = PageSecondaryTextColor,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 16.dp),
+                modifier = Modifier.staggeredEntrance(1).padding(top = 16.dp),
             )
+            }
         }
     }
 }

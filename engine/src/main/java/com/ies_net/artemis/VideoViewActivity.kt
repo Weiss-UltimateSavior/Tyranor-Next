@@ -4,6 +4,7 @@ import tv.danmaku.ijk.media.player.IMediaPlayer
 import tv.danmaku.ijk.media.player.widget.IjkVideoView
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.res.AssetFileDescriptor
 import android.graphics.Color
 import android.media.AudioManager
@@ -23,6 +24,10 @@ class VideoViewActivity : Activity(), IMediaPlayer.OnCompletionListener, IMediaP
     private var pausedBySystem = false
     private var skip = 0
     private var videoView: IjkVideoView? = null
+
+    override fun setRequestedOrientation(requestedOrientation: Int) {
+        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
+    }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event != null && isSystemVolumeKey(event.keyCode)) return super.dispatchKeyEvent(event)

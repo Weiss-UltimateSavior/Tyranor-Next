@@ -164,8 +164,6 @@ SYSTEMNNN_LITERAL_BASELINE = {
     },
     "SaveSlots.java": {
         '"无效的存档编号"': 1,
-        '"存档编号不匹配"': 1,
-        '"无效的存档截图"': 1,
     },
     "GameRunner.java": {
         '"ムービー番号"': 1,

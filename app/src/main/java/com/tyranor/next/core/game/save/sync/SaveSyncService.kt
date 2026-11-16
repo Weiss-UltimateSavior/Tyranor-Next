@@ -173,6 +173,14 @@ class SaveSyncService internal constructor(
         true
     }
 
+    /** Called with the versions, active-directory and mutation locks held. */
+    internal fun requireSaveDirectoryRetirementAvailable(game: ScanGame, directoryKey: String) {
+        directoryActivations.requireAvailable(directoryKey)
+        if (activations.hasPendingForDirectory(localKey(game), directoryKey)) {
+            throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
+        }
+    }
+
     /** Local recovery remains available after WebDAV is disabled; it never imports an archive. */
     suspend fun recoverSelection(game: ScanGame) = withContext(Dispatchers.IO) {
         try {

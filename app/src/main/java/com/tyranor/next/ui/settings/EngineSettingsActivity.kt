@@ -4,8 +4,10 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import com.tyranor.next.ui.common.AppScreenActivity
+import com.tyranor.next.ui.common.motion.ProvideEntrance
 
 class EngineSettingsActivity : AppScreenActivity() {
+    /** 基类完成主题与动效档位初始化后校验引擎种类，缺少有效种类时不创建页面内容。 */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -16,7 +18,9 @@ class EngineSettingsActivity : AppScreenActivity() {
         }
 
         setAppScreenContent {
-            EngineSettingsDetailScreen(kind = kind)
+            ProvideEntrance {
+                EngineSettingsDetailScreen(kind = kind)
+            }
         }
     }
 

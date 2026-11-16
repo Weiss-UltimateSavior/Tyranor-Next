@@ -13,7 +13,7 @@
 #
 # 步骤（幂等可重跑；依赖以 staging 前缀 stamp 判定是否跳过）
 #   1) 源码：`--src` 指向本地 xsystem4 checkout（只读复用，克隆一份到构建目录）；缺省 clone fork；
-#      两种情况都 checkout 固定 commit，并拉取 libsys4 / libsndfile(xsystem4 分支) 固定 commit；
+#      两种情况都检出目标 commit（`--ref`，缺省固定基线），并拉取 libsys4 / libsndfile(xsystem4 分支) 固定 commit；
 #   2) 依赖下载：§2.2 全表 + cglm；SHA1/SHA256 校验，失败即退出；SDL2 仅取头文件；
 #      `libSDL2x.so` 必须与 `engine/xsystem35/BUILD.md` 记录的入库产物 SHA-256 一致；
 #   3) staging 构建：ogg / vorbis / freetype / libjpeg-turbo / libwebp / libpng / libdeflate /
@@ -30,6 +30,8 @@
 #   --shaders-out <dir>    着色器输出目录（默认 <repo>/engine/src/main/assets/shaders）
 #   --licenses-out <dir>   许可文本输出目录（默认 <repo>/engine/xsystem4/licenses）
 #   --src <path>           本地 xsystem4 checkout（默认 clone fork 到 <build-dir>/src/xsystem4）
+#   --ref <rev>            构建的 xsystem4 版本（commit / 分支 / tag，默认固定基线 FORK_COMMIT；
+#                          传 HEAD 之类的分支名会随克隆当前状态变化，发布记录请写明完整 commit）
 #   --sdk <path>           Android SDK 根目录（默认 $ANDROID_SDK_ROOT / $ANDROID_HOME / ~/Library/Android/sdk）
 #   --cmake <path>         cmake 可执行文件（默认 <sdk>/cmake/3.31.1/bin/cmake）
 #   --ndk <path>           NDK 根目录（默认 <sdk>/ndk/28.0.13004108）
@@ -57,7 +59,7 @@ HOST_CMAKE_DIR="${XSYS4_DIR}/android-host/cmake"
 
 # ---- 固定基线（与 BUILD.md §1 一致） ---------------------------------------
 FORK_URL="https://github.com/Weiss-UltimateSavior/xsystem4"
-FORK_COMMIT="6a94a0c5637ce640e787b505ffb2bd21e881f970"
+FORK_COMMIT="46f7c253d63d7b513516f42af027419314cbf047"
 LIBSYS4_URL="https://github.com/Weiss-UltimateSavior/libsys4"
 LIBSYS4_COMMIT="e2bf438d0156a2ca70fc6018fddf7c870794a2ca"
 LIBSNDFILE_URL="https://github.com/Weiss-UltimateSavior/libsndfile"
@@ -81,6 +83,7 @@ OUT_DIR="${REPO_ROOT}/engine/src/main/jniLibs/arm64-v8a"
 SHADERS_OUT="${REPO_ROOT}/engine/src/main/assets/shaders"
 LICENSES_OUT="${XSYS4_DIR}/licenses"
 SRC_DIR=""
+XS4_REF="${FORK_COMMIT}"
 SDK_DIR="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Library/Android/sdk}}"
 CMAKE_BIN=""
 NDK_DIR=""
@@ -94,6 +97,7 @@ while [ $# -gt 0 ]; do
         --shaders-out)  SHADERS_OUT="${2:?--shaders-out 需要参数}"; shift 2 ;;
         --licenses-out) LICENSES_OUT="${2:?--licenses-out 需要参数}"; shift 2 ;;
         --src)          SRC_DIR="${2:?--src 需要参数}"; shift 2 ;;
+        --ref)          XS4_REF="${2:?--ref 需要参数}"; shift 2 ;;
         --sdk)          SDK_DIR="${2:?--sdk 需要参数}"; shift 2 ;;
         --cmake)        CMAKE_BIN="${2:?--cmake 需要参数}"; shift 2 ;;
         --ndk)          NDK_DIR="${2:?--ndk 需要参数}"; shift 2 ;;
@@ -300,13 +304,19 @@ else
         git clone -q "${FORK_URL}" "${XS4_SRC}"
     fi
 fi
-if [ "$(git -C "${XS4_SRC}" rev-parse HEAD 2>/dev/null || echo none)" != "${FORK_COMMIT}" ]; then
-    git -C "${XS4_SRC}" cat-file -e "${FORK_COMMIT}^{commit}" 2>/dev/null \
-        || git -C "${XS4_SRC}" fetch -q origin
-    git -C "${XS4_SRC}" checkout -q --detach "${FORK_COMMIT}"
+# 解析目标 commit：--ref 可给短哈希 / 分支 / tag，在克隆内解析成完整 40 位；
+# 克隆里没有的对象先 fetch（默认 clone 的 origin 是 fork）。
+if ! XS4_TARGET="$(git -C "${XS4_SRC}" rev-parse --verify --quiet "${XS4_REF}^{commit}")"; then
+    log "fetch origin（解析 --ref ${XS4_REF}）"
+    git -C "${XS4_SRC}" fetch -q origin || die "git fetch 失败，无法解析 --ref ${XS4_REF}"
+    XS4_TARGET="$(git -C "${XS4_SRC}" rev-parse --verify --quiet "${XS4_REF}^{commit}")" \
+        || die "无法解析 --ref：${XS4_REF}"
 fi
-[ "$(git -C "${XS4_SRC}" rev-parse HEAD)" = "${FORK_COMMIT}" ] || die "xsystem4 checkout 不在固定 commit ${FORK_COMMIT}"
-log "xsystem4 固定 commit：${FORK_COMMIT}"
+if [ "$(git -C "${XS4_SRC}" rev-parse HEAD 2>/dev/null || echo none)" != "${XS4_TARGET}" ]; then
+    git -C "${XS4_SRC}" checkout -q --detach "${XS4_TARGET}"
+fi
+[ "$(git -C "${XS4_SRC}" rev-parse HEAD)" = "${XS4_TARGET}" ] || die "xsystem4 checkout 不在目标 commit ${XS4_TARGET}"
+log "xsystem4 目标 commit：${XS4_TARGET}（--ref ${XS4_REF}）"
 
 # libsys4 子模块：不依赖 git submodule update，不改 .gitmodules（方案 §5.4-0）
 LIBSYS4_DIR="${XS4_SRC}/subprojects/libsys4"
@@ -570,7 +580,7 @@ build_cmake_dep sndfile "${LIBSNDFILE_SRC}" "${LIBSNDFILE_COMMIT}" \
 XS4_BUILD="${BUILD_TREE}/xsystem4"
 
 # 顶层 -S 直接指向 fork 检出（不写 wrapper：上游 git rev-parse 必须取到 fork 提交号）。
-log "cmake 配置：xsystem4 @ ${FORK_COMMIT}"
+log "cmake 配置：xsystem4 @ ${XS4_TARGET}"
 "${CMAKE_BIN}" -S "${XS4_SRC}" -B "${XS4_BUILD}" "${COMMON_CMAKE_ARGS[@]}" \
     -DCMAKE_MODULE_PATH="${HOST_CMAKE_DIR}" \
     -DFETCHCONTENT_FULLY_DISCONNECTED=ON \
@@ -673,6 +683,7 @@ lic_copy "${THIRD_PARTY_DIR}/libffi-3.4.6/LICENSE"         "libffi-LICENSE.txt"
 lic_copy "${THIRD_PARTY_DIR}/libogg-1.3.5/COPYING"         "libogg-COPYING.txt"
 lic_copy "${THIRD_PARTY_DIR}/libvorbis-1.3.7/COPYING"      "libvorbis-COPYING.txt"
 lic_copy "${THIRD_PARTY_DIR}/libjpeg-turbo-3.1.0/LICENSE.md" "libjpeg-turbo-LICENSE.md"
+lic_copy "${THIRD_PARTY_DIR}/libjpeg-turbo-3.1.0/README.ijg" "README.ijg"
 lic_copy "${THIRD_PARTY_DIR}/libwebp-1.3.2/COPYING"        "libwebp-COPYING.txt"
 lic_copy "${THIRD_PARTY_DIR}/libwebp-1.3.2/PATENTS"        "libwebp-PATENTS.txt"
 lic_copy "${THIRD_PARTY_DIR}/libpng-1.6.47/LICENSE"        "libpng-LICENSE.txt"

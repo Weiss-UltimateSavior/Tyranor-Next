@@ -47,6 +47,7 @@ object PerGameSettingsStore {
     // Artemis
     const val F_ART_VERSION = "art_engine_version"
     const val F_ART_KERNEL = "artemis_kernel"
+    /** Legacy per-game override retained in the stored settings shape; no longer affects launches. */
     const val F_ART_ROTATE = "art_rotate_screen"
     const val F_ART_PATCH = "art_auto_patch"
     const val F_ART_RESOLUTION = "art_resolution"
@@ -115,6 +116,10 @@ object PerGameSettingsStore {
     const val F_ETHORNELL_NLS = "ethornell_nls"
     const val F_ETHORNELL_FONT = "ethornell_font"
     const val F_CMVS_FONT = "cmvs_font"
+    const val F_SYSTEMNNN_FULLSCREEN = "systemnnn_fullscreen"
+    const val F_SYSTEMNNN_READING_SIZE = "systemnnn_reading_size"
+    const val F_SYSTEMNNN_EXE_ANALYSIS = "systemnnn_exe_analysis"
+    const val F_SYSTEMNNN_DEBUG_MODE = "systemnnn_debug_mode"
     const val F_FVP_SYSTEM_FONT = "fvp_system_font"
     const val F_FVP_TEXT_HIDPI = "fvp_text_hidpi"
     const val F_FVP_FONT = "fvp_font"

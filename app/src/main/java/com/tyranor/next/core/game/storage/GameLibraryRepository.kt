@@ -156,6 +156,11 @@ object GameLibraryRepository {
         dao(context).getAllGames().map { it.toModel() }
     }
 
+    /** Resource reclamation must see the durable library after earlier writes have completed. */
+    internal suspend fun loadGamesAfterWrites(context: Context): List<ScanGame> = withContext(writeDispatcher) {
+        writeMutex.withLock { loadGames(context) }
+    }
+
     /** 权威差量落库：变更行单行 upsert（保留首次发现时间），消失行删除（级联清理快捷启动）。 */
     suspend fun applyDiff(context: Context, previous: List<ScanGame>, updated: List<ScanGame>) =
         withContext(Dispatchers.IO) {
@@ -286,9 +291,13 @@ object GameLibraryRepository {
         true
     }
 
-    suspend fun removeRoot(context: Context, rootKey: String): Boolean = withContext(Dispatchers.IO) {
+    internal suspend fun removeRootAndGames(context: Context, rootKey: String, gameUris: Set<String>) = withContext(Dispatchers.IO) {
         ensureMigrated(context)
-        dao(context).deleteRoot(rootKey) > 0
+        GameLibraryDatabase.get(context).withTransaction {
+            val dao = dao(context)
+            dao.deleteRoot(rootKey)
+            gameUris.chunked(SQL_CHUNK_SIZE).forEach { dao.deleteGamesByUris(it) }
+        }
     }
 
     // ============ quick_launch ============

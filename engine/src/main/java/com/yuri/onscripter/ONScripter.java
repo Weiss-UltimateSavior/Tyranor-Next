@@ -30,6 +30,7 @@ import android.view.ViewGroup;
 import org.libsdl.app.SDLActivity;
 
 import com.core.engine.DoubleBackExit;
+import com.core.engine.EngineSurfaceStartupController;
 import com.core.engine.LaunchContract;
 import com.core.engine.R;
 import com.core.nativeplugin.IjkRuntime;
@@ -64,6 +65,7 @@ public class ONScripter extends SDLActivity {
     private boolean autoMode = false;
     /** 视频覆盖播放控制器：在本 Activity 窗口内覆盖播放，不启动独立 Activity。 */
     private OnsVideoOverlay videoOverlay;
+    private EngineSurfaceStartupController startupController;
     private native int nativeInitJavaCallbacks();
     private native int nativeGetWidth();
     private native int nativeGetHeight();
@@ -106,16 +108,26 @@ public class ONScripter extends SDLActivity {
         try { nativeInitJavaCallbacks(); } catch (Throwable t) { Log.w(TAG, "nativeInitJavaCallbacks failed", t); }
         setupVirtualControls();
         fullscreen();
+        attachStartupOverlay();
+    }
+
+    private void attachStartupOverlay() {
+        if (mBrokenLibraries || mSurface == null || mLayout == null) return;
+        ViewGroup content = findViewById(android.R.id.content);
+        startupController = new EngineSurfaceStartupController(this);
+        startupController.attachTo(content != null ? content : mLayout, mSurface.getHolder());
     }
 
     @Override public void onResume() {
         super.onResume();
         fullscreen();
+        if (startupController != null) startupController.onResume();
         // 播片期间切后台会暂停解码，回到前台必须恢复，否则视频停在暂停帧。
         if (videoOverlay != null) videoOverlay.onHostResume();
     }
 
     @Override public void onPause() {
+        if (startupController != null) startupController.onPause();
         super.onPause();
         // 切后台时暂停解码：overlay 不随 Activity 销毁，回来还在。
         if (videoOverlay != null) videoOverlay.onHostPause();
@@ -123,6 +135,7 @@ public class ONScripter extends SDLActivity {
 
     @Override public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        if (startupController != null) startupController.onWindowFocusChanged(hasFocus);
         if (hasFocus) fullscreen();
     }
 
@@ -540,6 +553,10 @@ public class ONScripter extends SDLActivity {
     @Override
     @SuppressLint("MissingSuperCall")
     public void onDestroy() {
+        if (startupController != null) {
+            startupController.dispose();
+            startupController = null;
+        }
         // 先收掉视频覆盖层：ijk 的 Surface/播放器必须在本进程被杀之前释放，
         // 否则 HWUI 渲染线程会操作已销毁的 SurfaceTexture，退出游戏时崩溃
         //（FORTIFY: pthread_mutex_lock called on a destroyed mutex / hwuiTask1 SIGABRT）。
@@ -606,6 +623,11 @@ public class ONScripter extends SDLActivity {
                         | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                         | android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
         setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+    }
+
+    @Override
+    public void setRequestedOrientation(int requestedOrientation) {
+        super.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
     }
 
     private String normalizeRootPath(String value) {

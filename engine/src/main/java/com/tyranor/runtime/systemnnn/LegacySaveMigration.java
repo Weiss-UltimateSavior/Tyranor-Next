@@ -49,7 +49,7 @@ final class LegacySaveMigration {
             Path host=files.resolve("systemnnn");
             if(exists(host,true))plan(host.resolve(key),key);
             // Keep the player's existing recovery prompt reachable if neither legacy layout
-            // has a readable generation. Other migrated slots can still be committed.
+            // has a readable generation. Other global records can still be committed.
             if(damagedProgress!=null)
                 copies.putIfAbsent(saves.resolve(PREFIX+READ).getFileName(),damagedProgress);
             if(!copies.isEmpty()){
@@ -73,31 +73,17 @@ final class LegacySaveMigration {
 
     private void plan(Path files,String key) throws IOException {
         if(!exists(files,true))return;
-        try(DirectoryStream<Path> candidates=Files.newDirectoryStream(files,key+"*")){
-            for(Path file:candidates){
-                String suffix=file.getFileName().toString().substring(key.length());
-                Integer slot=SaveSlots.committedSlot(suffix);
-                if(slot!=null)planFile(files,key,SaveSlots.suffix(slot),THUMB);
-            }
-        }
-        planFile(files,key,SaveSlots.LAST_SELECTION,null);
         planProgress(files,key);
-        planFile(files,key,GALLERY,null);
+        planFile(files,key,GALLERY);
         planChart(files.resolve(key+CHART));
     }
 
-    private void planFile(Path files,String key,String suffix,String companion) throws IOException {
+    private void planFile(Path files,String key,String suffix) throws IOException {
         Path source=committed(files.resolve(key+suffix));
         if(source==null)return;
         foundLegacy=true;
         Path name=saves.getFileSystem().getPath(PREFIX+suffix);
         if(copies.containsKey(name) || committed(saves.resolve(name))!=null)return;
-        if(companion!=null){
-            Path sideName=saves.getFileSystem().getPath(PREFIX+suffix+companion);
-            Path existing=committed(saves.resolve(sideName));
-            Path side=committed(files.resolve(key+suffix+companion));
-            if(existing==null && side!=null)copies.put(sideName,side);
-        }
         copies.put(name,source);
     }
 
@@ -153,13 +139,13 @@ final class LegacySaveMigration {
             if(path.equals(stage)||path.equals(ready))continue;
             Path relative=stage.relativize(path);
             boolean directory=chartDirectory(relative);
-            if(!(directory||ownedFile(relative)) || !exists(path,directory))
+            if(!(directory||ownedFile(relative)||retiredSlot(relative)) || !exists(path,directory))
                 throw new IOException("无法识别迁移暂存项 · "+path);
         }
         for(Path path:pending){
             if(path.equals(stage)||path.equals(ready))continue;
             Path relative=stage.relativize(path);
-            if(!complete || chartDirectory(relative))Files.delete(path);
+            if(!complete || chartDirectory(relative) || retiredSlot(relative))Files.delete(path);
             else publish(path,relative);
         }
         Files.deleteIfExists(ready);
@@ -174,9 +160,7 @@ final class LegacySaveMigration {
             Files.createDirectories(target.getParent());
         }
         String name=target.getFileName().toString();
-        Path base=null;
-        if(name.endsWith(THUMB))base=target.resolveSibling(name.substring(0,name.length()-THUMB.length()));
-        else if(name.equals(PREFIX+READ+".ext"))base=saves.resolve(PREFIX+READ);
+        Path base=name.equals(PREFIX+READ+".ext")?saves.resolve(PREFIX+READ):null;
         if(committed(target)!=null || base!=null && committed(base)!=null)Files.delete(source);
         else Files.move(source,target);
     }
@@ -187,8 +171,14 @@ final class LegacySaveMigration {
                 chartPage(relative.getName(1)) && chartNode(relative.getName(2));
         if(relative.getNameCount()!=1)return false;
         String name=relative.toString();
-        if(name.equals(PREFIX+READ) || name.equals(PREFIX+READ+".ext") || name.equals(PREFIX+GALLERY) ||
-            name.equals(PREFIX+SaveSlots.LAST_SELECTION) || name.equals(PREFIX+SaveSlots.SLOT_UI))return true;
+        return name.equals(PREFIX+READ) || name.equals(PREFIX+READ+".ext") || name.equals(PREFIX+GALLERY) ||
+            name.equals(PREFIX+SaveSlots.LAST_SELECTION) || name.equals(PREFIX+SaveSlots.SLOT_UI);
+    }
+
+    // A ready transaction made by an older player may contain copies of retired slots.
+    static boolean retiredSlot(Path relative) {
+        if(relative.getNameCount()!=1)return false;
+        String name=relative.toString();
         if(!name.startsWith(PREFIX))return false;
         String suffix=name.substring(PREFIX.length());
         if(suffix.endsWith(THUMB))suffix=suffix.substring(0,suffix.length()-THUMB.length());
