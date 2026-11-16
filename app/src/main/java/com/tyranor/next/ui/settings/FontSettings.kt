@@ -73,11 +73,15 @@ internal object FontImport {
 }
 
 /**
- * 字体选择行（m19）：Miuix ArrowPreference + 统一弹窗（「跟随/内置」项 + 「选择字体文件」项）。
- * 全局字体与单游戏覆盖共用同一组件，仅 [followLabel] 与值展示方式不同。
+ * 字体选择行（m19）：Miuix ArrowPreference + 统一弹窗（「跟随/内置」项 + 「选择字体文件」项；
+ * 单游戏覆盖页经 [onBuiltIn] 追加第三项「内置字体」形成三态，与 FVP/CMVS 的
+ * OverrideFontPreference 一致）。全局字体与单游戏覆盖共用同一组件，仅 [followLabel]、
+ * [onBuiltIn] 与值展示方式不同。
  *
  * @param value 当前生效字体名（或“跟随全局（xx）”文案）
  * @param followLabel 弹窗第一项文案：全局页用「使用内置字体」，单游戏页用「跟随全局」
+ * @param onBuiltIn 弹窗「内置字体」项回调（写空串覆盖）；null=不显示该项（全局页首项
+ *   「使用内置字体」已覆盖该语义，保持两态）
  * @param valueInSummary true 时值显示在标题下方（单游戏覆盖版的摘要形态），false 显示在行尾
  */
 @Composable
@@ -87,6 +91,7 @@ internal fun FontPreference(
     followLabel: String,
     onFollow: () -> Unit,
     onPick: () -> Unit,
+    onBuiltIn: (() -> Unit)? = null,
     valueInSummary: Boolean = false,
     enabled: Boolean = true,
 ) {
@@ -116,7 +121,7 @@ internal fun FontPreference(
             onDismissRequest = { open = false },
             title = { Text(label, style = MaterialTheme.typography.titleMedium) },
             text = {
-                // 两个选项依次弹入（与添加游戏弹窗同一写法）
+                // 选项依次弹入（与添加游戏弹窗同一写法）；onBuiltIn 存在时为三态
                 ProvideEntrance {
                 Column(
                     modifier = Modifier.fillMaxWidth().skipEntranceOnDrag(),
@@ -132,8 +137,20 @@ internal fun FontPreference(
                         onFollow()
                         open = false
                     }
+                    if (onBuiltIn != null) {
+                        AppNavItem(
+                            modifier = Modifier.staggeredEntrance(1),
+                            title = stringResource(R.string.engine_settings_builtin_font),
+                            leadingIcon = R.drawable.ic_font_bookmark,
+                            containerColor = DialogItemSurface,
+                            indication = null,
+                        ) {
+                            onBuiltIn()
+                            open = false
+                        }
+                    }
                     AppNavItem(
-                        modifier = Modifier.staggeredEntrance(1),
+                        modifier = Modifier.staggeredEntrance(if (onBuiltIn != null) 2 else 1),
                         title = stringResource(R.string.engine_settings_select_font_file),
                         leadingIcon = R.drawable.ic_font_bookmark,
                         containerColor = DialogItemSurface,

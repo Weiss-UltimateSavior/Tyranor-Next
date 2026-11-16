@@ -261,16 +261,16 @@ object PerGameSettingsStore {
         persist(context, gameId, json)
     }
 
-    /** 字符串字段覆盖值；null=未覆盖（跟随全局），""=覆盖为空串（如内置字体）。 */
+    /** 字符串字段覆盖值；null=未覆盖（跟随全局），""=覆盖为空串（如内置字体）。JSON null 与缺键同义。 */
     fun getStr(context: Context, gameId: String, key: String): String? {
         val j = load(context, gameId)
-        return if (j.has(key)) j.optString(key) else null
+        return overrideStr(j, key)
     }
 
-    /** 布尔字段覆盖值；null=未覆盖（跟随全局）。 */
+    /** 布尔字段覆盖值；null=未覆盖（跟随全局）。JSON null 与缺键同义。 */
     fun getBool(context: Context, gameId: String, key: String): Boolean? {
         val j = load(context, gameId)
-        return if (j.has(key)) j.optBoolean(key) else null
+        return overrideBool(j, key)
     }
 
     /** 设置字符串覆盖；value=null 表示移除该覆盖（跟随全局）。 */
