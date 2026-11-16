@@ -39,11 +39,15 @@ Siglus 之外由 game_launcher 运行库承载的三个软件渲染引擎（Real
 _Avoid_: 软渲染引擎、game_fb 引擎
 
 **外置 APK 引擎模块（External Engine Module）**:
-以独立 Android 应用形式分发、由用户另行安装的引擎运行时，用于承载 Ren'Py、RPG Maker RGSS 与 Ruffle（SWF / Flash）等游戏，由固定包名与静态注册表管理，与动态发现的「第三方 APK 运行时模块」是两套体系。游戏由模块运行，主 App 管理扫描、安装状态与启动协议，并对 Android 11 及以上 Ren’Py 的游戏目录存档提供统一管理。
+以独立 Android 应用形式分发、由用户另行安装的引擎运行时，用于承载 Ren'Py、RPG Maker RGSS、Ruffle（SWF / Flash）与 MAGES. 等游戏，由固定包名与静态注册表管理，与动态发现的「第三方 APK 运行时模块」是两套体系。游戏由模块运行，主 App 管理扫描、安装状态与启动协议，并对 Android 11 及以上 Ren’Py 的游戏目录存档提供统一管理。
 _Avoid_: 插件、引擎 DLC、第三方 APK 运行时模块（另一体系）
 
+**MAGES. 引擎（EngineType.IMPACTO）**:
+MAGES.（前 5pb.）的视觉小说引擎（SC3 脚本，如 Memories Off 6、Chaos;Child、Robotics;Notes 等）；Tyranor 通过外置 Impacto 宿主 APK 承载其开源重新实现 impacto 来运行这类游戏。「impacto」是项目 / 宿主名，不是引擎名；`EngineType.IMPACTO` 等代码标识沿用项目名。
+_Avoid_: 把 Impacto 当作引擎名（界面、文档中的引擎名一律写 MAGES.）
+
 **第三方 APK 运行时模块（Third-party APK Runtime Module）**:
-用户自行安装、以 `com.tyranor.runtime.` 包名前缀并声明 `com.tyranor.runtime.action.LAUNCH` 的独立 APK，接收游戏文件夹路径自行运行游戏；主 App 只负责发现、启用、扫描描述解释与交棒。
+用户自行安装、以 `com.tyranor.runtime.` 包名前缀并声明 `com.tyranor.runtime.action.LAUNCH` 的独立 APK，接收游戏文件夹路径自行运行游戏。主 App 负责发现、启用、扫描与交棒，并按模块可选声明提供单游戏配置及游戏目录内的统一存档管理。
 _Avoid_: 插件、外置引擎（指 JoiPlay 时）、外置 APK 引擎模块（指 JoiPlay 注册表体系时）
 
 **运行时模块绑定（Runtime Module Binding）**:
@@ -53,6 +57,14 @@ _Avoid_: 手动绑定、模块别名、externalModuleAlias
 **模块扫描描述（Runtime Module Scan Descriptor）**:
 第三方运行时模块在自己 `res/raw/tyranor_runtime.json` 中声明的 `extensions` / `markers`（及 `match`），是主 App 自动扫描该模块游戏的唯一特征来源。
 _Avoid_: 内置特征库、插件清单、手动绑定
+
+**模块设置描述（Runtime Module Settings Descriptor）**:
+第三方 APK 运行时模块声明的单游戏设置项、类型、约束与默认值；用户覆盖值优先于模块默认值，不继承全局引擎配置。
+_Avoid_: 模块全局设置、JoiPlay settings
+
+**模块存档声明（Runtime Module Save Descriptor）**:
+第三方 APK 运行时模块声明的游戏目录内固定存档子目录，是该模块游戏接入统一文件存档管理的能力依据。它不代表搬迁存档或授权访问模块私有数据。
+_Avoid_: 全局存档目录、存档重定向
 
 **PC 游戏（手动添加）**:
 用户手动加入游戏库、经外置 Winlator 运行的 Windows 程序，不限定为已识别的视觉小说引擎家族。其运行参数属于 Winlator 设置域。

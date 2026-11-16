@@ -89,6 +89,10 @@ object RuntimeModuleDiscovery {
             activityName = activity.name.orEmpty(),
             scan = manifest?.scan,
             enabled = false,
+            settings = manifest?.settings,
+            saves = manifest?.saves,
+            settingsDiagnostic = manifest?.settingsDiagnostic,
+            savesDiagnostic = manifest?.savesDiagnostic,
         )
     }
 

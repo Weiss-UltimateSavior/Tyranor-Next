@@ -93,6 +93,7 @@
 | RPG Maker RGSS | XP/VX/VX Ace 资源或 mkxp-z 模块选择 | 外置 RPGM APK 模块 |
 | Ren'Py | `.rpa`、`.rpy/.rpyc` 等组合 | 外置 Ren'Py APK；自动或指定 8.5.3 / 7.7.1 |
 | Ruffle / Flash | 顶层 `.swf`；根 `index.html/index.htm` + 唯一 SWF 的叶子目录 | 外置 Ruffle APK；一 SWF 一条记录 |
+| MAGES.（impacto） | 按精确大小写的根目录条目命中上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`）；恰好一个全命中才识别 | 外置 Impacto 宿主 APK（承载未改动的上游 CommitteeOfZero/impacto，PS3 数据布局；Windows／Steam 版数据不识别） |
 | 第三方运行时模块 | 已安装的 `com.tyranor.runtime.*` APK + 模块 `res/raw` 扫描描述 | 显式组件交棒游戏文件夹，模块自行运行 |
 | YU-RIS / CatSystem2 | YPF/DLL/配置或 INT/CST/HG3 等组合 | 外置 Winlator |
 | PC / 安卓游戏 | 手动添加目录+exe / 应用包名 | 外置 Winlator / 直接启动应用 |
@@ -116,6 +117,14 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 - `configuration.json`：游戏目录位于主外部存储根的子目录时，插件优先读取 `<游戏目录>/configuration.json`；其它情况（含存储根、可移动存储）读取 `/storage/emulated/0/JoiPlay/games/<id>/configuration.json`。文件存在时覆盖 intent settings；主 App 仅在文件已存在且为合法 JSON 对象时同步受管键，不创建/删除，跳过共享多 SWF 目录与存储根，原子写并限制 1 MiB。
 - 无统一存档管理，插件自管运行时/存档；不提供虚拟按键重映射；插件固定横屏。设备/插件运行验证尚未执行。
 
+MAGES. 引擎（经开源重新实现项目 impacto，未改动的上游 CommitteeOfZero/impacto）由外置 Impacto 宿主 APK 承载，宿主在独立仓库 yuukana1/Tyranor-Next-Impacto 构建、签名并发布，当前边界如下：
+
+- 扫描：按**精确大小写**的根目录条目名匹配上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`），恰好一个 profile 全部命中才识别；`darling` 与全小写 `mo6tw` 的要求集合相同，一律不识别。`launchTarget` 为 profile id，别名 `internal.impacto`。Windows／Steam 版数据（小写 `.cpk`、无 `SCRIPT.cls`）不识别为 Impacto。
+- 获取：引擎页点击 MAGES. 条目跳转到 `https://github.com/yuukana1/Tyranor-Next-Impacto/releases/latest/download/impacto-host.apk`（资产名固定，随宿主新发布自动指向最新版）；未安装或版本低于 `ImpactoHostContract.VERSION_CODE` 时与其他外置模块一样提示并引导下载。
+- 启动：发 `com.tyranor.next.impacto.action.RUN`，携带游戏目录、profile、`gameKey` 与标题，需要「所有文件访问」；宿主没有桌面入口。
+- 存档与配置在宿主私有目录内按游戏隔离，主 App 不提供文件存档管理；单游戏设置页只显示说明。
+- 验证状态：宿主引擎库只在一台真机上跑到读脚本失败为止（见 `docs/impacto-upstream-only.md`），没有受支持的游戏数据进到画面，渲染、声音、输入、存读档均未验证。
+
 ### 第三方 APK 运行时模块
 
 来源：`core/engine/runtime/`、`ui/runtime/`。
@@ -126,8 +135,10 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 - **扫描接入**：扫描开始时快照「已发现 + 已启用 + 有扫描描述」的模块；仅当内置识别结果为 `UNKNOWN` 或 `WEB_OTHER` 时才尝试模块匹配，KRKR / ONS / RPGM / Ren'Py 等强特征结果不被覆盖。多模块命中按「`all` 优先于 `any` → marker 数量多 → 包名」选择；重扫对同一 URI 优先保留旧绑定，扫描深度沿用现有上限。
 - **唯一入库入口**：扫描是第三方运行时游戏唯一入库入口；管理页、添加游戏对话框和游戏页均不提供手动添加、模块选择、目录导入或拖入，也不提供手动绑定/重绑或模块缺失修复页。
 - **绑定与降级**：`ScanGame.runtimeModulePackage`（Room `games.runtime_module_package`，v3）记录「游戏 → 模块包名」；模块卸载、禁用、入口不再可发现或包名为空时，绑定游戏降级为 `EngineType.UNKNOWN`，但保留最后已知包名（用于重扫合并，不作为启动依据），保留标题、封面与最近时间。发现查询失败不降级。重新安装/启用后重新扫描可恢复，不支持自动或手动改绑。
-- **启动交棒**：`EngineType.RUNTIME_MODULE` 由 `RuntimeModuleLauncher` 以显式 `ComponentName` 启动，只传当前游戏文件夹绝对路径、标题与协议版本；不传 `game` / `settings` JSON，也不附加 URI 读写授权。`Dispatched` 只表示 Intent 已交棒，不保证模块进入游戏或未崩溃；模块缺失、未启用、入口缺失、路径无法解析、安全拒绝与其它异常返回类型化结果。模块缺失或未启用（存在绑定包名时）会触发该游戏降级；路径无法解析时不请求「所有文件访问」，存储权限由模块自行负责。
-- **能力边界**：`RUNTIME_MODULE` 不进入 `EngineLauncher.supportedEngines`，不出现在引擎页引擎列表；不接管存档（`GameSaveManager` 无统一接口）、虚拟按键/手柄重映射、引擎或单游戏设置。运行时、设置与存档均由模块自身管理。管理页的刷新只重新发现模块，不触发游戏库扫描；禁用仍有绑定游戏的模块前先确认，确认后降级。
+- **启动交棒**：`EngineType.RUNTIME_MODULE` 由 `RuntimeModuleLauncher` 以显式 `ComponentName` 启动，基础参数仍为当前游戏文件夹绝对路径、标题与协议版本 1。声明有效 `settings` 时另传 `com.tyranor.runtime.extra.SETTINGS` 字符串（`{"version":1,"values":{...}}`），不使用 JoiPlay 的 `game` / `settings` 包装，也不附加 URI 读写授权。`Dispatched` 只表示交棒，不保证游戏可运行；模块失效、路径无法解析、安全拒绝和配置读取失败返回类型化结果。存储权限由模块自行负责。
+- **单游戏设置**：可选 `settings.version=1` 声明布尔、枚举、文本和整数，游戏抽屉按能力显示「引擎设置」。配置按游戏 URI + 模块包名隔离，生效顺序为合法覆盖值 → 模块默认值；保存、逐项/全部恢复默认、未保存返回与描述变化冲突由统一页面处理，不新增全局配置。描述最大 64 KiB，最多 32 项，配置启动载荷最大 48 KiB；三块能力各自容错，非法设置不影响有效扫描或存档声明。
+- **统一存档**：可选 `saves.version=1` 的 `directory` 声明游戏内固定相对存档子目录，按能力提供存档导入、导出、删除、版本管理和 WebDAV 同步。拒绝根目录、绝对路径、父级跳转及根下符号链接；目录不存在为空且不预创建，权限不足或存储离线不能当空存档。事务相邻路径无可信所有权时拒绝操作并保留原文件。外置游戏未确认退出时禁止文件操作，即使关闭 WebDAV、模块失效或主 App 重启也保留保护；失效/移除条目仍有旧会话确认入口。模块目录声明变化不自动迁移存档或将旧版本恢复到新目标。
+- **能力边界**：`RUNTIME_MODULE` 不进入 `EngineLauncher.supportedEngines` 或引擎页列表，不新增模块全局设置，不接管模块私有存档、运行时与虚拟按键/手柄重映射。管理页刷新不触发扫描；禁用有绑定游戏的模块仍须确认。未声明有效设置/存档能力的旧模块沿用原行为。
 
 ## 5. 设置、输入与图形
 
@@ -222,7 +233,7 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 - **镜像写入 copy-up**：非只读打开（含截断/追加/仅写）对已索引占位先复制完整源内容到本地（上限 64 MiB、临时文件 + 原子发布 + fsync，失败回滚占位并不留所有权标记），再提供可写本地描述符；保护范围限于尚未交付可写描述符的 copy-up 准备/发布事务：失败不发布半成品或新所有权。可写描述符已交付后，合法截断及随后写入按本地语义执行，崩溃或空间不足可能留下空/部分覆写与标记，不自动用源内容覆盖这些本地结果。追加日志类文件同样先复制（其源通常为引擎自建文件，代价小）。
 - **SAF 镜像备份取舍**：`<数据根>/games/` 同时包含可重建占位树、真实存档/本地覆写文件及对应控制标记，控制标记随同一镜像根参加备份与清理。恢复仅含 exclude 的默认备份范围，保留 root、files、sharedpref、database、external 等域的默认候选；不添加只覆盖 games 的单独 include，以免把应用设置、游戏库 prefs 镜像及其他引擎存档排除。鉴权与 Room 数据库排除项不变，索引仍位于 noBackupFilesDir。系统备份仍受容量、设备与传输策略限制，不保证保存或恢复这些存档（`bmgr` 实测待办），用户仍应主动导出 ZIP。
 - ZIP 导入检查路径安全，最多 **20,000 个条目（含目录）**、展开内容 **1 GiB**；MV/MZ 可剥除最多 **3 层**单目录包装。适用的会话/操作门禁阻止运行中冲突。
-- **外置游戏的文件存档管理**：YU-RIS 管理游戏根 `save/`；Ren’Py 在 Android 11（API 30）及以上管理游戏根 `saves/`，覆盖手动导入、导出、删除、版本管理与 WebDAV 同步。Ren’Py 在 Android 10 及以下不开放入口、不解析目录或纳入整库同步，也不访问模块专属存档。Ren’Py 的手动导入、导出和删除与启动/同步共用目录门禁，运行标记未确认退出时拒绝操作。PSP、Switch、CatSystem2、PC、安卓游戏、RPG Maker RGSS、Ruffle、第三方运行时模块、VN 与 WebOther 当前不提供该统一文件存档接口。
+- **外置游戏的文件存档管理**：YU-RIS 管理游戏根 `save/`；Ren’Py 在 Android 11（API 30）及以上管理游戏根 `saves/`，第三方 APK 运行时模块按有效 saves 声明管理独立游戏内子目录；覆盖手动导入、导出、删除、版本管理与 WebDAV 同步。Ren’Py 在 Android 10 及以下不开放入口、不解析目录或纳入整库同步，也不访问模块专属存档。外置游戏的手动操作与启动/同步共用目录门禁，运行标记未确认退出时拒绝操作。PSP、Switch、CatSystem2、PC、安卓游戏、RPG Maker RGSS、Ruffle、无有效 saves 的第三方模块、VN 与 WebOther 当前不提供该统一文件存档接口。
 - MV/MZ 标准格式与 Tyranor 格式仅作文件名映射，不重新编码内容；MV 支持哈希名及历史键名，MZ 使用 `fileN.bin` 等 ASCII 键名。
 - 启动时发现适用标准存档可询问转化，已有目标不覆盖，原件留在 `original/`。
 - MV/MZ 存档互通默认关闭，支持全局/单游戏设置；开启后启动前与回前台进行双向同步，并等待引擎会话结束。按槽位比较时间与哈希；删除副本隔离到 `deleted/`，同步清单损坏时中止文件修改。
@@ -248,7 +259,7 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 - **ZIP 目录项**：中央目录与本地记录中的目录必须为空；目录名以 `/` 结尾不代表内容可跳过，带载荷目录在首字节验证时拒绝，避免隐式解压绕过大小和取消检查。
 - **拉取边界**：每次按游戏只获取云端当前最新版本（按 `createdAt` 与内容哈希排序），仅在该版本尚未被检查点标记为已见时下载。不会批量下载远端全部历史，也不提供直接浏览或恢复未拉取云端版本的入口；本地版本选择器只展示已经存在于本地历史中的版本。
 - 跨设备同一游戏默认以「引擎 + 游戏目录名」识别，不用绝对路径或可变标题；目录名冲突或不同时可在存档管理页自定义标识。该标识的领域术语为「同步身份（Sync Identity）」，UI 固定显示为「云端游戏标识」。本地历史与检查点以游戏 URI 私有关联。
-- 参与同步的前提是该引擎已有统一文件存档接口，且该游戏的存档当前可用（`resolveSaveLocation().available`）。YU-RIS 经 Winlator 运行但存档落游戏目录 `save/`，可以同步；PC、安卓游戏及第三方 APK 运行时模块等无文件存档接口的条目，在整库同步的云端身份分组前排除，不因同名目录误报身份冲突。受支持引擎的存档暂不可读时仍保留其云端身份占用，避免另一条目覆盖它。
+- 参与传输的前提是已有统一文件存档接口，且游戏存档当前可用（`resolveSaveLocation().available`）。YU-RIS 经 Winlator 运行但存档落游戏目录 `save/`，可以同步；PC、安卓游戏及明确无有效 saves 的第三方模块等无接口条目在整库同步身份分组前排除。第三方模块命名空间按包名隔离，发现未知或支持但暂不可读时保留身份占用，暂停文件传输，避免另一条目覆盖已有云端数据。
 - 自动检查按单游戏串行（协程锁），手动可整库或单游戏并指定方向。判定为运行时，**上传与切换一律拒绝**：切换前的内部备份捕获一并拒绝，需备份的上传/同步轮次计入 busy，切换返回「游戏运行中」错误；**拉取仍允许**——只把最新云端不可变 ZIP 存入本地历史，不触碰当前存档目录。存档页不提供单独的「保存当前存档版本」入口，本地版本由拉取、上传与切换过程自动保留。传输走 OkHttp（5.5.0）。
 - **结果提示**：每次手动或自动同步只经简短 Toast 告知「成功 / 无变化 / 失败：原因」，不展示完整计数或全部游戏失败清单；自动结果由进程内一次性待提示状态流，只由当前 `RESUMED` Activity 消费一次；仅「仍在运行、尚未完成」的空转轮询保持静默。配置 revision、session 或目录归属在事务中变化时返回独立的类型化 `LOCAL_STATE_CHANGED`，不冒充 `GAME_RUNNING`；`cleanupPending` 也有独立提示，不显示成游戏运行中。提示只在已配置 WebDAV 时出现；持久化开关 `showSyncFeedback`（默认 true，界面名「同步提示」）同时控制手动与自动结果，关闭只静音提示，不改变同步。单游戏手动同步无法读取加密配置时改在面板内显示凭据错误，不绕过静音设置强制弹 Toast；原有导出、导入、删除和 MV/MZ 互通结果仍保留长时提示。
 - 服务器地址、用户名、口令、模式、保留量与提示开关构成**单个加密载荷**，存于独立 prefs `webdav_sync_secure`，由 AndroidKeyStore AES/GCM 256 位密钥保护（与 Hikarinagi 令牌同一做法），并写入 `fullBackupContent` 与 `dataExtractionRules` 的云备份/设备迁移排除；解密失败保留密文待下次重试，也可经用户确认重置配置后重新填写；重置不清理存档历史。`WebDavConfig` 快照另携带独立的 `config_revision`；保存新载荷或重置配置时，payload 变更与 revision 递增在同一 prefs `commit()` 中完成，本地事务入口和真实 HTTP 请求 enqueue 前都核对快照 revision。该 revision 与关闭开关的 `disable_generation` 分离，配置修改不会模拟关闭/重开。
@@ -320,7 +331,7 @@ App 存档管理与 native 共用 `<游戏根>/savedata` user-root。宿主和 n
 | Winlator 运行模式 | 跟随全局/跟随容器/自定义三分支、`null / "" / 值` 迁移推断、只覆盖容器名时的 ID 清除、模式键分区往返 |
 | Winlator 图形加速 | GL/GDI 第一配置槽映射、旧 WineD3D 保留容器渲染器、Box64 合并、全局/单游戏继承与空值、备份往返、save 开关及 GDI 游戏实机验证 |
 | Ruffle / SWF | 一 SWF 一条与包装目录边界（根 index、唯一 SWF、无子目录、既有引擎信号优先）、文件 URI→父目录、`game`/`settings` 契约与类型包装、模块未安装/入口缺失、全局与单游戏覆盖、`configuration.json` 只同步不创建、无存档入口与横屏限制；设备/插件验证待执行 |
-| 第三方运行时模块 | action/前缀发现、默认关闭、启用只写开关、仅已启用模块参与扫描、描述匹配只补 `UNKNOWN`/`WEB_OTHER`、旧绑定优先、改名/封面更新不丢绑定、卸载/禁用降级与重扫恢复、显式组件交棒、无存档/按键/设置入口 |
+| 第三方运行时模块 | 原发现/扫描/绑定行为保持；scan/settings/saves 独立容错、四类单游戏配置隔离与传参、游戏内存档目录事务、WebDAV关闭时退出保护、旧会话确认、模块命名空间与目录变化保护；无全局设置与按键映射入口 |
 | 宿主/JNI | 暂停恢复、Surface 重挂/旧世代、正常退出 ACK 后重入、owner 线程与资源释放 |
 | 存档 | ZIP 路径/数量/体积限制、目标冲突、MV/MZ 名称与目录、互通删除/清单损坏、Ethornell 游戏目录存档、旧私有迁移/冲突/中断恢复、导入导出/门禁拒绝及移除条目保留存档 |
 | 存档同步 | WebDAV 总开关默认关、关闭时不联网/隐藏版本同步身份但保留恢复入口/保留独立配置、关闭在同一 prefs 提交中持久化 `enabled=false` 与 `disable_generation`、session 记录 enabledGeneration 且旧 ticket 立即失效并跨重启保持失效、新 launch 不继承关闭前 pending baseline、启动前忙碌判定忽略旧 ticket/grace 但保留独立宿主探测、关闭同步捕获旧 token 且异步清理不误删 replacement、`whileEnabled` 复核持久 generation、每个顶层及嵌套 DAV exchange 按持久 generation 与当前 revision 重新准入且响应等待不持本地锁、整库手动三方向与单游戏固定双向、只拉取每个游戏最新云端版本且不批量恢复远端历史、打开/退出即时与 fallback 四条任务链相互独立、每游戏至多一份待处理记录与 staging ZIP、导入前持久目录 owner/token/revision、owner 保留到 journal 清理成功、journal 删除前持久 completionCommitted、journal 已删后的残留 owner 可按已知结果释放、旧 token 只续接自身或 legacy 空 epoch、同一及父子相交目录的入口等到清理成功后才放行、清理扫描持久 activeKey 包含不可解析 alias、committed 完成保留 revision 使旧传输失效、已证明 precommit abort 恢复 previousRevision 并保留旧链 epoch、promotionActiveKey + promotionDirectoryRevision 绑定目录与目录 epoch、另一 URI 成功选择后暂停旧 alias promotion、跨目录或旧 revision 以 SAVE_LOCATION_CHANGED 暂停、导入前同字节不算提交证据、不同 uncommitted token 不清除更早 completed S→N、完成 token 防重复 promotion、恢复重试只补元数据不自动导入、completed promotion 的目录/revision 缺失、为空或不匹配均暴露“处理未完成切换”、恢复捕获 active N 与已验证历史 S 且不导入、清除未知 ancestry 后普通 N 同步且不误替换远端 S、当前同版本显式重选作为可选重建路径、10/20/无上限保留与旧值迁移不删历史、新旧云端目录合并读取且按时间+哈希比较、内容哈希幂等去重、标识冲突拒答、运行中禁止上传/切换而拉取放行、5 版上限只计 ZIP 版本且维护/新增前保护 pending selected、beforeHash 与可恢复 promotion source、无独立保存版本入口、旧版本 S 恢复后保存 N 仍按 S→N 单一更新链处理、普通 ZIP 导入保持原行为、早期 Debug 选择标记与保留量迁移、结果 Toast 受同步提示开关控制、YU-RIS 需先退出外部游戏且 PC 不参与 |

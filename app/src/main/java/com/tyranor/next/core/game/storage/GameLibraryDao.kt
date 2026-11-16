@@ -19,6 +19,9 @@ internal interface GameLibraryDao {
     @Query("SELECT * FROM games WHERE uri IN (:uris)")
     suspend fun getGamesByUris(uris: List<String>): List<GameEntity>
 
+    @Query("SELECT * FROM games WHERE uri = :uri LIMIT 1")
+    suspend fun getGameByUri(uri: String): GameEntity?
+
     @Query("SELECT COUNT(*) FROM games")
     suspend fun countGames(): Int
 

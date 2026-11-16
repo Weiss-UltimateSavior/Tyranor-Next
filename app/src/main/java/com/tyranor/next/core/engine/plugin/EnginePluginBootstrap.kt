@@ -106,6 +106,7 @@ object EnginePluginBootstrap {
             EngineType.RPGMAKER,
             EngineType.RENPY,
             EngineType.RUFFLE,
+            EngineType.IMPACTO,
             EngineType.PSP,
             EngineType.NINTENDO_SWITCH,
             EngineType.RUNTIME_MODULE,
