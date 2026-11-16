@@ -154,7 +154,7 @@
         </activity>
         <activity
             android:name=".MainActivity"
-            android:configChanges="uiMode"
+            android:configChanges="uiMode|orientation|screenSize|smallestScreenSize|screenLayout|density|keyboardHidden"
             android:enableOnBackInvokedCallback="true"
             android:exported="true" />
         <!--
