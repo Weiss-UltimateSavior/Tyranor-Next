@@ -11,8 +11,9 @@ Majiro 通过独立的 `majiro-emulator` APK 作为 TyranorNext 第三方运行�
 | entry Activity | `org.majiro.player.MainActivity` |
 | protocol | `1` |
 | launch extra | `com.tyranor.runtime.extra.FOLDER_PATH` |
+| compatible host | `majiro-emulator` 0.5+，versionCode 23+ |
 
-模块由 TyranorNext 的「引擎模块管理」页发现，初始为关闭状态。用户启用后手动扫描游戏目录，识别到的记录统一以 `EngineType.RUNTIME_MODULE` 入库，游戏卡显示 `Plugin`。
+模块由 TyranorNext 的「引擎模块管理」页发现，初始为关闭状态。用户启用后手动扫描游戏目录，识别到的记录统一以 `EngineType.RUNTIME_MODULE` 入库，游戏卡显示 `Plugin`。当前宿主实现最低要求为 `majiro-emulator` 0.5（versionCode 23）；第三方模块协议本身不提供版本门禁，用户应安装匹配版本。
 
 ## 扫描描述
 
