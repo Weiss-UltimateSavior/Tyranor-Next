@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">运行时模块示例</string>
+    <string name="folder">游戏目录：%1$s</string>
+    <string name="invalid_folder">仅接受 Download/TyranorRuntimeExample 下的直接子目录。</string>
+    <string name="received">收到的配置：\n%1$s</string>
+    <string name="write_save">写入测试存档</string>
+    <string name="read_save">读取测试存档</string>
+    <string name="grant_access">授予示例模块文件访问权限</string>
+    <string name="save_written">已写入 saves/state.json</string>
+    <string name="save_empty">尚无测试存档</string>
+    <string name="save_failed">操作失败：%1$s</string>
+    <string name="finish">结束示例游戏</string>
+</resources>

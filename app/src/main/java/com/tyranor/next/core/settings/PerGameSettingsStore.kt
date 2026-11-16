@@ -4,6 +4,7 @@ import android.content.Context
 import com.core.engine.EnginePrefs
 import com.tyranor.next.core.game.storage.GameOverridePartitions
 import com.tyranor.next.core.game.storage.GameOverridesRepository
+import com.tyranor.next.core.engine.runtime.RuntimeModuleSettingsSpec
 import org.json.JSONObject
 import java.util.Locale
 
@@ -18,6 +19,16 @@ import java.util.Locale
  * prefs 文件名契约锚点在 engine，改名只需改 EnginePrefs 一处。
  */
 object PerGameSettingsStore {
+
+    sealed interface RuntimeModuleSettingsSaveResult {
+        data object Saved : RuntimeModuleSettingsSaveResult
+        data object GameMissing : RuntimeModuleSettingsSaveResult
+        data object BindingChanged : RuntimeModuleSettingsSaveResult
+        data object ModuleDisabled : RuntimeModuleSettingsSaveResult
+        data object DescriptorChanged : RuntimeModuleSettingsSaveResult
+        data object InvalidValues : RuntimeModuleSettingsSaveResult
+        data class StorageFailure(val detail: String?) : RuntimeModuleSettingsSaveResult
+    }
 
     private val PREF_NAME = EnginePrefs.GAME_OVERRIDES_PREFS
 
@@ -199,6 +210,45 @@ object PerGameSettingsStore {
         val row = GameOverridesRepository.loadRowBlocking(context, gameId) ?: return JSONObject()
         return runCatching { GameOverridePartitions.assemble(row) }.getOrDefault(JSONObject())
     }
+
+    /** Read the current module's isolated overrides (never returns module defaults). */
+    fun getRuntimeModuleSettings(context: Context, gameUri: String, packageName: String): JSONObject {
+        if (gameUri.isBlank() || packageName.isBlank()) return JSONObject()
+        return load(context, gameUri)
+            .optJSONObject(GameOverridePartitions.KEY_RUNTIME_MODULE_SETTINGS)
+            ?.optJSONObject(packageName)
+            ?.let { JSONObject(it.toString()) }
+            ?: JSONObject()
+    }
+
+    /** Persist a validated module-only override object and await both prefs mirror and Room write. */
+    suspend fun saveRuntimeModuleSettings(
+        context: Context,
+        gameUri: String,
+        packageName: String,
+        spec: RuntimeModuleSettingsSpec,
+        overrides: JSONObject,
+    ): RuntimeModuleSettingsSaveResult = when (
+        val result = GameOverridesRepository.writeRuntimeModuleSettings(context, gameUri, packageName, spec, overrides)
+    ) {
+        GameOverridesRepository.RuntimeSettingsWriteResult.Saved -> RuntimeModuleSettingsSaveResult.Saved
+        GameOverridesRepository.RuntimeSettingsWriteResult.GameMissing -> RuntimeModuleSettingsSaveResult.GameMissing
+        GameOverridesRepository.RuntimeSettingsWriteResult.BindingChanged -> RuntimeModuleSettingsSaveResult.BindingChanged
+        GameOverridesRepository.RuntimeSettingsWriteResult.ModuleDisabled -> RuntimeModuleSettingsSaveResult.ModuleDisabled
+        GameOverridesRepository.RuntimeSettingsWriteResult.DescriptorChanged -> RuntimeModuleSettingsSaveResult.DescriptorChanged
+        GameOverridesRepository.RuntimeSettingsWriteResult.InvalidValues -> RuntimeModuleSettingsSaveResult.InvalidValues
+        is GameOverridesRepository.RuntimeSettingsWriteResult.StorageFailure ->
+            RuntimeModuleSettingsSaveResult.StorageFailure(result.detail)
+    }
+
+    suspend fun clearRuntimeModuleSettings(
+        context: Context,
+        gameUri: String,
+        packageName: String,
+        spec: RuntimeModuleSettingsSpec,
+    ): RuntimeModuleSettingsSaveResult = saveRuntimeModuleSettings(
+        context, gameUri, packageName, spec, JSONObject(),
+    )
 
     fun getGraphicsOverride(context: Context, gameId: String, family: GraphicsFamily): GraphicsOverride =
         GraphicsSettingsCodec.readOverride(load(context, gameId), family)
@@ -445,7 +495,12 @@ object PerGameSettingsStore {
      * `GameOverridesRepository.syncFromPrefs` 回灌保证历史数据不丢。
      */
     private fun persist(context: Context, gameId: String, record: JSONObject) {
-        GameOverridesRepository.updateRecord(context, gameId, record)
-        prefs(context).edit().putString(gameId, record.toString()).apply()
+        synchronized(GameOverridesRepository.runtimeModuleSettingsMirrorLock) {
+            val mirror = prefs(context).getString(gameId, null)
+                ?.let { runCatching { JSONObject(it) }.getOrNull() }
+            if (mirror != null) GameOverridesRepository.preserveRuntimeModuleSettings(mirror, record)
+            GameOverridesRepository.updateRecord(context, gameId, record)
+            prefs(context).edit().putString(gameId, record.toString()).apply()
+        }
     }
 }

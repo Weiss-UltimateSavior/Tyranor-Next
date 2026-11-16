@@ -43,7 +43,7 @@ _Avoid_: 软渲染引擎、game_fb 引擎
 _Avoid_: 插件、引擎 DLC、第三方 APK 运行时模块（另一体系）
 
 **第三方 APK 运行时模块（Third-party APK Runtime Module）**:
-用户自行安装、以 `com.tyranor.runtime.` 包名前缀并声明 `com.tyranor.runtime.action.LAUNCH` 的独立 APK，接收游戏文件夹路径自行运行游戏；主 App 只负责发现、启用、扫描描述解释与交棒。
+用户自行安装、以 `com.tyranor.runtime.` 包名前缀并声明 `com.tyranor.runtime.action.LAUNCH` 的独立 APK，接收游戏文件夹路径自行运行游戏。主 App 负责发现、启用、扫描与交棒，并按模块可选声明提供单游戏配置及游戏目录内的统一存档管理。
 _Avoid_: 插件、外置引擎（指 JoiPlay 时）、外置 APK 引擎模块（指 JoiPlay 注册表体系时）
 
 **运行时模块绑定（Runtime Module Binding）**:
@@ -53,6 +53,14 @@ _Avoid_: 手动绑定、模块别名、externalModuleAlias
 **模块扫描描述（Runtime Module Scan Descriptor）**:
 第三方运行时模块在自己 `res/raw/tyranor_runtime.json` 中声明的 `extensions` / `markers`（及 `match`），是主 App 自动扫描该模块游戏的唯一特征来源。
 _Avoid_: 内置特征库、插件清单、手动绑定
+
+**模块设置描述（Runtime Module Settings Descriptor）**:
+第三方 APK 运行时模块声明的单游戏设置项、类型、约束与默认值；用户覆盖值优先于模块默认值，不继承全局引擎配置。
+_Avoid_: 模块全局设置、JoiPlay settings
+
+**模块存档声明（Runtime Module Save Descriptor）**:
+第三方 APK 运行时模块声明的游戏目录内固定存档子目录，是该模块游戏接入统一文件存档管理的能力依据。它不代表搬迁存档或授权访问模块私有数据。
+_Avoid_: 全局存档目录、存档重定向
 
 **PC 游戏（手动添加）**:
 用户手动加入游戏库、经外置 Winlator 运行的 Windows 程序，不限定为已识别的视觉小说引擎家族。其运行参数属于 Winlator 设置域。

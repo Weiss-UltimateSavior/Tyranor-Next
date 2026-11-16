@@ -26,6 +26,24 @@ class SaveSnapshotStoreTest {
         assertEquals(1, store.list(KEY_A).size)
     }
 
+    @Test fun runtimeProvenanceSurvivesReopenRefreshAndContentDeduplication() {
+        val root = temp.newFolder()
+        val store = SaveSnapshotStore(root)
+        val bytes = archive(listOf("save" to "runtime"))
+        val original = RuntimeSaveProvenance("example.runtime", "a".repeat(64), "/games/one/saves")
+        val sameBytesDifferentIdentity = RuntimeSaveProvenance("example.runtime", "b".repeat(64), "/games/one/new-saves")
+        val first = store.add(KEY_A, bytes, 10, SaveVersionSource.LOCAL, runtimeProvenance = original)
+        val reopened = SaveSnapshotStore(root)
+        assertEquals(setOf(original), reopened.list(KEY_A).single().runtimeProvenances)
+        val deduplicated = reopened.add(KEY_A, bytes, 11, SaveVersionSource.CLOUD,
+            runtimeProvenance = sameBytesDifferentIdentity)
+        assertEquals(first.id, deduplicated.id)
+        assertEquals(setOf(original, sameBytesDifferentIdentity), deduplicated.runtimeProvenances)
+        val refreshed = reopened.refreshVersion(KEY_A, deduplicated, 12)
+        assertEquals(setOf(original, sameBytesDifferentIdentity), reopened.list(KEY_A).single().runtimeProvenances)
+        assertEquals(12, refreshed.createdAt)
+    }
+
     @Test fun fileContentChangesWithTheSameSizeAndMtimeProduceAnotherVersion() {
         val first = archive(listOf("save" to "one"), 1000)
         val changed = archive(listOf("save" to "two"), 1000)

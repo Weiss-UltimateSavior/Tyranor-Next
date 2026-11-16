@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">ランタイムモジュールのサンプル</string>
+    <string name="folder">ゲームディレクトリ：%1$s</string>
+    <string name="invalid_folder">Download/TyranorRuntimeExample 直下のディレクトリのみ利用できます。</string>
+    <string name="received">受信した設定：\n%1$s</string>
+    <string name="write_save">テストセーブを書き込む</string>
+    <string name="read_save">テストセーブを読み込む</string>
+    <string name="grant_access">サンプルモジュールにファイルアクセスを許可</string>
+    <string name="save_written">saves/state.json に書き込みました</string>
+    <string name="save_empty">テストセーブはまだありません</string>
+    <string name="save_failed">操作に失敗しました：%1$s</string>
+    <string name="finish">サンプルゲームを終了</string>
+</resources>

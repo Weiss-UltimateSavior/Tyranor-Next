@@ -21,6 +21,8 @@ internal data class ExternalSaveLaunch(
     val activeKey: String?,
     val owner: String,
     val dispatchSequence: Long = 0,
+    val modulePackageName: String? = null,
+    val declarationFingerprint: String? = null,
 )
 
 /**
@@ -38,16 +40,20 @@ internal class ExternalSaveLaunchStore(
         require(owner.isNotBlank()) { "owner must not be blank" }
     }
 
-    fun prepare(uri: String, token: String, activeKey: String?) = withDiskLock { disk ->
+    fun prepare(uri: String, token: String, activeKey: String?, modulePackageName: String? = null,
+        declarationFingerprint: String? = null) = withDiskLock { disk ->
         requireIdentity(uri, token)
-        val entries = replaceToken(disk, uri, ExternalSaveLaunch(uri, token, activeKey, owner))
+        val entries = replaceToken(disk, uri, ExternalSaveLaunch(uri, token, activeKey, owner,
+            modulePackageName = modulePackageName, declarationFingerprint = declarationFingerprint))
         persist(disk, uri, entries)
     }
 
-    fun dispatched(uri: String, token: String, activeKey: String?, sequence: Long) = withDiskLock { disk ->
+    fun dispatched(uri: String, token: String, activeKey: String?, sequence: Long,
+        modulePackageName: String? = null, declarationFingerprint: String? = null) = withDiskLock { disk ->
         requireIdentity(uri, token)
         require(sequence >= 0L) { "dispatch sequence must not be negative" }
-        val entries = replaceToken(disk, uri, ExternalSaveLaunch(uri, token, activeKey, owner, sequence))
+        val entries = replaceToken(disk, uri, ExternalSaveLaunch(uri, token, activeKey, owner, sequence,
+            modulePackageName, declarationFingerprint))
         persist(disk, uri, entries)
     }
 
@@ -83,6 +89,21 @@ internal class ExternalSaveLaunchStore(
             activeKey.isBlank() || entry.uri in relatedUris ||
                 entry.activeKey.isNullOrBlank() ||
                 saveDirectoryScopesOverlap(entry.activeKey, activeKey)
+        }
+    }
+
+    /** Enumerates durable confirmations without treating an unreadable marker as absent. */
+    fun pending(): List<ExternalSaveLaunch> = withDiskLock { disk ->
+        if (!disk.directory.exists()) return@withDiskLock emptyList()
+        val files = disk.directory.listFiles() ?: throw localIo()
+        buildList {
+            for (file in files.filter { it.name.endsWith(".json") }) {
+                val key = file.name.removeSuffix(".json")
+                if (!key.matches(KEY_PATTERN)) continue
+                if (!Files.isRegularFile(file.toPath(), NOFOLLOW_LINKS)) throw localIo()
+                val decoded = decode(key, disk.states.load(key))
+                addAll(decoded)
+            }
         }
     }
 
@@ -125,6 +146,7 @@ internal class ExternalSaveLaunchStore(
     fun confirmExit(
         confirmation: Confirmation,
         liveTokens: Set<String>,
+        tokensToRetire: Set<String>? = null,
         beforeRetire: () -> Unit,
     ) = withDiskLock { disk ->
         val key = SaveContentHash.text(confirmation.uri)
@@ -147,15 +169,27 @@ internal class ExternalSaveLaunchStore(
             } catch (_: org.json.JSONException) {
                 emptyList()
             }
-            if (entries.any { it.token in liveTokens && it.dispatchSequence == 0L }) {
+            if (entries.any {
+                    (tokensToRetire == null || it.token in tokensToRetire) &&
+                        it.token in liveTokens && it.dispatchSequence == 0L
+                }) {
                 throw SaveSyncException(SaveSyncError.GAME_RUNNING)
+            }
+            val remaining = if (tokensToRetire == null) emptyList()
+                else entries.filterNot { it.token in tokensToRetire }
+            if (tokensToRetire != null && entries.none { it.token in tokensToRetire }) {
+                throw SaveSyncException(SaveSyncError.LOCAL_STATE_CHANGED)
             }
             requireCurrent(disk, confirmation)
             beforeRetire()
             if (confirmation.evidence != null) {
                 if (entries.isNotEmpty()) {
-                    // Confirmed healthy launches need no recovery copy on every play session.
-                    Files.delete(marker.toPath())
+                    if (tokensToRetire == null || remaining.isEmpty()) {
+                        // Confirmed healthy launches need no recovery copy on every play session.
+                        Files.delete(marker.toPath())
+                    } else {
+                        persist(disk, confirmation.uri, remaining)
+                    }
                 } else {
                     // Preserve damaged entries by renaming them without traversing their contents.
                     val quarantine = File(disk.directory, "$key.json.confirmed-${UUID.randomUUID()}")
@@ -301,7 +335,9 @@ internal class ExternalSaveLaunchStore(
                     .put(KEY_TOKEN, entry.token)
                     .put(KEY_ACTIVE_KEY, entry.activeKey ?: JSONObject.NULL)
                     .put(KEY_OWNER, entry.owner)
-                    .put(KEY_DISPATCH_SEQUENCE, entry.dispatchSequence),
+                    .put(KEY_DISPATCH_SEQUENCE, entry.dispatchSequence)
+                    .put(KEY_MODULE_PACKAGE, entry.modulePackageName ?: JSONObject.NULL)
+                    .put(KEY_DECLARATION_FINGERPRINT, entry.declarationFingerprint ?: JSONObject.NULL),
             )
         }
         disk.states.save(key, JSONObject().put(KEY_URI, uri).put(KEY_ENTRIES, encoded))
@@ -320,10 +356,12 @@ internal class ExternalSaveLaunchStore(
                 val entryOwner = entry.requiredString(KEY_OWNER)
                 val activeKey = entry.requiredNullableString(KEY_ACTIVE_KEY)
                 val dispatchSequence = entry.requiredLong(KEY_DISPATCH_SEQUENCE)
+                val modulePackage = entry.optionalNullableString(KEY_MODULE_PACKAGE)
+                val fingerprint = entry.optionalNullableString(KEY_DECLARATION_FINGERPRINT)
                 if (token.isBlank() || entryOwner.isBlank() || dispatchSequence < 0L || !tokens.add(token)) {
                     throw localIo()
                 }
-                add(ExternalSaveLaunch(uri, token, activeKey, entryOwner, dispatchSequence))
+                add(ExternalSaveLaunch(uri, token, activeKey, entryOwner, dispatchSequence, modulePackage, fingerprint))
             }
         }
     }
@@ -385,6 +423,9 @@ internal class ExternalSaveLaunchStore(
         }
     }
 
+    private fun JSONObject.optionalNullableString(name: String): String? =
+        if (has(name)) requiredNullableString(name) else null
+
     private fun JSONObject.requiredLong(name: String): Long {
         val value = opt(name) as? Number ?: throw localIo()
         return value.toString().toLongOrNull() ?: throw localIo()
@@ -424,5 +465,7 @@ internal class ExternalSaveLaunchStore(
         private const val KEY_ACTIVE_KEY = "activeKey"
         private const val KEY_OWNER = "owner"
         private const val KEY_DISPATCH_SEQUENCE = "dispatchSequence"
+        private const val KEY_MODULE_PACKAGE = "modulePackage"
+        private const val KEY_DECLARATION_FINGERPRINT = "declarationFingerprint"
     }
 }

@@ -123,6 +123,7 @@ import com.tyranor.next.core.game.manual.AndroidAppGames
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
+import com.tyranor.next.core.engine.runtime.RuntimeModuleRegistry
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.saveable.Saver
@@ -131,6 +132,7 @@ import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.game.save.RpgSaveFormat
 import com.tyranor.next.core.game.save.sync.SaveSyncService
+import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
 import com.tyranor.next.core.game.model.GameTitleTags
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.filterGames
@@ -204,6 +206,8 @@ import com.tyranor.next.ui.common.motion.rememberEntranceState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.foundation.lazy.itemsIndexed as lazyItemsIndexed
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.tyranor.next.ui.common.collectSettingAsState
 import com.tyranor.next.ui.common.notice.NoticeHost
 import com.tyranor.next.ui.common.notice.AppNotice
@@ -746,6 +750,7 @@ private enum class LibraryPane { Loading, Empty, NoMatch, Content }
 private data class DrawerAction(
     val key: String,
     val title: String,
+    val summary: String? = null,
     val icon: Int,
     val showArrow: Boolean = false,
     val iconTint: Color? = null,
@@ -789,6 +794,43 @@ internal fun GameActionsSheet(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val runtimeModules by RuntimeModuleRegistry.state.collectAsState()
+    val runtimeModule = remember(runtimeModules.modules, game.runtimeModulePackage) {
+        runtimeModules.modules.firstOrNull { it.packageName == game.runtimeModulePackage }
+    }
+    var runtimeRefreshRunning by remember(game.uri) { mutableStateOf(false) }
+    var runtimeRefreshFailed by remember(game.uri) { mutableStateOf(false) }
+    LaunchedEffect(game.uri, game.runtimeModulePackage) {
+        if (game.engine == EngineType.RUNTIME_MODULE && !game.runtimeModulePackage.isNullOrBlank()) {
+            runtimeRefreshRunning = true
+            try {
+                runtimeRefreshFailed = withContext(Dispatchers.IO) {
+                    RuntimeModuleRegistry.refresh(context) !is com.tyranor.next.core.engine.runtime.RuntimeModuleDiscoveryResult.Success
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                runtimeRefreshFailed = true
+            } finally {
+                runtimeRefreshRunning = false
+            }
+        }
+    }
+    var hasPendingExternalExit by remember(game.uri) { mutableStateOf(false) }
+    val sheetLifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(game.uri, sheetLifecycleOwner) {
+        sheetLifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            try {
+                hasPendingExternalExit = withContext(Dispatchers.IO) {
+                    SaveSyncRuntime.pendingExternalExitConfirmations(context).any { it.uri == game.uri }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                hasPendingExternalExit = false
+            }
+        }
+    }
     // 「增强」动效档由控制器接管抽屉的展开 / 收起 / 跟手下拉（见 ui/common/motion/SheetMotion.kt）
     val systemNnnLaunch: SystemNnnLaunchViewModel = viewModel()
     val systemNnnRequest = rememberSaveable(game.uri, saver = SystemNnnSheetRequestSaver) { SystemNnnSheetRequest() }
@@ -815,6 +857,10 @@ internal fun GameActionsSheet(
     // 抽屉动作条目的文案/颜色：buildList 的 lambda 内不允许 @Composable 调用，先在组合体取值
     val drawerSearchCoverTitle = stringResource(R.string.game_search_cover)
     val drawerSaveManagementTitle = stringResource(R.string.game_save_management)
+    val drawerExternalExitTitle = stringResource(R.string.save_external_exit_title)
+    val runtimeCapabilityLoadingTitle = stringResource(R.string.runtime_capability_loading)
+    val runtimeCapabilityRetryTitle = stringResource(R.string.runtime_capability_retry)
+    val runtimeCapabilityUnavailableSummary = stringResource(R.string.runtime_capability_unavailable)
     val drawerOnlinePatchTitle = stringResource(R.string.game_online_patch)
     val drawerEngineSettingsTitle = stringResource(R.string.settings_engine_settings)
     val drawerPrimaryColor = MaterialTheme.colorScheme.primary
@@ -987,7 +1033,9 @@ internal fun GameActionsSheet(
                             onClick = { if (!isBatchScrapingActive()) showCoverSourcePicker = true },
                         ),
                     )
-                    if (shouldShowSaveManagement(game)) {
+                    val hasRuntimeSaves = game.engine == EngineType.RUNTIME_MODULE &&
+                        runtimeModule?.enabled == true && runtimeModule.saves != null
+                    if (hasRuntimeSaves || shouldShowSaveManagement(game)) {
                         add(
                             DrawerAction(
                                 key = "save_management",
@@ -998,6 +1046,49 @@ internal fun GameActionsSheet(
                                 onClick = {
                                     navigation.openDetails {
                                         startActivityWithPageTransition(context, SaveManagementActivity.createIntent(context, game))
+                                    }
+                                },
+                            ),
+                        )
+                    }
+                    if (hasPendingExternalExit) {
+                        add(
+                            DrawerAction(
+                                key = "confirm_external_exit",
+                                title = drawerExternalExitTitle,
+                                icon = R.drawable.ic_sheet_saves,
+                                showArrow = true,
+                                iconTint = drawerPrimaryColor,
+                                onClick = {
+                                    navigation.openDetails {
+                                        startActivityWithPageTransition(context, SaveManagementActivity.createIntent(context, game))
+                                    }
+                                },
+                            ),
+                        )
+                    }
+                    if (game.engine == EngineType.RUNTIME_MODULE && (runtimeRefreshRunning || runtimeRefreshFailed)) {
+                        add(
+                            DrawerAction(
+                                key = "runtime_capability_status",
+                                title = if (runtimeRefreshRunning) runtimeCapabilityLoadingTitle else runtimeCapabilityRetryTitle,
+                                summary = if (runtimeRefreshFailed) runtimeCapabilityUnavailableSummary else null,
+                                icon = R.drawable.ic_sheet_settings,
+                                iconTint = drawerPrimaryColor,
+                                onClick = {
+                                    if (!runtimeRefreshRunning) scope.launch {
+                                        runtimeRefreshRunning = true
+                                        runtimeRefreshFailed = try {
+                                            withContext(Dispatchers.IO) {
+                                                RuntimeModuleRegistry.refresh(context) !is com.tyranor.next.core.engine.runtime.RuntimeModuleDiscoveryResult.Success
+                                            }
+                                        } catch (cancelled: CancellationException) {
+                                            throw cancelled
+                                        } catch (_: Exception) {
+                                            true
+                                        } finally {
+                                            runtimeRefreshRunning = false
+                                        }
                                     }
                                 },
                             ),
@@ -1019,8 +1110,10 @@ internal fun GameActionsSheet(
                             ),
                         )
                     }
-                    // 第三方运行时模块没有主 App 侧设置；未知引擎也不展示设置。
-                    if (game.engine != EngineType.RUNTIME_MODULE && game.engine != EngineType.UNKNOWN) {
+                    // 运行时模块只有声明有效设置且当前启用时才显示动态设置入口。
+                    if ((game.engine == EngineType.RUNTIME_MODULE && runtimeModule?.enabled == true && runtimeModule.settings?.items?.isNotEmpty() == true) ||
+                        (game.engine != EngineType.RUNTIME_MODULE && game.engine != EngineType.UNKNOWN)
+                    ) {
                         add(
                             DrawerAction(
                                 key = "engine_settings",
@@ -1040,6 +1133,7 @@ internal fun GameActionsSheet(
                     item(key = "drawer_row:" + action.key) {
                         AppNavItem(
                             title = action.title,
+                            summary = action.summary,
                             modifier = Modifier.gameSheetEntrance(3 + index),
                             leadingIcon = action.icon,
                             containerColor = drawerItemSurface,

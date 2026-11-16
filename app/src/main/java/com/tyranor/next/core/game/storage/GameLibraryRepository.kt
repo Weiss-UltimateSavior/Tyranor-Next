@@ -11,6 +11,7 @@ import com.tyranor.next.core.game.scan.GameRootMatcher
 import com.tyranor.next.core.process.AppProcess
 import com.tyranor.next.core.settings.AppStorageNames
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -22,6 +23,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import java.util.concurrent.Executors
 
 /**
@@ -386,6 +389,42 @@ object GameLibraryRepository {
     }
 
     /**
+     * Await a serialized write in the same FIFO queue as [post]. Unlike [post], the caller receives
+     * persistence errors; use this for user-visible operations that must not report success early.
+     */
+    internal suspend fun <T> writeAwaited(
+        context: Context,
+        block: suspend (Context, AwaitedWriteControl) -> T,
+    ): T {
+        val app = context.applicationContext
+        val control = AwaitedWriteControl(currentCoroutineContext()[Job])
+        val result = CompletableDeferred<T>()
+        val writeJob = writeScope.launch {
+            try {
+                control.checkBeforeCommit()
+                ensureMigrated(app)
+                val value = writeMutex.withLock {
+                    control.checkBeforeCommit()
+                    block(app, control)
+                }
+                schedulePrefsMirror(app)
+                result.complete(value)
+            } catch (ce: CancellationException) {
+                result.completeExceptionally(ce)
+                throw ce
+            } catch (t: Throwable) {
+                result.completeExceptionally(t)
+            }
+        }
+        return try {
+            result.await()
+        } catch (cancelled: CancellationException) {
+            if (control.cancelBeforeCommit()) writeJob.cancel(cancelled)
+            throw cancelled
+        }
+    }
+
+    /**
      * 缓存未命中的一次性阻塞读：与旧实现的首读 SharedPreferences XML 成本相当，
      * 由 [init] 在启动时预热把主线程首读概率降到最低。禁止在 Room 事务/写互斥内调用。
      */
@@ -403,4 +442,31 @@ object GameLibraryRepository {
 
     private fun dao(context: Context): GameLibraryDao = GameLibraryDatabase.get(context).gameLibraryDao()
 
+}
+
+/** Cancellation gate for awaited writes: queued work is abandoned; committed work may finish atomically. */
+internal class AwaitedWriteControl(private val callerJob: Job?) {
+    private val monitor = Any()
+    private var commitStarted = false
+    private var cancelledBeforeCommit = false
+
+    fun checkBeforeCommit() = synchronized(monitor) {
+        if (cancelledBeforeCommit) throw CancellationException("awaited write cancelled before commit")
+        if (!commitStarted) callerJob?.ensureActive()
+    }
+
+    /** Must be called immediately before the first durable side effect. */
+    fun beginCommit() = synchronized(monitor) {
+        if (cancelledBeforeCommit) throw CancellationException("awaited write cancelled before commit")
+        if (!commitStarted) callerJob?.ensureActive()
+        commitStarted = true
+    }
+
+    /** Returns true when the queued writer must be cancelled. */
+    fun cancelBeforeCommit(): Boolean = synchronized(monitor) {
+        if (commitStarted) false else {
+            cancelledBeforeCommit = true
+            true
+        }
+    }
 }

@@ -40,7 +40,7 @@ enum class SaveSyncError {
     NOT_CONFIGURED, INVALID_CONFIG, CREDENTIALS_UNAVAILABLE, AUTHENTICATION, NETWORK,
     SERVER, INVALID_RESPONSE, CORRUPT_ARCHIVE, LOCAL_IO, SAVE_UNAVAILABLE, GAME_RUNNING,
     IDENTITY_CONFLICT, DISABLED, SELECTION_INCOMPLETE, CLOUD_REPAIR_REQUIRED, STORAGE_FULL, SAVE_LOCATION_CHANGED,
-    LOCAL_STATE_CHANGED,
+    LOCAL_STATE_CHANGED, SAVE_PROVENANCE_UNKNOWN,
 }
 
 class SaveSyncException(
@@ -61,7 +61,34 @@ data class SaveVersion(
     val source: SaveVersionSource = SaveVersionSource.LOCAL,
     val restored: Boolean = false,
     val previousCreatedAt: Long? = null,
+    /** Runtime-module declaration and canonical directory identities that produced these bytes. */
+    val runtimeProvenances: Set<RuntimeSaveProvenance> = emptySet(),
 )
+
+data class RuntimeSaveProvenance(
+    val packageName: String,
+    val savesFingerprint: String,
+    val canonicalDirectory: String,
+)
+
+/** Opaque, short-lived confirmation snapshot. Pass the same instance back unchanged. */
+data class RuntimeSaveIdentityChange internal constructor(
+    val token: String,
+    val packageName: String,
+    val oldPackageName: String,
+    val oldDirectory: String,
+    val newDirectory: String,
+    val oldSavesFingerprint: String,
+    val newSavesFingerprint: String,
+)
+
+sealed interface RuntimeSaveIdentityChangeResult {
+    data object Confirmed : RuntimeSaveIdentityChangeResult
+    data object Stale : RuntimeSaveIdentityChangeResult
+    data object Unavailable : RuntimeSaveIdentityChangeResult
+    data object GameRunning : RuntimeSaveIdentityChangeResult
+    data class Failed(val error: SaveSyncError) : RuntimeSaveIdentityChangeResult
+}
 
 data class RemoteSaveVersion(
     val name: String,
