@@ -8,7 +8,6 @@ import java.io.IOException
 import java.io.InterruptedIOException
 import java.nio.file.DirectoryIteratorException
 import java.nio.file.DirectoryStream
-import java.nio.file.FileSystemException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Locale
@@ -42,6 +41,11 @@ internal class RpgMakerFileIndex(
             if (isCancelled()) throw InterruptedIOException("Plugin file index cancelled")
             if (nanoTime() - started > maxDurationNanos) throw LimitExceeded("time")
         }
+        checkActive()
+        val focusedArchive = if (onlyRoots == null) null else try {
+            asar?.focusedChildrenIndex(asarPrefix, onlyRoots)
+                ?: legacyArchive?.focusedChildrenIndex(asarPrefix, onlyRoots)
+        } catch (_: AsarChildrenIndex.LimitExceeded) { throw LimitExceeded("archive node") }
         var entries = 0
         var directories = 0
         var estimatedBytes = 2L
@@ -58,7 +62,7 @@ internal class RpgMakerFileIndex(
                 (canonical != root && !canonical.path.startsWith(root.path + File.separator))) return null
             val disk = canonical.takeIf { it.exists() }
             val archiveKey = asarPrefix + relative
-            val archiveChildren = try { archiveChildren(archiveKey) }
+            val archiveChildren = try { focusedArchive?.children(archiveKey.trimEnd('/')) ?: archiveChildren(archiveKey) }
                 catch (_: AsarChildrenIndex.LimitExceeded) { throw LimitExceeded("archive node") }
             val archiveDirectory = archiveIsDirectory(archiveKey) || archiveChildren.isNotEmpty()
             val archiveExists = archiveHas(archiveKey) || archiveDirectory
@@ -97,8 +101,9 @@ internal class RpgMakerFileIndex(
                     } catch (error: Exception) {
                         val cause = if (error is DirectoryIteratorException) error.cause else error
                         // Do not swallow quota/size/depth errors raised by addName().
-                        if ((relative.isEmpty() && asar == null && legacyArchive == null) ||
-                            (cause !is FileSystemException && cause !is SecurityException)) throw error
+                        if (cause is LimitExceeded || cause is InterruptedIOException ||
+                            (relative.isEmpty() && asar == null && legacyArchive == null) ||
+                            (cause !is IOException && cause !is SecurityException)) throw error
                         Log.w(TAG, "index skipped unreadable directory: $relative (${cause.javaClass.simpleName})")
                     }
                 }

@@ -60,5 +60,22 @@ internal class AsarChildrenIndex(entries: Iterable<Pair<String, Boolean>>, inclu
 
     companion object {
         private const val MAX_NODES = 250_000
+
+        /** Filter before allocating nodes; unrelated trees cannot consume a focused scan's budget. */
+        fun focused(
+            entries: Iterable<Pair<String, Boolean>>,
+            prefix: String,
+            roots: Set<String>,
+            includeEmptyNames: Boolean = false,
+        ): AsarChildrenIndex {
+            val selected = entries.asSequence().filter { (key, _) ->
+                if (Thread.currentThread().isInterrupted) throw InterruptedIOException("ASAR directory index cancelled")
+                if (!key.startsWith(prefix)) return@filter false
+                val end = key.indexOf('/', prefix.length).let { if (it < 0) key.length else it }
+                val rootName = key.substring(prefix.length, end)
+                roots.any { it.equals(rootName, ignoreCase = true) }
+            }
+            return AsarChildrenIndex(selected.asIterable(), includeEmptyNames)
+        }
     }
 }

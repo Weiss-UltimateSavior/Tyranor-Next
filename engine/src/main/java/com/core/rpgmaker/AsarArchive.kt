@@ -106,6 +106,10 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
         return childrenIndex.children(normalize(path).trimEnd('/'))
     }
 
+    /** Independent metadata view for budget fallback; never consults the archive-wide cache. */
+    internal fun focusedChildrenIndex(prefix: String, roots: Set<String>): AsarChildrenIndex =
+        AsarChildrenIndex.focused(entries.asSequence().map { it.key to it.value.directory }.asIterable(), prefix, roots)
+
     /**
      * 打开条目的流式读取（PR review 意见：大体积媒体以完整 ByteArray 在内存流转，
      * 既无法 Range/seek 也有 OOM 风险）。返回 [输入流, 条目总大小]；每次调用独立

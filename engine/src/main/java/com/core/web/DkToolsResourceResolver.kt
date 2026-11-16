@@ -17,8 +17,12 @@ internal object DkToolsResourceResolver {
     ): Resource? {
         val parts = uri.replace('\\', '/').split('/').filter { it.isNotEmpty() && it != "." }
         if (parts.isEmpty() || parts.any { it == ".." || it.any(Char::isISOControl) }) return null
-        val exactArchivePath = archivePrefix + parts.joinToString("/")
-        if (archiveIsFile(exactArchivePath)) {
+        val normalizedPath = parts.joinToString("/")
+        // Preserve the hosts' exact lookup order: web-root prefix, then archive root.
+        // Root fallback deliberately does not apply loose/case-insensitive matching.
+        val exactArchivePath = (if (archivePrefix.isEmpty()) listOf(normalizedPath)
+            else listOf(archivePrefix + normalizedPath, normalizedPath)).firstOrNull(archiveIsFile)
+        if (exactArchivePath != null) {
             // Most packaged resource requests are already exact. They must not construct
             // the optional directory tree (which can exceed its separate metadata budget).
             var candidate = root
@@ -38,7 +42,9 @@ internal object DkToolsResourceResolver {
             val names = linkedSetOf<String>()
             diskChildren.forEach { names.add(it.name) }
             val archiveNames = try { archiveChildren(archivePath) }
-                catch (_: AsarChildrenIndex.LimitExceeded) { return null }
+                // Directory metadata is optional. Keep unique disk matches usable when
+                // an unrelated archive subtree exhausts the metadata node budget.
+                catch (_: AsarChildrenIndex.LimitExceeded) { emptyList() }
             archiveNames.forEach { names.add(it.first) }
             val matched = RpgMakerNameMatcher.match(names.toList(), part) ?: return null
             disk = diskChildren.firstOrNull { it.name == matched }?.let { candidate ->

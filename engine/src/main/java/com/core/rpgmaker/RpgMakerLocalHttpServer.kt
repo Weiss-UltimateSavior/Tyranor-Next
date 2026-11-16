@@ -63,6 +63,10 @@ internal class RpgMakerLocalHttpServer(
     private val authCookieName = "${AUTH_COOKIE_NAME}_${authToken}"
     private val pluginIndexEnabled = this.scriptAppends.containsKey(DkToolsCompat.SCRIPT_PATH)
     private val pluginFileIndex = PluginFileIndexCache(build = { focused ->
+        val original = resolveRequestedFile("data/Stamp.json")
+        val hasOriginal = original.file != null || original.data != null || original.stream != null
+        original.stream?.close()
+        if (hasOriginal) return@PluginFileIndexCache "null".toByteArray(Charsets.UTF_8)
         val started = System.nanoTime()
         RpgMakerFileIndex(this.root, this.asar, asarRootPrefix, isCancelled = { !running || Thread.currentThread().isInterrupted })
             .build(if (focused) setOf("locales", "data") else null).also {
@@ -105,24 +109,14 @@ internal class RpgMakerLocalHttpServer(
 
     fun start() { thread.start() }
 
-    private val indexWarmupQueued = java.util.concurrent.atomic.AtomicBoolean()
-    private fun warmPluginIndex() {
-        if (!pluginIndexEnabled || !indexWarmupQueued.compareAndSet(false, true)) return
-        try { clients.execute {
-            try {
-                val original = resolveRequestedFile("data/Stamp.json")
-                val exists = original.file != null || original.data != null || original.stream != null
-                original.stream?.close()
-                if (!exists) pluginFileIndex.get()
-            } catch (error: java.io.IOException) {
-                if (running) Log.w(TAG, "plugin file index warmup failed", error)
-            }
-        } } catch (_: java.util.concurrent.RejectedExecutionException) { }
+    private val indexExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "TyranorPluginIndex").apply { isDaemon = true }
     }
     val port: Int get() = serverSocket.localPort
     fun stop() {
         running = false
         pluginFileIndex.stop()
+        indexExecutor.shutdownNow()
         try { serverSocket.close() } catch (_: Throwable) {}
         clients.shutdownNow()
     }
@@ -227,11 +221,13 @@ internal class RpgMakerLocalHttpServer(
                 return
             }
             if (uri == RpgMakerFileIndex.RESOURCE_PATH) {
-                val existing = resolveRequestedFile("data/Stamp.json")
-                val hasOriginal = existing.file != null || existing.data != null || existing.stream != null
-                existing.stream?.close()
-                // Existing game indexes remain authoritative, including malformed ones.
-                val bytes = if (hasOriginal) "null".toByteArray(Charsets.UTF_8) else pluginFileIndex.get()
+                val bytes = if (DkToolsCompat.hasExactOriginalStamp(root, asarRootPrefix) {
+                    asar?.entrySize(it) != null
+                }) "null".toByteArray(Charsets.UTF_8) else pluginFileIndex.request(indexExecutor)
+                if (bytes == null) {
+                    sendText(socket, 202, "Accepted", "plugin file index pending")
+                    return
+                }
                 sendBytes(socket, bytes, uri, method.equals("HEAD", true))
                 return
             }
@@ -456,13 +452,15 @@ internal class RpgMakerLocalHttpServer(
         headers["cookie"].orEmpty().split(';').any { it.trim() == "$authCookieName=$authToken" }
 
     private fun sendInjectedIndex(socket: Socket, html: String?, headOnly: Boolean) {
-        val data = if (earlyHook != null && earlyHook.isNotEmpty()) {
+        val injected = if (earlyHook != null && earlyHook.isNotEmpty()) {
             buildInjectedHtmlTwoPhase(
                 html.orEmpty(), earlyHook, tyranoHook, injectedHtml, injectBeforeBody,
             )
         } else {
             buildInjectedHtml(html.orEmpty(), tyranoHook, injectedHtml, injectBeforeBody)
         }
+        val data = if (pluginIndexEnabled) DkToolsCompat.injectBootstrap(String(injected, StandardCharsets.UTF_8))
+            .toByteArray(StandardCharsets.UTF_8) else injected
         Log.i(TAG, "served injected index bytes=${data.size} hook=${tyranoHook.size}")
         val out = BufferedOutputStream(socket.getOutputStream())
         out.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\n" + authCookieHeader() + "Content-Length: ${data.size}\r\nConnection: close\r\n\r\n").toByteArray(StandardCharsets.UTF_8))
@@ -524,7 +522,7 @@ internal class RpgMakerLocalHttpServer(
     }
 
     private fun sendAppendedBytes(socket: Socket, original: ByteArray, uri: String, headOnly: Boolean) {
-        if (!headOnly && uri.equals(DkToolsCompat.SCRIPT_PATH, true)) warmPluginIndex()
+
         val append = scriptAppends[uri.lowercase(Locale.ROOT)] ?: ByteArray(0)
         val data = ByteArray(original.size + append.size).also {
             original.copyInto(it)

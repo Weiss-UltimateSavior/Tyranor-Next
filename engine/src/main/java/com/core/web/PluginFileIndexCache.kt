@@ -2,8 +2,11 @@ package com.core.web
 
 import java.io.IOException
 import java.io.InterruptedIOException
+import java.util.concurrent.Executor
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.atomic.AtomicBoolean
 
-/** 会话内索引缓存；限额失败短时退避，临时 I/O 失败允许下一次立即重试。 */
+/** 会话内索引缓存；扫描只在独立执行器执行，HTTP 请求只读取已发布的快照。 */
 internal class PluginFileIndexCache(
     private val build: (focused: Boolean) -> ByteArray,
     private val isLimitFailure: (IOException) -> Boolean,
@@ -11,51 +14,71 @@ internal class PluginFileIndexCache(
     private val retryNanos: Long = 5_000_000_000L,
     private val onDegraded: (IOException) -> Unit = {},
 ) {
-    private var complete: ByteArray? = null
-    private var degraded: ByteArray? = null
-    private var failure: IOException? = null
-    private var retryAt = 0L
-    private var backingOff = false
+    private data class Snapshot(val bytes: ByteArray?, val failure: IOException?, val retryAt: Long? = null)
+    @Volatile private var snapshot: Snapshot? = null
     @Volatile private var stopped = false
+    private val building = AtomicBoolean()
+    private val queued = AtomicBoolean()
 
-    @Synchronized fun get(): ByteArray {
+    /** Returns null while scanning; never waits for an executor or an active scan. */
+    fun request(executor: Executor): ByteArray? {
         checkActive()
-        complete?.let { return it }
-        if (backingOff && nanoTime() - retryAt < 0L) {
-            degraded?.let { return it }
-            throw requireNotNull(failure)
-        }
-        try {
-            val bytes = build(false)
-            checkActive()
-            complete = bytes
-            degraded = null
-            failure = null
-            backingOff = false
-            return bytes
-        } catch (error: IOException) {
-            checkActive()
-            if (!isLimitFailure(error)) throw error
-            onDegraded(error)
+        available()?.let { return it }
+        if (queued.compareAndSet(false, true)) {
             try {
-                val bytes = build(true)
-                checkActive()
-                degraded = bytes
-                failure = null
-                return bytes
-            } catch (focusedError: IOException) {
-                checkActive()
-                degraded = null
-                failure = focusedError
-                throw focusedError
-            } finally {
-                retryAt = nanoTime() + retryNanos
-                backingOff = true
+                executor.execute {
+                    try { get() } catch (_: IOException) {
+                        // Deterministic failures are published; transient errors retry on the next poll.
+                    } finally { queued.set(false) }
+                }
+            } catch (error: RejectedExecutionException) {
+                queued.set(false)
+                throw error
             }
         }
+        return available()
     }
 
-    /** 不等待构建锁；扫描方同时检查宿主 running 状态与线程中断。 */
+    /** Background builder. Concurrent readers receive pending rather than waiting on a scan lock. */
+    fun get(): ByteArray {
+        checkActive()
+        available()?.let { return it }
+        if (!building.compareAndSet(false, true)) throw IOException("Plugin file index pending")
+        try {
+            available()?.let { return it }
+            try {
+                val bytes = build(false)
+                checkActive()
+                snapshot = Snapshot(bytes, null)
+                return bytes
+            } catch (error: IOException) {
+                checkActive()
+                if (!isLimitFailure(error)) throw error
+                onDegraded(error)
+                try {
+                    val bytes = build(true)
+                    checkActive()
+                    snapshot = Snapshot(bytes, null, nanoTime() + retryNanos)
+                    return bytes
+                } catch (focusedError: IOException) {
+                    checkActive()
+                    snapshot = if (isLimitFailure(focusedError)) {
+                        Snapshot(null, focusedError, nanoTime() + retryNanos)
+                    } else null
+                    throw focusedError
+                }
+            }
+        } finally { building.set(false) }
+    }
+
+    private fun available(): ByteArray? {
+        val current = snapshot ?: return null
+        if (current.retryAt != null && nanoTime() - current.retryAt >= 0L) return null
+        current.failure?.let { throw it }
+        return current.bytes
+    }
+
+    /** Does not wait for the builder; its executor is interrupted by the owning host. */
     fun stop() { stopped = true }
 
     private fun checkActive() {
