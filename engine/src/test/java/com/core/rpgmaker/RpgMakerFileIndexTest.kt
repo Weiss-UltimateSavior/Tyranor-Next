@@ -432,10 +432,20 @@ class RpgMakerFileIndexTest {
     }
 
     private fun request(port: Int, path: String, cookie: String? = null): Pair<Int, String> {
+        val deadline = System.nanoTime() + 5_000_000_000L
+        while (true) {
+            val response = requestOnce(port, path, cookie)
+            if (path != RpgMakerFileIndex.RESOURCE_PATH || response.first != 202) return response
+            check(System.nanoTime() < deadline) { "index did not become ready" }
+            Thread.sleep(10)
+        }
+    }
+
+    private fun requestOnce(port: Int, path: String, cookie: String? = null): Pair<Int, String> {
         val connection = connection(port, path, cookie)
         return try {
             val status = connection.responseCode
-            status to (if (status == 200) connection.inputStream else connection.errorStream).bufferedReader().use { it.readText() }
+            status to (if (status < 400) connection.inputStream else connection.errorStream).bufferedReader().use { it.readText() }
         } finally { connection.disconnect() }
     }
 

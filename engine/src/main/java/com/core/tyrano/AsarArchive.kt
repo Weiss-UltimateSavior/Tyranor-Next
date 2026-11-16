@@ -91,6 +91,11 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
         return childrenIndex.children(normalize(path).trimEnd('/'))
     }
 
+    /** Independent metadata view for budget fallback; never consults the archive-wide cache. */
+    internal fun focusedChildrenIndex(prefix: String, roots: Set<String>): AsarChildrenIndex =
+        AsarChildrenIndex.focused(entries.asSequence().map { it.key to it.value.directory }.asIterable(),
+            prefix, roots, includeEmptyNames = true)
+
     fun read(path: String): ByteArray? {
         return try {
             val key = normalize(path)

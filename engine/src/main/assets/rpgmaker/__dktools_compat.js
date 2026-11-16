@@ -54,27 +54,58 @@
         }
         return view(index);
     }
+    // DKTools initializes IO synchronously from window.onload. Fetch metadata first,
+    // then let the existing load handlers run together, preserving their alias chain.
+    // In particular, making _loadStamp itself async would publish IO readiness too early.
+    var prefetched, finished = false;
+    var mode = DKTools.IO.mode;
+    if (mode === undefined && typeof DKToolsParam !== "undefined") {
+        mode = DKToolsParam.get("File System", "Mode");
+    }
+    if (!Utils.isNwjs() && mode === DKTools.IO.MODE_NWJS_STAMP &&
+        (!DKTools.IO._stamp || Object.keys(DKTools.IO._stamp).length === 0)) {
+        var resolveReady;
+        var ready = new Promise(function (resolve) { resolveReady = resolve; });
+        var started = Date.now();
+        function finish(index) { prefetched = index; finished = true; resolveReady(); }
+        function requestIndex() {
+            var xhr = new XMLHttpRequest();
+            xhr.open("GET", "__tyranor_internal/dktools-index.json", true);
+            xhr.overrideMimeType("application/json");
+            xhr.timeout = 15000;
+            xhr.onload = function () {
+                if (xhr.status === 202 && Date.now() - started < 15000) {
+                    setTimeout(requestIndex, 100);
+                    return;
+                }
+                try {
+                    if (xhr.status !== 200) throw new Error("file index HTTP " + xhr.status);
+                    var index = JSON.parse(xhr.responseText);
+                    if (index !== null && (!index || Array.isArray(index) || typeof index !== "object")) {
+                        throw new Error("invalid file index");
+                    }
+                    finish(index);
+                } catch (error) {
+                    console.warn("[Tyranor] DKTools file index failed: " + error.message);
+                    finish(null);
+                }
+            };
+            xhr.onerror = xhr.ontimeout = function () { finish(null); };
+            try { xhr.send(); } catch (error) { finish(null); }
+        }
+        window.__tyranorDkToolsReady = ready;
+        requestIndex();
+    }
     DKTools.IO._loadStamp = function () {
         if (Utils.isNwjs() || this.mode !== DKTools.IO.MODE_NWJS_STAMP) return original.apply(this, arguments);
         if (this.__tyranorGeneratedStamp && this._stamp === this.__tyranorGeneratedStamp) return;
         if (this._stamp && Object.keys(this._stamp).length > 0) return original.apply(this, arguments);
-        try {
-            var xhr = new XMLHttpRequest();
-            xhr.open("GET", "__tyranor_internal/dktools-index.json", false);
-            xhr.overrideMimeType("application/json");
-            xhr.send();
-            if (xhr.status !== 200) throw new Error("file index HTTP " + xhr.status);
-            var index = JSON.parse(xhr.responseText);
-            // null means an original Stamp.json exists; let DKTools load/validate it.
-            if (index !== null) {
-                if (!index || Array.isArray(index) || typeof index !== "object") throw new Error("invalid file index");
-                this._stamp = compatibleIndex(index);
-                this.__tyranorGeneratedStamp = this._stamp;
-                console.info("[Tyranor] DKTools browser file index enabled");
-                return;
-            }
-        } catch (error) {
-            console.warn("[Tyranor] DKTools file index failed: " + error.message);
+        // null keeps original Stamp.json authoritative, including malformed originals.
+        if (finished && prefetched !== null && prefetched !== undefined) {
+            this._stamp = compatibleIndex(prefetched);
+            this.__tyranorGeneratedStamp = this._stamp;
+            console.info("[Tyranor] DKTools browser file index enabled");
+            return;
         }
         return original.apply(this, arguments);
     };

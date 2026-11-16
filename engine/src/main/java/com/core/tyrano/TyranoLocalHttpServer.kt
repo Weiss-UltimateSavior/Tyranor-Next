@@ -57,6 +57,10 @@ internal class TyranoLocalHttpServer(
     private val pluginIndexCookieName = "tyranorPluginIndex_${pluginIndexToken.replace("-", "")}"
     private val pluginIndexEnabled = this.scriptAppends.containsKey(DkToolsCompat.SCRIPT_PATH)
     private val pluginFileIndex = PluginFileIndexCache(build = { focused ->
+        val original = resolveRequestedFile("data/Stamp.json")
+        if (original.file != null || original.asarPath != null) {
+            return@PluginFileIndexCache "null".toByteArray(StandardCharsets.UTF_8)
+        }
         val started = System.nanoTime()
         RpgMakerFileIndex(this.root, asarPrefix = asarRootPrefix, legacyArchive = this.asar,
             isCancelled = { !running || Thread.currentThread().isInterrupted })
@@ -96,22 +100,14 @@ internal class TyranoLocalHttpServer(
 
     fun start() { thread.start() }
 
-    private val indexWarmupQueued = java.util.concurrent.atomic.AtomicBoolean()
-    private fun warmPluginIndex() {
-        if (!pluginIndexEnabled || !indexWarmupQueued.compareAndSet(false, true)) return
-        try { clients.execute {
-            try {
-                val original = resolveRequestedFile("data/Stamp.json")
-                if (original.file == null && original.asarPath == null) pluginFileIndex.get()
-            } catch (error: java.io.IOException) {
-                if (running) Log.w(TAG, "plugin file index warmup failed", error)
-            }
-        } } catch (_: java.util.concurrent.RejectedExecutionException) { }
+    private val indexExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "TyranorPluginIndex").apply { isDaemon = true }
     }
     val port: Int get() = serverSocket.localPort
     fun stop() {
         running = false
         pluginFileIndex.stop()
+        indexExecutor.shutdownNow()
         try { serverSocket.close() } catch (_: Throwable) {}
         clients.shutdownNow()
     }
@@ -177,10 +173,13 @@ internal class TyranoLocalHttpServer(
                     sendText(socket, 403, "Forbidden", "forbidden")
                     return
                 }
-                val original = resolveRequestedFile("data/Stamp.json")
-                val bytes = if (original.file != null || original.asarPath != null) {
-                    "null".toByteArray(StandardCharsets.UTF_8)
-                } else pluginFileIndex.get()
+                val bytes = if (DkToolsCompat.hasExactOriginalStamp(root, asarRootPrefix) {
+                    asar?.fileSize(it) != null
+                }) "null".toByteArray(Charsets.UTF_8) else pluginFileIndex.request(indexExecutor)
+                if (bytes == null) {
+                    sendText(socket, 202, "Accepted", "plugin file index pending")
+                    return
+                }
                 sendBytes(socket, bytes, uri, method.equals("HEAD", true))
                 return
             }
@@ -327,7 +326,9 @@ internal class TyranoLocalHttpServer(
     }
 
     private fun sendInjectedIndex(socket: Socket, html: String?, headOnly: Boolean) {
-        val data = buildInjectedHtml(html.orEmpty(), tyranoHook, injectedHtml, injectBeforeBody)
+        val injected = buildInjectedHtml(html.orEmpty(), tyranoHook, injectedHtml, injectBeforeBody)
+        val data = if (pluginIndexEnabled) DkToolsCompat.injectBootstrap(String(injected, StandardCharsets.UTF_8))
+            .toByteArray(StandardCharsets.UTF_8) else injected
         Log.i(TAG, "served injected index bytes=${data.size} hook=${tyranoHook.size}")
         val out = BufferedOutputStream(socket.getOutputStream())
         val indexCookie = if (pluginIndexEnabled) "Set-Cookie: $pluginIndexCookieName=$pluginIndexToken; Path=/; HttpOnly; SameSite=Strict\r\n" else ""
@@ -353,7 +354,7 @@ internal class TyranoLocalHttpServer(
     }
 
     private fun sendAppendedBytes(socket: Socket, original: ByteArray, uri: String, headOnly: Boolean) {
-        if (!headOnly && uri.equals(DkToolsCompat.SCRIPT_PATH, true)) warmPluginIndex()
+
         val append = scriptAppends[uri.lowercase(Locale.ROOT)] ?: ByteArray(0)
         val data = ByteArray(original.size + append.size).also {
             original.copyInto(it)
