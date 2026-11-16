@@ -23,7 +23,7 @@ final class GameSave {
     private static final int NATIVE_BASELINE=-5;
     private static final int RANDOM_STATE=-6, CLOCK_SAMPLE=-7, RESET_GALLERY=-8, GALLERY_BITS=-9;
     private static final int RESET_SCRIPT_PROGRESS=-10, SET_SCRIPT_PROGRESS=-11;
-    private static final int MAX_GALLERY_KEYS=150000;
+    private static final int MAX_GALLERY_KEYS=GalleryStore.LIMIT;
     static final int MAGIC_NS1=0x4e4e5331, MAGIC_NS2=0x4e4e5332;
     private static final int MAX_RUNS=200000, MAX_TICKS=24000000, MAX_CONTENT_BYTES=1024*1024;
     // A native checkpoint still validates its ID and cursor. This token can
@@ -100,8 +100,8 @@ final class GameSave {
         save.useNativeBaseline(0,0);
         return save;
     }
-    void recordModalBoundary(int x,int y){
-        // The legacy journal cannot reproduce a raw-text or multi-step reply.
+    void recordNativeBoundary(int x,int y){
+        // The legacy journal cannot reproduce a native-only action.
         // Existing native Backlog checkpoints still validate their original cursor.
         if(!requiresSnapshot())useNativeBaseline(x,y);
     }
@@ -176,6 +176,18 @@ final class GameSave {
         if(date!=0)stateRun(CLOCK_SAMPLE,date,milliseconds);
         append(ms,x,y,advance,choice,skip);
     }
+    void appendWithClock(int elapsed,int animation,int x,int y,boolean advance,int choice,boolean skip,
+                         int date,int milliseconds){
+        if(elapsed==animation&&elapsed<=1000){
+            appendWithClock(elapsed,x,y,advance,choice,skip,date,milliseconds);
+        }else if(requiresSnapshot()){
+            updateNativePointer(x,y);
+        }else{
+            // The legacy journal has one time per input. Keep the native Backlog
+            // checkpoints when an update has distinct elapsed and animation clocks.
+            useNativeBaseline(x,y);
+        }
+    }
     void recordMovieContinuationClock(int date,int milliseconds){
         if(requiresSnapshot()||runs.isEmpty())return;
         // The VM continues the same journal input after playback. A first
@@ -230,7 +242,7 @@ final class GameSave {
         Metadata at=metadata(slot,System.currentTimeMillis(),GameResourcePaths.displayScript(content[0]),savedMeta,speaker,body);
         GameSave journal=new GameSave();
         Run tail=lastInput();
-        if(meta[0]==NativeGame.MODAL)journal.useNativeBaseline(tail.x,tail.y);
+        if(meta[0]==NativeGame.MODAL||meta[0]==NativeGame.NATIVE_PANEL)journal.useNativeBaseline(tail.x,tail.y);
         else{
             journal.runs.addAll(runs);journal.ticks=ticks;
             // The live journal can only extend its final run. Earlier runs are
@@ -491,7 +503,7 @@ final class GameSave {
         byte[] snapshot=null;
         if(order!=null&&!needsSnapshot&&replayFailure==null)try{order.finish();}
         catch(IOException invalid){replayFailure=invalid;}
-        if(metadata.wait==NativeGame.MODAL && !needsSnapshot)
+        if((metadata.wait==NativeGame.MODAL||metadata.wait==NativeGame.NATIVE_PANEL) && !needsSnapshot)
             throw new IOException("Modal save has no native baseline");
         boolean nativeRequired=needsSnapshot||replayFailure!=null;
         boolean validatedSnapshot=false;
@@ -513,7 +525,7 @@ final class GameSave {
         if(!keepRuns && nativeRequired && !validatedSnapshot)
             throw new IOException("Missing or invalid required native save snapshot");
         if (save!=null) {
-            if(metadata.wait==NativeGame.MODAL&&(!save.requiresSnapshot()||snapshot==null))
+            if((metadata.wait==NativeGame.MODAL||metadata.wait==NativeGame.NATIVE_PANEL)&&(!save.requiresSnapshot()||snapshot==null))
                 throw new IOException("选择场景存档缺少有效原生快照");
             save.ticks=total;
             if(save.requiresSnapshot()){
@@ -530,10 +542,11 @@ final class GameSave {
         checkSlot(file,loaded.metadata);
         return loaded;
     }
-    static boolean restoreSnapshot(Loaded loaded,long handle,int[] meta,boolean keepMusicPosition,boolean migrateLegacy) {
+    static boolean restoreSnapshot(Loaded loaded,long handle,int[] meta,boolean keepMusicPosition,boolean migrateLegacy,
+                                   boolean restartMusic) {
         Metadata at=loaded.metadata;
         return loaded.nativeSnapshot!=null&&NativeGame.restoreSnapshot(handle,loaded.nativeSnapshot,at.wait,at.word,at.line,
-            loaded.content,meta,keepMusicPosition,migrateLegacy);
+            loaded.content,meta,keepMusicPosition,migrateLegacy,restartMusic);
     }
     static void replay(Loaded loaded,long handle,int[] meta) throws IOException {
         if(meta==null||meta.length<7)throw new IOException("缺少恢复状态");
@@ -689,7 +702,7 @@ final class GameSave {
     }
     private static void validateMetadata(Metadata m) throws IOException {
         if (!SaveSlots.valid(m.slot) || m.savedAt<0 || m.script==null || m.script.isEmpty() || m.script.length()>4096 ||
-            m.script.indexOf('\0')>=0 || m.wait<0 || m.wait>NativeGame.TITLE&&m.wait!=NativeGame.PLACE&&m.wait!=NativeGame.MODAL || m.word<0 || m.line<0 ||
+            m.script.indexOf('\0')>=0 || m.wait<0 || m.wait>NativeGame.TITLE&&m.wait!=NativeGame.PLACE&&m.wait!=NativeGame.MODAL&&m.wait!=NativeGame.NATIVE_PANEL || m.word<0 || m.line<0 ||
             m.speaker==null || m.summary==null || m.speaker.codePointCount(0,m.speaker.length())>256 ||
             m.summary.codePointCount(0,m.summary.length())>40 || m.speaker.indexOf('\0')>=0 || m.summary.indexOf('\0')>=0)
             throw new IOException("存档摘要无效");

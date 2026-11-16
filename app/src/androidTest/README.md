@@ -1,6 +1,60 @@
 # Ethornell device instrumentation
 
+设备仪器测试与 `android layout` / `android screen` 共用 UiAutomation，不能并行连接。
+开始仪器测试前，关闭本轮 CLI 的辅助连接（`adb shell am force-stop com.android.cli.interact.instrumentation`）；测试结束后再使用 CLI 检查界面。
+宿主类与 App 存档管理类宜分组运行；残留宿主任务会触发生产门禁，重新准备隔离测试包的数据后再复测，不手改会话记录绕过门禁。
+
 WebDAV 存档同步、恢复与 Compose UI 的独立验收入口见 [WebDAV 设备验收记录](../../../docs/WebDAV-device-acceptance.md)。这些测试要求专用 application ID 与显式 opt-in；其纯框架辅助 Activity 不证明原生游戏兼容性。
+
+## 界面动效设备验收
+
+动效测试通过 `MotionDeviceAcceptance` 同时校验显式 opt-in 与本轮期望的隔离 application ID。包名由 `motion_target_package` 参数指定，可沿用本页的 `com.tyranor.next.ethornelltest`，不再固定为某个本地私有包名。缺少参数、未授权或实际 target 与参数不一致时，测试会明确失败并说明原因，不能把跳过当成验收通过。正式包 `com.tyranor.next` 与 instrumentation 的 `.test` 包不接受为 target。
+
+以下命令示例只准备隔离 debug 目标；执行前按实际设备指定 `<serial>`，先核对两个 APK 的 application ID，再分别安装。不要以正式包构建或安装这些验收 APK。
+
+```bash
+TYRANOR_APPLICATION_ID=com.tyranor.next.ethornelltest ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
+adb -s '<serial>' install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s '<serial>' install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb -s '<serial>' shell am instrument -w -r \
+  -e motion_device_acceptance true \
+  -e motion_target_package com.tyranor.next.ethornelltest \
+  -e class com.tyranor.next.ui.common.MotionDialogDeviceTest \
+  com.tyranor.next.ethornelltest.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+PowerShell 构建时先设 `$env:TYRANOR_APPLICATION_ID = 'com.tyranor.next.ethornelltest'`，再运行 `./gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon`，完成后恢复原环境变量。使用其它 `com.tyranor.next.*` 隔离包时，构建变量、`motion_target_package` 和 runner 前缀必须一起替换。执行其它动效类或 `类名#方法名` 时保留上述两个 `-e` 参数；没有这些参数的默认 instrumentation 执行会报告门禁失败。
+
+新增遮罩回归包括 `com.tyranor.next.ui.common.motion.NestedWindowScrimDeviceTest`（实际屏幕像素）与 `DialogWindowDimDeviceTest`（真实窗口属性/释放）。测试通过只说明所执行场景，不证明商业游戏兼容性或完整性能矩阵。
+
+`com.tyranor.next.ui.common.motion.ClosingWindowScrimDeviceTest` 同时覆盖原生父弹窗和真实 `AppBottomSheet` 父抽屉。它分别采样底层页面与父面板，要求上层打开时父面板变暗、底层不叠深；冻结上层进度为 1、保留窗口时接受关闭，父面板须立即恢复而底层遮罩保留，并覆盖进度更新和显式重开。
+
+`com.tyranor.next.ui.common.AppSearchFieldHandleDeviceTest` 检查普通/增强档的默认搜索与显式 Done 兼容输入：触摸后必须真实出现水滴柄，再逐帧检查它持续存在，同时确认焦点、文本、语义节点和窗口身份稳定；另验证点击移动、长按选择与拖动选择柄。它区分水滴柄和正常闪烁的细竖线光标。测试限于 androidTest 读取 Compose Foundation 1.11.2 的内部选择柄语义；升级 Compose 时须重新核对该探针。虚拟时钟步进后的采样不能代替连续物理帧录像，API 26/27 上两种参数都进入兼容实现，须另记实际平台覆盖。
+
+## 内置引擎时长记录
+
+`GamePlaytimeDeviceTest` 使用独立包与原创 HTML 夹具，启动真实的 `:tyrano` 私有宿主，验证前台片段落盘、后台不累计、重复导入幂等，以及同一运行游戏收到新启动 UUID 后仍沿用原会话与排序起点。它不证明原生游戏兼容性，也不覆盖全部引擎的真实游戏验收。
+
+```bash
+TYRANOR_APPLICATION_ID=com.tyranor.next.playtimetest ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
+# 核对并分别安装上述两个 APK，包名必须为 com.tyranor.next.playtimetest 与其 .test 包。
+adb shell am instrument -w -r -e class com.tyranor.next.core.game.playtime.GamePlaytimeDeviceTest -e playtime_test true com.tyranor.next.playtimetest.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+## Web 宿主启动遮罩设备回归
+
+`EngineStartupWebDeviceTest` 使用随机目录下的原创 HTML 夹具，分别启动真实私有 `:tyrano` 与产品 MV v1 选择的 `:rpgmaker` Activity；RPG 夹具加载宿主提供的 MV v1 核心脚本及依赖，但不包含游戏数据或商业内容。夹具包含故意缺失的子资源并只触发一次页面 reload。测试通过 accessibility 树确认页面内容呈现、子资源 404 不导致启动失败，且同一 Activity reload 不重新显示首次启动遮罩。测试只在显式隔离包与 opt-in 下运行，并仅删除夹具及结束隔离宿主任务/进程；它验证宿主加载路径，不宣称 RPG Maker 游戏兼容性。
+
+```bash
+TYRANOR_APPLICATION_ID=com.tyranor.next.startuptest ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb shell am instrument -w -r -e class com.core.engine.EngineStartupWebDeviceTest -e startup_test true com.tyranor.next.startuptest.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+测试通过证明原创页面夹具对应的 WebView 宿主路径与遮罩边界，不证明 RPG Maker/Tyrano 商业游戏兼容性，也不替代 renderer 崩溃的设备专项验证。
+
+2026-11-12 在 MAA-AN10 / API 36 实机通过 1 项测试；对应 JVM 时长逻辑与启动记账回归共 9 项通过。全量 Android lint 未通过：App 29 个、engine 54 个存量错误，报错未涉及本次修改的文件。
 
 R8 release-native 动态验证使用可选的纯Java runner，见 [`../releaseProbe/README.md`](../releaseProbe/README.md)。不得把默认debug AndroidX测试APK与release target混装；默认本页命令仍针对debug，省略 `ethornellReleaseProbe` 属性即可。
 
@@ -49,7 +103,20 @@ android --sdk=/tmp/androidsdk install --device='adb-AUUEUT3C22008394-f7wkhv._adb
 
 **15 符号 / kind-5 契约（2026-11-02 设备结果）：** probe 把 `ethornell_android_request_payload` 列为 required 并报告 `symbols=15`；直接 JNI 测试覆盖 invalid-token `requestPayload` 抛错、request id `0` 拒绝、未知 id 返回 null 且不 poison owner token、kind2 的 `completeRequest` 使用 4 参空 text、kind5 先 `requestPayload` 再显式 cancel（无真实 dialog fixture 时不伪造 accepted）。父验收本轮 `EthornellDeviceTest` 全类 **6/6 通过**；其中 ABI/build-info 与 UTF-8/线程/token 两例另行复跑也通过（2/2）。该结果只证明合成夹具与 JNI 契约，不证明真实商业游戏对白或输入对话框。
 
-原创 render assets 为 `assets/ethornell-render/system.arc`（1235B，SHA256 `f0d1d96ef30135c95bc722414a9d9572ec3f34952fb57ad9a1bfcf6adb8c06d8`）及其 `fixture.json`；来源为工具 owner 提供的 `render` profile，内部 BP 122B SHA256 `2bcc87a51db064d0163bf81cbf724589f00b3cbe440a6eebcf2cb5a3feb04217`，无商业资产。测试每次校验固定 archive hash 和 manifest，再拷入本轮私有 resource 根，user 根另建。
+原创 render assets 为 `assets/ethornell-render/system.arc`（1235B，SHA256 `f0d1d96ef30135c95bc722414a9d9572ec3f34952fb57ad9a1bfcf6adb8c06d8`）及其 `fixture.json`；来源为工具 owner 提供的 `render` profile，内部 BP 122B SHA256 `2bcc87a51db064d0163bf81cbf724589f00b3cbe440a6eebcf2cb5a3feb04217`，无商业资产。测试每次校验固定 archive hash 和 manifest，再拷入本轮资源夹具根。走 Activity 的夹具使用其 `savedata` 子目录，直接 JNI 的分离根夹具仍用于独立路径协议回归。
+
+EthornellStartupActivityTest 使用派生 profile `render-close`（1239B，SHA256 `233cd2ec37af3ce195322fb439e023e67034b2edab302e2cd222a433d3171d57`，BP 126B，SHA256 `bfb81d854ecb0bf1f1d375631e9450bbe51a6316c2513736e0a93e1a23d5cf09`）。它保留 render 夹具的图像与绘制程序，仅在顶层 ret 前插入 push_byte(1); Sys80:68 SetNativeCloseMode，不调用 Sys80:69；因此同一次私有宿主会先绘制 checkerboard，再由标准宿主退出 UI 请求关闭并等待 Closed/destroy ACK。fixture.json 固定记录派生自 render profile 的 SHA256、插入字节和无商业素材来源。该 profile 是专用合成启动夹具，不证明商业游戏兼容性。
+
+仅在隔离包 `com.tyranor.next.startuptest` 和显式 opt-in 下运行：
+
+```bash
+adb shell am instrument -w -r \
+  -e class com.core.ethornell.EthornellStartupActivityTest \
+  -e startup_test true \
+  com.tyranor.next.startuptest.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+测试通过前台截图的四个 checkerboard 色块证明真实私有宿主已有输出、启动标题已退场；正常退出必须观察 dispatch TERMINAL 与 owner 进程退出。runtime/library SHA、fixture SHA、设备 ABI/API、呈现截图及 ACK 报告保存在该轮 identity-bound files/ethornell/userdata/<sha256>/ 下。不使用厂商加密 logcat 作为唯一判据。
 
 预期逻辑画布1280×720，Sprite `[512,232,256,256]`；顶部原点探针 `(576,296)=红`、`(704,296)=绿`、`(576,424)=蓝`、`(704,424)=白`、`(128,128)=黑`，alpha均255。3×3每像素逐通道容差3，不用平均值掩盖错色。Consumer 对最新 buffer 使用 SurfaceTexture 原始 transform matrix（含生产端方向/crop），渲染至相同尺寸 RGBA FBO，`glReadPixels(GL_RGBA, GL_UNSIGNED_BYTE)` 统一 producer BGRA/RGBA，再用 `height-1-y` 解释 GL 底部原点；**不尝试交换红蓝或翻转预期来凑通过**。关闭 dithering/blending，shader/FBO/GL错误立即失败。
 
@@ -82,7 +149,7 @@ android --sdk=/tmp/androidsdk install --device='adb-AUUEUT3C22008394-f7wkhv._adb
 
 生产宿主在独立 `:ethornell` 进程，`ActivityScenario` 无法观察跨进程对象；测试从 **instrumented target UID** 显式 startActivity，不使用 adb am start，不需要导出组件。
 
-两个Activity测试在每次启动前通过生产 `EthornellDispatchRegistry.issue(filesDir, ROOT_URI)` 持久化一次性dispatch，并将其放入 `LaunchContract.ETHORNELL_DISPATCH_TOKEN`；不绕过claim前置校验。真实游戏观察期要求metadata为同identity/实际host PID的CLAIMED。两轮合成正常关闭测试要求ISSUED→（允许快速关闭时轮询错过CLAIMED）→TERMINAL，核对TERMINAL的PID/starttime及已观测CLAIMED owner一致；仍独立要求真实Closed→destroyACK日志和进程死亡证据。第二轮issue后断言首轮TERMINAL按生产契约被prune。测试不调用finish伪造正常终态；失败teardown仅可revoke未claim dispatch或在正向owner-death证据后调用retireDeadClaim，证据不可读保留记录并报错。
+所有真实私有 Activity 启动测试通过生产 `EthornellDispatchRegistry.issue(filesDir, ROOT_URI)` 持久化一次性dispatch，并将其放入 `LaunchContract.ETHORNELL_DISPATCH_TOKEN`；不绕过claim前置校验。真实游戏观察期要求metadata为同identity/实际host PID的CLAIMED。两轮合成正常关闭测试要求ISSUED→（允许快速关闭时轮询错过CLAIMED）→TERMINAL，核对TERMINAL的PID/starttime及已观测CLAIMED owner一致；仍独立要求真实Closed→destroyACK日志和进程死亡证据。第二轮issue后断言首轮TERMINAL按生产契约被prune。测试不调用finish伪造正常终态；失败teardown仅可revoke未claim dispatch或在正向owner-death证据后调用retireDeadClaim，证据不可读保留记录并报错。
 
 只读诊断连接在 `@BeforeClass` 中一次获取 `UiAutomation.FLAG_DONT_USE_ACCESSIBILITY`，shell和截图复用同一对象并共用mutex，不为每条logcat/dumpsys反复调用 `getUiAutomation()`、不注册无障碍服务，也不在命令间disconnect或切换flags。runner负责连接生命周期，读取pipe仅由AutoCloseInputStream单次关闭。连接初始化失败会在启动host前失败，不删减Closed/destroyACK证据或悄悄换成权限不足的app-user logcat。验收时同一serial仍须串行，避免外部CLI layout/uiautomator并发占用automation；若已有外部残留连接，请父验收者在重跑前调查清理，本agent不操作设备。
 
@@ -105,7 +172,7 @@ android --sdk=/tmp/androidsdk install --device='adb-AUUEUT3C22008394-f7wkhv._adb
 
 同路径也可对直接 JNI 执行 `-e class com.core.ethornell.EthornellDeviceTest#suppliedGameDirectRuntime`。两者分别运行，避免前后台焦点干扰。
 
-Activity 测试自动验证：未导出、正确独立进程、生产 native-create ACK 后真实 registry identity、持续存活、ActivityManager 有目标 Activity、抓取该 pid 的真实 logcat（fatal/GPU lost/VM panic 报失败），截图保存。报告路径见 `EthornellHarness` log：`activity-logcat.txt` / `activity.png` 位于本轮私有 user 目录，可 `adb exec-out run-as com.tyranor.next.ethornelltest cat '<相对files路径>'` 拉出。**这只证明 create ACK/观察期存活，不宣称跨进程 Closed/VM 完成或真实游戏可玩；截图必须人工检查。** 真 VM + GPU 自动证据来自上面的直接 JNI 测试。
+Activity 测试自动验证：未导出、正确独立进程、生产 native-create ACK 后真实 registry identity、持续存活、ActivityManager 有目标 Activity、抓取该 pid 的真实 logcat（fatal/GPU lost/VM panic 报失败），截图保存。报告路径见 `EthornellHarness` log：`activity-logcat.txt` / `activity.png` 位于隔离测试包的 `files/ethornell-activity-evidence/<identity SHA-256>` 目录，可 `adb exec-out run-as com.tyranor.next.ethornelltest cat '<相对files路径>'` 拉出。**这只证明 create ACK/观察期存活，不宣称跨进程 Closed/VM 完成或真实游戏可玩；截图必须人工检查。** 真 VM + GPU 自动证据来自上面的直接 JNI 测试。
 
 真实游戏观察期任何异常/断言（含registry提前清空、create失败）都会在finally清理host**之前**立即尽力采证：优先已记录host PID，尚未记录则从该dispatch owner恢复PID；即使host已退出也读保留logcat，保存 `activity-logcat.txt`、`activity.png`、`activity-evidence.txt`。成功结束同样采集一次，不周期性截图/写盘。错误/警告及生命周期行通过instrumentation stream输出 `HOST ...`，去除文件路径、最多100行、每行1600字符；完整未脱敏日志只保留在本轮私有目录。截图可能已是退回后的界面，仍保留，不伪称为退出前游戏画面。
 
@@ -113,13 +180,27 @@ Activity 测试自动验证：未导出、正确独立进程、生产 native-cre
 
 真实游戏的 finally 在 UID/精确进程名匹配、registry identity 属于本轮或当前无 live identity 时 kill isolated host；发现不同 live identity 则拒绝终止。允许复用没有 live session 的 cached idle 进程，进入前发现其它 live session 则失败。此为真实游戏测试 teardown，**不是优雅退出/存档验收**。不会 kill 主进程，也不清除其它已有游戏会话。Activity 启动失败、无 registry ACK、崩溃、超时均失败，不当作成功。
 
+## Sys80 槽位读取回归
+
+`EthornellDeviceTest#vmSys80ResourceUserDataSlotWritesAndReopensThroughFileApis`
+使用原创 PackFile/BP 夹具，从限制模式默认 primary root 执行 `Sys80:32`
+写入 `savedata/UserData/7.sud`，新会话再执行 `30/31/34/35` 检查完整内容、
+偏移读取、存在性与大小。首项 `checkGenericSlot()` 另执行 `Sys81:32/35`：
+通用 Header 加载从同一 scoped 用户别名读取 marker，核对返回状态、读取长度、
+buffer 内容和资源大小。归档中带有同名但内容不同的资源，避免映射缺失时回退到
+资源路径被误判为用户存档读回；另含大小写、双前缀、普通归档和缺档负例。夹具不改变
+primary root，不创建物理 `bgi-resource` 目录，不含商业游戏脚本。
+
+该用例仅在隔离包 `com.tyranor.next.startuptest` 且 `-e startup_test true`
+时运行。这是 VM 文件 I/O 回归，不能代替商业游戏槽位 UI 和实际读档验收。
+
 ## 真实游戏手动接管（可选，非自动画面/存读档验收）
 
 **已知限制：此参数不能保证runner结束后host存活，不应作为跨runner手动接管方案。** 已核对AOSP `ActivityManagerService.finishInstrumentationLocked()`：默认 `!instr.mNoRestart` 会调用 `forceStopPackageLocked(..., "finished inst")`，连同target包的 `:ethornell` 子进程一起结束。仅取消测试自身kill不改变系统行为。参考 [AOSP实现](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/services/core/java/com/android/server/am/ActivityManagerService.java)。本harness不改变系统instrumentation模式、不添加生产后门来绕过。可靠的手动方案是在仪器完全结束后，从普通App游戏库正常点击启动。
 
 仅 `suppliedGamePrivateActivityLaunch` 支持 `-e keep_host_for_manual true`（默认false，严格只接受true/false），其精确语义只是**跳过harness自己的成功teardown**。在观察期与成功采证完成后，再确认本轮host仍存活且dispatch仍为CLAIMED，输出 `MANUAL_HANDOFF host_pid=... identity=... private_user_root=... dispatch=... survival_after_runner=NOT_GUARANTEED ... auto_acceptance=NONE` 并保存 `manual-handoff.txt`。该模式成功时不kill本轮host、不revoke/retire其dispatch，finally仍取消硬deadline并shutdown supervisor，不留后续定时杀进程任务。任何失败仍按默认采证+cleanup处理，不因为manual模式忽略错误。
 
-手动标题/新游戏/存档/读档/正常退出验收应在runner结束后**正常打开App并从游戏库启动**；别依赖上述参数留下的host。当前 `EthornellSaveCapability.available=true`：host dispatch 协议、App 私有 user-root save-IO/64 MiB 边界与 native 全局 user-data 的设备验收均已通过（`EthornellSaveDeviceTest` 9/9），公开 manager 用例在门禁开启后执行；它只控制 App 存档管理准入，不阻止正常 EngineLauncher 走 OperationGate.issue 后的启动，也不等于商业游戏内存档槽位保存/读回成功。若系统finish后留下CLAIMED metadata，下一次正常操作应走生产正向owner-death恢复，不手改记录。已显示的host confirmation保持人工处理，harness不自动答复所有确认，不以“观察期liveness通过”声称标题/slot可用。截图可能停在资源/保存错误提示，必须按真实错误归因。不得误伤正式App或其它session。参数只影响测试自身teardown，不导出Activity、不添加生产backdoor。
+手动标题/新游戏/存档/读档/正常退出验收应在 runner 结束后正常打开 App 并从游戏库启动；不要依赖测试留下的 host。Activity 使用传入游戏目录中的 `savedata`，手动测试请使用可写的独立游戏副本。测试日志、报告与截图放在隔离测试包的 `files/ethornell-activity-evidence/<identity SHA-256>`，不写入游戏存档目录，也不提交代码库。`EthornellSaveCapability.available` 只控制 App 存档管理准入，不等于商业槽位兼容；运行、残留任务及 dispatch 仍受门禁保护，不能手改记录绕过。
 
 ## 正常关闭 ACK 后进程退出再重进（合成 fixture）
 
@@ -158,7 +239,6 @@ failed identity_sha256=<64hex> token=<session token>
 ## 实施与验收状态（2026-11-02）
 
 - `EthornellDeviceTest` 全类 **6/6 通过**：15 符号/ABI/build_info、UTF-8/线程/token、原创 GPU 像素与 Surface 重挂、脚本关闭 Closed、合成 VM 全局 user-data 写入/重开/空根反例。ABI 与 supplementary 两组另行复跑 **2/2**。
-- `EthornellSaveDeviceTest` 门禁翻转后 **9/9 通过**：私有树 ZIP 往返、64 MiB 单文件边界、ZIP 回滚、恶意 ZIP、取消清理、公开 `GameSaveManager`、busy 拒绝等；native 全局 user-data write/read/empty negative 同时通过。
 - Release R8 probe **3/3 通过**（`NUMTEST=3`/`FAILURES=0`）：release identity、15 符号 RTLD_NOW/ABI/build_info、production JNI create/poll/destroy；scope 不含 GPU/标题/存档。
 - **已通过（范围受限）：** `EthornellPauseDeviceTest` 已按新调度器多 stage/step 模型重写并 3/3 通过；夹具验证暂停/恢复与 Surface，不再断言精确 guest tick/held 序列；输入映射由 JVM 测试覆盖。
 - **未验证：** 真实商业游戏样本当前不在设备，商业槽位保存/重启读回、真实对白与输入 dialog 未验证；16KB 模拟器本轮未重跑；API26 GPU、音频路由、字体/电影与长稳仍未闭环。
@@ -172,3 +252,9 @@ failed identity_sha256=<64hex> token=<session token>
 `ui/save/SaveDialogDismissDeviceTest` 补充两个隔离目标用例：任务中点击遮罩/返回保持弹窗可见，任务结束后允许关闭；退场动画已经开始后 busy 改变仍清除父状态。执行沿用 `com.tyranor.next.webdavacceptance*` 与 `-e webdav_device_acceptance true` 的双重门槛。
 
 2026-10-27 本轮仅编译该测试和普通 AndroidTest APK，按用户要求未连接设备、未执行新增 UI 用例；原有截图与设备报告不代表这两个新增用例已执行。
+
+固定横屏设备回归另含 `com.core.engine.EngineOrientationDeviceTest`（安装后20个宿主清单与Android 16属性）和 `com.tyranor.next.core.engine.external.ExternalEngineOrientationDeviceTest`（三个外置Intent方向请求）。两项均要求隔离包 `com.tyranor.next.startuptest` 与 `startup_test=true`；不启动外置APK，不保证其应用方向参数。
+
+BGI 游戏目录存档回归使用 `EthornellSaveDeviceTest`（旧私有数据迁入共享存储、ZIP、回滚、限额与门禁）、`EthornellDispatchDeviceTest`、`EthornellStartupActivityTest`，以及 `EthornellDeviceTest#vmWritesAndReopensGameLocalSaveOnSharedStorage`（真实 VM 在外部存储的游戏 `savedata` 写入和重开读取）。该 VM 用例与启动 Activity 用例要求隔离包 `com.tyranor.next.startuptest` 及 `-e startup_test true`。在隔离包的新安装或清理数据后执行；保留的播放器任务会按设计阻止存档管理。设备结果不能代替商业游戏槽位兼容性验收。
+
+公共共享存储的 BGI 写入锁回归包括 `EthornellDeviceTest#publicSharedStorageSupportsExclusiveOpenFileDescriptionLocks`（独立文件描述符互斥与关闭释放）和 `EthornellDeviceTest#vmWritesAndReopensGameLocalSaveOnPublicSharedStorage`（Download 中真实 VM 写入与重开）。二者使用隔离包和 `startup_test=true`，并需为隔离包允许“所有文件访问”；仅创建和删除 UUID 命名的自有夹具。应用专属 `externalFilesDir` 不能替代此公共目录用例，因为两者可能支持不同的锁操作。

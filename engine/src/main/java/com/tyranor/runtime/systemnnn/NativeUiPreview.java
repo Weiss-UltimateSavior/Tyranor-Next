@@ -16,10 +16,10 @@ final class NativeUiPreview {
     static native boolean claim(long handle,long runtime);
     static native void surface(long handle,Surface surface);
     static native void savedScreen(long handle,int[] pixels,int width,int height);
-    static native void page(long handle,int page);
+    static native void page(long handle,int page,boolean publish);
     static native void prime(long handle);
     static native void capture(long handle,Bitmap bitmap);
-    static native void tick(long handle,int mouseX,int mouseY,boolean clicked,boolean held,int frames);
+    static native int tick(long handle,int mouseX,int mouseY,boolean clicked,boolean held,int elapsedMs,boolean resetClock);
     static native void close(long handle);
     static native long createWipe(Bitmap before,Bitmap after,int color,int width,int height);
     static native void drawWipe(long handle,Bitmap target,int type,int frame,int frames);

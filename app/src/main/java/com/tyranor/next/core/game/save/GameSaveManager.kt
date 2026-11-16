@@ -21,6 +21,7 @@ import com.tyranor.next.core.game.model.Xs35Paths
 import com.tyranor.next.core.game.model.Xs4Paths
 import com.tyranor.next.core.game.save.sync.SaveSyncLocks
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
+import com.tyranor.next.core.game.save.sync.SaveSyncService
 import com.tyranor.next.core.game.save.sync.SAVE_DIRECTORY_KEY_PREFIX
 import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
 import com.tyranor.next.core.game.scan.EngineScanner
@@ -93,12 +94,14 @@ class GameSaveManager(private val context: Context) {
                 directory.isDirectory || directory.mkdirs(),
             )
         }
-        // Exact private identity root even when the resource volume is absent.
-        // Admission remains disabled until the device save-IO fixture is accepted.
+        // The same game-local root is used by preflight, the player and save management.
         if (game.engine == EngineType.ETHORNELL) {
             val directory = try {
-                val expected = EthornellPaths.userDataDir(appContext.filesDir, game.uri)
-                EthornellPaths.validateUserDataDir(appContext.filesDir, game.uri, expected.absolutePath)
+                val root = resolveGameDirectory(game)?.let(::File)
+                root?.let {
+                    val expected = EthornellPaths.gameUserDataDir(it)
+                    EthornellPaths.validateGameUserDataDir(it, expected.absolutePath)
+                }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (_: IOException) {
@@ -108,7 +111,7 @@ class GameSaveManager(private val context: Context) {
             }
             return SaveLocation(
                 directory,
-                R.string.save_location_engine_scoped,
+                R.string.save_location_engine_game_dir,
                 directory != null && EthornellSaveCapability.available,
             )
         }
@@ -187,7 +190,7 @@ class GameSaveManager(private val context: Context) {
             EngineType.RUFFLE,
             // 第三方运行时模块无统一存档接口，此分支仅为 when 完备性
             EngineType.RUNTIME_MODULE,
-            // ETHORNELL returns its exact private user root above; exhaustive fallback only.
+            // ETHORNELL returns its game-local user root above; exhaustive fallback only.
             EngineType.ETHORNELL,
             EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.CATSYSTEM2, EngineType.PC,
             // ANDROID_APP 在函数开头已提前返回（无文件存档接口），此分支仅为 when 完备性
@@ -356,7 +359,10 @@ class GameSaveManager(private val context: Context) {
     internal suspend fun inspectSaves(game: ScanGame): SaveListSnapshot {
         if (game.engine == EngineType.SYSTEMNNN) return withSystemNnnSourceLock(game) {
             val location = resolveSaveLocation(game)
-            val count = if (location.available) withSystemNnnSaveFiles(game, location.directory, List<File>::size) else 0
+            val count = if (location.available) {
+                val store = systemNnnStore(game, location.directory)
+                store.access { store.files().size }
+            } else 0
             SaveListSnapshot(location, count, hasImportedSystemNnnResources(game))
         }
         val location = resolveSaveLocation(game)
@@ -392,20 +398,21 @@ class GameSaveManager(private val context: Context) {
         expectedDirectory: File? = null,
     ): Int {
         if (game.engine == EngineType.SYSTEMNNN) {
-            val store = systemNnnStore(game, expectedDirectory)
-            return store.access {
-                val files = store.files()
-                if (files.isEmpty()) throw GameSaveException(SaveErrorCode.NO_EXPORTABLE_FILES)
-                val output = appContext.contentResolver.openOutputStream(destinationUri, "w")
-                    ?: throw GameSaveException(SaveErrorCode.CREATE_EXPORT_ZIP)
-                ZipOutputStream(output).use { zip ->
-                    for ((name, file) in files) {
-                        zip.putNextEntry(ZipEntry(safeZipEntryName(name)).apply { time = file.lastModified() })
-                        file.inputStream().use { it.copyTo(zip) }
-                        zip.closeEntry()
+            return withSystemNnnSaveTarget(game, expectedDirectory) { store ->
+                store.access {
+                    val files = store.files()
+                    if (files.isEmpty()) throw GameSaveException(SaveErrorCode.NO_EXPORTABLE_FILES)
+                    val output = appContext.contentResolver.openOutputStream(destinationUri, "w")
+                        ?: throw GameSaveException(SaveErrorCode.CREATE_EXPORT_ZIP)
+                    ZipOutputStream(output).use { zip ->
+                        for ((name, file) in files) {
+                            zip.putNextEntry(ZipEntry(safeZipEntryName(name)).apply { time = file.lastModified() })
+                            file.inputStream().use { it.copyTo(zip) }
+                            zip.closeEntry()
+                        }
                     }
+                    files.size
                 }
-                files.size
             }
         }
         requireCmvsIdle(game.engine)
@@ -623,30 +630,12 @@ class GameSaveManager(private val context: Context) {
 
     internal fun cleanupAppData(game: ScanGame, expectedDirectory: File?) {
         if (RuntimeModuleBindings.builtInSystemNnn(game).engine == EngineType.SYSTEMNNN) {
-            val sourceId = SystemNnnGameDirectory.sourceIdentity(game.uri) ?: return
-            val copy = SystemNnnCopyStore.committedRoot(appContext, sourceId) ?: return
-            val directory = SystemNnnHost.saveDirectory(appContext, copy)
-            if (directory.canonicalPath != expectedDirectory?.canonicalPath) {
-                throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
-            }
-            GameLibraryFacade.evictUnusedSystemNnnCopy(appContext, sourceId, excludingUri = game.uri) {
-                evictSystemNnnResources(sourceId)
-            }
+            // Copy reclamation is queued with library removal and runs once it is durable.
             return
         }
         if (game.engine == EngineType.ETHORNELL) {
-            // Retain on busy, disabled, damaged path, or incomplete recovery.
-            // Library removal is not permission to delete an uncertain tree.
-            if (!EthornellSaveCapability.available) return
-            try {
-                EthornellOperationGate.cleanupIfIdle(appContext) { ethornellStore(game).delete() }
-            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                throw cancelled
-            } catch (_: IOException) {
-                // Best effort cleanup: never redirect or broaden deletion.
-            } catch (_: SecurityException) {
-                // Permission failure retains the private tree.
-            }
+            // Removing a library entry must retain saves in the game's own directory.
+            // Retain the legacy migration source as well; an unavailable volume may return.
             return
         }
         if (game.engine == EngineType.CMVS) {
@@ -762,7 +751,11 @@ class GameSaveManager(private val context: Context) {
         }
     }
 
-    private fun ethornellStore(game: ScanGame) = EthornellSaveStore(appContext.filesDir, game.uri)
+    private fun ethornellStore(game: ScanGame, checkCancelled: () -> Unit = {}): EthornellSaveStore {
+        val root = resolveGameDirectory(game)?.let(::File)
+            ?: throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+        return EthornellSaveStore(appContext.filesDir, game.uri, root, checkCancelled = checkCancelled)
+    }
 
     /** CMVS 运行中由引擎独占 `.cmvs-system.lock` 并持续写槽位；手动覆盖/导出/删除必须先停引擎。 */
     private fun requireCmvsIdle(engine: EngineType) {
@@ -779,7 +772,7 @@ class GameSaveManager(private val context: Context) {
             val coroutine = kotlinx.coroutines.currentCoroutineContext()
             try {
                 EthornellOperationGate.requireIdle(appContext)
-                block(EthornellSaveStore(appContext.filesDir, game.uri, checkCancelled = {
+                block(ethornellStore(game, checkCancelled = {
                     coroutine.ensureActive()
                 }))
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -844,7 +837,7 @@ class GameSaveManager(private val context: Context) {
             throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
         }
         return SystemNnnSaveStore(root, directory, validateSnapshot = { stage, _, existing, checkCancelled ->
-            SystemNnnHost.validateStagedSaveSnapshot(appContext, stage, existing, checkCancelled)
+            SystemNnnHost.validateStagedSaveSnapshot(appContext, root, stage, existing, checkCancelled)
         })
     }
 
@@ -856,7 +849,7 @@ class GameSaveManager(private val context: Context) {
                 ?.let(SystemNnnCopyStore::hasImportedResources) == true
         }.getOrDefault(false)
 
-    internal suspend fun clearImportedSystemNnnResources(game: ScanGame, onlyIfUnreferenced: Boolean = false): Boolean {
+    internal suspend fun clearImportedSystemNnnResources(game: ScanGame): Boolean {
         if (game.engine != EngineType.SYSTEMNNN) return false
         val sourceId = SystemNnnGameDirectory.sourceIdentity(game.uri)
             ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
@@ -867,82 +860,91 @@ class GameSaveManager(private val context: Context) {
                 if (SaveSyncRuntime.activeKey(appContext, game) != key) {
                     throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
                 }
-                val running = SaveSyncRuntime.isGameRunning(appContext, game)
-                val evictIfIdle = {
-                    coroutine.ensureActive()
-                    if (running) throw GameSaveException(SaveErrorCode.ENGINE_RUNNING)
-                    evictSystemNnnResources(sourceId)
-                }
-                if (onlyIfUnreferenced) {
-                    GameLibraryFacade.evictUnusedSystemNnnCopy(appContext, sourceId, evict = evictIfIdle)
-                } else {
-                    evictIfIdle()
-                }
+                coroutine.ensureActive()
+                if (SaveSyncRuntime.isGameRunning(appContext, game)) throw GameSaveException(SaveErrorCode.ENGINE_RUNNING)
+                evictSystemNnnResources(sourceId)
             }
         }
     }
 
     internal data class SystemNnnResourceCleanup(
         val cleared: Int,
-        val failedGames: List<ScanGame>,
-    ) {
-        val failed: Int get() = failedGames.size
-    }
+        val failed: Int,
+    )
 
-    /**
-     * Cleans the copies of games that left the library (deletion, root removal, rescan drop).
-     * Failures stay queued in [SystemNnnCleanupQueue] so a later start can retry them.
-     */
-    internal suspend fun clearSystemNnnResourceTargets(games: List<ScanGame>): SystemNnnResourceCleanup =
+    /** Retry durable requests without letting a live library alias lose its copy. */
+    internal suspend fun drainSystemNnnCleanupQueue(uri: String? = null): SystemNnnResourceCleanup =
         withContext(Dispatchers.IO) {
+            val queue = SystemNnnCleanupQueue.open(appContext)
             var cleared = 0
-            val failed = ArrayList<ScanGame>()
-            val done = ArrayList<String>()
-            val seen = HashSet<String>()
-            // Legacy Emberfall module bindings resolve to the built-in engine before cleanup.
-            for (game in games.map(RuntimeModuleBindings::builtInSystemNnn)) {
+            var failed = 0
+            for (target in queue.pending()) {
+                if (uri != null && target.uri != uri) continue
                 ensureActive()
                 try {
-                    if (!seen.add(SystemNnnGameDirectory.sourceIdentity(game.uri) ?: game.uri)) {
-                        done += game.uri
+                    val sourceId = SystemNnnGameDirectory.sourceIdentity(target.uri)
+                    if (sourceId == null) {
+                        queue.complete(target)
                         continue
                     }
-                    if (clearImportedSystemNnnResources(game, onlyIfUnreferenced = true)) cleared++
-                    done += game.uri
+                    val result = clearQueuedSystemNnnResources(queue, target, sourceId)
+                    if (result == null) {
+                        failed++
+                        continue
+                    }
+                    if (result) cleared++
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
-                    failed += game
+                    failed++
                     android.util.Log.w("GameSaveManager", "Could not clear SystemNNN copy resources", failure)
                 }
-            }
-            if (done.isNotEmpty()) runCatching { SystemNnnCleanupQueue.remove(appContext, done) }
-            if (failed.isNotEmpty()) {
-                runCatching { SystemNnnCleanupQueue.add(appContext, failed.map(ScanGame::uri)) }
             }
             SystemNnnResourceCleanup(cleared, failed)
         }
 
-    /** Retries the durable queue; callers only need to run it on a background thread. */
-    internal suspend fun drainSystemNnnCleanupQueue(): SystemNnnResourceCleanup =
-        withContext(Dispatchers.IO) {
-            val pending = SystemNnnCleanupQueue.pending(appContext)
-            if (pending.isEmpty()) return@withContext SystemNnnResourceCleanup(0, emptyList())
-            val games = pending.map { uri ->
-                ScanGame(
-                    title = uri,
-                    uri = uri,
-                    engine = EngineType.SYSTEMNNN,
-                    launchTarget = EngineScanner.LAUNCH_TARGET_GAME_DIR,
-                )
+    private suspend fun clearQueuedSystemNnnResources(
+        queue: SystemNnnCleanupQueue,
+        target: SystemNnnCleanupQueue.Target,
+        sourceId: String,
+    ): Boolean? =
+        SaveSyncLocks.versions(target.uri) {
+            val game = ScanGame(target.uri, target.uri, EngineType.SYSTEMNNN, EngineScanner.LAUNCH_TARGET_GAME_DIR)
+            val key = SaveSyncRuntime.activeKey(appContext, game)
+            val coroutine = currentCoroutineContext()
+            SaveSyncLocks.active(key) {
+                // A retire marker switches directory authority, so exclude mutations of either directory.
+                SaveSyncLocks.mutation {
+                    if (SaveSyncRuntime.activeKey(appContext, game) != key) {
+                        throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+                    }
+                    val running = SaveSyncRuntime.isGameRunning(appContext, game)
+                    GameLibraryFacade.evictUnusedSystemNnnCopy(appContext, sourceId) {
+                        coroutine.ensureActive()
+                        if (target !in queue.pending()) return@evictUnusedSystemNnnCopy false
+                        val cleared = if (SystemNnnCopyStore.activeRoot(appContext, sourceId) != null) {
+                            if (running) throw GameSaveException(SaveErrorCode.ENGINE_RUNNING)
+                            if (target.retireCopy) {
+                                if (key == game.uri) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+                                SaveSyncService(appContext).requireSaveDirectoryRetirementAvailable(game, key)
+                            }
+                            evictSystemNnnResources(sourceId, target.retireCopy)
+                        } else {
+                            false
+                        }
+                        queue.complete(target)
+                        cleared
+                    }
+                }
             }
-            clearSystemNnnResourceTargets(games)
         }
 
-    private fun evictSystemNnnResources(sourceId: String): Boolean = try {
-        SystemNnnCopyStore.clearResources(appContext, sourceId)
+    private fun evictSystemNnnResources(sourceId: String, retireCopy: Boolean = false): Boolean = try {
+        SystemNnnCopyStore.clearResources(appContext, sourceId, retireCopy)
     } catch (failure: SystemNnnHost.SaveBusyException) {
         throw GameSaveException(SaveErrorCode.ENGINE_RUNNING, cause = failure)
+    } catch (failure: GameSaveException) {
+        throw failure
     } catch (failure: SystemNnnCopyStore.Failure) {
         val code = if (failure.reason == SystemNnnCopyStore.Reason.BUSY) SaveErrorCode.ENGINE_RUNNING
         else SaveErrorCode.SAVE_DIR_UNAVAILABLE
@@ -953,10 +955,10 @@ class GameSaveManager(private val context: Context) {
         throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = failure)
     }
 
-    internal fun <T> withSystemNnnSaveFiles(game: ScanGame, expectedDirectory: File?, use: (List<File>) -> T): T {
-        val store = systemNnnStore(game, expectedDirectory)
-        return store.access { use(store.files().values.toList()) }
-    }
+    internal fun <T> withSystemNnnSaveFiles(game: ScanGame, expectedDirectory: File?, use: (List<File>) -> T): T =
+        withSystemNnnSaveTarget(game, expectedDirectory) { store ->
+            store.access { use(store.files().values.toList()) }
+        }
 
     private fun resolveGameDirectory(game: ScanGame): String? {
         if (game.engine == EngineType.SYSTEMNNN) return SystemNnnGameDirectory.accessible(appContext, game.uri)?.absolutePath

@@ -13,9 +13,11 @@ final class GameUiAssets {
     private static final long MAX_IMAGE_PIXELS=4L*1024*1024, MAX_TOTAL_PIXELS=32L*1024*1024;
 
     static final class Config {
+        static final Config EMPTY=new Config(Collections.emptyMap(),null);
         private final Map<String,String> values;
         private final GameTextDecoder decoder;
         private Config(Map<String,String> values,GameTextDecoder decoder) { this.values=Collections.unmodifiableMap(values);this.decoder=decoder; }
+        static Config empty() { return EMPTY; }
         String value(String name,String fallback) {
             String result=values.get(key(name));
             return result==null ? fallback : result;
@@ -62,33 +64,115 @@ final class GameUiAssets {
         }
     }
 
+    static final class SharedConfig {
+        static final int SIZE=28;
+        final boolean fromNative;
+        final int screenWidth,screenHeight,defaultFrameMs,codeByte,trialFlag,systemSaveVersion;
+        final int layerLimit,renderLayerCount,saveLayerRecords,registersOkikae;
+        final int windowMessageNumber,fullMessageNumber,messageFontSize;
+        final int printX,printY,nextX,nextY,lprintX,lprintY,lnextX,lnextY,appendSkipName;
+        final int windowPercentRaw,windowOpacityPercent,charaVoiceCount,titleBgmNumber;
+        final int yearVarIndex,dateVarIndex;
+
+        private SharedConfig(boolean fromNative,int[] v){
+            this.fromNative=fromNative;
+            screenWidth=v[0];screenHeight=v[1];defaultFrameMs=v[2];codeByte=v[3];
+            trialFlag=v[4];systemSaveVersion=v[5];layerLimit=v[6];renderLayerCount=v[7];
+            saveLayerRecords=v[8];registersOkikae=v[9];windowMessageNumber=v[10];fullMessageNumber=v[11];
+            messageFontSize=v[12];printX=v[13];printY=v[14];nextX=v[15];nextY=v[16];
+            lprintX=v[17];lprintY=v[18];lnextX=v[19];lnextY=v[20];appendSkipName=v[21];
+            windowPercentRaw=v[22];windowOpacityPercent=v[23];charaVoiceCount=v[24];titleBgmNumber=v[25];
+            yearVarIndex=v[26];dateVarIndex=v[27];
+        }
+
+        boolean trial(){return trialFlag!=0;}
+        boolean singleByteText(){return codeByte==1;}
+        PcStorySave.GameDateVars gameDateVars(){
+            return yearVarIndex<0&&dateVarIndex<0?PcStorySave.GameDateVars.NONE:
+                new PcStorySave.GameDateVars(yearVarIndex,dateVarIndex);
+        }
+
+        static int opacityFromWindowPercent(int rawPercent){
+            return 100-Math.max(0,Math.min(100,rawPercent));
+        }
+
+        static SharedConfig from(int[] nativeSnapshot,File root,Config game,Config printMessage){
+            if(nativeSnapshot!=null&&nativeSnapshot.length>=SIZE)return new SharedConfig(true,nativeSnapshot);
+            return fallback(root,game,printMessage);
+        }
+
+        static SharedConfig fallback(File root,Config game,Config printMessage){
+            Config empty=new Config(Collections.emptyMap(),null);
+            Config exe=empty,main=empty,gm=game,pm=printMessage,title=empty;
+            if(root!=null){
+                try{exe=readExeSetup(root);}catch(IOException ignored){}
+                try{main=readConfig(root,"mainControl");}catch(IOException ignored){}
+                if(gm==null)try{gm=readConfig(root,"game");}catch(IOException ignored){}
+                if(pm==null)try{pm=readConfig(root,"printmessage");}catch(IOException ignored){}
+                try{title=readConfig(root,"title");}catch(IOException ignored){}
+            }
+            if(gm==null)gm=empty;
+            if(pm==null)pm=empty;
+            int sw=Math.max(1,exe.number("mainScreenWindowSizeX1",main.number("windowSizeX",800)));
+            int sh=Math.max(1,exe.number("mainScreenWindowSizeY1",main.number("windowSizeY",600)));
+            int frameMs=Math.max(1,gm.number("frameTime",20));
+            int cb=gm.number("codeByte",2)==1?1:2;
+            int trial=gm.number("taikenflag",0)!=0?1:0;
+            int sysVer=gm.number("systemSaveVersion",2);
+            int layerExp=gm.number("layerExpand",0)!=0?32:16;
+            int okikae=gm.number("okikaeNothing",0)==0?1:0;
+            int winMsg=Math.max(1,pm.number("windowMessageNumber",4));
+            int fontSize=Math.min(72,pm.number("fontSize",24));
+            int px=pm.number("printX",100),py=pm.number("printY",100);
+            int nx=pm.number("nextX",0),ny=pm.number("nextY",fontSize+6);
+            int lpx=pm.number("LPrintX",100),lpy=pm.number("LPrintY",100);
+            int lnx=pm.number("LNextX",nx),lny=pm.number("LNextY",ny);
+            int defFull=lny>0&&sh>lpy?Math.max(1,(sh-lpy)/lny-1):4;
+            int fullMsg=Math.max(1,pm.number("fullMessageNumber",defFull));
+            int skipName=pm.number("appendSkipName",1)!=0?1:0;
+            int winRaw=0,winOpacity=opacityFromWindowPercent(winRaw);
+            int bgm=title.number("bgmNumber",1);
+            PcStorySave.GameDateVars dv=PcStorySave.GameDateVars.NONE;
+            if(root!=null)try{dv=PcStorySave.GameDateVars.load(root,gm);}catch(IOException ignored){}
+            return new SharedConfig(false,new int[]{
+                sw,sh,frameMs,cb,trial,sysVer,layerExp,32,32,okikae,
+                winMsg,fullMsg,fontSize,px,py,nx,ny,lpx,lpy,lnx,lny,skipName,
+                winRaw,winOpacity,0,bgm,dv.yearIndex,dv.dateIndex
+            });
+        }
+    }
+
     final Config system,config,save,load,backlog,messageWindow,game,printMessage,dataFile,notice,messageCursor,selection;
     final Config gameMouse,selectPlace,selectPlace2;
-    final boolean freeStatus;
-    final Bitmap longPrintImage;
-    final boolean longPrintImageOffWithWindow;
+    final SharedConfig sharedConfig;
+    final boolean statusOverlays;
     final long systemExtensionModes;
     final Map<String,Config> storyButtons;
     final File root;
     RuntimeHandle runtime;
     private final Map<String,Bitmap> images;
+    // Worker-only cache of the current configuration portrait names, including misses.
+    private Set<String> characterImageRequest=Collections.emptySet();
+    private Map<String,Bitmap> characterImages=Collections.emptyMap();
     private final int[] textRates;
     private final boolean legacyVolumeDefaults;
+    private final boolean useXAudio2;
     private GameUiAssets(File root,Config system,Config config,Config save,Config load,Config backlog,Config messageWindow,
                          Config game,Config printMessage,Config dataFile,Config notice,Config messageCursor,Config selection,Config gameMouse,Config selectPlace,Config selectPlace2,
-                         Map<String,Config> storyButtons,Map<String,Bitmap> images,int[] textRates,boolean freeStatus,boolean legacyVolumeDefaults) throws IOException {
+                         SharedConfig sharedConfig,Map<String,Config> storyButtons,Map<String,Bitmap> images,int[] textRates,boolean freeStatus,
+                         boolean legacyVolumeDefaults,boolean useXAudio2) throws IOException {
         this.root=root.getCanonicalFile();
         this.system=system; this.config=config; this.save=save; this.load=load; this.backlog=backlog;
         this.messageWindow=messageWindow;
         this.dataFile=dataFile;this.notice=notice;this.messageCursor=messageCursor;this.selection=selection;
-        this.game=game;this.printMessage=printMessage;this.storyButtons=Collections.unmodifiableMap(storyButtons);
+        this.game=game;this.printMessage=printMessage;this.sharedConfig=sharedConfig;
+        this.storyButtons=Collections.unmodifiableMap(storyButtons);
         this.gameMouse=gameMouse;this.selectPlace=selectPlace;this.selectPlace2=selectPlace2;
         this.images=Collections.unmodifiableMap(images);
-        this.longPrintImage=images.get(longPrintImageKey(printMessage));
-        this.longPrintImageOffWithWindow=printMessage.number("addLPrintImageOffWithWindow",0)!=0;
         this.textRates=textRates;
-        this.freeStatus=freeStatus;
+        statusOverlays=freeStatus||game.number("useExtClass",0)!=0;
         this.legacyVolumeDefaults=legacyVolumeDefaults;
+        this.useXAudio2=useXAudio2;
         long extensions=0;
         for(int item=10;item<=GameSystemMenuPanel.optionCount(system);item++){
             int mode=system.number("expOptionMode"+item,0);
@@ -97,7 +181,7 @@ final class GameUiAssets {
         systemExtensionModes=extensions;
     }
     OriginalSettingsModel settingsModel(int width,int height){
-        return new OriginalSettingsModel(config,game,width,height,legacyVolumeDefaults);
+        return new OriginalSettingsModel(config,game,width,height,legacyVolumeDefaults,useXAudio2);
     }
     private static String key(String value) { return value.toLowerCase(Locale.ROOT); }
     private static boolean spacing(char c){return c==' '||c=='\t';}
@@ -126,10 +210,6 @@ final class GameUiAssets {
         String name=imageKey(value);
         return name.isEmpty()||name.indexOf('/')>=0?name:"sys/"+name;
     }
-    private static String longPrintImageKey(Config config) {
-        if(config.number("LPrintAddImageFlag",0)==0)return "";
-        return systemImageKey(config.value("FilenameLPrintImage","lprintimage"));
-    }
     /** Does not perform I/O, decoding or JNI calls; safe to query from UI drawing code. */
     Bitmap image(String name) { return name==null ? null : images.get(systemImageKey(name)); }
     Config place(int mode){return mode==NativeGame.SELECT_PLACE2_MODE?selectPlace2:selectPlace;}
@@ -154,8 +234,11 @@ final class GameUiAssets {
         requested.addAll(rows);
         return new ModeAssets(config,variant,modeSprites(handle,requested));
     }
-    ModeAssets chartAssets(long handle,GameTextDecoder decoder,ChartView chart,ModeAssets previous) throws IOException {
-        Config config=previous==null?readConfig(root,"selectChart",decoder):previous.config;
+    static Config readChartConfig(File root,GameTextDecoder decoder,boolean legacy) throws IOException {
+        return readConfig(root,legacy?"chart":"selectChart",decoder);
+    }
+    ModeAssets chartAssets(long handle,GameTextDecoder decoder,ChartView chart,boolean legacy,ModeAssets previous) throws IOException {
+        Config config=previous==null?readChartConfig(root,decoder,legacy):previous.config;
         Set<String> opaque=new LinkedHashSet<>();
         for(ChartView.Tile tile:chart.tiles)opaque.add(tile.asset);
         Set<String> requested=new LinkedHashSet<>(chart.images());
@@ -181,6 +264,13 @@ final class GameUiAssets {
     }
     Map<String,Bitmap> modeSprites(long handle,Collection<String> requested){
         return modeSprites(handle,requested,"");
+    }
+    Map<String,Bitmap> settingsCharacterImages(long handle,Set<String> requested){
+        if(!characterImageRequest.equals(requested)){
+            characterImages=modeSprites(handle,requested,"",characterImages,false);
+            characterImageRequest=new LinkedHashSet<>(requested);
+        }
+        return characterImages;
     }
     private Map<String,Bitmap> modeSprites(long handle,Collection<String> requested,String keyedImage){
         return modeSprites(handle,requested,keyedImage,Collections.emptyMap(),false);
@@ -216,13 +306,15 @@ final class GameUiAssets {
         }
         return loaded;
     }
-    PointerIcon pointer(int variant){
-        if(!gameMouse.has("fileNameMouse"))return null;
+    PointerIcon pointer(int configVariant,int scriptVariant){
+        if(game.number("gameMouseCreateFlag",1)==0)return null;
         int configs=DialogueLayout.clamp(gameMouse.number("mouseNumberConfig",1),1,64);
         int scripts=DialogueLayout.clamp(gameMouse.number("mouseNumberScript",1),1,64);
-        int index=DialogueLayout.clamp(variant,0,configs-1)+1;
-        String name=gameMouse.value("fileNameMouse","");
-        if(configs>1||scripts>1)name=gameMouse.value("fileNameMouse"+(configs>1&&scripts>1?"1_":"")+index,name);
+        int config=configVariant>=0&&configVariant<configs?configVariant+1:1;
+        int script=scriptVariant>=0&&scriptVariant<scripts?scriptVariant+1:1;
+        String name=gameMouse.value("fileNameMouse","ta_mouse");
+        if(configs>1&&scripts>1)name=gameMouse.value("fileNameMouse"+script+"_"+config,name);
+        else if(configs>1||scripts>1)name=gameMouse.value("fileNameMouse"+(scripts>1?script:config),name);
         Bitmap sheet=image(name);
         if(sheet==null)return null;
         int w=DialogueLayout.clamp(gameMouse.number("sizeX",32),1,Math.min(512,sheet.getWidth()));
@@ -242,6 +334,15 @@ final class GameUiAssets {
         File file=GameResourcePaths.file(root,"init2",name+".fxf");
         boolean encrypted=file!=null;
         if (!encrypted) file=GameResourcePaths.file(root,"init",name+".xtx");
+        return readConfigFile(file,encrypted,name,decoder);
+    }
+    private static Config readExeSetup(File root) throws IOException {
+        File file=GameResourcePaths.file(root,"spt","exesetup.fxf");
+        boolean encrypted=file!=null;
+        if(!encrypted)file=GameResourcePaths.file(root,"spt","exesetup.xtx");
+        return readConfigFile(file,encrypted,"exesetup",null);
+    }
+    private static Config readConfigFile(File file,boolean encrypted,String name,GameTextDecoder decoder) throws IOException {
         Map<String,String> values=new HashMap<>();
         if (file==null) return new Config(values,decoder);
         if (file.length()>MAX_CONFIG_BYTES) throw new IOException("Menu configuration too large: "+name);
@@ -277,6 +378,9 @@ final class GameUiAssets {
             if (!name.isEmpty()) names.add(systemImageKey(name));
         }
     }
+    static String backlogVoicePicture(Config backlog){
+        return backlog.value("filenameVoice","ta_backlogvoice");
+    }
     private static void common(Set<String> names,Config config) {
         request(names,config,"BackFileName","UpFileName","DownFileName","fileNamePageFont",
             "filenameDialog","fileNameDialog2","dialogOkFileName","dialogCancelFileName",
@@ -301,24 +405,26 @@ final class GameUiAssets {
         if(messageWindow.number("nameWindowFlag",0)!=0)
             for(String name:DialogueLayout.names(messageWindow.fields(),"filenameNameWindow","ta_namewin",windowCounts))
                 messageImages.add(systemImageKey(name));
-        String longPrintImage=longPrintImageKey(printMessage);
-        if(!longPrintImage.isEmpty())messageImages.add(longPrintImage);
         Set<String> names=new LinkedHashSet<>(messageImages);
         for(String name:new String[]{
             "ta_menu_bg01","ta_cnf_bg01","ta_cnf_bg02","ta_cnf_bg03",
-            "ta_savebg01","ta_save_slot01","ta_loadbg01","ta_load_slot01","ta_backlogbg",
+            "ta_savebg01","ta_save_slot01","ta_loadbg01","ta_load_slot01","ta_backlogbg","bg_backlog",
+            "ta_backlog_title","ta_backlog_updown","ta_backlog_up","ta_backlog_down",
+            "ta_sl_font","ta_font_sl3","ta_select01","ta_win_select",
             "ta_back01","ta_up_bt01","ta_down_bt01","ta_bar01","ta_bar03",
             "ta_dialog_save","ta_dialog_quit","ta_dialog_bt01","ta_dialog_bt02"})names.add(systemImageKey(name));
         names.addAll(config.imageNames());
         names.addAll(messageCursor.imageNames());
         names.addAll(gameMouse.imageNames());
+        if(game.number("gameMouseCreateFlag",1)!=0&&!gameMouse.has("fileNameMouse"))
+            names.add(systemImageKey("ta_mouse"));
         if(game.number("selectPlaceIsDefault",0)!=0)names.addAll(selectPlace.imageNames());
         if(game.number("selectPlace2IsDefault",0)!=0&&game.number("selectPlace2ClassDisable",0)==0)names.addAll(selectPlace2.imageNames());
         names.addAll(selection.imageNames());
         for(Config button:storyButtons.values())names.addAll(button.imageNames());
         for (int i=1;i<=Math.max(9,GameSystemMenuPanel.optionCount(system));++i)
             request(names,system,"Menu1Button"+i+"FileName");
-        request(names,system,"backScreenFileName","filenameMenuBase");
+        request(names,system,"backScreenFileName","filenameMenuBase","systemMenuSceneBackFileName","systemMenuSceneEndFileName");
         common(names,system); common(names,config); common(names,save); common(names,load);
         names.addAll(save.imageNames(field->field.matches("tab[0-9]+button[12]filename")));
         names.addAll(load.imageNames(field->field.matches("tab[0-9]+button[12]filename")));
@@ -329,13 +435,23 @@ final class GameUiAssets {
         for (String kind:new String[]{"skip1","skip2","auto1","auto2"})
             request(names,config,kind+"Button1FileName",kind+"Button2FileName");
         request(names,config,"messageSpeedBarFileName","autoSpeedBarFileName");
-        request(names,backlog,"backlogBGFileName","titlePicFileName","upArrowFileName","downArrowFileName","filenameVoice","filenameJump");
+        request(names,backlog,"backlogBGFileName","titlePicFileName","filenameUpdownArrow","upArrowFileName","downArrowFileName","filenameJump");
+        if(backlog.number("voicePicFlag",0)!=0){
+            String voice=backlogVoicePicture(backlog);
+            if(!voice.isEmpty())names.add(systemImageKey(voice));
+        }
         Config data=readConfig(root,"dataFile"),notice=readConfig(root,"notice");
         request(names,save,"filenameBG");request(names,load,"filenameBG");
-        request(names,data,"filenameSaveCursor","filenameLoadCursor","fileNameSaveTimeFont",
+        request(names,data,"fileNameSelectPic","filenameSaveCursor","filenameLoadCursor","filenameOverwriteCursor","fileNameSaveTimeFont",
             "fileNameSerialNumberFont","filenameSaveBase","filenameLoadBase","filenameQuickSaveBase","filenameQuickLoadBase","filenameLastSave",
             "fileNameError","fileNameBad","fileNameOld");
         if(data.number("addPicPrintFlag",0)!=0)names.add(systemImageKey(data.value("fileNameAddPic","ta_sl_font")));
+        if(data.number("gameYearPrintFlag",0)!=0||data.number("gameDatePrintFlag",0)!=0){
+            if(data.number("gameYearPrintFlag",0)!=0||data.number("gameMonthPrintFlag",1)!=0||data.number("gameDayPrintFlag",1)!=0)
+                names.add(systemImageKey(data.value("fileNameGameTimeFont","ta_font")));
+            if(data.number("gameWeekPrintFlag",1)!=0)
+                names.add(systemImageKey(data.value("fileNameGameWeekFont","ta_font")));
+        }
         if(game.number("noticeFlag",0)!=0){
             for(int number:new int[]{game.number("loadNoticeNumber",1),game.number("saveNoticeNumber",2)})
                 if(number>0&&number<=Math.min(64,notice.number("noticeNumber",1)))names.add(systemImageKey(GameNotice.filename(notice,number)));
@@ -377,7 +493,9 @@ final class GameUiAssets {
             try{freeStatus|=readConfig(root,name).number("freePrintFlag",0)!=0;}
             catch(IOException e){Log.w("SystemNNN","Optional status configuration unavailable: "+name,e);}
         }
+        SharedConfig shared=SharedConfig.from(handle!=0?NativeGame.sharedConfigSnapshot(handle):null,root,game,printMessage);
         return new GameUiAssets(root,system,config,save,load,backlog,messageWindow,game,printMessage,data,notice,messageCursor,selection,gameMouse,selectPlace,selectPlace2,
-            storyButtons,images,NativeGame.settingsTextRates(handle),freeStatus,NativeGame.legacyVolumeDefaults(handle));
+            shared,storyButtons,images,NativeGame.settingsTextRates(handle),freeStatus,NativeGame.legacyVolumeDefaults(handle),
+            NativeGame.usesXAudio2(handle));
     }
 }

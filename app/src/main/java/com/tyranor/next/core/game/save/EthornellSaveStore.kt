@@ -19,18 +19,21 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 /**
- * Android-native user-data backup, not a PC-format converter. Call only while
- * holding EthornellOperationGate and after proving the whole host is stopped.
- * No resource path is accepted. Private app storage plus the stopped host are
- * the no-concurrent-mutator assumption; this is not an adversarial same-UID sandbox.
+ * Android-native user-data backup, not a PC-format converter. The active tree
+ * is only the exact game-owned `savedata` directory; the former identity-bound
+ * private tree is read only for one-way migration. Call only while holding
+ * EthornellOperationGate and after proving the whole host is stopped. Canonical
+ * and no-follow checks fail closed for observed links, but do not prevent other
+ * processes from changing shared storage concurrently.
  *
  * The per-file limit is the upstream STORAGE 64 MiB atomic-write limit. The
- * [maxBytes] budget is a separate import-only total ZIP limit and must not be
- * read as the native single-write limit; export enforces the per-file limit only.
+ * [maxBytes] budget limits imported archives and legacy migration; it must not
+ * be read as the native single-write limit. Export enforces only the per-file limit.
  */
 internal class EthornellSaveStore(
     private val filesDir: File,
     private val identity: String,
+    private val gameDirectory: File,
     private val maxFiles: Int = 20_000,
     private val maxBytes: Long = 1024L * 1024L * 1024L,
     private val maxFileBytes: Long = MAX_FILE_BYTES,
@@ -38,15 +41,21 @@ internal class EthornellSaveStore(
     private val rename: (File, File) -> Boolean = { from, to -> from.renameTo(to) },
     private val maxNodes: Int = MAX_VISITED,
 ) {
-    val root: File = EthornellPaths.userDataDir(filesDir, identity)
+    val root: File = EthornellPaths.gameUserDataDir(gameDirectory)
     private val staging = File(root.parentFile, ".ethornell-${root.name}-import-staging")
     private val backup = File(root.parentFile, ".ethornell-${root.name}-import-backup")
+    private val migrationStaging = File(root.parentFile, ".ethornell-${root.name}-legacy-migration-staging")
+    private val legacyRoot = EthornellPaths.userDataDir(filesDir, identity)
+    private val legacyStaging = File(legacyRoot.parentFile, ".ethornell-${legacyRoot.name}-import-staging")
+    private val legacyBackup = File(legacyRoot.parentFile, ".ethornell-${legacyRoot.name}-import-backup")
+    private val migrationMarker = File(legacyRoot, MIGRATION_MARKER)
 
     /** Exact identity check is repeated before any read, write, recovery or cleanup. */
     internal fun validateRoot(supplied: File = root) {
         try {
-            EthornellPaths.validateUserDataDir(filesDir, identity, supplied.absolutePath)
-            for (path in listOf(root, staging, backup)) {
+            EthornellPaths.validateGameUserDataDir(gameDirectory, supplied.absolutePath)
+            EthornellPaths.validateUserDataDir(filesDir, identity, legacyRoot.absolutePath)
+            for (path in listOf(root, staging, backup, migrationStaging, legacyRoot, legacyStaging, legacyBackup)) {
                 if (path.canonicalFile != path || Files.isSymbolicLink(path.toPath())) unavailable()
                 if (exists(path) && !path.isDirectory) unavailable()
                 validateTree(path)
@@ -169,17 +178,154 @@ internal class EthornellSaveStore(
     private fun prepare() {
         checkCancelled()
         validateRoot()
-        if (exists(backup)) {
-            if (!exists(root)) {
-                if (!rename(backup, root)) unavailable()
+        recoverTransactions(root, staging, backup)
+        recoverTransactions(legacyRoot, legacyStaging, legacyBackup)
+        // A process death during legacy copy leaves only disposable staged files;
+        // committed target files are individually atomic and are retained.
+        removeTree(migrationStaging)
+        migrateLegacyUserFiles()
+    }
+
+    private fun recoverTransactions(target: File, targetStaging: File, targetBackup: File) {
+        if (exists(targetBackup)) {
+            if (!exists(target)) {
+                if (!rename(targetBackup, target)) unavailable()
             } else {
-                restoreReserved(backup, root)
-                removeTree(backup)
+                restoreReserved(targetBackup, target)
+                removeTree(targetBackup)
             }
         }
-        // Only our exact sibling staging path is eligible for disposal.
-        removeTree(staging)
+        // Only the exact sibling staging path is eligible for disposal.
+        removeTree(targetStaging)
     }
+
+    /**
+     * One-way, non-destructive migration from the former private save root.
+     * Existing game-directory files always win. The durable marker lives in
+     * the old root (and is filtered as reserved metadata) so deleting current
+     * saves can never make a later prepare() resurrect the legacy copy.
+     */
+    private fun migrateLegacyUserFiles() {
+        if (!exists(legacyRoot)) return
+        if (exists(migrationMarker)) {
+            if (!migrationMarker.isFile || migrationMarker.readText() != MIGRATION_MARKER_CONTENT) unavailable()
+            return
+        }
+        val sourceFiles = userFiles(legacyRoot)
+        val filesToCopy = sourceFiles.filter { source ->
+            val destination = File(root, relativeName(legacyRoot, source))
+            if (exists(destination)) {
+                if (!destination.isFile) unavailable()
+                false
+            } else true
+        }
+        if (filesToCopy.size > maxFiles) throw GameSaveException(SaveErrorCode.TOO_MANY_ZIP_FILES)
+        val finalTreeNodes = EthornellExtractionNodes(maxNodes)
+        reserveTreeNodes(root, "", finalTreeNodes)
+        filesToCopy.forEach { finalTreeNodes.reserve(relativeName(legacyRoot, it)) }
+        var totalBytes = 0L
+        filesToCopy.forEach { source ->
+            checkCancelled()
+            val length = source.length()
+            if (length > maxFileBytes) {
+                throw GameSaveException(SaveErrorCode.SAVE_FILE_TOO_LARGE, relativeName(legacyRoot, source))
+            }
+            totalBytes += length
+            if (totalBytes > maxBytes) throw GameSaveException(SaveErrorCode.ZIP_TOO_LARGE)
+        }
+        if (filesToCopy.isNotEmpty()) {
+            if (!migrationStaging.mkdir()) unavailable()
+            var copiedTotal = 0L
+            filesToCopy.forEach { source ->
+                checkCancelled()
+                val relative = relativeName(legacyRoot, source)
+                val staged = File(migrationStaging, relative)
+                if (!staged.parentFile!!.isDirectory && !staged.parentFile!!.mkdirs()) unavailable()
+                FileInputStream(source).use { input ->
+                    FileOutputStream(staged).use { output ->
+                        val buffer = ByteArray(16 * 1024)
+                        var copied = 0L
+                        while (true) {
+                            checkCancelled()
+                            val read = input.read(buffer)
+                            if (read == -1) break
+                            copied += read
+                            if (copied > maxFileBytes) {
+                                throw GameSaveException(SaveErrorCode.SAVE_FILE_TOO_LARGE, relative)
+                            }
+                            copiedTotal += read
+                            if (copiedTotal > maxBytes) throw GameSaveException(SaveErrorCode.ZIP_TOO_LARGE)
+                            output.write(buffer, 0, read)
+                        }
+                        output.fd.sync()
+                    }
+                }
+                if (source.lastModified() > 0L) staged.setLastModified(source.lastModified())
+            }
+            syncTreeDirectories(migrationStaging)
+            if (!root.isDirectory && !root.mkdirs()) unavailable()
+            filesToCopy.forEach { source ->
+                checkCancelled()
+                val relative = relativeName(legacyRoot, source)
+                val destination = File(root, relative)
+                if (exists(destination)) {
+                    if (!destination.isFile) unavailable()
+                    return@forEach
+                }
+                val parent = destination.parentFile ?: unavailable()
+                if (!parent.isDirectory && !parent.mkdirs()) unavailable()
+                try {
+                    // Files.move without REPLACE_EXISTING preserves a destination
+                    // created after the preflight existence check.
+                    Files.move(File(migrationStaging, relative).toPath(), destination.toPath())
+                } catch (_: java.nio.file.FileAlreadyExistsException) {
+                    if (!destination.isFile) unavailable()
+                } catch (error: IOException) {
+                    throw error
+                }
+            }
+            removeTree(migrationStaging)
+        }
+        if (exists(root)) {
+            syncTreeDirectories(root)
+            // Persist the savedata directory entry itself before writing the
+            // legacy completion marker.
+            syncDirectory(root.parentFile!!)
+        }
+        writeMigrationMarker()
+    }
+
+    private fun reserveTreeNodes(directory: File, prefix: String, nodes: EthornellExtractionNodes) {
+        if (!exists(directory)) return
+        children(directory).forEach { child ->
+            checkCancelled()
+            val relative = if (prefix.isEmpty()) child.name else "$prefix/${child.name}"
+            nodes.reserve(relative)
+            if (child.isDirectory) reserveTreeNodes(child, relative, nodes)
+        }
+    }
+
+    private fun writeMigrationMarker() {
+        if (!legacyRoot.isDirectory && !legacyRoot.mkdirs()) unavailable()
+        val temporaryMarker = File(legacyRoot, "$MIGRATION_MARKER.tmp")
+        if (exists(temporaryMarker)) {
+            if (!temporaryMarker.isFile || !temporaryMarker.delete()) unavailable()
+        }
+        FileOutputStream(temporaryMarker).use { output ->
+            output.write(MIGRATION_MARKER_CONTENT.toByteArray(Charsets.UTF_8))
+            output.fd.sync()
+        }
+        try {
+            Files.move(temporaryMarker.toPath(), migrationMarker.toPath())
+        } catch (_: java.nio.file.FileAlreadyExistsException) {
+            if (!migrationMarker.isFile || migrationMarker.readText() != MIGRATION_MARKER_CONTENT) unavailable()
+            if (!temporaryMarker.delete()) unavailable()
+        }
+        syncDirectory(legacyRoot)
+    }
+
+    private fun relativeName(base: File, file: File): String =
+        base.toPath().relativize(file.toPath()).toString().replace(File.separatorChar, '/')
 
     /** Launch must recover an interrupted import BEFORE mkdir/create can mask a missing root. */
     fun recoverForLaunch() = prepare()
@@ -363,6 +509,8 @@ internal class EthornellSaveStore(
     private fun unavailable(): Nothing = throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
 
     companion object {
+        private const val MIGRATION_MARKER = ".ethornell-migrated-to-game-savedata-v1"
+        private const val MIGRATION_MARKER_CONTENT = "ethornell-game-savedata-v1\n"
         private const val MAX_DEPTH = 64
         private const val MAX_VISITED = 100_000
         private const val MAX_FILE_BYTES = 64L * 1024L * 1024L

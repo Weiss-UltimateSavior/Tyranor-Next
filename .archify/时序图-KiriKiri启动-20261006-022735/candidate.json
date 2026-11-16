@@ -14,7 +14,7 @@
       "url": "https://github.com/Weiss-UltimateSavior/Tyranor-Next.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "1d6b9db336dc42e30c8b61edf5b4e075b80f295b"
+      "revision": "f15d5f94b8fb20ff752d22b57293c732f7281414"
     },
     "output": ".archify/时序图-KiriKiri启动-20261006-022735/sequence-kirikiri-launch.html"
   },
@@ -43,11 +43,11 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 141
+          "line": 183
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 732
+          "line": 742
         }
       ]
     },
@@ -59,11 +59,11 @@
       "sources": [
         {
           "path": "app/src/main/java/com/tyranor/next/core/engine/plugin/EnginePluginBootstrap.kt",
-          "line": 68
+          "line": 43
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/engine/plugin/EnginePluginBootstrap.kt",
-          "line": 77
+          "line": 82
         }
       ]
     },
@@ -96,7 +96,7 @@
         },
         {
           "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
-          "line": 1126
+          "line": 480
         }
       ]
     },
@@ -124,11 +124,11 @@
       "sources": [
         {
           "path": "engine/src/main/cpp/krkr_bridge.cpp",
-          "line": 690
+          "line": 384
         },
         {
           "path": "engine/src/main/cpp/krkr_bridge.cpp",
-          "line": 780
+          "line": 1227
         }
       ]
     },
@@ -236,9 +236,9 @@
       "from": "launcher",
       "to": "host",
       "y": 356,
-      "label": "startActivity(Intent + extras)",
+      "label": "startActivity(Intent + LaunchContract)",
       "variant": "emphasis",
-      "note": "LaunchContract 键"
+      "note": "ROOT_URI · playtime · 主题色"
     },
     {
       "id": "read-libs",
@@ -285,9 +285,9 @@
       "from": "bridge",
       "to": "mirror",
       "y": 524,
-      "label": "open / rename 重定向",
+      "label": "open / rename / mkdir 重定向",
       "variant": "dashed",
-      "note": "scopedSave · SAF · overlay"
+      "note": "overlay → scopedSave → SAF"
     },
     {
       "id": "game-ready",
@@ -361,16 +361,17 @@
       "items": [
         "EnginePluginBootstrap 仅对 KIRIKIRI / ONS / ARTEMIS 生效，其余引擎直接放行",
         "可移动存储强制 SAF 镜像并在镜像内建立 savedata；普通存储直接确保存档目录",
-        "补丁 overlay 与 Steam 配置 overlay 在 Intent 组装时一并准备"
+        "补丁 overlay、Steam 配置 overlay 与字体偏好在前置阶段准备，Intent 组装时注入",
+        "内置引擎统一附带 playtime 会话 ID / 起始时间，供宿主进程回写时长"
       ]
     },
     {
       "dot": "emerald",
       "title": "Intent 契约",
       "items": [
-        "buildIntent 注入 PATH / PROJECT_ROOT / GAME_SAVE_ROOT / ROOT_URI 等 LaunchContract 键",
-        "统一附加主题色 extras，引擎侧 EngineThemeColors.fromIntent 消费",
-        "krkrsdl3 走 GAME_ARGS：启动条目 + -render=… + -savedir=…"
+        "buildIntent 注入 PATH / PROJECT_ROOT / GAME_SAVE_ROOT / ROOT_URI / SAF_MIRROR_* 等 LaunchContract 键",
+        "统一附加主题色、界面语言与画质滤镜 extras，引擎侧 EngineThemeColors.fromIntent 消费",
+        "krkrsdl3 走 GAME_ARGS：启动条目 + -render=… + -savedir=…；两种内核均固定横屏并支持跳过启动对话框"
       ]
     },
     {
@@ -378,7 +379,7 @@
       "title": "桥接与文件重定向",
       "items": [
         "krkr_bridge_v2 预加载 libgame.so、解析 TVP 符号并 patch scene update 判定就绪",
-        "GOT/PLT patch 拦截 open / rename / mkdir 等调用，接入 scopedSave、SAF 镜像与 overlay",
+        "GOT/PLT patch 拦截 open / rename / mkdir / unlink 等调用；NativeBridge.open 依次尝试 readonly overlay → scopedSave → SAF 镜像 → 本地/SAF 兜底",
         "onKrkrGameReady 回调宿主进程，未识别启动条目时给出失败而不是白屏"
       ]
     }

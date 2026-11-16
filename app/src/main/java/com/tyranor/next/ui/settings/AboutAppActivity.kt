@@ -17,12 +17,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -36,13 +38,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.BuildConfig
 import com.tyranor.next.R
-import com.tyranor.next.theme.AppComponentShape
+import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.SettingsEntryCard
 import com.tyranor.next.ui.common.AppScreenActivity
-import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 
 /** 项目仓库地址：关于应用页「项目地址」条目打开的系统浏览器目标。 */
 private const val PROJECT_URL = "https://github.com/Weiss-UltimateSavior/Tyranor-Next"
@@ -74,8 +79,10 @@ internal fun AboutAppScreen() {
     var showDisclaimer by rememberSaveable { mutableStateOf(false) }
     val appLabel = stringResource(R.string.app_name)
     val versionLabel = stringResource(R.string.about_app_version, BuildConfig.VERSION_NAME)
+    // 页面入场：顶栏标题、图标版本行与三个入口卡依次弹入
+    ProvideEntrance {
     Column(Modifier.fillMaxSize()) {
-        AppTopBar(title = stringResource(R.string.settings_about_app))
+        AppSecondaryTopBar(title = stringResource(R.string.settings_about_app))
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -86,17 +93,24 @@ internal fun AboutAppScreen() {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(
+                modifier = Modifier.staggeredEntrance(0),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center,
             ) {
-                // 应用图标取展示尺寸的一半（56dp）；资源本身为 256px 缩略图
+                // 应用图标取展示尺寸的一半（56dp）；资源本身为 256px 缩略图。
+                // 与应用设置「经典应用图标」选中的启动器图标保持一致（同一份插画的缩略图）。
+                val classicIcon = remember { AppSettingsStore.isClassicIconEnabled(context) }
                 Image(
-                    painter = painterResource(R.drawable.ic_about_app),
+                    painter = painterResource(
+                        if (classicIcon) R.drawable.ic_about_app_classic else R.drawable.ic_about_app_default,
+                    ),
                     contentDescription = appLabel,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .size(56.dp)
-                        .clip(AppComponentShape),
+                        // 保留图标文件本身的方形轮廓，只加一点圆角：取「应用圆角调整」与 14dp 中较小者，
+                        // 圆角调到最大（50dp）时不会把 56dp 的图标裁成圆形
+                        .clip(RoundedCornerShape(minOf(AppComponentCornerRadius, 14.dp))),
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(
@@ -115,6 +129,7 @@ internal fun AboutAppScreen() {
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     SettingsEntryCard(
+                        modifier = Modifier.staggeredEntrance(1),
                         title = stringResource(R.string.about_project_url),
                         iconRes = R.drawable.ic_update_github,
                         onClick = {
@@ -126,11 +141,13 @@ internal fun AboutAppScreen() {
                     )
                     // 点击行为待接入：暂为空实现，先保持条目正常外观
                     SettingsEntryCard(
+                        modifier = Modifier.staggeredEntrance(2),
                         title = stringResource(R.string.about_acknowledgements),
                         iconRes = R.drawable.ic_about_acknowledgements,
                         onClick = {},
                     )
                     SettingsEntryCard(
+                        modifier = Modifier.staggeredEntrance(3),
                         title = stringResource(R.string.about_disclaimer),
                         iconRes = R.drawable.ic_about_disclaimer,
                         onClick = { showDisclaimer = true },
@@ -138,6 +155,7 @@ internal fun AboutAppScreen() {
                 }
             }
         }
+    }
     }
 
     if (showDisclaimer) {

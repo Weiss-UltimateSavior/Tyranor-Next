@@ -11,12 +11,15 @@ import java.util.List;
 /** Extra CMenuButtonSetup entries whose configured action opens an original mode. */
 final class MenuModeButton {
     final int index,mode,x,y;
+    // Nonzero starts a new story and stores this number in the title's extModeReturnVarName.
+    final int scenario;
     final String label;
     final boolean enabled;
     final ButtonArt.Setup setup;
 
-    private MenuModeButton(int index,int mode,int x,int y,String label,boolean enabled,ButtonArt.Setup setup){
-        this.index=index;this.mode=mode;this.x=x;this.y=y;this.label=label;this.enabled=enabled;this.setup=setup;
+    private MenuModeButton(int index,int mode,int scenario,int x,int y,String label,boolean enabled,ButtonArt.Setup setup){
+        this.index=index;this.mode=mode;this.scenario=scenario;this.x=x;this.y=y;
+        this.label=label;this.enabled=enabled;this.setup=setup;
     }
 
     static List<MenuModeButton> read(GameUiAssets.Config config,long handle,int basic,int builtIn){
@@ -27,7 +30,7 @@ final class MenuModeButton {
         return read(config,handle,basic,builtIn,true);
     }
 
-    private static List<MenuModeButton> read(GameUiAssets.Config config,long handle,int basic,int builtIn,boolean includeBasic){
+    private static List<MenuModeButton> read(GameUiAssets.Config config,long handle,int basic,int builtIn,boolean title){
         int modes=DialogueLayout.clamp(config.number("extModeNumber",0),0,32);
         int extra=modes==0?0:DialogueLayout.clamp(config.number("extButtonNumber",1),0,64);
         String variable=config.value("extModeCheckVarName","");
@@ -42,11 +45,25 @@ final class MenuModeButton {
             if(index>0){x+=nextX;y+=nextY;}
             x=config.number(tag+"PrintX",x);y=config.number(tag+"PrintY",y);
             previous=new ButtonArt.Setup(config,tag,previous,false);
-            int target=index<basic?config.number("basicButtonSpecialMode"+(index+1),-1):
-                config.number("extButtonSpecialMode"+(index-basic+1),-1);
+            int target;
+            if(index<basic){
+                target=config.number("basicButtonSpecialMode"+(index+1),-1);
+            }else{
+                // TITLE indexes from the five built-in actions. OMAKE indexes from the configured basic count.
+                int extensionIndex=index-(title?builtIn:basic);
+                target=extensionIndex>=0&&extensionIndex<extra?
+                    config.number("extButtonSpecialMode"+(extensionIndex+1),-1):-1;
+            }
+            // CCommonTitle starts a story from a button without a mode. Extension buttons
+            // count up from one and added basic buttons count down from minus one.
+            int scenario=0;
             if(index<builtIn){
-                if(!includeBasic||index>=basic)continue;
-            }else if(target<=0||target>49)continue;
+                if(!title||index>=basic)continue;
+            }else if(target>49)continue;
+            else if(target<=0){
+                if(!title)continue;
+                scenario=index<basic?-(index-builtIn+1):index-builtIn+1;
+            }
             boolean exists=config.number(tag+"ExistFlag",index<basic?1:0)!=0;
             boolean enabled=config.number(tag+"EnableFlag",exists?1:0)!=0;
             ButtonArt.Setup resolved=previous;
@@ -59,7 +76,8 @@ final class MenuModeButton {
                 resolved=new ButtonArt.Setup(config,tag,resolved,false);
                 atX=config.number(tag+"PrintX",atX);atY=config.number(tag+"PrintY",atY);
             }
-            if(exists)buttons.add(new MenuModeButton(index,target,atX,atY,config.text(tag+"Name",""),enabled,resolved));
+            if(exists)buttons.add(new MenuModeButton(index,scenario!=0?0:target,scenario,atX,atY,
+                config.text(tag+"Name",""),enabled,resolved));
         }
         return buttons;
     }

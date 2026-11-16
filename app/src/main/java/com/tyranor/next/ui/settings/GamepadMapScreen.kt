@@ -24,6 +24,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -37,18 +39,29 @@ import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppScreenActivity
-import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
 import com.tyranor.next.ui.common.NoRippleButton
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.ExpandVisibility
+import com.tyranor.next.ui.common.motion.MotionMode
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.bounceOnChange
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.pressSquishGroup
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import com.tyranor.next.ui.common.ArrowPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
+import com.tyranor.next.ui.common.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.tyranor.next.ui.common.notice.AppNotice
 
 /** 手柄映射编辑页：逐逻辑按键与摇杆方向编辑输出键位。 */
 class GamepadMapActivity : AppScreenActivity() {
@@ -62,6 +75,7 @@ class GamepadMapActivity : AppScreenActivity() {
     }
 }
 
+/** 编辑手柄按键和摇杆映射；通过逻辑按键及摇杆方向定位编辑目标，按卡片分组执行入场。 */
 @Composable
 internal fun GamepadMapScreen() {
     val ctx = LocalContext.current
@@ -75,19 +89,32 @@ internal fun GamepadMapScreen() {
             sticks = InputRemapRepository.stickEntries(ctx)
         }
     }
-    LaunchedEffect(Unit) { reload() }
+    // 首次读盘完成：「增强」档下映射行等到真实值到达再展开进场，不先闪一下「未绑定」再跳成实际键位
+    var loaded by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        reload()
+        loaded = true
+    }
 
     // 编辑目标：逻辑按键 id，或 "left.up" 形式的摇杆方向
-    var editingButton by remember { mutableStateOf<String?>(null) }
-    var editingStick by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var editingButton by rememberSaveable { mutableStateOf<String?>(null) }
+    var editingStick by rememberSaveable { mutableStateOf<Pair<String, String>?>(null) }
+    // 映射写盘成功的落点（编辑目标键 → 第几次）：只让刚改过的那一行弹一下
+    var landedBinding by remember { mutableStateOf<Pair<String, Int>?>(null) }
+    fun markLanded(target: String) {
+        landedBinding = target to ((landedBinding?.second ?: 0) + 1)
+    }
+    // 「普通」档不等读盘，与原版一致（读盘前即显示各行）
+    val rowsVisible = loaded || !MotionMode.enhanced
 
     MiuixSettingsTheme {
+        ProvideEntrance {
         MiuixScaffold(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
             containerColor = ComposeColor.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
-                AppTopBar(
+                AppSecondaryTopBar(
                     title = stringResource(R.string.input_settings_gamepad_title),
                     background = ComposeColor.Transparent,
                     contentColor = PageTextColor,
@@ -103,6 +130,7 @@ internal fun GamepadMapScreen() {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
+                    Box(Modifier.pressSquishGroup().staggeredEntrance(0)) {
                     EngineCard(stringResource(R.string.input_settings_gamepad_buttons_label)) {
                         // 说明并入卡片内：AGENTS.md 禁止在顶部栏下方放整页描述文案
                         Text(
@@ -111,17 +139,31 @@ internal fun GamepadMapScreen() {
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                         )
+                        // 读盘到达：整组映射行从说明文字下方弹簧展开、由糊变清（大块内容自动不做模糊）
+                        ExpandVisibility(visible = rowsVisible, label = "gamepadRows") {
+                        Column(Modifier.fillMaxWidth()) {
                         entries.forEach { entry ->
+                            BindingRowMotion(
+                                summary = bindingSummary(ctx, entry.keys, entry.autoKeep),
+                                landed = landedBinding?.takeIf { it.first == entry.id },
+                            ) { summary ->
                             ArrowPreference(
                                 title = gamepadKeyLabel(entry.id),
-                                summary = bindingSummary(ctx, entry.keys, entry.autoKeep),
+                                summary = summary,
                                 onClick = { editingButton = entry.id },
                             )
+                            }
                         }
+                        }
+                        }
+                    }
                     }
                 }
                 item {
+                    Box(Modifier.pressSquishGroup().staggeredEntrance(1)) {
                     EngineCard(stringResource(R.string.input_settings_gamepad_sticks_label)) {
+                        ExpandVisibility(visible = rowsVisible, label = "stickRows") {
+                        Column(Modifier.fillMaxWidth()) {
                         listOf(
                             InputRemapRepository.STICK_LEFT to R.string.input_settings_stick_left,
                             InputRemapRepository.STICK_RIGHT to R.string.input_settings_stick_right,
@@ -131,12 +173,19 @@ internal fun GamepadMapScreen() {
                                 entries = sticks.filter { it.stick == stick },
                                 summaryOf = { keys -> bindingSummary(ctx, keys, autoKeep = false) },
                                 onEdit = { direction -> editingStick = stick to direction },
+                                landed = { direction ->
+                                    landedBinding?.takeIf { it.first == stickLandingKey(stick, direction) }
+                                },
                             )
                         }
+                        }
+                        }
+                    }
                     }
                 }
                 item { BottomInsetSpacer() }
             }
+        }
         }
     }
 
@@ -158,6 +207,8 @@ internal fun GamepadMapScreen() {
                         // 写盘失败必须提示：否则弹窗关闭、行值未变，用户以为没反应
                         if (!ok) toastBindingFailed(ctx)
                         reload()
+                        // 落点反馈：新值到达后该行轻弹一下（摘要同时模糊替换为新键位）
+                        if (ok) markLanded(id)
                     }
                 },
             )
@@ -182,6 +233,7 @@ internal fun GamepadMapScreen() {
                         }
                         if (!ok) toastBindingFailed(ctx)
                         reload()
+                        if (ok) markLanded(stickLandingKey(stick, direction))
                     }
                 },
             )
@@ -189,13 +241,34 @@ internal fun GamepadMapScreen() {
     }
 }
 
+/** 摇杆方向在落点反馈里的键（与逻辑按键 id 不会重名）。 */
+private fun stickLandingKey(stick: String, direction: String): String = "stick:$stick.$direction"
+
+/**
+ * 映射行的内容替换与落点：摘要（键位）变化时整行模糊替换（「普通」档瞬时替换，与原版一致），
+ * [landed] 每变成一个新的非 null 值（该行写盘成功）时整行轻弹一下。
+ */
+@Composable
+private fun BindingRowMotion(
+    summary: String,
+    landed: Any?,
+    content: @Composable (String) -> Unit,
+) {
+    BlurCrossfade(
+        targetState = summary,
+        modifier = Modifier.fillMaxWidth().bounceOnChange(landed, depth = 0.05f),
+        label = "bindingSummary",
+    ) { text ->
+        content(text)
+    }
+}
+
 /** 手柄映射写盘失败提示（两处保存回调共用）。 */
 private fun toastBindingFailed(context: Context) {
-    Toast.makeText(
+    AppNotice.makeText(
         context,
-        context.getString(R.string.input_save_failed),
-        Toast.LENGTH_SHORT,
-    ).show()
+        R.string.input_save_failed,
+        Toast.LENGTH_SHORT).show()
 }
 
 @Composable
@@ -204,6 +277,8 @@ private fun StickRow(
     entries: List<InputRemapRepository.StickEntry>,
     summaryOf: @Composable (List<Int>) -> String,
     onEdit: (String) -> Unit,
+    /** 方向 → 落点触发值（该方向刚写盘成功时为新的非 null 值）。 */
+    landed: (String) -> Any? = { null },
 ) {
     Column(Modifier.fillMaxWidth()) {
         Text(
@@ -220,11 +295,13 @@ private fun StickRow(
             "right" to R.string.input_settings_stick_right_dir,
         ).forEach { (direction, labelRes) ->
             val keys = entries.firstOrNull { it.direction == direction }?.keys.orEmpty()
+            BindingRowMotion(summary = summaryOf(keys), landed = landed(direction)) { summary ->
             ArrowPreference(
                 title = stringResource(labelRes),
-                summary = summaryOf(keys),
+                summary = summary,
                 onClick = { onEdit(direction) },
             )
+            }
         }
     }
 }
@@ -286,6 +363,11 @@ private fun keyDisplayLabel(code: Int): String {
         ?: code.toString()
 }
 
+private val SelectedKeysSaver = Saver<Set<Int>, IntArray>(
+    save = { it.toIntArray() },
+    restore = { it.toSet() },
+)
+
 /** 键位多选对话框：分组键位网格 + 可选「按下保持」。 */
 @Composable
 private fun KeyBindingDialog(
@@ -296,8 +378,8 @@ private fun KeyBindingDialog(
     onDismiss: () -> Unit,
     onSave: (List<Int>, Boolean) -> Unit,
 ) {
-    var selected by remember { mutableStateOf(selectedKeys.toSet()) }
-    var keep by remember { mutableStateOf(autoKeep) }
+    var selected by rememberSaveable(stateSaver = SelectedKeysSaver) { mutableStateOf(selectedKeys.toSet()) }
+    var keep by rememberSaveable { mutableStateOf(autoKeep) }
     val groups = remember { InputRemapRepository.keyGroups() }
 
     // 弹窗在独立窗口里组合，拿不到调用点的 MiuixSettingsTheme 作用域：
@@ -316,46 +398,80 @@ private fun KeyBindingDialog(
             // 弹窗点击反馈规范：正文内所有可点击组件（开关/键位网格）禁用按压反馈
             CompositionLocalProvider(LocalIndication provides NoIndication) {
                 LazyColumn(Modifier.fillMaxWidth()) {
+                    // 弹窗编排：开关、计数、各组标题与键位行按屏幕次序依次轻轻升起（弹窗入场节拍内；
+                    // 之后滚动进来的行直接显示）。只改图层，停稳后与原样一致
+                    var order = 0
                     if (allowAutoKeep) {
+                        val switchOrder = order++
                         item {
                             SwitchPreference(
+                                modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale)
+                                    .staggeredEntrance(switchOrder, distance = 10.dp, stepMillis = 30L),
                                 title = stringResource(R.string.input_settings_auto_keep_toggle),
                                 checked = keep,
                                 onCheckedChange = { keep = it },
                             )
                         }
                     }
+                    val countOrder = order++
                     item {
-                        Text(
-                            text = stringResource(R.string.input_settings_binding_keys, selected.size),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                        )
+                        BlurCrossfade(
+                            targetState = selected.size,
+                            modifier = Modifier
+                                .staggeredEntrance(countOrder, distance = 10.dp, stepMillis = 30L)
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                        ) { count ->
+                            Text(
+                                text = stringResource(R.string.input_settings_binding_keys, count),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            )
+                        }
                     }
                     groups.forEach { group ->
+                        val titleOrder = order++
                         item {
                             Text(
                                 text = stringResource(group.titleRes),
                                 style = MaterialTheme.typography.titleMedium,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .staggeredEntrance(titleOrder, distance = 10.dp, stepMillis = 30L)
+                                    .padding(horizontal = 16.dp, vertical = 6.dp),
                             )
                         }
                         group.keys.chunked(4).forEach { chunk ->
+                            val rowOrder = order++
                             item {
-                                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+                                Row(
+                                    Modifier
+                                        .staggeredEntrance(rowOrder, distance = 10.dp, stepMillis = 30L)
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 8.dp),
+                                ) {
                                     chunk.forEach { option ->
                                         val on = option.code in selected
+                                        // 选中态切换：实底 ↔ 浅底整体模糊替换（颜色不再瞬间跳变，新态轻轻弹入）；
+                                        // 「普通」档瞬时替换，与原版一致。宽度分配挪到替换容器上，按钮仍等分
+                                        BlurCrossfade(
+                                            targetState = on,
+                                            modifier = Modifier.weight(1f),
+                                            label = "keyToggle",
+                                        ) { isOn ->
                                         // 选中态用主题色实底 + 白字，与游戏内编辑面板的键位高亮一致；
                                         // 未选中为静默文本，一眼可辨「选了哪些」而不是只看计数
                                         NoRippleButton(
                                             text = keyDisplayLabel(option.code),
-                                            tonal = !on,
-                                            modifier = Modifier.weight(1f),
+                                            tonal = !isOn,
                                             onClick = {
-                                                selected = if (on) selected - option.code else selected + option.code
+                                                // 按点击时的真实选中态切换：替换过渡中点到即将淡出的旧按钮也不会反向
+                                                selected = if (option.code in selected) {
+                                                    selected - option.code
+                                                } else {
+                                                    selected + option.code
+                                                }
                                             },
                                         )
+                                        }
                                     }
                                     repeat(4 - chunk.size) {
                                         Box(Modifier.weight(1f))

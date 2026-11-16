@@ -69,7 +69,8 @@ final class GameChartPanel extends GameUiPanel {
     private boolean descriptionOnTop,foreground=true,overlayLocked;
     private long clockStart=-1,clockElapsed,warningAt=-1,warningFrames;
 
-    private int inFlight=NONE,flightValue,queuedAction=NONE,queuedValue,desiredScroll=NONE;
+    private int inFlight=NONE,flightValue,queuedAction=NONE,queuedValue;
+    private Integer desiredScroll;
     private int desiredHover=NONE,sentHover=NONE;
     private int capture=CAPTURE_NONE,touchId=-1,downY,downScroll,miniAnchor,pointerX,pointerY;
     private float physicalDownX,physicalDownY;
@@ -148,7 +149,7 @@ final class GameChartPanel extends GameUiPanel {
         if(changedPage||warningChanged){
             resetGesture();
             desiredHover=sentHover=NONE;
-            desiredScroll=NONE;
+            desiredScroll=null;
         }
         if(changedPage){
             descriptionOnTop=false;
@@ -172,6 +173,7 @@ final class GameChartPanel extends GameUiPanel {
             else count=common;
             count=clamp(count,1,1024);
         }
+        // Native keeps this internal mode and exposes the detected game's original MODE to its script.
         chartBackground(config,SELECT_CHART,page,centerLayer,count,frame->{
             if(usesComposer(backdropFrame)!=usesComposer(frame))compositionEpoch++;
             backdropFrame=frame;
@@ -182,11 +184,38 @@ final class GameChartPanel extends GameUiPanel {
 
     private static boolean usesComposer(ChartBackdrop.Frame frame){return frame!=null&&frame.composer!=null;}
 
+    void captureSave(java.util.function.Consumer<Bitmap> done){
+        captureSave(modal,compositionEpoch,0,done);
+    }
+    private void captureSave(GameRunner.Modal expected,long epoch,int attempt,java.util.function.Consumer<Bitmap> done){
+        if(!isAttachedToWindow()||modal!=expected||compositionEpoch!=epoch||getWidth()<=0||getHeight()<=0){
+            done.accept(null);return;
+        }
+        boolean ready=activeFrameReady()&&!openingRunning()&&inFlight==NONE;
+        if(ready&&usesComposer(backdropFrame)){
+            if(composition==null&&!compositionUnavailable)try{composition=new ChartComposition(backdropFrame);}
+            catch(OutOfMemoryError error){compositionUnavailable=true;}
+            if(composition!=null&&!composition.currentReady()&&!composition.failed)
+                composition.request(backdropFrame,frames());
+            ready=composition!=null&&composition.currentReady();
+        }
+        if(!ready){
+            if(attempt<7){invalidate();postDelayed(()->captureSave(expected,epoch,attempt+1,done),Math.max(16,frameMs));}
+            else done.accept(null);
+            return;
+        }
+        try{capture(picture->{
+            if(modal==expected&&compositionEpoch==epoch&&isAttachedToWindow())done.accept(picture);
+            else{if(picture!=null)picture.recycle();done.accept(null);}
+        });}
+        catch(RuntimeException|OutOfMemoryError error){Log.w("SystemNNN","Chart save capture unavailable",error);done.accept(null);}
+    }
+
     void overlayInput(boolean locked){
         overlayLocked=locked;
         if(locked){
             queuedAction=NONE;
-            desiredHover=desiredScroll=NONE;
+            desiredHover=NONE;desiredScroll=null;
             resetGesture();
         }else pump();
     }
@@ -203,7 +232,7 @@ final class GameChartPanel extends GameUiPanel {
 
     @Override void cancelLeave(){
         super.cancelLeave();
-        if(inFlight==SCROLL)desiredScroll=NONE;
+        if(inFlight==SCROLL)desiredScroll=null;
         inFlight=NONE;
         invalidateMap();
         pump();
@@ -270,7 +299,7 @@ final class GameChartPanel extends GameUiPanel {
         queuedAction=action;queuedValue=value;
         if(action!=CHOOSE){
             desiredHover=NONE;
-            if(action!=PAGE)desiredScroll=NONE;
+            if(action!=PAGE)desiredScroll=null;
         }
         pump();
     }
@@ -281,12 +310,12 @@ final class GameChartPanel extends GameUiPanel {
     }
 
     private void scroll(long value){
-        desiredScroll=(int)Math.max(0,Math.min(chart.limit,value));
+        desiredScroll=chart.clampScroll(value);
         pump();
     }
 
     private int wantedScroll(){
-        if(desiredScroll>=0)return desiredScroll;
+        if(desiredScroll!=null)return desiredScroll;
         return inFlight==SCROLL?flightValue:chart.scroll;
     }
 
@@ -300,8 +329,8 @@ final class GameChartPanel extends GameUiPanel {
             return;
         }
         if(warning())return;
-        if(desiredScroll>=0){
-            int scroll=desiredScroll;desiredScroll=NONE;
+        if(desiredScroll!=null){
+            int scroll=desiredScroll;desiredScroll=null;
             if(scroll!=chart.scroll){publish(SCROLL,scroll);return;}
         }
         if(desiredHover!=sentHover){
@@ -369,13 +398,13 @@ final class GameChartPanel extends GameUiPanel {
             long delta=pointerY-downY;
             if(capture==CAPTURE_MINI)miniScroll((long)miniAnchor+delta);
             else if(capture==CAPTURE_MAIN&&(mainCapture==1||mainCapture==3)){
-                if(mainCapture==3)delta=delta*chart.limit/canvasHeight;
+                if(mainCapture==3)delta=delta*chart.scrollRange()/canvasHeight;
                 scroll(downScroll+(reverseCapture?delta:-delta));
             }else if(capture==CAPTURE_NONE)hover(point(pointerX,pointerY));
             invalidateMap();
         }else if(kind==MotionEvent.ACTION_UP||
             kind==MotionEvent.ACTION_POINTER_UP&&event.getActionIndex()==index){
-            if(tap&&!dragMoved&&nodeAt(pointerX,pointerY)!=null&&desiredScroll==NONE&&inFlight!=SCROLL)
+            if(tap&&!dragMoved&&nodeAt(pointerX,pointerY)!=null&&desiredScroll==null&&inFlight!=SCROLL)
                 enqueue(CHOOSE,point(pointerX,pointerY));
             resetGesture();
             invalidateMap();
@@ -398,16 +427,15 @@ final class GameChartPanel extends GameUiPanel {
 
     private void miniScroll(long offset){
         if(chart.miniHeight<=0)return;
-        offset=Math.max(0,Math.min(chart.miniHeight-miniLength(),offset));
-        scroll(offset*chart.extent/chart.miniHeight);
+        scroll(chart.scrollFromMini(offset,canvasHeight));
     }
 
     private int miniLength(){
-        return chart.extent<=0?0:clamp((int)((long)chart.miniHeight*canvasHeight/chart.extent),0,chart.miniHeight);
+        return chart.miniLength(canvasHeight);
     }
 
     private int miniOffset(int scroll){
-        return chart.extent<=0?0:(int)((long)scroll*chart.miniHeight/chart.extent);
+        return chart.miniOffset(scroll,canvasHeight);
     }
 
     private static Bitmap find(GameUiAssets assets,GameRunner.Modal modal,String name){
@@ -446,7 +474,7 @@ final class GameChartPanel extends GameUiPanel {
         for(ChartView.Node node:chart.nodes){
             if(node.access==0)continue;
             actionable=true;
-            if(nodeVisible(find(assets,modal,node.asset),node,chart,width,height,0,chart.limit))return null;
+            if(nodeVisible(find(assets,modal,node.asset),node,chart,width,height,chart.minScroll,chart.limit))return null;
         }
         if(!actionable)return null;
         PageTab[] tabs=pageTabs(assets.game,modal.assets.config,modal);
@@ -510,7 +538,8 @@ final class GameChartPanel extends GameUiPanel {
             }
         }
 
-        int currentPage=modal.selection<0?-1:modal.selection/Math.max(1,config.number("chartBlockSize",1000));
+        int currentPage=chart.currentPage!=null?chart.currentPage:
+            modal.selection<0?-1:modal.selection/Math.max(1,config.number("chartBlockSize",1000));
         String key="grow"+(currentPage+1)+"Button";
         tabMarkerX=config.number(key+"1PrintX",0);
         tabMarkerY=config.number(key+"1PrintY",0);
@@ -691,8 +720,7 @@ final class GameChartPanel extends GameUiPanel {
             canvas.scale(tab.setup.width/(float)button.getWidth(),tab.setup.height/(float)button.getHeight());
             button.draw(canvas);
             canvas.restoreToCount(saved);
-            int state=!button.isEnabled()?3:controlsBusy()&&!warning()?2:button.isPressed()||button.isHovered()?1:0;
-            animated|=button.spec.states[state].count>1;
+            animated|=button.isAnimating();
         }
         return animated;
     }
@@ -723,6 +751,7 @@ final class GameChartPanel extends GameUiPanel {
             return front>=0&&frontEpoch==compositionEpoch&&frontPage==modal.page&&frontScroll==chart.scroll&&
                 frontTabs==tabRevision?outputs[front]:null;
         }
+        boolean currentReady(){return current()!=null&&!pending&&!failed&&lastRevision==visualRevision;}
 
         void request(ChartBackdrop.Frame backdrop,long frame){
             if(pending||lastRevision==visualRevision&&(failed||!animated||lastFrame==frame))return;

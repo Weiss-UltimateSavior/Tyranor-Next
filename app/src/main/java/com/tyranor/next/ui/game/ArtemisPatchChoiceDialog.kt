@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
@@ -20,6 +21,7 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.ui.common.ProvideAppLocale
+import com.tyranor.next.ui.common.motion.ProvideMotionEnvironment
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
@@ -50,6 +52,8 @@ internal fun ArtemisPatchChoiceDialog(
     game: ScanGame,
     onChoice: (EngineLauncher.ArtemisPatchChoice?) -> Unit,
 ) {
+    // 「总是」位于确认槽，原本拿不到退场控制器、选择后弹窗瞬间消失：借取消槽捕获的控制器先退场再交付
+    val exitHandle = rememberGameDialogExitHandle()
     AppAlertDialog(
         onDismissRequest = { onChoice(null) },
         title = {
@@ -64,17 +68,22 @@ internal fun ArtemisPatchChoiceDialog(
         confirmButton = {
             DialogTextButton(
                 text = stringResource(PatchChoiceOption.ALWAYS.labelRes),
-                onClick = { onChoice(PatchChoiceOption.ALWAYS.toArtemisChoice()) },
+                // 三个选项按从左到右依次弹入（在按钮行整体升起之后再错开一拍）
+                modifier = Modifier.gameDialogAction(5),
+                onClick = { exitHandle.closeThen { onChoice(PatchChoiceOption.ALWAYS.toArtemisChoice()) } },
             )
         },
         dismissButton = {
+            exitHandle.capture()
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 DialogTextButton(
                     text = stringResource(PatchChoiceOption.NEVER.labelRes),
+                    modifier = Modifier.gameDialogAction(3),
                     onClick = { onChoice(PatchChoiceOption.NEVER.toArtemisChoice()) },
                 )
                 DialogTextButton(
                     text = stringResource(PatchChoiceOption.ONCE.labelRes),
+                    modifier = Modifier.gameDialogAction(4),
                     onClick = { onChoice(PatchChoiceOption.ONCE.toArtemisChoice()) },
                 )
             }
@@ -95,15 +104,17 @@ suspend fun ComponentActivity.awaitArtemisPatchChoice(game: ScanGame): EngineLau
             // 主题最外层（AGENTS.md 界面规范）：透明蹦床 trampoline 也必须挂主题，否则 typography/primary 回落默认
             TyranorNextTheme {
                 ProvideAppLocale {
-                    var showDialog by remember { mutableStateOf(true) }
-                    if (showDialog) {
-                        ArtemisPatchChoiceDialog(
-                            game = game,
-                            onChoice = { choice ->
-                                showDialog = false
-                                if (continuation.isActive) continuation.resume(choice)
-                            },
-                        )
+                    ProvideMotionEnvironment {
+                        var showDialog by remember { mutableStateOf(true) }
+                        if (showDialog) {
+                            ArtemisPatchChoiceDialog(
+                                game = game,
+                                onChoice = { choice ->
+                                    showDialog = false
+                                    if (continuation.isActive) continuation.resume(choice)
+                                },
+                            )
+                        }
                     }
                 }
             }

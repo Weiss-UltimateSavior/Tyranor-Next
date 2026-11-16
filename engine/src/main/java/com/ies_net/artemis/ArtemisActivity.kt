@@ -37,14 +37,25 @@ open class ArtemisActivity : NativeActivity() {
     external fun OnReadyPlayAssetDelivery(a: Int, b: Int, c: Int)
 
     fun PlayVideo(path: String, offset: Int, length: Int, volume: Int, skip: Int) {
-        val intent = Intent(applicationContext, VideoViewActivity::class.java)
-        intent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
-        intent.putExtra("PATH", path)
-        intent.putExtra("OFFSET", offset)
-        intent.putExtra("LENGTH", length)
-        intent.putExtra("VOLUME", volume)
-        intent.putExtra("SKIP", skip)
-        startActivityForResult(intent, 1)
+        val videoIntent = Intent(applicationContext, VideoViewActivity::class.java)
+        videoIntent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
+        videoIntent.putExtra("PATH", path)
+        videoIntent.putExtra("OFFSET", offset)
+        videoIntent.putExtra("LENGTH", length)
+        videoIntent.putExtra("VOLUME", volume)
+        videoIntent.putExtra("SKIP", skip)
+        intent?.getStringExtra(LaunchContract.ROOT_URI)?.takeIf { it.isNotBlank() }?.let {
+            videoIntent.putExtra(LaunchContract.ROOT_URI, it)
+        }
+        val playtimeSessionId = intent?.getStringExtra(LaunchContract.PLAYTIME_SESSION_ID)
+            ?.takeIf { it.isNotBlank() }
+        playtimeSessionId?.let {
+            videoIntent.putExtra(LaunchContract.PLAYTIME_SESSION_ID, it)
+            intent?.getLongExtra(LaunchContract.PLAYTIME_SESSION_STARTED_AT, 0L)
+                ?.takeIf { startedAt -> startedAt > 0L }
+                ?.let { startedAt -> videoIntent.putExtra(LaunchContract.PLAYTIME_SESSION_STARTED_AT, startedAt) }
+        }
+        startActivityForResult(videoIntent, 1)
         overridePendingTransition(0, 0)
     }
 

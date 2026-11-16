@@ -14,6 +14,8 @@ import androidx.annotation.Nullable;
  * 把每帧 RGBA 位图按 aspect-fit（尽量整数倍、保持像素清晰）居中绘制。
  */
 public final class FramebufferView extends View {
+    public interface FirstFrameDrawnListener { void onFirstFrameDrawn(); }
+
 
     private final Paint paint = new Paint();
     private final Rect src = new Rect();
@@ -21,6 +23,8 @@ public final class FramebufferView extends View {
 
     @Nullable
     private Bitmap frame;
+    private FirstFrameDrawnListener firstFrameDrawnListener;
+    private boolean firstFrameDrawn;
 
     public FramebufferView(Context context) {
         super(context);
@@ -32,6 +36,13 @@ public final class FramebufferView extends View {
     public void setFrame(@Nullable Bitmap bitmap) {
         frame = bitmap;
         invalidate();
+    }
+
+    public void setFirstFrameDrawnListener(@Nullable FirstFrameDrawnListener listener) {
+        firstFrameDrawnListener = listener;
+        if (firstFrameDrawn && listener != null) post(() -> {
+            if (firstFrameDrawnListener == listener) listener.onFirstFrameDrawn();
+        });
     }
 
     /** 当前画面在屏幕上的矩形（游戏触摸坐标换算用）。 */
@@ -84,5 +95,12 @@ public final class FramebufferView extends View {
         }
         layoutFrame();
         canvas.drawBitmap(frame, src, dst, paint);
+        if (!firstFrameDrawn) {
+            firstFrameDrawn = true;
+            FirstFrameDrawnListener listener = firstFrameDrawnListener;
+            if (listener != null) post(() -> {
+                if (firstFrameDrawnListener == listener) listener.onFirstFrameDrawn();
+            });
+        }
     }
 }

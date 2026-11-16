@@ -1,0 +1,64 @@
+--- a/crates/ethornell-app/src/file_policy.rs
++++ b/crates/ethornell-app/src/file_policy.rs
+@@ -14,6 +14,30 @@
+     io::Error::new(error.kind(), format!("host_policy:{code}:{}", error.raw_os_error().unwrap_or(0)))
+ }
+ 
++#[cfg(fd_policy)]
++fn flock_operation_unsupported(error: &io::Error) -> bool {
++    error.raw_os_error().is_some_and(|code| {
++        code == libc::ENOSYS || code == libc::EOPNOTSUPP || code == libc::ENOTSUP
++    })
++}
++
++#[cfg(any(target_os = "android", target_os = "linux"))]
++fn lock_writer_with_ofd(file: &std::fs::File) -> io::Result<()> {
++    use std::os::fd::AsRawFd;
++
++    let mut lock = libc::flock {
++        l_type: libc::F_WRLCK as _,
++        l_whence: libc::SEEK_SET as _,
++        l_start: 0,
++        l_len: 0,
++        l_pid: 0,
++    };
++    if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_OFD_SETLK, &mut lock) } < 0 {
++        return Err(io::Error::last_os_error());
++    }
++    Ok(())
++}
++
+ /// What the policy reports about a name (std::fs::Metadata has no portable
+ /// constructor, and the web build has no host files).
+ #[derive(Clone, Copy, Debug)]
+@@ -368,7 +392,12 @@
+         }
+         let file = unsafe { std::fs::File::from_raw_fd(fd) };
+         if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } < 0 {
+-            return Err(policy_error(202, io::Error::last_os_error()));
++            let error = io::Error::last_os_error();
++            if flock_operation_unsupported(&error) {
++                #[cfg(any(target_os = "android", target_os = "linux"))]
++                return lock_writer_with_ofd(&file).map_err(|error| policy_error(203, error)).map(|()| file);
++            }
++            return Err(policy_error(202, error));
+         }
+         Ok(file)
+     }
+@@ -1194,6 +1223,16 @@
+         drop(lock);
+         assert!(p.lock_writer().is_ok());
+         std::fs::remove_dir_all(base).unwrap();
++    }
++    #[test]
++    fn only_unsupported_flock_errors_enable_ofd_fallback() {
++        for errno in [libc::ENOSYS, libc::EOPNOTSUPP, libc::ENOTSUP] {
++            assert!(flock_operation_unsupported(&io::Error::from_raw_os_error(errno)));
++        }
++        for errno in [libc::EAGAIN, libc::EACCES, libc::EPERM, libc::EBADF] {
++            assert!(!flock_operation_unsupported(&io::Error::from_raw_os_error(errno)));
++        }
++        assert!(!flock_operation_unsupported(&io::Error::other("no errno")));
+     }
+     #[test]
+     fn install_userdata_alias_is_real_user_io_not_resource_write_or_original_save_import() {
