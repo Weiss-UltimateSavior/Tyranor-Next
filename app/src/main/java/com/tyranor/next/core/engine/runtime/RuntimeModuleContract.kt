@@ -19,6 +19,9 @@ object RuntimeModuleContract {
     /** 启动 extra：游戏文件夹绝对路径。 */
     const val EXTRA_FOLDER_PATH = "com.tyranor.runtime.extra.FOLDER_PATH"
 
+    /** 启动 extra：SAF tree 内的游戏目录 document ID；Intent.data 携带 tree URI。 */
+    const val EXTRA_GAME_ROOT = "com.tyranor.runtime.extra.GAME_ROOT"
+
     /** 启动 extra：游戏标题（便于模块展示，可不读）。 */
     const val EXTRA_GAME_TITLE = "com.tyranor.runtime.extra.GAME_TITLE"
 

@@ -127,7 +127,7 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 - **扫描接入**：扫描开始时快照「已发现 + 已启用 + 有扫描描述」的模块；仅当内置识别结果为 `UNKNOWN` 或 `WEB_OTHER` 时才尝试模块匹配，KRKR / ONS / RPGM / Ren'Py 等强特征结果不被覆盖。多模块命中按「`all` 优先于 `any` → marker 数量多 → 包名」选择；重扫对同一 URI 优先保留旧绑定，扫描深度沿用现有上限。
 - **唯一入库入口**：扫描是第三方运行时游戏唯一入库入口；管理页、添加游戏对话框和游戏页均不提供手动添加、模块选择、目录导入或拖入，也不提供手动绑定/重绑或模块缺失修复页。
 - **绑定与降级**：`ScanGame.runtimeModulePackage`（Room `games.runtime_module_package`，v3）记录「游戏 → 模块包名」；模块卸载、禁用、入口不再可发现或包名为空时，绑定游戏降级为 `EngineType.UNKNOWN`，但保留最后已知包名（用于重扫合并，不作为启动依据），保留标题、封面与最近时间。发现查询失败不降级。重新安装/启用后重新扫描可恢复，不支持自动或手动改绑。
-- **启动交棒**：`EngineType.RUNTIME_MODULE` 由 `RuntimeModuleLauncher` 以显式 `ComponentName` 启动，只传当前游戏文件夹绝对路径、标题与协议版本；不传 `game` / `settings` JSON，也不附加 URI 读写授权。`Dispatched` 只表示 Intent 已交棒，不保证模块进入游戏或未崩溃；模块缺失、未启用、入口缺失、路径无法解析、安全拒绝与其它异常返回类型化结果。模块缺失或未启用（存在绑定包名时）会触发该游戏降级；路径无法解析时不请求「所有文件访问」，存储权限由模块自行负责。
+- **启动交棒**：`EngineType.RUNTIME_MODULE` 由 `RuntimeModuleLauncher` 以显式 `ComponentName` 启动，传递当前游戏文件夹绝对路径（可用时）、标题与协议版本；SAF 游戏目录同时以 `Intent.data` 传递 tree URI、以 `GAME_ROOT` 传递子目录 document ID，并附加临时只读前缀授权。不传 `game` / `settings` JSON、存档路径或按键配置。`Dispatched` 只表示 Intent 已交棒，不保证模块进入游戏或未崩溃；模块缺失、未启用、入口缺失、路径/授权无法解析、安全拒绝与其它异常返回类型化结果。模块缺失或未启用（存在绑定包名时）会触发该游戏降级；无法解析本地路径时不请求「所有文件访问」，支持 SAF 的模块使用交棒的 tree 授权。
 - **能力边界**：`RUNTIME_MODULE` 不进入 `EngineLauncher.supportedEngines`，不出现在引擎页引擎列表；不接管存档（`GameSaveManager` 无统一接口）、虚拟按键/手柄重映射、引擎或单游戏设置。运行时、设置与存档均由模块自身管理。管理页的刷新只重新发现模块，不触发游戏库扫描；禁用仍有绑定游戏的模块前先确认，确认后降级。
 
 ## 5. 设置、输入与图形

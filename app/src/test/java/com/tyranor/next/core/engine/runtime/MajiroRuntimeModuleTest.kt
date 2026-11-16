@@ -38,5 +38,11 @@ class MajiroRuntimeModuleTest {
                 listOf(RuntimeModuleEntry("story.MJO", isDirectory = false)),
             ) { emptyList() },
         )
+        assertTrue(
+            RuntimeModuleMatcher.matches(
+                scan,
+                listOf(RuntimeModuleEntry("fastdata.ARC", isDirectory = false)),
+            ) { emptyList() },
+        )
     }
 }

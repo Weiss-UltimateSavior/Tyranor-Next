@@ -11,6 +11,7 @@ Majiro 通过独立的 `majiro-emulator` APK 作为 TyranorNext 第三方运行�
 | entry Activity | `org.majiro.player.MainActivity` |
 | protocol | `1` |
 | launch extra | `com.tyranor.runtime.extra.FOLDER_PATH` |
+| SAF root extra | `com.tyranor.runtime.extra.GAME_ROOT`（仅当 `Intent.data` 为 tree URI 时使用） |
 | compatible host | `majiro-emulator` 0.5+，versionCode 23+ |
 
 模块由 TyranorNext 的「引擎模块管理」页发现，初始为关闭状态。用户启用后手动扫描游戏目录，识别到的记录统一以 `EngineType.RUNTIME_MODULE` 入库，游戏卡显示 `Plugin`。当前宿主实现最低要求为 `majiro-emulator` 0.5（versionCode 23）；第三方模块协议本身不提供版本门禁，用户应安装匹配版本。
@@ -37,11 +38,12 @@ Majiro 通过独立的 `majiro-emulator` APK 作为 TyranorNext 第三方运行�
 
 TyranorNext 使用 `RuntimeModuleLauncher` 显式启动模块，只传：
 
-- 当前游戏目录的绝对路径；
+- 当前游戏目录的绝对路径（本地路径可用时）；
+- SAF tree URI、游戏目录 document ID 与临时只读授权（SAF 目录时）；
 - 游戏标题；
 - 协议版本 `1`。
 
-不会传 SAF URI、URI 授权、`game`/`settings` JSON、存档路径、按键映射或画面参数。`majiro-emulator` 在模块进程内校验目录并读取文件，自己的 `GameBridge` 同时支持绝对路径目录和宿主自身的 SAF 游戏库。
+不会传 `game`/`settings` JSON、存档路径、按键映射或画面参数。`majiro-emulator` 优先使用交棒的 SAF tree 目录读取共享存储，路径字段作为本地文件目录兼容回退；自己的 `GameBridge` 同时支持绝对路径目录和宿主自身的 SAF 游戏库。
 
 ## 边界
 

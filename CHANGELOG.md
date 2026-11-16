@@ -53,6 +53,8 @@
 
 ### 新增
 
+- 修复 Majiro 运行时模块在 SAF 共享存储目录上的启动：交棒时传递 tree URI、游戏子目录 document ID 和临时只读授权；同步补齐宿主扫描 `.mjo` / `.arc` 特征。
+
 - 新增 Majiro 第三方 APK 运行时模块接入：`majiro-emulator` 通过 `com.tyranor.runtime.*` 模块协议声明扫描特征并接收游戏目录路径；主 App 不再内置 Majiro 引擎，也不接管模块存档、设置或权限。
 
 - 修复 BGI 游戏位于公共共享存储时因 `flock` 返回不支持而无法启动：仅对不支持锁操作的错误回退到 OFD 非阻塞写入锁，保留占用与权限错误的拒绝行为。

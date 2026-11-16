@@ -619,7 +619,7 @@ object EngineLauncher {
 
     /**
      * 第三方 APK 运行时模块：先刷新发现结果（缓存可能早于模块安装/卸载/更新），再把游戏文件夹
-     * 绝对路径交给模块的显式组件。`Dispatched` 只代表 Intent 已交棒，不承诺游戏运行成功。
+     * 路径或 SAF tree 授权交给模块的显式组件。`Dispatched` 只代表 Intent 已交棒，不承诺游戏运行成功。
      *
      * [RuntimeModuleLaunchResult.ModuleMissing] / [ModuleDisabled] 会把游戏降级为 UNKNOWN；
      * [RuntimeModuleLaunchResult.PathUnresolved] 不请求「所有文件访问」——模块自己负责存储权限。
@@ -649,10 +649,10 @@ object EngineLauncher {
             degradeRuntimeModuleGame(context, game, packageName)
             return LaunchResult.Failure.RuntimeModuleFailed(RuntimeModuleLaunchResult.ModuleDisabled)
         }
-        // 先做词法映射：模块自己校验目录是否存在/可读，主 App 不要求“所有文件访问”。
+        // 先做词法映射；SAF 目录即使无法映射为本地路径，RuntimeModuleLauncher
+        // 仍会把 tree URI 和只读授权交给支持 SAF 的模块。
         val path = GamePathUtils.safUriToPath(game.uri)
             ?: resolveGameDirectory(context, game)
-            ?: return LaunchResult.Failure.RuntimeModuleFailed(RuntimeModuleLaunchResult.PathUnresolved)
         currentCoroutineContext().ensureActive()
         return when (val result = RuntimeModuleLauncher.launch(context, module, game, path)) {
             RuntimeModuleLaunchResult.Dispatched -> completeLaunch(context, game, onDispatched)

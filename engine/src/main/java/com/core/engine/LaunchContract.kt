@@ -61,6 +61,7 @@ object LaunchContract {
 
     const val RUNTIME_MODULE_ACTION = "com.tyranor.runtime.action.LAUNCH"
     const val RUNTIME_MODULE_FOLDER_PATH = "com.tyranor.runtime.extra.FOLDER_PATH"
+    const val RUNTIME_MODULE_GAME_ROOT = "com.tyranor.runtime.extra.GAME_ROOT"
     const val RUNTIME_MODULE_GAME_TITLE = "com.tyranor.runtime.extra.GAME_TITLE"
     /**
      * 原游戏目录，仅作为旧版设置/存档迁移的身份键；游戏数据以 [RUNTIME_MODULE_FOLDER_PATH] 为准。
