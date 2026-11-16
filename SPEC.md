@@ -93,6 +93,7 @@
 | RPG Maker RGSS | XP/VX/VX Ace 资源或 mkxp-z 模块选择 | 外置 RPGM APK 模块 |
 | Ren'Py | `.rpa`、`.rpy/.rpyc` 等组合 | 外置 Ren'Py APK；自动或指定 8.5.3 / 7.7.1 |
 | Ruffle / Flash | 顶层 `.swf`；根 `index.html/index.htm` + 唯一 SWF 的叶子目录 | 外置 Ruffle APK；一 SWF 一条记录 |
+| MAGES.（impacto） | 按精确大小写的根目录条目命中上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`）；恰好一个全命中才识别 | 外置 Impacto 宿主 APK（承载未改动的上游 CommitteeOfZero/impacto，PS3 数据布局；Windows／Steam 版数据不识别） |
 | 第三方运行时模块 | 已安装的 `com.tyranor.runtime.*` APK + 模块 `res/raw` 扫描描述 | 显式组件交棒游戏文件夹，模块自行运行 |
 | YU-RIS / CatSystem2 | YPF/DLL/配置或 INT/CST/HG3 等组合 | 外置 Winlator |
 | PC / 安卓游戏 | 手动添加目录+exe / 应用包名 | 外置 Winlator / 直接启动应用 |
@@ -115,6 +116,14 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 - 设置：全局与单游戏覆盖，默认 `opengl / high / showall / on / streaming / 0`（0 = 不自动关闭）；允许值分别为 auto/opengl/vulkan、low/medium/high/best、exactfit/noborder/noscale/showall、on/off、streaming/delayed/blocking、0/5/10/15/30/45/60 分钟。
 - `configuration.json`：游戏目录位于主外部存储根的子目录时，插件优先读取 `<游戏目录>/configuration.json`；其它情况（含存储根、可移动存储）读取 `/storage/emulated/0/JoiPlay/games/<id>/configuration.json`。文件存在时覆盖 intent settings；主 App 仅在文件已存在且为合法 JSON 对象时同步受管键，不创建/删除，跳过共享多 SWF 目录与存储根，原子写并限制 1 MiB。
 - 无统一存档管理，插件自管运行时/存档；不提供虚拟按键重映射；插件固定横屏。设备/插件运行验证尚未执行。
+
+MAGES. 引擎（经开源重新实现项目 impacto，未改动的上游 CommitteeOfZero/impacto）由外置 Impacto 宿主 APK 承载，宿主在独立仓库 yuukana1/Tyranor-Next-Impacto 构建、签名并发布，当前边界如下：
+
+- 扫描：按**精确大小写**的根目录条目名匹配上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`），恰好一个 profile 全部命中才识别；`darling` 与全小写 `mo6tw` 的要求集合相同，一律不识别。`launchTarget` 为 profile id，别名 `internal.impacto`。Windows／Steam 版数据（小写 `.cpk`、无 `SCRIPT.cls`）不识别为 Impacto。
+- 获取：引擎页点击 MAGES. 条目跳转到 `https://github.com/yuukana1/Tyranor-Next-Impacto/releases/latest/download/impacto-host.apk`（资产名固定，随宿主新发布自动指向最新版）；未安装或版本低于 `ImpactoHostContract.VERSION_CODE` 时与其他外置模块一样提示并引导下载。
+- 启动：发 `com.tyranor.next.impacto.action.RUN`，携带游戏目录、profile、`gameKey` 与标题，需要「所有文件访问」；宿主没有桌面入口。
+- 存档与配置在宿主私有目录内按游戏隔离，主 App 不提供文件存档管理；单游戏设置页只显示说明。
+- 验证状态：宿主引擎库只在一台真机上跑到读脚本失败为止（见 `docs/impacto-upstream-only.md`），没有受支持的游戏数据进到画面，渲染、声音、输入、存读档均未验证。
 
 ### 第三方 APK 运行时模块
 

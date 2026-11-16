@@ -47,6 +47,7 @@ internal fun engineSettingsKindOf(engine: EngineType): EngineSettingsKind? = whe
     EngineType.XSYS4 -> EngineSettingsKind.XSYS4
     EngineType.PSP -> EngineSettingsKind.PPSSPP
     EngineType.YURIS, EngineType.CATSYSTEM2, EngineType.PC -> EngineSettingsKind.WINLATOR
+    EngineType.IMPACTO,
     EngineType.NINTENDO_SWITCH,
     EngineType.RUNTIME_MODULE,
     EngineType.ANDROID_APP,

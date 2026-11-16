@@ -72,6 +72,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | WebOther             | 通用 `index.html` 网页游戏                                                | 内置 Web 运行环境                  |
 | Ren'Py               | `.rpa`、`game/script.rpy`、`game/options.rpy`、`renpy/` + `.rpy/.rpyc` | 外置 RenPy APK 模块（8.5.3 / 7.7.1） |
 | Ruffle / Flash       | 顶层 `.swf`；根 `index.html/index.htm` + 唯一 SWF 的叶子目录                   | 外置 Ruffle APK 模块              |
+| MAGES.（impacto）    | 按精确大小写的根目录条目识别上游 profile（如 `mo6tw` 的 `SYSTEM.CPK`、`SCRIPT.cls` 等） | 外置 Impacto 宿主 APK（引擎页点击跳转下载） |
 | PSP                  | `.pbp`、`.cso`、`.iso`、`.chd`                                         | 外置 PPSSPP 模拟器                 |
 | Nintendo Switch      | `.nsp`、`.xci`、`.nca`、`.nro`                                         | 外置 Eden 模拟器                   |
 
