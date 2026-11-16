@@ -4,8 +4,11 @@ import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Process
 import android.provider.DocumentsContract
+import com.tyranor.next.core.engine.runtime.RuntimeModuleLaunchDispatch.SafSource
 import com.tyranor.next.core.game.model.ScanGame
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -34,8 +37,8 @@ sealed interface RuntimeModuleLaunchResult {
  * 通过显式组件把游戏目录交给第三方运行时模块。
  *
  * 本地路径可用时继续传 [RuntimeModuleContract.EXTRA_FOLDER_PATH]；SAF 游戏目录同时通过
- * Intent.data 传递 tree URI、通过 [RuntimeModuleContract.EXTRA_GAME_ROOT] 传递子目录 ID，
- * 并只授予临时只读权限。协议版本保持 v1，旧模块可以继续只消费路径字段。
+ * Intent.data 传递精确游戏 tree URI、通过 [RuntimeModuleContract.EXTRA_GAME_ROOT] 传递该 tree 的根 ID，
+ * 并只授予临时只读权限。父 tree 不转授；协议版本保持 v1，旧模块可以继续只消费路径字段。
  */
 object RuntimeModuleLauncher {
 
@@ -47,12 +50,43 @@ object RuntimeModuleLauncher {
     ): RuntimeModuleLaunchResult {
         if (!module.enabled) return RuntimeModuleLaunchResult.ModuleDisabled
         if (module.packageName.isBlank() || module.activityName.isBlank()) return RuntimeModuleLaunchResult.EntryMissing
-        val safSource = safSource(game.uri)
-        if (folderPath.isNullOrBlank() && safSource == null) return RuntimeModuleLaunchResult.PathUnresolved
+        val applicationContext = context.applicationContext
+        return RuntimeModuleLaunchDispatch.launch(
+            folderPath = folderPath,
+            safSource = safSource(game.uri),
+            persistedSafSources = {
+                applicationContext.contentResolver.persistedUriPermissions.asSequence()
+                    .filter { it.isReadPermission }
+                    .mapNotNull { permission ->
+                        // 只复用系统记录的真实授权 URI，不从父 tree 构造游戏 retree。
+                        safSource(permission.uri.toString())?.copy(treeUri = permission.uri)
+                    }
+            },
+            canReadSafSource = { source ->
+                applicationContext.checkUriPermission(
+                    source.treeUri,
+                    Process.myPid(),
+                    Process.myUid(),
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                ) == PackageManager.PERMISSION_GRANTED
+            },
+            dispatch = { path, source ->
+                dispatch(applicationContext, module, game, path, source)
+            },
+        )
+    }
 
+    private fun dispatch(
+        context: Context,
+        module: RuntimeModuleDescriptor,
+        game: ScanGame,
+        folderPath: String?,
+        safSource: SafSource<Uri>?,
+    ): RuntimeModuleLaunchResult {
+        // 每次新建 Intent：路径回退不能残留 data、GAME_ROOT 或 URI 授权 flags。
         val intent = Intent(RuntimeModuleContract.ACTION_LAUNCH).apply {
             component = ComponentName(module.packageName, module.activityName)
-            folderPath?.takeIf { it.isNotBlank() }?.let {
+            folderPath?.let {
                 putExtra(RuntimeModuleContract.EXTRA_FOLDER_PATH, it)
             }
             safSource?.let { source ->
@@ -66,7 +100,7 @@ object RuntimeModuleLauncher {
         }
 
         return try {
-            context.applicationContext.startActivity(intent)
+            context.startActivity(intent)
             RuntimeModuleLaunchResult.Dispatched
         } catch (e: CancellationException) {
             throw e
@@ -79,33 +113,33 @@ object RuntimeModuleLauncher {
         }
     }
 
-    internal data class SafSource(
-        val treeUri: Uri,
-        val rootDocumentId: String,
-    )
-
     /**
-     * Rebuild the persisted tree URI from a scanned child document URI.
+     * Parse the selected tree and game document identities from a scanned URI.
      *
-     * The child document URI is the game identity stored by the scanner. A receiving
-     * APK needs the tree URI as Intent.data so the temporary prefix grant covers the
-     * game's files below the selected directory.
+     * Parsing does not establish permission. A parent tree is only a lookup key:
+     * dispatch requires an existing exact game tree so its prefix grant cannot
+     * include sibling games.
      */
-    internal fun safSource(uriText: String?): SafSource? {
+    internal fun safSource(uriText: String?): SafSource<Uri>? {
         if (uriText.isNullOrBlank()) return null
-        val documentUri = runCatching { Uri.parse(uriText) }.getOrNull() ?: return null
-        if (!documentUri.scheme.equals("content", ignoreCase = true)) return null
-        if (!DocumentsContract.isTreeUri(documentUri)) return null
-        val authority = documentUri.authority ?: return null
-        val treeDocumentId = runCatching {
-            DocumentsContract.getTreeDocumentId(documentUri)
-        }.getOrNull()?.takeIf { it.isNotBlank() } ?: return null
-        val rootDocumentId = runCatching {
-            DocumentsContract.getDocumentId(documentUri)
-        }.getOrDefault(treeDocumentId).takeIf { it.isNotBlank() } ?: treeDocumentId
-        val treeUri = runCatching {
-            DocumentsContract.buildTreeDocumentUri(authority, treeDocumentId)
-        }.getOrNull() ?: return null
-        return SafSource(treeUri, rootDocumentId)
+        return try {
+            val documentUri = Uri.parse(uriText)
+            if (!documentUri.scheme.equals("content", ignoreCase = true)) return null
+            if (!DocumentsContract.isTreeUri(documentUri)) return null
+            val authority = documentUri.authority ?: return null
+            val treeDocumentId = DocumentsContract.getTreeDocumentId(documentUri)
+                .takeIf { it.isNotBlank() } ?: return null
+            val rootDocumentId = if (documentUri.pathSegments.size == 2) {
+                treeDocumentId
+            } else {
+                DocumentsContract.getDocumentId(documentUri).takeIf { it.isNotBlank() } ?: return null
+            }
+            val treeUri = DocumentsContract.buildTreeDocumentUri(authority, treeDocumentId)
+            SafSource(treeUri, authority, treeDocumentId, rootDocumentId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
     }
 }
