@@ -119,6 +119,12 @@ val sharedEngineAssetNames = listOf(
     "__rpg__.js",
 )
 val hikarinagiClientId = configValue("HIKARINAGI_CLIENT_ID")
+val bangumiClientId = configValue("BANGUMI_CLIENT_ID")
+val bangumiClientSecret = configValue("BANGUMI_CLIENT_SECRET")
+val nextmoeClientId = configValue("NEXTMOE_CLIENT_ID")
+// 桌面应用名（android:label）占位符：默认沿用 @string/app_name，可由 TYRANOR_APP_LABEL 注入
+// 字面量（隔离变体的应用改名，如 Tyranor PlayStatus），不改动上游 strings.xml
+val launcherLabel = configValue("TYRANOR_APP_LABEL").ifBlank { "@string/app_name" }
 val tyranorApplicationId = configValue("TYRANOR_APPLICATION_ID").ifBlank { "com.tyranor.next" }
 val webdavDeviceProbe = providers.gradleProperty("webdavDeviceProbe").orNull.let { value ->
     require(value == null || value == "true" || value == "false") { "webdavDeviceProbe must be true or false" }
@@ -334,6 +340,10 @@ android {
         else "androidx.test.runner.AndroidJUnitRunner"
         if (ethornellReleaseProbe) testProguardFiles("src/releaseProbe/proguard-rules.pro")
         buildConfigField("String", "HIKARINAGI_CLIENT_ID", hikarinagiClientId.asBuildConfigString())
+        buildConfigField("String", "BANGUMI_CLIENT_ID", bangumiClientId.asBuildConfigString())
+        buildConfigField("String", "BANGUMI_CLIENT_SECRET", bangumiClientSecret.asBuildConfigString())
+        buildConfigField("String", "NEXTMOE_CLIENT_ID", nextmoeClientId.asBuildConfigString())
+        manifestPlaceholders["launcherLabel"] = launcherLabel
     }
 
     signingConfigs {
