@@ -810,7 +810,7 @@ private fun PlaySourceRow(
         },
         summaryMaxLines = Int.MAX_VALUE,
         onClick = if (busy) null else onClick,
-        leadingIcon = R.drawable.ic_sheet_play_status,
+        leadingIcon = R.drawable.ic_play_status_source,
         // 弹窗条目自足禁用按压反馈（AGENTS.md 弹窗条目约定）
         indication = null,
         showArrow = true,

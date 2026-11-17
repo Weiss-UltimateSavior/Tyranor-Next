@@ -1190,7 +1190,7 @@ internal fun GameActionsSheet(
                         DrawerAction(
                             key = "play_status",
                             title = drawerPlayStatusTitle,
-                            icon = R.drawable.ic_sheet_play_status,
+                            icon = R.drawable.ic_sheet_play_status_entry,
                             iconTint = drawerPrimaryColor,
                             trailingText = playStatusSummary,
                             onClick = { showPlayStatusDialog = true },
