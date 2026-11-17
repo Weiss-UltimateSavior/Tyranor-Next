@@ -136,4 +136,10 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         if (AppSettingsStore.isOnboardingCompleted(this)) BackgroundUpdateWorker.enqueue(this)
     }
 
+    /** 内存紧张时优先释放整屏背景图（与封面缓存相比它只服务一个页面），回到图层时自动重解码。 */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        BackgroundImageCache.onTrimMemory(level)
+    }
+
 }

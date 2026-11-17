@@ -90,16 +90,14 @@ internal class GameOverlayMotion(
     private fun releaseInputFocus() = tracks.focusManager?.clearFocus(force = true) ?: Unit
 
     fun dismiss(action: () -> Unit) {
-        if (kind == GameOverlay.ShortcutCrop && tracks.closing) return
+        if (tracks.closing) return
+        tracks.closing = true
+        releaseInputFocus()
         if (!enhanced) {
-            releaseInputFocus()
             releaseWindow()
             action()
             return
         }
-        if (tracks.closing) return
-        tracks.closing = true
-        releaseInputFocus()
         tracks.window.passThroughTouches()
         scope.launch {
             if (kind == GameOverlay.CoverSearch) launch { dim.animateTo(0f, MotionTokens.fadeOut(0.001f)) }
@@ -107,6 +105,20 @@ internal class GameOverlayMotion(
             releaseWindow()
             action()
         }
+    }
+
+    /**
+     * 应用锁生效时的强制收起：不播放退场动画、不等待业务守卫，立即释放窗口触摸与 dim
+     * 并执行调用方的移除回调。锁定状态下窗口层级在锁门之上，必须先消失，不能留下可操作的一帧。
+     *
+     * 即使普通退场已经在进行中（`closing` 已置位）也必须执行：普通退场可能还要播放
+     * 数百毫秒动画，锁定期间这段窗口仍然可见 / 可点。回调重复执行是幂等的（调用方只是清状态）。
+     */
+    fun dismissImmediately(action: () -> Unit) {
+        tracks.closing = true
+        releaseInputFocus()
+        releaseWindow()
+        action()
     }
 
     /** Run in the export job so cancellation still reaches its temporary-file cleanup. */

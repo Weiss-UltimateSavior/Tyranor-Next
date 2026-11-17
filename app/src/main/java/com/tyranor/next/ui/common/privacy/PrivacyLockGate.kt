@@ -1,12 +1,10 @@
 package com.tyranor.next.ui.common.privacy
 
-import android.app.Activity
 import android.content.Context
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,6 +50,7 @@ import com.tyranor.next.ui.common.motion.BlurCrossfade
 import com.tyranor.next.ui.common.motion.ExpandVisibility
 import com.tyranor.next.ui.common.motion.MotionHaptics
 import com.tyranor.next.ui.common.motion.shakeOnTrigger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -79,13 +78,16 @@ fun PrivacyLockGate(modifier: Modifier = Modifier) {
     if (!backgroundReady) {
         // 等背景期间下层页面已被隐藏（skipDrawWhenHidden），但输入**从锁定成立的第一帧起
         // 就必须拦住**：不能因为背景图还在解码而把点击交给被隐藏的页面控件。
-        // 这里用纯色底而不是简化门：图案盘随后与背景同帧出现。
+        // 这里直接渲染与门相同的完整背景（GlassBackground：样式自带底图 / 玻璃渐变，
+        // 自定义背景图未就绪时自动为空），不再用 MaterialTheme.colorScheme.background——
+        // PageGrey 在复古玻璃 / 白雾玻璃下是 Transparent，等待期间会露出窗口底色。
         Box(
             modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
                 .pointerInput(Unit) { detectTapGestures { } },
-        )
+        ) {
+            GlassBackground { }
+        }
         return
     }
     PrivacyUnlockGateContent(modifier)
@@ -102,6 +104,11 @@ private fun PrivacyUnlockGateContent(modifier: Modifier = Modifier) {
     var unreadableFailures by remember { mutableIntStateOf(0) }
     var resetConfirming by remember { mutableStateOf(false) }
     var resetting by remember { mutableStateOf(false) }
+    // 重置前的设备凭据认证进行中：防止连点重复创建 Prompt
+    var resetAuthenticating by remember { mutableStateOf(false) }
+    // 图案校验进行中：Keystore 解密已移到 IO，等待期间不再接受新的图案输入，
+    // 避免连续绘制造成多次并发校验与提示错拍
+    var verifying by remember { mutableStateOf(false) }
     var hint by remember { mutableStateOf(GateHint(localizedContext.getString(R.string.privacy_gate_hint_draw), false)) }
     // 凭据存在但当前读不出来（Keystore 瞬时异常）：给出设备凭据恢复路径，图案仍可重试
     val credentialUnreadable by AppLockController.credentialUnreadableState.collectSettingAsState()
@@ -130,8 +137,14 @@ private fun PrivacyUnlockGateContent(modifier: Modifier = Modifier) {
                 // 清除凭据是阻塞的 Keystore + commit：放到后台线程。清除成功时控制器
                 // 在后台解锁、门随 lockedState 变 false 离开组合；协程若因此被取消，
                 // 清除要么没写、要么已经写完，不会留下半套。
-                val cleared = withContext(Dispatchers.IO) {
-                    AppLockController.clearPatternAndDisable(context)
+                val cleared = try {
+                    withContext(Dispatchers.IO) {
+                        AppLockController.clearPatternAndDisable(context)
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    false
                 }
                 if (cleared) {
                     MotionHaptics.perform(MotionHaptics.Kind.Confirm)
@@ -148,28 +161,50 @@ private fun PrivacyUnlockGateContent(modifier: Modifier = Modifier) {
     }
 
     val onPattern: (List<Int>) -> Unit = { pattern ->
-        // 校验 + 解锁统一经控制器门面（UI 不直接触碰凭据存储）
-        if (AppLockController.verifyAndUnlock(context, pattern)) {
-            MotionHaptics.perform(MotionHaptics.Kind.Confirm)
-            hint = GateHint(localizedContext.getString(R.string.privacy_gate_hint_draw), false)
-        } else {
-            failCount += 1
-            // 读取失败不是「图案错误」：控制器已在本次校验中更新状态（同步），直接读当前值
-            val unreadable = AppLockController.credentialUnreadableState.value
-            if (unreadable) unreadableFailures += 1 else unreadableFailures = 0
-            hint = GateHint(
-                localizedContext.getString(
-                    if (unreadable) R.string.privacy_gate_credential_unreadable
-                    else R.string.privacy_gate_hint_wrong,
-                ),
-                true,
-            )
+        if (!verifying) {
+            verifying = true
+            scope.launch {
+                // 校验 + 解锁统一经控制器门面（UI 不直接触碰凭据存储）。
+                // Keystore 解密是阻塞调用，不能占用主线程（低端机解锁卡顿的直接来源）。
+                val verified = try {
+                    withContext(Dispatchers.IO) {
+                        AppLockController.verifyAndUnlock(context, pattern)
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    // 未预期异常按校验失败处理：不能把 verifying 永久留在 true、让图案盘不可用
+                    false
+                }
+                if (verified) {
+                    MotionHaptics.perform(MotionHaptics.Kind.Confirm)
+                    hint = GateHint(localizedContext.getString(R.string.privacy_gate_hint_draw), false)
+                } else {
+                    failCount += 1
+                    // 读取失败不是「图案错误」：控制器已在本次校验中更新状态（同步），直接读当前值
+                    val unreadable = AppLockController.credentialUnreadableState.value
+                    if (unreadable) unreadableFailures += 1 else unreadableFailures = 0
+                    hint = GateHint(
+                        localizedContext.getString(
+                            if (unreadable) R.string.privacy_gate_credential_unreadable
+                            else R.string.privacy_gate_hint_wrong,
+                        ),
+                        true,
+                    )
+                }
+                verifying = false
+            }
         }
     }
 
     GateSurface(modifier) {
         GateColumn(title = stringResource(R.string.privacy_gate_title)) {
-            GatePatternSection(failCount = failCount, hint = hint, onPatternEntered = onPattern)
+            GatePatternSection(
+                failCount = failCount,
+                hint = hint,
+                enabled = !verifying,
+                onPatternEntered = onPattern,
+            )
             DeviceCredentialSection(
                 credentialUsable = deviceCredentialUsable,
                 forceShow = credentialUnreadable,
@@ -181,25 +216,44 @@ private fun PrivacyUnlockGateContent(modifier: Modifier = Modifier) {
             CredentialResetSection(
                 visible = resetAvailable,
                 confirming = resetConfirming,
-                busy = resetting,
+                busy = resetting || resetAuthenticating,
                 onRequestConfirm = { resetConfirming = true },
                 onCancel = { resetConfirming = false },
                 onConfirm = {
                     val activity = fragmentActivity
-                    if (!resetting && activity != null) {
-                        // 重置会关闭应用锁：先通过设备凭据确认身份，成功后才执行清除
-                        createDeviceCredentialPrompt(
+                    if (!resetting && !resetAuthenticating && activity != null) {
+                        // 重置会关闭应用锁：先通过设备凭据确认身份，成功后才执行清除。
+                        // 每次认证新建 Prompt（库内回调按最后创建者生效），并对重复点击与
+                        // Activity 已保存状态等异常做兜底，不能把进程崩掉。
+                        resetAuthenticating = true
+                        val prompt = createDeviceCredentialPrompt(
                             activity = activity,
-                            onSuccess = startReset,
-                            onError = { message -> hint = GateHint(message, true) },
-                        ).authenticate(
-                            deviceCredentialPromptInfo(
-                                title = localizedContext.getString(R.string.privacy_gate_reset_device_title),
-                                description = localizedContext.getString(
-                                    R.string.privacy_gate_reset_device_description,
-                                ),
-                            ),
+                            onSuccess = {
+                                resetAuthenticating = false
+                                startReset()
+                            },
+                            onError = { message ->
+                                resetAuthenticating = false
+                                hint = GateHint(message, true)
+                            },
+                            onCancelled = { resetAuthenticating = false },
                         )
+                        try {
+                            prompt.authenticate(
+                                deviceCredentialPromptInfo(
+                                    title = localizedContext.getString(R.string.privacy_gate_reset_device_title),
+                                    description = localizedContext.getString(
+                                        R.string.privacy_gate_reset_device_description,
+                                    ),
+                                ),
+                            )
+                        } catch (_: Exception) {
+                            resetAuthenticating = false
+                            hint = GateHint(
+                                localizedContext.getString(R.string.privacy_gate_device_failed),
+                                true,
+                            )
+                        }
                     }
                 },
             )
@@ -244,8 +298,14 @@ fun PrivacyLockSetupGate(
                 saving = true
                 scope.launch {
                     // Keystore 加密 + commit 是阻塞落盘，必须在后台线程执行
-                    val saved = withContext(Dispatchers.IO) {
-                        AppLockController.savePatternAndEnable(context, pattern)
+                    val saved = try {
+                        withContext(Dispatchers.IO) {
+                            AppLockController.savePatternAndEnable(context, pattern)
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        false
                     }
                     saving = false
                     if (saved) {
@@ -397,39 +457,57 @@ private fun DeviceCredentialSection(
     val fragmentActivity = remember(context) { AppLocaleController.findActivity(context) as? FragmentActivity }
     if ((!allowBiometric && !forceShow) || !credentialUsable) return
 
+    // 认证进行中禁止再次点击：每次认证都要新建 Prompt，连点会叠加多个系统弹层
+    var authenticating by remember { mutableStateOf(false) }
     val authenticate: () -> Unit = {
         val activity = fragmentActivity
-        if (activity != null) {
+        if (activity != null && !authenticating) {
+            authenticating = true
             // 新建实例的构造会把 Fragment 的回调换成解锁回调（后创建者生效），再立即认证
-            createDeviceCredentialPrompt(
+            val prompt = createDeviceCredentialPrompt(
                 activity = activity,
                 onSuccess = {
+                    authenticating = false
                     MotionHaptics.perform(MotionHaptics.Kind.Confirm)
                     AppLockController.unlock()
                 },
-                onError = onAuthError,
-            ).authenticate(
-                deviceCredentialPromptInfo(
-                    title = localizedContext.getString(R.string.privacy_gate_device_title),
-                    description = localizedContext.getString(R.string.privacy_gate_device_description),
-                ),
+                onError = { message ->
+                    authenticating = false
+                    onAuthError(message)
+                },
+                onCancelled = { authenticating = false },
             )
+            try {
+                prompt.authenticate(
+                    deviceCredentialPromptInfo(
+                        title = localizedContext.getString(R.string.privacy_gate_device_title),
+                        description = localizedContext.getString(R.string.privacy_gate_device_description),
+                    ),
+                )
+            } catch (_: Exception) {
+                // Activity 已保存状态 / 系统弹层冲突等：不崩溃，提示改用图案
+                authenticating = false
+                onAuthError(localizedContext.getString(R.string.privacy_gate_device_failed))
+            }
         }
     }
     NoRippleButton(
         text = stringResource(R.string.privacy_gate_device_unlock),
+        enabled = !authenticating,
         onClick = authenticate,
     )
 }
 
 /**
  * 门内设备凭据验证（快捷解锁与「清除应用锁」前的身份确认共用）：
- * 取消 / 负按钮静默留在门内，其余错误回调给调用方；生物识别未匹配补一次拒绝触觉。
+ * 取消 / 负按钮静默留在门内（通过 [onCancelled] 复位进行中状态），其余错误回调给调用方；
+ * 生物识别未匹配补一次拒绝触觉。
  */
 private fun createDeviceCredentialPrompt(
     activity: FragmentActivity,
     onSuccess: () -> Unit,
     onError: (String) -> Unit,
+    onCancelled: () -> Unit = {},
 ): BiometricPrompt = BiometricPrompt(
     activity,
     ContextCompat.getMainExecutor(activity),
@@ -439,10 +517,12 @@ private fun createDeviceCredentialPrompt(
         }
 
         override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-            // 用户主动取消 / 选了「使用图案」负按钮：静默留在锁门 / 确认态，不算失败
+            // 用户主动取消 / 选了「使用图案」负按钮：静默留在锁门 / 确认态，不算失败；
+            // 必须复位调用方的「认证中」标记，否则按钮会一直不可点
             if (errorCode == BiometricPrompt.ERROR_USER_CANCELED ||
                 errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON
             ) {
+                onCancelled()
                 return
             }
             onError(errString.toString())

@@ -63,7 +63,7 @@ import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.LocalAppDialogContent
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
-import com.tyranor.next.ui.common.privacy.DismissOnAppLockEffect
+import com.tyranor.next.core.privacy.AppLockController
 import com.tyranor.next.ui.common.motion.Bind
 import com.tyranor.next.ui.common.motion.DialogSinkStrength
 import com.tyranor.next.ui.common.motion.LocalSheetBackdrop
@@ -126,7 +126,22 @@ internal fun AppAlertDialog(
     topOverhangHeight: Dp = 0.dp,
     /** 是否展示底部按钮行；纯条目式弹窗可从遮罩/返回键关闭，不显示额外按钮。 */
     showButtonRow: Boolean = true,
+    /**
+     * 应用锁生效时的强制关闭路径：必须真正把弹窗从组合里移除。
+     * 默认直接走 [onDismissRequest]；若业务回调里有「运行中只能重建 / 不允许关闭」之类的守卫
+     * （如归档进度弹窗），必须传入不经过该守卫的收尾动作，否则独立窗口会留在锁门之上。
+     */
+    onLockDismiss: (() -> Unit)? = null,
 ) {
+    // 应用锁生效时**退出组合**而不是只请求关闭：弹窗是独立窗口，层级在锁门之上；
+    // 调用方若在 onDismissRequest 里有「运行中只能重建」等守卫，只发回调会让窗口留在门上方。
+    // 这里直接移除 Dialog 窗口，并用 onLockDismiss（或默认回调）清理业务状态。
+    val locked by AppLockController.lockedState.collectSettingAsState()
+    if (locked) {
+        val currentClose by rememberUpdatedState(onLockDismiss ?: onDismissRequest)
+        LaunchedEffect(Unit) { currentClose() }
+        return
+    }
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
@@ -310,9 +325,6 @@ internal fun AppAlertDialog(
             decorFitsSystemWindows = false,
             dismissOnBackPress = currentDismissEnabled, dismissOnClickOutside = currentDismissEnabled),
     ) {
-        // 弹窗是独立窗口，层级在解锁门之上：应用锁生效时自动收起，
-        // 避免锁定状态下仍可操作弹窗内条目（含 NavItem / 输入框）
-        DismissOnAppLockEffect(onDismissRequest)
         dialogFocus[0] = LocalFocusManager.current
         dialogView[0] = LocalView.current
         DialogWindowScrim(

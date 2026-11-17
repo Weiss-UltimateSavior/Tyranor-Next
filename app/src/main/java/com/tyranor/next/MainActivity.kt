@@ -26,9 +26,6 @@ import com.tyranor.next.ui.common.CoachAnchor
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.geometry.Rect
 import kotlinx.coroutines.Dispatchers
@@ -49,6 +46,7 @@ import com.tyranor.next.core.updater.UpdateNotificationManager
 import com.tyranor.next.ui.common.observeSaveSyncFeedback
 import com.tyranor.next.ui.common.privacy.FlagSecureEffect
 import com.tyranor.next.ui.common.privacy.PrivacyLockGate
+import com.tyranor.next.ui.common.privacy.blockAppInteractionKeys
 
 private fun coachPageOf(index: Int): Int = when (index) {
   CoachAnchor.HOME -> 0
@@ -132,15 +130,9 @@ class MainActivity : FragmentActivity() {
                     .fillMaxSize()
                     // 锁定时页面内容退出无障碍树（门自身语义保留）
                     .then(if (locked) Modifier.clearAndSetSemantics { } else Modifier)
-                    // 外接键盘：无障碍屏蔽只挡语义，已聚焦的控件仍能被 Enter 激活；
-                    // 预览阶段拦下除 Back 外的按键（Back 放行给锁门的 BackHandler）
-                    .then(
-                      if (locked) {
-                        Modifier.onPreviewKeyEvent { event -> event.key != Key.Back }
-                      } else {
-                        Modifier
-                      },
-                    ),
+                    // 外接键盘 / 手柄：无障碍屏蔽只挡语义，已聚焦的控件仍能被 Enter 激活；
+                    // 锁定时拦下会操作页面的按键（Back 放行给锁门，音量 / 媒体等系统键放行）
+                    .then(Modifier.blockAppInteractionKeys(locked))
                 ) {
                   AppEntry()
                 }

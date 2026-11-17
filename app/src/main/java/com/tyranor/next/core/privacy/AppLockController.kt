@@ -8,6 +8,10 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.SystemClock
 import com.tyranor.next.core.settings.AppSettingsStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,6 +35,12 @@ import kotlinx.coroutines.flow.asStateFlow
  * 不改用 Activity.onPause 作为离开信号：切换二级页、系统权限弹窗 / 生物识别弹层同样会触发
  * onPause，会把应用内操作误记成离场，并让 1/5/15 分钟的离开时长从错误时刻起算。
  *
+ * **主线程不读 Keystore**：`Application.onCreate`、ProcessLifecycleOwner.onStart 与
+ * SCREEN_ON 都只消费内存中的 [credentialPresence] 缓存；三态读取在 IO 线程完成后再更新
+ * StateFlow。启动时先按「有凭据」fail-closed 上锁，异步读到 ABSENT（备份恢复 / 数据被清）
+ * 再回写关闭开关并放行，显示与实际保持一致。图案校验本身仍是阻塞调用，UI 层必须放到
+ * IO 线程（见 PrivacyLockGate）。
+ *
  * 锁定范围仅启动器界面：引擎宿主为独立进程（不安装本控制器），运行中的游戏不受影响；
  * 从游戏回到启动器同样视为「回前台」按延迟档位判定（启动器曾被退后台）。
  */
@@ -52,12 +62,20 @@ object AppLockController {
     private var installed = false
     private var appContext: Context? = null
 
+    /** 凭据三态缓存（null = 尚未完成首次读取）；主线程的计时判定只读这里。 */
+    private var credentialPresence: PatternCredentialState? = null
+
+    /** 凭据状态代数：保存 / 清除 / 校验 / 设置页查询后递增，丢弃迟到的异步读取结果。 */
+    private var credentialGeneration = 0L
+
+    /** 是否有一次凭据三态读取在 IO 线程进行中：避免 onStart 连续触发时堆积重复读取。 */
+    private var credentialReadInFlight = false
+
     /**
-     * 是否需要在本进程首个「回前台」时重查一次图案凭据。
+     * 是否需要在本进程首个「回前台」时异步重查一次图案凭据。
      *
-     * `install()` 在 Application.onCreate 极早期读取 Keystore，冷启动时可能瞬时失败。首个
-     * onLauncherEntering 时 Keystore 已就绪，重查一次即可把这种瞬时失败纠正回来。
-     * 锁已启用时总是重查：凭据存在（含暂时读取失败）保持锁定，凭据确实不存在才解除锁定。
+     * `install()` 在 Application.onCreate 极早期发起异步读取，冷启动时可能瞬时失败。首个
+     * onLauncherEntering 时再查一次即可把这种瞬时失败纠正回来（不阻塞主线程）。
      */
     private var recheckPatternOnEnter = false
 
@@ -77,20 +95,19 @@ object AppLockController {
      */
     private val credentialOpLock = Any()
 
+    /** 凭据异步读取的进程级作用域（Application 生命周期，不需要取消）。 */
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     /** 主进程 Application 启动阶段调用（幂等）：注册熄屏 / 亮屏广播，并恢复进程级锁定状态。 */
     fun install(application: Application) {
         synchronized(this) {
             if (installed) return
             installed = true
             appContext = application.applicationContext
-            // 进程冷启动（被杀后重开）先要求解锁：凭据存在（含暂时读取失败）就保持锁定，
-            // 凭据确实不存在时不上锁——否则用户永远无法解锁
             val enabled = AppSettingsStore.isPrivacyAppLockEnabled(application)
-            val credential = AppLockCredentialStore.credentialState(application)
-            mutableCredentialUnreadable.value = credential == PatternCredentialState.UNREADABLE
-            mutableLocked.value = enabled && credential != PatternCredentialState.ABSENT
-            // 首个回前台时再确认一次：纠正 install() 阶段可能的 Keystore 瞬时失败，
-            // 或凭据确已不存在（备份恢复 / 数据被清）
+            // 进程冷启动（被杀后重开）先要求解锁：这里不读 Keystore，按「有凭据」fail-closed
+            // 上锁；异步读到 ABSENT（备份恢复 / 数据被清）再回写关闭并放行
+            mutableLocked.value = enabled
             recheckPatternOnEnter = enabled
             val receiver = object : BroadcastReceiver() {
                 override fun onReceive(context: Context, intent: Intent) {
@@ -113,6 +130,7 @@ object AppLockController {
                 @Suppress("DEPRECATION")
                 application.registerReceiver(receiver, filter)
             }
+            if (enabled) refreshCredentialPresenceAsync(application.applicationContext)
         }
     }
 
@@ -135,8 +153,9 @@ object AppLockController {
      * 亮屏窥视判定（SCREEN_ON）：不修改 [away] / [leftAtMillis]，仅在已离开、锁已启用且
      * 已超过延迟档时直接上锁。真实回前台的计时消费在 [onLauncherEntering]。
      *
-     * 先算离开时长、不超档直接返回：亮屏广播可能很频繁，Keystore 解密（[credentialState]）
-     * 是主线程热点，没必要为一次注定不上锁的窥视付这笔开销。
+     * 先算离开时长、不超档直接返回：亮屏广播可能很频繁，注定不上锁时不做任何额外工作。
+     * 凭据状态读内存缓存，**不在主线程做 Keystore 解密**；缓存尚未就绪时按「有凭据」处理
+     * （fail-closed），迟到的 ABSENT 结果会把锁定与开关一起纠正。
      */
     private fun peekLockOnScreenOn() {
         synchronized(this) {
@@ -148,9 +167,9 @@ object AppLockController {
             )
             val elapsed = SystemClock.elapsedRealtime() - leftAtMillis
             if (!shouldRequireUnlock(elapsed, timeout)) return
-            val credential = AppLockCredentialStore.credentialState(context)
-            mutableCredentialUnreadable.value = credential == PatternCredentialState.UNREADABLE
-            if (credential == PatternCredentialState.ABSENT) return
+            val presence = credentialPresence
+            if (presence == PatternCredentialState.ABSENT) return
+            mutableCredentialUnreadable.value = presence == PatternCredentialState.UNREADABLE
             mutableLocked.value = true
         }
     }
@@ -174,34 +193,43 @@ object AppLockController {
      * 启动器回到前台（仅 ProcessLifecycleOwner.onStart；亮屏走 peekLockOnScreenOn，不消费计时器）：
      * 按延迟档位判定是否上锁（并消费计时器）。
      *
-     * 冷启动口径优先于延迟档：进程首次回前台时凭据存在（含暂时读取失败）就**直接保持锁定**，
-     * 不按离开时长判定（否则选了 1/5/15 分钟档时冷启动会漏锁）。凭据确实不存在时不能上锁
-     * （否则用户永远无法解锁），用户可在隐私设置重新设置图案。
+     * 冷启动口径优先于延迟档：进程首次回前台时凭据存在（含暂时读取失败 / 尚未读取完成）就
+     * **直接保持锁定**，不按离开时长判定（否则选了 1/5/15 分钟档时冷启动会漏锁）。
+     * 凭据确实不存在时不能上锁（否则用户永远无法解锁），并回写关闭开关。
      */
     fun onLauncherEntering() {
         synchronized(this) {
             if (!installed) return
             val context = appContext ?: return
-            // 进程内首个回前台：重查凭据，纠正 install() 阶段可能的 Keystore 瞬时失败
+            val enabled = AppSettingsStore.isPrivacyAppLockEnabled(context)
             if (recheckPatternOnEnter) {
                 recheckPatternOnEnter = false
-                val enabled = AppSettingsStore.isPrivacyAppLockEnabled(context)
-                val credential = AppLockCredentialStore.credentialState(context)
-                mutableCredentialUnreadable.value = credential == PatternCredentialState.UNREADABLE
-                if (enabled) {
-                    // 冷启动一律要求解锁：凭据存在（或暂时读不出来）就锁定；
-                    // 凭据确实不存在才放行，失败方向是「可用」而不是「永久锁死」
-                    mutableLocked.value = credential != PatternCredentialState.ABSENT
-                }
-                // 本次判定已覆盖冷启动语义，之前的离开计时一并作废
+                // 首个回前台再异步确认一次：纠正 install() 阶段可能的 Keystore 瞬时失败，
+                // 或凭据确已不存在（备份恢复 / 数据被清）；主线程只消费缓存与 StateFlow
+                if (enabled) refreshCredentialPresenceAsync(context)
+            }
+            if (!enabled) {
                 away = false
                 leftAtMillis = 0L
+                return
             }
+            if (credentialPresence == null) {
+                // 启动读取尚未完成 / 设置页刚启用：异步补一次，当前判定按「有凭据」处理
+                refreshCredentialPresenceAsync(context)
+            }
+            val presence = credentialPresence
+            if (presence == PatternCredentialState.ABSENT) {
+                // 开关开着但凭据确实不存在：回写关闭，保证显示与实际一致并避免永久锁死。
+                // 放在 !away 早退之前：即使冷启动首次 onStart 也先把这种不一致纠正掉。
+                AppSettingsStore.setPrivacyAppLockEnabled(context, false)
+                mutableLocked.value = false
+                mutableCredentialUnreadable.value = false
+                away = false
+                leftAtMillis = 0L
+                return
+            }
+            mutableCredentialUnreadable.value = presence == PatternCredentialState.UNREADABLE
             if (!away) return
-            if (!AppSettingsStore.isPrivacyAppLockEnabled(context)) return
-            val credential = AppLockCredentialStore.credentialState(context)
-            mutableCredentialUnreadable.value = credential == PatternCredentialState.UNREADABLE
-            if (credential == PatternCredentialState.ABSENT) return
             val timeout = PrivacyLockTimeout.fromStorageIndex(
                 AppSettingsStore.getPrivacyAppLockTimeoutIndex(context),
             )
@@ -233,26 +261,72 @@ object AppLockController {
     }
 
     /**
+     * 设置页查询是否已有可用图案（UI 的唯一读取入口）：同时刷新控制器缓存的凭据三态，
+     * 避免「设置页读到 PRESENT、控制器还停留在 ABSENT」导致启用后首次回前台被误关闭。
+     *
+     * 阻塞调用（Keystore 解密），必须在后台线程执行。返回 false 包括凭据不存在与读取失败
+     * （读取失败时设置页应拉起重新设置，而不是静默启用一个无法校验的锁）。
+     */
+    fun isPatternConfigured(context: Context): Boolean {
+        val state = synchronized(credentialOpLock) {
+            AppLockCredentialStore.credentialState(context)
+        }
+        synchronized(this) {
+            credentialGeneration++
+            credentialPresence = state
+            mutableCredentialUnreadable.value = state == PatternCredentialState.UNREADABLE
+        }
+        return state == PatternCredentialState.PRESENT
+    }
+
+    /**
      * 图案校验并解锁（UI 的唯一入口）：校验与状态变更都归本控制器，
      * 避免页面直接触碰凭据存储后再单独调 [unlock]，绕过门面。
      *
      * 读取失败不算「图案错误」：置 [credentialUnreadableState]，锁门据此显示设备凭据恢复路径。
+     * 凭据确实不存在（备份恢复）时回写关闭应用锁并放行，避免永久锁死。
+     *
+     * 阻塞调用（Keystore 解密），必须在后台线程执行。
      */
     fun verifyAndUnlock(context: Context, points: List<Int>): Boolean =
         when (AppLockCredentialStore.verifyPattern(context, points)) {
             PatternVerifyResult.SUCCESS -> {
-                mutableCredentialUnreadable.value = false
+                synchronized(this) {
+                    credentialGeneration++
+                    credentialPresence = PatternCredentialState.PRESENT
+                    mutableCredentialUnreadable.value = false
+                }
                 unlock()
                 true
             }
             PatternVerifyResult.MISMATCH -> {
                 // 能读出凭据、只是与图案不匹配：清除「读取失败」标记，
                 // 否则锁门会一直显示设备凭据 / 重置恢复入口
-                mutableCredentialUnreadable.value = false
+                synchronized(this) {
+                    credentialGeneration++
+                    credentialPresence = PatternCredentialState.PRESENT
+                    mutableCredentialUnreadable.value = false
+                }
                 false
             }
             PatternVerifyResult.UNREADABLE -> {
-                mutableCredentialUnreadable.value = true
+                synchronized(this) {
+                    credentialGeneration++
+                    credentialPresence = PatternCredentialState.UNREADABLE
+                    mutableCredentialUnreadable.value = true
+                }
+                false
+            }
+            PatternVerifyResult.ABSENT -> {
+                // 凭据确实不存在：不能把用户永久锁在门外；关闭开关并放行，
+                // 设置页显示关闭状态，用户重新设置图案后才会再次启用
+                synchronized(this) {
+                    credentialGeneration++
+                    credentialPresence = PatternCredentialState.ABSENT
+                    mutableCredentialUnreadable.value = false
+                }
+                AppSettingsStore.setPrivacyAppLockEnabled(context, false)
+                unlock()
                 false
             }
         }
@@ -274,6 +348,8 @@ object AppLockController {
             if (!saved) return@synchronized false
             AppSettingsStore.setPrivacyAppLockEnabled(context, true)
             synchronized(this) {
+                credentialGeneration++
+                credentialPresence = PatternCredentialState.PRESENT
                 mutableCredentialUnreadable.value = false
                 if (leaveGeneration == generation) {
                     away = false
@@ -293,8 +369,45 @@ object AppLockController {
     fun clearPatternAndDisable(context: Context): Boolean = synchronized(credentialOpLock) {
         if (!AppLockCredentialStore.clearPattern(context)) return@synchronized false
         AppSettingsStore.setPrivacyAppLockEnabled(context, false)
-        mutableCredentialUnreadable.value = false
+        synchronized(this) {
+            credentialGeneration++
+            credentialPresence = PatternCredentialState.ABSENT
+            mutableCredentialUnreadable.value = false
+        }
         unlock()
         true
+    }
+
+    /**
+     * 异步读取凭据三态并更新缓存（IO 线程）。只消费结果、不阻塞调用方：
+     * 迟到的结果若与代数不匹配（保存 / 清除 / 校验 / 设置页查询已给出更新的事实）则丢弃。
+     *
+     * 读到 ABSENT 且开关仍开着时回写关闭并放行：备份恢复把 `privacy_app_lock_enabled`
+     * 带回来、但 `app_lock_secure.xml` 不在备份范围内，开关与实际必须保持一致。
+     */
+    private fun refreshCredentialPresenceAsync(context: Context) {
+        val generation = synchronized(this) {
+            if (credentialReadInFlight) return
+            credentialReadInFlight = true
+            credentialGeneration
+        }
+        ioScope.launch {
+            try {
+                val state = AppLockCredentialStore.credentialState(context)
+                synchronized(this@AppLockController) {
+                    if (!installed || generation != credentialGeneration) return@launch
+                    credentialPresence = state
+                    mutableCredentialUnreadable.value = state == PatternCredentialState.UNREADABLE
+                    if (state == PatternCredentialState.ABSENT &&
+                        AppSettingsStore.isPrivacyAppLockEnabled(context)
+                    ) {
+                        AppSettingsStore.setPrivacyAppLockEnabled(context, false)
+                        mutableLocked.value = false
+                    }
+                }
+            } finally {
+                synchronized(this@AppLockController) { credentialReadInFlight = false }
+            }
+        }
     }
 }

@@ -54,7 +54,9 @@ import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
 import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.basic.Text
+import com.tyranor.next.core.privacy.AppLockController
 import com.tyranor.next.ui.common.privacy.DismissOnAppLockEffect
+import com.tyranor.next.ui.common.privacy.SecureContainingDialogWindowEffect
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowListPopup
@@ -280,12 +282,19 @@ private fun DropdownListPopup(
     content: @Composable () -> Unit,
 ) {
     // 下拉浮层可能是独立窗口（抽屉内为 WindowListPopup），层级在解锁门之上：
-    // 应用锁生效时收起，避免锁定状态下展开选项
+    // 应用锁生效时直接不组合浮层（而不是只把 show 置 false 等库播退场动画），
+    // 同时用 effect 通知入口收起展开态。
+    val locked by AppLockController.lockedState.collectSettingAsState()
     DismissOnAppLockEffect(onDismissRequest)
+    if (locked) return
     if (LocalAppSheetContent.current) {
         WindowListPopup(show = show, alignment = PopupPositionProvider.Align.End,
             onDismissRequest = onDismissRequest, onDismissFinished = onDismissFinished,
-            maxHeight = maxHeight, minWidth = 0.dp, content = content)
+            maxHeight = maxHeight, minWidth = 0.dp, content = {
+                // 抽屉内的下拉是独立 Dialog 窗口：安全屏幕 / 应用锁生效时同步 FLAG_SECURE
+                SecureContainingDialogWindowEffect()
+                content()
+            })
     } else {
         OverlayListPopup(show = show, alignment = PopupPositionProvider.Align.End,
             onDismissRequest = onDismissRequest, onDismissFinished = onDismissFinished,

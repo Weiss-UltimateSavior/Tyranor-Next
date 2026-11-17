@@ -1196,6 +1196,7 @@
     <string name="privacy_gate_device_title">验证设备解锁方式</string>
     <string name="privacy_gate_device_description">验证通过后即可进入应用</string>
     <string name="privacy_gate_device_unlock">使用设备解锁方式</string>
+    <string name="privacy_gate_device_failed">无法启动设备验证，请改用图案解锁</string>
     <string name="privacy_gate_setup_title">设置应用锁</string>
     <string name="privacy_gate_setup_draw">绘制解锁图案，至少连接 4 个点</string>
     <string name="privacy_gate_setup_confirm">再次绘制图案以确认</string>
@@ -1211,4 +1212,5 @@
     <string name="settings_background_image_blur_value">%1$d%%</string>
     <string name="settings_background_image_clear">清除背景图</string>
     <string name="settings_background_image_take_failed">无法保留图片访问权限，请重新选择</string>
+    <string name="settings_background_image_save_failed">保存背景图设置失败，请重试</string>
 </resources>

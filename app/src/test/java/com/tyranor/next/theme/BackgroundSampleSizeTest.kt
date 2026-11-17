@@ -36,6 +36,20 @@ class BackgroundSampleSizeTest {
     }
 
     @Test
+    fun `低内存设备按堆比例预算继续降采样`() {
+        // 实际预算取 maxMemory/8（16–64MiB）：32MiB 预算下 6000×6000 要降到 1500×1500
+        assertEquals(
+            4,
+            backgroundSampleSize(
+                width = 6000,
+                height = 6000,
+                maxEdge = 3200,
+                maxBytes = 32L * 1024 * 1024,
+            ),
+        )
+    }
+
+    @Test
     fun `采样结果同时满足长边与字节预算`() {
         val cases = listOf(
             Triple(6000, 6000, 3200),

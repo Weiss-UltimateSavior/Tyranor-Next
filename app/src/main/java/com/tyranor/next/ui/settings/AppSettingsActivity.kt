@@ -374,8 +374,24 @@ internal fun AppSettingsScreen() {
                                             ).show()
                                             return@rememberLauncherForActivityResult
                                         }
-                                        AppSettingsStore.setBackgroundImageUri(ctx, uriText)
-                                        // 新图保存成功后再释放旧图的持久授权：系统对每个应用有
+                                        val saved = AppSettingsStore.setBackgroundImageUri(ctx, uriText)
+                                        if (!saved) {
+                                            // 新 URI 未落盘：释放刚拿到的授权，旧图与旧授权保持不变
+                                            runCatching {
+                                                ctx.contentResolver.releasePersistableUriPermission(
+                                                    uri,
+                                                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                                                )
+                                            }
+                                            AppNotice.makeText(
+                                                ctx,
+                                                R.string.settings_background_image_save_failed,
+                                                Toast.LENGTH_SHORT,
+                                                AppNotice.Kind.Failure,
+                                            ).show()
+                                            return@rememberLauncherForActivityResult
+                                        }
+                                        // 新图已确认落盘后再释放旧图的持久授权：系统对每个应用有
                                         // 配额上限（约 128 个），反复换图不释放会耗尽配额
                                         if (previous.isNotBlank()) {
                                             runCatching {
@@ -454,10 +470,18 @@ internal fun AppSettingsScreen() {
                                         title = stringResource(R.string.settings_background_image_clear),
                                         onClick = {
                                             val previous = AppSettingsStore.getBackgroundImageUri(ctx)
-                                            AppSettingsStore.setBackgroundImageUri(ctx, "")
-                                            // 清除后 previous 已为空，这里必须趁现在释放该 uri 的
-                                            // 持久授权，否则每清除一次就泄漏一个授权配额槽位
-                                            if (previous.isNotBlank()) {
+                                            val cleared = AppSettingsStore.setBackgroundImageUri(ctx, "")
+                                            if (!cleared) {
+                                                // 落盘失败：保留旧 URI 与旧授权，避免「界面已清除、重启又回来」
+                                                AppNotice.makeText(
+                                                    ctx,
+                                                    R.string.settings_background_image_save_failed,
+                                                    Toast.LENGTH_SHORT,
+                                                    AppNotice.Kind.Failure,
+                                                ).show()
+                                            } else if (previous.isNotBlank()) {
+                                                // 清除已落盘后再释放该 uri 的持久授权，
+                                                // 否则每清除一次就泄漏一个授权配额槽位
                                                 runCatching {
                                                     ctx.contentResolver.releasePersistableUriPermission(
                                                         Uri.parse(previous),

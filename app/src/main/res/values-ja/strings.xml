@@ -1183,6 +1183,7 @@
     <string name="privacy_gate_device_title">端末の解錠方法を確認</string>
     <string name="privacy_gate_device_description">確認が成功するとアプリに入れます</string>
     <string name="privacy_gate_device_unlock">端末の解錠方法を使用</string>
+    <string name="privacy_gate_device_failed">端末の認証を開始できませんでした。パターンで解錠してください</string>
     <string name="privacy_gate_setup_title">アプリロックを設定</string>
     <string name="privacy_gate_setup_draw">解錠パターンを描いてください（4つ以上の点をつなぐ）</string>
     <string name="privacy_gate_setup_confirm">確認のためもう一度パターンを描いてください</string>
@@ -1198,6 +1199,7 @@
     <string name="settings_background_image_blur_value">%1$d%%</string>
     <string name="settings_background_image_clear">背景画像を削除</string>
     <string name="settings_background_image_take_failed">画像へのアクセス権を保持できませんでした。選び直してください</string>
+    <string name="settings_background_image_save_failed">背景画像の設定を保存できませんでした。もう一度お試しください</string>
     <string name="engine_settings_systemnnn_layout_ext_status">EXT 拡張セーブ：%1$s</string>
     <string name="engine_settings_systemnnn_layout_ext_on">有効</string>
     <string name="engine_settings_systemnnn_layout_ext_off">無効</string>

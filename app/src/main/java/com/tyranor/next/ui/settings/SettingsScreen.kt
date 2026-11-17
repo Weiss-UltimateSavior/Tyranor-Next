@@ -132,7 +132,6 @@ import com.tyranor.next.core.updater.UpdateCandidate
 import com.tyranor.next.core.updater.UpdateCheckResult
 import com.tyranor.next.core.updater.UpdateDownloadResult
 import com.tyranor.next.ui.cover.CoverScraperSettingsActivity
-import com.tyranor.next.ui.settings.PrivacySettingsActivity
 import com.tyranor.next.ui.common.motion.startActivityWithPageTransition
 import java.io.File
 import java.util.Locale

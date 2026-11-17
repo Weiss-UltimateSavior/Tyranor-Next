@@ -29,11 +29,12 @@ import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import androidx.compose.ui.graphics.Color as ComposeColor
 import com.tyranor.next.core.privacy.AppLockController
-import com.tyranor.next.core.privacy.AppLockCredentialStore
+import com.tyranor.next.core.privacy.PrivacyLockTimeout
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.PageTextColor
+import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.ArrowPreference
@@ -89,13 +90,8 @@ internal fun PrivacySettingsScreen() {
     // 设备凭据可用性（弱生物识别或锁屏凭据）：设备未设锁屏密码时隐藏快捷解锁开关。
     // 无 key：按本页进入时的快照判定——在本页打开系统设置录入/删除锁屏凭据后需重新进入本页才会刷新
     val credentialUsable = remember { isDeviceCredentialUsable(ctx) }
-    // 下拉选项顺序必须与 storageIndex 对齐（PrivacyLockTimeout.ordered 即 0..3 档）
-    val timeoutLabels = listOf(
-        stringResource(R.string.privacy_timeout_immediate),
-        stringResource(R.string.privacy_timeout_one_minute),
-        stringResource(R.string.privacy_timeout_five_minutes),
-        stringResource(R.string.privacy_timeout_fifteen_minutes),
-    )
+    // 下拉选项顺序与文案由 PrivacyLockTimeout.ordered 生成，枚举与界面不再各写一份顺序
+    val timeoutLabels = PrivacyLockTimeout.ordered.map { stringResource(it.labelRes()) }
 
     // 应用锁设置门（绘制图案 → 确认 → 保存并启用 / 修改图案）
     var showSetupGate by remember { mutableStateOf(false) }
@@ -123,7 +119,7 @@ internal fun PrivacySettingsScreen() {
                     ) {
                         item {
                             MiuixCard(
-                                modifier = Modifier.pressSquishGroup().staggeredEntrance(0).fillMaxWidth(),
+                                modifier = Modifier.pressSquishGroup().staggeredEntrance(0).fillMaxWidth().glassBorder(),
                                 cornerRadius = AppComponentCornerRadius,
                             ) {
                                 Column(Modifier.padding(vertical = 4.dp)) {
@@ -141,7 +137,7 @@ internal fun PrivacySettingsScreen() {
 
                         item {
                             MiuixCard(
-                                modifier = Modifier.pressSquishGroup().staggeredEntrance(1).fillMaxWidth(),
+                                modifier = Modifier.pressSquishGroup().staggeredEntrance(1).fillMaxWidth().glassBorder(),
                                 cornerRadius = AppComponentCornerRadius,
                             ) {
                                 Column(Modifier.padding(vertical = 4.dp)) {
@@ -159,7 +155,7 @@ internal fun PrivacySettingsScreen() {
 
                         item {
                             MiuixCard(
-                                modifier = Modifier.pressSquishGroup().staggeredEntrance(2).fillMaxWidth(),
+                                modifier = Modifier.pressSquishGroup().staggeredEntrance(2).fillMaxWidth().glassBorder(),
                                 cornerRadius = AppComponentCornerRadius,
                             ) {
                                 Column(Modifier.padding(vertical = 4.dp)) {
@@ -173,7 +169,7 @@ internal fun PrivacySettingsScreen() {
                                                     // 已有图案凭据直接启用；否则拉起设置门，确认后再落开关。
                                                     // Keystore 解密挪到 IO，主线程只处理开关状态与设置门
                                                     val hasPattern = withContext(Dispatchers.IO) {
-                                                        AppLockCredentialStore.hasPattern(ctx)
+                                                        AppLockController.isPatternConfigured(ctx)
                                                     }
                                                     if (hasPattern) {
                                                         AppSettingsStore.setPrivacyAppLockEnabled(ctx, true)
@@ -250,4 +246,12 @@ private fun PrivacySettingsTopBar() {
         background = ComposeColor.Transparent,
         contentColor = PageTextColor,
     )
+}
+
+/** 解锁延迟档位文案：顺序由 [PrivacyLockTimeout.ordered] 决定，这里只负责枚举到资源的映射。 */
+private fun PrivacyLockTimeout.labelRes(): Int = when (this) {
+    PrivacyLockTimeout.IMMEDIATE -> R.string.privacy_timeout_immediate
+    PrivacyLockTimeout.ONE_MINUTE -> R.string.privacy_timeout_one_minute
+    PrivacyLockTimeout.FIVE_MINUTES -> R.string.privacy_timeout_five_minutes
+    PrivacyLockTimeout.FIFTEEN_MINUTES -> R.string.privacy_timeout_fifteen_minutes
 }

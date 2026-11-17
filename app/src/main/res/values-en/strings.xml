@@ -1183,6 +1183,7 @@
     <string name="privacy_gate_device_title">Verify with device unlock</string>
     <string name="privacy_gate_device_description">Verify to enter the app</string>
     <string name="privacy_gate_device_unlock">Use device unlock</string>
+    <string name="privacy_gate_device_failed">Couldn\'t start device authentication, use the pattern instead</string>
     <string name="privacy_gate_setup_title">Set up app lock</string>
     <string name="privacy_gate_setup_draw">Draw an unlock pattern (connect at least 4 dots)</string>
     <string name="privacy_gate_setup_confirm">Draw the pattern again to confirm</string>
@@ -1198,6 +1199,7 @@
     <string name="settings_background_image_blur_value">%1$d%%</string>
     <string name="settings_background_image_clear">Clear background image</string>
     <string name="settings_background_image_take_failed">Cannot keep access to this image, please pick again</string>
+    <string name="settings_background_image_save_failed">Couldn\'t save the background image setting, try again</string>
     <string name="engine_settings_systemnnn_layout_ext_status">EXT save blocks: %1$s</string>
     <string name="engine_settings_systemnnn_layout_ext_on">Enabled</string>
     <string name="engine_settings_systemnnn_layout_ext_off">Disabled</string>

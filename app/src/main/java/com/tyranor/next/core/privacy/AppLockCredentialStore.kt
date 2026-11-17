@@ -12,11 +12,16 @@ internal enum class PatternCredentialState {
     UNREADABLE,
 }
 
-/** 图案校验结果：不可读取必须与「图案错误」区分开，前者要给出恢复路径而不是静默失败。 */
+/** 图案校验结果：不可读取与凭据不存在必须与「图案错误」区分开，前者要给出恢复路径而不是静默失败。 */
 internal enum class PatternVerifyResult {
     SUCCESS,
     MISMATCH,
+
+    /** 凭据存在但当前读不出来（Keystore 瞬时异常）：保持锁定并允许重试 / 设备凭据恢复。 */
     UNREADABLE,
+
+    /** 凭据确实不存在（备份恢复 / 数据被清）：不能永久锁死，调用方应回写关闭应用锁并放行。 */
+    ABSENT,
 }
 
 /**
@@ -29,8 +34,9 @@ internal enum class PatternVerifyResult {
  * 写入（[savePattern] / [clearPattern]）是阻塞调用（Keystore 加密 + commit 落盘），
  * 调用方必须在后台线程执行。读写共用 [credentialLock] 串行化：`commit()` 先把新值写进
  * 内存再落盘，失败时内存已是新值——恢复旧密文与校验不能交错。读路径（[credentialState] /
- * [verifyPattern]）在同一把锁内做 Keystore 解密，单次约毫秒级；锁序单向（控制器 → 凭据锁，
- * 反向没有获取），因此锁门的主线程校验与后台保存不会互相死锁。
+ * [verifyPattern]）在同一把锁内做 Keystore 解密；锁门运行时只消费控制器缓存的三态，
+ * 图案校验本身由 UI 层放到 IO 线程执行。锁序单向（控制器 → 凭据锁，反向没有获取），
+ * 因此锁门校验与后台保存不会互相死锁。
  */
 internal object AppLockCredentialStore {
 
@@ -110,7 +116,11 @@ internal object AppLockCredentialStore {
         saved
     }
 
-    /** 校验图案；未设置凭据 / 图案非法 / 比对不一致返回 [PatternVerifyResult.MISMATCH]。 */
+    /**
+     * 校验图案；凭据不存在返回 [PatternVerifyResult.ABSENT]，读取失败返回
+     * [PatternVerifyResult.UNREADABLE]，图案非法 / 比对不一致返回
+     * [PatternVerifyResult.MISMATCH]。
+     */
     fun verifyPattern(context: Context, points: List<Int>): PatternVerifyResult =
         synchronized(credentialLock) {
             val saltRead = readState(context, FIELD_SALT)
@@ -120,15 +130,19 @@ internal object AppLockCredentialStore {
             ) {
                 return@synchronized PatternVerifyResult.UNREADABLE
             }
+            val saltValue = saltRead as? KeystoreFieldCipher.FieldRead.Value
+            val hashValue = hashRead as? KeystoreFieldCipher.FieldRead.Value
+            // 两个字段都不存在（或只剩半套）→ 凭据确实不存在；与「存在但读不出」区分开，
+            // 否则备份恢复后的首帧校验会被当成普通图案错误而永久卡在锁门
+            if (saltValue == null || hashValue == null) {
+                return@synchronized PatternVerifyResult.ABSENT
+            }
             val salt = runCatching {
-                Base64.decode(
-                    (saltRead as? KeystoreFieldCipher.FieldRead.Value)?.text.orEmpty(),
-                    Base64.NO_WRAP,
-                )
+                Base64.decode(saltValue.text, Base64.NO_WRAP)
             }.getOrNull() ?: return@synchronized PatternVerifyResult.MISMATCH
-            val storedHash = (hashRead as? KeystoreFieldCipher.FieldRead.Value)?.text.orEmpty()
+            val storedHash = hashValue.text
             if (salt.isEmpty() || storedHash.isEmpty()) {
-                return@synchronized PatternVerifyResult.MISMATCH
+                return@synchronized PatternVerifyResult.ABSENT
             }
             val candidate = PatternHasher.hash(salt, points)
                 ?: return@synchronized PatternVerifyResult.MISMATCH

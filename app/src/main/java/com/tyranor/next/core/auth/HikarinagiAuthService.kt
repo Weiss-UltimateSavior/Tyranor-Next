@@ -11,6 +11,11 @@ import androidx.annotation.StringRes
 import com.tyranor.next.BuildConfig
 import com.tyranor.next.R
 import com.tyranor.next.core.i18n.AppLocaleController
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationRequest
 import net.openid.appauth.AuthorizationResponse
@@ -35,6 +40,9 @@ object HikarinagiAuthService {
     private const val SCOPES = "openid catalog:read catalog:full offline_access"
     private const val REFRESH_SKEW_MS = 60_000L
     private var authorizationService: AuthorizationService? = null
+
+    /** 令牌落盘作用域（IO）：OAuth 回调在主线程，Keystore 加密 + commit 不能占用主线程。 */
+    private val tokenStoreScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun startAuthorization(activity: Activity, callbackIntent: Intent): String? {
         val clientId = clientId()
@@ -140,8 +148,14 @@ object HikarinagiAuthService {
                     return@performTokenRequest
                 }
                 val expiresAt = token.accessTokenExpirationTime ?: (System.currentTimeMillis() + 3_600_000L)
-                HikarinagiAuthStore.saveTokens(appContext, accessToken, refreshToken, expiresAt)
-                onResult(true, text(activity, R.string.auth_hikarinagi_success))
+                // performTokenRequest 的回调在主线程：Keystore 加密 + commit 必须挪到 IO，
+                // 保存完成后再回主线程交付结果
+                tokenStoreScope.launch {
+                    HikarinagiAuthStore.saveTokens(appContext, accessToken, refreshToken, expiresAt)
+                    withContext(Dispatchers.Main.immediate) {
+                        onResult(true, text(activity, R.string.auth_hikarinagi_success))
+                    }
+                }
             }
         } catch (_: Exception) {
             service.dispose()

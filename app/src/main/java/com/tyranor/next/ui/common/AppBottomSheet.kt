@@ -16,17 +16,16 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.ModalBottomSheetProperties
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
+import com.tyranor.next.core.privacy.AppLockController
 import com.tyranor.next.theme.AppSheetTopShape
 import com.tyranor.next.ui.common.privacy.DismissOnAppLockEffect
 import com.tyranor.next.theme.AppThemeColors
@@ -75,11 +74,14 @@ internal fun AppBottomSheet(
     controller: MotionSheetController = rememberMotionSheetController(),
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    // 抽屉是独立窗口，层级在解锁门之上：应用锁生效时立即把窗口从组合里移除（不播退场动画），
+    // 只让 effect 通知调用方清理业务状态——只调 onDismissRequest 时调用方的退场动画仍可能
+    // 把窗口留在锁门上方数百毫秒。
+    val locked by AppLockController.lockedState.collectSettingAsState()
+    DismissOnAppLockEffect(onDismissRequest)
+    if (locked) return
     val sheetState = rememberMotionSheetState(controller, confirmValueChange)
     LocalSheetBackdrop.current?.let { controller.BindBackdrop(it) }
-    // 抽屉是独立窗口，层级在解锁门之上：应用锁生效时立即请求收起（锁定时首要不可操作，
-    // 不等页面侧编排的退场动画，避免抽屉留在门上方仍可点）
-    DismissOnAppLockEffect(onDismissRequest)
     ModalBottomSheet(
         onDismissRequest = {
             if (controller.canClose()) {

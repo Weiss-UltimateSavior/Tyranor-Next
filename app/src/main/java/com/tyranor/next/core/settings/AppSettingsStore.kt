@@ -390,19 +390,19 @@ object AppSettingsStore {
     val privacyPreventScreenshotState: MutableStateFlow<Boolean> =
         MutableStateFlow(DEFAULT_PRIVACY_PREVENT_SCREENSHOT)
 
-    /** 隐藏通知内容内存态：更新通知构建时读取，不在 Compose 侧订阅。 */
+    /** 隐藏通知内容内存态：隐私设置页订阅显示；通知构建时直接读持久化值。 */
     val privacyHideNotificationState: MutableStateFlow<Boolean> =
         MutableStateFlow(DEFAULT_PRIVACY_HIDE_NOTIFICATION)
 
-    /** 应用锁开关内存态：锁门与解锁延迟判定读取。 */
+    /** 应用锁开关内存态：隐私设置页订阅显示；锁运行时直接读持久化值，不依赖 Compose 状态。 */
     val privacyAppLockEnabledState: MutableStateFlow<Boolean> =
         MutableStateFlow(DEFAULT_PRIVACY_APP_LOCK_ENABLED)
 
-    /** 设备凭据快捷解锁内存态：锁门上「使用设备解锁方式」按钮的显隐。 */
+    /** 设备凭据快捷解锁内存态：锁门订阅「使用设备解锁方式」按钮的显隐。 */
     val privacyAppLockBiometricState: MutableStateFlow<Boolean> =
         MutableStateFlow(DEFAULT_PRIVACY_APP_LOCK_BIOMETRIC)
 
-    /** 解锁延迟档位内存态：下拉选择后即时广播（0..3，归一化见 [normalizePrivacyLockTimeoutIndex]）。 */
+    /** 解锁延迟档位内存态：隐私设置页订阅显示；锁运行时直接读持久化值并按档位归一。 */
     val privacyAppLockTimeoutIndexState: MutableStateFlow<Int> =
         MutableStateFlow(DEFAULT_PRIVACY_APP_LOCK_TIMEOUT_INDEX)
 
@@ -488,9 +488,17 @@ object AppSettingsStore {
     fun getBackgroundImageUri(c: Context): String =
         prefs(c).getString(KEY_BACKGROUND_IMAGE_URI, DEFAULT_BACKGROUND_IMAGE_URI).orEmpty()
 
-    fun setBackgroundImageUri(c: Context, uri: String) {
-        prefs(c).edit().putString(KEY_BACKGROUND_IMAGE_URI, uri).apply()
-        backgroundImageUriState.value = uri
+    /**
+     * 保存自定义背景图 URI。使用同步 `commit()` 并返回是否落盘成功：调用方（设置页）
+     * 必须在新 URI 真正写入磁盘后再释放旧图的持久授权，否则进程在异步落盘前被杀会留下
+     * 「磁盘旧 URI + 旧授权已释放」，背景永久失效且没有提示。
+     */
+    fun setBackgroundImageUri(c: Context, uri: String): Boolean {
+        val committed = runCatching {
+            prefs(c).edit().putString(KEY_BACKGROUND_IMAGE_URI, uri).commit()
+        }.getOrDefault(false)
+        if (committed) backgroundImageUriState.value = uri
+        return committed
     }
 
     /** 背景图透明度（0..100）。 */

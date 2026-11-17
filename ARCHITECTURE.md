@@ -9,7 +9,7 @@ Tyranor Next 是 Android 多引擎视觉小说聚合启动器。它管理游戏�
 | 位置 | 职责与依赖边界 |
 | --- | --- |
 | `app/src/main/java/com/tyranor/next/ui/` | Compose 页面、输入交互、导航、状态展示与错误文案；经 core 调用引擎能力 |
-| `app/src/main/java/com/tyranor/next/core/` | 扫描、游戏库、启动、设置、封面、存档、补丁、拆封包、授权、更新与第三方 APK 运行时模块发现/启用/交棒；可依赖 engine，禁止 Compose/UI 依赖 |
+| `app/src/main/java/com/tyranor/next/core/` | 扫描、游戏库、启动、设置、封面、存档、补丁、拆封包、授权、更新、隐私（应用锁 / 安全屏幕 / 背景图设置读取）与第三方 APK 运行时模块发现/启用/交棒；可依赖 engine，禁止 Compose/UI 依赖 |
 | `app/src/main/java/com/tyranor/next/theme/` | Material/Miuix 主题与视觉状态，属于表现层 |
 | `engine/` | 引擎宿主、Java/Kotlin 桥、Web 脚本、JNI、预编译运行库与输入/图形基础能力；不依赖 App 页面 |
 | `buildSrc/` | 图形贡献目录生成、资源归属及来源校验；独立构建逻辑，不是第三个业务模块 |
