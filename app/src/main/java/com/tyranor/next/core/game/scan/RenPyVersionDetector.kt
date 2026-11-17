@@ -6,15 +6,11 @@ import java.io.File
 /** Ren'Py 游戏版本探测。按 script_version/runtime 自动匹配链路探测。 */
 object RenPyVersionDetector {
     private const val RENPY_8_THRESHOLD = 80000
+    private const val RENPY_86_THRESHOLD = 80600
 
     fun detect(gameDir: File): String? {
         if (!gameDir.isDirectory) return null
-        val gameSubdir = File(gameDir, "game")
-        val versionCode = readVersionCode(
-            scriptVersionTxt = File(gameSubdir, "script_version.txt").takeIf { it.isFile }?.readTextSafely(),
-            scriptVersionRpy = File(gameSubdir, "script_version.rpy").takeIf { it.isFile }?.readTextSafely(),
-        )
-        if (versionCode != null) return moduleVersionForCode(versionCode)
+        detectFromScriptVersion(gameDir)?.let { return it }
         if (File(gameDir, "lib/pythonlib2.7").exists()) return EngineSettingsStore.RENPY_77
         return EngineSettingsStore.RENPY_85
     }
@@ -57,8 +53,24 @@ object RenPyVersionDetector {
         return normalized.toIntOrNull()
     }
 
-    internal fun moduleVersionForCode(versionCode: Int): String =
-        if (versionCode < RENPY_8_THRESHOLD) EngineSettingsStore.RENPY_77 else EngineSettingsStore.RENPY_85
+    internal fun moduleVersionForCode(versionCode: Int): String = when {
+        versionCode < RENPY_8_THRESHOLD -> EngineSettingsStore.RENPY_77
+        versionCode < RENPY_86_THRESHOLD -> EngineSettingsStore.RENPY_85
+        else -> EngineSettingsStore.RENPY_86
+    }
+
+    /**
+     * 仅凭游戏自带的 script_version 判定版本；没有可读的版本文件时返回 null（不做 Python 2.7 / 默认推断）。
+     * 启动时用来修正媒体库里旧扫描记录的版本（例如 8.6 游戏曾被记成 8.x 默认值），读不到时保留旧记录。
+     */
+    fun detectFromScriptVersion(gameDir: File): String? {
+        val gameSubdir = File(gameDir, "game")
+        val versionCode = readVersionCode(
+            scriptVersionTxt = File(gameSubdir, "script_version.txt").takeIf { it.isFile }?.readTextSafely(),
+            scriptVersionRpy = File(gameSubdir, "script_version.rpy").takeIf { it.isFile }?.readTextSafely(),
+        ) ?: return null
+        return moduleVersionForCode(versionCode)
+    }
 
     private fun File.readTextSafely(): String? = runCatching {
         inputStream().use { input ->

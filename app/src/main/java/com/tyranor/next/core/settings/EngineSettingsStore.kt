@@ -284,6 +284,7 @@ object EngineSettingsStore {
     const val RENPY_AUTO = "auto"
     const val RENPY_85 = "8.5"
     const val RENPY_853 = "8.5.3"
+    const val RENPY_86 = "8.6.0"
     const val RENPY_77 = "7.7.1"
 
     /** Migrates the former 8.5 selector value to the compatible upgraded 8.5.3 runtime. */
@@ -750,6 +751,7 @@ object EngineSettingsStore {
         val v = prefs(c).getString(KEY_RENPY_ENGINE_VERSION, RENPY_AUTO)
         return when (normalizeRenpyVersion(v)?.trim()) {
             RENPY_853 -> RENPY_853
+            RENPY_86 -> RENPY_86
             RENPY_77 -> RENPY_77
             else -> RENPY_AUTO
         }

@@ -24,6 +24,50 @@ class ExternalEngineModuleRegistryTest {
     }
 
     @Test
+    fun registersRenPy86Runtime() {
+        assertTrue(RenPy86ExternalEngineModule in ExternalEngineModuleRegistry.modules)
+        assertEquals("renpy86", RenPy86ExternalEngineModule.id)
+        assertEquals("Ren'Py 8.6.0", RenPy86ExternalEngineModule.displayName)
+        assertEquals(EngineType.RENPY, RenPy86ExternalEngineModule.engine)
+        assertEquals("studio.tsatoru.renpy86", RenPy86ExternalEngineModule.packageName)
+        assertEquals("studio.tsatoru.renpy86.RUN", RenPy86ExternalEngineModule.action)
+        assertEquals(8060002L, RenPy86ExternalEngineModule.minimumVersionCode)
+        assertEquals(
+            "https://github.com/t-satoru-Studio/renpy-android-runtime/releases/download/v8.6.0-r2/renpy-android-runtime-8.6.0-r2.apk",
+            RenPy86ExternalEngineModule.installUrl,
+        )
+        assertTrue(RenPy86ExternalEngineModule.requiresGameDirectoryPath)
+        assertFalse(RenPy86ExternalEngineModule.launchEntryIsFile)
+        // 默认模块仍是 8.5.3：8.6 只在显式选择或探测到 8.6+ 时使用
+        assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.moduleForEngine(EngineType.RENPY))
+        assertSame(RenPy86ExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias("internal.renpy86"))
+    }
+
+    @Test
+    fun routesRenPy86ByConfiguredOrDetectedVersion() {
+        assertSame(RenPy86ExternalEngineModule, ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_86))
+        assertSame(
+            RenPy86ExternalEngineModule,
+            ExternalEngineModuleRegistry.resolveRenpyModule(EngineSettingsStore.RENPY_AUTO, EngineSettingsStore.RENPY_86),
+        )
+        // 显式选择优先于探测结果
+        assertSame(
+            RenPyExternalEngineModule,
+            ExternalEngineModuleRegistry.resolveRenpyModule(EngineSettingsStore.RENPY_853, EngineSettingsStore.RENPY_86),
+        )
+        assertSame(
+            RenPy86ExternalEngineModule,
+            ExternalEngineModuleRegistry.resolveRenpyModule(EngineSettingsStore.RENPY_86, EngineSettingsStore.RENPY_77),
+        )
+        // 探测为 8.x（8.6 以下）或未知时仍走 8.5.3
+        assertSame(
+            RenPyExternalEngineModule,
+            ExternalEngineModuleRegistry.resolveRenpyModule(EngineSettingsStore.RENPY_AUTO, EngineSettingsStore.RENPY_85),
+        )
+        assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.resolveRenpyModule(EngineSettingsStore.RENPY_AUTO, null))
+    }
+
+    @Test
     fun resolvesRenPyVersions() {
         assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_85))
         assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_853))

@@ -12,6 +12,8 @@ import org.json.JSONObject
  *
  * - Ren'Py 8.5.3 / 7.7.1 走外置 runtime 模块协议（`cyou.joiplay.runtime.renpy.run`），
  *   两者仅包名不同，共享 [RenPyRuntimeModule] 的 intent 构造。
+ * - Ren'Py 8.6.0 运行时接受同一组 `game` / `settings` extras，只换包名与 action，
+ *   见 [RenPy86ExternalEngineModule]。
  * 启动协议集中在模块文件内，UI / 扫描器不散落 package/action 字符串。
  */
 
@@ -113,6 +115,31 @@ object RenPyExternalEngineModule : RenPyRuntimeModule(
     supportedAliases = setOf("external.renpy", "internal.renpy8"),
 ) {
     override val minimumVersionCode: Long = 10200L
+}
+
+/**
+ * Ren'Py 8.6.0 运行时（SDL3）。
+ *
+ * 由官方 RAPT / SDK 原样组装的独立运行时 APK（docs/renpy-8.6.0-runtime-module.md）：
+ * extras 沿用 JoiPlay 格式，`renpy_dont_use_gl2` 与 `app.cheats` 被忽略（8.6 在 Android 上只有 gles2 渲染器）；
+ * 它不读 JoiPlay 的 configuration.json，所以启动前不同步该文件。存档同样落在 `<游戏目录>/saves`。
+ * versionCode 要求 8060002（8.6.0-r2）：r1 切后台时主线程会卡 8 秒且不存档。
+ */
+object RenPy86ExternalEngineModule : RenPyRuntimeModule(
+    id = "renpy86",
+    displayName = "Ren'Py 8.6.0",
+    packageName = "studio.tsatoru.renpy86",
+    installUrl = "https://github.com/t-satoru-Studio/renpy-android-runtime/releases/download/v8.6.0-r2/renpy-android-runtime-8.6.0-r2.apk",
+    defaultAlias = "internal.renpy86",
+    supportedAliases = setOf("external.renpy86"),
+) {
+    override val action: String = "studio.tsatoru.renpy86.RUN"
+    override val minimumVersionCode: Long = 8060002L
+
+    override fun prepareForLaunch(
+        context: Context,
+        request: ExternalEngineLaunchRequest,
+    ): ExternalEngineLaunchResult? = null
 }
 
 /** Ren'Py 7.7.1 runtime 模块（与 8.5 同协议，仅包名不同）。 */

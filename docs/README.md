@@ -23,6 +23,7 @@
 - [System4（xsystem4）内置引擎接入方案](System4-xsystem4-引擎接入方案.md)
 - [krkrsdl3 引擎壳配置能力清单与 TyranorNext 完善方案](krkrsdl3-engine-config-plan.md)
 - [Ren’Py 8.5.3 外置模块接入分析](renpy-8.5.3-module-analysis.md)
+- [Ren’Py 8.6.0 运行时接入记录](renpy-8.6.0-runtime-module.md)
 - [外置 APK 引擎模块接入方案](外置APK引擎模块接入方案.md)
 - [外置 Ren'Py 模块配置接入引擎设置清单计划](外置RenPy模块配置接入引擎设置清单计划.md)
 - [外置 RPGM 模块配置接入引擎设置清单计划](外置RPGM模块配置接入引擎设置清单计划.md)

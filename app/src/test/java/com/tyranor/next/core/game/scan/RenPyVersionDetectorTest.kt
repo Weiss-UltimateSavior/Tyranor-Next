@@ -27,6 +27,35 @@ class RenPyVersionDetectorTest {
         assertEquals(EngineSettingsStore.RENPY_77, RenPyVersionDetector.moduleVersionForCode(70701))
         assertEquals(EngineSettingsStore.RENPY_85, RenPyVersionDetector.moduleVersionForCode(80000))
         assertEquals(EngineSettingsStore.RENPY_85, RenPyVersionDetector.moduleVersionForCode(80500))
+        assertEquals(EngineSettingsStore.RENPY_85, RenPyVersionDetector.moduleVersionForCode(80503))
+        assertEquals(EngineSettingsStore.RENPY_86, RenPyVersionDetector.moduleVersionForCode(80600))
+        assertEquals(EngineSettingsStore.RENPY_86, RenPyVersionDetector.moduleVersionForCode(80701))
+    }
+
+    @Test
+    fun parsesRenPy86ScriptVersionFormat() {
+        // Ren'Py 8.6.0 构建写入的 game/script_version.txt 原文
+        assertEquals(80600, RenPyVersionDetector.parseVersionCode("(8, 6, 0)"))
+        assertEquals(
+            EngineSettingsStore.RENPY_86,
+            RenPyVersionDetector.detect(scriptVersionTxt = "(8, 6, 0)", scriptVersionRpy = null, hasPython27 = false),
+        )
+    }
+
+    @Test
+    fun scriptVersionOnlyDetectionIgnoresFallbacks() {
+        val renpy86 = temporaryFolder.newFolder("renpy86")
+        renpy86.resolve("game").mkdirs()
+        renpy86.resolve("game/script_version.txt").writeText("(8, 6, 0)")
+
+        val noVersionFile = temporaryFolder.newFolder("renpy-unknown")
+        noVersionFile.resolve("game").mkdirs()
+        noVersionFile.resolve("lib/pythonlib2.7").mkdirs()
+
+        assertEquals(EngineSettingsStore.RENPY_86, RenPyVersionDetector.detectFromScriptVersion(renpy86))
+        // 没有版本文件时不推断（Python 2.7 / 默认值留给扫描记录）
+        assertEquals(null, RenPyVersionDetector.detectFromScriptVersion(noVersionFile))
+        assertEquals(null, RenPyVersionDetector.detectFromScriptVersion(temporaryFolder.root.resolve("missing")))
     }
 
     @Test

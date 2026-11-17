@@ -10,6 +10,28 @@ import org.junit.Test
 
 class RenPyExternalEngineModuleTest {
     @Test
+    fun renpy86SendsTheSameGamePayload() {
+        val request = ExternalEngineLaunchRequest(
+            game = ScanGame(
+                title = "8.6 游戏",
+                uri = "file:///storage/emulated/0/Games/Koi",
+                engine = EngineType.RENPY,
+                launchTarget = "[游戏目录]",
+            ),
+            gameDirectoryPath = "/storage/emulated/0/Games/Koi/",
+        )
+
+        val json = parseFlatJson(RenPy86ExternalEngineModule.buildGameJson(request))
+
+        assertEquals("/storage/emulated/0/Games/Koi", json["folder"])
+        assertEquals("8.6 游戏", json["title"])
+        // 与 JoiPlay 模块一致的游戏 ID（日志目录名），切换版本不影响
+        assertEquals(RenPyExternalEngineModule.buildGameJson(request), RenPy86ExternalEngineModule.buildGameJson(request))
+        val settings = JSONObject(RenPy86ExternalEngineModule.buildSettingsJson())
+        assertTrue(settings.getJSONObject("renpy").has("renpy_less_memory"))
+    }
+
+    @Test
     fun buildsRenPyGameJsonPayload() {
         val request = ExternalEngineLaunchRequest(
             game = ScanGame(

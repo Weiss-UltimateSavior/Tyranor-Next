@@ -84,6 +84,7 @@ import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.EngineDetectionRepository
 import com.tyranor.next.core.game.scan.GameDirFingerprint
+import com.tyranor.next.core.game.scan.RenPyVersionDetector
 import com.tyranor.next.core.settings.GraphicsCapabilities
 import com.tyranor.next.core.settings.GraphicsFamily
 import com.tyranor.next.core.settings.GraphicsSettings
@@ -451,10 +452,17 @@ object EngineLauncher {
         // 三级设置（应用级 + 单游戏覆盖）一次性解析，后续 Intent 组装只消费生效值（P0-3）
         val settings = EngineSettingsResolver.resolve(context, game, path)
         defaultModule?.let { defaultModule ->
+            // 游戏自带的 script_version 比媒体库里的扫描记录更新（旧版扫描会把 8.6 游戏记成 8.x 默认值）；
+            // 读不到（如尚未授予所有文件访问）时沿用扫描记录。
+            val detectedRenpyVersion = if (game.engine == EngineType.RENPY) {
+                path?.let { RenPyVersionDetector.detectFromScriptVersion(File(it)) } ?: game.detectedRenpyVersion
+            } else {
+                game.detectedRenpyVersion
+            }
             val module = ExternalEngineModuleRegistry.resolveModule(
                 game.engine,
                 if (game.engine == EngineType.RENPY) settings.renpyVersion else null,
-                detectedRenpyVersion = game.detectedRenpyVersion,
+                detectedRenpyVersion = detectedRenpyVersion,
             ) ?: defaultModule
             // 先确认模块已安装，再走目录/权限门禁：否则未安装时会把用户先送去「所有文件访问」，
             // 真正的缺失原因（应安装模块）反而看不到。

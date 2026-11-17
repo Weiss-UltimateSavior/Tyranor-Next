@@ -12,6 +12,7 @@
     <queries>
         <package android:name="cyou.joiplay.runtime.rpgmaker" />
         <package android:name="cyou.joiplay.runtime.renpy.v8d4d1" />
+        <package android:name="studio.tsatoru.renpy86" />
         <package android:name="cyou.joiplay.runtime.renpy.v7d7d1" />
         <package android:name="cyou.joiplay.runtime.ruffle" />
         <!-- Impacto 外置宿主 APK（安装探测 + 显式组件启动；Android 11+ 不声明则看不到该包） -->

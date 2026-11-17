@@ -8,6 +8,7 @@ import java.util.Locale
 object ExternalEngineModuleRegistry {
     val modules: List<ExternalEngineModule> = listOf(
         RenPyExternalEngineModule,
+        RenPy86ExternalEngineModule,
         RenPy77ExternalEngineModule,
         RpgMakerExternalEngineModule,
         RuffleExternalEngineModule,
@@ -19,7 +20,7 @@ object ExternalEngineModuleRegistry {
 
     /**
      * 解析某引擎实际生效的外置模块：
-     * Ren'Py 显式版本优先；auto/null/未知时使用扫描探测版本；仍未知则默认当前 8.5.3 模块。
+     * Ren'Py 显式版本优先；auto/null/未知时使用探测版本（8.6 及以上走 8.6 运行时）；仍未知则默认 8.5.3 模块。
      */
     fun resolveModule(
         engine: EngineType,
@@ -44,6 +45,7 @@ object ExternalEngineModuleRegistry {
     fun moduleForRenpyVersion(version: String?): ExternalEngineModule? =
         when (version?.trim()?.lowercase(Locale.ROOT)) {
             EngineSettingsStore.RENPY_85, EngineSettingsStore.RENPY_853 -> RenPyExternalEngineModule
+            EngineSettingsStore.RENPY_86 -> RenPy86ExternalEngineModule
             EngineSettingsStore.RENPY_77 -> RenPy77ExternalEngineModule
             else -> null
         }
