@@ -209,7 +209,7 @@ private fun HostStatusRow(installed: Boolean) {
                 imageVector = if (isInstalled) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
                 contentDescription = null,
                 modifier = Modifier.size(22.dp),
-                tint = if (isInstalled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                tint = if (isInstalled) MiuixTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
             )
         }
     }
