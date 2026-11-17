@@ -27,7 +27,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.key
@@ -161,7 +160,7 @@ fun MainScreen(
 ) {
   val context = LocalContext.current
   var globalLaunchError by remember { mutableStateOf<LaunchErrorState?>(null) }
-  val busFailure by LaunchFailureBus.failure.collectAsState()
+  val busFailure by LaunchFailureBus.failure.collectAsStateWithLifecycle()
   LaunchedEffect(busFailure) {
     busFailure?.let {
       globalLaunchError = it.toErrorState(context)
@@ -747,6 +746,10 @@ private fun ColumnScope.MainTabPages(
                   modifier = Modifier.fillMaxSize(),
                   libraryState = libraryState,
                   onGameUpdated = libraryViewModel::replaceGame,
+                  onGameCoverUpdated = libraryViewModel::applyCoverUpdate,
+                  onGameRenamed = libraryViewModel::renameGame,
+                  onGameLaunchFileUpdated = libraryViewModel::updateLaunchFile,
+                  onGameBindingUpdated = libraryViewModel::applyBindingUpdate,
                   onGameDeleted = libraryViewModel::deleteGame,
                   onRecentRemoved = libraryViewModel::removeRecentGame,
                   onQuickLaunchToggle = libraryViewModel::toggleQuickLaunch,
@@ -757,6 +760,10 @@ private fun ColumnScope.MainTabPages(
                   modifier = Modifier.fillMaxSize(),
                   libraryState = libraryState,
                   onGameUpdated = libraryViewModel::replaceGame,
+                  onGameCoverUpdated = libraryViewModel::applyCoverUpdate,
+                  onGameRenamed = libraryViewModel::renameGame,
+                  onGameLaunchFileUpdated = libraryViewModel::updateLaunchFile,
+                  onGameBindingUpdated = libraryViewModel::applyBindingUpdate,
                   onGameDeleted = libraryViewModel::deleteGame,
                   onQuickLaunchToggle = libraryViewModel::toggleQuickLaunch,
                   onScanLibrary = libraryViewModel::scanLibrary,

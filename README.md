@@ -58,6 +58,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | System35             | `*.ALD`（`SA.ALD` 等；根目录或 `GAMEDATA/`）、`System39.ain`/`System39.ini`/`*.wai`/`*.bgi`/`*.alk` | 内置 System3.x 运行时（xsystem35） |
 | System4              | `System40.ini` 或 `AliceStart.ini`（根目录；`*.ain` 为辅助特征）                    | 内置 System4 运行时（xsystem4）      |
 | SystemNNN            | 游戏目录下的 `spt/sys.spt`（不区分大小写）                            | 内置 [SystemNNN-Emberfall 0.8.1](https://github.com/PorisRora/SystemNNN-Emberfall)（ARM64） |
+| Ethornell / BGI      | 根目录的 `system.arc`（带 BGI 引导标记，且不与 UK2 冲突）             | 内置 Ethornell / BGI 运行时（`libethornell.so`） |
 | YU-RIS               | `yscfg.dat`、`pac/*.ypf`、`YS*.DLL`、`.ymv`                          | 外置 Winlator（winlator-cn）        |
 | CatSystem2           | `config/startup.xml`、`*.int`、`*.cst`、`*.hg3`、`*.kcs` 等组合         | 外置 Winlator（winlator-cn）        |
 | PC（手动添加）        | 游戏页顶栏「添加 PC 游戏」选择目录并指定启动 exe                          | 外置 Winlator（winlator-cn）        |
@@ -133,7 +134,7 @@ CI 使用 JDK 17；还需 engine 的 Android 36 平台、Build Tools 37.0.0、ND
 ```
 app/
 ├── src/main/java/com/tyranor/next/
-│   ├── core/      功能抽象层：扫描、启动、引擎模块、封面、存档、补丁、拆封包、配置、授权、更新
+│   ├── core/      功能抽象层：扫描、启动、引擎模块、封面、游玩状态、存档、补丁、拆封包、配置、授权、网络（各域共享 HTTP 层）、更新
 │   ├── ui/        界面 UI 交互层：主界面、游戏页、设置页、弹窗、公共组件
 │   └── theme/     Compose / Miuix 主题、色调、深浅色适配
 ├── src/main/assets/rtp/    App 自有 RTP 资源

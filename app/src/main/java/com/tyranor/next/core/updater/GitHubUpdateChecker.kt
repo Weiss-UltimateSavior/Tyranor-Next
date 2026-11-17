@@ -5,6 +5,8 @@ import android.content.pm.PackageInfo
 import android.os.Build
 import com.tyranor.next.R
 import com.tyranor.next.core.i18n.AppLocaleController
+import com.tyranor.next.core.net.MAX_JSON_CHARS
+import com.tyranor.next.core.net.readTextCapped
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +15,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.charset.StandardCharsets
 
 object GitHubUpdateChecker {
     private const val RELEASES_API =
@@ -119,6 +122,7 @@ object GitHubUpdateChecker {
                 )
             }
         }.getOrElse { error ->
+            if (error is kotlinx.coroutines.CancellationException) throw error
             val localizedContext = AppLocaleController.wrap(context)
             UpdateCheckResult.Failed(error.message ?: localizedContext.getString(R.string.update_network_failed))
         }
@@ -142,18 +146,15 @@ object GitHubUpdateChecker {
             setRequestProperty("User-Agent", "TyranorNext")
         }
         return try {
-            val stream = if (connection.responseCode in 200..299) {
-                connection.inputStream
-            } else {
-                connection.errorStream ?: connection.inputStream
+            val status = connection.responseCode
+            if (status !in 200..299) {
+                runCatching { connection.errorStream?.close() }
+                error(AppLocaleController.wrap(context).getString(R.string.update_github_request_failed, status))
             }
-            stream.bufferedReader().use { reader ->
-                val body = reader.readText()
-                if (connection.responseCode !in 200..299) {
-                    error(AppLocaleController.wrap(context).getString(R.string.update_github_request_failed, connection.responseCode))
-                }
-                JSONArray(body)
+            val body = connection.inputStream.bufferedReader(StandardCharsets.UTF_8).use { reader ->
+                reader.readTextCapped(MAX_JSON_CHARS)
             }
+            JSONArray(body)
         } finally {
             connection.disconnect()
         }

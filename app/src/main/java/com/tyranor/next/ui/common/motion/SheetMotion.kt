@@ -59,8 +59,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineStart
 import com.tyranor.next.theme.AppSheetTopShape
 import kotlinx.coroutines.withTimeoutOrNull
-import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.addOutline
 import androidx.compose.ui.draw.drawWithCache
@@ -148,7 +153,8 @@ class MotionSheetController internal constructor(
     private var navigating = false
 
     /** 收起是否已经承诺为「跳转交接」：这种收起不可回头。 */
-    private var leaving = false
+    internal var leaving = false
+        private set
 
     /** 已提交的页面跳转（正在跳转 / 交接收起）：抽屉内的跳转条目不再重复触发，避免重复启动。普通的下拉 / 点遮罩收起不算。 */
     internal val busy: Boolean get() = navigating || leaving
@@ -172,8 +178,19 @@ class MotionSheetController internal constructor(
     /** 收起的协程；在抽屉完全离屏之前可以取消并把抽屉接回来。 */
     private var closeJob: kotlinx.coroutines.Job? = null
 
+    /** 收起代次：仅当前未被打断（reopen / reopenForGrab / updateHeight）的关闭协程在取消时交付收尾。 */
+    private var closeAttempt = 0L
+
     /** 收起是否已越过离屏线（抽屉底边越过屏幕底边）：此刻抽屉就被移除，不可回头。 */
-    private var closeCommitted = false
+    internal var closeCommitted = false
+        private set
+
+    internal fun commitClose() {
+        if (closeCommitted) return
+        closeCommitted = true
+        allowHide = true
+        onClosed()
+    }
 
     /**
      * 收起途中（尚未完全离屏）把抽屉接回来：取消收起，位移从当前位置带着速度弹回展开位，遮罩随之回到原暗度。
@@ -183,6 +200,7 @@ class MotionSheetController internal constructor(
         if (!closing || closeCommitted || leaving) return false
         // 先取速度再取消收起：取消后动画状态可能已被清掉，接回就成了从零速重新起步
         val v = offset.velocity
+        closeAttempt += 1L
         closeJob?.cancel()
         closeJob = null
         closing = false
@@ -237,21 +255,33 @@ class MotionSheetController internal constructor(
         closing = true
         leaving = true
         scope.launch {
-            val paused = withTimeoutOrNull(NAVIGATION_START_TIMEOUT_MILLIS) {
-                owner.lifecycle.currentStateFlow.first { !it.isAtLeast(Lifecycle.State.RESUMED) }
-            } != null
-            if (!paused) {
-                closing = false
-                leaving = false
-                close()
-                return@launch
+            var paused = false
+            try {
+                paused = withTimeoutOrNull(NAVIGATION_START_TIMEOUT_MILLIS) {
+                    owner.lifecycle.currentStateFlow.first { !it.isAtLeast(Lifecycle.State.RESUMED) }
+                } != null
+                if (!paused) {
+                    closing = false
+                    leaving = false
+                    close()
+                    return@launch
+                }
+                launch {
+                    navDim.animateTo(1f, tween(MotionSprings.PushDurationMillis, easing = MotionSprings.PushEasing))
+                }
+                delay(MotionSprings.PushDurationMillis + 80L)
+            } finally {
+                withContext(NonCancellable) {
+                    if (leaving && !closeCommitted) {
+                        if (paused) {
+                            commitClose()
+                        } else {
+                            closing = false
+                            leaving = false
+                        }
+                    }
+                }
             }
-            launch {
-                navDim.animateTo(1f, tween(MotionSprings.PushDurationMillis, easing = MotionSprings.PushEasing))
-            }
-            delay(MotionSprings.PushDurationMillis + 80L)
-            allowHide = true
-            onClosed()
         }
     }
 
@@ -278,6 +308,7 @@ class MotionSheetController internal constructor(
     }
 
     private fun animateClose(velocity: Float) {
+        val attempt = ++closeAttempt
         closeJob = scope.launch {
             // 位移 ≥ 抽屉自身高度 = 底边越过屏幕底边 = 完全离屏（此刻遮罩也已淡尽）；越过这里收起不可回头
             val exitLine = if (height > 0f) height else 2000f
@@ -285,18 +316,23 @@ class MotionSheetController internal constructor(
             val slide = launch { offset.animateTo(exitLine * 1.05f, CloseSpec, initialVelocity = startVelocity) }
             val exit = launch {
                 snapshotFlow { offset.value >= exitLine }.first { it }
-                closeCommitted = true
-                allowHide = true
+                commitClose()
                 slide.cancel()
-                onClosed()
             }
-            slide.join()
-            // 下沉被别的位移动画顶掉（例如刚展开时的 snapTo / animateTo）而没走到离屏：这次收起作废，
-            // 不能卡在「收起中」——否则返回键 / 点遮罩都会因 closing 为真而直接被忽略
-            if (!closeCommitted) {
-                exit.cancel()
-                closing = false
-                scrimWindow.restoreDialogDim()
+            try {
+                slide.join()
+                // 下沉被别的位移动画顶掉（例如刚展开时的 snapTo / animateTo）而没走到离屏：这次收起作废，
+                // 不能卡在「收起中」——否则返回键 / 点遮罩都会因 closing 为真而直接被忽略
+                if (!closeCommitted) {
+                    exit.cancel()
+                    closing = false
+                    scrimWindow.restoreDialogDim()
+                }
+            } catch (cancelled: CancellationException) {
+                if (closing && !closeCommitted && closeAttempt == attempt) {
+                    withContext(NonCancellable) { commitClose() }
+                }
+                throw cancelled
             }
         }
     }
@@ -314,6 +350,7 @@ class MotionSheetController internal constructor(
     /** 抓住收起中的抽屉：取消收起并立刻停住回弹动画，让跟手位移接管（不 snapTo，位置保持当前值）。 */
     private fun reopenForGrab(): Boolean {
         if (closeCommitted || leaving || !closing) return false
+        closeAttempt += 1L
         closeJob?.cancel()
         closeJob = null
         closing = false
@@ -425,8 +462,30 @@ fun rememberMotionSheetController(): MotionSheetController {
     val scope = rememberCoroutineScope()
     val enhanced = MotionMode.enhanced
     val depth = LocalPageDepth.current
-    return remember(enhanced) { MotionSheetController(scope, enhanced) }.also {
-        it.pageDepth = depth
+    val lifecycleOwner = LocalLifecycleOwner.current
+    return remember(enhanced) { MotionSheetController(scope, enhanced) }.also { controller ->
+        controller.pageDepth = depth
+        DisposableEffect(lifecycleOwner, controller) {
+            val observer = LifecycleEventObserver { _, event ->
+                // 旋转/重建在 onDestroy 之前先走 onSaveInstanceState：非跳转交接的常规退场途中
+                // 在暂停阶段立即提交关闭，避免 rememberSaveable 把打开态写入 Bundle 导致重建复活。
+                if ((event == Lifecycle.Event.ON_PAUSE && !controller.leaving) ||
+                    (event == Lifecycle.Event.ON_STOP && controller.leaving)
+                ) {
+                    if (controller.closing && !controller.closeCommitted) {
+                        try {
+                            controller.commitClose()
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (failure: Exception) {
+                            android.util.Log.w("SheetMotion", "Sheet close callback failed on lifecycle event", failure)
+                        }
+                    }
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        }
     }
 }
 
