@@ -1218,6 +1218,7 @@
     <string name="save_external_exit_message">先に外部実行環境で「%1$s」と同じセーブフォルダーを共有するすべてのゲームを完全に終了してください。Tyranor に戻るだけでは終了を確認できません。確認すると今回の実行マーカーを解除し、アップロード・セーブの切り替え・削除を許可します。書き込み中の場合、セーブを失うおそれがあります。</string>
     <string name="save_external_exit_done">外部ゲームの終了を確認しました。セーブを管理できます</string>
     <string name="save_external_exit_identity">確認待ちセッション：モジュール %1$s · 以前のセーブ先 %2$s</string>
+    <string name="save_external_exit_identity_unrecorded">記録なし</string>
     <string name="save_runtime_identity_changed_title">セーブ先の宣言が変更されました</string>
     <string name="save_runtime_identity_changed_message">モジュールが宣言するセーブ先が変更されました。新しい場所を確認すると、以後の同期に新しいセーブ先を使います。以前の場所の内容はクラウドのセーブへ自動で取り込みません。</string>
     <string name="save_runtime_identity_old_directory">以前の場所：%1$s</string>

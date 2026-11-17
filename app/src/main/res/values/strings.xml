@@ -1231,6 +1231,7 @@
     <string name="save_external_exit_message">请先在外置运行环境中完全退出“%1$s”，并确认共用存档目录的其他游戏也已退出。仅切回 Tyranor 不代表游戏退出。确认后将解除本次运行标记，允许上传、切换存档和删除；若游戏仍在写入，可能造成存档丢失。</string>
     <string name="save_external_exit_done">已确认外部游戏退出，可继续管理存档</string>
     <string name="save_external_exit_identity">待确认会话：模块 %1$s · 原存档目录 %2$s</string>
+    <string name="save_external_exit_identity_unrecorded">未记录</string>
     <string name="save_runtime_identity_changed_title">存档目录声明已变化</string>
     <string name="save_runtime_identity_changed_message">模块的存档目录声明已变化。确认新目录后，后续同步将使用新目录；旧目录内容不会自动导入云端存档。</string>
     <string name="save_runtime_identity_old_directory">原目录：%1$s</string>

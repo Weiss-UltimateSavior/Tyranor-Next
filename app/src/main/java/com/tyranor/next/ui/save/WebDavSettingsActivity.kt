@@ -447,8 +447,8 @@ private fun WebDavSettingsScreen() {
                                         title = session.title.ifBlank { session.uri },
                                         summary = stringResource(
                                             R.string.save_external_exit_identity,
-                                            session.modulePackageName ?: stringResource(R.string.engine_name_web),
-                                            session.directoryIdentity ?: stringResource(R.string.save_location_engine_no_file_interface),
+                                            session.modulePackageName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.save_external_exit_identity_unrecorded),
+                                            session.directoryIdentity?.takeIf { it.isNotBlank() } ?: stringResource(R.string.save_external_exit_identity_unrecorded),
                                         ),
                                         leadingIcon = R.drawable.ic_sheet_saves,
                                         leadingIconTint = MiuixTheme.colorScheme.primary,
@@ -771,8 +771,8 @@ private fun WebDavSettingsScreen() {
                     Text(
                         stringResource(
                             R.string.save_external_exit_identity,
-                            session.modulePackageName ?: stringResource(R.string.engine_name_web),
-                            session.directoryIdentity ?: stringResource(R.string.save_location_engine_no_file_interface),
+                            session.modulePackageName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.save_external_exit_identity_unrecorded),
+                            session.directoryIdentity?.takeIf { it.isNotBlank() } ?: stringResource(R.string.save_external_exit_identity_unrecorded),
                         ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

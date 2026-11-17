@@ -1218,6 +1218,7 @@
     <string name="save_external_exit_message">Fully quit “%1$s” in its external runtime first, along with any other game sharing its save folder. Switching back to Tyranor does not mean the game has exited. Confirming clears this run’s protection and allows uploads, save selection and removal. If the game is still writing, saves may be lost.</string>
     <string name="save_external_exit_done">External game exit confirmed. Save management is available</string>
     <string name="save_external_exit_identity">Pending session: module %1$s · previous save directory %2$s</string>
+    <string name="save_external_exit_identity_unrecorded">Not recorded</string>
     <string name="save_runtime_identity_changed_title">Save directory declaration changed</string>
     <string name="save_runtime_identity_changed_message">The module now declares a different save directory. After you confirm the new location, future syncs will use it. Files in the old directory will not be imported into cloud saves automatically.</string>
     <string name="save_runtime_identity_old_directory">Previous location: %1$s</string>

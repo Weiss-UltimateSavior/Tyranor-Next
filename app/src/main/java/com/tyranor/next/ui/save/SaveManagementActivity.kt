@@ -329,8 +329,8 @@ private fun SaveManagementScreen(game: ScanGame) {
                                 Text(
                                     stringResource(
                                         R.string.save_external_exit_identity,
-                                        session.modulePackageName ?: game.engine.name,
-                                        session.directoryIdentity ?: stringResource(R.string.save_location_engine_no_file_interface),
+                                        session.modulePackageName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.save_external_exit_identity_unrecorded),
+                                        session.directoryIdentity?.takeIf { it.isNotBlank() } ?: stringResource(R.string.save_external_exit_identity_unrecorded),
                                     ),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
