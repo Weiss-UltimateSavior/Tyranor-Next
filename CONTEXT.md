@@ -55,7 +55,7 @@ _Avoid_: 插件、外置引擎（指 JoiPlay 时）、外置 APK 引擎模块（
 _Avoid_: 手动绑定、模块别名、externalModuleAlias
 
 **模块扫描描述（Runtime Module Scan Descriptor）**:
-第三方运行时模块在自己 `res/raw/tyranor_runtime.json` 中声明的 `extensions` / `markers`（及 `match`），是主 App 自动扫描该模块游戏的唯一特征来源。
+第三方运行时模块在自己 `res/raw/tyranor_runtime.json` 中声明的 `extensions` / `markers`（及 `match`），是主 App 自动扫描该模块游戏的唯一特征来源；在允许模块匹配的目录中优先于内置识别，未命中再由内置规则补充。
 _Avoid_: 内置特征库、插件清单、手动绑定
 
 **模块设置描述（Runtime Module Settings Descriptor）**:

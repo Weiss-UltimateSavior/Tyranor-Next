@@ -93,7 +93,7 @@ Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并�
 
 1. `RuntimeModuleDiscovery` 通过 Manifest `<queries>` 声明的 `com.tyranor.runtime.action.LAUNCH` 查询可见应用，只保留 `com.tyranor.runtime.` 前缀；每个包选择一个入口 Activity，并容错读取 `com.tyranor.runtime.MANIFEST` 指向的 `res/raw` JSON（`RuntimeModuleDescriptor` / `RuntimeModuleScanSpec`）。不申请 `QUERY_ALL_PACKAGES`，不校验签名或版本。
 2. `RuntimeModuleRegistry` 保存发现快照与 `AppSettingsStore.KEY_RUNTIME_MODULE_ENABLED`（StringSet，默认空集），经 `StateFlow` 提供给 `ui/runtime/EngineModuleManagementScreen`；刷新、启用/禁用与扫描索引构建在同一互斥区内串行。新模块默认关闭，启用只写开关。
-3. 扫描开始时 `EngineScanner` 取 `RuntimeModuleIndex`（已发现 + 已启用 + 有扫描描述），仅在 `UNKNOWN` / `WEB_OTHER` 等弱结果上调用 `RuntimeModuleMatcher` 匹配 `extensions` / `markers`；命中写入 `ScanGame.runtimeModulePackage`。多模块按 `all` > `any` → marker 数 → 包名排序，旧 URI 绑定优先；扫描是唯一入库入口。
+3. 扫描开始时 `EngineScanner` 取 `RuntimeModuleIndex`（已发现 + 已启用 + 有扫描描述），先调用 `RuntimeModuleMatcher` 匹配 `extensions` / `markers`，未命中才执行内置识别；扫描根及 ROM/SWF 目录维持既有排除规则，命中写入 `ScanGame.runtimeModulePackage`。多模块按 `all` > `any` → marker 数 → 包名排序，旧 URI 绑定优先；扫描是唯一入库入口。
 4. `RuntimeModuleManifest` 独立解析 `scan`、`settings`、`saves`。设置由模块声明布尔、枚举、文本、整数及默认值，单游戏覆盖按 URI + 包名保存在现有覆盖记录内；`PerGameSettingsStore` 提供可等待的保存结果，复用写队列并维护 prefs 镜像。解析后的完整配置通过可选 `com.tyranor.runtime.extra.SETTINGS` JSON 下发，不增加全局设置。
 5. `EngineLauncher` 在存档准入之前刷新并固定模块身份，交棒前复核绑定、声明与实际存档目录，再调用 `RuntimeModuleLauncher`：显式 `ComponentName` + 文件夹绝对路径/标题/协议版本，以及声明能力所需的配置；`Dispatched` 只表示交棒，`ModuleMissing` / `ModuleDisabled` 触发 `RuntimeModuleBindings.degradeGame`。
 6. `RuntimeModuleBindings.reconcile` 在重扫前与应用回前台等时机核对绑定：模块未发现、未启用或包名为空 → `EngineType.UNKNOWN`（保留最后已知 `runtimeModulePackage` 供重扫合并），保留其它字段；发现查询失败时跳过第三方绑定的降级。旧 Emberfall 内置身份的迁移独立进行。
