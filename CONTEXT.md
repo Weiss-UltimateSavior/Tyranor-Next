@@ -55,7 +55,7 @@ _Avoid_: 插件、外置引擎（指 JoiPlay 时）、外置 APK 引擎模块（
 _Avoid_: 手动绑定、模块别名、externalModuleAlias
 
 **模块扫描描述（Runtime Module Scan Descriptor）**:
-第三方运行时模块在自己 `res/raw/tyranor_runtime.json` 中声明的 `extensions` / `markers`（及 `match`），是主 App 自动扫描该模块游戏的唯一特征来源。
+第三方运行时模块在自己 `res/raw/tyranor_runtime.json` 中声明的 `extensions` / `markers`（及 `match`），是主 App 自动扫描该模块游戏的唯一特征来源；在允许模块匹配的目录中优先于内置识别，未命中再由内置规则补充。
 _Avoid_: 内置特征库、插件清单、手动绑定
 
 **模块设置描述（Runtime Module Settings Descriptor）**:
@@ -227,6 +227,10 @@ _Avoid_: 玻璃（单独出现时指本档）
 外观风格第三档（显示名由「乳白玻璃」更名；持久化值仍为 `milk_glass`，内部 `MILK_GLASS` / `MilkSurface` 等标识保留以避免数据迁移）：运行期 64dp 高斯模糊的图片底图 + 38% 压暗 + 主题色环境光；默认液态玻璃 · 经典底栏用亮玻璃 + 主题色轻染；页面条目为 70% 白纱（`MilkSurface`，目标 L≈211），条目正文为深色（`TextColor`），页面顶栏/空态用近白（`PageTextColor`）；弹窗/抽屉面板用同一张页面底图 + 50% 白纱（`MilkGlassPanelBackground`），条目用 `DialogItemSurface`（`MilkItemOnPanel` 45% 白纱，叠加后约 L215，与页面条目同亮度）；不使用 0.5dp 玻璃描边或投影，圆角仍取统一应用圆角。
 _Avoid_: 乳白玻璃（旧显示名）、Milk glass（旧英文名）
 
+**工具页（Tools Page）**:
+主导航中的一级页面，集中提供 Kirikiroid2 原生界面、解包/封包、WebDAV 存档同步、输入与手柄及引擎模块管理入口，替代原“妙妙工具”侧边栏。
+_Avoid_: 妙妙工具侧边栏、工具抽屉
+
 **平板侧栏（Side Rail）**:
 平板/大窗口（sw600dp 或宽 ≥ 840dp）下主导航的侧边形态（应用设置「平板侧边栏」开关控制，默认开）：按外观风格取该主题「默认导航栏」形态（默认与白雾玻璃 = Material3 `NavigationRail`、复古玻璃 = 悬浮玻璃柱），液态玻璃两档不适配侧栏（平板下降级为主题默认形态）；侧栏占布局宽度，`glassNavBottomInset()` 返回 0。
 _Avoid_: 导航抽屉（NavigationDrawer）、侧边栏（与抽屉混淆时）
@@ -254,20 +258,30 @@ _Avoid_: 版本列表（与弹窗条目混淆时）
 ## 封面
 
 **封面来源（Cover Source）**:
-获取封面的数据源（VNDB / 未萌NextMoe / Hikarinagi / Bangumi / Steam / Local / Custom），可自定义顺序；Hikarinagi 需 OAuth Client ID，未萌NextMoe 匿名无登录。
+获取封面的数据源（VNDB / 未萌NextMoe / Hikarinagi / Bangumi / Steam / Local / Custom），可自定义顺序与来源凭据；其中 Hikarinagi、Bangumi、未萌NextMoe 支持网页授权（Bangumi 亦支持个人访问令牌，未萌NextMoe 目录封面亦可匿名无登录读取），VNDB 支持可选个人访问令牌。
 _Avoid_: 图源、壁纸源
 
 **封面抓取（Cover Scraping）**:
-为游戏库批量或按需获取封面元数据的流程（CoverScraperService + 批量任务管理器 + 来源聚合），仅覆写 coverUri/coverSource 等封面字段。
+为游戏库批量或按需获取封面元数据的流程；以既有的手工条目绑定为先，仅在绑定缺失时以刮削结果补全。
 _Avoid_: 下载封面、封面更新
 
 **手动绑定（Bind Candidate）**:
-用户从候选封面中选择并落库单游戏封面的动作；VNDB 候选同时携带 vndbId / metadataTitle（未萌NextMoe 候选命中 VNDB ref 时同样携带）。
+用户从候选搜索结果中选择并确认某作品为游戏关联封面与远端条目的动作；按来源携带对应作品标识与元数据标题。
 _Avoid_: 选封面、替换
 
 **两级封面选择（Cover Drill-down）**:
 部分来源（未萌NextMoe）一个作品有多张封面时，先在作品候选列表选中作品、再从可获取的封面中挑选的流程；不支持该流程的来源点选候选即直接绑定。
 _Avoid_: 二段选择、多图选择
+
+## 游玩状态
+
+**条目绑定（Entry Binding）**:
+把游戏库条目关联到远端作品条目的持久化关系（覆盖 VNDB / Bangumi / Hikarinagi / 未萌NextMoe）。手工绑定由用户搜索后显式确认；批量刮削仅在对应来源尚无绑定时按首条命中自动补全。
+_Avoid_: 关联、绑定（泛指 UI 控件绑定）
+
+**游玩状态（同步）（Play Status Sync）**:
+用户手动触发的远端游玩状态操作：对 VNDB、Hikarinagi、未萌NextMoe 与 Bangumi 四源均支持远端状态回读与显式写入（Bangumi 经 `GET /v0/users/{username}/collections/{subject_id}` 单条收藏读回，404 归一「未收藏」，读 401/403 与写路径分位处理；条目绑定四源共用）。
+_Avoid_: 进度同步（各站均无逐章进度概念）、成就同步
 
 **封面缓存（CoverImageCache / CoverThumbnailLoader）**:
 封面缩略图的内存 + 磁盘持久化缓存与受限并发解码器；滚动感知解码配合批量回填避免滑动卡顿。
@@ -390,7 +404,7 @@ _Avoid_: 液态玻璃 2.0、增强玻璃
 _Avoid_: FAB 导航、悬浮菜单
 
 **主界面常驻组合**:
-主界面可见 Tab（首页 / 游戏 / 引擎 / 设置；关闭「显示首页」后为三页）保留组合与列表状态；增强档按方向水平弹簧切换、淡化并带轻微景深，普通档保留原补间。增强档在允许隐藏绘制的 Compose 页完全离屏后跳过正文绘制，网页首页等需保持绘制的宿主例外；切换期间未停稳的页面不接收触摸与无障碍操作。
+主界面可见 Tab（首页 / 游戏 / 引擎 / 工具 / 设置；关闭「显示首页」后为四页）保留组合与列表状态；增强档按方向水平弹簧切换、淡化并带轻微景深，普通档保留原补间。增强档在允许隐藏绘制的 Compose 页完全离屏后跳过正文绘制，网页首页等需保持绘制的宿主例外；切换期间未停稳的页面不接收触摸与无障碍操作。
 _Avoid_: 懒加载页、Fragment
 
 **界面动效档**:

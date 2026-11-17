@@ -252,7 +252,7 @@ object EngineScanner {
         }
     }
 
-    private fun mergeScannedGame(
+    internal fun mergeScannedGame(
         current: ScanGame,
         saved: ScanGame,
         allowedModules: Set<String>,
@@ -273,6 +273,9 @@ object EngineScanner {
                     previous.coverUri == null || previous.coverUri == current.coverUri
                 },
             vndbId = previous.vndbId,
+            bangumiId = previous.bangumiId,
+            hikarinagiId = previous.hikarinagiId,
+            nextmoeId = previous.nextmoeId,
             metadataTitle = previous.metadataTitle,
             externalModuleAlias = previous.externalModuleAlias ?: current.externalModuleAlias,
             runtimeModulePackage = if (current.engine == EngineType.RUNTIME_MODULE) {
@@ -924,8 +927,7 @@ object EngineScanner {
     /**
      * 目录识别（SAF 适配器）。[runtimeModules] 缺省空索引，保证既有调用/测试不必改签名。
      *
-     * 内置强特征优先：只有内置结果为 [EngineType.UNKNOWN] / [EngineType.WEB_OTHER] 时才尝试
-     * 第三方模块声明的扫描特征；子项只取一次，匹配失败不会产生额外 SAF 往返。
+     * 优先匹配第三方模块，未命中时再执行内置识别；两者复用本级目录子项。
      */
     fun detectEngine(
         context: Context,
@@ -934,7 +936,17 @@ object EngineScanner {
     ): Detection {
         if (!dir.isDirectory) return UNKNOWN_DETECTION
         val children = dir.listFiles()
-        val builtIn = detectEngine(
+        matchRuntimeModule(
+            entries = children.map { RuntimeModuleEntry(it.name.orEmpty(), it.isDirectory) },
+            childrenOf = { entry ->
+                children.firstOrNull { it.isDirectory && it.name.orEmpty() == entry.name }
+                    ?.listFiles()
+                    ?.map { RuntimeModuleEntry(it.name.orEmpty(), it.isDirectory) }
+                    .orEmpty()
+            },
+            runtimeModules = runtimeModules,
+        )?.let { return it }
+        return detectEngine(
             children = children.asIterable(),
             nameOf = { it.name.orEmpty() },
             isDirectory = { it.isDirectory },
@@ -952,20 +964,9 @@ object EngineScanner {
             },
             sizeOf = { it.length().takeIf { size -> size > 0 } },
         )
-        return applyRuntimeModules(
-            builtIn = builtIn,
-            entries = children.map { RuntimeModuleEntry(it.name.orEmpty(), it.isDirectory) },
-            childrenOf = { entry ->
-                children.firstOrNull { it.isDirectory && it.name.orEmpty() == entry.name }
-                    ?.listFiles()
-                    ?.map { RuntimeModuleEntry(it.name.orEmpty(), it.isDirectory) }
-                    .orEmpty()
-            },
-            runtimeModules = runtimeModules,
-        )
     }
 
-    /** 目录识别（真实路径）。[runtimeModules] 缺省空索引，仅弱结果（UNKNOWN/WEB_OTHER）才会被模块覆盖。 */
+    /** 目录识别（真实路径）。[runtimeModules] 缺省空索引，第三方模块优先，未命中时使用内置识别。 */
     fun detectEngine(dir: File, runtimeModules: RuntimeModuleIndex = RuntimeModuleIndex.EMPTY): Detection {
         if (!dir.isDirectory) return UNKNOWN_DETECTION
         return detectEngine(dir, FileScanSession(), runtimeModules)
@@ -977,16 +978,7 @@ object EngineScanner {
         runtimeModules: RuntimeModuleIndex = RuntimeModuleIndex.EMPTY,
     ): Detection {
         val children = session.children(dir)
-        val builtIn = detectEngine(
-            children = children.asIterable(),
-            nameOf = { it.name },
-            isDirectory = { it.isDirectory },
-            childrenOf = { session.children(it).asIterable() },
-            headOf = { session.readHead(it) },
-            sizeOf = { it.length() },
-        )
-        return applyRuntimeModules(
-            builtIn = builtIn,
+        matchRuntimeModule(
             entries = children.map { RuntimeModuleEntry(it.name, it.isDirectory) },
             childrenOf = { entry ->
                 children.firstOrNull { it.isDirectory && it.name == entry.name }
@@ -995,6 +987,14 @@ object EngineScanner {
                     .orEmpty()
             },
             runtimeModules = runtimeModules,
+        )?.let { return it }
+        return detectEngine(
+            children = children.asIterable(),
+            nameOf = { it.name },
+            isDirectory = { it.isDirectory },
+            childrenOf = { session.children(it).asIterable() },
+            headOf = { session.readHead(it) },
+            sizeOf = { it.length() },
         )
     }
 
@@ -1004,16 +1004,7 @@ object EngineScanner {
         headOf: (SafNode) -> ByteArray?,
         runtimeModules: RuntimeModuleIndex = RuntimeModuleIndex.EMPTY,
     ): Detection {
-        val builtIn = detectEngine(
-            children = children,
-            nameOf = { it.name },
-            isDirectory = { it.isDirectory },
-            childrenOf = childrenOf,
-            headOf = headOf,
-            sizeOf = { it.size },
-        )
-        return applyRuntimeModules(
-            builtIn = builtIn,
+        matchRuntimeModule(
             entries = children.map { RuntimeModuleEntry(it.name, it.isDirectory) },
             childrenOf = { entry ->
                 children.firstOrNull { it.isDirectory && it.name == entry.name }
@@ -1022,25 +1013,30 @@ object EngineScanner {
                     .orEmpty()
             },
             runtimeModules = runtimeModules,
+        )?.let { return it }
+        return detectEngine(
+            children = children,
+            nameOf = { it.name },
+            isDirectory = { it.isDirectory },
+            childrenOf = childrenOf,
+            headOf = headOf,
+            sizeOf = { it.size },
         )
     }
 
     /**
-     * 第三方运行时模块的弱结果分流：内置强特征（KRKR / ONS / RPGM / Ren'Py 等）不被覆盖，
-     * 只有 [EngineType.UNKNOWN] 与 [EngineType.WEB_OTHER] 才尝试模块声明的扫描特征。
+     * 第三方运行时模块优先匹配；无命中时由调用方继续执行内置识别。
      * 命中时统一以 [EngineType.RUNTIME_MODULE] + 文件夹路径启动，并记录模块包名。
      */
-    private fun applyRuntimeModules(
-        builtIn: Detection,
+    private fun matchRuntimeModule(
         entries: List<RuntimeModuleEntry>,
         childrenOf: (RuntimeModuleEntry) -> List<RuntimeModuleEntry>,
         runtimeModules: RuntimeModuleIndex,
-    ): Detection {
-        if (runtimeModules.modules.isEmpty()) return builtIn
-        if (builtIn.engine != EngineType.UNKNOWN && builtIn.engine != EngineType.WEB_OTHER) return builtIn
+    ): Detection? {
+        if (runtimeModules.modules.isEmpty()) return null
         // 主机 ROM / 散装 SWF 目录必须交给 romGamesForSaf/File 逐文件入库，不能被模块扩展名吞掉。
-        if (entries.any { !it.isDirectory && romEngineOf(it.name) != null }) return builtIn
-        val module = runtimeModules.match(entries, childrenOf) ?: return builtIn
+        if (entries.any { !it.isDirectory && romEngineOf(it.name) != null }) return null
+        val module = runtimeModules.match(entries, childrenOf) ?: return null
         return Detection(
             engine = EngineType.RUNTIME_MODULE,
             confidence = 80,
