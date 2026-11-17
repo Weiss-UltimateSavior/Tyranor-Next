@@ -19,6 +19,7 @@
     <string name="nav_home">首页</string>
     <string name="nav_games">游戏</string>
     <string name="nav_engine">引擎</string>
+    <string name="nav_tools">工具</string>
     <string name="nav_settings">设置</string>
     <string name="nav_floating_expand">展开导航</string>
     <string name="nav_floating_collapse">收起导航</string>

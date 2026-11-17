@@ -56,7 +56,7 @@ data class MainLibraryUiState(
 )
 
 /**
- * MainActivity 四个 Tab 共用的游戏库状态。
+ * MainActivity 主标签页 共用的游戏库状态。
  *
  * 页面只持有搜索词、弹窗等瞬时 UI 状态；持久数据统一进入一个 FIFO 队列并在 IO dispatcher
  * 处理，避免组合期磁盘读取、离页取消后台任务，以及快速操作时后发写入被先发任务覆盖。

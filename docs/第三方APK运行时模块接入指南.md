@@ -224,7 +224,7 @@ class LaunchActivity : Activity() {
 ## 4. 启用、扫描、入库
 
 1. 安装模块 APK。
-2. 主 App 侧边栏「妙妙工具 → 引擎模块管理」出现该模块，**默认关闭**。
+2. 主 App 「工具 → 引擎模块管理」出现该模块，**默认关闭**。
 3. 用户打开开关：只写入启用状态，**不自动扫描、不立即入库**。
 4. 用户回游戏页手动扫描：只有已启用 + 有扫描描述的模块参与。
 5. 识别到的目录以 `EngineType.RUNTIME_MODULE` 入库，游戏卡引擎名显示 **Plugin**。
@@ -348,7 +348,7 @@ Intent("com.tyranor.runtime.action.LAUNCH").apply {
 ### 7.2 自测步骤
 
 1. 安装主 App 和模块 APK。
-2. 打开「妙妙工具 → 引擎模块管理」，确认模块被发现，开关默认关闭。
+2. 打开「工具 → 引擎模块管理」，确认模块被发现，开关默认关闭。
 3. 打开开关；确认没有自动扫描、游戏数仍为 0。
 4. 回游戏页手动扫描；确认假游戏入库，卡片引擎名显示 `Plugin`。
 5. 启动游戏；确认模块收到正确的 `FOLDER_PATH`、`GAME_TITLE`、`PROTOCOL_VERSION`。
@@ -492,4 +492,4 @@ val vsync = values?.opt("vsync") as? Boolean ?: true
 - 内部设计：[第三方APK运行时模块接入方案.md](第三方APK运行时模块接入方案.md)
 - 当前行为边界：[SPEC.md](../SPEC.md)
 - 术语：[CONTEXT.md](../CONTEXT.md)
-- 主 App 的模块管理入口：侧边栏「妙妙工具 → 引擎模块管理」
+- 主 App 的模块管理入口：「工具 → 引擎模块管理」

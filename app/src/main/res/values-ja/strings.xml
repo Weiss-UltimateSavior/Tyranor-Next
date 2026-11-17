@@ -19,6 +19,7 @@
     <string name="nav_home">ホーム</string>
     <string name="nav_games">ゲーム</string>
     <string name="nav_engine">エンジン</string>
+    <string name="nav_tools">ツール</string>
     <string name="nav_settings">設定</string>
     <string name="nav_floating_expand">ナビゲーションを展開</string>
     <string name="nav_floating_collapse">ナビゲーションを折りたたむ</string>
