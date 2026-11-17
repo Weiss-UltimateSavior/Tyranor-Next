@@ -454,20 +454,27 @@ object EngineLauncher {
         defaultModule?.let { defaultModule ->
             // 游戏自带的 script_version 比媒体库里的扫描记录更新（旧版扫描会把 8.6 游戏记成 8.x 默认值）；
             // 读不到（如尚未授予所有文件访问）时沿用扫描记录。
-            val detectedRenpyVersion = if (game.engine == EngineType.RENPY) {
-                path?.let { RenPyVersionDetector.detectFromScriptVersion(File(it)) } ?: game.detectedRenpyVersion
+            val scriptRenpyVersion = if (game.engine == EngineType.RENPY) {
+                path?.let { RenPyVersionDetector.detectFromScriptVersion(File(it)) }
             } else {
-                game.detectedRenpyVersion
+                null
             }
+            val configuredRenpyVersion = if (game.engine == EngineType.RENPY) settings.renpyVersion else null
             val module = ExternalEngineModuleRegistry.resolveModule(
                 game.engine,
-                if (game.engine == EngineType.RENPY) settings.renpyVersion else null,
-                detectedRenpyVersion = detectedRenpyVersion,
+                configuredRenpyVersion,
+                detectedRenpyVersion = scriptRenpyVersion ?: game.detectedRenpyVersion,
             ) ?: defaultModule
             // 先确认模块已安装，再走目录/权限门禁：否则未安装时会把用户先送去「所有文件访问」，
             // 真正的缺失原因（应安装模块）反而看不到。
-            ExternalEngineLauncher.checkInstallation(context, module)?.let {
-                return LaunchResult.Failure.ExternalModuleFailed(it)
+            ExternalEngineLauncher.checkInstallation(context, module)?.let { missing ->
+                // 例外：Ren'Py 自动选版本却读不到 script_version 时，所选模块来自可能过期的扫描记录
+                // （如只装了 8.6 运行时、库里仍记成 8.5 的游戏）。先申请权限，授权后再次启动会重新读取版本。
+                val versionUnverified = renpyModuleChoiceUnverified(game.engine, configuredRenpyVersion, scriptRenpyVersion)
+                if (versionUnverified && module.requiresGameDirectoryPath && path != null) {
+                    requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
+                }
+                return LaunchResult.Failure.ExternalModuleFailed(missing)
             }
             if (module.requiresGameDirectoryPath && path == null) {
                 return LaunchResult.Failure.GameDirUnresolved
@@ -3005,3 +3012,15 @@ internal fun effectiveRpgMakerModEnabled(
     perGameOverride: Boolean?,
     globalDefault: Boolean,
 ): Boolean = EffectiveEngineSettings.resolveRpgMakerModEnabled(engine, perGameOverride, globalDefault)
+
+/**
+ * Ren'Py 自动选版本、却没读到游戏的 script_version 时，所选模块只来自扫描记录，可能已过期。
+ * 此时模块缺失不一定是真缺失，启动流程应先申请所有文件访问，授权后再次启动会重新读取版本。
+ */
+internal fun renpyModuleChoiceUnverified(
+    engine: EngineType,
+    configuredRenpyVersion: String?,
+    scriptRenpyVersion: String?,
+): Boolean = engine == EngineType.RENPY &&
+    scriptRenpyVersion == null &&
+    ExternalEngineModuleRegistry.moduleForRenpyVersion(configuredRenpyVersion) == null
