@@ -42,7 +42,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -177,7 +176,7 @@ fun SettingsScreen(
     // 已知行为：以下更新弹窗状态均为 remember 持有，Activity 重建（旋转/语言切换）会丢失并静默取消下载；
     // 更新检查是低频操作，接受该取舍，未上 ViewModel 持久化。
     var checkingUpdate by remember { mutableStateOf(false) }
-    val hasUpdate by GitHubUpdateChecker.hasUpdate.collectAsState()
+    val hasUpdate by GitHubUpdateChecker.hasUpdate.collectAsStateWithLifecycle()
     var updateAvailable by remember { mutableStateOf<UpdateCheckResult.UpdateAvailable?>(null) }
     var activeCandidate by remember { mutableStateOf<UpdateCandidate?>(null) }
     var updateDownloadPhase by remember { mutableStateOf<UpdateDownloadPhase?>(null) }
@@ -209,15 +208,19 @@ fun SettingsScreen(
     }
     val dirPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri?.let { u ->
-            runCatching {
-                ctx.contentResolver.takePersistableUriPermission(
-                    u,
-                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                        android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-                )
+            scope.launch {
+                val roots = withContext(Dispatchers.IO) {
+                    runCatching {
+                        ctx.contentResolver.takePersistableUriPermission(
+                            u,
+                            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                        )
+                    }
+                    GameLibraryFacade.saveRoot(ctx, u)
+                }
+                scanDirs = roots
             }
-            GameLibraryFacade.saveRoot(ctx, u)
-            scanDirs = GameLibraryFacade.loadRoots(ctx)
         }
     }
 
@@ -593,26 +596,36 @@ fun SettingsScreen(
         val allFilesAccessMsg = stringResource(R.string.settings_all_files_access_required)
         // 路径校验失败次数：每 +1 输入框左右抖一下（与 Toast 同时出现）
         var pathRejects by remember { mutableIntStateOf(0) }
+        var savingPath by remember { mutableStateOf(false) }
         val savePath: () -> Unit = {
-            scope.launch {
-                val trimmed = pathInput.trim()
-                val target = File(trimmed)
-                // 仅绝对路径且为有效目录才允许保存；磁盘 IO 放到 Dispatchers.IO（同本文件 :265-269 约定）。
-                val ok = target.isAbsolute &&
-                    withContext(Dispatchers.IO) { runCatching { target.isDirectory }.getOrDefault(false) }
-                if (!ok) {
-                    pathRejects++
-                    AppNotice.makeText(ctx, pathInvalidMsg, Toast.LENGTH_SHORT, AppNotice.Kind.Failure).show()
-                    return@launch
+            if (!savingPath) {
+                savingPath = true
+                scope.launch {
+                    try {
+                        val trimmed = pathInput.trim()
+                        val target = File(trimmed)
+                        // 仅绝对路径且为有效目录才允许保存；磁盘 IO 放到 Dispatchers.IO（同本文件 :265-269 约定）。
+                        val ok = target.isAbsolute &&
+                            withContext(Dispatchers.IO) { runCatching { target.isDirectory }.getOrDefault(false) }
+                        if (!ok) {
+                            pathRejects++
+                            AppNotice.makeText(ctx, pathInvalidMsg, Toast.LENGTH_SHORT, AppNotice.Kind.Failure).show()
+                            return@launch
+                        }
+                        // /storage 等共享存储路径需“管理所有文件”权限，否则扫描会静默为空；先引导授权，不落盘。
+                        if (guideAllFilesAccessIfNeeded(ctx, target.absolutePath)) {
+                            AppNotice.makeText(ctx, allFilesAccessMsg, Toast.LENGTH_SHORT, AppNotice.Kind.Limit).show()
+                            return@launch
+                        }
+                        withContext(Dispatchers.IO) {
+                            GameLibraryFacade.saveRoot(ctx, target.absolutePath)
+                        }
+                        showPathDialog = false
+                        pathInput = ""
+                    } finally {
+                        savingPath = false
+                    }
                 }
-                // /storage 等共享存储路径需“管理所有文件”权限，否则扫描会静默为空；先引导授权，不落盘。
-                if (guideAllFilesAccessIfNeeded(ctx, target.absolutePath)) {
-                    AppNotice.makeText(ctx, allFilesAccessMsg, Toast.LENGTH_SHORT, AppNotice.Kind.Limit).show()
-                    return@launch
-                }
-                GameLibraryFacade.saveRoot(ctx, target.absolutePath)
-                showPathDialog = false
-                pathInput = ""
             }
         }
         AppAlertDialog(
