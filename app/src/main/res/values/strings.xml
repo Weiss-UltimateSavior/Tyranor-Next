@@ -701,7 +701,6 @@
     <string name="external_ruffle_resolve_swf_failed">无法定位 SWF 启动文件，Ruffle 模块无法启动</string>
     <string name="external_impacto_module_name">MAGES.</string>
     <string name="external_impacto_profile_unresolved">无法确认该目录对应的 MAGES. 游戏配置，无法启动</string>
-    <string name="engine_settings_impacto_hint">暂无可调选项。游戏由独立的 Impacto 宿主 APK 运行（impacto 是重新实现 MAGES. 引擎的开源项目）；存档位于该宿主的私有数据目录，本应用无法管理。</string>
     <string name="external_rpgm_resolve_dir_failed">无法解析 RPGM 游戏目录真实路径，外置 RPGM 模块无法启动</string>
 
     <string name="engine_settings_rpgm_module_card">RPG Maker RGSS 外置模块</string>
@@ -804,6 +803,32 @@
     <string name="engine_settings_ruffle_screen_timeout_off">不自动关闭</string>
     <string name="engine_settings_ruffle_screen_timeout_minutes">%1$d 分钟</string>
     <string name="engine_settings_ruffle_note">SWF 记录指向文件时会自动取其所在目录启动；启动前需要为本应用授予「所有文件访问」权限以解析游戏目录，Ruffle 插件可能另行申请自身存储权限。插件固定横屏显示；自动关闭设为 0 表示不自动关闭。</string>
+    <string name="engine_settings_impacto_title">MAGES.引擎设置</string>
+    <string name="engine_settings_impacto_card">MAGES. 外置模块</string>
+    <string name="engine_settings_impacto_module_status">模块状态</string>
+    <string name="engine_settings_impacto_module_get">下载模块</string>
+    <string name="engine_settings_impacto_card_play">操作与显示</string>
+    <string name="engine_settings_impacto_swap_confirm_cancel">交换确认 / 取消键</string>
+    <string name="engine_settings_impacto_vsync">垂直同步</string>
+    <string name="engine_settings_impacto_card_video">影片与字幕</string>
+    <string name="engine_settings_impacto_video_playback">播放影片</string>
+    <string name="engine_settings_impacto_subtitles">影片字幕</string>
+    <string name="engine_settings_impacto_subtitles_all">全部</string>
+    <string name="engine_settings_impacto_subtitles_translation">仅翻译</string>
+    <string name="engine_settings_impacto_subtitles_karaoke">仅卡拉 OK 歌词</string>
+    <string name="engine_settings_impacto_card_other">阅读与诊断</string>
+    <string name="engine_settings_impacto_close_backlog">回看记录滚到底时自动关闭</string>
+    <string name="engine_settings_impacto_delusion_mouse">妄想触发：鼠标 / 触摸操作（仅 Chaos;Head 与 Chaos;Child 的 Love Chu Chu 版）</string>
+    <string name="engine_settings_impacto_log_level">日志等级</string>
+    <string name="engine_settings_impacto_log_off">关闭</string>
+    <string name="engine_settings_impacto_log_fatal">致命</string>
+    <string name="engine_settings_impacto_log_error">错误</string>
+    <string name="engine_settings_impacto_log_warning">警告</string>
+    <string name="engine_settings_impacto_log_info">信息</string>
+    <string name="engine_settings_impacto_log_debug">调试</string>
+    <string name="engine_settings_impacto_log_trace">跟踪</string>
+    <string name="engine_settings_impacto_note">这些设置会在每次启动游戏时写入引擎配置，并覆盖引擎内置设置页里的同名项；分辨率、显示模式、渲染器和音频后端在 Android 上由系统与宿主固定，不提供。需要宿主 0.1.2 及以上。</string>
+    <string name="engine_settings_impacto_module_description">MAGES. 引擎由独立的 Impacto 宿主 APK 运行（impacto 是重新实现 MAGES. 引擎的开源项目），以下设置默认跟随全局；存档位于该宿主的私有数据目录，本应用无法管理。</string>
 
     <string name="plugin_unknown_engine">未知引擎插件：%1$s</string>
     <string name="plugin_install_failed">引擎插件安装失败，请重启应用或检查安装包完整性</string>

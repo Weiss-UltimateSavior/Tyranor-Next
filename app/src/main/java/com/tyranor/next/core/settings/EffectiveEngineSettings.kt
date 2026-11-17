@@ -204,6 +204,30 @@ object EffectiveEngineSettings {
     }
 
     /**
+     * MAGES.（impacto）宿主全局设置 + 单游戏覆盖合并：布尔字段 null 跟随全局；
+     * 日志等级经白名单校验，非法覆盖回退全局（全局也非法时回退默认 warning）。
+     */
+    fun mergeImpacto(
+        global: EngineSettingsStore.Impacto,
+        override: ImpactoOverride?,
+    ): EngineSettingsStore.Impacto {
+        if (override == null) return global
+        return global.copy(
+            swapConfirmCancel = resolveBool(override.swapConfirmCancel, global.swapConfirmCancel),
+            vsync = resolveBool(override.vsync, global.vsync),
+            videoPlayback = resolveBool(override.videoPlayback, global.videoPlayback),
+            subtitles = override.subtitles?.trim()?.lowercase(java.util.Locale.ROOT)
+                ?.takeIf { it in EngineSettingsStore.IMPACTO_SUBTITLES }
+                ?: EngineSettingsStore.normalizeImpactoSubtitles(global.subtitles),
+            closeBacklogAtEnd = resolveBool(override.closeBacklogAtEnd, global.closeBacklogAtEnd),
+            delusionMouse = resolveBool(override.delusionMouse, global.delusionMouse),
+            logLevel = override.logLevel?.trim()?.lowercase(java.util.Locale.ROOT)
+                ?.takeIf { it in EngineSettingsStore.IMPACTO_LOG_LEVELS }
+                ?: EngineSettingsStore.normalizeImpactoLogLevel(global.logLevel),
+        )
+    }
+
+    /**
      * Web 壳端口三级合并：单游戏覆盖值合法（1..65535）时优先，否则回退全局生效值。
      */
     fun resolveWebShellPort(override: String?, global: Int): Int =
@@ -312,6 +336,17 @@ data class RuffleOverride(
     val scaleMode: String? = null,
     val letterbox: String? = null,
     val loadBehavior: String? = null,
+)
+
+/** MAGES.（impacto）宿主单游戏覆盖字段（null = 跟随全局）。 */
+data class ImpactoOverride(
+    val swapConfirmCancel: Boolean? = null,
+    val vsync: Boolean? = null,
+    val videoPlayback: Boolean? = null,
+    val subtitles: String? = null,
+    val closeBacklogAtEnd: Boolean? = null,
+    val delusionMouse: Boolean? = null,
+    val logLevel: String? = null,
 )
 
 /** ONS 单游戏覆盖字段（null = 跟随全局）。 */

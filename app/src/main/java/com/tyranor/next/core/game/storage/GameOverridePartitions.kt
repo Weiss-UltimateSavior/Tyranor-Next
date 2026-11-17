@@ -125,6 +125,14 @@ internal object GameOverridePartitions {
     const val KEY_RUFFLE_SCALE_MODE = "ruffle_scale_mode"
     const val KEY_RUFFLE_LETTERBOX = "ruffle_letterbox"
     const val KEY_RUFFLE_LOAD_BEHAVIOR = "ruffle_load_behavior"
+    // MAGES.（impacto）宿主配置覆盖键（与 PerGameSettingsStore.F_IMPACTO_*、EngineSettingsStore.KEY_IMPACTO_* 字面量锚定）
+    const val KEY_IMPACTO_SWAP_CONFIRM_CANCEL = "impacto_swap_confirm_cancel"
+    const val KEY_IMPACTO_VSYNC = "impacto_vsync"
+    const val KEY_IMPACTO_VIDEO_PLAYBACK = "impacto_video_playback"
+    const val KEY_IMPACTO_SUBTITLES = "impacto_subtitles"
+    const val KEY_IMPACTO_CLOSE_BACKLOG_AT_END = "impacto_close_backlog_at_end"
+    const val KEY_IMPACTO_DELUSION_MOUSE = "impacto_delusion_mouse"
+    const val KEY_IMPACTO_LOG_LEVEL = "impacto_log_level"
     const val ONS_OBJECT_KEY = "ons"
     const val KEY_RUNTIME_MODULE_SETTINGS = "runtime_module_settings"
 
@@ -178,6 +186,9 @@ internal object GameOverridePartitions {
         KEY_XSYS4_JOYPAD, KEY_XSYS4_MSGSKIP_DELAY,
         KEY_RUFFLE_SCREEN_TIMEOUT, KEY_RUFFLE_BACKEND, KEY_RUFFLE_QUALITY,
         KEY_RUFFLE_SCALE_MODE, KEY_RUFFLE_LETTERBOX, KEY_RUFFLE_LOAD_BEHAVIOR,
+        KEY_IMPACTO_SWAP_CONFIRM_CANCEL, KEY_IMPACTO_VSYNC, KEY_IMPACTO_VIDEO_PLAYBACK,
+        KEY_IMPACTO_SUBTITLES,
+        KEY_IMPACTO_CLOSE_BACKLOG_AT_END, KEY_IMPACTO_DELUSION_MOUSE, KEY_IMPACTO_LOG_LEVEL,
     )
     // Ren'Py 分区：版本选择 + 外置模块配置，显式建模防止未来收紧分区时丢键
     val RENPY_KEYS: Set<String> = setOf(

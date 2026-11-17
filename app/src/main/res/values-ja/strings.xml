@@ -701,7 +701,6 @@
     <string name="external_ruffle_resolve_swf_failed">SWF 起動ファイルを特定できないため、Ruffle モジュールを起動できません</string>
     <string name="external_impacto_module_name">MAGES.</string>
     <string name="external_impacto_profile_unresolved">このフォルダに対応する MAGES. のゲーム設定を特定できないため、起動できません</string>
-    <string name="engine_settings_impacto_hint">調整できる項目はまだありません。ゲームは別の Impacto ホスト APK（MAGES. エンジンのオープンソース再実装 impacto）で動作し、セーブデータはそのホストの専用フォルダに保存されるため、このアプリでは管理できません。</string>
     <string name="external_rpgm_resolve_dir_failed">RPGM ゲームフォルダ実パスを解析できないため、外部 RPGM モジュールを起動できません</string>
 
     <string name="engine_settings_rpgm_module_card">RPG Maker RGSS モジュール</string>
@@ -804,6 +803,32 @@
     <string name="engine_settings_ruffle_screen_timeout_off">自動終了しない</string>
     <string name="engine_settings_ruffle_screen_timeout_minutes">%1$d 分</string>
     <string name="engine_settings_ruffle_note">SWF がファイルを指す場合は自動的にそのフォルダーから起動します。起動前にゲームフォルダーを解決するため、このアプリへ「すべてのファイルへのアクセス」を許可してください。Ruffle プラグインが別途独自のストレージ権限を要求する場合があります。プラグインは常に横向きで表示されます。自動終了を 0 にすると無効になります。</string>
+    <string name="engine_settings_impacto_title">MAGES. エンジン設定</string>
+    <string name="engine_settings_impacto_card">MAGES. 外部モジュール</string>
+    <string name="engine_settings_impacto_module_status">モジュールの状態</string>
+    <string name="engine_settings_impacto_module_get">モジュールをダウンロード</string>
+    <string name="engine_settings_impacto_card_play">操作と表示</string>
+    <string name="engine_settings_impacto_swap_confirm_cancel">決定 / キャンセルボタンを入れ替え</string>
+    <string name="engine_settings_impacto_vsync">垂直同期</string>
+    <string name="engine_settings_impacto_card_video">ムービーと字幕</string>
+    <string name="engine_settings_impacto_video_playback">ムービーを再生</string>
+    <string name="engine_settings_impacto_subtitles">ムービー字幕</string>
+    <string name="engine_settings_impacto_subtitles_all">すべて</string>
+    <string name="engine_settings_impacto_subtitles_translation">翻訳のみ</string>
+    <string name="engine_settings_impacto_subtitles_karaoke">カラオケ歌詞のみ</string>
+    <string name="engine_settings_impacto_card_other">閲覧と診断</string>
+    <string name="engine_settings_impacto_close_backlog">バックログが最後までスクロールしたら閉じる</string>
+    <string name="engine_settings_impacto_delusion_mouse">妄想トリガー：マウス / タッチ操作（Chaos;Head と Chaos;Child の Love Chu Chu 版のみ）</string>
+    <string name="engine_settings_impacto_log_level">ログレベル</string>
+    <string name="engine_settings_impacto_log_off">オフ</string>
+    <string name="engine_settings_impacto_log_fatal">致命的</string>
+    <string name="engine_settings_impacto_log_error">エラー</string>
+    <string name="engine_settings_impacto_log_warning">警告</string>
+    <string name="engine_settings_impacto_log_info">情報</string>
+    <string name="engine_settings_impacto_log_debug">デバッグ</string>
+    <string name="engine_settings_impacto_log_trace">トレース</string>
+    <string name="engine_settings_impacto_note">これらの設定はゲームを起動するたびにエンジン設定へ書き込まれ、エンジン内蔵の設定画面の同名項目を上書きします。解像度・表示モード・レンダラー・オーディオバックエンドは Android とホストで固定のため用意していません。ホスト 0.1.2 以降が必要です。</string>
+    <string name="engine_settings_impacto_module_description">MAGES. エンジンは別の Impacto ホスト APK（MAGES. エンジンのオープンソース再実装 impacto）で動作します。以下の設定は既定で全体設定に従います。セーブデータはそのホストの非公開データフォルダーにあり、このアプリでは管理できません。</string>
 
     <string name="plugin_unknown_engine">不明なエンジンプラグイン：%1$s</string>
     <string name="plugin_install_failed">エンジンプラグインのインストールに失敗しました。アプリを再起動するか、インストールパッケージの完全性を確認してください</string>

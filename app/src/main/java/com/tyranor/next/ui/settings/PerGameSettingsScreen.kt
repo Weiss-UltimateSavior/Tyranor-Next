@@ -64,6 +64,8 @@ import com.tyranor.next.core.input.InputRemapRepository
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.EffectiveEngineSettings
 import com.tyranor.next.core.settings.PerGameSettingsStore
+import com.tyranor.next.core.game.scan.ImpactoGameCatalog
+import com.tyranor.next.core.settings.ImpactoOverride
 import com.tyranor.next.core.settings.RenPyOverride
 import com.tyranor.next.core.settings.RpgMakerOverride
 import com.tyranor.next.core.settings.RuffleOverride
@@ -210,6 +212,16 @@ fun PerGameSettingsScreen(game: ScanGame) {
         )
     }
     val ruffle = ruffleOverride ?: RuffleOverride()
+    var impactoOverride by remember(gid) {
+        mutableStateOf(
+            if (game.engine == EngineType.IMPACTO) {
+                PerGameSettingsStore.toImpactoOverride(PerGameSettingsStore.load(ctx, gid))
+            } else {
+                null
+            },
+        )
+    }
+    val impacto = impactoOverride ?: ImpactoOverride()
 
     val onsOverride = remember { mutableStateOf(PerGameSettingsStore.loadOnsOverride(ctx, gid) ?: JSONObject()) }
     var onsScoped by remember { mutableStateOf(onsBool(onsOverride.value, "scopedsavedir")) }
@@ -501,6 +513,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val winlatorBox64PresetMap = winlatorBox64PresetOptionsMap()
     val globalRenpy = remember { EngineSettingsStore.loadRenPy(ctx) }
     val globalRuffle = remember { EngineSettingsStore.loadRuffle(ctx) }
+    val globalImpacto = remember { EngineSettingsStore.loadImpacto(ctx) }
     val globalRpg = remember { EngineSettingsStore.loadRpgMaker(ctx) }
     val rpgWindowMap = rpgWindowSizeOptionsMap()
     val rpgSpeedUpMap = rpgSpeedUpOptionsMap()
@@ -537,6 +550,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val ruffleScaleModeMap = ruffleScaleModeOptionsMap()
     val ruffleLoadBehaviorMap = ruffleLoadBehaviorOptionsMap()
     val ruffleScreenTimeoutMap = ruffleScreenTimeoutOptionsMap()
+    val impactoLogLevelMap = impactoLogLevelOptionsMap()
+    val impactoSubtitlesMap = impactoSubtitlesOptionsMap()
     val engineDefault = stringResource(R.string.engine_option_engine_default)
     val builtinFont = stringResource(R.string.engine_settings_builtin_font)
     val auto = stringResource(R.string.common_auto)
@@ -759,6 +774,26 @@ fun PerGameSettingsScreen(game: ScanGame) {
                 gid,
                 PerGameSettingsStore.F_RUFFLE_LOAD_BEHAVIOR,
                 ruffle.loadBehavior?.takeIf { it in EngineSettingsStore.RUFFLE_LOAD_BEHAVIORS },
+            )
+        }
+        // MAGES. 覆盖同理只写 MAGES. 游戏，避免 impacto_* 键进入其它游戏的覆盖 blob。
+        if (game.engine == EngineType.IMPACTO) {
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_IMPACTO_SWAP_CONFIRM_CANCEL, impacto.swapConfirmCancel)
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_IMPACTO_VSYNC, impacto.vsync)
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_IMPACTO_VIDEO_PLAYBACK, impacto.videoPlayback)
+            PerGameSettingsStore.setStr(
+                ctx,
+                gid,
+                PerGameSettingsStore.F_IMPACTO_SUBTITLES,
+                impacto.subtitles?.takeIf { it in EngineSettingsStore.IMPACTO_SUBTITLES },
+            )
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_IMPACTO_CLOSE_BACKLOG_AT_END, impacto.closeBacklogAtEnd)
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_IMPACTO_DELUSION_MOUSE, impacto.delusionMouse)
+            PerGameSettingsStore.setStr(
+                ctx,
+                gid,
+                PerGameSettingsStore.F_IMPACTO_LOG_LEVEL,
+                impacto.logLevel?.takeIf { it in EngineSettingsStore.IMPACTO_LOG_LEVELS },
             )
         }
     }
@@ -1621,8 +1656,48 @@ fun PerGameSettingsScreen(game: ScanGame) {
                     }
                     EngineType.IMPACTO -> item {
                         SectionCard(game.engine.displayName) {
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_impacto_swap_confirm_cancel),
+                                globalImpacto.swapConfirmCancel,
+                                impacto.swapConfirmCancel,
+                            ) { impactoOverride = impacto.copy(swapConfirmCancel = it) }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_impacto_vsync),
+                                globalImpacto.vsync,
+                                impacto.vsync,
+                            ) { impactoOverride = impacto.copy(vsync = it) }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_impacto_video_playback),
+                                globalImpacto.videoPlayback,
+                                impacto.videoPlayback,
+                            ) { impactoOverride = impacto.copy(videoPlayback = it) }
+                            OverrideChoice(
+                                stringResource(R.string.engine_settings_impacto_subtitles),
+                                impactoSubtitlesMap,
+                                globalImpacto.subtitles,
+                                impacto.subtitles,
+                            ) { impactoOverride = impacto.copy(subtitles = it) }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_impacto_close_backlog),
+                                globalImpacto.closeBacklogAtEnd,
+                                impacto.closeBacklogAtEnd,
+                            ) { impactoOverride = impacto.copy(closeBacklogAtEnd = it) }
+                            // 妄想触发的鼠标 / 触摸支持只存在于 Chaos;Head / Chaos;Child 两个 profile
+                            if (game.launchTarget in ImpactoGameCatalog.DELUSION_PROFILES) {
+                                OverrideSwitch(
+                                    stringResource(R.string.engine_settings_impacto_delusion_mouse),
+                                    globalImpacto.delusionMouse,
+                                    impacto.delusionMouse,
+                                ) { impactoOverride = impacto.copy(delusionMouse = it) }
+                            }
+                            OverrideChoice(
+                                stringResource(R.string.engine_settings_impacto_log_level),
+                                impactoLogLevelMap,
+                                globalImpacto.logLevel,
+                                impacto.logLevel,
+                            ) { impactoOverride = impacto.copy(logLevel = it) }
                             Text(
-                                stringResource(R.string.engine_settings_impacto_hint),
+                                stringResource(R.string.engine_settings_impacto_module_description),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),

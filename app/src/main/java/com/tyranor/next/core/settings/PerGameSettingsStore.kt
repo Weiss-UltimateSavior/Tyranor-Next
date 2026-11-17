@@ -182,6 +182,14 @@ object PerGameSettingsStore {
     const val F_RUFFLE_SCALE_MODE = "ruffle_scale_mode"
     const val F_RUFFLE_LETTERBOX = "ruffle_letterbox"
     const val F_RUFFLE_LOAD_BEHAVIOR = "ruffle_load_behavior"
+    // MAGES.（impacto）宿主配置覆盖（与全局键同名；null=跟随全局）
+    const val F_IMPACTO_SWAP_CONFIRM_CANCEL = "impacto_swap_confirm_cancel"
+    const val F_IMPACTO_VSYNC = "impacto_vsync"
+    const val F_IMPACTO_VIDEO_PLAYBACK = "impacto_video_playback"
+    const val F_IMPACTO_SUBTITLES = "impacto_subtitles"
+    const val F_IMPACTO_CLOSE_BACKLOG_AT_END = "impacto_close_backlog_at_end"
+    const val F_IMPACTO_DELUSION_MOUSE = "impacto_delusion_mouse"
+    const val F_IMPACTO_LOG_LEVEL = "impacto_log_level"
 
     // ONS 子对象键
     const val ONS_KEY = "ons"
@@ -388,6 +396,33 @@ object PerGameSettingsStore {
             loadBehavior = strOrNull(F_RUFFLE_LOAD_BEHAVIOR),
         )
         return override.takeIf { it != RuffleOverride() }
+    }
+
+    /**
+     * MAGES.（impacto）宿主覆盖快照 → 类型化模型（缺失字段=跟随全局，
+     * 供 [EffectiveEngineSettings.mergeImpacto] 使用）。日志等级 trim/lowercase 后再比较。
+     */
+    fun toImpactoOverride(json: JSONObject?): ImpactoOverride? {
+        if (json == null) return null
+        fun boolOrNull(key: String): Boolean? = if (json.has(key)) json.optBoolean(key) else null
+        val override = ImpactoOverride(
+            swapConfirmCancel = boolOrNull(F_IMPACTO_SWAP_CONFIRM_CANCEL),
+            vsync = boolOrNull(F_IMPACTO_VSYNC),
+            videoPlayback = boolOrNull(F_IMPACTO_VIDEO_PLAYBACK),
+            subtitles = if (json.has(F_IMPACTO_SUBTITLES)) {
+                json.optString(F_IMPACTO_SUBTITLES).trim().lowercase(Locale.ROOT)
+            } else {
+                null
+            },
+            closeBacklogAtEnd = boolOrNull(F_IMPACTO_CLOSE_BACKLOG_AT_END),
+            delusionMouse = boolOrNull(F_IMPACTO_DELUSION_MOUSE),
+            logLevel = if (json.has(F_IMPACTO_LOG_LEVEL)) {
+                json.optString(F_IMPACTO_LOG_LEVEL).trim().lowercase(Locale.ROOT)
+            } else {
+                null
+            },
+        )
+        return override.takeIf { it != ImpactoOverride() }
     }
 
     /**

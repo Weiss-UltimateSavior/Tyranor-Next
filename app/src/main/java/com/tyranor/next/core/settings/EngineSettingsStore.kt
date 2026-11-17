@@ -126,6 +126,15 @@ object EngineSettingsStore {
     const val KEY_RUFFLE_SCALE_MODE = "ruffle_scale_mode"
     const val KEY_RUFFLE_LETTERBOX = "ruffle_letterbox"
     const val KEY_RUFFLE_LOAD_BEHAVIOR = "ruffle_load_behavior"
+    // MAGES.（impacto）外置宿主的 App prefs 键；与 PerGameSettingsStore.F_IMPACTO_*、
+    // GameOverridePartitions.KEY_IMPACTO_* 字面量锚定（由 ImpactoSettingsKeysTest 约束）
+    const val KEY_IMPACTO_SWAP_CONFIRM_CANCEL = "impacto_swap_confirm_cancel"
+    const val KEY_IMPACTO_VSYNC = "impacto_vsync"
+    const val KEY_IMPACTO_VIDEO_PLAYBACK = "impacto_video_playback"
+    const val KEY_IMPACTO_SUBTITLES = "impacto_subtitles"
+    const val KEY_IMPACTO_CLOSE_BACKLOG_AT_END = "impacto_close_backlog_at_end"
+    const val KEY_IMPACTO_DELUSION_MOUSE = "impacto_delusion_mouse"
+    const val KEY_IMPACTO_LOG_LEVEL = "impacto_log_level"
 
     // Tyrano 与 RPG Maker Web 共用同一套 WebView 宿主设置；启动链路按同一键读取。
     const val KEY_TYRANO_EXTERNAL_NETWORK = "tyrano_external_network"
@@ -303,6 +312,16 @@ object EngineSettingsStore {
     val RUFFLE_SCALE_MODES: Set<String> = linkedSetOf("exactfit", "noborder", "noscale", RUFFLE_SCALE_MODE_SHOW_ALL)
     val RUFFLE_LETTERBOXES: Set<String> = linkedSetOf(RUFFLE_LETTERBOX_ON, "off")
     val RUFFLE_LOAD_BEHAVIORS: Set<String> = linkedSetOf(RUFFLE_LOAD_BEHAVIOR_STREAMING, "delayed", "blocking")
+
+    // MAGES.（impacto）日志等级取值域，对齐上游 LogLevel（off 为关闭；默认 warning）
+    const val IMPACTO_LOG_LEVEL_WARNING = "warning"
+    val IMPACTO_LOG_LEVELS: Set<String> =
+        linkedSetOf("off", "fatal", "error", IMPACTO_LOG_LEVEL_WARNING, "info", "debug", "trace")
+
+    // MAGES.（impacto）影片字幕轨：引擎配置里的 SubtitleConfig 是标志枚举，写成 "Karaoke|Translation" 这样的组合；
+    // “两个都关”没有引擎读得回的写法，所以只提供三档：全部 / 仅翻译 / 仅卡拉 OK。
+    const val IMPACTO_SUBTITLES_ALL = "all"
+    val IMPACTO_SUBTITLES: Set<String> = linkedSetOf(IMPACTO_SUBTITLES_ALL, "translation", "karaoke")
 
     // Siglus 语言取值常量（auto 不设置 SIGLUS_LANGUAGE，保持引擎默认 JP）
     const val SIGLUS_LANGUAGE_AUTO = "auto"
@@ -1312,4 +1331,70 @@ object EngineSettingsStore {
 
     private fun normalizeRuffleAllowed(v: String?, allowed: Set<String>, fallback: String): String =
         v?.trim()?.lowercase(java.util.Locale.ROOT)?.takeIf { it in allowed } ?: fallback
+
+    // ---------- MAGES.（impacto）外置宿主 ----------
+
+    /**
+     * MAGES.（impacto）宿主的配置节。字段对应上游 `userconfig.toml` 里 Android 上有意义的项（默认值与上游一致）：
+     * swapConfirmCancel → CommonSettings.SwapConfirmCancelButtons；vsync → GameSettings.<profile>.UseVSync；
+     * videoPlayback → AdvancedSettings.VideoPlayer（FFmpeg / None）；subtitles →
+     * EnhancementsSettings.SubtitleConfig（影片字幕轨，三档 all / translation / karaoke）；closeBacklogAtEnd → EnhancementsSettings.CloseBacklogWhenReachedEnd；
+     * delusionMouse → EnhancementsSettings.CHLCC / CCLCC.DelusionMousePatch；logLevel → CommonSettings.LogLvl。
+     * 分辨率、显示模式、渲染器与音频后端在 Android 上由系统和宿主固定，不在此列。
+     */
+    data class Impacto(
+        var swapConfirmCancel: Boolean = false,
+        var vsync: Boolean = true,
+        var videoPlayback: Boolean = true,
+        var subtitles: String = IMPACTO_SUBTITLES_ALL,
+        var closeBacklogAtEnd: Boolean = true,
+        var delusionMouse: Boolean = true,
+        var logLevel: String = IMPACTO_LOG_LEVEL_WARNING,
+    )
+
+    private val IMPACTO_BOOL_KEYS = listOf(
+        KEY_IMPACTO_SWAP_CONFIRM_CANCEL, KEY_IMPACTO_VSYNC, KEY_IMPACTO_VIDEO_PLAYBACK,
+        KEY_IMPACTO_CLOSE_BACKLOG_AT_END, KEY_IMPACTO_DELUSION_MOUSE,
+    )
+
+    fun loadImpacto(c: Context): Impacto {
+        val p = prefs(c)
+        val d = Impacto()
+        return Impacto(
+            swapConfirmCancel = p.getBoolean(KEY_IMPACTO_SWAP_CONFIRM_CANCEL, d.swapConfirmCancel),
+            vsync = p.getBoolean(KEY_IMPACTO_VSYNC, d.vsync),
+            videoPlayback = p.getBoolean(KEY_IMPACTO_VIDEO_PLAYBACK, d.videoPlayback),
+            subtitles = normalizeImpactoSubtitles(p.getString(KEY_IMPACTO_SUBTITLES, null)),
+            closeBacklogAtEnd = p.getBoolean(KEY_IMPACTO_CLOSE_BACKLOG_AT_END, d.closeBacklogAtEnd),
+            delusionMouse = p.getBoolean(KEY_IMPACTO_DELUSION_MOUSE, d.delusionMouse),
+            logLevel = normalizeImpactoLogLevel(p.getString(KEY_IMPACTO_LOG_LEVEL, null)),
+        )
+    }
+
+    fun saveImpacto(c: Context, s: Impacto) {
+        prefs(c).edit().apply {
+            putBoolean(KEY_IMPACTO_SWAP_CONFIRM_CANCEL, s.swapConfirmCancel)
+            putBoolean(KEY_IMPACTO_VSYNC, s.vsync)
+            putBoolean(KEY_IMPACTO_VIDEO_PLAYBACK, s.videoPlayback)
+            putString(KEY_IMPACTO_SUBTITLES, normalizeImpactoSubtitles(s.subtitles))
+            putBoolean(KEY_IMPACTO_CLOSE_BACKLOG_AT_END, s.closeBacklogAtEnd)
+            putBoolean(KEY_IMPACTO_DELUSION_MOUSE, s.delusionMouse)
+            putString(KEY_IMPACTO_LOG_LEVEL, normalizeImpactoLogLevel(s.logLevel))
+        }.apply()
+    }
+
+    /** 仅重置 impacto 节，其余引擎设置不动。 */
+    fun resetImpacto(c: Context) {
+        val editor = prefs(c).edit()
+        IMPACTO_BOOL_KEYS.forEach(editor::remove)
+        editor.remove(KEY_IMPACTO_LOG_LEVEL)
+        editor.remove(KEY_IMPACTO_SUBTITLES)
+        editor.apply()
+    }
+
+    fun normalizeImpactoLogLevel(v: String?): String =
+        v?.trim()?.lowercase(java.util.Locale.ROOT)?.takeIf { it in IMPACTO_LOG_LEVELS } ?: IMPACTO_LOG_LEVEL_WARNING
+
+    fun normalizeImpactoSubtitles(v: String?): String =
+        v?.trim()?.lowercase(java.util.Locale.ROOT)?.takeIf { it in IMPACTO_SUBTITLES } ?: IMPACTO_SUBTITLES_ALL
 }

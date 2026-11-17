@@ -701,7 +701,6 @@
     <string name="external_ruffle_resolve_swf_failed">Unable to locate the SWF launch file, so the Ruffle module cannot start</string>
     <string name="external_impacto_module_name">MAGES.</string>
     <string name="external_impacto_profile_unresolved">Unable to match this folder to a MAGES. game profile, so it cannot be launched</string>
-    <string name="engine_settings_impacto_hint">No adjustable options yet. The game runs in the separate Impacto host APK (impacto is an open-source reimplementation of the MAGES. engine); its saves live in the private data folder of that host and cannot be managed from this app.</string>
     <string name="external_rpgm_resolve_dir_failed">Unable to resolve the real path for the RPGM game directory, so the external RPGM module cannot start</string>
 
     <string name="engine_settings_rpgm_module_card">RPG Maker RGSS Module</string>
@@ -804,6 +803,32 @@
     <string name="engine_settings_ruffle_screen_timeout_off">Never auto-close</string>
     <string name="engine_settings_ruffle_screen_timeout_minutes">%1$d min</string>
     <string name="engine_settings_ruffle_note">When a SWF record points at a file, its folder is used automatically. Grant “All files access” to this app before launch so it can resolve the game folder; the Ruffle plugin may request its own storage permission separately. The plugin always runs in landscape. Set auto-close to 0 to disable it.</string>
+    <string name="engine_settings_impacto_title">MAGES. engine settings</string>
+    <string name="engine_settings_impacto_card">MAGES. external module</string>
+    <string name="engine_settings_impacto_module_status">Module status</string>
+    <string name="engine_settings_impacto_module_get">Download module</string>
+    <string name="engine_settings_impacto_card_play">Controls and display</string>
+    <string name="engine_settings_impacto_swap_confirm_cancel">Swap confirm / cancel buttons</string>
+    <string name="engine_settings_impacto_vsync">Vertical sync</string>
+    <string name="engine_settings_impacto_card_video">Video and subtitles</string>
+    <string name="engine_settings_impacto_video_playback">Play videos</string>
+    <string name="engine_settings_impacto_subtitles">Video subtitles</string>
+    <string name="engine_settings_impacto_subtitles_all">All</string>
+    <string name="engine_settings_impacto_subtitles_translation">Translation only</string>
+    <string name="engine_settings_impacto_subtitles_karaoke">Karaoke lyrics only</string>
+    <string name="engine_settings_impacto_card_other">Reading and diagnostics</string>
+    <string name="engine_settings_impacto_close_backlog">Close backlog when scrolled to the end</string>
+    <string name="engine_settings_impacto_delusion_mouse">Delusion Trigger: mouse / touch input (Chaos;Head and Chaos;Child Love Chu Chu only)</string>
+    <string name="engine_settings_impacto_log_level">Log level</string>
+    <string name="engine_settings_impacto_log_off">Off</string>
+    <string name="engine_settings_impacto_log_fatal">Fatal</string>
+    <string name="engine_settings_impacto_log_error">Error</string>
+    <string name="engine_settings_impacto_log_warning">Warning</string>
+    <string name="engine_settings_impacto_log_info">Info</string>
+    <string name="engine_settings_impacto_log_debug">Debug</string>
+    <string name="engine_settings_impacto_log_trace">Trace</string>
+    <string name="engine_settings_impacto_note">These settings are written into the engine configuration every time a game starts and override the same options in the engine in-game settings page. Resolution, display mode, renderer and audio backend are fixed by Android and the host, so they are not offered. Requires host 0.1.2 or later.</string>
+    <string name="engine_settings_impacto_module_description">The MAGES. engine runs in the separate Impacto host APK (impacto is an open-source reimplementation of the MAGES. engine). The options below follow the global values by default; saves live in the private data folder of that host and cannot be managed by this app.</string>
 
     <string name="plugin_unknown_engine">Unknown engine plugin: %1$s</string>
     <string name="plugin_install_failed">Engine plugin installation failed. Restart the app or check that the install package is complete</string>
