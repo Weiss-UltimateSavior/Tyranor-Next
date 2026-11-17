@@ -2,6 +2,7 @@ package com.tyranor.next.core.game.storage
 
 import android.content.Context
 import android.util.Log
+import androidx.room.withTransaction
 import com.core.engine.EnginePrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -9,6 +10,10 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.runtime.RuntimeModuleSettingsSpec
+import com.tyranor.next.core.engine.runtime.RuntimeModuleRegistry
+import com.tyranor.next.core.settings.AppSettingsStore
 
 /**
  * 单游戏覆盖设置的 DB 仓库（迁移方案阶段 4）：game_overrides 表为 App 侧事实源，
@@ -32,6 +37,19 @@ object GameOverridesRepository {
     private var cacheGeneration = 0L
 
     private val syncMutex = Mutex()
+
+    /** Serializes the prefs mirror's read/merge/commit with runtime-module setting writes. */
+    internal val runtimeModuleSettingsMirrorLock = Any()
+
+    sealed interface RuntimeSettingsWriteResult {
+        data object Saved : RuntimeSettingsWriteResult
+        data object GameMissing : RuntimeSettingsWriteResult
+        data object BindingChanged : RuntimeSettingsWriteResult
+        data object ModuleDisabled : RuntimeSettingsWriteResult
+        data object DescriptorChanged : RuntimeSettingsWriteResult
+        data object InvalidValues : RuntimeSettingsWriteResult
+        data class StorageFailure(val detail: String?) : RuntimeSettingsWriteResult
+    }
 
     @Volatile
     private var syncDone = false
@@ -147,8 +165,29 @@ object GameOverridesRepository {
             rowCache[gameId] = row
         }
         GameLibraryRepository.post(context) {
-            GameLibraryDatabase.get(it).gameLibraryDao().upsertOverrideRows(listOf(row))
+            val dao = GameLibraryDatabase.get(it).gameLibraryDao()
+            val latest = dao.getOverrideRow(gameId)?.let(GameOverridePartitions::assemble) ?: JSONObject()
+            val merged = JSONObject(record.toString())
+            preserveRuntimeModuleSettings(latest, merged)
+            val mergedRow = GameOverridePartitions.split(gameId, merged, System.currentTimeMillis())
+            dao.upsertOverrideRows(listOf(mergedRow))
+            synchronized(cacheLock) {
+                rowCache[gameId] = mergedRow
+            }
         }
+    }
+
+    /** Runtime-module overrides are owned by their dedicated API; stale full-record writes retain them. */
+    internal fun preserveRuntimeModuleSettings(latest: JSONObject, target: JSONObject) {
+        val latestSettings = latest.optJSONObject(GameOverridePartitions.KEY_RUNTIME_MODULE_SETTINGS)
+        if (latestSettings == null) {
+            target.remove(GameOverridePartitions.KEY_RUNTIME_MODULE_SETTINGS)
+            return
+        }
+        target.put(
+            GameOverridePartitions.KEY_RUNTIME_MODULE_SETTINGS,
+            JSONObject(latestSettings.toString()),
+        )
     }
 
     /** 落库失败时的自愈入口：清空行缓存并重置同步标记——prefs 持有调用方同步写入的
@@ -171,6 +210,109 @@ object GameOverridesRepository {
         }
         GameLibraryRepository.post(context) {
             GameLibraryDatabase.get(it).gameLibraryDao().deleteOverrideRow(gameId)
+        }
+    }
+
+    /**
+     * Atomically merge and persist one module's settings against the latest serialized override row.
+     * The prefs mirror is committed first; if the DB write then fails, startup's existing mirror
+     * reconciliation imports this exact new value instead of restoring an older mirror.
+     */
+    internal suspend fun writeRuntimeModuleSettings(
+        context: Context,
+        gameUri: String,
+        packageName: String,
+        spec: RuntimeModuleSettingsSpec,
+        overrides: JSONObject,
+    ): RuntimeSettingsWriteResult {
+        if (gameUri.isBlank() || packageName.isBlank()) return RuntimeSettingsWriteResult.BindingChanged
+        val validOverrides = JSONObject()
+        val declaredKeys = spec.items.associateBy { it.key }
+        for (key in overrides.keys()) {
+            val item = declaredKeys[key] ?: continue
+            val value = overrides.opt(key) ?: continue
+            if (value !== JSONObject.NULL && com.tyranor.next.core.engine.runtime.RuntimeModuleSettingsParser.isValidValue(item, value)) {
+                validOverrides.put(key, value)
+            }
+        }
+        if (validOverrides.length() != overrides.length()) return RuntimeSettingsWriteResult.InvalidValues
+
+        // Reject stale UI drafts before queueing storage work; the same check is repeated while
+        // holding the registry refresh lock at the actual transaction boundary below.
+        val preflight = RuntimeModuleRegistry.withCurrentSettingsDescriptor(context, packageName, spec.fingerprint) { }
+        if (preflight !is RuntimeModuleRegistry.SettingsDescriptorCheck.Valid) {
+            return RuntimeSettingsWriteResult.DescriptorChanged
+        }
+
+        return try {
+            GameLibraryRepository.writeAwaited(context) { app, writeControl ->
+                val checked = RuntimeModuleRegistry.withCurrentSettingsDescriptor(
+                    app, packageName, spec.fingerprint,
+                ) {
+                    ensureSynced(app)
+                    val database = GameLibraryDatabase.get(app)
+                    var savedRow: GameOverrideEntity? = null
+                    val writeResult = database.withTransaction {
+                        val dao = database.gameLibraryDao()
+                        val game = dao.getGameByUri(gameUri)
+                            ?: return@withTransaction RuntimeSettingsWriteResult.GameMissing
+                        if (game.engine != EngineType.RUNTIME_MODULE.name || game.runtimeModulePackage != packageName) {
+                            return@withTransaction RuntimeSettingsWriteResult.BindingChanged
+                        }
+                        if (packageName !in AppSettingsStore.getEnabledRuntimeModules(app)) {
+                            return@withTransaction RuntimeSettingsWriteResult.ModuleDisabled
+                        }
+
+                        val currentRow = dao.getOverrideRow(gameUri)
+                        val record = currentRow?.let(GameOverridePartitions::assemble) ?: JSONObject()
+                        val allModules = record.optJSONObject(GameOverridePartitions.KEY_RUNTIME_MODULE_SETTINGS) ?: JSONObject()
+                        if (validOverrides.length() == 0) allModules.remove(packageName)
+                        else allModules.put(packageName, validOverrides)
+                        if (allModules.length() == 0) record.remove(GameOverridePartitions.KEY_RUNTIME_MODULE_SETTINGS)
+                        else record.put(GameOverridePartitions.KEY_RUNTIME_MODULE_SETTINGS, allModules)
+
+                        val prefs = app.getSharedPreferences(EnginePrefs.GAME_OVERRIDES_PREFS, Context.MODE_PRIVATE)
+                        val mirrorCommitted = synchronized(runtimeModuleSettingsMirrorLock) {
+                            // A queued caller cancellation is checked before the first durable write.
+                            writeControl.beginCommit()
+                            val previousMirror = prefs.all[gameUri] as? String
+                            val committed = prefs.edit().putString(gameUri, record.toString()).commit()
+                            if (!committed) {
+                                // SharedPreferences commits memory before disk IO. Restore that memory
+                                // snapshot immediately so ensureSynced cannot import a failed value.
+                                val restore = prefs.edit()
+                                if (previousMirror == null) restore.remove(gameUri)
+                                else restore.putString(gameUri, previousMirror)
+                                restore.apply()
+                            }
+                            committed
+                        }
+                        if (!mirrorCommitted) {
+                            return@withTransaction RuntimeSettingsWriteResult.StorageFailure("prefs mirror commit failed")
+                        }
+                        val updatedRow = GameOverridePartitions.split(gameUri, record, System.currentTimeMillis())
+                        dao.upsertOverrideRows(listOf(updatedRow))
+                        savedRow = updatedRow
+                        RuntimeSettingsWriteResult.Saved
+                    }
+                    if (writeResult == RuntimeSettingsWriteResult.Saved) {
+                        synchronized(cacheLock) {
+                            cacheGeneration++
+                            rowCache[gameUri] = savedRow
+                        }
+                    }
+                    writeResult
+                }
+                when (checked) {
+                    is RuntimeModuleRegistry.SettingsDescriptorCheck.Valid -> checked.value
+                    RuntimeModuleRegistry.SettingsDescriptorCheck.Changed -> RuntimeSettingsWriteResult.DescriptorChanged
+                }
+            }
+        } catch (ce: kotlinx.coroutines.CancellationException) {
+            throw ce
+        } catch (t: Throwable) {
+            invalidateRowCache()
+            RuntimeSettingsWriteResult.StorageFailure(t.message ?: t.javaClass.simpleName)
         }
     }
 }

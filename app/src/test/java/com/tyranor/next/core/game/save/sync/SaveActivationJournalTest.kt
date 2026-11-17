@@ -56,6 +56,18 @@ class SaveActivationJournalTest {
         assertEquals(pending, SaveActivationJournal(root).load(KEY_A))
     }
 
+    @Test fun runtimeProvenanceSurvivesPendingActivationRecovery() {
+        val root = temp.newFolder("runtime-journal")
+        val journal = SaveActivationJournal(root)
+        val staging = archive(root, "runtime-selected")
+        val provenance = RuntimeSaveProvenance("example.runtime", "c".repeat(64), "/games/demo/saves")
+        val selected = version(staging).copy(runtimeProvenances = setOf(provenance))
+
+        journal.prepare(KEY_A, selected, staging, "before-s", activeKey = "save-directory:A")
+
+        assertEquals(setOf(provenance), SaveActivationJournal(root).load(KEY_A)!!.selected.runtimeProvenances)
+    }
+
     @Test fun committedJournalFinalizesContinuedNWhileUncommittedRequiresSelectedS() {
         val root = temp.newFolder("journal")
         val journal = SaveActivationJournal(root)

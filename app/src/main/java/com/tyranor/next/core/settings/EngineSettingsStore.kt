@@ -4,6 +4,7 @@ import android.content.Context
 import com.core.engine.EnginePrefs
 import com.core.engine.LaunchContract
 import com.tyranor.next.core.engine.external.WinlatorContract
+import com.tyranor.runtime.systemnnn.SystemNnnHost
 import org.json.JSONObject
 
 /**
@@ -75,6 +76,10 @@ object EngineSettingsStore {
 
     // CMVS（cmvs-rs）应用级字体；路径必须位于 App 私有 files/fonts/，face 为字体集合索引
     const val KEY_CMVS_FONT = "cmvs_font"
+    private const val KEY_SYSTEMNNN_FULLSCREEN = "systemnnn_fullscreen"
+    private const val KEY_SYSTEMNNN_READING_SIZE = "systemnnn_reading_size"
+    private const val KEY_SYSTEMNNN_EXE_ANALYSIS = "systemnnn_exe_analysis"
+    private const val KEY_SYSTEMNNN_DEBUG_MODE = "systemnnn_debug_mode"
     const val KEY_CMVS_FACE = "cmvs_font_face"
 
     // System35（xsystem35）应用级默认（独立存档 / 渲染后端 / 整数倍缩放 / 失焦静音）
@@ -819,6 +824,32 @@ object EngineSettingsStore {
     fun setFvpFont(c: Context, v: String?) =
         prefs(c).edit().putString(KEY_FVP_FONT, normalizeFvpFont(v)).apply()
     fun normalizeFvpFont(v: String?): String = v?.trim().orEmpty()
+
+    // ---------- SystemNNN ----------
+    val SYSTEMNNN_READING_SIZES: List<Int> = SystemNnnHost.READING_SIZES
+
+    fun isSystemNnnFullscreen(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_SYSTEMNNN_FULLSCREEN, SystemNnnHost.DEFAULT_FULLSCREEN)
+
+    fun getSystemNnnReadingSize(c: Context): Int =
+        prefs(c).getInt(KEY_SYSTEMNNN_READING_SIZE, 0).takeIf { it in SYSTEMNNN_READING_SIZES }
+            ?: SystemNnnHost.legacyReadingSize(c)
+
+    fun isSystemNnnExeAnalysisEnabled(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_SYSTEMNNN_EXE_ANALYSIS, SystemNnnHost.DEFAULT_EXE_ANALYSIS)
+
+    fun isSystemNnnDebugMode(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_SYSTEMNNN_DEBUG_MODE, SystemNnnHost.DEFAULT_DEBUG_MODE)
+
+    fun saveSystemNnnSettings(c: Context, fullscreen: Boolean, readingSize: Int, exeAnalysis: Boolean, debugMode: Boolean) {
+        require(readingSize in SYSTEMNNN_READING_SIZES)
+        prefs(c).edit()
+            .putBoolean(KEY_SYSTEMNNN_FULLSCREEN, fullscreen)
+            .putInt(KEY_SYSTEMNNN_READING_SIZE, readingSize)
+            .putBoolean(KEY_SYSTEMNNN_EXE_ANALYSIS, exeAnalysis)
+            .putBoolean(KEY_SYSTEMNNN_DEBUG_MODE, debugMode)
+            .apply()
+    }
 
     // ---------- CMVS ----------
     fun getCmvsFont(c: Context): String = prefs(c).getString(KEY_CMVS_FONT, "").orEmpty()

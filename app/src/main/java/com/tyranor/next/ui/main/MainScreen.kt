@@ -1,5 +1,6 @@
 package com.tyranor.next.ui.main
 
+import androidx.activity.compose.BackHandler
 import android.app.Activity
 import android.content.Intent
 import android.os.Build
@@ -27,7 +28,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.key
@@ -45,8 +45,6 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -73,12 +71,10 @@ import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.UnselectedGrey
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.glassPageBackground
-import com.tyranor.next.theme.DialogItemSurface
-import com.tyranor.next.ui.archive.ArchiveUnpackActivity
 import com.tyranor.next.ui.common.LiquidGlassNavItem
-import com.tyranor.next.ui.common.AppNavItem
+import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavigationRail
-import com.tyranor.next.ui.common.AppSidePanel
+import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.motion.LocalPageDepth
 import com.tyranor.next.ui.common.motion.depthFoldStack
 import com.tyranor.next.ui.common.motion.LocalSheetBackdrop
@@ -92,11 +88,10 @@ import com.tyranor.next.ui.common.LaunchErrorState
 import com.tyranor.next.core.game.launch.LaunchFailureBus
 import com.tyranor.next.ui.common.LiquidGlassNavigationBar
 import com.tyranor.next.ui.common.NavigationTabIcon
-import com.tyranor.next.ui.common.SidePanelEdgeExclusionBar
 import com.tyranor.next.ui.common.effectiveNavStyle
 import com.tyranor.next.ui.common.isSideRailLayout
-import com.tyranor.next.ui.common.rememberSidePanelSwipeModifier
 import com.tyranor.next.ui.common.toErrorState
+import com.tyranor.next.ui.common.syncErrorResource
 import com.tyranor.next.ui.common.glass.EnhancedLiquidGlassNavigationBar
 import com.tyranor.next.ui.common.glass.GlassShaderSupport
 import com.tyranor.next.ui.common.glass.GlassBottomBarSpec
@@ -107,11 +102,8 @@ import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import top.yukonga.miuix.kmp.utils.MiuixPopupUtils
 import com.tyranor.next.ui.engine.EngineScreen
 import com.tyranor.next.ui.game.GameScreen
-import com.tyranor.next.ui.common.motion.startActivityWithPageTransition
 import com.tyranor.next.ui.home.HomeScreen
-import com.tyranor.next.ui.save.WebDavSettingsActivity
-import com.tyranor.next.ui.runtime.EngineModuleManagementActivity
-import com.tyranor.next.ui.settings.InputSettingsActivity
+import com.tyranor.next.ui.tools.ToolsScreen
 import com.tyranor.next.ui.settings.SettingsScreen
 import com.tyranor.next.ui.common.CoachAnchor
 import kotlinx.coroutines.CancellationException
@@ -130,7 +122,6 @@ import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.HiddenPageAlpha
 import com.tyranor.next.ui.common.motion.skipDrawWhenHidden
 import com.tyranor.next.ui.common.motion.tabPageTransform
-import com.tyranor.next.ui.common.motion.rememberAfterPushStarts
 import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import com.tyranor.next.ui.common.collectSettingAsState
 import com.tyranor.next.ui.common.notice.AppNotice
@@ -146,10 +137,11 @@ private val tabItems = listOf(
   Tab(R.string.nav_home, R.drawable.ic_home),
   Tab(R.string.nav_games, R.drawable.ic_game),
   Tab(R.string.nav_engine, R.drawable.ic_module),
+  Tab(R.string.nav_tools, R.drawable.ic_nav_tools),
   Tab(R.string.nav_settings, R.drawable.ic_settings),
 )
 
-/** 托管四个主标签页、侧栏及根 Miuix 浮层；透明且零 inset 的宿主让菜单遮罩覆盖底栏。 */
+/** 托管五个主标签页及根 Miuix 浮层；透明且零 inset 的宿主让菜单遮罩覆盖底栏。 */
 @Composable
 fun MainScreen(
   modifier: Modifier = Modifier,
@@ -158,7 +150,7 @@ fun MainScreen(
 ) {
   val context = LocalContext.current
   var globalLaunchError by remember { mutableStateOf<LaunchErrorState?>(null) }
-  val busFailure by LaunchFailureBus.failure.collectAsState()
+  val busFailure by LaunchFailureBus.failure.collectAsStateWithLifecycle()
   LaunchedEffect(busFailure) {
     busFailure?.let {
       globalLaunchError = it.toErrorState(context)
@@ -167,7 +159,7 @@ fun MainScreen(
   }
   // 「显示首页」开关（应用设置，默认开）：关闭后首页不参与导航，游戏页作为第一页
   // 随生命周期订阅：设置页盖在上面、主界面不可见时不在后台增删首页（组合 / 销毁首页会占满主线程，让设置页开关卡顿）
-  // 先从 prefs 初始化要订阅的流；首帧页数和默认选中项使用同一个值，关闭首页时不会先闪出四个图标。
+  // 先从 prefs 初始化要订阅的流；首帧页数和默认选中项使用同一个值，关闭首页时不会先闪出全部导航图标。
   val homePageEnabled by remember(context) {
     AppSettingsStore.initHomePageEnabled(context)
     AppSettingsStore.homePageEnabledState
@@ -237,87 +229,30 @@ fun MainScreen(
     }
   }
   val navStyle = effectiveNavStyle()
-  // ===== 侧边栏（仅四大页面可唤出）：左缘右滑 / 左边缘返回手势打开 =====
-  // 面板关闭时把「左边缘返回手势」解读为唤出侧边栏；右边缘/返回键保持系统默认（退出）。
-  // 页面级 BackHandler（如 Web 首页回退历史、悬浮按钮展开态）在更晚的组合位置注册，
-  // 按返回分发「后注册优先」规则仍优先生效。
-  var sidePanelOpen by rememberSaveable { mutableStateOf(false) }
-  // 侧边栏条目：内置原生 Kirikiroid2 界面启动失败提示（原引擎设置 KRKR 页的功能迁入）
-  var sidePanelLaunchError by remember { mutableStateOf<LaunchErrorState?>(null) }
+  // 页面级返回处理后注册，仍优先处理网页历史和浮层关闭。
   val hostActivity = AppLocaleController.findActivity(context)
-  MainScreenBackHandler(enabled = !sidePanelOpen) { fromLeftEdge ->
-    if (fromLeftEdge) sidePanelOpen = true else hostActivity?.leaveMainScreen()
-  }
-  val panelNavigation = remember { MainPanelNavigation() }
-  val closePanelAfterPush = rememberAfterPushStarts()
-  // 从侧边栏进入页面：增强动效档下面板要等侧推开始才滑出，这段时间内再点条目不能重复打开页面
-  /** 增强档等待页面让位后关闭侧栏，普通档立即关闭；等待期间复用同一个启动门控。 */
-  fun navigateFromPanel(start: () -> Unit) {
-    panelNavigation.navigate(start, closePanelAfterPush) { sidePanelOpen = false }
-  }
-  // 侧栏展开时，主界面的页面区绕右缘翻折并褪色（与遮罩同步）；底部导航不在页面区里，不受影响
-  val panelBackdrop = rememberSheetBackdrop()
+  BackHandler { hostActivity?.leaveMainScreen() }
   // 页面区里的抽屉与弹窗（AppAlertDialog）升起时，页面区只褪色、不再上下翻折
   val overlayBackdrop = rememberSheetBackdrop()
-  AppSidePanel(open = sidePanelOpen, backdrop = panelBackdrop, onDismiss = {
-    sidePanelOpen = false
-    panelNavigation.cancel()
-  }) {
-    // 妙妙工具条目：启动内置原生 Kirikiroid2 界面（文件浏览器，不启动具体游戏）
-    AppNavItem(
-      title = stringResource(R.string.side_panel_kr2_native_title),
-      leadingIcon = R.drawable.ic_settings_engine,
-      containerColor = DialogItemSurface,
-      leadingIconTint = MaterialTheme.colorScheme.primary,
-      onClick = {
-        sidePanelOpen = false
-        interactScope.launch {
-          val result = withContext(Dispatchers.IO) {
-            EngineLauncher.launchNativeKirikiroidUi(context)
-          }
-          sidePanelLaunchError = result.toErrorState(context)
-        }
-      },
-    )
-    // 妙妙工具条目：解包 / 封包工具（原设置页「解包 / 封包」入口迁入）
-    AppNavItem(
-      title = stringResource(R.string.side_panel_archive_tool_title),
-      leadingIcon = R.drawable.ic_sheet_archive,
-      containerColor = DialogItemSurface,
-      leadingIconTint = MaterialTheme.colorScheme.primary,
-      onClick = {
-        navigateFromPanel { startActivityWithPageTransition(context, ArchiveUnpackActivity.createIntent(context)) }
-      },
-    )
-    AppNavItem(
-      title = stringResource(R.string.webdav_title),
-      leadingIcon = R.drawable.ic_save_cloud,
-      containerColor = DialogItemSurface,
-      leadingIconTint = MaterialTheme.colorScheme.primary,
-      onClick = {
-        navigateFromPanel { startActivityWithPageTransition(context, WebDavSettingsActivity.createIntent(context)) }
-      },
-    )
-    // 妙妙工具条目：输入与手柄（原设置页「输入与手柄」入口迁入）
-    AppNavItem(
-      title = stringResource(R.string.side_panel_input_tool_title),
-      leadingIcon = R.drawable.ic_input_gamepad,
-      containerColor = DialogItemSurface,
-      leadingIconTint = MaterialTheme.colorScheme.primary,
-      onClick = {
-        navigateFromPanel { startActivityWithPageTransition(context, InputSettingsActivity.createIntent(context)) }
-      },
-    )
-    // 妙妙工具条目：引擎模块管理（第三方 APK 运行时模块的发现与启用）
-    AppNavItem(
-      title = stringResource(R.string.side_panel_engine_module_title),
-      leadingIcon = R.drawable.ic_engine_manage,
-      containerColor = DialogItemSurface,
-      leadingIconTint = MaterialTheme.colorScheme.primary,
-      onClick = {
-        navigateFromPanel { startActivityWithPageTransition(context, EngineModuleManagementActivity.createIntent(context)) }
-      },
-    )
+  val cleanupError = libraryState.cleanupError
+  if (cleanupError != null || libraryState.copyCleanupPending) {
+    val cleanupMessage = if (cleanupError != null) {
+      stringResource(R.string.settings_systemnnn_copy_cleanup_schedule_failed, libraryState.cleanupGameTitle.orEmpty(),
+        stringResource(cleanupError.syncErrorResource()))
+    } else {
+      stringResource(R.string.settings_systemnnn_copy_cleanup_pending)
+    }
+    CompositionLocalProvider(LocalSheetBackdrop provides overlayBackdrop) {
+      AppAlertDialog(
+        onDismissRequest = libraryViewModel::dismissCleanupError,
+        title = { Text(stringResource(R.string.save_operation_failed), style = MaterialTheme.typography.titleMedium) },
+        text = { Text(cleanupMessage, style = MaterialTheme.typography.bodyMedium) },
+        textScrollEnabled = true,
+        confirmButton = {
+          DialogTextButton(stringResource(R.string.common_confirm), onClick = libraryViewModel::dismissCleanupError)
+        },
+      )
+    }
   }
   // 首页样式：Web 首页参与绘制期间底栏改用仅背景采样源（见 webHomeInvolved）
   val homeStyle by AppSettingsStore.homeStyleState.collectSettingAsState()
@@ -336,23 +271,6 @@ fun MainScreen(
   val floatingNavOutsideTapObserver = remember(floatingNavOutsideTapBridge) {
     Modifier.observeFloatingNavOutsideTaps(floatingNavOutsideTapBridge)
   }
-  // 侧边栏唤出识别需跳过底部导航栏区域：各底栏形态在布局后把自己顶边（根布局坐标）上报到
-  // bottomNavTopY；悬浮按钮 / 平板侧栏没有底部导航栏，恒按「无排除」处理。
-  var bottomNavTopY by remember { mutableStateOf(Float.POSITIVE_INFINITY) }
-  val reportBottomNavTop = remember {
-    Modifier.onGloballyPositioned { bottomNavTopY = it.positionInParent().y }
-  }
-  // 左缘右滑唤出：挂在根布局上（子内容优先，不遮挡任何点击/滚动）；
-  // 起点落在底部导航栏区域内时不识别（见 rememberSidePanelSwipeModifier 的 bottomBarTopY）
-  val sidePanelSwipeModifier = rememberSidePanelSwipeModifier(
-    onOpen = { sidePanelOpen = true },
-    bottomBarTopY = {
-      if (railLayout || floatingButtonActive) Float.POSITIVE_INFINITY else bottomNavTopY
-    },
-    excludeStart = { point ->
-      floatingButtonActive && floatingNavOutsideTapBridge.containsControls(point)
-    },
-  )
   // 玻璃外观风格 + 默认导航样式：导航栏改为悬浮的圆角玻璃条（描边 + 玻璃底）
   val floatingDefaultNav = AppThemeColors.isGlass && !liquidGlass && !floatingButtonStyle && !railLayout
   // 可见 Tab：关闭首页后首页不参与导航（游戏页成为第一页）
@@ -435,7 +353,7 @@ fun MainScreen(
     contentWindowInsets = WindowInsets(0.dp),
   ) { _ ->
   Box(
-    modifier.fillMaxSize().then(sidePanelSwipeModifier)
+    modifier.fillMaxSize()
       .then(if (floatingButtonActive) floatingNavOutsideTapObserver else Modifier),
   ) {
     // 内容层录制进 backdrop，供液态玻璃导航采样页面内容。
@@ -535,7 +453,6 @@ fun MainScreen(
             libraryState = libraryState,
             libraryViewModel = libraryViewModel,
             onCoachAnchorChanged = onCoachAnchorChanged,
-            panel = panelBackdrop,
             overlay = overlayBackdrop,
             foldDesaturate = homeStyle != AppSettingsStore.HOME_STYLE_WEB,
             onboarding = coachPage != null,
@@ -553,7 +470,6 @@ fun MainScreen(
           libraryState = libraryState,
           libraryViewModel = libraryViewModel,
           onCoachAnchorChanged = onCoachAnchorChanged,
-          panel = panelBackdrop,
           overlay = overlayBackdrop,
           foldDesaturate = homeStyle != AppSettingsStore.HOME_STYLE_WEB,
           onboarding = coachPage != null,
@@ -564,7 +480,7 @@ fun MainScreen(
             items = liquidGlassTabItems,
             unselectedColor = unselectedColor,
             onSelectPage = onSelectNavPage,
-            modifier = reportBottomNavTop,
+            modifier = Modifier,
           )
         }
       }
@@ -583,7 +499,7 @@ fun MainScreen(
           colors = rememberGlassBottomBarColors(unselectedColor),
           items = liquidGlassTabItems,
           onItemClick = onSelectNavPage,
-          modifier = reportBottomNavTop
+          modifier = Modifier
             .align(Alignment.BottomCenter)
             .navigationBarsPadding()
             .padding(bottom = GlassBottomBarSpec.Default.hostBottomPadding),
@@ -596,7 +512,7 @@ fun MainScreen(
           unselectedColor = unselectedColor,
           items = liquidGlassTabItems,
           onItemClick = onSelectNavPage,
-          modifier = reportBottomNavTop.align(Alignment.BottomCenter),
+          modifier = Modifier.align(Alignment.BottomCenter),
         )
       }
     }
@@ -605,7 +521,7 @@ fun MainScreen(
     // 内容可从其下方滚过，列表底部留白由 glassNavBottomInset() 统一提供。
     if (floatingDefaultNav) {
       Box(
-        modifier = reportBottomNavTop
+        modifier = Modifier
           .align(Alignment.BottomCenter)
           .fillMaxWidth()
           .navigationBarsPadding()
@@ -645,25 +561,16 @@ fun MainScreen(
       )
     }
 
-    // 侧边栏唤出入口：左缘系统返回手势排除条（无指针输入不拦截事件；识别逻辑在根布局的
-    // sidePanelSwipeModifier 上，靠边排除区外的返回手势由 MainScreenBackHandler 兜底）
-    SidePanelEdgeExclusionBar(
-      modifier = Modifier.align(Alignment.CenterStart),
-    )
   }
   }
 
-  // 侧边栏条目启动失败弹窗（与首页/游戏页共用同一个错误弹窗组件）
-  sidePanelLaunchError?.let { state ->
-    LaunchErrorDialog(state = state, onDismiss = { sidePanelLaunchError = null })
-  }
   globalLaunchError?.let { state ->
     LaunchErrorDialog(state = state, onDismiss = { globalLaunchError = null })
   }
 }
 
 /**
- * 主界面可见页常驻组合（默认四页；应用设置关闭首页后为三页）：隐藏页只保留已测量节点且 alpha=0，
+ * 主界面可见页常驻组合（默认五页；应用设置关闭首页后为四页）：隐藏页只保留已测量节点且 alpha=0，
  * 切换时不再重建游戏网格/Miuix 设置页；
  * 中间 Tab 的 alpha 在任意状态均为 0，跨页时只显示起点和终点的直接水平动画。
  * 底栏形态与平板侧栏形态共用本组件，保证两种布局下的页面与转场完全一致。
@@ -690,15 +597,14 @@ private fun ColumnScope.MainTabPages(
   libraryState: MainLibraryUiState,
   libraryViewModel: MainLibraryViewModel,
   onCoachAnchorChanged: (Int, Rect) -> Unit,
-  panel: SheetBackdrop,
   overlay: SheetBackdrop,
   foldDesaturate: Boolean,
   onboarding: Boolean,
 ) {
-    // 抽屉 / 弹窗（顶边）、侧栏（右缘）、页面推入（左缘）三种来源合成一层：按最大的那个走，不叠加、不互相抵消
+    // 抽屉 / 弹窗与页面推入共用景深层，按最大进度合成，不叠加。
     Box(
       Modifier.weight(1f).fillMaxWidth().clipToBounds()
-        .depthFoldStack(overlay = overlay, panel = panel, push = LocalPageDepth.current, desaturate = foldDesaturate),
+        .depthFoldStack(overlay = overlay, panel = null, push = LocalPageDepth.current, desaturate = foldDesaturate),
     ) {
       WithoutPressIndication {
         // 可见页面常驻组合：隐藏页只保留已测量节点且 alpha=0，切换时不再重建游戏网格/Miuix 设置页。
@@ -724,6 +630,10 @@ private fun ColumnScope.MainTabPages(
                   modifier = Modifier.fillMaxSize(),
                   libraryState = libraryState,
                   onGameUpdated = libraryViewModel::replaceGame,
+                  onGameCoverUpdated = libraryViewModel::applyCoverUpdate,
+                  onGameRenamed = libraryViewModel::renameGame,
+                  onGameLaunchFileUpdated = libraryViewModel::updateLaunchFile,
+                  onGameBindingUpdated = libraryViewModel::applyBindingUpdate,
                   onGameDeleted = libraryViewModel::deleteGame,
                   onRecentRemoved = libraryViewModel::removeRecentGame,
                   onQuickLaunchToggle = libraryViewModel::toggleQuickLaunch,
@@ -734,6 +644,10 @@ private fun ColumnScope.MainTabPages(
                   modifier = Modifier.fillMaxSize(),
                   libraryState = libraryState,
                   onGameUpdated = libraryViewModel::replaceGame,
+                  onGameCoverUpdated = libraryViewModel::applyCoverUpdate,
+                  onGameRenamed = libraryViewModel::renameGame,
+                  onGameLaunchFileUpdated = libraryViewModel::updateLaunchFile,
+                  onGameBindingUpdated = libraryViewModel::applyBindingUpdate,
                   onGameDeleted = libraryViewModel::deleteGame,
                   onQuickLaunchToggle = libraryViewModel::toggleQuickLaunch,
                   onScanLibrary = libraryViewModel::scanLibrary,
@@ -749,7 +663,8 @@ private fun ColumnScope.MainTabPages(
                   isActive = pageActive,
                   gameCount = libraryState.games.size,
                 )
-                3 -> SettingsScreen(
+                3 -> ToolsScreen(Modifier.fillMaxSize())
+                4 -> SettingsScreen(
                   Modifier.fillMaxSize(),
                   onCoachAnchorChanged = { onCoachAnchorChanged(CoachAnchor.SETTINGS, it) },
                   isActive = pageActive,
@@ -762,7 +677,7 @@ private fun ColumnScope.MainTabPages(
     }
 }
 
-/** 侧栏接管了根页返回，右缘与返回键仍须保留系统的桌面任务语义。 */
+/** 保留桌面根任务正常返回时移到后台的系统语义。 */
 private fun Activity.leaveMainScreen() {
   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && isTaskRoot &&
     intent?.action == Intent.ACTION_MAIN && intent?.hasCategory(Intent.CATEGORY_LAUNCHER) == true &&
@@ -832,38 +747,6 @@ internal fun MainTabPageHost(
       ),
   ) {
     ProvideEntranceAndBackdrop(entrance, overlay) { content(pageActive) }
-  }
-}
-
-/** 侧栏发起一次页面启动后，直到真正让位或用户取消前不重复启动。 */
-internal class MainPanelNavigation {
-  private var waiting = false
-  private var generation = 0
-
-  /** 启动失败时解除门控并原样传播异常；成功时由 afterPush 决定关闭时机，仅当前请求可关闭面板。 */
-  fun navigate(start: () -> Unit, afterPush: (action: () -> Unit) -> Unit, close: () -> Unit) {
-    if (waiting) return
-    waiting = true
-    val request = ++generation
-    var started = false
-    try {
-      start()
-      started = true
-    } finally {
-      if (!started) waiting = false
-    }
-    afterPush {
-      if (request == generation) {
-        waiting = false
-        close()
-      }
-    }
-  }
-
-  /** 关闭或重新打开面板时使旧的延迟回调失效，并允许新的启动请求。 */
-  fun cancel() {
-    generation++
-    waiting = false
   }
 }
 

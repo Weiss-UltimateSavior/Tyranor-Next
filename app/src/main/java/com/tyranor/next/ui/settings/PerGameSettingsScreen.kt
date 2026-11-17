@@ -115,6 +115,19 @@ import com.tyranor.next.ui.common.notice.AppNotice
 fun PerGameSettingsScreen(game: ScanGame) {
     val ctx = LocalContext.current
     val gid = game.uri
+    val systemNnn = game.engine == EngineType.SYSTEMNNN
+    var systemNnnFullscreen by remember(gid, systemNnn) {
+        mutableStateOf(if (systemNnn) PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_SYSTEMNNN_FULLSCREEN) else null)
+    }
+    var systemNnnReadingSize by remember(gid, systemNnn) {
+        mutableStateOf(if (systemNnn) PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_SYSTEMNNN_READING_SIZE) else null)
+    }
+    var systemNnnExeAnalysis by remember(gid, systemNnn) {
+        mutableStateOf(if (systemNnn) PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_SYSTEMNNN_EXE_ANALYSIS) else null)
+    }
+    var systemNnnDebugMode by remember(gid, systemNnn) {
+        mutableStateOf(if (systemNnn) PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_SYSTEMNNN_DEBUG_MODE) else null)
+    }
     val graphicsFamily = game.engine.graphicsFamily()
     val globalGraphics = graphicsFamily?.let { EngineSettingsStore.getGraphicsSettings(ctx, it) }
     var graphicsOverride by remember(gid, graphicsFamily) {
@@ -553,6 +566,12 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val effRenderer = krRender[PerGameSettingsStore.F_RENDERER]!!.value ?: globalRenderer
 
     fun save() {
+        if (systemNnn) {
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_SYSTEMNNN_FULLSCREEN, systemNnnFullscreen)
+            PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_SYSTEMNNN_READING_SIZE, systemNnnReadingSize)
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_SYSTEMNNN_EXE_ANALYSIS, systemNnnExeAnalysis)
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_SYSTEMNNN_DEBUG_MODE, systemNnnDebugMode)
+        }
         graphicsFamily?.let { PerGameSettingsStore.setGraphicsOverride(ctx, gid, it, graphicsOverride) }
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ENGINE_VERSION, krVersion)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ENGINE_KERNEL, krKernel)
@@ -1482,6 +1501,28 @@ fun PerGameSettingsScreen(game: ScanGame) {
                     }
                     EngineType.SYSTEMNNN -> item(key = if (motionEnhanced) "systemNnn" else null) {
                         SectionCard(game.engine.displayName, modifier = listItemMotion(enabled = motionEnhanced)) {
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_systemnnn_fullscreen),
+                                EngineSettingsStore.isSystemNnnFullscreen(ctx),
+                                systemNnnFullscreen,
+                            ) { systemNnnFullscreen = it }
+                            OverrideChoice(
+                                stringResource(R.string.engine_settings_systemnnn_reading_size),
+                                systemNnnReadingSizeChoices().toMap(),
+                                EngineSettingsStore.getSystemNnnReadingSize(ctx).toString(),
+                                systemNnnReadingSize,
+                            ) { systemNnnReadingSize = it }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_systemnnn_exe_analysis),
+                                EngineSettingsStore.isSystemNnnExeAnalysisEnabled(ctx),
+                                systemNnnExeAnalysis,
+                            ) { systemNnnExeAnalysis = it }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_systemnnn_debug_mode),
+                                EngineSettingsStore.isSystemNnnDebugMode(ctx),
+                                systemNnnDebugMode,
+                            ) { systemNnnDebugMode = it }
+                            SystemNnnSaveLayoutSettings(game.uri)
                             Text(
                                 stringResource(R.string.engine_settings_systemnnn_hint),
                                 style = MaterialTheme.typography.bodyMedium,
@@ -1572,6 +1613,16 @@ fun PerGameSettingsScreen(game: ScanGame) {
                         SectionCard(game.engine.displayName) {
                             Text(
                                 stringResource(R.string.engine_settings_external_emulator_hint),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
+                    EngineType.IMPACTO -> item {
+                        SectionCard(game.engine.displayName) {
+                            Text(
+                                stringResource(R.string.engine_settings_impacto_hint),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),

@@ -11,6 +11,7 @@ class RuntimeModuleContractTest {
         assertEquals("com.tyranor.runtime.extra.FOLDER_PATH", RuntimeModuleContract.EXTRA_FOLDER_PATH)
         assertEquals("com.tyranor.runtime.extra.GAME_TITLE", RuntimeModuleContract.EXTRA_GAME_TITLE)
         assertEquals("com.tyranor.runtime.extra.PROTOCOL_VERSION", RuntimeModuleContract.EXTRA_PROTOCOL_VERSION)
+        assertEquals("com.tyranor.runtime.extra.SETTINGS", RuntimeModuleContract.EXTRA_SETTINGS)
         assertEquals(1, RuntimeModuleContract.PROTOCOL_VERSION)
     }
 

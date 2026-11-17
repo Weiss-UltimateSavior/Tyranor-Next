@@ -126,6 +126,7 @@ internal object GameOverridePartitions {
     const val KEY_RUFFLE_LETTERBOX = "ruffle_letterbox"
     const val KEY_RUFFLE_LOAD_BEHAVIOR = "ruffle_load_behavior"
     const val ONS_OBJECT_KEY = "ons"
+    const val KEY_RUNTIME_MODULE_SETTINGS = "runtime_module_settings"
 
     /** Read-only legacy migration key; keep old KR values in their own partition until frozen. */
     const val KEY_KR_LEGACY_ANIME4K_MODE = "anime4k_mode"
@@ -152,6 +153,7 @@ internal object GameOverridePartitions {
     // 不依赖“未识别键兜底归入 tyrano”的 else 路径，防止未来收紧分区时丢键
     val TYRANO_KEYS: Set<String> = setOf(
         KEY_TY_SCOPED, KEY_WINLATOR_MODE,
+        KEY_RUNTIME_MODULE_SETTINGS,
         KEY_WINLATOR_CONTAINER_ID, KEY_WINLATOR_CONTAINER_NAME,
         KEY_WINLATOR_GRAPHICS_DRIVER, KEY_WINLATOR_DXWRAPPER, KEY_WINLATOR_SCREEN_SIZE,
         KEY_WINLATOR_LC_ALL, KEY_WINLATOR_TZ, KEY_WINLATOR_BOX64_PRESET, KEY_WINLATOR_SAVE,

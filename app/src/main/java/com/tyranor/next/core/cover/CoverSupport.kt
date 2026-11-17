@@ -2,13 +2,17 @@ package com.tyranor.next.core.cover
 
 import android.content.Context
 import android.net.Uri
+import androidx.annotation.VisibleForTesting
+import com.tyranor.next.BuildConfig
+import com.tyranor.next.core.net.optNonBlankString
 import com.tyranor.next.core.settings.AppSettingsStore
+import kotlinx.coroutines.CancellationException
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
+import java.net.URI
 import java.net.URL
-import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -23,94 +27,15 @@ internal class CoverSearchException(
     detail: String? = null,
 ) : RuntimeException(detail ?: error.name)
 
-/** HTTP 响应：状态码 + 已解析的 JSON 体（非 JSON 体时为 null）。 */
-internal data class HttpJsonResult(val status: Int, val json: JSONObject?)
-
-/** JSON 响应体上限：与 CoverImageCache 的图片上限同理，避免被超大响应打爆内存。 */
-private const val MAX_JSON_CHARS = 4 * 1024 * 1024
-
-/**
- * 带状态码的 JSON 请求：供需要区分 HTTP 状态的来源使用（如 NextMoe 的 429 限流）。
- * 传输异常统一返回 `status = 0`；已在读体前拿到的状态码不会因读体失败而丢失。
- */
-internal fun httpJsonResult(
-    url: String,
-    method: String = "GET",
-    body: String? = null,
-    headers: Map<String, String> = emptyMap(),
-): HttpJsonResult {
-    var conn: HttpURLConnection? = null
-    return try {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = method
-            connectTimeout = 15000
-            readTimeout = 20000
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "TyranorNext/1.0")
-            headers.forEach { (key, value) -> setRequestProperty(key, value) }
-            if (body != null) {
-                doOutput = true
-                setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            }
-        }
-        conn = connection
-        if (body != null) {
-            connection.outputStream.use { it.write(body.toByteArray(StandardCharsets.UTF_8)) }
-        }
-        val status = connection.responseCode
-        val text = runCatching {
-            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-            stream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readTextCapped(MAX_JSON_CHARS) }
-        }.getOrNull()
-        HttpJsonResult(status, text?.let { runCatching { JSONObject(it) }.getOrNull() })
-    } catch (_: Exception) {
-        HttpJsonResult(0, null)
-    } finally {
-        conn?.disconnect()
-    }
-}
-
-private fun java.io.Reader.readTextCapped(maxChars: Int): String {
-    val buffer = CharArray(16 * 1024)
-    val out = StringBuilder()
-    while (true) {
-        val read = read(buffer)
-        if (read < 0) break
-        if (out.length + read > maxChars) throw IllegalStateException("json response too large")
-        out.append(buffer, 0, read)
-    }
-    return out.toString()
-}
-
-/**
- * 请求最小间隔节流：VNDB / 未萌 NextMoe 都是「单机串行 + 服务端限流」的来源。
- * 必须在 IO 线程调用（内部阻塞）。
- */
-internal class RequestThrottle(private val minIntervalMs: Long) {
-    private var lastRequestTime = 0L
-
-    @Synchronized
-    fun await() {
-        val wait = minIntervalMs - (System.currentTimeMillis() - lastRequestTime)
-        if (wait > 0) Thread.sleep(wait)
-        lastRequestTime = System.currentTimeMillis()
-    }
-}
-
-/** 仅成功（2xx）时返回 JSON，行为与各来源原有 httpJson 保持一致。 */
-internal fun httpJson(
-    url: String,
-    method: String = "GET",
-    body: String? = null,
-    headers: Map<String, String> = emptyMap(),
-): JSONObject? = httpJsonResult(url, method, body, headers)
-    .let { if (it.status in 200..299) it.json else null }
-
-internal fun String.urlEncode(): String =
-    URLEncoder.encode(this, StandardCharsets.UTF_8.name())
+// 通用 HTTP 帮助函数（httpJsonResult/httpJson/RequestThrottle/urlEncode 等）已下沉
+// `core/net`：auth/status/cover 三方共用，避免 auth 反向引用 cover 形成包级环。
 
 internal object CoverImageCache {
-    private const val MAX_COVER_BYTES = 20L * 1024L * 1024L
+    internal const val MAX_COVER_BYTES = 20L * 1024L * 1024L
+
+    @VisibleForTesting
+    @Volatile
+    internal var testDownloadResult: ((imageUrl: String) -> String?)? = null
 
     fun download(
         context: Context,
@@ -120,13 +45,18 @@ internal object CoverImageCache {
         referer: String? = source?.let(::coverRefererForSource),
         cookie: String? = source?.let(::coverCookieForSource),
         persistent: Boolean = true,
+        toUriString: (File) -> String = { Uri.fromFile(it).toString() },
     ): String? {
         if (imageUrl.isBlank()) return null
+        testDownloadResult?.let { stub ->
+            check(BuildConfig.DEBUG) { "test stub must be null in release" }
+            return stub(imageUrl)
+        }
         val dir = coverCacheDir(context, persistent)
         if (!dir.exists() && !dir.mkdirs()) return null
         val safePrefix = prefix.replace(Regex("[^A-Za-z0-9_.-]"), "_")
         val target = File(dir, "${safePrefix}_${stableKey(imageUrl)}.jpg")
-        if (target.isFile && target.length() > 0) return Uri.fromFile(target).toString()
+        if (target.isFile && target.length() > 0) return toUriString(target)
 
         var conn: HttpURLConnection? = null
         var tmp: File? = null
@@ -149,7 +79,8 @@ internal object CoverImageCache {
                     val buffer = ByteArray(8192)
                     while (true) {
                         val read = input.read(buffer)
-                        if (read <= 0) break
+                        if (read < 0) break
+                        if (read == 0) continue
                         total += read
                         if (total > MAX_COVER_BYTES) error("cover too large")
                         output.write(buffer, 0, read)
@@ -158,7 +89,10 @@ internal object CoverImageCache {
             }
             if (total <= 0L) error("empty cover")
             moveTempCover(tempFile, target)
-            Uri.fromFile(target).toString()
+            toUriString(target)
+        } catch (e: CancellationException) {
+            // 同 httpJsonResult：CE 透传，防未来引入挂起点后取消被吞
+            throw e
         } catch (_: Exception) {
             null
         } finally {
@@ -170,17 +104,23 @@ internal object CoverImageCache {
     fun deleteCachedCover(context: Context, coverUri: String?, exceptUri: String? = null) {
         if (coverUri.isNullOrBlank() || coverUri == exceptUri) return
         val dir = coverCacheDir(context)
-        val file = runCatching { File(Uri.parse(coverUri).path ?: return) }.getOrNull() ?: return
+        val file = uriPath(coverUri)?.let(::File) ?: return
         val cachePath = runCatching { dir.canonicalPath }.getOrNull() ?: return
         val filePath = runCatching { file.canonicalPath }.getOrNull() ?: return
-        val exceptPath = runCatching { File(Uri.parse(exceptUri.orEmpty()).path.orEmpty()).canonicalPath }.getOrNull()
-        val inCacheDir = filePath == cachePath || filePath.startsWith("$cachePath${File.separator}")
+        val exceptPath = exceptUri?.let(::uriPath)?.let { runCatching { File(it).canonicalPath }.getOrNull() }
+        val inCacheDir = filePath.startsWith("$cachePath${File.separator}")
         if (filePath != exceptPath && inCacheDir) {
             file.delete()
         }
     }
 
-    private fun moveTempCover(source: File, target: File) {
+    private fun uriPath(uriString: String): String? {
+        if (!uriString.startsWith("file:", ignoreCase = true)) return null
+        return runCatching { URI(uriString).path }.getOrNull()?.takeIf { it.isNotBlank() }
+            ?: runCatching { Uri.parse(uriString).path }.getOrNull()?.takeIf { it.isNotBlank() }
+    }
+
+    internal fun moveTempCover(source: File, target: File) {
         runCatching {
             Files.move(
                 source.toPath(),
@@ -254,3 +194,43 @@ internal fun coverCookieForSource(source: String): String? = when (source) {
     AppSettingsStore.COVER_SOURCE_VNDB -> "vndb_img=1; vndb_samesite=1"
     else -> null
 }
+
+internal fun encodeCoverSearchCandidate(candidate: CoverSearchCandidate): String =
+    JSONObject()
+        .put("source", candidate.source)
+        .put("id", candidate.id)
+        .put("title", candidate.title)
+        .put("subtitle", candidate.subtitle)
+        .put("detail", candidate.detail)
+        .put("score", candidate.score)
+        .put("coverUrl", candidate.coverUrl)
+        .put("downloadUrl", candidate.downloadUrl)
+        .put("vndbId", candidate.vndbId)
+        .put("bangumiId", candidate.bangumiId)
+        .put("hikarinagiId", candidate.hikarinagiId)
+        .put("nextmoeId", candidate.nextmoeId)
+        .put("metadataTitle", candidate.metadataTitle)
+        .toString()
+
+internal fun decodeCoverSearchCandidate(encoded: String): CoverSearchCandidate? = runCatching {
+    val json = JSONObject(encoded)
+    fun nonNullString(key: String): String =
+        if (json.isNull(key)) "" else json.optString(key, "").takeUnless { it == "null" }.orEmpty()
+    val source = json.optNonBlankString("source") ?: return@runCatching null
+    val id = json.optNonBlankString("id") ?: return@runCatching null
+    CoverSearchCandidate(
+        source = source,
+        id = id,
+        title = nonNullString("title"),
+        subtitle = nonNullString("subtitle"),
+        detail = nonNullString("detail"),
+        score = if (json.has("score") && !json.isNull("score")) json.optInt("score") else null,
+        coverUrl = nonNullString("coverUrl"),
+        downloadUrl = json.optNonBlankString("downloadUrl"),
+        vndbId = json.optNonBlankString("vndbId"),
+        bangumiId = json.optNonBlankString("bangumiId"),
+        hikarinagiId = json.optNonBlankString("hikarinagiId"),
+        nextmoeId = json.optNonBlankString("nextmoeId"),
+        metadataTitle = json.optNonBlankString("metadataTitle"),
+    )
+}.getOrNull()

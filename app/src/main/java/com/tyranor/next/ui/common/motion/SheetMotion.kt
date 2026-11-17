@@ -27,6 +27,16 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.platform.InspectorInfo
+import androidx.compose.ui.node.requireGraphicsContext
+import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.node.DrawModifierNode
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.TransformOrigin
@@ -49,12 +59,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineStart
 import com.tyranor.next.theme.AppSheetTopShape
 import kotlinx.coroutines.withTimeoutOrNull
-import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.Lifecycle
-import androidx.compose.ui.graphics.BlendMode
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.addOutline
-import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.animation.core.tween
@@ -140,7 +153,8 @@ class MotionSheetController internal constructor(
     private var navigating = false
 
     /** 收起是否已经承诺为「跳转交接」：这种收起不可回头。 */
-    private var leaving = false
+    internal var leaving = false
+        private set
 
     /** 已提交的页面跳转（正在跳转 / 交接收起）：抽屉内的跳转条目不再重复触发，避免重复启动。普通的下拉 / 点遮罩收起不算。 */
     internal val busy: Boolean get() = navigating || leaving
@@ -164,8 +178,19 @@ class MotionSheetController internal constructor(
     /** 收起的协程；在抽屉完全离屏之前可以取消并把抽屉接回来。 */
     private var closeJob: kotlinx.coroutines.Job? = null
 
+    /** 收起代次：仅当前未被打断（reopen / reopenForGrab / updateHeight）的关闭协程在取消时交付收尾。 */
+    private var closeAttempt = 0L
+
     /** 收起是否已越过离屏线（抽屉底边越过屏幕底边）：此刻抽屉就被移除，不可回头。 */
-    private var closeCommitted = false
+    internal var closeCommitted = false
+        private set
+
+    internal fun commitClose() {
+        if (closeCommitted) return
+        closeCommitted = true
+        allowHide = true
+        onClosed()
+    }
 
     /**
      * 收起途中（尚未完全离屏）把抽屉接回来：取消收起，位移从当前位置带着速度弹回展开位，遮罩随之回到原暗度。
@@ -175,6 +200,7 @@ class MotionSheetController internal constructor(
         if (!closing || closeCommitted || leaving) return false
         // 先取速度再取消收起：取消后动画状态可能已被清掉，接回就成了从零速重新起步
         val v = offset.velocity
+        closeAttempt += 1L
         closeJob?.cancel()
         closeJob = null
         closing = false
@@ -229,21 +255,33 @@ class MotionSheetController internal constructor(
         closing = true
         leaving = true
         scope.launch {
-            val paused = withTimeoutOrNull(NAVIGATION_START_TIMEOUT_MILLIS) {
-                owner.lifecycle.currentStateFlow.first { !it.isAtLeast(Lifecycle.State.RESUMED) }
-            } != null
-            if (!paused) {
-                closing = false
-                leaving = false
-                close()
-                return@launch
+            var paused = false
+            try {
+                paused = withTimeoutOrNull(NAVIGATION_START_TIMEOUT_MILLIS) {
+                    owner.lifecycle.currentStateFlow.first { !it.isAtLeast(Lifecycle.State.RESUMED) }
+                } != null
+                if (!paused) {
+                    closing = false
+                    leaving = false
+                    close()
+                    return@launch
+                }
+                launch {
+                    navDim.animateTo(1f, tween(MotionSprings.PushDurationMillis, easing = MotionSprings.PushEasing))
+                }
+                delay(MotionSprings.PushDurationMillis + 80L)
+            } finally {
+                withContext(NonCancellable) {
+                    if (leaving && !closeCommitted) {
+                        if (paused) {
+                            commitClose()
+                        } else {
+                            closing = false
+                            leaving = false
+                        }
+                    }
+                }
             }
-            launch {
-                navDim.animateTo(1f, tween(MotionSprings.PushDurationMillis, easing = MotionSprings.PushEasing))
-            }
-            delay(MotionSprings.PushDurationMillis + 80L)
-            allowHide = true
-            onClosed()
         }
     }
 
@@ -270,6 +308,7 @@ class MotionSheetController internal constructor(
     }
 
     private fun animateClose(velocity: Float) {
+        val attempt = ++closeAttempt
         closeJob = scope.launch {
             // 位移 ≥ 抽屉自身高度 = 底边越过屏幕底边 = 完全离屏（此刻遮罩也已淡尽）；越过这里收起不可回头
             val exitLine = if (height > 0f) height else 2000f
@@ -277,18 +316,23 @@ class MotionSheetController internal constructor(
             val slide = launch { offset.animateTo(exitLine * 1.05f, CloseSpec, initialVelocity = startVelocity) }
             val exit = launch {
                 snapshotFlow { offset.value >= exitLine }.first { it }
-                closeCommitted = true
-                allowHide = true
+                commitClose()
                 slide.cancel()
-                onClosed()
             }
-            slide.join()
-            // 下沉被别的位移动画顶掉（例如刚展开时的 snapTo / animateTo）而没走到离屏：这次收起作废，
-            // 不能卡在「收起中」——否则返回键 / 点遮罩都会因 closing 为真而直接被忽略
-            if (!closeCommitted) {
-                exit.cancel()
-                closing = false
-                scrimWindow.restoreDialogDim()
+            try {
+                slide.join()
+                // 下沉被别的位移动画顶掉（例如刚展开时的 snapTo / animateTo）而没走到离屏：这次收起作废，
+                // 不能卡在「收起中」——否则返回键 / 点遮罩都会因 closing 为真而直接被忽略
+                if (!closeCommitted) {
+                    exit.cancel()
+                    closing = false
+                    scrimWindow.restoreDialogDim()
+                }
+            } catch (cancelled: CancellationException) {
+                if (closing && !closeCommitted && closeAttempt == attempt) {
+                    withContext(NonCancellable) { commitClose() }
+                }
+                throw cancelled
             }
         }
     }
@@ -306,6 +350,7 @@ class MotionSheetController internal constructor(
     /** 抓住收起中的抽屉：取消收起并立刻停住回弹动画，让跟手位移接管（不 snapTo，位置保持当前值）。 */
     private fun reopenForGrab(): Boolean {
         if (closeCommitted || leaving || !closing) return false
+        closeAttempt += 1L
         closeJob?.cancel()
         closeJob = null
         closing = false
@@ -363,8 +408,21 @@ class MotionSheetController internal constructor(
         if (canClose() && height > 0f && projected > height * DISMISS_FRACTION) {
             close(v)
         } else {
-            scope.launch { offset.animateTo(0f, SettleSpec, initialVelocity = v) }
+            // 回弹的幅度跟拉下的距离走：慢慢拉下一小段再松手，速度几乎为 0，弹簧的自然过冲只有拉距的几个百分点
+            // （拉 60px 才不到 3px），肉眼看就是「没有回弹」。给一个与拉距成正比、朝向原位的底速度，让过冲稳定可见。
+            val kick = -offset.value * SETTLE_KICK_PER_PX
+            scope.launch { offset.animateTo(0f, SettleSpec, initialVelocity = minOf(v, kick)) }
         }
+    }
+
+    /**
+     * 抽屉在这次手势里被拉下去、又被手指推回了原位，手指还带着向上的速度松手（向上甩）：此刻位移已经是 0，
+     * 没有「回弹」可播，到顶就像撞上了墙——按松手速度向上冲过停位（竖向拉伸）再落回，幅度随速度变化。
+     */
+    internal fun bounceAtTop(flingVelocity: Float) {
+        if (!enhanced || closing) return
+        val v = flingVelocity.coerceIn(-BOUNCE_MAX_VELOCITY, 0f) * BOUNCE_GAIN
+        scope.launch { offset.animateTo(0f, SettleSpec, initialVelocity = v) }
     }
 
     internal companion object {
@@ -376,6 +434,14 @@ class MotionSheetController internal constructor(
         const val LINE_REARM = 0.85f
         const val NAVIGATION_START_TIMEOUT_MILLIS = 700L
         const val FLING_PROJECTION_SECONDS = 0.12f
+
+        /** 松手回弹的底速度：每拉下 1px 给多少 px/s（朝向原位）。 */
+        const val SETTLE_KICK_PER_PX = 5f
+
+        /** 向上甩到顶的最小速度（px/s）：低于它视为没有甩，不弹。 */
+        const val BOUNCE_MIN_VELOCITY = 400f
+        const val BOUNCE_MAX_VELOCITY = 3000f
+        const val BOUNCE_GAIN = 0.7f
         /**
          * 展开：约 0.37s 周期（含全局加速），像抽屉被推上来——利落地升起、越接近停位越慢，只在停位处轻轻多走一点再落稳
          * （阻尼 0.82，过冲约 1%，被竖向拉伸吃掉，底边始终贴住屏幕；不是果冻式的来回弹）；遮罩随抽屉位置渐显，不是先「啪」地全暗。
@@ -396,8 +462,30 @@ fun rememberMotionSheetController(): MotionSheetController {
     val scope = rememberCoroutineScope()
     val enhanced = MotionMode.enhanced
     val depth = LocalPageDepth.current
-    return remember(enhanced) { MotionSheetController(scope, enhanced) }.also {
-        it.pageDepth = depth
+    val lifecycleOwner = LocalLifecycleOwner.current
+    return remember(enhanced) { MotionSheetController(scope, enhanced) }.also { controller ->
+        controller.pageDepth = depth
+        DisposableEffect(lifecycleOwner, controller) {
+            val observer = LifecycleEventObserver { _, event ->
+                // 旋转/重建在 onDestroy 之前先走 onSaveInstanceState：非跳转交接的常规退场途中
+                // 在暂停阶段立即提交关闭，避免 rememberSaveable 把打开态写入 Bundle 导致重建复活。
+                if ((event == Lifecycle.Event.ON_PAUSE && !controller.leaving) ||
+                    (event == Lifecycle.Event.ON_STOP && controller.leaving)
+                ) {
+                    if (controller.closing && !controller.closeCommitted) {
+                        try {
+                            controller.commitClose()
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (failure: Exception) {
+                            android.util.Log.w("SheetMotion", "Sheet close callback failed on lifecycle event", failure)
+                        }
+                    }
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        }
     }
 }
 
@@ -668,13 +756,9 @@ fun Modifier.motionSheetSurface(controller: MotionSheetController, scrim: Color)
         }
     }
     .sheetPanelDim(controller)
-    // 压暗与褪色盖在抽屉上，并且在图层里面画——跟着抽屉一起翻折，不会留下一块没翻的方形暗影。
-    // （褪色不用渲染效果：渲染效果的离屏缓冲只有本布局框那么大，抽屉画在 Material3 的偏移之后，会被裁掉一大块）
+    // 压暗盖在抽屉上，并且在图层里面画——跟着抽屉一起翻折，不会留下一块没翻的方形暗影。
     .drawWithCache {
         val outline = AppSheetTopShape.createOutline(size, layoutDirection, this)
-        val path = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            androidx.compose.ui.graphics.Path().apply { addOutline(outline) }
-        } else null
         onDrawWithContent {
             drawContent()
             val depth = controller.pageDepth?.progress?.value ?: 0f
@@ -686,16 +770,12 @@ fun Modifier.motionSheetSurface(controller: MotionSheetController, scrim: Color)
                 // 按抽屉的圆角轮廓画：直接画矩形会在圆角外露出深色直角
                 translate(top = top) {
                     drawOutline(outline = outline, color = Color.Black.copy(alpha = pageDimMaxAlpha() * d))
-                    // 褪色：用「饱和度」混合模式盖一层灰（饱和度为 0），只改抽屉内容的饱和度、不改亮度；API 31+（与页面区的褪色同档，低版本两边都只有压暗和翻折）
-                    if (depth > 0.01f && path != null) {
-                        clipPath(path) {
-                            drawRect(color = Color.Gray, alpha = 0.5f * depth.coerceAtMost(1f), blendMode = BlendMode.Saturation)
-                        }
-                    }
                 }
             }
         }
     }
+    // 褪色放在压暗的内侧：先把抽屉内容褪色，压暗再盖在上面（两者都是线性变换，先后顺序结果相同）
+    .then(SheetDepthDesaturateElement(controller))
 
 /**
  * 抽屉内容 / 把手上的跟手下拉手势。必须放在抽屉**内部**（内容根节点、把手），不要放在 `ModalBottomSheet` 的 modifier 上：
@@ -775,9 +855,71 @@ internal class SheetDragConnection(private val c: MotionSheetController) : Neste
         if (!c.dragged) return Velocity.Zero
         if (c.offset.value == 0f) {
             c.endDrag()
+            // 拉下去又推回原位、带着向上的速度松手：到顶按速度弹一下（此前这里直接放过，几乎碰不到回弹）
+            if (available.y < -MotionSheetController.BOUNCE_MIN_VELOCITY) c.bounceAtTop(available.y)
             return Velocity.Zero
         }
         c.settle()
         return available
     }
 }
+
+/** 抽屉随页面景深褪色的最大程度：饱和度从 1 降到 1 - 这个值（与页面区的褪色一致）。 */
+private const val SheetDesaturation = 0.5f
+private const val SheetDesaturationSteps = 20
+
+/** 褪色用的色彩矩阵滤镜按 5% 一档预先建好，进度每帧都在变，查表即可。 */
+private val SheetDesaturationFilters: Array<ColorFilter> by lazy {
+    Array(SheetDesaturationSteps + 1) { i ->
+        ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(1f - SheetDesaturation * i / SheetDesaturationSteps) })
+    }
+}
+
+private data class SheetDepthDesaturateElement(
+    private val controller: MotionSheetController,
+) : ModifierNodeElement<SheetDepthDesaturateNode>() {
+    override fun create() = SheetDepthDesaturateNode(controller)
+    override fun update(node: SheetDepthDesaturateNode) {
+        node.controller = controller
+    }
+    override fun InspectorInfo.inspectableProperties() {
+        name = "sheetDepthDesaturate"
+    }
+}
+
+/**
+ * 抽屉进入二级页面时的褪色。
+ *
+ * 不用 `BlendMode.Saturation`：非可分离混合模式在联发科天玑（Mali GPU）机型上会把纯白画成黑色（抽屉条目整块变黑）；
+ * 也不用 `graphicsLayer { renderEffect }`：离屏缓冲只有本布局框那么大，而抽屉画在 Material3 的纵向偏移之后，会被裁掉一大块。
+ * 这里把内容录进自己的图层，图层向下加高到覆盖偏移后的抽屉，再给图层挂色彩矩阵滤镜（普通的图层绘制，不涉及混合模式）。
+ * 进度为 0 时不走图层，直接绘制，没有额外开销。API 31 以下只有压暗和翻折，与页面区同档。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+private class SheetDepthDesaturateNode(var controller: MotionSheetController) : Modifier.Node(), DrawModifierNode {
+    private var layer: GraphicsLayer? = null
+
+    override fun ContentDrawScope.draw() {
+        val depth = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) controller.pageDepth?.progress?.value ?: 0f else 0f
+        val step = kotlin.math.round(depth.coerceIn(0f, 1f) * SheetDesaturationSteps).toInt()
+        if (step == 0) {
+            drawContent()
+            return
+        }
+        val top = runCatching { controller.sheetState?.requireOffset() }.getOrNull() ?: 0f
+        val width = size.width.toInt().coerceAtLeast(1)
+        val height = (size.height + top.coerceAtLeast(0f)).toInt().coerceIn(1, MaxDesaturationLayerHeight)
+        val target = layer ?: requireGraphicsContext().createGraphicsLayer().also { layer = it }
+        target.colorFilter = SheetDesaturationFilters[step]
+        // 必须用 DrawScope 里的成员扩展 GraphicsLayer.record(size) { }：里面的 drawContent() 才会画进图层
+        target.record(IntSize(width, height)) { this@draw.drawContent() }
+        drawLayer(target)
+    }
+
+    override fun onDetach() {
+        layer?.let { requireGraphicsContext().releaseGraphicsLayer(it) }
+        layer = null
+    }
+}
+
+private const val MaxDesaturationLayerHeight = 8192

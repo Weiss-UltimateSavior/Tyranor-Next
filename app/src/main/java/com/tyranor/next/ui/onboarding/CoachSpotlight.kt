@@ -24,6 +24,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.CoachOverlayScrim
+import com.tyranor.next.ui.common.CoachAnchor
 import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.MotionTokens
 
@@ -109,7 +110,9 @@ internal class CoachSpotlight {
                         (drawnTarget.height + inflate * 2f).coerceAtLeast(0f),
                     ),
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius((cornerRadius + inflate).coerceAtLeast(0f)),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx()),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                        width = (if (safeStep == CoachAnchor.GAME_FOLDER) 2.dp else 3.dp).toPx(),
+                    ),
                 )
                 tooltipBounds()?.let {
                     val tooltip = Rect(
@@ -123,7 +126,7 @@ internal class CoachSpotlight {
                         color = primary.copy(alpha = 0.72f),
                         start = connector.first,
                         end = connector.second,
-                        strokeWidth = 2.5.dp.toPx(),
+                        strokeWidth = (if (safeStep == CoachAnchor.GAME_FOLDER) 1.5.dp else 2.5.dp).toPx(),
                         cap = StrokeCap.Round,
                     )
                 }

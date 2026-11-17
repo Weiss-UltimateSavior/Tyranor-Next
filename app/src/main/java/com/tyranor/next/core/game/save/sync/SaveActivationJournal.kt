@@ -13,6 +13,7 @@ import java.util.UUID
 internal class SaveActivationJournal(private val directory: File) {
     private val recordDirectory = File(directory, "records")
     private val records = SaveSyncStateStore(recordDirectory)
+    private val scopes = SaveSyncStateStore(File(directory, "scopes"))
 
     data class Pending(
         val token: String,
@@ -34,7 +35,18 @@ internal class SaveActivationJournal(private val directory: File) {
             return Pending(
                 state.getString("token"),
                 SaveVersion(parsed.name, parsed.contentHash, parsed.createdAt, archive(key).length(),
-                    SaveVersionSource.valueOf(state.getString("source")), parsed.restored, parsed.previousCreatedAt),
+                    SaveVersionSource.valueOf(state.getString("source")), parsed.restored, parsed.previousCreatedAt,
+                    state.optJSONArray("runtimeProvenances")?.let { array -> buildSet {
+                        for (index in 0 until array.length()) {
+                            val item = array.optJSONObject(index) ?: continue
+                            val packageName = item.optString("package")
+                            val fingerprint = item.optString("fingerprint")
+                            val directory = item.optString("directory")
+                            if (packageName.isNotBlank() && fingerprint.matches(Regex("[a-f0-9]{64}")) && directory.isNotBlank()) {
+                                add(RuntimeSaveProvenance(packageName, fingerprint, directory))
+                            }
+                        }
+                    } }.orEmpty()),
                 state.optString("before").takeIf { it.isNotBlank() },
                 state.optBoolean("committed"),
                 state.optString("activeKey").takeIf { it.isNotBlank() },
@@ -44,6 +56,41 @@ internal class SaveActivationJournal(private val directory: File) {
         } catch (failure: Exception) {
             throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)
         }
+    }
+
+    /** Inspect under the active-directory fence, including preparations that have no directory owner yet. */
+    fun hasPendingForDirectory(key: String, activeKey: String): Boolean {
+        val own = records.inspect(key)
+        if (own.has("token")) {
+            val directory = own.opt("activeKey") as? String
+            // A journal bound to a different directory does not depend on the retiring directory.
+            if ((own.opt("token") as? String).isNullOrBlank() ||
+                directory?.startsWith(SAVE_DIRECTORY_KEY_PREFIX) != true ||
+                !File(directory.removePrefix(SAVE_DIRECTORY_KEY_PREFIX)).isAbsolute ||
+                saveDirectoryScopesOverlap(directory, activeKey)
+            ) return true
+        } else if (!Files.notExists(archive(key).toPath(), NOFOLLOW_LINKS)) {
+            return true
+        }
+        // The scope is written before moving the ZIP. It protects an orphan or a damaged per-URI record.
+        if (scopes.keys().any { other ->
+                val directory = inspectOther(scopes, other)?.opt("activeKey") as? String
+                directory != null && saveDirectoryScopesOverlap(directory, activeKey) &&
+                    !Files.notExists(archive(other).toPath(), NOFOLLOW_LINKS)
+            }) return true
+        return records.keys().any { other ->
+            if (other == key) return@any false
+            val state = inspectOther(records, other) ?: return@any false
+            val directory = state.opt("activeKey") as? String
+            state.has("token") && !directory.isNullOrBlank() && saveDirectoryScopesOverlap(directory, activeKey)
+        }
+    }
+
+    private fun inspectOther(store: SaveSyncStateStore, key: String): JSONObject? = try {
+        store.inspect(key)
+    } catch (failure: SaveSyncException) {
+        if (failure.code != SaveSyncError.LOCAL_IO) throw failure
+        null
     }
 
     /** Consumes an already-private staging ZIP after validating it; never pass a history file. */
@@ -69,6 +116,8 @@ internal class SaveActivationJournal(private val directory: File) {
         val parent = target.parentFile!!
         if (!parent.isDirectory && !parent.mkdirs()) throw SaveSyncException(SaveSyncError.LOCAL_IO)
         check()
+        if (activeKey != null) scopes.save(key, JSONObject().put("activeKey", activeKey))
+        else scopes.remove(key)
         try {
             Files.move(staging.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
         } catch (_: AtomicMoveNotSupportedException) {
@@ -102,6 +151,12 @@ internal class SaveActivationJournal(private val directory: File) {
         if (source.exists() && !source.delete()) throw SaveSyncException(SaveSyncError.LOCAL_IO)
         // Keep the token if deleting staging fails; a retry must retain the completed chain.
         records.remove(key)
+        try {
+            scopes.remove(key)
+        } catch (failure: SaveSyncException) {
+            if (failure.code != SaveSyncError.LOCAL_IO) throw failure
+            // A scope with no archive cannot pin a directory and is replaced by the next preparation.
+        }
     }
 
     private fun encode(pending: Pending) = JSONObject()
@@ -109,4 +164,10 @@ internal class SaveActivationJournal(private val directory: File) {
         .put("source", pending.selected.source.name).put("before", pending.beforeHash.orEmpty())
         .put("committed", pending.committed)
         .put("activeKey", pending.activeKey)
+        .put("runtimeProvenances", org.json.JSONArray().apply {
+            pending.selected.runtimeProvenances.forEach { provenance ->
+                put(JSONObject().put("package", provenance.packageName)
+                    .put("fingerprint", provenance.savesFingerprint).put("directory", provenance.canonicalDirectory))
+            }
+        })
 }

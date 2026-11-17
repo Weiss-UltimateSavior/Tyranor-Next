@@ -9,6 +9,7 @@ import com.tyranor.next.core.game.model.GameLibraryConditions
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 /**
  * 应用设置存储层：与引擎无关的应用级偏好（如主题色、导航栏样式）。
@@ -138,7 +139,7 @@ object AppSettingsStore {
     const val COVER_SOURCE_BANGUMI = "bangumi"
     const val COVER_SOURCE_STEAM = "steam"
     const val COVER_SOURCE_VNDB = "vndb"
-    /** 未萌 NextMoe（鲲 Galgame 论坛）：匿名来源，无需登录。 */
+    /** 未萌 NextMoe（鲲 Galgame 论坛）：支持匿名刮削，游玩状态等需登录功能使用 OAuth。 */
     const val COVER_SOURCE_NEXTMOE = "nextmoe"
     const val COVER_SOURCE_LOCAL = "local"
     const val COVER_SOURCE_CUSTOM = "custom"
@@ -457,7 +458,7 @@ object AppSettingsStore {
 
     /**
      * 把「未显式设置」解析为实际样式（纯函数，便于单元测试）：
-     * 默认外观风格 → 液态玻璃 · 透镜（Android 13 以下回退液态玻璃 · 经典）；
+     * 默认外观风格 → 液态玻璃（经典）；
      * 玻璃系外观风格（复古玻璃）→ 经典 MD（其悬浮玻璃条形态）。显式选择只做版本兼容归一化，不随外观风格改变。
      */
     fun resolveNavStyle(style: String, enhancedSupported: Boolean, glassAppearance: Boolean): String {
@@ -808,7 +809,7 @@ object AppSettingsStore {
     }
 
     private fun bumpCoverScraperSettingsVersion() {
-        coverScraperSettingsVersion.value += 1
+        coverScraperSettingsVersion.update { it + 1 }
     }
 
     /** 已启用的第三方 APK 运行时模块包名集合；始终返回副本，调用方可安全修改。 */

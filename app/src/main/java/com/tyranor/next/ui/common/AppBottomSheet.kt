@@ -1,6 +1,7 @@
 package com.tyranor.next.ui.common
 
 import android.content.res.Configuration
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -23,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.theme.AppSheetTopShape
 import com.tyranor.next.theme.AppThemeColors
@@ -121,7 +123,10 @@ internal fun AppBottomSheet(
                         .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)),
                 ) {
                     AppSheetDragHandle(showGlassTopBorder = true)
-                    CompositionLocalProvider(LocalAppSheetContent provides true) { content() }
+                    CompositionLocalProvider(
+                        LocalAppSheetContent provides true,
+                        LocalIndication provides NoIndication,
+                    ) { content() }
                 }
             }
         }
@@ -129,7 +134,7 @@ internal fun AppBottomSheet(
 }
 
 /** Shared overall height policy for every app bottom sheet. Values are in dp, independent of density. */
-internal fun appBottomSheetMaxHeight(screenHeightDp: Int, isLandscape: Boolean): androidx.compose.ui.unit.Dp {
+internal fun appBottomSheetMaxHeight(screenHeightDp: Int, isLandscape: Boolean): Dp {
     val screenHeight = screenHeightDp.dp
     val marginLimit = screenHeight - if (isLandscape) 96.dp else 120.dp
     val proportionalLimit = screenHeight * if (isLandscape) 0.86f else 0.75f

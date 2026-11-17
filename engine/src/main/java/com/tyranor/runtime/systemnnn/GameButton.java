@@ -3,13 +3,14 @@ package com.tyranor.runtime.systemnnn;
 import android.content.Context;
 import android.graphics.*;
 import android.os.SystemClock;
+import android.view.InputDevice;
 import android.view.MotionEvent;
-import android.view.View;
+import java.util.function.Consumer;
 
 import static com.tyranor.runtime.systemnnn.ButtonArt.number;
 
 /** CCommonButton states in the original atlas, with the original click wait. */
-final class GameButton extends View {
+final class GameButton extends StoryPlaneView {
     static final class Spec {
         final SpriteAnimation[] states;
         final String image;
@@ -37,6 +38,17 @@ final class GameButton extends View {
             this.image=image;states=new SpriteAnimation[]{normal,hover,pressed,null};
             hit=normal;hitX=hitY=0;pixelHit=true;clickTime=frames;sound=voice=-1;
         }
+
+        boolean hasTouchTarget(Bitmap bitmap,int x,int y,int canvasWidth,int canvasHeight){
+            if(bitmap==null||bitmap.isRecycled())return false;
+            long visibleLeft=Math.max(0L,-(long)x),visibleTop=Math.max(0L,-(long)y);
+            long visibleRight=Math.min(states[0].w,(long)canvasWidth-x);
+            long visibleBottom=Math.min(states[0].h,(long)canvasHeight-y);
+            long left=Math.max(0L,visibleLeft-hitX),top=Math.max(0L,visibleTop-hitY);
+            long right=Math.min(hit.w,visibleRight-hitX),bottom=Math.min(hit.h,visibleBottom-hitY);
+            return left<right&&top<bottom&&
+                (!pixelHit||hit.hasHitPixels(bitmap,(int)left,(int)top,(int)right,(int)bottom));
+        }
     }
     final Spec spec;
     private final Bitmap image;
@@ -48,20 +60,34 @@ final class GameButton extends View {
     private long stateSince;
     private Runnable pending;
     private Runnable prepare;
+    private Consumer<ButtonArt.SoundEvent> feedback;
+    private Runnable hoverCue;
+    private int enterWait,exitWait;
+    private boolean pointerInside;
 
     GameButton(Context context,Spec spec,Bitmap image,String label,int frameMs){
         super(context);this.spec=spec;this.image=image;this.label=label;period=Math.max(1,frameMs);
         setContentDescription(label);setSoundEffectsEnabled(false);setFocusable(true);
     }
     void prepare(Runnable action){prepare=action;}
+    void feedback(Consumer<ButtonArt.SoundEvent> action,int enterWait,int exitWait){
+        feedback=action;this.enterWait=enterWait;this.exitWait=exitWait;
+    }
     boolean commit(Runnable cue,Runnable action){
         if(pending!=null||!isEnabled())return false;
+        cancelHoverCue();
         pending=()->{pending=null;invalidate();action.run();};
         cue.run();invalidate();postDelayed(pending,spec.clickTime*(long)period);
         if(prepare!=null)prepare.run();
         return true;
     }
-    @Override protected void onDetachedFromWindow(){if(pending!=null)removeCallbacks(pending);pending=null;super.onDetachedFromWindow();}
+    @Override protected void onDetachedFromWindow(){
+        if(pending!=null)removeCallbacks(pending);
+        pending=null;
+        cancelHoverCue();
+        pointerInside=false;
+        super.onDetachedFromWindow();
+    }
     @Override public CharSequence getAccessibilityClassName(){return "android.widget.Button";}
     @Override protected void drawableStateChanged(){super.drawableStateChanged();invalidate();}
     boolean pictureHit(float localX,float localY){
@@ -72,23 +98,49 @@ final class GameButton extends View {
     }
     @Override public boolean onTouchEvent(MotionEvent event){
         if(pending!=null)return true;
-        if(event.getActionMasked()==MotionEvent.ACTION_DOWN&&!pictureHit(event.getX(),event.getY()))return false;
+        if(event.getActionMasked()==MotionEvent.ACTION_DOWN){
+            if(!pictureHit(event.getX(),event.getY()))return false;
+            if(feedback!=null&&!isEnabled())feedback.accept(ButtonArt.SoundEvent.CANNOT_CLICK);
+        }
         return super.onTouchEvent(event);
     }
+    @Override public boolean onHoverEvent(MotionEvent event){
+        if(feedback!=null&&pending==null&&isEnabled()&&event.isFromSource(InputDevice.SOURCE_MOUSE)){
+            boolean inside=event.getActionMasked()!=MotionEvent.ACTION_HOVER_EXIT&&pictureHit(event.getX(),event.getY());
+            if(pointerInside!=inside){
+                pointerInside=inside;
+                cancelHoverCue();
+                int wait=inside?enterWait:exitWait;
+                ButtonArt.SoundEvent kind=inside?ButtonArt.SoundEvent.ENTER:ButtonArt.SoundEvent.EXIT;
+                if(wait==0)feedback.accept(kind);
+                else if(wait>0){
+                    hoverCue=()->{hoverCue=null;feedback.accept(kind);};
+                    postDelayed(hoverCue,(long)period*wait);
+                }
+            }
+        }
+        return super.onHoverEvent(event);
+    }
+    private void cancelHoverCue(){
+        if(hoverCue!=null){removeCallbacks(hoverCue);hoverCue=null;}
+    }
+    private int drawState(){return !isEnabled()?3:pending!=null?2:isPressed()||isHovered()?1:0;}
+    boolean isAnimating(){
+        if(image==null)return false;
+        int mode=drawState();
+        SpriteAnimation animation=spec.states[mode];
+        long elapsed=mode==state?Math.max(0,(SystemClock.uptimeMillis()-stateSince)/period):0;
+        return getVisibility()==VISIBLE&&animation!=null&&animation.active(elapsed);
+    }
     @Override protected void onDraw(Canvas c){
-        int mode=!isEnabled()?3:pending!=null?2:isPressed()||isHovered()?1:0;
+        int mode=drawState();
         long now=SystemClock.uptimeMillis();
         if(mode!=state){state=mode;stateSince=now;}
         long elapsed=(now-stateSince)/period;
         SpriteAnimation animation=spec.states[mode];
         dest.set(0,0,getWidth(),getHeight());
         boolean drawn=animation!=null&&animation.draw(c,image,dest,paint,elapsed,255);
-        if(!drawn)drawn=spec.states[0].draw(c,image,dest,paint,0,isEnabled()?255:100);
-        if(!drawn){
-            paint.setColor(mode==2?0xff9a5613:0xff07253b);c.drawRect(dest,paint);
-            paint.setColor(isEnabled()?0xffffbc42:0xff8d9da8);paint.setTextSize(getHeight()*.4f);paint.setTextAlign(Paint.Align.CENTER);
-            c.drawText(label,getWidth()/2f,getHeight()*.64f,paint);
-        }
-        if(animation!=null&&animation.active(elapsed))postInvalidateOnAnimation();
+        if(!drawn)spec.states[0].draw(c,image,dest,paint,0,isEnabled()?255:100);
+        if(drawn&&animation.active(elapsed))postInvalidateOnAnimation();
     }
 }

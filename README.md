@@ -57,7 +57,8 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | CMVS                 | `data/pack/script.cpz` + `start.ps3/ps2`（仅 19 部登记作品）              | 内置 CMVS 原生运行时（cmvs-rs，NativeActivity） |
 | System35             | `*.ALD`（`SA.ALD` 等；根目录或 `GAMEDATA/`）、`System39.ain`/`System39.ini`/`*.wai`/`*.bgi`/`*.alk` | 内置 System3.x 运行时（xsystem35） |
 | System4              | `System40.ini` 或 `AliceStart.ini`（根目录；`*.ain` 为辅助特征）                    | 内置 System4 运行时（xsystem4）      |
-| SystemNNN            | 游戏目录下的 `spt/sys.spt`（不区分大小写）                            | 内置 [SystemNNN-Emberfall 0.6.14](https://github.com/PorisRora/SystemNNN-Emberfall)（ARM64） |
+| SystemNNN            | 游戏目录下的 `spt/sys.spt`（不区分大小写）                            | 内置 [SystemNNN-Emberfall 0.8.1](https://github.com/PorisRora/SystemNNN-Emberfall)（ARM64） |
+| Ethornell / BGI      | 根目录的 `system.arc`（带 BGI 引导标记，且不与 UK2 冲突）             | 内置 Ethornell / BGI 运行时（`libethornell.so`） |
 | YU-RIS               | `yscfg.dat`、`pac/*.ypf`、`YS*.DLL`、`.ymv`                          | 外置 Winlator（winlator-cn）        |
 | CatSystem2           | `config/startup.xml`、`*.int`、`*.cst`、`*.hg3`、`*.kcs` 等组合         | 外置 Winlator（winlator-cn）        |
 | PC（手动添加）        | 游戏页顶栏「添加 PC 游戏」选择目录并指定启动 exe                          | 外置 Winlator（winlator-cn）        |
@@ -72,6 +73,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | WebOther             | 通用 `index.html` 网页游戏                                                | 内置 Web 运行环境                  |
 | Ren'Py               | `.rpa`、`game/script.rpy`、`game/options.rpy`、`renpy/` + `.rpy/.rpyc` | 外置 RenPy APK 模块（8.5.3 / 7.7.1） |
 | Ruffle / Flash       | 顶层 `.swf`；根 `index.html/index.htm` + 唯一 SWF 的叶子目录                   | 外置 Ruffle APK 模块              |
+| MAGES.（impacto）    | 按精确大小写的根目录条目识别上游 profile（如 `mo6tw` 的 `SYSTEM.CPK`、`SCRIPT.cls` 等） | 外置 Impacto 宿主 APK（引擎页点击跳转下载） |
 | PSP                  | `.pbp`、`.cso`、`.iso`、`.chd`                                         | 外置 PPSSPP 模拟器                 |
 | Nintendo Switch      | `.nsp`、`.xci`、`.nca`、`.nro`                                         | 外置 Eden 模拟器                   |
 
@@ -81,6 +83,10 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 - 当前原生引擎库仅提供 `arm64-v8a`，设备需为 64 位 ARM 架构。
 - 游戏目录需位于 Android 可访问的本地存储，并通过系统文件选择器（SAF）授权；启动时目录必须能够映射为真实文件路径，外置存储上的部分引擎可能需要“所有文件访问”权限。
 - 实际兼容性取决于游戏使用的引擎版本、封包/加密方式和脚本特性；特殊修改版可能需要调整引擎设置或补丁。
+
+## 首次使用
+
+新安装或清除数据后首次打开，会在真实主界面上叠加八步「快速入门」教练层，用连接线和提示气泡讲解首页、添加文件夹、手动添加、搜索、封面、重新扫描、引擎与设置入口，不会创建独立的引导页面。支持的引擎游戏应从空游戏库的「添加文件夹」选择包含多个游戏的总目录，自动扫描入库；顶部加号用于指定 exe 手动添加电脑游戏或添加已安装的安卓应用。点击「跳过引导」或「开始使用」后移除提示并保留当前主界面状态，之后不再自动显示；已有设置或游戏库的升级用户默认跳过。新用户在完成引导后请求通知权限，升级用户跳过引导后沿用既有通知权限请求策略。
 
 ## 参与贡献
 
@@ -128,7 +134,7 @@ CI 使用 JDK 17；还需 engine 的 Android 36 平台、Build Tools 37.0.0、ND
 ```
 app/
 ├── src/main/java/com/tyranor/next/
-│   ├── core/      功能抽象层：扫描、启动、引擎模块、封面、存档、补丁、拆封包、配置、授权、更新
+│   ├── core/      功能抽象层：扫描、启动、引擎模块、封面、游玩状态、存档、补丁、拆封包、配置、授权、网络（各域共享 HTTP 层）、更新
 │   ├── ui/        界面 UI 交互层：主界面、游戏页、设置页、弹窗、公共组件
 │   └── theme/     Compose / Miuix 主题、色调、深浅色适配
 ├── src/main/assets/rtp/    App 自有 RTP 资源
@@ -161,7 +167,7 @@ docs/、.archify/                     专题方案、审查记录与可视化
 | Siglus / RealLive / AVG32 / UK2 | [siglus_rs](https://github.com/xmoezzz/siglus_rs) | MPL-2.0 | 上游仓库 |
 | FVP | [rfvp](https://github.com/xmoezzz/rfvp) | MPL-2.0 | 上游仓库 |
 | CMVS | [cmvs-rs](https://github.com/Weiss-UltimateSavior/cmvs-rs) | MIT OR Apache-2.0 | `tools/cmvs/` |
-| SystemNNN | [SystemNNN-Emberfall](https://github.com/PorisRora/SystemNNN-Emberfall)（原版 SystemNNN 由 tinyan 开发） | GPL-2.0-only | `engine/src/main/assets/licenses/systemnnn/` |
+| SystemNNN | [SystemNNN-Emberfall](https://github.com/PorisRora/SystemNNN-Emberfall)（原版 SystemNNN 由 tinyan 开发） | GPL-2.0-only | [对应源码及构建记录](engine/src/main/assets/licenses/systemnnn/ffmpeg-source.txt)、[归属与许可](engine/src/main/assets/licenses/systemnnn/upstream-source.txt) |
 | System35 | [xsystem35-sdl2](https://github.com/kichikuou/xsystem35-sdl2) | GPL-2.0-or-later | `engine/xsystem35/BUILD.md`、`engine/xsystem35/licenses/` |
 | System4 | [xsystem4](https://github.com/nunuhara/xsystem4) / [libsys4](https://github.com/nunuhara/libsys4) | GPL-2.0-or-later | `engine/xsystem4/BUILD.md`、`engine/xsystem4/licenses/` |
 | Anime4K 着色器 | [bloc97/Anime4K](https://github.com/bloc97/Anime4K) | MIT | `engine/src/main/assets/anime4k/` |

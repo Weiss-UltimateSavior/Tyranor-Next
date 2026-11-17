@@ -50,6 +50,8 @@ class GameOverridePartitionsTest {
         .put(GameOverridePartitions.TOUCH_PAD_CONFIG_KEY, JSONObject().put("buttons", "a,b"))
         .put(GameOverridePartitions.TOUCH_PAD_PRESETS_KEY, JSONObject().put("preset1", "{}"))
         .put("future_engine_key", "keep-me")
+        .put(GameOverridePartitions.KEY_RUNTIME_MODULE_SETTINGS, JSONObject()
+            .put("com.tyranor.runtime.one", JSONObject().put("vsync", false)))
 
     @Test
     fun splitAssembleRoundTripIsLossless() {
@@ -117,6 +119,32 @@ class GameOverridePartitionsTest {
         assertTrue(tyranoPartition.has(PerGameSettingsStore.F_FVP_SYSTEM_FONT))
         assertTrue(tyranoPartition.has(PerGameSettingsStore.F_FVP_TEXT_HIDPI))
         assertTrue(tyranoPartition.has(PerGameSettingsStore.F_FVP_FONT))
+        assertTrue(tyranoPartition.has(GameOverridePartitions.KEY_RUNTIME_MODULE_SETTINGS))
+    }
+
+    @Test
+    fun staleFullRecordWriteKeepsLatestRuntimeModuleMapAndDoesNotResurrectClearedModules() {
+        val packageA = "com.tyranor.runtime.a"
+        val packageB = "com.tyranor.runtime.b"
+        val latest = JSONObject().put(
+            GameOverridePartitions.KEY_RUNTIME_MODULE_SETTINGS,
+            JSONObject().put(packageA, JSONObject().put("fps", 60)),
+        )
+        val staleTarget = JSONObject()
+            .put(PerGameSettingsStore.F_RENDERER, "vulkan")
+            .put(
+                GameOverridePartitions.KEY_RUNTIME_MODULE_SETTINGS,
+                JSONObject()
+                    .put(packageA, JSONObject().put("fps", 30))
+                    .put(packageB, JSONObject().put("old", true)),
+            )
+
+        GameOverridesRepository.preserveRuntimeModuleSettings(latest, staleTarget)
+
+        assertEquals("vulkan", staleTarget.getString(PerGameSettingsStore.F_RENDERER))
+        val preserved = staleTarget.getJSONObject(GameOverridePartitions.KEY_RUNTIME_MODULE_SETTINGS)
+        assertEquals(60, preserved.getJSONObject(packageA).getInt("fps"))
+        assertTrue(!preserved.has(packageB))
     }
 
     @Test
