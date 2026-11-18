@@ -51,6 +51,9 @@
     <string name="settings_theme_mode_light">浅色</string>
     <string name="settings_theme_mode_dark">深色</string>
     <string name="settings_default_theme_particles">默认主题粒子</string>
+    <string name="settings_default_theme_particle_style">默认主题粒子样式</string>
+    <string name="settings_particles_rising_bubbles">气泡上升</string>
+    <string name="settings_particles_button_waterfall">按键瀑布</string>
     <string name="settings_engine_tabs">引擎页分类显示</string>
     <string name="settings_engine_card_icon">显示引擎卡片图标</string>
     <string name="settings_side_rail">平板侧边栏</string>
