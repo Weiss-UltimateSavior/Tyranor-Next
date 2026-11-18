@@ -13,9 +13,11 @@ import java.security.MessageDigest
 /**
  * Impacto 外置 APK 引擎模块。
  *
- * 被承载的是**未改动**的 CommitteeOfZero/impacto（固定提交见宿主仓库 yuukana1/Tyranor-Next-MAGES 的 `engine/impacto/source-lock.json`）。它自带 SDL3
+ * 被承载的是 CommitteeOfZero/impacto：宿主仓库 yuukana1/Tyranor-Next-MAGES 固定上游提交，再按序应用该仓库的补丁系列
+ * （`engine/impacto/source-lock.json`、`engine/impacto/patches/`，逐个记录 SHA-256）。补丁里既有通用修复，也有只服务
+ * Windows／Steam 版《秋之回忆6》的 `mo6tw-pc*` profile；其他游戏没有在设备上逐一回归。上游 impacto 自带 SDL3
  * 的 `org.libsdl.app`，与主 APK 内置的 SDL2 同名 Java 类冲突，所以必须是独立 APK：
- * 由宿主仓库 yuukana1/Tyranor-Next-MAGES 构建发布，包内只有上游 Java 源码、上游库 `libimpacto.so` 和 TYN 自有的启动子类。
+ * 由宿主仓库 yuukana1/Tyranor-Next-MAGES 构建发布，包内只有上游 Java 源码、固定上游加补丁系列编出的库 `libimpacto.so` 和 TYN 自有的启动子类。
  * 启动协议集中在本文件和 [ImpactoHostContract] 内，扫描器 / UI 不散落 package/action/extra 字符串。
  */
 object ImpactoExternalEngineModule : ExternalEngineModule {

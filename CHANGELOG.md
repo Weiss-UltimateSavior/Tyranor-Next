@@ -6,6 +6,8 @@
 
 - MAGES. 引擎宿主仓库更名为 `yuukana1/Tyranor-Next-MAGES`，引擎页下载链接改为该仓库的 `releases/latest/download/Tyranor-Next-MAGES.apk`（资产名固定，始终指向最新正式发布）。宿主从 0.2.0 起发布资产名为 `Tyranor-Next-MAGES.apk`；0.2.0 另附一份同内容的旧资产名 `impacto-host.apk`，让更早的本 App 版本里写死的旧链接暂时仍可下载，**之后的宿主版本不再附带**，旧链接从下一个宿主发布起失效；已安装的宿主不受影响。
 
+- 下载链接现在指向的宿主（0.2.0 起）不再是未改动的上游：构建输入是固定的上游 impacto 提交加宿主仓库的补丁系列（`engine/impacto/patches/`，逐个记录 SHA-256），取代此前「不应用 TYN 引擎补丁」的约束。`docs/impacto-upstream-only.md`、`SPEC.md` 与 `ImpactoExternalEngineModule` 的说明同步改写；补丁里有通用修复，也有只服务 Windows／Steam 版《秋之回忆6》的 `mo6tw-pc*` profile，其他游戏没有在设备上逐一回归。主 App 本身的识别与启动行为不变。
+
 - 应用设置新增「默认主题粒子样式」，可在「气泡上升」与手柄按键图形沿弧线摇摆下落的「按键瀑布」之间切换。
 
 - 应用设置新增「默认主题粒子」开关，默认开启。关闭后默认外观只绘制纯色背景。
