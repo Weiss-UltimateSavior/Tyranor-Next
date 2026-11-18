@@ -51,6 +51,9 @@
     <string name="settings_theme_mode_light">ライト</string>
     <string name="settings_theme_mode_dark">ダーク</string>
     <string name="settings_default_theme_particles">デフォルトテーマのパーティクル</string>
+    <string name="settings_default_theme_particle_style">デフォルトテーマのパーティクルスタイル</string>
+    <string name="settings_particles_rising_bubbles">浮かぶ泡</string>
+    <string name="settings_particles_button_waterfall">ボタンの滝</string>
     <string name="settings_engine_tabs">エンジンページを分類表示</string>
     <string name="settings_engine_card_icon">エンジンカードのアイコンを表示</string>
     <string name="settings_side_rail">タブレットサイドレール</string>

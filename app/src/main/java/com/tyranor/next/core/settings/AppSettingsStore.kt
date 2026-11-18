@@ -79,6 +79,7 @@ object AppSettingsStore {
     const val KEY_LIQUID_GLASS_ENHANCE = "liquid_glass_enhance"
     const val KEY_APPEARANCE_STYLE = "appearance_style"
     private const val KEY_DEFAULT_THEME_PARTICLES_ENABLED = "default_theme_particles_enabled"
+    private const val KEY_DEFAULT_THEME_PARTICLE_STYLE = "default_theme_particle_style"
     private const val DEFAULT_THEME_PARTICLES_ENABLED = true
     const val KEY_SCAN_DEPTH = "scan_depth"
     const val KEY_APP_CORNER_RADIUS = "app_corner_radius"
@@ -318,6 +319,9 @@ object AppSettingsStore {
 
     private val mutableDefaultThemeParticlesEnabled = MutableStateFlow(DEFAULT_THEME_PARTICLES_ENABLED)
     val defaultThemeParticlesEnabled = mutableDefaultThemeParticlesEnabled.asStateFlow()
+
+    private val mutableDefaultThemeParticleStyle = MutableStateFlow(DefaultThemeParticleStyle.RISING_BUBBLES)
+    internal val defaultThemeParticleStyle = mutableDefaultThemeParticleStyle.asStateFlow()
 
     /** 经典应用图标内存态：设置页切换后由 [AppIconSwitcher] 同步启动器别名。 */
     val classicIconEnabledState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_CLASSIC_ICON)
@@ -611,13 +615,23 @@ object AppSettingsStore {
     }
 
     internal fun initDefaultThemeParticles(c: Context) {
+        val settings = prefs(c)
         mutableDefaultThemeParticlesEnabled.value =
-            prefs(c).getBoolean(KEY_DEFAULT_THEME_PARTICLES_ENABLED, DEFAULT_THEME_PARTICLES_ENABLED)
+            settings.getBoolean(KEY_DEFAULT_THEME_PARTICLES_ENABLED, DEFAULT_THEME_PARTICLES_ENABLED)
+        val storedStyle = settings.getString(KEY_DEFAULT_THEME_PARTICLE_STYLE, null)
+        mutableDefaultThemeParticleStyle.value =
+            DefaultThemeParticleStyle.entries.firstOrNull { it.storedValue == storedStyle }
+                ?: DefaultThemeParticleStyle.RISING_BUBBLES
     }
 
     fun setDefaultThemeParticlesEnabled(c: Context, enabled: Boolean) {
         prefs(c).edit { putBoolean(KEY_DEFAULT_THEME_PARTICLES_ENABLED, enabled) }
         mutableDefaultThemeParticlesEnabled.value = enabled
+    }
+
+    internal fun setDefaultThemeParticleStyle(c: Context, style: DefaultThemeParticleStyle) {
+        prefs(c).edit { putString(KEY_DEFAULT_THEME_PARTICLE_STYLE, style.storedValue) }
+        mutableDefaultThemeParticleStyle.value = style
     }
 
     /** 是否使用经典应用图标（旧版图标）；启动器别名状态由 [AppIconSwitcher] 负责。 */

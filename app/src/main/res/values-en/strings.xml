@@ -51,6 +51,9 @@
     <string name="settings_theme_mode_light">Light</string>
     <string name="settings_theme_mode_dark">Dark</string>
     <string name="settings_default_theme_particles">Default theme particles</string>
+    <string name="settings_default_theme_particle_style">Default theme particle style</string>
+    <string name="settings_particles_rising_bubbles">Rising bubbles</string>
+    <string name="settings_particles_button_waterfall">Button waterfall</string>
     <string name="settings_engine_tabs">Categorize engine page</string>
     <string name="settings_engine_card_icon">Show engine card icons</string>
     <string name="settings_side_rail">Tablet side rail</string>
