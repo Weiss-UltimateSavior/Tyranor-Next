@@ -47,7 +47,7 @@ MAGES.（前 5pb.）的视觉小说引擎（SC3 脚本，如 Memories Off 6、Ch
 _Avoid_: 把 Impacto 当作引擎名（界面、文档中的引擎名一律写 MAGES.）
 
 **MAGES. 语言变体（Language Variant）**:
-同一份 Windows／Steam 版《秋之回忆6》数据对应的三个启动 profile 之一（`mo6tw-pc` 日文、`mo6tw-pc-zhs` 简体、`mo6tw-pc-zht` 繁体），三者合称一个变体族（代码里的 `family`）；扫描按应用界面语言选一个写入 `launchTarget`，重扫沿用已入库且仍可用的选择。宿主按「profile + 目录」隔离存档，所以换变体等于换一份存档。
+同一份 Windows／Steam 版《秋之回忆6》数据按文本语言（日文、简体、繁体）对应的三个启动 profile 之一，三者构成一个变体族。宿主按「profile + 目录」隔离存档，所以换变体等于换一份存档。
 _Avoid_: 语言包、语言补丁
 
 **第三方 APK 运行时模块（Third-party APK Runtime Module）**:
