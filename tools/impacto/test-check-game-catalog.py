@@ -201,6 +201,54 @@ class HostProfilesTests(unittest.TestCase):
         dropped = self.mutated(lambda p: p['mo6tw-pc-zht'].update(detect=None))
         self.assertTrue(any('mo6tw-pc-zht' in x and 'not a "pc" profile' in x for x in self.compare(dropped)))
 
+    def test_a_constant_member_of_the_common_files_is_resolved_and_compared(self):
+        text = self.catalog_text.replace(
+            'private val PC_COMMON_DATA_ENTRIES = setOf("script.cpk", "mes00.cpk")',
+            'private const val EXTRA_REQUIRED = "extra.cpk"\n'
+            '    private val PC_COMMON_DATA_ENTRIES = setOf("script.cpk", "mes00.cpk", EXTRA_REQUIRED)',
+        )
+        self.assertNotEqual(text, self.catalog_text)
+        self.assertEqual(
+            tool.pc_requirements(text), {'game.exe', 'data/script.cpk', 'data/mes00.cpk', 'data/extra.cpk'},
+        )
+        # The host allOf did not change: the extra required file must be reported, not ignored.
+        problems = self.compare(HOST_PROFILES, text)
+        self.assertTrue(any('required files' in x for x in problems), problems)
+        # And it passes once the host lists the file too.
+        both = self.mutated(lambda p: [
+            p[i]['detect']['allOf'].append('data/extra.cpk') for i in ('mo6tw-pc', 'mo6tw-pc-zhs', 'mo6tw-pc-zht')
+        ])
+        self.assertEqual(self.compare(both, text), [])
+
+    def test_a_member_the_tool_cannot_resolve_is_reported_instead_of_ignored(self):
+        unknown = self.catalog_text.replace(
+            'setOf("script.cpk", "mes00.cpk")', 'setOf("script.cpk", "mes00.cpk", NOT_DEFINED)',
+        )
+        self.assertNotEqual(unknown, self.catalog_text)
+        self.assertIsNone(tool.pc_requirements(unknown))
+        self.assertIn('cannot read', self.compare(HOST_PROFILES, unknown)[0])
+        # Something added after the closing parenthesis is not part of the parsed set either.
+        appended = self.catalog_text.replace(
+            'setOf("script.cpk", "mes00.cpk")', 'setOf("script.cpk", "mes00.cpk") + "extra.cpk"',
+        )
+        self.assertNotEqual(appended, self.catalog_text)
+        self.assertIsNone(tool.pc_requirements(appended))
+        # A root-level member that is neither a literal nor a known constant.
+        root = self.catalog_text.replace(
+            'requiredEntries = setOf("game.exe", DATA_DIR),', 'requiredEntries = setOf("game.exe", DATA_DIR, MISSING),',
+        )
+        self.assertNotEqual(root, self.catalog_text)
+        self.assertIsNone(tool.pc_requirements(root))
+
+    def test_members_are_literals_or_string_constants(self):
+        constants = {'A': 'a.cpk'}
+        self.assertEqual(tool.resolve_members('"x.cpk", A', constants), ['x.cpk', 'a.cpk'])
+        self.assertEqual(tool.resolve_members('"only.cpk"', constants), ['only.cpk'])
+        self.assertEqual(tool.resolve_members('"a,b.cpk", "c.cpk",', constants), ['a,b.cpk', 'c.cpk'])
+        self.assertEqual(tool.resolve_members('', constants), [])
+        for bad in ('B', '"x.cpk", foo()', 'A + "x"', '"x.cpk" "y.cpk"'):
+            self.assertIsNone(tool.resolve_members(bad, constants), bad)
+
     def test_a_helper_the_tool_cannot_read_is_reported_instead_of_passing(self):
         broken = self.catalog_text.replace('PC_COMMON_DATA_ENTRIES = setOf(', 'PC_COMMON_ENTRIES = setOf(')
         self.assertNotEqual(broken, self.catalog_text)

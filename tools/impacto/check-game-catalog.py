@@ -28,9 +28,10 @@ GAME_CALL = re.compile(r'game\(\s*"([^"]+)"\s*,\s*"([^"]*)"\s*,\s*((?:"[^"]+"\s*
 PC_EDITION_CALL = re.compile(r'pcEdition\(\s*"([^"]+)"')
 PC_EDITION_FULL = re.compile(r'pcEdition\(\s*"([^"]+)"\s*,\s*(\w+)\s*,\s*"([^"]+)"\s*\)')
 CONST_STRING = re.compile(r'const val (\w+) = "([^"]*)"')
-PC_COMMON = re.compile(r'PC_COMMON_DATA_ENTRIES\s*=\s*setOf\(([^)]*)\)')
+PC_COMMON = re.compile(r'PC_COMMON_DATA_ENTRIES\s*=\s*setOf\(([^)]*)\)[ \t]*(?:\r?\n|//)')
 PC_BODY = re.compile(r'fun pcEdition\([^)]*\)\s*=\s*Game\((.*?)\n    \)', re.S)
-PC_ROOT_ENTRIES = re.compile(r'requiredEntries\s*=\s*setOf\(([^)]*)\)')
+PC_ROOT_ENTRIES = re.compile(r'requiredEntries\s*=\s*setOf\(([^)]*)\)(?=\s*,)')
+MEMBER = re.compile(r'\s*(?:"([^"]*)"|(\w+))\s*(?:,|$)')
 DEFINITION = re.compile(r'^\s{2}(?:\["([\w-]+)"\]|(\w+))\s*=\s*\{(.*?)^\s{2}\},?\s*$', re.S | re.M)
 NAME = re.compile(r'^\s*Name\s*=\s*"([^"]*)"', re.M)
 MOUNT = re.compile(r'RootGamedataDir\s*\.\.\s*"/([\w-]+)/?([^"]*)"')
@@ -63,6 +64,29 @@ def parse_pc_editions(text):
     }
 
 
+def resolve_members(arguments, constants):
+    """Members of a Kotlin setOf(...) argument list as strings: string literals and string constants.
+
+    None when any member is something else (an expression, an unknown name): the caller reports that instead of
+    comparing an incomplete set.
+    """
+    arguments = arguments.strip()
+    members, position = [], 0
+    while position < len(arguments):
+        match = MEMBER.match(arguments, position)
+        if not match or match.end() == position:
+            return None
+        literal, name = match.groups()
+        if literal is not None:
+            members.append(literal)
+        elif name in constants:
+            members.append(constants[name])
+        else:
+            return None
+        position = match.end()
+    return members
+
+
 def pc_requirements(text):
     """Files every pcEdition needs, as paths relative to the game folder (e.g. 'game.exe', 'data/script.cpk').
 
@@ -75,13 +99,12 @@ def pc_requirements(text):
     root = PC_ROOT_ENTRIES.search(body.group(1)) if body else None
     if not common or not root:
         return None
-    required = {f'{data_dir}/{name}' for name in re.findall(r'"([^"]+)"', common.group(1))}
-    for token in (part.strip() for part in root.group(1).split(',') if part.strip()):
-        if token.startswith('"'):
-            required.add(token.strip('"'))
-        elif constants.get(token) != data_dir:  # DATA_DIR names the folder that holds the data/ files, not a file
-            return None
-    return required
+    common_files = resolve_members(common.group(1), constants)
+    root_entries = resolve_members(root.group(1), constants)
+    if common_files is None or root_entries is None:
+        return None
+    # DATA_DIR names the folder that holds the data/ files, not a file of its own
+    return {f'{data_dir}/{name}' for name in common_files} | {name for name in root_entries if name != data_dir}
 
 
 def mounted_names(source, profile):
