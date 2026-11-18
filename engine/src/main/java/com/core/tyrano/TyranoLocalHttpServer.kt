@@ -230,7 +230,8 @@ internal class TyranoLocalHttpServer(
         if (target != null) return ResolvedFile(target, null)
         if (pluginIndexEnabled) {
             val resource = DkToolsResourceResolver.resolve(root, uri, asarRootPrefix,
-                { asar?.children(it).orEmpty() }, { asar?.fileSize(it) != null })
+                { asar?.children(it).orEmpty() }, { asar?.fileSize(it) != null },
+                { asar?.directChildren(it).orEmpty() })
             if (resource != null) return ResolvedFile(resource.file, resource.archivePath)
         }
         val lower = uri.lowercase(Locale.ROOT)

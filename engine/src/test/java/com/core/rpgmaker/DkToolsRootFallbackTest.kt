@@ -103,6 +103,83 @@ class DkToolsRootFallbackTest {
         }
     }
 
+    @Test fun bothHttpHostsIndexArchiveRootFallbackAndKeepOverridePriority() {
+        for (legacy in listOf(false, true)) {
+            val root = temporary.newFolder("index-root-$legacy")
+            val archiveFile = temporary.newFile("index-root-$legacy.asar")
+            writeTestAsar(archiveFile, packed = mapOf(
+                "www/index.html" to "<html></html>",
+                "www/locales/prefixed.json" to "1234",
+                "www/locales/override.json" to "prefixed-win",
+                "locales/override.json" to "root",
+                "locales/en.json" to "root-lang",
+                "locales/disk.json" to "root",
+            ))
+            File(root, "locales/disk.json").apply { parentFile.mkdirs(); writeText("disk-wins") }
+            val archive = if (!legacy) AsarArchive(archiveFile) else null
+            val oldArchive = if (legacy) com.core.tyrano.AsarArchive(archiveFile) else null
+            val append = mapOf(DkToolsCompat.SCRIPT_PATH to byteArrayOf())
+            val server = if (!legacy) RpgMakerLocalHttpServer(root, archive, null, scriptAppends = append) else null
+            val oldServer = if (legacy) TyranoLocalHttpServer(root, oldArchive, null, scriptAppends = append) else null
+            server?.start(); oldServer?.start()
+            val port = server?.port ?: requireNotNull(oldServer).port
+            try {
+                val bootstrap = connection(port, "index.html")
+                val cookie = try {
+                    assertEquals(200, bootstrap.responseCode)
+                    bootstrap.inputStream.use { it.readBytes() }
+                    bootstrap.getHeaderField("Set-Cookie").substringBefore(';')
+                } finally { bootstrap.disconnect() }
+                val indexJson = requestIndex(port, cookie)
+                val index = org.json.JSONObject(indexJson)
+                assertFalse("legacy=$legacy web-root container must not leak into Stamp root", index.has("www"))
+                val locales = index.getJSONObject("locales")
+                assertTrue("legacy=$legacy missing root fallback en.json", locales.has("en.json"))
+                assertTrue(locales.has("prefixed.json"))
+                assertEquals(12L, locales.getJSONObject("override.json").getJSONObject("__stats__").getLong("size"))
+                assertEquals(9L, locales.getJSONObject("disk.json").getJSONObject("__stats__").getLong("size"))
+            } finally { server?.stop(); oldServer?.stop(); archive?.close(); oldArchive?.close() }
+        }
+    }
+
+    @Test fun focusedIndexKeepsArchiveRootFallbackWhenGlobalArchiveExceedsNodeLimit() {
+        val file = temporary.newFile("oversized-root-fallback.asar")
+        writeTestAsar(file, packed = mapOf(
+            "www/index.html" to "<html></html>",
+            "www/img/" + "d/".repeat(250_000) + "leaf.png" to "",
+            "locales/en.json" to "{}",
+        ))
+        AsarArchive(file).use { modern ->
+            com.core.tyrano.AsarArchive(file).use { legacy ->
+                for (builder in listOf(
+                    RpgMakerFileIndex(temporary.newFolder(), modern, "www/"),
+                    RpgMakerFileIndex(temporary.newFolder(), asarPrefix = "www/", legacyArchive = legacy),
+                )) {
+                    val index = org.json.JSONObject(String(builder.build(setOf("locales", "data"))))
+                    assertTrue(index.getJSONObject("locales").has("en.json"))
+                    assertFalse(index.has("www"))
+                }
+            }
+        }
+    }
+
+    private fun requestIndex(port: Int, cookie: String): String {
+        val deadline = System.nanoTime() + 5_000_000_000L
+        while (true) {
+            val request = connection(port, RpgMakerFileIndex.RESOURCE_PATH).apply { setRequestProperty("Cookie", cookie) }
+            try {
+                val code = request.responseCode
+                val body = (if (code < 400) request.inputStream else request.errorStream).bufferedReader().use { it.readText() }
+                if (code != 202) {
+                    assertEquals(200, code)
+                    return body
+                }
+            } finally { request.disconnect() }
+            check(System.nanoTime() < deadline) { "index did not become ready" }
+            Thread.sleep(10)
+        }
+    }
+
     private fun connection(port: Int, path: String): HttpURLConnection =
         (URI("http", null, "127.0.0.1", port, "/$path", null, null).toURL().openConnection() as HttpURLConnection).apply {
             connectTimeout = 5_000; readTimeout = 5_000

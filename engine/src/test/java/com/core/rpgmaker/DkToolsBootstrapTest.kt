@@ -14,21 +14,27 @@ class DkToolsBootstrapTest {
         val html = "<!DOCTYPE html><html><head><script>window.onload = boot;</script></head><body></body></html>"
         val injected = DkToolsCompat.injectBootstrap(html)
         assertTrue(injected.startsWith("<!DOCTYPE html><html><head>"))
-        assertTrue(injected.indexOf(DkToolsCompat.BOOTSTRAP_SCRIPT) < injected.indexOf("window.onload = boot"))
+        val bootstrapIndex = injected.indexOf(DkToolsCompat.BOOTSTRAP_SCRIPT)
+        assertTrue(bootstrapIndex >= 0)
+        assertTrue(bootstrapIndex < injected.indexOf("window.onload = boot"))
         assertTrue(injected.endsWith("</body></html>"))
     }
 
     @Test fun headlessDocumentsAndFragmentsInstallBeforeBodyOnload() {
         for (html in listOf("<!doctype html><body onload='boot()'></body>", "<body onload='boot()'></body>")) {
             val injected = DkToolsCompat.injectBootstrap(html)
-            assertTrue(injected.indexOf(DkToolsCompat.BOOTSTRAP_SCRIPT) < injected.indexOf("<body"))
+            val bootstrapIndex = injected.indexOf(DkToolsCompat.BOOTSTRAP_SCRIPT)
+            assertTrue(bootstrapIndex >= 0)
+            assertTrue(bootstrapIndex < injected.indexOf("<body"))
             if (html.startsWith("<!doctype")) assertTrue(injected.startsWith("<!doctype html>"))
         }
     }
 
     @Test fun bootstrapAlsoPrecedesAnExistingHostHookBeforeHead() {
         val injected = DkToolsCompat.injectBootstrap("<script>hostHook()</script><html><head></head></html>")
-        assertTrue(injected.indexOf(DkToolsCompat.BOOTSTRAP_SCRIPT) < injected.indexOf("hostHook()"))
+        val bootstrapIndex = injected.indexOf(DkToolsCompat.BOOTSTRAP_SCRIPT)
+        assertTrue(bootstrapIndex >= 0)
+        assertTrue(bootstrapIndex < injected.indexOf("hostHook()"))
     }
 
     @Test fun exactOriginalStampChecksDiskThenPrefixedAndRootArchiveCandidates() {

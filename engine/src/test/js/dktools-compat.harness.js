@@ -23,44 +23,52 @@ async function run({ index = { locales: {} }, nwjs = false, mode = 0, status = 2
     let listeners = 0;
     let ticks = 0;
     const heartbeat = setInterval(() => ticks++, 1);
-    let loaded;
-    const loadDone = new Promise(resolve => { loaded = resolve; });
-    browser.onload = () => {
-        io.mode = mode;
-        io._loadStamp();
-        loaded();
-    };
-    const context = vm.createContext({ window: browser, Event, setTimeout, clearTimeout, DKToolsParam: { get: () => mode }, DKTools: { IO: io }, Utils: { isNwjs: () => nwjs }, console,
-        XMLHttpRequest: class {
-            open(method, url, async) { assert.equal(method, 'GET'); assert.equal(url, resourcePath); assert.equal(async, true, 'Index requests must not block the browser event loop'); }
-            overrideMimeType() {}
-            send() {
-                requests++;
-                const respond = () => {
-                    this.status = Array.isArray(status) ? status[Math.min(requests - 1, status.length - 1)] : status;
-                    this.responseText = JSON.stringify(index);
-                    this.onload();
-                };
-                if (delay) setTimeout(respond, delay); else queueMicrotask(respond);
+    let timeout;
+    try {
+        let loaded;
+        const loadDone = new Promise((resolve, reject) => {
+            loaded = resolve;
+            timeout = setTimeout(() => reject(new Error('Timed out waiting for DKTools load gate')), Math.max(2000, delay + 1000));
+        });
+        browser.onload = () => {
+            io.mode = mode;
+            io._loadStamp();
+            loaded();
+        };
+        const context = vm.createContext({ window: browser, Event, setTimeout, clearTimeout, DKToolsParam: { get: () => mode }, DKTools: { IO: io }, Utils: { isNwjs: () => nwjs }, console,
+            XMLHttpRequest: class {
+                open(method, url, async) { assert.equal(method, 'GET'); assert.equal(url, resourcePath); assert.equal(async, true, 'Index requests must not block the browser event loop'); }
+                overrideMimeType() {}
+                send() {
+                    requests++;
+                    const respond = () => {
+                        this.status = Array.isArray(status) ? status[Math.min(requests - 1, status.length - 1)] : status;
+                        this.responseText = JSON.stringify(index);
+                        this.onload();
+                    };
+                    if (delay) setTimeout(respond, delay); else queueMicrotask(respond);
+                }
             }
-        }
-    });
-    vm.runInContext(bootstrap, context);
-    // The page has already registered its native handler when DKTools is loaded.
-    browser.addEventListener('load', () => browser.onload());
-    vm.runInContext(hook, context);
-    vm.runInContext(hook, context); // Injection is idempotent.
-    // A plugin loaded after DKTools aliases the handler; its whole chain must run once.
-    const alias = browser.onload;
-    browser.onload = () => { alias(); listeners++; };
-    browser.addEventListener('load', () => listeners++);
-    if (afterFetch) await new Promise(resolve => setTimeout(resolve, delay + 5));
-    browser.dispatchEvent(new Event('load'));
-    await loadDone;
-    clearInterval(heartbeat);
-    assert.equal(listeners, 2, 'All later load listeners and aliases run exactly once');
-    if (delay >= 20) assert.ok(ticks >= 2, 'Browser event loop remains responsive while waiting for metadata');
-    return { io, get originalCalls() { return originalCalls; }, get requests() { return requests; } };
+        });
+        vm.runInContext(bootstrap, context);
+        // The page has already registered its native handler when DKTools is loaded.
+        browser.addEventListener('load', () => browser.onload());
+        vm.runInContext(hook, context);
+        vm.runInContext(hook, context); // Injection is idempotent.
+        // A plugin loaded after DKTools aliases the handler; its whole chain must run once.
+        const alias = browser.onload;
+        browser.onload = () => { alias(); listeners++; };
+        browser.addEventListener('load', () => listeners++);
+        if (afterFetch) await new Promise(resolve => setTimeout(resolve, delay + 5));
+        browser.dispatchEvent(new Event('load'));
+        await loadDone;
+        assert.equal(listeners, 2, 'All later load listeners and aliases run exactly once');
+        if (delay >= 20) assert.ok(ticks >= 2, 'Browser event loop remains responsive while waiting for metadata');
+        return { io, get originalCalls() { return originalCalls; }, get requests() { return requests; } };
+    } finally {
+        clearTimeout(timeout);
+        clearInterval(heartbeat);
+    }
 }
 const generated = await run();
 assert.equal(generated.originalCalls, 0, 'Missing Stamp must not schedule the original 404 error');

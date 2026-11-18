@@ -125,6 +125,32 @@ class DkToolsHttpMatchingTest {
         }
     }
 
+    @Test fun bothHostsResolveUniqueCaseMismatchedArchivePathsWhenUnrelatedSubtreeExceedsBudget() {
+        for (legacy in listOf(false, true)) {
+            val root = temporary.newFolder("over-budget-case-$legacy")
+            val file = temporary.newFile("over-budget-case-$legacy.asar")
+            val hugeKey = "www/img/" + "d/".repeat(250_001) + "unused.png"
+            writeTestAsar(file, packed = mapOf(
+                "www/index.html" to "<html></html>",
+                "www/Locales/En/Messages.json" to "ok",
+                hugeKey to "",
+            ))
+            val modernArchive = if (!legacy) AsarArchive(file) else null
+            val oldArchive = if (legacy) com.core.tyrano.AsarArchive(file) else null
+            val modern = if (!legacy) RpgMakerLocalHttpServer(root, modernArchive, null,
+                scriptAppends = mapOf(DkToolsCompat.SCRIPT_PATH to byteArrayOf())) else null
+            val old = if (legacy) TyranoLocalHttpServer(root, oldArchive, null,
+                scriptAppends = mapOf(DkToolsCompat.SCRIPT_PATH to byteArrayOf())) else null
+            modern?.start(); old?.start()
+            val port = modern?.port ?: requireNotNull(old).port
+            try {
+                val cookie = bootstrap(port)
+                val response = request(port, "locales/en/messages.json", cookie)
+                assertEquals("legacy=$legacy", 200 to "ok", response)
+            } finally { modern?.stop(); old?.stop(); modernArchive?.close(); oldArchive?.close() }
+        }
+    }
+
     @Test fun twoSessionsKeepTheirCookiesInOneHostCookieJar() {
         for (legacy in listOf(false, true)) {
             val root = temporary.newFolder("cookies-$legacy")
