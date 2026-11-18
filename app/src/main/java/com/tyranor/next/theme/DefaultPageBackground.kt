@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
@@ -19,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
+import com.tyranor.next.core.settings.AppSettingsStore
 import kotlin.math.PI
 import kotlin.math.sin
 import kotlin.random.Random
@@ -54,12 +56,18 @@ private data class FloatingParticle(
  * - 仅**默认外观风格**生效；复古玻璃与白雾玻璃有独立的页面背景实现（[GlassBackground]），本组件为 no-op。
  * - 粒子在绘制阶段读取动画时间，只失效绘制、不触发重组；约 30fps。
  * - 系统关闭动画（开发者选项/无障碍）时停止动画，保留静态粒子。
+ * - 应用设置关闭「默认主题粒子」时只绘制纯色底。
  * - 背景层必须是**独立空层**（不含页面内容），由页面根作为第一个子节点挂载。
  */
 @Composable
 fun DefaultPageBackgroundLayer(modifier: Modifier = Modifier) {
     if (AppThemeColors.isGlass || AppThemeColors.isMilkGlass) return
-    val base = MaterialTheme.colorScheme.background
+    val background = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+    val particlesEnabled by AppSettingsStore.defaultThemeParticlesEnabled.collectAsState()
+    if (!particlesEnabled) {
+        Box(background)
+        return
+    }
     val primary = AppThemeColors.primary
     val particles = remember(primary) { buildFloatingParticles(primary) }
     var elapsedSeconds by remember { mutableFloatStateOf(0f) }
@@ -79,12 +87,7 @@ fun DefaultPageBackgroundLayer(modifier: Modifier = Modifier) {
         }
     }
 
-    Box(
-        modifier
-            .fillMaxSize()
-            .background(base)
-            .drawBehind { drawFloatingParticles(particles, elapsedSeconds) },
-    )
+    Box(background.drawBehind { drawFloatingParticles(particles, elapsedSeconds) })
 }
 
 /** 以主题色为基准生成同色系粒子（色相偏移 +36° / -36°），保证随「色调轮盘」整体换色。 */

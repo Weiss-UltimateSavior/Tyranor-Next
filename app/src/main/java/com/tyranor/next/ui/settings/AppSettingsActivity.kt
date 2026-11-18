@@ -121,6 +121,7 @@ internal fun AppSettingsScreen() {
     val gameCardBadge by AppSettingsStore.gameCardBadgeState.collectSettingAsState()
     val homeStyle by AppSettingsStore.homeStyleState.collectSettingAsState()
     val homePageEnabled by AppSettingsStore.homePageEnabledState.collectSettingAsState()
+    val defaultThemeParticlesEnabled by AppSettingsStore.defaultThemeParticlesEnabled.collectSettingAsState()
     val classicIcon by AppSettingsStore.classicIconEnabledState.collectSettingAsState()
     val homeWebUrl by AppSettingsStore.homeWebUrlState.collectSettingAsState()
     val fixedPalette = AppThemeColors.hasFixedContentPalette
@@ -317,6 +318,13 @@ internal fun AppSettingsScreen() {
                                 },
                             )
                             }
+                            SwitchPreference(
+                                title = stringResource(R.string.settings_default_theme_particles),
+                                checked = defaultThemeParticlesEnabled,
+                                onCheckedChange = { checked ->
+                                    AppSettingsStore.setDefaultThemeParticlesEnabled(ctx, checked)
+                                },
+                            )
                         }
                     }
                 }
