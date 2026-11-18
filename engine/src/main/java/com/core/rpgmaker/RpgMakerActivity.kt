@@ -353,8 +353,10 @@ class RpgMakerActivity : Activity() {
             val sessionConfig = "<script>window.__tyranorRpg={engine:'" +
                 (if (webGameType == WebGameType.RPG_MZ) "MZ" else "MV") +
                 "',version:'" + (normalizedVersion ?: "") + "'};</script>"
+            // 会话配置与会话强相关：即使兼容层资产缺失也要下发，否则 v2 的渲染器
+            // 「交还游戏 core」会静默退化成我们的实现，且原因只能从日志间接推断。
             val earlyHtml = if (polyfillAssets.isEmpty()) {
-                ""
+                if (v12Session) sessionConfig else ""
             } else {
                 sessionConfig + polyfillAssets.joinToString(separator = "") { script ->
                     // 键本身已含 `__tyranor__/` 前缀（它同时是 internalResources 的查找键），
@@ -955,7 +957,10 @@ class RpgMakerActivity : Activity() {
                     }
                     teardown.run()
                 }
-            }.onFailure { teardown.run() }
+            }.onFailure {
+                Log.w(TAG, "localStorage final flush could not be dispatched", it)
+                teardown.run()
+            }
         }
         runCatching { localServer?.stop() }
         localServer = null
@@ -1198,12 +1203,13 @@ class RpgMakerActivity : Activity() {
         /**
          * `finish()` 到 `killProcess` 的延迟。
          *
-         * 必须**大于** [FLUSH_TEARDOWN_WATCHDOG_MS]，否则进程会在 localStorage 落盘完成前
-         * 被杀掉（退出动画/界面早已不可见，多留几秒只是让收尾跑完，用户无感）。
-         * 不变量：`PROCESS_EXIT_DELAY_MS > FLUSH_TEARDOWN_WATCHDOG_MS`。
+         * 取值**大于** [FLUSH_TEARDOWN_WATCHDOG_MS]：看门狗从 `onDestroy` 起算，而 kill 从
+         * `finish()` 起算，中间还隔着退出转场，所以这只是一个「尽量让 WebView 收尾跑完」的
+         * 预算，不是硬保证。它管的是资源回收，与 Storage 落盘无关——已返回的修改在返回前
+         * 就已进入原生队列，`flushAll(true)` 本身不做 I/O。
          *
-         * 延迟越长，「旧会话的退出任务撞上新会话」的窗口越大，所以真正的保护是
-         * [sessionOwnership] 的期号比对，而不是这个数值本身。
+         * 延迟越长，「旧会话的退出任务撞上新会话」的窗口越大，因此真正保护新会话的是
+         * 会话期号复核（见上），不是这个延迟。
          */
         private const val PROCESS_EXIT_DELAY_MS = 3_000L
         private const val MAX_ENTRY_SEARCH_DEPTH = 2

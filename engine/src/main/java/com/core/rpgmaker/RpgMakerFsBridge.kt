@@ -225,13 +225,24 @@ internal class RpgMakerFsBridge(
             writes.keys.forEach { RpgMakerStorageWriteLedger.record(requireStorageFile(it).path, session) }
             deletes.forEach { RpgMakerStorageWriteLedger.record(requireStorageFile(it).path, session) }
             if (clear) RpgMakerStorageWriteLedger.recordDirectory(storeDir.canonicalPath, session)
-            // 立刻物化：成功则队列回到空态，队列文件不再随写入次数增长
+            // 立刻物化：成功则队列回到空态，队列文件不再随写入次数增长。
+            // 批量做——队列只解析一次、确认只写一次；逐键各解析/重写会在 clear 这类
+            // 一次提交上千键的场景里退化成 O(K²) 字节与 K 次 fsync。
+            val queued = RpgMakerStoragePendingJournal.pendingEntries(storeDir)
+            val materialized = LinkedHashMap<String, String?>()
             var deferred = false
             for ((name, value) in writes) {
-                if (!applyQueuedEntry(name, value)) deferred = true
+                if (materializeQueued(queued[name], name, value)) materialized[name] = value
+                else deferred = true
             }
             for (name in deletes) {
-                if (!applyQueuedEntry(name, null)) deferred = true
+                if (materializeQueued(queued[name], name, null)) materialized[name] = null
+                else deferred = true
+            }
+            if (materialized.isNotEmpty() &&
+                !RpgMakerStoragePendingJournal.discard(storeDir, session, materialized)
+            ) {
+                deferred = true
             }
             if (deferred) 2 else 1
         }
@@ -259,17 +270,30 @@ internal class RpgMakerFsBridge(
      * 这样晚到的旧定时器既不会覆盖新值，也不会复活已确认的删除。
      */
     private fun applyQueuedEntry(name: String, value: String?): Boolean {
-        val file = requireStorageFile(name)
-        if (RpgMakerStorageWriteLedger.isSuperseded(file.path, session)) return true
         val pending = RpgMakerStoragePendingJournal.pendingEntries(storeDir)[name] ?: return true
-        if (pending.session > session || pending.value != value) return true
+        if (!materializeQueued(pending, name, value)) return false
+        return RpgMakerStoragePendingJournal.discard(storeDir, session, mapOf(name to value))
+    }
+
+    /**
+     * 只做「落盘」这一步：[queued] 是调用方已经解析好的队列条目（批量场景只解析一次）。
+     * 返回 false 表示该键仍需留在队列里（内容不符/无权限/写入失败），由调用方决定重试。
+     */
+    private fun materializeQueued(
+        queued: RpgMakerStoragePendingJournal.Entry?,
+        name: String,
+        value: String?,
+    ): Boolean {
+        val file = requireStorageFile(name)
+        if (queued == null) return true
+        if (RpgMakerStorageWriteLedger.isSuperseded(file.path, session)) return true
+        if (queued.session > session || queued.value != value) return true
         val bytes = value?.toByteArray(StandardCharsets.UTF_8)
         if (bytes != null && bytes.size > MAX_WRITE_BYTES) {
             Log.w(TAG, "Storage value too large to materialize (${bytes.size}): ${file.path}")
             return false
         }
-        val done = if (bytes == null) removeResolved(file) else writeResolved(file) { it.write(bytes) }
-        return done && RpgMakerStoragePendingJournal.discard(storeDir, session, mapOf(name to value))
+        return if (bytes == null) removeResolved(file) else writeResolved(file) { it.write(bytes) }
     }
 
     private fun requireStorageDirectory() {
@@ -286,14 +310,16 @@ internal class RpgMakerFsBridge(
     }
 
     /**
+     * legacy 入口：只为「旧版本写下的队列如何回放」与测试保留，**不再暴露给页面**
+     * （兼容层只调 [commitStorageMutation]）。真实修改走返回前同步接收。
+     *
      * 把仍未落盘的键交给原生恢复队列（见 [RpgMakerStoragePendingJournal]）。
      *
      * 载荷：`{"values": {文件名: 值}, "deletes": [文件名]}`。返回 true 表示已持久化到
      * 队列，下次文档初始化时重放；false 表示连队列都写不进去，调用方应把数量报给宿主。
      * 空载荷代表「没有待写项」，按已持久化处理。
      */
-    @JavascriptInterface
-    fun stagePendingStorage(payload: String?): Boolean {
+    internal fun stagePendingStorage(payload: String?): Boolean {
         val raw = payload?.takeIf { it.isNotBlank() } ?: return true
         return try {
             RpgMakerStorageWriteLedger.withStorageLock(storeDir.path) {
@@ -434,8 +460,7 @@ internal class RpgMakerFsBridge(
     }
 
     /** 丢弃本会话及更旧会话在队列里的条目（`Storage.clear()` 用）。 */
-    @JavascriptInterface
-    fun clearPendingStorage(): Boolean = try {
+    internal fun clearPendingStorage(): Boolean = try {
         RpgMakerStorageWriteLedger.withStorageLock(storeDir.path) {
             requireStorageDirectory()
             RpgMakerStoragePendingJournal.clearUpTo(storeDir, session)
@@ -452,23 +477,22 @@ internal class RpgMakerFsBridge(
      * 条目），null 表示不比对内容直接丢弃；两种情况下都只处理本会话及更旧会话的条目。
      * 空串表示丢弃本会话及更旧会话的全部条目（`Storage.clear()` 用）。
      */
-    @JavascriptInterface
-    fun discardPendingStorage(payload: String?): Boolean = try {
+    internal fun discardPendingStorage(payload: String?): Boolean = try {
         RpgMakerStorageWriteLedger.withStorageLock(storeDir.path) {
-        requireStorageDirectory()
-        val raw = payload?.trim().orEmpty()
-        if (raw.isEmpty()) {
-            RpgMakerStoragePendingJournal.clearUpTo(storeDir, session)
-        } else {
-            val json = JSONObject(raw)
-            val expectations = LinkedHashMap<String, String?>()
-            val names = json.keys()
-            while (names.hasNext()) {
-                val name = names.next()
-                expectations[name] = if (json.isNull(name)) null else json.optString(name, "")
+            requireStorageDirectory()
+            val raw = payload?.trim().orEmpty()
+            if (raw.isEmpty()) {
+                RpgMakerStoragePendingJournal.clearUpTo(storeDir, session)
+            } else {
+                val json = JSONObject(raw)
+                val expectations = LinkedHashMap<String, String?>()
+                val names = json.keys()
+                while (names.hasNext()) {
+                    val name = names.next()
+                    expectations[name] = if (json.isNull(name)) null else json.optString(name, "")
+                }
+                RpgMakerStoragePendingJournal.discard(storeDir, session, expectations)
             }
-            RpgMakerStoragePendingJournal.discard(storeDir, session, expectations)
-        }
         }
     } catch (error: Throwable) {
         Log.w(TAG, "pending storage discard failed", error)

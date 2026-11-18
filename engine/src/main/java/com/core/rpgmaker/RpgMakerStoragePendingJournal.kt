@@ -14,12 +14,10 @@ import org.json.JSONObject
 /**
  * localStorage 的「未落盘数据」恢复队列（落盘于 `AppData/Local Storage`）。
  *
- * 背景：`setItem` 是内存镜像 + 合并写，真正的写入发生在 JS 定时器 / 退出钩子里。宿主在
- * 退出或重建时会销毁 WebView，销毁后 JS 内存与定时器一起消失——`flushAll` 一旦没写完
- * （预算耗尽、单键 I/O 失败、文件系统暂时不可写），剩下的值就永久丢失。
- *
- * 因此收尾改成「先入队、再落盘」：入队是一次小的原子写（比几十次 fsync 更可能在坏盘上
- * 成功），落盘失败或被打断都不再丢数据；下一次文档初始化时在游戏脚本之前重放。
+ * 背景：`Storage` 的修改在 **JS 返回前** 通过 `commitStorageMutation` 同步写入本队列，
+ * `.dat` 的合并物化只是把已接收的意图落到最终文件；宿主销毁 WebView / 无卸载事件导航
+ * 都不会带走队列里的数据。落盘失败时条目留在队列里，下一次文档初始化时在游戏脚本之前
+ * 重放；队列本身不可读才降级为 fatal。
  *
  * 重放的安全条件（缺一就会把新值盖回旧值）：
  *  1. 该条目入队之后目标文件没有被改过——比对 `(存在, size, mtime)` 与内容 CRC32
@@ -46,10 +44,13 @@ internal object RpgMakerStoragePendingJournal {
     private const val MAX_ENTRIES = 4096
 
     /**
-     * 单条值上限（字符）。浏览器给每个 origin 的 localStorage 配额本来只有几 MiB，
-     * 这里取 8Mi 保证「浏览器能存下的值，恢复队列也能存下」，不再额外收紧插件行为。
+     * 单条值上限（UTF-16 字符）。
+     *
+     * 取 5Mi 是「字符」与「字节」两个上限的交点：UTF-8 最坏 3 字节/字符（BMP 三字节，
+     * 代理对是 2 字符 4 字节），5Mi 字符 ⇒ 最多 15 MiB 字节，仍在桥的 16 MiB 写入上限内。
+     * 取 8Mi 时一个 CJK 值可以接收成功却永远物化失败，该键之后每个会话都不可读。
      */
-    private const val MAX_VALUE_CHARS = 8 * 1024 * 1024
+    private const val MAX_VALUE_CHARS = 5 * 1024 * 1024
 
     /** 队列总字符上限（按合并结果计，不是按单次入参计）。 */
     private const val MAX_TOTAL_CHARS = 12L * 1024L * 1024L
@@ -128,8 +129,8 @@ internal object RpgMakerStoragePendingJournal {
      * 入队时记录目标文件当前的 `(存在, size, mtime, crc)`：重放前若发现文件已变化，
      * 说明入队之后有别的会话写过它，这一条必须作废。
      *
-     * 同名条目若**值没有变化**（同一批键在 pagehide / beforeunload / 宿主 onDestroy 会被
-     * 重复入队），保留首次的指纹：重新拍快照会让「入队后文件被改过」这条判据失效。
+     * legacy 入口（`accepted=false`，只服务旧版本写下的队列回放与测试）在同名同值时保留
+     * 首次指纹：重复入队不该刷新「入队后文件被改过」这条判据。
      */
     fun stage(
         storeDir: File,
@@ -248,7 +249,7 @@ internal object RpgMakerStoragePendingJournal {
      * 占有当前队列用于重放：在锁内把队列并入 `.claim` 并改名占有，调用方随后在锁外逐条
      * 应用、结束后调用 [finish]。
      *
-     * 这样队列锁只被持有一次「读 + 写 claim」，另一个文档的 `stagePendingStorage`（同步的
+     * 这样队列锁只被持有一次「读 + 写 claim」，另一个文档的 `commitStorageMutation`（同步的
      * `@JavascriptInterface`，跑在渲染线程上）不会被整段重放堵住。
      */
     fun claim(storeDir: File): Snapshot? = synchronized(lock) {
@@ -277,7 +278,11 @@ internal object RpgMakerStoragePendingJournal {
                 Log.w(TAG, "pending storage claim write failed: ${claim.path}")
                 throw IOException("pending storage claim write failed: ${claim.path}")
             }
-            deleteQuietly(journal)
+            // 删不掉只是多留一份（下一次 claim 会按会话合并，幂等）；但要留痕，
+            // 否则「claim 成功即视为 journal 已消费」这条不变量会静默失效
+            if (!deleteQuietly(journal)) {
+                Log.w(TAG, "pending storage journal not retired after claim: ${journal.path}")
+            }
             Snapshot(merged)
         } catch (error: Throwable) {
             Log.w(TAG, "pending storage claim failed: $storeDir", error)

@@ -1620,9 +1620,8 @@ console.log('\n== localStorage 文档销毁前的收尾（复审修复项）==')
             ' kept=' + String(fresh.getItem('staged.then.kept'));
     })());
 
-    // 回归 6（复审问题 5）：删除尚未完成时 flushAll 不能报 0。恢复队列也不可用时，
-    // 必须把未完成的删除计入返回值，宿主的 incomplete 检测才不会漏报。
-    check('已接收的删除不依赖退出时再次入队', (() => {
+    // 删除落盘失败时，墓碑必须已经进队列：下一次文档读回 null，而不是磁盘上的旧值。
+    check('删除落盘失败时墓碑进队列，新文档读回 null', (() => {
         newSession();
         const key = 'unfinished.delete';
         const target = fileOf(key);
@@ -1632,24 +1631,20 @@ console.log('\n== localStorage 文档销毁前的收尾（复审修复项）==')
 
         const bridgeFs = global.TyranorFs;
         const origRemove = bridgeFs.remove;
-        const origStage = bridgeFs.stagePendingStorage;
-        let remaining = -1;
         const origWarn = console.warn;
         bridgeFs.remove = () => false;
-        bridgeFs.stagePendingStorage = () => false;
         console.warn = () => {};
         try {
             s.removeItem(key);
-            remaining = window.__tyranorLocalStorageFlushAll(true);
+            window.__tyranorLocalStorageFlushAll(true);
         } finally {
             bridgeFs.remove = origRemove;
-            bridgeFs.stagePendingStorage = origStage;
             console.warn = origWarn;
         }
         const entry = JSON.parse(fs.readFileSync(journalPath, 'utf8')).entries[nameOf(key)];
         const durableDelete = entry && entry.d === true;
         newSession();
-        return remaining === 0 && durableDelete && Object.create(global.Storage.prototype).getItem(key) === null;
+        return durableDelete && Object.create(global.Storage.prototype).getItem(key) === null;
     })(), (() => {
         const target = fileOf('unfinished.delete');
         return fs.existsSync(target) ? 'disk=' + fs.readFileSync(target, 'utf8') : 'disk=<missing>';
@@ -1808,14 +1803,22 @@ console.log('\n== Storage 修改返回前持久交接 ==');
     check('final flush 只报告已接收状态，不触发跨桥磁盘 I/O', (() => {
         newSession();
         const s = Object.create(global.Storage.prototype);
-        s.setItem('accepted.final', 'PERSISTED');
+        // 先制造一条「已接收、物化被推迟」的键（写盘失败 → code 2 → dirty 非空），
+        // 否则 dirty 为空时「没碰桥」对任何实现都成立，测不到 finalizing 早退
+        const blocked = nameToFile('final.deferred');
+        fs.mkdirSync(blocked, { recursive: true });
+        s.setItem('final.deferred', 'DEFERRED');
+        if (s.getItem('final.deferred') !== 'DEFERRED') return false;
         const methods = Object.keys(bridge).filter((name) => typeof bridge[name] === 'function');
         const originals = {};
         let calls = 0;
         methods.forEach((name) => { originals[name] = bridge[name]; bridge[name] = () => { calls++; return false; }; });
         let remaining;
         try { remaining = window.__tyranorLocalStorageFlushAll(true); }
-        finally { methods.forEach((name) => { bridge[name] = originals[name]; }); }
+        finally {
+            methods.forEach((name) => { bridge[name] = originals[name]; });
+            fs.rmdirSync(blocked, { recursive: true });
+        }
         return remaining === 0 && calls === 0;
     })());
 }

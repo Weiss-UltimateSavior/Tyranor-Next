@@ -10,7 +10,7 @@ import org.junit.Test
  *
  * 该 Activity 是独立进程 + `singleInstance`，`finish()` 排队的 `killProcess` 会延迟执行；
  * 用户在延迟窗口内重开游戏时进程还活着，会被直接复用给新会话——旧任务若无条件执行，
- * 新会话刚起来就被杀。`PROCESS_EXIT_DELAY_MS` 从 500ms 提到 1500ms 正是放大这个窗口的
+ * 新会话刚起来就被杀。`PROCESS_EXIT_DELAY_MS` 从 500ms 提到 3000ms 正是放大这个窗口的
  * 改动，所以这条不变量必须有 JVM 覆盖。
  */
 class RpgMakerSessionOwnershipTest {

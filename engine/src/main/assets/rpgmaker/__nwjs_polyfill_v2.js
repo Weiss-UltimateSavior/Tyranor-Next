@@ -877,16 +877,6 @@
                 catch (e) { return false; }
             },
             // 无条件登记删除意图（墓碑）：文件可能还没被合并写落盘，existsSync 为假也要记，
-            // 否则旧会话随后的合并写会把已经 removeItem 的键写回来。
-            recordDelete: function (p) {
-                try { return typeof bridge.recordDelete === "function" && bridge.recordDelete(p) === true; }
-                catch (e) { return false; }
-            },
-            // 目录级清除版本：clear() 看不到旧会话仍在内存里的待写键，只能按目录记版本
-            recordClear: function (p) {
-                try { return typeof bridge.recordClear === "function" && bridge.recordClear(p) === true; }
-                catch (e) { return false; }
-            },
             replayPendingStorage: function () {
                 try {
                     if (typeof bridge.replayPendingStorage !== "function") return null;
@@ -3718,8 +3708,14 @@
                         delete removedKeys[k];
                         delete suppressedNames[fileNameFor(k)];
                         rememberKey(k);
-                        // 已接收且已落盘就不必再排物化；只有落盘被推迟时才留着重试
-                        if (code === 2) markDirty(k); else delete dirty[k];
+                        // 已接收且已落盘：镜像交回「按需读」，否则 values 在会话内只增不减；
+                        // 只有落盘被推迟时才留着重试
+                        if (code === 2) {
+                            markDirty(k);
+                        } else {
+                            delete dirty[k];
+                            delete values[k];
+                        }
                     };
                 } catch (eSet) {}
                 try {
@@ -3771,15 +3767,9 @@
                         order = [];
                         indexLoaded = true;
                         storageCleared = true;
-                        try {
-                            var names = [];
-                            for (var i = 0; i < names.length; i++) {
-                                var name = String(names[i]);
-                                if (!/\.dat$/.test(name)) continue;
-                                if (!realFs.flushStorageMutation(name, null)) suppressedNames[name] = true;
-                                else delete suppressedNames[name];
-                            }
-                        } catch (eMaterialize) {}
+                        // 删除意图与尽力物化都在原生的 commitStorageMutation({clear:true})
+                        // 里完成（目录锁内枚举磁盘 + 队列 + claim），这里不再逐文件过桥。
+                        suppressedNames = Object.create(null);
                         try {
                             if (nativeRemove) {
                                 for (var j = nativeStorageLength() - 1; j >= 0; j--) nativeRemove.call(this, nativeStorageKey(j));

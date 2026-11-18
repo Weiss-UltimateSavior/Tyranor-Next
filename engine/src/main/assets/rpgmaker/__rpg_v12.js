@@ -1,5 +1,8 @@
-// 游戏自带 corescript 的原始实现（v1 会话由我们用覆盖核心替换，v2 会话归还给它）
-var ___tyranorCoreCreateRenderer = Graphics._createRenderer;
+// 游戏自带 corescript 的原始实现（v1 会话由我们用覆盖核心替换，v2 会话归还给它）。
+// 只在尚未捕获过时赋值：同一 realm 内脚本被求值两次时，第二次不能把我们的包装当成
+// 「原实现」，否则 v2 分支会无限递归（栈溢出后被 _createRenderer 的 catch 吞掉 → 黑屏）。
+var ___tyranorCoreCreateRenderer =
+    typeof ___tyranorCoreCreateRenderer === "function" ? ___tyranorCoreCreateRenderer : Graphics._createRenderer;
 
 Graphics._createRenderer = function() {
     PIXI.dontSayHello = true;

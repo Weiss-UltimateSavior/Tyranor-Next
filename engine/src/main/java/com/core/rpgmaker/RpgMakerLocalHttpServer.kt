@@ -493,6 +493,10 @@ internal class RpgMakerLocalHttpServer(
             ".ogg", ".m4a", ".mp3", ".wav", ".aac", ".flac",
             ".mp4", ".m4v", ".webm",
             ".ttf", ".otf", ".woff", ".woff2",
+            // 加密包里的素材落盘就是这三个扩展名（页面按 .png/.ogg/.m4a 请求时由加密
+            // 回退解析到这里）。漏掉它们会让加密游戏整批素材既没有 max-age 也没有
+            // ETag，正是本分支要消除的那部分重传。
+            ".rpgmvp", ".rpgmvo", ".rpgmvm",
             -> true
             else -> false
         }
@@ -528,7 +532,7 @@ internal class RpgMakerLocalHttpServer(
         "\"${file.length().toString(16)}-${file.lastModified().toString(16)}\""
 
     private fun connectionHeader(keepAlive: Boolean): String =
-        if (keepAlive) "Connection: keep-alive\r\nKeep-Alive: timeout=${(KEEPALIVE_IDLE_TIMEOUT_MS + 999) / 1000}\r\n"
+        if (keepAlive) "Connection: keep-alive\r\nKeep-Alive: timeout=${KEEPALIVE_IDLE_TIMEOUT_MS / 1000}\r\n"
         else "Connection: close\r\n"
 
     private fun sendNotModified(socket: Socket, etag: String, cacheControl: String, keepAlive: Boolean) {
@@ -644,7 +648,9 @@ internal class RpgMakerLocalHttpServer(
         val parts = uri.split("/")
         var current: File = root
         for (part in parts) {
-            if (part.isEmpty()) continue
+            // `.` 段与空段一样是「当前目录」：fs 桥的 resolve 已跳过它，服务器不跳会
+            // 让 `./img/x.png` 在服务器 404、在桥里命中，破坏两端同结论的契约。
+            if (part.isEmpty() || part == ".") continue
             if (!allowWhitespaceTolerance) {
                 // v0/v1 历史路径：精确命中直接用；否则大小写不敏感取首个命中
                 val exact = File(current, part)
