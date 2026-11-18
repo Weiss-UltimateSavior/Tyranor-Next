@@ -110,6 +110,26 @@ class CheckGameCatalogTests(unittest.TestCase):
         self.assertIn('viewer', listed[0])
         self.assertNotIn('alpha-pc', listed[0])
 
+    def test_commented_out_entries_are_not_catalog_entries(self):
+        catalog = CATALOG.replace(
+            '    )\n}',
+            '        // game("gamma", "Gamma", "X.CPK"),\n'
+            '        /* pcEdition("alpha-pc", "ja", "mes00.cpk"), */\n'
+            '    )\n}',
+        )
+        self.assertIn('// game("gamma"', catalog)
+        patched = DEFINITIONS.replace('  viewer = {', '  ["alpha-pc"] = {\n    Name = "Alpha (PC)",\n  },\n  viewer = {')
+        (self.source / 'gamedefinitions.lua').write_text(patched, encoding='utf-8')
+        problems, notes = self.run_check(catalog)
+        # The commented game is not looked up upstream, and the commented edition does not stand in for the upstream
+        # profile "alpha-pc": it is still defined there but not detectable here.
+        self.assertEqual(problems, [])
+        self.assertEqual(set(tool.parse_catalog(catalog)), {'alpha'})
+        self.assertFalse(any('host patch series' in n for n in notes), notes)
+        listed = [n for n in notes if n.startswith('defined upstream but not detectable here')]
+        self.assertEqual(len(listed), 1)
+        self.assertIn('alpha-pc', listed[0])
+
     def test_the_real_catalog_file_is_parseable(self):
         games = tool.parse_catalog(tool.DEFAULT_CATALOG.read_text(encoding='utf-8'))
         self.assertIn('mo6tw', games)
@@ -295,6 +315,62 @@ class HostProfilesTests(unittest.TestCase):
             self.assertEqual(len(problems), 1, broken)
             self.assertIn('cannot read', problems[0], broken)
 
+    def test_a_pc_edition_call_inside_a_comment_is_not_a_call(self):
+        zht = 'pcEdition("mo6tw-pc-zht", TEXT_ZH_HANT, "mes01.cpk"),'
+        note = 'pcEdition("extra-pc", "ja", "mes00.cpk")'
+        self.assertIn(zht, self.catalog_text)
+        # A note after a real call, a commented-out line and block comments: none of them is an edition. A prose
+        # mention such as "pcEdition(...)" is no call either (it is not even a complete one).
+        for commented in (
+            zht + ' // ' + note,
+            zht + '\n        // ' + note + ',',
+            zht + ' /* ' + note + ' */',
+            zht + '\n        /*\n         * ' + note + ',\n         */',
+            zht + ' // keep in step with pcEdition(...) in the host profiles',
+            '/** one pcEdition(...) per text archive */\n        ' + zht,
+        ):
+            text = self.catalog_text.replace(zht, commented)
+            self.assertNotEqual(text, self.catalog_text)
+            self.assertEqual(self.compare(HOST_PROFILES, text), [], commented)
+        # Nor does a comment make the catalog list a profile it does not have.
+        profiles = json.loads(json.dumps(HOST_PROFILES))
+        profiles['profiles'].append({
+            'id': 'extra-pc', 'language': 'ja',
+            'detect': {
+                'layout': 'pc', 'allOf': ['game.exe', 'data/script.cpk', 'data/mes00.cpk'],
+                'textArchive': 'data/mes00.cpk',
+            },
+        })
+        problems = self.compare(profiles, self.catalog_text.replace(zht, zht + ' // ' + note))
+        self.assertTrue(any('extra-pc' in x and 'missing from the catalog' in x for x in problems), problems)
+
+    def test_a_call_that_cannot_be_read_is_still_reported_next_to_a_comment(self):
+        zht = 'pcEdition("mo6tw-pc-zht", TEXT_ZH_HANT, "mes01.cpk"),'
+        broken = 'pcEdition("extra-pc", languageOf(), "mes00.cpk"), // pcEdition("fine-pc", "ja", "mes00.cpk")'
+        problems = self.compare(HOST_PROFILES, self.catalog_text.replace(zht, zht + '\n        ' + broken))
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn('cannot read', problems[0])
+
+    def test_a_comment_marker_inside_a_string_literal_is_text(self):
+        zht = 'pcEdition("mo6tw-pc-zht", TEXT_ZH_HANT, "mes01.cpk"),'
+        slashed = self.catalog_text.replace(zht, zht + '\n        pcEdition("odd//pc", TEXT_JA, "mes00.cpk"),')
+        problems = self.compare(HOST_PROFILES, slashed)
+        # The call is read like any other (and compared), not cut off at the "//".
+        self.assertTrue(any('odd//pc' in x and 'not a "pc" profile' in x for x in problems), problems)
+        self.assertFalse(any('cannot read' in x for x in problems), problems)
+
+    def test_comments_inside_the_requirement_sets_are_ignored(self):
+        text = self.catalog_text.replace(
+            'private val PC_COMMON_DATA_ENTRIES = setOf("script.cpk", "mes00.cpk")',
+            'private val PC_COMMON_DATA_ENTRIES = setOf(\n'
+            '        "script.cpk", // the scripts (host: data/script.cpk)\n'
+            '        /* the Japanese text */ "mes00.cpk",\n'
+            '    )',
+        )
+        self.assertNotEqual(text, self.catalog_text)
+        self.assertEqual(tool.pc_requirements(text), {'game.exe', 'data/script.cpk', 'data/mes00.cpk'})
+        self.assertEqual(self.compare(HOST_PROFILES, text), [])
+
     def test_a_helper_the_tool_cannot_read_is_reported_instead_of_passing(self):
         broken = self.catalog_text.replace('PC_COMMON_DATA_ENTRIES = setOf(', 'PC_COMMON_ENTRIES = setOf(')
         self.assertNotEqual(broken, self.catalog_text)
@@ -305,6 +381,41 @@ class HostProfilesTests(unittest.TestCase):
     @unittest.skipUnless(os.environ.get('HOST_PROFILES_JSON'), 'set HOST_PROFILES_JSON to the host repository file')
     def test_the_real_host_file_matches_the_catalog(self):
         self.assertEqual(tool.check_host_profiles(self.catalog_text, Path(os.environ['HOST_PROFILES_JSON'])), [])
+
+
+class StripCommentsTests(unittest.TestCase):
+    def test_line_and_block_comments_are_removed(self):
+        strip = tool.strip_comments
+        self.assertEqual(strip('a // x\nb'), 'a \nb')
+        self.assertEqual(strip('a /* x */ b').split(), ['a', 'b'])
+        # A comment still separates the tokens on both sides of it.
+        self.assertEqual(strip('a/* x */b').split(), ['a', 'b'])
+        # Line structure survives a block comment that spans lines.
+        self.assertEqual(strip('a /* x\n y\n */ b').count('\n'), 2)
+        self.assertEqual(strip('/** doc with pcEdition("x", "ja", "a.cpk") */\nval a = 1').split(), ['val', 'a', '=', '1'])
+
+    def test_comment_markers_inside_literals_are_text(self):
+        strip = tool.strip_comments
+        self.assertEqual(strip('val u = "http://x" // c'), 'val u = "http://x" ')
+        self.assertEqual(strip('val u = "a/*b*/c"'), 'val u = "a/*b*/c"')
+        # An escaped quote does not end the string.
+        self.assertEqual(strip('"a\\"//b" // c'), '"a\\"//b" ')
+        self.assertEqual(strip('val q = \'"\' // it\'s'), 'val q = \'"\' ')
+        # A quote in a char literal does not open a string that would swallow the next real one.
+        self.assertEqual(strip('val q = \'"\' + "//x"'), 'val q = \'"\' + "//x"')
+        self.assertEqual(strip('val r = """a // b\n/* c */"""'), 'val r = """a // b\n/* c */"""')
+
+    def test_quotes_inside_comments_open_nothing(self):
+        strip = tool.strip_comments
+        self.assertEqual(strip('// say "hi\nval a = "b//c"'), '\nval a = "b//c"')
+        self.assertEqual(strip('/* " */ val a = "x//y" // z').split(), ['val', 'a', '=', '"x//y"'])
+
+    def test_text_without_comments_is_unchanged(self):
+        source = 'private val X = setOf("a.cpk", "b.cpk")\nfun f() = Game("it\'s", 1)\n'
+        self.assertEqual(tool.strip_comments(source), source)
+        real = tool.DEFAULT_CATALOG.read_text(encoding='utf-8')
+        self.assertEqual(tool.strip_comments(tool.strip_comments(real)), tool.strip_comments(real))
+        self.assertIn('pcEdition("mo6tw-pc", TEXT_JA, "mes00.cpk")', tool.strip_comments(real))
 
 
 if __name__ == '__main__':

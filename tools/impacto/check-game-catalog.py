@@ -11,6 +11,8 @@ Scope: the upstream profiles, declared as game("id", "title", "entry", ...). The
 so the upstream comparison skips them and lists them as a note. With --host-profiles they are compared against the
 "pc" detect blocks of the host's engine/impacto/profiles.json (yuukana1/Tyranor-Next-MAGES): same profile ids, languages,
 text archives and required files. That is a comparison of two copies of the same contract, not a game run.
+
+Kotlin comments are ignored: a commented-out or mentioned call is not a catalog entry.
 """
 from __future__ import annotations
 
@@ -23,6 +25,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CATALOG = ROOT / 'app/src/main/java/com/tyranor/next/core/game/scan/ImpactoGameCatalog.kt'
 
+# The tokens that can hide a comment marker or be hidden by one, in the order they are tried at each position: raw
+# string, string, char, line comment, block comment. "//" inside a literal is text; a quote inside a comment opens nothing.
+KOTLIN_TOKEN = re.compile(
+    r'"""[\s\S]*?"""'
+    r'|"(?:\\.|[^"\\\r\n])*"'
+    r"|'(?:\\.|[^'\\\r\n])'"
+    r'|//[^\r\n]*'
+    r'|/\*[\s\S]*?\*/'
+)
+# The patterns below are applied to source with its comments removed (strip_comments).
 GAME_CALL = re.compile(r'game\(\s*"([^"]+)"\s*,\s*"([^"]*)"\s*,\s*((?:"[^"]+"\s*,?\s*)+)\)', re.S)
 # Profiles that come from the host patch series (not in upstream): pcEdition("id", TEXT_X, "mesNN.cpk").
 PC_EDITION_CALL = re.compile(r'pcEdition\(\s*"([^"]+)"')
@@ -31,8 +43,8 @@ PC_EDITION_ANY = re.compile(r'(?<!fun )pcEdition\(')
 PC_EDITION_FULL = re.compile(r'pcEdition\(\s*"([^"]+)"\s*,\s*("[^"]+"|\w+)\s*,\s*"([^"]+)"\s*,?\s*\)')
 # A string constant is exactly one string literal. "a" + ".b" or any other expression is not recorded: a member that
 # refers to it is then unreadable and reported, never compared with a truncated value.
-CONST_STRING = re.compile(r'const val (\w+) = "([^"]*)"[ \t]*(?:\r?\n|//|$)', re.M)
-PC_COMMON = re.compile(r'PC_COMMON_DATA_ENTRIES\s*=\s*setOf\(([^)]*)\)[ \t]*(?:\r?\n|//)')
+CONST_STRING = re.compile(r'const val (\w+) = "([^"]*)"[ \t]*(?:\r?\n|$)', re.M)
+PC_COMMON = re.compile(r'PC_COMMON_DATA_ENTRIES\s*=\s*setOf\(([^)]*)\)[ \t]*\r?\n')
 PC_BODY = re.compile(r'fun pcEdition\([^)]*\)\s*=\s*Game\((.*?)\n    \)', re.S)
 PC_ROOT_ENTRIES = re.compile(r'requiredEntries\s*=\s*setOf\(([^)]*)\)(?=\s*,)')
 MEMBER = re.compile(r'\s*(?:"([^"]*)"|(\w+))\s*(?:,|$)')
@@ -41,9 +53,27 @@ NAME = re.compile(r'^\s*Name\s*=\s*"([^"]*)"', re.M)
 MOUNT = re.compile(r'RootGamedataDir\s*\.\.\s*"/([\w-]+)/?([^"]*)"')
 
 
+def strip_comments(source):
+    """Kotlin source without its comments; string and char literals stay as written.
+
+    A comment leaves its line breaks behind (a block comment on one line leaves a space, so the tokens on both sides
+    stay apart), so the patterns can keep relying on lines. Block comments are not read as nested (Kotlin nests them,
+    the catalog does not): a nested one leaves part of the comment visible, which can add reports but never hide code.
+    """
+    def keep_or_drop(match):
+        token = match.group(0)
+        if token.startswith('//'):
+            return ''
+        if token.startswith('/*'):
+            return '\n' * token.count('\n') or ' '
+        return token
+
+    return KOTLIN_TOKEN.sub(keep_or_drop, source)
+
+
 def parse_catalog(text):
     games = {}
-    for match in GAME_CALL.finditer(text):
+    for match in GAME_CALL.finditer(strip_comments(text)):
         entries = re.findall(r'"([^"]+)"', match.group(3))
         games[match.group(1)] = {'title': match.group(2), 'entries': entries}
     return games
@@ -64,7 +94,9 @@ def parse_pc_editions(text):
 
     None when any call cannot be read completely (an expression or an unknown name where the language is expected, a
     first argument that is not a string literal, ...): report it instead of comparing only the calls that were read.
+    Calls that only appear in comments are not calls.
     """
+    text = strip_comments(text)
     constants = dict(CONST_STRING.findall(text))
     parsed = PC_EDITION_FULL.findall(text)
     if len(parsed) != len(PC_EDITION_ANY.findall(text)):
@@ -109,6 +141,7 @@ def pc_requirements(text):
 
     None when the catalog's helper no longer has the shape this tool understands: report it, never guess.
     """
+    text = strip_comments(text)
     constants = dict(CONST_STRING.findall(text))
     data_dir = constants.get('DATA_DIR')
     if data_dir is None:
@@ -139,7 +172,7 @@ def check(catalog_path, source):
     games = parse_catalog(text)
     if not games:
         return ['no game(...) entries found in the catalog'], notes
-    editions = sorted(set(PC_EDITION_CALL.findall(text)))
+    editions = sorted(set(PC_EDITION_CALL.findall(strip_comments(text))))
     if editions:
         notes.append(
             f'{editions}: defined by the host patch series, not by upstream; skipped here '
