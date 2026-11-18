@@ -82,6 +82,7 @@
     <string name="settings_home_web_current">現在</string>
     <string name="home_web_preset_kungal">KunGal</string>
     <string name="home_web_preset_letmoe">LetMoe</string>
+    <string name="home_web_preset_takanashi">小鳥遊</string>
     <string name="home_web_error">ページの読み込みに失敗しました</string>
     <string name="home_web_open_browser_failed">このリンクを開けるアプリが見つかりません</string>
     <string name="home_web_download_unsupported">このダウンロードはブラウザで開けません</string>

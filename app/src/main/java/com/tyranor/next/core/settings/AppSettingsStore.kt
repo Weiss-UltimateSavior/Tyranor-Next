@@ -264,6 +264,9 @@ object AppSettingsStore {
     /** Web 首页预设：一起萌。 */
     const val HOME_WEB_URL_LETMOE = "https://www.letmoe.com"
 
+    /** Web 首页预设：小鸟游。 */
+    const val HOME_WEB_URL_TAKANASHI = "https://t-satoru.top"
+
     /** Web 首页默认地址：一起萌。 */
     const val DEFAULT_HOME_WEB_URL = HOME_WEB_URL_LETMOE
 
