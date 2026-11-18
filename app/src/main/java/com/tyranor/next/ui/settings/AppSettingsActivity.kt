@@ -323,7 +323,6 @@ internal fun AppSettingsScreen() {
                 stagedItem(4, staged) {
                     MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(4).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
-                            // 导航栏样式：经典 MD / 液态玻璃 · 经典 / 液态玻璃 · 透镜 / 悬浮按钮。
                             // 三个外观主题在未显式选择时统一使用液态玻璃 · 经典。
                             // 「透镜」档需要 Android 13+ 的 RuntimeShader，低版本不提供该选项（列表里不出现）。
                             val navStyleOptions = buildList {
@@ -341,10 +340,12 @@ internal fun AppSettingsScreen() {
                                             stringResource(R.string.settings_nav_bar_liquid_glass_enhanced),
                                     )
                                 }
-                                add(
-                                    AppSettingsStore.NAV_STYLE_FLOATING_BUTTON to
-                                        stringResource(R.string.settings_nav_bar_floating_button),
-                                )
+                                if (AppSettingsStore.FLOATING_NAV_ENABLED) {
+                                    add(
+                                        AppSettingsStore.NAV_STYLE_FLOATING_BUTTON to
+                                            stringResource(R.string.settings_nav_bar_floating_button),
+                                    )
+                                }
                             }
                             val navStyleIndex = navStyleOptions
                                 .indexOfFirst { it.first == navStyle }

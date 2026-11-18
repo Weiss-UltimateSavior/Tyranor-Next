@@ -230,6 +230,9 @@ object AppSettingsStore {
     /** 底部导航栏样式：悬浮按钮（右下角圆形玻璃按钮，点击沿 1/4 圆弧展开四项）。 */
     const val NAV_STYLE_FLOATING_BUTTON = "floating_button"
 
+    // 暂停提供悬浮按钮导航，保留已保存的样式和位置。
+    internal const val FLOATING_NAV_ENABLED = false
+
     /**
      * 导航栏样式「未显式设置」：仅作内存态 / 归一化结果，**不会持久化**。
      * 实际样式由 [resolveNavStyle] 解析，三个外观主题统一默认使用液态玻璃 · 经典。
@@ -443,7 +446,7 @@ object AppSettingsStore {
      * 导航样式归一化（纯函数，便于单元测试）：
      * 缺省 / 未知值归为 [NAV_STYLE_AUTO]（未显式设置）；透镜档在不支持的版本（< Android 13）回退普通档——
      * 这样即使从更新的设备备份恢复数据，旧设备也只会得到普通档而不是降级画面。
-     * 悬浮按钮在低版本走实底降级（组件内处理），不参与归一化降级。
+     * 暂停提供悬浮按钮时，旧配置读为液态玻璃 · 经典。
      */
     fun normalizeNavStyle(stored: String?, enhancedSupported: Boolean): String =
         when (stored) {
@@ -451,7 +454,8 @@ object AppSettingsStore {
             NAV_STYLE_LIQUID_GLASS -> NAV_STYLE_LIQUID_GLASS
             NAV_STYLE_LIQUID_GLASS_ENHANCED ->
                 if (enhancedSupported) NAV_STYLE_LIQUID_GLASS_ENHANCED else NAV_STYLE_LIQUID_GLASS
-            NAV_STYLE_FLOATING_BUTTON -> NAV_STYLE_FLOATING_BUTTON
+            NAV_STYLE_FLOATING_BUTTON ->
+                if (FLOATING_NAV_ENABLED) NAV_STYLE_FLOATING_BUTTON else NAV_STYLE_LIQUID_GLASS
             else -> NAV_STYLE_AUTO
         }
 
