@@ -210,9 +210,8 @@ private fun LiquidGlassNavItemView(
 }
 
 /**
- * 当前实际生效的导航栏样式：用户显式选择的样式原样生效；未显式设置时按外观风格解析
- * （白雾玻璃沿用液态玻璃 · 经典，仅做亮玻璃 + 主题色轻染的配色适配）
- * （默认外观 → 液态玻璃 · 经典，玻璃系外观 → 经典 MD），随外观风格切换即时重组。
+ * 当前实际生效的导航栏样式：用户显式选择优先；三个外观主题均默认液态玻璃 · 经典。
+ * 各外观主题的玻璃配色由导航组件负责。
  */
 @Composable
 fun effectiveNavStyle(): String {
@@ -220,7 +219,6 @@ fun effectiveNavStyle(): String {
     return AppSettingsStore.resolveNavStyle(
         style = navStyle,
         enhancedSupported = AppSettingsStore.supportsLiquidGlassEnhanced,
-        glassAppearance = AppThemeColors.isGlass,
     )
 }
 

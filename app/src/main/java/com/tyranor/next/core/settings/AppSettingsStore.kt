@@ -232,8 +232,7 @@ object AppSettingsStore {
 
     /**
      * 导航栏样式「未显式设置」：仅作内存态 / 归一化结果，**不会持久化**。
-     * 实际样式由 [resolveNavStyle] 按外观风格解析——默认外观风格为液态玻璃 · 经典，
-     * 玻璃系外观风格（复古玻璃）保持经典 MD（其悬浮玻璃条形态）。
+     * 实际样式由 [resolveNavStyle] 解析，三个外观主题统一默认使用液态玻璃 · 经典。
      */
     const val NAV_STYLE_AUTO = "auto"
 
@@ -419,7 +418,7 @@ object AppSettingsStore {
 
     /**
      * 用户显式选择的底部导航栏样式（经典 MD / 液态玻璃经典 / 透镜 / 悬浮按钮）；
-     * 从未设置过时为 [NAV_STYLE_AUTO]，须经 [resolveNavStyle] 按外观风格解析后使用。
+     * 从未设置过时为 [NAV_STYLE_AUTO]，须经 [resolveNavStyle] 解析为统一默认样式后使用。
      */
     fun getNavStyle(c: Context): String =
         synchronized(navStyleLock) {
@@ -432,7 +431,7 @@ object AppSettingsStore {
     fun setNavStyle(c: Context, style: String) {
         val normalized = normalizeNavStyle(style, supportsLiquidGlassEnhanced)
         synchronized(navStyleLock) {
-            // AUTO 不落盘：清掉显式选择，回到「跟随外观风格」
+            // AUTO 不落盘：清掉显式选择，回到统一默认样式。
             prefs(c).edit().apply {
                 if (normalized == NAV_STYLE_AUTO) remove(KEY_NAV_STYLE) else putString(KEY_NAV_STYLE, normalized)
             }.apply()
@@ -457,15 +456,13 @@ object AppSettingsStore {
         }
 
     /**
-     * 把「未显式设置」解析为实际样式（纯函数，便于单元测试）：
-     * 默认外观风格 → 液态玻璃（经典）；
-     * 玻璃系外观风格（复古玻璃）→ 经典 MD（其悬浮玻璃条形态）。显式选择只做版本兼容归一化，不随外观风格改变。
+     * 三个外观主题的未显式设置值统一解析为液态玻璃 · 经典。
+     * 显式选择只做版本兼容归一化，不随外观主题改变。
      */
-    fun resolveNavStyle(style: String, enhancedSupported: Boolean, glassAppearance: Boolean): String {
+    fun resolveNavStyle(style: String, enhancedSupported: Boolean): String {
         val normalized = normalizeNavStyle(style, enhancedSupported)
         return when {
             normalized != NAV_STYLE_AUTO -> normalized
-            glassAppearance -> NAV_STYLE_CLASSIC_MD
             else -> NAV_STYLE_LIQUID_GLASS
         }
     }
