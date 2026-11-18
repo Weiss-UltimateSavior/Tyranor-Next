@@ -47,9 +47,18 @@ object RuntimeModuleLauncher {
         module: RuntimeModuleDescriptor,
         game: ScanGame,
         folderPath: String?,
+        settingsPayload: String? = null,
     ): RuntimeModuleLaunchResult {
         if (!module.enabled) return RuntimeModuleLaunchResult.ModuleDisabled
         if (module.packageName.isBlank() || module.activityName.isBlank()) return RuntimeModuleLaunchResult.EntryMissing
+        if (module.settings != null && settingsPayload == null) {
+            return RuntimeModuleLaunchResult.StartFailed("runtime module settings payload missing")
+        }
+        if (module.settings != null && settingsPayload != null &&
+            settingsPayload.toByteArray(Charsets.UTF_8).size > RuntimeModuleSettingsParser.MAX_PAYLOAD_BYTES
+        ) {
+            return RuntimeModuleLaunchResult.StartFailed("runtime module settings payload exceeds 48 KiB")
+        }
         val applicationContext = context.applicationContext
         return RuntimeModuleLaunchDispatch.launch(
             folderPath = folderPath,
@@ -59,19 +68,19 @@ object RuntimeModuleLauncher {
                     .filter { it.isReadPermission }
                     .mapNotNull { permission ->
                         // 只复用系统记录的真实授权 URI，不从父 tree 构造游戏 retree。
-                        safSource(permission.uri.toString())?.copy(treeUri = permission.uri)
+                        safSource(permission.uri.toString())?.takeIf { it.treeUri == permission.uri }
                     }
             },
             canReadSafSource = { source ->
                 applicationContext.checkUriPermission(
-                    source.treeUri,
+                    DocumentsContract.buildDocumentUriUsingTree(source.treeUri, source.rootDocumentId),
                     Process.myPid(),
                     Process.myUid(),
                     Intent.FLAG_GRANT_READ_URI_PERMISSION,
                 ) == PackageManager.PERMISSION_GRANTED
             },
             dispatch = { path, source ->
-                dispatch(applicationContext, module, game, path, source)
+                dispatch(applicationContext, module, game, path, source, settingsPayload)
             },
         )
     }
@@ -82,6 +91,7 @@ object RuntimeModuleLauncher {
         game: ScanGame,
         folderPath: String?,
         safSource: SafSource<Uri>?,
+        settingsPayload: String?,
     ): RuntimeModuleLaunchResult {
         // 每次新建 Intent：路径回退不能残留 data、GAME_ROOT 或 URI 授权 flags。
         val intent = Intent(RuntimeModuleContract.ACTION_LAUNCH).apply {
@@ -96,6 +106,9 @@ object RuntimeModuleLauncher {
             }
             putExtra(RuntimeModuleContract.EXTRA_GAME_TITLE, game.title)
             putExtra(RuntimeModuleContract.EXTRA_PROTOCOL_VERSION, RuntimeModuleContract.PROTOCOL_VERSION)
+            if (module.settings != null && settingsPayload != null) {
+                putExtra(RuntimeModuleContract.EXTRA_SETTINGS, settingsPayload)
+            }
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
 
@@ -129,10 +142,12 @@ object RuntimeModuleLauncher {
             val authority = documentUri.authority ?: return null
             val treeDocumentId = DocumentsContract.getTreeDocumentId(documentUri)
                 .takeIf { it.isNotBlank() } ?: return null
-            val rootDocumentId = if (documentUri.pathSegments.size == 2) {
-                treeDocumentId
-            } else {
-                DocumentsContract.getDocumentId(documentUri).takeIf { it.isNotBlank() } ?: return null
+            val segments = documentUri.pathSegments
+            val rootDocumentId = when {
+                segments.size == 2 -> treeDocumentId
+                segments.size == 4 && segments[2] == "document" ->
+                    DocumentsContract.getDocumentId(documentUri).takeIf { it.isNotBlank() } ?: return null
+                else -> return null
             }
             val treeUri = DocumentsContract.buildTreeDocumentUri(authority, treeDocumentId)
             SafSource(treeUri, authority, treeDocumentId, rootDocumentId)

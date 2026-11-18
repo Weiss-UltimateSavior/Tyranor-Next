@@ -361,6 +361,7 @@ fun EngineScreen(
                 val statusRes = when {
                     module != null ->
                         if (installed) R.string.engine_module_installed
+                        else if (module.maximumVersionCode < Long.MAX_VALUE) R.string.engine_module_version_required
                         else if (module.minimumVersionCode > 0) R.string.engine_module_install_or_update
                         else R.string.engine_module_not_installed
 
@@ -976,6 +977,7 @@ private fun engineIconRes(engine: EngineType): Int = when (engine) {
     EngineType.SYSTEMNNN -> R.drawable.ic_engine_card_systemnnn
     EngineType.RENPY -> R.drawable.ic_engine_card_renpy
     EngineType.RUFFLE -> R.drawable.ic_engine_card_ruffle
+    EngineType.IMPACTO -> R.drawable.ic_engine_card_impacto
     EngineType.YURIS -> R.drawable.ic_engine_card_yuris
     EngineType.CATSYSTEM2 -> R.drawable.ic_engine_card_catsystem2
     EngineType.PC -> R.drawable.ic_engine_card_pc
@@ -1048,7 +1050,7 @@ private fun engineTabOf(engine: EngineType): EngineTab = when (engine) {
     EngineType.KIRIKIRI, EngineType.ONS, EngineType.ARTEMIS, EngineType.SIGLUS,
     EngineType.REALLIVE, EngineType.AVG32, EngineType.XSYS35, EngineType.XSYS4, EngineType.UK2, EngineType.FVP,
     EngineType.ETHORNELL, EngineType.CMVS, EngineType.SYSTEMNNN,
-    EngineType.RENPY, EngineType.YURIS, EngineType.CATSYSTEM2 -> EngineTab.GAL
+    EngineType.RENPY, EngineType.YURIS, EngineType.CATSYSTEM2, EngineType.IMPACTO -> EngineTab.GAL
     // PC（手动添加，经 Winlator 运行）与主机模拟器同属「主机」分类
     EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.PC -> EngineTab.CONSOLE
     // 手动添加的安卓应用不进入引擎页（supportedEngines 未收录），此处仅为 when 完备性
@@ -1153,6 +1155,7 @@ private fun engineDialogEntries(
                 id = module.id,
                 title = module.displayName(context),
                 summaryRes = if (installed) R.string.engine_module_installed
+                    else if (module.maximumVersionCode < Long.MAX_VALUE) R.string.engine_module_version_required
                     else if (module.minimumVersionCode > 0) R.string.engine_module_install_or_update
                     else R.string.engine_module_not_installed,
                 installed = installed,

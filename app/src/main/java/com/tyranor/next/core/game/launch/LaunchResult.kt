@@ -41,6 +41,7 @@ sealed interface LaunchResult {
 
         /** 无法把游戏 URI 解析为本地目录路径。 */
         data object GameDirUnresolved : Failure
+        data object ArtemisSettingsUnavailable : Failure
         data class EthornellPrepareFailed(val error: EthornellPrepareError) : Failure
         data class SystemNnnResourcesFailed(val error: SystemNnnResourceError) : Failure
         data class SavePreparationFailed(val error: SaveSyncError) : Failure

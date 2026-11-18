@@ -28,6 +28,9 @@ object RuntimeModuleContract {
     /** 启动 extra：主 App 协议版本。 */
     const val EXTRA_PROTOCOL_VERSION = "com.tyranor.runtime.extra.PROTOCOL_VERSION"
 
+    /** Optional full v1 JSON settings payload for modules declaring valid settings. */
+    const val EXTRA_SETTINGS = "com.tyranor.runtime.extra.SETTINGS"
+
     /** 当前主 App 支持的协议版本。 */
     const val PROTOCOL_VERSION = 1
 }

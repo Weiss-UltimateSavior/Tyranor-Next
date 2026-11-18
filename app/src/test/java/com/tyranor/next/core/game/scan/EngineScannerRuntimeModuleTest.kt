@@ -13,8 +13,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 /**
- * 扫描器接入第三方运行时模块：只覆盖 UNKNOWN / WEB_OTHER 弱结果，
- * KRKR 等强特征不被抢走；空索引/未命中保持内置识别结果。
+ * 扫描器优先匹配第三方运行时模块；空索引、未命中或停用时回退内置识别。
  */
 class EngineScannerRuntimeModuleTest {
 
@@ -67,15 +66,40 @@ class EngineScannerRuntimeModuleTest {
     }
 
     @Test
-    fun strongBuiltInKirikiriIsNotOverriddenByDeclaredExtension() {
+    fun runtimeModuleTakesPriorityOverBuiltInKirikiri() {
         val dir = temporary.newFolder("built-in-krkr")
         dir.resolve("data.xp3").writeText("xp3")
         assertEquals(EngineType.KIRIKIRI, EngineScanner.detectEngine(dir).engine)
 
         val detection = EngineScanner.detectEngine(dir, index(module(extensions = listOf(".xp3"))))
 
-        assertEquals(EngineType.KIRIKIRI, detection.engine)
-        assertNull(detection.runtimeModulePackage)
+        assertEquals(EngineType.RUNTIME_MODULE, detection.engine)
+        assertEquals(PACKAGE_NAME, detection.runtimeModulePackage)
+    }
+
+    @Test
+    fun unmatchedOrDisabledModuleFallsBackToStrongBuiltIn() {
+        val dir = temporary.newFolder("built-in-fallback")
+        dir.resolve("data.xp3").writeText("xp3")
+        listOf(
+            RuntimeModuleIndex.EMPTY,
+            index(module(extensions = listOf(".pak"))),
+            index(module(extensions = listOf(".xp3"), enabled = false)),
+        ).forEach { modules ->
+            val detection = EngineScanner.detectEngine(dir, modules)
+            assertEquals(EngineType.KIRIKIRI, detection.engine)
+            assertNull(detection.runtimeModulePackage)
+        }
+    }
+
+    @Test
+    fun moduleMarkerTakesPriorityOverRenpyDetection() {
+        val dir = temporary.newFolder("renpy-priority")
+        dir.resolve("script.rpa").writeText("rpa")
+        assertEquals(EngineType.RENPY, EngineScanner.detectEngine(dir).engine)
+        val detection = EngineScanner.detectEngine(dir, index(module(markers = listOf("script.rpa"))))
+        assertEquals(EngineType.RUNTIME_MODULE, detection.engine)
+        assertEquals(PACKAGE_NAME, detection.runtimeModulePackage)
     }
 
     @Test

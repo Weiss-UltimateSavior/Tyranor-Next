@@ -30,8 +30,9 @@ flowchart TD
 
 ## 2. 应用启动与界面状态
 
+- 当前版本通过 `AppSettingsStore.ONBOARDING_FEATURE_ENABLED` 暂时屏蔽首次使用引导覆盖层；引导代码、状态存储与后续重新启用所需的主导航接入仍保留。
 - [TyranorNextApplication.kt](app/src/main/java/com/tyranor/next/TyranorNextApplication.kt) 在主进程偏好迁移之前经 `AppSettingsStore` 初始化首次引导标记；标记写入失败不阻断启动，而由 `OnboardingPreferences` 保留本次安装判定的内存快照，并写入不参与存量安装判断的应用私有重试快照，后续启动或完成引导时继续重试落盘，避免迁移标记或空数据库改变首次判定。随后迁移共享 prefs 名称、配置 WebView profile，并在应用进入后台时安排更新检查；前后台切换同时驱动存档同步（WebDAV）的打开拉取与会话兜底（`core/game/save/sync/SaveSyncRuntime`）。主进程游戏库在启动阶段通过幂等入口触发预热，通常早于首帧组合但不保证初始化已完成，保证真实主页教练层及保存后的 Activity 重建都能复用同一入口。
-- [MainActivity.kt](app/src/main/java/com/tyranor/next/MainActivity.kt) 在语言、主题与背景内门控首次引导；未完成时仍创建真实主导航，在其上叠加 `OnboardingCoachOverlay` 的聚焦框、连接线与气泡，并通过 `coachPage` 驱动游戏/引擎/设置页面切换。各真实控件在对应页面处于前台时通过 `onGloballyPositioned` 上报 root 坐标；首页首帧尚未测量时允许 `coachFallbackRect` 做比例回退，其余步骤等待真实锚点后再绘制，避免把暂时不可用的坐标误当作真实位置。完成标记落盘后仅移除覆盖层并请求通知权限，复用同一主导航组合，不重建主导航或重置页面状态。覆盖层使用独立的模态无障碍语义组，外围拦截区消费误触，真实高亮控件仍保留语义与触摸入口。完成标记由 core 的 `AppSettingsStore` / `OnboardingPreferences` 管理；`ui/common/OnboardingCoachAnchor.kt` 提供跨页面共享的锚点映射与测量修饰符；[MainScreen.kt](app/src/main/java/com/tyranor/next/ui/main/MainScreen.kt) 组合首页、游戏、引擎、设置四页；首页可在应用设置关闭，关闭后为游戏 / 引擎 / 设置三页。可见页常驻，切换用水平位移与 alpha，避免重建列表。
+- [MainActivity.kt](app/src/main/java/com/tyranor/next/MainActivity.kt) 在语言、主题与背景内门控首次引导；未完成时仍创建真实主导航，在其上叠加 `OnboardingCoachOverlay` 的聚焦框、连接线与气泡，并通过 `coachPage` 驱动游戏/引擎/设置页面切换。各真实控件在对应页面处于前台时通过 `onGloballyPositioned` 上报 root 坐标；首页首帧尚未测量时允许 `coachFallbackRect` 做比例回退，其余步骤等待真实锚点后再绘制，避免把暂时不可用的坐标误当作真实位置。完成标记落盘后仅移除覆盖层并请求通知权限，复用同一主导航组合，不重建主导航或重置页面状态。覆盖层使用独立的模态无障碍语义组，外围拦截区消费误触，真实高亮控件仍保留语义与触摸入口。完成标记由 core 的 `AppSettingsStore` / `OnboardingPreferences` 管理；`ui/common/OnboardingCoachAnchor.kt` 提供跨页面共享的锚点映射与测量修饰符；[MainScreen.kt](app/src/main/java/com/tyranor/next/ui/main/MainScreen.kt) 组合首页、游戏、引擎、工具、设置五页；首页可在应用设置关闭，关闭后为游戏 / 引擎 / 工具 / 设置四页。可见页常驻，切换用水平位移与 alpha，避免重建列表。工具页承接原“妙妙工具”侧边栏的五个功能入口；主界面不再挂载侧边栏、左缘唤出手势或系统手势排除区，系统返回沿用根任务离开规则。
 - [MainLibraryViewModel.kt](app/src/main/java/com/tyranor/next/ui/main/MainLibraryViewModel.kt) 通过 `StateFlow<MainLibraryUiState>` 发布游戏库快照，Channel 串行处理扫描/删除/刷新等命令；搜索防抖并拒绝过期结果。
 - 二级页通常复用 [AppScreen.kt](app/src/main/java/com/tyranor/next/ui/common/AppScreen.kt) 中的 `AppScreenActivity` / `AppScreenScaffold`，统一语言、主题、系统栏、背景与转场；正文由 `setAppScreenContent` 提供，主题包裹依次经过 `ProvideAppLocale`、`TyranorNextTheme` 与 `GlassBackground`。全屏按键编辑器保留明文例外。
 
@@ -49,11 +50,11 @@ flowchart TD
 
 ## 3. 游戏库与持久化
 
-[GameLibraryDatabase.kt](app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryDatabase.kt) 定义主进程专用 Room 数据库 `game_library.db`，当前 schema v3：
+[GameLibraryDatabase.kt](app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryDatabase.kt) 定义主进程专用 Room 数据库 `game_library.db`，当前 schema v6：
 
 | 表 | 内容 |
 | --- | --- |
-| `games` | 游戏身份、引擎、启动目标、第三方运行时模块包名、封面/标题元数据与最近打开时间 |
+| `games` | 游戏身份、引擎、启动目标、第三方运行时模块包名、封面/标题与游玩状态条目绑定元数据（`vndb_id` / `bangumi_id` / `hikarinagi_id` / `nextmoe_id`）及最近打开时间 |
 | `scan_roots` | 扫描根目录 |
 | `quick_launch` | 有序快捷启动关系 |
 | `game_overrides` | 单游戏设置覆盖 |
@@ -65,7 +66,9 @@ flowchart TD
 
 旧 `game_scanner` prefs 仍作为幂等迁移来源和恢复镜像，不能删除为“无用缓存”。应用/引擎偏好及引擎进程读取的单游戏 blob 仍保留 prefs；Room 不是所有状态的唯一介质，也不能把普通 SharedPreferences 当成实时跨进程消息总线。
 
-Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并从镜像修复；v2→v3 通过显式 `Migration(2,3)` 新增 `games.runtime_module_package` 列及索引，schema v3 的 `3.json` 已导出。后续版本必须显式注册 `Migration`，不能扩大全局破坏性回退。当前数据库、加密凭据、存档同步状态与备份边界统一见 [持久化数据清单](docs/应用持久化数据清单.md)；清单分别说明 v1 破坏性重建与 v2→v3 显式迁移；专题验收记录仍只对各自标注的版本有效。
+`game_overrides` 的普通字段在单游戏设置镜像锁内读取、修改并发布，然后进入 Room 写队列。第三方模块事务持有同一镜像锁时合并模块命名空间，保留已排队的普通字段和清除操作。Web 外部网络策略在主进程解析全局与单游戏值，经启动 Intent 交给两个 Web 宿主。
+
+Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并从镜像修复；v2→v3（`games.runtime_module_package` 列及索引）、v3→v4（`games.bangumi_id`）、v4→v5（`games.hikarinagi_id`）、v5→v6（`games.nextmoe_id`）分别通过显式 `Migration(2,3)`、`Migration(3,4)`、`Migration(4,5)`、`Migration(5,6)` 升级，对应 `3.json`–`6.json` 已导出。后续版本必须显式注册 `Migration`，不能扩大全局破坏性回退。当前数据库、加密凭据、存档同步状态与备份边界统一见 [持久化数据清单](docs/应用持久化数据清单.md)；专题验收记录仍只对各自标注的版本有效。
 
 ### 类级预编译规则
 
@@ -93,10 +96,12 @@ Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并�
 
 1. `RuntimeModuleDiscovery` 通过 Manifest `<queries>` 声明的 `com.tyranor.runtime.action.LAUNCH` 查询可见应用，只保留 `com.tyranor.runtime.` 前缀；每个包选择一个入口 Activity，并容错读取 `com.tyranor.runtime.MANIFEST` 指向的 `res/raw` JSON（`RuntimeModuleDescriptor` / `RuntimeModuleScanSpec`）。不申请 `QUERY_ALL_PACKAGES`，不校验签名或版本。
 2. `RuntimeModuleRegistry` 保存发现快照与 `AppSettingsStore.KEY_RUNTIME_MODULE_ENABLED`（StringSet，默认空集），经 `StateFlow` 提供给 `ui/runtime/EngineModuleManagementScreen`；刷新、启用/禁用与扫描索引构建在同一互斥区内串行。新模块默认关闭，启用只写开关。
-3. 扫描开始时 `EngineScanner` 取 `RuntimeModuleIndex`（已发现 + 已启用 + 有扫描描述），仅在 `UNKNOWN` / `WEB_OTHER` 等弱结果上调用 `RuntimeModuleMatcher` 匹配 `extensions` / `markers`；命中写入 `ScanGame.runtimeModulePackage`。多模块按 `all` > `any` → marker 数 → 包名排序，旧 URI 绑定优先；扫描是唯一入库入口。
-4. `EngineLauncher` 对 `RUNTIME_MODULE` 直接调用 `RuntimeModuleLauncher`：显式 `ComponentName` + 文件夹绝对路径/标题/协议版本；`Dispatched` 只表示交棒，`ModuleMissing` / `ModuleDisabled` 触发 `RuntimeModuleBindings.degradeGame`。
-5. `RuntimeModuleBindings.reconcile` 在重扫前与应用回前台等时机核对绑定：模块未发现、未启用或包名为空 → `EngineType.UNKNOWN`（保留最后已知 `runtimeModulePackage` 供重扫合并），保留其它字段；发现查询失败时跳过第三方绑定的降级。旧 Emberfall 内置身份的迁移独立进行。
-6. 绑定经 `ScanGame` → `GameEntity.runtime_module_package`（Room v3）→ `GameRecordCodec` prefs 镜像传播；v2→v3 使用显式 `Migration(2,3)`。
+3. 扫描开始时 `EngineScanner` 取 `RuntimeModuleIndex`（已发现 + 已启用 + 有扫描描述），先调用 `RuntimeModuleMatcher` 匹配 `extensions` / `markers`，未命中才执行内置识别；扫描根及 ROM/SWF 目录维持既有排除规则，命中写入 `ScanGame.runtimeModulePackage`。多模块按 `all` > `any` → marker 数 → 包名排序，旧 URI 绑定优先；扫描是唯一入库入口。
+4. `RuntimeModuleManifest` 独立解析 `scan`、`settings`、`saves`。设置由模块声明布尔、枚举、文本、整数及默认值，单游戏覆盖按 URI + 包名保存在现有覆盖记录内；`PerGameSettingsStore` 提供可等待的保存结果，复用写队列并维护 prefs 镜像。解析后的完整配置通过可选 `com.tyranor.runtime.extra.SETTINGS` JSON 下发，不增加全局设置。
+5. `EngineLauncher` 在存档准入之前刷新并固定模块身份，交棒前复核绑定、声明与实际存档目录，再调用 `RuntimeModuleLauncher`：显式 `ComponentName` + 标题、协议版本、可解析的游戏目录路径及已声明的设置。可转授时附带当前游戏目录自身的临时只读 SAF tree，不转授父级扫描根；授权失效时可回退到路径。`Dispatched` 只表示交棒，`ModuleMissing` / `ModuleDisabled` 触发 `RuntimeModuleBindings.degradeGame`。
+6. `RuntimeModuleBindings.reconcile` 在重扫前与应用回前台等时机核对绑定：模块未发现、未启用或包名为空 → `EngineType.UNKNOWN`（保留最后已知 `runtimeModulePackage` 供重扫合并），保留其它字段；发现查询失败时跳过第三方绑定的降级。旧 Emberfall 内置身份的迁移独立进行。
+7. 绑定经 `ScanGame` → `GameEntity.runtime_module_package`（Room v3）→ `GameRecordCodec` prefs 镜像传播；v2→v3 使用显式 `Migration(2,3)`。配置复用现有 JSON 分区，不增加 Room schema 版本。
+8. `saves` 声明固定的游戏内相对存档目录，`GameSaveManager` 统一验证当前绑定、目录范围与符号链接，复用文件事务；第三方目录的事务相邻项须有私有所有权记录。存档能力动态判定，云端引擎命名空间包含模块包名，未知或暂不可用状态保留身份占位。外置启动在 WebDAV 关闭时也经过目录门禁，持久化运行标记成功后才交棒；退出确认可在模块失效、游戏降级或移除后按旧会话身份进行。
 
 [EngineSettingsResolver](app/src/main/java/com/tyranor/next/core/settings/EngineSettingsResolver.kt) 统一读取引擎全局与单游戏覆盖，`EffectiveEngineSettings` 处理归一化与回退。启动和存档消费同一份生效规则，页面不得另写优先级逻辑。
 
@@ -152,7 +157,7 @@ WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano
 - SystemNNN 的 ZIP 导入在私有 `:systemnnn_validator` 进程通过绑定服务校验。主进程传应用缓存中的暂存目录名、目标游戏目录及校验条件，服务返回结果。普通存档校验可使用资源已清理的目录，流程图节点仍依赖游戏的图结构。服务死亡、校验超时或快照无效时不会替换活动存档。WebDAV 在暂存 ZIP 移入恢复区之前保存活动目录范围，用于在恢复记录损坏时保护该目录。副本迁移会话基线和已提交的恢复记录前须核对同源，仍有待提交的恢复事务时返回类型化错误。
 - SystemNNN 单游戏引擎设置通过同一私有进程读取或重新生成存档格式配置。App 解析游戏目录，Emberfall 在该目录读写 `emberfall-system.cfg` 并返回展示字段。
 
-- 封面：`CoverScraperService` 聚合在线来源，`CoverScrapeTaskManager` 管理应用级批量任务；UI 使用缩略图缓存，不在重组期同步抓取/解码。
+- 封面：`CoverScraperService` 聚合在线来源，`CoverScrapeTaskManager` 管理应用级批量任务；UI 使用缩略图缓存，不在重组期同步抓取/解码。游玩状态（`core/status/PlayStatusService`）复用同一套来源：Bangumi 收藏、VNDB ulist、Hikarinagi 评分与未萌 NextMoe 作品状态的读写均为用户显式操作（Bangumi 经 `GET /v0/users/{username}/collections/{subject_id}` 按持久化用户名读回，404 归一未收藏；读 401 置位 needsReauth、读 403 置位独立 permission_error 位、读 2xx 双清，写路径仍保持 401 置位 / 403 只抛错的单侧约束），授权凭据分别存于 `bangumi_auth_secure` / `vndb_auth_secure` / `hikarinagi_auth_secure` / `nextmoe_auth_secure`（Keystore 加密，排除备份）；Bangumi / Hikarinagi 授权经 AppAuth 网页流程完成，custom scheme 回调由 `RedirectUriReceiverActivity`（exported）接收并转发至各自不导出的回调 Activity；未萌 NextMoe 采用 Public Client + 强制 PKCE S256 与 `127.0.0.1:0` 环回回调（`NextMoeAuthService`）；各服务均以类型化错误码返回、文案由 UI 映射，授权状态经各 store 的 `statusVersion` StateFlow 发布；VNDB token 校验与权限解析（`verifyVndbToken` / `checkVndbPermissions` / `authInfo`）当前落在 core/status，分别供封面刮削设置页（`CoverScraperSettingsActivity` 粘贴校验）与游玩状态弹窗（`PlayStatusDialog` 条目绑定后的权限提示）消费，若迁 core/auth 需连带上述两处调用点，触碰时评估；条目绑定落在 `games.vndb_id` / `games.bangumi_id` / `games.hikarinagi_id` / `games.nextmoe_id`（schema v6）。
 - 存档：`GameSaveManager` 解析位置并导入/导出 ZIP；MV/MZ 的格式转化与互通独立于存档镜像，均采用同源目录解析。Ethornell 存档管理已按 capability 开放（`DEVICE_SAVE_IO_VERIFIED=true` 与 `HOST_DISPATCH_PROTOCOL_VERIFIED=true`）；范围为游戏目录 `savedata` user-root 的备份/恢复/删除；旧私有树在同一操作门禁内迁入，目标同名文件优先，完成标记避免后续删档复活，ZIP 单个文件上限 64 MiB（与 native 原子写一致），总量 1 GiB 预算不等于该上限；不自动导入资源根 `UserData`。运行时的用户槽位读/查/通用加载走授权别名，别名缺失不会回退到资源槽位；普通资源与命名归档保持原路径。商业游戏槽位保存与重开读档仍是独立验收范围，PC 格式互通不在本 capability 内。
 - 存档变更门禁按规范化目录的父子相交关系互斥，运行证据与待切换 owner 也使用同一范围；相关目录的 revision 参与传输 epoch，父目录切换后内层旧传输与会话失效。不相交的已知目录共享准入并可并行执行哈希、导出与启动；无法解析目录的启动仍独占变更准入。移除游戏只清理已获得门禁的当前应用专属存档目录与事务副本，保留旧独立目录、镜像父目录及索引。删除等锁可取消且有时限，进入必要清理后才不可取消；先推进传输 revision，子项失败保留身份和索引供重试。
 - 存档同步（WebDAV）：`core/game/save/sync/SaveSyncService` 在既有 ZIP 导出/导入能力之上管理不可变历史，按相对路径和内容字节计算 SHA-256；网络串行锁与本地历史锁按 URI 区分，活动存档锁按规范化实际目录区分，重叠 SAF 根共享写入门禁。`SaveDirectoryActivationStore` 在 `noBackupFilesDir/save_sync/directory_selections` 持久化该目录的 owner URI/token 与 revision；导入前写入，所有 alias 在恢复及 session/baseline 清理成功前拒绝同步启动与捕获，清理按持久 `activeKey` 扫描而不依赖当前 alias 是否可解析，完成后保留 revision 使旧 pinned transfer 失效。网络等待不持有本地锁，上传固定私有 ZIP 副本，选择/身份/清理通过 revision 使旧传输收尾失效。默认关闭、启用后默认手动；`SaveSnapshotStore` 负责每游戏 5 版与临时文件维护，`WebDavClient` 负责 WebDAV 传输与旧布局读取，10/20/无上限的独立保留策略由 `SaveSyncService` 执行。每次拉取只取该游戏当前最新云端版本并写入本地历史，不批量下载或直接恢复远端历史；手动激活版本才导入活动存档。旧版本 S 激活后继续保存出的 N 仍沿同一恢复链发布，并用 N 替换云端旧 S。旧保留量值、v1 云端布局和早期 Debug 本地选择标记均保留迁移/读取路径。
@@ -167,10 +172,10 @@ WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano
 - 清理上限与本地失败边界：每个游戏每个同步轮次中，所有经 `SaveSyncService` 发起的远程 DELETE 合计最多 20 次。超过上限时保留 `needsPrune` / `publicationConfirmed` checkpoint 和 pending session，以 `SaveSyncReport.cleanupPending` 结束本游戏本轮；WorkManager fallback 继续，下一轮先重新确认有效替换再裁剪，已有 S→N 链与同字节待清理意图保持。下载在写盘前检查可用空间，写入、flush、close 或原子替换的本地失败分类为 `STORAGE_FULL` / `LOCAL_IO`，空间不足不进入自动网络重试；上传 pin 复制失败会释放临时文件登记并删除残留。`LOCAL_STATE_CHANGED` 是独立 typed error，不冒充 `GAME_RUNNING`；游戏删除保留原始 `SaveSyncError`，UI 按错误码映射提示。Service 已确认的 `needsPrune` 会在 capture/pin 前重新验证云端档案，active 为空或上传 pin 创建失败仍可继续清理，但验证所需空间与 checkpoint 持久化必须成功、验证失败不得删除旧版本；Runtime 以 pending cleanup 优先于非空 hash 差异判断，20 次 DELETE 预算耗尽时保留 marker，新 M 可在同轮发布并由后续轮次继续清理，临时文件 create/copy 的 ENOSPC 统一为不重试的 `STORAGE_FULL`。 清理报告和失败关联使用 URI；fallback 按打开/退出唯一链名称的稳定哈希在 `save_sync/workers` 保存存储不足 URI 排除集与最新 owner UUID，排程及运行中补写在进程内同一锁下取并集。`APPEND_OR_REPLACE` 保留在途传输，后继总会入队，过时排队请求跳过 IO，旧 owner 的清理不能删除新状态；终止失败记录报告后以成功图节点结束，避免取消后继。下一轮 `flushPending` / `syncAll` 在执行前过滤，身份冲突统计仍包含被跳过的游戏。新立即/手动请求不继承，排除集完成/耗尽/关闭时移除；当前链可长时间等待非计费网络而不失效，旧版 UUID 记录才七天过期。WorkManager Data 仅保存模式布尔量与稳定链名，URI 不塞入 Data。
 - WebDAV 本地删除：移除游戏时在本地历史/活动存档锁内清理该 URI 的版本、激活源、检查点、会话与 baseline，不删除云端历史；子项清理失败保留主状态的身份与 checkpointKeys 归属索引，并恢复游戏库条目以提供重试入口。宿主登记为进程级，零 Activity 在 native owner 完成后再经 1.5 秒宽限视为空闲；ActivityManager 空列表/不可用时，仍需宿主证据的有效 native session 保守判忙；无此 session 时改查持久 PID 与 `/proc`，无记录或已证明退出可空闲，未知身份/无效 PID 仍判忙；`/proc` 不可读且 `kill(pid, 0)` 返回 `EPERM`/`EACCES` 时证明该 PID 不属于本应用宿主进程（宿主必与 App 同 UID），按已退出处理，避免陈旧 PID 被复用后永久判忙。hosts 为可重建缓存，坏 JSON 留存原件与隔离副本，逐记录转为未知宿主证据；无法证明退出时持续判忙，不能因隔离后记录缺失而放行。Activity 创建/销毁/恢复/暂停均补写宿主记录，正常重新启动及退出可重建缓存；durable journal/checkpoint 保持严格读取。状态目录本身被普通文件占位时按本地 IO 失败关闭：Windows 会把这种路径的子项读取报成「文件不存在」，不能据此推断该游戏无状态，Unix 与非普通路径检查同样归为 IO 失败。
 - 拆封包：`ui/archive` → `core/unpack` → `com.core.archive.Xp3Core` → Rust；SAF 不能映射路径时经 staging 中转。Artemis PFS 补丁解包不走该工具链。
-- 第三方运行时模块：`core/engine/runtime` 只负责发现、启用、扫描描述解释与显式组件交棒；存档、输入重映射与引擎/单游戏设置均不接管，由模块自身负责。
+- 第三方运行时模块：`core/engine/runtime` 负责发现、启用、描述解释与显式组件交棒；UI 按可选设置描述生成单游戏表单，core 负责保存与启动传参。声明独立游戏内存档子目录的模块接入统一存档门面和同步；模块私有存档、运行实现及输入重映射仍由模块负责。
 - 输入：UI → core 门面 → `engine/com.core.input`，按 canonical 键位注入每宿主的 `InputSink`；布局编辑器复用原生按键层。
-- 授权/更新：Hikarinagi OAuth 经 AppAuth 与 Keystore 保护的凭据存储；后台更新由 WorkManager 单次任务驱动，下载后经 FileProvider 交系统安装器。
+- 授权/更新：Hikarinagi / Bangumi OAuth 经 AppAuth、未萌 NextMoe OAuth 经 `127.0.0.1:0` 环回 PKCE S256 与 Keystore 保护的凭据存储（`hikarinagi_auth_secure` / `bangumi_auth_secure` / `vndb_auth_secure` / `nextmoe_auth_secure`）；后台更新由 WorkManager 单次任务驱动，下载后经 FileProvider 交系统安装器。
 
 ## 8. 已知架构偏差
 
-当前代码仍有与规范不完全一致的部分：授权及在线补丁的部分接口携带本地化文本；旧数据清单和专题验收说明也有历史快照。新增/改动接口须采用类型化错误，修复时连同调用链迁移。
+当前代码仍有与规范不完全一致的部分：在线补丁（`KrkrOnlinePatchService`）以及更新检查/下载（`core/updater` 下的 `GitHubUpdateChecker`、`UpdateApkDownloader`）的部分接口仍携带本地化文本；VNDB token 校验与权限解析（`PlayStatusService.verifyVndbToken` / `checkVndbPermissions` / `authInfo`）作为授权域能力落在 core/status（§7 有内联论证，迁移需连带封面刮削设置页与游玩状态弹窗两处调用点）；旧数据清单和专题验收说明也有历史快照。新增/改动接口须采用类型化错误，修复时连同调用链迁移。

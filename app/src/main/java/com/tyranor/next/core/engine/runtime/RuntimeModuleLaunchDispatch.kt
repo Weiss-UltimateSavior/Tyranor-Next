@@ -35,7 +35,8 @@ internal object RuntimeModuleLaunchDispatch {
         } catch (_: SecurityException) {
             null
         } catch (e: Exception) {
-            return RuntimeModuleLaunchResult.StartFailed(e.message)
+            if (path == null) return RuntimeModuleLaunchResult.StartFailed(e.message)
+            null
         }
         if (path == null && readableSource == null) {
             return if (safSource == null) {

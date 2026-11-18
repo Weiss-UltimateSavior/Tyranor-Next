@@ -62,6 +62,7 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
             // commit 失败时 OnboardingPreferences 保留基于旧数据的内存快照：存量用户仍直接进入主界面，
             // 新安装用户仍显示引导；下一次启动或完成引导时会再次尝试落盘。
             AppSettingsStore.initializeOnboarding(this)
+            AppSettingsStore.initDefaultThemeParticles(this)
             // 启动器图标别名与设置对齐（升级、清除数据或上次切换失败时兜底）；幂等，无变化不写。
             AppIconSwitcher.apply(this, AppSettingsStore.isClassicIconEnabled(this))
         }
@@ -106,7 +107,11 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
 
     override fun onStop(owner: LifecycleOwner) {
         SaveSyncRuntime.onBackground(this)
-        if (AppSettingsStore.isOnboardingCompleted(this)) BackgroundUpdateWorker.enqueue(this)
+        if (!AppSettingsStore.ONBOARDING_FEATURE_ENABLED ||
+            AppSettingsStore.isOnboardingCompleted(this)
+        ) {
+            BackgroundUpdateWorker.enqueue(this)
+        }
     }
 
 }

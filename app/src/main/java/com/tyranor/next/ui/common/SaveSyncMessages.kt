@@ -42,6 +42,7 @@ internal fun SaveSyncError.syncErrorResource(): Int = when (this) {
     SaveSyncError.SELECTION_INCOMPLETE -> R.string.save_error_selection_incomplete
     SaveSyncError.CLOUD_REPAIR_REQUIRED -> R.string.webdav_error_cloud_repair
     SaveSyncError.LOCAL_STATE_CHANGED -> R.string.webdav_error_local_state_changed
+    SaveSyncError.SAVE_PROVENANCE_UNKNOWN -> R.string.save_runtime_identity_legacy_blocked
 }
 
 internal fun SaveSyncError.toSaveSyncMessage(context: Context): String =

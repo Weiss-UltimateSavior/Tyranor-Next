@@ -50,6 +50,7 @@ import com.tyranor.next.core.engine.external.WinlatorContract
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
+import com.tyranor.next.core.engine.runtime.RuntimeModuleDescriptor
 import com.tyranor.next.core.engine.runtime.RuntimeModuleDiscoveryResult
 import com.tyranor.next.core.engine.runtime.RuntimeModuleLauncher
 import com.tyranor.next.core.engine.runtime.RuntimeModuleLaunchResult
@@ -162,6 +163,7 @@ object EngineLauncher {
         EngineType.CMVS,
         EngineType.RENPY,
         EngineType.RUFFLE,
+        EngineType.IMPACTO,
         // YURIS / CatSystem2 / PC 由外置 Winlator 承载（GAL 分组），引擎页条目点击进入引擎专属弹窗
         EngineType.YURIS,
         EngineType.CATSYSTEM2,
@@ -187,11 +189,35 @@ object EngineLauncher {
     ): LaunchResult =
         withContext(Dispatchers.IO) {
             val entry = RuntimeModuleBindings.builtInSystemNnn(game)
-            suspend fun launchAdmitted(): LaunchResult? = withSaveSyncLaunchAdmission(
-                resolve = { SaveSyncRuntime.launchAdmission(context, entry) },
-                managed = { admission -> launchManaged(context, entry, patchChoice, admission) },
-                unmanaged = { recoverSystemNnnSaves(context, entry) ?: launchInternal(context, entry, patchChoice) },
-            )
+            // Runtime save admission and dispatch must consume one discovered module identity.
+            val runtimeModule = if (entry.engine == EngineType.RUNTIME_MODULE) {
+                when (val discovery = RuntimeModuleRegistry.refresh(context)) {
+                    is RuntimeModuleDiscoveryResult.Failure -> return@withContext LaunchResult.Failure.RuntimeModuleFailed(
+                        RuntimeModuleLaunchResult.StartFailed(discovery.detail),
+                    )
+                    is RuntimeModuleDiscoveryResult.Success -> Unit
+                }
+                val module = RuntimeModuleRegistry.find(entry.runtimeModulePackage)
+                if (module == null || !module.enabled) {
+                    degradeRuntimeModuleGame(context, entry, entry.runtimeModulePackage)
+                    return@withContext LaunchResult.Failure.RuntimeModuleFailed(
+                        if (module == null) RuntimeModuleLaunchResult.ModuleMissing else RuntimeModuleLaunchResult.ModuleDisabled,
+                    )
+                }
+                module
+            } else null
+            suspend fun launchAdmitted(): LaunchResult? = try {
+                withSaveSyncLaunchAdmission(
+                    resolve = { SaveSyncRuntime.launchAdmission(context, entry) },
+                    managed = { admission -> launchManaged(context, entry, patchChoice, admission, runtimeModule) },
+                    unmanaged = { recoverSystemNnnSaves(context, entry) ?: launchInternal(context, entry, patchChoice, runtimeModule) },
+                )
+            } catch (failure: SaveSyncException) {
+                LaunchResult.Failure.SavePreparationFailed(failure.code)
+            } catch (failure: GameSaveException) {
+                if (entry.engine != EngineType.RUNTIME_MODULE) throw failure
+                LaunchResult.Failure.SavePreparationFailed(SaveSyncError.SAVE_UNAVAILABLE)
+            }
             var result: LaunchResult?
             do {
                 currentCoroutineContext().ensureActive()
@@ -211,6 +237,7 @@ object EngineLauncher {
         game: ScanGame,
         patchChoice: ArtemisPatchChoice?,
         admission: SaveSyncLaunchAdmission.Directory?,
+        runtimeModule: RuntimeModuleDescriptor? = null,
     ): LaunchResult? {
         val directoryKey = admission?.key
         try {
@@ -237,8 +264,14 @@ object EngineLauncher {
                 return LaunchResult.Failure.SavePreparationFailed(failure.code)
             }
             // Optional persistence may fail; every actual start still needs a protected handoff.
-            grace = SaveSyncRuntime.prepareOptionalLaunchGrace(context, game, directoryKey)
-            return launchInternal(context, game, patchChoice) {
+            grace = SaveSyncRuntime.prepareOptionalLaunchGrace(
+                context,
+                game,
+                directoryKey,
+                runtimeModulePackageName = runtimeModule?.takeIf { it.saves != null }?.packageName,
+                runtimeSaveFingerprint = runtimeModule?.saves?.fingerprint,
+            )
+            return launchInternal(context, game, patchChoice, runtimeModule, directoryKey) {
                 dispatched = true
                 SaveSyncRuntime.optionalLaunchDispatched(context, game, grace, directoryKey)
             }
@@ -316,11 +349,18 @@ object EngineLauncher {
     private val launchingUris: MutableSet<String> =
         Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
 
-    private suspend fun launchInternal(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice?, onDispatched: () -> Unit = {}): LaunchResult {
+    private suspend fun launchInternal(
+        context: Context,
+        game: ScanGame,
+        patchChoice: ArtemisPatchChoice?,
+        runtimeModule: RuntimeModuleDescriptor? = null,
+        expectedSaveDirectoryKey: String? = null,
+        onDispatched: () -> Unit = {},
+    ): LaunchResult {
         if (game.engine == EngineType.ETHORNELL) {
             return EthornellOperationGate.exclusive {
                 try {
-                    launchTracked(context, game, patchChoice, onDispatched)
+                    launchTracked(context, game, patchChoice, runtimeModule, expectedSaveDirectoryKey, onDispatched)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: java.io.IOException) {
@@ -330,19 +370,33 @@ object EngineLauncher {
                 }
             }
         }
-        return launchTracked(context, game, patchChoice, onDispatched)
+        return launchTracked(context, game, patchChoice, runtimeModule, expectedSaveDirectoryKey, onDispatched)
     }
 
-    private suspend fun launchTracked(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice?, onDispatched: () -> Unit): LaunchResult {
+    private suspend fun launchTracked(
+        context: Context,
+        game: ScanGame,
+        patchChoice: ArtemisPatchChoice?,
+        runtimeModule: RuntimeModuleDescriptor?,
+        expectedSaveDirectoryKey: String?,
+        onDispatched: () -> Unit,
+    ): LaunchResult {
         launchingUris.add(game.uri)
         try {
-            return launchInternalChecked(context, game, patchChoice, onDispatched)
+            return launchInternalChecked(context, game, patchChoice, runtimeModule, expectedSaveDirectoryKey, onDispatched)
         } finally {
             launchingUris.remove(game.uri)
         }
     }
 
-    private suspend fun launchInternalChecked(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice?, onDispatched: () -> Unit): LaunchResult {
+    private suspend fun launchInternalChecked(
+        context: Context,
+        game: ScanGame,
+        patchChoice: ArtemisPatchChoice?,
+        runtimeModule: RuntimeModuleDescriptor?,
+        expectedSaveDirectoryKey: String?,
+        onDispatched: () -> Unit,
+    ): LaunchResult {
         // 未知引擎（含第三方运行时模块卸载/禁用后的降级条目）不再落入 Tyrano 宿主兜底；请用户重新扫描。
         if (game.engine == EngineType.UNKNOWN) return LaunchResult.Failure.EngineUnknown
         if (game.engine == EngineType.ETHORNELL) {
@@ -364,7 +418,7 @@ object EngineLauncher {
         }
         // 第三方 APK 运行时模块：按包名交给显式组件启动，不进入目录解析/设置/插件链
         if (game.engine == EngineType.RUNTIME_MODULE) {
-            return launchRuntimeModule(context, game, onDispatched)
+            return launchRuntimeModule(context, game, runtimeModule, expectedSaveDirectoryKey, onDispatched)
         }
         // 外置模拟器跳转：PSP / Switch 为 ROM 文件型（不解析目录），
         // YURIS 为 Windows 游戏（目录 + 主 exe，经 Winlator 外置启动协议挂载目录）
@@ -612,6 +666,8 @@ object EngineLauncher {
             completeLaunch(context, game, onDispatched)
         } catch (ce: CancellationException) {
             throw ce // 取消不是启动失败，原样传播给调用方
+        } catch (_: ArtemisSettingsUnavailableException) {
+            LaunchResult.Failure.ArtemisSettingsUnavailable
         } catch (e: Exception) {
             LaunchResult.Failure.StartFailed(e.message)
         }
@@ -624,7 +680,13 @@ object EngineLauncher {
      * [RuntimeModuleLaunchResult.ModuleMissing] / [ModuleDisabled] 会把游戏降级为 UNKNOWN；
      * [RuntimeModuleLaunchResult.PathUnresolved] 不请求「所有文件访问」——模块自己负责存储权限。
      */
-    private suspend fun launchRuntimeModule(context: Context, game: ScanGame, onDispatched: () -> Unit): LaunchResult {
+    private suspend fun launchRuntimeModule(
+        context: Context,
+        game: ScanGame,
+        preparedModule: RuntimeModuleDescriptor?,
+        expectedSaveDirectoryKey: String?,
+        onDispatched: () -> Unit,
+    ): LaunchResult {
         // 发现查询失败不是「模块缺失」：直接上报通用失败，避免把全部绑定误降级。
         when (val discovery = RuntimeModuleRegistry.refresh(context)) {
             is RuntimeModuleDiscoveryResult.Failure ->
@@ -649,12 +711,51 @@ object EngineLauncher {
             degradeRuntimeModuleGame(context, game, packageName)
             return LaunchResult.Failure.RuntimeModuleFailed(RuntimeModuleLaunchResult.ModuleDisabled)
         }
-        // 先做词法映射；SAF 目录即使无法映射为本地路径，RuntimeModuleLauncher
-        // 仍会把 tree URI 和只读授权交给支持 SAF 的模块。
-        val path = GamePathUtils.safUriToPath(game.uri)
-            ?: resolveGameDirectory(context, game)
+        if (preparedModule == null || module != preparedModule) {
+            return LaunchResult.Failure.RuntimeModuleFailed(
+                RuntimeModuleLaunchResult.StartFailed("runtime module changed during launch admission"),
+            )
+        }
+        val currentGame = GameLibraryFacade.loadGames(context).firstOrNull { it.uri == game.uri }
+        if (currentGame?.engine != EngineType.RUNTIME_MODULE || currentGame.runtimeModulePackage != packageName) {
+            return LaunchResult.Failure.RuntimeModuleFailed(
+                RuntimeModuleLaunchResult.StartFailed("runtime module game binding changed"),
+            )
+        }
+        if (module.saves != null) {
+            val location = try {
+                GameSaveManager(context).resolveRuntimeSaveLocation(game, packageName, module.saves.fingerprint)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: GameSaveException) {
+                return LaunchResult.Failure.SavePreparationFailed(SaveSyncError.SAVE_UNAVAILABLE)
+            }
+            val directory = location.directory
+            if (!location.available || directory == null || expectedSaveDirectoryKey != SAVE_DIRECTORY_KEY_PREFIX + directory.canonicalPath) {
+                return LaunchResult.Failure.SavePreparationFailed(SaveSyncError.SAVE_UNAVAILABLE)
+            }
+        }
+        val uri = Uri.parse(game.uri)
+        val path = when (uri.scheme?.lowercase(Locale.ROOT)) {
+            null -> game.uri
+            "file" -> uri.path
+            "content" -> if (uri.authority == EXTERNAL_STORAGE_AUTHORITY) GamePathUtils.safUriToPath(game.uri) else null
+            else -> null
+        }?.takeIf { it.startsWith('/') }
+        val settingsPayload = try {
+            module.settings?.let { spec ->
+                val overrides = PerGameSettingsStore.getRuntimeModuleSettings(context, game.uri, packageName)
+                spec.encode(spec.resolve(overrides)) ?: return LaunchResult.Failure.RuntimeModuleFailed(
+                    RuntimeModuleLaunchResult.StartFailed("invalid runtime module settings payload"),
+                )
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            return LaunchResult.Failure.RuntimeModuleFailed(RuntimeModuleLaunchResult.StartFailed(failure.message))
+        }
         currentCoroutineContext().ensureActive()
-        return when (val result = RuntimeModuleLauncher.launch(context, module, game, path)) {
+        return when (val result = RuntimeModuleLauncher.launch(context, module, game, path, settingsPayload)) {
             RuntimeModuleLaunchResult.Dispatched -> completeLaunch(context, game, onDispatched)
 
             RuntimeModuleLaunchResult.ModuleMissing,
@@ -1289,7 +1390,8 @@ object EngineLauncher {
 
             EngineType.RPGMAKER,
             EngineType.RENPY,
-            EngineType.RUFFLE -> error("${engine.displayName} is handled by external engine launcher")
+            EngineType.RUFFLE,
+            EngineType.IMPACTO -> error("${engine.displayName} is handled by external engine launcher")
 
             EngineType.RUNTIME_MODULE -> error("${engine.displayName} is handled by RuntimeModuleLauncher")
 
@@ -1988,6 +2090,8 @@ object EngineLauncher {
      * 自研 clean-room 内核（[EngineSettingsStore.ART_KERNEL_CLEAN]）走独立分支：单库无版本、
      * 不做 PFS/system.ini 补丁、不参与官方回退链（严格自研，失败即退出）。
      */
+    private class ArtemisSettingsUnavailableException : Exception()
+
     private fun buildArtemisIntent(
         context: Context,
         path: String,
@@ -2014,7 +2118,9 @@ object EngineLauncher {
             null -> Unit
         }
         applyArtemisBasePatchIfNeeded(path, autoPatch)
-        ArtemisPfsUnpacker.applyAndroidSettings(path, androidSettings)
+        if (!ArtemisPfsUnpacker.applyAndroidSettings(path, androidSettings)) {
+            throw ArtemisSettingsUnavailableException()
+        }
         // 自动补丁=off 时禁用自动回退；否则 auto 版本启用兼容回退
         val auto = version == EngineSettingsStore.ART_ENGINE_AUTO &&
             autoPatch != EngineSettingsStore.AUTO_PATCH_OFF
@@ -2177,6 +2283,7 @@ object EngineLauncher {
             putExtra(LaunchContract.ORIENTATION, BUILT_IN_PLAYER_ORIENTATION)
             putExtra(LaunchContract.SCOPED_SAVE_DIR, scoped)
             scopedSaveRoot?.let { putExtra(LaunchContract.SCOPED_SAVE_ROOT, it) }
+            putExtra(LaunchContract.WEB_EXTERNAL_NETWORK, settings.webExternalNetwork)
             putExtra(LaunchContract.RPG_MAKER_MOD_ENABLED, rpgMakerModEnabled)
             putExtra(LaunchContract.RPG_MAKER_MOD_GAME_ID, game.uri)
             if (useRpgMakerRuntime) {

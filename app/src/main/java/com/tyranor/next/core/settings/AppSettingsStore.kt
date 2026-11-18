@@ -4,17 +4,22 @@ import android.content.Context
 import android.content.res.Configuration
 import android.os.Build
 import androidx.annotation.VisibleForTesting
+import androidx.core.content.edit
 import com.tyranor.next.core.game.model.GameFilterOptions
 import com.tyranor.next.core.game.model.GameLibraryConditions
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 /**
  * 应用设置存储层：与引擎无关的应用级偏好（如主题色、导航栏样式）。
  * 使用独立 prefs 文件 app_settings，避免混入引擎进程读取的 tyranor_prefs。
  */
 object AppSettingsStore {
+
+    /** 临时关闭首次使用引导展示，待页面入口稳定后再恢复。 */
+    const val ONBOARDING_FEATURE_ENABLED = false
 
     const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
 
@@ -73,6 +78,9 @@ object AppSettingsStore {
     const val KEY_NAV_STYLE = "nav_style"
     const val KEY_LIQUID_GLASS_ENHANCE = "liquid_glass_enhance"
     const val KEY_APPEARANCE_STYLE = "appearance_style"
+    private const val KEY_DEFAULT_THEME_PARTICLES_ENABLED = "default_theme_particles_enabled"
+    private const val KEY_DEFAULT_THEME_PARTICLE_STYLE = "default_theme_particle_style"
+    private const val DEFAULT_THEME_PARTICLES_ENABLED = true
     const val KEY_SCAN_DEPTH = "scan_depth"
     const val KEY_APP_CORNER_RADIUS = "app_corner_radius"
     const val KEY_LANGUAGE = "language"
@@ -135,7 +143,7 @@ object AppSettingsStore {
     const val COVER_SOURCE_BANGUMI = "bangumi"
     const val COVER_SOURCE_STEAM = "steam"
     const val COVER_SOURCE_VNDB = "vndb"
-    /** 未萌 NextMoe（鲲 Galgame 论坛）：匿名来源，无需登录。 */
+    /** 未萌 NextMoe（鲲 Galgame 论坛）：支持匿名刮削，游玩状态等需登录功能使用 OAuth。 */
     const val COVER_SOURCE_NEXTMOE = "nextmoe"
     const val COVER_SOURCE_LOCAL = "local"
     const val COVER_SOURCE_CUSTOM = "custom"
@@ -226,10 +234,12 @@ object AppSettingsStore {
     /** 底部导航栏样式：悬浮按钮（右下角圆形玻璃按钮，点击沿 1/4 圆弧展开四项）。 */
     const val NAV_STYLE_FLOATING_BUTTON = "floating_button"
 
+    // 暂停提供悬浮按钮导航，保留已保存的样式和位置。
+    internal const val FLOATING_NAV_ENABLED = false
+
     /**
      * 导航栏样式「未显式设置」：仅作内存态 / 归一化结果，**不会持久化**。
-     * 实际样式由 [resolveNavStyle] 按外观风格解析——默认外观风格为液态玻璃 · 经典，
-     * 玻璃系外观风格（复古玻璃）保持经典 MD（其悬浮玻璃条形态）。
+     * 实际样式由 [resolveNavStyle] 解析，三个外观主题统一默认使用液态玻璃 · 经典。
      */
     const val NAV_STYLE_AUTO = "auto"
 
@@ -306,6 +316,12 @@ object AppSettingsStore {
 
     /** 首页显示内存态：设置页切换后主导航即时隐藏/恢复首页入口。 */
     val homePageEnabledState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_HOME_PAGE_ENABLED)
+
+    private val mutableDefaultThemeParticlesEnabled = MutableStateFlow(DEFAULT_THEME_PARTICLES_ENABLED)
+    val defaultThemeParticlesEnabled = mutableDefaultThemeParticlesEnabled.asStateFlow()
+
+    private val mutableDefaultThemeParticleStyle = MutableStateFlow(DefaultThemeParticleStyle.RISING_BUBBLES)
+    internal val defaultThemeParticleStyle = mutableDefaultThemeParticleStyle.asStateFlow()
 
     /** 经典应用图标内存态：设置页切换后由 [AppIconSwitcher] 同步启动器别名。 */
     val classicIconEnabledState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_CLASSIC_ICON)
@@ -415,7 +431,7 @@ object AppSettingsStore {
 
     /**
      * 用户显式选择的底部导航栏样式（经典 MD / 液态玻璃经典 / 透镜 / 悬浮按钮）；
-     * 从未设置过时为 [NAV_STYLE_AUTO]，须经 [resolveNavStyle] 按外观风格解析后使用。
+     * 从未设置过时为 [NAV_STYLE_AUTO]，须经 [resolveNavStyle] 解析为统一默认样式后使用。
      */
     fun getNavStyle(c: Context): String =
         synchronized(navStyleLock) {
@@ -428,7 +444,7 @@ object AppSettingsStore {
     fun setNavStyle(c: Context, style: String) {
         val normalized = normalizeNavStyle(style, supportsLiquidGlassEnhanced)
         synchronized(navStyleLock) {
-            // AUTO 不落盘：清掉显式选择，回到「跟随外观风格」
+            // AUTO 不落盘：清掉显式选择，回到统一默认样式。
             prefs(c).edit().apply {
                 if (normalized == NAV_STYLE_AUTO) remove(KEY_NAV_STYLE) else putString(KEY_NAV_STYLE, normalized)
             }.apply()
@@ -440,7 +456,7 @@ object AppSettingsStore {
      * 导航样式归一化（纯函数，便于单元测试）：
      * 缺省 / 未知值归为 [NAV_STYLE_AUTO]（未显式设置）；透镜档在不支持的版本（< Android 13）回退普通档——
      * 这样即使从更新的设备备份恢复数据，旧设备也只会得到普通档而不是降级画面。
-     * 悬浮按钮在低版本走实底降级（组件内处理），不参与归一化降级。
+     * 暂停提供悬浮按钮时，旧配置读为液态玻璃 · 经典。
      */
     fun normalizeNavStyle(stored: String?, enhancedSupported: Boolean): String =
         when (stored) {
@@ -448,20 +464,19 @@ object AppSettingsStore {
             NAV_STYLE_LIQUID_GLASS -> NAV_STYLE_LIQUID_GLASS
             NAV_STYLE_LIQUID_GLASS_ENHANCED ->
                 if (enhancedSupported) NAV_STYLE_LIQUID_GLASS_ENHANCED else NAV_STYLE_LIQUID_GLASS
-            NAV_STYLE_FLOATING_BUTTON -> NAV_STYLE_FLOATING_BUTTON
+            NAV_STYLE_FLOATING_BUTTON ->
+                if (FLOATING_NAV_ENABLED) NAV_STYLE_FLOATING_BUTTON else NAV_STYLE_LIQUID_GLASS
             else -> NAV_STYLE_AUTO
         }
 
     /**
-     * 把「未显式设置」解析为实际样式（纯函数，便于单元测试）：
-     * 默认外观风格 → 液态玻璃 · 透镜（Android 13 以下回退液态玻璃 · 经典）；
-     * 玻璃系外观风格（复古玻璃）→ 经典 MD（其悬浮玻璃条形态）。显式选择只做版本兼容归一化，不随外观风格改变。
+     * 三个外观主题的未显式设置值统一解析为液态玻璃 · 经典。
+     * 显式选择只做版本兼容归一化，不随外观主题改变。
      */
-    fun resolveNavStyle(style: String, enhancedSupported: Boolean, glassAppearance: Boolean): String {
+    fun resolveNavStyle(style: String, enhancedSupported: Boolean): String {
         val normalized = normalizeNavStyle(style, enhancedSupported)
         return when {
             normalized != NAV_STYLE_AUTO -> normalized
-            glassAppearance -> NAV_STYLE_CLASSIC_MD
             else -> NAV_STYLE_LIQUID_GLASS
         }
     }
@@ -597,6 +612,26 @@ object AppSettingsStore {
     fun setHomePageEnabled(c: Context, enabled: Boolean) {
         prefs(c).edit().putBoolean(KEY_HOME_PAGE_ENABLED, enabled).apply()
         homePageEnabledState.value = enabled
+    }
+
+    internal fun initDefaultThemeParticles(c: Context) {
+        val settings = prefs(c)
+        mutableDefaultThemeParticlesEnabled.value =
+            settings.getBoolean(KEY_DEFAULT_THEME_PARTICLES_ENABLED, DEFAULT_THEME_PARTICLES_ENABLED)
+        val storedStyle = settings.getString(KEY_DEFAULT_THEME_PARTICLE_STYLE, null)
+        mutableDefaultThemeParticleStyle.value =
+            DefaultThemeParticleStyle.entries.firstOrNull { it.storedValue == storedStyle }
+                ?: DefaultThemeParticleStyle.RISING_BUBBLES
+    }
+
+    fun setDefaultThemeParticlesEnabled(c: Context, enabled: Boolean) {
+        prefs(c).edit { putBoolean(KEY_DEFAULT_THEME_PARTICLES_ENABLED, enabled) }
+        mutableDefaultThemeParticlesEnabled.value = enabled
+    }
+
+    internal fun setDefaultThemeParticleStyle(c: Context, style: DefaultThemeParticleStyle) {
+        prefs(c).edit { putString(KEY_DEFAULT_THEME_PARTICLE_STYLE, style.storedValue) }
+        mutableDefaultThemeParticleStyle.value = style
     }
 
     /** 是否使用经典应用图标（旧版图标）；启动器别名状态由 [AppIconSwitcher] 负责。 */
@@ -805,7 +840,7 @@ object AppSettingsStore {
     }
 
     private fun bumpCoverScraperSettingsVersion() {
-        coverScraperSettingsVersion.value += 1
+        coverScraperSettingsVersion.update { it + 1 }
     }
 
     /** 已启用的第三方 APK 运行时模块包名集合；始终返回副本，调用方可安全修改。 */

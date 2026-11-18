@@ -5,6 +5,7 @@ import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.save.GameSaveException
+import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.SaveErrorCode
 import com.tyranor.next.core.game.save.SavePathSafety
 import kotlinx.coroutines.CancellationException
@@ -19,6 +20,7 @@ import java.io.File
 import java.text.Normalizer
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 /** All cloud transfers stage ZIPs. Only [activateVersion], called by the user, imports one. */
 class SaveSyncService internal constructor(
@@ -31,20 +33,87 @@ class SaveSyncService internal constructor(
     private val states = SaveSyncStateStore(File(root, "checkpoints"))
     private val activations = SaveActivationJournal(File(root, "pending"))
     private val directoryActivations = SaveDirectoryActivationStore(root)
+    private data class RuntimeChangeToken(val uri: String, val snapshot: RuntimeSaveIdentityChange, val issuedAt: Long)
+    private val runtimeChangeTokens = ConcurrentHashMap<String, RuntimeChangeToken>()
 
     suspend fun listVersions(game: ScanGame): List<SaveVersion> = withContext(Dispatchers.IO) {
         if (!environment.enabled) return@withContext emptyList()
         SaveSyncLocks.versions(game.uri) {
             requireEnabled()
+            if (game.engine == EngineType.RUNTIME_MODULE) {
+                val directoryKey = environment.activeKey(game)
+                SaveSyncLocks.active(directoryKey) { ensureRuntimeIdentityBaseline(game, directoryKey) }
+            }
             maintainSnapshots(game)
             val pending = activations.load(localKey(game))
             if (pending != null && states.load(localKey(game)).optString("completedActivation") != pending.token &&
                 snapshots.list(localKey(game)).none { it.contentHash == pending.selected.contentHash }) {
                 snapshots.add(localKey(game), activations.archive(localKey(game)), pending.selected.createdAt,
                     pending.selected.source, pending.selected.contentHash, restored = pending.selected.restored,
-                    previousCreatedAt = pending.selected.previousCreatedAt, protectedHashes = pendingProtection(game))
+                    previousCreatedAt = pending.selected.previousCreatedAt, protectedHashes = pendingProtection(game),
+                    runtimeProvenance = pending.selected.runtimeProvenances.firstOrNull())
             }
             snapshots.list(localKey(game))
+        }
+    }
+
+    /** Returns a token-bound old/new identity snapshot for the save-management confirmation UI. */
+    fun runtimeSaveIdentityChange(game: ScanGame): RuntimeSaveIdentityChange? {
+        if (game.engine != EngineType.RUNTIME_MODULE) return null
+        if (environment.running(game)) return null // Resolve/confirm any pending external session first.
+        val current = currentRuntimeProvenance(game) ?: return null
+        val previous = acceptedRuntimeProvenance(localKey(game)) ?: return null
+        if (previous == current) return null
+        val now = System.nanoTime()
+        runtimeChangeTokens.entries.removeIf { (_, entry) ->
+            entry.uri == game.uri || now - entry.issuedAt > RUNTIME_CONFIRMATION_TTL_NANOS
+        }
+        val token = UUID.randomUUID().toString()
+        return RuntimeSaveIdentityChange(token, current.packageName, previous.packageName, previous.canonicalDirectory,
+            current.canonicalDirectory, previous.savesFingerprint, current.savesFingerprint).also {
+            runtimeChangeTokens[token] = RuntimeChangeToken(game.uri, it, now)
+        }
+    }
+
+    /** Explicitly accepts a changed runtime save directory; it never imports remote bytes. */
+    suspend fun confirmRuntimeSaveIdentityChange(
+        game: ScanGame,
+        confirmation: RuntimeSaveIdentityChange,
+    ): RuntimeSaveIdentityChangeResult = withContext(Dispatchers.IO) {
+        val token = runtimeChangeTokens.remove(confirmation.token)
+        if (game.engine != EngineType.RUNTIME_MODULE || token == null || token.uri != game.uri || token.snapshot != confirmation ||
+            System.nanoTime() - token.issuedAt > RUNTIME_CONFIRMATION_TTL_NANOS) {
+            return@withContext RuntimeSaveIdentityChangeResult.Stale
+        }
+        try {
+            SaveSyncLocks.versions(game.uri) {
+                val directoryKey = environment.activeKey(game)
+                SaveSyncLocks.active(directoryKey) {
+                    SaveSyncLocks.mutation(directoryKey) {
+                        requireSameSaveDirectory(directoryKey, environment.activeKey(game))
+                        val current = currentRuntimeProvenance(game)
+                            ?: return@mutation RuntimeSaveIdentityChangeResult.Unavailable
+                        val previous = acceptedRuntimeProvenance(localKey(game))
+                            ?: return@mutation RuntimeSaveIdentityChangeResult.Stale
+                        if (!identityMatches(confirmation, previous, current)) return@mutation RuntimeSaveIdentityChangeResult.Stale
+                        if (environment.running(game)) return@mutation RuntimeSaveIdentityChangeResult.GameRunning
+                        if (environment.games().none { it.uri == game.uri && it.engine == EngineType.RUNTIME_MODULE &&
+                                it.runtimeModulePackage == game.runtimeModulePackage }) {
+                            return@mutation RuntimeSaveIdentityChangeResult.Stale
+                        }
+                        saveAcceptedRuntimeProvenance(localKey(game), current)
+                        // A new local namespace must not pull the old remote head on its first sync.
+                        acknowledgeCurrentRemoteHead(game)
+                        RuntimeSaveIdentityChangeResult.Confirmed
+                    }
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: SaveSyncException) {
+            RuntimeSaveIdentityChangeResult.Failed(failure.code)
+        } catch (failure: Exception) {
+            RuntimeSaveIdentityChangeResult.Failed(SaveSyncError.LOCAL_IO)
         }
     }
 
@@ -209,6 +278,7 @@ class SaveSyncService internal constructor(
                 requireSameSaveDirectory(directoryKey, environment.activeKey(game))
                 requireEnabled()
                 requireIdle(game)
+                ensureRuntimeIdentityBaseline(game, directoryKey)
                 directoryActivations.requireAvailable(directoryKey, game.uri)
                 invalidateTransfers(game)
                 val completedCleanup = finishPreparedDirectoryCleanup(game, directoryKey)
@@ -228,6 +298,18 @@ class SaveSyncService internal constructor(
                     ?: pending?.selected?.takeIf { it.id == id }
                     ?: versions.firstOrNull { it.contentHash == SaveVersionNames.parse(id)?.contentHash }
                     ?: throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
+                val expectedRuntimeCapability = if (game.engine == EngineType.RUNTIME_MODULE) {
+                    environment.runtimeSaveCapabilitySnapshot(game)?.takeIf {
+                        it.status == GameSaveManager.RuntimeSaveCapability.AVAILABLE && it.location?.directory != null
+                    } ?: throw SaveSyncException(SaveSyncError.SAVE_UNAVAILABLE)
+                } else null
+                if (game.engine == EngineType.RUNTIME_MODULE) {
+                    val current = expectedRuntimeCapability?.toRuntimeProvenance()
+                        ?: throw SaveSyncException(SaveSyncError.SAVE_UNAVAILABLE)
+                    if (selected.runtimeProvenances.isEmpty()) throw SaveSyncException(SaveSyncError.SAVE_PROVENANCE_UNKNOWN)
+                    if (current !in selected.runtimeProvenances) throw SaveSyncException(SaveSyncError.SAVE_LOCATION_CHANGED)
+                    requirePinnedRuntimeCapability(game, expectedRuntimeCapability)
+                }
                 val temp = temporaryZip()
                 try {
                     val source = snapshots.file(key, selected.id).takeIf { it.isFile }
@@ -243,6 +325,7 @@ class SaveSyncService internal constructor(
                             requireIdle(game)
                             requireEnabled()
                             requireSameSaveDirectory(directoryKey, environment.activeKey(game))
+                            expectedRuntimeCapability?.let { requirePinnedRuntimeCapability(game, it) }
                             environment.completeImport(game, directoryKey)
                             SaveActivationRecovery.beforeSelection(
                                 sameContent = pending.selected.contentHash == selected.contentHash,
@@ -275,7 +358,9 @@ class SaveSyncService internal constructor(
                             requireIdle(game)
                             requireEnabled()
                             requireSameSaveDirectory(directoryKey, environment.activeKey(game))
+                            expectedRuntimeCapability?.let { requirePinnedRuntimeCapability(game, it) }
                             captureLocked(game, finalizeRestore = true, directoryKey = directoryKey)
+                            expectedRuntimeCapability?.let { requirePinnedRuntimeCapability(game, it) }
                             job.ensureActive()
                             withContext(NonCancellable) {
                                 try {
@@ -284,8 +369,10 @@ class SaveSyncService internal constructor(
                                     requireIdle(game)
                                     requireEnabled()
                                     requireSameSaveDirectory(directoryKey, environment.activeKey(game))
+                                    expectedRuntimeCapability?.let { requirePinnedRuntimeCapability(game, it) }
                                     directoryActivations.begin(directoryKey, game.uri, activations.load(key)!!.token)
-                                    environment.import(game, activations.archive(key), directoryKey) { committed = true }
+                                    environment.import(game, activations.archive(key), directoryKey,
+                                        expectedRuntimeCapability) { committed = true }
                                     tryFinishActivation(game, activations.markCommitted(key), directoryKey)
                                 } catch (cancelled: CancellationException) {
                                     throw cancelled
@@ -307,12 +394,13 @@ class SaveSyncService internal constructor(
                                     // Disabling/cancelling does not cancel required rollback.
                                     // A launch or a directory change does: keep the recovery material.
                                     requireIdle(game)
+                                    expectedRuntimeCapability?.let { requirePinnedRuntimeCapability(game, it) }
                                     requireSameSaveDirectory(directoryKey, environment.activeKey(game))
                                     activations.discardUncommitted(key) { archive, version ->
                                         environment.completeImport(game, directoryKey)
                                         snapshots.add(key, archive, version.createdAt, version.source, version.contentHash,
                                             restored = version.restored, previousCreatedAt = version.previousCreatedAt,
-                                            protectedHashes = pendingProtection(game))
+                                            protectedHashes = pendingProtection(game), runtimeProvenance = version.runtimeProvenances.firstOrNull())
                                         prepareDirectoryRollback(game, directoryKey)
                                     }
                                     finishPreparedDirectoryCleanup(game, directoryKey)
@@ -398,7 +486,7 @@ class SaveSyncService internal constructor(
             snapshots.add(key, archive, trusted?.createdAt ?: maxOf(1L, archive.lastModified()),
                 trusted?.source ?: SaveVersionSource.LOCAL, archiveHash,
                 restored = trusted?.restored ?: false, previousCreatedAt = trusted?.previousCreatedAt,
-                protectedHashes = protected) { job.ensureActive() }
+                protectedHashes = protected, runtimeProvenance = trusted?.runtimeProvenances?.firstOrNull()) { job.ensureActive() }
         }
         for (hash in protected) {
             val retained = snapshots.list(key).firstOrNull { it.contentHash == hash }
@@ -530,7 +618,8 @@ class SaveSyncService internal constructor(
             // Preserve the selected archive even when import normalization changes the bytes/paths.
             val selected = snapshots.add(key, archive, nextTimestamp(game), pending.selected.source,
                 pending.selected.contentHash, restored = true, refreshExisting = true,
-                previousCreatedAt = pending.selected.createdAt, protectedHashes = pendingProtection(game))
+                previousCreatedAt = pending.selected.createdAt, protectedHashes = pendingProtection(game),
+                runtimeProvenance = pending.selected.runtimeProvenances.firstOrNull())
             val active = if (current == selected.contentHash) selected else {
                 captureLocked(game, restored = true, refreshExisting = true, finalizeRestore = true,
                     previousCreatedAt = pending.selected.createdAt, protectedHashes = setOf(selected.contentHash),
@@ -571,7 +660,7 @@ class SaveSyncService internal constructor(
             requireEnabled()
             // Engines without a usable file-save interface have no cloud identity to reserve.
             // Supported games with temporarily unavailable storage must still participate.
-            if (!supportsManagedSave(game.engine)) continue
+            if (!supportsSyncIdentity(game)) continue
             try {
                 val remoteKey = remoteKeyForConflict(game)
                 if (remoteKey != null) keys.getOrPut(remoteKey) { ArrayList() }.add(game)
@@ -591,7 +680,9 @@ class SaveSyncService internal constructor(
                 if (game.uri in excludedUris) continue
                 report += if (games.size > 1) {
                     SaveSyncReport(failures = listOf(SaveSyncFailure(game.title, SaveSyncError.IDENTITY_CONFLICT, game.uri)))
-                } else syncOne(game, direction, config, client, expectedGeneration = generation)
+                } else if (canTransferRuntimeSave(game)) {
+                    syncOne(game, direction, config, client, expectedGeneration = generation)
+                } else SaveSyncReport()
             }
         }
         report
@@ -626,6 +717,11 @@ class SaveSyncService internal constructor(
         expectedContentHash: String? = null,
         expectedGeneration: Long = environment.generation(),
     ): SaveSyncReport = SaveSyncLocks.network(game.uri) {
+        val runtimeSaveIdentity = if (game.engine == EngineType.RUNTIME_MODULE) {
+            environment.runtimeSaveCapabilitySnapshot(game)?.takeIf {
+                it.status == GameSaveManager.RuntimeSaveCapability.AVAILABLE && it.location?.directory != null
+            } ?: throw SaveSyncException(SaveSyncError.SAVE_UNAVAILABLE)
+        } else null
         val key = localKey(game)
         var revision: String? = null
         var uploadArchive: File? = null
@@ -650,6 +746,16 @@ class SaveSyncService internal constructor(
                 if (environment.generation() != expectedGeneration) throw LocalStateChanged()
                 if (environment.configRevision() != config.revision) throw LocalStateChanged()
                 if (!isCurrent()) throw LocalStateChanged()
+                runtimeSaveIdentity?.let { expected ->
+                    val current = environment.runtimeSaveCapabilitySnapshot(game)
+                        ?: throw LocalStateChanged()
+                    if (current.status != GameSaveManager.RuntimeSaveCapability.AVAILABLE ||
+                        current.modulePackageName != expected.modulePackageName ||
+                        current.declarationFingerprint != expected.declarationFingerprint ||
+                        current.location?.directory?.canonicalPath != expected.location?.directory?.canonicalPath) {
+                        throw LocalStateChanged()
+                    }
+                }
                 if (revision != null && states.load(key).optString("revision") != revision) throw LocalStateChanged()
                 capturedDirectory?.let { directory ->
                     if (capturedRevision != null && directoryActivations.revision(directory) != capturedRevision) throw LocalStateChanged()
@@ -686,6 +792,7 @@ class SaveSyncService internal constructor(
             } }
             if (!local { environment.available(game) }) return@network SaveSyncReport()
             local { capturedDirectory = expectedActiveKey ?: environment.activeKey(game) }
+            local { ensureRuntimeIdentityBaseline(game, checkNotNull(capturedDirectory)) }
             val remoteGame = local {
                 capturedRevision = directoryActivations.revision(checkNotNull(capturedDirectory))
                 if (environment.games().none { it.uri == game.uri }) throw LocalStateChanged()
@@ -694,11 +801,12 @@ class SaveSyncService internal constructor(
                 state.put("revision", revision)
                 states.save(key, state)
                 maintainSnapshots(game)
-                RemoteSaveGame(game.engine.name, identity(game)).also { adopted ->
+                RemoteSaveGame(remoteEngineNamespace(game), identity(game)).also { adopted ->
                     // This runs after network queue admission, under the same lock used to edit
                     // this game's identity. Unavailable saves still own their portable identity.
                     if (environment.games().any { other ->
-                        other.uri != game.uri && other.engine == game.engine && remoteKeyForConflict(other) == adopted.key
+                        other.uri != game.uri && supportsSyncIdentity(other) &&
+                            remoteEngineNamespace(other) == adopted.engine && remoteKeyForConflict(other) == adopted.key
                     }) throw SaveSyncException(SaveSyncError.IDENTITY_CONFLICT)
                 }
             }
@@ -715,6 +823,22 @@ class SaveSyncService internal constructor(
             var remote = client.list(remoteGame)
             checkCurrent()
 
+            val stateAfterList = local { states.load(key) }
+            val acknowledgeForIdentity = stateAfterList.optBoolean("runtimeAcknowledgeNextHead") &&
+                stateAfterList.optString("runtimeAcknowledgeRemoteKey") == remoteKey &&
+                stateAfterList.optString("runtimeAcknowledgeServer") == config.serverUrl.trimEnd('/') &&
+                stateAfterList.optString("runtimeAcknowledgeUsername") == config.username
+            if (acknowledgeForIdentity) {
+                val newest = remote.maxWithOrNull(REMOTE_ORDER)
+                checkpoint.put("seen", newest?.name.orEmpty())
+                saveCheckpoint(checkpointKey, checkpoint)
+                stateAfterList.remove("runtimeAcknowledgeNextHead")
+                stateAfterList.remove("runtimeAcknowledgeRemoteKey")
+                stateAfterList.remove("runtimeAcknowledgeServer")
+                stateAfterList.remove("runtimeAcknowledgeUsername")
+                local { states.save(key, stateAfterList) }
+            }
+
             if (direction.pulls) {
                 val newest = remote.maxWithOrNull(REMOTE_ORDER)
                 val seen = SaveVersionNames.parse(checkpoint.optString("seen"))
@@ -730,7 +854,7 @@ class SaveSyncService internal constructor(
                             local {
                                 snapshots.add(key, temp, newest.createdAt, SaveVersionSource.CLOUD,
                                     newest.contentHash, restored = newest.restored, previousCreatedAt = newest.previousCreatedAt,
-                                    protectedHashes = pendingProtection(game)) {
+                                    protectedHashes = pendingProtection(game), runtimeProvenance = runtimeSaveIdentity?.toRuntimeProvenance()) {
                                     job.ensureActive()
                                 }
                             }
@@ -1148,7 +1272,10 @@ class SaveSyncService internal constructor(
         }
         snapshots.list(localKey(game)).firstOrNull { it.contentHash == before &&
             snapshots.isValid(localKey(game), it) { job.ensureActive() } }?.let {
-            return if (refreshExisting) snapshots.refreshVersion(localKey(game), it, nextTimestamp(game), previousCreatedAt) else it
+            val current = currentRuntimeProvenance(game)?.let { provenance ->
+                snapshots.recordRuntimeProvenance(localKey(game), it, provenance)
+            } ?: it
+            return if (refreshExisting) snapshots.refreshVersion(localKey(game), current, nextTimestamp(game), previousCreatedAt) else current
         }
         val temp = temporaryZip()
         try {
@@ -1159,7 +1286,7 @@ class SaveSyncService internal constructor(
             val job = currentCoroutineContext()
             return snapshots.add(localKey(game), temp, nextTimestamp(game), SaveVersionSource.LOCAL, before,
                 restored = restored, refreshExisting = refreshExisting, previousCreatedAt = previousCreatedAt,
-                protectedHashes = protected) { job.ensureActive() }
+                protectedHashes = protected, runtimeProvenance = currentRuntimeProvenance(game)) { job.ensureActive() }
         } finally {
             SaveSyncTemporaryFiles.release(temp)
         }
@@ -1206,6 +1333,112 @@ class SaveSyncService internal constructor(
         if (environment.running(game)) throw SaveSyncException(SaveSyncError.GAME_RUNNING)
     }
 
+    private suspend fun ensureRuntimeIdentityBaseline(game: ScanGame, directoryKey: String) {
+        if (game.engine != EngineType.RUNTIME_MODULE) return
+        requireSameSaveDirectory(directoryKey, environment.activeKey(game))
+        requireIdle(game) // In particular, do not overwrite the baseline while an external-exit marker is pending.
+        directoryActivations.requireAvailable(directoryKey, game.uri)
+        val current = currentRuntimeProvenance(game) ?: throw SaveSyncException(SaveSyncError.SAVE_UNAVAILABLE)
+        SaveSyncLocks.mutation(directoryKey) {
+            requireSameSaveDirectory(directoryKey, environment.activeKey(game))
+            requireIdle(game)
+            directoryActivations.requireAvailable(directoryKey, game.uri)
+            val latest = currentRuntimeProvenance(game) ?: throw SaveSyncException(SaveSyncError.SAVE_UNAVAILABLE)
+            if (latest != current) throw SaveSyncException(SaveSyncError.SAVE_LOCATION_CHANGED)
+            val state = states.load(localKey(game))
+            val accepted = state.optJSONObject(RUNTIME_IDENTITY_KEY)?.toRuntimeProvenance()
+            when {
+                !state.has(RUNTIME_IDENTITY_KEY) -> {
+                    if (activations.load(localKey(game)) != null || activations.archive(localKey(game)).exists()) {
+                        throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
+                    }
+                    saveAcceptedRuntimeProvenance(localKey(game), current)
+                }
+                accepted == null -> throw SaveSyncException(SaveSyncError.LOCAL_IO)
+                accepted != current -> throw SaveSyncException(SaveSyncError.SAVE_LOCATION_CHANGED)
+            }
+        }
+    }
+
+    private fun currentRuntimeProvenance(game: ScanGame): RuntimeSaveProvenance? {
+        val bound = environment.games().firstOrNull { it.uri == game.uri } ?: return null
+        if (bound.engine != EngineType.RUNTIME_MODULE || bound.runtimeModulePackage != game.runtimeModulePackage) return null
+        val capability = environment.runtimeSaveCapabilitySnapshot(bound) ?: return null
+        if (capability.status != GameSaveManager.RuntimeSaveCapability.AVAILABLE) return null
+        val directory = capability.location?.directory?.canonicalPath ?: return null
+        val packageName = capability.modulePackageName ?: return null
+        val fingerprint = capability.declarationFingerprint?.takeIf { it.matches(Regex("[a-f0-9]{64}")) } ?: return null
+        return RuntimeSaveProvenance(packageName, fingerprint, directory)
+    }
+
+    private fun requirePinnedRuntimeCapability(
+        game: ScanGame,
+        expected: GameSaveManager.RuntimeSaveCapabilitySnapshot,
+    ) {
+        val bound = environment.games().firstOrNull { it.uri == game.uri }
+        if (bound?.engine != EngineType.RUNTIME_MODULE || bound.runtimeModulePackage != game.runtimeModulePackage) {
+            throw SaveSyncException(SaveSyncError.LOCAL_STATE_CHANGED)
+        }
+        val current = environment.runtimeSaveCapabilitySnapshot(bound)
+            ?: throw SaveSyncException(SaveSyncError.SAVE_UNAVAILABLE)
+        if (current.status != GameSaveManager.RuntimeSaveCapability.AVAILABLE ||
+            current.modulePackageName != expected.modulePackageName ||
+            current.declarationFingerprint != expected.declarationFingerprint ||
+            current.location?.directory?.canonicalPath != expected.location?.directory?.canonicalPath) {
+            throw SaveSyncException(SaveSyncError.SAVE_LOCATION_CHANGED)
+        }
+    }
+
+    private fun acceptedRuntimeProvenance(key: String): RuntimeSaveProvenance? {
+        val state = states.load(key)
+        if (!state.has(RUNTIME_IDENTITY_KEY)) return null
+        return state.optJSONObject(RUNTIME_IDENTITY_KEY)?.toRuntimeProvenance()
+            ?: throw SaveSyncException(SaveSyncError.LOCAL_IO)
+    }
+
+    private fun saveAcceptedRuntimeProvenance(key: String, provenance: RuntimeSaveProvenance) {
+        val state = states.load(key)
+        state.put(RUNTIME_IDENTITY_KEY, provenance.toJson())
+        states.save(key, state)
+    }
+
+    private fun identityMatches(
+        confirmation: RuntimeSaveIdentityChange,
+        old: RuntimeSaveProvenance,
+        current: RuntimeSaveProvenance,
+    ): Boolean = confirmation.packageName == current.packageName && confirmation.oldPackageName == old.packageName &&
+        confirmation.oldDirectory == old.canonicalDirectory && confirmation.newDirectory == current.canonicalDirectory &&
+        confirmation.oldSavesFingerprint == old.savesFingerprint && confirmation.newSavesFingerprint == current.savesFingerprint
+
+    private fun acknowledgeCurrentRemoteHead(game: ScanGame) {
+        val state = states.load(localKey(game))
+        val config = environment.config()
+        state.put("runtimeAcknowledgeNextHead", true)
+            .put("runtimeAcknowledgeRemoteKey", remoteKey(game))
+            .put("runtimeAcknowledgeServer", config.serverUrl.trimEnd('/'))
+            .put("runtimeAcknowledgeUsername", config.username)
+        states.save(localKey(game), state)
+    }
+
+    private fun JSONObject.toRuntimeProvenance(): RuntimeSaveProvenance? {
+        val packageName = optString("package")
+        val fingerprint = optString("fingerprint")
+        val directory = optString("directory")
+        if (packageName.isBlank() || !fingerprint.matches(Regex("[a-f0-9]{64}")) || directory.isBlank()) return null
+        return RuntimeSaveProvenance(packageName, fingerprint, directory)
+    }
+
+    private fun RuntimeSaveProvenance.toJson() = JSONObject()
+        .put("package", packageName).put("fingerprint", savesFingerprint).put("directory", canonicalDirectory)
+
+    private fun GameSaveManager.RuntimeSaveCapabilitySnapshot.toRuntimeProvenance(): RuntimeSaveProvenance? {
+        if (status != GameSaveManager.RuntimeSaveCapability.AVAILABLE) return null
+        val packageName = modulePackageName ?: return null
+        val fingerprint = declarationFingerprint?.takeIf { it.matches(Regex("[a-f0-9]{64}")) } ?: return null
+        val directory = location?.directory?.canonicalPath ?: return null
+        return RuntimeSaveProvenance(packageName, fingerprint, directory)
+    }
+
     private fun requireEnabled() {
         if (!environment.enabled) throw SaveSyncException(SaveSyncError.DISABLED)
     }
@@ -1217,8 +1450,35 @@ class SaveSyncService internal constructor(
         return Normalizer.normalize(folder, Normalizer.Form.NFC).lowercase(Locale.ROOT)
     }
 
+    private fun supportsSyncIdentity(game: ScanGame): Boolean {
+        if ((game.engine == EngineType.RUNTIME_MODULE || game.engine == EngineType.UNKNOWN) &&
+            !game.runtimeModulePackage.isNullOrBlank()) {
+            return when (environment.runtimeSaveCapability(game)) {
+                null, GameSaveManager.RuntimeSaveCapability.UNSUPPORTED -> false
+                GameSaveManager.RuntimeSaveCapability.UNKNOWN,
+                GameSaveManager.RuntimeSaveCapability.UNAVAILABLE,
+                GameSaveManager.RuntimeSaveCapability.AVAILABLE -> true
+            }
+        }
+        return supportsManagedSave(game.engine)
+    }
+
+    private fun canTransferRuntimeSave(game: ScanGame): Boolean = when {
+        game.engine == EngineType.RUNTIME_MODULE ->
+            environment.runtimeSaveCapability(game) == GameSaveManager.RuntimeSaveCapability.AVAILABLE
+        game.engine == EngineType.UNKNOWN && !game.runtimeModulePackage.isNullOrBlank() -> false
+        else -> true
+    }
+
+    private fun remoteEngineNamespace(game: ScanGame): String =
+        if ((game.engine == EngineType.RUNTIME_MODULE || game.engine == EngineType.UNKNOWN) &&
+            !game.runtimeModulePackage.isNullOrBlank()) {
+            "RUNTIME_MODULE_${SaveContentHash.text(game.runtimeModulePackage).uppercase(Locale.ROOT)}"
+        }
+        else game.engine.name
+
     private fun remoteKey(game: ScanGame, portableIdentity: String = identity(game)) =
-        SaveContentHash.text(game.engine.name + "\n" + portableIdentity)
+        SaveContentHash.text(remoteEngineNamespace(game) + "\n" + portableIdentity)
     private fun remoteKeyForConflict(game: ScanGame): String? = try {
         remoteKey(game)
     } catch (failure: SaveSyncException) {
@@ -1231,6 +1491,8 @@ class SaveSyncService internal constructor(
     private fun temporaryZip(): File = SaveSyncTemporaryFiles.create("save_sync_", ".zip", environment.cacheDirectory)
 
     companion object {
+        private const val RUNTIME_IDENTITY_KEY = "runtimeSaveIdentity"
+        private const val RUNTIME_CONFIRMATION_TTL_NANOS = 10L * 60L * 1_000_000_000L
         private const val CLEANUP_LOCK_WAIT_MS = 5_000L
         internal const val MAX_REMOTE_DELETES_PER_ROUND = 20
         private const val RUNNING_PROBE_CACHE_NANOS = 1_000_000_000L

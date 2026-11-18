@@ -39,11 +39,15 @@ Siglus 之外由 game_launcher 运行库承载的三个软件渲染引擎（Real
 _Avoid_: 软渲染引擎、game_fb 引擎
 
 **外置 APK 引擎模块（External Engine Module）**:
-以独立 Android 应用形式分发、由用户另行安装的引擎运行时，用于承载 Ren'Py、RPG Maker RGSS 与 Ruffle（SWF / Flash）等游戏，由固定包名与静态注册表管理，与动态发现的「第三方 APK 运行时模块」是两套体系。游戏由模块运行，主 App 管理扫描、安装状态与启动协议，并对 Android 11 及以上 Ren’Py 的游戏目录存档提供统一管理。
+以独立 Android 应用形式分发、由用户另行安装的引擎运行时，用于承载 Ren'Py、RPG Maker RGSS、Ruffle（SWF / Flash）与 MAGES. 等游戏，由固定包名与静态注册表管理，与动态发现的「第三方 APK 运行时模块」是两套体系。游戏由模块运行，主 App 管理扫描、安装状态、启动协议及 Android 11 及以上 Ren’Py 的游戏目录存档；Ren’Py 8.5.0 与 8.5.3 为分别可选的同包名版本，设备上一次只能安装其中一版。
 _Avoid_: 插件、引擎 DLC、第三方 APK 运行时模块（另一体系）
 
+**MAGES. 引擎（EngineType.IMPACTO）**:
+MAGES.（前 5pb.）的视觉小说引擎（SC3 脚本，如 Memories Off 6、Chaos;Child、Robotics;Notes 等）；Tyranor 通过外置 Impacto 宿主 APK 承载其开源重新实现 impacto 来运行这类游戏。「impacto」是项目 / 宿主名，不是引擎名；`EngineType.IMPACTO` 等代码标识沿用项目名。
+_Avoid_: 把 Impacto 当作引擎名（界面、文档中的引擎名一律写 MAGES.）
+
 **第三方 APK 运行时模块（Third-party APK Runtime Module）**:
-用户自行安装、以 `com.tyranor.runtime.` 包名前缀并声明 `com.tyranor.runtime.action.LAUNCH` 的独立 APK，接收游戏文件夹路径自行运行游戏；主 App 只负责发现、启用、扫描描述解释与交棒。
+用户自行安装、以 `com.tyranor.runtime.` 包名前缀并声明 `com.tyranor.runtime.action.LAUNCH` 的独立 APK，接收游戏文件夹路径自行运行游戏。主 App 负责发现、启用、扫描与交棒，并按模块可选声明提供单游戏配置及游戏目录内的统一存档管理。
 _Avoid_: 插件、外置引擎（指 JoiPlay 时）、外置 APK 引擎模块（指 JoiPlay 注册表体系时）
 
 **Majiro（MAJIRO）**:
@@ -55,8 +59,16 @@ _Avoid_: 内置 Majiro 引擎、主 App 存档管理
 _Avoid_: 手动绑定、模块别名、externalModuleAlias
 
 **模块扫描描述（Runtime Module Scan Descriptor）**:
-第三方运行时模块在自己 `res/raw/tyranor_runtime.json` 中声明的 `extensions` / `markers`（及 `match`），是主 App 自动扫描该模块游戏的唯一特征来源。
+第三方运行时模块在自己 `res/raw/tyranor_runtime.json` 中声明的 `extensions` / `markers`（及 `match`），是主 App 自动扫描该模块游戏的唯一特征来源；在允许模块匹配的目录中优先于内置识别，未命中再由内置规则补充。
 _Avoid_: 内置特征库、插件清单、手动绑定
+
+**模块设置描述（Runtime Module Settings Descriptor）**:
+第三方 APK 运行时模块声明的单游戏设置项、类型、约束与默认值；用户覆盖值优先于模块默认值，不继承全局引擎配置。
+_Avoid_: 模块全局设置、JoiPlay settings
+
+**模块存档声明（Runtime Module Save Descriptor）**:
+第三方 APK 运行时模块声明的游戏目录内固定存档子目录，是该模块游戏接入统一文件存档管理的能力依据。它不代表搬迁存档或授权访问模块私有数据。
+_Avoid_: 全局存档目录、存档重定向
 
 **PC 游戏（手动添加）**:
 用户手动加入游戏库、经外置 Winlator 运行的 Windows 程序，不限定为已识别的视觉小说引擎家族。其运行参数属于 Winlator 设置域。
@@ -204,7 +216,7 @@ _Avoid_: 引擎设置 Tab
 _Avoid_: 全局/容器/自定义三档（易与外观档位混淆）、跟随容器配置（参数级文案）
 
 **导航样式（Nav Style）**:
-底部导航栏样式的四档取值：「经典 MD」（原「默认」，Material3 导航栏；复古玻璃下为悬浮圆角玻璃条）、「液态玻璃 · 经典」（磨砂玻璃栏，默认外观与白雾玻璃的默认样式；无选中胶囊，图标下方显示文字，选中图标沿用经典 MD 的自下而上填充变色；栏宽与透镜档一致，圆角跟随应用圆角设置）、「液态玻璃 · 透镜」（折射透镜，需显式选择）、「悬浮按钮」；未手动选择时，默认外观与白雾玻璃使用液态玻璃 · 经典，复古玻璃保留经典 MD 的玻璃条形态。手动选择优先于外观风格，切换外观不覆盖选择；平板/大窗口的侧边形态见「平板侧栏」。
+底部导航栏当前可选三档：「经典 MD」（原「默认」，Material3 导航栏；复古玻璃下为悬浮圆角玻璃条）、「液态玻璃 · 经典」（磨砂玻璃栏，三个外观主题的默认样式；无选中胶囊，图标下方显示文字，选中图标沿用经典 MD 的自下而上填充变色；栏宽与透镜档一致，圆角跟随应用圆角设置）、「液态玻璃 · 透镜」（折射透镜，需显式选择）；未手动选择时，默认、复古玻璃与白雾玻璃统一使用液态玻璃 · 经典。手动选择优先于外观风格，切换外观不覆盖选择；平板/大窗口的侧边形态见「平板侧栏」。
 _Avoid_: 底部栏外观、主题、默认导航（已更名为「经典 MD」）
 
 **外观风格（Appearance Style）**:
@@ -219,8 +231,12 @@ _Avoid_: 玻璃（单独出现时指本档）
 外观风格第三档（显示名由「乳白玻璃」更名；持久化值仍为 `milk_glass`，内部 `MILK_GLASS` / `MilkSurface` 等标识保留以避免数据迁移）：运行期 64dp 高斯模糊的图片底图 + 38% 压暗 + 主题色环境光；默认液态玻璃 · 经典底栏用亮玻璃 + 主题色轻染；页面条目为 70% 白纱（`MilkSurface`，目标 L≈211），条目正文为深色（`TextColor`），页面顶栏/空态用近白（`PageTextColor`）；弹窗/抽屉面板用同一张页面底图 + 50% 白纱（`MilkGlassPanelBackground`），条目用 `DialogItemSurface`（`MilkItemOnPanel` 45% 白纱，叠加后约 L215，与页面条目同亮度）；不使用 0.5dp 玻璃描边或投影，圆角仍取统一应用圆角。
 _Avoid_: 乳白玻璃（旧显示名）、Milk glass（旧英文名）
 
+**工具页（Tools Page）**:
+主导航中的一级页面，集中提供 Kirikiroid2 原生界面、解包/封包、WebDAV 存档同步、输入与手柄及引擎模块管理入口，替代原“妙妙工具”侧边栏。
+_Avoid_: 妙妙工具侧边栏、工具抽屉
+
 **平板侧栏（Side Rail）**:
-平板/大窗口（sw600dp 或宽 ≥ 840dp）下主导航的侧边形态（应用设置「平板侧边栏」开关控制，默认开）：按外观风格取该主题「默认导航栏」形态（默认与白雾玻璃 = Material3 `NavigationRail`、复古玻璃 = 悬浮玻璃柱），液态玻璃两档不适配侧栏（平板下降级为主题默认形态）；侧栏占布局宽度，`glassNavBottomInset()` 返回 0。
+平板/大窗口（sw600dp 或宽 ≥ 840dp）下主导航的侧边形态（应用设置「平板侧边栏」开关控制，默认开）：按外观风格取该主题「经典 MD 导航栏」形态（默认与白雾玻璃 = Material3 `NavigationRail`、复古玻璃 = 悬浮玻璃柱），液态玻璃两档不适配侧栏（平板下降级为主题默认形态）；侧栏占布局宽度，`glassNavBottomInset()` 返回 0。
 _Avoid_: 导航抽屉（NavigationDrawer）、侧边栏（与抽屉混淆时）
 
 **外观模式（Appearance）**:
@@ -232,8 +248,14 @@ _Avoid_: 深色模式（仅指其一）
 _Avoid_: 组件圆角、卡片圆角（仅指其一）
 
 **背景粒子（Floating Particles）**:
-默认外观风格页面背景上的主题色缓慢漂浮圆点（约 30fps、仅在绘制阶段更新，系统关闭动画时静止），随「色调轮盘」整体换色；复古玻璃与白雾玻璃不绘制。
+默认外观风格页面背景上随色调轮盘换色的装饰图形，可选择「气泡上升」或「按键瀑布」。
 _Avoid_: 动态壁纸、粒子特效（仅指本背景）
+
+**气泡上升（Rising Bubbles）**:
+圆形光点缓慢向上漂浮的背景粒子样式，为默认选项。
+
+**按键瀑布（Button Waterfall）**:
+三角、圆形、方块与十字形手柄按键图案向下飘落的背景粒子样式。
 
 **三语言支持**:
 zh / ja / en 三套 `strings.xml` 由工具强制键值一致（`checkHardcodedUiStrings`），禁止 Kotlin 源码硬编码 CJK 文案。
@@ -246,20 +268,30 @@ _Avoid_: 版本列表（与弹窗条目混淆时）
 ## 封面
 
 **封面来源（Cover Source）**:
-获取封面的数据源（VNDB / 未萌NextMoe / Hikarinagi / Bangumi / Steam / Local / Custom），可自定义顺序；Hikarinagi 需 OAuth Client ID，未萌NextMoe 匿名无登录。
+获取封面的数据源（VNDB / 未萌NextMoe / Hikarinagi / Bangumi / Steam / Local / Custom），可自定义顺序与来源凭据；其中 Hikarinagi、Bangumi、未萌NextMoe 支持网页授权（Bangumi 亦支持个人访问令牌，未萌NextMoe 目录封面亦可匿名无登录读取），VNDB 支持可选个人访问令牌。
 _Avoid_: 图源、壁纸源
 
 **封面抓取（Cover Scraping）**:
-为游戏库批量或按需获取封面元数据的流程（CoverScraperService + 批量任务管理器 + 来源聚合），仅覆写 coverUri/coverSource 等封面字段。
+为游戏库批量或按需获取封面元数据的流程；以既有的手工条目绑定为先，仅在绑定缺失时以刮削结果补全。
 _Avoid_: 下载封面、封面更新
 
 **手动绑定（Bind Candidate）**:
-用户从候选封面中选择并落库单游戏封面的动作；VNDB 候选同时携带 vndbId / metadataTitle（未萌NextMoe 候选命中 VNDB ref 时同样携带）。
+用户从候选搜索结果中选择并确认某作品为游戏关联封面与远端条目的动作；按来源携带对应作品标识与元数据标题。
 _Avoid_: 选封面、替换
 
 **两级封面选择（Cover Drill-down）**:
 部分来源（未萌NextMoe）一个作品有多张封面时，先在作品候选列表选中作品、再从可获取的封面中挑选的流程；不支持该流程的来源点选候选即直接绑定。
 _Avoid_: 二段选择、多图选择
+
+## 游玩状态
+
+**条目绑定（Entry Binding）**:
+把游戏库条目关联到远端作品条目的持久化关系（覆盖 VNDB / Bangumi / Hikarinagi / 未萌NextMoe）。手工绑定由用户搜索后显式确认；批量刮削仅在对应来源尚无绑定时按首条命中自动补全。
+_Avoid_: 关联、绑定（泛指 UI 控件绑定）
+
+**游玩状态（同步）（Play Status Sync）**:
+用户手动触发的远端游玩状态操作：对 VNDB、Hikarinagi、未萌NextMoe 与 Bangumi 四源均支持远端状态回读与显式写入（Bangumi 经 `GET /v0/users/{username}/collections/{subject_id}` 单条收藏读回，404 归一「未收藏」，读 401/403 与写路径分位处理；条目绑定四源共用）。
+_Avoid_: 进度同步（各站均无逐章进度概念）、成就同步
 
 **封面缓存（CoverImageCache / CoverThumbnailLoader）**:
 封面缩略图的内存 + 磁盘持久化缓存与受限并发解码器；滚动感知解码配合批量回填避免滑动卡顿。
@@ -378,11 +410,11 @@ _Avoid_: 毛玻璃、透明导航
 _Avoid_: 液态玻璃 2.0、增强玻璃
 
 **悬浮按钮导航（Floating Button Nav）**:
-导航样式的第四档（`ui/common/FloatingGlassNavButton.kt`）：可拖动的 64dp 圆形液态玻璃主按钮，点击或长按后朝屏幕内侧沿圆弧展开导航项，手机与平板共用（API 31+ 采样，低版本实底回退）。交互、材质与触觉细则见 AGENTS.md「圆角豁免（悬浮按钮导航）」。
+以可拖动的圆形液态玻璃按钮沿圆弧展开导航项的样式，当前暂时停用。
 _Avoid_: FAB 导航、悬浮菜单
 
 **主界面常驻组合**:
-主界面可见 Tab（首页 / 游戏 / 引擎 / 设置；关闭「显示首页」后为三页）保留组合与列表状态；增强档按方向水平弹簧切换、淡化并带轻微景深，普通档保留原补间。增强档在允许隐藏绘制的 Compose 页完全离屏后跳过正文绘制，网页首页等需保持绘制的宿主例外；切换期间未停稳的页面不接收触摸与无障碍操作。
+主界面可见 Tab（首页 / 游戏 / 引擎 / 工具 / 设置；关闭「显示首页」后为四页）保留组合与列表状态；增强档按方向水平弹簧切换、淡化并带轻微景深，普通档保留原补间。增强档在允许隐藏绘制的 Compose 页完全离屏后跳过正文绘制，网页首页等需保持绘制的宿主例外；切换期间未停稳的页面不接收触摸与无障碍操作。
 _Avoid_: 懒加载页、Fragment
 
 **界面动效档**:

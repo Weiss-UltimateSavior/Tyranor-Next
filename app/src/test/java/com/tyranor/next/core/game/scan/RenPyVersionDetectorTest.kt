@@ -11,6 +11,14 @@ class RenPyVersionDetectorTest {
     val temporaryFolder = TemporaryFolder()
 
     @Test
+    fun detects853AndLaterSeparatelyFromLegacy8x() {
+        assertEquals(EngineSettingsStore.RENPY_85, RenPyVersionDetector.moduleVersionForCode(80502))
+        assertEquals(EngineSettingsStore.RENPY_853, RenPyVersionDetector.moduleVersionForCode(80503))
+        assertEquals(EngineSettingsStore.RENPY_853, RenPyVersionDetector.moduleVersionForCode(80600))
+        assertEquals(EngineSettingsStore.RENPY_853, RenPyVersionDetector.detect("8.5.3", null, false))
+    }
+
+    @Test
     fun parsesCommaSeparatedScriptVersionLikeJoiPlay() {
         assertEquals(70411, RenPyVersionDetector.parseVersionCode("script_version = (7, 4, 11)"))
         assertEquals(80500, RenPyVersionDetector.parseVersionCode("8,5,0"))

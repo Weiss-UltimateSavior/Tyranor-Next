@@ -13,7 +13,7 @@ object ExternalEngineLauncher {
     fun isPackageInstalled(context: Context, module: ExternalEngineModule): Boolean =
         checkInstallation(context, module) == null
 
-    /** Returns a typed missing/outdated result, or null when the installed package is usable. */
+    /** 模块缺失或版本不匹配时返回类型化失败，可用时返回 null。 */
     fun checkInstallation(context: Context, module: ExternalEngineModule): ExternalEngineLaunchResult? =
         try {
             val packageManager = context.applicationContext.packageManager
@@ -29,9 +29,10 @@ object ExternalEngineLauncher {
                 @Suppress("DEPRECATION")
                 packageInfo.versionCode.toLong()
             }
-            if (!isVersionCodeSupported(installedVersionCode, module.minimumVersionCode)) {
+            val versionError = versionCodeError(installedVersionCode, module)
+            if (versionError != null) {
                 ExternalEngineLaunchResult.failure(
-                    ExternalEngineErrorCode.PACKAGE_OUTDATED,
+                    versionError,
                     moduleNameRes = module.displayNameRes,
                     moduleNameFallback = module.displayName,
                     engineName = module.engine.displayName,
@@ -52,6 +53,13 @@ object ExternalEngineLauncher {
 
     internal fun isVersionCodeSupported(installed: Long, minimum: Long): Boolean =
         minimum <= 0L || installed >= minimum
+
+    internal fun versionCodeError(installed: Long, module: ExternalEngineModule): ExternalEngineErrorCode? =
+        when {
+            !isVersionCodeSupported(installed, module.minimumVersionCode) -> ExternalEngineErrorCode.PACKAGE_OUTDATED
+            installed > module.maximumVersionCode -> ExternalEngineErrorCode.PACKAGE_VERSION_MISMATCH
+            else -> null
+        }
 
     fun launch(context: Context, module: ExternalEngineModule, request: ExternalEngineLaunchRequest): ExternalEngineLaunchResult {
         if (module.requiresGameDirectoryPath && request.gameDirectoryPath.isBlank()) {

@@ -11,6 +11,7 @@ import com.tyranor.next.core.game.scan.GameRootMatcher
 import com.tyranor.next.core.process.AppProcess
 import com.tyranor.next.core.settings.AppStorageNames
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -22,6 +23,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import java.util.concurrent.Executors
 
 /**
@@ -69,25 +72,31 @@ object GameLibraryRepository {
     @Volatile
     private var migrationDone = false
 
+    @Volatile
+    private var initJob: Job? = null
+
     /** 应用启动预热（仅主进程）：旧数据迁移检查 + 单游戏覆盖 prefs 同步 + GameLibraryFacade
      * 同步门面缓存回填，避免主线程首次读库阻塞。引擎子进程直接跳过。 */
     fun init(context: Context) {
         if (!AppProcess.isMain(context)) return
         val app = context.applicationContext
-        writeScope.launch {
+        initJob = writeScope.launch {
             try {
                 ensureMigrated(app)
             } catch (t: Throwable) {
+                if (t is CancellationException) throw t
                 Log.e(TAG, "Game library migration failed", t)
             }
             try {
                 GameOverridesRepository.ensureSynced(app)
             } catch (t: Throwable) {
+                if (t is CancellationException) throw t
                 Log.e(TAG, "Game overrides sync failed", t)
             }
             try {
                 GameLibraryFacade.prewarmCaches(app)
             } catch (t: Throwable) {
+                if (t is CancellationException) throw t
                 Log.e(TAG, "Game library prewarm failed", t)
             }
         }
@@ -102,8 +111,6 @@ object GameLibraryRepository {
     suspend fun ensureMigrated(context: Context) {
         if (migrationDone) return
         val prefs = context.getSharedPreferences(LEGACY_PREFS, Context.MODE_PRIVATE)
-        val flagSet = prefs.getBoolean(KEY_MIGRATION_FLAG, false)
-        val db = GameLibraryDatabase.get(context)
         migrationMutex.withLock {
             if (migrationDone) return
             val alreadyFlagged = prefs.getBoolean(KEY_MIGRATION_FLAG, false)
@@ -194,17 +201,30 @@ object GameLibraryRepository {
             }
         }
 
-    /** 封面元数据单行更新（方案阶段 2）：封面刮削不再触碰整库。返回是否有行被更新。 */
+    /** 封面/绑定元数据单行更新（方案阶段 2）：封面刮削不再触碰整库。返回是否有行被更新。 */
     suspend fun updateCover(
         context: Context,
         uri: String,
         coverUri: String?,
         coverSource: String?,
         vndbId: String?,
+        bangumiId: String?,
+        hikarinagiId: String?,
+        nextmoeId: String?,
         metadataTitle: String?,
     ): Boolean = withContext(Dispatchers.IO) {
         ensureMigrated(context)
-        dao(context).updateCover(uri, coverUri, coverSource, vndbId, metadataTitle, System.currentTimeMillis()) > 0
+        dao(context).updateCover(
+            uri,
+            coverUri,
+            coverSource,
+            vndbId,
+            bangumiId,
+            hikarinagiId,
+            nextmoeId,
+            metadataTitle,
+            System.currentTimeMillis(),
+        ) > 0
     }
 
     /** 最近打开列表：games.last_opened_at 的派生视图（方案 4.1），替代旧 recent_games 快照。 */
@@ -332,24 +352,70 @@ object GameLibraryRepository {
             mirrorJob?.cancel()
             mirrorJob = writeScope.launch {
                 delay(PREFS_MIRROR_DELAY_MS)
-                runCatching { writePrefsMirror(app) }
-                    .onFailure { Log.e(TAG, "Prefs mirror write failed", it) }
+                try {
+                    writeMutex.withLock {
+                        writePrefsMirror(app)
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (t: Throwable) {
+                    Log.e(TAG, "Prefs mirror write failed", t)
+                }
             }
         }
     }
 
+    @androidx.annotation.VisibleForTesting
+    internal fun isMigrationDoneForTest(): Boolean = migrationDone
+
+    @androidx.annotation.VisibleForTesting
+    internal fun resetMigrationForTest(done: Boolean) {
+        migrationDone = done
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal suspend fun cancelPendingMirrorAndAwaitWritesForTest() {
+        initJob?.join()
+        awaitPendingWrites()
+        synchronized(mirrorLock) {
+            mirrorJob?.cancel()
+            mirrorJob = null
+        }
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal suspend fun flushPrefsMirrorForTest(context: Context) {
+        val app = context.applicationContext
+        cancelPendingMirrorAndAwaitWritesForTest()
+        writeMutex.withLock {
+            writePrefsMirror(app)
+        }
+    }
+
+    private data class MirrorSnapshot(
+        val games: List<GameEntity>,
+        val roots: List<String>,
+        val recent: List<GameEntity>,
+        val quick: List<GameEntity>,
+    )
+
     private suspend fun writePrefsMirror(context: Context) {
-        val dao = dao(context)
-        val games = dao.getAllGames()
-        val roots = dao.getRoots().map { it.uri }
-        val recent = dao.getRecentGames(GameLibraryDao.RECENT_LIMIT)
-        val quick = dao.getQuickLaunchGames()
+        val db = GameLibraryDatabase.get(context)
+        val dao = db.gameLibraryDao()
+        val snapshot = db.withTransaction {
+            MirrorSnapshot(
+                games = dao.getAllGames(),
+                roots = dao.getRoots().map { it.uri },
+                recent = dao.getRecentGames(GameLibraryDao.RECENT_LIMIT),
+                quick = dao.getQuickLaunchGames(),
+            )
+        }
         val prefs = context.getSharedPreferences(LEGACY_PREFS, Context.MODE_PRIVATE)
         prefs.edit()
-            .putString(LEGACY_KEY_ROOTS, roots.joinToString("\n"))
-            .putString(LEGACY_KEY_GAMES, GameRecordCodec.serialize(games.map { it.toModel() }))
-            .putString(LEGACY_KEY_RECENT, GameRecordCodec.serialize(recent.map { it.toModel() }))
-            .putString(LEGACY_KEY_QUICK, GameRecordCodec.serialize(quick.map { it.toModel() }))
+            .putString(LEGACY_KEY_ROOTS, snapshot.roots.joinToString("\n"))
+            .putString(LEGACY_KEY_GAMES, GameRecordCodec.serialize(snapshot.games.map { it.toModel() }))
+            .putString(LEGACY_KEY_RECENT, GameRecordCodec.serialize(snapshot.recent.map { it.toModel() }))
+            .putString(LEGACY_KEY_QUICK, GameRecordCodec.serialize(snapshot.quick.map { it.toModel() }))
             .apply()
     }
 
@@ -386,6 +452,42 @@ object GameLibraryRepository {
     }
 
     /**
+     * Await a serialized write in the same FIFO queue as [post]. Unlike [post], the caller receives
+     * persistence errors; use this for user-visible operations that must not report success early.
+     */
+    internal suspend fun <T> writeAwaited(
+        context: Context,
+        block: suspend (Context, AwaitedWriteControl) -> T,
+    ): T {
+        val app = context.applicationContext
+        val control = AwaitedWriteControl(currentCoroutineContext()[Job])
+        val result = CompletableDeferred<T>()
+        val writeJob = writeScope.launch {
+            try {
+                control.checkBeforeCommit()
+                ensureMigrated(app)
+                val value = writeMutex.withLock {
+                    control.checkBeforeCommit()
+                    block(app, control)
+                }
+                schedulePrefsMirror(app)
+                result.complete(value)
+            } catch (ce: CancellationException) {
+                result.completeExceptionally(ce)
+                throw ce
+            } catch (t: Throwable) {
+                result.completeExceptionally(t)
+            }
+        }
+        return try {
+            result.await()
+        } catch (cancelled: CancellationException) {
+            if (control.cancelBeforeCommit()) writeJob.cancel(cancelled)
+            throw cancelled
+        }
+    }
+
+    /**
      * 缓存未命中的一次性阻塞读：与旧实现的首读 SharedPreferences XML 成本相当，
      * 由 [init] 在启动时预热把主线程首读概率降到最低。禁止在 Room 事务/写互斥内调用。
      */
@@ -403,4 +505,31 @@ object GameLibraryRepository {
 
     private fun dao(context: Context): GameLibraryDao = GameLibraryDatabase.get(context).gameLibraryDao()
 
+}
+
+/** Cancellation gate for awaited writes: queued work is abandoned; committed work may finish atomically. */
+internal class AwaitedWriteControl(private val callerJob: Job?) {
+    private val monitor = Any()
+    private var commitStarted = false
+    private var cancelledBeforeCommit = false
+
+    fun checkBeforeCommit() = synchronized(monitor) {
+        if (cancelledBeforeCommit) throw CancellationException("awaited write cancelled before commit")
+        if (!commitStarted) callerJob?.ensureActive()
+    }
+
+    /** Must be called immediately before the first durable side effect. */
+    fun beginCommit() = synchronized(monitor) {
+        if (cancelledBeforeCommit) throw CancellationException("awaited write cancelled before commit")
+        if (!commitStarted) callerJob?.ensureActive()
+        commitStarted = true
+    }
+
+    /** Returns true when the queued writer must be cancelled. */
+    fun cancelBeforeCommit(): Boolean = synchronized(monitor) {
+        if (commitStarted) false else {
+            cancelledBeforeCommit = true
+            true
+        }
+    }
 }

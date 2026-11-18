@@ -205,9 +205,22 @@ class RuntimeModuleLauncherTest {
     }
 
     @Test
-    fun unexpectedPermissionFailureDoesNotLaunchOrRetry() {
+    fun unexpectedPermissionFailureStillDispatchesLocalPath() {
         val calls = mutableListOf<Pair<String?, String?>>()
         val result = launch(
+            canRead = { throw IllegalStateException("permission service failed") },
+            dispatch = record(calls),
+        )
+
+        assertEquals(RuntimeModuleLaunchResult.Dispatched, result)
+        assertEquals(listOf(path to null), calls)
+    }
+
+    @Test
+    fun unexpectedPermissionFailureWithoutLocalPathIsReported() {
+        val calls = mutableListOf<Pair<String?, String?>>()
+        val result = launch(
+            folderPath = null,
             canRead = { throw IllegalStateException("permission service failed") },
             dispatch = record(calls),
         )

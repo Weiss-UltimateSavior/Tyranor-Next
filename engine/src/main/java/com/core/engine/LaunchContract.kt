@@ -53,6 +53,7 @@ object LaunchContract {
     // ---------- 存档目录 ----------
 
     const val SCOPED_SAVE_DIR = "scopedSaveDir"
+    const val WEB_EXTERNAL_NETWORK = "webExternalNetwork"
     const val SCOPED_SAVE_ROOT = "scopedSaveRoot"
     const val SCOPED_SAVE_NAME = "scopedSaveName"
     const val GAME_SAVE_ROOT = "gameSaveRoot"
