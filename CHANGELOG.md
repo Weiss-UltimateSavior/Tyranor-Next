@@ -4,7 +4,7 @@
 
 - 网页首页新增「小鸟游」地址预设。
 
-- MAGES. 引擎宿主仓库更名为 `yuukana1/Tyranor-Next-MAGES`，引擎页下载链接改为该仓库的 `releases/latest/download/Tyranor-Next-MAGES.apk`（资产名固定，始终指向最新正式发布）。宿主从 0.2.0 起发布资产名为 `Tyranor-Next-MAGES.apk`，旧资产名 `impacto-host.apk` 只存在于 0.1.2 及更早的发布里，所以更早的本 App 版本里写死的旧链接在新版本发布后会下载失败；已安装的宿主不受影响。
+- MAGES. 引擎宿主仓库更名为 `yuukana1/Tyranor-Next-MAGES`，引擎页下载链接改为该仓库的 `releases/latest/download/Tyranor-Next-MAGES.apk`（资产名固定，始终指向最新正式发布）。宿主从 0.2.0 起发布资产名为 `Tyranor-Next-MAGES.apk`；0.2.0 另附一份同内容的旧资产名 `impacto-host.apk`，让更早的本 App 版本里写死的旧链接暂时仍可下载，**之后的宿主版本不再附带**，旧链接从下一个宿主发布起失效；已安装的宿主不受影响。
 
 - 应用设置新增「默认主题粒子样式」，可在「气泡上升」与手柄按键图形沿弧线摇摆下落的「按键瀑布」之间切换。
 
