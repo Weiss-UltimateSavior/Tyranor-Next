@@ -14,6 +14,7 @@ internal object DkToolsResourceResolver {
         archivePrefix: String,
         archiveChildren: (String) -> List<Pair<String, Boolean>>,
         archiveIsFile: (String) -> Boolean,
+        archiveDirectChildren: ((String) -> List<Pair<String, Boolean>>)? = null,
     ): Resource? {
         val parts = uri.replace('\\', '/').split('/').filter { it.isNotEmpty() && it != "." }
         if (parts.isEmpty() || parts.any { it == ".." || it.any(Char::isISOControl) }) return null
@@ -42,9 +43,12 @@ internal object DkToolsResourceResolver {
             val names = linkedSetOf<String>()
             diskChildren.forEach { names.add(it.name) }
             val archiveNames = try { archiveChildren(archivePath) }
-                // Directory metadata is optional. Keep unique disk matches usable when
-                // an unrelated archive subtree exhausts the metadata node budget.
-                catch (_: AsarChildrenIndex.LimitExceeded) { emptyList() }
+                // Directory metadata is optional. Fall back to a direct-child scan when
+                // an unrelated archive subtree exhausts the archive-wide metadata node budget.
+                catch (_: AsarChildrenIndex.LimitExceeded) {
+                    try { archiveDirectChildren?.invoke(archivePath).orEmpty() }
+                    catch (_: AsarChildrenIndex.LimitExceeded) { emptyList() }
+                }
             archiveNames.forEach { names.add(it.first) }
             val matched = RpgMakerNameMatcher.match(names.toList(), part) ?: return null
             disk = diskChildren.firstOrNull { it.name == matched }?.let { candidate ->

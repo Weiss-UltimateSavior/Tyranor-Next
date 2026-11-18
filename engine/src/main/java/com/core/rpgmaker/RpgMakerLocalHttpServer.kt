@@ -276,7 +276,8 @@ internal class RpgMakerLocalHttpServer(
         if (target != null) return ResolvedFile(target, null)
         if (pluginIndexEnabled) {
             val resource = DkToolsResourceResolver.resolve(root, uri, asarRootPrefix,
-                { asar?.children(it).orEmpty() }, { asar?.entrySize(it) != null })
+                { asar?.children(it).orEmpty() }, { asar?.entrySize(it) != null },
+                { asar?.directChildren(it).orEmpty() })
             if (resource?.file != null) return ResolvedFile(resource.file, null)
             resource?.archivePath?.let { path ->
                 val streamed = asar?.openStream(path) ?: return ResolvedFile(null, null)

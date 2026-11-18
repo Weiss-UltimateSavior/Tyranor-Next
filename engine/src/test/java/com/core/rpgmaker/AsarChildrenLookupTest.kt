@@ -144,6 +144,24 @@ class AsarChildrenLookupTest {
         com.core.tyrano.AsarArchive(file).use { assertEquals(listOf("" to true), it.children("odd")) }
     }
 
+    @Test fun directChildrenStillWorkWhenArchiveTreeExceedsNodeBudget() {
+        val file = temporary.newFile("direct-children-over-budget.asar")
+        writeTestAsar(file, packed = mapOf(
+            "www/img/" + "d/".repeat(250_001) + "leaf.png" to "",
+            "www/Locales/en/messages.json" to "{}",
+        ))
+        AsarArchive(file).use { modern ->
+            com.core.tyrano.AsarArchive(file).use { legacy ->
+                assertEquals(setOf("img" to true, "Locales" to true), modern.directChildren("www").toSet())
+                assertEquals(setOf("img" to true, "Locales" to true), legacy.directChildren("www").toSet())
+                assertEquals(listOf("en" to true), modern.directChildren("www/Locales"))
+                assertEquals(listOf("en" to true), legacy.directChildren("www/Locales"))
+                assertEquals(listOf("messages.json" to false), modern.directChildren("www/Locales/en"))
+                assertEquals(listOf("messages.json" to false), legacy.directChildren("www/Locales/en"))
+            }
+        }
+    }
+
     @Test fun repeatedDirectoryLookupsReturnOnlyTheirOwnFiles() {
         val file = temporary.newFile("many.asar")
         val entries = linkedMapOf<String, String>()

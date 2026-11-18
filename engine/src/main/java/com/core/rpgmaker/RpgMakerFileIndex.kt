@@ -42,9 +42,15 @@ internal class RpgMakerFileIndex(
             if (nanoTime() - started > maxDurationNanos) throw LimitExceeded("time")
         }
         checkActive()
+        val prefixPath = asarPrefix.trimEnd('/')
+        val hasRootFallback = asarPrefix.isNotEmpty() && (asar != null || legacyArchive != null)
         val focusedArchive = if (onlyRoots == null) null else try {
             asar?.focusedChildrenIndex(asarPrefix, onlyRoots)
                 ?: legacyArchive?.focusedChildrenIndex(asarPrefix, onlyRoots)
+        } catch (_: AsarChildrenIndex.LimitExceeded) { throw LimitExceeded("archive node") }
+        val focusedRootArchive = if (onlyRoots == null || !hasRootFallback) null else try {
+            asar?.focusedChildrenIndex("", onlyRoots)
+                ?: legacyArchive?.focusedChildrenIndex("", onlyRoots)
         } catch (_: AsarChildrenIndex.LimitExceeded) { throw LimitExceeded("archive node") }
         var entries = 0
         var directories = 0
@@ -61,14 +67,27 @@ internal class RpgMakerFileIndex(
             if (canonical != logical.absoluteFile ||
                 (canonical != root && !canonical.path.startsWith(root.path + File.separator))) return null
             val disk = canonical.takeIf { it.exists() }
-            val archiveKey = asarPrefix + relative
-            val archiveChildren = try { focusedArchive?.children(archiveKey.trimEnd('/')) ?: archiveChildren(archiveKey) }
+            val primaryKey = asarPrefix + relative
+            val primaryChildren = try { focusedArchive?.children(primaryKey.trimEnd('/')) ?: archiveChildren(primaryKey) }
                 catch (_: AsarChildrenIndex.LimitExceeded) { throw LimitExceeded("archive node") }
-            val archiveDirectory = archiveIsDirectory(archiveKey) || archiveChildren.isNotEmpty()
-            val archiveExists = archiveHas(archiveKey) || archiveDirectory
-            if (relative.isNotEmpty() && disk == null && !archiveExists) return null
-            val directory = disk?.isDirectory ?: (relative.isEmpty() || archiveDirectory)
-            val size = if (directory) 0L else disk?.length() ?: archiveSize(archiveKey) ?: return null
+            val primaryDirectory = archiveIsDirectory(primaryKey) || primaryChildren.isNotEmpty()
+            val primarySize = if (!primaryDirectory && archiveHas(primaryKey)) archiveSize(primaryKey) else null
+            val primaryExists = primaryDirectory || primarySize != null
+
+            // Mirror DkToolsResourceResolver's root fallback (disk > web-root prefix > archive root).
+            val allowRootFallback = hasRootFallback &&
+                relative != prefixPath && !relative.startsWith("$prefixPath/") &&
+                (disk == null || disk.isDirectory) && (!primaryExists || primaryDirectory)
+            val fallbackChildren = if (!allowRootFallback) emptyList() else try {
+                focusedRootArchive?.children(relative) ?: archiveChildren(relative)
+            } catch (_: AsarChildrenIndex.LimitExceeded) { throw LimitExceeded("archive node") }
+            val fallbackDirectory = allowRootFallback && (archiveIsDirectory(relative) || fallbackChildren.isNotEmpty())
+            val fallbackSize = if (allowRootFallback && !fallbackDirectory && archiveHas(relative)) archiveSize(relative) else null
+            val fallbackExists = fallbackDirectory || fallbackSize != null
+
+            if (relative.isNotEmpty() && disk == null && !primaryExists && !fallbackExists) return null
+            val directory = disk?.isDirectory ?: (relative.isEmpty() || primaryDirectory || (!primaryExists && fallbackDirectory))
+            val size = if (directory) 0L else disk?.length() ?: primarySize ?: fallbackSize ?: return null
             if (disk != null && !disk.isFile && !disk.isDirectory) return null
             if (++entries > maxEntries) throw LimitExceeded("entry")
             estimatedBytes += relative.substringAfterLast('/').length.toLong() * 6 + 160
@@ -107,12 +126,25 @@ internal class RpgMakerFileIndex(
                         Log.w(TAG, "index skipped unreadable directory: $relative (${cause.javaClass.simpleName})")
                     }
                 }
-                if (relative.isEmpty() || archiveDirectory) {
-                    archiveChildren.forEach { addName(it.first) }
+                if (relative.isEmpty() || primaryDirectory) {
+                    primaryChildren.forEach { addName(it.first) }
                 }
+                if (allowRootFallback && (relative.isEmpty() || fallbackDirectory)) {
+                    fallbackChildren.forEach { (name, _) ->
+                        val childPath = if (relative.isEmpty()) name else "$relative/$name"
+                        if (childPath != prefixPath) addName(name)
+                    }
+                }
+                var childNodesAdded = 0
                 for (name in names.sortedWith(compareBy<String> { if (it.equals("locales", true)) 0 else if (it.equals("data", true)) 1 else 2 }.thenBy { it })) {
                     val childPath = if (relative.isEmpty()) name else "$relative/$name"
-                    visit(childPath, depth + 1)?.let { node.put(name, it) }
+                    visit(childPath, depth + 1)?.let {
+                        node.put(name, it)
+                        childNodesAdded++
+                    }
+                }
+                if (disk == null && !primaryExists && hasRootFallback && prefixPath.startsWith("$relative/") && childNodesAdded == 0) {
+                    return null
                 }
             }
             return node

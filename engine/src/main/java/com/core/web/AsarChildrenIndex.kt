@@ -18,23 +18,25 @@ internal class AsarChildrenIndex(entries: Iterable<Pair<String, Boolean>>, inclu
         var nodeCount = 0
         for ((key, explicitDirectory) in entries) {
             checkActive()
-            val parts = key.split('/')
             var children = root
-            for (index in parts.indices) {
+            var start = 0
+            while (true) {
                 checkActive()
-                val name = parts[index]
+                val slash = key.indexOf('/', start)
+                val isLast = slash < 0
+                val name = key.substring(start, if (isLast) key.length else slash)
                 val child = children.getOrPut(name) {
                     if (++nodeCount > MAX_NODES) throw LimitExceeded()
                     Child()
                 }
                 // Preserve each reader's malformed-path policy instead of normalizing it.
-                if (name.isNotEmpty() || (includeEmptyNames && index < parts.lastIndex)) {
+                if (name.isNotEmpty() || (includeEmptyNames && !isLast)) {
                     child.visible = true
-                    child.directory = child.directory || index < parts.lastIndex || explicitDirectory
+                    child.directory = child.directory || !isLast || explicitDirectory
                 }
-                if (index < parts.lastIndex) {
-                    children = child.children ?: LinkedHashMap<String, Child>().also { child.children = it }
-                }
+                if (isLast) break
+                children = child.children ?: LinkedHashMap<String, Child>().also { child.children = it }
+                start = slash + 1
             }
         }
     }
@@ -60,6 +62,33 @@ internal class AsarChildrenIndex(entries: Iterable<Pair<String, Boolean>>, inclu
 
     companion object {
         private const val MAX_NODES = 250_000
+
+        /** List direct children of [parent] without allocating an archive-wide tree. */
+        fun directChildren(
+            entries: Iterable<Pair<String, Boolean>>,
+            parent: String,
+            includeEmptyNames: Boolean = false,
+        ): List<Pair<String, Boolean>> {
+            val prefix = if (parent.isEmpty()) "" else "$parent/"
+            val result = LinkedHashMap<String, Boolean>()
+            for ((key, explicitDirectory) in entries) {
+                if (Thread.currentThread().isInterrupted) throw InterruptedIOException("ASAR directory index cancelled")
+                if (prefix.isNotEmpty() && !key.startsWith(prefix)) continue
+                val slash = key.indexOf('/', prefix.length)
+                val isLast = slash < 0
+                val name = key.substring(prefix.length, if (isLast) key.length else slash)
+                if (name.isEmpty() && (!includeEmptyNames || isLast)) continue
+                val directory = !isLast || explicitDirectory
+                val existing = result[name]
+                if (existing == null) {
+                    if (result.size >= MAX_NODES) throw LimitExceeded()
+                    result[name] = directory
+                } else if (!existing && directory) {
+                    result[name] = true
+                }
+            }
+            return result.entries.map { it.key to it.value }
+        }
 
         /** Filter before allocating nodes; unrelated trees cannot consume a focused scan's budget. */
         fun focused(

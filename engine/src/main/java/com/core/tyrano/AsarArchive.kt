@@ -91,6 +91,14 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
         return childrenIndex.children(normalize(path).trimEnd('/'))
     }
 
+    /** Direct-child fallback used when an unrelated subtree exceeds the archive-wide node limit. */
+    internal fun directChildren(path: String): List<Pair<String, Boolean>> =
+        AsarChildrenIndex.directChildren(
+            entries.asSequence().map { it.key to it.value.directory }.asIterable(),
+            normalize(path).trimEnd('/'),
+            includeEmptyNames = true,
+        )
+
     /** Independent metadata view for budget fallback; never consults the archive-wide cache. */
     internal fun focusedChildrenIndex(prefix: String, roots: Set<String>): AsarChildrenIndex =
         AsarChildrenIndex.focused(entries.asSequence().map { it.key to it.value.directory }.asIterable(),
