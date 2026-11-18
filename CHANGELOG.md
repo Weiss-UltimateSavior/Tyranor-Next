@@ -4,6 +4,10 @@
 
 - 网页首页新增「小鸟游」地址预设。
 
+- MAGES. 引擎宿主仓库更名为 `yuukana1/Tyranor-Next-MAGES`，引擎页下载链接改为该仓库的 `releases/latest/download/Tyranor-Next-MAGES.apk`（资产名固定，始终指向最新正式发布）。宿主从 0.2.0 起发布资产名为 `Tyranor-Next-MAGES.apk`；0.2.0 另附一份同内容的旧资产名 `impacto-host.apk`，让更早的本 App 版本里写死的旧链接暂时仍可下载，**之后的宿主版本不再附带**，旧链接从下一个宿主发布起失效；已安装的宿主不受影响。
+
+- 下载链接现在指向的宿主（0.2.0 起）不再是未改动的上游：构建输入是固定的上游 impacto 提交加宿主仓库的补丁系列（`engine/impacto/patches/`，逐个记录 SHA-256），取代此前「不应用 TYN 引擎补丁」的约束。`docs/impacto-upstream-only.md`、`SPEC.md` 与 `ImpactoExternalEngineModule` 的说明同步改写；补丁里有通用修复，也有只服务 Windows／Steam 版《秋之回忆6》的 `mo6tw-pc*` profile，其他游戏没有在设备上逐一回归。主 App 本身的识别与启动行为不变。
+
 - 应用设置新增「默认主题粒子样式」，可在「气泡上升」与手柄按键图形沿弧线摇摆下落的「按键瀑布」之间切换。
 
 - 应用设置新增「默认主题粒子」开关，默认开启。关闭后默认外观只绘制纯色背景。
@@ -89,7 +93,7 @@
 
 ### 新增
 
-- 新增 MAGES. 外置引擎（经开源重新实现项目 impacto 承载，未改动的上游 CommitteeOfZero/impacto；impacto 是项目名，不是引擎名）：引擎类型与图标、按精确大小写识别七个上游 profile（`mo6tw` 等，PS3 数据布局）、外置模块启动协议；引擎页点击跳转下载宿主 APK，链接指向宿主仓库 https://github.com/yuukana1/Tyranor-Next-Impacto 的最新发布（`releases/latest/download/impacto-host.apk`，新版本发布后自动指向），与其他外置引擎一致，不内置；宿主没有桌面入口。宿主引擎库已在一台真机上加载并跑到读脚本为止，**没有任何游戏进到画面，渲染、声音、输入、存读档均未验证**；Windows／Steam 版数据与上游 PS3 配置不一致，不识别。另增只读工具：CPK 结构检查与 profile 目录表校验。
+- 新增 MAGES. 外置引擎（经开源重新实现项目 impacto 承载，未改动的上游 CommitteeOfZero/impacto；impacto 是项目名，不是引擎名）：引擎类型与图标、按精确大小写识别七个上游 profile（`mo6tw` 等，PS3 数据布局）、外置模块启动协议；引擎页点击跳转下载宿主 APK，链接指向宿主仓库 https://github.com/yuukana1/Tyranor-Next-Impacto 的最新发布（`releases/latest/download/Tyranor-Next-MAGES.apk`，新版本发布后自动指向），与其他外置引擎一致，不内置；宿主没有桌面入口。宿主引擎库已在一台真机上加载并跑到读脚本为止，**没有任何游戏进到画面，渲染、声音、输入、存读档均未验证**；Windows／Steam 版数据与上游 PS3 配置不一致，不识别。另增只读工具：CPK 结构检查与 profile 目录表校验。
 - 新增 MAGES. 引擎设置（引擎页弹窗的「全局引擎设置」与单游戏设置，格式与 Ruffle / Ren'Py 外置引擎一致：全局值 + 单游戏覆盖，三语言）：交换确认 / 取消键、垂直同步、影片播放、影片字幕（全部 / 仅翻译 / 仅卡拉 OK）、回看记录滚到底时自动关闭、妄想触发的鼠标 / 触摸支持（仅 Chaos;Head / Chaos;Child）、日志等级。启动时经 `SETTINGS` extra 下发，宿主 0.1.2（versionCode 3）起合并进该游戏的 `userconfig.toml`；更老的宿主按“需要更新”处理。分辨率、显示模式、渲染器、音频后端与补丁在 Android 上固定或不可用，不提供。
 - 修复 BGI 游戏位于公共共享存储时因 `flock` 返回不支持而无法启动：仅对不支持锁操作的错误回退到 OFD 非阻塞写入锁，保留占用与权限错误的拒绝行为。
 - BGI / Ethornell 存档改到游戏目录内的 `savedata/`，启动、宿主与存档管理共用同一位置；旧私有数据一次性迁入且不覆盖目标同名文件，目录不可写时不回退私有存档。移除游戏库条目保留游戏目录中的存档。
