@@ -161,6 +161,10 @@ object EngineSettingsResolver {
                 str(PerGameSettingsStore.F_WEB_SHELL_PORT),
                 EngineSettingsStore.getWebShellPort(app),
             ),
+            webExternalNetwork = EffectiveEngineSettings.resolveBool(
+                bool(PerGameSettingsStore.F_TY_EXTERNAL),
+                EngineSettingsStore.isTyranoExternalNetwork(app),
+            ),
             webScopedSaveDir = EffectiveEngineSettings.resolveBool(
                 bool(PerGameSettingsStore.F_TY_SCOPED),
                 EngineSettingsStore.isTyranoScopedSaveDir(app),
@@ -370,6 +374,7 @@ data class ResolvedEngineSettings(
     /** Web 壳（Tyrano / WebOther / VN）本地 HTTP 服务端口（固定端口保证 WebView 存档域稳定）。 */
     val webShellPort: Int,
     val webScopedSaveDir: Boolean,
+    val webExternalNetwork: Boolean,
     val rpgMakerModEnabled: Boolean,
     val rpgLegacyRenderer: Boolean,
     /** MV/MZ 存档互通生效值（单游戏覆盖 > 全局）。合并值不区分引擎，消费方须以引擎类型门控。 */

@@ -6,9 +6,44 @@ import com.tyranor.next.core.settings.EngineSettingsStore
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 class RpgMakerExternalEngineModuleTest {
+    @get:Rule val temporaryFolder = TemporaryFolder()
+
+    @Test
+    fun reconcilesExistingRgssSettingsWithTheSameValuesAsTheIntent() {
+        val config = temporaryFolder.newFile("configuration.json")
+        config.writeText("""{"cheats":true,"vsync":false,"customFont":"old","screenTimeout":60}""")
+        val settings = EngineSettingsStore.RpgMaker(cheats = false, vsync = true, customFont = "new")
+        val flat = RpgMakerExternalEngineModule.flatSettings("rpgmvxace", settings)
+        assertEquals(ExternalEngineSettingsFile.Result.READY, ExternalEngineSettingsFile.reconcile(config, flat))
+        val saved = JSONObject(config.readText())
+        val intent = JSONObject(RpgMakerExternalEngineModule.buildSettingsJson("rpgmvxace", settings))
+        assertEquals(intent.getJSONObject("app").getJSONObject("cheats").getBoolean("boolean"), saved.getBoolean("cheats"))
+        assertEquals(intent.getJSONObject("rpg").getJSONObject("vsync").getBoolean("boolean"), saved.getBoolean("vsync"))
+        assertEquals(intent.getJSONObject("rpg").getJSONObject("customFont").getString("string"), saved.getString("customFont"))
+        assertEquals(60, saved.getInt("screenTimeout"))
+    }
+
+    @Test
+    fun missingRgssConfigIsCreatedOnlyWhenTheXpBootstrapRequiresIt() {
+        val config = temporaryFolder.root.resolve("game/configuration.json")
+        val settings = RpgMakerExternalEngineModule.flatSettings("rpgmxp", null)
+        assertEquals(ExternalEngineSettingsFile.Result.READY, ExternalEngineSettingsFile.reconcile(config, settings))
+        assertTrue(!config.exists())
+        val bootstrap = JSONObject().put("useRuby18", settings.getBoolean("useRuby18"))
+        assertEquals(
+            ExternalEngineSettingsFile.Result.READY,
+            ExternalEngineSettingsFile.reconcile(config, settings, required = bootstrap),
+        )
+        val saved = JSONObject(config.readText())
+        assertEquals(1, saved.length())
+        assertEquals(true, saved.getBoolean("useRuby18"))
+    }
+
     @Test
     fun resolvesSubtypeFromExternalModuleAlias() {
         assertEquals("rpgmxp", RpgMakerExternalEngineModule.resolveGameType(request("internal.rpgmxp")))

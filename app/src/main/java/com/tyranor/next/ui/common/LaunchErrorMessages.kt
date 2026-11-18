@@ -28,6 +28,9 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
         LaunchResult.Failure.GameDirUnresolved ->
             localized.getString(R.string.launch_resolve_local_dir_failed)
 
+        LaunchResult.Failure.ArtemisSettingsUnavailable ->
+            localized.getString(R.string.launch_artemis_settings_unavailable)
+
         is LaunchResult.Failure.SavePreparationFailed -> localized.getString(error.syncErrorResource())
 
         is LaunchResult.Failure.SystemNnnResourcesFailed -> localized.getString(when (error) {

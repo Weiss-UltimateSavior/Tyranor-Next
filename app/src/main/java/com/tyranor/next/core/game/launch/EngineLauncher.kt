@@ -666,6 +666,8 @@ object EngineLauncher {
             completeLaunch(context, game, onDispatched)
         } catch (ce: CancellationException) {
             throw ce // 取消不是启动失败，原样传播给调用方
+        } catch (_: ArtemisSettingsUnavailableException) {
+            LaunchResult.Failure.ArtemisSettingsUnavailable
         } catch (e: Exception) {
             LaunchResult.Failure.StartFailed(e.message)
         }
@@ -2085,6 +2087,8 @@ object EngineLauncher {
      * 自研 clean-room 内核（[EngineSettingsStore.ART_KERNEL_CLEAN]）走独立分支：单库无版本、
      * 不做 PFS/system.ini 补丁、不参与官方回退链（严格自研，失败即退出）。
      */
+    private class ArtemisSettingsUnavailableException : Exception()
+
     private fun buildArtemisIntent(
         context: Context,
         path: String,
@@ -2111,7 +2115,9 @@ object EngineLauncher {
             null -> Unit
         }
         applyArtemisBasePatchIfNeeded(path, autoPatch)
-        ArtemisPfsUnpacker.applyAndroidSettings(path, androidSettings)
+        if (!ArtemisPfsUnpacker.applyAndroidSettings(path, androidSettings)) {
+            throw ArtemisSettingsUnavailableException()
+        }
         // 自动补丁=off 时禁用自动回退；否则 auto 版本启用兼容回退
         val auto = version == EngineSettingsStore.ART_ENGINE_AUTO &&
             autoPatch != EngineSettingsStore.AUTO_PATCH_OFF
@@ -2274,6 +2280,7 @@ object EngineLauncher {
             putExtra(LaunchContract.ORIENTATION, BUILT_IN_PLAYER_ORIENTATION)
             putExtra(LaunchContract.SCOPED_SAVE_DIR, scoped)
             scopedSaveRoot?.let { putExtra(LaunchContract.SCOPED_SAVE_ROOT, it) }
+            putExtra(LaunchContract.WEB_EXTERNAL_NETWORK, settings.webExternalNetwork)
             putExtra(LaunchContract.RPG_MAKER_MOD_ENABLED, rpgMakerModEnabled)
             putExtra(LaunchContract.RPG_MAKER_MOD_GAME_ID, game.uri)
             if (useRpgMakerRuntime) {

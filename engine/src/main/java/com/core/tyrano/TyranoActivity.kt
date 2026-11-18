@@ -117,6 +117,11 @@ class TyranoActivity : Activity() {
         resolveGameDir(intent),
         intent.getBooleanExtra(LaunchContract.SCOPED_SAVE_DIR, false).toString(),
         intent.getStringExtra(LaunchContract.SCOPED_SAVE_ROOT),
+        if (intent.hasExtra(LaunchContract.WEB_EXTERNAL_NETWORK)) {
+            intent.getBooleanExtra(LaunchContract.WEB_EXTERNAL_NETWORK, false).toString()
+        } else {
+            null
+        },
         intent.getBooleanExtra(LaunchContract.RPG_MAKER_MOD_ENABLED, true).toString(),
         intent.getStringExtra(LaunchContract.RPG_MAKER_MOD_GAME_ID),
         intent.getIntExtra(LaunchContract.WEB_SHELL_PORT, 0).toString(),
@@ -126,8 +131,12 @@ class TyranoActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enterFullscreen()
-        allowExternalNetwork = getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
-            .getBoolean(EnginePrefs.KEY_TYRANO_EXTERNAL_NETWORK, false)
+        allowExternalNetwork = if (intent.hasExtra(LaunchContract.WEB_EXTERNAL_NETWORK)) {
+            intent.getBooleanExtra(LaunchContract.WEB_EXTERNAL_NETWORK, false)
+        } else {
+            getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
+                .getBoolean(EnginePrefs.KEY_TYRANO_EXTERNAL_NETWORK, false)
+        }
 
         gameDir = resolveGameDir(intent)
         Log.i(TAG, "onCreate gameDir=$gameDir")

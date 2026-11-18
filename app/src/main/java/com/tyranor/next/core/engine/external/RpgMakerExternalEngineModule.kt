@@ -54,14 +54,33 @@ object RpgMakerExternalEngineModule : ExternalEngineModule {
                 messageRes = R.string.external_rpgm_resolve_dir_failed,
             )
         }
-        val settings = request.resolvedSettings?.rpg ?: EngineSettingsStore.RpgMaker()
         ensureRtpEnvironment(context.applicationContext, gameType)
-        if (gameType == TYPE_RPGMXP) {
-            syncGameConfiguration(
-                gameFolder = folder,
-                gameId = gameIdFor(folder, request.game.title),
-                useRuby18 = settings.useRuby18,
+        val flatSettings = flatSettings(gameType, request.resolvedSettings?.rpg)
+        val gameId = gameIdFor(folder, request.game.title)
+        val externalRoot = Environment.getExternalStorageDirectory()
+        val legacyFile = File(externalRoot, "JoiPlay/games/$gameId/configuration.json")
+        val file = if (folder.startsWith(externalRoot.absolutePath)) {
+            File(folder, "configuration.json")
+        } else {
+            legacyFile
+        }
+        val writable = File(folder) != externalRoot
+        // Retain the XP Ruby bootstrap for older APKs that read it directly from the file.
+        val required = JSONObject()
+        if (gameType == TYPE_RPGMXP && writable) required.put("useRuby18", flatSettings.getBoolean("useRuby18"))
+        if (ExternalEngineSettingsFile.reconcile(file, flatSettings, writable, required) !=
+            ExternalEngineSettingsFile.Result.READY
+        ) {
+            return ExternalEngineLaunchResult.failure(
+                ExternalEngineErrorCode.PREPARE_FAILED,
+                messageRes = R.string.external_engine_settings_file_unavailable,
             )
+        }
+        if (required.length() != 0 && file != legacyFile &&
+            ExternalEngineSettingsFile.reconcile(legacyFile, required, required = required) !=
+            ExternalEngineSettingsFile.Result.READY
+        ) {
+            Log.w(TAG, "Unable to write the alternate XP bootstrap at ${legacyFile.absolutePath}")
         }
         return null
     }
@@ -117,29 +136,40 @@ object RpgMakerExternalEngineModule : ExternalEngineModule {
         gameType: String,
         settings: EngineSettingsStore.RpgMaker? = null,
     ): String {
+        val app = JSONObject()
+        val rpg = JSONObject()
+        val flat = flatSettings(gameType, settings)
+        for (key in flat.keys()) {
+            val value = flat.get(key)
+            val type = if (value is Boolean) "boolean" else "string"
+            val section = if (key == "cheats") app else rpg
+            section.put(key, JSONObject().put(type, value))
+        }
+        return JSONObject().put("app", app).put("rpg", rpg).toString()
+    }
+
+    internal fun flatSettings(gameType: String, settings: EngineSettingsStore.RpgMaker?): JSONObject {
         val s = settings ?: EngineSettingsStore.RpgMaker()
         val useRuby18 = if (gameType == TYPE_RPGMXP && settings == null) true else s.useRuby18
-        val app = JSONObject()
-            .put("cheats", JSONObject().put("boolean", s.cheats))
-        val rpg = JSONObject()
-            .put("useRuby18", JSONObject().put("boolean", useRuby18))
-            .put("debug", JSONObject().put("boolean", s.debug))
-            .put("smoothScaling", JSONObject().put("boolean", s.smoothScaling))
-            .put("vsync", JSONObject().put("boolean", s.vsync))
-            .put("frameSkip", JSONObject().put("boolean", s.frameSkip))
-            .put("solidFonts", JSONObject().put("boolean", s.solidFonts))
-            .put("pathCache", JSONObject().put("boolean", s.pathCache))
-            .put("prebuiltPathCache", JSONObject().put("boolean", s.prebuiltPathCache))
-            .put("fastPathEnum", JSONObject().put("boolean", s.fastPathEnum))
-            .put("copyText", JSONObject().put("boolean", s.copyText))
-            .put("useCJKFont", JSONObject().put("boolean", s.useCJKFont))
-            .put("enablePostloadScripts", JSONObject().put("boolean", s.enablePostloadScripts))
-            .put("customFont", JSONObject().put("string", s.customFont))
-            .put("verticalScreenAlign", JSONObject().put("string", s.verticalScreenAlign))
-            .put("windowSize", JSONObject().put("string", s.windowSize))
-            .put("speedUp", JSONObject().put("string", s.speedUp))
-            .put("fontScale", JSONObject().put("string", s.fontScale))
-        return JSONObject().put("app", app).put("rpg", rpg).toString()
+        return JSONObject()
+            .put("cheats", s.cheats)
+            .put("useRuby18", useRuby18)
+            .put("debug", s.debug)
+            .put("smoothScaling", s.smoothScaling)
+            .put("vsync", s.vsync)
+            .put("frameSkip", s.frameSkip)
+            .put("solidFonts", s.solidFonts)
+            .put("pathCache", s.pathCache)
+            .put("prebuiltPathCache", s.prebuiltPathCache)
+            .put("fastPathEnum", s.fastPathEnum)
+            .put("copyText", s.copyText)
+            .put("useCJKFont", s.useCJKFont)
+            .put("enablePostloadScripts", s.enablePostloadScripts)
+            .put("customFont", s.customFont)
+            .put("verticalScreenAlign", s.verticalScreenAlign)
+            .put("windowSize", s.windowSize)
+            .put("speedUp", s.speedUp)
+            .put("fontScale", s.fontScale)
     }
 
     internal fun resolveGameType(request: ExternalEngineLaunchRequest): String {
@@ -220,59 +250,6 @@ object RpgMakerExternalEngineModule : ExternalEngineModule {
         }.onFailure { error ->
             Log.w(TAG, "ensureRtpEnvironment failed (non-fatal)", error)
         }
-    }
-
-    /**
-     * 同步 XP 的扁平 configuration.json（插件 `loadFromFile()` 读取），与生效 useRuby18 联动：
-     * - 文件不存在：创建 `{"useRuby18":<value>}`；
-     * - 文件已是 JSON 对象：仅更新 useRuby18（保留用户其余键）；
-     * - 文件存在但非 JSON：跳过，不覆盖用户文件。
-     */
-    private fun syncGameConfiguration(gameFolder: String, gameId: String, useRuby18: Boolean) {
-        runCatching {
-            val externalRoot = Environment.getExternalStorageDirectory()
-            val candidates = buildList {
-                if (gameFolder.startsWith(externalRoot.absolutePath)) {
-                    add(File(gameFolder, "configuration.json"))
-                }
-                add(
-                    File(
-                        externalRoot,
-                        "JoiPlay" + File.separator + "games" + File.separator +
-                            gameId + File.separator + "configuration.json",
-                    ),
-                )
-            }
-            for (configFile in candidates.distinctBy { it.absolutePath }) {
-                syncFlatConfigurationFile(configFile, useRuby18)
-            }
-        }.onFailure { error ->
-            Log.w(TAG, "syncGameConfiguration failed (non-fatal)", error)
-        }
-    }
-
-    private fun syncFlatConfigurationFile(configFile: File, useRuby18: Boolean) {
-        val exists = configFile.exists()
-        val existing = if (exists) {
-            runCatching { JSONObject(configFile.readText()) }.getOrNull()
-        } else {
-            null
-        }
-        if (exists && existing == null) {
-            Log.w(TAG, "skip non-JSON configuration file: ${configFile.absolutePath}")
-            return
-        }
-        if (existing != null && existing.has("useRuby18") &&
-            existing.optBoolean("useRuby18") == useRuby18
-        ) {
-            return
-        }
-        val json = existing ?: JSONObject()
-        json.put("useRuby18", useRuby18)
-        configFile.parentFile?.let { parent ->
-            if (!parent.exists()) parent.mkdirs()
-        }
-        configFile.writeText(json.toString())
     }
 
     private fun copyAssetToFile(context: Context, assetPath: String, destination: File) {

@@ -6,6 +6,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.nio.charset.Charset
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.Locale
 import kotlin.text.Charsets.UTF_8
@@ -177,7 +179,13 @@ object ArtemisPfsUnpacker {
                 restoreAndroidSectionDefaults(text)
             }
             if (patched != text) {
-                systemIni.writeText(patched, charset)
+                val temp = Files.createTempFile(dir.toPath(), ".system-", ".tmp")
+                try {
+                    temp.toFile().writeText(patched, charset)
+                    Files.move(temp, systemIni.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+                } finally {
+                    Files.deleteIfExists(temp)
+                }
                 logInfo("applied Artemis Android settings root=$rootPath settings=$settings")
             }
             true

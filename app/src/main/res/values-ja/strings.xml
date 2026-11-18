@@ -811,6 +811,9 @@
     <string name="external_rpgm_module_name">RPGM-1.22.00</string>
     <string name="external_ruffle_module_name">Ruffle-1.02.00</string>
     <string name="external_ruffle_resolve_swf_failed">SWF 起動ファイルを特定できないため、Ruffle モジュールを起動できません</string>
+    <string name="external_engine_settings_file_unavailable">エンジンの configuration.json を読み込み、または更新できません。ストレージのアクセス権限と空き容量を確認してください。</string>
+    <string name="external_ruffle_shared_configuration_conflict">共有の configuration.json が現在の Ruffle 設定と競合しています。この SWF と関連ファイルを専用フォルダーに移動して再スキャンするか、共有ファイルの設定を調整してください。</string>
+    <string name="launch_artemis_settings_unavailable">Artemis の設定を system.ini に適用できません。ゲームフォルダーの書き込み権限と system.ini の有無を確認してください。</string>
     <string name="external_impacto_module_name">MAGES.</string>
     <string name="external_impacto_profile_unresolved">このフォルダに対応する MAGES. のゲーム設定を特定できないため、起動できません</string>
     <string name="external_rpgm_resolve_dir_failed">RPGM ゲームフォルダ実パスを解析できないため、外部 RPGM モジュールを起動できません</string>

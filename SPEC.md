@@ -117,7 +117,7 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 - 无根 index 的单 SWF 仍按文件记录；同目录多个 SWF 逐条入库；含子目录的目录不自动识别为包装游戏。单 SWF 标题取父目录名（缺失回退文件主名），多个 SWF 取文件主名。
 - 启动：文件记录先解析入口所在目录，模块收到 `game`（title/id/folder/execFile，`type=flash`）与 `settings`（`app.screenTimeout.int` 及 `ruffle.backend/quality/scaleMode/letterbox/loadBehavior.string`）。未安装返回类型化失败；安装入口打开项目托管的 RufflePlugin-1.02.00.apk 直链。
 - 设置：全局与单游戏覆盖，默认 `opengl / high / showall / on / streaming / 0`（0 = 不自动关闭）；允许值分别为 auto/opengl/vulkan、low/medium/high/best、exactfit/noborder/noscale/showall、on/off、streaming/delayed/blocking、0/5/10/15/30/45/60 分钟。
-- `configuration.json`：游戏目录位于主外部存储根的子目录时，插件优先读取 `<游戏目录>/configuration.json`；其它情况（含存储根、可移动存储）读取 `/storage/emulated/0/JoiPlay/games/<id>/configuration.json`。文件存在时覆盖 intent settings；主 App 仅在文件已存在且为合法 JSON 对象时同步受管键，不创建/删除，跳过共享多 SWF 目录与存储根，原子写并限制 1 MiB。
+- `configuration.json`：Ruffle 1.02.00 对游戏目录执行主外部存储路径前缀检查，命中时读取 `<游戏目录>/configuration.json`（包括存储根本身），否则读取 `/storage/emulated/0/JoiPlay/games/<id>/configuration.json`。文件值覆盖 Intent。主 App 原子同步现有专用文件的受管键，保留其他字段，读取上限为 1 MiB。多 SWF 目录和存储根的共享文件保持原样，同名字段冲突或配置无法读取、同步时提示并停止本次启动。
 - 无统一存档管理，插件自管运行时/存档；不提供虚拟按键重映射；插件固定横屏。设备/插件运行验证尚未执行。
 
 MAGES. 引擎（经开源重新实现项目 impacto，未改动的上游 CommitteeOfZero/impacto）由外置 Impacto 宿主 APK 承载，宿主在独立仓库 yuukana1/Tyranor-Next-Impacto 构建、签名并发布，当前边界如下：
@@ -175,6 +175,9 @@ MAGES. 引擎（经开源重新实现项目 impacto，未改动的上游 Committ
 - SystemNNN 原版设置按 `mustStartPage1Flag` 控制入场固定打开第 1 页或保留会话内上次页码。阅读字号默认 85%，在全局和单游戏引擎设置中调整；`windowPercent` 窗口透明度滑条保持 0–100 原始百分比映射而不受 `windowPercentVolumeDevide` 分段缩放影响。场景回想中打开原版 `systemMenu` 时禁用存读档与扩展项，按 `systemMenuSceneBackFileName` / `systemMenuSceneEndFileName` 切换按钮贴图并直接退回回想列表；鉴赏页按上游默认网格、收集率（`ta_font_cg1` / `ta_font_movie1`）、页码（`ta_font_sl3`）、未解锁盖板（`ta_futa1` 与有符号 `picMustPrintPercent`）、选框模式（`selectPrintMode`）、音乐室 `cannotColorR/G/B` 与正文配色及 CG `fileNameDifferenceFont`（`CSuuji`）差分数字绘制；历史回看支持 `bgMode` `0..3`（纯色、背景图、`backDelta*` / `backMulti*` 级联抓屏滤镜、背景脚本）与 `titleMessage` `#` 颜色前缀；选项分支对齐 `ta_select01` / `ta_win_select` 默认配置；各界面缺贴图或关闭显示开关时一律按原版静默不画，不绘制非原版色块或文字兜底。
 
 - 应用设置、引擎设置、单游戏设置按作用域分离；单游戏未覆盖的字段跟随引擎全局设置，经 `EngineSettingsResolver` 统一解析。
+- 全局设置保存当前引擎分类的字段。Tyrano 与 RPG Maker 两页都显示的外部网络、独立存档使用共享全局值。Tyrano、VN、WebOther 和 RPG Maker MV／MZ 的单游戏外部网络覆盖随启动请求下发，重新启动或重新打开同一宿主时读取新值。
+- RPG Maker RGSS 启动前同步既有 `configuration.json` 的受管字段，保留插件的其他设置。XP 继续可生成 Ruby 1.8 启动配置。若无法应用生效设置则提示并停止启动。
+- Artemis 官方内核启动前将分辨率、裁切、缓存及省电设置应用到 `system.ini`。原子替换失败或无法获得文件时提示并停止启动。
 - Winlator 全局与单游戏图形加速支持跟随容器配置、DXVK、WineD3D（跟随容器渲染器）、WineD3D + OpenGL / GDI。显式 GL/GDI 预设通过既有 `dxwrapperConfig` 整项替换 WineD3D 配置，其它子参数用接收端默认值；可与 Box64 同时下发，开启写入容器配置时持久化。旧 WineD3D 不迁移，空值与继承语义不变；需支持该协议的 winlator-cn。
 - 单游戏 Winlator 设置提供三种运行模式：跟随全局（默认）、跟随容器、自定义。跟随容器以全局设置为基线，仅清空六个图形/运行参数，容器 ID/名称先继承全局、再由逐游戏值覆盖。**模式推断**按 1.61 的 `null / "" / 值` 语义（空串 = 显式不下发，不等同于未覆盖）；切换运行模式不会清除另一种模式已填的参数（以 `winlator_mode` 为准，切回可恢复）；「跟随容器」是本版本新增的显式语义，六空记录升级后 `save` 固定为 `false`（1.61 会继承记录或全局的 `save`，差异只在是否把配置写回容器），保存过的模式以保存值为准。
 - 容器匹配遵循「ID 优先于名称」：两者都覆盖时以 ID 为准；**只覆盖名称时会清除继承的全局 ID**（置 0 不下发），否则继承的 ID 会让名称覆盖失效。该行为是 1.61 未定义、本版本明确的新规则。

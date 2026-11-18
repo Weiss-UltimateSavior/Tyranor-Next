@@ -232,7 +232,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var onsSharpVal by remember { mutableStateOf(onsStr(onsOverride.value, "sharpness_value", "2")) }
     var onsEnc by remember { mutableStateOf(onsStr(onsOverride.value, "encoding", "gbk")) }
 
-    var tyExternal by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, "ty_external")) }
+    var tyExternal by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_TY_EXTERNAL)) }
     var tyScoped by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, "ty_scoped")) }
     var rpgMakerMod by remember {
         mutableStateOf(
@@ -682,7 +682,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
         putIfNotNull(onsObj, "sharpness_value", onsSharpVal)
         putIfNotNull(onsObj, "encoding", onsEnc)
         PerGameSettingsStore.setOnsOverride(ctx, gid, onsObj)
-        PerGameSettingsStore.setBool(ctx, gid, "ty_external", tyExternal)
+        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_TY_EXTERNAL, tyExternal)
         PerGameSettingsStore.setBool(ctx, gid, "ty_scoped", tyScoped)
         PerGameSettingsStore.setBool(
             ctx,

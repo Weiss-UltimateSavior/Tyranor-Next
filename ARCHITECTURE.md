@@ -66,6 +66,8 @@ flowchart TD
 
 旧 `game_scanner` prefs 仍作为幂等迁移来源和恢复镜像，不能删除为“无用缓存”。应用/引擎偏好及引擎进程读取的单游戏 blob 仍保留 prefs；Room 不是所有状态的唯一介质，也不能把普通 SharedPreferences 当成实时跨进程消息总线。
 
+`game_overrides` 的普通字段在单游戏设置镜像锁内读取、修改并发布，然后进入 Room 写队列。第三方模块事务持有同一镜像锁时合并模块命名空间，保留已排队的普通字段和清除操作。Web 外部网络策略在主进程解析全局与单游戏值，经启动 Intent 交给两个 Web 宿主。
+
 Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并从镜像修复；v2→v3（`games.runtime_module_package` 列及索引）、v3→v4（`games.bangumi_id`）、v4→v5（`games.hikarinagi_id`）、v5→v6（`games.nextmoe_id`）分别通过显式 `Migration(2,3)`、`Migration(3,4)`、`Migration(4,5)`、`Migration(5,6)` 升级，对应 `3.json`–`6.json` 已导出。后续版本必须显式注册 `Migration`，不能扩大全局破坏性回退。当前数据库、加密凭据、存档同步状态与备份边界统一见 [持久化数据清单](docs/应用持久化数据清单.md)；专题验收记录仍只对各自标注的版本有效。
 
 ### 类级预编译规则
