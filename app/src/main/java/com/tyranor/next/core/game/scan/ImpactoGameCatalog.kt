@@ -22,6 +22,9 @@ object ImpactoGameCatalog {
         val requiredEntries: Set<String>,
     )
 
+    /** 上游有「妄想触发鼠标支持」增强项的 profile（Chaos;Head / Chaos;Child 的 Love Chu Chu 版）。 */
+    val DELUSION_PROFILES: Set<String> = setOf("chlcc", "cclcc")
+
     private fun game(profileId: String, title: String, vararg entries: String) =
         Game(profileId, title, entries.toSet())
 

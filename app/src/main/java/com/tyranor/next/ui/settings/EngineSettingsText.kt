@@ -488,6 +488,34 @@ internal fun ruffleLoadBehaviorOptionsMap(): Map<String, String> = ruffleLoadBeh
 @Composable
 internal fun ruffleScreenTimeoutOptionsMap(): Map<String, String> = ruffleScreenTimeoutOptions().toMap()
 
+// ───────────────────────── MAGES.（impacto）外置宿主 ─────────────────────────
+
+/** 日志等级：对齐上游 LogLevel；默认 warning。 */
+@Composable
+internal fun impactoLogLevelOptions(): List<Pair<String, String>> = listOf(
+    "off" to stringResource(R.string.engine_settings_impacto_log_off),
+    "fatal" to stringResource(R.string.engine_settings_impacto_log_fatal),
+    "error" to stringResource(R.string.engine_settings_impacto_log_error),
+    EngineSettingsStore.IMPACTO_LOG_LEVEL_WARNING to stringResource(R.string.engine_settings_impacto_log_warning),
+    "info" to stringResource(R.string.engine_settings_impacto_log_info),
+    "debug" to stringResource(R.string.engine_settings_impacto_log_debug),
+    "trace" to stringResource(R.string.engine_settings_impacto_log_trace),
+)
+
+@Composable
+internal fun impactoLogLevelOptionsMap(): Map<String, String> = impactoLogLevelOptions().toMap()
+
+/** 影片字幕轨：全部 / 仅翻译 / 仅卡拉 OK（引擎配置没有“全部关闭”的写法）。 */
+@Composable
+internal fun impactoSubtitlesOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.IMPACTO_SUBTITLES_ALL to stringResource(R.string.engine_settings_impacto_subtitles_all),
+    "translation" to stringResource(R.string.engine_settings_impacto_subtitles_translation),
+    "karaoke" to stringResource(R.string.engine_settings_impacto_subtitles_karaoke),
+)
+
+@Composable
+internal fun impactoSubtitlesOptionsMap(): Map<String, String> = impactoSubtitlesOptions().toMap()
+
 // ───────────────────────── RPG Maker RGSS 外置模块 ─────────────────────────
 
 /** 窗口尺寸全为尺寸字面量，无需本地化。 */

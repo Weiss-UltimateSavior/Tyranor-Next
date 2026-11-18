@@ -5,6 +5,8 @@ import android.content.Intent
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.scan.ImpactoGameCatalog
+import com.tyranor.next.core.settings.EngineSettingsStore
+import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 
@@ -56,7 +58,29 @@ object ImpactoExternalEngineModule : ExternalEngineModule {
             putExtra(ImpactoHostContract.EXTRA_PROFILE, request.launchTarget)
             putExtra(ImpactoHostContract.EXTRA_GAME_KEY, gameKeyFor(folder, request.launchTarget))
             putExtra(ImpactoHostContract.EXTRA_TITLE, request.game.title)
+            putExtra(
+                ImpactoHostContract.EXTRA_SETTINGS,
+                buildSettingsJson(request.resolvedSettings?.impacto),
+            )
         }
+    }
+
+    /**
+     * 宿主 settings extra：扁平 JSON，字段与 [EngineSettingsStore.Impacto] 一一对应。
+     * 宿主在启动引擎前把它合并进该游戏的 `userconfig.toml`（只改这些键，其余保持）；
+     * [settings] 为生效设置，为空时按默认模型全量下发，避免宿主缺键走自身默认。
+     */
+    internal fun buildSettingsJson(settings: EngineSettingsStore.Impacto? = null): String {
+        val s = settings ?: EngineSettingsStore.Impacto()
+        return JSONObject()
+            .put("swapConfirmCancel", s.swapConfirmCancel)
+            .put("vsync", s.vsync)
+            .put("videoPlayback", s.videoPlayback)
+            .put("subtitles", EngineSettingsStore.normalizeImpactoSubtitles(s.subtitles))
+            .put("closeBacklogAtEnd", s.closeBacklogAtEnd)
+            .put("delusionMouse", s.delusionMouse)
+            .put("logLevel", EngineSettingsStore.normalizeImpactoLogLevel(s.logLevel))
+            .toString()
     }
 
     /**
@@ -74,12 +98,16 @@ object ImpactoExternalEngineModule : ExternalEngineModule {
 object ImpactoHostContract {
     const val PACKAGE = "com.tyranor.next.impacto"
 
-    /** 本版 App 需要的最低宿主 versionCode；须不高于宿主仓库最新发布的版本。只在请求协议不兼容时才需要抬高。 */
-    const val VERSION_CODE = 1
+    /**
+     * 本版 App 需要的最低宿主 versionCode；须不高于宿主仓库最新发布的版本。只在请求协议不兼容时才需要抬高。
+     * 3 = 宿主 0.1.2，起认识 [EXTRA_SETTINGS]；更老的宿主会忽略该 extra，设置不会生效，所以按“需要更新”处理。
+     */
+    const val VERSION_CODE = 3
 
     const val ACTION_RUN = "com.tyranor.next.impacto.action.RUN"
     const val EXTRA_GAME_DIR = "com.tyranor.next.impacto.extra.GAME_DIR"
     const val EXTRA_PROFILE = "com.tyranor.next.impacto.extra.PROFILE"
     const val EXTRA_GAME_KEY = "com.tyranor.next.impacto.extra.GAME_KEY"
     const val EXTRA_TITLE = "com.tyranor.next.impacto.extra.TITLE"
+    const val EXTRA_SETTINGS = "com.tyranor.next.impacto.extra.SETTINGS"
 }

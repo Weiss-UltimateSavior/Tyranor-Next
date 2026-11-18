@@ -123,7 +123,9 @@ MAGES. 引擎（经开源重新实现项目 impacto，未改动的上游 Committ
 - 扫描：按**精确大小写**的根目录条目名匹配上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`），恰好一个 profile 全部命中才识别；`darling` 与全小写 `mo6tw` 的要求集合相同，一律不识别。`launchTarget` 为 profile id，别名 `internal.impacto`。Windows／Steam 版数据（小写 `.cpk`、无 `SCRIPT.cls`）不识别为 Impacto。
 - 获取：引擎页点击 MAGES. 条目跳转到 `https://github.com/yuukana1/Tyranor-Next-Impacto/releases/latest/download/impacto-host.apk`（资产名固定，随宿主新发布自动指向最新版）；未安装或版本低于 `ImpactoHostContract.VERSION_CODE` 时与其他外置模块一样提示并引导下载。
 - 启动：发 `com.tyranor.next.impacto.action.RUN`，携带游戏目录、profile、`gameKey` 与标题，需要「所有文件访问」；宿主没有桌面入口。
-- 存档与配置在宿主私有目录内按游戏隔离，主 App 不提供文件存档管理；单游戏设置页只显示说明。
+- 存档在宿主私有目录内按游戏隔离，主 App 不提供文件存档管理。
+- 设置：引擎页 MAGES. 条目的「全局引擎设置」与单游戏设置，格式与 Ruffle 一致（全局值 + 单游戏覆盖，覆盖为 null 时跟随全局）。可调项只收录上游 `userconfig.toml` 里在 Android 上有意义的：交换确认 / 取消键、垂直同步、影片播放（`FFmpeg` / `None`）、影片字幕（全部 / 仅翻译 / 仅卡拉 OK；引擎的字幕配置是标志枚举，没有可读回的“全部关闭”）、回看记录滚到底时自动关闭、妄想触发的鼠标 / 触摸支持（仅 `chlcc`、`cclcc`）、日志等级。分辨率与显示模式（Android 上窗口固定全屏）、渲染器与音频后端（只有 OpenGL / OpenAL）、补丁（宿主私有目录里无法放入补丁档案）不提供。
+- 设置下发：启动请求带 `com.tyranor.next.impacto.extra.SETTINGS`（扁平 JSON），宿主 0.1.2（versionCode 3）起在引擎启动前把它们合并进该游戏的 `userconfig.toml`（只改受管键，其余保留）；因此这些值每次启动都会覆盖引擎内置设置页里的同名项。更老的宿主不认识该 extra，所以 `ImpactoHostContract.VERSION_CODE` 为 3，更老的宿主按“需要更新”处理。设置页的保存与启动请求都不依赖宿主是否已安装。
 - 验证状态：宿主引擎库只在一台真机上跑到读脚本失败为止（见 `docs/impacto-upstream-only.md`），没有受支持的游戏数据进到画面，渲染、声音、输入、存读档均未验证。
 
 ### 第三方 APK 运行时模块
