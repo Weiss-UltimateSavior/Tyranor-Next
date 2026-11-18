@@ -26,14 +26,17 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CATALOG = ROOT / 'app/src/main/java/com/tyranor/next/core/game/scan/ImpactoGameCatalog.kt'
 
 # The tokens that can hide a comment marker or be hidden by one, in the order they are tried at each position: raw
-# string, string, char, line comment, block comment. "//" inside a literal is text; a quote inside a comment opens nothing.
+# string, string, char, line comment, start of a block comment. "//" inside a literal is text; a quote inside a comment
+# opens nothing.
 KOTLIN_TOKEN = re.compile(
     r'"""[\s\S]*?"""'
     r'|"(?:\\.|[^"\\\r\n])*"'
     r"|'(?:\\.|[^'\\\r\n])'"
     r'|//[^\r\n]*'
-    r'|/\*[\s\S]*?\*/'
+    r'|/\*'
 )
+# Block comments nest in Kotlin: their end is found by counting these.
+BLOCK_COMMENT_EDGE = re.compile(r'/\*|\*/')
 # The patterns below are applied to source with its comments removed (strip_comments).
 GAME_CALL = re.compile(r'game\(\s*"([^"]+)"\s*,\s*"([^"]*)"\s*,\s*((?:"[^"]+"\s*,?\s*)+)\)', re.S)
 # Profiles that come from the host patch series (not in upstream): pcEdition("id", TEXT_X, "mesNN.cpk").
@@ -53,22 +56,44 @@ NAME = re.compile(r'^\s*Name\s*=\s*"([^"]*)"', re.M)
 MOUNT = re.compile(r'RootGamedataDir\s*\.\.\s*"/([\w-]+)/?([^"]*)"')
 
 
+def block_comment_end(source, start):
+    """Index just after the `*/` that closes the block comment whose `/*` ends at `start`; None when it never closes."""
+    depth = 1
+    for edge in BLOCK_COMMENT_EDGE.finditer(source, start):
+        depth += 1 if edge.group(0) == '/*' else -1
+        if depth == 0:
+            return edge.end()
+    return None
+
+
 def strip_comments(source):
     """Kotlin source without its comments; string and char literals stay as written.
 
-    A comment leaves its line breaks behind (a block comment on one line leaves a space, so the tokens on both sides
-    stay apart), so the patterns can keep relying on lines. Block comments are not read as nested (Kotlin nests them,
-    the catalog does not): a nested one leaves part of the comment visible, which can add reports but never hide code.
+    Line comments and block comments are removed, and block comments nest as they do in Kotlin. A comment marker inside
+    a literal is text, and a quote inside a comment opens nothing. A comment leaves its line breaks behind (a block
+    comment on one line leaves a space, so the tokens on both sides stay apart), so the patterns can keep relying on
+    lines. A block comment that never closes is left as it is: the compiler would refuse it, and showing its text can
+    only add reports. String templates are not interpreted: a `${...}` that itself holds quotes or comments is out of
+    scope (the catalog has none).
     """
-    def keep_or_drop(match):
-        token = match.group(0)
-        if token.startswith('//'):
-            return ''
-        if token.startswith('/*'):
-            return '\n' * token.count('\n') or ' '
-        return token
-
-    return KOTLIN_TOKEN.sub(keep_or_drop, source)
+    out, position = [], 0
+    while True:
+        match = KOTLIN_TOKEN.search(source, position)
+        if match is None:
+            out.append(source[position:])
+            return ''.join(out)
+        out.append(source[position:match.start()])
+        token, end = match.group(0), match.end()
+        if token == '/*':
+            closed = block_comment_end(source, end)
+            if closed is None:
+                out.append(token)
+            else:
+                out.append('\n' * source.count('\n', match.start(), closed) or ' ')
+                end = closed
+        elif not token.startswith('//'):
+            out.append(token)
+        position = end
 
 
 def parse_catalog(text):

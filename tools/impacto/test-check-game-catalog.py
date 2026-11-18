@@ -344,6 +344,19 @@ class HostProfilesTests(unittest.TestCase):
         problems = self.compare(profiles, self.catalog_text.replace(zht, zht + ' // ' + note))
         self.assertTrue(any('extra-pc' in x and 'missing from the catalog' in x for x in problems), problems)
 
+    def test_block_comments_nest_like_in_kotlin(self):
+        zht = 'pcEdition("mo6tw-pc-zht", TEXT_ZH_HANT, "mes01.cpk"),'
+        real = 'pcEdition("extra-pc", "ja", "mes00.cpk"),'
+        # The call after the outer comment closes is real code, even though a "//" and a "*/" sit inside the comment:
+        # the host does not list it, so it must be reported.
+        text = self.catalog_text.replace(zht, zht + '\n        /* outer /* inner */ // */ ' + real)
+        problems = self.compare(HOST_PROFILES, text)
+        self.assertTrue(any('extra-pc' in x and 'not a "pc" profile' in x for x in problems), problems)
+        self.assertFalse(any('cannot read' in x for x in problems), problems)
+        # A commented-out call inside a nested comment is no call.
+        text = self.catalog_text.replace(zht, zht + '\n        /* old /* x */ ' + real + ' */')
+        self.assertEqual(self.compare(HOST_PROFILES, text), [])
+
     def test_a_call_that_cannot_be_read_is_still_reported_next_to_a_comment(self):
         zht = 'pcEdition("mo6tw-pc-zht", TEXT_ZH_HANT, "mes01.cpk"),'
         broken = 'pcEdition("extra-pc", languageOf(), "mes00.cpk"), // pcEdition("fine-pc", "ja", "mes00.cpk")'
@@ -393,6 +406,21 @@ class StripCommentsTests(unittest.TestCase):
         # Line structure survives a block comment that spans lines.
         self.assertEqual(strip('a /* x\n y\n */ b').count('\n'), 2)
         self.assertEqual(strip('/** doc with pcEdition("x", "ja", "a.cpk") */\nval a = 1').split(), ['val', 'a', '=', '1'])
+
+    def test_block_comments_nest(self):
+        strip = tool.strip_comments
+        self.assertEqual(strip('a /* x /* y */ z */ b').split(), ['a', 'b'])
+        # The "*/" after a nested "//" still closes the outer comment; the code behind it stays.
+        shown = strip('/* outer /* inner */ // */ pcEdition("extra-pc", "ja", "mes00.cpk"),')
+        self.assertEqual(shown.split(), ['pcEdition("extra-pc",', '"ja",', '"mes00.cpk"),'])
+        # Line structure survives a nested comment that spans lines.
+        self.assertEqual(strip('a /* x\n/* y\n*/\n*/ b').count('\n'), 3)
+
+    def test_a_block_comment_that_never_closes_stays_visible(self):
+        strip = tool.strip_comments
+        self.assertEqual(strip('a /* b'), 'a /* b')
+        # Closing only the inner comment leaves the outer one open: nothing is hidden.
+        self.assertIn('pcEdition(', strip('/* outer /* inner */ pcEdition("x", "ja", "m.cpk"),'))
 
     def test_comment_markers_inside_literals_are_text(self):
         strip = tool.strip_comments
