@@ -58,7 +58,11 @@ object RenPyVersionDetector {
     }
 
     internal fun moduleVersionForCode(versionCode: Int): String =
-        if (versionCode < RENPY_8_THRESHOLD) EngineSettingsStore.RENPY_77 else EngineSettingsStore.RENPY_85
+        when {
+            versionCode < RENPY_8_THRESHOLD -> EngineSettingsStore.RENPY_77
+            versionCode >= 80503 -> EngineSettingsStore.RENPY_853
+            else -> EngineSettingsStore.RENPY_85
+        }
 
     private fun File.readTextSafely(): String? = runCatching {
         inputStream().use { input ->

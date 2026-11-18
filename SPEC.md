@@ -92,7 +92,7 @@
 | Tyrano / VN / WebOther | `tyrano/`、`globalData.vndata`、HTML 等 | 内置 Web 壳 |
 | RPG Maker MV / MZ | `rpg_core.js` / `rmmz_core.js`、`www/` 等 | 内置 Web 运行环境，支持适用的 Asar 包 |
 | RPG Maker RGSS | XP/VX/VX Ace 资源或 mkxp-z 模块选择 | 外置 RPGM APK 模块 |
-| Ren'Py | `.rpa`、`.rpy/.rpyc` 等组合 | 外置 Ren'Py APK；自动或指定 8.5.3 / 7.7.1 |
+| Ren'Py | `.rpa`、`.rpy/.rpyc` 等组合 | 外置 Ren'Py APK；自动或指定 8.5.0 / 8.5.3 / 7.7.1 |
 | Ruffle / Flash | 顶层 `.swf`；根 `index.html/index.htm` + 唯一 SWF 的叶子目录 | 外置 Ruffle APK；一 SWF 一条记录 |
 | MAGES.（impacto） | 按精确大小写的根目录条目命中上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`）；恰好一个全命中才识别 | 外置 Impacto 宿主 APK（承载未改动的上游 CommitteeOfZero/impacto，PS3 数据布局；Windows／Steam 版数据不识别） |
 | 第三方运行时模块 | 已安装的 `com.tyranor.runtime.*` APK + 模块 `res/raw` 扫描描述 | 显式组件交棒游戏文件夹，模块自行运行 |
@@ -104,7 +104,7 @@
 
 JoiPlay 外置模块与模拟器必须先安装；主 App 显示安装状态及获取入口。第三方 APK 运行时模块同样由用户自行安装，但主 App 不提供下载/安装器，只在「引擎模块管理」中列出并管理启用状态。启动前检查目标、权限和目录，失败由类型化结果映射 UI 文案。设置中的“自动”按当前运行时规则解析，不承诺回退能修复不受支持的脚本或资源。
 
-Ren’Py 8.5.3 与原 8.5 使用相同 APK 包名，作为同一模块升级，不能独立并存。旧 `8.5` 设置兼容映射到 8.5.3；自动模式对 8.x/未知版本选择 8.5.3，对 7.x 选择 7.7.1。8.x 模块要求 APK versionCode 至少为 10200，旧版会提示更新并提供下载入口；配置载荷与游戏 ID 保持原协议。接入证据和设备验收边界见 [8.5.3 分析记录](docs/renpy-8.5.3-module-analysis.md)。
+Ren’Py 8.5.0 与 8.5.3 分别保留版本选项与下载入口，不再将旧 `8.5` 设置自动升级；旧值对应 8.5.0，显式 `8.5.3` 保持不变。自动模式在探测到 8.5.3 及以上时选择 8.5.3，其他 8.x 和未知版本回退 8.5.0，7.x 选择 7.7.1。两版使用相同 APK 包名，设备上一次只能安装其中一版：8.5.0 接受 APK versionCode 10100–10199，8.5.3 接受至少 10200；安装态与启动均检查所选版本，版本不匹配时提供对应下载入口，切回旧版需先卸载新版。8.5.0 引导至 [旧版 APK](https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RenPy-Plugin-8.5.apk)，不修改或重新打包外置 APK；配置载荷、游戏 ID 和存档路径保持原协议。接入证据和设备验收边界见 [8.5.3 分析记录](docs/renpy-8.5.3-module-analysis.md)。
 
 外置模拟器跳转使用显式组件启动目标应用：YU-RIS / CatSystem2 / PC 通过 Winlator 的 `dir_path` 与 `exe_path` 传递游戏目录和主程序；PSP / Nintendo Switch 则传递 ROM URI 及读取授权。具体协议见 [外置模拟器接入说明](docs/外置主机模拟器跳转接入方案.md)。
 

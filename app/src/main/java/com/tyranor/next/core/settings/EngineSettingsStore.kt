@@ -283,12 +283,13 @@ object EngineSettingsStore {
     // Ren'Py 版本取值常量
     const val RENPY_AUTO = "auto"
     const val RENPY_85 = "8.5"
+    const val RENPY_850 = "8.5.0"
     const val RENPY_853 = "8.5.3"
     const val RENPY_77 = "7.7.1"
 
-    /** Migrates the former 8.5 selector value to the compatible upgraded 8.5.3 runtime. */
+    /** 历史 8.5 选择值对应原 8.5.0 模块，不自动升级到 8.5.3。 */
     fun normalizeRenpyVersion(value: String?): String? =
-        if (value?.trim() == RENPY_85) RENPY_853 else value
+        if (value?.trim() == RENPY_85) RENPY_850 else value
 
     // Ruffle 外置模块取值域（对齐插件 RuffleConfiguration 的默认值）
     const val RUFFLE_SCREEN_TIMEOUT_DEFAULT = 0
@@ -749,6 +750,7 @@ object EngineSettingsStore {
     fun getRenpyVersion(c: Context): String {
         val v = prefs(c).getString(KEY_RENPY_ENGINE_VERSION, RENPY_AUTO)
         return when (normalizeRenpyVersion(v)?.trim()) {
+            RENPY_850 -> RENPY_850
             RENPY_853 -> RENPY_853
             RENPY_77 -> RENPY_77
             else -> RENPY_AUTO

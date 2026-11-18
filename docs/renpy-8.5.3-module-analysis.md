@@ -48,7 +48,7 @@
 - `jadx/sources/cyou/joiplay/commons/parser/RenPyConfigurationParser.java`：嵌套与扁平配置；对应 `apktool/smali/cyou/joiplay/commons/parser/RenPyConfigurationParser.smali`。
 - `jadx/sources/org/renpy/android/PythonSDLActivity.java` 的 `parseConfig()`、`loadConfig()`、`preparePython()`：配置顺序、环境变量及存档路径；对应 `apktool/smali/org/renpy/android/PythonSDLActivity.smali`。
 
-## 项目接入行为
+## 初始接入行为（2026-11-12，版本选择已由下节调整）
 
 - 原 8.x 注册项升级为 8.5.3，保留模块 ID、包名及历史别名；下载地址换成新 APK。无需新增 Manifest package query，因为包名未变。
 - 设置界面显示“自动 / 8.5.3 / 7.7.1”。已有全局和单游戏 `8.5` 值继续映射到升级后的模块。
@@ -57,6 +57,22 @@
 - 不打包外置 APK，不改动游戏 ID、游戏目录和配置协议。Android 11 及以上的游戏目录 `saves/` 已纳入统一存档管理，模块专属目录不在管理范围内。
 
 静态协议检查不构成游戏兼容性验收。旧 8.5 与本样本的签名是否相同、设备上是否能直接覆盖安装、真实游戏运行和存档兼容性均未验证。
+
+## 分别保留版本选项（2026-11-18）
+
+- 用户提供的旧版拆解目录 `/Volumes/HUAWEI-M2LITE/app/decompiled/renpy_out` 中，Manifest 的引擎版本为 `80500`，apktool 记录 APK versionCode 为 `10100`、versionName 为 `1.01.00-patreon`，因此旧版实际为 **8.5.0**，不是 8.0.5。
+- 按用户要求不改包、不重打包 APK；8.5.0 下载入口使用 [RenPy-Plugin-8.5.apk](https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RenPy-Plugin-8.5.apk)，8.5.3 保留原下载地址。此次未重新下载核验远程旧版 APK，以上身份来自提供的本地拆解样本。
+- 设置选项为“自动 / 8.5.0 / 8.5.3 / 7.7.1”。旧 `8.5` 值映射到 `8.5.0`；已明确保存的 `8.5.3` 不变。历史 `renpy85` 注册项恢复旧版，另增 `renpy853` 注册项；共用包名不等于共用安装状态，状态按模块 ID 分别检查。
+- 自动模式对已知 8.5.3+ 游戏使用新模块，其他 8.x 与未知版本默认旧模块；保留旧扫描缓存中的 `8.5` 识别值兼容。
+- 8.5.0 接受 `10100–10199`（旧样本版本至新模块最低版本之前），8.5.3 接受 `10200` 及以上。选择旧版而安装新版时返回类型化版本不匹配结果，提示卸载当前模块并下载旧版；选择新版而安装旧版时沿用更新提示。
+- 两版不能同时安装；这里保留的是独立的版本选项与下载入口。配置协议、游戏 ID 与游戏目录存档路径不变，不修改外置 APK。
+
+验证：
+
+- `./gradlew :app:testDebugUnitTest --tests 'com.tyranor.next.core.engine.external.*' --tests 'com.tyranor.next.core.settings.RenPySettingsKeysTest' --tests 'com.tyranor.next.core.game.scan.RenPyVersionDetectorTest' --tests 'com.tyranor.next.core.game.scan.EngineScannerRenPyTest' --console=plain`：122 项测试通过，0 失败、0 错误。
+- `python3 tools/check-hardcoded-ui-strings.py`、`python3 tools/check-motion-boundaries.py` 与 `git diff --check`：通过。
+- `./gradlew :app:lintDebug --console=plain`：通过。
+- 未进行设备安装、降级切换、UI 截图或真实游戏验收。
 
 ## 模块升级验证结果
 
