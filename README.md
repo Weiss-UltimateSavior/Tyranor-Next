@@ -68,8 +68,8 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | RPG Maker VX Ace     | `.rgss3a`、`Game.ini` + `Data/*.rvdata2`                             | 外置 RPGM APK 模块               |
 | mkxp-z               | 用户选择/内部别名 `internal.mkxp-z`                                         | 外置 RPGM APK 模块               |
 | Majiro               | `majiro.env`、`.mjo` 或 `.arc`（第三方模块声明的静态特征）                 | [第三方 APK 运行时模块（`majiro-emulator`）](docs/Majiro引擎接入方案.md) |
-| RPG Maker MV         | `www/`、`js/rpg_core.js`                                             | 内置 Web 运行环境                  |
-| RPG Maker MZ         | `www/`、`js/rmmz_core.js`                                            | 内置 Web 运行环境                  |
+| RPG Maker MV         | `www/`、`js/rpg_core.js`                                             | 内置 Web 运行环境（Tyranor-2.3.4 / TynMV-0.1 / TynMV-0.2） |
+| RPG Maker MZ         | `www/`、`js/rmmz_core.js`                                            | 内置 Web 运行环境（Tyranor-2.3.4 / TynMV-0.2） |
 | VN                   | `globalData.vndata`                                                 | 内置 Web 运行环境                  |
 | WebOther             | 通用 `index.html` 网页游戏                                                | 内置 Web 运行环境                  |
 | Ren'Py               | `.rpa`、`game/script.rpy`、`game/options.rpy`、`renpy/` + `.rpy/.rpyc` | 外置 RenPy APK 模块（8.5.0 / 8.5.3 / 7.7.1；8.5.0 与 8.5.3 同包名，按所选版本下载安装） |
