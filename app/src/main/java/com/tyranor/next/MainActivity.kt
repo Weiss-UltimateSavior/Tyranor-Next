@@ -157,17 +157,20 @@ class MainActivity : ComponentActivity() {
     }
 
     LaunchedEffect(completed) {
-      if (completed && UpdateNotificationManager.shouldRequestPermission(this@MainActivity)) {
+      if ((!AppSettingsStore.ONBOARDING_FEATURE_ENABLED || completed) &&
+        UpdateNotificationManager.shouldRequestPermission(this@MainActivity)
+      ) {
         UpdateNotificationManager.markPermissionRequested(this@MainActivity)
         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
       }
     }
+    val onboardingVisible = AppSettingsStore.ONBOARDING_FEATURE_ENABLED && !completed
     Box(Modifier.fillMaxSize()) {
       MainNavigation(
-        coachPage = if (completed) null else coachPage,
-        onCoachAnchorChanged = if (completed) { _, _ -> } else reportCoachAnchor,
+        coachPage = if (onboardingVisible) coachPage else null,
+        onCoachAnchorChanged = if (onboardingVisible) reportCoachAnchor else { _, _ -> },
       )
-      CoachOverlayVisibility(visible = !completed) {
+      CoachOverlayVisibility(visible = onboardingVisible) {
         OnboardingCoachOverlay(
           step = safeCoachStep,
           homeStyle = homeStyle,

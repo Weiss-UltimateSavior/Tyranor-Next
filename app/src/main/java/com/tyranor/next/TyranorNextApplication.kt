@@ -106,7 +106,11 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
 
     override fun onStop(owner: LifecycleOwner) {
         SaveSyncRuntime.onBackground(this)
-        if (AppSettingsStore.isOnboardingCompleted(this)) BackgroundUpdateWorker.enqueue(this)
+        if (!AppSettingsStore.ONBOARDING_FEATURE_ENABLED ||
+            AppSettingsStore.isOnboardingCompleted(this)
+        ) {
+            BackgroundUpdateWorker.enqueue(this)
+        }
     }
 
 }

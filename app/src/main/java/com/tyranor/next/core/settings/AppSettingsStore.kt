@@ -17,6 +17,9 @@ import kotlinx.coroutines.flow.update
  */
 object AppSettingsStore {
 
+    /** 临时关闭首次使用引导展示，待页面入口稳定后再恢复。 */
+    const val ONBOARDING_FEATURE_ENABLED = false
+
     const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
 
     private const val ONBOARDING_PENDING_INITIAL_STATE_FILE = "onboarding_initial_state"
