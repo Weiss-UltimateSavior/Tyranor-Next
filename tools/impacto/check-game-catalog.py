@@ -26,8 +26,12 @@ DEFAULT_CATALOG = ROOT / 'app/src/main/java/com/tyranor/next/core/game/scan/Impa
 GAME_CALL = re.compile(r'game\(\s*"([^"]+)"\s*,\s*"([^"]*)"\s*,\s*((?:"[^"]+"\s*,?\s*)+)\)', re.S)
 # Profiles that come from the host patch series (not in upstream): pcEdition("id", TEXT_X, "mesNN.cpk").
 PC_EDITION_CALL = re.compile(r'pcEdition\(\s*"([^"]+)"')
-PC_EDITION_FULL = re.compile(r'pcEdition\(\s*"([^"]+)"\s*,\s*(\w+)\s*,\s*"([^"]+)"\s*\)')
-CONST_STRING = re.compile(r'const val (\w+) = "([^"]*)"')
+# Every call site of the helper (not its declaration): all of them must be read completely.
+PC_EDITION_ANY = re.compile(r'(?<!fun )pcEdition\(')
+PC_EDITION_FULL = re.compile(r'pcEdition\(\s*"([^"]+)"\s*,\s*("[^"]+"|\w+)\s*,\s*"([^"]+)"\s*,?\s*\)')
+# A string constant is exactly one string literal. "a" + ".b" or any other expression is not recorded: a member that
+# refers to it is then unreadable and reported, never compared with a truncated value.
+CONST_STRING = re.compile(r'const val (\w+) = "([^"]*)"[ \t]*(?:\r?\n|//|$)', re.M)
 PC_COMMON = re.compile(r'PC_COMMON_DATA_ENTRIES\s*=\s*setOf\(([^)]*)\)[ \t]*(?:\r?\n|//)')
 PC_BODY = re.compile(r'fun pcEdition\([^)]*\)\s*=\s*Game\((.*?)\n    \)', re.S)
 PC_ROOT_ENTRIES = re.compile(r'requiredEntries\s*=\s*setOf\(([^)]*)\)(?=\s*,)')
@@ -56,12 +60,25 @@ def parse_definitions(text):
 
 
 def parse_pc_editions(text):
-    """profile id -> {'language': 'ja' | 'zh-Hans' | ..., 'textArchive': 'data/mes00.cpk'} for every pcEdition(...)."""
+    """profile id -> {'language': 'ja' | 'zh-Hans' | ..., 'textArchive': 'data/mes00.cpk'} for every pcEdition(...) call.
+
+    None when any call cannot be read completely (an expression or an unknown name where the language is expected, a
+    first argument that is not a string literal, ...): report it instead of comparing only the calls that were read.
+    """
     constants = dict(CONST_STRING.findall(text))
-    return {
-        profile: {'language': constants.get(language, language), 'textArchive': f'data/{archive}'}
-        for profile, language, archive in PC_EDITION_FULL.findall(text)
-    }
+    parsed = PC_EDITION_FULL.findall(text)
+    if len(parsed) != len(PC_EDITION_ANY.findall(text)):
+        return None
+    editions = {}
+    for profile, language, archive in parsed:
+        if language.startswith('"'):
+            value = language.strip('"')
+        elif language in constants:
+            value = constants[language]
+        else:
+            return None
+        editions[profile] = {'language': value, 'textArchive': f'data/{archive}'}
+    return editions
 
 
 def resolve_members(arguments, constants):
@@ -93,7 +110,9 @@ def pc_requirements(text):
     None when the catalog's helper no longer has the shape this tool understands: report it, never guess.
     """
     constants = dict(CONST_STRING.findall(text))
-    data_dir = constants.get('DATA_DIR', 'data')
+    data_dir = constants.get('DATA_DIR')
+    if data_dir is None:
+        return None
     common = PC_COMMON.search(text)
     body = PC_BODY.search(text)
     root = PC_ROOT_ENTRIES.search(body.group(1)) if body else None
@@ -158,8 +177,11 @@ def check_host_profiles(catalog_text, profiles_path):
     host = {p['id']: p for p in data.get('profiles', []) if (p.get('detect') or {}).get('layout') == 'pc'}
     editions = parse_pc_editions(catalog_text)
     required = pc_requirements(catalog_text)
-    if required is None:
-        return ['cannot read the Windows/Steam requirements (PC_COMMON_DATA_ENTRIES / the pcEdition helper) from the catalog']
+    if editions is None or required is None:
+        return [
+            'cannot read the Windows/Steam editions or their requirements '
+            '(pcEdition calls, DATA_DIR, PC_COMMON_DATA_ENTRIES, the pcEdition helper) from the catalog',
+        ]
     if not host:
         return ['the host profiles.json has no profile with detect.layout "pc"']
     problems = []

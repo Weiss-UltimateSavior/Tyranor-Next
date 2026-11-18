@@ -249,6 +249,52 @@ class HostProfilesTests(unittest.TestCase):
         for bad in ('B', '"x.cpk", foo()', 'A + "x"', '"x.cpk" "y.cpk"'):
             self.assertIsNone(tool.resolve_members(bad, constants), bad)
 
+    def test_a_string_constant_must_be_one_complete_literal(self):
+        text = self.catalog_text.replace(
+            'private val PC_COMMON_DATA_ENTRIES = setOf("script.cpk", "mes00.cpk")',
+            'private const val EXTRA_REQUIRED = "script.cpk" + ".extra"\n'
+            '    private val PC_COMMON_DATA_ENTRIES = setOf("script.cpk", "mes00.cpk", EXTRA_REQUIRED)',
+        )
+        self.assertNotEqual(text, self.catalog_text)
+        # The concatenation is not recorded as its first half ("script.cpk"); the member is reported as unreadable.
+        self.assertNotIn('EXTRA_REQUIRED', dict(tool.CONST_STRING.findall(text)))
+        self.assertIsNone(tool.pc_requirements(text))
+        self.assertIn('cannot read', self.compare(HOST_PROFILES, text)[0])
+        # A trailing comment after one complete literal is fine.
+        commented = text.replace('"script.cpk" + ".extra"', '"extra.cpk" // one literal')
+        self.assertEqual(
+            tool.pc_requirements(commented), {'game.exe', 'data/script.cpk', 'data/mes00.cpk', 'data/extra.cpk'},
+        )
+
+    def test_data_dir_must_be_a_plain_literal_too(self):
+        text = self.catalog_text.replace('const val DATA_DIR = "data"', 'const val DATA_DIR = "da" + "ta"')
+        self.assertNotEqual(text, self.catalog_text)
+        self.assertIsNone(tool.pc_requirements(text))
+        self.assertIn('cannot read', self.compare(HOST_PROFILES, text)[0])
+
+    def test_every_pc_edition_call_is_read_completely_or_reported(self):
+        zht = 'pcEdition("mo6tw-pc-zht", TEXT_ZH_HANT, "mes01.cpk"),'
+        self.assertIn(zht, self.catalog_text)
+        # A literal language and a trailing comma are read like the constant form.
+        for variant in (
+            'pcEdition("mo6tw-pc-zht", "zh-Hant", "mes01.cpk"),',
+            'pcEdition("mo6tw-pc-zht", TEXT_ZH_HANT, "mes01.cpk",),',
+        ):
+            self.assertEqual(self.compare(HOST_PROFILES, self.catalog_text.replace(zht, variant)), [], variant)
+        # A new edition the host does not list is reported, not skipped.
+        extra = self.catalog_text.replace(zht, zht + '\n        pcEdition("extra-pc", "ja", "mes00.cpk"),')
+        self.assertTrue(any('extra-pc' in x for x in self.compare(HOST_PROFILES, extra)))
+        # Calls that cannot be read completely make the whole comparison unreadable.
+        for broken in (
+            'pcEdition("extra-pc", languageOf(), "mes00.cpk"),',
+            'pcEdition("extra-pc", TEXT_UNKNOWN, "mes00.cpk"),',
+            'pcEdition(SOME_ID, TEXT_JA, "mes00.cpk"),',
+        ):
+            text = self.catalog_text.replace(zht, zht + '\n        ' + broken)
+            problems = self.compare(HOST_PROFILES, text)
+            self.assertEqual(len(problems), 1, broken)
+            self.assertIn('cannot read', problems[0], broken)
+
     def test_a_helper_the_tool_cannot_read_is_reported_instead_of_passing(self):
         broken = self.catalog_text.replace('PC_COMMON_DATA_ENTRIES = setOf(', 'PC_COMMON_ENTRIES = setOf(')
         self.assertNotEqual(broken, self.catalog_text)
