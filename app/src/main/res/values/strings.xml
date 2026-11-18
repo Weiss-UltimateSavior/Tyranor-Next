@@ -82,6 +82,7 @@
     <string name="settings_home_web_current">当前</string>
     <string name="home_web_preset_kungal">鲲Gal</string>
     <string name="home_web_preset_letmoe">一起萌</string>
+    <string name="home_web_preset_takanashi">小鸟游</string>
     <string name="home_web_error">网页加载失败</string>
     <string name="home_web_open_browser_failed">未找到可打开该链接的应用</string>
     <string name="home_web_download_unsupported">该下载链接无法在浏览器中打开</string>

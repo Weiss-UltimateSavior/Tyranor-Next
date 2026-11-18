@@ -448,7 +448,7 @@ internal fun AppSettingsScreen() {
                                     }
                                 },
                             )
-                            // Web 首页地址：预设（鲲Gal / 一起萌）或自定义，点击弹出选择
+                            // Web 首页地址：预设地址或自定义，点击弹出选择
                             ArrowPreference(
                                 title = stringResource(R.string.settings_home_web_url),
                                 endActions = {
@@ -607,7 +607,7 @@ internal fun AppSettingsScreen() {
 }
 
 /**
- * Web 首页地址选择弹窗：预设（鲲Gal / 一起萌）+ 自定义地址。
+ * Web 首页地址选择弹窗提供预设地址和自定义地址。
  * 选择预设立即保存；选择自定义进入输入弹窗。
  */
 @Composable
@@ -617,6 +617,11 @@ private fun HomeWebUrlDialog(
     onCustom: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val presets = listOf(
+        R.string.home_web_preset_kungal to AppSettingsStore.HOME_WEB_URL_KUNGAL,
+        R.string.home_web_preset_letmoe to AppSettingsStore.HOME_WEB_URL_LETMOE,
+        R.string.home_web_preset_takanashi to AppSettingsStore.HOME_WEB_URL_TAKANASHI,
+    )
     val isCustom = !HomeWebUrls.isPreset(currentUrl)
     val currentMark = stringResource(R.string.settings_home_web_current)
     fun summaryOf(url: String): String = if (currentUrl == url) "$url · $currentMark" else url
@@ -628,33 +633,26 @@ private fun HomeWebUrlDialog(
                 style = MaterialTheme.typography.titleMedium,
             )
         },
+        textScrollEnabled = true,
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 // 预设点击即保存（执行动作，无跳转箭头）；自定义进入下一级弹窗（保留箭头）
-                // 弹窗编排：三个条目在正文入场后依次轻轻升起（只改图层，停稳后与原样一致）
+                presets.forEachIndexed { index, (title, url) ->
+                    AppNavItem(
+                        modifier = Modifier.staggeredEntrance(index + 1, distance = 10.dp, stepMillis = 40L),
+                        title = stringResource(title),
+                        summary = summaryOf(url),
+                        leadingIcon = R.drawable.ic_web_link,
+                        containerColor = DialogItemSurface,
+                        showArrow = false,
+                        indication = null,
+                    ) { onSelectPreset(url) }
+                }
                 AppNavItem(
-                    modifier = Modifier.staggeredEntrance(1, distance = 10.dp, stepMillis = 40L),
-                    title = stringResource(R.string.home_web_preset_kungal),
-                    summary = summaryOf(AppSettingsStore.HOME_WEB_URL_KUNGAL),
-                    leadingIcon = R.drawable.ic_web_link,
-                    containerColor = DialogItemSurface,
-                    showArrow = false,
-                    indication = null,
-                ) { onSelectPreset(AppSettingsStore.HOME_WEB_URL_KUNGAL) }
-                AppNavItem(
-                    modifier = Modifier.staggeredEntrance(2, distance = 10.dp, stepMillis = 40L),
-                    title = stringResource(R.string.home_web_preset_letmoe),
-                    summary = summaryOf(AppSettingsStore.HOME_WEB_URL_LETMOE),
-                    leadingIcon = R.drawable.ic_web_link,
-                    containerColor = DialogItemSurface,
-                    showArrow = false,
-                    indication = null,
-                ) { onSelectPreset(AppSettingsStore.HOME_WEB_URL_LETMOE) }
-                AppNavItem(
-                    modifier = Modifier.staggeredEntrance(3, distance = 10.dp, stepMillis = 40L),
+                    modifier = Modifier.staggeredEntrance(presets.size + 1, distance = 10.dp, stepMillis = 40L),
                     title = stringResource(R.string.settings_home_web_custom),
                     summary = if (isCustom) {
                         "$currentUrl · $currentMark"

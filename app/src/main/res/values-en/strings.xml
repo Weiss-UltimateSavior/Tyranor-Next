@@ -82,6 +82,7 @@
     <string name="settings_home_web_current">Current</string>
     <string name="home_web_preset_kungal">KunGal</string>
     <string name="home_web_preset_letmoe">LetMoe</string>
+    <string name="home_web_preset_takanashi">Takanashi</string>
     <string name="home_web_error">Failed to load the page</string>
     <string name="home_web_open_browser_failed">No app can open this link</string>
     <string name="home_web_download_unsupported">This download cannot be opened in a browser</string>
