@@ -318,6 +318,10 @@ object EngineSettingsResolver {
                 EngineSettingsStore.loadRuffle(app),
                 PerGameSettingsStore.toRuffleOverride(override),
             ),
+            impacto = EffectiveEngineSettings.mergeImpacto(
+                EngineSettingsStore.loadImpacto(app),
+                PerGameSettingsStore.toImpactoOverride(override),
+            ),
             winlator = run {
                 val global = EngineSettingsStore.loadWinlator(app)
                 // 模式推断复用本函数已加载的覆盖 JSON，避免 getWinlatorMode 再走一次阻塞读。
@@ -421,6 +425,8 @@ data class ResolvedEngineSettings(
     val renpy: EngineSettingsStore.RenPy,
     /** Ruffle 外置模块生效配置（三级合并结果，启动时经 settings extra 下发）。 */
     val ruffle: EngineSettingsStore.Ruffle,
+    /** MAGES.（impacto）宿主生效配置（三级合并结果，启动时经 settings extra 下发）。 */
+    val impacto: EngineSettingsStore.Impacto,
     /** Winlator 外置启动下发参数（三级合并结果；跳转 YU-RIS / CatSystem2 / PC 时消费）。 */
     val winlator: EngineSettingsStore.Winlator,
     val systemNnnFullscreen: Boolean = SystemNnnHost.DEFAULT_FULLSCREEN,

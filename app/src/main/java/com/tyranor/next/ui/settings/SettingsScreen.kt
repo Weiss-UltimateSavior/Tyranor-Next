@@ -893,6 +893,10 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         RuffleSettingsScreen()
         return
     }
+    if (kind == EngineSettingsKind.IMPACTO) {
+        ImpactoSettingsScreen()
+        return
+    }
     if (kind == EngineSettingsKind.CMVS) {
         CmvsSettingsScreen()
         return
