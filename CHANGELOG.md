@@ -48,6 +48,7 @@
 
 ### 修复
 
+- 修复 Ren’Py 单游戏保存时异步旧记录回填导致覆盖丢失的问题，同时校正全局与单游戏设置中「禁用模型渲染（GL2）」的开关方向。
 - 修复 Ethornell 升级后《巧克甜恋》启动时因 Graph91:00 未识别而退出，恢复该 ABI 的旧版兼容行为。
 - 更新 Ethornell 运行库至上游 `7cfc2fba`，保留游戏目录存档和公共存储锁补丁；虚拟路径读取改用上游实现。
 - 更新 System4（xsystem4）运行库至上游 `46f7c25`（上一基线 `6a94a0c`）：新增 parts activity 系统、KiwiSoundEngine 名称/淡变 API、Evenicle 导出与 MainEXFile 名称调用等；宿主命令行参数、NEEDED 集合与入库方式不变。

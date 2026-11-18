@@ -356,6 +356,23 @@ object PerGameSettingsStore {
         return override.takeIf { it != RpgMakerOverride() }
     }
 
+    /** 一次写入 Ren'Py 版本和全部开关，保留同一游戏的其他覆盖。 */
+    fun setRenPyOverrides(context: Context, gameId: String, version: String?, override: RenPyOverride) {
+        if (gameId.isBlank()) return
+        val record = load(context, gameId)
+        record.put(F_RENPY_VERSION, version?.trim())
+        record.put(F_RENPY_CHEATS, override.cheats)
+        record.put(F_RENPY_HW_VIDEO, override.hwVideo)
+        record.put(F_RENPY_AUTOSAVE, override.autosave)
+        record.put(F_RENPY_PHONE_SMALL_VARIANT, override.phoneSmallVariant)
+        record.put(F_RENPY_VSYNC, override.vsync)
+        record.put(F_RENPY_LESS_MEMORY, override.lessMemory)
+        record.put(F_RENPY_LESS_UPDATES, override.lessUpdates)
+        record.put(F_RENPY_DONT_USE_GL2, override.dontUseGl2)
+        record.put(F_RENPY_RECOMPILE, override.recompile)
+        persist(context, gameId, record)
+    }
+
     /**
      * Ren'Py 外置模块覆盖快照 → 类型化模型（缺失字段=跟随全局，
      * 供 [EffectiveEngineSettings.mergeRenPy] 使用）。版本键不在此列。

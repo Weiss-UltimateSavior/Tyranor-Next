@@ -8,7 +8,7 @@
 > - `settings` extra 下发 `app.cheats` + 8 个 `renpy_*`（`RenPyRuntimeModule.buildSettingsJson`）；
 > - 全局 `RenPySettingsCard` + 单游戏 9 项覆盖；
 > - `configuration.json` 策略 A：插件会读的配置文件存在时同步受管键（`RenPyRuntimeEnvironment`）；
-> - `dont_use_gl2` 采用 JoiPlay 反选语义；单游戏说明文案校准为「默认跟随全局，可单独覆盖」。
+> - 此计划记录了初始接入。其 GL2 反选方案已由现行规格替代。全局与单游戏界面开启「禁用模型渲染（GL2）」时均写入 `renpy_dont_use_gl2=true`。见 [外置引擎启动规格](../SPEC.md)。
 
 ---
 
