@@ -14,7 +14,7 @@ class ImpactoGameCatalogTest {
     fun profileIdsAreUniqueAndMatchTheHostApkList() {
         val ids = ImpactoGameCatalog.games.map { it.profileId }
         assertEquals(ids.size, ids.toSet().size)
-        // Kept in sync with ImpactoRequest.PROFILES in the host repository (yuukana1/Tyranor-Next-Impacto; the host refuses anything else).
+        // Kept in sync with ImpactoRequest.PROFILES in the host repository (yuukana1/Tyranor-Next-MAGES.; the host refuses anything else).
         assertEquals(
             setOf("chlcc", "cclcc", "cclcc-switch", "mo6tw", "darling", "dash", "rne"),
             ids.toSet(),
