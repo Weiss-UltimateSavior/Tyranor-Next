@@ -106,6 +106,28 @@ class ImpactoExternalEngineModuleTest {
     }
 
     @Test
+    fun gameKeyOfTheWindowsProfilesMatchesAnIndependentDerivation() {
+        // sha256(profile + NUL + folder)[:12] as hex, computed outside Kotlin (hashlib). The host recomputes it from the
+        // same two inputs and refuses a mismatch, so a different key per language variant is also what isolates saves.
+        val folder = "/storage/emulated/0/Games/memo06-pc"
+        assertEquals("cebb69567b666d5dc1b5ba49", ImpactoExternalEngineModule.gameKeyFor(folder, "mo6tw-pc-zhs"))
+        assertEquals("0bcdcec1737da1f1a978e1ff", ImpactoExternalEngineModule.gameKeyFor(folder, "mo6tw-pc"))
+    }
+
+    @Test
+    fun onlyTheWindowsProfilesNeedAHostThatKnowsThem() {
+        // Host 0.1.2 (versionCode 3) understands the request protocol but refuses the mo6tw-pc* profiles.
+        // 4 = 0.2.0, the first release carrying the patch series that defines them.
+        listOf("mo6tw-pc", "mo6tw-pc-zhs", "mo6tw-pc-zht").forEach {
+            assertEquals(it, 4L, ImpactoExternalEngineModule.minimumVersionCodeFor(it))
+        }
+        // Everything else keeps the module-wide minimum, including a target the catalog does not know.
+        listOf("mo6tw", "chlcc", "cclcc", "darling", "not-a-profile", "DIR", "").forEach {
+            assertEquals(it, 3L, ImpactoExternalEngineModule.minimumVersionCodeFor(it))
+        }
+    }
+
+    @Test
     fun gameKeyIsStableAndSeparatesGamesAndProfiles() {
         val folder = "/storage/emulated/0/Games/mo6tw"
         val key = ImpactoExternalEngineModule.gameKeyFor(folder, "mo6tw")

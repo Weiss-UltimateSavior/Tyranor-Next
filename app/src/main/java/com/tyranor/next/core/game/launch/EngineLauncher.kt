@@ -458,7 +458,7 @@ object EngineLauncher {
             ) ?: defaultModule
             // 先确认模块已安装，再走目录/权限门禁：否则未安装时会把用户先送去「所有文件访问」，
             // 真正的缺失原因（应安装模块）反而看不到。
-            ExternalEngineLauncher.checkInstallation(context, module)?.let {
+            ExternalEngineLauncher.checkInstallation(context, module, game.launchTarget)?.let {
                 return LaunchResult.Failure.ExternalModuleFailed(it)
             }
             if (module.requiresGameDirectoryPath && path == null) {

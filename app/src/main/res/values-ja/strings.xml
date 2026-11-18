@@ -943,7 +943,7 @@
     <string name="engine_settings_impacto_log_info">情報</string>
     <string name="engine_settings_impacto_log_debug">デバッグ</string>
     <string name="engine_settings_impacto_log_trace">トレース</string>
-    <string name="engine_settings_impacto_note">これらの設定はゲームを起動するたびにエンジン設定へ書き込まれ、エンジン内蔵の設定画面の同名項目を上書きします。解像度・表示モード・レンダラー・オーディオバックエンドは Android とホストで固定のため用意していません。ホスト 0.1.2 以降が必要です。</string>
+    <string name="engine_settings_impacto_note">これらの設定はゲームを起動するたびにエンジン設定へ書き込まれ、エンジン内蔵の設定画面の同名項目を上書きします。解像度・表示モード・レンダラー・オーディオバックエンドは Android とホストで固定のため用意していません。ホスト 0.1.2 以降が必要です。Memories Off 6 ~T-Wave~ の Windows／Steam 版はホスト 0.2.0 以降が必要です。</string>
     <string name="engine_settings_impacto_module_description">MAGES. エンジンは別の Impacto ホスト APK（MAGES. エンジンのオープンソース再実装 impacto）で動作します。以下の設定は既定で全体設定に従います。セーブデータはそのホストの非公開データフォルダーにあり、このアプリでは管理できません。</string>
 
     <string name="plugin_unknown_engine">不明なエンジンプラグイン：%1$s</string>

@@ -36,6 +36,17 @@ object ImpactoExternalEngineModule : ExternalEngineModule {
 
     /** 低于本版本的宿主不认识当前请求协议，按「已过期」处理并引导更新。 */
     override val minimumVersionCode: Long = ImpactoHostContract.VERSION_CODE.toLong()
+
+    /**
+     * 个别 profile 要求更新的宿主：`mo6tw-pc*` 由宿主补丁系列提供，宿主 0.2.0 之前的版本会直接拒绝它们。
+     * 只对这些 profile 提示更新，不抬高模块级的 [minimumVersionCode]，免得只玩其余 profile 的用户被迫升级宿主。
+     */
+    override fun minimumVersionCodeFor(launchTarget: String): Long =
+        maxOf(
+            minimumVersionCode,
+            ImpactoGameCatalog.byProfileId(launchTarget)?.minHostVersionCode?.toLong() ?: 0L,
+        )
+
     override val requiresGameDirectoryPath: Boolean = true
 
     override fun prepareForLaunch(
@@ -103,6 +114,8 @@ object ImpactoHostContract {
     /**
      * 本版 App 需要的最低宿主 versionCode；须不高于宿主仓库最新发布的版本。只在请求协议不兼容时才需要抬高。
      * 3 = 宿主 0.1.2，起认识 [EXTRA_SETTINGS]；更老的宿主会忽略该 extra，设置不会生效，所以按“需要更新”处理。
+     * 只有部分 profile 才需要的新版本（`mo6tw-pc*` 要 4 = 宿主 0.2.0）由 [ImpactoGameCatalog.Game.minHostVersionCode]
+     * 单独约束，不抬高这里的全局值。
      */
     const val VERSION_CODE = 3
 

@@ -357,7 +357,7 @@ object EngineScanner {
                     title = scanTitle(context, detected, dir.name),
                     uri = dir.uri.toString(),
                     engine = detected.engine,
-                    launchTarget = detected.launchTarget,
+                    launchTarget = scanLaunchTarget(context, detected, dir.uri.toString()),
                     externalModuleAlias = detected.externalModuleAlias,
                     runtimeModulePackage = detected.runtimeModulePackage,
                     detectedRenpyVersion = detectRenpyVersionIfNeeded(detected, children, session),
@@ -435,7 +435,7 @@ object EngineScanner {
                     title = scanTitle(context, detected, dir.name),
                     uri = dir.uri.toString(),
                     engine = detected.engine,
-                    launchTarget = detected.launchTarget,
+                    launchTarget = scanLaunchTarget(context, detected, dir.uri.toString()),
                     externalModuleAlias = detected.externalModuleAlias,
                     runtimeModulePackage = detected.runtimeModulePackage,
                     detectedRenpyVersion = detectRenpyVersionIfNeeded(detected, children, session),
@@ -656,6 +656,31 @@ object EngineScanner {
     private fun romTitle(name: String): String =
         name.substringBeforeLast('.').takeIf { it.isNotBlank() } ?: name
 
+    /**
+     * 扫描得到的启动目标。同一目录有多个可启动 profile 时（MAGES. Windows／Steam 版同时带日文、简体、繁体三份文本）
+     * 交给 [selectLaunchTarget] 选；其余引擎原样返回识别结果。[gameUri] 是该游戏记录的 uri，用来找库里已有的记录。
+     */
+    private fun scanLaunchTarget(context: Context, detected: Detection, gameUri: String): String {
+        if (detected.launchTargetChoices.size < 2) return detected.launchTarget
+        val saved = GameLibraryFacade.loadGames(context).firstOrNull { it.uri == gameUri }?.launchTarget
+        return selectLaunchTarget(detected, saved, AppLocaleController.engineUiLanguageTag(context))
+    }
+
+    /**
+     * 同一目录有多个候选 profile 时选哪一个（纯函数，供 JVM 单测）：
+     * 1. 库里已有的选择仍在候选里就沿用——宿主按 `profile + 目录` 隔离存档，重扫时不能因为界面语言变了就换 profile；
+     *    已存的 profile 对应的文本档已不在盘上（不再是候选）时不沿用，否则启动会失败；
+     * 2. 否则按界面语言标签选文本语言最接近的（[ImpactoGameCatalog.preferredProfileId]），没有对应语言取默认候选。
+     *
+     * 选择记在游戏库条目里：条目被移除后（含目录暂时不可达被重扫丢弃）重新入库，会按当时的界面语言重新选择。
+     */
+    internal fun selectLaunchTarget(detected: Detection, savedLaunchTarget: String?, uiLanguageTag: String?): String {
+        val choices = detected.launchTargetChoices
+        if (choices.size < 2) return detected.launchTarget
+        savedLaunchTarget?.takeIf { it in choices }?.let { return it }
+        return ImpactoGameCatalog.preferredProfileId(choices, uiLanguageTag) ?: detected.launchTarget
+    }
+
     /** 扫描标题：识别期标题 > 目录名；Ruffle 包装目录在目录名缺失时回退 SWF 文件主名。 */
     private fun scanTitle(context: Context, detected: Detection, dirName: String): String {
         val ruffleFallback = if (detected.engine == EngineType.RUFFLE) {
@@ -838,7 +863,7 @@ object EngineScanner {
                     title = scanTitle(context, detected, dir.name),
                     uri = dir.absolutePath,
                     engine = detected.engine,
-                    launchTarget = detected.launchTarget,
+                    launchTarget = scanLaunchTarget(context, detected, dir.absolutePath),
                     externalModuleAlias = detected.externalModuleAlias,
                     runtimeModulePackage = detected.runtimeModulePackage,
                     detectedRenpyVersion = detectRenpyVersionIfNeeded(detected, dir),
@@ -878,7 +903,7 @@ object EngineScanner {
                     title = scanTitle(context, detected, dir.name),
                     uri = dir.absolutePath,
                     engine = detected.engine,
-                    launchTarget = detected.launchTarget,
+                    launchTarget = scanLaunchTarget(context, detected, dir.absolutePath),
                     externalModuleAlias = detected.externalModuleAlias,
                     runtimeModulePackage = detected.runtimeModulePackage,
                     detectedRenpyVersion = detectRenpyVersionIfNeeded(detected, dir),
@@ -922,6 +947,11 @@ object EngineScanner {
         val titleHint: String? = null,
         /** 命中的第三方运行时模块包名；仅 [EngineType.RUNTIME_MODULE] 条目非空。 */
         val runtimeModulePackage: String? = null,
+        /**
+         * 同一目录可用的多个启动 profile（MAGES. PC 版的语言变体，目录表顺序，含 [launchTarget]）；其余引擎为空。
+         * 识别只回答「磁盘上有什么」，选哪个属于偏好，由持有 Context 的调用方经 [scanLaunchTarget] 决定。
+         */
+        val launchTargetChoices: List<String> = emptyList(),
     )
 
     /**
@@ -1133,8 +1163,10 @@ object EngineScanner {
         var cmvsStartCount = 0
         var hasCmvsStartHeader = false
         var hasCmvsExe = false
-        // Impacto 按精确大小写匹配根目录条目名（上游 Android 路径区分大小写），故另存原名
+        // Impacto 按精确大小写匹配根目录条目名（上游 Android 路径区分大小写），故另存原名；
+        // Windows／Steam 版把档案放在根下的 `data/` 里，同样另存该目录里的文件原名
         val impactoRootNames = HashSet<String>()
+        val impactoDataNames = HashSet<String>()
 
         fun collect(entry: T, rel: String) {
             if (Thread.currentThread().isInterrupted) throw java.util.concurrent.CancellationException()
@@ -1144,6 +1176,14 @@ object EngineScanner {
             val childRel = if (rel.isEmpty()) lower else "$rel/$lower"
             if (isDirectory(entry)) {
                 hasChildDirectory = true
+                if (rel.isEmpty() && nameOf(entry) == ImpactoGameCatalog.DATA_DIR) {
+                    childrenOf(entry).forEach { child ->
+                        val childName = nameOf(child)
+                        if (childName in ImpactoGameCatalog.dataEntryNames && !isDirectory(child)) {
+                            impactoDataNames.add(childName)
+                        }
+                    }
+                }
                 if (lower == "tyrano") hasTyranoDir = true
                 if (lower == "renpy") hasRenpyDir = true
                 if (lower == "game") hasGameDir = true
@@ -1527,14 +1567,17 @@ object EngineScanner {
         if (hasCmvsExe) {
             return Detection(EngineType.CMVS, 82, LAUNCH_TARGET_GAME_DIR)
         }
-        // Impacto：排在所有既有引擎之后；launchTarget 保存上游 profile id（`-g` 参数）
-        ImpactoGameCatalog.match(impactoRootNames)?.let {
+        // Impacto：排在所有既有引擎之后；launchTarget 保存 profile id（`-g` 参数）。
+        // 同一份数据有多个语言变体（Windows／Steam 版）时，这里取默认变体并带上全部候选，由 scanLaunchTarget 按偏好选。
+        val impacto = ImpactoGameCatalog.candidates(impactoRootNames, impactoDataNames)
+        ImpactoGameCatalog.pick(impacto)?.let {
             return Detection(
                 EngineType.IMPACTO,
                 94,
                 it.profileId,
                 IMPACTO_MODULE_ALIAS,
                 titleHint = it.title,
+                launchTargetChoices = if (impacto.size > 1) impacto.map { game -> game.profileId } else emptyList(),
             )
         }
         return UNKNOWN_DETECTION

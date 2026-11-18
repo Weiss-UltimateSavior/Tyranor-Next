@@ -94,7 +94,7 @@
 | RPG Maker RGSS | XP/VX/VX Ace 资源或 mkxp-z 模块选择 | 外置 RPGM APK 模块 |
 | Ren'Py | `.rpa`、`.rpy/.rpyc` 等组合 | 外置 Ren'Py APK；自动或指定 8.5.0 / 8.5.3 / 7.7.1 |
 | Ruffle / Flash | 顶层 `.swf`；根 `index.html/index.htm` + 唯一 SWF 的叶子目录 | 外置 Ruffle APK；一 SWF 一条记录 |
-| MAGES.（impacto） | 按精确大小写的根目录条目命中上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`）；恰好一个全命中才识别 | 外置 Impacto 宿主 APK（宿主仓库固定上游 impacto 并应用其补丁系列；主 App 只识别上游 profile 的布局，其中 `mo6tw` 是 PS3 版数据、`cclcc` 是 PS4 版、`cclcc-switch` 是 Switch 版，Windows／Steam 版数据暂不识别） |
+| MAGES.（impacto） | 按精确大小写的条目命中 profile，恰好一个（或同一语言变体族）全命中才识别：上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`；其中 `mo6tw` 是 PS3 版数据、`cclcc` 是 PS4 版、`cclcc-switch` 是 Switch 版）看根目录条目名；Windows／Steam 版《秋之回忆6》（`mo6tw-pc*`）为根目录 `game.exe` + `data/` 内的 `script.cpk`、`mes00.cpk` | 外置 Impacto 宿主 APK（宿主仓库固定上游 impacto 并应用其补丁系列；`mo6tw-pc*` 需宿主 0.2.0 及以上） |
 | 第三方运行时模块 | 已安装的 `com.tyranor.runtime.*` APK + 模块 `res/raw` 扫描描述 | 显式组件交棒游戏文件夹，模块自行运行 |
 | YU-RIS / CatSystem2 | YPF/DLL/配置或 INT/CST/HG3 等组合 | 外置 Winlator |
 | PC / 安卓游戏 | 手动添加目录+exe / 应用包名 | 外置 Winlator / 直接启动应用 |
@@ -122,13 +122,20 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 
 MAGES. 引擎（经开源重新实现项目 impacto）由外置 Impacto 宿主 APK 承载，宿主在独立仓库 yuukana1/Tyranor-Next-MAGES 构建、签名并发布。构建输入是固定的上游 CommitteeOfZero/impacto 提交加上该仓库的补丁系列（`engine/impacto/patches/`，`source-lock.json` 记录每个补丁的 SHA-256），**不是未改动的上游**：补丁里有通用修复，也有只服务 Windows／Steam 版《秋之回忆6》的 `mo6tw-pc*` profile；其他游戏没有在设备上逐一回归。当前边界如下：
 
-- 扫描：按**精确大小写**的根目录条目名匹配上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`），恰好一个 profile 全部命中才识别；`darling` 与全小写 `mo6tw` 的要求集合相同，一律不识别。`launchTarget` 为 profile id，别名 `internal.impacto`。Windows／Steam 版数据（小写 `.cpk`、无 `SCRIPT.cls`）不识别为 Impacto。
-- 获取：引擎页点击 MAGES. 条目跳转到 `https://github.com/yuukana1/Tyranor-Next-MAGES/releases/latest/download/Tyranor-Next-MAGES.apk`（资产名固定，随宿主新发布自动指向最新版）；未安装或版本低于 `ImpactoHostContract.VERSION_CODE` 时与其他外置模块一样提示并引导下载。
+- 扫描：按**精确大小写**的条目名匹配 profile，恰好一个 profile（或同一语言变体族）全部命中才识别；`launchTarget` 为 profile id，别名 `internal.impacto`。
+  - 上游布局（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`）：看游戏目录根下的条目名；`darling` 与全小写 `mo6tw` 的要求集合相同，一律不识别。
+  - Windows／Steam 版《秋之回忆6》（Steam App 2184580；`mo6tw-pc`、`mo6tw-pc-zhs`、`mo6tw-pc-zht`，由宿主补丁系列提供）：游戏目录根有 `game.exe` 和 `data/` 目录，`data/` 里有 `script.cpk`、`mes00.cpk`，判据与宿主 `engine/impacto/profiles.json` 的 `detect` 一致。`data/` 里其余档案（`system.cpk`、`bg.cpk`、`movie.cpk` 等）不作为特征，缺失时启动会失败（具体表现没有在设备上核对）；按宿主 profile 的约定，`mes00.cpk`、`mes01.cpk`、`mes02.cpk` 依次是日文、繁体、简体文本，Steam 版里三份同时存在，所以一个目录对应至多三个候选 profile（设备上只用过简体）。
+  - 语言变体：扫描按应用界面语言选一个候选：简体中文界面 → `mo6tw-pc-zhs`，日文及其他界面语言 → `mo6tw-pc`，「跟随系统」且系统语言是繁体中文（`zh-TW`、`zh-HK`、`zh-MO` 或 `Hant`）→ `mo6tw-pc-zht`（应用没有繁体中文界面，只有这一条路）；显式写了 `Hans` / `Hant` 的标签以脚本为准。缺哪份文本档就不提供对应变体，想要的语言不在盘上时回落到日文。选择记在游戏库条目里：全量重扫时，只要已存的 profile 仍在候选里就沿用，因为宿主按「profile + 目录」隔离存档，换 profile 等于换了一份存档；已存的 profile 对应的文本档已不在盘上时按界面语言重新选。条目被移除（包括目录暂时不可达而被重扫丢弃）后重新入库，也会按当时的界面语言重新选。目前没有在界面里切换语言变体的入口。
+  - 不识别：大小写不符（如 `Data/`、`SCRIPT.CPK`）、档案直接放在游戏根而没有 `data/`、没有 `game.exe`、缺 `script.cpk` 或 `mes00.cpk`，以及上游布局与 Windows 布局同时出现（布局有歧义，不猜）。识别只看目录布局，不核对游戏身份。
+- 获取：引擎页点击 MAGES. 条目跳转到 `https://github.com/yuukana1/Tyranor-Next-MAGES/releases/latest/download/Tyranor-Next-MAGES.apk`（资产名固定，随宿主新发布自动指向最新版）；未安装或版本低于 `ImpactoHostContract.VERSION_CODE` 时与其他外置模块一样提示并引导下载。`mo6tw-pc*` 另要求宿主 0.2.0（versionCode 4）及以上：更老的宿主会拒绝这些 profile，所以只对这些游戏提示更新（`ExternalEngineModule.minimumVersionCodeFor`），其余 profile 仍只要求 0.1.2。该检查在「所有文件访问」授权之前执行。
 - 启动：发 `com.tyranor.next.impacto.action.RUN`，携带游戏目录、profile、`gameKey` 与标题，需要「所有文件访问」；宿主没有桌面入口。
 - 存档在宿主私有目录内按游戏隔离，主 App 不提供文件存档管理。
 - 设置：引擎页 MAGES. 条目的「全局引擎设置」与单游戏设置，格式与 Ruffle 一致（全局值 + 单游戏覆盖，覆盖为 null 时跟随全局）。可调项只收录上游 `userconfig.toml` 里在 Android 上有意义的：交换确认 / 取消键、垂直同步、影片播放（`FFmpeg` / `None`）、影片字幕（全部 / 仅翻译 / 仅卡拉 OK；引擎的字幕配置是标志枚举，没有可读回的“全部关闭”）、回看记录滚到底时自动关闭、妄想触发的鼠标 / 触摸支持（仅 `chlcc`、`cclcc`）、日志等级。分辨率与显示模式（Android 上窗口固定全屏）、渲染器与音频后端（只有 OpenGL / OpenAL）、补丁（宿主私有目录里无法放入补丁档案）不提供。
 - 设置下发：启动请求带 `com.tyranor.next.impacto.extra.SETTINGS`（扁平 JSON），宿主 0.1.2（versionCode 3）起在引擎启动前把它们合并进该游戏的 `userconfig.toml`（只改受管键，其余保留）；因此这些值每次启动都会覆盖引擎内置设置页里的同名项。更老的宿主不认识该 extra，所以 `ImpactoHostContract.VERSION_CODE` 为 3，更老的宿主按“需要更新”处理。设置页的保存与启动请求都不依赖宿主是否已安装。
-- 验证状态：宿主侧（宿主仓库 PR #1 的记录，补丁系列的 dev 构建，一台荣耀 PPG-AN00 / Android 17）：Windows／Steam 版数据用 `mo6tw-pc-zhs` 进到标题画面、新游戏第一章对白（背景、名牌、简体中文正文、语音）和存读档。繁体与日文变体、非对话菜单（坐标为近似）、附加内容、输入与性能、其他游戏均未验证；Windows 构建与非 ASCII 存档路径未验证。这些都是宿主侧、经外部 Intent 启动的记录；主 App 暂不识别这种目录布局，也没有走过「主 App 启动 → 宿主 0.2.0 进入游戏」。上游 profile 对应的游戏没有真实数据进到画面。这不是兼容性验收。
+- 验证状态：
+  - 宿主侧（宿主仓库 PR #1 的记录，补丁系列的 dev 构建，一台荣耀 PPG-AN00 / Android 17）：Windows／Steam 版数据用 `mo6tw-pc-zhs` 进到标题画面、新游戏第一章对白（背景、名牌、简体中文正文、语音）和存读档。繁体与日文变体、非对话菜单（坐标为近似）、附加内容、输入与性能、其他游戏均未验证；Windows 构建与非 ASCII 存档路径未验证。
+  - 主 App 的识别（荣耀 PPG-AN00 / Android 17，真实 Steam 数据，详见 `docs/impacto-upstream-only.md` 的 2026-11-18 记录）：添加含 `memo06-pc/` 的目录后识别为「Memories Off 6 ~T-Wave~ (PC)」，简体界面得到 `mo6tw-pc-zhs`；切换界面语言后的全量重扫沿用已入库的 profile，移除后重扫按当时的界面语言重新选（日文界面得到 `mo6tw-pc`，简体界面得到 `mo6tw-pc-zhs`，两个方向都观察过）；宿主 0.1.2 上启动得到「模块版本过旧」提示，且测试包当时没有「所有文件访问」授权却没有被先送去授权页，说明版本检查先于授权门禁。**没有**在真机上完成「主 App 启动 → 宿主 0.2.0 进入游戏」整条链路。
+  - 识别规则、变体选择与沿用（`EngineScanner.selectLaunchTarget`）、界面语言到文本语言的映射、版本门槛的判定由 JVM 单测覆盖；「版本检查先于授权门禁」的先后只有上面的真机记录，没有单测；扫描入口把界面语言与库记录交给 `selectLaunchTarget` 的那一小段需要 Context，同样只有真机记录。这不是游戏兼容性验收；上游 profile 对应的游戏没有真实数据进到画面。
 
 ### 第三方 APK 运行时模块
 
@@ -323,6 +330,7 @@ App 存档管理与 native 共用 `<游戏根>/savedata` user-root。宿主和 n
 | Winlator 运行模式 | 跟随全局/跟随容器/自定义三分支、`null / "" / 值` 迁移推断、只覆盖容器名时的 ID 清除、模式键分区往返 |
 | Winlator 图形加速 | GL/GDI 第一配置槽映射、旧 WineD3D 保留容器渲染器、Box64 合并、全局/单游戏继承与空值、备份往返、save 开关及 GDI 游戏实机验证 |
 | Ruffle / SWF | 一 SWF 一条与包装目录边界（根 index、唯一 SWF、无子目录、既有引擎信号优先）、文件 URI→父目录、`game`/`settings` 契约与类型包装、模块未安装/入口缺失、全局与单游戏覆盖、`configuration.json` 只同步不创建、无存档入口与横屏限制；设备/插件验证待执行 |
+| MAGES.（impacto） | 上游布局按精确大小写的根目录条目识别、`darling` 与全小写 `mo6tw` 不识别；Windows／Steam 版 `game.exe` + `data/` 识别，大小写不符、缺 `game.exe` / `script.cpk` / `mes00.cpk`、档案平铺在根目录、与上游布局同时出现均不识别；语言变体按界面语言（含「跟随系统」的繁体）选择、重扫只在候选仍存在时沿用、候选缺失时回落；`mo6tw-pc*` 的宿主版本提示出现在「所有文件访问」授权之前，其余 profile 不受影响；宿主缺失 / 过期引导；`SETTINGS` 下发；不能以识别通过代替宿主里的游戏运行验收 |
 | 第三方运行时模块 | 原发现/扫描/绑定行为保持；scan/settings/saves 独立容错、四类单游戏配置隔离与传参、游戏内存档目录事务、WebDAV关闭时退出保护、旧会话确认、模块命名空间与目录变化保护；无全局设置与按键映射入口 |
 | 宿主/JNI | 暂停恢复、Surface 重挂/旧世代、正常退出 ACK 后重入、owner 线程与资源释放 |
 | RPG Maker MV/MZ 网页宿主（v1/v2，v0 走 Tyrano 宿主、不受本行约束） | 兼容层以 `/__tyranor__/nwjs_polyfill*.js` 外链注入、顺序 base→v1→v2 且先于 `</head>` 之后的脚本；base 缺失时放弃整组并记错误日志（不拼半套）；keep-alive 下 ≥6 条并发连接不在队列里等到空闲超时；缓存按**目录优先**判定——`data/`、`save/` 一律 `no-cache`（含其中的图片，插件会改写截图/头像），其余仅纯素材扩展名（图片/音频/字体/视频）`max-age=3600` + `ETag`/304，脚本与 HTML/CSS/JSON/无扩展名一律 `no-cache`；磁盘可改写路径不发 ETag（避免同 mtime 同长度改写被 304 钉死），内存内容与 ≤256 KiB 的 ASAR 条目用内容哈希 ETag（无 mtime 粒度问题），更大的 ASAR 条目走流式、不带 ETag；0 字节文件发 `Content-Length: 0`；HEAD 与 Range(206) 之后同一连接仍可用；宽松素材名匹配与 fs 桥共用同一索引与同一上限（单目录 >4096 条目时只保留精确/大小写不敏感，索引项 30s 年龄上限兜外部写入），桥写入会同时失效两侧缓存；`AppData/Local Storage` 的 `setItem`/`removeItem`/`clear` 在返回前通过 `commitStorageMutation` 同步持久接收，接收失败抛 `QuotaExceededError` 且不改 JS 镜像；`.dat` 保留 200ms 合并物化（每批 ≤32 键，非最终 flush 预算 800ms），物化与匹配条目的确认在同一目录锁内完成，缺失或内容不匹配的旧定时器空操作；恢复队列 `.tyranor-pending.json` 与崩溃遗留 `.tyranor-pending.claim` 按会话版本合并，真实修改更新版本，旧 stage 重试保留首次指纹，旧进程期号按最旧处理；新接收条目持有权威意图，legacy 条目仍按存在/大小/mtime/CRC32 识别外部修改；`clear` 在原生目录锁内登记磁盘、队列及 claim 中的全部适用键（含哈希名）的删除意图；目录锁贯穿接收、重放、物化与确认，两个 bridge 不会争用同一 claim；页面兼容层在游戏脚本前重放并读取 JSON 报告：单条无法物化只把该键列入失败名单（删除意图的键读回 null、写入意图的键报 `InvalidStateError` 可重试），队列本身不可读或写不回去才算整体失败；不可解析的队列改名 `.corrupt.<时间戳>` 留证后按空队列继续，避免一次损坏让 Storage 永久不可用；队列限制 4096 项、单值 5Mi 字符（UTF-8 最坏 15MiB，仍在 16MiB 写入上限内）、总值 12Mi 字符及序列化 36MiB，任一超限整份拒绝；`pagehide`/`beforeunload`/NW 重载/宿主最终钩子只报告交接状态，不再负责入队或大批 I/O，因此无事件导航和 Activity 重建不依赖旧文档定时器；2500ms 看门狗与 3000ms 进程退出延迟只管资源收尾，不再是数据提交预算；接收后立即尝试物化，正常路径队列保持为空（每次修改 = 一次 journal 写 + 一次 `.dat` 写），设备耗时与游戏兼容性尚待验收；写入/删除/目录清除账本期号单调，旧会话的待写/待删操作让位于新会话；`textureGC` 回收策略按会话归属：MV v1 用 PIXI 默认值，MV v2 由游戏自带 core 决定（注入脚本把 `Graphics._createRenderer` 交还原实现）；MZ 的 hook 不含该补丁。Tyrano 壳的传输层本轮未同步（仍 `Connection: close` + 一律 `no-cache`）；版本缺失时的 v0 兜底会话仍走本宿主与同一传输层（只是不注入兼容层、`fuzzyNames=false`），与 Tyrano 宿主的 v0 无关 |

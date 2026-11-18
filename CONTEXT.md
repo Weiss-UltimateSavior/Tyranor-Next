@@ -46,6 +46,10 @@ _Avoid_: 插件、引擎 DLC、第三方 APK 运行时模块（另一体系）
 MAGES.（前 5pb.）的视觉小说引擎（SC3 脚本，如 Memories Off 6、Chaos;Child、Robotics;Notes 等）；Tyranor 通过外置 Impacto 宿主 APK 承载其开源重新实现 impacto 来运行这类游戏。「impacto」是项目 / 宿主名，不是引擎名；`EngineType.IMPACTO` 等代码标识沿用项目名。
 _Avoid_: 把 Impacto 当作引擎名（界面、文档中的引擎名一律写 MAGES.）
 
+**MAGES. 语言变体（Language Variant）**:
+同一份 Windows／Steam 版《秋之回忆6》数据按文本语言（日文、简体、繁体）对应的三个启动 profile 之一，三者构成一个变体族。宿主按「profile + 目录」隔离存档，所以换变体等于换一份存档。
+_Avoid_: 语言包、语言补丁
+
 **第三方 APK 运行时模块（Third-party APK Runtime Module）**:
 用户自行安装、以 `com.tyranor.runtime.` 包名前缀并声明 `com.tyranor.runtime.action.LAUNCH` 的独立 APK，接收游戏文件夹路径自行运行游戏。主 App 负责发现、启用、扫描与交棒，并按模块可选声明提供单游戏配置及游戏目录内的统一存档管理。
 _Avoid_: 插件、外置引擎（指 JoiPlay 时）、外置 APK 引擎模块（指 JoiPlay 注册表体系时）
