@@ -33,6 +33,9 @@ object GameOverridesRepository {
     /** 每游戏一行；value=null 表示已加载确认无覆盖，避免重复阻塞读。 */
     private val rowCache = HashMap<String, GameOverrideEntity?>()
 
+    /** 每个游戏最近一次待落库的普通覆盖快照。 */
+    private val pendingRecords = HashMap<String, GameOverrideEntity>()
+
     /** 缓存代数：失效时自增；读取期间的旧查询结果回填前必须核对代数，防止过期值写回。 */
     private var cacheGeneration = 0L
 
@@ -96,6 +99,7 @@ object GameOverridesRepository {
         synchronized(cacheLock) {
             cacheGeneration++
             rowCache.clear()
+            pendingRecords.clear()
         }
         if (imported > 0 || orphans.isNotEmpty()) {
             Log.i(TAG, "Game overrides synced from prefs: imported=$imported pruned=${orphans.size}")
@@ -163,6 +167,7 @@ object GameOverridesRepository {
         synchronized(cacheLock) {
             cacheGeneration++
             rowCache[gameId] = row
+            pendingRecords[gameId] = row
         }
         GameLibraryRepository.post(context) {
             val dao = GameLibraryDatabase.get(it).gameLibraryDao()
@@ -172,7 +177,11 @@ object GameOverridesRepository {
             val mergedRow = GameOverridePartitions.split(gameId, merged, System.currentTimeMillis())
             dao.upsertOverrideRows(listOf(mergedRow))
             synchronized(cacheLock) {
-                rowCache[gameId] = mergedRow
+                // 旧写入不能盖过新快照或清除操作。
+                if (pendingRecords[gameId] === row) {
+                    pendingRecords.remove(gameId)
+                    rowCache[gameId] = mergedRow
+                }
             }
         }
     }
@@ -196,6 +205,7 @@ object GameOverridesRepository {
         synchronized(cacheLock) {
             cacheGeneration++
             rowCache.clear()
+            pendingRecords.clear()
             syncDone = false
         }
     }
@@ -203,6 +213,7 @@ object GameOverridesRepository {
     internal fun clearRow(context: Context, gameId: String) {
         synchronized(cacheLock) {
             cacheGeneration++
+            pendingRecords.remove(gameId)
             // 保留 null tombstone 直到 DB 删除完成，防止并发 loadRowCached 在删除提交前
             // 读回旧行并以新代数重新写入缓存；失败时由 post 的 onPersistFailure 触发
             // invalidateRowCache 清空 tombstone 并重置同步，保留一致性

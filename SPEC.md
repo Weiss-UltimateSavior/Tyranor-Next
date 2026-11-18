@@ -106,6 +106,8 @@ JoiPlay 外置模块与模拟器必须先安装；主 App 显示安装状态及�
 
 Ren’Py 8.5.0 与 8.5.3 分别保留版本选项与下载入口，不再将旧 `8.5` 设置自动升级；旧值对应 8.5.0，显式 `8.5.3` 保持不变。自动模式在探测到 8.5.3 及以上时选择 8.5.3，其他 8.x 和未知版本回退 8.5.0，7.x 选择 7.7.1。两版使用相同 APK 包名，设备上一次只能安装其中一版：8.5.0 接受 APK versionCode 10100–10199，8.5.3 接受至少 10200；安装态与启动均检查所选版本，版本不匹配时提供对应下载入口，切回旧版需先卸载新版。8.5.0 引导至 [旧版 APK](https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RenPy-Plugin-8.5.apk)，不修改或重新打包外置 APK；配置载荷、游戏 ID 和存档路径保持原协议。接入证据和设备验收边界见 [8.5.3 分析记录](docs/renpy-8.5.3-module-analysis.md)。
 
+Ren’Py 单游戏引擎设置一次保存版本及全部开关。从单游戏设置立即返回并启动时，解析器应读取最新保存值。显式开启、关闭或指定版本优先于全局值，选择「跟随全局」时清除对应覆盖。全局和单游戏设置中开启「禁用模型渲染（GL2）」对应 `renpy_dont_use_gl2=true`。
+
 外置模拟器跳转使用显式组件启动目标应用：YU-RIS / CatSystem2 / PC 通过 Winlator 的 `dir_path` 与 `exe_path` 传递游戏目录和主程序；PSP / Nintendo Switch 则传递 ROM URI 及读取授权。具体协议见 [外置模拟器接入说明](docs/外置主机模拟器跳转接入方案.md)。
 
 Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动边界如下：
