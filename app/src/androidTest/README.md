@@ -8,6 +8,11 @@ WebDAV 存档同步、恢复与 Compose UI 的独立验收入口见 [WebDAV 设�
 
 ## 界面动效设备验收
 
+`GameSheetShortWindowDeviceTest` 在真实抽屉窗口内限制内容为 100dp，覆盖普通/增强与 1.0/1.5 字体比例，滚动到底后验证启动文字不溢出并以真实触摸触发合成回调；常规高度另外验证启动按钮不随列表滚动。测试不会启动游戏。可与 `AppBottomSheetDeviceTest` 一起运行，复核下拉菜单及抽屉关闭守卫。
+
+2026-11-18 验证：隔离包 `com.tyranor.next.sheetheighttest`，MAA_AN10 / Android 16，密度 530dpi。常规手机视口的 6 项新用例与 4 项原抽屉用例通过；以 `wm size` 临时模拟 1224×500、1224×600、1224×900，各运行 4 项短窗用例，以及 3072×2048、2048×3072 的平板横竖视口，各运行 6 项新用例，合计 34 次执行通过。截图已人工核对，测试后恢复原始 1224×2700 视口。平板结果来自同一手机上的大窗口模拟，不代表另一台平板的实测；本轮为默认浅色外观，未额外覆盖深色/玻璃外观或系统动画关闭。截图与各轮日志保存在本机 `/tmp/tyranor-game-sheet-evidence/`，未纳入仓库。
+
+
 动效测试通过 `MotionDeviceAcceptance` 同时校验显式 opt-in 与本轮期望的隔离 application ID。包名由 `motion_target_package` 参数指定，可沿用本页的 `com.tyranor.next.ethornelltest`，不再固定为某个本地私有包名。缺少参数、未授权或实际 target 与参数不一致时，测试会明确失败并说明原因，不能把跳过当成验收通过。正式包 `com.tyranor.next` 与 instrumentation 的 `.test` 包不接受为 target。
 
 以下命令示例只准备隔离 debug 目标；执行前按实际设备指定 `<serial>`，先核对两个 APK 的 application ID，再分别安装。不要以正式包构建或安装这些验收 APK。

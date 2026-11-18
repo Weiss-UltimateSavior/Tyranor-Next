@@ -1135,199 +1135,187 @@ internal fun GameActionsSheet(
         onDismissRequest = ::dismissSheet,
         controller = sheetMotion,
     ) {
-        Column(Modifier.fillMaxWidth().weight(1f, fill = false)) {
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
-                contentPadding = PaddingValues(start = 16.dp, top = 6.dp, end = 16.dp, bottom = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+        GameSheetContent(
+            modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+            onLaunch = {
+                if (!(systemNnnLaunch.activeUri != null && RuntimeModuleBindings.builtInSystemNnn(game).engine == EngineType.SYSTEMNNN)
+                    && sheetMotion.interact()
+                ) beginLaunch()
+            },
+        ) {
+            item {
+                Text(
+                    game.title,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.gameSheetEntrance(0)
+                        .fillMaxWidth().padding(start = 4.dp, top = 4.dp, end = 4.dp, bottom = 8.dp),
+                )
+            }
+
+            // KRKR 与所有 Winlator 系引擎（YU-RIS / CatSystem2 / PC）支持启动文件切换
+            if (
+                game.engine == EngineType.KIRIKIRI ||
+                ExternalEmulatorRegistry.forEngine(game.engine)?.launchStyle == EmulatorLaunchStyle.WINLATOR_EXTERNAL
             ) {
                 item {
-                    Text(
-                        game.title,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.gameSheetEntrance(0)
-                            .fillMaxWidth().padding(start = 4.dp, top = 4.dp, end = 4.dp, bottom = 8.dp),
+                    AppNavItem(
+                        title = stringResource(R.string.game_launch_file),
+                        summary = game.launchFile ?: stringResource(R.string.game_launch_file_auto_summary),
+                        // 启动文件选定后（摘要换成新文件名）整行轻弹一下作为落点反馈
+                        modifier = Modifier
+                            .gameSheetEntrance(2)
+                            .bounceOnChange(game.launchFile ?: "", depth = 0.05f),
+                        leadingIcon = R.drawable.ic_sheet_launch_file,
+                        containerColor = drawerItemSurface,
+                        verticalPadding = 17.dp,
+                        showArrow = false,
+                        leadingIconTint = MaterialTheme.colorScheme.primary,
+                        indication = null,
+                        onClick = { if (sheetMotion.interact()) showLaunchFilePicker = true },
                     )
-                }
-
-                // KRKR 与所有 Winlator 系引擎（YU-RIS / CatSystem2 / PC）支持启动文件切换
-                if (
-                    game.engine == EngineType.KIRIKIRI ||
-                    ExternalEmulatorRegistry.forEngine(game.engine)?.launchStyle == EmulatorLaunchStyle.WINLATOR_EXTERNAL
-                ) {
-                    item {
-                        AppNavItem(
-                            title = stringResource(R.string.game_launch_file),
-                            summary = game.launchFile ?: stringResource(R.string.game_launch_file_auto_summary),
-                            // 启动文件选定后（摘要换成新文件名）整行轻弹一下作为落点反馈
-                            modifier = Modifier
-                                .gameSheetEntrance(2)
-                                .bounceOnChange(game.launchFile ?: "", depth = 0.05f),
-                            leadingIcon = R.drawable.ic_sheet_launch_file,
-                            containerColor = drawerItemSurface,
-                            verticalPadding = 17.dp,
-                            showArrow = false,
-                            leadingIconTint = MaterialTheme.colorScheme.primary,
-                            indication = null,
-                            onClick = { if (sheetMotion.interact()) showLaunchFilePicker = true },
-                        )
-                    }
-                }
-                // 所有动作条目统一单个占满一行；卡片管理动作（快捷启动 / 桌面快捷方式 / 改名 /
-                // 改封面 / 删除）已统一收口到长按操作弹窗，抽屉只保留启动相关动作与二级页面入口。
-                val drawerActions = buildList {
-                    add(
-                        DrawerAction(
-                            key = "search_cover",
-                            title = drawerSearchCoverTitle,
-                            icon = R.drawable.ic_sheet_search_cover,
-                            iconTint = drawerPrimaryColor,
-                            onClick = { if (!isBatchScrapingActive()) showCoverSourcePicker = true },
-                        ),
-                    )
-                    add(
-                        DrawerAction(
-                            key = "play_status",
-                            title = drawerPlayStatusTitle,
-                            icon = R.drawable.ic_sheet_play_status_entry,
-                            iconTint = drawerPrimaryColor,
-                            trailingText = playStatusSummary,
-                            onClick = { showPlayStatusDialog = true },
-                        ),
-                    )
-                    val hasRuntimeSaves = game.engine == EngineType.RUNTIME_MODULE &&
-                        runtimeModule?.enabled == true && runtimeModule.saves != null
-                    if (hasRuntimeSaves || shouldShowSaveManagement(game)) {
-                        add(
-                            DrawerAction(
-                                key = "save_management",
-                                title = drawerSaveManagementTitle,
-                                icon = R.drawable.ic_sheet_saves,
-                                showArrow = true,
-                                iconTint = drawerPrimaryColor,
-                                onClick = {
-                                    navigation.openDetails {
-                                        startActivityWithPageTransition(context, SaveManagementActivity.createIntent(context, game))
-                                    }
-                                },
-                            ),
-                        )
-                    }
-                    if (hasPendingExternalExit) {
-                        add(
-                            DrawerAction(
-                                key = "confirm_external_exit",
-                                title = drawerExternalExitTitle,
-                                icon = R.drawable.ic_sheet_saves,
-                                showArrow = true,
-                                iconTint = drawerPrimaryColor,
-                                onClick = {
-                                    navigation.openDetails {
-                                        startActivityWithPageTransition(context, SaveManagementActivity.createIntent(context, game))
-                                    }
-                                },
-                            ),
-                        )
-                    }
-                    if (game.engine == EngineType.RUNTIME_MODULE && (runtimeRefreshRunning || runtimeRefreshFailed)) {
-                        add(
-                            DrawerAction(
-                                key = "runtime_capability_status",
-                                title = if (runtimeRefreshRunning) runtimeCapabilityLoadingTitle else runtimeCapabilityRetryTitle,
-                                summary = if (runtimeRefreshFailed) runtimeCapabilityUnavailableSummary else null,
-                                icon = R.drawable.ic_sheet_settings,
-                                iconTint = drawerPrimaryColor,
-                                onClick = {
-                                    if (!runtimeRefreshRunning) scope.launch {
-                                        runtimeRefreshRunning = true
-                                        runtimeRefreshFailed = try {
-                                            withContext(Dispatchers.IO) {
-                                                RuntimeModuleRegistry.refresh(context) !is com.tyranor.next.core.engine.runtime.RuntimeModuleDiscoveryResult.Success
-                                            }
-                                        } catch (cancelled: CancellationException) {
-                                            throw cancelled
-                                        } catch (_: Exception) {
-                                            true
-                                        } finally {
-                                            runtimeRefreshRunning = false
-                                        }
-                                    }
-                                },
-                            ),
-                        )
-                    }
-                    if (game.engine == EngineType.KIRIKIRI) {
-                        add(
-                            DrawerAction(
-                                key = "online_patch",
-                                title = drawerOnlinePatchTitle,
-                                icon = R.drawable.ic_sheet_patch,
-                                showArrow = true,
-                                iconTint = drawerPrimaryColor,
-                                onClick = {
-                                    navigation.openDetails {
-                                        startActivityWithPageTransition(context, KrkrOnlinePatchActivity.createIntent(context, game))
-                                    }
-                                },
-                            ),
-                        )
-                    }
-                    // 运行时模块只有声明有效设置且当前启用时才显示动态设置入口。
-                    if ((game.engine == EngineType.RUNTIME_MODULE && runtimeModule?.enabled == true && runtimeModule.settings?.items?.isNotEmpty() == true) ||
-                        (game.engine != EngineType.RUNTIME_MODULE && game.engine != EngineType.UNKNOWN)
-                    ) {
-                        add(
-                            DrawerAction(
-                                key = "engine_settings",
-                                title = drawerEngineSettingsTitle,
-                                icon = R.drawable.ic_sheet_settings,
-                                showArrow = true,
-                                iconTint = drawerPrimaryColor,
-                                onClick = {
-                                    // The caller clears selection in ordinary mode.
-                                    navigation.openDetails(ordinaryDismiss = {}, open = onEngineSettings)
-                                },
-                            ),
-                        )
-                    }
-                }
-                drawerActions.forEachIndexed { index, action ->
-                    item(key = "drawer_row:" + action.key) {
-                        AppNavItem(
-                            title = action.title,
-                            summary = action.summary,
-                            modifier = Modifier.gameSheetEntrance(3 + index),
-                            trailingText = action.trailingText,
-                            leadingIcon = action.icon,
-                            containerColor = drawerItemSurface,
-                            verticalPadding = 17.dp,
-                            showArrow = action.showArrow,
-                            leadingIconTint = action.iconTint,
-                            indication = null,
-                            onClick = {
-                                if (sheetMotion.interact()) {
-                                    systemNnnRequest.takeResult()
-                                    action.onClick()
-                                }
-                            },
-                        )
-                    }
                 }
             }
-            // 主操作固定在抽屉底部：整行长按钮，「启动游戏」文案居中
-            NoRippleButton(
-                text = stringResource(R.string.game_launch_action),
-                modifier = Modifier
-                    .gameSheetEntrance(1)
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 22.dp),
-                onClick = {
-                    if (!(systemNnnLaunch.activeUri != null && RuntimeModuleBindings.builtInSystemNnn(game).engine == EngineType.SYSTEMNNN)
-                        && sheetMotion.interact()
-                    ) beginLaunch()
-                },
-            )
+            // 所有动作条目统一单个占满一行；卡片管理动作（快捷启动 / 桌面快捷方式 / 改名 /
+            // 改封面 / 删除）已统一收口到长按操作弹窗，抽屉只保留启动相关动作与二级页面入口。
+            val drawerActions = buildList {
+                add(
+                    DrawerAction(
+                        key = "search_cover",
+                        title = drawerSearchCoverTitle,
+                        icon = R.drawable.ic_sheet_search_cover,
+                        iconTint = drawerPrimaryColor,
+                        onClick = { if (!isBatchScrapingActive()) showCoverSourcePicker = true },
+                    ),
+                )
+                add(
+                    DrawerAction(
+                        key = "play_status",
+                        title = drawerPlayStatusTitle,
+                        icon = R.drawable.ic_sheet_play_status_entry,
+                        iconTint = drawerPrimaryColor,
+                        trailingText = playStatusSummary,
+                        onClick = { showPlayStatusDialog = true },
+                    ),
+                )
+                val hasRuntimeSaves = game.engine == EngineType.RUNTIME_MODULE &&
+                    runtimeModule?.enabled == true && runtimeModule.saves != null
+                if (hasRuntimeSaves || shouldShowSaveManagement(game)) {
+                    add(
+                        DrawerAction(
+                            key = "save_management",
+                            title = drawerSaveManagementTitle,
+                            icon = R.drawable.ic_sheet_saves,
+                            showArrow = true,
+                            iconTint = drawerPrimaryColor,
+                            onClick = {
+                                navigation.openDetails {
+                                    startActivityWithPageTransition(context, SaveManagementActivity.createIntent(context, game))
+                                }
+                            },
+                        ),
+                    )
+                }
+                if (hasPendingExternalExit) {
+                    add(
+                        DrawerAction(
+                            key = "confirm_external_exit",
+                            title = drawerExternalExitTitle,
+                            icon = R.drawable.ic_sheet_saves,
+                            showArrow = true,
+                            iconTint = drawerPrimaryColor,
+                            onClick = {
+                                navigation.openDetails {
+                                    startActivityWithPageTransition(context, SaveManagementActivity.createIntent(context, game))
+                                }
+                            },
+                        ),
+                    )
+                }
+                if (game.engine == EngineType.RUNTIME_MODULE && (runtimeRefreshRunning || runtimeRefreshFailed)) {
+                    add(
+                        DrawerAction(
+                            key = "runtime_capability_status",
+                            title = if (runtimeRefreshRunning) runtimeCapabilityLoadingTitle else runtimeCapabilityRetryTitle,
+                            summary = if (runtimeRefreshFailed) runtimeCapabilityUnavailableSummary else null,
+                            icon = R.drawable.ic_sheet_settings,
+                            iconTint = drawerPrimaryColor,
+                            onClick = {
+                                if (!runtimeRefreshRunning) scope.launch {
+                                    runtimeRefreshRunning = true
+                                    runtimeRefreshFailed = try {
+                                        withContext(Dispatchers.IO) {
+                                            RuntimeModuleRegistry.refresh(context) !is com.tyranor.next.core.engine.runtime.RuntimeModuleDiscoveryResult.Success
+                                        }
+                                    } catch (cancelled: CancellationException) {
+                                        throw cancelled
+                                    } catch (_: Exception) {
+                                        true
+                                    } finally {
+                                        runtimeRefreshRunning = false
+                                    }
+                                }
+                            },
+                        ),
+                    )
+                }
+                if (game.engine == EngineType.KIRIKIRI) {
+                    add(
+                        DrawerAction(
+                            key = "online_patch",
+                            title = drawerOnlinePatchTitle,
+                            icon = R.drawable.ic_sheet_patch,
+                            showArrow = true,
+                            iconTint = drawerPrimaryColor,
+                            onClick = {
+                                navigation.openDetails {
+                                    startActivityWithPageTransition(context, KrkrOnlinePatchActivity.createIntent(context, game))
+                                }
+                            },
+                        ),
+                    )
+                }
+                // 运行时模块只有声明有效设置且当前启用时才显示动态设置入口。
+                if ((game.engine == EngineType.RUNTIME_MODULE && runtimeModule?.enabled == true && runtimeModule.settings?.items?.isNotEmpty() == true) ||
+                    (game.engine != EngineType.RUNTIME_MODULE && game.engine != EngineType.UNKNOWN)
+                ) {
+                    add(
+                        DrawerAction(
+                            key = "engine_settings",
+                            title = drawerEngineSettingsTitle,
+                            icon = R.drawable.ic_sheet_settings,
+                            showArrow = true,
+                            iconTint = drawerPrimaryColor,
+                            onClick = {
+                                // The caller clears selection in ordinary mode.
+                                navigation.openDetails(ordinaryDismiss = {}, open = onEngineSettings)
+                            },
+                        ),
+                    )
+                }
+            }
+            drawerActions.forEachIndexed { index, action ->
+                item(key = "drawer_row:" + action.key) {
+                    AppNavItem(
+                        title = action.title,
+                        summary = action.summary,
+                        modifier = Modifier.gameSheetEntrance(3 + index),
+                        trailingText = action.trailingText,
+                        leadingIcon = action.icon,
+                        containerColor = drawerItemSurface,
+                        verticalPadding = 17.dp,
+                        showArrow = action.showArrow,
+                        leadingIconTint = action.iconTint,
+                        indication = null,
+                        onClick = {
+                            if (sheetMotion.interact()) {
+                                systemNnnRequest.takeResult()
+                                action.onClick()
+                            }
+                        },
+                    )
+                }
+            }
         }
     }
 
