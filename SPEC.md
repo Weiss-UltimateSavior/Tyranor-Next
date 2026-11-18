@@ -94,7 +94,7 @@
 | RPG Maker RGSS | XP/VX/VX Ace 资源或 mkxp-z 模块选择 | 外置 RPGM APK 模块 |
 | Ren'Py | `.rpa`、`.rpy/.rpyc` 等组合 | 外置 Ren'Py APK；自动或指定 8.5.0 / 8.5.3 / 7.7.1 |
 | Ruffle / Flash | 顶层 `.swf`；根 `index.html/index.htm` + 唯一 SWF 的叶子目录 | 外置 Ruffle APK；一 SWF 一条记录 |
-| MAGES.（impacto） | 按精确大小写的条目命中 profile，恰好一个（或同一语言变体族）全命中才识别：根目录的 `.CPK` / `.cls` 等（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`）；Windows／Steam 版《秋之回忆6》为根目录 `game.exe` + `data/` 内的 `script.cpk`、`mes00.cpk`（`mo6tw-pc*`） | 外置 Impacto 宿主 APK（宿主仓库固定上游 impacto 并应用其补丁系列；`mo6tw-pc*` 需宿主 0.2.0 及以上） |
+| MAGES.（impacto） | 按精确大小写的条目命中 profile，恰好一个（或同一语言变体族）全命中才识别：上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`；其中 `mo6tw` 是 PS3 版数据、`cclcc` 是 PS4 版、`cclcc-switch` 是 Switch 版）看根目录条目名；Windows／Steam 版《秋之回忆6》（`mo6tw-pc*`）为根目录 `game.exe` + `data/` 内的 `script.cpk`、`mes00.cpk` | 外置 Impacto 宿主 APK（宿主仓库固定上游 impacto 并应用其补丁系列；`mo6tw-pc*` 需宿主 0.2.0 及以上） |
 | 第三方运行时模块 | 已安装的 `com.tyranor.runtime.*` APK + 模块 `res/raw` 扫描描述 | 显式组件交棒游戏文件夹，模块自行运行 |
 | YU-RIS / CatSystem2 | YPF/DLL/配置或 INT/CST/HG3 等组合 | 外置 Winlator |
 | PC / 安卓游戏 | 手动添加目录+exe / 应用包名 | 外置 Winlator / 直接启动应用 |
