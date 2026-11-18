@@ -1,7 +1,7 @@
 name: Impacto tools
 
 # Read-only helpers for the Impacto integration (game catalog check, CPK inspector). The host APK itself is built
-# and released from https://github.com/yuukana1/Tyranor-Next-MAGES..
+# and released from https://github.com/yuukana1/Tyranor-Next-MAGES
 on:
   pull_request:
     paths:

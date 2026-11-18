@@ -2,7 +2,7 @@
 
 ## 未发布
 
-- MAGES. 引擎宿主仓库更名为 `yuukana1/Tyranor-Next-MAGES.`，引擎页下载链接改为该仓库的 `releases/latest/download/impacto-host.apk`（资产名固定，始终指向最新正式发布）；旧地址由 GitHub 重定向，已安装用户不受影响。
+- MAGES. 引擎宿主仓库更名为 `yuukana1/Tyranor-Next-MAGES`，引擎页下载链接改为该仓库的 `releases/latest/download/impacto-host.apk`（资产名固定，始终指向最新正式发布）；旧地址由 GitHub 重定向，已安装用户不受影响。
 
 - 应用设置新增「默认主题粒子样式」，可在「气泡上升」与手柄按键图形沿弧线摇摆下落的「按键瀑布」之间切换。
 

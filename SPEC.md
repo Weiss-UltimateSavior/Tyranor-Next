@@ -120,10 +120,10 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 - `configuration.json`：Ruffle 1.02.00 对游戏目录执行主外部存储路径前缀检查，命中时读取 `<游戏目录>/configuration.json`（包括存储根本身），否则读取 `/storage/emulated/0/JoiPlay/games/<id>/configuration.json`。文件值覆盖 Intent。主 App 原子同步现有专用文件的受管键，保留其他字段，读取上限为 1 MiB。多 SWF 目录和存储根的共享文件保持原样，同名字段冲突或配置无法读取、同步时提示并停止本次启动。
 - 无统一存档管理，插件自管运行时/存档；不提供虚拟按键重映射；插件固定横屏。设备/插件运行验证尚未执行。
 
-MAGES. 引擎（经开源重新实现项目 impacto，未改动的上游 CommitteeOfZero/impacto）由外置 Impacto 宿主 APK 承载，宿主在独立仓库 yuukana1/Tyranor-Next-MAGES. 构建、签名并发布，当前边界如下：
+MAGES. 引擎（经开源重新实现项目 impacto，未改动的上游 CommitteeOfZero/impacto）由外置 Impacto 宿主 APK 承载，宿主在独立仓库 yuukana1/Tyranor-Next-MAGES 构建、签名并发布，当前边界如下：
 
 - 扫描：按**精确大小写**的根目录条目名匹配上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`），恰好一个 profile 全部命中才识别；`darling` 与全小写 `mo6tw` 的要求集合相同，一律不识别。`launchTarget` 为 profile id，别名 `internal.impacto`。Windows／Steam 版数据（小写 `.cpk`、无 `SCRIPT.cls`）不识别为 Impacto。
-- 获取：引擎页点击 MAGES. 条目跳转到 `https://github.com/yuukana1/Tyranor-Next-MAGES./releases/latest/download/impacto-host.apk`（资产名固定，随宿主新发布自动指向最新版）；未安装或版本低于 `ImpactoHostContract.VERSION_CODE` 时与其他外置模块一样提示并引导下载。
+- 获取：引擎页点击 MAGES. 条目跳转到 `https://github.com/yuukana1/Tyranor-Next-MAGES/releases/latest/download/impacto-host.apk`（资产名固定，随宿主新发布自动指向最新版）；未安装或版本低于 `ImpactoHostContract.VERSION_CODE` 时与其他外置模块一样提示并引导下载。
 - 启动：发 `com.tyranor.next.impacto.action.RUN`，携带游戏目录、profile、`gameKey` 与标题，需要「所有文件访问」；宿主没有桌面入口。
 - 存档在宿主私有目录内按游戏隔离，主 App 不提供文件存档管理。
 - 设置：引擎页 MAGES. 条目的「全局引擎设置」与单游戏设置，格式与 Ruffle 一致（全局值 + 单游戏覆盖，覆盖为 null 时跟随全局）。可调项只收录上游 `userconfig.toml` 里在 Android 上有意义的：交换确认 / 取消键、垂直同步、影片播放（`FFmpeg` / `None`）、影片字幕（全部 / 仅翻译 / 仅卡拉 OK；引擎的字幕配置是标志枚举，没有可读回的“全部关闭”）、回看记录滚到底时自动关闭、妄想触发的鼠标 / 触摸支持（仅 `chlcc`、`cclcc`）、日志等级。分辨率与显示模式（Android 上窗口固定全屏）、渲染器与音频后端（只有 OpenGL / OpenAL）、补丁（宿主私有目录里无法放入补丁档案）不提供。
