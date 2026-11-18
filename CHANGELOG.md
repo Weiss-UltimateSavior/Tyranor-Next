@@ -6,7 +6,9 @@
 
 - MAGES. 引擎宿主仓库更名为 `yuukana1/Tyranor-Next-MAGES`，引擎页下载链接改为该仓库的 `releases/latest/download/Tyranor-Next-MAGES.apk`（资产名固定，始终指向最新正式发布）。宿主从 0.2.0 起发布资产名为 `Tyranor-Next-MAGES.apk`；0.2.0 另附一份同内容的旧资产名 `impacto-host.apk`，让更早的本 App 版本里写死的旧链接暂时仍可下载，**之后的宿主版本不再附带**，旧链接从下一个宿主发布起失效；已安装的宿主不受影响。
 
-- 下载链接现在指向的宿主（0.2.0 起）不再是未改动的上游：构建输入是固定的上游 impacto 提交加宿主仓库的补丁系列（`engine/impacto/patches/`，逐个记录 SHA-256），取代此前「不应用 TYN 引擎补丁」的约束。`docs/impacto-upstream-only.md`、`SPEC.md` 与 `ImpactoExternalEngineModule` 的说明同步改写；补丁里有通用修复，也有只服务 Windows／Steam 版《秋之回忆6》的 `mo6tw-pc*` profile，其他游戏没有在设备上逐一回归。主 App 本身的识别与启动行为不变。
+- 下载链接现在指向的宿主（0.2.0 起）不再是未改动的上游：构建输入是固定的上游 impacto 提交加宿主仓库的补丁系列（`engine/impacto/patches/`，逐个记录 SHA-256），取代此前「不应用 TYN 引擎补丁」的约束。`docs/impacto-upstream-only.md`、`SPEC.md` 与 `ImpactoExternalEngineModule` 的说明同步改写；补丁里有通用修复，也有只服务 Windows／Steam 版《秋之回忆6》的 `mo6tw-pc*` profile，其他游戏没有在设备上逐一回归。本条只更正说明；主 App 识别与启动行为的变化见下一条。
+
+- MAGES. 引擎新增对 Windows／Steam 版《秋之回忆6》（Steam App 2184580，`game.exe` + `data/*.cpk`）的识别：添加游戏目录并扫描后，游戏库里会出现「Memories Off 6 ~T-Wave~ (PC)」，用 MAGES. 引擎启动，profile 为 `mo6tw-pc`（日文）、`mo6tw-pc-zhs`（简体）或 `mo6tw-pc-zht`（繁体）。判据与宿主 `engine/impacto/profiles.json` 一致：根目录 `game.exe` 与 `data/` 目录，`data/` 里有 `script.cpk`、`mes00.cpk`，按精确大小写。Steam 版同时带三份文本，扫描按应用界面语言选一个（简体中文 → 简体；日文及其他语言 → 日文；跟随系统且系统语言为繁体中文 → 繁体），已入库的选择在重扫时沿用（宿主按「profile + 目录」隔离存档，换 profile 等于换了一份存档），对应文本档不在盘上时不提供该变体。只对这些 profile 要求宿主 0.2.0（versionCode 4）及以上，其余 profile 仍只要求 0.1.2；该检查在「所有文件访问」授权之前执行。**尚无在界面里切换语言变体的入口**；识别只看目录布局，不代表该游戏在你的设备上可运行。真机（荣耀 PPG-AN00）上只验证了识别、变体选择与版本提示，没有走完「主 App 启动 → 宿主 0.2.0 进入游戏」；`mo6tw-pc-zhs` 在宿主仓库 PR #1 里于一台真机上进到过对话与存读档，日文与繁体变体没有上机。
 
 - 应用设置新增「默认主题粒子样式」，可在「气泡上升」与手柄按键图形沿弧线摇摆下落的「按键瀑布」之间切换。
 
@@ -93,7 +95,7 @@
 
 ### 新增
 
-- 新增 MAGES. 外置引擎（经开源重新实现项目 impacto 承载，未改动的上游 CommitteeOfZero/impacto；impacto 是项目名，不是引擎名）：引擎类型与图标、按精确大小写识别七个上游 profile（`mo6tw` 等，PS3 数据布局）、外置模块启动协议；引擎页点击跳转下载宿主 APK，链接指向宿主仓库 https://github.com/yuukana1/Tyranor-Next-Impacto 的最新发布（`releases/latest/download/Tyranor-Next-MAGES.apk`，新版本发布后自动指向），与其他外置引擎一致，不内置；宿主没有桌面入口。宿主引擎库已在一台真机上加载并跑到读脚本为止，**没有任何游戏进到画面，渲染、声音、输入、存读档均未验证**；Windows／Steam 版数据与上游 PS3 配置不一致，不识别。另增只读工具：CPK 结构检查与 profile 目录表校验。
+- 新增 MAGES. 外置引擎（经开源重新实现项目 impacto 承载；impacto 是项目名，不是引擎名）：引擎类型与图标、按精确大小写识别上游 profile（`mo6tw` 等，根目录条目）与 Windows／Steam 版《秋之回忆6》（见上文）、外置模块启动协议；引擎页点击跳转下载宿主 APK，链接指向宿主仓库 https://github.com/yuukana1/Tyranor-Next-MAGES 的最新发布（`releases/latest/download/Tyranor-Next-MAGES.apk`，新版本发布后自动指向），与其他外置引擎一致，不内置；宿主没有桌面入口。宿主是固定的上游 impacto 提交加宿主仓库的补丁系列，不再是未改动的上游。Windows／Steam 版的 `mo6tw-pc-zhs` 在宿主仓库 PR #1 的记录里于一台真机上进到过对话与存读档；其余 profile 与游戏的渲染、声音、输入、存读档均未验证。另增只读工具：CPK 结构检查与 profile 目录表校验。
 - 新增 MAGES. 引擎设置（引擎页弹窗的「全局引擎设置」与单游戏设置，格式与 Ruffle / Ren'Py 外置引擎一致：全局值 + 单游戏覆盖，三语言）：交换确认 / 取消键、垂直同步、影片播放、影片字幕（全部 / 仅翻译 / 仅卡拉 OK）、回看记录滚到底时自动关闭、妄想触发的鼠标 / 触摸支持（仅 Chaos;Head / Chaos;Child）、日志等级。启动时经 `SETTINGS` extra 下发，宿主 0.1.2（versionCode 3）起合并进该游戏的 `userconfig.toml`；更老的宿主按“需要更新”处理。分辨率、显示模式、渲染器、音频后端与补丁在 Android 上固定或不可用，不提供。
 - 修复 BGI 游戏位于公共共享存储时因 `flock` 返回不支持而无法启动：仅对不支持锁操作的错误回退到 OFD 非阻塞写入锁，保留占用与权限错误的拒绝行为。
 - BGI / Ethornell 存档改到游戏目录内的 `savedata/`，启动、宿主与存档管理共用同一位置；旧私有数据一次性迁入且不覆盖目标同名文件，目录不可写时不回退私有存档。移除游戏库条目保留游戏目录中的存档。

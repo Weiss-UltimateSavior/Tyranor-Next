@@ -44,4 +44,37 @@ class ExternalEngineLauncherVersionTest {
         assertTrue(ExternalEngineLauncher.isVersionCodeSupported(1L, 0L))
         assertTrue(ExternalEngineLauncher.isVersionCodeSupported(0L, 0L))
     }
+
+    @Test
+    fun anOlderHostIsOutdatedOnlyForTheTargetsThatNeedANewerOne() {
+        val windows = "mo6tw-pc-zhs"
+        val ps3 = "mo6tw"
+
+        assertEquals(
+            ExternalEngineErrorCode.PACKAGE_OUTDATED,
+            ExternalEngineLauncher.versionCodeError(3L, ImpactoExternalEngineModule, windows),
+        )
+        assertNull(ExternalEngineLauncher.versionCodeError(4L, ImpactoExternalEngineModule, windows))
+        assertNull(ExternalEngineLauncher.versionCodeError(5L, ImpactoExternalEngineModule, windows))
+        // The same installed host still launches the profiles that existed before the patch series.
+        assertNull(ExternalEngineLauncher.versionCodeError(3L, ImpactoExternalEngineModule, ps3))
+        // Without a target only the module-wide minimum applies (engine page install state).
+        assertNull(ExternalEngineLauncher.versionCodeError(3L, ImpactoExternalEngineModule))
+        assertEquals(
+            ExternalEngineErrorCode.PACKAGE_OUTDATED,
+            ExternalEngineLauncher.versionCodeError(2L, ImpactoExternalEngineModule),
+        )
+    }
+
+    @Test
+    fun modulesWithoutPerTargetRulesIgnoreTheTargetWhenCheckingTheirMinimumVersion() {
+        assertEquals(10100L, RenPyExternalEngineModule.minimumVersionCodeFor("DIR"))
+        assertEquals(10200L, RenPy853ExternalEngineModule.minimumVersionCodeFor("DIR"))
+        // The previous results do not change when a target is passed.
+        assertNull(ExternalEngineLauncher.versionCodeError(10100L, RenPyExternalEngineModule, "DIR"))
+        assertEquals(
+            ExternalEngineErrorCode.PACKAGE_OUTDATED,
+            ExternalEngineLauncher.versionCodeError(10100L, RenPy853ExternalEngineModule, "DIR"),
+        )
+    }
 }

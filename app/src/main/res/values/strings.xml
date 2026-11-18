@@ -943,7 +943,7 @@
     <string name="engine_settings_impacto_log_info">信息</string>
     <string name="engine_settings_impacto_log_debug">调试</string>
     <string name="engine_settings_impacto_log_trace">跟踪</string>
-    <string name="engine_settings_impacto_note">这些设置会在每次启动游戏时写入引擎配置，并覆盖引擎内置设置页里的同名项；分辨率、显示模式、渲染器和音频后端在 Android 上由系统与宿主固定，不提供。需要宿主 0.1.2 及以上。</string>
+    <string name="engine_settings_impacto_note">这些设置会在每次启动游戏时写入引擎配置，并覆盖引擎内置设置页里的同名项；分辨率、显示模式、渲染器和音频后端在 Android 上由系统与宿主固定，不提供。需要宿主 0.1.2 及以上；Memories Off 6 ~T-Wave~ 的 Windows／Steam 版需要宿主 0.2.0 及以上。</string>
     <string name="engine_settings_impacto_module_description">MAGES. 引擎由独立的 Impacto 宿主 APK 运行（impacto 是重新实现 MAGES. 引擎的开源项目），以下设置默认跟随全局；存档位于该宿主的私有数据目录，本应用无法管理。</string>
 
     <string name="plugin_unknown_engine">未知引擎插件：%1$s</string>
