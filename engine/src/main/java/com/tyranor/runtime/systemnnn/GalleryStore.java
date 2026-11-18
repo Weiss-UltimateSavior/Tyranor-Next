@@ -6,7 +6,8 @@ import java.util.Arrays;
 
 /** Per-game unlocks are independent of the story's save slots. */
 final class GalleryStore {
-    private static final int MAGIC=0x4e4e4731, LIMIT=150000;
+    private static final int MAGIC=0x4e4e4731;
+    static final int LIMIT=180224;
     private final AtomicFile file;
 
     GalleryStore(File path) { file=new AtomicFile(path); }
@@ -36,31 +37,22 @@ final class GalleryStore {
         }
     }
 
-    int[] merge(int[] keys) throws IOException {
-        // Two activities for the same game can finish in either order.
+    void write(int[] keys) throws IOException {
         synchronized (GalleryStore.class) {
-            int[] saved=readFile();
-            int[] merged=new int[saved.length+keys.length];
-            int a=0,b=0,count=0;
-            while (a<saved.length || b<keys.length) {
-                int key=b==keys.length || a<saved.length && saved[a]<keys[b] ? saved[a++] : keys[b++];
-                if (count==0 || merged[count-1]!=key) merged[count++]=key;
-            }
-            if (count>LIMIT) throw new IOException("鉴赏记录达到容量上限");
-            if (count==saved.length) return saved;
+            if(keys.length>LIMIT)throw new IOException("鉴赏记录达到容量上限");
+            if(Arrays.equals(keys,readFile()))return;
             FileOutputStream raw=file.startWrite();
             try {
                 DataOutputStream out=new DataOutputStream(new BufferedOutputStream(raw));
                 out.writeInt(MAGIC);
-                out.writeInt(count);
-                for (int i=0;i<count;i++) out.writeInt(merged[i]);
+                out.writeInt(keys.length);
+                for(int key:keys)out.writeInt(key);
                 out.flush();
                 file.finishWrite(raw);
             } catch (IOException | RuntimeException e) {
                 file.failWrite(raw);
                 throw e;
             }
-            return Arrays.copyOf(merged,count);
         }
     }
 }

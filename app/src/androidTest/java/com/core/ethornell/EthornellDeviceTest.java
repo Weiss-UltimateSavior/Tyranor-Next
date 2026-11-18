@@ -44,6 +44,7 @@ public final class EthornellDeviceTest {
     /** Schema-valid explicit cancel for kind-5 dialogs; tests never fake an accepted answer. */
     private static final String DIALOG_CANCEL = "{\"accepted\":false}";
     private static native String probe(String absoluteLibrary);
+    private static native int[] probeWriterLocks(String path);
     private static Context app() { return InstrumentationRegistry.getInstrumentation().getTargetContext().getApplicationContext(); }
     private static Bundle args() { return InstrumentationRegistry.getArguments(); }
     private static int encoding() {
@@ -245,9 +246,179 @@ public final class EthornellDeviceTest {
         });
     }
 
+    @Test public void publicSharedStorageSupportsExclusiveOpenFileDescriptionLocks() throws Exception {
+        assumeTrue("Dedicated test package required", app().getPackageName().equals("com.tyranor.next.startuptest"));
+        assumeTrue("Explicit opt-in required", "true".equals(args().getString("startup_test")));
+        File root = new File(android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_DOWNLOADS), "bgi-writer-lock-" + UUID.randomUUID());
+        assertTrue("Public shared-storage fixture is not writable", root.mkdir());
+        File lock = new File(root, "writer.lock");
+        try {
+            System.loadLibrary("ethornell_test_probe");
+            int[] results = probeWriterLocks(lock.getAbsolutePath());
+            Log.i(TAG, "PUBLIC_LOCKS flock/ofd/conflict/released=" + java.util.Arrays.toString(results));
+            assertEquals("OFD lock is unavailable", 0, results[1]);
+            assertTrue("A second descriptor must be refused", results[2] == OsConstants.EAGAIN || results[2] == OsConstants.EACCES);
+            assertEquals("Closing the owner must release the lock", 0, results[3]);
+        } finally {
+            if (lock.exists()) assertTrue(lock.delete());
+            assertTrue(root.delete());
+        }
+    }
+
+    @Test public void vmWritesAndReopensGameLocalSaveOnSharedStorage() throws Exception {
+        File external = app().getExternalFilesDir(null);
+        assertNotNull("Shared storage is unavailable", external);
+        verifyGameLocalSave(external);
+    }
+
+    @Test public void vmWritesAndReopensGameLocalSaveOnPublicSharedStorage() throws Exception {
+        verifyGameLocalSave(android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_DOWNLOADS));
+    }
+
+    @Test public void vmSys80ResourceUserDataSlotWritesAndReopensThroughFileApis() throws Exception {
+        assumeTrue("Dedicated test package required", app().getPackageName().equals("com.tyranor.next.startuptest"));
+        assumeTrue("Explicit opt-in required", "true".equals(args().getString("startup_test")));
+        bounded(() -> {
+            File external = app().getExternalFilesDir(null);
+            assertNotNull("App-specific shared storage is unavailable", external);
+            File base = new File(external.getCanonicalFile(), "bgi-sys80-slot-" + UUID.randomUUID());
+            File resource = new File(base, "game"), user = new File(resource, "savedata");
+            assertTrue("Unable to create isolated game/savedata fixture", user.mkdirs());
+            File resourceAlias = new File(resource, "bgi-resource");
+            assertFalse("Virtual bgi-resource prefix must not be shadowed by a real directory",
+                    resourceAlias.exists());
+            File archive = new File(resource, "system.arc");
+            File savedSlot = new File(new File(user, "UserData"), "7.sud");
+            File resourceSlot = new File(new File(resourceAlias, "UserData"), "7.sud");
+            assertFalse("Synthetic SUD slot must start absent", savedSlot.exists());
+            try {
+                byte[] writeArchive = Sys80Fixture.archive("write");
+                Files.write(archive.toPath(), writeArchive);
+                runSys80Phase(resource, user, "ETHORNELL_SYS80_SLOT_WRITE_OK");
+                assertTrue("Sys80:32 did not write the slot under game/savedata/UserData",
+                        savedSlot.isFile() && savedSlot.length() == Sys80Fixture.SLOT_BYTES.length);
+                assertArrayEquals("Sys80:32 wrote the wrong slot bytes", Sys80Fixture.SLOT_BYTES,
+                        Files.readAllBytes(savedSlot.toPath()));
+                assertFalse("Resource-root slot was modified", resourceSlot.exists());
+                assertFalse("The virtual resource prefix became a physical directory", resourceAlias.exists());
+
+                // A new native session must prove Sys80:30/31/34/35 can reopen/query the
+                // actual UserData slot through the default single and explicit double prefix.
+                Files.write(archive.toPath(), Sys80Fixture.archive("read"));
+                runSys80Phase(resource, user, "ETHORNELL_SYS80_SLOT_READ_OK");
+                assertArrayEquals("Sys80 reads changed the persisted slot", Sys80Fixture.SLOT_BYTES,
+                        Files.readAllBytes(savedSlot.toPath()));
+                assertFalse("Read phase created the missing negative-control slot",
+                        new File(new File(user, "UserData"), "Missing.sud").exists());
+                assertArrayEquals("Read phase changed the resource archive",
+                        Sys80Fixture.archive("read"), Files.readAllBytes(archive.toPath()));
+                Log.i(TAG, "PASS real VM Sys80:32 write + new-session 30/31/34/35; single/double bgi-resource prefix, case folding, archive fallback and missing-slot controls");
+            } finally {
+                try (java.util.stream.Stream<java.nio.file.Path> paths = Files.walk(base.toPath())) {
+                    for (java.nio.file.Path path : (Iterable<java.nio.file.Path>) paths.sorted(
+                            java.util.Comparator.reverseOrder())::iterator) Files.delete(path);
+                }
+            }
+        });
+    }
+
+    private static void runSys80Phase(File resource, File user, String expectedTitle) throws Exception {
+        File r = resource.getCanonicalFile(), u = user.getCanonicalFile();
+        assertTrue("Invalid game-local roots", u.equals(new File(r, "savedata").getCanonicalFile()));
+        runtimeLibrary();
+        long handle = NativeEthornell.create(app(), r.getPath(), u.getPath(), "", encoding());
+        assertNotEquals("Sys80 phase create failed", 0, handle);
+        GpuSurfaceConsumer consumer = null;
+        boolean title = false, closed = false;
+        List<String> observed = new ArrayList<>();
+        try {
+            consumer = new GpuSurfaceConsumer();
+            NativeEthornell.setSurface(handle, consumer.surface, consumer.width, consumer.height, 1);
+            NativeEthornell.setPaused(handle, 0);
+            long deadline = SystemClock.elapsedRealtime() + 15000;
+            while (!closed && SystemClock.elapsedRealtime() < deadline) {
+                NativeEthornell.step(handle, System.nanoTime());
+                for (int i = 0; i < 128; i++) {
+                    EthornellSession.Event event = NativeEthornell.pollEvent(handle);
+                    if (event == null) break;
+                    String text = "kind=" + event.kind + " code=" + event.code + " text=" + event.text;
+                    observed.add(text);
+                    Log.i(TAG, "SYS80 " + text);
+                    assertFalse("Fatal Sys80 file-I/O diagnostic: " + observed,
+                            event.kind == 1 && event.code < 0);
+                    assertNotEquals("Unexpected confirmation in Sys80 fixture", 2, event.kind);
+                    if (event.kind == 5) {
+                        String payload = NativeEthornell.requestPayload(handle, event.requestId);
+                        NativeEthornell.completeRequest(handle, event.requestId, 0, DIALOG_CANCEL);
+                        fail("Unexpected dialog in Sys80 fixture: " + text + " payload=" + payload);
+                    }
+                    if (event.kind == 4) {
+                        assertFalse("Repeated Title event", title);
+                        assertEquals("Wrong Sys80 result: " + observed, expectedTitle, event.text);
+                        assertEquals(0, event.code);
+                        title = true;
+                    }
+                    if (event.kind == 3) {
+                        assertTrue("Closed without exact Sys80 Title: " + observed, title);
+                        assertEquals(0, event.code);
+                        closed = true;
+                    }
+                    if (i == 127) fail("Sys80 event queue exceeded budget");
+                }
+                consumer.assertHealthy();
+                if (!closed) SystemClock.sleep(20);
+            }
+            assertTrue("Missing Title->Closed for " + expectedTitle + ": " + observed, title && closed);
+        } finally {
+            destroyAcknowledged(handle);
+            if (consumer != null) consumer.close();
+        }
+    }
+
+    private static void verifyGameLocalSave(File external) throws Exception {
+        assumeTrue("Dedicated test package required", app().getPackageName().equals("com.tyranor.next.startuptest"));
+        assumeTrue("Explicit opt-in required", "true".equals(args().getString("startup_test")));
+        bounded(() -> {
+            File base = new File(external.getCanonicalFile(), "bgi-local-save-" + UUID.randomUUID());
+            File resource = new File(base, "game"), user = new File(resource, "savedata");
+            assertTrue(user.mkdirs());
+            Context tests = InstrumentationRegistry.getInstrumentation().getContext();
+            File archive = new File(resource, "system.arc");
+            try {
+                try (InputStream input = tests.getAssets().open("ethornell-user-data/write/system.arc")) {
+                    Files.copy(input, archive.toPath());
+                }
+                Log.i(TAG, "GAME_LOCAL_WRITE_BEGIN");
+                runUserDataPhase(resource, user, "ETHORNELL_USER_DATA_WRITE_OK");
+                Log.i(TAG, "GAME_LOCAL_WRITE_ACK");
+                File save = new File(user, "BGI.gdb");
+                assertTrue("Save was not written inside game/savedata", save.isFile() && save.length() > 32);
+                byte[] persisted = Files.readAllBytes(save.toPath());
+                assertFalse("Save leaked into the resource root", new File(resource, "BGI.gdb").exists());
+                Files.delete(archive.toPath());
+                try (InputStream input = tests.getAssets().open("ethornell-user-data/read/system.arc")) {
+                    Files.copy(input, archive.toPath());
+                }
+                Log.i(TAG, "GAME_LOCAL_READ_BEGIN");
+                runUserDataPhase(resource, user, "ETHORNELL_USER_DATA_READ_OK");
+                Log.i(TAG, "GAME_LOCAL_READ_ACK");
+                assertArrayEquals("Reopen changed the save", persisted, Files.readAllBytes(save.toPath()));
+            } finally {
+                // This random fixture is the only cleanup scope; do not follow links.
+                try (java.util.stream.Stream<java.nio.file.Path> paths = Files.walk(base.toPath())) {
+                    for (java.nio.file.Path path : (Iterable<java.nio.file.Path>) paths.sorted(
+                            java.util.Comparator.reverseOrder())::iterator) Files.delete(path);
+                }
+            }
+        });
+    }
+
     private static long runUserDataPhase(File resource, File user, String expectedTitle) throws Exception {
         File r = resource.getCanonicalFile(), u = user.getCanonicalFile();
-        assertFalse("Resource/user overlap", r.toPath().startsWith(u.toPath()) || u.toPath().startsWith(r.toPath()));
+        assertTrue("Invalid overlapping roots", u.equals(new File(r, "savedata"))
+                || (!r.toPath().startsWith(u.toPath()) && !u.toPath().startsWith(r.toPath())));
         runtimeLibrary();
         long handle = NativeEthornell.create(app(), r.getPath(), u.getPath(), "", encoding());
         assertNotEquals("User-data phase create failed", 0, handle);
@@ -292,8 +463,11 @@ public final class EthornellDeviceTest {
             assertTrue("Missing Title->Closed for " + expectedTitle + ": " + observed, title && closed);
             return handle;
         } finally {
+            Log.i(TAG, "USER_DATA_DESTROY_BEGIN handle=" + handle);
             destroyAcknowledged(handle);
+            Log.i(TAG, "USER_DATA_DESTROY_ACK handle=" + handle);
             if (consumer != null) consumer.close();
+            Log.i(TAG, "USER_DATA_CONSUMER_CLOSED handle=" + handle);
         }
     }
 
@@ -453,6 +627,237 @@ public final class EthornellDeviceTest {
         }, 70, TimeUnit.SECONDS);
         try { action.run(); }
         finally { deadline.cancel(false); watchdog.shutdownNow(); }
+    }
+
+    /** Original in-test BP program exercising the VM's real Sys80 disk-file opcodes. */
+    private static final class Sys80Fixture {
+        static final byte[] SLOT_BYTES = new byte[]{'T', 'Y', 'R', 'A', 'N', 'O', 'R', '-', 'S', 'L', 'O', 'T', '-', 'V', '1', 0};
+        private static final byte[] FALLBACK_BYTES = new byte[]{'R', 'E', 'S', 'O', 'U', 'R', 'C', 'E'};
+        private static final int FRAME = 32;
+
+        static byte[] archive(String phase) throws Exception {
+            Program program = new Program();
+            program.prologue();
+            if ("write".equals(phase)) {
+                // The restricted VM already reports bgi-resource\\ as its primary root.
+                program.pointer(0);
+                program.emit(0x0b, SLOT_BYTES.length);
+                program.emit(SLOT_BYTES);
+                program.pushString("UserData\\7.sud");
+                program.pointer(0);
+                program.pushInt(SLOT_BYTES.length);
+                program.sys(0x32);
+                program.requireInt(1);
+                program.finishWith("ETHORNELL_SYS80_SLOT_WRITE_OK", "ETHORNELL_SYS80_SLOT_WRITE_FAILED");
+            } else if ("read".equals(phase)) {
+                // Generic Sys81 loads use a different RuntimeTraceApi callback than the
+                // Sys80 loose-file operations below; check this first to catch alias drift.
+                program.checkGenericSlot();
+                // First exercise the default bgi-resource\\ root before any setter can
+                // mask a resource-root routing failure on the unpatched host.
+                program.checkSlot("UserData\\7.sud");
+                program.checkSlot("userdata\\7.SUD");
+                program.checkDoublePrefixSlot("bgi-resource\\UserData\\7.sud");
+                program.checkArchiveFallback();
+                program.checkMissingSlot();
+                program.finishWith("ETHORNELL_SYS80_SLOT_READ_OK", "ETHORNELL_SYS80_SLOT_READ_FAILED");
+            } else {
+                throw new IllegalArgumentException("Unknown Sys80 fixture phase: " + phase);
+            }
+            return packEntries(
+                    new String[]{"ipl._bp", "fallback.bin", "UserData\\7.sud"},
+                    new byte[][]{program.finish(), FALLBACK_BYTES, FALLBACK_SLOT_BYTES});
+        }
+
+        private static final byte[] FALLBACK_SLOT_BYTES = new byte[]{
+                'F', 'A', 'L', 'L', 'B', 'A', 'C', 'K', '-', 'S', 'L', 'O', 'T', '-', 'V', '1'
+        };
+
+        private static byte[] packEntries(String[] names, byte[][] payloads) {
+            if (names.length != payloads.length) throw new IllegalArgumentException("Pack entry mismatch");
+            int payloadOffset = 16 + names.length * 32;
+            int payloadLength = 0;
+            for (byte[] payload : payloads) payloadLength += payload.length;
+            ByteBuffer pack = ByteBuffer.allocate(payloadOffset + payloadLength)
+                    .order(ByteOrder.LITTLE_ENDIAN);
+            pack.put("PackFile    ".getBytes(StandardCharsets.US_ASCII)).putInt(names.length);
+            int offset = 0;
+            for (int i = 0; i < names.length; i++) {
+                putEntry(pack, names[i], offset, payloads[i].length);
+                offset += payloads[i].length;
+            }
+            for (byte[] payload : payloads) pack.put(payload);
+            return pack.array();
+        }
+
+        private static void putEntry(ByteBuffer pack, String name, int offset, int length) {
+            byte[] encoded = name.getBytes(StandardCharsets.US_ASCII);
+            if (encoded.length == 0 || encoded.length >= 16) throw new IllegalArgumentException("Bad pack name");
+            byte[] padded = new byte[16];
+            System.arraycopy(encoded, 0, padded, 0, encoded.length);
+            pack.put(padded).putInt(offset).putInt(length).putInt(0).putInt(0);
+        }
+
+        private static final class Program {
+            private final ByteArrayOutputStream code = new ByteArrayOutputStream();
+            private final ByteArrayOutputStream strings = new ByteArrayOutputStream();
+            private final List<Branch> branches = new ArrayList<>();
+            private final List<StringFixup> stringFixups = new ArrayList<>();
+            private final java.util.Map<String, Integer> labels = new java.util.HashMap<>();
+            private boolean outcomeAdded;
+
+            void prologue() { emit(0x10, 0x00, FRAME, 0x20, 0x11); }
+            void emit(int... bytes) { for (int value : bytes) code.write(value & 0xff); }
+            void emit(byte[] bytes) { code.write(bytes, 0, bytes.length); }
+            void pushInt(int value) {
+                if (value >= -128 && value <= 127) emit(0x00, value);
+                else if (value >= -32768 && value <= 32767) emit(0x01, value, value >>> 8);
+                else emit(0x02, value, value >>> 8, value >>> 16, value >>> 24);
+            }
+            void pointer(int offset) {
+                int displacement = FRAME - offset;
+                emit(0x04, displacement, displacement >>> 8);
+            }
+            void pushString(String value) {
+                int opcode = code.size();
+                emit(0x05, 0, 0);
+                stringFixups.add(new StringFixup(opcode, value));
+            }
+            void sys(int selector) { emit(0x80, selector); }
+            void sys81(int selector) { emit(0x81, selector); }
+            void requireInt(int expected) {
+                pushInt(expected);
+                emit(0x30);
+                branch("failed", 1); // predicate 1 branches when equality is false
+            }
+            void branch(String label, int zeroPredicate) {
+                int operand = code.size() + 1;
+                emit(0x02, 0, 0, 0, 0); // branch destination is a 32-bit code-region offset
+                emit(0x15, zeroPredicate);
+                branches.add(new Branch(operand, label));
+            }
+            void jump(String label) {
+                int operand = code.size() + 1;
+                emit(0x02, 0, 0, 0, 0, 0x14); // unconditional branch
+                branches.add(new Branch(operand, label));
+            }
+            void load(int offset) {
+                int displacement = FRAME - offset;
+                emit(0x04, displacement, displacement >>> 8, 0x08, 0x02);
+            }
+            void checkGenericSlot() {
+                String filename = "bgi-resource\\UserData\\7.sud";
+                // Sys81:32 inputs are pushed in VM stack order: requested length,
+                // destination, filename, then bytes-read output pointer.
+                pushInt(SLOT_BYTES.length);
+                pointer(0);
+                pushString(filename);
+                pointer(28);
+                sys81(0x32);
+                requireInt(0);
+                load(28);
+                requireInt(SLOT_BYTES.length);
+                requireBytes(0, SLOT_BYTES, 0, SLOT_BYTES.length);
+
+                // Sys81:35 takes context then path and returns the resolved size.
+                pushInt(0);
+                pushString(filename);
+                sys81(0x35);
+                requireInt(SLOT_BYTES.length);
+            }
+            void checkSlot(String filename) {
+                pointer(0); pushString("system.arc"); pushString(filename); sys(0x30);
+                requireInt(SLOT_BYTES.length);
+                requireBytes(0, SLOT_BYTES, 0, SLOT_BYTES.length);
+
+                pointer(20); pushString("system.arc"); pushString(filename); pushInt(4); pushInt(8); sys(0x31);
+                requireInt(0);
+                requireBytes(20, SLOT_BYTES, 4, 8);
+
+                pushInt(0); pushString(filename); sys(0x34); requireInt(1);
+                pushInt(0); pushString(filename); sys(0x35); requireInt(SLOT_BYTES.length);
+            }
+            void checkDoublePrefixSlot(String filename) {
+                pointer(20); pushInt(0); pushString(filename); pushInt(4); pushInt(8); sys(0x31);
+                requireInt(0);
+                requireBytes(20, SLOT_BYTES, 4, 8);
+                pushInt(0); pushString(filename); sys(0x34); requireInt(1);
+                pushInt(0); pushString(filename); sys(0x35); requireInt(SLOT_BYTES.length);
+            }
+            void requireBytes(int destination, byte[] expected, int start, int length) {
+                for (int offset = 0; offset < length; offset += 4) {
+                    load(destination + offset);
+                    int word = (expected[start + offset] & 0xff)
+                            | ((expected[start + offset + 1] & 0xff) << 8)
+                            | ((expected[start + offset + 2] & 0xff) << 16)
+                            | (expected[start + offset + 3] << 24);
+                    pushInt(word);
+                    emit(0x30);
+                    branch("failed", 1);
+                }
+            }
+            void checkArchiveFallback() {
+                pointer(0); pushString("system.arc"); pushString("fallback.bin"); sys(0x30);
+                requireInt(FALLBACK_BYTES.length);
+                requireBytes(0, FALLBACK_BYTES, 0, FALLBACK_BYTES.length);
+                pointer(20); pushString("system.arc"); pushString("fallback.bin");
+                pushInt(0); pushInt(FALLBACK_BYTES.length); sys(0x31);
+                requireInt(0);
+                requireBytes(20, FALLBACK_BYTES, 0, FALLBACK_BYTES.length);
+                pushString("system.arc"); pushString("fallback.bin"); sys(0x34); requireInt(1);
+                pushString("system.arc"); pushString("fallback.bin"); sys(0x35);
+                requireInt(FALLBACK_BYTES.length);
+            }
+            void checkMissingSlot() {
+                pointer(0); pushInt(0); pushString("UserData\\Missing.sud");
+                pushInt(0); pushInt(4); sys(0x31); requireInt(1);
+                pushInt(0); pushString("UserData\\Missing.sud"); sys(0x34); requireInt(0);
+                pushInt(0); pushString("UserData\\Missing.sud"); sys(0x35); requireInt(0);
+            }
+            void finishWith(String success, String failure) {
+                if (outcomeAdded) throw new IllegalStateException("Duplicate outcome");
+                outcomeAdded = true;
+                labels.put("success", code.size());
+                pushString(success); sys(0x66); jump("finish");
+                labels.put("failed", code.size());
+                pushString(failure); sys(0x66); jump("finish");
+                labels.put("finish", code.size());
+                pushInt(1); sys(0x68); sys(0x69);
+                emit(0x10, 0x00, FRAME, 0x21, 0x11, 0x17);
+            }
+            byte[] finish() {
+                if (!outcomeAdded) throw new IllegalStateException("Missing outcome");
+                byte[] instructions = code.toByteArray();
+                for (Branch branch : branches) {
+                    Integer target = labels.get(branch.label);
+                    if (target == null) throw new IllegalStateException("Unknown branch " + branch.label);
+                    ByteBuffer.wrap(instructions).order(ByteOrder.LITTLE_ENDIAN).putInt(branch.operandOffset, target);
+                }
+                for (StringFixup fixup : stringFixups) {
+                    byte[] text = (fixup.value + "\0").getBytes(StandardCharsets.US_ASCII);
+                    int delta = instructions.length + strings.size() - fixup.opcodeOffset;
+                    if (delta < Short.MIN_VALUE || delta > Short.MAX_VALUE)
+                        throw new IllegalStateException("String displacement overflow");
+                    instructions[fixup.opcodeOffset + 1] = (byte) delta;
+                    instructions[fixup.opcodeOffset + 2] = (byte) (delta >>> 8);
+                    strings.write(text, 0, text.length);
+                }
+                byte[] payload = new byte[instructions.length + strings.size()];
+                System.arraycopy(instructions, 0, payload, 0, instructions.length);
+                System.arraycopy(strings.toByteArray(), 0, payload, instructions.length, strings.size());
+                ByteBuffer bp = ByteBuffer.allocate(16 + payload.length).order(ByteOrder.LITTLE_ENDIAN);
+                bp.putInt(16).putInt(payload.length).putInt(0).putInt(0).put(payload);
+                return bp.array();
+            }
+            private static final class Branch {
+                final int operandOffset; final String label;
+                Branch(int offset, String name) { operandOffset = offset; label = name; }
+            }
+            private static final class StringFixup {
+                final int opcodeOffset; final String value;
+                StringFixup(int offset, String text) { opcodeOffset = offset; value = text; }
+            }
+        }
     }
 
     /** Original single-entry PackFile/BP bytes; no third-party script/font/image data. */

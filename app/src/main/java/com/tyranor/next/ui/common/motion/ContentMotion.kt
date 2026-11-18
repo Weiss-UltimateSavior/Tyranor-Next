@@ -518,6 +518,27 @@ private fun rollDirection(old: String, new: String): Int {
 }
 
 /**
+ * 「忙碌」的可见态：[busy] 持续超过 [delayMillis] 才变为 true，结束时立刻回落。
+ * 用于「任务在途时整页控件置灰」的场景：失败 / 瞬间完成的操作（如未配置服务器时点同步）只在数毫秒内翻转 busy，
+ * 直接把它当 enabled 用，连点会让整页控件反复闪灰。控件的真实可用性（拦截重复提交）仍应读取即时的 [busy]，只把视觉置灰延后。
+ * 「普通」档与原版一致，立刻跟随。
+ */
+@Composable
+fun rememberDelayedBusy(busy: Boolean, delayMillis: Long = 220L): Boolean {
+    if (!MotionMode.enhanced) return busy
+    var shown by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(busy) {
+        if (busy) {
+            kotlinx.coroutines.delay(delayMillis)
+            shown = true
+        } else {
+            shown = false
+        }
+    }
+    return busy && shown
+}
+
+/**
  * 延迟出现的加载转圈：「增强」档下快于 [delayMillis] 就加载完的场景用户只看到内容淡入、不会先闪一下转圈；
  * 超过才用 [BlurVisibility]（模糊 + 缩放）浮现。「普通」档与原版一致，立刻显示。
  * 只用于「页面 / 区块被动等待」的加载转圈；用户刚点了按钮的进度（顶栏刮削转圈等）应立即显示，不要延迟。

@@ -14,6 +14,8 @@
         <package android:name="cyou.joiplay.runtime.renpy.v8d4d1" />
         <package android:name="cyou.joiplay.runtime.renpy.v7d7d1" />
         <package android:name="cyou.joiplay.runtime.ruffle" />
+        <!-- Impacto 外置宿主 APK（安装探测 + 显式组件启动；Android 11+ 不声明则看不到该包） -->
+        <package android:name="com.tyranor.next.impacto" />
         <!-- 外置主机模拟器跳转目标（安装探测 + 显式组件启动） -->
         <package android:name="org.ppsspp.ppsspp" />
         <package android:name="dev.eden.eden_emulator" />
@@ -39,7 +41,7 @@
         android:enableOnBackInvokedCallback="false"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
+        android:label="${launcherLabel}"
         android:largeHeap="true"
         android:requestLegacyExternalStorage="true"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -133,6 +135,12 @@
         <activity
             android:name=".ui.auth.HikarinagiOAuthCallbackActivity"
             android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"
+            android:theme="@style/Theme.TyranorNext.Translucent" />
+        <activity
+            android:name=".ui.auth.BangumiOAuthCallbackActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"
             android:theme="@style/Theme.TyranorNext.Translucent" />
         <activity
             android:name="net.openid.appauth.RedirectUriReceiverActivity"
@@ -148,11 +156,16 @@
                     android:host="oauth"
                     android:path="/hikarinagi"
                     android:scheme="tyranornext" />
+
+                <data
+                    android:host="oauth"
+                    android:path="/bangumi"
+                    android:scheme="tyranornext" />
             </intent-filter>
         </activity>
         <activity
             android:name=".MainActivity"
-            android:configChanges="uiMode"
+            android:configChanges="uiMode|orientation|screenSize|smallestScreenSize|screenLayout|density|keyboardHidden"
             android:enableOnBackInvokedCallback="true"
             android:exported="true" />
         <!--
@@ -165,7 +178,7 @@
             android:enabled="true"
             android:exported="true"
             android:icon="@mipmap/ic_launcher"
-            android:label="@string/app_name"
+            android:label="${launcherLabel}"
             android:roundIcon="@mipmap/ic_launcher_round"
             android:targetActivity=".MainActivity">
             <intent-filter>
@@ -178,7 +191,7 @@
             android:enabled="false"
             android:exported="true"
             android:icon="@mipmap/ic_launcher_classic"
-            android:label="@string/app_name"
+            android:label="${launcherLabel}"
             android:roundIcon="@mipmap/ic_launcher_classic_round"
             android:targetActivity=".MainActivity">
             <intent-filter>

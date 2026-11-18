@@ -1,0 +1,20 @@
+{
+  "protocol": 1,
+  "scan": { "match": "any", "extensions": [".tyranor-example"] },
+  "settings": {
+    "version": 1,
+    "items": [
+      { "key": "vsync", "type": "boolean", "title": "VSync", "default": true },
+      {
+        "key": "renderer", "type": "enum", "title": "Renderer", "default": "auto",
+        "options": [
+          { "value": "auto", "title": "Auto" },
+          { "value": "software", "title": "Software" }
+        ]
+      },
+      { "key": "player_name", "type": "text", "title": "Player name", "default": "", "maxLength": 64 },
+      { "key": "fps_limit", "type": "integer", "title": "FPS limit", "default": 60, "min": 30, "max": 120 }
+    ]
+  },
+  "saves": { "version": 1, "directory": "saves" }
+}

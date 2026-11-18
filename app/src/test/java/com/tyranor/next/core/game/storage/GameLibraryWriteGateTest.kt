@@ -7,7 +7,9 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -49,10 +51,10 @@ class GameLibraryWriteGateTest {
                 Thread.sleep(1)
             }
             releaseEviction.countDown()
-            assertTrue(eviction.get(5, TimeUnit.SECONDS))
+            assertEquals(true, eviction.get(5, TimeUnit.SECONDS))
             registration.get(5, TimeUnit.SECONDS)
 
-            assertFalse(gate.evictIfUnused(registered::get) { error("A referenced copy must not be evicted") })
+            assertNull(gate.evictIfUnused<Unit>(registered::get) { error("A referenced copy must not be evicted") })
         } finally {
             releaseEviction.countDown()
             executor.shutdownNow()

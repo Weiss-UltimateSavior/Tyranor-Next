@@ -30,6 +30,7 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
     private final TextureView picture;
     private final byte[] filename;
     private final boolean canSkip;
+    private final int tracks;
     private final float volume;
     private final Listener listener;
     private final AudioAttributes audioAttributes = new AudioAttributes.Builder()
@@ -47,13 +48,15 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
     private boolean started;
     private Outcome pendingOutcome;
     private String pendingFailure;
+    private Runnable firstVideoFrame;
     private int videoWidth, videoHeight;
 
-    MoviePlayback(Context context, File file, int volume, boolean canSkip, Listener listener) {
+    MoviePlayback(Context context, File file, float gain, boolean canSkip, int tracks, Listener listener) {
         super(context);
         this.listener = listener;
         this.canSkip = canSkip;
-        this.volume = Math.max(0, Math.min(100, volume)) / 100f;
+        this.tracks = tracks;
+        this.volume = gain;
         filename = file.getPath().getBytes(StandardCharsets.UTF_8);
         audioFocus = new PlayerAudioFocus(context, owner, audioAttributes, this::mayRequestFocus,
             () -> Log.i(TAG, "Movie playing muted while audio focus is unavailable"));
@@ -65,6 +68,22 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
         picture = new TextureView(context);
         picture.setSurfaceTextureListener(this);
         addView(picture, new LayoutParams(-1, -1, Gravity.CENTER));
+    }
+
+    /** PC codec result: 0 none, 1 audio, 2 video, 4 complete. No Surface or output is opened. */
+    static int checkCodec(File file) {
+        if(file==null)return 0;
+        byte[] path=file.getAbsolutePath().getBytes(StandardCharsets.UTF_8);
+        boolean video=false,audio=false,absentAudio=false;
+        long token=0;
+        try {token=openVideo(path);video=token!=0&&next(token,0)>=0;}
+        catch(RuntimeException|LinkageError e){Log.w(TAG,"Movie video probe failed",e);}
+        finally {if(token!=0)close(token);}
+        token=0;
+        try {token=open(path,null);absentAudio=token==0;audio=token!=0&&next(token,0)>=0;}
+        catch(RuntimeException|LinkageError e){Log.w(TAG,"Movie audio probe failed",e);}
+        finally {if(token!=0)close(token);}
+        return video?(audio||absentAudio?4:2):audio?1:0;
     }
 
     void skip() {
@@ -92,6 +111,10 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
         if (mayRequestFocus()) audioFocus.request();
     }
 
+    void onFirstVideoFrame(Runnable callback) {
+        firstVideoFrame = callback;
+    }
+
     void dispose() {
         synchronized (gate) {
             if (stopped) return;
@@ -101,6 +124,7 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
         }
         pendingOutcome = null;
         pendingFailure = null;
+        firstVideoFrame = null;
         audioFocus.abandon();
     }
 
@@ -140,7 +164,16 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
     }
 
     @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture, int width, int height) {}
-    @Override public void onSurfaceTextureUpdated(SurfaceTexture texture) {}
+    @Override public void onSurfaceTextureUpdated(SurfaceTexture texture) {
+        if (firstVideoFrame == null) return;
+        // Layout can request an update before decoding. Read the latched buffer after the draw.
+        owner.post(() -> {
+            if (firstVideoFrame == null || stopped || texture != requestedTexture || texture.getTimestamp() == 0) return;
+            Runnable callback = firstVideoFrame;
+            firstVideoFrame = null;
+            callback.run();
+        });
+    }
 
     @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) {
         boolean stillPlaying;
@@ -250,6 +283,11 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
         int rendered = 0, dropped = 0;
         try {
             if (!awaitPlayback()) return;
+            if(tracks==1){
+                decodeAudio();
+                synchronized(gate){error=audioFailure;}
+                return;
+            }
             token = openVideo(filename);
             if (token == 0) throw new IllegalStateException("Movie video track unavailable");
             int[] size = size(token);
@@ -259,7 +297,8 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
                 videoHeight = size[1];
                 fit();
             });
-            new Thread(this::decodeAudio, "SystemNNN-MovieAudio").start();
+            if(tracks==2)endAudio(null);
+            else new Thread(this::decodeAudio, "SystemNNN-MovieAudio").start();
 
             long lastDraw = 0, previousPts = 0;
             while (awaitFrame(token, -1)) {

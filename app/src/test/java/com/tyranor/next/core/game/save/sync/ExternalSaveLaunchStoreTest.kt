@@ -73,6 +73,36 @@ class ExternalSaveLaunchStoreTest {
     }
 
     @Test
+    fun runtimeModuleIdentitySurvivesProcessReloadForExitConfirmation() {
+        val root = temp.newFolder("root")
+        val uri = "content://games/runtime"
+        val store = ExternalSaveLaunchStore(root, "owner")
+        store.prepare(uri, "runtime-token", "save-directory:/games/a/save",
+            modulePackageName = "com.tyranor.runtime.demo", declarationFingerprint = "decl-v1")
+        store.dispatched(uri, "runtime-token", "save-directory:/games/a/save", 4L,
+            modulePackageName = "com.tyranor.runtime.demo", declarationFingerprint = "decl-v1")
+
+        val record = ExternalSaveLaunchStore(root, "restarted-owner").pending().single()
+        assertEquals("com.tyranor.runtime.demo", record.modulePackageName)
+        assertEquals("decl-v1", record.declarationFingerprint)
+        assertEquals("save-directory:/games/a/save", record.activeKey)
+    }
+
+    @Test
+    fun confirmingOneRuntimeTokenKeepsAnyNewerTokenProtected() {
+        val root = temp.newFolder("root")
+        val uri = "content://games/runtime"
+        val store = ExternalSaveLaunchStore(root, "owner")
+        store.prepare(uri, "old-token", "old-directory", "com.tyranor.runtime.demo", "decl-v1")
+        store.prepare(uri, "new-token", "new-directory", "com.tyranor.runtime.demo", "decl-v2")
+        val snapshot = store.confirmation(uri)
+
+        store.confirmExit(snapshot, emptySet(), tokensToRetire = setOf("old-token")) {}
+
+        assertEquals(listOf("new-token"), ExternalSaveLaunchStore(root, "restart").pending().map { it.token })
+    }
+
+    @Test
     fun preparedEvidenceSurvivesOwnerChangeUntilExplicitConfirmation() {
         val root = temp.newFolder("root")
         val oldUri = "content://games/old"

@@ -10,7 +10,10 @@ import android.view.View;
 import java.util.ArrayList;
 
 /** Original selection window, hit rectangles and animated focus cursor. */
-final class GameChoicePanel extends GameUiPanel {
+final class GameChoicePanel extends GameUiPanel implements StoryPlaneView.Host {
+    private Runnable planeInvalidated;
+    void planeInvalidated(Runnable action){planeInvalidated=action;}
+    @Override public void invalidateStoryPlane(){if(planeInvalidated!=null)planeInvalidated.run();}
     interface Select {void choose(int oneBased);}
     private final GameUiAssets.Config cfg;
     private final DialogueMarkup.Style markup;
@@ -28,7 +31,7 @@ final class GameChoicePanel extends GameUiPanel {
     private boolean changeColor;
     private Runnable confirmation;
     private ChoiceTimer timer;
-    private boolean drawingOptions;
+    private boolean drawingPlane,includeTimer;
     private int remaining;
 
     GameChoicePanel(Context context,GameUiAssets assets,GameRunner.Frame frame,boolean changeColor,
@@ -47,9 +50,9 @@ final class GameChoicePanel extends GameUiPanel {
         center=cfg.number(special?"centeringFlag":"newCenteringFlag",0)!=0;
         boolean scroll=!special&&cfg.number("useScrollFlag",0)!=0;
         visible=scroll?Math.max(1,cfg.number("messagePrintGyo",4)-frame.choiceMessages.length):frame.choices.length;
-        String art=cfg.value("cursorFileName","ta_select_cur01");
+        String art=cfg.value("cursorFileName","ta_select01");
         cursor=sprite(special?cfg.value("filenameSpecialCursor",art):art);
-        int patterns=cfg.number(special?"specialAnimePatternNumber":"animePatternNumber",1);
+        int patterns=cfg.number(special?"specialAnimePatternNumber":"animePatternNumber",special?1:8);
         int period=cfg.number(special?"specialAnimeFrame":"animeFrame",1);
         boolean blend=cfg.number(special?"specialAnimePrintType":"animePrintType",0)!=0;
         boolean reverse=cfg.number(special?"specialAnimeReverse":"animeReverse",0)!=0;
@@ -59,6 +62,20 @@ final class GameChoicePanel extends GameUiPanel {
         readyAt=appearAt+(appearType==0?0:bound(cfg.number("firstAppearTime",10),0,1000))*(long)frame.frameMs;
         render();
     }
+    int page(){return page;}
+    boolean animating(){
+        if(getVisibility()==GONE)return false;
+        long now=SystemClock.uptimeMillis();
+        if(now<readyAt||cursor!=null&&focused>=0&&animation.active((now-readyAt)/Math.max(1,frame.frameMs))||
+            controlsBusy()||confirming())return true;
+        for(int i=0;i<getChildCount();i++){
+            View child=getChildAt(i);
+            if(child instanceof GameButton){
+                if(((GameButton)child).isAnimating())return true;
+            }
+        }
+        return false;
+    }
     void changeColor(boolean value){
         if(value==changeColor)return;
         changeColor=value;
@@ -66,17 +83,31 @@ final class GameChoicePanel extends GameUiPanel {
         for(ChoiceRow row:rows)row.invalidate();
     }
     void remaining(int value){remaining=value;if(timer!=null)timer.invalidate();}
-    boolean isTimer(View view){return timer!=null&&view==timer;}
-    void drawOptions(Canvas canvas){
-        if(getVisibility()!=VISIBLE)return;
-        drawingOptions=true;
-        try{draw(canvas);}finally{drawingOptions=false;}
+    void drawPlane(Canvas canvas,boolean withTimer){
+        if(getVisibility()==GONE)return;
+        drawingPlane=true;includeTimer=withTimer;
+        try{draw(canvas);}finally{drawingPlane=false;includeTimer=false;}
     }
-    void drawTimer(Canvas canvas){
-        if(getVisibility()==VISIBLE&&timer!=null&&timer.getVisibility()==VISIBLE)timer.draw(canvas);
+    boolean hasFloating(){
+        for(int i=0;i<getChildCount();i++){
+            View child=getChildAt(i);
+            if((child==timer||child instanceof GameButton)&&child.getVisibility()==VISIBLE)return true;
+        }
+        return false;
+    }
+    void drawFloating(Canvas canvas){
+        if(getVisibility()==GONE)return;
+        for(int i=0;i<getChildCount();i++){
+            View child=getChildAt(i);
+            if((child==timer||child instanceof GameButton)&&child.getVisibility()==VISIBLE)
+                super.drawChild(canvas,child,getDrawingTime());
+        }
+    }
+    @Override protected void dispatchDraw(Canvas canvas){
+        if(drawingPlane)super.dispatchDraw(canvas);
     }
     @Override protected boolean drawChild(Canvas canvas,View child,long drawingTime){
-        return (!drawingOptions||child!=timer)&&super.drawChild(canvas,child,drawingTime);
+        return (includeTimer||(child!=timer&&!(child instanceof GameButton)))&&super.drawChild(canvas,child,drawingTime);
     }
     boolean confirming(){return confirmation!=null;}
     private boolean timeLimitActionAllowed(){return frame.choiceInfo[0]==0||cfg.number("timeLimitOptionOk",0)!=0;}
@@ -99,11 +130,18 @@ final class GameChoicePanel extends GameUiPanel {
         clearControls();rows.clear();messages.clear();
         setClipChildren(true);
         if(!special){
-            String tag=frame.choiceInfo[0]>0?"timeLimitWindow":"window";
-            if(cfg.number(tag+"PrintFlag",0)!=0){
-                int x=cfg.number(tag+"PrintX",0),y=cfg.number(tag+"PrintY",0);
-                picture(cfg.value(tag+"FileName","ta_select_win01"),x,y,
-                    bound(cfg.number(tag+"SizeX",canvasWidth),1,4096),bound(cfg.number(tag+"SizeY",220),1,4096));
+            int winFlag=cfg.number("windowPrintFlag",1);
+            String winFile=cfg.value("windowFileName","ta_win_select");
+            int winX=cfg.number("windowPrintX",0),winY=cfg.number("windowPrintY",400);
+            int winW=cfg.number("windowSizeX",800),winH=cfg.number("windowSizeY",200);
+            if(frame.choiceInfo[0]>0){
+                winFlag=cfg.number("timeLimitWindowPrintFlag",winFlag);
+                winFile=cfg.value("timeLimitWindowFileName",winFile);
+                winX=cfg.number("timeLimitWindowPrintX",winX);winY=cfg.number("timeLimitWindowPrintY",winY);
+                winW=cfg.number("timeLimitWindowSizeX",winW);winH=cfg.number("timeLimitWindowSizeY",winH);
+            }
+            if(winFlag!=0&&sprite(winFile)!=null){
+                picture(winFile,winX,winY,bound(winW,1,4096),bound(winH,1,4096));
             }
         }
         int count=Math.max(1,Math.min(8,frame.choices.length));
@@ -158,7 +196,7 @@ final class GameChoicePanel extends GameUiPanel {
         confirmation=()->{confirmation=null;select.choose(index+1);};
         postDelayed(confirmation,bound(cfg.number("clickingTime",5),0,1000)*(long)frame.frameMs);
     }
-    private final class ChoiceTimer extends View {
+    private final class ChoiceTimer extends StoryPlaneView {
         private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);
         private final Bitmap bar=sprite(cfg.value("fileNameTimer",""));
         private final Bitmap digits=sprite(cfg.value("fileNameTimerTime",""));
@@ -230,7 +268,7 @@ final class GameChoicePanel extends GameUiPanel {
         }
     }
     @Override protected void onDetachedFromWindow(){if(confirmation!=null)removeCallbacks(confirmation);confirmation=null;super.onDetachedFromWindow();}
-    private final class ChoiceRow extends View {
+    private final class ChoiceRow extends StoryPlaneView {
         final int index;
         final String label;
         final DialogueTextView annotated;
@@ -267,10 +305,7 @@ final class GameChoicePanel extends GameUiPanel {
             if(focused==index&&now>=readyAt){
                 long elapsed=(now-readyAt)/Math.max(1,frame.frameMs);
                 dest.set(0,0,cursorW,cursorH);
-                if(!animation.draw(canvas,cursor,dest,paint,elapsed,255)){
-                    paint.setColor(0x88498bcc);canvas.drawRect(dest,paint);
-                }
-                if(animation.active(elapsed))postInvalidateOnAnimation();
+                if(animation.draw(canvas,cursor,dest,paint,elapsed,255)&&animation.active(elapsed))postInvalidateOnAnimation();
             }
             int tone=textColor(index);
             paint.setColor(tone);

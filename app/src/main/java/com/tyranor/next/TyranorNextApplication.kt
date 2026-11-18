@@ -10,7 +10,6 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
 import bridge.PrimaryStorageRoot
 import com.tyranor.next.core.game.save.GameSaveManager
-import com.tyranor.next.core.game.save.SystemNnnCleanupQueue
 import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.process.AppProcess
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
@@ -63,6 +62,7 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
             // commit 失败时 OnboardingPreferences 保留基于旧数据的内存快照：存量用户仍直接进入主界面，
             // 新安装用户仍显示引导；下一次启动或完成引导时会再次尝试落盘。
             AppSettingsStore.initializeOnboarding(this)
+            AppSettingsStore.initDefaultThemeParticles(this)
             // 启动器图标别名与设置对齐（升级、清除数据或上次切换失败时兜底）；幂等，无变化不写。
             AppIconSwitcher.apply(this, AppSettingsStore.isClassicIconEnabled(this))
         }
@@ -77,8 +77,14 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         if (mainProcess) {
             initializeMainLibrary()
             // 上次删除游戏/目录或重扫丢弃条目时未完成的副本回收在这里续做；引擎侧不保存这些路径。
-            if (!SystemNnnCleanupQueue.isEmpty(this)) background.launch {
-                runCatching { GameSaveManager(this@TyranorNextApplication).drainSystemNnnCleanupQueue() }
+            background.launch {
+                try {
+                    GameSaveManager(this@TyranorNextApplication).drainSystemNnnCleanupQueue()
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    android.util.Log.w("SystemNNN", "Could not resume copy resource cleanup", failure)
+                }
             }
         }
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
@@ -101,7 +107,11 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
 
     override fun onStop(owner: LifecycleOwner) {
         SaveSyncRuntime.onBackground(this)
-        if (AppSettingsStore.isOnboardingCompleted(this)) BackgroundUpdateWorker.enqueue(this)
+        if (!AppSettingsStore.ONBOARDING_FEATURE_ENABLED ||
+            AppSettingsStore.isOnboardingCompleted(this)
+        ) {
+            BackgroundUpdateWorker.enqueue(this)
+        }
     }
 
 }

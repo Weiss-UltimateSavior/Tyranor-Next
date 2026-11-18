@@ -11,8 +11,13 @@ import java.util.function.IntConsumer;
 final class ValueBar extends View {
     final Bitmap image;final String label;final int min,max,logicalWidth,logicalHeight,padding;final IntConsumer change;final Runnable click;
     final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);int value;boolean tracking;
+    private final boolean fallbackTrack;
     private IntConsumer commit;
-    ValueBar(Context context,Bitmap image,String label,int min,int max,int value,int w,int h,int padding,Runnable click,IntConsumer change){super(context);this.image=image;this.padding=padding;this.click=click;this.label=label;this.min=min;this.max=Math.max(min,max);this.value=Math.max(min,Math.min(value,this.max));logicalWidth=w;logicalHeight=h;this.change=change;
+    ValueBar(Context context,Bitmap image,String label,int min,int max,int value,int w,int h,int padding,Runnable click,IntConsumer change){
+        this(context,image,label,min,max,value,w,h,padding,click,change,false);
+    }
+    ValueBar(Context context,Bitmap image,String label,int min,int max,int value,int w,int h,int padding,Runnable click,IntConsumer change,boolean fallbackTrack){super(context);this.image=image;this.padding=padding;this.click=click;this.label=label;this.min=min;this.max=Math.max(min,max);this.value=Math.max(min,Math.min(value,this.max));logicalWidth=w;logicalHeight=h;this.change=change;
+        this.fallbackTrack=fallbackTrack;
         setFocusable(true);setClickable(true);setSoundEffectsEnabled(false);describe();}
     void describe(){setContentDescription(label+" "+value+" / "+max);}
     void update(int next){next=Math.max(min,Math.min(next,max));if(next!=value){value=next;describe();invalidate();change.accept(value);sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_SELECTED);}}
@@ -21,13 +26,18 @@ final class ValueBar extends View {
     private void clickCue(){if(click!=null)click.run();}
     private void committed(){if(commit!=null)commit.accept(value);}
     @Override protected void onDraw(Canvas c){
-        float sy=getHeight()/(float)(logicalHeight+padding),top=padding*.5f*sy,bottom=top+logicalHeight*sy;
-        float fraction=max==min?1:(value-min)/(float)(max-min);int extent=Math.round(logicalWidth*fraction);p.setAlpha(isEnabled()?255:110);
+        float sy=getHeight()/(float)(logicalHeight+padding),top=padding*.5f*sy;
+        float fraction=max==min?1:(value-min)/(float)(max-min);int extent=Math.round(logicalWidth*fraction);
+        int alpha=isEnabled()?255:110;
         if(image!=null&&extent>0){
             int width=Math.min(extent,image.getWidth()),height=Math.min(logicalHeight,image.getHeight());
+            p.setAlpha(alpha);
             c.drawBitmap(image,new Rect(0,0,width,height),new RectF(0,top,getWidth()*width/(float)logicalWidth,top+height*sy),p);
+        }else if(image==null&&fallbackTrack){
+            float bottom=top+logicalHeight*sy;
+            p.setColor(0xff365776);p.setAlpha(alpha);c.drawRect(0,top,getWidth(),bottom,p);
+            p.setColor(0xff83d8ff);p.setAlpha(alpha);c.drawRect(0,top,getWidth()*fraction,bottom,p);
         }
-        else if(image==null){p.setColor(0xff365776);c.drawRect(0,top,getWidth(),bottom,p);p.setColor(0xff83d8ff);c.drawRect(0,top,getWidth()*fraction,bottom,p);}
     }
     @Override public boolean onTouchEvent(MotionEvent e){if(!isEnabled())return false;
         switch(e.getActionMasked()){

@@ -20,6 +20,9 @@ interface ExternalEngineModule {
     /** Minimum installed APK versionCode accepted by this module; zero means any version. */
     val minimumVersionCode: Long get() = 0L
 
+    /** 允许的 APK versionCode 上限；用于区分共用包名的不同引擎版本。 */
+    val maximumVersionCode: Long get() = Long.MAX_VALUE
+
     @get:StringRes
     val displayNameRes: Int? get() = null
 

@@ -4,11 +4,11 @@ import java.util.*;
 
 /** CGameCallBack's CSceneOptionButton declarations; all coordinates remain game pixels. */
 final class GameStoryControlsModel {
-    enum Action { MENU,QUICK_SAVE,QUICK_LOAD,CONFIG,BACKLOG,SAVE,LOAD,AUTO,SKIP,HIDE }
+    enum Action { MENU,QUICK_SAVE,QUICK_LOAD,CONFIG,BACKLOG,SAVE,LOAD,AUTO,SKIP,HIDE,FILM_SKIP }
     static final String[] CONFIG_NAMES={"optionButton","quickSaveButton","quickLoadButton","quickConfigButton",
-        "quickBacklogButton","freeSaveButton","freeLoadButton","freeAutoButton","freeSkipButton","freeWindowOffButton"};
+        "quickBacklogButton","freeSaveButton","freeLoadButton","freeAutoButton","freeSkipButton","freeWindowOffButton","skipFilmButton"};
     static final Action[] ACTIONS={Action.MENU,Action.QUICK_SAVE,Action.QUICK_LOAD,Action.CONFIG,Action.BACKLOG,
-        Action.SAVE,Action.LOAD,Action.AUTO,Action.SKIP,Action.HIDE};
+        Action.SAVE,Action.LOAD,Action.AUTO,Action.SKIP,Action.HIDE,Action.FILM_SKIP};
     final List<Button> buttons=new ArrayList<>();
     final boolean original;
     final boolean drawDuringTransitions;
@@ -40,7 +40,7 @@ final class GameStoryControlsModel {
             if(i==2&&load==0)continue;
             buttons.add(new Button(ACTIONS[i],name,c));
         }
-        original=!buttons.isEmpty();
+        original=buttons.stream().anyMatch(button->button.action!=Action.FILM_SKIP);
     }
     private static int bound(int v,int min,int max){return Math.max(min,Math.min(v,max));}
 }

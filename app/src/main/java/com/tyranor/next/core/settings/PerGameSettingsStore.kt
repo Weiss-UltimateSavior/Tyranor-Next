@@ -4,6 +4,7 @@ import android.content.Context
 import com.core.engine.EnginePrefs
 import com.tyranor.next.core.game.storage.GameOverridePartitions
 import com.tyranor.next.core.game.storage.GameOverridesRepository
+import com.tyranor.next.core.engine.runtime.RuntimeModuleSettingsSpec
 import org.json.JSONObject
 import java.util.Locale
 
@@ -18,6 +19,16 @@ import java.util.Locale
  * prefs 文件名契约锚点在 engine，改名只需改 EnginePrefs 一处。
  */
 object PerGameSettingsStore {
+
+    sealed interface RuntimeModuleSettingsSaveResult {
+        data object Saved : RuntimeModuleSettingsSaveResult
+        data object GameMissing : RuntimeModuleSettingsSaveResult
+        data object BindingChanged : RuntimeModuleSettingsSaveResult
+        data object ModuleDisabled : RuntimeModuleSettingsSaveResult
+        data object DescriptorChanged : RuntimeModuleSettingsSaveResult
+        data object InvalidValues : RuntimeModuleSettingsSaveResult
+        data class StorageFailure(val detail: String?) : RuntimeModuleSettingsSaveResult
+    }
 
     private val PREF_NAME = EnginePrefs.GAME_OVERRIDES_PREFS
 
@@ -116,6 +127,10 @@ object PerGameSettingsStore {
     const val F_ETHORNELL_NLS = "ethornell_nls"
     const val F_ETHORNELL_FONT = "ethornell_font"
     const val F_CMVS_FONT = "cmvs_font"
+    const val F_SYSTEMNNN_FULLSCREEN = "systemnnn_fullscreen"
+    const val F_SYSTEMNNN_READING_SIZE = "systemnnn_reading_size"
+    const val F_SYSTEMNNN_EXE_ANALYSIS = "systemnnn_exe_analysis"
+    const val F_SYSTEMNNN_DEBUG_MODE = "systemnnn_debug_mode"
     const val F_FVP_SYSTEM_FONT = "fvp_system_font"
     const val F_FVP_TEXT_HIDPI = "fvp_text_hidpi"
     const val F_FVP_FONT = "fvp_font"
@@ -167,6 +182,14 @@ object PerGameSettingsStore {
     const val F_RUFFLE_SCALE_MODE = "ruffle_scale_mode"
     const val F_RUFFLE_LETTERBOX = "ruffle_letterbox"
     const val F_RUFFLE_LOAD_BEHAVIOR = "ruffle_load_behavior"
+    // MAGES.（impacto）宿主配置覆盖（与全局键同名；null=跟随全局）
+    const val F_IMPACTO_SWAP_CONFIRM_CANCEL = "impacto_swap_confirm_cancel"
+    const val F_IMPACTO_VSYNC = "impacto_vsync"
+    const val F_IMPACTO_VIDEO_PLAYBACK = "impacto_video_playback"
+    const val F_IMPACTO_SUBTITLES = "impacto_subtitles"
+    const val F_IMPACTO_CLOSE_BACKLOG_AT_END = "impacto_close_backlog_at_end"
+    const val F_IMPACTO_DELUSION_MOUSE = "impacto_delusion_mouse"
+    const val F_IMPACTO_LOG_LEVEL = "impacto_log_level"
 
     // ONS 子对象键
     const val ONS_KEY = "ons"
@@ -195,6 +218,45 @@ object PerGameSettingsStore {
         val row = GameOverridesRepository.loadRowBlocking(context, gameId) ?: return JSONObject()
         return runCatching { GameOverridePartitions.assemble(row) }.getOrDefault(JSONObject())
     }
+
+    /** Read the current module's isolated overrides (never returns module defaults). */
+    fun getRuntimeModuleSettings(context: Context, gameUri: String, packageName: String): JSONObject {
+        if (gameUri.isBlank() || packageName.isBlank()) return JSONObject()
+        return load(context, gameUri)
+            .optJSONObject(GameOverridePartitions.KEY_RUNTIME_MODULE_SETTINGS)
+            ?.optJSONObject(packageName)
+            ?.let { JSONObject(it.toString()) }
+            ?: JSONObject()
+    }
+
+    /** Persist a validated module-only override object and await both prefs mirror and Room write. */
+    suspend fun saveRuntimeModuleSettings(
+        context: Context,
+        gameUri: String,
+        packageName: String,
+        spec: RuntimeModuleSettingsSpec,
+        overrides: JSONObject,
+    ): RuntimeModuleSettingsSaveResult = when (
+        val result = GameOverridesRepository.writeRuntimeModuleSettings(context, gameUri, packageName, spec, overrides)
+    ) {
+        GameOverridesRepository.RuntimeSettingsWriteResult.Saved -> RuntimeModuleSettingsSaveResult.Saved
+        GameOverridesRepository.RuntimeSettingsWriteResult.GameMissing -> RuntimeModuleSettingsSaveResult.GameMissing
+        GameOverridesRepository.RuntimeSettingsWriteResult.BindingChanged -> RuntimeModuleSettingsSaveResult.BindingChanged
+        GameOverridesRepository.RuntimeSettingsWriteResult.ModuleDisabled -> RuntimeModuleSettingsSaveResult.ModuleDisabled
+        GameOverridesRepository.RuntimeSettingsWriteResult.DescriptorChanged -> RuntimeModuleSettingsSaveResult.DescriptorChanged
+        GameOverridesRepository.RuntimeSettingsWriteResult.InvalidValues -> RuntimeModuleSettingsSaveResult.InvalidValues
+        is GameOverridesRepository.RuntimeSettingsWriteResult.StorageFailure ->
+            RuntimeModuleSettingsSaveResult.StorageFailure(result.detail)
+    }
+
+    suspend fun clearRuntimeModuleSettings(
+        context: Context,
+        gameUri: String,
+        packageName: String,
+        spec: RuntimeModuleSettingsSpec,
+    ): RuntimeModuleSettingsSaveResult = saveRuntimeModuleSettings(
+        context, gameUri, packageName, spec, JSONObject(),
+    )
 
     fun getGraphicsOverride(context: Context, gameId: String, family: GraphicsFamily): GraphicsOverride =
         GraphicsSettingsCodec.readOverride(load(context, gameId), family)
@@ -337,6 +399,33 @@ object PerGameSettingsStore {
     }
 
     /**
+     * MAGES.（impacto）宿主覆盖快照 → 类型化模型（缺失字段=跟随全局，
+     * 供 [EffectiveEngineSettings.mergeImpacto] 使用）。日志等级 trim/lowercase 后再比较。
+     */
+    fun toImpactoOverride(json: JSONObject?): ImpactoOverride? {
+        if (json == null) return null
+        fun boolOrNull(key: String): Boolean? = if (json.has(key)) json.optBoolean(key) else null
+        val override = ImpactoOverride(
+            swapConfirmCancel = boolOrNull(F_IMPACTO_SWAP_CONFIRM_CANCEL),
+            vsync = boolOrNull(F_IMPACTO_VSYNC),
+            videoPlayback = boolOrNull(F_IMPACTO_VIDEO_PLAYBACK),
+            subtitles = if (json.has(F_IMPACTO_SUBTITLES)) {
+                json.optString(F_IMPACTO_SUBTITLES).trim().lowercase(Locale.ROOT)
+            } else {
+                null
+            },
+            closeBacklogAtEnd = boolOrNull(F_IMPACTO_CLOSE_BACKLOG_AT_END),
+            delusionMouse = boolOrNull(F_IMPACTO_DELUSION_MOUSE),
+            logLevel = if (json.has(F_IMPACTO_LOG_LEVEL)) {
+                json.optString(F_IMPACTO_LOG_LEVEL).trim().lowercase(Locale.ROOT)
+            } else {
+                null
+            },
+        )
+        return override.takeIf { it != ImpactoOverride() }
+    }
+
+    /**
      * 1.61 的六个旧参数键：只用于「六键都存在且全为空串 → 跟随容器」的迁移判定。
      * 新增覆盖字段时不要动这个列表，否则历史记录会被误判。
      */
@@ -441,7 +530,12 @@ object PerGameSettingsStore {
      * `GameOverridesRepository.syncFromPrefs` 回灌保证历史数据不丢。
      */
     private fun persist(context: Context, gameId: String, record: JSONObject) {
-        GameOverridesRepository.updateRecord(context, gameId, record)
-        prefs(context).edit().putString(gameId, record.toString()).apply()
+        synchronized(GameOverridesRepository.runtimeModuleSettingsMirrorLock) {
+            val mirror = prefs(context).getString(gameId, null)
+                ?.let { runCatching { JSONObject(it) }.getOrNull() }
+            if (mirror != null) GameOverridesRepository.preserveRuntimeModuleSettings(mirror, record)
+            GameOverridesRepository.updateRecord(context, gameId, record)
+            prefs(context).edit().putString(gameId, record.toString()).apply()
+        }
     }
 }

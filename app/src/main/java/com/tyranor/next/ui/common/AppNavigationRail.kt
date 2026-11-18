@@ -44,8 +44,8 @@ private val RailWidth = 64.dp
 private val RailItemSize = 56.dp
 
 /**
- * 平板/大窗口的主导航侧栏：**按外观风格取该主题「默认导航栏」的形态**——
- * - 默认外观：Material3 [NavigationRail]（与默认底栏同款选中态、同款图标填充动画）；
+ * 平板/大窗口的主导航侧栏：**按外观风格取该主题「经典 MD 导航栏」的形态**——
+ * - 默认外观：Material3 [NavigationRail]（与经典 MD 底栏同款选中态、同款图标填充动画）；
  * - 复古玻璃：悬浮玻璃柱（`GlassNavSurface` + 渐变描边）。
  *
  * 液态玻璃 · 经典 / 透镜两档是底部横排的专用实现（透镜更是三层采样 + 折射轨迹），

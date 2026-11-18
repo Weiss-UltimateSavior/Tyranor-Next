@@ -93,8 +93,7 @@ public final class EthornellPrivateActivityTest {
         File game = new File(path).getCanonicalFile();
         assertTrue("game_path not readable (check appops/scoped storage)", game.isAbsolute() && game.isDirectory() && game.canRead());
         String identity = "ethornell-instrumentation://" + UUID.randomUUID();
-        File user = expectedUserRoot(app, identity);
-        assertTrue(user.mkdirs());
+        File user = expectedGameUserRoot(game);
         String dispatch = issueDispatch(app, identity);
         Intent intent = new Intent().setComponent(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 .putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_ETHORNELL)
@@ -145,10 +144,10 @@ public final class EthornellPrivateActivityTest {
                         EngineSessionRegistry.currentLiveGame(app, EngineSessionRegistry.HOST_ETHORNELL));
                 assertDispatch(app, dispatch, identity, hostPid, EthornellDispatchRegistry.Stage.CLAIMED);
                 String handoff = "MANUAL_HANDOFF host_pid=" + hostPid + " identity=" + identity
-                        + " private_user_root=" + user + " dispatch=" + dispatch
+                        + " game_user_root=" + user + " dispatch=" + dispatch
                         + " survival_after_runner=NOT_GUARANTEED (default Android instrumentation finish force-stops target package)"
                         + " auto_acceptance=NONE (title/newgame/save/load/confirmation require manual review)";
-                Files.write(new File(user, "manual-handoff.txt").toPath(), handoff.getBytes(StandardCharsets.UTF_8));
+                Files.write(evidenceFile(app, identity, "manual-handoff.txt").toPath(), handoff.getBytes(StandardCharsets.UTF_8));
                 runnerDiagnostic(handoff);
                 manualHandoff = true;
             }
@@ -201,7 +200,7 @@ public final class EthornellPrivateActivityTest {
         try {
             assertTrue("No recorded host pid for log capture", capturedPid > 0 && capturedPid != Process.myPid());
             evidence.logs = shell("logcat -d -v threadtime --pid=" + capturedPid + " -t 2000", false);
-            try (FileOutputStream out = new FileOutputStream(new File(user, "activity-logcat.txt"))) {
+            try (FileOutputStream out = new FileOutputStream(evidenceFile(app, identity, "activity-logcat.txt"))) {
                 out.write(evidence.logs.getBytes(StandardCharsets.UTF_8));
             }
             int emitted = 0;
@@ -218,7 +217,7 @@ public final class EthornellPrivateActivityTest {
                 Bitmap screenshot;
                 synchronized (AUTOMATION_LOCK) { screenshot = automation.takeScreenshot(); }
                 assertNotNull("Screenshot unavailable", screenshot);
-                try (FileOutputStream out = new FileOutputStream(new File(user, "activity.png"))) {
+                try (FileOutputStream out = new FileOutputStream(evidenceFile(app, identity, "activity.png"))) {
                     assertTrue("PNG encode failed", screenshot.compress(Bitmap.CompressFormat.PNG, 100, out));
                 } finally { screenshot.recycle(); }
                 return null;
@@ -226,7 +225,7 @@ public final class EthornellPrivateActivityTest {
         } catch (Exception | Error error) { evidence.failures.add(error); }
         try {
             String summary = "phase=" + phase + " host_pid=" + capturedPid + " capture_failures=" + evidence.failures;
-            Files.write(new File(user, "activity-evidence.txt").toPath(), summary.getBytes(StandardCharsets.UTF_8));
+            Files.write(evidenceFile(app, identity, "activity-evidence.txt").toPath(), summary.getBytes(StandardCharsets.UTF_8));
             runnerDiagnostic("EVIDENCE phase=" + phase + " host_pid=" + capturedPid
                     + " capture_failures=" + evidence.failures.size() + " files=" + user);
         } catch (Exception | Error error) { evidence.failures.add(error); }
@@ -247,8 +246,6 @@ public final class EthornellPrivateActivityTest {
                 EngineSessionRegistry.currentLiveGame(app, EngineSessionRegistry.HOST_ETHORNELL));
         String identity = "ethornell-close-reentry://" + UUID.randomUUID();
         String hash = identityHash(identity);
-        File user = expectedUserRoot(app, identity);
-        assertTrue(user.mkdirs());
         ComponentName component = new ComponentName(app.getPackageName(), EthornellActivity.class.getName());
         ActivityInfo info = app.getPackageManager().getActivityInfo(component, 0);
         assertFalse(info.exported);
@@ -263,6 +260,7 @@ public final class EthornellPrivateActivityTest {
         String previousDispatch = null;
         String activeDispatch = null;
         try (EthornellDeviceTest.Fixture fixture = new EthornellDeviceTest.Fixture(true)) {
+            File user = expectedGameUserRoot(fixture.resource);
             for (int round = 1; round <= 2; round++) {
                 activeDispatch = issueDispatch(app, identity);
                 if (previousDispatch != null) assertNull("issue must prune the previous TERMINAL record",
@@ -293,7 +291,7 @@ public final class EthornellPrivateActivityTest {
                     if (completed != null) { pid = (int) completed[0]; token = completed[1]; break; }
                     SystemClock.sleep(75);
                 }
-                File report = new File(user, "close-reentry-round-" + round + ".log");
+                File report = evidenceFile(app, identity, "close-reentry-round-" + round + ".log");
                 try (FileOutputStream out = new FileOutputStream(report)) {
                     out.write(logs.getBytes(StandardCharsets.UTF_8));
                 }
@@ -316,7 +314,7 @@ public final class EthornellPrivateActivityTest {
                 while (ownHostPid(app) != 0 && SystemClock.elapsedRealtime() < exitDeadline) SystemClock.sleep(50);
                 assertEquals("Host must terminate itself after acknowledged close", 0, ownHostPid(app));
                 assertFalse("TERMINAL owner must have actually exited", EthornellDispatchRegistry.isOwnerAlive(app, terminal));
-                fixture.assertResourceUnchanged();
+                assertGameResourceUnchanged(fixture, user);
                 Log.i(EthornellDeviceTest.TAG, "PASS normal-close round=" + round + " pid=" + pid
                         + " token=" + token + " identity_sha256=" + hash + " log=" + report);
                 previousDispatch = activeDispatch;
@@ -416,13 +414,30 @@ public final class EthornellPrivateActivityTest {
         return hex.toString();
     }
 
-    private static File expectedUserRoot(Context app, String identity) throws Exception {
-        // Independently derive the real security contract; never ask the production host to
-        // accept an arbitrary instrumentation root or relax its identity/path check.
-        File expected = new File(new File(app.getFilesDir().getCanonicalFile(), "ethornell/userdata"), identityHash(identity));
-        assertEquals("Shared path facade disagrees with independent SHA256 contract", expected,
-                EthornellPaths.userDataDir(app.getFilesDir(), identity));
+    private static File evidenceFile(Context app, String identity, String name) throws Exception {
+        File directory = new File(app.getFilesDir(), "ethornell-activity-evidence/" + identityHash(identity));
+        assertTrue("Cannot prepare test evidence directory", directory.isDirectory() || directory.mkdirs());
+        return new File(directory, name);
+    }
+
+    private static File expectedGameUserRoot(File gameRoot) throws Exception {
+        File canonicalRoot = gameRoot.getCanonicalFile();
+        assertTrue("Game resource root must already exist", canonicalRoot.isDirectory());
+        File expected = new File(canonicalRoot, "savedata");
+        assertEquals("Shared facade must resolve the game-owned savedata directory", expected,
+                EthornellPaths.gameUserDataDir(gameRoot));
+        assertEquals("Host payload must use the exact canonical savedata path", expected,
+                EthornellPaths.validateGameUserDataDir(gameRoot, expected.getPath()));
         return expected;
+    }
+
+    private static void assertGameResourceUnchanged(EthornellDeviceTest.Fixture fixture, File userRoot)
+            throws Exception {
+        assertArrayEquals("The game archive changed", fixture.expected,
+                Files.readAllBytes(new File(fixture.resource, "system.arc").toPath()));
+        assertTrue("Game savedata directory must remain beneath the resource root", userRoot.isDirectory());
+        assertEquals("Only the archive and game savedata may exist at the resource root",
+                2, fixture.resource.list().length);
     }
 
     private static int ownHostPid(Context context) {

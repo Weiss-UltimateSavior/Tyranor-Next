@@ -104,10 +104,11 @@ class RenPyExternalEngineModuleTest {
     @Test
     fun renpy853UsesExisting85SettingsProtocol() {
         val settings = EngineSettingsStore.RenPy(lessMemory = true)
-        val payload = JSONObject(RenPyExternalEngineModule.buildSettingsJson(settings))
+        val payload = JSONObject(RenPy853ExternalEngineModule.buildSettingsJson(settings))
         assertTrue(payload.getJSONObject("renpy").getJSONObject("renpy_less_memory").getBoolean("boolean"))
-        assertEquals("cyou.joiplay.runtime.renpy.v8d4d1", RenPyExternalEngineModule.packageName)
-        assertEquals(10200L, RenPyExternalEngineModule.minimumVersionCode)
+        assertEquals(RenPyExternalEngineModule.buildSettingsJson(settings), payload.toString())
+        assertEquals("cyou.joiplay.runtime.renpy.v8d4d1", RenPy853ExternalEngineModule.packageName)
+        assertEquals(10200L, RenPy853ExternalEngineModule.minimumVersionCode)
     }
 
     private fun parseFlatJson(payload: String): Map<String, String> {

@@ -19,6 +19,10 @@ data class RuntimeModuleDescriptor(
     val activityName: String,
     val scan: RuntimeModuleScanSpec?,
     val enabled: Boolean,
+    val settings: RuntimeModuleSettingsSpec? = null,
+    val saves: RuntimeModuleSaveSpec? = null,
+    val settingsDiagnostic: String? = null,
+    val savesDiagnostic: String? = null,
 ) {
     companion object {
         /** 解析模块描述文件 JSON，只返回描述文件能声明的字段。 */
@@ -46,6 +50,10 @@ data class RuntimeModuleManifest(
     val protocol: Int,
     val label: String?,
     val scan: RuntimeModuleScanSpec?,
+    val settings: RuntimeModuleSettingsSpec? = null,
+    val saves: RuntimeModuleSaveSpec? = null,
+    val settingsDiagnostic: String? = null,
+    val savesDiagnostic: String? = null,
 ) {
     companion object {
         fun parse(json: String?): RuntimeModuleManifest? = RuntimeModuleManifestParser.parse(json)
@@ -112,10 +120,16 @@ object RuntimeModuleManifestParser {
         } catch (_: Exception) {
             return null
         }
+        val settingsResult = RuntimeModuleSettingsParser.parseDetailed(root.opt("settings"))
+        val savesResult = RuntimeModuleSaveSpecParser.parseDetailed(root.opt("saves"))
         return RuntimeModuleManifest(
             protocol = readProtocol(root),
             label = (root.opt("label") as? String)?.trim()?.takeIf { it.isNotEmpty() },
             scan = parseScan(root.opt("scan")),
+            settings = settingsResult.first,
+            saves = savesResult.first,
+            settingsDiagnostic = settingsResult.second,
+            savesDiagnostic = savesResult.second,
         )
     }
 

@@ -56,6 +56,7 @@ import com.tyranor.next.ui.common.collectSettingAsState
 import com.tyranor.next.ui.common.motion.dissolve
 import com.tyranor.next.ui.common.motion.dissolveTint
 import com.tyranor.next.ui.common.motion.dissolvingGames
+import com.tyranor.next.ui.common.motion.rememberLastNonNull
 
 /**
  * 游戏页「列表」卡片风格（封面流）：
@@ -173,7 +174,7 @@ private fun CoverFlowCard(
 ) {
     val cover by rememberCoverBitmap(game.coverUri, isScrolling)
     // 删除消散：游戏库删除确认后登记在 dissolvingGames 里；封面流的卡也要播放消散（与瀑布 / 网格卡一致），期间触摸由 dissolve 吞掉
-    val dissolve = dissolvingGames[game.uri]
+    val dissolve = rememberLastNonNull(dissolvingGames[game.uri])
     // 封面加载完成：淡入 + 由糊变清（已缓存的封面一开始就是 1，不会闪）
     val reveal = rememberCoverReveal(cover != null, CoverSurface.Flow)
     Box(

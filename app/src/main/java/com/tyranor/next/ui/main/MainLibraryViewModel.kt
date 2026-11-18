@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.tyranor.next.R
 import com.tyranor.next.core.cover.CoverScrapeTaskManager
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.game.cleanupDeletedGame
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.i18n.AppLocaleController
@@ -14,11 +15,11 @@ import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.scan.SiglusTitleFeedback
 import com.tyranor.next.core.game.scan.Xs35TitleFeedback
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.sync.SaveSyncError
 import com.tyranor.next.core.game.save.sync.SaveSyncException
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.ui.cover.coverErrorMessage
-import com.tyranor.next.ui.game.cleanupDeletedGame
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -45,6 +46,7 @@ data class MainLibraryUiState(
     val scrapeMessage: String? = null,
     val cleanupError: SaveSyncError? = null,
     val cleanupGameTitle: String? = null,
+    val copyCleanupPending: Boolean = false,
     /** 最新搜索词；与页面当前搜索词一致时才可采用 [searchHitUris]。 */
     val searchQuery: String = "",
     /** 当前游戏标题快照的 Room 命中集；null 表示尚无结果，空集合表示没有命中。 */
@@ -54,7 +56,7 @@ data class MainLibraryUiState(
 )
 
 /**
- * MainActivity 四个 Tab 共用的游戏库状态。
+ * MainActivity 主标签页 共用的游戏库状态。
  *
  * 页面只持有搜索词、弹窗等瞬时 UI 状态；持久数据统一进入一个 FIFO 队列并在 IO dispatcher
  * 处理，避免组合期磁盘读取、离页取消后台任务，以及快速操作时后发写入被先发任务覆盖。
@@ -93,9 +95,18 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
             }
         }
         // 每张封面成功持久化后立即更新所有应用层列表，批量任务无需等到全部游戏完成。
+        // 逐源绑定回填前与实时修订号比对：通知自「落库完成时刻」携带快照，期间发生的
+        // 绑定/解绑（修订号推进）使该来源的回填作废，防止迟到事件把刚解绑的条目 ID 复活。
         viewModelScope.launch {
-            CoverScrapeTaskManager.gameUpdates.collect { updated ->
-                _uiState.update { MainLibraryStateReducer.replaceGame(it, updated) }
+            CoverScrapeTaskManager.gameUpdates.collect { update ->
+                val live = GameLibraryFacade.bindingRevision(update.game.uri)
+                val bindingUnchanged = ScrapedBindingUnchanged(
+                    vndb = live.vndb == update.vndbRevision,
+                    bangumi = live.bangumi == update.bangumiRevision,
+                    hikarinagi = live.hikarinagi == update.hikarinagiRevision,
+                    nextmoe = live.nextmoe == update.nextmoeRevision,
+                )
+                _uiState.update { MainLibraryStateReducer.applyScrapedGame(it, update.game, bindingUnchanged) }
             }
         }
         // 设置页删除扫描目录时会同步清理该目录下的持久游戏缓存；
@@ -105,14 +116,31 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
                 refreshFromStorage()
             }
         }
+        // 封面刮削设置页消费结果并 clearFinished 后，主库侧同步清掉待提示事件，
+        // 避免返回 GameScreen 时把同一次结果再次弹给用户（设置页已展示过）。
+        viewModelScope.launch {
+            CoverScrapeTaskManager.acknowledgedEventId.drop(1).collect { eventId ->
+                _uiState.update { state ->
+                    if (state.scrapeEventId == eventId && state.scrapeMessage != null) {
+                        state.copy(scrapeMessage = null)
+                    } else {
+                        state
+                    }
+                }
+            }
+        }
         // 刮削任务属于应用级长任务，即使 GameScreen 已离开组合，也要立即发布给首页与游戏页。
         viewModelScope.launch {
             var handledEventId = 0L
             CoverScrapeTaskManager.state.collect { task ->
                 if (task.running || task.eventId == 0L || task.eventId == handledEventId) return@collect
                 handledEventId = task.eventId
+                // 结果已被其它界面（封面刮削设置页）确认消费时仍须同步最新库快照，仅压制重复弹窗提示
+                val alreadyAcknowledged = task.eventId <= CoverScrapeTaskManager.acknowledgedEventId.value
                 val result = task.result
-                val message = if (result != null) {
+                val message = if (alreadyAcknowledged) {
+                    null
+                } else if (result != null) {
                     AppLocaleController.wrap(appContext).getString(
                         R.string.cover_scrape_done,
                         result.updatedCount,
@@ -122,9 +150,10 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
                 } else {
                     task.error?.coverErrorMessage(appContext)
                 }
-                if (result != null) {
-                    acceptPersistedGames(result.games, task.eventId, message)
-                } else {
+                // 单条刮削结果已由 gameUpdates 实时合并；终态统一走 FIFO 队列从 Room/Facade 刷新
+                // 最新快照，避免刮削收尾瞬间并发改名/删除被陈旧 result.games 短暂闪回覆盖。
+                refreshFromStorage()
+                if (!alreadyAcknowledged) {
                     _uiState.update { it.copy(scrapeEventId = task.eventId, scrapeMessage = message) }
                 }
                 // 不在此清空任务态：刮削页/游戏页各自展示完成后经 acknowledgeScrapeEvent 清空，
@@ -180,28 +209,54 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    /** 扫描/刮削已经完成持久化时，立即发布结果，再由 FIFO 队列校准派生列表。 */
-    private fun acceptPersistedGames(games: List<ScanGame>, eventId: Long = 0L, message: String? = null) {
-        val revision = stateRevision.incrementAndGet()
-        _uiState.update {
-            MainLibraryStateReducer.acceptGames(it, games).copy(
-                scrapeEventId = eventId.takeIf { id -> id != 0L } ?: it.scrapeEventId,
-                scrapeMessage = message,
-            )
-        }
-        enqueuePersistence(revision) { }
-    }
-
     fun replaceGame(updated: ScanGame) {
         val before = _uiState.value.games.firstOrNull { it.uri == updated.uri } ?: updated
         val revision = stateRevision.incrementAndGet()
         _uiState.update { MainLibraryStateReducer.replaceGame(it, updated) }
+        persistSingleGameMutation(revision, updated) { current ->
+            mergeChangedGameFields(current, before, updated)
+        }
+    }
+
+    /**
+     * 封面绑定或自定义封面已在 core 原子落库并广播 `libraryRevision`，
+     * 此处仅局部合并封面/绑定相关字段，避免异步窗口内旧快照整行回滚并发改名或他源解绑。
+     */
+    fun applyCoverUpdate(source: String?, updated: ScanGame) {
+        _uiState.update { MainLibraryStateReducer.applyCoverUpdate(it, source, updated) }
+    }
+
+    /** 局部更新标题：仅覆写 `title` 字段，避免异步改名窗口回滚并发封面或绑定变更。 */
+    fun renameGame(uri: String, title: String) {
+        val current = _uiState.value.games.firstOrNull { it.uri == uri } ?: return
+        val revision = stateRevision.incrementAndGet()
+        _uiState.update { MainLibraryStateReducer.renameGame(it, uri, title) }
+        persistSingleGameMutation(revision, current.copy(title = title)) { live ->
+            live.copy(title = title)
+        }
+    }
+
+    /** 局部更新启动文件：仅覆写 `launchFile` 字段，避免回滚并发封面或绑定变更。 */
+    fun updateLaunchFile(uri: String, launchFile: String?) {
+        val current = _uiState.value.games.firstOrNull { it.uri == uri } ?: return
+        val revision = stateRevision.incrementAndGet()
+        _uiState.update { MainLibraryStateReducer.updateLaunchFile(it, uri, launchFile) }
+        persistSingleGameMutation(revision, current.copy(launchFile = launchFile)) { live ->
+            live.copy(launchFile = launchFile)
+        }
+    }
+
+    private fun persistSingleGameMutation(
+        revision: Long,
+        fallback: ScanGame,
+        mutate: (ScanGame) -> ScanGame,
+    ) {
         enqueuePersistence(revision) {
-            var persisted = updated
+            var persisted = fallback
             GameLibraryFacade.updateGames(appContext) { games ->
                 games.map { current ->
-                    if (current.uri == updated.uri) {
-                        mergeChangedGameFields(current, before, updated).also { persisted = it }
+                    if (current.uri == fallback.uri) {
+                        mutate(current).also { persisted = it }
                     } else {
                         current
                     }
@@ -216,6 +271,14 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
                 quick.map { if (it.uri == persisted.uri) persisted else it }
             }
         }
+    }
+
+    /**
+     * 游玩状态绑定/解绑已在 PlayStatusService 内原子落库并广播 libraryRevision，
+     * 此处仅局部合并目标来源绑定字段与元数据标题，避免整对象 replaceGame 与并发封面刮削互相踩踏。
+     */
+    fun applyBindingUpdate(source: String, updated: ScanGame) {
+        _uiState.update { MainLibraryStateReducer.applyBindingUpdate(it, source, updated) }
     }
 
     /**
@@ -235,24 +298,43 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
         return true
     }
 
+    /** 先移除库条目，再尽力清理关联数据。SystemNNN 副本的清理任务随移除一起登记。 */
     fun deleteGame(target: ScanGame) {
         val revision = stateRevision.incrementAndGet()
         _uiState.update { MainLibraryStateReducer.deleteGame(it, target.uri) }
         enqueuePersistence(revision) {
-            try {
-                cleanupDeletedGame(appContext, target)
+            val liveTarget = GameLibraryFacade.loadGames(appContext).firstOrNull { it.uri == target.uri } ?: target
+            val queued = try {
                 withContext(NonCancellable) {
                     GameLibraryFacade.removeGame(appContext, target.uri)
                 }
             } catch (failure: SaveSyncException) {
-                // Keep the persistent library entry as the retry route when cleanup is blocked.
-                _uiState.update { it.copy(cleanupError = failure.code, cleanupGameTitle = target.title) }
+                // 副本清理请求尚未持久化，保留库条目供重试。
+                _uiState.update { it.copy(cleanupError = failure.code, cleanupGameTitle = target.title, copyCleanupPending = false) }
+                return@enqueuePersistence
+            }
+            try {
+                cleanupDeletedGame(appContext, liveTarget, extraCoverUri = target.coverUri)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Log.w(TAG, "Best-effort cleanup failed for deleted game ${target.uri}", failure)
+            }
+            // 关联数据清理失败时，仍继续处理已登记的资源清理。
+            if (queued) try {
+                val cleanup = GameSaveManager(appContext).drainSystemNnnCleanupQueue(target.uri)
+                if (cleanup.failed != 0) {
+                    _uiState.update { it.copy(copyCleanupPending = true) }
+                }
+            } catch (failure: SaveSyncException) {
+                Log.w(TAG, "Could not resume SystemNNN copy cleanup", failure)
+                _uiState.update { it.copy(copyCleanupPending = true) }
             }
         }
     }
 
     fun dismissCleanupError() {
-        _uiState.update { it.copy(cleanupError = null, cleanupGameTitle = null) }
+        _uiState.update { it.copy(cleanupError = null, cleanupGameTitle = null, copyCleanupPending = false) }
     }
 
     fun removeRecentGame(target: ScanGame) {
@@ -414,6 +496,17 @@ private fun sameSearchTitles(first: List<ScanGame>, second: List<ScanGame>): Boo
         first[index].uri == second[index].uri && first[index].title == second[index].title
     })
 
+/**
+ * 逐源「绑定修订号自落库以来未变」标记（默认全 true，兼容既有纯函数用例）：批量刮削
+ * 迟到通知回填绑定前逐源比对，任一来源推进（期间发生绑定/解绑）即禁止该来源回填。
+ */
+internal data class ScrapedBindingUnchanged(
+    val vndb: Boolean = true,
+    val bangumi: Boolean = true,
+    val hikarinagi: Boolean = true,
+    val nextmoe: Boolean = true,
+)
+
 /** 将用户改动的游戏元数据合并到最新磁盘对象；最近打开时间由游玩记录入口管理。 */
 internal fun mergeChangedGameFields(base: ScanGame, before: ScanGame, updated: ScanGame): ScanGame = base.copy(
     title = if (updated.title != before.title) updated.title else base.title,
@@ -422,6 +515,9 @@ internal fun mergeChangedGameFields(base: ScanGame, before: ScanGame, updated: S
     coverUri = if (updated.coverUri != before.coverUri) updated.coverUri else base.coverUri,
     coverSource = if (updated.coverSource != before.coverSource) updated.coverSource else base.coverSource,
     vndbId = if (updated.vndbId != before.vndbId) updated.vndbId else base.vndbId,
+    bangumiId = if (updated.bangumiId != before.bangumiId) updated.bangumiId else base.bangumiId,
+    hikarinagiId = if (updated.hikarinagiId != before.hikarinagiId) updated.hikarinagiId else base.hikarinagiId,
+    nextmoeId = if (updated.nextmoeId != before.nextmoeId) updated.nextmoeId else base.nextmoeId,
     metadataTitle = if (updated.metadataTitle != before.metadataTitle) updated.metadataTitle else base.metadataTitle,
     externalModuleAlias = if (updated.externalModuleAlias != before.externalModuleAlias) {
         updated.externalModuleAlias
@@ -490,6 +586,109 @@ internal object MainLibraryStateReducer {
             recentGames = replaceIn(state.recentGames),
             quickLaunch = state.quickLaunch.map { if (it.uri == updated.uri) updated else it },
             searchHitUris = state.searchHitUris?.takeIf { sameSearchTitles(state.games, games) },
+        )
+    }
+
+    /** 仅局部合并封面及绑定结果（`source == null` 表示自定义封面，不触碰绑定 ID）。 */
+    fun applyCoverUpdate(state: MainLibraryUiState, source: String?, updated: ScanGame): MainLibraryUiState {
+        fun mergeCover(current: ScanGame): ScanGame {
+            if (current.uri != updated.uri) return current
+            if (source == null) {
+                return current.copy(coverUri = updated.coverUri, coverSource = updated.coverSource)
+            }
+            fun resolvedId(targetSource: String, curId: String?, newId: String?): String? =
+                if (source == targetSource) {
+                    newId ?: curId
+                } else {
+                    curId?.takeIf { it.isNotBlank() } ?: newId?.takeIf { it.isNotBlank() }
+                }
+            return current.copy(
+                coverUri = updated.coverUri,
+                coverSource = updated.coverSource,
+                vndbId = resolvedId(AppSettingsStore.COVER_SOURCE_VNDB, current.vndbId, updated.vndbId),
+                bangumiId = resolvedId(AppSettingsStore.COVER_SOURCE_BANGUMI, current.bangumiId, updated.bangumiId),
+                hikarinagiId = resolvedId(AppSettingsStore.COVER_SOURCE_HIKARINAGI, current.hikarinagiId, updated.hikarinagiId),
+                nextmoeId = resolvedId(AppSettingsStore.COVER_SOURCE_NEXTMOE, current.nextmoeId, updated.nextmoeId),
+                metadataTitle = updated.metadataTitle?.takeIf { it.isNotBlank() } ?: current.metadataTitle,
+            )
+        }
+        return state.copy(
+            games = state.games.map(::mergeCover),
+            recentGames = state.recentGames.map(::mergeCover),
+            quickLaunch = state.quickLaunch.map(::mergeCover),
+        )
+    }
+
+    /** 仅局部更新游戏标题，保留并发封面、绑定与最近打开时间。 */
+    fun renameGame(state: MainLibraryUiState, uri: String, title: String): MainLibraryUiState {
+        fun applyRename(game: ScanGame) = if (game.uri == uri) game.copy(title = title) else game
+        val games = state.games.map(::applyRename)
+        return state.copy(
+            games = games,
+            recentGames = state.recentGames.map(::applyRename),
+            quickLaunch = state.quickLaunch.map(::applyRename),
+            searchHitUris = state.searchHitUris?.takeIf { sameSearchTitles(state.games, games) },
+        )
+    }
+
+    /** 仅局部更新启动文件，保留并发封面、绑定与最近打开时间。 */
+    fun updateLaunchFile(state: MainLibraryUiState, uri: String, launchFile: String?): MainLibraryUiState {
+        fun applyLaunchFile(game: ScanGame) = if (game.uri == uri) game.copy(launchFile = launchFile) else game
+        return state.copy(
+            games = state.games.map(::applyLaunchFile),
+            recentGames = state.recentGames.map(::applyLaunchFile),
+            quickLaunch = state.quickLaunch.map(::applyLaunchFile),
+        )
+    }
+
+    /** 仅合并单来源绑定 ID 与非空元数据标题，保留并发封面刮削或他源绑定结果与最近游玩时间。 */
+    fun applyBindingUpdate(state: MainLibraryUiState, source: String, updated: ScanGame): MainLibraryUiState {
+        fun mergeBinding(current: ScanGame): ScanGame {
+            if (current.uri != updated.uri) return current
+            val effectiveMetadataTitle = updated.metadataTitle ?: current.metadataTitle
+            return when (source) {
+                AppSettingsStore.COVER_SOURCE_VNDB ->
+                    current.copy(vndbId = updated.vndbId, metadataTitle = effectiveMetadataTitle)
+                AppSettingsStore.COVER_SOURCE_BANGUMI ->
+                    current.copy(bangumiId = updated.bangumiId, metadataTitle = effectiveMetadataTitle)
+                AppSettingsStore.COVER_SOURCE_HIKARINAGI ->
+                    current.copy(hikarinagiId = updated.hikarinagiId, metadataTitle = effectiveMetadataTitle)
+                AppSettingsStore.COVER_SOURCE_NEXTMOE ->
+                    current.copy(nextmoeId = updated.nextmoeId, metadataTitle = effectiveMetadataTitle)
+                else -> current
+            }
+        }
+        return state.copy(
+            games = state.games.map(::mergeBinding),
+            recentGames = state.recentGames.map(::mergeBinding),
+            quickLaunch = state.quickLaunch.map(::mergeBinding),
+        )
+    }
+
+    /** 批量封面刮削单条通知仅更新封面列与缺失绑定，不回滚并发改名或已有绑定字段。 */
+    fun applyScrapedGame(
+        state: MainLibraryUiState,
+        updated: ScanGame,
+        bindingUnchanged: ScrapedBindingUnchanged = ScrapedBindingUnchanged(),
+    ): MainLibraryUiState {
+        fun mergeScraped(current: ScanGame): ScanGame {
+            if (current.uri != updated.uri) return current
+            return current.copy(
+                coverUri = updated.coverUri,
+                coverSource = updated.coverSource,
+                // 绑定回填仅在「自落库以来该来源修订号未变」时生效：期间发生过绑定/解绑的
+                // 来源不得把迟到的刮削值重新填回（DB 侧护栏见 core/cover mergeScrapedCover）
+                vndbId = current.vndbId?.takeIf { it.isNotBlank() } ?: updated.vndbId.takeIf { bindingUnchanged.vndb },
+                bangumiId = current.bangumiId?.takeIf { it.isNotBlank() } ?: updated.bangumiId.takeIf { bindingUnchanged.bangumi },
+                hikarinagiId = current.hikarinagiId?.takeIf { it.isNotBlank() } ?: updated.hikarinagiId.takeIf { bindingUnchanged.hikarinagi },
+                nextmoeId = current.nextmoeId?.takeIf { it.isNotBlank() } ?: updated.nextmoeId.takeIf { bindingUnchanged.nextmoe },
+                metadataTitle = current.metadataTitle?.takeIf { it.isNotBlank() } ?: updated.metadataTitle,
+            )
+        }
+        return state.copy(
+            games = state.games.map(::mergeScraped),
+            recentGames = state.recentGames.map(::mergeScraped),
+            quickLaunch = state.quickLaunch.map(::mergeScraped),
         )
     }
 

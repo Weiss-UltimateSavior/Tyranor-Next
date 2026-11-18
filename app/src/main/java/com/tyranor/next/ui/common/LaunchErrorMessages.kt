@@ -136,6 +136,9 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
                 ExternalEngineErrorCode.PACKAGE_OUTDATED ->
                     localized.getString(R.string.external_engine_module_outdated, moduleName)
 
+                ExternalEngineErrorCode.PACKAGE_VERSION_MISMATCH ->
+                    localized.getString(R.string.external_engine_module_version_mismatch, moduleName)
+
                 ExternalEngineErrorCode.PREPARE_FAILED ->
                     result.messageRes?.let { localized.getString(it) }
                         ?: result.detail

@@ -10,10 +10,13 @@ import android.graphics.drawable.Icon
 import android.net.Uri
 import com.tyranor.next.R
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.settings.AppSettingsStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.security.MessageDigest
 import java.io.File
+import java.io.InputStream
+import java.security.MessageDigest
 import kotlin.math.max
 import kotlin.math.min
 
@@ -44,7 +47,11 @@ object GameShortcutManager {
         // Adaptive icons apply an additional launcher-specific safe-zone inset, which makes
         // the selected crop appear unexpectedly small in the confirmation sheet.
         val icon = coverBitmap?.let(Icon::createWithBitmap)
-            ?: Icon.createWithResource(appContext, R.mipmap.ic_launcher)
+            // 没有封面时退回应用图标：跟随应用设置选中的启动器图标（经典 / 新版），与桌面上的应用图标一致
+            ?: Icon.createWithResource(
+                appContext,
+                if (AppSettingsStore.isClassicIconEnabled(appContext)) R.mipmap.ic_launcher_classic else R.mipmap.ic_launcher,
+            )
         val label = game.title.trim().ifBlank { appContext.getString(R.string.app_name) }
         val shortcut = ShortcutInfo.Builder(appContext, shortcutId(game.uri))
             .setShortLabel(label)
@@ -71,7 +78,10 @@ object GameShortcutManager {
                 } else {
                     RequestResult.FAILED
                 }
-            }.getOrElse { RequestResult.FAILED }
+            }.getOrElse { error ->
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                RequestResult.FAILED
+            }
         }
     }
 
@@ -82,47 +92,63 @@ object GameShortcutManager {
     }
 
     /** Decodes and center-crops a fallback icon source to the launcher target size. */
-    private fun decodeSquareIcon(context: Context, uriText: String, targetSize: Int): Bitmap? = runCatching {
-        val uri = Uri.parse(uriText)
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        openShortcutIconInputStream(context, uri)?.use {
-            BitmapFactory.decodeStream(it, null, bounds)
-        }
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+    @androidx.annotation.VisibleForTesting
+    internal fun decodeSquareIcon(context: Context, uriText: String, targetSize: Int): Bitmap? {
+        var decoded: Bitmap? = null
+        var cropped: Bitmap? = null
+        var scaled: Bitmap? = null
+        var returned = false
+        return try {
+            val uri = Uri.parse(uriText)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            openShortcutIconInputStream(context, uri)?.use {
+                BitmapFactory.decodeStream(it, null, bounds)
+            }
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
 
-        var sampleSize = 1
-        while (max(bounds.outWidth, bounds.outHeight) / (sampleSize * 2) >= targetSize * 2) {
-            sampleSize *= 2
-        }
-        val decoded = openShortcutIconInputStream(context, uri)?.use {
-            BitmapFactory.decodeStream(
-                it,
-                null,
-                BitmapFactory.Options().apply {
-                    inSampleSize = sampleSize
-                    inPreferredConfig = Bitmap.Config.ARGB_8888
-                },
+            var sampleSize = 1
+            while (max(bounds.outWidth, bounds.outHeight) / (sampleSize * 2) >= targetSize * 2) {
+                sampleSize *= 2
+            }
+            decoded = openShortcutIconInputStream(context, uri)?.use {
+                BitmapFactory.decodeStream(
+                    it,
+                    null,
+                    BitmapFactory.Options().apply {
+                        inSampleSize = sampleSize
+                        inPreferredConfig = Bitmap.Config.ARGB_8888
+                    },
+                )
+            } ?: return null
+
+            val side = min(decoded.width, decoded.height)
+            cropped = Bitmap.createBitmap(
+                decoded,
+                (decoded.width - side) / 2,
+                (decoded.height - side) / 2,
+                side,
+                side,
             )
-        } ?: return@runCatching null
+            scaled = Bitmap.createScaledBitmap(cropped, targetSize, targetSize, true)
+            returned = true
+            scaled
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        } finally {
+            if (!returned && scaled != null && !scaled.isRecycled) scaled.recycle()
+            if (cropped != null && cropped !== scaled && !cropped.isRecycled) cropped.recycle()
+            if (decoded != null && decoded !== cropped && decoded !== scaled && !decoded.isRecycled) decoded.recycle()
+        }
+    }
 
-        val side = min(decoded.width, decoded.height)
-        val cropped = Bitmap.createBitmap(
-            decoded,
-            (decoded.width - side) / 2,
-            (decoded.height - side) / 2,
-            side,
-            side,
-        )
-        val scaled = Bitmap.createScaledBitmap(cropped, targetSize, targetSize, true)
-        if (cropped !== decoded) decoded.recycle()
-        if (scaled !== cropped) cropped.recycle()
-        scaled
-    }.getOrNull()
-
-    /** Opens a shortcut icon URI through the resolver, with a local file fallback. */
-    private fun openShortcutIconInputStream(context: Context, uri: Uri): java.io.InputStream? {
+    /** Opens a shortcut icon URI through the resolver, with a local file fallback for file/empty schemes. */
+    private fun openShortcutIconInputStream(context: Context, uri: Uri): InputStream? {
         val resolverStream = runCatching { context.contentResolver.openInputStream(uri) }.getOrNull()
         if (resolverStream != null) return resolverStream
+        val scheme = uri.scheme
+        if (!scheme.equals("file", ignoreCase = true) && !scheme.isNullOrBlank()) return null
         val path = uri.path?.takeIf { it.isNotBlank() } ?: return null
         return runCatching { File(path).inputStream() }.getOrNull()
     }

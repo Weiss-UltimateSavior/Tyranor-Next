@@ -2,7 +2,12 @@ package com.tyranor.next.core.game.storage
 
 import android.content.Context
 import android.net.Uri
+import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.save.SystemNnnCleanupQueue
+import com.tyranor.next.core.game.save.sync.SaveSyncError
+import com.tyranor.next.core.game.save.sync.SaveSyncException
 import com.tyranor.next.core.game.scan.GameRootMatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -12,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
+import java.io.IOException
 
 /**
  * 游戏库门面：对 UI / 启动编排暴露同步的内存缓存读与「缓存先行、FIFO 落库」写。
@@ -29,7 +35,21 @@ object GameLibraryFacade {
     // 主页面会在 Tab 动画中反复进入组合。将已解析的数据保留在进程内，避免每次切页都在
     // 主线程重新读库、解析并构造完整游戏列表。
     private val cacheLock = Any()
+    private val bindingRevisionLock = Any()
     private val gameWrites = GameLibraryWriteGate()
+    // 每游戏逐源条目绑定修订号（进程内单调计数）：批量封面刮削跨异步周期完成时，用于识别
+    // 「先绑定再解绑」使当前 id 回到 null 的场景，避免刮削写回绕过用户显式解绑重新自动回填。
+    // 独立于 cacheLock（锁序始终 cacheLock -> bindingRevisionLock，仅纯内存操作），
+    // 使主线程/收集器读 bindingRevision 不与后台 readBlocking 争持 cacheLock。
+    internal data class BindingRevisionSnapshot(
+        val vndb: Long = 0L,
+        val bangumi: Long = 0L,
+        val hikarinagi: Long = 0L,
+        val nextmoe: Long = 0L,
+    )
+
+    private val bindingRevisions = mutableMapOf<String, BindingRevisionSnapshot>()
+
     @Volatile
     private var gamesCache: List<ScanGame>? = null
     @Volatile
@@ -50,12 +70,24 @@ object GameLibraryFacade {
     @Volatile
     private var persistFailureListenerInstalled = false
 
-    /** 持久化写失败后的自愈入口：清空派生自 DB 的缓存（roots 单独管理，不受影响）。 */
+    @androidx.annotation.VisibleForTesting
+    internal fun resetCachesForTest() {
+        invalidatePersistenceCaches()
+        synchronized(cacheLock) {
+            rootsCache = null
+            synchronized(bindingRevisionLock) {
+                bindingRevisions.clear()
+            }
+        }
+    }
+
+    /** 持久化写失败后，从 Room 重新读取可能已经先行发布的缓存。 */
     private fun invalidatePersistenceCaches() {
         synchronized(cacheLock) {
             gamesCache = null
             recentGamesCache = null
             quickLaunchCache = null
+            rootsCache = null
         }
         // 单游戏覆盖同样走「缓存先行、post 落库」模式，一并回源
         GameOverridesRepository.invalidateRowCache()
@@ -84,10 +116,57 @@ object GameLibraryFacade {
 
     // ============ 游戏库 ============
 
+    @Volatile
+    internal var skipPersistForTest: Boolean = false
+
     fun loadGames(context: Context): List<ScanGame> =
         gamesCache ?: synchronized(cacheLock) {
             loadGamesLocked(context)
         }
+
+    /** 在同一 `cacheLock` 下原子读取游戏列表与各条目当前绑定版本快照，消除刮削启动时的交错竞态。 */
+    internal fun loadGamesWithBindingRevisions(
+        context: Context,
+        overrideGames: List<ScanGame>? = null,
+    ): Pair<List<ScanGame>, Map<String, BindingRevisionSnapshot>> = synchronized(cacheLock) {
+        val currentGames = loadGamesLocked(context)
+        // 按选定 URI 从当前权威列表取快照，避免旧列表与锁内较新修订号错配（如先绑后解再写回）
+        val snapshot = if (overrideGames == null) {
+            currentGames.toList()
+        } else {
+            val currentByUri = currentGames.associateBy { it.uri }
+            overrideGames.mapNotNull { candidate -> currentByUri[candidate.uri] }
+        }
+        val revisions = synchronized(bindingRevisionLock) {
+            snapshot.associate { game ->
+                game.uri to (bindingRevisions[game.uri] ?: BindingRevisionSnapshot())
+            }
+        }
+        snapshot to revisions
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun seedGamesForTest(games: List<ScanGame>?) {
+        synchronized(cacheLock) {
+            gamesCache = games?.toList()
+            if (games == null) {
+                recentGamesCache = null
+                quickLaunchCache = null
+                rootsCache = null
+            }
+            synchronized(bindingRevisionLock) {
+                bindingRevisions.clear()
+            }
+        }
+    }
+
+    @androidx.annotation.VisibleForTesting
+    internal fun seedDerivedCachesForTest(recent: List<ScanGame>?, quickLaunch: List<ScanGame>?) {
+        synchronized(cacheLock) {
+            recentGamesCache = recent?.toList()
+            quickLaunchCache = quickLaunch?.toList()
+        }
+    }
 
     /** Use [registerGames] when adding URI references. Existing entries can be edited or removed here. */
     fun updateGames(context: Context, transform: (List<ScanGame>) -> List<ScanGame>): List<ScanGame> =
@@ -96,8 +175,11 @@ object GameLibraryFacade {
             val updated = transform(current).toList()
             if (updated != current) {
                 gamesCache = updated
-                // 差量落库：仅 upsert 变更行、删除消失行，封面单字段变化不再触发整库序列化。
-                GameLibraryRepository.post(context) { GameLibraryRepository.applyDiff(it, current, updated) }
+                recordBindingRevisionsLocked(current, updated)
+                if (!skipPersistForTest) {
+                    // 差量落库：仅 upsert 变更行、删除消失行，封面单字段变化不再触发整库序列化。
+                    GameLibraryRepository.post(context) { GameLibraryRepository.applyDiff(it, current, updated) }
+                }
             }
             updated
         }
@@ -107,20 +189,31 @@ object GameLibraryFacade {
             val coroutine = currentCoroutineContext()
             gameWrites.update {
                 coroutine.ensureActive()
-                updateGames(context, transform)
+                updateGames(context) { current ->
+                    val registered = transform(current)
+                    val known = current.mapTo(HashSet(), ScanGame::uri)
+                    val sources = registered.asSequence().filter { it.uri !in known }
+                        .mapNotNull { SystemNnnGameDirectory.sourceIdentity(it.uri) }.distinct()
+                        .filter { SystemNnnCopyStore.activeRoot(context, it) != null }.toSet()
+                    if (sources.isNotEmpty()) SystemNnnCleanupQueue.open(context).retainCopies {
+                        SystemNnnGameDirectory.sourceIdentity(it) in sources
+                    }
+                    registered
+                }
             }
         }
 
-    /** The caller has already obtained any save-sync admission. The callback only evicts resources. */
+    /** An asynchronous Room failure may leave an old reference after the cache changed. */
     internal fun evictUnusedSystemNnnCopy(
         context: Context,
         sourceId: String,
-        excludingUri: String? = null,
         evict: () -> Boolean,
-    ): Boolean = gameWrites.evictIfUnused(
+    ): Boolean? = gameWrites.evictIfUnused(
         referenced = {
-            loadGames(context).any { game ->
-                game.uri != excludingUri && SystemNnnGameDirectory.sourceIdentity(game.uri) == sourceId
+            // The writer does not take gameWrites. Do not hold cacheLock while waiting for it.
+            val durable = GameLibraryRepository.readBlocking(context, GameLibraryRepository::loadGamesAfterWrites)
+            (durable.asSequence() + loadGames(context).asSequence()).map(ScanGame::uri).distinct().any {
+                SystemNnnGameDirectory.sourceIdentity(it) == sourceId
             }
         },
         evict = evict,
@@ -133,39 +226,170 @@ object GameLibraryFacade {
     }
 
     /**
-     * 封面元数据单行更新（迁移方案阶段 2）：DB 只 UPDATE 封面相关列，封面刮削等高频路径
-     * 不再触发整库序列化。返回更新后的游戏；游戏不在库中或封面四列均无变化时返回 null。
+     * 封面/绑定元数据单行更新（迁移方案阶段 2）：DB 只 UPDATE 封面与绑定相关列，封面刮削
+     * 等高频路径不再触发整库序列化。返回更新后的游戏；游戏不在库中或封面/绑定七列均无变化
+     * 时返回 null。（BK-51：原名单提「封面」，实际比较与落库含绑定 id 与 metadataTitle，
+     * 更名 [updateGameCoverMetadata] 名副其实。）
      */
-    fun updateGameCover(
+    fun updateGameCoverMetadata(
         context: Context,
         uri: String,
         transform: (ScanGame) -> ScanGame,
-    ): ScanGame? = synchronized(cacheLock) {
+    ): ScanGame? = updateGameCoverMetadataWithRevisions(context, uri, transform).first
+
+    /**
+     * [updateGameCoverMetadata] 的修订号伴随版：返回「更新后的行」与「本行落库完成时刻的
+     * 逐源绑定修订快照」。快照在同一 `cacheLock` 临界区内、于 [recordBindingRevisionLocked]
+     * 之后采集，因此此后任何绑定/解绑写都会推进实时修订号——调用方（批量刮削通知）据此
+     * 识别「事件迟于并发绑定变更」，在 UI 状态回填前丢弃过期绑定值，防止刚解绑的条目 ID
+     * 被 `_uiState` 复活（DB 侧护栏见 core/cover `mergeScrapedCover`）。
+     */
+    internal fun updateGameCoverMetadataWithRevisions(
+        context: Context,
+        uri: String,
+        transform: (ScanGame) -> ScanGame,
+    ): Pair<ScanGame?, BindingRevisionSnapshot> = synchronized(cacheLock) {
         val current = loadGamesLocked(context)
-        val before = current.firstOrNull { it.uri == uri } ?: return null
+        val before = current.firstOrNull { it.uri == uri }
+            ?: return@synchronized null to bindingRevision(uri)
         val after = transform(before)
         if (after.coverUri == before.coverUri && after.coverSource == before.coverSource &&
-            after.vndbId == before.vndbId && after.metadataTitle == before.metadataTitle
+            after.vndbId == before.vndbId && after.bangumiId == before.bangumiId &&
+            after.hikarinagiId == before.hikarinagiId && after.nextmoeId == before.nextmoeId &&
+            after.metadataTitle == before.metadataTitle
         ) {
-            return null
+            return@synchronized null to bindingRevision(uri)
         }
         gamesCache = current.map { if (it.uri == uri) after else it }
-        GameLibraryRepository.post(context) {
-            GameLibraryRepository.updateCover(
-                it,
-                uri,
-                after.coverUri,
-                after.coverSource,
-                after.vndbId,
-                after.metadataTitle,
-            )
+        recentGamesCache = recentGamesCache?.map { recent ->
+            if (recent.uri == uri) after.copy(openTime = recent.openTime) else recent
         }
-        after
+        quickLaunchCache = quickLaunchCache?.map { quick ->
+            if (quick.uri == uri) after else quick
+        }
+        val revisionAfter = synchronized(bindingRevisionLock) {
+            recordBindingRevisionLocked(before, after)
+            bindingRevisions[uri] ?: BindingRevisionSnapshot()
+        }
+        if (!skipPersistForTest) {
+            GameLibraryRepository.post(context) {
+                GameLibraryRepository.updateCover(
+                    it,
+                    uri,
+                    after.coverUri,
+                    after.coverSource,
+                    after.vndbId,
+                    after.bangumiId,
+                    after.hikarinagiId,
+                    after.nextmoeId,
+                    after.metadataTitle,
+                )
+            }
+        }
+        after to revisionAfter
+    }
+
+    internal fun bindingRevision(uri: String): BindingRevisionSnapshot = synchronized(bindingRevisionLock) {
+        bindingRevisions[uri] ?: BindingRevisionSnapshot()
+    }
+
+    private fun recordBindingRevisionsLocked(before: List<ScanGame>, after: List<ScanGame>) {
+        val beforeByUri = before.associateBy { it.uri }
+        val afterByUri = after.associateBy { it.uri }
+        synchronized(bindingRevisionLock) {
+            for (uri in beforeByUri.keys + afterByUri.keys) {
+                val prev = beforeByUri[uri]
+                val next = afterByUri[uri]
+                val replacedOrToggled = prev == null || next == null
+                recordBindingRevisionLocked(
+                    uri = uri,
+                    vndbChanged = replacedOrToggled || prev.vndbId != next.vndbId,
+                    bangumiChanged = replacedOrToggled || prev.bangumiId != next.bangumiId,
+                    hikarinagiChanged = replacedOrToggled || prev.hikarinagiId != next.hikarinagiId,
+                    nextmoeChanged = replacedOrToggled || prev.nextmoeId != next.nextmoeId,
+                )
+            }
+        }
+    }
+
+    private fun recordBindingRevisionLocked(before: ScanGame, after: ScanGame) {
+        recordBindingRevisionLocked(
+            uri = after.uri,
+            vndbChanged = before.vndbId != after.vndbId,
+            bangumiChanged = before.bangumiId != after.bangumiId,
+            hikarinagiChanged = before.hikarinagiId != after.hikarinagiId,
+            nextmoeChanged = before.nextmoeId != after.nextmoeId,
+        )
+    }
+
+    private fun recordBindingRevisionLocked(
+        uri: String,
+        vndbChanged: Boolean,
+        bangumiChanged: Boolean,
+        hikarinagiChanged: Boolean,
+        nextmoeChanged: Boolean,
+    ) {
+        if (!vndbChanged && !bangumiChanged && !hikarinagiChanged && !nextmoeChanged) return
+        val current = bindingRevisions[uri] ?: BindingRevisionSnapshot()
+        bindingRevisions[uri] = current.copy(
+            vndb = if (vndbChanged) current.vndb + 1L else current.vndb,
+            bangumi = if (bangumiChanged) current.bangumi + 1L else current.bangumi,
+            hikarinagi = if (hikarinagiChanged) current.hikarinagi + 1L else current.hikarinagi,
+            nextmoe = if (nextmoeChanged) current.nextmoe + 1L else current.nextmoe,
+        )
+    }
+
+    /** 游戏行移除后顺带清空其逐源绑定修订号（ROB-4）：条目已不在库，修订号无存续意义，
+     *  不再按「进程存活期内出现过的不重复 URI」单调累积。重加同一 URI 的新行从零代次开始，
+     *  与「先绑后解」护栏不冲突——曾绑定条目的快照修订号 ≥1，与新行 0 代次必不匹配，
+     *  刮削写回仍被修订号护栏拦截。仅纯内存操作，须在持有 [cacheLock] 外调用
+     *  （锁序约束：cacheLock → bindingRevisionLock，此处单独获取 bindingRevisionLock）。 */
+    private fun forgetBindingRevisions(uris: Collection<String>) {
+        if (uris.isEmpty()) return
+        synchronized(bindingRevisionLock) {
+            uris.forEach(bindingRevisions::remove)
+        }
     }
 
     /** 从持久游戏库中移除指定游戏（在游戏页或首页删除游戏时调用，保证库与最近列表一致）。 */
-    fun removeGame(context: Context, uri: String) {
-        updateGames(context) { games -> games.filterNot { it.uri == uri } }
+    internal fun removeGame(context: Context, uri: String): Boolean = gameWrites.update {
+        var queued = false
+        updateGames(context) { games ->
+            val targets = games.filter { it.uri == uri }
+            val remaining = games.filterNot { it.uri == uri }
+            queued = enqueueSystemNnnRemoval(context, targets, retireCopy = true, remaining = remaining)
+            remaining
+        }
+        forgetBindingRevisions(listOf(uri))
+        queued
+    }
+
+    internal fun enqueueSystemNnnRemoval(
+        context: Context,
+        games: List<ScanGame>,
+        retireCopy: Boolean,
+        remaining: List<ScanGame> = emptyList(),
+    ): Boolean {
+        val targets = try {
+            games.asSequence().map(RuntimeModuleBindings::builtInSystemNnn)
+                .filter { it.engine == EngineType.SYSTEMNNN && SystemNnnGameDirectory.committed(context, it.uri) != null }
+                .map(ScanGame::uri).toList()
+        } catch (failure: IOException) {
+            throw SaveSyncException(SaveSyncError.SAVE_UNAVAILABLE, cause = failure)
+        } catch (failure: SecurityException) {
+            throw SaveSyncException(SaveSyncError.SAVE_UNAVAILABLE, cause = failure)
+        }
+        if (targets.isEmpty()) return false
+        val queue = SystemNnnCleanupQueue.open(context)
+        val referenced = remaining.mapNotNull { SystemNnnGameDirectory.sourceIdentity(it.uri) }.toSet()
+        val sources = targets.associateWith { SystemNnnGameDirectory.sourceIdentity(it) }
+        val retain = sources.values.filterNotNull()
+            .filter { !retireCopy || it in referenced }.toSet()
+        if (retain.isNotEmpty()) queue.retainCopies { SystemNnnGameDirectory.sourceIdentity(it) in retain }
+        queue.add(sources.map { (uri, source) ->
+            SystemNnnCleanupQueue.Target(uri, retireCopy && source != null && source !in referenced)
+        })
+        return true
     }
 
     // ============ 最近打开 ============
@@ -203,7 +427,9 @@ object GameLibraryFacade {
             recentGamesCache = recent.filterNot(::matches)
             // 主库缓存同步清零，避免后续整行 upsert 复活已移除的最近记录。
             gamesCache = games.map { if (matches(it)) it.copy(openTime = 0) else it }
-            GameLibraryRepository.post(context) { GameLibraryRepository.clearRecent(it, uri, expectedOpenedAt) }
+            if (!skipPersistForTest) {
+                GameLibraryRepository.post(context) { GameLibraryRepository.clearRecent(it, uri, expectedOpenedAt) }
+            }
         }
     }
 
@@ -216,7 +442,9 @@ object GameLibraryFacade {
         if (updated != current) {
             recentGamesCache = updated
             // 最近打开为派生视图：只回写保留条目的 openTime，被过滤条目对应游戏行已不在库中。
-            GameLibraryRepository.post(context) { GameLibraryRepository.restoreRecent(it, updated) }
+            if (!skipPersistForTest) {
+                GameLibraryRepository.post(context) { GameLibraryRepository.restoreRecent(it, updated) }
+            }
         }
         updated
     }
@@ -266,8 +494,10 @@ object GameLibraryFacade {
         synchronized(cacheLock) {
             val snapshot = games.toList()
             quickLaunchCache = snapshot
-            GameLibraryRepository.post(context) {
-                GameLibraryRepository.replaceQuickLaunch(it, snapshot.map { game -> game.uri })
+            if (!skipPersistForTest) {
+                GameLibraryRepository.post(context) {
+                    GameLibraryRepository.replaceQuickLaunch(it, snapshot.map { game -> game.uri })
+                }
             }
             _quickLaunchRevision.value++
         }
@@ -306,35 +536,27 @@ object GameLibraryFacade {
         }
     }
 
-    fun removeRoot(context: Context, uri: Uri) {
+    internal fun removeRootAndGames(context: Context, uri: Uri) = gameWrites.update {
+        var removedUris: Set<String> = emptySet()
         synchronized(cacheLock) {
-            val current = loadRootsLocked(context)
-            val existing = current.filterNot { it == uri.toString() }
-            if (existing.size == current.size) return
-            rootsCache = existing
-            GameLibraryRepository.post(context) { GameLibraryRepository.removeRoot(it, uri.toString()) }
-            _rootsRevision.value++
-        }
-    }
-
-    fun removeRootAndGames(context: Context, uri: Uri): List<ScanGame> {
-        removeRoot(context, uri)
-        val root = uri.toString()
-        var removed = emptyList<ScanGame>()
-        updateGames(context) { games ->
-            removed = games.filter { isGameUnderRoot(root, it.uri) }
-            val removedUris = removed.mapTo(HashSet()) { it.uri }
-            games.filterNot { it.uri in removedUris }
-        }
-        if (removed.isEmpty()) return emptyList()
-        val removedUris = removed.mapTo(HashSet()) { it.uri }
-        // 最近打开/快捷启动的 DB 行已随游戏行删除（派生视图 + 级联），这里只需同步内存缓存。
-        synchronized(cacheLock) {
+            val root = uri.toString()
+            val roots = loadRootsLocked(context)
+            val games = loadGamesLocked(context)
+            val removed = games.filter { isGameUnderRoot(root, it.uri) }
+            if (root !in roots && removed.isEmpty()) return@synchronized
+            removedUris = removed.mapTo(HashSet()) { it.uri }
+            val remaining = games.filterNot { it.uri in removedUris }
+            enqueueSystemNnnRemoval(context, removed, retireCopy = true, remaining = remaining)
+            rootsCache = roots - root
+            gamesCache = remaining
             recentGamesCache = recentGamesCache?.filterNot { it.uri in removedUris }
+            quickLaunchCache = quickLaunchCache?.filterNot { it.uri in removedUris }
+            GameLibraryRepository.post(context) { GameLibraryRepository.removeRootAndGames(it, root, removedUris) }
+            _quickLaunchRevision.value++
+            _rootsRevision.value++
+            _libraryRevision.value++
         }
-        updateQuickLaunch(context) { list -> list.filterNot { it.uri in removedUris } }
-        notifyGamesChanged()
-        return removed
+        forgetBindingRevisions(removedUris)
     }
 
     /** 外部逻辑（如运行时模块降级）直接改库后通知 UI 重新读取派生列表。 */

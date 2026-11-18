@@ -20,14 +20,10 @@ import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.rememberAfterPushStarts
 import com.tyranor.next.ui.common.motion.rememberEntranceState
 import com.tyranor.next.ui.main.MainTabMotion
-import com.tyranor.next.ui.main.MainPanelNavigation
 import com.tyranor.next.ui.main.rememberMainTabMotion
-import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -39,97 +35,6 @@ class MotionLifecycleDeviceTest {
     }
 
     @get:Rule val compose = createComposeRule(effectContext = durationScale)
-
-    /** Every failed start propagates its original throwable and permits a subsequent successful request. */
-    @Test
-    fun failedNavigationPropagatesEveryThrowableAndAllowsRetry() {
-        MotionDeviceAcceptance.require()
-        for (failure in listOf(RuntimeException("start"), AssertionError("start"), IOException("start"))) {
-            val navigation = MainPanelNavigation()
-            var pending: (() -> Unit)? = null
-            var closes = 0
-            val afterPush: (() -> Unit) -> Unit = { pending = it }
-            val thrown = try {
-                navigation.navigate({ throw failure }, afterPush) { closes++ }
-                null
-            } catch (error: Throwable) {
-                error
-            }
-            assertSame("A failed start must propagate the original throwable", failure, thrown)
-            assertNull("A failed start must not queue a close callback", pending)
-            assertEquals(0, closes)
-            var starts = 0
-            navigation.navigate({ starts++ }, afterPush) { closes++ }
-            assertEquals("A failed start must not lock the next navigation", 1, starts)
-            assertEquals("A successful retry must still wait for the push", 0, closes)
-            requireNotNull(pending).invoke()
-            assertEquals(1, closes)
-        }
-    }
-
-    /** Keeps the overlay open during a slow launch and consumes the latest close only on a real pause. */
-    @Test
-    fun slowNavigationStaysLockedUntilPauseAndConsumesOnlyTheLatestClose() {
-        MotionDeviceAcceptance.require()
-        val owner = resumedOwner()
-        val staleCloses = AtomicInteger()
-        val closes = AtomicInteger()
-        val starts = AtomicInteger()
-        val navigation = MainPanelNavigation()
-        lateinit var afterPush: (() -> Unit) -> Unit
-        compose.setContent {
-            CompositionLocalProvider(LocalLifecycleOwner provides owner) {
-                val deferred = rememberAfterPushStarts()
-                SideEffect { afterPush = deferred }
-            }
-        }
-        compose.mainClock.autoAdvance = false
-        try {
-            compose.runOnIdle {
-                afterPush { staleCloses.incrementAndGet() }
-                navigation.navigate({ starts.incrementAndGet() }, afterPush) { closes.incrementAndGet() }
-            }
-            compose.mainClock.advanceTimeBy(600)
-            val observeUntil = SystemClock.uptimeMillis() + 600L
-            compose.waitUntil(timeoutMillis = 2_000) { SystemClock.uptimeMillis() >= observeUntil }
-            compose.runOnIdle {
-                assertEquals(Lifecycle.State.RESUMED, owner.lifecycle.currentState)
-                navigation.navigate({ starts.incrementAndGet() }, afterPush) { closes.incrementAndGet() }
-                assertEquals("Slow startup must not permit a second Activity launch", 1, starts.get())
-                assertEquals("Elapsed time must leave the overlay visible while this page is resumed", 0, closes.get())
-                assertEquals("Replacing a request must discard its close action", 0, staleCloses.get())
-                owner.event(Lifecycle.Event.ON_PAUSE)
-                assertEquals("The real pause must close the latest overlay once", 1, closes.get())
-                owner.event(Lifecycle.Event.ON_RESUME)
-                owner.event(Lifecycle.Event.ON_PAUSE)
-                assertEquals("A later pause must not execute the consumed action again", 1, closes.get())
-                assertEquals(0, staleCloses.get())
-            }
-        } finally {
-            compose.mainClock.autoAdvance = true
-        }
-    }
-
-    /** Reopens navigation and verifies that the cancelled callback cannot close or unlock the new request. */
-    @Test
-    fun cancellingNavigationDiscardsItsOldCloseWithoutUnlockingTheNewRequest() {
-        MotionDeviceAcceptance.require()
-        val navigation = MainPanelNavigation()
-        var pending: (() -> Unit)? = null
-        var starts = 0
-        var closes = 0
-        val afterPush: (() -> Unit) -> Unit = { pending = it }
-        navigation.navigate({ starts++ }, afterPush) { closes++ }
-        val oldClose = requireNotNull(pending)
-        navigation.cancel()
-        navigation.navigate({ starts++ }, afterPush) { closes++ }
-        oldClose()
-        assertEquals("A cancelled request must not close a reopened panel", 0, closes)
-        navigation.navigate({ starts++ }, afterPush) { closes++ }
-        assertEquals("An old close must not unlock the new navigation request", 2, starts)
-        requireNotNull(pending).invoke()
-        assertEquals(1, closes)
-    }
 
     /** Disposes an overlay before pause and checks that its pending close never executes. */
     @Test
@@ -269,9 +174,9 @@ class MotionLifecycleDeviceTest {
                     leaving.alpha.value <= 0f || abs(leaving.offset.value) >= 1f,
                 )
                 val generation = entrance.generation
-                leaving.replayEntranceIfHidden(entrance, timeSinceLeft = 400L)
+                leaving.replayEntranceIfHidden(entrance, timeSinceLeft = 120L)
                 assertEquals("The minimum replay gap must still apply to a hidden page", generation, entrance.generation)
-                leaving.replayEntranceIfHidden(entrance, timeSinceLeft = 401L)
+                leaving.replayEntranceIfHidden(entrance, timeSinceLeft = 121L)
                 assertEquals("A hidden page may replay once the minimum gap has elapsed", generation + 1, entrance.generation)
                 assertTrue("Returning to a previously shown tab must use its quick entrance", entrance.quick)
             }

@@ -3,6 +3,7 @@ package com.tyranor.next.core.game.save.sync
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.save.GameSaveException
+import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.SaveErrorCode
 import com.tyranor.next.core.game.save.SystemNnnSaveStore
 import com.tyranor.runtime.systemnnn.SystemNnnHost
@@ -22,6 +23,7 @@ import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Rule
@@ -37,6 +39,63 @@ import java.util.zip.ZipOutputStream
 class SaveSyncServiceTest {
     @get:Rule
     val temp = TemporaryFolder()
+
+    @Test
+    fun directoryRetirementWaitsForPreparedActivationAndOverlappingOwner() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("retiring-copy", EngineType.SYSTEMNNN)
+        val alias = harness.addGame("overlapping-save-owner")
+        val directory = SAVE_DIRECTORY_KEY_PREFIX + File(harness.root, "copy/sav").canonicalPath
+        val aliasDirectory = SAVE_DIRECTORY_KEY_PREFIX + File(harness.root, "copy").canonicalPath
+        val unrelatedDirectory = SAVE_DIRECTORY_KEY_PREFIX + File(harness.root, "copy2").canonicalPath
+        val key = harness.key(alias)
+        val owners = SaveDirectoryActivationStore(harness.root)
+
+        fun assertPinned() {
+            val failure = assertThrows(SaveSyncException::class.java) {
+                harness.service.requireSaveDirectoryRetirementAvailable(game, directory)
+            }
+            assertEquals(SaveSyncError.SELECTION_INCOMPLETE, failure.code)
+        }
+
+        val staged = harness.archive("unrelated", "unrelated")
+        harness.journal.prepare(harness.key(game), harness.versionFor(staged), staged, null)
+        assertPinned() // Old journal or an archive for the queued URI has no other directory owner.
+        harness.journal.clear(harness.key(game))
+        val orphan = harness.journal.archive(harness.key(game))
+        harness.archive("orphan", "orphan").copyTo(orphan)
+        assertPinned() // The process can die after moving the ZIP and before recording its owner.
+        harness.journal.clear(harness.key(game))
+
+        val source = harness.archive("original-staged", "original")
+        val sourceVersion = harness.versionFor(source)
+        val original = harness.journal.prepare(harness.key(game), sourceVersion, source, null, unrelatedDirectory)
+        harness.service.requireSaveDirectoryRetirementAvailable(game, directory)
+        assertEquals(original, harness.journal.load(harness.key(game)))
+        harness.world.directoryKey = unrelatedDirectory
+        harness.service.recoverSelection(game)
+        assertNull(harness.journal.load(harness.key(game)))
+        assertTrue(harness.snapshots.isValid(harness.key(game), sourceVersion))
+
+        val other = harness.archive("unrelated-directory", "other")
+        harness.journal.prepare(key, harness.versionFor(other), other, null, unrelatedDirectory)
+        harness.service.requireSaveDirectoryRetirementAvailable(game, directory)
+        harness.journal.clear(key)
+
+        val aliasStage = harness.archive("alias-staged", "alias")
+        val pending = harness.journal.prepare(key, harness.versionFor(aliasStage), aliasStage, null, aliasDirectory)
+        assertPinned()
+        assertNull(owners.owned(alias.uri).singleOrNull())
+        val activationRoot = harness.journal.archive(key).parentFile!!.parentFile!!
+        File(activationRoot, "records/$key.json").writeText("broken journal")
+        assertPinned() // The prepared ZIP remains pinned by its separately persisted directory scope.
+        harness.service.requireSaveDirectoryRetirementAvailable(game, unrelatedDirectory)
+        owners.begin(aliasDirectory, alias.uri, pending.token)
+        harness.journal.clear(key)
+        assertPinned() // The owner alone still fences retirement while completion is pending.
+        owners.complete(aliasDirectory, alias.uri, pending.token, committed = false)
+        harness.service.requireSaveDirectoryRetirementAvailable(game, directory)
+    }
 
     @Test
     fun systemNnnSaveLockRetriesExitUpload() = runBlocking {
@@ -102,7 +161,7 @@ class SaveSyncServiceTest {
         val before = harness.setActive(game, "before")
         val gameDirectory = temp.newFolder("systemnnn").canonicalFile
         val saveDirectory = File(gameDirectory, "sav").apply { mkdir() }
-        val save = File(saveDirectory, "emberfall.sav").apply { writeText("progress after exit") }
+        val save = File(saveDirectory, "data0.sav").apply { writeText("progress after exit") }
         val archive = temp.newFile("systemnnn-progress.zip")
         ZipOutputStream(archive.outputStream()).use { output ->
             output.putNextEntry(ZipEntry(save.name))
@@ -117,8 +176,8 @@ class SaveSyncServiceTest {
         val session = JSONObject().put("token", "pending-exit").put("uri", game.uri)
             .put("activeKey", directoryKey).put("baseline", before)
         harness.sessions.save(key, session)
-        val saves = SystemNnnSaveStore(gameDirectory, saveDirectory, validateSnapshot = { _, incoming, existing, _ ->
-            SystemNnnHost.canReplaceSaveSnapshot(incoming, existing)
+        val saves = SystemNnnSaveStore(gameDirectory, saveDirectory, validateSnapshot = { _, _, _, _ ->
+            error("The test only exports saves")
         })
         var attemptedCapture = false
         suspend fun flush() = SaveSyncRuntime.flushPending(harness.root, harness.world) { target, activeKey ->
@@ -2491,6 +2550,161 @@ class SaveSyncServiceTest {
     }
 
     @Test
+    fun supportedRuntimeSavesSyncAndDifferentPackagesWithSameLeafDoNotConflict() = runBlocking {
+        val harness = Harness(temp)
+        fun runtime(parent: String, packageName: String) = ScanGame(
+            title = "$packageName-$parent",
+            uri = "/library/$parent/shared-game",
+            engine = EngineType.RUNTIME_MODULE,
+            launchTarget = "__game_dir__",
+            runtimeModulePackage = packageName,
+        )
+        val first = runtime("first", "com.example.runtime.one")
+        val second = runtime("second", "com.example.runtime.two")
+        for ((index, game) in listOf(first, second).withIndex()) {
+            harness.world.addGame(game)
+            val directory = temp.newFolder("runtime-$index")
+            harness.world.setRuntimeCapability(game, GameSaveManager.RuntimeSaveCapability.AVAILABLE, directory)
+            harness.world.setActive(game, harness.archive("runtime-$index", "state-$index"))
+        }
+
+        val report = harness.service.syncAll(SaveSyncDirection.UPLOAD)
+
+        assertTrue(report.toString(), report.failures.isEmpty())
+        assertEquals(2, report.uploaded)
+        assertTrue(harness.transport.listInvocationCount(harness.runtimeRemoteGame(first)) > 0)
+        assertTrue(harness.transport.listInvocationCount(harness.runtimeRemoteGame(second)) > 0)
+    }
+
+    @Test
+    fun unsupportedRuntimeDoesNotReserveCloudIdentity() = runBlocking {
+        val unsupportedHarness = Harness(temp)
+        fun runtime(uri: String, engine: EngineType, packageName: String) = ScanGame(
+            title = uri,
+            uri = uri,
+            engine = engine,
+            launchTarget = "__game_dir__",
+            runtimeModulePackage = packageName,
+        )
+        val unsupported = runtime("/library/a/shared-game", EngineType.RUNTIME_MODULE, "com.example.runtime")
+        val supported = runtime("/library/b/shared-game", EngineType.RUNTIME_MODULE, "com.example.runtime")
+        unsupportedHarness.world.addGame(unsupported)
+        unsupportedHarness.world.setRuntimeCapability(unsupported, GameSaveManager.RuntimeSaveCapability.UNSUPPORTED)
+        unsupportedHarness.world.addGame(supported)
+        val directory = temp.newFolder("supported-runtime")
+        unsupportedHarness.world.setRuntimeCapability(supported, GameSaveManager.RuntimeSaveCapability.AVAILABLE, directory)
+        unsupportedHarness.world.setActive(supported, unsupportedHarness.archive("supported", "state"))
+
+        val skippedReport = unsupportedHarness.service.syncAll(SaveSyncDirection.UPLOAD)
+
+        assertTrue(skippedReport.toString(), skippedReport.failures.isEmpty())
+        assertEquals(1, skippedReport.uploaded)
+        assertTrue(unsupportedHarness.transport.listInvocationCount(unsupportedHarness.runtimeRemoteGame(supported)) > 0)
+    }
+
+    @Test
+    fun unknownRuntimeReservesItsCloudIdentity() = runBlocking {
+        fun runtime(uri: String, engine: EngineType, packageName: String) = ScanGame(
+            title = uri,
+            uri = uri,
+            engine = engine,
+            launchTarget = "__game_dir__",
+            runtimeModulePackage = packageName,
+        )
+        val unknownHarness = Harness(temp)
+        val unknown = runtime("/library/a/shared-game", EngineType.UNKNOWN, "com.example.runtime")
+        val known = runtime("/library/b/shared-game", EngineType.RUNTIME_MODULE, "com.example.runtime")
+        unknownHarness.world.addGame(unknown)
+        unknownHarness.world.setRuntimeCapability(unknown, GameSaveManager.RuntimeSaveCapability.UNKNOWN)
+        unknownHarness.world.addGame(known)
+        val knownDirectory = temp.newFolder("known-runtime")
+        unknownHarness.world.setRuntimeCapability(known, GameSaveManager.RuntimeSaveCapability.AVAILABLE, knownDirectory)
+        unknownHarness.world.setActive(known, unknownHarness.archive("known", "state"))
+
+        val reservedReport = unknownHarness.service.syncAll(SaveSyncDirection.UPLOAD)
+
+        assertEquals(2, reservedReport.failures.count { it.error == SaveSyncError.IDENTITY_CONFLICT })
+        assertEquals(0, unknownHarness.transport.listInvocationCount(unknownHarness.runtimeRemoteGame(known)))
+    }
+
+    @Test
+    fun runtimeDirectoryChangeRequiresConfirmationAndOldProvenanceCannotRestore() = runBlocking {
+        val harness = Harness(temp)
+        val game = ScanGame("runtime-change", "/library/a/runtime-game", EngineType.RUNTIME_MODULE,
+            "__game_dir__", runtimeModulePackage = "com.example.runtime")
+        harness.world.addGame(game)
+        val oldDirectory = temp.newFolder("runtime-old")
+        harness.world.setRuntimeCapability(game, GameSaveManager.RuntimeSaveCapability.AVAILABLE, oldDirectory,
+            fingerprint = "1".repeat(64))
+        val originalArchive = harness.archive("runtime-original", "old-save")
+        harness.world.setActive(game, originalArchive)
+        harness.service.setIdentity(game, "runtime-portable")
+        val initial = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        assertEquals(1, initial.uploaded)
+        val oldVersion = harness.service.listVersions(game).single()
+        assertTrue(oldVersion.runtimeProvenances.any { it.canonicalDirectory == oldDirectory.canonicalPath })
+
+        val newDirectory = temp.newFolder("runtime-new")
+        harness.world.setRuntimeCapability(game, GameSaveManager.RuntimeSaveCapability.AVAILABLE, newDirectory,
+            fingerprint = "2".repeat(64))
+        val change = harness.service.runtimeSaveIdentityChange(game)
+        assertTrue(change != null)
+        val blocked = harness.service.syncGame(game, SaveSyncDirection.PULL)
+        assertEquals(SaveSyncError.SAVE_LOCATION_CHANGED, blocked.failures.single().error)
+        assertEquals(RuntimeSaveIdentityChangeResult.Confirmed,
+            harness.service.confirmRuntimeSaveIdentityChange(game, requireNotNull(change)))
+
+        val afterConfirmation = harness.service.syncGame(game, SaveSyncDirection.PULL)
+        assertTrue(afterConfirmation.failures.toString(), afterConfirmation.failures.isEmpty())
+        assertEquals(0, afterConfirmation.downloaded)
+        assertEquals(0, harness.world.importCount(game))
+        val restoreFailure = try {
+            harness.service.activateVersion(game, oldVersion.id)
+            null
+        } catch (failure: SaveSyncException) {
+            failure.code
+        }
+        assertEquals(SaveSyncError.SAVE_LOCATION_CHANGED, restoreFailure)
+    }
+
+    @Test
+    fun runtimeActivationRechecksDeclarationBeforeImportAndRejectsStaleConfirmation() = runBlocking {
+        val harness = Harness(temp)
+        val game = ScanGame("runtime-declaration", "/library/a/declaration-game", EngineType.RUNTIME_MODULE,
+            "__game_dir__", runtimeModulePackage = "com.example.runtime")
+        harness.world.addGame(game)
+        val directory = temp.newFolder("runtime-declaration-dir")
+        harness.world.setRuntimeCapability(game, GameSaveManager.RuntimeSaveCapability.AVAILABLE, directory,
+            fingerprint = "3".repeat(64))
+        harness.world.setActive(game, harness.archive("runtime-current", "current"))
+        harness.service.setIdentity(game, "runtime-declaration")
+        harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        val selected = harness.service.listVersions(game).single()
+        harness.world.setActive(game, harness.archive("runtime-current-updated", "newer-current-state"))
+        // Change the declaration in the same canonical directory after selection but during capture.
+        harness.world.onExport = {
+            harness.world.setRuntimeCapability(game, GameSaveManager.RuntimeSaveCapability.AVAILABLE, directory,
+                fingerprint = "4".repeat(64))
+        }
+        val result = try {
+            harness.service.activateVersion(game, selected.id)
+            null
+        } catch (failure: SaveSyncException) {
+            failure.code
+        }
+        assertEquals(SaveSyncError.SAVE_LOCATION_CHANGED, result)
+        assertEquals(0, harness.world.importCount(game))
+
+        harness.world.onExport = null
+        val change = harness.service.runtimeSaveIdentityChange(game)
+        assertTrue(change != null)
+        harness.world.setRuntimeCapability(game, GameSaveManager.RuntimeSaveCapability.AVAILABLE, directory,
+            fingerprint = "5".repeat(64))
+        assertEquals(RuntimeSaveIdentityChangeResult.Stale,
+            harness.service.confirmRuntimeSaveIdentityChange(game, requireNotNull(change)))
+    }
+
+    @Test
     fun sameSizeUnverifiedPublicationCannotAuthorizeRetentionDeletes() = runBlocking {
         val harness = Harness(temp)
         val game = harness.addGame("unverified-publication")
@@ -3761,6 +3975,11 @@ class SaveSyncServiceTest {
         fun remoteGame(game: ScanGame): RemoteSaveGame =
             RemoteSaveGame(game.engine.name, service.identity(game))
 
+        fun runtimeRemoteGame(game: ScanGame): RemoteSaveGame = RemoteSaveGame(
+            "RUNTIME_MODULE_${SaveContentHash.text(requireNotNull(game.runtimeModulePackage)).uppercase()}",
+            service.identity(game),
+        )
+
         fun checkpointKey(game: ScanGame): String {
             val remoteKey = SaveContentHash.text(game.engine.name + "\n" + service.identity(game))
             return SaveContentHash.text(
@@ -3811,6 +4030,9 @@ class SaveSyncServiceTest {
         var lastRecordedDirectory: String? = null
         @Volatile var onRunning: (() -> Unit)? = null
         val unavailableUris = HashSet<String>()
+        private val runtimeCapabilities = HashMap<String, GameSaveManager.RuntimeSaveCapability>()
+        private val runtimeCapabilitySnapshots = HashMap<String, GameSaveManager.RuntimeSaveCapabilitySnapshot>()
+        private val directoryKeys = HashMap<String, String>()
         val activeKeyEntered = CompletableDeferred<Unit>()
         @Volatile
         var onRetireDirectory: (suspend (String) -> Unit)? = null
@@ -3819,13 +4041,17 @@ class SaveSyncServiceTest {
         override fun config(): WebDavConfig = webDavConfig
         override fun games(): List<ScanGame> = synchronized(lock) { games.toList() }
         override fun available(game: ScanGame): Boolean = synchronized(lock) { game in games && game.uri !in unavailableUris }
+        override fun runtimeSaveCapability(game: ScanGame): GameSaveManager.RuntimeSaveCapability? =
+            synchronized(lock) { runtimeCapabilities[game.uri] }
+        override fun runtimeSaveCapabilitySnapshot(game: ScanGame): GameSaveManager.RuntimeSaveCapabilitySnapshot? =
+            synchronized(lock) { runtimeCapabilitySnapshots[game.uri] }
         override fun running(game: ScanGame): Boolean {
             val value = isRunning || externalRunning
             onRunning?.invoke()
             return value
         }
         override fun activeKey(game: ScanGame): String {
-            val key = directoryKey ?: game.uri
+            val key = synchronized(lock) { directoryKeys[game.uri] } ?: directoryKey ?: game.uri
             activeKeyEntered.complete(Unit)
             return key
         }
@@ -3903,6 +4129,25 @@ class SaveSyncServiceTest {
 
         fun addGame(game: ScanGame) = synchronized(lock) {
             games += game
+        }
+
+        fun setRuntimeCapability(
+            game: ScanGame,
+            status: GameSaveManager.RuntimeSaveCapability,
+            directory: File? = null,
+            packageName: String? = game.runtimeModulePackage,
+            fingerprint: String? = if (status == GameSaveManager.RuntimeSaveCapability.AVAILABLE) "a".repeat(64) else null,
+        ) = synchronized(lock) {
+            runtimeCapabilities[game.uri] = status
+            runtimeCapabilitySnapshots[game.uri] = GameSaveManager.RuntimeSaveCapabilitySnapshot(
+                status = status,
+                location = directory?.let {
+                    GameSaveManager.SaveLocation(it, 0, available = status == GameSaveManager.RuntimeSaveCapability.AVAILABLE)
+                },
+                modulePackageName = packageName,
+                declarationFingerprint = fingerprint,
+            )
+            if (directory != null) directoryKeys[game.uri] = SAVE_DIRECTORY_KEY_PREFIX + directory.canonicalPath
         }
 
         fun setActive(game: ScanGame, source: File) {
