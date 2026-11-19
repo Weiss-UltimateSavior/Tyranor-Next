@@ -103,7 +103,7 @@ fun RuntimeModuleSettingsScreen(game: ScanGame) {
     val screenState = when {
         loading -> RuntimeSettingsScreenState.Loading
         loadError -> RuntimeSettingsScreenState.Error
-        module?.settings == null -> RuntimeSettingsScreenState.Empty
+        settings == null && module?.fileImports.isNullOrEmpty() -> RuntimeSettingsScreenState.Empty
         descriptionConflict -> RuntimeSettingsScreenState.Conflict
         else -> RuntimeSettingsScreenState.Content
     }
@@ -258,6 +258,7 @@ fun RuntimeModuleSettingsScreen(game: ScanGame) {
     }
 
     MiuixSettingsTheme {
+        val pickFiles = rememberRuntimeModuleFileImport(game)
         ProvideEntrance {
             MiuixScaffold(
                 modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
@@ -352,6 +353,24 @@ fun RuntimeModuleSettingsScreen(game: ScanGame) {
                                 },
                                 onRestore = { changeOverride(item, null) },
                             )
+                        }
+                    }
+                    if (bindingValid && descriptorConfirmed && !loadError) {
+                        items(module?.fileImports.orEmpty(), key = { "runtime_file_import:${it.key}" }) { item ->
+                            val enabled = pickFiles != null && !loading && !saveRunning
+                            MiuixCard(
+                                cornerRadius = AppComponentCornerRadius,
+                                modifier = Modifier.then(listItemMotion()).fillMaxWidth().glassBorder(),
+                            ) {
+                                com.tyranor.next.ui.common.AppNavItem(
+                                    title = item.title,
+                                    summary = stringResource(R.string.runtime_file_import_destination, item.displayPath),
+                                    drawSurface = false,
+                                    showLeadingIcon = false,
+                                    showArrow = false,
+                                    onClick = if (enabled) ({ pickFiles(item) }) else null,
+                                )
+                            }
                         }
                     }
                 }

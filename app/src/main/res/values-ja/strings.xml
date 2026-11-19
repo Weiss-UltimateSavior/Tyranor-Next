@@ -1200,6 +1200,13 @@
     <string name="runtime_settings_retry">再試行</string>
     <string name="runtime_settings_unavailable">モジュールを現在利用できません。下書きは保持されています</string>
     <string name="runtime_settings_empty">このモジュールに有効な設定項目はありません</string>
+    <string name="runtime_file_import_destination">インポート先：%1$s</string>
+    <string name="runtime_file_import_confirm">ファイルのインポートを確認</string>
+    <string name="runtime_file_import_add">追加：%1$s</string>
+    <string name="runtime_file_import_replace">上書き：%1$s</string>
+    <string name="runtime_file_import_unavailable">インポートを準備できません。ゲームフォルダー、ファイル名、選択数（最大32件）を確認してください。</string>
+    <string name="runtime_file_import_success">%1$d 件のファイルをインポートしました</string>
+    <string name="runtime_file_import_failed">インポートを中止しました。%2$d 件中 %1$d 件を書き込みました。</string>
     <string name="runtime_settings_binding_changed">ゲームの紐付けが変更されました。ライブラリに戻って更新してください</string>
     <string name="runtime_settings_description_changed">モジュールの設定説明が更新されました。続行する前に新しい設定を確認してください</string>
     <string name="runtime_settings_discard_draft">下書きを破棄して新しい設定を読み込む</string>

@@ -1200,6 +1200,13 @@
     <string name="runtime_settings_retry">Retry</string>
     <string name="runtime_settings_unavailable">This module is currently unavailable. Your draft is preserved</string>
     <string name="runtime_settings_empty">This module declares no valid settings</string>
+    <string name="runtime_file_import_destination">Import to: %1$s</string>
+    <string name="runtime_file_import_confirm">Confirm file import</string>
+    <string name="runtime_file_import_add">Add: %1$s</string>
+    <string name="runtime_file_import_replace">Replace: %1$s</string>
+    <string name="runtime_file_import_unavailable">Could not prepare the import. Check the game folder, file names, and selection (up to 32 files).</string>
+    <string name="runtime_file_import_success">Files imported: %1$d</string>
+    <string name="runtime_file_import_failed">Import stopped after writing %1$d of %2$d files.</string>
     <string name="runtime_settings_binding_changed">The game binding changed. Return to the library, refresh, and try again</string>
     <string name="runtime_settings_description_changed">The module settings description changed. Review the new settings before continuing</string>
     <string name="runtime_settings_discard_draft">Discard draft and load new settings</string>

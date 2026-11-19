@@ -102,6 +102,7 @@ Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并�
 6. `RuntimeModuleBindings.reconcile` 在重扫前与应用回前台等时机核对绑定：模块未发现、未启用或包名为空 → `EngineType.UNKNOWN`（保留最后已知 `runtimeModulePackage` 供重扫合并），保留其它字段；发现查询失败时跳过第三方绑定的降级。旧 Emberfall 内置身份的迁移独立进行。
 7. 绑定经 `ScanGame` → `GameEntity.runtime_module_package`（Room v3）→ `GameRecordCodec` prefs 镜像传播；v2→v3 使用显式 `Migration(2,3)`。配置复用现有 JSON 分区，不增加 Room schema 版本。
 8. `saves` 声明固定的游戏内相对存档目录，`GameSaveManager` 统一验证当前绑定、目录范围与符号链接，复用文件事务；第三方目录的事务相邻项须有私有所有权记录。存档能力动态判定，云端引擎命名空间包含模块包名，未知或暂不可用状态保留身份占位。外置启动在 WebDAV 关闭时也经过目录门禁，持久化运行标记成功后才交棒；退出确认可在模块失效、游戏降级或移除后按旧会话身份进行。
+9. `fileImports` 独立声明文件导入目标；单游戏引擎设置页取得系统选取的文件 URI 并预览写入。确认后由 `RuntimeModuleFileImporter` 复核绑定、模块声明及目标，逐文件暂存后提交；不写入单游戏覆盖记录或启动 Intent。
 
 [EngineSettingsResolver](app/src/main/java/com/tyranor/next/core/settings/EngineSettingsResolver.kt) 统一读取引擎全局与单游戏覆盖，`EffectiveEngineSettings` 处理归一化与回退。启动和存档消费同一份生效规则，页面不得另写优先级逻辑。
 

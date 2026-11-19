@@ -1275,8 +1275,8 @@ internal fun GameActionsSheet(
                         ),
                     )
                 }
-                // 运行时模块只有声明有效设置且当前启用时才显示动态设置入口。
-                if ((game.engine == EngineType.RUNTIME_MODULE && runtimeModule?.enabled == true && runtimeModule.settings?.items?.isNotEmpty() == true) ||
+                if ((game.engine == EngineType.RUNTIME_MODULE && runtimeModule?.enabled == true &&
+                        (runtimeModule.settings?.items?.isNotEmpty() == true || runtimeModule.fileImports.isNotEmpty())) ||
                     (game.engine != EngineType.RUNTIME_MODULE && game.engine != EngineType.UNKNOWN)
                 ) {
                     add(

@@ -16,5 +16,12 @@
       { "key": "fps_limit", "type": "integer", "title": "FPS limit", "default": 60, "min": 30, "max": 120 }
     ]
   },
-  "saves": { "version": 1, "directory": "saves" }
+  "saves": { "version": 1, "directory": "saves" },
+  "fileImports": {
+    "version": 1,
+    "items": [
+      { "key": "assets", "title": "Import test assets", "directory": "assets", "multiple": true },
+      { "key": "config", "title": "Replace test configuration", "directory": ".", "fileName": "example.ini" }
+    ]
+  }
 }

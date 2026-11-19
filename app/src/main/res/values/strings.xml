@@ -1200,6 +1200,13 @@
     <string name="runtime_settings_retry">重试</string>
     <string name="runtime_settings_unavailable">该模块当前不可用，草稿已保留</string>
     <string name="runtime_settings_empty">该模块未声明有效设置项</string>
+    <string name="runtime_file_import_destination">导入到：%1$s</string>
+    <string name="runtime_file_import_confirm">确认导入文件</string>
+    <string name="runtime_file_import_add">新增：%1$s</string>
+    <string name="runtime_file_import_replace">覆盖：%1$s</string>
+    <string name="runtime_file_import_unavailable">无法准备导入。请检查游戏目录、文件名及选择数量（最多 32 个）。</string>
+    <string name="runtime_file_import_success">已导入 %1$d 个文件</string>
+    <string name="runtime_file_import_failed">导入已停止，已写入 %1$d/%2$d 个文件。</string>
     <string name="runtime_settings_binding_changed">游戏绑定已变化，请返回游戏库刷新后重试</string>
     <string name="runtime_settings_description_changed">模块设置描述已更新。请核对新设置后再继续</string>
     <string name="runtime_settings_discard_draft">放弃草稿并加载新设置</string>

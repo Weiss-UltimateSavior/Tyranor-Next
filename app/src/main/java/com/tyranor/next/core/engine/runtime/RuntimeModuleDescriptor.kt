@@ -23,6 +23,7 @@ data class RuntimeModuleDescriptor(
     val saves: RuntimeModuleSaveSpec? = null,
     val settingsDiagnostic: String? = null,
     val savesDiagnostic: String? = null,
+    val fileImports: List<RuntimeModuleFileImportSpec> = emptyList(),
 ) {
     companion object {
         /** 解析模块描述文件 JSON，只返回描述文件能声明的字段。 */
@@ -54,6 +55,7 @@ data class RuntimeModuleManifest(
     val saves: RuntimeModuleSaveSpec? = null,
     val settingsDiagnostic: String? = null,
     val savesDiagnostic: String? = null,
+    val fileImports: List<RuntimeModuleFileImportSpec> = emptyList(),
 ) {
     companion object {
         fun parse(json: String?): RuntimeModuleManifest? = RuntimeModuleManifestParser.parse(json)
@@ -130,6 +132,7 @@ object RuntimeModuleManifestParser {
             saves = savesResult.first,
             settingsDiagnostic = settingsResult.second,
             savesDiagnostic = savesResult.second,
+            fileImports = RuntimeModuleFileImportParser.parse(root.opt("fileImports")),
         )
     }
 

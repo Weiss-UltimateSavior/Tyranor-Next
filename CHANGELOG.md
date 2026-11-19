@@ -95,6 +95,8 @@
 
 ### 新增
 
+- 第三方 APK 运行时模块可声明单游戏文件导入项，支持固定文件名导入及按原文件名批量导入，覆盖前显示确认。
+
 - 新增 MAGES. 外置引擎（经开源重新实现项目 impacto 承载；impacto 是项目名，不是引擎名）：引擎类型与图标、按精确大小写识别上游 profile（`mo6tw` 等，根目录条目）与 Windows／Steam 版《秋之回忆6》（见上文）、外置模块启动协议；引擎页点击跳转下载宿主 APK，链接指向宿主仓库 https://github.com/yuukana1/Tyranor-Next-MAGES 的最新发布（`releases/latest/download/Tyranor-Next-MAGES.apk`，新版本发布后自动指向），与其他外置引擎一致，不内置；宿主没有桌面入口。宿主是固定的上游 impacto 提交加宿主仓库的补丁系列，不再是未改动的上游。Windows／Steam 版的 `mo6tw-pc-zhs` 在宿主仓库 PR #1 的记录里于一台真机上进到过对话与存读档；其余 profile 与游戏的渲染、声音、输入、存读档均未验证。另增只读工具：CPK 结构检查与 profile 目录表校验。
 - 新增 MAGES. 引擎设置（引擎页弹窗的「全局引擎设置」与单游戏设置，格式与 Ruffle / Ren'Py 外置引擎一致：全局值 + 单游戏覆盖，三语言）：交换确认 / 取消键、垂直同步、影片播放、影片字幕（全部 / 仅翻译 / 仅卡拉 OK）、回看记录滚到底时自动关闭、妄想触发的鼠标 / 触摸支持（仅 Chaos;Head / Chaos;Child）、日志等级。启动时经 `SETTINGS` extra 下发，宿主 0.1.2（versionCode 3）起合并进该游戏的 `userconfig.toml`；更老的宿主按“需要更新”处理。分辨率、显示模式、渲染器、音频后端与补丁在 Android 上固定或不可用，不提供。
 - 修复 BGI 游戏位于公共共享存储时因 `flock` 返回不支持而无法启动：仅对不支持锁操作的错误回退到 OFD 非阻塞写入锁，保留占用与权限错误的拒绝行为。

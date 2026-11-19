@@ -250,19 +250,21 @@ internal object RuntimeModuleSettingsParser {
 }
 
 internal object RuntimeModuleSaveSpecParser {
-    private val VALID_SEGMENT = Regex("^[^/\\\\:*?\"<>|]+$")
-
     fun parseDetailed(value: Any?): Pair<RuntimeModuleSaveSpec?, String?> {
         if (value == null) return null to null
         val root = value as? JSONObject ?: return null to "saves must be an object"
         val version = root.opt("version") as? Int ?: return null to "saves version must be integer 1"
         if (version != 1) return null to "unsupported saves version"
         val directory = root.opt("directory") as? String ?: return null to "saves directory must be a string"
-        if (!isValidDirectory(directory)) return null to "invalid saves directory"
+        if (!RuntimeModulePaths.isValidRelativePath(directory)) return null to "invalid saves directory"
         return RuntimeModuleSaveSpec(version, directory) to null
     }
+}
 
-    fun isValidDirectory(path: String): Boolean {
+internal object RuntimeModulePaths {
+    private val VALID_SEGMENT = Regex("^[^/\\\\:*?\"<>|]+$")
+
+    fun isValidRelativePath(path: String): Boolean {
         if (path.isEmpty() || path.length > 256 || path.startsWith('/') || path.endsWith('/')) return false
         if (!isValidUnicode(path)) return false
         if (path.any { it.code < 0x20 || it.code in 0x7f..0x9f }) return false
