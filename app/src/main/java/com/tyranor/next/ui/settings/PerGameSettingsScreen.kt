@@ -64,6 +64,8 @@ import com.tyranor.next.core.input.InputRemapRepository
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.EffectiveEngineSettings
 import com.tyranor.next.core.settings.PerGameSettingsStore
+import com.tyranor.next.core.game.scan.ImpactoGameCatalog
+import com.tyranor.next.core.settings.ImpactoOverride
 import com.tyranor.next.core.settings.RenPyOverride
 import com.tyranor.next.core.settings.RpgMakerOverride
 import com.tyranor.next.core.settings.RuffleOverride
@@ -154,7 +156,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var artSurfaceCache by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_SURFACE_CACHE_SIZE)) }
     var artFontCache by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_FONT_CACHE_SIZE)) }
     var artPowerSaving by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_POWER_SAVING)) }
-    var renpyVersion by remember {
+    var renpyVersion by remember(gid) {
         mutableStateOf(
             EngineSettingsStore.normalizeRenpyVersion(
                 PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RENPY_VERSION),
@@ -210,6 +212,16 @@ fun PerGameSettingsScreen(game: ScanGame) {
         )
     }
     val ruffle = ruffleOverride ?: RuffleOverride()
+    var impactoOverride by remember(gid) {
+        mutableStateOf(
+            if (game.engine == EngineType.IMPACTO) {
+                PerGameSettingsStore.toImpactoOverride(PerGameSettingsStore.load(ctx, gid))
+            } else {
+                null
+            },
+        )
+    }
+    val impacto = impactoOverride ?: ImpactoOverride()
 
     val onsOverride = remember { mutableStateOf(PerGameSettingsStore.loadOnsOverride(ctx, gid) ?: JSONObject()) }
     var onsScoped by remember { mutableStateOf(onsBool(onsOverride.value, "scopedsavedir")) }
@@ -220,7 +232,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var onsSharpVal by remember { mutableStateOf(onsStr(onsOverride.value, "sharpness_value", "2")) }
     var onsEnc by remember { mutableStateOf(onsStr(onsOverride.value, "encoding", "gbk")) }
 
-    var tyExternal by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, "ty_external")) }
+    var tyExternal by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_TY_EXTERNAL)) }
     var tyScoped by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, "ty_scoped")) }
     var rpgMakerMod by remember {
         mutableStateOf(
@@ -501,6 +513,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val winlatorBox64PresetMap = winlatorBox64PresetOptionsMap()
     val globalRenpy = remember { EngineSettingsStore.loadRenPy(ctx) }
     val globalRuffle = remember { EngineSettingsStore.loadRuffle(ctx) }
+    val globalImpacto = remember { EngineSettingsStore.loadImpacto(ctx) }
     val globalRpg = remember { EngineSettingsStore.loadRpgMaker(ctx) }
     val rpgWindowMap = rpgWindowSizeOptionsMap()
     val rpgSpeedUpMap = rpgSpeedUpOptionsMap()
@@ -537,6 +550,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val ruffleScaleModeMap = ruffleScaleModeOptionsMap()
     val ruffleLoadBehaviorMap = ruffleLoadBehaviorOptionsMap()
     val ruffleScreenTimeoutMap = ruffleScreenTimeoutOptionsMap()
+    val impactoLogLevelMap = impactoLogLevelOptionsMap()
+    val impactoSubtitlesMap = impactoSubtitlesOptionsMap()
     val engineDefault = stringResource(R.string.engine_option_engine_default)
     val builtinFont = stringResource(R.string.engine_settings_builtin_font)
     val auto = stringResource(R.string.common_auto)
@@ -566,6 +581,10 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val effRenderer = krRender[PerGameSettingsStore.F_RENDERER]!!.value ?: globalRenderer
 
     fun save() {
+        if (game.engine == EngineType.RENPY) {
+            PerGameSettingsStore.setRenPyOverrides(ctx, gid, renpyVersion, renpy)
+            return
+        }
         if (systemNnn) {
             PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_SYSTEMNNN_FULLSCREEN, systemNnnFullscreen)
             PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_SYSTEMNNN_READING_SIZE, systemNnnReadingSize)
@@ -599,7 +618,6 @@ fun PerGameSettingsScreen(game: ScanGame) {
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_SURFACE_CACHE_SIZE, artSurfaceCache)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_FONT_CACHE_SIZE, artFontCache)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_POWER_SAVING, artPowerSaving)
-        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_RENPY_VERSION, renpyVersion)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_SIGLUS_LANGUAGE, siglusLanguage)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_FB_NLS, fbNls)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_FVP_NLS, fvpNls)
@@ -664,7 +682,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
         putIfNotNull(onsObj, "sharpness_value", onsSharpVal)
         putIfNotNull(onsObj, "encoding", onsEnc)
         PerGameSettingsStore.setOnsOverride(ctx, gid, onsObj)
-        PerGameSettingsStore.setBool(ctx, gid, "ty_external", tyExternal)
+        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_TY_EXTERNAL, tyExternal)
         PerGameSettingsStore.setBool(ctx, gid, "ty_scoped", tyScoped)
         PerGameSettingsStore.setBool(
             ctx,
@@ -712,15 +730,6 @@ fun PerGameSettingsScreen(game: ScanGame) {
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_RPG_WINDOW_SIZE, rpgm.windowSize)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_RPG_SPEED_UP, rpgm.speedUp)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_RPG_FONT_SCALE, rpgm.fontScale)
-        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_RENPY_CHEATS, renpy.cheats)
-        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_RENPY_HW_VIDEO, renpy.hwVideo)
-        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_RENPY_AUTOSAVE, renpy.autosave)
-        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_RENPY_PHONE_SMALL_VARIANT, renpy.phoneSmallVariant)
-        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_RENPY_VSYNC, renpy.vsync)
-        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_RENPY_LESS_MEMORY, renpy.lessMemory)
-        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_RENPY_LESS_UPDATES, renpy.lessUpdates)
-        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_RENPY_DONT_USE_GL2, renpy.dontUseGl2)
-        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_RENPY_RECOMPILE, renpy.recompile)
         // Ruffle 覆盖只写 Ruffle 游戏：无条件写会把 ruffle_* 键塞进其它游戏的覆盖 blob。
         if (game.engine == EngineType.RUFFLE) {
             PerGameSettingsStore.setStr(
@@ -759,6 +768,26 @@ fun PerGameSettingsScreen(game: ScanGame) {
                 gid,
                 PerGameSettingsStore.F_RUFFLE_LOAD_BEHAVIOR,
                 ruffle.loadBehavior?.takeIf { it in EngineSettingsStore.RUFFLE_LOAD_BEHAVIORS },
+            )
+        }
+        // MAGES. 覆盖同理只写 MAGES. 游戏，避免 impacto_* 键进入其它游戏的覆盖 blob。
+        if (game.engine == EngineType.IMPACTO) {
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_IMPACTO_SWAP_CONFIRM_CANCEL, impacto.swapConfirmCancel)
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_IMPACTO_VSYNC, impacto.vsync)
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_IMPACTO_VIDEO_PLAYBACK, impacto.videoPlayback)
+            PerGameSettingsStore.setStr(
+                ctx,
+                gid,
+                PerGameSettingsStore.F_IMPACTO_SUBTITLES,
+                impacto.subtitles?.takeIf { it in EngineSettingsStore.IMPACTO_SUBTITLES },
+            )
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_IMPACTO_CLOSE_BACKLOG_AT_END, impacto.closeBacklogAtEnd)
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_IMPACTO_DELUSION_MOUSE, impacto.delusionMouse)
+            PerGameSettingsStore.setStr(
+                ctx,
+                gid,
+                PerGameSettingsStore.F_IMPACTO_LOG_LEVEL,
+                impacto.logLevel?.takeIf { it in EngineSettingsStore.IMPACTO_LOG_LEVELS },
             )
         }
     }
@@ -1076,8 +1105,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             OverrideSwitch(stringResource(R.string.engine_settings_renpy_less_memory), globalRenpy.lessMemory, renpy.lessMemory) {
                                 renpyOverride = renpy.copy(lessMemory = it)
                             }
-                            OverrideSwitch(stringResource(R.string.engine_settings_renpy_dont_use_gl2), !globalRenpy.dontUseGl2, renpy.dontUseGl2?.let { !it }) {
-                                renpyOverride = renpy.copy(dontUseGl2 = it?.let { v -> !v })
+                            OverrideSwitch(stringResource(R.string.engine_settings_renpy_dont_use_gl2), globalRenpy.dontUseGl2, renpy.dontUseGl2) {
+                                renpyOverride = renpy.copy(dontUseGl2 = it)
                             }
                             OverrideSwitch(stringResource(R.string.engine_settings_renpy_phone_small_variant), globalRenpy.phoneSmallVariant, renpy.phoneSmallVariant) {
                                 renpyOverride = renpy.copy(phoneSmallVariant = it)
@@ -1621,8 +1650,48 @@ fun PerGameSettingsScreen(game: ScanGame) {
                     }
                     EngineType.IMPACTO -> item {
                         SectionCard(game.engine.displayName) {
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_impacto_swap_confirm_cancel),
+                                globalImpacto.swapConfirmCancel,
+                                impacto.swapConfirmCancel,
+                            ) { impactoOverride = impacto.copy(swapConfirmCancel = it) }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_impacto_vsync),
+                                globalImpacto.vsync,
+                                impacto.vsync,
+                            ) { impactoOverride = impacto.copy(vsync = it) }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_impacto_video_playback),
+                                globalImpacto.videoPlayback,
+                                impacto.videoPlayback,
+                            ) { impactoOverride = impacto.copy(videoPlayback = it) }
+                            OverrideChoice(
+                                stringResource(R.string.engine_settings_impacto_subtitles),
+                                impactoSubtitlesMap,
+                                globalImpacto.subtitles,
+                                impacto.subtitles,
+                            ) { impactoOverride = impacto.copy(subtitles = it) }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_impacto_close_backlog),
+                                globalImpacto.closeBacklogAtEnd,
+                                impacto.closeBacklogAtEnd,
+                            ) { impactoOverride = impacto.copy(closeBacklogAtEnd = it) }
+                            // 妄想触发的鼠标 / 触摸支持只存在于 Chaos;Head / Chaos;Child 两个 profile
+                            if (game.launchTarget in ImpactoGameCatalog.DELUSION_PROFILES) {
+                                OverrideSwitch(
+                                    stringResource(R.string.engine_settings_impacto_delusion_mouse),
+                                    globalImpacto.delusionMouse,
+                                    impacto.delusionMouse,
+                                ) { impactoOverride = impacto.copy(delusionMouse = it) }
+                            }
+                            OverrideChoice(
+                                stringResource(R.string.engine_settings_impacto_log_level),
+                                impactoLogLevelMap,
+                                globalImpacto.logLevel,
+                                impacto.logLevel,
+                            ) { impactoOverride = impacto.copy(logLevel = it) }
                             Text(
-                                stringResource(R.string.engine_settings_impacto_hint),
+                                stringResource(R.string.engine_settings_impacto_module_description),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),

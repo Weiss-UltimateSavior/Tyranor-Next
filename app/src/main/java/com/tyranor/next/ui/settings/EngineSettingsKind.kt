@@ -13,6 +13,7 @@ enum class EngineSettingsKind(@param:StringRes val titleRes: Int) {
     TYRANO(R.string.engine_settings_tyrano_title),
     RENPY(R.string.engine_settings_renpy_title),
     RUFFLE(R.string.engine_settings_ruffle_title),
+    IMPACTO(R.string.engine_settings_impacto_title),
     SIGLUS(R.string.engine_settings_siglus_title),
     FRAMEBUFFER(R.string.engine_settings_framebuffer_title),
     FVP(R.string.engine_settings_fvp_title),
@@ -37,6 +38,7 @@ internal fun engineSettingsKindOf(engine: EngineType): EngineSettingsKind? = whe
     EngineType.TYRANO, EngineType.VN, EngineType.WEB_OTHER -> EngineSettingsKind.TYRANO
     EngineType.RENPY -> EngineSettingsKind.RENPY
     EngineType.RUFFLE -> EngineSettingsKind.RUFFLE
+    EngineType.IMPACTO -> EngineSettingsKind.IMPACTO
     EngineType.SIGLUS -> EngineSettingsKind.SIGLUS
     EngineType.REALLIVE, EngineType.AVG32, EngineType.UK2 -> EngineSettingsKind.FRAMEBUFFER
     EngineType.FVP -> EngineSettingsKind.FVP
@@ -47,7 +49,6 @@ internal fun engineSettingsKindOf(engine: EngineType): EngineSettingsKind? = whe
     EngineType.XSYS4 -> EngineSettingsKind.XSYS4
     EngineType.PSP -> EngineSettingsKind.PPSSPP
     EngineType.YURIS, EngineType.CATSYSTEM2, EngineType.PC -> EngineSettingsKind.WINLATOR
-    EngineType.IMPACTO,
     EngineType.NINTENDO_SWITCH,
     EngineType.RUNTIME_MODULE,
     EngineType.ANDROID_APP,

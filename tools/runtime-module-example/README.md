@@ -1,6 +1,6 @@
 # 第三方模块协议示例
 
-独立 Android APK，仅用于配置参数与文件存档接入验收，不加入主 App 构建、不包含游戏运行时。四种设置类型和 `saves` 声明见 `src/main/res/raw/tyranor_runtime.json`。
+独立 Android APK，仅用于配置参数、文件导入与文件存档接入验收，不加入主 App 构建、不包含游戏运行时。声明见 `src/main/res/raw/tyranor_runtime.json`。
 
 从仓库根目录构建（使用已配置的 Android SDK 与 JDK 17）：
 
@@ -16,5 +16,6 @@ ANDROID_HOME=/path/to/sdk ./gradlew -p tools/runtime-module-example assembleDebu
 4. 启动游戏，示例显示收到的原始配置 JSON。文件访问由模块自己申请，主 App 不转授权限；Android 10 及以下使用设备设置授予示例所需存储权限。
 5. 点击「写入测试存档」创建 `saves/state.json`，结束示例并在主 App 确认外置游戏退出。
 6. 从「存档管理」验证导出、删除、导入、版本创建与恢复；配置 WebDAV 后验证双向同步，比较恢复文件与原文件内容。
+7. 从「引擎设置」选择两个文件导入 `assets/`，检查文件名和内容；再用固定目标导入任意单个文件为 `example.ini`，重复导入时分别验证取消保留原文件和确认覆盖。
 
 未提供 settings 的模块继续使用旧启动参数。该示例显示协议与读写链路，不能证明第三方真实引擎或商业游戏的兼容性。

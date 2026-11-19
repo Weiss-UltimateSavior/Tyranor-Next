@@ -252,7 +252,7 @@ object EngineScanner {
         }
     }
 
-    private fun mergeScannedGame(
+    internal fun mergeScannedGame(
         current: ScanGame,
         saved: ScanGame,
         allowedModules: Set<String>,
@@ -273,6 +273,9 @@ object EngineScanner {
                     previous.coverUri == null || previous.coverUri == current.coverUri
                 },
             vndbId = previous.vndbId,
+            bangumiId = previous.bangumiId,
+            hikarinagiId = previous.hikarinagiId,
+            nextmoeId = previous.nextmoeId,
             metadataTitle = previous.metadataTitle,
             externalModuleAlias = previous.externalModuleAlias ?: current.externalModuleAlias,
             runtimeModulePackage = if (current.engine == EngineType.RUNTIME_MODULE) {
@@ -354,7 +357,7 @@ object EngineScanner {
                     title = scanTitle(context, detected, dir.name),
                     uri = dir.uri.toString(),
                     engine = detected.engine,
-                    launchTarget = detected.launchTarget,
+                    launchTarget = scanLaunchTarget(context, detected, dir.uri.toString()),
                     externalModuleAlias = detected.externalModuleAlias,
                     runtimeModulePackage = detected.runtimeModulePackage,
                     detectedRenpyVersion = detectRenpyVersionIfNeeded(detected, children, session),
@@ -432,7 +435,7 @@ object EngineScanner {
                     title = scanTitle(context, detected, dir.name),
                     uri = dir.uri.toString(),
                     engine = detected.engine,
-                    launchTarget = detected.launchTarget,
+                    launchTarget = scanLaunchTarget(context, detected, dir.uri.toString()),
                     externalModuleAlias = detected.externalModuleAlias,
                     runtimeModulePackage = detected.runtimeModulePackage,
                     detectedRenpyVersion = detectRenpyVersionIfNeeded(detected, children, session),
@@ -653,6 +656,31 @@ object EngineScanner {
     private fun romTitle(name: String): String =
         name.substringBeforeLast('.').takeIf { it.isNotBlank() } ?: name
 
+    /**
+     * 扫描得到的启动目标。同一目录有多个可启动 profile 时（MAGES. Windows／Steam 版同时带日文、简体、繁体三份文本）
+     * 交给 [selectLaunchTarget] 选；其余引擎原样返回识别结果。[gameUri] 是该游戏记录的 uri，用来找库里已有的记录。
+     */
+    private fun scanLaunchTarget(context: Context, detected: Detection, gameUri: String): String {
+        if (detected.launchTargetChoices.size < 2) return detected.launchTarget
+        val saved = GameLibraryFacade.loadGames(context).firstOrNull { it.uri == gameUri }?.launchTarget
+        return selectLaunchTarget(detected, saved, AppLocaleController.engineUiLanguageTag(context))
+    }
+
+    /**
+     * 同一目录有多个候选 profile 时选哪一个（纯函数，供 JVM 单测）：
+     * 1. 库里已有的选择仍在候选里就沿用——宿主按 `profile + 目录` 隔离存档，重扫时不能因为界面语言变了就换 profile；
+     *    已存的 profile 对应的文本档已不在盘上（不再是候选）时不沿用，否则启动会失败；
+     * 2. 否则按界面语言标签选文本语言最接近的（[ImpactoGameCatalog.preferredProfileId]），没有对应语言取默认候选。
+     *
+     * 选择记在游戏库条目里：条目被移除后（含目录暂时不可达被重扫丢弃）重新入库，会按当时的界面语言重新选择。
+     */
+    internal fun selectLaunchTarget(detected: Detection, savedLaunchTarget: String?, uiLanguageTag: String?): String {
+        val choices = detected.launchTargetChoices
+        if (choices.size < 2) return detected.launchTarget
+        savedLaunchTarget?.takeIf { it in choices }?.let { return it }
+        return ImpactoGameCatalog.preferredProfileId(choices, uiLanguageTag) ?: detected.launchTarget
+    }
+
     /** 扫描标题：识别期标题 > 目录名；Ruffle 包装目录在目录名缺失时回退 SWF 文件主名。 */
     private fun scanTitle(context: Context, detected: Detection, dirName: String): String {
         val ruffleFallback = if (detected.engine == EngineType.RUFFLE) {
@@ -835,7 +863,7 @@ object EngineScanner {
                     title = scanTitle(context, detected, dir.name),
                     uri = dir.absolutePath,
                     engine = detected.engine,
-                    launchTarget = detected.launchTarget,
+                    launchTarget = scanLaunchTarget(context, detected, dir.absolutePath),
                     externalModuleAlias = detected.externalModuleAlias,
                     runtimeModulePackage = detected.runtimeModulePackage,
                     detectedRenpyVersion = detectRenpyVersionIfNeeded(detected, dir),
@@ -875,7 +903,7 @@ object EngineScanner {
                     title = scanTitle(context, detected, dir.name),
                     uri = dir.absolutePath,
                     engine = detected.engine,
-                    launchTarget = detected.launchTarget,
+                    launchTarget = scanLaunchTarget(context, detected, dir.absolutePath),
                     externalModuleAlias = detected.externalModuleAlias,
                     runtimeModulePackage = detected.runtimeModulePackage,
                     detectedRenpyVersion = detectRenpyVersionIfNeeded(detected, dir),
@@ -919,13 +947,17 @@ object EngineScanner {
         val titleHint: String? = null,
         /** 命中的第三方运行时模块包名；仅 [EngineType.RUNTIME_MODULE] 条目非空。 */
         val runtimeModulePackage: String? = null,
+        /**
+         * 同一目录可用的多个启动 profile（MAGES. PC 版的语言变体，目录表顺序，含 [launchTarget]）；其余引擎为空。
+         * 识别只回答「磁盘上有什么」，选哪个属于偏好，由持有 Context 的调用方经 [scanLaunchTarget] 决定。
+         */
+        val launchTargetChoices: List<String> = emptyList(),
     )
 
     /**
      * 目录识别（SAF 适配器）。[runtimeModules] 缺省空索引，保证既有调用/测试不必改签名。
      *
-     * 内置强特征优先：只有内置结果为 [EngineType.UNKNOWN] / [EngineType.WEB_OTHER] 时才尝试
-     * 第三方模块声明的扫描特征；子项只取一次，匹配失败不会产生额外 SAF 往返。
+     * 优先匹配第三方模块，未命中时再执行内置识别；两者复用本级目录子项。
      */
     fun detectEngine(
         context: Context,
@@ -934,7 +966,17 @@ object EngineScanner {
     ): Detection {
         if (!dir.isDirectory) return UNKNOWN_DETECTION
         val children = dir.listFiles()
-        val builtIn = detectEngine(
+        matchRuntimeModule(
+            entries = children.map { RuntimeModuleEntry(it.name.orEmpty(), it.isDirectory) },
+            childrenOf = { entry ->
+                children.firstOrNull { it.isDirectory && it.name.orEmpty() == entry.name }
+                    ?.listFiles()
+                    ?.map { RuntimeModuleEntry(it.name.orEmpty(), it.isDirectory) }
+                    .orEmpty()
+            },
+            runtimeModules = runtimeModules,
+        )?.let { return it }
+        return detectEngine(
             children = children.asIterable(),
             nameOf = { it.name.orEmpty() },
             isDirectory = { it.isDirectory },
@@ -952,20 +994,9 @@ object EngineScanner {
             },
             sizeOf = { it.length().takeIf { size -> size > 0 } },
         )
-        return applyRuntimeModules(
-            builtIn = builtIn,
-            entries = children.map { RuntimeModuleEntry(it.name.orEmpty(), it.isDirectory) },
-            childrenOf = { entry ->
-                children.firstOrNull { it.isDirectory && it.name.orEmpty() == entry.name }
-                    ?.listFiles()
-                    ?.map { RuntimeModuleEntry(it.name.orEmpty(), it.isDirectory) }
-                    .orEmpty()
-            },
-            runtimeModules = runtimeModules,
-        )
     }
 
-    /** 目录识别（真实路径）。[runtimeModules] 缺省空索引，仅弱结果（UNKNOWN/WEB_OTHER）才会被模块覆盖。 */
+    /** 目录识别（真实路径）。[runtimeModules] 缺省空索引，第三方模块优先，未命中时使用内置识别。 */
     fun detectEngine(dir: File, runtimeModules: RuntimeModuleIndex = RuntimeModuleIndex.EMPTY): Detection {
         if (!dir.isDirectory) return UNKNOWN_DETECTION
         return detectEngine(dir, FileScanSession(), runtimeModules)
@@ -977,16 +1008,7 @@ object EngineScanner {
         runtimeModules: RuntimeModuleIndex = RuntimeModuleIndex.EMPTY,
     ): Detection {
         val children = session.children(dir)
-        val builtIn = detectEngine(
-            children = children.asIterable(),
-            nameOf = { it.name },
-            isDirectory = { it.isDirectory },
-            childrenOf = { session.children(it).asIterable() },
-            headOf = { session.readHead(it) },
-            sizeOf = { it.length() },
-        )
-        return applyRuntimeModules(
-            builtIn = builtIn,
+        matchRuntimeModule(
             entries = children.map { RuntimeModuleEntry(it.name, it.isDirectory) },
             childrenOf = { entry ->
                 children.firstOrNull { it.isDirectory && it.name == entry.name }
@@ -995,6 +1017,14 @@ object EngineScanner {
                     .orEmpty()
             },
             runtimeModules = runtimeModules,
+        )?.let { return it }
+        return detectEngine(
+            children = children.asIterable(),
+            nameOf = { it.name },
+            isDirectory = { it.isDirectory },
+            childrenOf = { session.children(it).asIterable() },
+            headOf = { session.readHead(it) },
+            sizeOf = { it.length() },
         )
     }
 
@@ -1004,16 +1034,7 @@ object EngineScanner {
         headOf: (SafNode) -> ByteArray?,
         runtimeModules: RuntimeModuleIndex = RuntimeModuleIndex.EMPTY,
     ): Detection {
-        val builtIn = detectEngine(
-            children = children,
-            nameOf = { it.name },
-            isDirectory = { it.isDirectory },
-            childrenOf = childrenOf,
-            headOf = headOf,
-            sizeOf = { it.size },
-        )
-        return applyRuntimeModules(
-            builtIn = builtIn,
+        matchRuntimeModule(
             entries = children.map { RuntimeModuleEntry(it.name, it.isDirectory) },
             childrenOf = { entry ->
                 children.firstOrNull { it.isDirectory && it.name == entry.name }
@@ -1022,25 +1043,30 @@ object EngineScanner {
                     .orEmpty()
             },
             runtimeModules = runtimeModules,
+        )?.let { return it }
+        return detectEngine(
+            children = children,
+            nameOf = { it.name },
+            isDirectory = { it.isDirectory },
+            childrenOf = childrenOf,
+            headOf = headOf,
+            sizeOf = { it.size },
         )
     }
 
     /**
-     * 第三方运行时模块的弱结果分流：内置强特征（KRKR / ONS / RPGM / Ren'Py 等）不被覆盖，
-     * 只有 [EngineType.UNKNOWN] 与 [EngineType.WEB_OTHER] 才尝试模块声明的扫描特征。
+     * 第三方运行时模块优先匹配；无命中时由调用方继续执行内置识别。
      * 命中时统一以 [EngineType.RUNTIME_MODULE] + 文件夹路径启动，并记录模块包名。
      */
-    private fun applyRuntimeModules(
-        builtIn: Detection,
+    private fun matchRuntimeModule(
         entries: List<RuntimeModuleEntry>,
         childrenOf: (RuntimeModuleEntry) -> List<RuntimeModuleEntry>,
         runtimeModules: RuntimeModuleIndex,
-    ): Detection {
-        if (runtimeModules.modules.isEmpty()) return builtIn
-        if (builtIn.engine != EngineType.UNKNOWN && builtIn.engine != EngineType.WEB_OTHER) return builtIn
+    ): Detection? {
+        if (runtimeModules.modules.isEmpty()) return null
         // 主机 ROM / 散装 SWF 目录必须交给 romGamesForSaf/File 逐文件入库，不能被模块扩展名吞掉。
-        if (entries.any { !it.isDirectory && romEngineOf(it.name) != null }) return builtIn
-        val module = runtimeModules.match(entries, childrenOf) ?: return builtIn
+        if (entries.any { !it.isDirectory && romEngineOf(it.name) != null }) return null
+        val module = runtimeModules.match(entries, childrenOf) ?: return null
         return Detection(
             engine = EngineType.RUNTIME_MODULE,
             confidence = 80,
@@ -1137,8 +1163,10 @@ object EngineScanner {
         var cmvsStartCount = 0
         var hasCmvsStartHeader = false
         var hasCmvsExe = false
-        // Impacto 按精确大小写匹配根目录条目名（上游 Android 路径区分大小写），故另存原名
+        // Impacto 按精确大小写匹配根目录条目名（上游 Android 路径区分大小写），故另存原名；
+        // Windows／Steam 版把档案放在根下的 `data/` 里，同样另存该目录里的文件原名
         val impactoRootNames = HashSet<String>()
+        val impactoDataNames = HashSet<String>()
 
         fun collect(entry: T, rel: String) {
             if (Thread.currentThread().isInterrupted) throw java.util.concurrent.CancellationException()
@@ -1148,6 +1176,14 @@ object EngineScanner {
             val childRel = if (rel.isEmpty()) lower else "$rel/$lower"
             if (isDirectory(entry)) {
                 hasChildDirectory = true
+                if (rel.isEmpty() && nameOf(entry) == ImpactoGameCatalog.DATA_DIR) {
+                    childrenOf(entry).forEach { child ->
+                        val childName = nameOf(child)
+                        if (childName in ImpactoGameCatalog.dataEntryNames && !isDirectory(child)) {
+                            impactoDataNames.add(childName)
+                        }
+                    }
+                }
                 if (lower == "tyrano") hasTyranoDir = true
                 if (lower == "renpy") hasRenpyDir = true
                 if (lower == "game") hasGameDir = true
@@ -1531,14 +1567,17 @@ object EngineScanner {
         if (hasCmvsExe) {
             return Detection(EngineType.CMVS, 82, LAUNCH_TARGET_GAME_DIR)
         }
-        // Impacto：排在所有既有引擎之后；launchTarget 保存上游 profile id（`-g` 参数）
-        ImpactoGameCatalog.match(impactoRootNames)?.let {
+        // Impacto：排在所有既有引擎之后；launchTarget 保存 profile id（`-g` 参数）。
+        // 同一份数据有多个语言变体（Windows／Steam 版）时，这里取默认变体并带上全部候选，由 scanLaunchTarget 按偏好选。
+        val impacto = ImpactoGameCatalog.candidates(impactoRootNames, impactoDataNames)
+        ImpactoGameCatalog.pick(impacto)?.let {
             return Detection(
                 EngineType.IMPACTO,
                 94,
                 it.profileId,
                 IMPACTO_MODULE_ALIAS,
                 titleHint = it.title,
+                launchTargetChoices = if (impacto.size > 1) impacto.map { game -> game.profileId } else emptyList(),
             )
         }
         return UNKNOWN_DETECTION

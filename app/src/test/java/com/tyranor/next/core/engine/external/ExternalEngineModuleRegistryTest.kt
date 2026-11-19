@@ -18,15 +18,17 @@ class ExternalEngineModuleRegistryTest {
         assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias(RenPyExternalEngineModule.packageName))
         assertTrue(ExternalEngineModuleRegistry.isExternalEngine(EngineType.RENPY))
         assertEquals("renpy85", RenPyExternalEngineModule.id)
-        assertEquals("Ren'Py 8.5.3", RenPyExternalEngineModule.displayName)
+        assertEquals("Ren'Py 8.5.0", RenPyExternalEngineModule.displayName)
         assertEquals("cyou.joiplay.runtime.renpy.v8d4d1", RenPyExternalEngineModule.packageName)
-        assertEquals(10200L, RenPyExternalEngineModule.minimumVersionCode)
+        assertEquals(10100L, RenPyExternalEngineModule.minimumVersionCode)
+        assertEquals(10199L, RenPyExternalEngineModule.maximumVersionCode)
     }
 
     @Test
     fun resolvesRenPyVersions() {
         assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_85))
-        assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_853))
+        assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_850))
+        assertSame(RenPy853ExternalEngineModule, ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_853))
         assertSame(RenPy77ExternalEngineModule, ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_77))
         assertNull(ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_AUTO))
         assertNull(ExternalEngineModuleRegistry.moduleForRenpyVersion("unknown"))
@@ -66,8 +68,12 @@ class ExternalEngineModuleRegistryTest {
     @Test
     fun renpyVersionModuleProtocols() {
         assertEquals(
-            "https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RenPyPlugin-8.5.3-1.02.00.apk",
+            "https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RenPy-Plugin-8.5.apk",
             RenPyExternalEngineModule.installUrl,
+        )
+        assertEquals(
+            "https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RenPyPlugin-8.5.3-1.02.00.apk",
+            RenPy853ExternalEngineModule.installUrl,
         )
         assertEquals(
             "https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RenPy-Plugin-7.7.1.apk",
@@ -87,15 +93,30 @@ class ExternalEngineModuleRegistryTest {
     }
 
     @Test
-    fun legacyAndCurrentRenPy85ValuesResolveToUpgradedPackage() {
+    fun legacyAndCurrentRenPyValuesKeepIndependentChoices() {
         assertSame(
             RenPyExternalEngineModule,
             ExternalEngineModuleRegistry.resolveRenpyModule(EngineSettingsStore.RENPY_85),
         )
         assertSame(
-            RenPyExternalEngineModule,
+            RenPy853ExternalEngineModule,
             ExternalEngineModuleRegistry.resolveRenpyModule(EngineSettingsStore.RENPY_853),
         )
+        assertSame(
+            RenPyExternalEngineModule,
+            ExternalEngineModuleRegistry.resolveRenpyModule(EngineSettingsStore.RENPY_850),
+        )
+        assertSame(
+            RenPy853ExternalEngineModule,
+            ExternalEngineModuleRegistry.resolveRenpyModule(EngineSettingsStore.RENPY_AUTO, EngineSettingsStore.RENPY_853),
+        )
+        assertSame(
+            RenPyExternalEngineModule,
+            ExternalEngineModuleRegistry.resolveRenpyModule(EngineSettingsStore.RENPY_850, EngineSettingsStore.RENPY_853),
+        )
+        assertEquals(RenPyExternalEngineModule.packageName, RenPy853ExternalEngineModule.packageName)
+        assertEquals("renpy853", RenPy853ExternalEngineModule.id)
+        assertSame(RenPy853ExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias("internal.renpy853"))
         assertEquals("renpy85", RenPyExternalEngineModule.id)
     }
 

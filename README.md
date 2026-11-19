@@ -58,6 +58,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | System35             | `*.ALD`（`SA.ALD` 等；根目录或 `GAMEDATA/`）、`System39.ain`/`System39.ini`/`*.wai`/`*.bgi`/`*.alk` | 内置 System3.x 运行时（xsystem35） |
 | System4              | `System40.ini` 或 `AliceStart.ini`（根目录；`*.ain` 为辅助特征）                    | 内置 System4 运行时（xsystem4）      |
 | SystemNNN            | 游戏目录下的 `spt/sys.spt`（不区分大小写）                            | 内置 [SystemNNN-Emberfall 0.8.1](https://github.com/PorisRora/SystemNNN-Emberfall)（ARM64） |
+| Ethornell / BGI      | 根目录的 `system.arc`（带 BGI 引导标记，且不与 UK2 冲突）             | 内置 Ethornell / BGI 运行时（`libethornell.so`） |
 | YU-RIS               | `yscfg.dat`、`pac/*.ypf`、`YS*.DLL`、`.ymv`                          | 外置 Winlator（winlator-cn）        |
 | CatSystem2           | `config/startup.xml`、`*.int`、`*.cst`、`*.hg3`、`*.kcs` 等组合         | 外置 Winlator（winlator-cn）        |
 | PC（手动添加）        | 游戏页顶栏「添加 PC 游戏」选择目录并指定启动 exe                          | 外置 Winlator（winlator-cn）        |
@@ -66,13 +67,13 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | RPG Maker VX         | `.rgss2a`、`Game.ini` + `Data/*.rvdata`                              | 外置 RPGM APK 模块               |
 | RPG Maker VX Ace     | `.rgss3a`、`Game.ini` + `Data/*.rvdata2`                             | 外置 RPGM APK 模块               |
 | mkxp-z               | 用户选择/内部别名 `internal.mkxp-z`                                         | 外置 RPGM APK 模块               |
-| RPG Maker MV         | `www/`、`js/rpg_core.js`                                             | 内置 Web 运行环境                  |
-| RPG Maker MZ         | `www/`、`js/rmmz_core.js`                                            | 内置 Web 运行环境                  |
+| RPG Maker MV         | `www/`、`js/rpg_core.js`                                             | 内置 Web 运行环境（Tyranor-2.3.4 / TynMV-0.1 / TynMV-0.2） |
+| RPG Maker MZ         | `www/`、`js/rmmz_core.js`                                            | 内置 Web 运行环境（Tyranor-2.3.4 / TynMV-0.2） |
 | VN                   | `globalData.vndata`                                                 | 内置 Web 运行环境                  |
 | WebOther             | 通用 `index.html` 网页游戏                                                | 内置 Web 运行环境                  |
-| Ren'Py               | `.rpa`、`game/script.rpy`、`game/options.rpy`、`renpy/` + `.rpy/.rpyc` | 外置 RenPy APK 模块（8.5.3 / 7.7.1） |
+| Ren'Py               | `.rpa`、`game/script.rpy`、`game/options.rpy`、`renpy/` + `.rpy/.rpyc` | 外置 RenPy APK 模块（8.5.0 / 8.5.3 / 7.7.1；8.5.0 与 8.5.3 同包名，按所选版本下载安装） |
 | Ruffle / Flash       | 顶层 `.swf`；根 `index.html/index.htm` + 唯一 SWF 的叶子目录                   | 外置 Ruffle APK 模块              |
-| MAGES.（impacto）    | 按精确大小写的根目录条目识别上游 profile（如 `mo6tw` 的 `SYSTEM.CPK`、`SCRIPT.cls` 等） | 外置 Impacto 宿主 APK（引擎页点击跳转下载） |
+| MAGES.（impacto）    | 按精确大小写识别 profile：上游 profile 看根目录条目（如 `mo6tw` 的 `SYSTEM.CPK`、`SCRIPT.cls`），Windows／Steam 版《秋之回忆6》看根目录 `game.exe` 与 `data/` 里的 `script.cpk`、`mes00.cpk` | 外置 Impacto 宿主 APK（引擎页点击跳转下载；Windows／Steam 版需宿主 0.2.0 及以上） |
 | PSP                  | `.pbp`、`.cso`、`.iso`、`.chd`                                         | 外置 PPSSPP 模拟器                 |
 | Nintendo Switch      | `.nsp`、`.xci`、`.nca`、`.nro`                                         | 外置 Eden 模拟器                   |
 
@@ -141,7 +142,7 @@ CI 使用 JDK 17；还需 engine 的 Android 36 平台、Build Tools 37.0.0、ND
 ```
 app/
 ├── src/main/java/com/tyranor/next/
-│   ├── core/      功能抽象层：扫描、启动、引擎模块、封面、存档、补丁、拆封包、配置、授权、更新
+│   ├── core/      功能抽象层：扫描、启动、引擎模块、封面、游玩状态、存档、补丁、拆封包、配置、授权、网络（各域共享 HTTP 层）、更新
 │   ├── ui/        界面 UI 交互层：主界面、游戏页、设置页、弹窗、公共组件
 │   └── theme/     Compose / Miuix 主题、色调、深浅色适配
 ├── src/main/assets/rtp/    App 自有 RTP 资源

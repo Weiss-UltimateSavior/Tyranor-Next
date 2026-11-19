@@ -93,6 +93,7 @@ object RuntimeModuleDiscovery {
             saves = manifest?.saves,
             settingsDiagnostic = manifest?.settingsDiagnostic,
             savesDiagnostic = manifest?.savesDiagnostic,
+            fileImports = manifest?.fileImports.orEmpty(),
         )
     }
 

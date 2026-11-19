@@ -85,18 +85,14 @@
 
 插件读取顺序（`loadConfig`）：
 
-1. 游戏目录位于外部存储根的子目录：`<gameFolder>/configuration.json`；
-2. 其它情况（含存储根本身、可移动存储等）：`/storage/emulated/0/JoiPlay/games/<game.id>/configuration.json`。
+1. 游戏目录以外部存储根路径为前缀时，读取 `<gameFolder>/configuration.json`（包括存储根本身）；
+2. 其它情况（如可移动存储）读取 `/storage/emulated/0/JoiPlay/games/<game.id>/configuration.json`。
 
-**文件存在时，文件值覆盖 intent `settings`。**
+文件同名字段覆盖 Intent。主 App 在启动前检查已有文件：
 
-TyranorNext 采用策略 A：
-
-- 仅在文件已存在、长度不超过 1 MiB 且内容为合法 JSON 对象时同步；
-- 只写受管键（`screenTimeout`、`backend`、`quality`、`scaleMode`、`letterbox`、`loadBehavior`），保留未知键；
-- 不创建、不删除配置文件；文件缺失、损坏或超限时直接跳过，由插件按自身默认处理；
-- 跳过同一目录多个 SWF 的共享目录与外部存储根，避免目录级配置把某个游戏的设置串给同目录其它游戏；
-- 写入使用同目录 `.tmp` + rename；rename 失败保留原文件，同步失败不影响启动。
+- 专用文件中的受管字段与生效值冲突时，原子替换该文件。保留其他字段（受管字段为 `screenTimeout`、`backend`、`quality`、`scaleMode`、`letterbox`、`loadBehavior`）。
+- 多 SWF 目录和外部存储根的共享文件保持原样。共享文件已有的受管字段与生效值冲突时，启动提示将 SWF 及其资源放到独立目录，或调整共享文件。
+- 文件缺失时直接使用 Intent，格式损坏的 JSON 由插件跳过。文件读取上限为 1 MiB。无法确认或更新文件时提示启动失败。
 
 ## 4. 扫描规则与包装目录边界
 
@@ -152,7 +148,7 @@ ScanGame(
 | 启动异常 | `LAUNCH_EXCEPTION` |
 | 入口 URI 无法解析为真实路径 | `GameDirUnresolved`（UI 提示无法解析游戏目录） |
 | 找不到 SWF 或入口越界 | `PREPARE_FAILED`，文案 `external_ruffle_resolve_swf_failed` |
-| `configuration.json` 同步失败 | 非致命；保留原文件，启动继续 |
+| `configuration.json` 同步失败或共享文件冲突 | `PREPARE_FAILED`，保留原文件并提示原因 |
 
 已知限制：
 
@@ -161,7 +157,7 @@ ScanGame(
 - 不提供虚拟按键 / 手柄重映射；主 App 不向该模块注入按键层或手柄映射。
 - 插件仅横屏；主 App 不改变该方向。
 - 包装目录只在叶子目录、单 SWF、根 index 的窄条件下自动识别；有子目录或多 SWF 的目录不会合并为一条。
-- 多 SWF 共享目录即使已存在 `configuration.json`，主 App 也不会改写它；插件仍会以该文件覆盖 intent，单游戏设置可能不生效。
+- 多 SWF 共用目录和存储根保留共享配置文件。共享文件与生效设置冲突时，本次启动停止并反馈原因。
 - 协议按 1.02.00 实现；插件后续版本若调整 action、extras 或配置键，需要重新核对。
 - 设备与插件运行验证尚未执行，不能据此声明任何 SWF 游戏可运行或兼容。
 

@@ -8,12 +8,11 @@ import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,12 +23,14 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.layout.Layout
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,7 +38,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.tyranor.next.ui.common.motion.nestedPanelContentDim
@@ -55,6 +55,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassPanel
 import com.tyranor.next.theme.MilkGlassPanelBackground
@@ -163,9 +166,13 @@ internal fun AppAlertDialog(
     // 弹窗升起时背后的页面随遮罩进度下沉 / 褪色（见 LocalSheetBackdrop）
     LocalSheetBackdrop.current?.Bind(strength = { DialogSinkStrength }) { dimAlpha.value.coerceIn(0f, 1f) }
     val dismissing = remember { mutableStateOf(false) }
+    val pendingExitAction = remember { mutableStateOf<(() -> Unit)?>(null) }
+    val pendingExitIsDismiss = remember { mutableStateOf(true) }
+    val pendingExitDelivered = remember { mutableStateOf(false) }
     val currentOnDismiss by rememberUpdatedState(onDismissRequest)
     val currentDismissEnabled by rememberUpdatedState(dismissEnabled)
     val focusManager = LocalFocusManager.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     // Dialog 内容是独立的 Compose 根，自带一个焦点管理器；这里拿到的 focusManager 只管页面层。
     // 输入框的光标水滴柄是弹窗根里的独立 Popup，必须清弹窗根的焦点才会立刻收掉（否则面板已经下沉淡出，水滴柄还孤零零悬在原处）。
     val dialogFocus = remember { arrayOfNulls<androidx.compose.ui.focus.FocusManager>(1) }
@@ -242,12 +249,56 @@ internal fun AppAlertDialog(
         }
     }
 
+    fun deliverPendingExit() {
+        if (pendingExitDelivered.value) return
+        val action = pendingExitAction.value ?: return
+        pendingExitDelivered.value = true
+        pendingExitAction.value = null
+        action()
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            // 旋转/重建在 onDestroy 之前先走 onSaveInstanceState：已接受退场（常规关闭或按钮退场）
+            // 在暂停阶段提前交付回调，避免 rememberSaveable 把打开态写入 Bundle 导致复活或丢失连锁删除。
+            if (event == Lifecycle.Event.ON_PAUSE && pendingExitAction.value != null && !pendingExitDelivered.value) {
+                try {
+                    deliverPendingExit()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    if (pendingExitIsDismiss.value) {
+                        Log.e("AppAlertDialog", "Dialog dismissal failed on pause", failure)
+                    } else {
+                        actionFailed(failure)
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     // 取消类按钮：先播放退场再执行按钮动作（按钮通常直接把弹窗从组合里移除，来不及播放退场）。
     // 动作执行后弹窗若仍在（例如校验未通过），再弹回来，不会卡在隐藏状态。
-    val exitController = remember(enhanced, focusManager) {
+    val exitController = remember(enhanced, focusManager, lifecycleOwner) {
         DialogExitController { action ->
             if (dismissing.value) return@DialogExitController
+            // 若调用本身正处于 ON_PAUSE（例如嵌套弹窗连锁关闭），直接同步交付以避免错失保存窗口
+            if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                try {
+                    action()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    actionFailed(failure)
+                }
+                return@DialogExitController
+            }
             dismissing.value = true
+            pendingExitIsDismiss.value = false
+            pendingExitAction.value = action
+            pendingExitDelivered.value = false
             releaseInputFocus()
             dialogWindow[0].beginDialogDimExit()
             var restored = false
@@ -256,7 +307,7 @@ internal fun AppAlertDialog(
                     animateExit = {
                         if (enhanced) playExit(MotionTokens.fadeOut(0.001f), MotionTokens.surfaceExit(0.001f))
                     },
-                    action = action,
+                    action = { deliverPendingExit() },
                     afterAction = {
                         // 仍在组合中：动作没有关闭弹窗，恢复显示。
                         deliveredAt[0] = 0L
@@ -277,6 +328,7 @@ internal fun AppAlertDialog(
                         try {
                             dialogWindow[0]?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
                         } finally {
+                            pendingExitAction.value = null
                             // 只有真正交付了关闭才进入「退场尾段」；动作没关弹窗、已恢复显示的，不能再按尾段处理遮罩按下与关闭请求
                             if (!restored) deliveredAt[0] = android.os.SystemClock.uptimeMillis()
                             dismissing.value = false
@@ -291,6 +343,9 @@ internal fun AppAlertDialog(
     fun dismiss() {
         if (!currentDismissEnabled || dismissing.value || inTail()) return
         dismissing.value = true
+        pendingExitIsDismiss.value = true
+        pendingExitAction.value = { currentOnDismiss() }
+        pendingExitDelivered.value = false
         releaseInputFocus()
         dialogWindow[0].beginDialogDimExit()
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -302,13 +357,14 @@ internal fun AppAlertDialog(
                         playExit(tween(250, easing = FastOutLinearInEasing), tween(260, easing = FastOutLinearInEasing))
                     }
                 },
-                action = { currentOnDismiss() },
+                action = { deliverPendingExit() },
                 afterAction = {},
                 onFailure = { Log.e("AppAlertDialog", "Dialog dismissal failed", it) },
                 cleanup = {
                     try {
                         dialogWindow[0]?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
                     } finally {
+                        pendingExitAction.value = null
                         deliveredAt[0] = android.os.SystemClock.uptimeMillis()
                         dismissing.value = false
                     }
@@ -432,16 +488,38 @@ internal fun AppAlertDialog(
                                         }
                                     }
                                     if (showButtonRow) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth().staggeredEntrance(2, distance = 14.dp, stepMillis = 45L).padding(top = 14.dp),
-                                            horizontalArrangement = buttonArrangement,
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            CompositionLocalProvider(LocalDialogExit provides exitController) {
-                                                dismissButton?.invoke()
-                                            }
-                                            CompositionLocalProvider(LocalDialogExit provides if (dismissButton == null) exitController else null) {
-                                                confirmButton()
+                                        val splitEnds = buttonArrangement == Arrangement.SpaceBetween && dismissButton != null
+                                        val actionRowModifier = Modifier
+                                            .fillMaxWidth()
+                                            .staggeredEntrance(2, distance = 14.dp, stepMillis = 45L)
+                                            .padding(top = 14.dp)
+                                        if (splitEnds) {
+                                            SplitEndsActionRow(
+                                                modifier = actionRowModifier,
+                                                leading = {
+                                                    CompositionLocalProvider(LocalDialogExit provides exitController) {
+                                                        dismissButton()
+                                                    }
+                                                },
+                                                trailing = {
+                                                    CompositionLocalProvider(LocalDialogExit provides null) {
+                                                        confirmButton()
+                                                    }
+                                                },
+                                            )
+                                        } else {
+                                            FlowRow(
+                                                modifier = actionRowModifier,
+                                                horizontalArrangement = buttonArrangement,
+                                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                                                itemVerticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                CompositionLocalProvider(LocalDialogExit provides exitController) {
+                                                    dismissButton?.invoke()
+                                                }
+                                                CompositionLocalProvider(LocalDialogExit provides if (dismissButton == null) exitController else null) {
+                                                    confirmButton()
+                                                }
                                             }
                                         }
                                     }
@@ -511,6 +589,77 @@ internal class DialogExitController(val closeThen: (action: () -> Unit) -> Unit)
 
 /** 当前按钮所在弹窗的退场控制器；为 null 时按钮直接执行动作。 */
 internal val LocalDialogExit = staticCompositionLocalOf<DialogExitController?> { null }
+
+/**
+ * 两端对齐且支持窄屏/大字号自动折行的按钮行：
+ * 单行可容纳时左端 [leading] 左对齐、右端 [trailing] 右对齐；
+ * 超宽时整组折行右对齐，消除 `FlowRow + Spacer(weight)` 折行时产生的空行占位间距。
+ */
+@Composable
+internal fun SplitEndsActionRow(
+    modifier: Modifier = Modifier,
+    horizontalSpacing: Dp = 8.dp,
+    verticalSpacing: Dp = 4.dp,
+    leading: @Composable () -> Unit,
+    trailing: @Composable () -> Unit,
+) {
+    Layout(
+        modifier = modifier.fillMaxWidth(),
+        content = {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(horizontalSpacing, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(verticalSpacing),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
+                leading()
+            }
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(horizontalSpacing, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(verticalSpacing),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
+                trailing()
+            }
+        },
+    ) { measurables, constraints ->
+        val childConstraints = constraints.copy(minWidth = 0, minHeight = 0)
+        val leadingPlaceable = measurables[0].measure(childConstraints)
+        val trailingPlaceable = measurables[1].measure(childConstraints)
+        val hGap = horizontalSpacing.roundToPx()
+        val vGap = verticalSpacing.roundToPx()
+        val maxWidth = if (constraints.hasBoundedWidth) {
+            constraints.maxWidth
+        } else {
+            leadingPlaceable.width + hGap + trailingPlaceable.width
+        }
+        val singleRow = leadingPlaceable.width == 0 ||
+            trailingPlaceable.width == 0 ||
+            leadingPlaceable.width + hGap + trailingPlaceable.width <= maxWidth
+        if (singleRow) {
+            val rowHeight = maxOf(leadingPlaceable.height, trailingPlaceable.height)
+            layout(maxWidth, rowHeight) {
+                if (leadingPlaceable.width > 0) {
+                    leadingPlaceable.placeRelative(0, (rowHeight - leadingPlaceable.height) / 2)
+                }
+                if (trailingPlaceable.width > 0) {
+                    trailingPlaceable.placeRelative(
+                        (maxWidth - trailingPlaceable.width).coerceAtLeast(0),
+                        (rowHeight - trailingPlaceable.height) / 2,
+                    )
+                }
+            }
+        } else {
+            val totalHeight = leadingPlaceable.height + vGap + trailingPlaceable.height
+            layout(maxWidth, totalHeight) {
+                leadingPlaceable.placeRelative((maxWidth - leadingPlaceable.width).coerceAtLeast(0), 0)
+                trailingPlaceable.placeRelative(
+                    (maxWidth - trailingPlaceable.width).coerceAtLeast(0),
+                    leadingPlaceable.height + vGap,
+                )
+            }
+        }
+    }
+}
 
 /**
  * 弹窗正文内「点一下就关闭弹窗」的条目所用的退场控制器（正文槽恒有，不论是否带按钮行）。

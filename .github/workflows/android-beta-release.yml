@@ -184,6 +184,10 @@ jobs:
           } >> "${GITHUB_ENV}"
 
       - name: Assemble release APK
+        env:
+          NEXTMOE_CLIENT_ID: ${{ vars.NEXTMOE_CLIENT_ID }}
+          BANGUMI_CLIENT_ID: ${{ vars.BANGUMI_CLIENT_ID }}
+          BANGUMI_CLIENT_SECRET: ${{ secrets.BANGUMI_CLIENT_SECRET }}
         run: ./gradlew assembleRelease --no-daemon
 
       - name: Verify CMVS runtime provenance

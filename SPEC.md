@@ -13,13 +13,13 @@
 
 | 能力 | 当前行为 |
 | --- | --- |
-| 主导航 | 首页（可在应用设置关闭）/ 游戏 / 引擎 / 设置，保留页面组合与列表状态；关闭首页后为游戏 / 引擎 / 设置三页且游戏页为第一位置；二级页系统返回采用统一转场 |
+| 主导航 | 首页（可在应用设置关闭）/ 游戏 / 引擎 / 工具 / 设置，工具页提供 Kirikiroid2 原生界面、解包/封包、WebDAV 存档同步、输入与手柄及引擎模块管理；保留页面组合与列表状态；关闭首页后为游戏 / 引擎 / 工具 / 设置四页且游戏页为第一位置；二级页系统返回采用统一转场 |
 | 首页 | 默认原生首页（最近游戏 + 快捷启动）、网页首页两种；应用设置「显示首页」关闭后首页与导航入口隐藏 |
-| 网页首页 | 内嵌 http/https 页面，下载交外部浏览器；非 http(s) 主框架跳转受 scheme 白名单限制；离开首页或应用退后台时暂停 JS/媒体 |
-| 外观 | 默认、复古玻璃、白雾玻璃；默认风格支持明/暗/跟随系统，页面背景为纯色 + 主题色粒子漂浮；复古玻璃固定深色渐变与深色玻璃条目；白雾玻璃使用模糊图片底图 + 70% 白纱亮面条目 + 深色正文；两种玻璃风格的「深浅色切换」禁用，主题色仍可调；应用圆角统一可调（5–50dp 十档，默认 15dp），三档共用 |
+| 网页首页 | 内嵌 http/https 页面，可选鲲Gal、一起萌（默认）、小鸟游或自定义地址；下载交外部浏览器；非 http(s) 主框架跳转受 scheme 白名单限制；离开首页或应用退后台时暂停 JS/媒体 |
+| 外观 | 默认、复古玻璃、白雾玻璃；默认风格支持明/暗/跟随系统，页面背景为纯色底加主题色粒子，可即时切换「气泡上升」（默认）和「按键瀑布」（手柄按键沿弧线摆动下落，轮廓轻微摇转，跟随显示帧更新）。「默认主题粒子」开关默认开启，关闭后只保留纯色背景，仍可预选样式；开关和样式在重启后保留。系统关闭动画时，开启的粒子保持静止；复古玻璃固定深色渐变与深色玻璃条目；白雾玻璃使用模糊图片底图 + 70% 白纱亮面条目 + 深色正文；两种玻璃风格的「深浅色切换」禁用，主题色仍可调；应用圆角统一可调（5–50dp 十档，默认 15dp），三档共用 |
 | 应用图标 | 默认使用当前新图标；应用设置「经典应用图标」开启后改用旧版启动图标（默认关）。经 manifest 的 `LauncherDefault` / `LauncherClassic` 两个 activity-alias 切换；切换即通知桌面刷新，部分桌面可能重置图标位置或需短暂刷新 |
-| 导航样式 | 经典 MD、液态玻璃经典、液态玻璃透镜、悬浮按钮；未手选时默认外观与白雾玻璃取液态玻璃 · 经典（图示磨砂玻璃，无选中胶囊、图标下方显示文字、选中图标沿用经典 MD 的填充变色，栏宽与透镜一致，圆角跟随应用设置），透镜需显式选择且 API < 33 不提供；复古玻璃默认经典 MD |
-| 平板 | sw600dp 或至少 840×600dp 的大窗口且侧栏开关启用时使用侧栏；默认启用。窄手机横屏仍使用底部导航。悬浮按钮保留圆球导航，其余样式按主题侧栏规则处理 |
+| 导航样式 | 经典 MD、液态玻璃 · 经典、液态玻璃 · 透镜；未手选时默认、复古玻璃与白雾玻璃均取液态玻璃 · 经典（图示磨砂玻璃，无选中胶囊、图标下方显示文字、选中图标沿用经典 MD 的填充变色，栏宽与透镜一致，圆角跟随应用设置），透镜需显式选择且 API < 33 不提供；悬浮按钮暂时停用，旧配置读取时回退到液态玻璃 · 经典，保留已保存的样式和位置 |
+| 平板 | sw600dp 或至少 840×600dp 的大窗口且侧栏开关启用时使用侧栏；默认启用。窄手机横屏仍使用底部导航。侧栏外观随主题和导航样式调整 |
 
 页面统一为顶栏在上、正文在下的上下分离布局，不启用顶栏模糊叠层。导航对应的四个一级页面使用 `AppTopBar`；二级页面使用 `AppSecondaryTopBar`，左侧为加粗返回箭头和标题，右侧保留保存等原有操作。返回按钮与系统返回共用宿主返回分发器；两类顶栏均保持透明背景、状态栏留白与 64dp 标题行，Miuix 页面通过透明 `MiuixScaffold` 承载。全屏按键编辑器固定横屏、不设顶栏，其它页面使用公共顶栏、输入框、标签栏与弹窗组件。
 
@@ -48,11 +48,12 @@
 
 ### 首次使用引导
 
+- 当前版本暂时关闭首次使用引导展示；以下条目记录重新启用后的行为。
 - 新安装或清除数据且未检测到既有应用设置、旧版偏好或游戏库时，在真实主界面上显示八步教练层；已有任一既有数据的升级用户直接跳过。
 - 八步依次定位首页、游戏页空态的添加文件夹、顶部加号手动添加、搜索、抓取封面、重新扫描、引擎页和设置页；添加文件夹步骤说明首次使用时添加游戏目录并自动扫描支持的游戏，加号步骤说明指定 exe 的电脑游戏与已安装安卓应用的手动添加，二者不混用。引导期间页面切换由当前步骤驱动，首页首帧未完成测量时允许保守比例区域，其他目标在真实控件测量完成前不绘制虚假的引导目标。
 - 添加文件夹步骤的提示卡优先贴近空态按钮下方，空间不足时移到上方，避开系统栏并按可用空间滚动，保留按钮的触摸区域；扫描中或已有游戏导致按钮消失时清除该锚点，用户仍可通过下一步继续引导。设置步骤介绍扫描目录的增删、扫描深度与排序，移除目录不删除游戏文件。
 - 「跳过引导」和最后一步「开始使用」都会写入完成标记；初始化标记写入失败不阻断应用启动，并按本次安装判定继续显示引导或跳过，同时把判定保存到不参与存量安装判断的应用私有快照，后续启动继续重试而不被迁移标记或空数据库改判；完成引导时的写入失败保留引导并显示失败提示，用户可再次操作，不因 Activity 重建而绕过引导。
-- 教练层叠加在同一份主导航组合上，完成或跳过只移除覆盖层，不重建首页、游戏、引擎、设置页面，也不重置当前页面状态；引导期间由当前步骤驱动页面切换，真实高亮目标可继续接收操作，目标外围由遮罩拦截误触。
+- 教练层叠加在同一份主导航组合上，完成或跳过只移除覆盖层，不重建首页、游戏、引擎、工具、设置页面，也不重置当前页面状态；引导期间由当前步骤驱动页面切换，真实高亮目标可继续接收操作，目标外围由遮罩拦截误触。
 - 教练层声明独立的模态无障碍语义组，不再清空整棵主界面语义树；高亮目标及其提示仍由真实控件和引导卡片提供语义。
 - 新安装用户完成引导后请求通知权限；已有安装数据的用户跳过引导后沿用既有通知权限请求策略；通知权限请求失败或被拒绝不影响引导完成状态。
 
@@ -67,10 +68,11 @@
 - 游戏页提供常驻搜索栏（无顶栏搜索图标；仅在列表顶部显示，离开顶部即收起，向上滚动过程中不提前展开、滚回顶部才重新出现，封面流和空结果页始终显示）、卡片样式、改名、封面操作、启动文件选择及适用的单游戏设置/存档操作；可清理已不存在的游戏记录。
 - 游戏页搜索栏旁的「筛选与排序」入口打开抽屉；筛选按钮与搜索栏随列表滚动一起收起，滚回顶部后一起显示。抽屉最大高度按横竖屏可用高度调整，筛选条件超出可用高度时可滚动，重置操作在空间充足时固定在底部。抽屉顶部横向选择引擎类型，下方以两个下拉项选择排序方式（字母 / 括号标签 / 引擎 / 最近游玩）和游玩状态；两个下拉条目与重置按钮共用 16dp 水平留白，条目间距为 10dp，最后一项到重置按钮留白 18dp。排序仅在游戏页筛选抽屉中设置。条件持久化，并作用于标题搜索命中集。抽屉重置恢复默认条件并保留搜索词；空结果页的重置也清除搜索词。切换条件后瀑布和网格回顶、封面流回到第一页，条件未变时保留恢复位置。游戏库确认某引擎已不存在且未在扫描时清除对应条件，删除失败恢复游戏时保留条件。
 - 「已游玩」以 `openTime > 0` 为准，「最近游玩」按该时间降序。清除首页最近打开记录会同时清除该时间，游戏仍留在库中。
-- 游戏卡交互：点按打开操作抽屉（启动游戏 / 启动文件 / 搜索封面 / 存档管理 / 在线补丁 / 引擎设置）；长按打开统一操作弹窗（添加快捷启动、添加到桌面、名称修改、修改封面、删除游戏）。弹窗顶部为超出面板上沿的游戏封面 + 游戏名，封面右下角可点击更换封面；动作项各占一行，删除游戏为底部整行长按钮。「瀑布」「网格」「列表」三种卡片一致；操作弹窗只承担卡片管理动作，启动相关动作仍留在抽屉。
+- 游戏卡交互：点按打开操作抽屉（启动游戏 / 启动文件 / 搜索封面 / 游玩状态 / 存档管理 / 在线补丁 / 引擎设置）；长按打开统一操作弹窗（添加快捷启动、添加到桌面、名称修改、修改封面、删除游戏）。弹窗顶部为超出面板上沿的游戏封面 + 游戏名，封面右下角可点击更换封面；动作项各占一行，删除游戏为底部整行长按钮。「瀑布」「网格」「列表」三种卡片一致；操作弹窗只承担卡片管理动作，启动相关动作仍留在抽屉。游戏操作抽屉在常规高度下固定底部启动按钮；短窗按实际剩余高度与字体比例将启动按钮纳入列表滚动，条目和按钮保留完整高度，滚动到底可触达启动操作。公共抽屉在短窗减少顶部留白，最大高度始终不超过视口。
 - 快捷启动最多 **3** 项；小屏单卡左右滑动，卡片下方以「当前页胶囊 + 其余圆点」指示页数（仅 2–3 项时显示）；首页快捷启动卡点按打开操作抽屉、长按打开与游戏页相同的操作弹窗。最近游戏最多读取 **20** 项（首页竖屏两列显示 10 项、横屏/大屏五列显示 15 项封面卡，展示封面/引擎色底与游戏名，长按删除该条记录）。桌面快捷方式经独立入口回到统一启动链。
 - PC 游戏由用户选择目录和启动 exe 手动添加；安卓游戏从已安装可启动应用选择，以 `androidapp://<包名>` 标识，卸载后启动返回缺失结果。
 - 第三方 APK 运行时模块游戏只能经扫描入库：模块须先安装并在「引擎模块管理」启用，且声明扫描特征；主 App 不提供该类型的手动添加、模块选择、目录导入或拖入入口。
+- 模块可独立声明单游戏文件导入项。游戏抽屉的「引擎设置」中使用系统选择器选取文件：目录目标保留源文件名并可声明多选，固定文件名目标只允许单选。确认页区分新增和覆盖；仅写入可直接写入的游戏目录，拒绝越界路径、符号链接和非普通目标文件。逐文件提交，批量中途失败时保留已完成文件并报告数量。
 
 ## 4. 引擎识别与运行路线
 
@@ -89,11 +91,11 @@
 | SystemNNN | 游戏根目录下的 `spt/sys.spt`，不区分大小写 | 内置 SystemNNN-Emberfall。TYN 提供全局和单游戏显示设置 |
 | Ethornell / BGI | BGI 特征与资源组合 | 内置实验宿主，见第 10 节 |
 | Tyrano / VN / WebOther | `tyrano/`、`globalData.vndata`、HTML 等 | 内置 Web 壳 |
-| RPG Maker MV / MZ | `rpg_core.js` / `rmmz_core.js`、`www/` 等 | 内置 Web 运行环境，支持适用的 Asar 包 |
+| RPG Maker MV / MZ | `rpg_core.js` / `rmmz_core.js`、`www/` 等 | 内置 Web 运行环境，支持适用的 Asar 包；v1/v2 会话注入 NW.js 兼容层（外链脚本），受第 11 节条目约束 |
 | RPG Maker RGSS | XP/VX/VX Ace 资源或 mkxp-z 模块选择 | 外置 RPGM APK 模块 |
-| Ren'Py | `.rpa`、`.rpy/.rpyc` 等组合 | 外置 Ren'Py APK；自动或指定 8.5.3 / 7.7.1 |
+| Ren'Py | `.rpa`、`.rpy/.rpyc` 等组合 | 外置 Ren'Py APK；自动或指定 8.5.0 / 8.5.3 / 7.7.1 |
 | Ruffle / Flash | 顶层 `.swf`；根 `index.html/index.htm` + 唯一 SWF 的叶子目录 | 外置 Ruffle APK；一 SWF 一条记录 |
-| MAGES.（impacto） | 按精确大小写的根目录条目命中上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`）；恰好一个全命中才识别 | 外置 Impacto 宿主 APK（承载未改动的上游 CommitteeOfZero/impacto，PS3 数据布局；Windows／Steam 版数据不识别） |
+| MAGES.（impacto） | 按精确大小写的条目命中 profile，恰好一个（或同一语言变体族）全命中才识别：上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`；其中 `mo6tw` 是 PS3 版数据、`cclcc` 是 PS4 版、`cclcc-switch` 是 Switch 版）看根目录条目名；Windows／Steam 版《秋之回忆6》（`mo6tw-pc*`）为根目录 `game.exe` + `data/` 内的 `script.cpk`、`mes00.cpk` | 外置 Impacto 宿主 APK（宿主仓库固定上游 impacto 并应用其补丁系列；`mo6tw-pc*` 需宿主 0.2.0 及以上） |
 | 第三方运行时模块 | 已安装的 `com.tyranor.runtime.*` APK + 模块 `res/raw` 扫描描述 | 显式组件交棒游戏文件夹，模块自行运行 |
 | YU-RIS / CatSystem2 | YPF/DLL/配置或 INT/CST/HG3 等组合 | 外置 Winlator |
 | PC / 安卓游戏 | 手动添加目录+exe / 应用包名 | 外置 Winlator / 直接启动应用 |
@@ -103,7 +105,9 @@
 
 JoiPlay 外置模块与模拟器必须先安装；主 App 显示安装状态及获取入口。第三方 APK 运行时模块同样由用户自行安装，但主 App 不提供下载/安装器，只在「引擎模块管理」中列出并管理启用状态。启动前检查目标、权限和目录，失败由类型化结果映射 UI 文案。设置中的“自动”按当前运行时规则解析，不承诺回退能修复不受支持的脚本或资源。
 
-Ren’Py 8.5.3 与原 8.5 使用相同 APK 包名，作为同一模块升级，不能独立并存。旧 `8.5` 设置兼容映射到 8.5.3；自动模式对 8.x/未知版本选择 8.5.3，对 7.x 选择 7.7.1。8.x 模块要求 APK versionCode 至少为 10200，旧版会提示更新并提供下载入口；配置载荷与游戏 ID 保持原协议。接入证据和设备验收边界见 [8.5.3 分析记录](docs/renpy-8.5.3-module-analysis.md)。
+Ren’Py 8.5.0 与 8.5.3 分别保留版本选项与下载入口，不再将旧 `8.5` 设置自动升级；旧值对应 8.5.0，显式 `8.5.3` 保持不变。自动模式在探测到 8.5.3 及以上时选择 8.5.3，其他 8.x 和未知版本回退 8.5.0，7.x 选择 7.7.1。两版使用相同 APK 包名，设备上一次只能安装其中一版：8.5.0 接受 APK versionCode 10100–10199，8.5.3 接受至少 10200；安装态与启动均检查所选版本，版本不匹配时提供对应下载入口，切回旧版需先卸载新版。8.5.0 引导至 [旧版 APK](https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RenPy-Plugin-8.5.apk)，不修改或重新打包外置 APK；配置载荷、游戏 ID 和存档路径保持原协议。接入证据和设备验收边界见 [8.5.3 分析记录](docs/renpy-8.5.3-module-analysis.md)。
+
+Ren’Py 单游戏引擎设置一次保存版本及全部开关。从单游戏设置立即返回并启动时，解析器应读取最新保存值。显式开启、关闭或指定版本优先于全局值，选择「跟随全局」时清除对应覆盖。全局和单游戏设置中开启「禁用模型渲染（GL2）」对应 `renpy_dont_use_gl2=true`。
 
 外置模拟器跳转使用显式组件启动目标应用：YU-RIS / CatSystem2 / PC 通过 Winlator 的 `dir_path` 与 `exe_path` 传递游戏目录和主程序；PSP / Nintendo Switch 则传递 ROM URI 及读取授权。具体协议见 [外置模拟器接入说明](docs/外置主机模拟器跳转接入方案.md)。
 
@@ -114,25 +118,34 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 - 无根 index 的单 SWF 仍按文件记录；同目录多个 SWF 逐条入库；含子目录的目录不自动识别为包装游戏。单 SWF 标题取父目录名（缺失回退文件主名），多个 SWF 取文件主名。
 - 启动：文件记录先解析入口所在目录，模块收到 `game`（title/id/folder/execFile，`type=flash`）与 `settings`（`app.screenTimeout.int` 及 `ruffle.backend/quality/scaleMode/letterbox/loadBehavior.string`）。未安装返回类型化失败；安装入口打开项目托管的 RufflePlugin-1.02.00.apk 直链。
 - 设置：全局与单游戏覆盖，默认 `opengl / high / showall / on / streaming / 0`（0 = 不自动关闭）；允许值分别为 auto/opengl/vulkan、low/medium/high/best、exactfit/noborder/noscale/showall、on/off、streaming/delayed/blocking、0/5/10/15/30/45/60 分钟。
-- `configuration.json`：游戏目录位于主外部存储根的子目录时，插件优先读取 `<游戏目录>/configuration.json`；其它情况（含存储根、可移动存储）读取 `/storage/emulated/0/JoiPlay/games/<id>/configuration.json`。文件存在时覆盖 intent settings；主 App 仅在文件已存在且为合法 JSON 对象时同步受管键，不创建/删除，跳过共享多 SWF 目录与存储根，原子写并限制 1 MiB。
+- `configuration.json`：Ruffle 1.02.00 对游戏目录执行主外部存储路径前缀检查，命中时读取 `<游戏目录>/configuration.json`（包括存储根本身），否则读取 `/storage/emulated/0/JoiPlay/games/<id>/configuration.json`。文件值覆盖 Intent。主 App 原子同步现有专用文件的受管键，保留其他字段，读取上限为 1 MiB。多 SWF 目录和存储根的共享文件保持原样，同名字段冲突或配置无法读取、同步时提示并停止本次启动。
 - 无统一存档管理，插件自管运行时/存档；不提供虚拟按键重映射；插件固定横屏。设备/插件运行验证尚未执行。
 
-MAGES. 引擎（经开源重新实现项目 impacto，未改动的上游 CommitteeOfZero/impacto）由外置 Impacto 宿主 APK 承载，宿主在独立仓库 yuukana1/Tyranor-Next-Impacto 构建、签名并发布，当前边界如下：
+MAGES. 引擎（经开源重新实现项目 impacto）由外置 Impacto 宿主 APK 承载，宿主在独立仓库 yuukana1/Tyranor-Next-MAGES 构建、签名并发布。构建输入是固定的上游 CommitteeOfZero/impacto 提交加上该仓库的补丁系列（`engine/impacto/patches/`，`source-lock.json` 记录每个补丁的 SHA-256），**不是未改动的上游**：补丁里有通用修复，也有只服务 Windows／Steam 版《秋之回忆6》的 `mo6tw-pc*` profile；其他游戏没有在设备上逐一回归。当前边界如下：
 
-- 扫描：按**精确大小写**的根目录条目名匹配上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`），恰好一个 profile 全部命中才识别；`darling` 与全小写 `mo6tw` 的要求集合相同，一律不识别。`launchTarget` 为 profile id，别名 `internal.impacto`。Windows／Steam 版数据（小写 `.cpk`、无 `SCRIPT.cls`）不识别为 Impacto。
-- 获取：引擎页点击 MAGES. 条目跳转到 `https://github.com/yuukana1/Tyranor-Next-Impacto/releases/latest/download/impacto-host.apk`（资产名固定，随宿主新发布自动指向最新版）；未安装或版本低于 `ImpactoHostContract.VERSION_CODE` 时与其他外置模块一样提示并引导下载。
+- 扫描：按**精确大小写**的条目名匹配 profile，恰好一个 profile（或同一语言变体族）全部命中才识别；`launchTarget` 为 profile id，别名 `internal.impacto`。
+  - 上游布局（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`）：看游戏目录根下的条目名；`darling` 与全小写 `mo6tw` 的要求集合相同，一律不识别。
+  - Windows／Steam 版《秋之回忆6》（Steam App 2184580；`mo6tw-pc`、`mo6tw-pc-zhs`、`mo6tw-pc-zht`，由宿主补丁系列提供）：游戏目录根有 `game.exe` 和 `data/` 目录，`data/` 里有 `script.cpk`、`mes00.cpk`，判据与宿主 `engine/impacto/profiles.json` 的 `detect` 一致。`data/` 里其余档案（`system.cpk`、`bg.cpk`、`movie.cpk` 等）不作为特征，缺失时启动会失败（具体表现没有在设备上核对）；按宿主 profile 的约定，`mes00.cpk`、`mes01.cpk`、`mes02.cpk` 依次是日文、繁体、简体文本，Steam 版里三份同时存在，所以一个目录对应至多三个候选 profile（设备上只用过简体）。
+  - 语言变体：扫描按应用界面语言选一个候选：简体中文界面 → `mo6tw-pc-zhs`，日文及其他界面语言 → `mo6tw-pc`，「跟随系统」且系统语言是繁体中文（`zh-TW`、`zh-HK`、`zh-MO` 或 `Hant`）→ `mo6tw-pc-zht`（应用没有繁体中文界面，只有这一条路）；显式写了 `Hans` / `Hant` 的标签以脚本为准。缺哪份文本档就不提供对应变体，想要的语言不在盘上时回落到日文。选择记在游戏库条目里：全量重扫时，只要已存的 profile 仍在候选里就沿用，因为宿主按「profile + 目录」隔离存档，换 profile 等于换了一份存档；已存的 profile 对应的文本档已不在盘上时按界面语言重新选。条目被移除（包括目录暂时不可达而被重扫丢弃）后重新入库，也会按当时的界面语言重新选。目前没有在界面里切换语言变体的入口。
+  - 不识别：大小写不符（如 `Data/`、`SCRIPT.CPK`）、档案直接放在游戏根而没有 `data/`、没有 `game.exe`、缺 `script.cpk` 或 `mes00.cpk`，以及上游布局与 Windows 布局同时出现（布局有歧义，不猜）。识别只看目录布局，不核对游戏身份。
+- 获取：引擎页点击 MAGES. 条目跳转到 `https://github.com/yuukana1/Tyranor-Next-MAGES/releases/latest/download/Tyranor-Next-MAGES.apk`（资产名固定，随宿主新发布自动指向最新版）；未安装或版本低于 `ImpactoHostContract.VERSION_CODE` 时与其他外置模块一样提示并引导下载。`mo6tw-pc*` 另要求宿主 0.2.0（versionCode 4）及以上：更老的宿主会拒绝这些 profile，所以只对这些游戏提示更新（`ExternalEngineModule.minimumVersionCodeFor`），其余 profile 仍只要求 0.1.2。该检查在「所有文件访问」授权之前执行。
 - 启动：发 `com.tyranor.next.impacto.action.RUN`，携带游戏目录、profile、`gameKey` 与标题，需要「所有文件访问」；宿主没有桌面入口。
-- 存档与配置在宿主私有目录内按游戏隔离，主 App 不提供文件存档管理；单游戏设置页只显示说明。
-- 验证状态：宿主引擎库只在一台真机上跑到读脚本失败为止（见 `docs/impacto-upstream-only.md`），没有受支持的游戏数据进到画面，渲染、声音、输入、存读档均未验证。
+- 存档在宿主私有目录内按游戏隔离，主 App 不提供文件存档管理。
+- 设置：引擎页 MAGES. 条目的「全局引擎设置」与单游戏设置，格式与 Ruffle 一致（全局值 + 单游戏覆盖，覆盖为 null 时跟随全局）。可调项只收录上游 `userconfig.toml` 里在 Android 上有意义的：交换确认 / 取消键、垂直同步、影片播放（`FFmpeg` / `None`）、影片字幕（全部 / 仅翻译 / 仅卡拉 OK；引擎的字幕配置是标志枚举，没有可读回的“全部关闭”）、回看记录滚到底时自动关闭、妄想触发的鼠标 / 触摸支持（仅 `chlcc`、`cclcc`）、日志等级。分辨率与显示模式（Android 上窗口固定全屏）、渲染器与音频后端（只有 OpenGL / OpenAL）、补丁（宿主私有目录里无法放入补丁档案）不提供。
+- 设置下发：启动请求带 `com.tyranor.next.impacto.extra.SETTINGS`（扁平 JSON），宿主 0.1.2（versionCode 3）起在引擎启动前把它们合并进该游戏的 `userconfig.toml`（只改受管键，其余保留）；因此这些值每次启动都会覆盖引擎内置设置页里的同名项。更老的宿主不认识该 extra，所以 `ImpactoHostContract.VERSION_CODE` 为 3，更老的宿主按“需要更新”处理。设置页的保存与启动请求都不依赖宿主是否已安装。
+- 验证状态：
+  - 宿主侧（宿主仓库 PR #1 的记录，补丁系列的 dev 构建，一台荣耀 PPG-AN00 / Android 17）：Windows／Steam 版数据用 `mo6tw-pc-zhs` 进到标题画面、新游戏第一章对白（背景、名牌、简体中文正文、语音）和存读档。繁体与日文变体、非对话菜单（坐标为近似）、附加内容、输入与性能、其他游戏均未验证；Windows 构建与非 ASCII 存档路径未验证。
+  - 主 App 的识别（荣耀 PPG-AN00 / Android 17，真实 Steam 数据，详见 `docs/impacto-upstream-only.md` 的 2026-11-18 记录）：添加含 `memo06-pc/` 的目录后识别为「Memories Off 6 ~T-Wave~ (PC)」，简体界面得到 `mo6tw-pc-zhs`；切换界面语言后的全量重扫沿用已入库的 profile，移除后重扫按当时的界面语言重新选（日文界面得到 `mo6tw-pc`，简体界面得到 `mo6tw-pc-zhs`，两个方向都观察过）；宿主 0.1.2 上启动得到「模块版本过旧」提示，且测试包当时没有「所有文件访问」授权却没有被先送去授权页，说明版本检查先于授权门禁。**没有**在真机上完成「主 App 启动 → 宿主 0.2.0 进入游戏」整条链路。
+  - 识别规则、变体选择与沿用（`EngineScanner.selectLaunchTarget`）、界面语言到文本语言的映射、版本门槛的判定由 JVM 单测覆盖；「版本检查先于授权门禁」的先后只有上面的真机记录，没有单测；扫描入口把界面语言与库记录交给 `selectLaunchTarget` 的那一小段需要 Context，同样只有真机记录。这不是游戏兼容性验收；上游 profile 对应的游戏没有真实数据进到画面。
 
 ### 第三方 APK 运行时模块
 
 来源：`core/engine/runtime/`、`ui/runtime/`。
 
 - **发现**：Manifest `<queries>` 声明 `com.tyranor.runtime.action.LAUNCH`（含 `CATEGORY_DEFAULT`），主 App 按 action 查询可见应用并只保留包名前缀 `com.tyranor.runtime.`；不申请 `QUERY_ALL_PACKAGES`，也不校验签名、版本或包内容。一个包只取一个入口 Activity：优先带 `com.tyranor.runtime.MANIFEST` meta-data 的，否则按 Activity 名排序取第一个。
-- **启用默认关**：发现结果只用于侧边栏「妙妙工具 → 引擎模块管理」列表与模块名展示，不写入扫描索引或游戏库；开关默认关闭。游戏库卡片对这类游戏统一显示「Plugin」，不显示模块名。启用只把包名写入 `AppSettingsStore.KEY_RUNTIME_MODULE_ENABLED`（StringSet，默认空集），不触发扫描、不立即写库。同包名更新/重装保留开关；包名变更视为新模块，默认关闭。
+- **启用默认关**：发现结果只用于「工具 → 引擎模块管理」列表与模块名展示，不写入扫描索引或游戏库；开关默认关闭。游戏库卡片对这类游戏统一显示「Plugin」，不显示模块名。启用只把包名写入 `AppSettingsStore.KEY_RUNTIME_MODULE_ENABLED`（StringSet，默认空集），不触发扫描、不立即写库。同包名更新/重装保留开关；包名变更视为新模块，默认关闭。
 - **扫描描述**：模块可选提供 `res/raw/tyranor_runtime.json`，声明 `extensions` / `markers` / `match`（`any` 或 `all`）；这是自动扫描的唯一特征来源，主 App 不根据包名、应用名、图标或内置第三方特征库猜测，也不执行模块代码；扩展名只匹配目录直接子文件，marker 支持直接子项与单层路径（如 `data/*.pak`），不递归。描述缺失、读取/解析失败或没有有效模式时只关闭该模块的自动扫描能力，模块仍可被发现、启用和启动。
-- **扫描接入**：扫描开始时快照「已发现 + 已启用 + 有扫描描述」的模块；仅当内置识别结果为 `UNKNOWN` 或 `WEB_OTHER` 时才尝试模块匹配，KRKR / ONS / RPGM / Ren'Py 等强特征结果不被覆盖。多模块命中按「`all` 优先于 `any` → marker 数量多 → 包名」选择；重扫对同一 URI 优先保留旧绑定，扫描深度沿用现有上限。
+- **扫描接入**：扫描开始时快照「已发现 + 已启用 + 有扫描描述」的模块；优先匹配模块声明，命中后使用模块；未命中时再执行内置识别。扫描根本身及含主机 ROM/SWF 的目录沿用原有排除规则。多模块命中按「`all` 优先于 `any` → marker 数量多 → 包名」选择；重扫对同一 URI 优先保留旧绑定，扫描深度沿用现有上限。
 - **唯一入库入口**：扫描是第三方运行时游戏唯一入库入口；管理页、添加游戏对话框和游戏页均不提供手动添加、模块选择、目录导入或拖入，也不提供手动绑定/重绑或模块缺失修复页。
 - **绑定与降级**：`ScanGame.runtimeModulePackage`（Room `games.runtime_module_package`，v3）记录「游戏 → 模块包名」；模块卸载、禁用、入口不再可发现或包名为空时，绑定游戏降级为 `EngineType.UNKNOWN`，但保留最后已知包名（用于重扫合并，不作为启动依据），保留标题、封面与最近时间。发现查询失败不降级。重新安装/启用后重新扫描可恢复，不支持自动或手动改绑。
 - **启动交棒**：`EngineType.RUNTIME_MODULE` 由 `RuntimeModuleLauncher` 以显式 `ComponentName` 启动，基础参数仍为当前游戏文件夹绝对路径、标题与协议版本 1。声明有效 `settings` 时另传 `com.tyranor.runtime.extra.SETTINGS` 字符串（`{"version":1,"values":{...}}`），不使用 JoiPlay 的 `game` / `settings` 包装，也不附加 URI 读写授权。`Dispatched` 只表示交棒，不保证游戏可运行；模块失效、路径无法解析、安全拒绝和配置读取失败返回类型化结果。存储权限由模块自行负责。
@@ -170,6 +183,9 @@ MAGES. 引擎（经开源重新实现项目 impacto，未改动的上游 Committ
 - SystemNNN 原版设置按 `mustStartPage1Flag` 控制入场固定打开第 1 页或保留会话内上次页码。阅读字号默认 85%，在全局和单游戏引擎设置中调整；`windowPercent` 窗口透明度滑条保持 0–100 原始百分比映射而不受 `windowPercentVolumeDevide` 分段缩放影响。场景回想中打开原版 `systemMenu` 时禁用存读档与扩展项，按 `systemMenuSceneBackFileName` / `systemMenuSceneEndFileName` 切换按钮贴图并直接退回回想列表；鉴赏页按上游默认网格、收集率（`ta_font_cg1` / `ta_font_movie1`）、页码（`ta_font_sl3`）、未解锁盖板（`ta_futa1` 与有符号 `picMustPrintPercent`）、选框模式（`selectPrintMode`）、音乐室 `cannotColorR/G/B` 与正文配色及 CG `fileNameDifferenceFont`（`CSuuji`）差分数字绘制；历史回看支持 `bgMode` `0..3`（纯色、背景图、`backDelta*` / `backMulti*` 级联抓屏滤镜、背景脚本）与 `titleMessage` `#` 颜色前缀；选项分支对齐 `ta_select01` / `ta_win_select` 默认配置；各界面缺贴图或关闭显示开关时一律按原版静默不画，不绘制非原版色块或文字兜底。
 
 - 应用设置、引擎设置、单游戏设置按作用域分离；单游戏未覆盖的字段跟随引擎全局设置，经 `EngineSettingsResolver` 统一解析。
+- 全局设置保存当前引擎分类的字段。Tyrano 与 RPG Maker 两页都显示的外部网络、独立存档使用共享全局值。Tyrano、VN、WebOther 和 RPG Maker MV／MZ 的单游戏外部网络覆盖随启动请求下发，重新启动或重新打开同一宿主时读取新值。
+- RPG Maker RGSS 启动前同步既有 `configuration.json` 的受管字段，保留插件的其他设置。XP 继续可生成 Ruby 1.8 启动配置。若无法应用生效设置则提示并停止启动。
+- Artemis 官方内核启动前将分辨率、裁切、缓存及省电设置应用到 `system.ini`。原子替换失败或无法获得文件时提示并停止启动。
 - Winlator 全局与单游戏图形加速支持跟随容器配置、DXVK、WineD3D（跟随容器渲染器）、WineD3D + OpenGL / GDI。显式 GL/GDI 预设通过既有 `dxwrapperConfig` 整项替换 WineD3D 配置，其它子参数用接收端默认值；可与 Box64 同时下发，开启写入容器配置时持久化。旧 WineD3D 不迁移，空值与继承语义不变；需支持该协议的 winlator-cn。
 - 单游戏 Winlator 设置提供三种运行模式：跟随全局（默认）、跟随容器、自定义。跟随容器以全局设置为基线，仅清空六个图形/运行参数，容器 ID/名称先继承全局、再由逐游戏值覆盖。**模式推断**按 1.61 的 `null / "" / 值` 语义（空串 = 显式不下发，不等同于未覆盖）；切换运行模式不会清除另一种模式已填的参数（以 `winlator_mode` 为准，切回可恢复）；「跟随容器」是本版本新增的显式语义，六空记录升级后 `save` 固定为 `false`（1.61 会继承记录或全局的 `save`，差异只在是否把配置写回容器），保存过的模式以保存值为准。
 - 容器匹配遵循「ID 优先于名称」：两者都覆盖时以 ID 为准；**只覆盖名称时会清除继承的全局 ID**（置 0 不下发），否则继承的 ID 会让名称覆盖失效。该行为是 1.61 未定义、本版本明确的新规则。
@@ -206,9 +222,10 @@ MAGES. 引擎（经开源重新实现项目 impacto，未改动的上游 Committ
 
 - 在线来源为 VNDB、未萌 NextMoe、Hikarinagi、Bangumi、Steam，另支持本地封面与自定义选择；来源可排序和启停。
 - 批量抓取按启用来源顺序处理，支持仅补充缺失封面；任务跨 Tab 持续运行，逐游戏发布结果与失败/跳过统计。
-- 手动搜索候选后绑定封面；NextMoe 的作品可进一步选择多张封面。适用候选携带 VNDB 关联 ID/元数据标题。
+- 手动搜索候选后绑定封面；NextMoe 的作品可进一步选择多张封面。适用候选携带 VNDB/Bangumi/Hikarinagi/未萌NextMoe 关联 ID 与元数据标题（条目绑定）；批量刮削以已有绑定优先，仅在缺失时以刮削命中填充。其中关键词搜索命中的 NextMoe 候选同样携带自身作品 ID 与标题并参与缺失回填——该命中未经人工验证（与本节「手动搜索候选后绑定」的显式确认不同源），回填结果以条目绑定行展示，写游玩状态前仍以弹窗显式确认为准。
 - 抓取不得覆盖无关游戏字段；System4 在本地与在线均缺封面时可用图标兜底。
-- Hikarinagi 需要配置 OAuth Client ID 并完成授权；凭据由 Keystore 加密存储。离线、来源故障与未授权应显示对应结果，不把空搜索结果等同成功绑定。
+- Hikarinagi 需要配置 OAuth Client ID 并完成授权；Bangumi OAuth 需注册应用（Client ID/Secret 经 BuildConfig 注入，不入库、不提交），授权为一次性网页流程：打开系统浏览器复用已有登录态，授权后经自定义 scheme `tyranornext://oauth/bangumi` 回到应用——scheme 由 AppAuth 的 RedirectUriReceiverActivity（exported）统一接收，转发至应用内 BangumiOAuthCallbackActivity（exported=false）完成令牌交换与 state 校验；注册应用时回调地址登记该 scheme 值；授权失败以类型化错误码返回，文案由 UI 映射；Bangumi 也支持粘贴个人访问令牌（next.bgm.tv/demo/access-token 生成，经 /v0/me 校验，无需注册应用，与网页授权二选一）；VNDB 可选粘贴 token（经 /authinfo 校验，VNDB 无 OAuth）；未萌NextMoe 支持可选 OAuth 2.0 授权（Public Client + 强制 PKCE S256，`NEXTMOE_CLIENT_ID` 经 BuildConfig 注入，无需 client_secret；NextMoe 禁止自定义 scheme，经系统浏览器与本地 `127.0.0.1:0/callback` 环回端口完成授权回调、nonce 校验与轮换 refresh_token 刷新，目录封面搜索仍支持匿名回退）。凭据均由 Keystore 加密存储并排除出备份。离线、来源故障与未授权应显示对应结果，不把空搜索结果等同成功绑定。
+- 游玩状态同步（游戏操作抽屉「游玩状态」条目）：对已绑定的 VNDB VN（ulist 四态标签，复用既有 vndb_id 绑定）、Hikarinagi Galgame（评分五态，复用 hikarinagi_id 绑定）与未萌NextMoe 作品（`/v2/me/work-states/{work_id}` 五态 `wish/doing/done/on_hold/dropped`，复用 `nextmoe_id` 绑定；回读 404 NOT_FOUND 归一为未标记，404 ENTITY_MERGED / 410 ENTITY_DELETED 提示重绑，写入非 `wish` 状态时透传保留既有的 `completion` 字段）回读远端状态并显式写入；Bangumi 条目（收藏五态，复用 bangumi_id 绑定）经 `GET /v0/users/{username}/collections/{subject_id}` 读回远端收藏状态（username 取授权时持久化的账号名，`me`/`-` 通配不可用；身份未解析——username 为数字 uid 占位且 /v0/me 身份回查失败——时读回按「身份未解析」挂起，不以数字 uid 直接发起读回，避免对设有用户名的账号把 404 误归一「未收藏」；404 JSON 错误体归一为未收藏——私有收藏按官方 spec 同样 404，非 JSON 404 与传输失败按网络档；写路径 404 JSON 体按「条目不存在/已删除」提示重绑），写入成功后乐观更新显示、重开弹窗/抽屉与抽屉摘要以读回结果为准（不再以「已绑定 {id}」兜底）。每次写入均为用户手动操作且会出现在站点公开主页（VNDB 预置状态无私有选项），无自动推送。VNDB 读取路径 401/403 记录失效状态并保留 token 提示重新授权（VNDB 写入路径不回写授权态）。写路径不回写授权态为默认约束，唯 Bangumi 写路径 401（服务端明确拒绝）置位 needsReauth——被吊销/失效令牌获得状态信号（设置页转「重新授权」），重新授权或重贴令牌后自愈；其余写路径失败不回写授权态。Bangumi 读路径 401 同置位 needsReauth（此后读/写取令牌均经刷新短路，常规自愈 = 重新授权），读 403 置位独立 permission_error 位（与刷新短路分立，摘要门不排该位、读 2xx 双清自愈），读 2xx（含未收藏）双清失效与权限标记，与 VNDB/Hikarinagi/未萌NextMoe 读路径分位语义一致。错误走类型化错误码，文案由 UI 映射。
 
 ## 7. 存档与互通
 
@@ -243,7 +260,7 @@ MAGES. 引擎（经开源重新实现项目 impacto，未改动的上游 Committ
 
 ### 存档同步（WebDAV）
 
-来源：`core/game/save/sync/`、`ui/save/WebDavSettingsActivity.kt`、`ui/save/SaveVersionsPanel.kt`，以及位于 `ui/common/` 的 `SaveSyncFeedback.kt` / `SaveSyncMessages.kt`（一次性结果观察与错误文案映射）。服务器配置在 WebDAV 设置页（妙妙工具侧栏直达，设置主清单不加项），使用与应用设置一致的 `MiuixCard` + `OverlayDropdownPreference`。**总开关** `WebDavConfig.enabled` 默认 false，作为独立 prefs 布尔值持久化、不与加密凭据捆绑，关闭不会重置服务器或凭据；有效状态 = enabled 且已配置。关闭时依赖设置全部不可用，每游戏 `SaveVersionsPanel` 的版本选择、切换、同步与身份配置隐藏，但保留未完成切换恢复入口，后台任务取消、入口守卫拦截，手动与自动都不发起网络请求。存档管理页只提供紧凑版本选择器 + 切换按钮、「WebDAV 同步」（固定双向）与「云端游戏标识」，没有方向下拉或 WebDAV 设置跳转；每个 DAV exchange（包括传输内部发起的嵌套请求）在发出前重新执行本事务准入，复核总开关、持久 generation、独立 `config_revision`、session/current 条件及已固定的关键 revision 与目录归属。准入后网络 I/O 不持有本地版本/目录锁，已发出的单次请求可自然完成，后续与嵌套请求再次准入。
+来源：`core/game/save/sync/`、`ui/save/WebDavSettingsActivity.kt`、`ui/save/SaveVersionsPanel.kt`，以及位于 `ui/common/` 的 `SaveSyncFeedback.kt` / `SaveSyncMessages.kt`（一次性结果观察与错误文案映射）。服务器配置在 WebDAV 设置页（工具页直达，设置主清单不加项），使用与应用设置一致的 `MiuixCard` + `OverlayDropdownPreference`。**总开关** `WebDavConfig.enabled` 默认 false，作为独立 prefs 布尔值持久化、不与加密凭据捆绑，关闭不会重置服务器或凭据；有效状态 = enabled 且已配置。关闭时依赖设置全部不可用，每游戏 `SaveVersionsPanel` 的版本选择、切换、同步与身份配置隐藏，但保留未完成切换恢复入口，后台任务取消、入口守卫拦截，手动与自动都不发起网络请求。存档管理页只提供紧凑版本选择器 + 切换按钮、「WebDAV 同步」（固定双向）与「云端游戏标识」，没有方向下拉或 WebDAV 设置跳转；每个 DAV exchange（包括传输内部发起的嵌套请求）在发出前重新执行本事务准入，复核总开关、持久 generation、独立 `config_revision`、session/current 条件及已固定的关键 revision 与目录归属。准入后网络 I/O 不持有本地版本/目录锁，已发出的单次请求可自然完成，后续与嵌套请求再次准入。
 
 - **启动隔离**：`EngineLauncher` 以 Disabled / Unmanaged / Unresolved / Directory 类型路由。无统一文件存档接口的游戏直接启动；受管理游戏在 WebDAV 关闭或开关不可读时不解析同步目录、不进同步目录锁，但与解析失败的启动一起使用 mutation 门禁及启动宽限。已解析目录使用实际目录锁→mutation；等锁后重读准入，类型/目录变化时重新准入，再以固定目录读取 baseline。宽限在实际 dispatch 前登记，即使可选 ticket 失败也不会漏掉；手动/仅拉取或关闭同步时的 YURIS 也登记独立外置运行标记；它不随配置 generation 失效、不按短宽限到期。已 dispatch 的标记在返回前台、Activity 重建与主进程重建后仍保留，只能由用户退出 Winlator 后在存档管理页明确确认已退出，按该 URI 的标记定向清除；确认入口在 WebDAV 关闭时仍可用，普通前台事件不推进退出会话。宽限按 token 独立保留，失败只移除本次 token；Intent 已发出后的最近记录失败不会冒充启动失败，随后取消也不撤销已发出的保护。正常同步仍严格校验实际目录。
 - **等锁后的复核**：激活早期收尾、导入前捕获、失败回滚、同步收尾与自动会话内容捕获均在取得 mutation 门禁后复核运行态和实际目录；需要开启功能的事务同时复核开关。取消后的必要回滚连同等锁在 `NonCancellable` 中执行，允许关闭状态下收尾；若游戏已运行或目录改变，则保留 journal/staging 供退出后重试，不写活动目录。
@@ -303,7 +320,7 @@ MAGES. 引擎（经开源重新实现项目 impacto，未改动的上游 Committ
 
 ## 9. 授权与应用更新
 
-Hikarinagi OAuth 支持授权、回调校验及 token 刷新。应用检查 GitHub Releases，提供正式/预发布候选、下载与系统安装器跳转；后台任务在应用进入后台时安排，并受网络和系统调度限制，不保证固定时间完成。通知及未知来源安装受系统授权控制；失败不应阻断离线游戏库功能。
+Hikarinagi 与 Bangumi OAuth 经 AppAuth 完成网页授权、回调校验及令牌刷新（Bangumi 另支持个人访问令牌）；未萌 NextMoe 采用 Public Client + 强制 PKCE S256 与 `127.0.0.1` 环回回调；VNDB 支持个人访问令牌校验与权限检查。四源凭据均使用 AndroidKeyStore 加密存储并排除备份。应用检查 GitHub Releases，提供正式/预发布候选、下载与系统安装器跳转；后台任务在应用进入后台时安排，并受网络和系统调度限制，不保证固定时间完成。通知及未知来源安装受系统授权控制；失败不应阻断离线游戏库功能。
 
 ## 10. 实验能力与证据边界
 
@@ -332,8 +349,10 @@ App 存档管理与 native 共用 `<游戏根>/savedata` user-root。宿主和 n
 | Winlator 运行模式 | 跟随全局/跟随容器/自定义三分支、`null / "" / 值` 迁移推断、只覆盖容器名时的 ID 清除、模式键分区往返 |
 | Winlator 图形加速 | GL/GDI 第一配置槽映射、旧 WineD3D 保留容器渲染器、Box64 合并、全局/单游戏继承与空值、备份往返、save 开关及 GDI 游戏实机验证 |
 | Ruffle / SWF | 一 SWF 一条与包装目录边界（根 index、唯一 SWF、无子目录、既有引擎信号优先）、文件 URI→父目录、`game`/`settings` 契约与类型包装、模块未安装/入口缺失、全局与单游戏覆盖、`configuration.json` 只同步不创建、无存档入口与横屏限制；设备/插件验证待执行 |
+| MAGES.（impacto） | 上游布局按精确大小写的根目录条目识别、`darling` 与全小写 `mo6tw` 不识别；Windows／Steam 版 `game.exe` + `data/` 识别，大小写不符、缺 `game.exe` / `script.cpk` / `mes00.cpk`、档案平铺在根目录、与上游布局同时出现均不识别；语言变体按界面语言（含「跟随系统」的繁体）选择、重扫只在候选仍存在时沿用、候选缺失时回落；`mo6tw-pc*` 的宿主版本提示出现在「所有文件访问」授权之前，其余 profile 不受影响；宿主缺失 / 过期引导；`SETTINGS` 下发；不能以识别通过代替宿主里的游戏运行验收 |
 | 第三方运行时模块 | 原发现/扫描/绑定行为保持；scan/settings/saves 独立容错、四类单游戏配置隔离与传参、游戏内存档目录事务、WebDAV关闭时退出保护、旧会话确认、模块命名空间与目录变化保护；无全局设置与按键映射入口 |
 | 宿主/JNI | 暂停恢复、Surface 重挂/旧世代、正常退出 ACK 后重入、owner 线程与资源释放 |
+| RPG Maker MV/MZ 网页宿主（v1/v2，v0 走 Tyrano 宿主、不受本行约束） | 兼容层以 `/__tyranor__/nwjs_polyfill*.js` 外链注入、顺序 base→v1→v2 且先于 `</head>` 之后的脚本；base 缺失时放弃整组并记错误日志（不拼半套）；keep-alive 下 ≥6 条并发连接不在队列里等到空闲超时；缓存按**目录优先**判定——`data/`、`save/` 一律 `no-cache`（含其中的图片，插件会改写截图/头像），其余仅纯素材扩展名（图片/音频/字体/视频）`max-age=3600` + `ETag`/304，脚本与 HTML/CSS/JSON/无扩展名一律 `no-cache`；磁盘可改写路径不发 ETag（避免同 mtime 同长度改写被 304 钉死），内存内容与 ≤256 KiB 的 ASAR 条目用内容哈希 ETag（无 mtime 粒度问题），更大的 ASAR 条目走流式、不带 ETag；0 字节文件发 `Content-Length: 0`；HEAD 与 Range(206) 之后同一连接仍可用；宽松素材名匹配与 fs 桥共用同一索引与同一上限（单目录 >4096 条目时只保留精确/大小写不敏感，索引项 30s 年龄上限兜外部写入），桥写入会同时失效两侧缓存；`AppData/Local Storage` 的 `setItem`/`removeItem`/`clear` 在返回前通过 `commitStorageMutation` 同步持久接收，接收失败抛 `QuotaExceededError` 且不改 JS 镜像；`.dat` 保留 200ms 合并物化（每批 ≤32 键，非最终 flush 预算 800ms），物化与匹配条目的确认在同一目录锁内完成，缺失或内容不匹配的旧定时器空操作；恢复队列 `.tyranor-pending.json` 与崩溃遗留 `.tyranor-pending.claim` 按会话版本合并，真实修改更新版本，旧 stage 重试保留首次指纹，旧进程期号按最旧处理；新接收条目持有权威意图，legacy 条目仍按存在/大小/mtime/CRC32 识别外部修改；`clear` 在原生目录锁内登记磁盘、队列及 claim 中的全部适用键（含哈希名）的删除意图；目录锁贯穿接收、重放、物化与确认，两个 bridge 不会争用同一 claim；页面兼容层在游戏脚本前重放并读取 JSON 报告：单条无法物化只把该键列入失败名单（删除意图的键读回 null、写入意图的键报 `InvalidStateError` 可重试），队列本身不可读或写不回去才算整体失败；不可解析的队列改名 `.corrupt.<时间戳>` 留证后按空队列继续，避免一次损坏让 Storage 永久不可用；队列限制 4096 项、单值 5Mi 字符（UTF-8 最坏 15MiB，仍在 16MiB 写入上限内）、总值 12Mi 字符及序列化 36MiB，任一超限整份拒绝；`pagehide`/`beforeunload`/NW 重载/宿主最终钩子只报告交接状态，不再负责入队或大批 I/O，因此无事件导航和 Activity 重建不依赖旧文档定时器；2500ms 看门狗与 3000ms 进程退出延迟只管资源收尾，不再是数据提交预算；接收后立即尝试物化，正常路径队列保持为空（每次修改 = 一次 journal 写 + 一次 `.dat` 写），设备耗时与游戏兼容性尚待验收；写入/删除/目录清除账本期号单调，旧会话的待写/待删操作让位于新会话；`textureGC` 回收策略按会话归属：MV v1 用 PIXI 默认值，MV v2 由游戏自带 core 决定（注入脚本把 `Graphics._createRenderer` 交还原实现）；MZ 的 hook 不含该补丁。Tyrano 壳的传输层本轮未同步（仍 `Connection: close` + 一律 `no-cache`）；版本缺失时的 v0 兜底会话仍走本宿主与同一传输层（只是不注入兼容层、`fuzzyNames=false`），与 Tyrano 宿主的 v0 无关 |
 | 存档 | ZIP 路径/数量/体积限制、目标冲突、MV/MZ 名称与目录、互通删除/清单损坏、Ethornell 游戏目录存档、旧私有迁移/冲突/中断恢复、导入导出/门禁拒绝及移除条目保留存档 |
 | 存档同步 | WebDAV 总开关默认关、关闭时不联网/隐藏版本同步身份但保留恢复入口/保留独立配置、关闭在同一 prefs 提交中持久化 `enabled=false` 与 `disable_generation`、session 记录 enabledGeneration 且旧 ticket 立即失效并跨重启保持失效、新 launch 不继承关闭前 pending baseline、启动前忙碌判定忽略旧 ticket/grace 但保留独立宿主探测、关闭同步捕获旧 token 且异步清理不误删 replacement、`whileEnabled` 复核持久 generation、每个顶层及嵌套 DAV exchange 按持久 generation 与当前 revision 重新准入且响应等待不持本地锁、整库手动三方向与单游戏固定双向、只拉取每个游戏最新云端版本且不批量恢复远端历史、打开/退出即时与 fallback 四条任务链相互独立、每游戏至多一份待处理记录与 staging ZIP、导入前持久目录 owner/token/revision、owner 保留到 journal 清理成功、journal 删除前持久 completionCommitted、journal 已删后的残留 owner 可按已知结果释放、旧 token 只续接自身或 legacy 空 epoch、同一及父子相交目录的入口等到清理成功后才放行、清理扫描持久 activeKey 包含不可解析 alias、committed 完成保留 revision 使旧传输失效、已证明 precommit abort 恢复 previousRevision 并保留旧链 epoch、promotionActiveKey + promotionDirectoryRevision 绑定目录与目录 epoch、另一 URI 成功选择后暂停旧 alias promotion、跨目录或旧 revision 以 SAVE_LOCATION_CHANGED 暂停、导入前同字节不算提交证据、不同 uncommitted token 不清除更早 completed S→N、完成 token 防重复 promotion、恢复重试只补元数据不自动导入、completed promotion 的目录/revision 缺失、为空或不匹配均暴露“处理未完成切换”、恢复捕获 active N 与已验证历史 S 且不导入、清除未知 ancestry 后普通 N 同步且不误替换远端 S、当前同版本显式重选作为可选重建路径、10/20/无上限保留与旧值迁移不删历史、新旧云端目录合并读取且按时间+哈希比较、内容哈希幂等去重、标识冲突拒答、运行中禁止上传/切换而拉取放行、5 版上限只计 ZIP 版本且维护/新增前保护 pending selected、beforeHash 与可恢复 promotion source、无独立保存版本入口、旧版本 S 恢复后保存 N 仍按 S→N 单一更新链处理、普通 ZIP 导入保持原行为、早期 Debug 选择标记与保留量迁移、结果 Toast 受同步提示开关控制、YU-RIS 需先退出外部游戏且 PC 不参与 |
 | 存档同步增量 | WebDAV 关闭时不解析同步目录、不进同步目录锁，关闭或回退启动仍与在途激活/恢复的目录变更共享 mutation 门禁、类型化启动准入区分不受管理引擎与目录解析失败而正常同步仍严格校验目录、`config_revision` 与加密 payload 同次提交且在本地事务与真实 HTTP enqueue 前复核、配置保存/重置不推进 `disable_generation`、`LOCAL_STATE_CHANGED` 不冒充 `GAME_RUNNING`、删除保留类型化 `SaveSyncError` 并按码映射、下载空间预检与 `STORAGE_FULL`/`LOCAL_IO` 分类、上传 pin 复制失败清理临时文件、每游戏每轮经 `SaveSyncService` 发起的所有远程 DELETE 合计不超过 20 次以及超限 `cleanupPending` 保留 checkpoint/session 并由 fallback 继续 |

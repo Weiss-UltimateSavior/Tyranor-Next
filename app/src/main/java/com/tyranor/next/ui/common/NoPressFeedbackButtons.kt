@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -72,6 +73,7 @@ internal fun NoRippleActionText(
     Text(
         text = text,
         style = MaterialTheme.typography.bodyMedium,
+        textAlign = TextAlign.Center,
         // 可用 ↔ 不可用：「增强」档文字颜色弹簧淡变，「普通」档直接切换
         color = if (MotionMode.enhanced) {
             animateColorAsState(targetColor, MotionTokens.fadeIn(), label = colorLabel).value

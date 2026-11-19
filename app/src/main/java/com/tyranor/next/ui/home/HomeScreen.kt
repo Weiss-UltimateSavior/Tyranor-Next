@@ -132,6 +132,10 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
     libraryState: MainLibraryUiState,
     onGameUpdated: (ScanGame) -> Unit,
+    onGameCoverUpdated: (String?, ScanGame) -> Unit = { _, updated -> onGameUpdated(updated) },
+    onGameRenamed: ((String, String) -> Unit)? = null,
+    onGameLaunchFileUpdated: ((String, String?) -> Unit)? = null,
+    onGameBindingUpdated: (String, ScanGame) -> Unit = { _, updated -> onGameUpdated(updated) },
     onGameDeleted: (ScanGame) -> Unit,
     onRecentRemoved: (ScanGame) -> Unit,
     onQuickLaunchToggle: (ScanGame) -> Boolean,
@@ -230,6 +234,12 @@ fun HomeScreen(
                 game = game,
                 onDismiss = { selectedGameUri = null },
                 onGameUpdated = { replaceGame(it) },
+                onGameCoverUpdated = onGameCoverUpdated,
+                onGameLaunchFileUpdated = { uri, name ->
+                    val updater = onGameLaunchFileUpdated
+                    if (updater != null) updater(uri, name) else replaceGame(game.copy(launchFile = name))
+                },
+                onGameBindingUpdated = onGameBindingUpdated,
                 onEngineSettings = {
                     openPerGameSettingsFromSheet(context, game) { selectedGameUri = null }
                 },
@@ -244,6 +254,8 @@ fun HomeScreen(
             quickLaunched = quickLaunch.any { it.uri == game.uri },
             onDismiss = { quickActionsGameUri = null },
             onGameUpdated = { replaceGame(it) },
+            onGameCoverUpdated = { updated -> onGameCoverUpdated(null, updated) },
+            onGameRenamed = onGameRenamed,
             // 与游戏页同一入口：增强档先播放消散再删库，补位的卡片随后才顶上来
             onDeleteGame = { deleteScope.removeLibraryGame(game.uri) { onGameDeleted(game) } },
             onQuickLaunchToggle = { onQuickLaunchToggle(game) },

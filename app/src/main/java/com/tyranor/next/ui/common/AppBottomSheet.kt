@@ -1,6 +1,7 @@
 package com.tyranor.next.ui.common
 
 import android.content.res.Configuration
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -24,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.core.privacy.AppLockController
 import com.tyranor.next.theme.AppSheetTopShape
@@ -108,8 +110,7 @@ internal fun AppBottomSheet(
         dragHandle = null,
     ) {
         controller.BindWindowScrim(SheetScrimColor)
-        // 竖屏保留更多页面露出；横屏按高度比例给内容留空间。短屏不强制抬高到最小值，
-        // 避免内容超过可用视口；滚动区会在剩余高度内滚动。
+        // 常规窗口保留页面露出；短窗优先给内容留空间，但上限始终不超过可用视口。
         val configuration = LocalConfiguration.current
         val sheetMaxHeight = appBottomSheetMaxHeight(
             screenHeightDp = configuration.screenHeightDp,
@@ -130,7 +131,10 @@ internal fun AppBottomSheet(
                         .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)),
                 ) {
                     AppSheetDragHandle(showGlassTopBorder = true)
-                    CompositionLocalProvider(LocalAppSheetContent provides true) { content() }
+                    CompositionLocalProvider(
+                        LocalAppSheetContent provides true,
+                        LocalIndication provides NoIndication,
+                    ) { content() }
                 }
             }
         }
@@ -138,9 +142,12 @@ internal fun AppBottomSheet(
 }
 
 /** Shared overall height policy for every app bottom sheet. Values are in dp, independent of density. */
-internal fun appBottomSheetMaxHeight(screenHeightDp: Int, isLandscape: Boolean): androidx.compose.ui.unit.Dp {
+internal fun appBottomSheetMaxHeight(screenHeightDp: Int, isLandscape: Boolean): Dp {
     val screenHeight = screenHeightDp.dp
     val marginLimit = screenHeight - if (isLandscape) 96.dp else 120.dp
     val proportionalLimit = screenHeight * if (isLandscape) 0.86f else 0.75f
-    return minOf(marginLimit, proportionalLimit, 560.dp).coerceAtLeast(0.dp)
+    val preferredLimit = minOf(marginLimit, proportionalLimit, 560.dp)
+    // 仅放宽最大高度，不强制内容撑满。短窗不能再固定扣掉 96/120dp，挤没底部操作。
+    val shortWindowLimit = minOf(320.dp, screenHeight - 24.dp)
+    return maxOf(preferredLimit, shortWindowLimit).coerceIn(0.dp, screenHeight.coerceAtLeast(0.dp))
 }

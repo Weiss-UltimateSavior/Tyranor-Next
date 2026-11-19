@@ -9,8 +9,6 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -64,11 +62,14 @@ import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassPanel
 import com.tyranor.next.theme.MilkGlassPanelBackground
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.SecondaryTextColor
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.privacy.DismissOnAppLockEffect
+import com.tyranor.next.ui.common.SplitEndsActionRow
+import java.util.concurrent.atomic.AtomicReference
 import com.tyranor.next.ui.common.motion.BlurCrossfade
 import com.tyranor.next.ui.common.motion.ExpandVisibility
 import com.tyranor.next.ui.common.notice.NoticeHost
@@ -77,6 +78,7 @@ import com.tyranor.next.ui.common.motion.bounceOnChange
 import com.tyranor.next.ui.common.motion.breathing
 import com.tyranor.next.ui.common.motion.shakeOnTrigger
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.min
@@ -131,30 +133,34 @@ internal fun GameShortcutCropDialog(
     /** Exports the current bounded crop off the main thread and returns it to the caller. */
     fun confirmCrop() {
         val currentBitmap = bitmap ?: return
-        if (!metrics.isValid || confirming) return
+        if (!metrics.isValid || confirming || overlay.isClosing) return
         confirming = true
         cropFailed = false
         val current = transform
         scope.launch {
-            var croppedUri: Uri? = null
+            val createdUri = AtomicReference<Uri?>(null)
             var handedOff = false
             try {
-                croppedUri = withContext(Dispatchers.IO) {
+                val croppedUri = withContext(Dispatchers.IO) {
                     writeShortcutCropBitmap(context.applicationContext, currentBitmap, current, metrics)
+                        ?.also { createdUri.set(it) }
                 }
                 if (croppedUri == null) {
                     cropFailed = true
                     cropFailCount++
                 } else {
-                    val resultUri = croppedUri
                     overlay.finishCropExport()
-                    onConfirm(resultUri)
+                    onConfirm(croppedUri)
                     handedOff = true
                 }
             } finally {
                 confirming = false
                 if (!handedOff) {
-                    deleteShortcutCropBitmap(context.applicationContext, croppedUri)
+                    createdUri.get()?.let { stale ->
+                        withContext(NonCancellable + Dispatchers.IO) {
+                            deleteShortcutCropBitmap(context.applicationContext, stale)
+                        }
+                    }
                 }
             }
         }
@@ -164,8 +170,8 @@ internal fun GameShortcutCropDialog(
         onDismissRequest = ::dismiss,
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
-            dismissOnBackPress = !confirming,
-            dismissOnClickOutside = !confirming,
+            dismissOnBackPress = !confirming && !overlay.isClosing,
+            dismissOnClickOutside = !confirming && !overlay.isClosing,
         ),
     ) {
         overlay.BindWindow()
@@ -194,6 +200,7 @@ internal fun GameShortcutCropDialog(
                 metrics = metrics,
                 transform = transform,
                 confirming = confirming,
+                closing = overlay.isClosing,
                 cropFailed = cropFailed,
                 cropFailCount = cropFailCount,
                 onViewportSizeChanged = { viewportSize = min(it.width, it.height).toFloat() },
@@ -202,7 +209,7 @@ internal fun GameShortcutCropDialog(
                         it.scale / metrics.minimumScale, it.offsetX / viewportSize, it.offsetY / viewportSize,
                     )
                 },
-                onPickImage = onPickImage,
+                onPickImage = { if (!confirming && !overlay.isClosing) onPickImage() },
                 onDismiss = ::dismiss,
                 onConfirm = ::confirmCrop,
             )
@@ -224,6 +231,7 @@ private fun CropDialogCard(
     metrics: CropImageMetrics,
     transform: CropTransform,
     confirming: Boolean,
+    closing: Boolean,
     cropFailed: Boolean,
     cropFailCount: Int,
     onViewportSizeChanged: (androidx.compose.ui.unit.IntSize) -> Unit,
@@ -271,7 +279,7 @@ private fun CropDialogCard(
                 Text(
                     text = stringResource(R.string.game_desktop_shortcut_crop_hint),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = SecondaryTextColor,
                     modifier = Modifier.enterGamePanel(GameOverlay.ShortcutCrop, GamePanelPart.Input),
                 )
                 CropDialogImage(
@@ -297,6 +305,7 @@ private fun CropDialogCard(
                 }
                 CropDialogActions(
                     confirming = confirming,
+                    closing = closing,
                     canConfirm = loadState is CropImageLoadState.Ready && metrics.isValid,
                     onPickImage = onPickImage,
                     onDismiss = onDismiss,
@@ -355,46 +364,49 @@ private fun CropDialogImage(
 @Composable
 private fun CropDialogActions(
     confirming: Boolean,
+    closing: Boolean,
     canConfirm: Boolean,
     onPickImage: () -> Unit,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        DialogTextButton(
-            text = stringResource(R.string.game_desktop_shortcut_crop_choose_image),
-            onClick = onPickImage,
-            enabled = !confirming,
-        )
-        Spacer(Modifier.weight(1f))
-        DialogTextButton(
-            text = stringResource(R.string.common_cancel),
-            onClick = onDismiss,
-            enabled = !confirming,
-        )
-        // 「确认 ↔ 处理中」模糊替换，处理中文字缓缓明灭；图片就绪、确认变为可用的一刻轻轻弹一下
-        BlurCrossfade(
-            targetState = confirming,
-            modifier = Modifier.bounceOnChange(canConfirm, depth = 0.12f),
-            contentAlignment = Alignment.Center,
-        ) { busy ->
+    val interactive = !confirming && !closing
+    SplitEndsActionRow(
+        modifier = modifier,
+        leading = {
             DialogTextButton(
-                text = if (busy) {
-                    stringResource(R.string.common_loading)
-                } else {
-                    stringResource(R.string.common_confirm)
-                },
-                modifier = Modifier.breathing(active = busy),
-                onClick = onConfirm,
-                enabled = canConfirm && !confirming,
+                text = stringResource(R.string.game_desktop_shortcut_crop_choose_image),
+                onClick = onPickImage,
+                enabled = interactive,
             )
-        }
-    }
+        },
+        trailing = {
+            // 窄屏/大字体宽度不足时右对齐整组折行，不因 Spacer 占位残留空行
+            DialogTextButton(
+                text = stringResource(R.string.common_cancel),
+                onClick = onDismiss,
+                enabled = interactive,
+            )
+            // 「确认 ↔ 处理中」模糊替换，处理中文字缓缓明灭；图片就绪、确认变为可用的一刻轻轻弹一下
+            BlurCrossfade(
+                targetState = confirming,
+                modifier = Modifier.bounceOnChange(canConfirm, depth = 0.12f),
+                contentAlignment = Alignment.Center,
+            ) { busy ->
+                DialogTextButton(
+                    text = if (busy) {
+                        stringResource(R.string.common_loading)
+                    } else {
+                        stringResource(R.string.common_confirm)
+                    },
+                    modifier = Modifier.breathing(active = busy),
+                    onClick = onConfirm,
+                    enabled = canConfirm && interactive,
+                )
+            }
+        },
+    )
 }
 
 private sealed interface CropImageLoadState {

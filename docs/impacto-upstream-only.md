@@ -2,7 +2,9 @@
 
 > **命名**：引擎名是 **MAGES.**（界面与文档中一律这样写）；**impacto** 是重新实现该引擎的开源项目，也是宿主 APK 的名字。代码里的 `IMPACTO` / `Impacto*` 标识沿用项目名。
 
-> **宿主 APK 已迁出（2026-11-15）**：宿主 APK 的源码、固定来源 `source-lock.json`、构建脚本、发布工作流与许可说明现在在独立公开仓库 [yuukana1/Tyranor-Next-Impacto](https://github.com/yuukana1/Tyranor-Next-Impacto)，由它构建、签名并发布 APK。本仓库只保留主 App 一侧的接入（引擎类型、扫描、外置模块、文案）和 `tools/impacto/` 里与游戏数据有关的两个只读工具。下文中带日期的构建、宿主与真机记录是迁出前的历史记录，其中提到的 `engine/impacto/`、`tools/impacto/build-upstream.sh` 等路径已不在本仓库，请到上述仓库查看。
+> **宿主 APK 已迁出（2026-11-15）**：宿主 APK 的源码、固定来源 `source-lock.json`、构建脚本、发布工作流与许可说明现在在独立公开仓库 [yuukana1/Tyranor-Next-MAGES](https://github.com/yuukana1/Tyranor-Next-MAGES)，由它构建、签名并发布 APK。本仓库只保留主 App 一侧的接入（引擎类型、扫描、外置模块、文案）和 `tools/impacto/` 里与游戏数据有关的两个只读工具。下文中带日期的构建、宿主与真机记录是迁出前的历史记录，其中提到的 `engine/impacto/`、`tools/impacto/build-upstream.sh` 等路径已不在本仓库，请到上述仓库查看。
+
+> **补丁系列（2026-11-18，取代下文「不应用 TYN 引擎补丁」）**：宿主不再是 upstream-only。为支持 Windows／Steam 版《秋之回忆6》，宿主仓库的 [PR #1](https://github.com/yuukana1/Tyranor-Next-MAGES/pull/1) 起，构建输入是**固定的上游提交加一套补丁系列**（`engine/impacto/patches/`；`source-lock.json` 记录每个补丁的 SHA-256，构建与发布工作流都要求检出恰好等于「固定提交 + 系列」）。从宿主 0.2.0 起发布的 APK 都带这套补丁。下文「约束与当前行为」据此改写；带日期的历史记录（构建、真机、样本核对）保持写下时的样子，不回改。
 
 本记录面向 `Weiss-UltimateSavior/Tyranor-Next` 的 `main`，从当前上游基线
 `e04f9a15` 建立。它取代已关闭的 [PR #161](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/161)
@@ -14,10 +16,10 @@
 ## 约束与当前行为
 
 - 直接引用 [CommitteeOfZero/impacto](https://github.com/CommitteeOfZero/impacto)，用完整 commit SHA 固定版本。
-- 不修改 Impacto 源码、profile、着色器，不应用 TYN 引擎补丁，不以生成修改副本或符号替换绕过此约束。
+- 对上游源码、profile 与着色器的修改只存在于宿主仓库的**补丁系列**里：按序应用、逐个记录 SHA-256，只放 TYN 兼容性所需的最小改动，能上游化的写成可提交上游的形态；构建与发布校验检出恰好等于「固定提交 + 系列」。不以生成修改副本或符号替换绕过补丁系列。（原约束「不修改 Impacto 源码、profile、着色器，不应用 TYN 引擎补丁」在 2026-11-18 被取代，见顶部说明；补丁中有通用修复，也有只服务 `mo6tw-pc*` 的新增，对其他游戏没有设备回归。）
 - Android 生命周期、权限、目录、启动参数和存档隔离由 TYN 宿主适配；宿主不能解决的上游问题明确记录，不维护引擎分叉。
-- 不增加 TYN 的 SDL 或其它第三方源码补丁。上游自身依赖构建配方保持原样，并在来源记录中说明。
-- 原版构建产物先留在独立候选目录。当前 PR 没有把旧补丁库、旧源码归档、私有 SDL 类或商业游戏数据带入应用，也尚未新增可启动的 Impacto 引擎入口。
+- 不增加 TYN 的 SDL 或其它第三方源码补丁，不碰 SDL3 的 Java 层与 JNI 命名空间。上游自身依赖构建配方保持原样，并在来源记录中说明。
+- （PR #165 当时的状态）原版构建产物先留在独立候选目录。当前 PR 没有把旧补丁库、旧源码归档、私有 SDL 类或商业游戏数据带入应用，也尚未新增可启动的 Impacto 引擎入口。
 
 ## 测试样本
 
@@ -54,9 +56,11 @@
 
 结论：直接套用上游 `mo6tw` 配置不会得到可用界面；能否经自有 profile 进入标题，目前没有证据，也尚未在任何设备上运行。
 
+> **后续（2026-11-18）**：宿主补丁系列随后为这类数据提供了 `mo6tw-pc*` profile；其中 `mo6tw-pc-zhs` 在一台真机上由外部 Intent 启动、进到对话与存读档（补丁系列的 dev 构建；日文与繁体变体没有上机，证据与未验证项见宿主仓库 PR #1 的说明）；主 App 对 `game.exe` + `data/*.cpk` 布局的识别见下文「主 App 与宿主 APK 接入」。本节的表格是 2026-11-13 的只读核对，保持原样，其中「不匹配」「不能直接使用」的判断针对的是**上游 PS3 配置**。
+
 ## 构建和更新
 
-已迁到 [yuukana1/Tyranor-Next-Impacto](https://github.com/yuukana1/Tyranor-Next-Impacto)：该仓库的 `engine/impacto/source-lock.json` 固定引擎、vcpkg 与工具链版本（NDK `27.3.13750724`，上游官方 CI 默认使用的版本），`tools/impacto/` 里的脚本负责校验上游 checkout、从固定提交编译库、暂存与校验候选库，发布工作流打包签名宿主 APK。构建与升级流程见该仓库的 README 与 `engine/impacto/host-apk/README.md`。
+已迁到 [yuukana1/Tyranor-Next-MAGES](https://github.com/yuukana1/Tyranor-Next-MAGES)：该仓库的 `engine/impacto/source-lock.json` 固定引擎、vcpkg 与工具链版本（NDK `27.3.13750724`，上游官方 CI 默认使用的版本），`tools/impacto/` 里的脚本负责校验上游 checkout、从固定提交编译库、暂存与校验候选库，发布工作流打包签名宿主 APK。构建与升级流程见该仓库的 README 与 `engine/impacto/host-apk/README.md`。
 
 这是固定 revision 和 Git 洁净性检查，不是游戏兼容性测试。
 
@@ -72,11 +76,11 @@
 - [ ] 完成资源验证和持久 TOML 管理：存档与 `userconfig.toml` 已按游戏隔离（`games/<gameKey>/`），但在宿主私有目录内，主 App 无法管理；未验证。
 - [ ] 接入扫描、外置模块启动、三语言文案和引擎图标：代码已写，主 App 编译与新增单测通过；Impacto 以外置 APK 承载，不走运行库分片。对已有引擎未见行为改动，但未逐一验证；完整 JVM 回归在本机有 15 个与本改动无关、干净 HEAD 上同样出现的 Windows 环境失败。
 - [x] 只读核对现有 Windows／Steam 样本的容器、脚本头和资源格式（见上节）；结论是它与上游 PS3 配置不一致，不能直接使用。
-- [ ] 为该样本建立 TYN 自有、标明实验性的 PC profile（图集、字体、MSB、语言、立绘），再验证原版引擎能否读资源并解析脚本。
-- [ ] 完成游戏数据的标题、正文、声音、输入、存读档、前后台及退出重启验收（上游支持的是 PS3 数据；PC 样本是否可行尚无证据）。
+- [x] 为该样本建立 TYN 自有、标明实验性的 PC profile（图集、字体、MSB、语言、立绘），再验证原版引擎能否读资源并解析脚本。（2026-11-18：宿主仓库补丁系列里的 `mo6tw-pc`、`mo6tw-pc-zhs`、`mo6tw-pc-zht`；非对话菜单的坐标为近似，见宿主仓库 PR #1。）
+- [ ] 完成游戏数据的标题、正文、声音、输入、存读档、前后台及退出重启验收（上游支持的是 PS3 数据）。（2026-11-18 更新：`mo6tw-pc-zhs` 的 dev 构建在一台真机上进到过标题、新游戏第一章对白与语音、存读档，见宿主仓库 PR #1；其他变体与游戏、非对话菜单、长时间运行均未验证，所以不勾选。）
 - [ ] 完成 API 28、16 KiB 页设备与 minified Release 检查。
 
-引擎已作为外置模块接入，下载走宿主仓库最新发布；但真实游戏测试没有完成：没有受支持的游戏数据进到画面，渲染、声音、输入、存读档均未验证。
+（截至 2026-11-15）引擎已作为外置模块接入，下载走宿主仓库最新发布；但真实游戏测试没有完成：没有受支持的游戏数据进到画面，渲染、声音、输入、存读档均未验证。2026-11-18 起 `mo6tw-pc-zhs` 的情况见顶部「补丁系列」说明与 SPEC。
 
 ## 原版 ARM64 全量构建（2026-11-14，WSL Ubuntu 24.04）
 
@@ -102,12 +106,13 @@
 
 - `EngineType.IMPACTO` 属 GAL 分类，卡片图标为 `ic_engine_card_impacto`，封面色 `#B3123A`。
 - 扫描：`ImpactoGameCatalog` 按**精确大小写**的根目录条目名识别上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`），恰好一个 profile 全部命中才识别；`darling` 的要求集合与全小写的 mo6tw 完全相同，无法区分，所以这种布局一律不识别，不猜；`launchTarget` 保存 profile id（即 `-g` 参数）。影片档不作为特征。该表由 `tools/impacto/check-game-catalog.py` 对照固定提交（见宿主仓库的 `source-lock.json`）的 `gamedefinitions.lua` 和各 `vfs.lua` 校验。
-- 现有 Windows／Steam 样本（小写 `.cpk`、`script.cpk`、无 `SCRIPT.cls`）**不会**被识别为 Impacto，也不会被误判成大写布局的 `chlcc`。
-- 启动：`ImpactoExternalEngineModule` 发 `com.tyranor.next.impacto.action.RUN`，携带游戏目录、profile、`gameKey` 与标题；游戏目录需要主 App 已取得的路径与「所有文件访问」。宿主未安装或版本低于 `ImpactoHostContract.VERSION_CODE` 时，提示并引导下载宿主仓库最新发布的 APK（`releases/latest/download/impacto-host.apk`，资产名固定，新版本发布后自动指向）。
-- 存档：存在于宿主 APK 的内部私有目录（`files/games/<gameKey>/saves`），主 App 不提供文件存档管理；单游戏设置页只显示说明，没有可调项。
-- 宿主 APK 见 [yuukana1/Tyranor-Next-Impacto](https://github.com/yuukana1/Tyranor-Next-Impacto)：只用上游公开钩子，直接引用已校验的上游 Java 源码，不复制、不修改；需要候选库 `libimpacto.so` 才能打包，只能在 Linux（或 WSL）构建。**不内置进 Tyranor Next**：宿主 APK 约 90 MB（其中 CJK 字体与各游戏字体贴图占大头，均已是压缩格式），内置会让所有用户多下载约 100 MB；且上游自带的 SDL3 `org.libsdl.app` 与 TYN 内置的 SDL2 同名，代码无法合并进主 APK。获取方式与其他外置 APK 模块相同：该仓库的 CI 构建、发布到 GitHub Release（已发布，下载链接始终指向最新版（0.1.1 起宿主应用名为“MAGES.（impacto）”）），引擎页点击跳转下载最新版 APK。
+- Windows／Steam 版《秋之回忆6》（`game.exe` + `data/*.cpk`，上面「样本核对」的那类数据）：补丁系列提供 `mo6tw-pc`、`mo6tw-pc-zhs`、`mo6tw-pc-zht` 三个 profile，主 App 在 2026-11-18 起识别这种布局。判据是根目录 `game.exe` 与 `data/` 目录，`data/` 里有 `script.cpk`、`mes00.cpk`（与宿主 `engine/impacto/profiles.json` 的 `detect` 一致；`pcEdition(...)` 条目不在 `check-game-catalog.py` 的上游对照范围内，该工具只在备注里列出它们）。`mes00/01/02.cpk` 同时存在，所以一个目录对应三个候选 profile，扫描按应用界面语言选一个并在重扫时沿用，细节与限制见 SPEC。该 profile 要求宿主 0.2.0（versionCode 4）及以上，主 App 只对这些游戏提示更新宿主。
+- 根目录平铺的小写 `.cpk`（没有 `data/` 目录）仍**不会**被识别为 Impacto，也不会被误判成大写布局的 `chlcc`：宿主按 `<游戏目录>/data/<档>.cpk` 打开，平铺的档案它找不到。
+- 启动：`ImpactoExternalEngineModule` 发 `com.tyranor.next.impacto.action.RUN`，携带游戏目录、profile、`gameKey` 与标题；游戏目录需要主 App 已取得的路径与「所有文件访问」。宿主未安装或版本低于 `ImpactoHostContract.VERSION_CODE` 时，提示并引导下载宿主仓库最新发布的 APK（`releases/latest/download/Tyranor-Next-MAGES.apk`，资产名固定，新版本发布后自动指向）。
+- 存档：存在于宿主 APK 的内部私有目录（`files/games/<gameKey>/saves`），主 App 不提供文件存档管理；设置见 SPEC：全局与单游戏覆盖，启动时经 `SETTINGS` extra 下发给宿主（0.1.2 起）。
+- 宿主 APK 见 [yuukana1/Tyranor-Next-MAGES](https://github.com/yuukana1/Tyranor-Next-MAGES)：宿主的 Java 层只用上游公开钩子，直接引用已校验的上游 Java 源码（SDL3 的 `org.libsdl.app`），不复制、不修改；引擎与 profile 的改动只存在于补丁系列里；需要候选库 `libimpacto.so` 才能打包，只能在 Linux（或 WSL）构建。**不内置进 Tyranor Next**：宿主 APK 约 90 MB（其中 CJK 字体与各游戏字体贴图占大头，均已是压缩格式），内置会让所有用户多下载约 100 MB；且上游自带的 SDL3 `org.libsdl.app` 与 TYN 内置的 SDL2 同名，代码无法合并进主 APK。获取方式与其他外置 APK 模块相同：该仓库的 CI 构建、发布到 GitHub Release（已发布，下载链接始终指向最新版（0.1.1 起宿主应用名为“MAGES.（impacto）”）），引擎页点击跳转下载最新版 APK。
 
-这是接入代码，**不是兼容性验收**：带真实引擎库的宿主 APK 已能在电脑上打包，但没有装到任何设备上，引擎没有运行过，也没有对任何游戏数据验证过。
+（写于 2026-11-14）这是接入代码，**不是兼容性验收**：带真实引擎库的宿主 APK 已能在电脑上打包，但没有装到任何设备上，引擎没有运行过，也没有对任何游戏数据验证过。之后的真机记录见下文各节。
 
 ### 真机核对（2026-11-14，一台设备，引擎库缺席）
 
@@ -154,6 +159,18 @@
 
 **仍未覆盖**：引擎渲染、声音、输入、存读档；没有受支持的游戏数据进到画面。
 
+### 真机 App 层核对（2026-11-18，Windows／Steam 版识别）
+
+设备 PPG-AN00（Android 17，arm64-v8a）。主 App 是本变更的 debug 包，隔离包名 `com.tyranor.next.magesrecog`；宿主是用户已装的 0.1.2（versionCode 3），**没有升级**。数据是真实的 Steam 版《秋之回忆6》：`/storage/emulated/0/Games/memo06-pc/` 下 `game.exe`、`steam_appid.txt` 和 `data/*.cpk`（16 个，含 `mes00/01/02.cpk`），原件未改动。流程：游戏页为空 → 「添加文件夹」→ 系统选择器选 `Games`（其下只有 `memo06-pc/`）→ 允许访问 → 自动扫描。
+
+| 项目 | 结果 |
+| --- | --- |
+| 识别 | 游戏页出现一条「Memories Off 6 ~T-Wave~ (PC)」（MAGES. 占位封面）。库记录 `engine=IMPACTO`、`launch_target=mo6tw-pc-zhs`、`external_module_alias=internal.impacto`（简体中文界面，读自应用私有库） |
+| 界面语言与重扫 | 应用语言切到日本語后全量重扫（日志 `scanAll roots=1 games=1`）：`launch_target` 仍是 `mo6tw-pc-zhs`。移除该条目（确认框写明不删除游戏文件，游戏目录完好）后在日本語界面重扫：新记录 `launch_target=mo6tw-pc`。代码审查后「沿用」从合并步骤挪到了创建点（只在已存 profile 仍是候选时沿用），用最终构建又验证了反方向：简体中文界面下全量重扫保持 `mo6tw-pc`，移除后重扫得到 `mo6tw-pc-zhs` |
+| 启动（宿主 0.1.2） | 点「启动游戏」：提示「已安装的模块版本过旧，请下载安装 MAGES.」并带「去下载」；前台仍是 TYN，没有先跳到「所有文件访问」授权页（测试包当时没有该授权，`appops` 为默认值）。审查前后两个构建都验证过 |
+
+**未覆盖**：主 App 启动 → 宿主 0.2.0 → 进入游戏的整条链路（手机上宿主为 0.1.2，没有替用户升级）；`mo6tw-pc` 与 `mo6tw-pc-zht` 的运行；English 与繁体界面（映射只由单测覆盖）；外部存储卷、手动「输入路径」添加与增量扫描路径；其他 Android 版本和机型。这是识别与启动前检查的核对，不是游戏兼容性验收。
+
 ## 本轮检查
 
 - 20 项真实 Git 仓库回归通过，包含“父仓库冒充源码 checkout”和 Git replace refs 替换锁定提交的拒绝测试。
@@ -166,4 +183,4 @@
 - 官方固定 checkout 的 tree 为 `a2a0b7996a46c5d067efbeb8747cef103a69b157`，Git 洁净检查通过。
 - **NDK 28.0.13004108 编不过原版**：2026-11-14 在 WSL（Ubuntu 24.04）里用该 NDK 做真实全量构建，vcpkg 依赖（含 SDL3、FFmpeg）全部编好，但原版 `src/io/fsfolderarchive.h` 的 `std::vector<TextMetaEntry>`（前向声明的不完整类型）在 r28 的 libc++ 下报 `incomplete type`，`log.cpp`、`main.cpp` 等编译失败。上游官方 CI 用的是 runner 默认的 NDK 27.3.13750724，因此来源锁改为该版本；这是改宿主侧工具链版本，没有改动上游源码。下一条的"诊断性编译通过"是用 NDK 28 做的单文件探针，不能说明全量构建可行。
 - 用 NDK 28 对原版 `src/io/vfs.cpp`、`src/io/fsfolderarchive.cpp` 执行语法与 ARM64 对象编译均通过。为隔离诊断，外部探针配置禁用了 OpenGL/ImGui 并补齐正常 PCH 标准头；不是完整 CMake 构建。外部直接析构 `FSFolderArchive` 的合成探针会触发不完整类型错误，但不能据此认定当前上游构建必然失败，不能作为恢复引擎补丁的理由。
-- 带引擎库的宿主 APK 尚未装到任何设备；引擎库未在设备上加载，真实游戏未验收。宿主 Java 层与主 App 入口已在一台真机上核对（见上节）。
+- （本节写于 2026-11-14 前后，之后已有真机记录）带引擎库的宿主 APK 尚未装到任何设备；引擎库未在设备上加载，真实游戏未验收。宿主 Java 层与主 App 入口已在一台真机上核对（见上节）。

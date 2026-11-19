@@ -13,8 +13,16 @@ object ExternalEngineLauncher {
     fun isPackageInstalled(context: Context, module: ExternalEngineModule): Boolean =
         checkInstallation(context, module) == null
 
-    /** Returns a typed missing/outdated result, or null when the installed package is usable. */
-    fun checkInstallation(context: Context, module: ExternalEngineModule): ExternalEngineLaunchResult? =
+    /**
+     * 模块缺失或版本不匹配时返回类型化失败，可用时返回 null。
+     * 传入 [launchTarget] 时按该目标要求的最低版本（[ExternalEngineModule.minimumVersionCodeFor]）判定，
+     * 不传则只看模块级要求（引擎页、设置页的安装状态）。
+     */
+    fun checkInstallation(
+        context: Context,
+        module: ExternalEngineModule,
+        launchTarget: String? = null,
+    ): ExternalEngineLaunchResult? =
         try {
             val packageManager = context.applicationContext.packageManager
             val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -29,9 +37,10 @@ object ExternalEngineLauncher {
                 @Suppress("DEPRECATION")
                 packageInfo.versionCode.toLong()
             }
-            if (!isVersionCodeSupported(installedVersionCode, module.minimumVersionCode)) {
+            val versionError = versionCodeError(installedVersionCode, module, launchTarget)
+            if (versionError != null) {
                 ExternalEngineLaunchResult.failure(
-                    ExternalEngineErrorCode.PACKAGE_OUTDATED,
+                    versionError,
                     moduleNameRes = module.displayNameRes,
                     moduleNameFallback = module.displayName,
                     engineName = module.engine.displayName,
@@ -53,6 +62,19 @@ object ExternalEngineLauncher {
     internal fun isVersionCodeSupported(installed: Long, minimum: Long): Boolean =
         minimum <= 0L || installed >= minimum
 
+    internal fun versionCodeError(
+        installed: Long,
+        module: ExternalEngineModule,
+        launchTarget: String? = null,
+    ): ExternalEngineErrorCode? {
+        val minimum = launchTarget?.let(module::minimumVersionCodeFor) ?: module.minimumVersionCode
+        return when {
+            !isVersionCodeSupported(installed, minimum) -> ExternalEngineErrorCode.PACKAGE_OUTDATED
+            installed > module.maximumVersionCode -> ExternalEngineErrorCode.PACKAGE_VERSION_MISMATCH
+            else -> null
+        }
+    }
+
     fun launch(context: Context, module: ExternalEngineModule, request: ExternalEngineLaunchRequest): ExternalEngineLaunchResult {
         if (module.requiresGameDirectoryPath && request.gameDirectoryPath.isBlank()) {
             return ExternalEngineLaunchResult.failure(
@@ -60,7 +82,7 @@ object ExternalEngineLauncher {
                 engineName = request.game.engine.displayName,
             )
         }
-        checkInstallation(context, module)?.let { return it }
+        checkInstallation(context, module, request.launchTarget)?.let { return it }
         module.prepareForLaunch(context, request)?.let { return it }
 
         val intent = module.buildLaunchIntent(request).addFlags(
