@@ -1295,7 +1295,7 @@
     <string name="save_systemnnn_clear_resources_done">Imported game resources cleared</string>
 
     <!-- Privacy settings -->
-    <string name="privacy_settings_title">Privacy settings</string>
+    <string name="privacy_settings_title">Privacy management settings</string>
     <string name="privacy_secure_screen_title">Secure screen</string>
     <string name="privacy_secure_screen_summary">Show a blank card in Recents and block screenshots of the app</string>
     <string name="privacy_hide_notification_title">Hide notification content</string>

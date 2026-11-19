@@ -1307,8 +1307,8 @@
     <string name="save_systemnnn_clear_resources_message">清理应用内副本的游戏资源可以释放空间，原游戏目录和副本中的全部存档都会保留。下次启动时需要从原目录重新导入资源。</string>
     <string name="save_systemnnn_clear_resources_done">已清理导入的游戏资源</string>
 
-    <!-- 隐私设置 -->
-    <string name="privacy_settings_title">隐私设置</string>
+    <!-- 隐私管理设置 -->
+    <string name="privacy_settings_title">隐私管理设置</string>
     <string name="privacy_secure_screen_title">安全屏幕</string>
     <string name="privacy_secure_screen_summary">最近任务显示空白卡片，应用内无法截屏</string>
     <string name="privacy_hide_notification_title">隐藏通知内容</string>

@@ -2,6 +2,8 @@
 
 ## 未发布
 
+- 将「隐私设置」入口移至工具页，改名为「隐私管理设置」并使用钥匙图标。
+
 - 网页首页新增「小鸟游」地址预设。
 
 - MAGES. 引擎宿主仓库更名为 `yuukana1/Tyranor-Next-MAGES`，引擎页下载链接改为该仓库的 `releases/latest/download/Tyranor-Next-MAGES.apk`（资产名固定，始终指向最新正式发布）。宿主从 0.2.0 起发布资产名为 `Tyranor-Next-MAGES.apk`；0.2.0 另附一份同内容的旧资产名 `impacto-host.apk`，让更早的本 App 版本里写死的旧链接暂时仍可下载，**之后的宿主版本不再附带**，旧链接从下一个宿主发布起失效；已安装的宿主不受影响。

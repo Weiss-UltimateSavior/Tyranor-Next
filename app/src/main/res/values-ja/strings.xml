@@ -1295,7 +1295,7 @@
     <string name="save_systemnnn_clear_resources_done">取り込んだゲームデータを削除しました</string>
 
     <!-- プライバシー設定 -->
-    <string name="privacy_settings_title">プライバシー設定</string>
+    <string name="privacy_settings_title">プライバシー管理設定</string>
     <string name="privacy_secure_screen_title">セキュアスクリーン</string>
     <string name="privacy_secure_screen_summary">最近使ったタスクに空白カードを表示し、アプリ内のスクリーンショットを禁止します</string>
     <string name="privacy_hide_notification_title">通知内容を隠す</string>
