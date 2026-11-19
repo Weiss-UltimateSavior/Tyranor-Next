@@ -3,9 +3,11 @@ package com.tyranor.next.core.engine.external
 import android.content.pm.ActivityInfo
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
-import org.junit.Assert.assertFalse
+import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -163,6 +165,7 @@ class ExternalEngineLauncherVersionTest {
             gameDirectoryPath = "/storage/emulated/0/Games/RenPy",
         )
 
+        val expectedCancel = CancellationException("cancelled after resolve")
         var checkCount = 0
         try {
             ExternalEngineLauncher.prepareRequest(
@@ -171,13 +174,44 @@ class ExternalEngineLauncherVersionTest {
                 orientationResolver = { ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE },
                 beforeStartActivity = {
                     checkCount += 1
-                    if (checkCount == 2) throw IllegalStateException("cancelled after resolve")
+                    if (checkCount == 2) throw expectedCancel
                 },
             )
             fail("Expected cancellation exception after orientation resolve")
-        } catch (expected: IllegalStateException) {
-            assertEquals("cancelled after resolve", expected.message)
+        } catch (caught: CancellationException) {
+            assertSame(expectedCancel, caught)
             assertEquals(2, checkCount)
+        }
+    }
+
+    @Test
+    fun prepareRequestPropagatesFirstCheckCancellationWithoutResolvingOrientation() {
+        val baseRequest = ExternalEngineLaunchRequest(
+            game = ScanGame(
+                title = "RenPy Test",
+                uri = "file:///storage/emulated/0/Games/RenPy",
+                engine = EngineType.RENPY,
+                launchTarget = "[游戏目录]",
+            ),
+            gameDirectoryPath = "/storage/emulated/0/Games/RenPy",
+        )
+
+        val expectedCancel = CancellationException("cancelled before resolve")
+        var orientationResolved = false
+        try {
+            ExternalEngineLauncher.prepareRequest(
+                prepareStep = { null },
+                request = baseRequest,
+                orientationResolver = {
+                    orientationResolved = true
+                    ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+                },
+                beforeStartActivity = { throw expectedCancel },
+            )
+            fail("Expected cancellation exception before orientation resolve")
+        } catch (caught: CancellationException) {
+            assertSame(expectedCancel, caught)
+            assertFalse(orientationResolved)
         }
     }
 }
