@@ -12,11 +12,13 @@ internal class PluginFileIndexCache(
     private val isLimitFailure: (IOException) -> Boolean,
     private val nanoTime: () -> Long = System::nanoTime,
     private val retryNanos: Long = 5_000_000_000L,
+    private val maxTransientAttempts: Int = 3,
     private val onDegraded: (IOException) -> Unit = {},
 ) {
     private data class Snapshot(val bytes: ByteArray?, val failure: IOException?, val retryAt: Long? = null)
     @Volatile private var snapshot: Snapshot? = null
     @Volatile private var stopped = false
+    private var consecutiveTransientFailures = 0
     private val building = AtomicBoolean()
     private val queued = AtomicBoolean()
 
@@ -49,26 +51,43 @@ internal class PluginFileIndexCache(
             try {
                 val bytes = build(false)
                 checkActive()
+                consecutiveTransientFailures = 0
                 snapshot = Snapshot(bytes, null)
                 return bytes
             } catch (error: IOException) {
                 checkActive()
-                if (!isLimitFailure(error)) throw error
+                if (!isLimitFailure(error)) {
+                    publishTransientOrTerminal(error)
+                    throw error
+                }
                 onDegraded(error)
                 try {
                     val bytes = build(true)
                     checkActive()
+                    consecutiveTransientFailures = 0
                     snapshot = Snapshot(bytes, null, nanoTime() + retryNanos)
                     return bytes
                 } catch (focusedError: IOException) {
                     checkActive()
-                    snapshot = if (isLimitFailure(focusedError)) {
-                        Snapshot(null, focusedError, nanoTime() + retryNanos)
-                    } else null
+                    if (isLimitFailure(focusedError)) {
+                        consecutiveTransientFailures = 0
+                        snapshot = Snapshot(null, focusedError, nanoTime() + retryNanos)
+                    } else {
+                        publishTransientOrTerminal(focusedError)
+                    }
                     throw focusedError
                 }
             }
         } finally { building.set(false) }
+    }
+
+    private fun publishTransientOrTerminal(error: IOException) {
+        if (++consecutiveTransientFailures >= maxTransientAttempts) {
+            consecutiveTransientFailures = 0
+            snapshot = Snapshot(null, error, nanoTime() + retryNanos)
+        } else {
+            snapshot = null
+        }
     }
 
     private fun available(): ByteArray? {
