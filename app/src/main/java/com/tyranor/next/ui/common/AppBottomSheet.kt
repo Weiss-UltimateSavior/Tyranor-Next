@@ -74,13 +74,19 @@ internal fun AppBottomSheet(
     onDismissRequest: () -> Unit,
     confirmValueChange: (SheetValue) -> Boolean = { true },
     controller: MotionSheetController = rememberMotionSheetController(),
+    /**
+     * 应用锁生效时的强制清理路径；默认走 [onDismissRequest]。
+     * 调用方若在 onDismissRequest 里有「运行中只能重建」之类的守卫，必须传入真正清状态的路径，
+     * 否则窗口虽然被移除，解锁后调用方状态仍会让抽屉原地复活。
+     */
+    onLockDismiss: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     // 抽屉是独立窗口，层级在解锁门之上：应用锁生效时立即把窗口从组合里移除（不播退场动画），
     // 只让 effect 通知调用方清理业务状态——只调 onDismissRequest 时调用方的退场动画仍可能
     // 把窗口留在锁门上方数百毫秒。
     val locked by AppLockController.lockedState.collectSettingAsState()
-    DismissOnAppLockEffect(onDismissRequest)
+    DismissOnAppLockEffect(onLockDismiss ?: onDismissRequest)
     if (locked) return
     val sheetState = rememberMotionSheetState(controller, confirmValueChange)
     LocalSheetBackdrop.current?.let { controller.BindBackdrop(it) }
