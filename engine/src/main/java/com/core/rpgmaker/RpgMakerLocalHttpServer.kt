@@ -328,8 +328,17 @@ internal class RpgMakerLocalHttpServer(
                 if (target != null) { Log.i(TAG, "resource fallback ogg->rpgmvo $uri -> $alt"); return ResolvedFile(target, null) }
             }
         }
-        // Do not let legacy first-match/lowercase fallbacks undo an ambiguous index lookup.
-        if (pluginIndexEnabled) return ResolvedFile(null, null)
+        // Do not let legacy first-match/lowercase fallbacks undo an ambiguous index lookup,
+        // while preserving entry-page candidate fallback for index.html / index.htm.
+        if (pluginIndexEnabled) {
+            if (asar != null && (uri.equals("index.html", true) || uri.equals("index.htm", true))) {
+                for (candidate in listOf("index.html", "www/index.html", "app/index.html", "resources/app/index.html")) {
+                    val data = asar.read(candidate)
+                    if (data != null) return ResolvedFile(null, data)
+                }
+            }
+            return ResolvedFile(null, null)
+        }
         if (asar != null) {
             val normalizedUri = uri.replace(Regex("/\\./"), "/").replace(Regex("//+"), "/")
             // 大条目优先流式：媒体需要 Range/seek，整段 ByteArray 有 OOM 风险（PR review 意见）

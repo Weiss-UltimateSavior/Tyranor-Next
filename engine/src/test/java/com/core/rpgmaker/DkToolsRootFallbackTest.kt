@@ -99,6 +99,11 @@ class DkToolsRootFallbackTest {
                         assertEquals(expected, request.inputStream.bufferedReader().use { it.readText() })
                     } finally { request.disconnect() }
                 }
+                val htmRequest = connection(port, "index.htm").apply { setRequestProperty("Cookie", cookie) }
+                try {
+                    assertEquals("legacy=$legacy index.htm fallback", 200, htmRequest.responseCode)
+                    assertTrue(htmRequest.inputStream.bufferedReader().use { it.readText() }.contains("__tyranorDkToolsReady"))
+                } finally { htmRequest.disconnect() }
             } finally { server?.stop(); oldServer?.stop(); archive?.close(); oldArchive?.close() }
         }
     }

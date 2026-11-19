@@ -66,7 +66,6 @@
         (!DKTools.IO._stamp || Object.keys(DKTools.IO._stamp).length === 0)) {
         var resolveReady;
         var ready = new Promise(function (resolve) { resolveReady = resolve; });
-        var started = Date.now();
         function finish(index) { prefetched = index; finished = true; resolveReady(); }
         function requestIndex() {
             var xhr = new XMLHttpRequest();
@@ -74,7 +73,7 @@
             xhr.overrideMimeType("application/json");
             xhr.timeout = 15000;
             xhr.onload = function () {
-                if (xhr.status === 202 && Date.now() - started < 15000) {
+                if (xhr.status === 202) {
                     setTimeout(requestIndex, 100);
                     return;
                 }

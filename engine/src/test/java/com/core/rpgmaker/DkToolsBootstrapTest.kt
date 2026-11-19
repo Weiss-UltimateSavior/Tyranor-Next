@@ -37,6 +37,16 @@ class DkToolsBootstrapTest {
         assertTrue(bootstrapIndex < injected.indexOf("hostHook()"))
     }
 
+    @Test fun bootstrapSkipsHtmlCommentsBeforeRealHeadAndScripts() {
+        val html = "<!doctype html><!-- <head><script>ignored()</script> --><html><head><script>boot();</script></head><body></body></html>"
+        val injected = DkToolsCompat.injectBootstrap(html)
+        assertTrue(injected.startsWith("<!doctype html><!-- <head><script>ignored()</script> --><html><head>"))
+        val bootstrapIndex = injected.indexOf(DkToolsCompat.BOOTSTRAP_SCRIPT)
+        val realHeadEnd = injected.indexOf("<html><head>") + "<html><head>".length
+        assertTrue(bootstrapIndex >= realHeadEnd)
+        assertTrue(bootstrapIndex < injected.indexOf("<script>boot();</script>"))
+    }
+
     @Test fun exactOriginalStampChecksDiskThenPrefixedAndRootArchiveCandidates() {
         val root = temporary.newFolder()
         val checked = mutableListOf<String>()

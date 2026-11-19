@@ -13,7 +13,7 @@ const resourcePath = constant('RESOURCE_PATH');
 const hook = fs.readFileSync(path.join(__dirname, '../../main/assets', constant('ASSET_PATH')), 'utf8');
 (async () => {
 let scenarios = 0;
-async function run({ index = { locales: {} }, nwjs = false, mode = 0, status = 200, stamp = {}, delay = 0, afterFetch = false, uninitialized = false } = {}) {
+async function run({ index = { locales: {} }, nwjs = false, mode = 0, status = 200, stamp = {}, delay = 0, afterFetch = false, uninitialized = false, clockStep = 0 } = {}) {
     scenarios++;
     let originalCalls = 0;
     let requests = 0;
@@ -35,12 +35,15 @@ async function run({ index = { locales: {} }, nwjs = false, mode = 0, status = 2
             io._loadStamp();
             loaded();
         };
-        const context = vm.createContext({ window: browser, Event, setTimeout, clearTimeout, DKToolsParam: { get: () => mode }, DKTools: { IO: io }, Utils: { isNwjs: () => nwjs }, console,
+        let now = 0;
+        const FakeDate = { now: () => now };
+        const context = vm.createContext({ window: browser, Event, setTimeout, clearTimeout, Date: FakeDate, DKToolsParam: { get: () => mode }, DKTools: { IO: io }, Utils: { isNwjs: () => nwjs }, console,
             XMLHttpRequest: class {
                 open(method, url, async) { assert.equal(method, 'GET'); assert.equal(url, resourcePath); assert.equal(async, true, 'Index requests must not block the browser event loop'); }
                 overrideMimeType() {}
                 send() {
                     requests++;
+                    now += clockStep;
                     const respond = () => {
                         this.status = Array.isArray(status) ? status[Math.min(requests - 1, status.length - 1)] : status;
                         this.responseText = JSON.stringify(index);
@@ -127,6 +130,9 @@ assert.equal({}.injected, undefined);
 await run({ delay: 30, uninitialized: true });
 await run({ delay: 20, afterFetch: true });
 await run({ status: [202, 202, 200], delay: 20 });
+const slowScan = await run({ status: [202, 202, 200], delay: 20, clockStep: 10000 });
+assert.equal(slowScan.originalCalls, 0, 'Pending 202 responses beyond 15s must still wait for the generated index');
+assert.deepEqual(JSON.parse(JSON.stringify(slowScan.io._stamp)), { locales: {} });
 console.log(`DKTools compatibility harness: ${scenarios} scenarios passed`);
 
 })().catch(error => { console.error(error); process.exitCode = 1; });

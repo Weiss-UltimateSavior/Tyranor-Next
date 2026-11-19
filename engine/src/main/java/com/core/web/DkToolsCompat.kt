@@ -25,9 +25,10 @@ internal object DkToolsCompat {
 })();"""
 
     fun injectBootstrap(html: String): String {
-        val headEnd = Regex("<head(?:\\s[^>]*)?>", RegexOption.IGNORE_CASE).find(html)?.range?.last?.plus(1)
-        val doctypeEnd = Regex("<!doctype\\s[^>]*>", RegexOption.IGNORE_CASE).find(html)?.range?.last?.plus(1)
-        val firstScript = Regex("<script(?:\\s|>)", RegexOption.IGNORE_CASE).find(html)?.range?.first
+        val uncommented = Regex("<!--([\\s\\S]*?)-->|<!--[\\s\\S]*$").replace(html) { " ".repeat(it.value.length) }
+        val headEnd = Regex("<head(?:\\s[^>]*)?>", RegexOption.IGNORE_CASE).find(uncommented)?.range?.last?.plus(1)
+        val doctypeEnd = Regex("<!doctype\\s[^>]*>", RegexOption.IGNORE_CASE).find(uncommented)?.range?.last?.plus(1)
+        val firstScript = Regex("<script(?:\\s|>)", RegexOption.IGNORE_CASE).find(uncommented)?.range?.first
         // For fragments, place the bootstrap before body onload attributes as well.
         val position = minOf(headEnd ?: doctypeEnd ?: 0, firstScript ?: html.length)
         val script = "\n<script type='text/javascript'>\n$BOOTSTRAP_SCRIPT\n</script>\n"
