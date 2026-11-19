@@ -98,7 +98,7 @@ class ExternalEngineLauncherVersionTest {
             orientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
         )
 
-        val (resolvedRequest, failure) = ExternalEngineLauncher.prepareRequest(
+        val prepared = ExternalEngineLauncher.prepareRequest(
             prepareStep = {
                 events += "prepare"
                 null
@@ -108,14 +108,14 @@ class ExternalEngineLauncherVersionTest {
                 events += "resolve"
                 ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
             },
-            beforeStartActivity = {
-                events += "ensureActive"
+            cancellationCheck = {
+                events += "check"
             },
         )
 
-        assertNull(failure)
-        assertEquals(listOf("prepare", "ensureActive", "resolve", "ensureActive"), events)
-        assertEquals(ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE, resolvedRequest?.orientation)
+        val ready = prepared as ExternalEngineLauncher.PreparedLaunchRequest.Ready
+        assertEquals(listOf("prepare", "check", "resolve", "check"), events)
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE, ready.request.orientation)
     }
 
     @Test
@@ -130,17 +130,17 @@ class ExternalEngineLauncherVersionTest {
             gameDirectoryPath = "/storage/emulated/0/Games/Ruffle",
         )
 
-        val (normalizedRequest, successFailure) = ExternalEngineLauncher.prepareRequest(
+        val normalized = ExternalEngineLauncher.prepareRequest(
             prepareStep = { null },
             request = baseRequest,
             orientationResolver = { ActivityInfo.SCREEN_ORIENTATION_PORTRAIT },
         )
-        assertNull(successFailure)
-        assertEquals(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, normalizedRequest?.orientation)
+        val ready = normalized as ExternalEngineLauncher.PreparedLaunchRequest.Ready
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, ready.request.orientation)
 
         var resolvedAfterFailure = false
         val expectedFailure = ExternalEngineLaunchResult.failure(ExternalEngineErrorCode.INVALID_GAME_PATH)
-        val (skippedRequest, failure) = ExternalEngineLauncher.prepareRequest(
+        val failed = ExternalEngineLauncher.prepareRequest(
             prepareStep = { expectedFailure },
             request = baseRequest,
             orientationResolver = {
@@ -148,8 +148,8 @@ class ExternalEngineLauncherVersionTest {
                 ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
             },
         )
-        assertNull(skippedRequest)
-        assertEquals(expectedFailure, failure)
+        val failedResult = failed as ExternalEngineLauncher.PreparedLaunchRequest.Failed
+        assertEquals(expectedFailure, failedResult.failure)
         assertFalse(resolvedAfterFailure)
     }
 
@@ -172,7 +172,7 @@ class ExternalEngineLauncherVersionTest {
                 prepareStep = { null },
                 request = baseRequest,
                 orientationResolver = { ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE },
-                beforeStartActivity = {
+                cancellationCheck = {
                     checkCount += 1
                     if (checkCount == 2) throw expectedCancel
                 },
@@ -206,12 +206,81 @@ class ExternalEngineLauncherVersionTest {
                     orientationResolved = true
                     ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
                 },
-                beforeStartActivity = { throw expectedCancel },
+                cancellationCheck = { throw expectedCancel },
             )
             fail("Expected cancellation exception before orientation resolve")
         } catch (caught: CancellationException) {
             assertSame(expectedCancel, caught)
             assertFalse(orientationResolved)
+        }
+    }
+
+    @Test
+    fun prepareRequestFallsBackToRequestOrientationWhenResolverThrows() {
+        // P3-12（ROB-08）：解析器抛非取消异常时回落请求原方向并上报，启动仍以原方向进行，
+        // 不落入未类型化的异常路径。
+        val baseRequest = ExternalEngineLaunchRequest(
+            game = ScanGame(
+                title = "RenPy Test",
+                uri = "file:///storage/emulated/0/Games/RenPy",
+                engine = EngineType.RENPY,
+                launchTarget = "[游戏目录]",
+            ),
+            gameDirectoryPath = "/storage/emulated/0/Games/RenPy",
+            orientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+        )
+        val resolverFailure = IllegalStateException("orientation resolver exploded")
+        var reported: Throwable? = null
+        val events = mutableListOf<String>()
+
+        val prepared = ExternalEngineLauncher.prepareRequest(
+            prepareStep = {
+                events += "prepare"
+                null
+            },
+            request = baseRequest,
+            orientationResolver = { throw resolverFailure },
+            cancellationCheck = {
+                events += "check"
+            },
+            onOrientationResolveFailed = { reported = it },
+        )
+
+        val ready = prepared as ExternalEngineLauncher.PreparedLaunchRequest.Ready
+        assertEquals(listOf("prepare", "check", "check"), events)
+        assertSame(resolverFailure, reported)
+        assertEquals(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, ready.request.orientation)
+    }
+
+    @Test
+    fun prepareRequestPropagatesCancellationThrownInsideOrientationResolver() {
+        // 取消不是失败：解析器内抛出的取消异常必须原样传播，且不执行第二次取消检查。
+        val baseRequest = ExternalEngineLaunchRequest(
+            game = ScanGame(
+                title = "RenPy Test",
+                uri = "file:///storage/emulated/0/Games/RenPy",
+                engine = EngineType.RENPY,
+                launchTarget = "[游戏目录]",
+            ),
+            gameDirectoryPath = "/storage/emulated/0/Games/RenPy",
+        )
+
+        val expectedCancel = CancellationException("cancelled inside resolver")
+        var reported: Throwable? = null
+        var checkCount = 0
+        try {
+            ExternalEngineLauncher.prepareRequest(
+                prepareStep = { null },
+                request = baseRequest,
+                orientationResolver = { throw expectedCancel },
+                cancellationCheck = { checkCount += 1 },
+                onOrientationResolveFailed = { reported = it },
+            )
+            fail("Expected cancellation exception thrown inside orientation resolver")
+        } catch (caught: CancellationException) {
+            assertSame(expectedCancel, caught)
+            assertNull(reported)
+            assertEquals(1, checkCount)
         }
     }
 }

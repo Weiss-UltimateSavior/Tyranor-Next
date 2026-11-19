@@ -6,10 +6,23 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.util.Log
 import com.tyranor.next.core.engine.graphics.putDisabledGraphicsRequest
+import kotlinx.coroutines.CancellationException
 
 /** 外置 APK 引擎启动与安装状态检查。 */
 object ExternalEngineLauncher {
+    private const val TAG = "ExternalEngineLaunch"
+
+    /** [prepareRequest] 的类型化结果：失败与就绪二选一，消除「请求与失败双可空」的歧义。 */
+    internal sealed class PreparedLaunchRequest {
+        /** prepareStep 判定不可启动；启动链应立即返回该类型化失败，不再组装 Intent。 */
+        internal class Failed(val failure: ExternalEngineLaunchResult) : PreparedLaunchRequest()
+
+        /** 准备与取消检查完成，[request] 已按判定结果携带具体单向横屏方向。 */
+        internal class Ready(val request: ExternalEngineLaunchRequest) : PreparedLaunchRequest()
+    }
+
     fun isPackageInstalled(context: Context, module: ExternalEngineModule): Boolean =
         checkInstallation(context, module) == null
 
@@ -80,7 +93,7 @@ object ExternalEngineLauncher {
         module: ExternalEngineModule,
         request: ExternalEngineLaunchRequest,
         orientationResolver: (() -> Int)? = null,
-        beforeStartActivity: (() -> Unit)? = null,
+        cancellationCheck: (() -> Unit)? = null,
     ): ExternalEngineLaunchResult {
         if (module.requiresGameDirectoryPath && request.gameDirectoryPath.isBlank()) {
             return ExternalEngineLaunchResult.failure(
@@ -89,15 +102,18 @@ object ExternalEngineLauncher {
             )
         }
         checkInstallation(context, module, request.launchTarget)?.let { return it }
-        val (resolvedRequest, prepareFailure) = prepareRequest(
+        val prepared = prepareRequest(
             prepareStep = { module.prepareForLaunch(context, request) },
             request = request,
             orientationResolver = orientationResolver,
-            beforeStartActivity = beforeStartActivity,
+            cancellationCheck = cancellationCheck,
         )
-        if (prepareFailure != null) return prepareFailure
+        val resolvedRequest = when (prepared) {
+            is PreparedLaunchRequest.Failed -> return prepared.failure
+            is PreparedLaunchRequest.Ready -> prepared.request
+        }
 
-        val intent = module.buildLaunchIntent(resolvedRequest ?: request).addFlags(
+        val intent = module.buildLaunchIntent(resolvedRequest).addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or
                 Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
@@ -129,24 +145,63 @@ object ExternalEngineLauncher {
         }
     }
 
+    /**
+     * 执行 [prepareStep] 并在启动前完成方向解析的编排（internal 以便测试直接驱动，生产走 [launch]）。
+     *
+     * 执行顺序：[prepareStep]（失败即 [PreparedLaunchRequest.Failed]，不触发取消检查与方向解析）
+     * → [cancellationCheck]（取消检查点 ①，准备完成后快速失败）→ 方向解析（[orientationResolver]
+     * 非 null 时执行并归一化，解析异常回落 request 原方向并经 [onOrientationResolveFailed] 上报）
+     * → [cancellationCheck]（取消检查点 ②，闭合解析窗口）→ [PreparedLaunchRequest.Ready]。
+     *
+     * [cancellationCheck] 是**取消检查点**而非「startActivity 前钩子」：它会被调用两次，
+     * 传入的实现必须可重入（生产为 `launchContext.ensureActive()`）。
+     */
     internal fun prepareRequest(
         prepareStep: () -> ExternalEngineLaunchResult?,
         request: ExternalEngineLaunchRequest,
         orientationResolver: (() -> Int)? = null,
-        beforeStartActivity: (() -> Unit)? = null,
-    ): Pair<ExternalEngineLaunchRequest?, ExternalEngineLaunchResult?> {
-        prepareStep()?.let { return null to it }
+        cancellationCheck: (() -> Unit)? = null,
+        onOrientationResolveFailed: (Throwable) -> Unit = {
+            Log.w(TAG, "orientation resolver failed, fall back to request orientation", it)
+        },
+    ): PreparedLaunchRequest {
+        prepareStep()?.let { return PreparedLaunchRequest.Failed(it) }
         // 外置模块准备（如 RPG Maker 创建 RTP 环境、写 configuration.json）完成后再检查取消
         // 并解析此刻握持方向，避免准备耗时期间设备旋转导致沿用过期方向。
-        beforeStartActivity?.invoke()
+        cancellationCheck?.invoke()
         val resolvedRequest = if (orientationResolver != null) {
-            request.copy(orientation = ExternalEngineContract.normalizeOrientation(orientationResolver()))
+            request.copy(
+                orientation = resolveOrientationSafely(
+                    orientationResolver,
+                    request,
+                    onOrientationResolveFailed,
+                ),
+            )
         } else {
             request
         }
-        beforeStartActivity?.invoke()
-        return resolvedRequest to null
+        cancellationCheck?.invoke()
+        return PreparedLaunchRequest.Ready(resolvedRequest)
     }
+
+    /**
+     * 方向解析容错（ROB-08）：解析器抛出的取消异常原样传播（取消不是失败，类型化失败路径
+     * 不吞取消）；其余 [RuntimeException] 记日志后回落请求原方向——解析失败不应让整个启动
+     * 失败，模块宿主拿到请求原方向仍可正常运行。
+     */
+    private fun resolveOrientationSafely(
+        orientationResolver: () -> Int,
+        request: ExternalEngineLaunchRequest,
+        onFailed: (Throwable) -> Unit,
+    ): Int =
+        try {
+            ExternalEngineContract.normalizeOrientation(orientationResolver())
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (failure: RuntimeException) {
+            onFailed(failure)
+            request.orientation
+        }
 
     fun openInstallPage(context: Context, module: ExternalEngineModule): Boolean =
         module.installUrl?.let { openInstallPage(context, it) } ?: false

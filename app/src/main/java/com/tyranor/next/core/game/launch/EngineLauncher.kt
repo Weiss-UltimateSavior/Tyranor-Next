@@ -480,7 +480,7 @@ object EngineLauncher {
                     resolvedSettings = settings,
                 ),
                 orientationResolver = { LaunchOrientationMonitor.resolvePlayerOrientation(context) },
-                beforeStartActivity = { launchContext.ensureActive() },
+                cancellationCheck = { launchContext.ensureActive() },
             )
             if (result.success) {
                 return completeLaunch(context, game, onDispatched)
