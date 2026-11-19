@@ -2277,18 +2277,23 @@ internal fun GameCard(
     showEngineBadge: Boolean = false,
 ) {
     val engineName = gameCardEngineName(game)
-    val coverBitmap by rememberCoverBitmap(game.coverUri, isScrolling)
+    // 瀑布流：按游戏 uri 稳定取 0.60–0.80 的封面宽高比，让卡片高低错落（列数不变）。
+    // 解码按这个比例裁剪，避免先把图裁成 3:4 再被卡片盒二次裁切。
+    val coverAspect = remember(game.uri) {
+        val hash = game.uri.hashCode().let { if (it == Int.MIN_VALUE) 0 else kotlin.math.abs(it) }
+        0.60f + (hash % 21) / 100f
+    }
+    val coverBitmap by rememberCoverBitmap(
+        coverUri = game.coverUri,
+        isScrolling = isScrolling,
+        targetAspect = coverAspect,
+    )
     // 删除消散中：登记在 dissolvingGames 里的卡片播放消散效果，期间不再响应点击
     val dissolve = rememberLastNonNull(dissolvingGames[game.uri])
     val pressModifier = if (onLongClick != null) {
         Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
     } else {
         Modifier.clickable(onClick = onClick)
-    }
-    // 瀑布流：按游戏 uri 稳定取 0.60–0.80 的封面宽高比，让卡片高低错落（列数不变）
-    val coverAspect = remember(game.uri) {
-        val hash = game.uri.hashCode().let { if (it == Int.MIN_VALUE) 0 else kotlin.math.abs(it) }
-        0.60f + (hash % 21) / 100f
     }
     val bmp = coverBitmap
     val reveal = rememberCoverReveal(bmp != null, CoverSurface.Waterfall)
@@ -2545,9 +2550,9 @@ internal object CoverAvailability {
     /** 撤销登记：封面文件被删 / 损坏、解码返回 null 时调用，让对应卡片立即重组回占位兜底。 */
     fun forget(uri: String) {
         if (uri.isBlank()) return
-        // 同一 uri 可能被不同档位的消费者并发解码：另一个消费者刚成功写入缓存时，
+        // 同一 uri 可能被不同档位 / 宽高比的消费者并发解码：另一个消费者刚成功写入缓存时，
         // 本次失败不能撤销它的登记。已有任一份解码结果就保持「已显示过」。
-        if (CoverDecodedKeys.hasAnyTier(uri)) return
+        if (CoverDecodedKeys.hasAnyDecoded(uri)) return
         // 先写 false 通知当前卡片重组（快照失效已入队），再移除条目，避免失败 uri 无界累积；
         // 之后重新解码成功时 markKnown 会重建状态。
         known[uri]?.value = false
@@ -2559,22 +2564,41 @@ internal object CoverAvailability {
 
 /**
  * 已解码封面的「缓存 key 存在过」标记（纯 Kotlin，不触碰 Android LruCache）：
- * `CoverAvailability.forget` 用它确认同一 uri 的其它档位是否刚解码成功，避免一次失败
+ * `CoverAvailability.forget` 用它确认同一 uri 的其它档位 / 宽高比是否刚解码成功，避免一次失败
  * 撤销另一个消费者刚建立的可用登记；LruCache 逐出时同步撤销。
  */
 private object CoverDecodedKeys {
-    private val keys = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    // uri → 该 uri 当前已解码的 cacheKey 集合。按 uri 精确索引，避免用 endsWith 后缀
+    // 判断时把「另一个 uri 恰好以本 uri 结尾」误判成同一张图。
+    private val keysByUri = java.util.concurrent.ConcurrentHashMap<String, MutableSet<String>>()
 
     fun mark(cacheKey: String) {
-        keys.add(cacheKey)
+        val uri = uriOf(cacheKey) ?: return
+        keysByUri.compute(uri) { _, existing ->
+            (existing ?: java.util.concurrent.ConcurrentHashMap.newKeySet<String>()).apply {
+                add(cacheKey)
+            }
+        }
     }
 
     fun unmark(cacheKey: String) {
-        keys.remove(cacheKey)
+        val uri = uriOf(cacheKey) ?: return
+        keysByUri.computeIfPresent(uri) { _, existing ->
+            existing.remove(cacheKey)
+            existing.ifEmpty { null }
+        }
     }
 
-    fun hasAnyTier(uri: String): Boolean =
-        CoverDecodeTier.entries.any { it.cacheKey(uri) in keys }
+    fun hasAnyDecoded(uri: String): Boolean = keysByUri[uri]?.isNotEmpty() == true
+
+    /** cacheKey 格式固定为 `tier:a<aspect>:<uri>`；uri 自身含 `:`，只切前两段。 */
+    private fun uriOf(cacheKey: String): String? {
+        val first = cacheKey.indexOf(':')
+        if (first <= 0) return null
+        val second = cacheKey.indexOf(':', first + 1)
+        if (second <= first) return null
+        return cacheKey.substring(second + 1).takeIf { it.isNotEmpty() }
+    }
 }
 
 /** 该封面是否已成功显示过（调用方据此跳过占位兜底，避免"显示过又变回兜底"）。 */
@@ -2601,11 +2625,14 @@ internal fun rememberCoverBitmap(
     coverUri: String?,
     isScrolling: () -> Boolean = neverScrolling,
     tier: CoverDecodeTier = CoverDecodeTier.GRID,
+    /** 消费方盒子的宽高比（宽/高）；默认按档位的 3:4。会按 0.05 分桶后进入缓存 key。 */
+    targetAspect: Float? = null,
 ): androidx.compose.runtime.State<ImageBitmap?> {
     val context = LocalContext.current
-    val cacheKey = coverUri?.let(tier::cacheKey)
+    val aspect = quantizedCoverAspect(targetAspect ?: tier.defaultAspect)
+    val cacheKey = coverUri?.let { tier.cacheKey(it, aspect) }
     val cached = cacheKey?.let(CoverBitmapCache::get)
-    return produceState<ImageBitmap?>(initialValue = cached?.asImageBitmap(), coverUri, tier) {
+    return produceState<ImageBitmap?>(initialValue = cached?.asImageBitmap(), coverUri, tier, aspect) {
         val uri = coverUri
         if (uri.isNullOrBlank()) return@produceState
         if (cached != null) {
@@ -2616,7 +2643,7 @@ internal fun rememberCoverBitmap(
         }
         // 滑动/惯性中不启动解码，避免解码完成 → 重组/纹理上传挤占滑动帧
         awaitScrollIdle(isScrolling)
-        val bitmap = CoverThumbnailLoader.load(context.applicationContext, uri, tier)
+        val bitmap = CoverThumbnailLoader.load(context.applicationContext, uri, tier, aspect)
         if (bitmap == null) {
             // 已登记过的封面文件可能被删 / 损坏：撤销登记，否则卡片只剩底色、
             // 占位文字在重启前不会再出现；下次仍会重新尝试解码
@@ -2661,8 +2688,10 @@ private object CoverPublishGate {
 private fun rememberCandidateCoverPreview(candidate: CoverSearchCandidate): androidx.compose.runtime.State<CoverPreviewState> {
     val context = LocalContext.current
     val cacheKey = candidate.coverUrl
-    // 搜索结果缩略图与游戏库网格同档；缓存 key 带档位，避免与封面流的大图互相覆盖
-    val cacheKeyWithTier = cacheKey.takeIf { it.isNotBlank() }?.let(CoverDecodeTier.GRID::cacheKey)
+    // 搜索结果缩略图与游戏库网格同档；缓存 key 带档位与宽高比，避免与其它消费方互相覆盖
+    val cacheKeyWithTier = cacheKey.takeIf { it.isNotBlank() }?.let { uri ->
+        CoverDecodeTier.GRID.cacheKey(uri)
+    }
     val cached = cacheKeyWithTier?.let(CoverBitmapCache::get)
     val initialState = cached?.asImageBitmap()?.let(CoverPreviewState::Ready)
         ?: CoverPreviewState.Loading
@@ -2680,7 +2709,7 @@ private fun rememberCandidateCoverPreview(candidate: CoverSearchCandidate): andr
                 source = candidate.source,
                 persistent = false,
             )
-            val bitmap = uri?.let { decodeCoverThumbnail(context, it, CoverDecodeTier.GRID) }
+            val bitmap = uri?.let { decodeCoverThumbnail(context, it, CoverDecodeTier.GRID, CoverDecodeTier.GRID.defaultAspect) }
             if (bitmap != null) {
                 CoverBitmapCache.putDecoded(cacheKeyWithTier, bitmap)
                 CoverPreviewState.Ready(bitmap.asImageBitmap())
@@ -2697,111 +2726,66 @@ private sealed interface CoverPreviewState {
     data class Ready(val bitmap: ImageBitmap) : CoverPreviewState
 }
 
-/**
- * 封面解码档位：按消费方的最大显示宽度分档（3:4 竖版目标盒）。
- *
- * `BitmapFactory.inSampleSize` 只能取 2 的幂，单靠采样无法精确命中目标尺寸（例如 1000×1333
- * 在 384×512 阈值下会解到 500×666）。这里先按档位采样，再裁剪到 3:4；超过目标尺寸时精确缩放，
- * 小图保留原生尺寸不放大。封面流（1080p 竖屏卡片约 648px 宽）使用更大档位，避免复用 384 宽
- * 缩略图放大发虚。
- *
- * 档位同时参与 Bitmap 缓存 key：同一 URI 在不同消费方可能以不同清晰度驻留，
- * LruCache 仍按真实字节数统一计费与逐出。
- */
-internal enum class CoverDecodeTier(val maxWidthPx: Int, val maxHeightPx: Int) {
-    /** 3/6 列网格、封面搜索预览与模糊背景（卡片最大边约 180–384px）。 */
-    GRID(384, 512),
-
-    /** 首页最近打开（手机约 500px 宽）与操作弹窗等中等卡片。 */
-    CARD(512, 683),
-
-    /** 封面流（1080p 竖屏卡片约 648px 宽）。 */
-    FLOW(768, 1024),
-
-    /** 大屏 / 平板封面流。 */
-    FLOW_LARGE(1024, 1365),
-    ;
-
-    fun cacheKey(uri: String): String = "${name.lowercase()}:$uri"
-
-    companion object {
-        /** 按卡片宽度取档位：档位数量有限，缓存 key 不会随窗口宽度无限膨胀。 */
-        fun forWidth(widthPx: Int): CoverDecodeTier = when {
-            widthPx <= GRID.maxWidthPx -> GRID
-            widthPx <= CARD.maxWidthPx -> CARD
-            widthPx <= FLOW.maxWidthPx -> FLOW
-            else -> FLOW_LARGE
-        }
-    }
-}
-
-/** 封面只按消费档位解码，避免切页时上传原始大图；已解码缩略图跨页面复用。 */
+/** 封面只按消费档位与盒子宽高比解码，避免切页时上传原始大图；已解码缩略图跨页面复用。 */
 private fun decodeCoverThumbnail(
     context: android.content.Context,
     uriText: String,
     tier: CoverDecodeTier,
+    targetAspect: Float,
 ): Bitmap? = runCatching {
     val uri = android.net.Uri.parse(uriText)
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
     if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
 
-    // 采样只负责把源图压到目标盒附近（仍可能大于目标）；精确尺寸由 scaleCoverToTier 完成。
-    var sampleSize = 1
-    while (bounds.outWidth / (sampleSize * 2) >= tier.maxWidthPx &&
-        bounds.outHeight / (sampleSize * 2) >= tier.maxHeightPx
-    ) {
+    // 采样同时受「不缩到档位目标以下」与「解码字节 ≤ 预算」约束；精确尺寸由 scaleCoverToAspect 完成。
+    // 采样估算按 4 字节/像素，实际 byteCount 还含行对齐：解码后再兜底检查，超出预算就再降一档。
+    var sampleSize = coverSampleSize(bounds.outWidth, bounds.outHeight, tier)
+    var attempts = 0
+    var decoded: Bitmap? = null
+    while (true) {
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        val candidate = context.contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, options)
+        } ?: return@runCatching null
+        if (candidate.byteCount <= CoverDecodeBudgetBytes) {
+            decoded = candidate
+            break
+        }
+        candidate.recycle()
+        if (++attempts > CoverResampleAttempts) return@runCatching null
         sampleSize *= 2
     }
-    val options = BitmapFactory.Options().apply {
-        inSampleSize = sampleSize
-        inPreferredConfig = Bitmap.Config.ARGB_8888
-    }
-    val decoded = context.contentResolver.openInputStream(uri)?.use {
-        BitmapFactory.decodeStream(it, null, options)
-    } ?: return@runCatching null
-    scaleCoverToTier(decoded, tier)
+    scaleCoverToAspect(decoded, tier, targetAspect)
 }.getOrNull()
 
+/** 解码后按真实 byteCount 超预算时的最大重采样次数。 */
+private const val CoverResampleAttempts = 3
+
 /**
- * 把采样后的位图裁剪到档位的 3:4 目标盒；超过目标尺寸时精确缩放，小图保留原生尺寸不放大。
- * 卡片本身用 `ContentScale.Crop`，预先裁到 3:4 不会丢失卡片实际可见区域，同时让 LRU
+ * 把采样后的位图按消费方盒子的宽高比居中裁剪，再缩放到档位盒内（小图不放大）。
+ * 卡片本身用 `ContentScale.Crop`，预先按盒子比例裁剪不会丢失可见区域，同时让 LRU
  * 容量估算与真实显示尺寸一致。
  *
  * 中间位图在不再被目标引用后立即 `recycle()`：采样结果与裁剪副本最多同时存在一帧，
  * 之后只保留最终位图。
  */
-private fun scaleCoverToTier(decoded: Bitmap, tier: CoverDecodeTier): Bitmap {
-    val srcWidth = decoded.width
-    val srcHeight = decoded.height
-    if (srcWidth <= 0 || srcHeight <= 0) return decoded
-    val targetAspect = tier.maxWidthPx.toFloat() / tier.maxHeightPx
-    val sourceAspect = srcWidth.toFloat() / srcHeight
-    var cropped = decoded
-    if (kotlin.math.abs(sourceAspect - targetAspect) > 0.01f) {
-        val cropWidth = if (sourceAspect > targetAspect) {
-            (srcHeight * targetAspect).toInt().coerceIn(1, srcWidth)
-        } else {
-            srcWidth
-        }
-        val cropHeight = if (sourceAspect > targetAspect) {
-            srcHeight
-        } else {
-            (srcWidth / targetAspect).toInt().coerceIn(1, srcHeight)
-        }
-        cropped = Bitmap.createBitmap(
-            decoded,
-            (srcWidth - cropWidth) / 2,
-            (srcHeight - cropHeight) / 2,
-            cropWidth,
-            cropHeight,
-        )
+private fun scaleCoverToAspect(decoded: Bitmap, tier: CoverDecodeTier, targetAspect: Float): Bitmap {
+    val crop = coverCropRect(decoded.width, decoded.height, targetAspect) ?: return decoded
+    val cropped = if (crop.width == decoded.width && crop.height == decoded.height) {
+        decoded
+    } else {
+        Bitmap.createBitmap(decoded, crop.left, crop.top, crop.width, crop.height)
     }
-    val scaled = if (cropped.width <= tier.maxWidthPx && cropped.height <= tier.maxHeightPx) {
-        // 小图不放大：保留原生尺寸（仍 ≤ 档位目标），避免无意义的纹理上传与模糊放大
+    val (targetWidth, targetHeight) = coverTargetSize(tier, targetAspect)
+    val scaled = if (cropped.width <= targetWidth && cropped.height <= targetHeight) {
+        // 小图不放大：保留原生尺寸（仍 ≤ 目标盒），避免无意义的纹理上传与模糊放大
         cropped
     } else {
-        Bitmap.createScaledBitmap(cropped, tier.maxWidthPx, tier.maxHeightPx, true)
+        Bitmap.createScaledBitmap(cropped, targetWidth, targetHeight, true)
     }
     // 目标是唯一保留的位图：所有未被目标引用的中间位图（裁剪副本 / 采样源）都回收
     if (cropped !== scaled) cropped.recycle()
@@ -2845,14 +2829,21 @@ private object CoverThumbnailLoader {
     // 这里适度提高并行度以加速滚动停止后的批量回填
     private val coordinator = BoundedKeyedLoader<String>(parallelism = 4)
 
-    suspend fun load(context: android.content.Context, uriText: String, tier: CoverDecodeTier): Bitmap? {
-        val cacheKey = tier.cacheKey(uriText)
+    suspend fun load(
+        context: android.content.Context,
+        uriText: String,
+        tier: CoverDecodeTier,
+        targetAspect: Float,
+    ): Bitmap? {
+        val cacheKey = tier.cacheKey(uriText, targetAspect)
         return coordinator.load(
             key = cacheKey,
             cached = { CoverBitmapCache.get(cacheKey) },
         ) {
             withContext(Dispatchers.IO) {
-                decodeCoverThumbnail(context, uriText, tier)?.also { CoverBitmapCache.putDecoded(cacheKey, it) }
+                decodeCoverThumbnail(context, uriText, tier, targetAspect)?.also {
+                    CoverBitmapCache.putDecoded(cacheKey, it)
+                }
             }
         }
     }

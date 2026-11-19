@@ -708,7 +708,12 @@ private fun RecentGameCard(
     // Preserve the original one-line title plus 12.5dp padding at either edge, including font scaling.
     val panelHeight = with(LocalDensity.current) { titleStyle.lineHeight.toDp() } + 25.dp
     val compactStyle = titleStyle.copy(lineHeight = titleStyle.fontSize)
-    val coverBitmap by rememberCoverBitmap(game.coverUri, tier = CoverDecodeTier.CARD)
+    val coverBitmap by rememberCoverBitmap(
+        coverUri = game.coverUri,
+        tier = CoverDecodeTier.CARD,
+        // 最近打开卡是 1:1 正方形：按方形裁剪，避免先裁 3:4 再被卡片盒裁掉两侧内容
+        targetAspect = 1f,
+    )
     val bmp = coverBitmap
     val reveal = rememberCoverReveal(bmp != null, CoverSurface.Recent)
     Box(
