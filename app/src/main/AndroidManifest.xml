@@ -133,6 +133,10 @@
             android:exported="false"
             android:configChanges="uiMode" />
         <activity
+            android:name=".ui.settings.PrivacySettingsActivity"
+            android:exported="false"
+            android:configChanges="uiMode" />
+        <activity
             android:name=".ui.auth.HikarinagiOAuthCallbackActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"

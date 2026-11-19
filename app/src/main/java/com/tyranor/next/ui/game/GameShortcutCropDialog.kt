@@ -67,6 +67,7 @@ import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.privacy.DismissOnAppLockEffect
 import com.tyranor.next.ui.common.SplitEndsActionRow
 import java.util.concurrent.atomic.AtomicReference
 import com.tyranor.next.ui.common.motion.BlurCrossfade
@@ -174,6 +175,8 @@ internal fun GameShortcutCropDialog(
         ),
     ) {
         overlay.BindWindow()
+        // 独立 Window 层级在锁门之上：锁定后立即强制收起，不等待裁剪 / 导出结束
+        DismissOnAppLockEffect { overlay.dismissImmediately(onDismiss) }
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center,

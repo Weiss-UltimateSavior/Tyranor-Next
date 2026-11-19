@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -105,6 +106,12 @@ internal fun GameCoverFlow(
                     .coerceAtLeast(96.dp)
                     .coerceAtMost(maxWidth)
                 val horizontalPadding = ((maxWidth - cardWidth) / 2).coerceAtLeast(0.dp)
+                // 按卡片实际宽度取解码档位：1080p 竖屏约 648px 宽的场景使用 FLOW，
+                // 不再复用 384 宽的网格缩略图放大发虚；大屏封面流自动升到 FLOW_LARGE
+                val density = LocalDensity.current
+                val coverDecodeTier = remember(cardWidth, density) {
+                    CoverDecodeTier.forWidth(with(density) { cardWidth.roundToPx() })
+                }
                 // 甩动速度（页 / 秒）：只在图层块里读取，卡片顺势侧倾；停下归零，静止外观不变
                 val pagerVelocity = rememberPagerVelocity(pagerState)
                 // 「增强」档：滑动 / 甩动中暂缓封面解码（读取放在解码协程里，不订阅滚动状态）；「普通」档与原版一致，不暂缓
@@ -126,6 +133,7 @@ internal fun GameCoverFlow(
                         CoverFlowCard(
                             game = game,
                             batchChangedAt = listChangedAt,
+                            tier = coverDecodeTier,
                             onClick = {
                                 if (page == pagerState.currentPage) {
                                     onGameClick(game)
@@ -167,12 +175,13 @@ internal fun GameCoverFlow(
 private fun CoverFlowCard(
     game: ScanGame,
     batchChangedAt: Long,
+    tier: CoverDecodeTier,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     isScrolling: () -> Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val cover by rememberCoverBitmap(game.coverUri, isScrolling)
+    val cover by rememberCoverBitmap(game.coverUri, isScrolling, tier)
     // 删除消散：游戏库删除确认后登记在 dissolvingGames 里；封面流的卡也要播放消散（与瀑布 / 网格卡一致），期间触摸由 dissolve 吞掉
     val dissolve = rememberLastNonNull(dissolvingGames[game.uri])
     // 封面加载完成：淡入 + 由糊变清（已缓存的封面一开始就是 1，不会闪）

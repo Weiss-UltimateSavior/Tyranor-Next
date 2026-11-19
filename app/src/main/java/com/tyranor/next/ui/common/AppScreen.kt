@@ -13,20 +13,26 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.fragment.app.FragmentActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import kotlinx.coroutines.delay
+import com.tyranor.next.core.privacy.AppLockController
+import com.tyranor.next.ui.common.collectSettingAsState
+import com.tyranor.next.ui.common.motion.skipDrawWhenHidden
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassBackground
@@ -47,15 +53,22 @@ import com.tyranor.next.ui.common.motion.rememberSheetBackdrop
 import com.tyranor.next.ui.common.motion.MotionSprings
 import com.tyranor.next.ui.common.motion.pageTransitionScrim
 import com.tyranor.next.ui.common.motion.rememberPageDepth
+import com.tyranor.next.ui.common.privacy.FlagSecureEffect
+import com.tyranor.next.ui.common.privacy.PrivacyLockGate
+import com.tyranor.next.ui.common.privacy.blockAppInteractionKeys
 
 /**
  * 二级页面统一宿主（P1-4）：收敛各 Activity 重复的
  * 「isDarkEffective → enableEdgeToEdge → 透明系统栏 → 主题包裹 → finish 转场」样板。
  *
+ * 基类为 [FragmentActivity]（[ComponentActivity] 的子类）：应用锁的 BiometricPrompt
+ * （core/privacy + ui/common/privacy）要求宿主 Activity 提供 FragmentManager，
+ * 所有二级页与 [com.tyranor.next.MainActivity] 统一满足。
+ *
  * 用法：Activity 继承 [AppScreenActivity]，在 `onCreate` 中校验入参后调用
  * [setAppScreenContent] 提供正文；页面自身需要的 Miuix 子主题照常在正文内声明。
  */
-abstract class AppScreenActivity : ComponentActivity() {
+abstract class AppScreenActivity : FragmentActivity() {
 
     private var systemBarsDark: Boolean? = null
     private var closeTransitionMode: Boolean? = null
@@ -193,6 +206,8 @@ abstract class AppScreenActivity : ComponentActivity() {
     /** 统一主题包裹并提供页面正文。 */
     protected fun setAppScreenContent(content: @Composable () -> Unit) {
         setContent {
+            // 防止截图 / 应用锁生效期间强制 FLAG_SECURE（窗口级，挂在页面正文之外）
+            FlagSecureEffect(this)
             // 应用设置可在本页切档；系统选择返回动画之前就要更新，而不是等手势提交。
             val enhanced = MotionMode.enhanced
             DisposableEffect(enhanced) {
@@ -330,10 +345,29 @@ fun AppScreenScaffold(
                 val pageLayers = remember(enhanced, overlayBackdrop, depth, pageEnter) {
                     Modifier.depthFoldStack(overlay = overlayBackdrop, panel = null, push = depth, enter = pageEnter)
                 }
-                PageTransitionBackground(depth, modifier) {
+                // 应用锁生效时**整块页面（根背景 + 内容）**都不参与绘制：锁门自带同样的完整背景，
+                // 下层继续画只会让粒子 / 自定义背景图各多一份（30fps 重绘白白消耗）。
+                // 跳过挂在 PageTransitionBackground 外层，连同它在 skipDrawWhenHidden 之外的
+                // 背景 / 粒子层一起跳过（内层不再重复挂）。
+                val locked by AppLockController.lockedState.collectSettingAsState()
+                PageTransitionBackground(
+                    depth = depth,
+                    modifier = modifier.skipDrawWhenHidden { !locked },
+                ) {
                     WithoutPressIndication {
                         // 翻折只作用在内容上：页面根背景不动
-                        Box(Modifier.fillMaxSize().then(pageLayers)) {
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .then(pageLayers)
+                                // 锁定时页面内容退出无障碍树：TalkBack 不能聚焦或激活门下节点
+                                // （门自身语义保留，见 PrivacyLockGate）
+                                .then(if (locked) Modifier.clearAndSetSemantics { } else Modifier)
+                                // 外接键盘 / 手柄：无障碍屏蔽只挡语义，已聚焦的按钮仍能被 Enter 激活。
+                                // 锁定时拦下会操作页面的按键（Back 放行给锁门退到后台，
+                                // 音量 / 媒体等系统键放行）
+                                .then(Modifier.blockAppInteractionKeys(locked)),
+                        ) {
                             CompositionLocalProvider(
                                 LocalEntranceGate provides entranceGate,
                                 LocalSheetBackdrop provides overlayBackdrop,
@@ -343,6 +377,9 @@ fun AppScreenScaffold(
                         }
                     }
                 }
+                // 应用锁解锁门：进程内覆盖层（性质同弹窗，不设顶栏），盖在页面内容
+                // （含翻折图层与抽屉遮罩）之上；未上锁时不组合任何内容
+                PrivacyLockGate()
             }
         }
     }

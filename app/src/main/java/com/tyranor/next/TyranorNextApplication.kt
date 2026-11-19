@@ -15,9 +15,11 @@ import com.tyranor.next.core.process.AppProcess
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
 import com.tyranor.next.core.game.playtime.GamePlaytimeRepository
 import com.tyranor.next.core.game.playtime.GamePlaytimeRuntime
+import com.tyranor.next.core.privacy.AppLockController
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.AppIconSwitcher
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.theme.BackgroundImageCache
 import com.tyranor.next.core.settings.PrefsRenameMigration
 import com.tyranor.next.core.updater.BackgroundUpdateWorker
 import com.tyranor.next.core.updater.GitHubUpdateChecker
@@ -76,6 +78,27 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         // 游戏库 Room 迁移检查 + 首页缓存预热在启动阶段触发，避免首帧 SettingsScreen 同步开库。
         if (mainProcess) {
             initializeMainLibrary()
+            // 隐私设置与窗口级效果（FLAG_SECURE / 通知隐藏）在页面创建前就要读到正确值；
+            // 应用锁只装主进程（引擎宿主为独立进程，不在锁定范围）。
+            AppSettingsStore.initPrivacySettings(this)
+            // 自定义背景图（URI/透明度/模糊）要在首帧前就绪，否则冷启动会先画默认背景再淡入
+            AppSettingsStore.initBackgroundImage(this)
+            // 启动即预热背景图：解码完成后所有页面同步可用（冷启动首帧可能早于解码完成，
+            // 此时背景为空、解码完成后自动出现；只有锁门会等待就绪以对齐首帧）
+            val backgroundUri = AppSettingsStore.getBackgroundImageUri(this)
+            if (backgroundUri.isNotBlank()) {
+                background.launch {
+                    try {
+                        BackgroundImageCache.ensureLoaded(applicationContext, backgroundUri)
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        // 取消不是解码失败，必须原样向上传播（取消语义）
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // 解码失败按未就绪处理：进入页面时 ensureLoaded 会再次尝试
+                    }
+                }
+            }
+            AppLockController.install(this)
             // 上次删除游戏/目录或重扫丢弃条目时未完成的副本回收在这里续做；引擎侧不保存这些路径。
             background.launch {
                 try {
@@ -99,6 +122,8 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
     }
 
     override fun onStart(owner: LifecycleOwner) {
+        // 应用锁：回前台按解锁延迟档位判定是否上锁（未安装的子进程为空操作）
+        AppLockController.onLauncherEntering()
         SaveSyncRuntime.onForeground(this)
         if (AppProcess.isMain(this)) background.launch {
             GamePlaytimeRepository.refresh(this@TyranorNextApplication)
@@ -106,12 +131,20 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
     }
 
     override fun onStop(owner: LifecycleOwner) {
+        // 应用锁：退后台开始离开计时（熄屏由 AppLockController 自注册的广播驱动）
+        AppLockController.onLauncherLeft()
         SaveSyncRuntime.onBackground(this)
         if (!AppSettingsStore.ONBOARDING_FEATURE_ENABLED ||
             AppSettingsStore.isOnboardingCompleted(this)
         ) {
             BackgroundUpdateWorker.enqueue(this)
         }
+    }
+
+    /** 内存紧张时优先释放整屏背景图（与封面缓存相比它只服务一个页面），回到图层时自动重解码。 */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        BackgroundImageCache.onTrimMemory(level)
     }
 
 }

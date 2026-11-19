@@ -71,7 +71,8 @@ fun DefaultPageBackgroundLayer(modifier: Modifier = Modifier) {
     val background = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
     val particlesEnabled by AppSettingsStore.defaultThemeParticlesEnabled.collectAsState()
     if (!particlesEnabled) {
-        Box(background)
+        // 关闭粒子时仍要保留自定义背景图（图片在纯色底之上、页面内容之下）
+        Box(background) { CustomBackgroundImageLayer() }
         return
     }
     val style by AppSettingsStore.defaultThemeParticleStyle.collectAsState()
@@ -97,8 +98,17 @@ fun DefaultPageBackgroundLayer(modifier: Modifier = Modifier) {
     }
 
     // 瀑布每帧只更新自己的空图层，页面内容与纯色背景可以复用已录制的绘制指令。
-    val particleLayer = if (buttonWaterfall) background.graphicsLayer() else background
-    Box(particleLayer.drawBehind { drawFloatingParticles(particles, elapsedSeconds, buttonWaterfall) })
+    // 自定义背景图必须单独放在粒子层下方；不能用带纯色背景的 background 修饰符画粒子层，
+    // 否则会在图片之上再铺一层不透明色。
+    val particleLayer = if (buttonWaterfall) {
+        Modifier.fillMaxSize().graphicsLayer()
+    } else {
+        Modifier.fillMaxSize()
+    }
+    Box(background) {
+        CustomBackgroundImageLayer()
+        Box(particleLayer.drawBehind { drawFloatingParticles(particles, elapsedSeconds, buttonWaterfall) })
+    }
 }
 
 /** 以主题色为基准生成同色系粒子（色相偏移 +36° / -36°），保证随「色调轮盘」整体换色。 */

@@ -408,6 +408,14 @@ fun SettingsScreen(
                 item {
                     SettingsEntryCard(
                         modifier = Modifier.staggeredEntrance(2),
+                        title = stringResource(R.string.privacy_settings_title),
+                        iconRes = R.drawable.ic_settings_privacy,
+                        onClick = { startActivityWithPageTransition(ctx, PrivacySettingsActivity.createIntent(ctx)) },
+                    )
+                }
+                item {
+                    SettingsEntryCard(
+                        modifier = Modifier.staggeredEntrance(3),
                         title = stringResource(R.string.settings_cover_scraper),
                         iconRes = R.drawable.ic_game_cover,
                         onClick = { startActivityWithPageTransition(ctx, CoverScraperSettingsActivity.createIntent(ctx)) },
@@ -415,7 +423,7 @@ fun SettingsScreen(
                 }
                 item {
                     SettingsEntryCard(
-                        modifier = Modifier.staggeredEntrance(3),
+                        modifier = Modifier.staggeredEntrance(4),
                         title = if (checkingUpdate) {
                             stringResource(R.string.settings_update_checking)
                         } else {
@@ -429,7 +437,7 @@ fun SettingsScreen(
                 }
                 item {
                     SettingsEntryCard(
-                        modifier = Modifier.staggeredEntrance(4),
+                        modifier = Modifier.staggeredEntrance(5),
                         title = stringResource(R.string.settings_join_group),
                         iconRes = R.drawable.ic_settings_group,
                         onClick = { showGroupDialog = true },
@@ -437,7 +445,7 @@ fun SettingsScreen(
                 }
                 item {
                     SettingsEntryCard(
-                        modifier = Modifier.staggeredEntrance(5),
+                        modifier = Modifier.staggeredEntrance(6),
                         title = stringResource(R.string.settings_about_app),
                         iconRes = R.drawable.ic_settings_about,
                         onClick = { startActivityWithPageTransition(ctx, AboutAppActivity.createIntent(ctx)) },

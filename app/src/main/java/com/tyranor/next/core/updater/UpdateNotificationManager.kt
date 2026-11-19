@@ -14,6 +14,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.tyranor.next.R
 import com.tyranor.next.core.i18n.AppLocaleController
+import com.tyranor.next.core.settings.AppSettingsStore
 
 object UpdateNotificationManager {
     private const val CHANNEL_ID = "app_updates"
@@ -70,6 +71,12 @@ object UpdateNotificationManager {
             .setOnlyAlertOnce(true)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            // 隐私设置「隐藏通知内容」：锁屏上完全不显示（VISIBILITY_SECRET），解锁后才可见
+            .apply {
+                if (AppSettingsStore.isPrivacyHideNotification(appContext)) {
+                    setVisibility(NotificationCompat.VISIBILITY_SECRET)
+                }
+            }
             .build()
 
         return runCatching {

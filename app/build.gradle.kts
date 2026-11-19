@@ -528,6 +528,9 @@ dependencies {
   implementation(libs.androidx.lifecycle.process)
   implementation(libs.androidx.work.runtime.ktx)
   implementation(libs.androidx.activity.compose)
+  // 应用锁（core/privacy）：BiometricPrompt 要求宿主 Activity 为 FragmentActivity
+  implementation(libs.androidx.biometric)
+  implementation(libs.androidx.fragment)
 
   // Arch Components
   implementation(libs.androidx.lifecycle.runtime.compose)
