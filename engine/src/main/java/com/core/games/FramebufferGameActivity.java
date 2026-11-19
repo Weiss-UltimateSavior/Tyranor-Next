@@ -2,7 +2,6 @@ package com.core.games;
 
 import android.graphics.Bitmap;
 import android.graphics.Color;
-import android.content.pm.ActivityInfo;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -28,6 +27,7 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
+import com.core.engine.EnginePlayerOrientation;
 import com.core.engine.EngineUiText;
 import com.core.engine.EngineStartupOverlay;
 import com.core.engine.LaunchContract;
@@ -50,7 +50,7 @@ public final class FramebufferGameActivity extends AppCompatActivity
 
     @Override
     public void setRequestedOrientation(int requestedOrientation) {
-        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        EnginePlayerOrientation.applyWithSuper(this, super::setRequestedOrientation);
     }
 
     private static final String TAG = "FramebufferGame";
@@ -105,6 +105,7 @@ public final class FramebufferGameActivity extends AppCompatActivity
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
+        EnginePlayerOrientation.lockOnCreate(this, savedInstanceState);
         super.onCreate(savedInstanceState);
 
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);

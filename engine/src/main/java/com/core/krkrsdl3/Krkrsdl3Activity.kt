@@ -1,7 +1,6 @@
 package com.core.krkrsdl3
 
 import android.content.Context
-import android.content.pm.ActivityInfo
 import android.content.res.AssetManager
 import android.content.res.Configuration
 import android.os.Build
@@ -12,6 +11,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Toast
 import com.core.engine.EngineThemeColors
+import com.core.engine.EnginePlayerOrientation
 import com.core.engine.EngineSurfaceStartupController
 import com.core.engine.LaunchContract
 import com.core.engine.R
@@ -39,8 +39,8 @@ class Krkrsdl3Activity : KRKRActivity() {
     private var startupController: EngineSurfaceStartupController? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 先应用标准横屏再走 super；SDL/KRKR 的后续方向请求也由本 Activity 固定为横屏。
-        applyEngineRequestedOrientation()
+        // 先锁定启动契约传入的横屏方向再走 super；SDL/KRKR 的后续方向请求也统一收敛到该值。
+        EnginePlayerOrientation.lockOnCreate(this, savedInstanceState)
         applyLauncherWindowTone()
         // 引擎主体由启动编排解压到私有目录；缺失说明安装包不完整、解压失败，
         // 或应用升级后宿主从最近任务恢复而没有再经过 EngineLauncher.ensure。
@@ -95,7 +95,7 @@ class Krkrsdl3Activity : KRKRActivity() {
 
     override fun onResume() {
         super.onResume()
-        // 保持标准横屏，覆盖运行库或启动参数可能带来的方向请求。
+        // 保持启动时锁定的单向横屏，覆盖运行库或启动参数可能带来的方向请求。
         applyEngineRequestedOrientation()
         if (startupController?.isLoading() != true) graphicsOverlay?.show()
         startupController?.onResume()
@@ -121,7 +121,7 @@ class Krkrsdl3Activity : KRKRActivity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        // 重配置后重新断言标准横屏与沉浸全屏。
+        // 重配置后重新断言已锁定的单向横屏与沉浸全屏。
         applyEngineRequestedOrientation()
         applySystemUiVisibility()
     }
@@ -140,18 +140,18 @@ class Krkrsdl3Activity : KRKRActivity() {
 
     /**
      * 拦截 SDL 原生方向回调（[SDLActivity.setOrientation] JNI → setOrientationBis），
-     * 固定标准横屏并在 UI 线程恢复沉浸标志。
+     * 保持启动时锁定的单向横屏并在 UI 线程恢复沉浸标志。
      */
     override fun setOrientationBis(w: Int, h: Int, resizable: Boolean, hint: String?) {
         runOnUiThread {
             if (isFinishing || isDestroyed) return@runOnUiThread
-            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
+            EnginePlayerOrientation.applyLocked(this)
             applySystemUiVisibility()
         }
     }
 
     override fun setRequestedOrientation(requestedOrientation: Int) {
-        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
+        EnginePlayerOrientation.applyWithSuper(this) { super.setRequestedOrientation(it) }
     }
 
     /**
@@ -176,14 +176,9 @@ class Krkrsdl3Activity : KRKRActivity() {
         super.onDestroy()
     }
 
-    /** 统一方向入口：播放器始终使用标准横屏。 */
+    /** 统一方向入口：播放器锁定启动时判定的具体横屏方向。 */
     private fun applyEngineRequestedOrientation() {
-        try {
-            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
-        } catch (t: Throwable) {
-            // 个别 ROM 对非全屏窗口调用会抛 IllegalStateException；保持当前方向即可
-            Log.w(TAG, "apply orientation failed", t)
-        }
+        EnginePlayerOrientation.applyLocked(this)
     }
 
     companion object {

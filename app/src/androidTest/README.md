@@ -256,7 +256,7 @@ failed identity_sha256=<64hex> token=<session token>
 
 2026-10-27 本轮仅编译该测试和普通 AndroidTest APK，按用户要求未连接设备、未执行新增 UI 用例；原有截图与设备报告不代表这两个新增用例已执行。
 
-固定横屏设备回归另含 `com.core.engine.EngineOrientationDeviceTest`（安装后20个宿主清单与Android 16属性）和 `com.tyranor.next.core.engine.external.ExternalEngineOrientationDeviceTest`（三个外置Intent方向请求）。两项均要求隔离包 `com.tyranor.next.startuptest` 与 `startup_test=true`；不启动外置APK，不保证其应用方向参数。
+横屏方向回归另含 `com.core.engine.EngineOrientationDeviceTest`（安装后20个宿主清单 `sensorLandscape` 与Android 16属性）和 `com.tyranor.next.core.engine.external.ExternalEngineOrientationDeviceTest`（三个外置Intent默认与反向横屏方向请求）。两项均要求隔离包 `com.tyranor.next.startuptest` 与 `startup_test=true`；不启动外置APK，不保证其应用方向参数。
 
 BGI 游戏目录存档回归使用 `EthornellSaveDeviceTest`（旧私有数据迁入共享存储、ZIP、回滚、限额与门禁）、`EthornellDispatchDeviceTest`、`EthornellStartupActivityTest`，以及 `EthornellDeviceTest#vmWritesAndReopensGameLocalSaveOnSharedStorage`（真实 VM 在外部存储的游戏 `savedata` 写入和重开读取）。该 VM 用例与启动 Activity 用例要求隔离包 `com.tyranor.next.startuptest` 及 `-e startup_test true`。在隔离包的新安装或清理数据后执行；保留的播放器任务会按设计阻止存档管理。设备结果不能代替商业游戏槽位兼容性验收。
 

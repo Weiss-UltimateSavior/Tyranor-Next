@@ -1,7 +1,6 @@
 package com.core.xsys4;
 
 import android.app.Activity;
-import android.content.pm.ActivityInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -12,6 +11,8 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+
+import com.core.engine.EnginePlayerOrientation;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -40,11 +41,12 @@ public final class Xs4ManualActivity extends Activity {
 
     @Override
     public void setRequestedOrientation(int requestedOrientation) {
-        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        EnginePlayerOrientation.applyWithSuper(this, super::setRequestedOrientation);
     }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        EnginePlayerOrientation.lockOnCreate(this, savedInstanceState);
         super.onCreate(savedInstanceState);
         File manualDir = absoluteFileExtra(EXTRA_MANUAL_DIR);
         File index = absoluteFileExtra(EXTRA_INDEX_PATH);

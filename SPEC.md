@@ -103,7 +103,7 @@
 | PC / 安卓游戏 | 手动添加目录+exe / 应用包名 | 外置 Winlator / 直接启动应用 |
 | PSP / Nintendo Switch | `.pbp/.cso/.iso/.chd` / `.nsp/.xci/.nca/.nro` | 外置 PPSSPP（标准/黄金）/ Eden，一 ROM 一条记录 |
 
-所有内置引擎播放器（含加载期、运行期、视频窗口与 System4 手册窗口）统一使用 `SCREEN_ORIENTATION_LANDSCAPE`，禁止传感器翻转和反向横屏；清单与宿主运行时请求同时约束，旧方向 extra 与 Artemis 旋转设置不再生效。应用主页面和按键布局编辑器保持各自方向策略。Ren'Py / RPG Maker RGSS / Ruffle 启动请求使用标准横屏；外置 APK、模拟器及安卓游戏的实际窗口方向由目标应用决定。
+所有内置引擎播放器（含加载期、运行期、视频窗口与 System4 手册窗口）采用“启动前判定、入场即锁死”的横屏策略：主进程启动后监测设备方向，在启动游戏前将当前握持对应的具体横屏方向（`SCREEN_ORIENTATION_LANDSCAPE` 或 `SCREEN_ORIENTATION_REVERSE_LANDSCAPE`）写入启动 Intent；清单声明 `sensorLandscape` 保证窗口按当前横屏方向直接进入，各宿主在 `super.onCreate` 前锁定该值并拦截运行期方向请求，避免进入或游玩过程中发生旋转与生命周期重建。历史 Artemis 旋转设置保留兼容性占位但不再生效；应用主页面和按键布局编辑器保持各自方向策略。Ren'Py / RPG Maker RGSS / Ruffle 启动请求同步下发主进程判定的具体横屏方向；外置 APK、模拟器及安卓游戏的实际窗口方向由目标应用决定。
 
 JoiPlay 外置模块与模拟器必须先安装；主 App 显示安装状态及获取入口。第三方 APK 运行时模块同样由用户自行安装，但主 App 不提供下载/安装器，只在「引擎模块管理」中列出并管理启用状态。启动前检查目标、权限和目录，失败由类型化结果映射 UI 文案。设置中的“自动”按当前运行时规则解析，不承诺回退能修复不受支持的脚本或资源。
 

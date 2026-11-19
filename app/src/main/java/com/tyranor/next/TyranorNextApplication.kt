@@ -9,6 +9,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
 import bridge.PrimaryStorageRoot
+import com.tyranor.next.core.game.launch.LaunchOrientationMonitor
 import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.process.AppProcess
@@ -60,6 +61,10 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
     /** 主线程调用；引导标记落盘失败不阻断应用启动，快照仍用于本次启动判定。 */
     private fun initializeStartup() {
         val mainProcess = AppProcess.isMain(this, unknownIsMainProcess = true)
+        val strictMainProcess = AppProcess.isMain(this, unknownIsMainProcess = false)
+        if (strictMainProcess) {
+            LaunchOrientationMonitor.install(this)
+        }
         if (mainProcess) {
             // commit 失败时 OnboardingPreferences 保留基于旧数据的内存快照：存量用户仍直接进入主界面，
             // 新安装用户仍显示引导；下一次启动或完成引导时会再次尝试落盘。
@@ -76,7 +81,7 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         UpdateNotificationManager.createChannel(this)
         GitHubUpdateChecker.restoreState(this)
         // 游戏库 Room 迁移检查 + 首页缓存预热在启动阶段触发，避免首帧 SettingsScreen 同步开库。
-        if (mainProcess) {
+        if (strictMainProcess) {
             initializeMainLibrary()
             // 隐私设置与窗口级效果（FLAG_SECURE / 通知隐藏）在页面创建前就要读到正确值；
             // 应用锁只装主进程（引擎宿主为独立进程，不在锁定范围）。
@@ -109,8 +114,8 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
                     android.util.Log.w("SystemNNN", "Could not resume copy resource cleanup", failure)
                 }
             }
+            ProcessLifecycleOwner.get().lifecycle.addObserver(this)
         }
-        ProcessLifecycleOwner.get().lifecycle.addObserver(this)
     }
 
     /** 主线程调用；进程内只预热一次。 */
@@ -122,15 +127,17 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
     }
 
     override fun onStart(owner: LifecycleOwner) {
+        if (!AppProcess.isMain(this, unknownIsMainProcess = false)) return
         // 应用锁：回前台按解锁延迟档位判定是否上锁（未安装的子进程为空操作）
         AppLockController.onLauncherEntering()
         SaveSyncRuntime.onForeground(this)
-        if (AppProcess.isMain(this)) background.launch {
+        background.launch {
             GamePlaytimeRepository.refresh(this@TyranorNextApplication)
         }
     }
 
     override fun onStop(owner: LifecycleOwner) {
+        if (!AppProcess.isMain(this, unknownIsMainProcess = false)) return
         // 应用锁：退后台开始离开计时（熄屏由 AppLockController 自注册的广播驱动）
         AppLockController.onLauncherLeft()
         SaveSyncRuntime.onBackground(this)

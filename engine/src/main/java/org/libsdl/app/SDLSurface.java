@@ -1,6 +1,7 @@
 package org.libsdl.app;
 
 import android.content.Context;
+import android.content.pm.ActivityInfo;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -226,7 +227,15 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback, V
         SDLActivity.nativeSetScreenResolution(i9, i10, i11, i12, this.mDisplay.getRefreshRate());
         SDLActivity.onNativeResize();
         int requestedOrientation = SDLActivity.mSingleton.getRequestedOrientation();
-        boolean z = requestedOrientation == 1 || requestedOrientation == 7 ? this.mWidth > this.mHeight : !(!(requestedOrientation == 0 || requestedOrientation == 6) || this.mWidth >= this.mHeight);
+        boolean isPortraitRequested = requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
+                || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT;
+        boolean isLandscapeRequested = requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+                || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE;
+        boolean z = isPortraitRequested ? this.mWidth > this.mHeight : (isLandscapeRequested && this.mWidth < this.mHeight);
         if (z) {
             if (((double) Math.max(this.mWidth, this.mHeight)) / ((double) Math.min(this.mWidth, this.mHeight)) < 1.2d) {
                 Log.v("SDL", "Don't skip on such aspect-ratio. Could be a square resolution.");

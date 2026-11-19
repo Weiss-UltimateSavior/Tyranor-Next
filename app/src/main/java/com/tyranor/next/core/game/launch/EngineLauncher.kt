@@ -5,7 +5,6 @@ import android.app.ActivityManager
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -120,7 +119,6 @@ import java.util.concurrent.ConcurrentHashMap
  */
 object EngineLauncher {
     private const val TAG = "EngineLauncher"
-    private const val BUILT_IN_PLAYER_ORIENTATION = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     private const val KR_LEGACY_PATCH_MARKER = "// TYRANOR_NEXT_KRKR_LEGACY_PATCH_V1"
     private const val KR_FBF_STEAM_STUB_MARKER = "// TYRANOR_NEXT_FBF_STEAM_STUB_V1"
     private const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
@@ -321,6 +319,7 @@ object EngineLauncher {
             return@withContext LaunchResult.Failure.PluginBootstrapFailed(it)
         }
         return@withContext try {
+            val playerOrientation = LaunchOrientationMonitor.resolvePlayerOrientation(context)
             app.startActivity(
                 Intent(app, Kirikiroid139::class.java).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -330,7 +329,7 @@ object EngineLauncher {
                         EngineSettingsStore.getGraphicsSettings(app, GraphicsFamily.KR),
                         GraphicsCapabilities.forRuntime(GraphicsFamily.KR, EngineSettingsStore.KERNEL_KIRIKIRI2),
                     )
-                    putExtra(LaunchContract.ORIENTATION, BUILT_IN_PLAYER_ORIENTATION)
+                    putExtra(LaunchContract.ORIENTATION, playerOrientation)
                     putExtra(LaunchContract.FOCUS, "true")
                 },
             )
@@ -478,6 +477,7 @@ object EngineLauncher {
                     gameDirectoryPath = path.orEmpty(),
                     launchTarget = game.launchTarget,
                     resolvedSettings = settings,
+                    orientation = LaunchOrientationMonitor.resolvePlayerOrientation(context),
                 ),
             )
             if (result.success) {
@@ -1416,6 +1416,7 @@ object EngineLauncher {
             }
         }
         if (!intent.hasExtra(LaunchContract.GRAPHICS_FILTER_CHAIN)) intent.putDisabledGraphicsRequest()
+        intent.putExtra(LaunchContract.ORIENTATION, LaunchOrientationMonitor.resolvePlayerOrientation(context))
         intent.putExtra(LaunchContract.UI_LANGUAGE_TAG, AppLocaleController.engineUiLanguageTag(context))
         // 注入 App 统一主题色与深浅色：引擎壳自绘 UI（确认/输入弹窗按钮等）经
         // EngineThemeColors.fromIntent / KrDialogStyle 读取，缺失时回落默认绿。
@@ -1732,8 +1733,6 @@ object EngineLauncher {
             }
             putExtra(LaunchContract.XS35_INTEGER_SCALE, settings.xs35IntegerScale)
             putExtra(LaunchContract.XS35_MUTE_UNFOCUS, settings.xs35MuteUnfocus)
-            // 契约保留（对齐 krkrsdl3）：宿主方向由 Activity 配置固定；该 extra 保持标准横屏值。
-            putExtra(LaunchContract.ORIENTATION, BUILT_IN_PLAYER_ORIENTATION)
         }
     }
 
@@ -1802,8 +1801,6 @@ object EngineLauncher {
             if (settings.xs4MsgskipDelay > 0) {
                 putExtra(LaunchContract.XS4_MSGSKIP_DELAY, settings.xs4MsgskipDelay)
             }
-            // 契约保留（对齐 System35）：宿主方向由 Activity 配置固定；该 extra 保持标准横屏值。
-            putExtra(LaunchContract.ORIENTATION, BUILT_IN_PLAYER_ORIENTATION)
         }
     }
 
@@ -1884,7 +1881,6 @@ object EngineLauncher {
                 putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
                 putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_KRKRSDL3)
                 putExtra(KrkrStartupDialogPolicy.EXTRA_ENABLED, skipStartupDialogs)
-                putExtra(LaunchContract.ORIENTATION, BUILT_IN_PLAYER_ORIENTATION)
                 putExtra(LaunchContract.FOCUS, "true")
             }
         }
@@ -1936,7 +1932,6 @@ object EngineLauncher {
                 putExtra(LaunchContract.SAF_MIRROR_FILES, it.fileCount)
                 // 诊断汇总由 engine 侧 prepare 输出一次（审查第十轮 #21），不再重复打印
             }
-            putExtra(LaunchContract.ORIENTATION, BUILT_IN_PLAYER_ORIENTATION)
             putExtra(LaunchContract.SCOPED_SAVE_DIR, effectiveScoped)
             if (effectiveScoped) {
                 putExtra(LaunchContract.SCOPED_SAVE_ROOT, actualSaveRoot.absolutePath)
@@ -2162,7 +2157,6 @@ object EngineLauncher {
             putExtra(LaunchContract.ROOT_URI, game.uri)
             putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
             putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_ARTEMIS)
-            putExtra(LaunchContract.ORIENTATION, BUILT_IN_PLAYER_ORIENTATION)
             putExtra(LaunchContract.SCOPED_SAVE_DIR, false)
             // 按实际首选库设置门禁，保留原始请求供后续候选重新判定。
             putArtemisGraphicsSettings(settings, version)
@@ -2180,7 +2174,7 @@ object EngineLauncher {
     /**
      * 自研内核启动 Intent：独立 Activity/进程 + `artemis-clean` 库名。
      * 不写 PFS 基础补丁与 system.ini（该内核直接从游戏包内读取配置/资源，散装补丁无意义），
-     * 不传回退链（严格自研）。方向固定为标准横屏。
+     * 不传回退链（严格自研）。方向由统一出口写入主进程判定的具体单向横屏值。
      */
     private fun buildArtemisCleanIntent(
         context: Context,
@@ -2192,7 +2186,6 @@ object EngineLauncher {
         putExtra(LaunchContract.ROOT_URI, game.uri)
         putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
         putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_ARTEMIS)
-        putExtra(LaunchContract.ORIENTATION, BUILT_IN_PLAYER_ORIENTATION)
         putExtra(LaunchContract.SCOPED_SAVE_DIR, false)
         // artemis_loader 按 "lib<engineLibName>.so" 拼路径，需传库名（不带 lib 前缀）
         putExtra(LaunchContract.ENGINE_LIB_NAME, NativePluginConstants.ARTEMIS_CLEAN_ENGINE_LIB_NAME)
@@ -2277,7 +2270,6 @@ object EngineLauncher {
             if (game.engine == EngineType.TYRANO || game.engine == EngineType.WEB_OTHER || game.engine == EngineType.VN) {
                 putExtra(LaunchContract.WEB_SHELL_PORT, settings.webShellPort)
             }
-            putExtra(LaunchContract.ORIENTATION, BUILT_IN_PLAYER_ORIENTATION)
             putExtra(LaunchContract.SCOPED_SAVE_DIR, scoped)
             scopedSaveRoot?.let { putExtra(LaunchContract.SCOPED_SAVE_ROOT, it) }
             putExtra(LaunchContract.WEB_EXTERNAL_NETWORK, settings.webExternalNetwork)
