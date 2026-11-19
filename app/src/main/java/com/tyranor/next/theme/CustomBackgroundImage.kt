@@ -13,6 +13,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,6 +29,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.ui.common.collectSettingAsState
 import kotlinx.coroutines.CoroutineScope
@@ -85,7 +89,11 @@ internal object BackgroundImageCache {
     private val mutableUnavailableUri = mutableStateOf<String?>(null)
     val unavailableUri: androidx.compose.runtime.State<String?> = mutableUnavailableUri
 
-    /** onTrimMemory 释放背景后的重载信号：图层重新组合时按该信号再次解码。 */
+    /**
+     * CRITICAL / COMPLETE 释放后的**立即**重载信号：这两档按既有取舍即使处于后台也马上重解码。
+     * 后台 RUNNING_LOW 释放不递增该信号（否则会在后台立刻解回来，释放目的落空）；
+     * 它由图层在回到前台（ON_START）时按当前存储 uri 自动补解码。
+     */
     private val mutableReloadSignal = mutableIntStateOf(0)
     val reloadSignal: androidx.compose.runtime.State<Int> = mutableReloadSignal
 
@@ -167,23 +175,33 @@ internal object BackgroundImageCache {
     /**
      * Android 内存紧张时释放背景位图（Application.onTrimMemory 调用）：
      * 与封面缓存不同，背景图是整屏大图且只服务一个页面，低内存时应优先让出。
-     * 释放后通过 [reloadSignal] 让图层重新解码；位图在下一帧绘制切走后回收。
+     *
+     * [ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW] 在前台正常使用时也会派发；若立即释放，
+     * 图层马上会重新解码并弹回背景，高压力设备反复触发就是解码风暴。因此 RUNNING_LOW 只在
+     * 应用处于后台时释放（复用 ProcessLifecycleOwner 的进程前后台信号），且释放后**不递增**
+     * 重载信号：后台不立即重解码，等回前台由图层在 ON_START 按存储 uri 补一次。
+     * RUNNING_CRITICAL / COMPLETE 维持总是释放并立即重解码（既有取舍）。
+     *
+     * 位图在下一帧绘制切走后回收。
      */
     fun onTrimMemory(level: Int) {
-        val release = when (level) {
-            ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW,
-            ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL,
-            ComponentCallbacks2.TRIM_MEMORY_COMPLETE -> true
-            else -> false
-        }
-        if (!release) return
+        val backgroundLow = level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW &&
+            !isAppForeground()
+        val critical = level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL ||
+            level == ComponentCallbacks2.TRIM_MEMORY_COMPLETE
+        if (!backgroundLow && !critical) return
         val previous = mutableImage.value?.asAndroidBitmap() ?: return
         currentUri = ""
         loadingUri = ""
         mutableImage.value = null
-        mutableReloadSignal.intValue++
+        // 后台 RUNNING_LOW 只释放不重载；CRITICAL / COMPLETE 维持立即重解码
+        if (critical) mutableReloadSignal.intValue++
         recycleAfterDraw(previous, keep = null)
     }
+
+    /** Application.onTrimMemory 在主线程派发；STARTED 及以上视为前台。 */
+    private fun isAppForeground(): Boolean =
+        ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
 
     /**
      * 延迟回收旧位图：State 更新后当前帧可能仍在绘制旧图，立即 recycle 会让 RenderThread
@@ -391,10 +409,17 @@ fun CustomBackgroundImageLayer(modifier: Modifier = Modifier) {
 
     if (uri.isBlank()) return
 
-    // 启动时预加载；换图 / onTrimMemory 释放后重新解码（旧图保留到新图就绪）
+    // 首次组合 / 换图 / CRITICAL 释放后立即重解码（旧图保留到新图就绪）
+    val appContext = context.applicationContext
     val reloadSignal by BackgroundImageCache.reloadSignal
     LaunchedEffect(uri, reloadSignal) {
-        BackgroundImageCache.ensureLoaded(context.applicationContext, uri)
+        BackgroundImageCache.ensureLoaded(appContext, uri)
+    }
+    // 后台 RUNNING_LOW 释放后不递增信号；回到前台（ON_START）按当前存储 uri 补一次，
+    // 避免后台刚释放就被 LaunchedEffect 立即解回来。
+    val scope = rememberCoroutineScope()
+    LifecycleEventEffect(Lifecycle.Event.ON_START) {
+        scope.launch { BackgroundImageCache.ensureLoaded(appContext, uri) }
     }
 
     // 组合期直接读同一个 State：启动预热完成后会即时刷新，不需要等页面重新组合
