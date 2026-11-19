@@ -211,9 +211,9 @@ public final class Xs4Activity extends SDLActivity {
      */
     @Override
     public void setOrientationBis(int w, int h, boolean resizable, String hint) {
-        int orientation = EnginePlayerOrientation.resolveForActivity(this);
+        // applyLocked 内部即返回锁定值，不再重复 resolve（P3-14）。
+        int orientation = EnginePlayerOrientation.applyLocked(this);
         Log.v(TAG, "force locked landscape=" + orientation + " (w=" + w + ", h=" + h + ", resizable=" + resizable + ", hint=" + hint + ")");
-        EnginePlayerOrientation.applyLocked(this);
     }
 
     @Override
