@@ -131,6 +131,9 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
     }
 
     override fun onStart(owner: LifecycleOwner) {
+        // 防御性冗余（P3-20）：ProcessLifecycleOwner 观察者仅在上面的 mainProcess 分支注册，
+        // 子进程不注册，本守卫理论上恒为真；保留以保证未来注册点移动时前台/后台回调
+        // 仍只作用于主进程或 unknown 进程，不重复执行应用锁与后台任务排程。
         if (!mainOrUnknownProcess) return
         // 应用锁：回前台按解锁延迟档位判定是否上锁（未安装的子进程为空操作）
         AppLockController.onLauncherEntering()
@@ -141,6 +144,7 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
     }
 
     override fun onStop(owner: LifecycleOwner) {
+        // 防御性冗余（P3-20）：同 onStart——观察者仅主进程注册，保留守卫作防御。
         if (!mainOrUnknownProcess) return
         // 应用锁：退后台开始离开计时（熄屏由 AppLockController 自注册的广播驱动）
         AppLockController.onLauncherLeft()

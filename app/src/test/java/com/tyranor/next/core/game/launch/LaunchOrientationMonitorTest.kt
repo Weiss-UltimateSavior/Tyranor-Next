@@ -4,6 +4,7 @@ import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.view.OrientationEventListener
 import android.view.Surface
+import com.core.engine.EnginePlayerOrientation
 import com.tyranor.next.core.engine.external.ExternalEngineContract
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -211,6 +212,105 @@ class LaunchOrientationMonitorTest {
         assertEquals(
             ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
             ExternalEngineContract.normalizeOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT),
+        )
+    }
+
+    @Test
+    fun externalContractNormalizationDelegatesToEnginePureFunction() {
+        // P3-2 收口：app 侧外置契约与 engine 纯函数必须恒一致，防止两份归一化漂移。
+        val values = listOf(
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+            ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE,
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
+            ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT,
+            ActivityInfo.SCREEN_ORIENTATION_FULL_USER,
+            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
+        )
+        values.forEach { value ->
+            assertEquals(
+                EnginePlayerOrientation.normalizeLandscapeOrientation(value),
+                ExternalEngineContract.normalizeOrientation(value),
+            )
+        }
+    }
+
+    @Test
+    fun displayStateCacheIsStaleWhenClearedOrPastTtl() {
+        // P2-2 缓存失效语义：缓存被显示事件/退后台清理（null）→ 必须重算。
+        assertTrue(
+            LaunchOrientationMonitor.isDisplayCacheStale(capturedAtMs = null, nowMs = 10_000L, ttlMs = 1_000L),
+        )
+        // TTL 内复用缓存（回调路径零显示查询）。
+        assertFalse(
+            LaunchOrientationMonitor.isDisplayCacheStale(capturedAtMs = 9_500L, nowMs = 10_000L, ttlMs = 1_000L),
+        )
+        // 精确到 TTL 边界过期（>= ttl 即失效）；超过 TTL 过期。
+        assertTrue(
+            LaunchOrientationMonitor.isDisplayCacheStale(capturedAtMs = 9_000L, nowMs = 10_000L, ttlMs = 1_000L),
+        )
+        assertTrue(
+            LaunchOrientationMonitor.isDisplayCacheStale(capturedAtMs = 8_999L, nowMs = 10_000L, ttlMs = 1_000L),
+        )
+    }
+
+    @Test
+    fun probeConditionCoversFreshSnapshotWithoutLandscapeSample() {
+        // LOGIC-03 窗口：快照新鲜（lastObservedAtMs 刚更新）但只有竖屏死区样本时，
+        // sensorDegrees 为 null 仍允许后台线程的一次瞬时探测。
+        LaunchOrientationMonitor.recordSensorSample(degrees = 5, nowMs = 1_000L, naturalIsLandscape = false)
+        val degreesAfterFreshPortraitSnapshot = LaunchOrientationMonitor.recentLandscapeDegrees(1_100L)
+        assertNull(degreesAfterFreshPortraitSnapshot)
+        assertTrue(
+            LaunchOrientationMonitor.shouldProbeAccelerometer(
+                sensorDegrees = degreesAfterFreshPortraitSnapshot,
+                installed = true,
+                onMainThread = false,
+            ),
+        )
+        // 主线程绝不探测。
+        assertFalse(
+            LaunchOrientationMonitor.shouldProbeAccelerometer(
+                sensorDegrees = null,
+                installed = true,
+                onMainThread = true,
+            ),
+        )
+        // 未安装方向监听的进程不探测（unknown 进程降级口径）。
+        assertFalse(
+            LaunchOrientationMonitor.shouldProbeAccelerometer(
+                sensorDegrees = null,
+                installed = false,
+                onMainThread = false,
+            ),
+        )
+        // 已有可用横屏样本时不重复探测。
+        LaunchOrientationMonitor.recordSensorSample(degrees = 90, nowMs = 1_200L, naturalIsLandscape = false)
+        val degreesWithLandscapeSample = LaunchOrientationMonitor.recentLandscapeDegrees(1_300L)
+        assertEquals(90, degreesWithLandscapeSample)
+        assertFalse(
+            LaunchOrientationMonitor.shouldProbeAccelerometer(
+                sensorDegrees = degreesWithLandscapeSample,
+                installed = true,
+                onMainThread = false,
+            ),
+        )
+    }
+
+    @Test
+    fun accelerometerFlatnessBoundaryAcceptsAtEqualityLikeAosp() {
+        // P3-9：平放拒绝边界对齐 AOSP OrientationEventListener（接受条件 magnitude * 4 >= Z*Z）。
+        // x=1,y=0,z=2 时 |z|² 恰等于 4·|xy|²，等值点接受（修复前为 UNKNOWN），角度归一化为 270；
+        // 反向同构造归一化为 90。
+        assertEquals(270, LaunchOrientationMonitor.degreesFromAccelerometer(1f, 0f, 2f))
+        assertEquals(90, LaunchOrientationMonitor.degreesFromAccelerometer(-1f, 0f, 2f))
+        // 严格超过阈值仍拒绝（接近平放、屏幕方向无意义）。
+        assertEquals(
+            OrientationEventListener.ORIENTATION_UNKNOWN,
+            LaunchOrientationMonitor.degreesFromAccelerometer(1f, 0f, 3f),
+        )
+        assertEquals(
+            OrientationEventListener.ORIENTATION_UNKNOWN,
+            LaunchOrientationMonitor.degreesFromAccelerometer(0f, 0f, 5f),
         )
     }
 }
