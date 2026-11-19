@@ -318,8 +318,9 @@ object EngineLauncher {
         EnginePluginBootstrap.ensureForLaunch(app, EngineType.KIRIKIRI)?.let {
             return@withContext LaunchResult.Failure.PluginBootstrapFailed(it)
         }
+        val playerOrientation = LaunchOrientationMonitor.resolvePlayerOrientation(context)
+        currentCoroutineContext().ensureActive()
         return@withContext try {
-            val playerOrientation = LaunchOrientationMonitor.resolvePlayerOrientation(context)
             app.startActivity(
                 Intent(app, Kirikiroid139::class.java).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -467,7 +468,8 @@ object EngineLauncher {
             if (module.requiresGameDirectoryPath && path != null) {
                 requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
             }
-            // 与内置引擎路径一致：真正拉起外置引擎前确认未取消，避免取消后仍执行启动副作用
+            val playerOrientation = LaunchOrientationMonitor.resolvePlayerOrientation(context)
+            // 与内置引擎路径一致：真正拉起外置引擎前（含冷启动方向采样返回后）确认未取消，避免取消后仍执行启动副作用
             currentCoroutineContext().ensureActive()
             val result = ExternalEngineLauncher.launch(
                 context,
@@ -477,7 +479,7 @@ object EngineLauncher {
                     gameDirectoryPath = path.orEmpty(),
                     launchTarget = game.launchTarget,
                     resolvedSettings = settings,
-                    orientation = LaunchOrientationMonitor.resolvePlayerOrientation(context),
+                    orientation = playerOrientation,
                 ),
             )
             if (result.success) {

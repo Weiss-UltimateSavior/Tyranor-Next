@@ -33,6 +33,7 @@ import kotlinx.coroutines.launch
 /** 在整个应用进入后台时安排一次静默更新检查。 */
 class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configuration.Provider {
     private var libraryInitialized = false
+    private var strictMainProcess = false
     private val background = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override val workManagerConfiguration: Configuration
@@ -61,8 +62,9 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
     /** 主线程调用；引导标记落盘失败不阻断应用启动，快照仍用于本次启动判定。 */
     private fun initializeStartup() {
         val mainProcess = AppProcess.isMain(this, unknownIsMainProcess = true)
-        val strictMainProcess = AppProcess.isMain(this, unknownIsMainProcess = false)
-        if (strictMainProcess) {
+        val strictMain = AppProcess.isMain(this, unknownIsMainProcess = false)
+        strictMainProcess = strictMain
+        if (strictMain) {
             LaunchOrientationMonitor.install(this)
         }
         if (mainProcess) {
@@ -81,7 +83,7 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         UpdateNotificationManager.createChannel(this)
         GitHubUpdateChecker.restoreState(this)
         // 游戏库 Room 迁移检查 + 首页缓存预热在启动阶段触发，避免首帧 SettingsScreen 同步开库。
-        if (strictMainProcess) {
+        if (strictMain) {
             initializeMainLibrary()
             // 隐私设置与窗口级效果（FLAG_SECURE / 通知隐藏）在页面创建前就要读到正确值；
             // 应用锁只装主进程（引擎宿主为独立进程，不在锁定范围）。
@@ -127,7 +129,7 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
     }
 
     override fun onStart(owner: LifecycleOwner) {
-        if (!AppProcess.isMain(this, unknownIsMainProcess = false)) return
+        if (!strictMainProcess) return
         // 应用锁：回前台按解锁延迟档位判定是否上锁（未安装的子进程为空操作）
         AppLockController.onLauncherEntering()
         SaveSyncRuntime.onForeground(this)
@@ -137,7 +139,7 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
     }
 
     override fun onStop(owner: LifecycleOwner) {
-        if (!AppProcess.isMain(this, unknownIsMainProcess = false)) return
+        if (!strictMainProcess) return
         // 应用锁：退后台开始离开计时（熄屏由 AppLockController 自注册的广播驱动）
         AppLockController.onLauncherLeft()
         SaveSyncRuntime.onBackground(this)
