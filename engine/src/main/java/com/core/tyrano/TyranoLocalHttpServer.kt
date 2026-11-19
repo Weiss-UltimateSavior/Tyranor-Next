@@ -245,8 +245,16 @@ internal class TyranoLocalHttpServer(
             target = canonicalIfValid(alt)
             if (target != null) { Log.i(TAG, "resource fallback rpgmvm->rpgmvo $uri -> $alt"); return ResolvedFile(target, null) }
         }
-        // The generated index rejects ambiguous names; do not reselect a first/lowercase hit.
-        if (pluginIndexEnabled) return ResolvedFile(null, null)
+        // The generated index rejects ambiguous names; do not reselect a first/lowercase hit,
+        // while preserving entry-page candidate fallback for index.html / index.htm.
+        if (pluginIndexEnabled) {
+            if (asar != null && (uri.equals("index.html", true) || uri.equals("index.htm", true))) {
+                for (candidate in ASAR_INDEX_CANDIDATES) {
+                    if (asar.fileSize(candidate) != null) return ResolvedFile(null, candidate)
+                }
+            }
+            return ResolvedFile(null, null)
+        }
         resolveAsarEntry(uri)?.let { return ResolvedFile(null, it) }
         return ResolvedFile(resolveCaseInsensitive(uri), null)
     }
