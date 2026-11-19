@@ -75,7 +75,13 @@ object ExternalEngineLauncher {
         }
     }
 
-    fun launch(context: Context, module: ExternalEngineModule, request: ExternalEngineLaunchRequest): ExternalEngineLaunchResult {
+    fun launch(
+        context: Context,
+        module: ExternalEngineModule,
+        request: ExternalEngineLaunchRequest,
+        orientationResolver: (() -> Int)? = null,
+        beforeStartActivity: (() -> Unit)? = null,
+    ): ExternalEngineLaunchResult {
         if (module.requiresGameDirectoryPath && request.gameDirectoryPath.isBlank()) {
             return ExternalEngineLaunchResult.failure(
                 ExternalEngineErrorCode.INVALID_GAME_PATH,
@@ -83,9 +89,15 @@ object ExternalEngineLauncher {
             )
         }
         checkInstallation(context, module, request.launchTarget)?.let { return it }
-        module.prepareForLaunch(context, request)?.let { return it }
+        val (resolvedRequest, prepareFailure) = prepareRequest(
+            prepareStep = { module.prepareForLaunch(context, request) },
+            request = request,
+            orientationResolver = orientationResolver,
+            beforeStartActivity = beforeStartActivity,
+        )
+        if (prepareFailure != null) return prepareFailure
 
-        val intent = module.buildLaunchIntent(request).addFlags(
+        val intent = module.buildLaunchIntent(resolvedRequest ?: request).addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or
                 Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
@@ -115,6 +127,25 @@ object ExternalEngineLauncher {
                 detail = t.message,
             )
         }
+    }
+
+    internal fun prepareRequest(
+        prepareStep: () -> ExternalEngineLaunchResult?,
+        request: ExternalEngineLaunchRequest,
+        orientationResolver: (() -> Int)? = null,
+        beforeStartActivity: (() -> Unit)? = null,
+    ): Pair<ExternalEngineLaunchRequest?, ExternalEngineLaunchResult?> {
+        prepareStep()?.let { return null to it }
+        // 外置模块准备（如 RPG Maker 创建 RTP 环境、写 configuration.json）完成后再检查取消
+        // 并解析此刻握持方向，避免准备耗时期间设备旋转导致沿用过期方向。
+        beforeStartActivity?.invoke()
+        val resolvedRequest = if (orientationResolver != null) {
+            request.copy(orientation = ExternalEngineContract.normalizeOrientation(orientationResolver()))
+        } else {
+            request
+        }
+        beforeStartActivity?.invoke()
+        return resolvedRequest to null
     }
 
     fun openInstallPage(context: Context, module: ExternalEngineModule): Boolean =

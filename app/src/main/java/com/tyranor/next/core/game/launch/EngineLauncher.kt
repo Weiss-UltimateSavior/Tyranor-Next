@@ -468,9 +468,8 @@ object EngineLauncher {
             if (module.requiresGameDirectoryPath && path != null) {
                 requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
             }
-            val playerOrientation = LaunchOrientationMonitor.resolvePlayerOrientation(context)
-            // 与内置引擎路径一致：真正拉起外置引擎前（含冷启动方向采样返回后）确认未取消，避免取消后仍执行启动副作用
-            currentCoroutineContext().ensureActive()
+            val launchContext = currentCoroutineContext()
+            launchContext.ensureActive()
             val result = ExternalEngineLauncher.launch(
                 context,
                 module,
@@ -479,8 +478,9 @@ object EngineLauncher {
                     gameDirectoryPath = path.orEmpty(),
                     launchTarget = game.launchTarget,
                     resolvedSettings = settings,
-                    orientation = playerOrientation,
                 ),
+                orientationResolver = { LaunchOrientationMonitor.resolvePlayerOrientation(context) },
+                beforeStartActivity = { launchContext.ensureActive() },
             )
             if (result.success) {
                 return completeLaunch(context, game, onDispatched)
