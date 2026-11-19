@@ -8,6 +8,10 @@ import java.security.SecureRandom
  *
  * 图案是低熵凭据，哈希必须带盐：盐与哈希一起存储（两者再经 Keystore 加密保管，
  * 见 [AppLockCredentialStore]），盐本身仅用于阻止对固定哈希值的预计算比对。
+ *
+ * **按按下顺序精确匹配，不做形状归一化**：只要求「形状相同」会让跳点、回扫等变体
+ * 也被当成同一凭据，削弱应用锁；因此 0→2 与 0→1→2 是两个不同的图案。快速划过时
+ * 未命中的中间点不会自动补入，用户需要完整经过要包含的每个点。
  */
 internal object PatternHasher {
 
@@ -24,63 +28,24 @@ internal object PatternHasher {
     fun newSalt(): ByteArray = ByteArray(SALT_BYTES).also { SecureRandom().nextBytes(it) }
 
     /**
+     * 点序是否可保存 / 校验：点数 >= [MIN_POINTS]、下标在 0..8 且无重复。
+     * **不补中间点、不重排**，点序就是用户实际按下的顺序。
+     */
+    fun isValidPattern(points: List<Int>): Boolean =
+        points.size >= MIN_POINTS &&
+            points.all { it in 0 until PATTERN_POINT_COUNT } &&
+            points.size == points.distinct().size
+
+    /**
      * 计算图案哈希：SHA-256(salt || 按下顺序点序)。
      * 点数不足 [MIN_POINTS]、越界或重复的点序一律返回 null，调用方不得把空结果当作合法凭据。
      */
     fun hash(salt: ByteArray, points: List<Int>): String? {
         if (salt.isEmpty()) return null
-        val normalized = normalize(points) ?: return null
-        if (normalized.size < MIN_POINTS) return null
+        if (!isValidPattern(points)) return null
         val digest = MessageDigest.getInstance("SHA-256")
         digest.update(salt)
-        digest.update(normalized.joinToString(separator = ".").toByteArray(Charsets.US_ASCII))
+        digest.update(points.joinToString(separator = ".").toByteArray(Charsets.US_ASCII))
         return digest.digest().joinToString(separator = "") { "%02x".format(it) }
-    }
-
-    /**
-     * 点序归一化：相邻两点若同行 / 同列 / 同对角且中间隔着一点（如 0→2、0→6、0→8），
-     * 把中间点补进去。系统图案锁同样会途经中间点，用户手指划过时也可能不精确经过中心，
-     * 不归一化会让同一形状产生不同点序，导致保存与校验不一致而误拒。
-     *
-     * 两点说明（用户可能手动经过已被隐式补上的中间点）：
-     * - 待追加的原始点若已在归一化结果中，**跳过**（如 `[0,2,1,4]` 的 `1` 已由 0→2 补入）；
-     * - 每段始终从**归一化序列的最后一个点**起算，而不是原始上一点。
-     * 这样 `[0,2,1,4]` 与完整采样 `[0,1,2,4]` 得到同一点序。
-     *
-     * 保存与校验共用本函数。非法输入（越界 / 重复点）返回 null。
-     */
-    fun normalize(points: List<Int>): List<Int>? {
-        if (points.isEmpty()) return null
-        if (points.any { it !in 0 until PATTERN_POINT_COUNT }) return null
-        if (points.size != points.distinct().size) return null
-        val result = ArrayList<Int>(points.size + 2)
-        for (point in points) {
-            if (result.isEmpty()) {
-                result += point
-                continue
-            }
-            val from = result.last()
-            val mid = middlePoint(from, point)
-            if (mid != null && mid !in result) result += mid
-            // 已被隐式补入（或作为上一步的终点）的点不再重复追加
-            if (point !in result) result += point
-        }
-        return result
-    }
-
-    /** 两点同心同列 / 同行 / 同对角线且相隔一格时，返回其中间点；否则返回 null。 */
-    private fun middlePoint(from: Int, to: Int): Int? {
-        val fx = from % 3
-        val fy = from / 3
-        val tx = to % 3
-        val ty = to / 3
-        val dx = tx - fx
-        val dy = ty - fy
-        // 只在「整两格」且共线（行 / 列 / 对角）时才有中间点
-        if (kotlin.math.abs(dx) != 2 && kotlin.math.abs(dy) != 2) return null
-        if (dx != 0 && dy != 0 && kotlin.math.abs(dx) != kotlin.math.abs(dy)) return null
-        val mx = (fx + tx) / 2
-        val my = (fy + ty) / 2
-        return my * 3 + mx
     }
 }

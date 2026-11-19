@@ -1,6 +1,7 @@
 package com.tyranor.next.core.privacy
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -9,6 +10,9 @@ import org.junit.Test
 /**
  * 图案哈希钉住：同一盐 + 同一点序必须得到同一哈希（解锁判定依赖），
  * 点序/盐任一不同必须得到不同哈希；非法输入一律不可哈希（不得落盘半套凭据）。
+ *
+ * 点序按用户实际按下顺序精确匹配，不做形状归一化：
+ * 0→2 与 0→1→2 是不同图案，跳点 / 回扫变体不能解锁。
  */
 class PatternHasherTest {
 
@@ -36,10 +40,25 @@ class PatternHasherTest {
     }
 
     @Test
+    fun `跳点与完整经过中间点是不同图案`() {
+        // 不按形状归一化：直接跳 0→2 与完整经过 0→1→2 必须是不同凭据
+        assertNotEquals(
+            PatternHasher.hash(salt, listOf(0, 2, 5, 8)),
+            PatternHasher.hash(salt, listOf(0, 1, 2, 5, 8)),
+        )
+        // 回扫已经被经过的点同样不折叠
+        assertNotEquals(
+            PatternHasher.hash(salt, listOf(0, 2, 1, 4)),
+            PatternHasher.hash(salt, listOf(0, 1, 2, 4)),
+        )
+    }
+
+    @Test
     fun `点数不足最少点数不可哈希`() {
         assertNull(PatternHasher.hash(salt, emptyList()))
         assertNull(PatternHasher.hash(salt, listOf(0, 1, 2)))
         assertNull(PatternHasher.hash(salt, listOf(4)))
+        assertNull(PatternHasher.hash(salt, listOf(0, 2)))
     }
 
     @Test
@@ -55,71 +74,19 @@ class PatternHasherTest {
     }
 
     @Test
+    fun `图案合法性校验与哈希使用同一条规则`() {
+        assertTrue(PatternHasher.isValidPattern(listOf(0, 1, 2, 5)))
+        assertFalse(PatternHasher.isValidPattern(listOf(0, 1, 2)))
+        assertFalse(PatternHasher.isValidPattern(listOf(-1, 0, 1, 2)))
+        assertFalse(PatternHasher.isValidPattern(listOf(0, 1, 1, 2)))
+    }
+
+    @Test
     fun `新盐长度固定且两两不同`() {
         val first = PatternHasher.newSalt()
         val second = PatternHasher.newSalt()
         assertEquals(PatternHasher.SALT_BYTES, first.size)
         assertNotEquals(first.toList(), second.toList())
-    }
-
-    @Test
-    fun `归一化会补上同行同列同对角之间的中间点`() {
-        // 0→2 同行隔一点 → 补 1；0→6 同列隔一点 → 补 3；0→8 对角隔一点 → 补 4
-        assertEquals(listOf(0, 1, 2), PatternHasher.normalize(listOf(0, 2)))
-        assertEquals(listOf(0, 3, 6), PatternHasher.normalize(listOf(0, 6)))
-        assertEquals(listOf(0, 4, 8), PatternHasher.normalize(listOf(0, 8)))
-        // 相邻点不需要补
-        assertEquals(listOf(0, 1), PatternHasher.normalize(listOf(0, 1)))
-        // 非共线的跳跃不补（0→5 是斜走一格，中间没有格点）
-        assertEquals(listOf(0, 5), PatternHasher.normalize(listOf(0, 5)))
-    }
-
-    @Test
-    fun `归一化后同一形状得到同一哈希`() {
-        // 用户精确划过 0→1→2 与直接 0→2 是同一形状，必须得到同一哈希（否则保存与校验会误拒）
-        assertEquals(
-            PatternHasher.hash(salt, listOf(0, 1, 2)),
-            PatternHasher.hash(salt, listOf(0, 2)),
-        )
-        assertEquals(
-            PatternHasher.hash(salt, listOf(0, 3, 6, 7)),
-            PatternHasher.hash(salt, listOf(0, 6, 7)),
-        )
-    }
-
-    @Test
-    fun `归一化不会重复追加已隐式补入的中点`() {
-        // 0→2 已隐式补入 1；用户随后显式经过 1 时不能再追加一次（否则点序变成 0,1,2,1,4）
-        assertEquals(listOf(0, 1, 2, 4), PatternHasher.normalize(listOf(0, 2, 1, 4)))
-        assertEquals(
-            PatternHasher.hash(salt, listOf(0, 2, 1, 4)),
-            PatternHasher.hash(salt, listOf(0, 1, 2, 4)),
-        )
-        // 后续段从归一化序列的末点起算：0→8 已补 4，用户再显式经过 4，
-        // 下一段 8→2 的中间点 5 仍要补（若从原始上一点 4 起算就漏掉了）
-        assertEquals(listOf(0, 4, 8, 5, 2), PatternHasher.normalize(listOf(0, 8, 4, 2)))
-        assertEquals(
-            PatternHasher.hash(salt, listOf(0, 8, 4, 2)),
-            PatternHasher.hash(salt, listOf(0, 4, 8, 5, 2)),
-        )
-    }
-
-    @Test
-    fun `归一化让快速划过的少点图案与完整采样等价`() {
-        // 用户快速划 0→2→8 时中间点 1、5 由归一化补上，等价于完整采样 0→1→2→5→8；
-        // 图案盘按归一化结果判点数，否则 3 个原始点会被当成不足 4 点而静默拒绝
-        assertEquals(listOf(0, 1, 2, 5, 8), PatternHasher.normalize(listOf(0, 2, 8)))
-        assertEquals(
-            PatternHasher.hash(salt, listOf(0, 2, 8)),
-            PatternHasher.hash(salt, listOf(0, 1, 2, 5, 8)),
-        )
-    }
-
-    @Test
-    fun `归一化对非法点序返回 null`() {
-        assertNull(PatternHasher.normalize(emptyList()))
-        assertNull(PatternHasher.normalize(listOf(0, 9)))
-        assertNull(PatternHasher.normalize(listOf(0, 1, 1)))
     }
 
     @Test

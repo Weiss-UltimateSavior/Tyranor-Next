@@ -240,6 +240,34 @@ object AppLockController {
         }
     }
 
+    /**
+     * 进入启动器界面时是否**将会**要求解锁（只读快照：不消费离开计时、不触发异步读取）。
+     *
+     * OAuth 回调 Activity / NextMoe 环回回调在 ProcessLifecycleOwner 派发 ON_START 之前到达：
+     * 此时 [lockedState] 仍是 false，但紧接着的 [onLauncherEntering] 会把应用锁上。外部回调
+     * 据此丢弃令牌交换，避免把凭据写进一个即将被锁门覆盖的应用。
+     *
+     * 判定口径与 [onLauncherEntering] 一致：未安装 / 开关关闭 / 凭据确不存在 → false；
+     * 已经锁定（冷启动 fail-closed 或熄屏窥视已上锁）→ true；凭据尚未读取（null）按
+     * 「有凭据」处理；仅在确实处于离开计时且已超过延迟档时 → true。
+     */
+    fun willRequireUnlockOnEntering(): Boolean {
+        synchronized(this) {
+            if (!installed) return false
+            val context = appContext ?: return false
+            if (!AppSettingsStore.isPrivacyAppLockEnabled(context)) return false
+            if (mutableLocked.value) return true
+            // 凭据确不存在时 onLauncherEntering 会关闭开关并放行，不能把回调误判成需要解锁
+            if (credentialPresence == PatternCredentialState.ABSENT) return false
+            if (!away) return false
+            val timeout = PrivacyLockTimeout.fromStorageIndex(
+                AppSettingsStore.getPrivacyAppLockTimeoutIndex(context),
+            )
+            val elapsed = SystemClock.elapsedRealtime() - leftAtMillis
+            return shouldRequireUnlock(elapsed, timeout)
+        }
+    }
+
     /** 解锁成功（图案或设备凭据）：解除锁定。 */
     fun unlock() {
         synchronized(this) {
