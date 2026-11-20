@@ -44,7 +44,6 @@ import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.PageSecondaryTextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.motion.BlurCrossfade
-import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.PressSquishDefaults
 import com.tyranor.next.ui.common.motion.ProvideEntrance
 import com.tyranor.next.ui.common.motion.pressSquish
@@ -114,11 +113,6 @@ internal fun GameCoverFlow(
                 }
                 // 甩动速度（页 / 秒）：只在图层块里读取，卡片顺势侧倾；停下归零，静止外观不变
                 val pagerVelocity = rememberPagerVelocity(pagerState)
-                // 「增强」档：滑动 / 甩动中暂缓封面解码（读取放在解码协程里，不订阅滚动状态）；「普通」档与原版一致，不暂缓
-                val enhancedFlow = MotionMode.enhanced
-                val isScrolling: () -> Boolean = remember(pagerState, enhancedFlow) {
-                    if (enhancedFlow) ({ pagerState.isScrollInProgress }) else ({ false })
-                }
                 HorizontalPager(
                     state = pagerState,
                     modifier = Modifier.fillMaxWidth(),
@@ -144,7 +138,6 @@ internal fun GameCoverFlow(
                                 }
                             },
                             onLongClick = { onGameLongClick(game) },
-                            isScrolling = isScrolling,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .aspectRatio(3f / 4f)
@@ -178,10 +171,9 @@ private fun CoverFlowCard(
     tier: CoverDecodeTier,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
-    isScrolling: () -> Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val cover by rememberCoverBitmap(game.coverUri, isScrolling, tier)
+    val cover by rememberCoverBitmap(game.coverUri, tier = tier)
     // 删除消散：游戏库删除确认后登记在 dissolvingGames 里；封面流的卡也要播放消散（与瀑布 / 网格卡一致），期间触摸由 dissolve 吞掉
     val dissolve = rememberLastNonNull(dissolvingGames[game.uri])
     // 封面加载完成：淡入 + 由糊变清（已缓存的封面一开始就是 1，不会闪）
