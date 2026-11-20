@@ -179,12 +179,9 @@ fun MainScreen(
   val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
   val interactScope = rememberCoroutineScope()
   val unselectedColor = UnselectedGrey
-  // 导航栏样式：应用设置 → 默认 / 液态玻璃 · 经典 / 液态玻璃 · 透镜（内存态，设置页切换即时生效）
   LaunchedEffect(Unit) {
-    withContext(Dispatchers.IO) { AppSettingsStore.initNavStyle(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initEngineTabs(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initEngineCardIcon(context) }
-    withContext(Dispatchers.IO) { AppSettingsStore.initSideRail(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardHideTitleTag(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardBadge(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardStyle(context) }
@@ -441,7 +438,6 @@ fun MainScreen(
           selectedIndex = selectedNavIndex,
           items = liquidGlassTabItems,
           onItemClick = onSelectNavPage,
-          modifier = Modifier.fillMaxHeight(),
         )
         Column(Modifier.weight(1f).fillMaxHeight().then(contentLayerModifier)) {
           MainTabPages(
@@ -480,7 +476,6 @@ fun MainScreen(
             items = liquidGlassTabItems,
             unselectedColor = unselectedColor,
             onSelectPage = onSelectNavPage,
-            modifier = Modifier,
           )
         }
       }

@@ -87,7 +87,6 @@ import com.tyranor.next.theme.AppNavCapsuleShape
 import com.tyranor.next.theme.GlassEdgeStrokeAlpha
 import com.tyranor.next.theme.GlassEdgeStrokeWidth
 import com.tyranor.next.ui.common.LiquidGlassNavItem
-import com.tyranor.next.ui.common.isWideScreen
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -174,10 +173,7 @@ fun EnhancedLiquidGlassNavigationBar(
     val windowWidthDp = with(density) {
         LocalWindowInfo.current.containerSize.width.toDp()
     }.takeIf { it > 0.dp } ?: configuration.screenWidthDp.dp
-    // 平板/横屏拉伸铺满（与原版液态玻璃导航一致）：复用项目既有的宽屏判定，
-    // 避免这里再维护一套阈值（横屏或宽度 ≥600dp 都算宽屏）
-    val stretchBar = isWideScreen()
-    val barWidth = spec.clampedBarWidth(tabs, windowWidthDp, stretch = stretchBar)
+    val barWidth = spec.clampedBarWidth(tabs, windowWidthDp)
     // 窄窗判定基于**最终像素**并要求单槽可点：dp 转 px 后可能正好只剩左右内边距，
     // 这时 tabWidthPx = 0（透镜不画但宿主仍留白）。宿主侧的 canRender() 用同一套判定。
     val renderWidthPx = with(density) { barWidth.toPx() }
@@ -823,7 +819,7 @@ fun EnhancedLiquidGlassNavigationBar(
                     translationX = if (currentIsLtr) shift + panelShift else -shift + panelShift
                 }
             }
-            // 外层：整槽宽度的**手势热区**（宽屏拉伸后单槽很宽，热区保持整槽才好按）；
+            // 外层：手势热区覆盖整个导航槽位。
             // 内层：视觉透镜，宽度按 spec.lensMaxWidth 封顶并居中，避免变成巨大胶囊
             Box(
                 Modifier

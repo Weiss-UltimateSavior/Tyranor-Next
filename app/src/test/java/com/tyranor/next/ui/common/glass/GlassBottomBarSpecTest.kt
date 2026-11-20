@@ -133,11 +133,9 @@ class GlassBottomBarSpecTest {
     }
 
     @Test
-    fun clampedBarWidth_stretchesOnWideScreens() {
-        // 平板/横屏：拉伸铺满可用宽度（与项目原有液态玻璃导航一致），不再缩成居中短栏
-        assertEquals(768.dp, spec.clampedBarWidth(tabsCount = 4, windowWidth = 800.dp, stretch = true))
-        // 手机：保持参考单槽宽度居中收窄
-        assertEquals(312.dp, spec.clampedBarWidth(tabsCount = 4, windowWidth = 800.dp, stretch = false))
+    fun clampedBarWidth_keepsNaturalWidthOnWideScreens() {
+        assertEquals(312.dp, spec.clampedBarWidth(tabsCount = 4, windowWidth = 800.dp))
+        assertEquals(388.dp, spec.clampedBarWidth(tabsCount = 5, windowWidth = 1280.dp))
     }
 
 

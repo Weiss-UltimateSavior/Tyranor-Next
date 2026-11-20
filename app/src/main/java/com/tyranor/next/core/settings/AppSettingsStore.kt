@@ -442,7 +442,7 @@ object AppSettingsStore {
     private val privacyLock = Any()
 
     /**
-     * 首次组合时从持久化加载导航栏样式到内存态（幂等）。
+     * 从持久化加载导航栏样式到内存态（幂等）；主界面在首帧前调用。
      *
      * 与 [setNavStyle] 共用 [navStyleLock]：设置页在 IO 线程调用本方法的同时，下拉仍可交互，
      * 若不加锁，迁移的「读—改—写」可能覆盖用户在这一窗口内刚选择的样式。
@@ -550,7 +550,7 @@ object AppSettingsStore {
         backgroundImageBlurState.value = normalized
     }
 
-    /** 首次组合时从持久化加载平板侧边栏开关到内存态（幂等）。 */
+    /** 从持久化加载平板侧边栏开关到内存态（幂等）；主界面在首帧前调用。 */
     fun initSideRail(c: Context) {
         sideRailState.value = isSideRailEnabled(c)
     }
