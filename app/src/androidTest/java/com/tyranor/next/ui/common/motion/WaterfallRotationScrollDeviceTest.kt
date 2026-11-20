@@ -29,8 +29,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
 import com.tyranor.next.ui.common.MotionDeviceAcceptance
+import androidx.compose.foundation.MutatePriority
+import androidx.compose.runtime.snapshots.Snapshot
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -148,13 +156,97 @@ class WaterfallRotationScrollDeviceTest {
         assertStableUpwardScroll(fixture, "production-prepend-key")
     }
 
-    private fun withProduction(check: (Fixture) -> Unit) {
+    @Test
+    fun userInputPreemptionRevealsViewportWithoutRestoringOldAnchor() = withProduction(manualRestore = true) { fixture ->
+        compose.runOnIdle { fixture.scope.launch { fixture.state.scrollToItem(50) } }
+        settle()
+        compose.runOnIdle { fixture.columns = 3 }
+        settle()
+        val ownerCompleted = CompletableDeferred<Unit>()
+        lateinit var inputJob: Job
+        lateinit var restoreJob: Job
+        compose.runOnIdle {
+            assertTrue("Column change must have a pending restore", fixture.holder!!.isRestoring)
+            inputJob = fixture.scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                fixture.state.scroll(MutatePriority.UserInput) { awaitCancellation() }
+            }
+            restoreJob = fixture.scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                fixture.holder!!.restore(fixture.state, true)
+                ownerCompleted.complete(Unit)
+            }
+        }
+        try {
+            compose.waitUntil { restoreJob.isCompleted }
+            compose.runOnIdle {
+                assertTrue("Input preemption must not cancel the restoration owner", ownerCompleted.isCompleted && !restoreJob.isCancelled)
+                assertTrue("Preempted restoration must reveal the viewport", !fixture.holder!!.isRestoring)
+                assertTrue("Preemption must keep the user viewport rather than apply the old anchor", fixture.state.firstVisibleItemIndex == 0)
+                assertTrue("Input must retain its higher-priority scroll", inputJob.isActive)
+            }
+        } finally {
+            compose.runOnIdle { inputJob.cancel(); restoreJob.cancel() }
+        }
+        settle()
+        compose.runOnIdle {
+            fixture.scope.launch { fixture.holder!!.restore(fixture.state, true) }
+        }
+        settle()
+        compose.runOnIdle {
+            assertTrue("Cleared restoration must not retry the old anchor", fixture.state.firstVisibleItemIndex == 0)
+        }
+    }
+
+    @Test
+    fun ownerCancellationKeepsPendingRestorationForItsSuccessor() = withProduction(manualRestore = true) { fixture ->
+        compose.runOnIdle { fixture.scope.launch { fixture.state.scrollToItem(50) } }
+        settle()
+        compose.runOnIdle { fixture.columns = 3 }
+        settle()
+        lateinit var owner: Job
+        lateinit var blocker: Job
+        val releaseScroll = CompletableDeferred<Unit>()
+        val returned = CompletableDeferred<Unit>()
+        compose.runOnIdle {
+            blocker = fixture.scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                fixture.state.scroll {
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        withContext(NonCancellable) { releaseScroll.await() }
+                    }
+                }
+            }
+            owner = fixture.scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                fixture.holder!!.restore(fixture.state, true)
+                returned.complete(Unit)
+            }
+            assertTrue("Restoration must be waiting for the scroll lock", owner.isActive && !returned.isCompleted)
+            owner.cancel()
+        }
+        try {
+            compose.waitUntil { owner.isCompleted }
+            compose.runOnIdle {
+                assertTrue("Cancelled effect must propagate cancellation", owner.isCancelled && !returned.isCompleted)
+                assertTrue("Cancelled effect must not clear the pending anchor", fixture.holder!!.isRestoring)
+            }
+        } finally {
+            compose.runOnIdle { releaseScroll.complete(Unit); blocker.cancel(); owner.cancel() }
+        }
+        settle()
+        compose.runOnIdle { fixture.scope.launch { fixture.holder!!.restore(fixture.state, true) } }
+        awaitRestore(fixture)
+        compose.runOnIdle {
+            assertTrue("The replacement effect must restore the original anchor", fixture.state.layoutInfo.visibleItemsInfo.any { it.key == "waterfall-50" })
+        }
+    }
+
+    private fun withProduction(manualRestore: Boolean = false, check: (Fixture) -> Unit) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val originalMode = MotionMode.enhanced
         val originalAutoAdvance = compose.mainClock.autoAdvance
         try {
             MotionDeviceAcceptance.require()
-            val fixture = Fixture(freshState = false, buildHistory = false, production = true)
+            val fixture = Fixture(freshState = false, buildHistory = false, production = true, manualRestore = manualRestore)
             compose.setContent { Waterfall(fixture) }
             settle()
             check(fixture)
@@ -301,7 +393,11 @@ class WaterfallRotationScrollDeviceTest {
     @Composable
     private fun Waterfall(fixture: Fixture) {
         val columns = fixture.columns
-        val holder = if (fixture.production) rememberWaterfallReflowState(columns, columns == 3) else null
+        val holder = if (fixture.manualRestore) {
+            remember { WaterfallReflowState.create(2, false) }.also { holder ->
+                Snapshot.withoutReadObservation { holder.update(columns, columns == 3) }
+            }
+        } else if (fixture.production) rememberWaterfallReflowState(columns, columns == 3) else null
         fixture.holder = holder
         val state = if (holder != null) {
             holder.gridState
@@ -346,7 +442,12 @@ class WaterfallRotationScrollDeviceTest {
         }
     }
 
-    private class Fixture(val freshState: Boolean, val buildHistory: Boolean, val production: Boolean = false) {
+    private class Fixture(
+        val freshState: Boolean,
+        val buildHistory: Boolean,
+        val production: Boolean = false,
+        val manualRestore: Boolean = false,
+    ) {
         var holder: WaterfallReflowState? = null
         var keyOrder by mutableStateOf((0 until 100).toList())
         var columns by mutableIntStateOf(2)

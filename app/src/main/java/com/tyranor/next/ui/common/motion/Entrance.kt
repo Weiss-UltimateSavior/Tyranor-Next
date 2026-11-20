@@ -362,10 +362,11 @@ internal class StaggeredEntranceNode(
         val key = itemKey ?: return
         val entrance = flow.entrance
         if (reflowGeneration == entrance.generation || !flow.isVisible(key)) return
-        reflowGeneration = entrance.generation
-        if (MotionMode.enhanced && flow.shouldEnter(key) && playJob?.isActive != true) {
+        if (MotionMode.enhanced && flow.shouldEnter(key)) {
             val delayMillis = flow.entranceDelayMillis(key, stepMillis) ?: return
-            beginPlay(entrance, relayout, delayOverrideMillis = delayMillis, placementDelta = flow.placementDelta(key))
+            if (beginPlay(entrance, relayout, delayOverrideMillis = delayMillis, placementDelta = flow.placementDelta(key))) {
+                reflowGeneration = entrance.generation
+            }
         }
     }
 
@@ -491,7 +492,7 @@ internal class StaggeredEntranceNode(
         slotOverride: Int = -1,
         delayOverrideMillis: Long? = null,
         placementDelta: IntOffset = IntOffset.Zero,
-    ) {
+    ): Boolean {
         if (!android.animation.ValueAnimator.areAnimatorsEnabled()) {
             playJob?.cancel()
             playJob = null
@@ -499,7 +500,7 @@ internal class StaggeredEntranceNode(
                 it.token++
                 it.mode = MODE_DONE
             }
-            return
+            return false
         }
         val an = anim ?: EntranceAnim().also { anim = it }
         an.placementDelta = placementDelta
@@ -529,6 +530,7 @@ internal class StaggeredEntranceNode(
         }
         // 挂载时不用手动失效：节点随布局节点一起挂载，首次测量 / 放置本来就会发生
         if (newLayer && relayout) invalidatePlacement()
+        return true
     }
 
     /** 播放错峰入场并响应拖动跳过；取消时只收尾仍属于本轮的动画值。 */

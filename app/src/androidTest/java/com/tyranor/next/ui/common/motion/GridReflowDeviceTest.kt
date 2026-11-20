@@ -115,6 +115,28 @@ class GridReflowDeviceTest(private val staggered: Boolean) {
     }
 
     @Test
+    fun secondRotationReplaysCardsWhilePreviousEntranceIsRunning() = withFixture(entranceStepMillis = 60L) {
+        assumeTrue("Enhanced repeated entrances require system animations", ValueAnimator.areAnimatorsEnabled())
+        compose.runOnIdle { columns.intValue = 3 }
+        awaitWaterfallReady()
+        repeat(6) { compose.mainClock.advanceTimeByFrame() }
+        assertTrue("The first entrance must have started before interrupting it", capture().card(0).count > 0)
+
+        compose.runOnIdle { columns.intValue = 2 }
+        val frames = List(32) {
+            compose.mainClock.advanceTimeByFrame()
+            capture()
+        }
+        val firstFrames = (0 until 4).map { card ->
+            frames.indexOfFirst { it.card(card).count > 0 }
+        }
+        assertTrue("Every card must replay for the second rotation", firstFrames.all { it >= 0 })
+        assertTrue("The second entrance must restart in list order", firstFrames.zipWithNext().all { (a, b) -> a < b })
+        compose.mainClock.advanceTimeBy(SETTLE_MILLIS)
+        assertResting(capture(), 2)
+    }
+
+    @Test
     fun rapidRotationRoundTripsLeaveEveryVisibleCardFullyDrawn() = withFixture(entranceStepMillis = 60L) {
         assumeTrue("Enhanced round trips require system animations", ValueAnimator.areAnimatorsEnabled())
         for (next in listOf(3, 2, 3, 2, 3)) {

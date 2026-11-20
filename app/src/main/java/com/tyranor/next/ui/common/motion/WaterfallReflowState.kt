@@ -68,59 +68,65 @@ class WaterfallReflowState private constructor(
                 (state.layoutInfo.totalItemsCount > 0 || contentReady)
         }.first { it.first > 0 && it.second }
         val context = currentCoroutineContext()
-        state.scroll {
-            val scope = LazyLayoutScrollScope(state, this)
-            with(scope) {
-                val count = state.layoutInfo.totalItemsCount
-                if (count == 0) return@with
-                val target = anchor.index.coerceIn(0, count - 1)
-                // Foundation 1.11.2 needs forward measurement history for stable upward lanes.
-                // This is O(anchorIndex), or O(itemCount) at the bottom; a large library can
-                // block the UI thread. Do not replace these measured steps with teleportation.
-                val maxSteps = count.toLong() * 4L + 1024L
-                var steps = 0L
-                var anchorFound = false
-                while (steps++ < maxSteps) {
-                    context.ensureActive()
-                    val before = state.layoutInfo
-                    val visible = before.visibleItemsInfo
-                    val item = if (anchor.key != null) visible.firstOrNull { it.key == anchor.key }
-                        else visible.firstOrNull { it.index == target }
-                    if (anchor.atBottom) {
-                        if (!state.canScrollForward) break
-                    } else if (item != null) {
-                        anchorFound = true
-                        scrollBy((item.offset.y - anchor.y).toFloat())
-                        break
-                    }
-                    if (!state.canScrollForward) break
-                    val lastIndex = visible.maxOfOrNull { it.index } ?: break
-                    val firstIndex = state.firstVisibleItemIndex
-                    val firstOffset = state.firstVisibleItemScrollOffset
-                    val consumed = scrollBy((before.viewportSize.height / 2f).coerceAtLeast(1f))
-                    if (!consumed.isFinite() || consumed <= 0f) break
-                    val after = state.layoutInfo.visibleItemsInfo
-                    if ((after.maxOfOrNull { it.index } ?: -1) <= lastIndex &&
-                        state.firstVisibleItemIndex == firstIndex &&
-                        state.firstVisibleItemScrollOffset == firstOffset
-                    ) break
-                }
-                // A missing identity falls back only after the forward scan has exhausted it.
-                if (!anchor.atBottom && !anchorFound && anchor.key != null) {
-                    steps = 0L
+        try {
+            state.scroll {
+                val scope = LazyLayoutScrollScope(state, this)
+                with(scope) {
+                    val count = state.layoutInfo.totalItemsCount
+                    if (count == 0) return@with
+                    val target = anchor.index.coerceIn(0, count - 1)
+                    // Foundation 1.11.2 needs forward measurement history for stable upward lanes.
+                    // This is O(anchorIndex), or O(itemCount) at the bottom; a large library can
+                    // block the UI thread. Do not replace these measured steps with teleportation.
+                    val maxSteps = count.toLong() * 4L + 1024L
+                    var steps = 0L
+                    var anchorFound = false
                     while (steps++ < maxSteps) {
                         context.ensureActive()
-                        val item = state.layoutInfo.visibleItemsInfo.firstOrNull { it.index == target }
-                        if (item != null) {
+                        val before = state.layoutInfo
+                        val visible = before.visibleItemsInfo
+                        val item = if (anchor.key != null) visible.firstOrNull { it.key == anchor.key }
+                            else visible.firstOrNull { it.index == target }
+                        if (anchor.atBottom) {
+                            if (!state.canScrollForward) break
+                        } else if (item != null) {
+                            anchorFound = true
                             scrollBy((item.offset.y - anchor.y).toFloat())
                             break
                         }
-                        if (!state.canScrollBackward ||
-                            scrollBy(-(state.layoutInfo.viewportSize.height / 2f).coerceAtLeast(1f)) >= 0f
+                        if (!state.canScrollForward) break
+                        val lastIndex = visible.maxOfOrNull { it.index } ?: break
+                        val firstIndex = state.firstVisibleItemIndex
+                        val firstOffset = state.firstVisibleItemScrollOffset
+                        val consumed = scrollBy((before.viewportSize.height / 2f).coerceAtLeast(1f))
+                        if (!consumed.isFinite() || consumed <= 0f) break
+                        val after = state.layoutInfo.visibleItemsInfo
+                        if ((after.maxOfOrNull { it.index } ?: -1) <= lastIndex &&
+                            state.firstVisibleItemIndex == firstIndex &&
+                            state.firstVisibleItemScrollOffset == firstOffset
                         ) break
+                    }
+                    // A missing identity falls back only after the forward scan has exhausted it.
+                    if (!anchor.atBottom && !anchorFound && anchor.key != null) {
+                        steps = 0L
+                        while (steps++ < maxSteps) {
+                            context.ensureActive()
+                            val item = state.layoutInfo.visibleItemsInfo.firstOrNull { it.index == target }
+                            if (item != null) {
+                                scrollBy((item.offset.y - anchor.y).toFloat())
+                                break
+                            }
+                            if (!state.canScrollBackward ||
+                                scrollBy(-(state.layoutInfo.viewportSize.height / 2f).coerceAtLeast(1f)) >= 0f
+                            ) break
+                        }
                     }
                 }
             }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            // A higher-priority user scroll may preempt this non-suspending history rebuild.
+            // Preserve cancellation of the owning effect, but let input take over the viewport.
+            context.ensureActive()
         }
         if (gridState === state) {
             pendingAnchor = null
