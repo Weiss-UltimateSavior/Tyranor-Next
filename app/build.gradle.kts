@@ -551,6 +551,8 @@ dependencies {
   // Instrumented tests
    if (!ethornellReleaseProbe) androidTestImplementation(libs.androidx.compose.ui.test.junit4)
   debugImplementation(libs.androidx.compose.ui.test.manifest)
+  // ActivityScenario helper activities must be available in the target process.
+  debugImplementation(libs.androidx.test.core)
 
   // Local tests: jUnit, coroutines, Android runner
   testImplementation(libs.junit)

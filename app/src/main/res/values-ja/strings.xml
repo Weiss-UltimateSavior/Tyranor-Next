@@ -107,6 +107,9 @@
     <string name="settings_game_card_style_waterfall">ウォーターフォール</string>
     <string name="settings_game_card_style_grid">グリッド</string>
     <string name="settings_game_card_style_cover_flow">リスト</string>
+    <string name="settings_game_card_portrait_columns">縦画面の1行あたりのカード数</string>
+    <string name="settings_game_card_landscape_columns">横画面の1行あたりのカード数</string>
+    <string name="settings_game_card_columns_value">%1$d 枚</string>
     <string name="settings_game_card_badge">カードのエンジンバッジ</string>
     <string name="settings_game_card_hide_title_tag">カードの名前タグを非表示</string>
     <string name="settings_engine_settings">エンジン設定</string>

@@ -1,5 +1,8 @@
 package com.tyranor.next.core.settings
 
+import android.content.Context
+import com.tyranor.next.testing.InMemoryPreferencesContext
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -8,6 +11,209 @@ import org.junit.Test
  * 历史值 grid（当时渲染瀑布流）、空值、未知值与大小写/空白差异按默认瀑布处理。
  */
 class GameCardStyleSettingsTest {
+
+    private val originalStyle = AppSettingsStore.gameCardStyleState.value
+    private val originalPortraitColumns = AppSettingsStore.gameGridPortraitColumnsState.value
+    private val originalLandscapeColumns = AppSettingsStore.gameGridLandscapeColumnsState.value
+    private val originalWaterfallPortraitColumns = AppSettingsStore.gameWaterfallPortraitColumnsState.value
+    private val originalWaterfallLandscapeColumns = AppSettingsStore.gameWaterfallLandscapeColumnsState.value
+
+    @After
+    fun restoreSettingsState() {
+        AppSettingsStore.gameCardStyleState.value = originalStyle
+        AppSettingsStore.gameGridPortraitColumnsState.value = originalPortraitColumns
+        AppSettingsStore.gameGridLandscapeColumnsState.value = originalLandscapeColumns
+        AppSettingsStore.gameWaterfallPortraitColumnsState.value = originalWaterfallPortraitColumns
+        AppSettingsStore.gameWaterfallLandscapeColumnsState.value = originalWaterfallLandscapeColumns
+    }
+
+    @Test
+    fun gridColumnsDefaultToFourPortraitAndSixLandscape() {
+        val context = InMemoryPreferencesContext()
+
+        assertEquals(4, AppSettingsStore.DEFAULT_GAME_GRID_PORTRAIT_COLUMNS)
+        assertEquals(6, AppSettingsStore.DEFAULT_GAME_GRID_LANDSCAPE_COLUMNS)
+        assertEquals(4, AppSettingsStore.getGameGridPortraitColumns(context))
+        assertEquals(6, AppSettingsStore.getGameGridLandscapeColumns(context))
+
+        AppSettingsStore.gameCardStyleState.value = AppSettingsStore.GAME_CARD_STYLE_GRID
+        AppSettingsStore.gameGridPortraitColumnsState.value = 9
+        AppSettingsStore.gameGridLandscapeColumnsState.value = 3
+        AppSettingsStore.initGameCardStyle(context)
+
+        assertEquals(AppSettingsStore.DEFAULT_GAME_CARD_STYLE, AppSettingsStore.gameCardStyleState.value)
+        assertEquals(4, AppSettingsStore.gameGridPortraitColumnsState.value)
+        assertEquals(6, AppSettingsStore.gameGridLandscapeColumnsState.value)
+    }
+
+    @Test
+    fun gridColumnsClampToTwoThroughTen() {
+        assertEquals(2, AppSettingsStore.MIN_GAME_GRID_COLUMNS)
+        assertEquals(10, AppSettingsStore.MAX_GAME_GRID_COLUMNS)
+        for (columns in listOf(Int.MIN_VALUE, -1, 0, 1)) {
+            assertEquals("columns=$columns", 2, AppSettingsStore.normalizeGameGridColumns(columns))
+        }
+        for (columns in 2..10) {
+            assertEquals("columns=$columns", columns, AppSettingsStore.normalizeGameGridColumns(columns))
+        }
+        for (columns in listOf(11, Int.MAX_VALUE)) {
+            assertEquals("columns=$columns", 10, AppSettingsStore.normalizeGameGridColumns(columns))
+        }
+    }
+
+    @Test
+    fun gridColumnsPersistIndependentlyAndReloadWithStyle() {
+        val context = InMemoryPreferencesContext()
+        AppSettingsStore.setGameCardStyle(context, AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW)
+        AppSettingsStore.setGameGridPortraitColumns(context, 3)
+        AppSettingsStore.setGameGridLandscapeColumns(context, 8)
+        AppSettingsStore.setGameGridPortraitColumns(context, 5)
+
+        assertEquals(5, AppSettingsStore.getGameGridPortraitColumns(context))
+        assertEquals(8, AppSettingsStore.getGameGridLandscapeColumns(context))
+        assertEquals(5, AppSettingsStore.gameGridPortraitColumnsState.value)
+        assertEquals(8, AppSettingsStore.gameGridLandscapeColumnsState.value)
+
+        AppSettingsStore.setGameGridLandscapeColumns(context, 7)
+        assertEquals(5, AppSettingsStore.getGameGridPortraitColumns(context))
+        assertEquals(7, AppSettingsStore.getGameGridLandscapeColumns(context))
+        assertEquals(5, AppSettingsStore.gameGridPortraitColumnsState.value)
+        assertEquals(7, AppSettingsStore.gameGridLandscapeColumnsState.value)
+        val stored = context.prefSnapshot(AppStorageNames.APP_SETTINGS_PREFS)
+        assertEquals(5, stored[AppSettingsStore.KEY_GAME_GRID_PORTRAIT_COLUMNS])
+        assertEquals(7, stored[AppSettingsStore.KEY_GAME_GRID_LANDSCAPE_COLUMNS])
+
+        AppSettingsStore.initGameCardStyle(InMemoryPreferencesContext())
+        AppSettingsStore.initGameCardStyle(context)
+
+        assertEquals(AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW, AppSettingsStore.gameCardStyleState.value)
+        assertEquals(5, AppSettingsStore.gameGridPortraitColumnsState.value)
+        assertEquals(7, AppSettingsStore.gameGridLandscapeColumnsState.value)
+    }
+
+    @Test
+    fun gridColumnSettersPersistNormalizedValues() {
+        val context = InMemoryPreferencesContext()
+        AppSettingsStore.setGameGridPortraitColumns(context, Int.MIN_VALUE)
+        AppSettingsStore.setGameGridLandscapeColumns(context, Int.MAX_VALUE)
+
+        assertEquals(2, AppSettingsStore.getGameGridPortraitColumns(context))
+        assertEquals(10, AppSettingsStore.getGameGridLandscapeColumns(context))
+        assertEquals(2, AppSettingsStore.gameGridPortraitColumnsState.value)
+        assertEquals(10, AppSettingsStore.gameGridLandscapeColumnsState.value)
+        val stored = context.prefSnapshot(AppStorageNames.APP_SETTINGS_PREFS)
+        assertEquals(2, stored[AppSettingsStore.KEY_GAME_GRID_PORTRAIT_COLUMNS])
+        assertEquals(10, stored[AppSettingsStore.KEY_GAME_GRID_LANDSCAPE_COLUMNS])
+    }
+
+    @Test
+    fun persistedOutOfRangeColumnsAreNormalizedOnReadAndInitialization() {
+        val context = InMemoryPreferencesContext()
+        context.getSharedPreferences(AppStorageNames.APP_SETTINGS_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(AppSettingsStore.KEY_GAME_GRID_PORTRAIT_COLUMNS, Int.MAX_VALUE)
+            .putInt(AppSettingsStore.KEY_GAME_GRID_LANDSCAPE_COLUMNS, Int.MIN_VALUE)
+            .apply()
+
+        assertEquals(10, AppSettingsStore.getGameGridPortraitColumns(context))
+        assertEquals(2, AppSettingsStore.getGameGridLandscapeColumns(context))
+
+        AppSettingsStore.initGameCardStyle(context)
+
+        assertEquals(10, AppSettingsStore.gameGridPortraitColumnsState.value)
+        assertEquals(2, AppSettingsStore.gameGridLandscapeColumnsState.value)
+    }
+
+    @Test
+    fun waterfallColumnsDefaultToFourPortraitAndSixLandscape() {
+        val context = InMemoryPreferencesContext()
+
+        assertEquals(4, AppSettingsStore.DEFAULT_GAME_WATERFALL_PORTRAIT_COLUMNS)
+        assertEquals(6, AppSettingsStore.DEFAULT_GAME_WATERFALL_LANDSCAPE_COLUMNS)
+        assertEquals(4, AppSettingsStore.getGameWaterfallPortraitColumns(context))
+        assertEquals(6, AppSettingsStore.getGameWaterfallLandscapeColumns(context))
+
+        AppSettingsStore.gameWaterfallPortraitColumnsState.value = 9
+        AppSettingsStore.gameWaterfallLandscapeColumnsState.value = 3
+        AppSettingsStore.initGameCardStyle(context)
+
+        assertEquals(4, AppSettingsStore.gameWaterfallPortraitColumnsState.value)
+        assertEquals(6, AppSettingsStore.gameWaterfallLandscapeColumnsState.value)
+    }
+
+    @Test
+    fun waterfallSettersClampAndPersistNormalizedValues() {
+        val context = InMemoryPreferencesContext()
+        AppSettingsStore.setGameWaterfallPortraitColumns(context, Int.MIN_VALUE)
+        AppSettingsStore.setGameWaterfallLandscapeColumns(context, Int.MAX_VALUE)
+
+        assertEquals(2, AppSettingsStore.getGameWaterfallPortraitColumns(context))
+        assertEquals(10, AppSettingsStore.getGameWaterfallLandscapeColumns(context))
+        assertEquals(2, AppSettingsStore.gameWaterfallPortraitColumnsState.value)
+        assertEquals(10, AppSettingsStore.gameWaterfallLandscapeColumnsState.value)
+        val stored = context.prefSnapshot(AppStorageNames.APP_SETTINGS_PREFS)
+        assertEquals(2, stored[AppSettingsStore.KEY_GAME_WATERFALL_PORTRAIT_COLUMNS])
+        assertEquals(10, stored[AppSettingsStore.KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS])
+
+        AppSettingsStore.setGameWaterfallPortraitColumns(context, 1)
+        AppSettingsStore.setGameWaterfallLandscapeColumns(context, 11)
+        assertEquals(2, AppSettingsStore.getGameWaterfallPortraitColumns(context))
+        assertEquals(10, AppSettingsStore.getGameWaterfallLandscapeColumns(context))
+    }
+
+    @Test
+    fun waterfallAndGridColumnsPersistIndependentlyAcrossStylesAndInitialization() {
+        val context = InMemoryPreferencesContext()
+        AppSettingsStore.setGameCardStyle(context, AppSettingsStore.GAME_CARD_STYLE_WATERFALL)
+        AppSettingsStore.setGameGridPortraitColumns(context, 3)
+        AppSettingsStore.setGameGridLandscapeColumns(context, 8)
+        AppSettingsStore.setGameWaterfallPortraitColumns(context, 5)
+        AppSettingsStore.setGameWaterfallLandscapeColumns(context, 7)
+
+        AppSettingsStore.setGameCardStyle(context, AppSettingsStore.GAME_CARD_STYLE_GRID)
+        AppSettingsStore.setGameGridPortraitColumns(context, 4)
+        AppSettingsStore.setGameWaterfallPortraitColumns(context, 9)
+        AppSettingsStore.setGameCardStyle(context, AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW)
+        AppSettingsStore.gameGridPortraitColumnsState.value = 2
+        AppSettingsStore.gameGridLandscapeColumnsState.value = 2
+        AppSettingsStore.gameWaterfallPortraitColumnsState.value = 2
+        AppSettingsStore.gameWaterfallLandscapeColumnsState.value = 2
+        AppSettingsStore.initGameCardStyle(context)
+
+        assertEquals(AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW, AppSettingsStore.gameCardStyleState.value)
+        assertEquals(4, AppSettingsStore.gameGridPortraitColumnsState.value)
+        assertEquals(8, AppSettingsStore.gameGridLandscapeColumnsState.value)
+        assertEquals(9, AppSettingsStore.gameWaterfallPortraitColumnsState.value)
+        assertEquals(7, AppSettingsStore.gameWaterfallLandscapeColumnsState.value)
+        assertEquals(4, AppSettingsStore.getGameGridPortraitColumns(context))
+        assertEquals(8, AppSettingsStore.getGameGridLandscapeColumns(context))
+        assertEquals(9, AppSettingsStore.getGameWaterfallPortraitColumns(context))
+        assertEquals(7, AppSettingsStore.getGameWaterfallLandscapeColumns(context))
+
+        val stored = context.prefSnapshot(AppStorageNames.APP_SETTINGS_PREFS)
+        assertEquals(4, stored[AppSettingsStore.KEY_GAME_GRID_PORTRAIT_COLUMNS])
+        assertEquals(8, stored[AppSettingsStore.KEY_GAME_GRID_LANDSCAPE_COLUMNS])
+        assertEquals(9, stored[AppSettingsStore.KEY_GAME_WATERFALL_PORTRAIT_COLUMNS])
+        assertEquals(7, stored[AppSettingsStore.KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS])
+    }
+
+    @Test
+    fun persistedOutOfRangeWaterfallColumnsAreNormalizedOnReadAndInitialization() {
+        val context = InMemoryPreferencesContext()
+        context.getSharedPreferences(AppStorageNames.APP_SETTINGS_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(AppSettingsStore.KEY_GAME_WATERFALL_PORTRAIT_COLUMNS, Int.MAX_VALUE)
+            .putInt(AppSettingsStore.KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS, Int.MIN_VALUE)
+            .apply()
+
+        assertEquals(10, AppSettingsStore.getGameWaterfallPortraitColumns(context))
+        assertEquals(2, AppSettingsStore.getGameWaterfallLandscapeColumns(context))
+
+        AppSettingsStore.initGameCardStyle(context)
+
+        assertEquals(10, AppSettingsStore.gameWaterfallPortraitColumnsState.value)
+        assertEquals(2, AppSettingsStore.gameWaterfallLandscapeColumnsState.value)
+    }
 
     @Test
     fun explicitStylesAreAccepted() {

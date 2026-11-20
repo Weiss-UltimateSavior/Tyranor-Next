@@ -3,7 +3,11 @@ package com.tyranor.next.ui.game
 import com.tyranor.next.ui.common.motion.CoverSurface
 import com.tyranor.next.ui.common.motion.CoverReveal
 import com.tyranor.next.ui.common.motion.listItemMotion
-import com.tyranor.next.ui.common.motion.ListItemPlacement
+import com.tyranor.next.ui.common.motion.gridReflowHost
+import com.tyranor.next.ui.common.motion.rememberGridReflowState
+import com.tyranor.next.ui.common.motion.WaterfallReflowState
+import com.tyranor.next.ui.common.motion.rememberWaterfallReflowState
+import com.tyranor.next.ui.common.motion.waterfallReflowHost
 import com.tyranor.next.ui.common.motion.rememberCoverReveal
 import com.tyranor.next.ui.common.motion.startActivityWithPageTransition
 import com.tyranor.next.ui.common.motion.rememberMotionSheetController
@@ -23,6 +27,7 @@ import com.tyranor.next.ui.common.NoRippleButton
 import androidx.compose.foundation.lazy.staggeredgrid.itemsIndexed as staggeredGridItemsIndexed
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -70,10 +75,8 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
-import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LocalContentColor
@@ -112,6 +115,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -418,8 +422,15 @@ private fun GameLibraryContent(
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val conditions by AppSettingsStore.gameConditions.collectSettingAsState()
-    // 条件变化时重新创建滚动状态，避免 Lazy 布局按旧首卡键锚定到排序后的其它位置。
-    val gridState = key(conditions) { rememberLazyStaggeredGridState() }
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val waterfallPortraitColumns by AppSettingsStore.gameWaterfallPortraitColumnsState.collectSettingAsState()
+    val waterfallLandscapeColumns by AppSettingsStore.gameWaterfallLandscapeColumnsState.collectSettingAsState()
+    val waterfallColumns = if (landscape) waterfallLandscapeColumns else waterfallPortraitColumns
+    // 条件变化仍回顶；列数或方向变化则从零重建测量历史，恢复业务锚点。
+    val waterfallReflow = key(conditions) {
+        rememberWaterfallReflowState(waterfallColumns, landscape, contentReady = loaded)
+    }
+    val gridState = waterfallReflow.gridState
     val uniformGridState = key(conditions) { rememberLazyGridState() }
     val sortedGames = remember(games, conditions.sortMode) { sortGames(games, conditions.sortMode) }
     LaunchedEffect(query) { onSearchQueryChanged(query) }
@@ -454,9 +465,15 @@ private fun GameLibraryContent(
     // 封面流无纵向滚动，始终显示。
     var searchBarVisible by remember { mutableStateOf(true) }
     val searchAndFilterVisible = searchBarVisible || (loaded && !scanning && filteredGames.isEmpty())
-    LaunchedEffect(cardStyle, gridState, uniformGridState) {
-        searchBarVisible = true
-        if (cardStyle == AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW) return@LaunchedEffect
+    val restoringWaterfall = waterfallReflow.isRestoring
+    LaunchedEffect(cardStyle, gridState, uniformGridState, restoringWaterfall) {
+        if (cardStyle == AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW) {
+            searchBarVisible = true
+            return@LaunchedEffect
+        }
+        if (cardStyle == AppSettingsStore.GAME_CARD_STYLE_WATERFALL && restoringWaterfall) {
+            return@LaunchedEffect
+        }
         val positions = when (cardStyle) {
             AppSettingsStore.GAME_CARD_STYLE_GRID -> snapshotFlow {
                 uniformGridState.firstVisibleItemIndex to uniformGridState.firstVisibleItemScrollOffset
@@ -633,7 +650,9 @@ private fun GameLibraryContent(
                             // 「瀑布」风格（默认）
                             else -> GameGrid(
                                 games = filteredGames,
-                                gridState = gridState,
+                                waterfallReflow = waterfallReflow,
+                                columns = waterfallColumns,
+                                landscape = landscape,
                                 onGameClick = { if (contentInteractive) onGameClick(it) },
                                 onGameLongClick = { if (contentInteractive) onGameLongClick(it) },
                             )
@@ -2205,10 +2224,13 @@ private fun LaunchFileDialog(
 @Composable
 internal fun GameGrid(
     games: List<ScanGame>,
-    gridState: LazyStaggeredGridState,
+    waterfallReflow: WaterfallReflowState,
+    columns: Int,
+    landscape: Boolean,
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
 ) {
+    val gridState = waterfallReflow.gridState
     // 液态玻璃导航悬浮时不占布局：列表底部预留导航高度，滚动到底时最后一行可完全露出不被遮挡；
     // 滚动过程中内容仍可经过玻璃后面（沉浸）
     val glassBottomInset = glassNavBottomInset()
@@ -2216,8 +2238,19 @@ internal fun GameGrid(
     val hideTitleTag by AppSettingsStore.gameCardTitleTagState.collectSettingAsState()
     // 应用设置「卡片引擎角标」：左上角引擎类型角标（默认关）
     val showEngineBadge by AppSettingsStore.gameCardBadgeState.collectSettingAsState()
-    // 大屏（横屏/平板）一行六个卡片，避免卡片被撑得过大；窄屏保持一行三个
-    val columns = if (isWideScreen()) 6 else 3
+    val reflow = rememberGridReflowState(
+        columns,
+        landscape,
+        ready = !waterfallReflow.isRestoring,
+        placementDelta = { key ->
+            val previous = waterfallReflow.previousItemOffsets[key]
+            val current = gridState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == key }?.offset
+            if (previous != null && current != null) previous - current else androidx.compose.ui.unit.IntOffset.Zero
+        },
+    ) {
+        gridState.layoutInfo.visibleItemsInfo.sortedBy { it.index }.mapTo(LinkedHashSet()) { it.key }
+    }
+    val placement = reflow.placement
     // 滚动状态只以 provider 形式下发，由封面加载协程读取（见 rememberCoverBitmap）：
     // 若在 item 组合内直接读 gridState.isScrollInProgress，滑动开始/结束会让整屏卡片一并重组。
     val isScrolling = remember(gridState) { { gridState.isScrollInProgress } }
@@ -2226,7 +2259,10 @@ internal fun GameGrid(
     LazyVerticalStaggeredGrid(
         columns = StaggeredGridCells.Fixed(columns),
         state = gridState,
-        modifier = Modifier.fillMaxSize().scrollJellyHost(gridJelly),
+        modifier = Modifier.fillMaxSize()
+            .waterfallReflowHost(waterfallReflow)
+            .gridReflowHost(reflow)
+            .scrollJellyHost(gridJelly),
         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp + glassBottomInset),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalItemSpacing = 12.dp,
@@ -2240,8 +2276,9 @@ internal fun GameGrid(
         ) { index, game ->
             GameCard(
                 // 搜索 / 排序 / 增删时卡片位置弹簧过渡；首屏依次弹入
-                modifier = listItemMotion(ListItemPlacement.Reflow).staggeredEntrance(index)
-                    // 窄卡片（3/6 列）拉伸略收一点，避免高速滚动时显得过软
+                modifier = listItemMotion(placement)
+                    .staggeredEntrance(index, reflow = reflow, key = gameCardItemKey(game))
+                    // 多列卡片拉伸略收一点，避免高速滚动时显得过软
                     .scrollJelly(gridJelly, strength = 0.03f),
                 game = game,
                 onClick = { onGameClick(game) },
@@ -2355,7 +2392,7 @@ internal fun GameCard(
 
 /**
  * 游戏页「网格」卡片风格：恢复瀑布流之前的等高网格（3:4 封面 + 封面下方单行标题）。
- * 列数、封面加载优化、名称标签与角标设置与瀑布流一致。
+ * 列数按当前横竖屏独立配置；封面加载优化、名称标签与角标设置与瀑布流一致。
  */
 @Composable
 internal fun UniformGameGrid(
@@ -2368,15 +2405,22 @@ internal fun UniformGameGrid(
     val glassBottomInset = glassNavBottomInset()
     val hideTitleTag by AppSettingsStore.gameCardTitleTagState.collectSettingAsState()
     val showEngineBadge by AppSettingsStore.gameCardBadgeState.collectSettingAsState()
-    // 大屏（横屏/平板）一行六个卡片，窄屏保持一行三个
-    val columns = if (isWideScreen()) 6 else 3
+    // 按屏幕方向选择，竖屏平板也使用竖屏配置。
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val portraitColumns by AppSettingsStore.gameGridPortraitColumnsState.collectSettingAsState()
+    val landscapeColumns by AppSettingsStore.gameGridLandscapeColumnsState.collectSettingAsState()
+    val columns = if (landscape) landscapeColumns else portraitColumns
+    val reflow = rememberGridReflowState(columns, landscape) {
+        gridState.layoutInfo.visibleItemsInfo.sortedBy { it.index }.mapTo(LinkedHashSet()) { it.key }
+    }
+    val placement = reflow.placement
     val isScrolling = remember(gridState) { { gridState.isScrollInProgress } }
     // 滚动果冻：快速滚动时卡片沿滚动方向轻微拉长，停下 Q 弹复原（「普通」档不挂）
     val gridJelly = rememberScrollJellyState()
     LazyVerticalGrid(
         columns = GridCells.Fixed(columns),
         state = gridState,
-        modifier = Modifier.fillMaxSize().scrollJellyHost(gridJelly),
+        modifier = Modifier.fillMaxSize().gridReflowHost(reflow).scrollJellyHost(gridJelly),
         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp + glassBottomInset),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -2388,7 +2432,8 @@ internal fun UniformGameGrid(
         ) { index, game ->
             UniformGameCard(
                 // 搜索 / 排序 / 增删时卡片位置弹簧过渡；首屏依次弹入（与瀑布流一致）
-                modifier = listItemMotion(ListItemPlacement.Reflow).staggeredEntrance(index)
+                modifier = listItemMotion(placement)
+                    .staggeredEntrance(index, reflow = reflow, key = gameCardItemKey(game))
                     .scrollJelly(gridJelly, strength = 0.03f),
                 game = game,
                 onClick = { onGameClick(game) },

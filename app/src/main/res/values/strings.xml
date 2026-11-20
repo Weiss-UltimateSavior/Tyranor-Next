@@ -107,6 +107,9 @@
     <string name="settings_game_card_style_waterfall">瀑布</string>
     <string name="settings_game_card_style_grid">网格</string>
     <string name="settings_game_card_style_cover_flow">列表</string>
+    <string name="settings_game_card_portrait_columns">竖屏每行卡片数</string>
+    <string name="settings_game_card_landscape_columns">横屏每行卡片数</string>
+    <string name="settings_game_card_columns_value">%1$d 张</string>
     <string name="settings_game_card_badge">卡片引擎角标</string>
     <string name="settings_game_card_hide_title_tag">卡片隐藏名称标签</string>
     <string name="settings_engine_settings">引擎设置</string>
