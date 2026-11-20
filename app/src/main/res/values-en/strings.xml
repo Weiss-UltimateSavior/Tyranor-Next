@@ -1036,7 +1036,7 @@
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
 
     <!-- Shared ordered graphics-chain settings -->
-    <string name="graphics_settings_title">Super resolution</string>
+    <string name="graphics_settings_title">Graphics filter chain</string>
     <string name="graphics_settings_enabled">Enable filter chain</string>
     <string name="graphics_chain_title">Filter chain</string>
     <string name="graphics_chain_custom">Use a custom chain for this game</string>

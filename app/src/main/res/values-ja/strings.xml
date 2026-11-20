@@ -1036,7 +1036,7 @@
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
 
     <!-- Shared ordered graphics-chain settings -->
-    <string name="graphics_settings_title">超解像</string>
+    <string name="graphics_settings_title">画質フィルターチェーン</string>
     <string name="graphics_settings_enabled">フィルターチェーンを有効化</string>
     <string name="graphics_chain_title">フィルターチェーン</string>
     <string name="graphics_chain_custom">このゲーム専用のチェーンを設定</string>
