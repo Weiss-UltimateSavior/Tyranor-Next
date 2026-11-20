@@ -46,6 +46,7 @@ import androidx.compose.ui.window.DialogWindowProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
+import com.tyranor.next.ui.common.privacy.SecureWindowEffect
 import kotlinx.coroutines.CancellationException
 import java.util.IdentityHashMap
 import kotlin.math.roundToInt
@@ -205,6 +206,9 @@ fun syncDialogWindow(
 ): Window? {
     val view = LocalView.current
     val window = (view.parent as? DialogWindowProvider)?.window
+    // 独立窗口不继承 Activity 的 FLAG_SECURE：安全屏幕 / 应用锁生效时在此统一同步，
+    // 覆盖所有经本入口的弹窗、侧栏、抽屉与游戏浮层。
+    SecureWindowEffect(window)
     val owner = remember(window) { PageTransitions.findActivity(view.context) ?: window }
     val originalAnimations = remember(window) { window?.attributes?.windowAnimations ?: 0 }
     val themeDim = remember(window) { window?.attributes?.dimAmount ?: 0f }

@@ -141,7 +141,7 @@ public class KRKRActivity extends SDLActivity {
             Objects.requireNonNull(this.getSupportActionBar()).hide();
         }
         catch (NullPointerException ignored){}
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        com.core.engine.EnginePlayerOrientation.applyLocked(this);
     }
 
     public native void setNativeAssetManager(AssetManager assetManager);

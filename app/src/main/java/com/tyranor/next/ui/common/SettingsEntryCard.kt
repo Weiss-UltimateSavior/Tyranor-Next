@@ -31,7 +31,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * 单条功能入口卡：一张 MiuixCard 只承载一条 ArrowPreference。
  *
  * 每个入口独立成卡，避免多个不相关功能挤在同一张卡里；卡片间距由外层列表统一提供，
- * 多行同类设置仍由 `EngineCard` 这类分组卡承载。设置页与关于应用页共用本组件。
+ * 多行同类设置仍由 `EngineCard` 这类分组卡承载。设置页、工具页与关于应用页共用本组件。
  *
  * 调用方需处于 [com.tyranor.next.theme.MiuixSettingsTheme]（或其上级主题）内。
  */
@@ -43,6 +43,7 @@ internal fun SettingsEntryCard(
     showBadge: Boolean = false,
     /** 该入口对应的操作正在进行（如检查更新）：图标呼吸并在开始 / 结束时弹一下。 */
     busy: Boolean = false,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     MiuixCard(
@@ -53,7 +54,8 @@ internal fun SettingsEntryCard(
             ArrowPreference(
                 title = title,
                 startAction = { SettingsItemIcon(iconRes, showBadge = showBadge, busy = busy) },
-                onClick = onClick,
+                enabled = enabled,
+                onClick = if (enabled) onClick else null,
             )
         }
     }

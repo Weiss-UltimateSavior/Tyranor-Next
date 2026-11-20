@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
+import com.tyranor.next.core.engine.runtime.RuntimeModuleRegistry
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.RpgSaveFormat
@@ -26,6 +27,8 @@ internal interface SaveSyncEnvironment {
     }
     fun games(): List<ScanGame>
     fun available(game: ScanGame): Boolean
+    fun runtimeSaveCapability(game: ScanGame): GameSaveManager.RuntimeSaveCapability? = null
+    fun runtimeSaveCapabilitySnapshot(game: ScanGame): GameSaveManager.RuntimeSaveCapabilitySnapshot? = null
     fun running(game: ScanGame): Boolean
     fun activeKey(game: ScanGame): String = game.uri
     suspend fun fingerprint(game: ScanGame): String?
@@ -40,6 +43,13 @@ internal interface SaveSyncEnvironment {
         requireSameSaveDirectory(activeKey, activeKey(game))
     }
     suspend fun import(game: ScanGame, archive: File, activeKey: String, committed: () -> Unit)
+    suspend fun import(
+        game: ScanGame,
+        archive: File,
+        activeKey: String,
+        expectedRuntimeCapability: GameSaveManager.RuntimeSaveCapabilitySnapshot?,
+        committed: () -> Unit,
+    ) = import(game, archive, activeKey, committed)
     fun completeImport(game: ScanGame)
     fun completeImport(game: ScanGame, activeKey: String) {
         requireSameSaveDirectory(activeKey, activeKey(game))
@@ -85,6 +95,20 @@ internal class AndroidSaveSyncEnvironment(private val context: Context) : SaveSy
     }
     override fun games() = RuntimeModuleBindings.loadLibraryWithBuiltInSystemNnn(context)
     override fun available(game: ScanGame) = manager.resolveSaveLocation(game).available
+    override fun runtimeSaveCapability(game: ScanGame): GameSaveManager.RuntimeSaveCapability? {
+        if (game.engine == EngineType.UNKNOWN && !game.runtimeModulePackage.isNullOrBlank()) {
+            val registry = RuntimeModuleRegistry.state.value
+            if (registry.lastError != null) return GameSaveManager.RuntimeSaveCapability.UNKNOWN
+            val descriptor = registry.modules.firstOrNull { it.packageName == game.runtimeModulePackage }
+                ?: return GameSaveManager.RuntimeSaveCapability.UNKNOWN
+            if (!descriptor.enabled) return GameSaveManager.RuntimeSaveCapability.UNAVAILABLE
+            if (descriptor.saves == null) return GameSaveManager.RuntimeSaveCapability.UNSUPPORTED
+            // The library binding has not resolved to this runtime yet, so reserve identity but never transfer.
+            return GameSaveManager.RuntimeSaveCapability.UNKNOWN
+        }
+        return manager.runtimeSaveCapability(game).status
+    }
+    override fun runtimeSaveCapabilitySnapshot(game: ScanGame) = manager.runtimeSaveCapability(game)
     override fun running(game: ScanGame) = SaveSyncRuntime.isGameRunning(context, game)
     override fun activeKey(game: ScanGame) = SaveSyncRuntime.activeKey(context, game)
     override suspend fun fingerprint(game: ScanGame): String? = fingerprint(game, activeKey(game))
@@ -115,10 +139,20 @@ internal class AndroidSaveSyncEnvironment(private val context: Context) : SaveSy
         requireSameSaveDirectory(activeKey, activeKey(game))
     }
     override suspend fun import(game: ScanGame, archive: File, activeKey: String, committed: () -> Unit) {
+        import(game, archive, activeKey, expectedRuntimeCapability = null, committed = committed)
+    }
+    override suspend fun import(
+        game: ScanGame,
+        archive: File,
+        activeKey: String,
+        expectedRuntimeCapability: GameSaveManager.RuntimeSaveCapabilitySnapshot?,
+        committed: () -> Unit,
+    ) {
         val directory = manager.syncSaveDirectory(game)
         requireSameSaveDirectory(activeKey, saveDirectoryIdentity(game) { directory })
         manager.importFromZip(game, Uri.fromFile(archive), manualSelection = true,
-            expectedDirectory = directory, onDirectoryCommitted = committed)
+            expectedDirectory = directory, expectedRuntimeCapability = expectedRuntimeCapability,
+            onDirectoryCommitted = committed)
     }
     override fun completeImport(game: ScanGame) = manager.completePendingVersionImport(game)
     override fun completeImport(game: ScanGame, activeKey: String) {

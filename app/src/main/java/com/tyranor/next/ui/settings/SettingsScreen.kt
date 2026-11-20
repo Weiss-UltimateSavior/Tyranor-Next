@@ -42,7 +42,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -177,7 +176,7 @@ fun SettingsScreen(
     // 已知行为：以下更新弹窗状态均为 remember 持有，Activity 重建（旋转/语言切换）会丢失并静默取消下载；
     // 更新检查是低频操作，接受该取舍，未上 ViewModel 持久化。
     var checkingUpdate by remember { mutableStateOf(false) }
-    val hasUpdate by GitHubUpdateChecker.hasUpdate.collectAsState()
+    val hasUpdate by GitHubUpdateChecker.hasUpdate.collectAsStateWithLifecycle()
     var updateAvailable by remember { mutableStateOf<UpdateCheckResult.UpdateAvailable?>(null) }
     var activeCandidate by remember { mutableStateOf<UpdateCandidate?>(null) }
     var updateDownloadPhase by remember { mutableStateOf<UpdateDownloadPhase?>(null) }
@@ -209,15 +208,19 @@ fun SettingsScreen(
     }
     val dirPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri?.let { u ->
-            runCatching {
-                ctx.contentResolver.takePersistableUriPermission(
-                    u,
-                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                        android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-                )
+            scope.launch {
+                val roots = withContext(Dispatchers.IO) {
+                    runCatching {
+                        ctx.contentResolver.takePersistableUriPermission(
+                            u,
+                            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                                android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                        )
+                    }
+                    GameLibraryFacade.saveRoot(ctx, u)
+                }
+                scanDirs = roots
             }
-            GameLibraryFacade.saveRoot(ctx, u)
-            scanDirs = GameLibraryFacade.loadRoots(ctx)
         }
     }
 
@@ -593,26 +596,36 @@ fun SettingsScreen(
         val allFilesAccessMsg = stringResource(R.string.settings_all_files_access_required)
         // 路径校验失败次数：每 +1 输入框左右抖一下（与 Toast 同时出现）
         var pathRejects by remember { mutableIntStateOf(0) }
+        var savingPath by remember { mutableStateOf(false) }
         val savePath: () -> Unit = {
-            scope.launch {
-                val trimmed = pathInput.trim()
-                val target = File(trimmed)
-                // 仅绝对路径且为有效目录才允许保存；磁盘 IO 放到 Dispatchers.IO（同本文件 :265-269 约定）。
-                val ok = target.isAbsolute &&
-                    withContext(Dispatchers.IO) { runCatching { target.isDirectory }.getOrDefault(false) }
-                if (!ok) {
-                    pathRejects++
-                    AppNotice.makeText(ctx, pathInvalidMsg, Toast.LENGTH_SHORT, AppNotice.Kind.Failure).show()
-                    return@launch
+            if (!savingPath) {
+                savingPath = true
+                scope.launch {
+                    try {
+                        val trimmed = pathInput.trim()
+                        val target = File(trimmed)
+                        // 仅绝对路径且为有效目录才允许保存；磁盘 IO 放到 Dispatchers.IO（同本文件 :265-269 约定）。
+                        val ok = target.isAbsolute &&
+                            withContext(Dispatchers.IO) { runCatching { target.isDirectory }.getOrDefault(false) }
+                        if (!ok) {
+                            pathRejects++
+                            AppNotice.makeText(ctx, pathInvalidMsg, Toast.LENGTH_SHORT, AppNotice.Kind.Failure).show()
+                            return@launch
+                        }
+                        // /storage 等共享存储路径需“管理所有文件”权限，否则扫描会静默为空；先引导授权，不落盘。
+                        if (guideAllFilesAccessIfNeeded(ctx, target.absolutePath)) {
+                            AppNotice.makeText(ctx, allFilesAccessMsg, Toast.LENGTH_SHORT, AppNotice.Kind.Limit).show()
+                            return@launch
+                        }
+                        withContext(Dispatchers.IO) {
+                            GameLibraryFacade.saveRoot(ctx, target.absolutePath)
+                        }
+                        showPathDialog = false
+                        pathInput = ""
+                    } finally {
+                        savingPath = false
+                    }
                 }
-                // /storage 等共享存储路径需“管理所有文件”权限，否则扫描会静默为空；先引导授权，不落盘。
-                if (guideAllFilesAccessIfNeeded(ctx, target.absolutePath)) {
-                    AppNotice.makeText(ctx, allFilesAccessMsg, Toast.LENGTH_SHORT, AppNotice.Kind.Limit).show()
-                    return@launch
-                }
-                GameLibraryFacade.saveRoot(ctx, target.absolutePath)
-                showPathDialog = false
-                pathInput = ""
             }
         }
         AppAlertDialog(
@@ -880,6 +893,10 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         RuffleSettingsScreen()
         return
     }
+    if (kind == EngineSettingsKind.IMPACTO) {
+        ImpactoSettingsScreen()
+        return
+    }
     if (kind == EngineSettingsKind.CMVS) {
         CmvsSettingsScreen()
         return
@@ -1021,63 +1038,93 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     val krIs134 = krVersion == EngineSettingsStore.KR_134
 
     // 编辑→保存模型：控件仅更新本地状态，点顶部保存按钮才统一写盘
-    fun saveAll() {
+    fun saveCurrentEngine() {
         graphicsFamily?.let { EngineSettingsStore.setGraphicsSettings(ctx, it, graphics) }
-        EngineSettingsStore.setKrEngineVersion(ctx, krVersion)
-        EngineSettingsStore.setKrKernel(ctx, krKernel)
-        EngineSettingsStore.setKrScopedSaveDir(ctx, krScoped)
-        EngineSettingsStore.setKrSkipStartupDialogs(ctx, krSkipStartupDialogs)
-        EngineSettingsStore.setKrPatchOverlayMode(ctx, krPatchOverlayMode)
-        EngineSettingsStore.setKrDefaultFont(ctx, krFont)
-        EngineSettingsStore.setKrForceDefaultFont(ctx, krForceFont)
-        EngineSettingsStore.setKrRenderer(ctx, krRenderer)
-        EngineSettingsStore.setKrSoftwareDrawThread(ctx, krDrawThread)
-        EngineSettingsStore.setKrSoftwareCompressTex(ctx, krSwCompress)
-        EngineSettingsStore.setKrOglCompressTex(ctx, krOglCompress)
-        EngineSettingsStore.setKrMemUsage(ctx, krMem)
-        EngineSettingsStore.setKrOglMaxTexsize(ctx, krTexsize)
-        EngineSettingsStore.setKrOglAccurateRender(ctx, krAccurate)
-        EngineSettingsStore.setKrFpsLimit(ctx, krFps)
-        EngineSettingsStore.setKrVCursorScale(ctx, krVCursorScale)
-        EngineSettingsStore.setKrMenuHandlerOpa(ctx, krMenuOpa)
-        EngineSettingsStore.saveOns(ctx, ons)
-        EngineSettingsStore.setArtKernel(ctx, artKernel)
-        EngineSettingsStore.setArtEngineVersion(ctx, artVersion)
-        EngineSettingsStore.setArtAutoPatch(ctx, artPatch)
-        EngineSettingsStore.setArtResolution(ctx, artResolution)
-        EngineSettingsStore.setArtSideCut(ctx, artSideCut)
-        EngineSettingsStore.setArtSurfaceCacheSize(ctx, artSurfaceCache)
-        EngineSettingsStore.setArtFontCacheSize(ctx, artFontCache)
-        EngineSettingsStore.setArtPowerSaving(ctx, artPowerSaving)
-        EngineSettingsStore.setTyranoExternalNetwork(ctx, tyExternal)
-        EngineSettingsStore.setTyranoScopedSaveDir(ctx, tyScoped)
-        EngineSettingsStore.setRpgMakerModEnabled(ctx, rpgMakerMod)
-        EngineSettingsStore.setRpgLegacyRenderer(ctx, rpgLegacyRenderer)
-        EngineSettingsStore.setRpgSaveInterop(ctx, rpgSaveInterop)
-        EngineSettingsStore.setRpgMvEngineVersion(ctx, rpgMvVersion)
-        EngineSettingsStore.setRpgMzEngineVersion(ctx, rpgMzVersion)
-        EngineSettingsStore.saveRpgMaker(ctx, rpg)
-        EngineSettingsStore.setRenpyVersion(ctx, renpyVersion)
-        EngineSettingsStore.saveRenPy(ctx, renpy)
-        EngineSettingsStore.setSiglusLanguage(ctx, siglusLanguage)
-        EngineSettingsStore.setFbNls(ctx, fbNls)
-        EngineSettingsStore.setFvpNls(ctx, fvpNls)
-        EngineSettingsStore.setFvpSystemFont(ctx, fvpSystemFont)
-        EngineSettingsStore.setFvpTextHidpi(ctx, fvpTextHidpi)
-        EngineSettingsStore.setFvpFont(ctx, fvpFont)
-        EngineSettingsStore.setXs35ScopedSaveDir(ctx, xs35Scoped)
-        EngineSettingsStore.setXs35Renderer(ctx, xs35Renderer)
-        EngineSettingsStore.setXs35IntegerScale(ctx, xs35IntegerScale)
-        EngineSettingsStore.setXs35MuteUnfocus(ctx, xs35MuteUnfocus)
-        EngineSettingsStore.setXs4ScopedSaveDir(ctx, xs4Scoped)
-        EngineSettingsStore.setXs4Encoding(ctx, xs4Encoding)
-        EngineSettingsStore.setXs4FontGothicPath(ctx, xs4FontGothic)
-        EngineSettingsStore.setXs4FontMinchoPath(ctx, xs4FontMincho)
-        EngineSettingsStore.setXs4Joypad(ctx, xs4Joypad)
-        EngineSettingsStore.setXs4MsgskipDelay(ctx, xs4MsgskipDelay)
-        EngineSettingsStore.saveWinlator(ctx, winlator)
-        EngineSettingsStore.setPpssppVersion(ctx, ppssppVersion)
-        EngineSettingsStore.setWebShellPort(ctx, webShellPort)
+        when (kind) {
+            EngineSettingsKind.KRKR -> {
+                EngineSettingsStore.setKrEngineVersion(ctx, krVersion)
+                EngineSettingsStore.setKrKernel(ctx, krKernel)
+                EngineSettingsStore.setKrScopedSaveDir(ctx, krScoped)
+                EngineSettingsStore.setKrSkipStartupDialogs(ctx, krSkipStartupDialogs)
+                EngineSettingsStore.setKrPatchOverlayMode(ctx, krPatchOverlayMode)
+                EngineSettingsStore.setKrDefaultFont(ctx, krFont)
+                EngineSettingsStore.setKrForceDefaultFont(ctx, krForceFont)
+                EngineSettingsStore.setKrRenderer(ctx, krRenderer)
+                EngineSettingsStore.setKrSoftwareDrawThread(ctx, krDrawThread)
+                EngineSettingsStore.setKrSoftwareCompressTex(ctx, krSwCompress)
+                EngineSettingsStore.setKrOglCompressTex(ctx, krOglCompress)
+                EngineSettingsStore.setKrMemUsage(ctx, krMem)
+                EngineSettingsStore.setKrOglMaxTexsize(ctx, krTexsize)
+                EngineSettingsStore.setKrOglAccurateRender(ctx, krAccurate)
+                EngineSettingsStore.setKrFpsLimit(ctx, krFps)
+                EngineSettingsStore.setKrVCursorScale(ctx, krVCursorScale)
+                EngineSettingsStore.setKrMenuHandlerOpa(ctx, krMenuOpa)
+            }
+
+            EngineSettingsKind.ONS -> EngineSettingsStore.saveOns(ctx, ons)
+            EngineSettingsKind.ARTEMIS -> {
+                EngineSettingsStore.setArtKernel(ctx, artKernel)
+                EngineSettingsStore.setArtEngineVersion(ctx, artVersion)
+                EngineSettingsStore.setArtAutoPatch(ctx, artPatch)
+                EngineSettingsStore.setArtResolution(ctx, artResolution)
+                EngineSettingsStore.setArtSideCut(ctx, artSideCut)
+                EngineSettingsStore.setArtSurfaceCacheSize(ctx, artSurfaceCache)
+                EngineSettingsStore.setArtFontCacheSize(ctx, artFontCache)
+                EngineSettingsStore.setArtPowerSaving(ctx, artPowerSaving)
+            }
+
+            EngineSettingsKind.TYRANO -> {
+                EngineSettingsStore.setTyranoExternalNetwork(ctx, tyExternal)
+                EngineSettingsStore.setTyranoScopedSaveDir(ctx, tyScoped)
+                EngineSettingsStore.setWebShellPort(ctx, webShellPort)
+            }
+
+            EngineSettingsKind.RPG_MAKER -> {
+                EngineSettingsStore.setTyranoExternalNetwork(ctx, tyExternal)
+                EngineSettingsStore.setTyranoScopedSaveDir(ctx, tyScoped)
+                EngineSettingsStore.setRpgMakerModEnabled(ctx, rpgMakerMod)
+                EngineSettingsStore.setRpgLegacyRenderer(ctx, rpgLegacyRenderer)
+                EngineSettingsStore.setRpgSaveInterop(ctx, rpgSaveInterop)
+                EngineSettingsStore.setRpgMvEngineVersion(ctx, rpgMvVersion)
+                EngineSettingsStore.setRpgMzEngineVersion(ctx, rpgMzVersion)
+                EngineSettingsStore.saveRpgMaker(ctx, rpg)
+            }
+
+            EngineSettingsKind.RENPY -> {
+                EngineSettingsStore.setRenpyVersion(ctx, renpyVersion)
+                EngineSettingsStore.saveRenPy(ctx, renpy)
+            }
+
+            EngineSettingsKind.SIGLUS -> EngineSettingsStore.setSiglusLanguage(ctx, siglusLanguage)
+            EngineSettingsKind.FRAMEBUFFER -> EngineSettingsStore.setFbNls(ctx, fbNls)
+            EngineSettingsKind.FVP -> {
+                EngineSettingsStore.setFvpNls(ctx, fvpNls)
+                EngineSettingsStore.setFvpSystemFont(ctx, fvpSystemFont)
+                EngineSettingsStore.setFvpTextHidpi(ctx, fvpTextHidpi)
+                EngineSettingsStore.setFvpFont(ctx, fvpFont)
+            }
+
+            EngineSettingsKind.XSYS35 -> {
+                EngineSettingsStore.setXs35ScopedSaveDir(ctx, xs35Scoped)
+                EngineSettingsStore.setXs35Renderer(ctx, xs35Renderer)
+                EngineSettingsStore.setXs35IntegerScale(ctx, xs35IntegerScale)
+                EngineSettingsStore.setXs35MuteUnfocus(ctx, xs35MuteUnfocus)
+            }
+
+            EngineSettingsKind.XSYS4 -> {
+                EngineSettingsStore.setXs4ScopedSaveDir(ctx, xs4Scoped)
+                EngineSettingsStore.setXs4Encoding(ctx, xs4Encoding)
+                EngineSettingsStore.setXs4FontGothicPath(ctx, xs4FontGothic)
+                EngineSettingsStore.setXs4FontMinchoPath(ctx, xs4FontMincho)
+                EngineSettingsStore.setXs4Joypad(ctx, xs4Joypad)
+                EngineSettingsStore.setXs4MsgskipDelay(ctx, xs4MsgskipDelay)
+            }
+
+            EngineSettingsKind.WINLATOR -> EngineSettingsStore.saveWinlator(ctx, winlator)
+            EngineSettingsKind.PPSSPP -> EngineSettingsStore.setPpssppVersion(ctx, ppssppVersion)
+            EngineSettingsKind.ETHORNELL, EngineSettingsKind.RUFFLE, EngineSettingsKind.IMPACTO,
+            EngineSettingsKind.CMVS, EngineSettingsKind.SYSTEMNNN -> Unit
+        }
     }
 
     MiuixSettingsTheme {
@@ -1092,7 +1139,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                     contentColor = PageTextColor,
                     trailing = {
                         TopBarIcon(painterResource(R.drawable.ic_save), stringResource(R.string.engine_settings_save_content_description), MiuixTheme.colorScheme.primary) {
-                            saveAll()
+                            saveCurrentEngine()
                             AppNotice.makeText(ctx, engineSettingsSavedMessage, android.widget.Toast.LENGTH_SHORT, AppNotice.Kind.Success).show()
                         }
                     },

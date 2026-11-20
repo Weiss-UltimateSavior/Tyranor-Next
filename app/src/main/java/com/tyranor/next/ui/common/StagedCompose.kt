@@ -26,7 +26,8 @@ class StagedCompose internal constructor(last: Int, fresh: Boolean) {
     // 每项只订阅自己所属的组；放行下一组不再使前几组已经可见的行一起失效。
     private val groups = if (fresh) Array(last + 1) { mutableStateOf(it == 0) } else null
 
-    internal fun isVisible(order: Int): Boolean = groups?.get(order)?.value ?: true
+    // 越界 order 直接放行：以后新增设置卡片但忘了同步 last 时，内容只会一次组合完，不会越界崩溃
+    internal fun isVisible(order: Int): Boolean = groups?.getOrNull(order)?.value ?: true
 
     internal suspend fun revealGroups() {
         val groups = groups ?: return

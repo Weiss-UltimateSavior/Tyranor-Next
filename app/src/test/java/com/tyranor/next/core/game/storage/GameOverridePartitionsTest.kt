@@ -5,6 +5,7 @@ import com.tyranor.next.core.settings.GraphicsNode
 import com.tyranor.next.core.settings.GraphicsOverride
 import com.tyranor.next.core.settings.GraphicsSettingsCodec
 import com.tyranor.next.core.settings.GraphicsSettings
+import com.tyranor.next.core.settings.ImpactoOverride
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.core.settings.RuffleOverride
@@ -50,6 +51,8 @@ class GameOverridePartitionsTest {
         .put(GameOverridePartitions.TOUCH_PAD_CONFIG_KEY, JSONObject().put("buttons", "a,b"))
         .put(GameOverridePartitions.TOUCH_PAD_PRESETS_KEY, JSONObject().put("preset1", "{}"))
         .put("future_engine_key", "keep-me")
+        .put(GameOverridePartitions.KEY_RUNTIME_MODULE_SETTINGS, JSONObject()
+            .put("com.tyranor.runtime.one", JSONObject().put("vsync", false)))
 
     @Test
     fun splitAssembleRoundTripIsLossless() {
@@ -117,6 +120,32 @@ class GameOverridePartitionsTest {
         assertTrue(tyranoPartition.has(PerGameSettingsStore.F_FVP_SYSTEM_FONT))
         assertTrue(tyranoPartition.has(PerGameSettingsStore.F_FVP_TEXT_HIDPI))
         assertTrue(tyranoPartition.has(PerGameSettingsStore.F_FVP_FONT))
+        assertTrue(tyranoPartition.has(GameOverridePartitions.KEY_RUNTIME_MODULE_SETTINGS))
+    }
+
+    @Test
+    fun staleFullRecordWriteKeepsLatestRuntimeModuleMapAndDoesNotResurrectClearedModules() {
+        val packageA = "com.tyranor.runtime.a"
+        val packageB = "com.tyranor.runtime.b"
+        val latest = JSONObject().put(
+            GameOverridePartitions.KEY_RUNTIME_MODULE_SETTINGS,
+            JSONObject().put(packageA, JSONObject().put("fps", 60)),
+        )
+        val staleTarget = JSONObject()
+            .put(PerGameSettingsStore.F_RENDERER, "vulkan")
+            .put(
+                GameOverridePartitions.KEY_RUNTIME_MODULE_SETTINGS,
+                JSONObject()
+                    .put(packageA, JSONObject().put("fps", 30))
+                    .put(packageB, JSONObject().put("old", true)),
+            )
+
+        GameOverridesRepository.preserveRuntimeModuleSettings(latest, staleTarget)
+
+        assertEquals("vulkan", staleTarget.getString(PerGameSettingsStore.F_RENDERER))
+        val preserved = staleTarget.getJSONObject(GameOverridePartitions.KEY_RUNTIME_MODULE_SETTINGS)
+        assertEquals(60, preserved.getJSONObject(packageA).getInt("fps"))
+        assertTrue(!preserved.has(packageB))
     }
 
     @Test
@@ -457,6 +486,52 @@ class GameOverridePartitionsTest {
                 loadBehavior = "blocking",
             ),
             PerGameSettingsStore.toRuffleOverride(GameOverridePartitions.assemble(row)),
+        )
+    }
+
+    @Test
+    fun impactoKeysArePartitionedIntoTyrano() {
+        val pairs = listOf(
+            GameOverridePartitions.KEY_IMPACTO_SWAP_CONFIRM_CANCEL to PerGameSettingsStore.F_IMPACTO_SWAP_CONFIRM_CANCEL,
+            GameOverridePartitions.KEY_IMPACTO_VSYNC to PerGameSettingsStore.F_IMPACTO_VSYNC,
+            GameOverridePartitions.KEY_IMPACTO_VIDEO_PLAYBACK to PerGameSettingsStore.F_IMPACTO_VIDEO_PLAYBACK,
+            GameOverridePartitions.KEY_IMPACTO_SUBTITLES to PerGameSettingsStore.F_IMPACTO_SUBTITLES,
+            GameOverridePartitions.KEY_IMPACTO_CLOSE_BACKLOG_AT_END to PerGameSettingsStore.F_IMPACTO_CLOSE_BACKLOG_AT_END,
+            GameOverridePartitions.KEY_IMPACTO_DELUSION_MOUSE to PerGameSettingsStore.F_IMPACTO_DELUSION_MOUSE,
+            GameOverridePartitions.KEY_IMPACTO_LOG_LEVEL to PerGameSettingsStore.F_IMPACTO_LOG_LEVEL,
+        )
+        pairs.forEach { (partitionKey, perGameKey) ->
+            assertEquals(perGameKey, partitionKey)
+            assertTrue("MAGES. 分区缺少字段 $perGameKey", perGameKey in GameOverridePartitions.TYRANO_KEYS)
+        }
+
+        val blob = JSONObject()
+            .put(PerGameSettingsStore.F_IMPACTO_SWAP_CONFIRM_CANCEL, true)
+            .put(PerGameSettingsStore.F_IMPACTO_VSYNC, false)
+            .put(PerGameSettingsStore.F_IMPACTO_VIDEO_PLAYBACK, false)
+            .put(PerGameSettingsStore.F_IMPACTO_SUBTITLES, "karaoke")
+            .put(PerGameSettingsStore.F_IMPACTO_CLOSE_BACKLOG_AT_END, false)
+            .put(PerGameSettingsStore.F_IMPACTO_DELUSION_MOUSE, false)
+            .put(PerGameSettingsStore.F_IMPACTO_LOG_LEVEL, "debug")
+
+        val row = GameOverridePartitions.split("/games/mo6tw", blob, 1L)
+        val tyranoPartition = JSONObject(row.tyranoJson!!)
+        for (key in blob.keys()) {
+            assertTrue("MAGES. 键 $key 未落入 tyrano 分区", tyranoPartition.has(key))
+            assertEquals(blob.opt(key)?.toString(), GameOverridePartitions.assemble(row).opt(key)?.toString())
+        }
+        assertEquals(blob.length(), GameOverridePartitions.assemble(row).length())
+        assertEquals(
+            ImpactoOverride(
+                swapConfirmCancel = true,
+                vsync = false,
+                videoPlayback = false,
+                subtitles = "karaoke",
+                closeBacklogAtEnd = false,
+                delusionMouse = false,
+                logLevel = "debug",
+            ),
+            PerGameSettingsStore.toImpactoOverride(GameOverridePartitions.assemble(row)),
         )
     }
 

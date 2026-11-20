@@ -54,6 +54,9 @@ import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
 import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.basic.Text
+import com.tyranor.next.core.privacy.AppLockController
+import com.tyranor.next.ui.common.privacy.DismissOnAppLockEffect
+import com.tyranor.next.ui.common.privacy.SecureContainingDialogWindowEffect
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.window.WindowListPopup
@@ -83,6 +86,8 @@ fun OverlayDropdownPreference(
     renderInRootScaffold: Boolean = true,
     onExpandedChange: ((Boolean) -> Unit)? = null,
     onSelectedIndexChange: ((Int) -> Unit)? = null,
+    /** 应用锁生效时的强制清理路径；默认走内部收起回调。带业务守卫的调用方可传真正清状态的路径。 */
+    onLockDismiss: (() -> Unit)? = null,
 ) {
     val entry = remember(items, selectedIndex, onSelectedIndexChange) {
         DropdownEntry(
@@ -112,6 +117,7 @@ fun OverlayDropdownPreference(
         renderInRootScaffold = renderInRootScaffold,
         collapseOnSelection = true,
         onExpandedChange = onExpandedChange,
+        onLockDismiss = onLockDismiss,
     )
 }
 
@@ -134,6 +140,8 @@ fun OverlayDropdownPreference(
     renderInRootScaffold: Boolean = true,
     collapseOnSelection: Boolean = true,
     onExpandedChange: ((Boolean) -> Unit)? = null,
+    /** 应用锁生效时的强制清理路径；默认走内部收起回调。带业务守卫的调用方可传真正清状态的路径。 */
+    onLockDismiss: (() -> Unit)? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val expanded = remember { mutableStateOf(false) }
@@ -262,6 +270,7 @@ fun OverlayDropdownPreference(
                     maxHeight = maxHeight,
                     dropdownColors = dropdownColors,
                     renderInRootScaffold = renderInRootScaffold,
+                    onLockDismiss = onLockDismiss,
                 )
             }
         },
@@ -276,12 +285,23 @@ private fun DropdownListPopup(
     onDismissFinished: () -> Unit,
     maxHeight: Dp?,
     renderInRootScaffold: Boolean,
+    onLockDismiss: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
+    // 下拉浮层可能是独立窗口（抽屉内为 WindowListPopup），层级在解锁门之上：
+    // 应用锁生效时直接不组合浮层（而不是只把 show 置 false 等库播退场动画），
+    // 同时用 effect 通知入口收起展开态；带业务守卫的调用方可用 onLockDismiss 真正清状态。
+    val locked by AppLockController.lockedState.collectSettingAsState()
+    DismissOnAppLockEffect(onLockDismiss ?: onDismissRequest)
+    if (locked) return
     if (LocalAppSheetContent.current) {
         WindowListPopup(show = show, alignment = PopupPositionProvider.Align.End,
             onDismissRequest = onDismissRequest, onDismissFinished = onDismissFinished,
-            maxHeight = maxHeight, minWidth = 0.dp, content = content)
+            maxHeight = maxHeight, minWidth = 0.dp, content = {
+                // 抽屉内的下拉是独立 Dialog 窗口：安全屏幕 / 应用锁生效时同步 FLAG_SECURE
+                SecureContainingDialogWindowEffect()
+                content()
+            })
     } else {
         OverlayListPopup(show = show, alignment = PopupPositionProvider.Align.End,
             onDismissRequest = onDismissRequest, onDismissFinished = onDismissFinished,
@@ -304,6 +324,7 @@ private fun HoldSelectDropdownPopup(
     maxHeight: Dp?,
     dropdownColors: DropdownColors,
     renderInRootScaffold: Boolean,
+    onLockDismiss: (() -> Unit)? = null,
 ) {
     val currentPreview by rememberUpdatedState(onPreview)
     val currentHit by rememberUpdatedState(onHit)
@@ -312,7 +333,14 @@ private fun HoldSelectDropdownPopup(
     val currentSelected by rememberUpdatedState(entry.items.indexOfFirst { it.selected })
     val longPressMillis = LocalViewConfiguration.current.longPressTimeoutMillis
     val highlighted = slide.highlightedIndex(entry.items.indexOfFirst { it.selected })
-    DropdownListPopup(show, onDismiss, onDismissFinished, maxHeight, renderInRootScaffold) {
+    DropdownListPopup(
+        show = show,
+        onDismissRequest = onDismiss,
+        onDismissFinished = onDismissFinished,
+        maxHeight = maxHeight,
+        renderInRootScaffold = renderInRootScaffold,
+        onLockDismiss = onLockDismiss,
+    ) {
         ListPopupColumn {
             entry.items.forEachIndexed { index, item ->
                 val coordinates = remember { arrayOfNulls<LayoutCoordinates>(1) }

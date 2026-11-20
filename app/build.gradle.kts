@@ -45,7 +45,7 @@ fun String.asBuildConfigString(): String =
  * 应用版本名：发版唯一需要手改的版本字段（issue #79）。
  * versionCode 由它推导，杜绝“只改 versionName、忘记递增 versionCode”。
  */
-val appVersionName = "1.66"
+val appVersionName = "1.72"
 
 /**
  * versionName -> versionCode 映射：major*1_000_000 + minor*1_000 + patch。
@@ -119,6 +119,12 @@ val sharedEngineAssetNames = listOf(
     "__rpg__.js",
 )
 val hikarinagiClientId = configValue("HIKARINAGI_CLIENT_ID")
+val bangumiClientId = configValue("BANGUMI_CLIENT_ID")
+val bangumiClientSecret = configValue("BANGUMI_CLIENT_SECRET")
+val nextmoeClientId = configValue("NEXTMOE_CLIENT_ID")
+// 桌面应用名（android:label）占位符：默认沿用 @string/app_name，可由 TYRANOR_APP_LABEL 注入
+// 字面量（隔离变体的应用改名，如 Tyranor PlayStatus），不改动上游 strings.xml
+val launcherLabel = configValue("TYRANOR_APP_LABEL").ifBlank { "@string/app_name" }
 val tyranorApplicationId = configValue("TYRANOR_APPLICATION_ID").ifBlank { "com.tyranor.next" }
 val webdavDeviceProbe = providers.gradleProperty("webdavDeviceProbe").orNull.let { value ->
     require(value == null || value == "true" || value == "false") { "webdavDeviceProbe must be true or false" }
@@ -228,16 +234,33 @@ val bundledEngineRuntimeContainerTasks = bundledEngineRuntimePacks.mapValues { (
     }
 }
 
-// 暂存容器必须至少有一个条目：空 zip 会压成一个合法但无用的资产，导致首启缺库。
+// 验证实际进入 APK 压缩资产的暂存容器。
 val bundledEngineRuntimeContainerVerificationTasks = bundledEngineRuntimePacks.mapValues { (packId, libraries) ->
     tasks.register<VerifyEngineRuntimePack>("verify${packId.replaceFirstChar { it.uppercase() }}RuntimePackContainer") {
         group = "native plugins"
-        description = "Verifies the $packId engine runtime pack container is not empty."
+        description = "Verifies the staged $packId engine runtime pack container."
         dependsOn(bundledEngineRuntimeContainerTasks.getValue(packId))
         this.packId.set(packId)
         libraryNames.set(libraries)
         libraryDirectory.set(engineRuntimeLibraryDir)
         containerFile.set(bundledEngineRuntimeContainerDir.map { it.file("$packId.zip") })
+        if (packId == "siglus") {
+            dynamicSymbolTool.set(androidComponents.sdkComponents.ndkDirectory.map { ndk ->
+                val prebuilt = ndk.dir("toolchains/llvm/prebuilt")
+                val tools = prebuilt.asFile.listFiles().orEmpty().flatMap { host ->
+                    listOf("bin/llvm-nm", "bin/llvm-nm.exe").map { host.resolve(it) }.filter { it.isFile }
+                }
+                val nm = tools.singleOrNull()
+                    ?: error("Expected one llvm-nm in the Android NDK at ${prebuilt.asFile}")
+                prebuilt.file(nm.relativeTo(prebuilt.asFile).invariantSeparatorsPath)
+            })
+            // Core entry points required by siglus_bridge.cpp and games_bridge.cpp.
+            requiredDynamicSymbols.set(listOf(
+                "siglus_android_create", "siglus_android_destroy", "siglus_android_init_context",
+                "siglus_android_resize", "siglus_android_set_surface", "siglus_android_step", "siglus_android_touch",
+                "game_fb_open", "game_fb_step", "game_fb_frame", "game_fb_close",
+            ))
+        }
     }
 }
 
@@ -334,6 +357,10 @@ android {
         else "androidx.test.runner.AndroidJUnitRunner"
         if (ethornellReleaseProbe) testProguardFiles("src/releaseProbe/proguard-rules.pro")
         buildConfigField("String", "HIKARINAGI_CLIENT_ID", hikarinagiClientId.asBuildConfigString())
+        buildConfigField("String", "BANGUMI_CLIENT_ID", bangumiClientId.asBuildConfigString())
+        buildConfigField("String", "BANGUMI_CLIENT_SECRET", bangumiClientSecret.asBuildConfigString())
+        buildConfigField("String", "NEXTMOE_CLIENT_ID", nextmoeClientId.asBuildConfigString())
+        manifestPlaceholders["launcherLabel"] = launcherLabel
     }
 
     signingConfigs {
@@ -518,6 +545,9 @@ dependencies {
   implementation(libs.androidx.lifecycle.process)
   implementation(libs.androidx.work.runtime.ktx)
   implementation(libs.androidx.activity.compose)
+  // 应用锁（core/privacy）：BiometricPrompt 要求宿主 Activity 为 FragmentActivity
+  implementation(libs.androidx.biometric)
+  implementation(libs.androidx.fragment)
 
   // Arch Components
   implementation(libs.androidx.lifecycle.runtime.compose)

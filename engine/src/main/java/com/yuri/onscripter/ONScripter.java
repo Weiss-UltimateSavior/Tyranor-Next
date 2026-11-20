@@ -30,6 +30,7 @@ import android.view.ViewGroup;
 import org.libsdl.app.SDLActivity;
 
 import com.core.engine.DoubleBackExit;
+import com.core.engine.EnginePlayerOrientation;
 import com.core.engine.EngineSurfaceStartupController;
 import com.core.engine.LaunchContract;
 import com.core.engine.R;
@@ -66,6 +67,7 @@ public class ONScripter extends SDLActivity {
     /** 视频覆盖播放控制器：在本 Activity 窗口内覆盖播放，不启动独立 Activity。 */
     private OnsVideoOverlay videoOverlay;
     private EngineSurfaceStartupController startupController;
+
     private native int nativeInitJavaCallbacks();
     private native int nativeGetWidth();
     private native int nativeGetHeight();
@@ -88,6 +90,7 @@ public class ONScripter extends SDLActivity {
     }
 
     @Override public void onCreate(Bundle savedInstanceState) {
+        EnginePlayerOrientation.lockOnCreate(this, savedInstanceState);
         gameRoot = firstNonEmpty(
                 getIntent().getStringExtra(LaunchContract.PATH),
                 getIntent().getStringExtra(LaunchContract.GAME_PATH),
@@ -622,12 +625,12 @@ public class ONScripter extends SDLActivity {
                         | android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                         | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                         | android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
-        setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        EnginePlayerOrientation.applyLocked(this);
     }
 
     @Override
     public void setRequestedOrientation(int requestedOrientation) {
-        super.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        EnginePlayerOrientation.applyWithSuper(this, super::setRequestedOrientation);
     }
 
     private String normalizeRootPath(String value) {

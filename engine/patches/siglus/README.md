@@ -1,9 +1,21 @@
-# Siglus：读取运行时生成的密钥，保持上游原库
+# Siglus 与 Framebuffer 随包运行库
 
-本轮按提交者要求改用宿主解析游戏配置的路线，`libsiglus.so` 恢复为 TYN main
-`740d7c130fce019350e135066478de61fa9b439e` 的原文件，不编译或提交改造过的 Siglus 引擎库。
-原库 SHA-256 为 `fdef411e1f30550ef7adb7ab4ff1f383433aee94be7609a481eb18c13c3563df`，
-与该上游提交的库逐字节一致；登记见 [原库及配置参考清单](../siglus-bundled.json)。
+随包的 `libsiglus.so` 由固定版本的 [siglus_rs](https://github.com/Weiss-UltimateSavior/siglus_rs)
+`game_launcher` 构建。它同时提供 Siglus 与 RealLive、AVG32、UK2 的 Framebuffer 接口。
+构建来源、目标、工具链及 SHA-256 见 [运行库清单](../siglus-bundled.json)，许可证为 MPL-2.0。
+
+在固定的源码提交上配置 NDK 28.0.13004108，并执行以下命令。随后将
+`target/aarch64-linux-android/release/libgame_launcher.so` 放入本仓库的
+`engine/src/main/jniLibs/arm64-v8a/libsiglus.so`，同步清单中的 SHA-256。
+
+```sh
+cargo ndk -t arm64-v8a --platform 26 build --release --locked -p game_launcher --lib
+```
+
+Gradle 打包时通过 NDK 的 `llvm-nm` 校验暂存 ZIP 内实际库的两组必需动态导出。
+清单所列运行库已在荣耀 MAA-AN10（Android 17）上通过 `dlopen(RTLD_NOW)` 验证，并用空目录调用
+`game_fb_open`，RealLive、AVG32 和 UK2 分别返回各自的缺文件诊断。
+[#196](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/196) 的原版游戏仍待实机验收。
 
 ## 尺寸取得与输出
 
@@ -69,8 +81,8 @@ surfaceChanged 同步 resize，surfaceDestroyed 仅停止步进并保留 VM，Ac
 ## 移除旧重编方案
 
 本轮移除舞台几何 Rust 补丁、旧 ABI 锚点、重编 manifest、构建脚本及专属重编 CI，
-Android/Beta 工作流不再编译 Siglus Rust 运行库。普通构建继续校验已打包原库和许可证 SHA，
-执行宿主 JVM 回归并编译正常项目 JNI 桥；这不产生要提交的预编译引擎库。
+Android/Beta 工作流使用预编译运行库。普通构建校验运行库和许可证 SHA，打包时检查动态导出，
+并编译项目 JNI 桥。
 旧重编方案的历史审查与 CI 不能替代本路线的验收；原库路线旧候选曾通过 CI 与提交者测试；本轮窗口修复的验证单独记录，见当前审查报告。
 
 ## 格式参考与许可证

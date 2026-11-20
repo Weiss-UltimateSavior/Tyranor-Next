@@ -29,6 +29,11 @@ data class RuntimeModuleSnapshot(
  */
 object RuntimeModuleRegistry {
 
+    internal sealed interface SettingsDescriptorCheck<out T> {
+        data class Valid<T>(val value: T) : SettingsDescriptorCheck<T>
+        data object Changed : SettingsDescriptorCheck<Nothing>
+    }
+
     private val refreshMutex = Mutex()
 
     private val _state = MutableStateFlow(
@@ -39,6 +44,24 @@ object RuntimeModuleRegistry {
     /** 重新发现模块并合并持久化启用状态；失败时保留旧模块并只记录 [RuntimeModuleSnapshot.lastError]。 */
     suspend fun refresh(context: Context): RuntimeModuleDiscoveryResult = refreshMutex.withLock {
         refreshLocked(context)
+    }
+
+    /** Refresh and hold registry mutations out while [block] uses the exact validated settings spec. */
+    internal suspend fun <T> withCurrentSettingsDescriptor(
+        context: Context,
+        packageName: String,
+        fingerprint: String,
+        block: suspend (RuntimeModuleDescriptor) -> T,
+    ): SettingsDescriptorCheck<T> = refreshMutex.withLock {
+        when (refreshLocked(context)) {
+            is RuntimeModuleDiscoveryResult.Failure -> SettingsDescriptorCheck.Changed
+            is RuntimeModuleDiscoveryResult.Success -> {
+                val module = _state.value.modules.firstOrNull { it.packageName == packageName }
+                    ?.takeIf { it.enabled && it.settings?.fingerprint == fingerprint }
+                    ?: return@withLock SettingsDescriptorCheck.Changed
+                SettingsDescriptorCheck.Valid(block(module))
+            }
+        }
     }
 
     /** 构建扫描索引：先刷新，成功后只取「已启用 + 有扫描描述」的模块；刷新失败返回空索引。 */

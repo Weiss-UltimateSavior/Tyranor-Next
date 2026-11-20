@@ -43,7 +43,12 @@ internal sealed interface SaveSyncLaunchAdmission {
     data object Disabled : SaveSyncLaunchAdmission
     data object Unmanaged : SaveSyncLaunchAdmission
     data object Unresolved : SaveSyncLaunchAdmission
-    data class Directory(val key: String, val exclusiveMutation: Boolean = false) : SaveSyncLaunchAdmission
+    data class Directory(
+        val key: String,
+        val exclusiveMutation: Boolean = false,
+        /** Changes re-admission even when a module reuses the same physical folder. */
+        val bindingIdentity: String? = null,
+    ) : SaveSyncLaunchAdmission
 }
 
 /** Re-admit after waiting; every managed launch shares the save-replacement fence. */

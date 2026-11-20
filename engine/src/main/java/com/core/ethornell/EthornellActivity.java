@@ -5,7 +5,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.BroadcastReceiver;
 import android.content.IntentFilter;
-import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.media.AudioAttributes;
@@ -36,6 +35,7 @@ import androidx.core.view.WindowCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
+import com.core.engine.EnginePlayerOrientation;
 import com.core.engine.EngineSessionRegistry;
 import com.core.engine.EngineStartupOverlay;
 import com.core.engine.EngineSurfaceReadyProbe;
@@ -56,7 +56,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class EthornellActivity extends AppCompatActivity implements SurfaceHolder.Callback, Choreographer.FrameCallback {
     @Override
     public void setRequestedOrientation(int requestedOrientation) {
-        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        EnginePlayerOrientation.applyWithSuper(this, super::setRequestedOrientation);
     }
 
     private static final AtomicLong TOKENS = new AtomicLong(1);
@@ -122,6 +122,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
         }
     }
     @Override protected void onCreate(Bundle saved) {
+        EnginePlayerOrientation.lockOnCreate(this, saved);
         super.onCreate(saved);
         processVerified = isOwnEngineProcess();
         if (!processVerified) { finish(); return; }
@@ -279,6 +280,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
     }
     @Override protected void onResume() {
         super.onResume(); resumed = true;
+        EnginePlayerOrientation.applyLocked(this);
         if (session == null) return;
         if (remap != null) remap.onResume();
         session.pause(EthornellSession.PAUSE_ACTIVITY, false);

@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">Runtime module example</string>
+    <string name="folder">Game directory: %1$s</string>
+    <string name="invalid_folder">Only direct child directories of Download/TyranorRuntimeExample are accepted.</string>
+    <string name="received">Received settings:\n%1$s</string>
+    <string name="write_save">Write test save</string>
+    <string name="read_save">Read test save</string>
+    <string name="grant_access">Grant file access to the example module</string>
+    <string name="save_written">Wrote saves/state.json</string>
+    <string name="save_empty">No test save yet</string>
+    <string name="save_failed">Operation failed: %1$s</string>
+    <string name="finish">End example game</string>
+</resources>

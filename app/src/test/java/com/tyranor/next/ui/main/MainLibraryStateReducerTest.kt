@@ -2,6 +2,7 @@ package com.tyranor.next.ui.main
 
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.settings.AppSettingsStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -184,6 +185,156 @@ class MainLibraryStateReducerTest {
         val merged = mergeChangedGameFields(base, before, renamedFromOldSnapshot)
 
         assertEquals("internal.rpgmxp", merged.externalModuleAlias)
+    }
+
+    @Test
+    fun applyBindingUpdatePreservesConcurrentScrapedCoverAndOtherSourceBindings() {
+        val scrapedInUi = first.copy(
+            coverUri = "file:///covers/scraped.jpg",
+            coverSource = AppSettingsStore.COVER_SOURCE_VNDB,
+            vndbId = "v562",
+            metadataTitle = "VNDB Title",
+            openTime = 999L,
+        )
+        val state = MainLibraryUiState(
+            games = listOf(scrapedInUi),
+            recentGames = listOf(scrapedInUi.copy(openTime = 1234L)),
+            quickLaunch = listOf(scrapedInUi),
+        )
+        // 绑定操作基于旧快照完成落库（仍带 coverUri = null, vndbId = null）
+        val boundFromStaleSnapshot = first.copy(
+            bangumiId = "4154",
+            metadataTitle = "Bangumi Title",
+        )
+
+        val boundState = MainLibraryStateReducer.applyBindingUpdate(
+            state,
+            AppSettingsStore.COVER_SOURCE_BANGUMI,
+            boundFromStaleSnapshot,
+        )
+        assertEquals("file:///covers/scraped.jpg", boundState.games.single().coverUri)
+        assertEquals(AppSettingsStore.COVER_SOURCE_VNDB, boundState.games.single().coverSource)
+        assertEquals("v562", boundState.games.single().vndbId)
+        assertEquals("4154", boundState.games.single().bangumiId)
+        assertEquals("Bangumi Title", boundState.games.single().metadataTitle)
+        assertEquals(1234L, boundState.recentGames.single().openTime)
+        assertEquals("4154", boundState.quickLaunch.single().bangumiId)
+
+        // 解绑操作若从旧快照带回 null metadataTitle，不得擦除并发刮削已写入的 metadataTitle
+        val unboundFromStaleSnapshot = first.copy(bangumiId = null, metadataTitle = null)
+        val unboundState = MainLibraryStateReducer.applyBindingUpdate(
+            boundState,
+            AppSettingsStore.COVER_SOURCE_BANGUMI,
+            unboundFromStaleSnapshot,
+        )
+        assertNull(unboundState.games.single().bangumiId)
+        assertEquals("Bangumi Title", unboundState.games.single().metadataTitle)
+        assertEquals("file:///covers/scraped.jpg", unboundState.games.single().coverUri)
+
+        // 批量刮削旧快照迟到到达时，仅更新封面与缺失绑定，不得抹除已绑定的他源 ID 或改名标题
+        val renamedAndBound = boundState.games.single().copy(title = "用户改名")
+        val stateAfterRename = MainLibraryStateReducer.replaceGame(boundState, renamedAndBound)
+        val lateScraped = first.copy(
+            coverUri = "file:///covers/scraped2.jpg",
+            coverSource = AppSettingsStore.COVER_SOURCE_VNDB,
+            vndbId = "v999",
+            bangumiId = null,
+        )
+        val afterScrape = MainLibraryStateReducer.applyScrapedGame(stateAfterRename, lateScraped)
+        assertEquals("用户改名", afterScrape.games.single().title)
+        assertEquals("4154", afterScrape.games.single().bangumiId)
+        assertEquals("v562", afterScrape.games.single().vndbId)
+        assertEquals("file:///covers/scraped2.jpg", afterScrape.games.single().coverUri)
+    }
+
+    @Test
+    fun lateScrapedEventDoesNotResurrectUnboundIdWhenRevisionAdvanced() {
+        // R5 中#1：批量刮削通知自「落库时刻」携带逐源绑定修订号；收集前用户并发解绑使修订号
+        // 推进，该来源的缺失回填必须作废——否则迟到的通知会把刚解绑的条目 ID 重新填回 _uiState
+        val state = MainLibraryUiState(games = listOf(first), recentGames = listOf(first), quickLaunch = listOf(first))
+        val scraped = first.copy(
+            coverUri = "file:///covers/scraped.jpg",
+            coverSource = AppSettingsStore.COVER_SOURCE_VNDB,
+            vndbId = "v10",
+            metadataTitle = "候选标题",
+        )
+
+        val gated = MainLibraryStateReducer.applyScrapedGame(state, scraped, ScrapedBindingUnchanged(vndb = false))
+        assertNull(gated.games.single().vndbId)
+        assertNull(gated.recentGames.single().vndbId)
+        assertNull(gated.quickLaunch.single().vndbId)
+        // 封面列与 metadataTitle 不受绑定修订门控影响（解绑不写封面列）
+        assertEquals("file:///covers/scraped.jpg", gated.games.single().coverUri)
+        assertEquals("候选标题", gated.games.single().metadataTitle)
+
+        // 修订号未推进时保持既有回填行为
+        val unchanged = MainLibraryStateReducer.applyScrapedGame(state, scraped)
+        assertEquals("v10", unchanged.games.single().vndbId)
+
+        // 逐源独立：其它来源修订推进不影响本来源回填
+        val partial = MainLibraryStateReducer.applyScrapedGame(
+            state,
+            scraped.copy(bangumiId = "4154"),
+            ScrapedBindingUnchanged(bangumi = false),
+        )
+        assertEquals("v10", partial.games.single().vndbId)
+        assertNull(partial.games.single().bangumiId)
+    }
+
+    @Test
+    fun partialCoverRenameAndLaunchFileReducersPreserveConcurrentFields() {
+        val concurrent = first.copy(
+            title = "并发改名",
+            launchFile = "app.exe",
+            vndbId = "v562",
+            bangumiId = "4154",
+            openTime = 777L,
+        )
+        val state = MainLibraryUiState(
+            games = listOf(concurrent),
+            recentGames = listOf(concurrent),
+            quickLaunch = listOf(concurrent),
+            searchQuery = "并发",
+            searchHitUris = setOf(concurrent.uri),
+        )
+
+        // 自定义封面（source = null）只更新封面字段，不得回滚并发标题/绑定/启动文件
+        val customFromOld = first.copy(coverUri = "file:///custom.png", coverSource = AppSettingsStore.COVER_SOURCE_CUSTOM)
+        val afterCustom = MainLibraryStateReducer.applyCoverUpdate(state, null, customFromOld)
+        assertEquals("并发改名", afterCustom.games.single().title)
+        assertEquals("app.exe", afterCustom.games.single().launchFile)
+        assertEquals("v562", afterCustom.games.single().vndbId)
+        assertEquals("4154", afterCustom.games.single().bangumiId)
+        assertEquals("file:///custom.png", afterCustom.games.single().coverUri)
+
+        // 候选封面绑定仅更新目标来源与封面，不覆盖他源既有绑定及并发标题
+        val candidateFromOld = first.copy(
+            coverUri = "file:///nextmoe.webp",
+            coverSource = AppSettingsStore.COVER_SOURCE_NEXTMOE,
+            nextmoeId = "207379",
+            vndbId = "v999",
+            metadataTitle = "Sakura",
+        )
+        val afterCandidate = MainLibraryStateReducer.applyCoverUpdate(
+            afterCustom,
+            AppSettingsStore.COVER_SOURCE_NEXTMOE,
+            candidateFromOld,
+        )
+        assertEquals("并发改名", afterCandidate.games.single().title)
+        assertEquals("v562", afterCandidate.games.single().vndbId)
+        assertEquals("207379", afterCandidate.games.single().nextmoeId)
+        assertEquals("Sakura", afterCandidate.games.single().metadataTitle)
+
+        // 改名局部更新仅改 title 并失效 searchHitUris；启动文件局部更新仅改 launchFile
+        val afterRename = MainLibraryStateReducer.renameGame(afterCandidate, first.uri, "最终标题")
+        assertEquals("最终标题", afterRename.games.single().title)
+        assertEquals("file:///nextmoe.webp", afterRename.games.single().coverUri)
+        assertNull(afterRename.searchHitUris)
+
+        val afterLaunchFile = MainLibraryStateReducer.updateLaunchFile(afterRename, first.uri, "boot.xp3")
+        assertEquals("boot.xp3", afterLaunchFile.games.single().launchFile)
+        assertEquals("最终标题", afterLaunchFile.games.single().title)
+        assertEquals("207379", afterLaunchFile.games.single().nextmoeId)
     }
 
     private fun game(id: String, title: String) = ScanGame(

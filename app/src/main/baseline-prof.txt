@@ -8982,9 +8982,6 @@ HSPLcom/tyranor/next/ui/game/ComposableSingletons$GameScreenKt$$ExternalSyntheti
 HSPLcom/tyranor/next/ui/game/ComposableSingletons$GameScreenKt$$ExternalSyntheticLambda9;->**(**)**
 HSPLcom/tyranor/next/ui/game/ComposableSingletons$GameScreenKt;->**(**)**
 HSPLcom/tyranor/next/ui/game/CoverBitmapCache;->**(**)**
-HSPLcom/tyranor/next/ui/game/CoverPublishGate$$ExternalSyntheticLambda0;->**(**)**
-HSPLcom/tyranor/next/ui/game/CoverPublishGate$awaitTurn$1;->**(**)**
-HSPLcom/tyranor/next/ui/game/CoverPublishGate;->**(**)**
 HSPLcom/tyranor/next/ui/game/CoverThumbnailLoader$$ExternalSyntheticLambda0;->**(**)**
 HSPLcom/tyranor/next/ui/game/CoverThumbnailLoader$load$3$1;->**(**)**
 HSPLcom/tyranor/next/ui/game/CoverThumbnailLoader$load$3;->**(**)**

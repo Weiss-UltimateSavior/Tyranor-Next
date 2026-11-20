@@ -35,7 +35,18 @@ internal class SaveActivationJournal(private val directory: File) {
             return Pending(
                 state.getString("token"),
                 SaveVersion(parsed.name, parsed.contentHash, parsed.createdAt, archive(key).length(),
-                    SaveVersionSource.valueOf(state.getString("source")), parsed.restored, parsed.previousCreatedAt),
+                    SaveVersionSource.valueOf(state.getString("source")), parsed.restored, parsed.previousCreatedAt,
+                    state.optJSONArray("runtimeProvenances")?.let { array -> buildSet {
+                        for (index in 0 until array.length()) {
+                            val item = array.optJSONObject(index) ?: continue
+                            val packageName = item.optString("package")
+                            val fingerprint = item.optString("fingerprint")
+                            val directory = item.optString("directory")
+                            if (packageName.isNotBlank() && fingerprint.matches(Regex("[a-f0-9]{64}")) && directory.isNotBlank()) {
+                                add(RuntimeSaveProvenance(packageName, fingerprint, directory))
+                            }
+                        }
+                    } }.orEmpty()),
                 state.optString("before").takeIf { it.isNotBlank() },
                 state.optBoolean("committed"),
                 state.optString("activeKey").takeIf { it.isNotBlank() },
@@ -153,4 +164,10 @@ internal class SaveActivationJournal(private val directory: File) {
         .put("source", pending.selected.source.name).put("before", pending.beforeHash.orEmpty())
         .put("committed", pending.committed)
         .put("activeKey", pending.activeKey)
+        .put("runtimeProvenances", org.json.JSONArray().apply {
+            pending.selected.runtimeProvenances.forEach { provenance ->
+                put(JSONObject().put("package", provenance.packageName)
+                    .put("fingerprint", provenance.savesFingerprint).put("directory", provenance.canonicalDirectory))
+            }
+        })
 }
