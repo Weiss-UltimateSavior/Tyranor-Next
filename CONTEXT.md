@@ -51,7 +51,7 @@ _Avoid_: 把 Impacto 当作引擎名（界面、文档中的引擎名一律写 M
 _Avoid_: 语言包、语言补丁
 
 **MAGES. 识别规则（Host Detection Rules）**:
-决定游戏目录对应哪个 MAGES. profile 的条目清单，由宿主仓库的 `profiles.json` 维护、随宿主 APK 发布（资产 `tyn/profiles.json`），主 App 扫描时从已安装的宿主读取，读不到时用内置目录表。
+决定游戏目录对应哪个 MAGES. profile 的条目清单，由 MAGES. 宿主维护并提供给主 App；宿主不提供时主 App 用自己的内置目录表（来源与回退见 SPEC、ARCHITECTURE）。
 _Avoid_: 把内置目录表当作唯一来源
 
 **暂不支持的 MAGES. 游戏（Unsupported MAGES. Game）**:

@@ -701,12 +701,7 @@ object EngineScanner {
         } else {
             null
         }
-        val variantTitle = if (detected.engine == EngineType.IMPACTO && detected.launchTargetChoices.size > 1) {
-            ImpactoGameCatalog.byProfileId(launchTarget)?.title
-        } else {
-            null
-        }
-        return variantTitle
+        return detected.launchTargetTitles[launchTarget]
             ?: detected.titleHint
             ?: dirName.takeIf { it.isNotBlank() }
             ?: ruffleFallback
@@ -973,6 +968,11 @@ object EngineScanner {
          * 识别只回答「磁盘上有什么」，选哪个属于偏好，由持有 Context 的调用方经 [scanLaunchTarget] 决定。
          */
         val launchTargetChoices: List<String> = emptyList(),
+        /**
+         * [launchTargetChoices] 各 profile 的标题（取自识别时的规则快照）：扫描标题按最终选定的变体取，
+         * 不再查一次可能已被替换的当前规则。
+         */
+        val launchTargetTitles: Map<String, String> = emptyMap(),
         /**
          * MAGES. 的「未支持布局」：目录像 MAGES. 游戏但没有 profile 能识别（[ImpactoGameCatalog.unsupportedLayoutFor]）。
          * 仍入库、可启动，[launchTarget] 是该布局指定的尝试用 profile，标题标注「暂不支持」。
@@ -1616,6 +1616,7 @@ object EngineScanner {
                 IMPACTO_MODULE_ALIAS,
                 titleHint = it.title,
                 launchTargetChoices = if (impacto.size > 1) impacto.map { game -> game.profileId } else emptyList(),
+                launchTargetTitles = if (impacto.size > 1) impacto.associate { game -> game.profileId to game.title } else emptyMap(),
             )
         }
         // 像 MAGES. 但没有 profile 能识别：仍作为 MAGES. 游戏入库（标题标注「暂不支持」），用布局指定的 profile 尝试运行

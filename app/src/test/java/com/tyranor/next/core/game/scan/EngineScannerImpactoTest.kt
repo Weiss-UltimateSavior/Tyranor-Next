@@ -135,6 +135,8 @@ class EngineScannerImpactoTest {
         assertEquals("internal.impacto", detection.externalModuleAlias)
         assertEquals("Memories Off 6 ~T-Wave~ (PC)", detection.titleHint)
         assertEquals(94, detection.confidence)
+        // titles come from the same rules snapshot as the candidates, for the variant the caller finally picks
+        assertEquals(detection.launchTargetChoices.toSet(), detection.launchTargetTitles.keys)
     }
 
     @Test

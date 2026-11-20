@@ -44,12 +44,12 @@ class ImpactoHostProfilesTest {
     @Test
     fun readsUnsupportedLayoutsThatPointAtAKnownProfile() {
         val rules = ImpactoHostProfiles.parse(
-            json(sg, """{"id":"pc-usrdir-mpk","allOf":["USRDIR/script.mpk"],"tryProfile":"sg-pc"}"""),
+            json(sg, """{"id":"pc-usrdir-mpk","allOf":["USRDIR/script.mpk","USRDIR/system.mpk"],"tryProfile":"sg-pc"}"""),
         )!!
 
         val layout = rules.unsupportedLayouts.single()
         assertEquals("pc-usrdir-mpk", layout.id)
-        assertEquals(setOf("USRDIR/script.mpk"), layout.requiredEntries)
+        assertEquals(setOf("USRDIR/script.mpk", "USRDIR/system.mpk"), layout.requiredEntries)
         assertEquals("sg-pc", layout.tryProfile)
     }
 
@@ -68,6 +68,9 @@ class ImpactoHostProfilesTest {
             "blank name" to json("""{"id":"x","name":"","language":null,"detect":{"allOf":["a"]}}"""),
             "unknown tryProfile" to json(sg, """{"id":"l","allOf":["USRDIR/script.mpk"],"tryProfile":"nope"}"""),
             "layout without entries" to json(sg, """{"id":"l","allOf":[],"tryProfile":"sg-pc"}"""),
+            "layout with one entry" to json(sg, """{"id":"l","allOf":["system.cpk"],"tryProfile":"sg-pc"}"""),
+            "layout with one entry twice" to
+                json(sg, """{"id":"l","allOf":["system.cpk","system.cpk"],"tryProfile":"sg-pc"}"""),
             "number entry" to json("""{"id":"x","name":"X","language":null,"detect":{"allOf":[1]}}"""),
             "null entry" to json("""{"id":"x","name":"X","language":null,"detect":{"allOf":[null]}}"""),
             "number id" to json("""{"id":7,"name":"X","language":null,"detect":{"allOf":["a"]}}"""),

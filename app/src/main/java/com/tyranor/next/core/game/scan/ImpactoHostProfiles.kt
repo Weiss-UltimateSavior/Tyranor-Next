@@ -31,6 +31,9 @@ object ImpactoHostProfiles {
 
     private const val TAG = "ImpactoHostProfiles"
 
+    /** 一条未支持布局至少要求的不同条目数（与宿主仓库 `test-profiles.py` 的检查一致）。 */
+    private const val MIN_UNSUPPORTED_ENTRIES = 2
+
     /** [load] 的结果。 */
     sealed interface Load {
         /** 读到了合格的规则。 */
@@ -79,7 +82,8 @@ object ImpactoHostProfiles {
      * 解析规则文本（纯函数，供 JVM 单测）。格式与宿主仓库 `engine/impacto/profiles.json` 一致：
      * - `profiles[]`：`id`、`name`、`language`（可为 null）、`variantOf`（可缺省）、
      *   `detect`（可为 null）= `{ allOf: [条目…], textArchive?: 条目 }`；`textArchive` 同样必须存在。
-     * - `unsupportedLayouts[]`（可缺省）：`{ id, allOf: [条目…], tryProfile }`，`tryProfile` 必须是上面某个 profile。
+     * - `unsupportedLayouts[]`（可缺省）：`{ id, allOf: [条目…], tryProfile }`，`allOf` 至少两个不同条目，
+ *   `tryProfile` 必须是上面某个 profile。
      *
      * 条目是相对游戏目录的路径，最多一层子目录（第二层必须是文件），不得含空段、`.`、`..`。字符串字段必须真的是
      * 非空字符串（不接受数字、`null` 之类被转成字符串的值）。任何一处不合格式就整份不用（返回 null），不做部分采纳——
@@ -122,7 +126,11 @@ object ImpactoHostProfiles {
             val layout = unsupported.getJSONObject(i)
             val entries = layout.getJSONArray("allOf").strings()
             val tryProfile = layout.requiredString("tryProfile")
-            require(entries.isNotEmpty() && entries.all(::isValidEntry) && games.any { it.profileId == tryProfile })
+            // 至少两个不同的档案：单个常见档名（script.cpk、system.mpk）其他用 CRI 档案的游戏也有
+            require(
+                entries.toSet().size >= MIN_UNSUPPORTED_ENTRIES && entries.all(::isValidEntry) &&
+                    games.any { it.profileId == tryProfile },
+            )
             layouts += ImpactoGameCatalog.UnsupportedLayout(
                 id = layout.requiredString("id"),
                 requiredEntries = entries.toSet(),
