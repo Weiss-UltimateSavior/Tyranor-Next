@@ -3,7 +3,6 @@ package com.core.xsys35;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.pm.ActivityInfo;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.ViewGroup;
@@ -13,6 +12,7 @@ import org.libsdl.app32.SDLActivity;
 import org.tvp.kirikiri2.KrDialogStyle;
 
 import com.core.engine.DoubleBackExit;
+import com.core.engine.EnginePlayerOrientation;
 import com.core.engine.EnginePrefs;
 import com.core.engine.EngineSurfaceStartupController;
 import com.core.engine.EngineUiText;
@@ -104,6 +104,7 @@ public final class Xs35Activity extends SDLActivity {
         // 无条件赋值（含 null）：静态字段跨 Activity 实例保留，必须清掉上一次的旧路径。
         sSdlLibraryPath = sdl;
         sEngineLibraryPath = engine;
+        EnginePlayerOrientation.lockOnCreate(this, savedInstanceState);
         super.onCreate(savedInstanceState);
         sdlReady = !SDLActivity.mBrokenLibraries;
         if (SDLActivity.mBrokenLibraries) {
@@ -219,17 +220,18 @@ public final class Xs35Activity extends SDLActivity {
      * xsystem35 以可缩放窗口创建 SDL 窗口且未设置 SDL_HINT_ORIENTATIONS，上游 SDL 在
      * 「无 hint + resizable」时会请求 SCREEN_ORIENTATION_FULL_USER（尊重系统旋转锁），
      * 设备锁定竖屏时活动会以竖屏渲染、游戏被信箱化。System3.x 游戏必须横屏，故覆盖
-     * 该扩展点始终请求标准横屏。
+     * 该扩展点始终锁定启动时判定的具体横屏方向。
      */
     @Override
     public void setOrientationBis(int w, int h, boolean resizable, String hint) {
-        Log.v(TAG, "force landscape (w=" + w + ", h=" + h + ", resizable=" + resizable + ", hint=" + hint + ")");
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        // applyLocked 内部即返回锁定值，不再重复 resolve（P3-14）。
+        int orientation = EnginePlayerOrientation.applyLocked(this);
+        Log.v(TAG, "force locked landscape=" + orientation + " (w=" + w + ", h=" + h + ", resizable=" + resizable + ", hint=" + hint + ")");
     }
 
     @Override
     public void setRequestedOrientation(int requestedOrientation) {
-        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        EnginePlayerOrientation.applyWithSuper(this, super::setRequestedOrientation);
     }
 
     // ---------- SDL 主循环参数 ----------

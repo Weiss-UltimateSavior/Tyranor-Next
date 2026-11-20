@@ -3,7 +3,6 @@ package com.core.siglus;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.os.Build;
@@ -37,6 +36,7 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
+import com.core.engine.EnginePlayerOrientation;
 import com.core.engine.EnginePrefs;
 import com.core.engine.EngineStartupOverlay;
 import com.core.engine.EngineSurfaceReadyProbe;
@@ -70,7 +70,7 @@ public final class SiglusActivity extends AppCompatActivity implements
 
     @Override
     public void setRequestedOrientation(int requestedOrientation) {
-        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        EnginePlayerOrientation.applyWithSuper(this, super::setRequestedOrientation);
     }
 
     private static final String TAG = "SiglusActivity";
@@ -129,6 +129,7 @@ public final class SiglusActivity extends AppCompatActivity implements
     private int stageSizeRequest;
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
+        EnginePlayerOrientation.lockOnCreate(this, savedInstanceState);
         super.onCreate(savedInstanceState);
 
         requestedChain = SiglusHostPolicy.requestedChain(
@@ -297,6 +298,7 @@ public final class SiglusActivity extends AppCompatActivity implements
     @Override
     protected void onResume() {
         super.onResume();
+        EnginePlayerOrientation.applyLocked(this);
         resumed = true;
         applyImmersive();
         startDirectStartupProbe();

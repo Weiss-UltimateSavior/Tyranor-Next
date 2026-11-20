@@ -117,6 +117,7 @@ fun Slider(
                 {
                     if (release.released) onValueChangeFinished?.invoke()
                     else onValueChangeCancelled?.invoke()
+                    Unit
                 }
             },
             height = height,

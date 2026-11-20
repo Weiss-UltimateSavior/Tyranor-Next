@@ -179,6 +179,9 @@ class WaterfallRotationScrollDeviceTest {
             val item = fixture.state.layoutInfo.visibleItemsInfo.first { it.key == fixture.itemKey(50) }
             Item(item.index, item.key, Position(item.offset.x, item.offset.y))
         }
+        val beforeLayout = compose.runOnIdle {
+            fixture.state.layoutInfo.visibleItemsInfo.map { Triple(it.index, it.key, it.offset) }
+        }
         compose.runOnIdle {
             fixture.coverVersion++
             fixture.keyOrder = (100 until 110).toList() + fixture.keyOrder
@@ -188,7 +191,7 @@ class WaterfallRotationScrollDeviceTest {
         compose.runOnIdle {
             val after = fixture.state.layoutInfo.visibleItemsInfo.firstOrNull { it.key == fixture.itemKey(50) }
             assertTrue("Changed cover key must differ from the saved lazy key", fixture.itemKey(50) != before.key)
-            assertTrue("Game identity must survive cover and order changes", after != null)
+            assertTrue("Game identity must survive cover and order changes; before=$beforeLayout; after=${fixture.state.layoutInfo.visibleItemsInfo.map { Triple(it.index, it.key, it.offset) }}", after != null)
             checkNotNull(after)
             assertTrue("The original game must restore at its new index", after.index == 60)
             assertTrue("Identity anchor must retain its viewport position", kotlin.math.abs(after.offset.y - before.position.y) < after.size.height)

@@ -2,7 +2,6 @@ package com.core.fvp;
 
 import android.graphics.Color;
 import android.graphics.Rect;
-import android.content.pm.ActivityInfo;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.util.DisplayMetrics;
@@ -25,6 +24,7 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
+import com.core.engine.EnginePlayerOrientation;
 import com.core.engine.EngineUiText;
 import com.core.engine.EngineStartupOverlay;
 import com.core.engine.EngineSurfaceReadyProbe;
@@ -47,7 +47,7 @@ public final class FvpActivity extends AppCompatActivity implements
 
     @Override
     public void setRequestedOrientation(int requestedOrientation) {
-        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        EnginePlayerOrientation.applyWithSuper(this, super::setRequestedOrientation);
     }
 
     private static final String TAG = "FvpActivity";
@@ -78,6 +78,7 @@ public final class FvpActivity extends AppCompatActivity implements
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
+        EnginePlayerOrientation.lockOnCreate(this, savedInstanceState);
         super.onCreate(savedInstanceState);
 
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
@@ -153,6 +154,7 @@ public final class FvpActivity extends AppCompatActivity implements
     @Override
     protected void onResume() {
         super.onResume();
+        EnginePlayerOrientation.applyLocked(this);
         resumed = true;
         windowFocused = hasWindowFocus();
         applyImmersive();

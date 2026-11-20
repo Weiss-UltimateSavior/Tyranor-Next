@@ -12,7 +12,6 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.DialogInterface;
 import android.content.res.ColorStateList;
-import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.ColorDrawable;
@@ -25,6 +24,7 @@ import android.widget.*;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
+import com.core.engine.EnginePlayerOrientation;
 import com.core.engine.EngineThemeColors;
 import com.core.engine.EngineUiText;
 import com.core.engine.EngineStartupOverlay;
@@ -44,7 +44,7 @@ import org.tvp.kirikiri2.KrDialogStyle;
 public final class PlayerActivity extends Activity implements GameRunner.Listener {
     @Override
     public void setRequestedOrientation(int requestedOrientation) {
-        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        EnginePlayerOrientation.applyWithSuper(this, super::setRequestedOrientation);
     }
 
     private File game;
@@ -122,6 +122,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     };
 
     @Override public void onCreate(Bundle saved) {
+        EnginePlayerOrientation.lockOnCreate(this, saved);
         super.onCreate(saved);
         uiContext=EngineUiText.localizedContext(this);
         Intent i=getIntent();
@@ -2180,7 +2181,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         else if(runner==null||titlePanel!=null)finish();
         else showMenu();
     }
-    @Override protected void onResume() { super.onResume(); foreground=true; immersive();
+    @Override protected void onResume() { super.onResume(); EnginePlayerOrientation.applyLocked(this); foreground=true; immersive();
         if(gamePanel!=null)gamePanel.uiActive(moviePlayback==null&&movieErrorPanel==null);
         statusActive(true);
         if(runner!=null) runner.active(true);
