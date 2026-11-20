@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -40,7 +41,6 @@ import com.tyranor.next.R
 import com.tyranor.next.core.game.model.GameTitleTags
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.settings.AppSettingsStore
-import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.PageSecondaryTextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.motion.BlurCrossfade
@@ -66,6 +66,7 @@ import com.tyranor.next.ui.common.motion.rememberLastNonNull
 @Composable
 internal fun GameCoverFlow(
     games: List<ScanGame>,
+    cardShape: Shape,
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
 ) {
@@ -126,6 +127,7 @@ internal fun GameCoverFlow(
                     key(game.uri) {
                         CoverFlowCard(
                             game = game,
+                            cardShape = cardShape,
                             batchChangedAt = listChangedAt,
                             tier = coverDecodeTier,
                             onClick = {
@@ -167,6 +169,7 @@ internal fun GameCoverFlow(
 @Composable
 private fun CoverFlowCard(
     game: ScanGame,
+    cardShape: Shape,
     batchChangedAt: Long,
     tier: CoverDecodeTier,
     onClick: () -> Unit,
@@ -183,10 +186,10 @@ private fun CoverFlowCard(
             .gameRemovalDust(dissolve)
             .coverBatchArrival(batchChangedAt)
             .pressSquish(scale = PressSquishDefaults.CardScale, charge = true)
-            .clip(AppComponentShape)
+            .clip(cardShape)
             .dissolveTint(dissolve, MaterialTheme.colorScheme.error)
             .background(game.engine.coverColor())
-            .glassBorder()
+            .glassBorder(shape = cardShape)
             // 点按：居中卡打开操作抽屉，侧卡先居中；长按：打开统一操作弹窗。
             // 用 combinedClickable 而非 pointerInput，保证改名/封面更新后手势读取最新游戏对象，
             // 并与瀑布流卡片共享长按触感与无障碍语义。

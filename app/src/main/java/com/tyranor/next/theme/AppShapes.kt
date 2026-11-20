@@ -15,6 +15,10 @@ import androidx.compose.ui.unit.dp
 val AppComponentShape: Shape
     get() = RoundedCornerShape(AppThemeColors.appCornerRadius.dp)
 
+/** 游戏页卡片可使用独立圆角，关闭时跟随应用圆角。 */
+internal fun gameCardShape(radiusDp: Int?): Shape =
+    radiusDp?.let { RoundedCornerShape(it.dp) } ?: AppComponentShape
+
 /**
  * 液态玻璃 · 透镜底栏（`ui/common/glass/`）的胶囊轮廓：圆角 = 半高
  * （64dp 栏体 → 32dp，56dp 透镜 → 28dp）。

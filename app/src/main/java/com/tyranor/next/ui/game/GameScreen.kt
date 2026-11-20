@@ -105,6 +105,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -178,6 +179,7 @@ import com.tyranor.next.theme.SecondaryTextColor
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
+import com.tyranor.next.theme.gameCardShape
 import com.tyranor.next.theme.CoverBadgeText
 import com.tyranor.next.theme.CoverBadgeBackground
 import com.tyranor.next.ui.common.AppAlertDialog
@@ -610,6 +612,8 @@ private fun GameLibraryContent(
                         }
                     }
                     LibraryPane.Content -> {
+                        val corners by AppSettingsStore.gameCardCorners.collectSettingAsState()
+                        val cardShape = gameCardShape(corners.radiusDp.takeIf { corners.enabled })
                         // 卡片风格切换（瀑布 / 网格 / 封面流）：整体模糊替换（大面积内容自动不做模糊，只淡入淡出与缩放）
                         BlurCrossfade(cardStyle, modifier = Modifier.fillMaxSize()) { style ->
                         when (style) {
@@ -617,6 +621,7 @@ private fun GameLibraryContent(
                             AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW -> key(conditions) {
                                 GameCoverFlow(
                                     games = filteredGames,
+                                    cardShape = cardShape,
                                     onGameClick = { if (contentInteractive) onGameClick(it) },
                                     onGameLongClick = { if (contentInteractive) onGameLongClick(it) },
                                 )
@@ -624,6 +629,7 @@ private fun GameLibraryContent(
                             // 「网格」风格：恢复瀑布流之前的等高网格
                             AppSettingsStore.GAME_CARD_STYLE_GRID -> UniformGameGrid(
                                 games = filteredGames,
+                                cardShape = cardShape,
                                 gridState = uniformGridState,
                                 onGameClick = { if (contentInteractive) onGameClick(it) },
                                 onGameLongClick = { if (contentInteractive) onGameLongClick(it) },
@@ -631,6 +637,7 @@ private fun GameLibraryContent(
                             // 「瀑布」风格（默认）
                             else -> GameGrid(
                                 games = filteredGames,
+                                cardShape = cardShape,
                                 gridState = gridState,
                                 onGameClick = { if (contentInteractive) onGameClick(it) },
                                 onGameLongClick = { if (contentInteractive) onGameLongClick(it) },
@@ -2203,6 +2210,7 @@ private fun LaunchFileDialog(
 @Composable
 internal fun GameGrid(
     games: List<ScanGame>,
+    cardShape: Shape,
     gridState: LazyStaggeredGridState,
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
@@ -2239,6 +2247,7 @@ internal fun GameGrid(
                     // 窄卡片（3/6 列）拉伸略收一点，避免高速滚动时显得过软
                     .scrollJelly(gridJelly, strength = 0.03f),
                 game = game,
+                cardShape = cardShape,
                 onClick = { onGameClick(game) },
                 onLongClick = { onGameLongClick(game) },
                 hideTitleTag = hideTitleTag,
@@ -2259,6 +2268,7 @@ internal fun gameCardItemKey(game: ScanGame): String =
 @Composable
 internal fun GameCard(
     game: ScanGame,
+    cardShape: Shape,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
@@ -2292,10 +2302,10 @@ internal fun GameCard(
         modifier
             .gameRemovalDust(dissolve)
             .pressSquish(scale = PressSquishDefaults.CardScale, charge = onLongClick != null)
-            .clip(AppComponentShape)
+            .clip(cardShape)
             .dissolveTint(dissolve, MaterialTheme.colorScheme.error)
             .background(NavWhite)
-            .glassBorder()
+            .glassBorder(shape = cardShape)
             .then(pressModifier),
     ) {
         Box(
@@ -2351,6 +2361,7 @@ internal fun GameCard(
 @Composable
 internal fun UniformGameGrid(
     games: List<ScanGame>,
+    cardShape: Shape,
     gridState: LazyGridState,
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
@@ -2381,6 +2392,7 @@ internal fun UniformGameGrid(
                 modifier = listItemMotion(ListItemPlacement.Reflow).staggeredEntrance(index)
                     .scrollJelly(gridJelly, strength = 0.03f),
                 game = game,
+                cardShape = cardShape,
                 onClick = { onGameClick(game) },
                 onLongClick = { onGameLongClick(game) },
                 hideTitleTag = hideTitleTag,
@@ -2398,6 +2410,7 @@ internal fun UniformGameGrid(
 @Composable
 internal fun UniformGameCard(
     game: ScanGame,
+    cardShape: Shape,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
@@ -2430,10 +2443,10 @@ internal fun UniformGameCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(3f / 4f)
-                .clip(AppComponentShape)
+                .clip(cardShape)
                 .dissolveTint(dissolve, MaterialTheme.colorScheme.error)
                 .background(game.engine.coverColor())
-                .glassBorder(),
+                .glassBorder(shape = cardShape),
             contentAlignment = Alignment.Center,
         ) {
             // 位图被 LRU 逐出后重新进入视口：已知该封面存在，先留底色等重解码，不再闪占位文字

@@ -104,6 +104,7 @@
     <string name="game_sort_engine">引擎</string>
     <string name="game_sort_recent">最近游玩</string>
     <string name="settings_game_card_style">游戏卡片风格</string>
+    <string name="settings_game_card_corner_radius">游戏卡片单独圆角</string>
     <string name="settings_game_card_style_waterfall">瀑布</string>
     <string name="settings_game_card_style_grid">网格</string>
     <string name="settings_game_card_style_cover_flow">列表</string>

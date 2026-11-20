@@ -164,6 +164,7 @@ internal fun AppSettingsScreen() {
             AppSettingsStore.initEngineCardIcon(ctx)
             AppSettingsStore.initGameCardHideTitleTag(ctx)
             AppSettingsStore.initGameCardStyle(ctx)
+            AppSettingsStore.initGameCardCorners(ctx)
             AppSettingsStore.initGameCardBadge(ctx)
             AppSettingsStore.initBackgroundImage(ctx)
             AppSettingsStore.initHomeStyle(ctx)
@@ -716,6 +717,7 @@ internal fun AppSettingsScreen() {
                                     }
                                 },
                             )
+                            GameCardCornerPreference()
                             // 游戏页卡片名称隐藏【】/[] 标签（切换即时生效并持久化）
                             SwitchPreference(
                                 title = stringResource(R.string.settings_game_card_hide_title_tag),
@@ -779,6 +781,47 @@ internal fun AppSettingsScreen() {
             },
             onDismiss = { dialog = null },
         )
+    }
+}
+
+@Composable
+private fun GameCardCornerPreference() {
+    val context = LocalContext.current
+    val corners by AppSettingsStore.gameCardCorners.collectSettingAsState()
+    val title = stringResource(R.string.settings_game_card_corner_radius)
+    val radiusSteps = AppSettingsStore.APP_CORNER_RADIUS_STEPS
+    Column {
+        SwitchPreference(
+            title = title,
+            checked = corners.enabled,
+            onCheckedChange = { enabled ->
+                AppSettingsStore.updateGameCardCorners(context) { it.copy(enabled = enabled) }
+            },
+            summary = if (corners.enabled) {
+                stringResource(R.string.settings_app_corner_radius_value, corners.radiusDp)
+            } else {
+                null
+            },
+        )
+        ExpandVisibility(visible = corners.enabled) {
+            Slider(
+                value = corners.radiusDp.toFloat(),
+                onValueChange = { radius ->
+                    AppSettingsStore.updateGameCardCorners(context) {
+                        it.copy(radiusDp = radius.roundToInt())
+                    }
+                },
+                enabled = corners.enabled,
+                valueRange = radiusSteps.first().toFloat()..radiusSteps.last().toFloat(),
+                steps = radiusSteps.size - 2,
+                showKeyPoints = true,
+                hapticEffect = SliderDefaults.SliderHapticEffect.Step,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
+                    .semantics { contentDescription = title },
+            )
+        }
     }
 }
 

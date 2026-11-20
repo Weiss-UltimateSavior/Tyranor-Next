@@ -269,8 +269,11 @@ _Avoid_: 导航抽屉（NavigationDrawer）、侧边栏（与抽屉混淆时）
 _Avoid_: 深色模式（仅指其一）
 
 **应用圆角（App Corner Radius）**:
-应用设置的统一圆角数值（5–50dp，十档，默认 15dp），默认外观、复古玻璃与白雾玻璃共用；卡片、条目、弹窗与抽屉经 `theme/AppShapes.kt` 的 `AppComponentShape` / `AppComponentCornerRadius` / `AppSheetTopShape` 统一取值，不按外观风格分档。
+卡片、条目、弹窗与抽屉默认共用的圆角数值，适用于默认外观、复古玻璃和白雾玻璃。
 _Avoid_: 组件圆角、卡片圆角（仅指其一）
+
+**游戏卡片单独圆角（Custom Game Card Corner Radius）**:
+游戏页瀑布、网格和封面流卡片共用的独立圆角。此设置默认关闭，关闭时三种卡片跟随应用圆角。
 
 **背景粒子（Floating Particles）**:
 默认外观风格页面背景上随色调轮盘换色的装饰图形，可选择「气泡上升」或「按键瀑布」。

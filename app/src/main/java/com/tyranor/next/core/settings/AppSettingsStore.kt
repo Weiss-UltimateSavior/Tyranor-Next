@@ -12,6 +12,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
+internal data class GameCardCornerSettings(
+    val enabled: Boolean = false,
+    val radiusDp: Int = AppSettingsStore.DEFAULT_APP_CORNER_RADIUS,
+)
+
 /**
  * 应用设置存储层：与引擎无关的应用级偏好（如主题色、导航栏样式）。
  * 使用独立 prefs 文件 app_settings，避免混入引擎进程读取的 tyranor_prefs。
@@ -116,6 +121,9 @@ object AppSettingsStore {
 
     /** 游戏页卡片风格：瀑布（默认）/ 网格 / 列表（封面流）。 */
     const val KEY_GAME_CARD_STYLE = "game_card_style"
+
+    private const val KEY_GAME_CARD_CORNER_ENABLED = "game_card_corner_enabled"
+    private const val KEY_GAME_CARD_CORNER_RADIUS = "game_card_corner_radius"
 
     /** 游戏页卡片左上角引擎类型角标；默认关。 */
     const val KEY_GAME_CARD_BADGE = "game_card_badge"
@@ -381,6 +389,9 @@ object AppSettingsStore {
 
     /** 卡片风格内存态：设置页切换后游戏页即时切换布局。 */
     val gameCardStyleState: MutableStateFlow<String> = MutableStateFlow(DEFAULT_GAME_CARD_STYLE)
+
+    private val mutableGameCardCorners = MutableStateFlow(GameCardCornerSettings())
+    internal val gameCardCorners = mutableGameCardCorners.asStateFlow()
 
     /** 卡片引擎角标内存态：设置页切换后游戏页卡片即时重组。 */
     val gameCardBadgeState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_GAME_CARD_BADGE)
@@ -704,6 +715,33 @@ object AppSettingsStore {
 
     fun setAppCornerRadius(c: Context, radius: Int) {
         prefs(c).edit().putInt(KEY_APP_CORNER_RADIUS, normalizeAppCornerRadius(radius)).apply()
+    }
+
+    @Synchronized
+    internal fun initGameCardCorners(context: Context) {
+        val settings = prefs(context)
+        mutableGameCardCorners.value = GameCardCornerSettings(
+            enabled = settings.getBoolean(KEY_GAME_CARD_CORNER_ENABLED, false),
+            radiusDp = normalizeAppCornerRadius(
+                settings.getInt(KEY_GAME_CARD_CORNER_RADIUS, DEFAULT_APP_CORNER_RADIUS),
+            ),
+        )
+    }
+
+    @Synchronized
+    internal fun updateGameCardCorners(
+        context: Context,
+        transform: (GameCardCornerSettings) -> GameCardCornerSettings,
+    ) {
+        val current = mutableGameCardCorners.value
+        val updated = transform(current)
+        val normalized = updated.copy(radiusDp = normalizeAppCornerRadius(updated.radiusDp))
+        if (normalized == current) return
+        prefs(context).edit {
+            putBoolean(KEY_GAME_CARD_CORNER_ENABLED, normalized.enabled)
+            putInt(KEY_GAME_CARD_CORNER_RADIUS, normalized.radiusDp)
+        }
+        mutableGameCardCorners.value = normalized
     }
 
     /** 首次组合时从持久化加载「卡片隐藏名称标签」到内存态（幂等）。 */

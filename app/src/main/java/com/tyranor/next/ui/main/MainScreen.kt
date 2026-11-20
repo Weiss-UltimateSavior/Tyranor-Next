@@ -185,6 +185,7 @@ fun MainScreen(
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardHideTitleTag(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardBadge(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardStyle(context) }
+    withContext(Dispatchers.IO) { AppSettingsStore.initGameCardCorners(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initHomeStyle(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initFloatingNavPosition(context) }
   }

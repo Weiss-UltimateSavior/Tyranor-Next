@@ -104,6 +104,7 @@
     <string name="game_sort_engine">エンジン</string>
     <string name="game_sort_recent">最近プレイ</string>
     <string name="settings_game_card_style">ゲームカードのスタイル</string>
+    <string name="settings_game_card_corner_radius">ゲームカードの角丸を個別に設定</string>
     <string name="settings_game_card_style_waterfall">ウォーターフォール</string>
     <string name="settings_game_card_style_grid">グリッド</string>
     <string name="settings_game_card_style_cover_flow">リスト</string>
