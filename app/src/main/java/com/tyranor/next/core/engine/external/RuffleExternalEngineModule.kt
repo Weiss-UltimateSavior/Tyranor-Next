@@ -2,7 +2,6 @@ package com.tyranor.next.core.engine.external
 
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.os.Environment
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
@@ -81,7 +80,10 @@ object RuffleExternalEngineModule : ExternalEngineModule {
                 ExternalEngineContract.SETTINGS,
                 buildSettingsJson(request.resolvedSettings?.ruffle),
             )
-            putExtra(ExternalEngineContract.ORIENTATION, ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
+            putExtra(
+                ExternalEngineContract.ORIENTATION,
+                ExternalEngineContract.normalizeOrientation(request.orientation),
+            )
             putExtra(ExternalEngineContract.ROOT_URI, request.game.uri)
             putExtra(
                 ExternalEngineContract.LAUNCH_TARGET,

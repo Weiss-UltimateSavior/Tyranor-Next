@@ -4,7 +4,6 @@ import tv.danmaku.ijk.media.player.IMediaPlayer
 import tv.danmaku.ijk.media.player.widget.IjkVideoView
 import android.app.Activity
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.content.res.AssetFileDescriptor
 import android.graphics.Color
 import android.media.AudioManager
@@ -14,6 +13,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.WindowManager
 import android.widget.LinearLayout
+import com.core.engine.EnginePlayerOrientation
 import java.io.File
 import java.io.RandomAccessFile
 
@@ -26,7 +26,7 @@ class VideoViewActivity : Activity(), IMediaPlayer.OnCompletionListener, IMediaP
     private var videoView: IjkVideoView? = null
 
     override fun setRequestedOrientation(requestedOrientation: Int) {
-        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
+        EnginePlayerOrientation.applyWithSuper(this) { super.setRequestedOrientation(it) }
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -56,6 +56,7 @@ class VideoViewActivity : Activity(), IMediaPlayer.OnCompletionListener, IMediaP
     }
 
     override fun onCreate(bundle: Bundle?) {
+        EnginePlayerOrientation.lockOnCreate(this, bundle)
         super.onCreate(bundle)
         // IJK 三件套来自运行库包；缺失时直接结束，避免在播放器构造期抛 UnsatisfiedLinkError。
         if (!com.core.nativeplugin.IjkRuntime.load(this)) {
@@ -139,6 +140,8 @@ class VideoViewActivity : Activity(), IMediaPlayer.OnCompletionListener, IMediaP
             pausedBySystem = false
             setResult(RESULT_CANCELED, Intent())
             finish()
+        } else {
+            EnginePlayerOrientation.applyLocked(this)
         }
     }
 

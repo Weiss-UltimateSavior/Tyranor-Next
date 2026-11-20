@@ -3,7 +3,6 @@ package com.core.cmvs
 import android.app.AlertDialog
 import android.app.NativeActivity
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
 import android.os.Process
@@ -14,6 +13,7 @@ import android.view.WindowManager
 import android.widget.EditText
 import androidx.annotation.Keep
 import com.core.engine.DoubleBackExit
+import com.core.engine.EnginePlayerOrientation
 import com.core.engine.EngineSurfaceStartupController
 import com.core.engine.LaunchContract
 import com.core.engine.R
@@ -33,7 +33,7 @@ import java.util.UUID
  */
 class CmvsActivity : NativeActivity() {
     override fun setRequestedOrientation(requestedOrientation: Int) {
-        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
+        EnginePlayerOrientation.applyWithSuper(this) { super.setRequestedOrientation(it) }
     }
 
     @Volatile private var startupAllowed = false
@@ -50,6 +50,7 @@ class CmvsActivity : NativeActivity() {
     fun shouldStartCmvsNative(): Boolean = startupAllowed
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        EnginePlayerOrientation.lockOnCreate(this, savedInstanceState)
         val launchConfig = File(filesDir, "launch.cfg")
         val expectedToken = intent?.getStringExtra(LaunchContract.CMVS_LAUNCH_TOKEN).orEmpty()
         val actualToken = readLaunchToken()
@@ -74,6 +75,7 @@ class CmvsActivity : NativeActivity() {
 
     override fun onResume() {
         super.onResume()
+        EnginePlayerOrientation.applyLocked(this)
         startupController?.onResume()
     }
 
