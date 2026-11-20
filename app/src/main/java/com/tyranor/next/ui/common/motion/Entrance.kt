@@ -361,12 +361,10 @@ internal class StaggeredEntranceNode(
         val flow = reflow ?: return
         val key = itemKey ?: return
         val entrance = flow.entrance
-        if (reflowGeneration == entrance.generation || !flow.isVisible(key)) return
-        if (MotionMode.enhanced && flow.shouldEnter(key)) {
-            val delayMillis = flow.entranceDelayMillis(key, stepMillis) ?: return
-            if (beginPlay(entrance, relayout, delayOverrideMillis = delayMillis, placementDelta = flow.placementDelta(key))) {
-                reflowGeneration = entrance.generation
-            }
+        if (reflowGeneration == entrance.generation) return
+        val delayMillis = flow.entranceDelayMillis(key, stepMillis) ?: return
+        if (beginPlay(entrance, relayout, delayOverrideMillis = delayMillis, placementDelta = flow.placementDelta(key))) {
+            reflowGeneration = entrance.generation
         }
     }
 

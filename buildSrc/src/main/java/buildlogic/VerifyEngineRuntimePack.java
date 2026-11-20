@@ -1,10 +1,15 @@
 package buildlogic;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.zip.ZipFile;
+import javax.inject.Inject;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
 import org.gradle.api.file.DirectoryProperty;
@@ -18,6 +23,7 @@ import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.PathSensitive;
 import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.TaskAction;
+import org.gradle.process.ExecOperations;
 
 /**
  * Validates one bundled engine-runtime pack against its sources and, when available, its staged
@@ -59,6 +65,17 @@ public abstract class VerifyEngineRuntimePack extends DefaultTask {
     @PathSensitive(PathSensitivity.NONE)
     public abstract RegularFileProperty getContainerFile();
 
+    @Optional
+    @InputFile
+    @PathSensitive(PathSensitivity.NONE)
+    public abstract RegularFileProperty getDynamicSymbolTool();
+
+    @Input
+    public abstract ListProperty<String> getRequiredDynamicSymbols();
+
+    @Inject
+    protected abstract ExecOperations getExecOperations();
+
     @TaskAction
     public void verify() {
         File directory = getLibraryDirectory().get().getAsFile();
@@ -85,9 +102,43 @@ public abstract class VerifyEngineRuntimePack extends DefaultTask {
                 throw new GradleException(
                         "Engine runtime pack '" + getPackId().get() + "' produced an empty archive: " + container);
             }
+            if (!getRequiredDynamicSymbols().get().isEmpty()) {
+                verifyExports(zip, getLibraryNames().get().get(0));
+            }
         } catch (IOException error) {
             throw new GradleException(
                     "Cannot inspect engine runtime pack '" + getPackId().get() + "' archive: " + container, error);
+        }
+    }
+
+    private void verifyExports(ZipFile zip, String library) throws IOException {
+        var entry = zip.getEntry(library);
+        if (entry == null) {
+            throw new GradleException("Engine runtime pack '" + getPackId().get() + "' is missing " + library);
+        }
+        var extracted = Files.createTempFile(getTemporaryDir().toPath(), "exports-", ".so");
+        try {
+            try (var input = zip.getInputStream(entry)) {
+                Files.copy(input, extracted, StandardCopyOption.REPLACE_EXISTING);
+            }
+            var output = new ByteArrayOutputStream();
+            getExecOperations().exec(spec -> {
+                spec.commandLine(getDynamicSymbolTool().get().getAsFile(), "--dynamic", "--defined-only",
+                        "--format=just-symbols", extracted);
+                spec.setStandardOutput(output);
+            });
+            var exports = output.toString(StandardCharsets.UTF_8).lines().toList();
+            var missing = getRequiredDynamicSymbols().get().stream()
+                    .filter(symbol -> !exports.contains(symbol))
+                    .toList();
+            if (!missing.isEmpty()) {
+                throw new GradleException(
+                        library + " in engine runtime pack '" + getPackId().get()
+                                + "' is missing dynamic exports: " + String.join(", ", missing)
+                                + ". Build the siglus_rs game_launcher package for Android.");
+            }
+        } finally {
+            Files.deleteIfExists(extracted);
         }
     }
 }

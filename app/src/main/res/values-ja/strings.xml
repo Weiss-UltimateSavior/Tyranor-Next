@@ -104,6 +104,7 @@
     <string name="game_sort_engine">エンジン</string>
     <string name="game_sort_recent">最近プレイ</string>
     <string name="settings_game_card_style">ゲームカードのスタイル</string>
+    <string name="settings_game_card_corner_radius">ゲームカードの角丸を個別に設定</string>
     <string name="settings_game_card_style_waterfall">ウォーターフォール</string>
     <string name="settings_game_card_style_grid">グリッド</string>
     <string name="settings_game_card_style_cover_flow">リスト</string>
@@ -659,6 +660,7 @@
     <string name="patch_processing">処理中</string>
     <string name="patch_download_install">ダウンロードしてインストール</string>
     <string name="scan_unnamed_game">名称未設定のゲーム</string>
+    <string name="scan_impacto_unsupported_title">%1$s · MAGES. ゲーム（未対応）</string>
     <string name="scan_unnamed_directory">名称未設定フォルダ</string>
 
     <string name="auth_hikarinagi_client_id_missing">Hikarinagi Client ID が設定されていません</string>

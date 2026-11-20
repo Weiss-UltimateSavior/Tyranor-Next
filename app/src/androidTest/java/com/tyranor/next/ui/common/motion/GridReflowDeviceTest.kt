@@ -4,6 +4,7 @@ import android.animation.ValueAnimator
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -216,68 +217,73 @@ class GridReflowDeviceTest(private val staggered: Boolean) {
         val columns = fixture.columns.intValue
         val waterfallReflow = rememberWaterfallReflowState(columns, columns == 3)
         val waterfall = waterfallReflow.gridState
-        val reflow = rememberGridReflowState(
-            columns = columns,
-            landscape = columns == 3,
-            ready = !staggered || !waterfallReflow.isRestoring,
-            placementDelta = if (staggered) { key ->
-                val previous = waterfallReflow.previousItemOffsets[key]
-                val current = waterfall.layoutInfo.visibleItemsInfo.firstOrNull { it.key == key }?.offset
-                if (previous != null && current != null) previous - current else androidx.compose.ui.unit.IntOffset.Zero
-            } else null,
-            visibleKeys = {
-                if (staggered) waterfall.layoutInfo.visibleItemsInfo.sortedBy { it.index }.mapTo(LinkedHashSet()) { it.key }
-                else grid.layoutInfo.visibleItemsInfo.sortedBy { it.index }.mapTo(LinkedHashSet()) { it.key }
-            },
-        )
+        val reflow = if (staggered) {
+            rememberGridReflowState(
+                columns = columns,
+                landscape = columns == 3,
+                gridState = waterfall,
+                ready = !waterfallReflow.isRestoring,
+                placementDelta = { key ->
+                    val previous = waterfallReflow.previousItemOffsets[key]
+                    val current = waterfall.layoutInfo.visibleItemsInfo.firstOrNull { it.key == key }?.offset
+                    if (previous != null && current != null) previous - current else androidx.compose.ui.unit.IntOffset.Zero
+                },
+            )
+        } else {
+            rememberGridReflowState(columns, columns == 3, grid)
+        }
         fixture.waterfall = waterfallReflow
         fixture.reflow = reflow
         // Integral pixel geometry keeps screenshots independent of emulator density.
-        val frame = Modifier
+        val viewport = Modifier
             .size(with(density) { WIDTH.toDp() }, with(density) { HEIGHT.toDp() })
             .background(Color.Black)
+            .testTag(GRID_TAG)
+        val frame = Modifier.fillMaxSize()
             .then(if (staggered) Modifier.waterfallReflowHost(waterfallReflow) else Modifier)
             .gridReflowHost(reflow)
-            .testTag(GRID_TAG)
         val gap = with(density) { GAP.toDp() }
-        if (staggered) {
-            LazyVerticalStaggeredGrid(
-                columns = StaggeredGridCells.Fixed(columns),
-                state = waterfall,
-                modifier = frame,
-                horizontalArrangement = Arrangement.spacedBy(gap),
-                verticalItemSpacing = gap,
-            ) {
-                items(COLORS.indices.toList(), key = { "card-$it" }) { index ->
-                    FixtureCard(
-                        index,
-                        listItemMotion(reflow.placement).staggeredEntrance(
+        // Capture outside the hidden accessibility subtree, including its preparation frames.
+        Box(viewport) {
+            if (staggered) {
+                LazyVerticalStaggeredGrid(
+                    columns = StaggeredGridCells.Fixed(columns),
+                    state = waterfall,
+                    modifier = frame,
+                    horizontalArrangement = Arrangement.spacedBy(gap),
+                    verticalItemSpacing = gap,
+                ) {
+                    items(COLORS.indices.toList(), key = { "card-$it" }) { index ->
+                        FixtureCard(
                             index,
-                            stepMillis = fixture.entranceStepMillis,
-                            reflow = reflow,
-                            key = "card-$index",
-                        ),
-                    )
+                            listItemMotion(ListItemPlacement.Reflow).staggeredEntrance(
+                                index,
+                                stepMillis = fixture.entranceStepMillis,
+                                reflow = reflow,
+                                key = "card-$index",
+                            ),
+                        )
+                    }
                 }
-            }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(columns),
-                state = grid,
-                modifier = frame,
-                horizontalArrangement = Arrangement.spacedBy(gap),
-                verticalArrangement = Arrangement.spacedBy(gap),
-            ) {
-                items(COLORS.indices.toList(), key = { "card-$it" }) { index ->
-                    FixtureCard(
-                        index,
-                        listItemMotion(reflow.placement).staggeredEntrance(
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(columns),
+                    state = grid,
+                    modifier = frame,
+                    horizontalArrangement = Arrangement.spacedBy(gap),
+                    verticalArrangement = Arrangement.spacedBy(gap),
+                ) {
+                    items(COLORS.indices.toList(), key = { "card-$it" }) { index ->
+                        FixtureCard(
                             index,
-                            stepMillis = fixture.entranceStepMillis,
-                            reflow = reflow,
-                            key = "card-$index",
-                        ),
-                    )
+                            listItemMotion(ListItemPlacement.Reflow).staggeredEntrance(
+                                index,
+                                stepMillis = fixture.entranceStepMillis,
+                                reflow = reflow,
+                                key = "card-$index",
+                            ),
+                        )
+                    }
                 }
             }
         }

@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -58,6 +59,7 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
  * - 单点：点哪一格直接跳到最近的刻度，轻震 + 圆钮带回弹落位；
  * - 松手：圆钮从手指位置弹簧吸附到刻度，略冲过再落稳。
  * 连续滑条与「普通」档直接使用 Miuix 原组件。
+ * @param onValueChangeCancelled 手势取消时回滚草稿；未设置时保留 Miuix 的默认结束语义。
  */
 @Composable
 fun Slider(
@@ -73,17 +75,32 @@ fun Slider(
     showKeyPoints: Boolean = false,
     keyPoints: List<Float>? = null,
     magnetThreshold: Float = 0.02f,
+    onValueChangeCancelled: (() -> Unit)? = null,
 ) {
     // 空自定义刻度等同未提供：有 steps 时使用均分刻度，否则走原有连续滑条。
     val effectiveKeyPoints = keyPoints?.takeIf { it.isNotEmpty() }
     val discrete = effectiveKeyPoints != null || steps > 0
     if (!MotionMode.enhanced || !discrete) {
+        val release = if (enabled && onValueChangeCancelled != null) {
+            remember { SliderRelease() }
+        } else null
+        val observedModifier = if (release == null) modifier else modifier.pointerInput(release) {
+            // Miuix's draggable reports both release and cancellation through onDragStopped.
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                release.released = false
+                var event = awaitPointerEvent(PointerEventPass.Initial)
+                while (event.changes.any { it.pressed }) event = awaitPointerEvent(PointerEventPass.Initial)
+                // Compose synthesizes consumed up changes when the platform cancels the stream.
+                release.released = event.changes.any { it.previousPressed && !it.isConsumed }
+            }
+        }
         // 用户明确保留本批滑条外观：已覆盖区域的刻度与进度条同色，见 PR #162。
         val coveredDotColor = if (enabled) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.disabledPrimarySlider
         MiuixSlider(
             value = value,
             onValueChange = onValueChange,
-            modifier = modifier.semantics {
+            modifier = observedModifier.semantics {
                 if (enabled) {
                     setProgress { target ->
                         onValueChange(target.coerceIn(valueRange.start, valueRange.endInclusive))
@@ -96,7 +113,12 @@ fun Slider(
             colors = SliderDefaults.sliderColors(keyPointForegroundColor = coveredDotColor),
             valueRange = valueRange,
             steps = steps,
-            onValueChangeFinished = onValueChangeFinished,
+            onValueChangeFinished = if (release == null) onValueChangeFinished else {
+                {
+                    if (release.released) onValueChangeFinished?.invoke()
+                    else onValueChangeCancelled?.invoke()
+                }
+            },
             height = height,
             hapticEffect = hapticEffect,
             showKeyPoints = showKeyPoints,
@@ -113,11 +135,16 @@ fun Slider(
         valueRange = valueRange,
         steps = steps,
         onValueChangeFinished = onValueChangeFinished,
+        onValueChangeCancelled = onValueChangeCancelled ?: {},
         height = height,
         haptics = hapticEffect != SliderDefaults.SliderHapticEffect.None,
         showKeyPoints = showKeyPoints,
         keyPoints = effectiveKeyPoints,
     )
+}
+
+private class SliderRelease {
+    var released = false
 }
 
 /** 拖出两端时整条最多拉伸的比例。 */
@@ -136,6 +163,7 @@ private fun TickSlider(
     valueRange: ClosedFloatingPointRange<Float>,
     steps: Int,
     onValueChangeFinished: (() -> Unit)?,
+    onValueChangeCancelled: () -> Unit,
     height: Dp,
     haptics: Boolean,
     showKeyPoints: Boolean,
@@ -174,6 +202,7 @@ private fun TickSlider(
     val scope = rememberCoroutineScope()
     val onChange by rememberUpdatedState(onValueChange)
     val onFinished by rememberUpdatedState(onValueChangeFinished)
+    val onCancelled by rememberUpdatedState(onValueChangeCancelled)
 
     val pos = remember { Animatable(valueFraction) }
     val press = remember { Animatable(1f) }
@@ -249,10 +278,11 @@ private fun TickSlider(
                                     val event = awaitPointerEvent()
                                     val change = event.changes.firstOrNull { it.id == down.id }
                                     if (change == null) {
-                                        cancelled = !moved
+                                        cancelled = true
                                         break
                                     }
                                     if (!change.pressed) {
+                                        cancelled = change.isConsumed
                                         change.consume()
                                         break
                                     }
@@ -312,9 +342,10 @@ private fun TickSlider(
                                 }
                                 scope.launch { overshoot.animateTo(0f, MotionTokens.control(0.0005f)) }
                                 scope.launch { press.animateTo(1f, MotionTokens.release(0.001f)) }
-                                if (!cancelled) onFinished?.invoke()
+                                if (cancelled) onCancelled() else onFinished?.invoke()
                                 finished = true
                             } finally {
+                                if (!finished) onCancelled()
                                 if (!finished && generation == interaction.generation) {
                                     dragging = false
                                     interacting = false

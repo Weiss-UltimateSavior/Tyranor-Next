@@ -79,6 +79,9 @@ class MainActivity : FragmentActivity() {
     // 首页样式同样在首帧前加载：应用锁的「跳过绘制」判定要知道当前是否 Web 首页
     // （WebView 靠原生绘制回调输出，不能被 skipDrawWhenHidden 罩住）
     AppSettingsStore.initHomeStyle(this)
+    // 导航位置和样式共同决定首帧布局，组合前读取用户保存的值。
+    AppSettingsStore.initSideRail(this)
+    AppSettingsStore.initNavStyle(this)
 
     enableEdgeToEdge(
       statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),

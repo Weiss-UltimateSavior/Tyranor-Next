@@ -2,7 +2,7 @@
   <img src="screenshots/index1.png" alt="Tyranor Next" width="900" />
 </p>
 
-基于 **Tyranor 模拟器逆向重写** 的多引擎视觉小说（Galgame）模拟器，面向 Android 平台。游戏页支持瀑布、网格与封面流。瀑布和网格可在游戏页「筛选与排序」抽屉中调整当前屏幕方向的每行卡片数，两种风格各自保存横竖屏设置。增强动效下旋转屏幕时，已有可见卡片平滑移动到新位置，全部可见卡片按列表顺序逐张补位：已有卡片衔接旧位置，新出现的卡片从下方向上进入。普通档或关闭系统动画时，卡片直接就位。瀑布流旋转后按游戏身份保持阅读位置，换封面不影响锚点；恢复测量分帧执行，原本触底时仍停在底部，随后上滑时卡片列位保持稳定。具体功能与兼容边界见 [SPEC.md](SPEC.md)。
+基于 **Tyranor 模拟器逆向重写** 的多引擎视觉小说（Galgame）模拟器，面向 Android 平台。游戏页支持瀑布、网格与封面流。瀑布和网格可在游戏页「筛选与排序」抽屉中调整当前屏幕方向的每行卡片数，两种风格各自保存横竖屏设置；滑条拖动时只预览读数，松手后提交。增强动效下旋转屏幕时，已有可见卡片平滑移动到新位置，全部可见卡片按列表顺序逐张补位：已有卡片衔接旧位置，新出现的卡片从下方向上进入。普通档或关闭系统动画时，卡片直接就位。瀑布流按游戏身份恢复阅读位置，换封面不影响锚点；恢复测量分帧执行，重建超过约 1.5 秒时降级到索引定位，此时不保证完整列历史与原游戏身份。恢复被滚动抢占后保留原锚点，待输入释放再重试；游戏页隐藏、切换卡片风格或页面离开前台时暂停恢复。具体功能与兼容边界见 [SPEC.md](SPEC.md)。
 
 iOS版本计划中...  鸿蒙设备可使用卓易通安装
 主打轻便、简单、快捷，不引入其他冗余功能的简约设计思路
@@ -50,7 +50,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | ONScripter           | `nscript.dat`、`.nsa`                                                | ONScripter 原生运行时             |
 | Artemis              | `system.ini`、`.pfs`                                                 | Artemis 原生运行时                |
 | SiglusEngine         | `Gameexe.dat`/`Gameexe.ini`、`Scene.pck`（根或 `Data/`）                | Siglus 原生运行时（siglus_rs）      |
-| RealLive             | `Gameexe.ini` + `SEEN.TXT`（10000 项 TOC）或 `SEEN####.TXT`             | 内置视觉小说运行时（game_launcher）  |
+| RealLive             | 有效的 `SEEN.TXT`（检查全部 10,000 个目录项），或 `Gameexe.ini` + 非空 `SEEN####.TXT` | 内置视觉小说运行时（game_launcher）  |
 | AVG32                | `Gameexe.ini` + `SEEN.TXT`（`PACL`）或 `SEEN###.TXT`（`TPC32`）          | 内置视觉小说运行时（game_launcher）  |
 | UK2（PC-98）          | `UK2.CFG`、`*.MES`（`<< UK2 TEXT Ver1.00 >>` 头）                       | 内置视觉小说运行时（game_launcher）  |
 | FVP                  | `*.hcb`/`*.bch` 脚本、`graph.bin`/`voice.bin` 等资源包                   | 内置 FVP 原生运行时（rfvp）          |
@@ -73,7 +73,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | WebOther             | 通用 `index.html` 网页游戏                                                | 内置 Web 运行环境                  |
 | Ren'Py               | `.rpa`、`game/script.rpy`、`game/options.rpy`、`renpy/` + `.rpy/.rpyc` | 外置 RenPy APK 模块（8.5.0 / 8.5.3 / 7.7.1；8.5.0 与 8.5.3 同包名，按所选版本下载安装） |
 | Ruffle / Flash       | 顶层 `.swf`；根 `index.html/index.htm` + 唯一 SWF 的叶子目录                   | 外置 Ruffle APK 模块              |
-| MAGES.（impacto）    | 按精确大小写识别 profile：上游 profile 看根目录条目（如 `mo6tw` 的 `SYSTEM.CPK`、`SCRIPT.cls`），Windows／Steam 版《秋之回忆6》看根目录 `game.exe` 与 `data/` 里的 `script.cpk`、`mes00.cpk` | 外置 Impacto 宿主 APK（引擎页点击跳转下载；Windows／Steam 版需宿主 0.2.0 及以上） |
+| MAGES.（impacto）    | 按精确大小写识别 profile，规则优先取自已安装的宿主：上游 profile 看根目录条目（如 `mo6tw` 的 `SYSTEM.CPK`、`SCRIPT.cls`），Windows／Steam 版《秋之回忆6》看根目录 `game.exe` 与 `data/` 里的 `script.cpk`、`mes00.cpk`，Steam 版 STEINS;GATE 看 `Game.exe` 与 `USRDIR/` 里的 `script.mpk`、`system.mpk`；像 MAGES. 但没有 profile 的目录列为「暂不支持」，可尝试运行 | 外置 Impacto 宿主 APK（引擎页点击跳转下载；Windows／Steam 版需宿主 0.2.0、STEINS;GATE 需 0.3.0 及以上） |
 | PSP                  | `.pbp`、`.cso`、`.iso`、`.chd`                                         | 外置 PPSSPP 模拟器                 |
 | Nintendo Switch      | `.nsp`、`.xci`、`.nca`、`.nro`                                         | 外置 Eden 模拟器                   |
 
@@ -83,18 +83,6 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 - 当前原生引擎库仅提供 `arm64-v8a`，设备需为 64 位 ARM 架构。
 - 游戏目录需位于 Android 可访问的本地存储，并通过系统文件选择器（SAF）授权；启动时目录必须能够映射为真实文件路径，外置存储上的部分引擎可能需要“所有文件访问”权限。
 - 实际兼容性取决于游戏使用的引擎版本、封包/加密方式和脚本特性；特殊修改版可能需要调整引擎设置或补丁。
-
-## 首次使用
-
-新安装或清除数据后首次打开，会在真实主界面上叠加八步「快速入门」教练层，用连接线和提示气泡讲解首页、添加文件夹、手动添加、搜索、封面、重新扫描、引擎与设置入口，不会创建独立的引导页面。支持的引擎游戏应从空游戏库的「添加文件夹」选择包含多个游戏的总目录，自动扫描入库；顶部加号用于指定 exe 手动添加电脑游戏或添加已安装的安卓应用。点击「跳过引导」或「开始使用」后移除提示并保留当前主界面状态，之后不再自动显示；已有设置或游戏库的升级用户默认跳过。新用户在完成引导后请求通知权限，升级用户跳过引导后沿用既有通知权限请求策略。
-
-## 隐私保护
-
-设置页提供独立的「隐私设置」（默认全部关闭）：
-
-- **安全屏幕**：主界面、二级页与所有独立窗口禁止截屏 / 录屏，最近任务卡片由系统置空。
-- **隐藏通知内容**：应用更新通知在系统锁屏上不显示。
-- **应用锁**：退出启动器后按延迟档（立即 / 1 / 5 / 15 分钟）要求图案解锁，冷启动强制解锁；可选用指纹 / 人脸 / 锁屏密码快捷解锁。仅覆盖启动器界面，游戏运行画面与桌面快捷方式直接拉起游戏不在范围内，详见 [SPEC.md](SPEC.md)。
 
 ## 参与贡献
 

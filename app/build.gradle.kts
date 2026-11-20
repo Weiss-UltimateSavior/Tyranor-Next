@@ -234,16 +234,33 @@ val bundledEngineRuntimeContainerTasks = bundledEngineRuntimePacks.mapValues { (
     }
 }
 
-// 暂存容器必须至少有一个条目：空 zip 会压成一个合法但无用的资产，导致首启缺库。
+// 验证实际进入 APK 压缩资产的暂存容器。
 val bundledEngineRuntimeContainerVerificationTasks = bundledEngineRuntimePacks.mapValues { (packId, libraries) ->
     tasks.register<VerifyEngineRuntimePack>("verify${packId.replaceFirstChar { it.uppercase() }}RuntimePackContainer") {
         group = "native plugins"
-        description = "Verifies the $packId engine runtime pack container is not empty."
+        description = "Verifies the staged $packId engine runtime pack container."
         dependsOn(bundledEngineRuntimeContainerTasks.getValue(packId))
         this.packId.set(packId)
         libraryNames.set(libraries)
         libraryDirectory.set(engineRuntimeLibraryDir)
         containerFile.set(bundledEngineRuntimeContainerDir.map { it.file("$packId.zip") })
+        if (packId == "siglus") {
+            dynamicSymbolTool.set(androidComponents.sdkComponents.ndkDirectory.map { ndk ->
+                val prebuilt = ndk.dir("toolchains/llvm/prebuilt")
+                val tools = prebuilt.asFile.listFiles().orEmpty().flatMap { host ->
+                    listOf("bin/llvm-nm", "bin/llvm-nm.exe").map { host.resolve(it) }.filter { it.isFile }
+                }
+                val nm = tools.singleOrNull()
+                    ?: error("Expected one llvm-nm in the Android NDK at ${prebuilt.asFile}")
+                prebuilt.file(nm.relativeTo(prebuilt.asFile).invariantSeparatorsPath)
+            })
+            // Core entry points required by siglus_bridge.cpp and games_bridge.cpp.
+            requiredDynamicSymbols.set(listOf(
+                "siglus_android_create", "siglus_android_destroy", "siglus_android_init_context",
+                "siglus_android_resize", "siglus_android_set_surface", "siglus_android_step", "siglus_android_touch",
+                "game_fb_open", "game_fb_step", "game_fb_frame", "game_fb_close",
+            ))
+        }
     }
 }
 

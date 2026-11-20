@@ -103,6 +103,8 @@ class WaterfallRestoreResponsivenessDeviceTest {
             assertTrue("A native touch must be processed while restore is pending", fixture.inputCount.get() > 0L)
             assertTrue("Input callbacks must not wait for the whole restore", fixture.maxInputDelay.get() < 250L)
             assertTrue("A restored frame must have been recorded", fixture.firstDraw.get() >= fixture.started.get())
+            assertTrue("Restoration including coarse fallback must finish within 2500 ms",
+                fixture.completed.get() - fixture.started.get() < 2500L)
             compose.runOnIdle { assertTrue("Bottom must remain anchored", !fixture.state.canScrollForward) }
             Log.i("WaterfallRestoreMetrics", "count=$count restoreMs=${fixture.completed.get() - fixture.started.get()} maxTouchDispatchDelayMs=${fixture.maxInputDelay.get()} visibleFrameMs=${fixture.firstDraw.get() - fixture.started.get()} touchesDuringRestore=${fixture.inputCount.get()}")
         } finally {

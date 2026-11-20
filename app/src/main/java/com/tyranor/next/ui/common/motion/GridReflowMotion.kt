@@ -1,16 +1,20 @@
 package com.tyranor.next.ui.common.motion
 
 import android.animation.ValueAnimator
+import androidx.compose.foundation.lazy.grid.LazyGridItemInfo
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridItemInfo
+import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.IntOffset
 
 /** Tracks layout changes independently from the page's initial entrance. */
@@ -19,17 +23,18 @@ class GridReflowState internal constructor() {
     internal val entrance = EntranceState()
     private val snapshot = GridReflowSnapshot()
     private val schedule = GridReflowEntranceSchedule()
-    // The caller must provide keys in the desired order (for example, via LinkedHashSet).
-    private var visibleKeys: () -> Set<Any> = { emptySet() }
+    private var visibleKeys: (() -> Set<Any>)? = null
     private var placementDelta: ((Any) -> IntOffset)? = null
     private val nodes = mutableSetOf<StaggeredEntranceNode>()
     private var pendingWindow = false
+    private var animationsEnabled = false
     internal var isReady by mutableStateOf(true)
         private set
 
     internal fun dispatchReflow() {
         if (pendingWindow) {
             pendingWindow = false
+            schedule.reset()
             entrance.openWindow()
             nodes.toList().forEach { it.onGridReflow() }
         }
@@ -38,8 +43,6 @@ class GridReflowState internal constructor() {
 
     internal fun attach(node: StaggeredEntranceNode) { nodes += node }
     internal fun detach(node: StaggeredEntranceNode) { nodes -= node }
-    internal var animationsEnabled: Boolean = false
-        private set
 
     internal fun update(
         columns: Int,
@@ -51,10 +54,7 @@ class GridReflowState internal constructor() {
         animationsEnabled = enabled
         this.visibleKeys = visibleKeys
         this.placementDelta = placementDelta
-        if (snapshot.update(columns, landscape) { visibleKeys().toSet() }) {
-            schedule.reset()
-            if (enabled) pendingWindow = true
-        }
+        if (snapshot.update(columns, landscape)) pendingWindow = enabled
         if (!enabled) entrance.skip()
     }
 
@@ -62,68 +62,86 @@ class GridReflowState internal constructor() {
         isReady = false
         pendingWindow = false
         animationsEnabled = false
-        visibleKeys = { emptySet() }
+        visibleKeys = null
         entrance.skip()
     }
-
-    internal fun isVisible(key: Any): Boolean =
-        Snapshot.withoutReadObservation { key in visibleKeys() }
-
-    internal fun shouldEnter(key: Any): Boolean =
-        animationsEnabled && snapshot.layoutGeneration > 0 && entrance.isFresh() && isVisible(key)
 
     internal fun placementDelta(key: Any): IntOffset =
         Snapshot.withoutReadObservation { placementDelta?.invoke(key) ?: IntOffset.Zero }
 
-    internal fun entranceDelayMillis(key: Any, stepMillis: Long): Long? =
-        Snapshot.withoutReadObservation {
+    internal fun entranceDelayMillis(key: Any, stepMillis: Long): Long? {
+        if (!animationsEnabled || pendingWindow || !entrance.isFresh()) return null
+        return Snapshot.withoutReadObservation {
+            if (!MotionMode.enhanced) return@withoutReadObservation null
+            val keys = visibleKeys?.invoke() ?: return@withoutReadObservation null
             val slot = schedule.slotFor(
                 key,
-                visibleKeys(),
+                keys,
                 maxOf(stepMillis, GridReflowEntranceSchedule.DEFAULT_STEP_MILLIS),
             ) ?: return@withoutReadObservation null
             // Explicit zero preserves callers that need placement without entrance staggering.
             if (stepMillis <= 0L) 0L else slot.delayMillis
         }
+    }
+}
 
-    /** Preserve native placement; the longer layout spring remains an optional tuning decision. */
-    val placement: ListItemPlacement
-        get() = ListItemPlacement.Reflow
+/** Orders each visible-items list once, after an active entrance actually requests it. */
+internal class GridReflowVisibleKeys<T>(
+    private val items: () -> List<T>,
+    private val index: (T) -> Int,
+    private val key: (T) -> Any,
+) : () -> Set<Any> {
+    private var previousItems: List<T>? = null
+    private var keys: Set<Any> = emptySet()
+
+    override fun invoke(): Set<Any> {
+        val current = items()
+        if (current !== previousItems) {
+            keys = current.sortedBy(index).mapTo(LinkedHashSet(current.size), key)
+            previousItems = current
+        }
+        return keys
+    }
 }
 
 /** Pure layout identity bookkeeping, separated from Android's animation clock. */
 internal class GridReflowSnapshot {
-    private var layout: Pair<Int, Boolean>? = null
+    private var columns = 0
+    private var landscape = false
+    private var initialized = false
     var layoutGeneration: Int = 0
         private set
-    var previousVisibleKeys: Set<Any> = emptySet()
-        private set
 
-    fun update(columns: Int, landscape: Boolean, visibleKeys: () -> Set<Any>): Boolean {
-        val next = columns to landscape
-        val previous = layout
-        if (previous == next) return false
-        layout = next
-        if (previous == null) return false
-        previousVisibleKeys = visibleKeys().toSet()
+    fun update(columns: Int, landscape: Boolean): Boolean {
+        if (initialized && this.columns == columns && this.landscape == landscape) return false
+        this.columns = columns
+        this.landscape = landscape
+        if (!initialized) {
+            initialized = true
+            return false
+        }
         layoutGeneration++
         return true
     }
 }
 
 /**
- * Assigns all visible keys on the first callback in the provider's iteration order.
- * Slots stay fixed for the generation; later keys append in the provider's current order.
+ * Assigns visible keys on the first eligible callback in the ordered snapshot's iteration order.
+ * Slots stay fixed for the generation; later keys append in the new snapshot's order.
  */
 internal class GridReflowEntranceSchedule {
     internal data class Slot(val order: Int, val delayMillis: Long)
 
     private var hasReflow = false
-    private val slots = LinkedHashMap<Any, Slot>()
+    private val slots = HashMap<Any, Slot>()
+    private var scheduledKeys: Set<Any>? = null
+    private var lastDelay = 0L
 
     fun reset() {
         hasReflow = true
         slots.clear()
+        scheduledKeys = null
+        lastDelay = 0L
     }
 
     fun slotFor(
@@ -132,19 +150,22 @@ internal class GridReflowEntranceSchedule {
         preferredStepMillis: Long = DEFAULT_STEP_MILLIS,
     ): Slot? {
         if (!hasReflow || key !in visibleKeys) return null
-        val additions = visibleKeys.filter { it !in slots }
-        if (additions.isNotEmpty()) {
-            val previousDelay = slots.values.lastOrNull()?.delayMillis
-            val intervals = if (previousDelay == null) additions.size - 1 else additions.size
-            val remaining = STAGGER_BUDGET_MILLIS - (previousDelay ?: 0L)
-            // Large batches compress toward one 60 Hz frame per card, rather than sharing a tail delay.
-            val step = minOf(
-                preferredStepMillis.coerceAtLeast(MIN_STEP_MILLIS),
-                (remaining / intervals.coerceAtLeast(1)).coerceAtLeast(MIN_STEP_MILLIS),
-            )
-            val startDelay = previousDelay?.plus(step) ?: 0L
-            additions.forEachIndexed { index, newKey ->
-                slots[newKey] = Slot(slots.size, startDelay + index.toLong() * step)
+        if (scheduledKeys !== visibleKeys) {
+            scheduledKeys = visibleKeys
+            val additions = visibleKeys.count { it !in slots }
+            if (additions > 0) {
+                val intervals = if (slots.isEmpty()) additions - 1 else additions
+                val remaining = STAGGER_BUDGET_MILLIS - lastDelay
+                // Large batches compress toward one 60 Hz frame per card, rather than sharing a tail delay.
+                val step = minOf(
+                    preferredStepMillis.coerceAtLeast(MIN_STEP_MILLIS),
+                    (remaining / intervals.coerceAtLeast(1)).coerceAtLeast(MIN_STEP_MILLIS),
+                )
+                for (visibleKey in visibleKeys) {
+                    if (visibleKey in slots) continue
+                    if (slots.isNotEmpty()) lastDelay += step
+                    slots[visibleKey] = Slot(slots.size, lastDelay)
+                }
             }
         }
         return slots[key]
@@ -157,17 +178,56 @@ internal class GridReflowEntranceSchedule {
     }
 }
 
-/**
- * [visibleKeys] must return a set whose iteration follows list index order, such as
- * `visibleItemsInfo.sortedBy { it.index }.mapTo(LinkedHashSet()) { it.key }`.
- * Callback arrival order does not affect entrance order; unordered sets are not supported.
- */
+/** Tracks reflow entrance for a lazy grid, ordering visible items by their list index. */
 @Composable
 fun rememberGridReflowState(
     columns: Int,
     landscape: Boolean,
+    gridState: LazyGridState,
     ready: Boolean = true,
     placementDelta: ((Any) -> IntOffset)? = null,
+): GridReflowState = rememberGridReflowState(
+    columns,
+    landscape,
+    ready,
+    placementDelta,
+    remember(gridState) {
+        GridReflowVisibleKeys(
+            { gridState.layoutInfo.visibleItemsInfo },
+            LazyGridItemInfo::index,
+            LazyGridItemInfo::key,
+        )
+    },
+)
+
+/** Tracks reflow entrance for a lazy staggered grid, ordering visible items by their list index. */
+@Composable
+fun rememberGridReflowState(
+    columns: Int,
+    landscape: Boolean,
+    gridState: LazyStaggeredGridState,
+    ready: Boolean = true,
+    placementDelta: ((Any) -> IntOffset)? = null,
+): GridReflowState = rememberGridReflowState(
+    columns,
+    landscape,
+    ready,
+    placementDelta,
+    remember(gridState) {
+        GridReflowVisibleKeys(
+            { gridState.layoutInfo.visibleItemsInfo },
+            LazyStaggeredGridItemInfo::index,
+            LazyStaggeredGridItemInfo::key,
+        )
+    },
+)
+
+@Composable
+private fun rememberGridReflowState(
+    columns: Int,
+    landscape: Boolean,
+    ready: Boolean,
+    placementDelta: ((Any) -> IntOffset)?,
     visibleKeys: () -> Set<Any>,
 ): GridReflowState {
     val state = remember { GridReflowState() }

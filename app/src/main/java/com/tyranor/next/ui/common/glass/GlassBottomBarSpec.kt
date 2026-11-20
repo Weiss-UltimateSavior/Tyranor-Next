@@ -218,8 +218,8 @@ data class GlassBottomBarSpec(
      *
      * 宿主据此决定要不要预留底部留白：两侧读同一份契约，窗口极窄时不会出现
      * 「组件不渲染、却仍空出一条」。等价于组件内部的
-     * `clampedBarWidth(...) > minRenderableBarWidth`（自然宽度 ≥ 84dp 恒大于 8dp，
-     * 因此两种模式都退化为「可用宽度是否够」）。
+     * 组件用 `clampedBarWidth(...)` 计算栏宽。默认自然宽度足够容纳所有导航项，
+     * 因此渲染下限取决于窗口的可用宽度。
      */
     fun canRender(windowWidth: Dp, tabsCount: Int = DefaultTabsForHostInset): Boolean {
         val available = (windowWidth - hostHorizontalPadding * 2).coerceAtLeast(0.dp)
@@ -237,16 +237,10 @@ data class GlassBottomBarSpec(
      */
     fun hostBottomInset(): Dp = barHeight + hostBottomPadding
 
-    /**
-     * 实际渲染宽度（纯函数，便于单元测试）：
-     * - 手机（[stretch] = false）：自然宽度与可用宽度取小，保持参考单槽比例并居中收窄；
-     * - 平板等宽屏（[stretch] = true）：拉伸铺满可用宽度，与原版「液态玻璃」导航一致，
-     *   避免在宽屏上缩成一条居中的短栏。
-     * 两种情况都不会超过可用宽度（报告 §9 窄屏风险）。
-     */
-    fun clampedBarWidth(tabsCount: Int, windowWidth: Dp, stretch: Boolean = false): Dp {
+    /** 栏宽由导航项数量决定，窄窗口按扣除左右留白后的可用宽度收缩。 */
+    fun clampedBarWidth(tabsCount: Int, windowWidth: Dp): Dp {
         val available = (windowWidth - hostHorizontalPadding * 2).coerceAtLeast(0.dp)
-        return if (stretch) available else minOf(naturalBarWidth(tabsCount), available)
+        return minOf(naturalBarWidth(tabsCount), available)
     }
 
     /** 可渲染下限：比这更窄时连左右内边距都放不下，调用方应放弃渲染而不是留一条残片。 */

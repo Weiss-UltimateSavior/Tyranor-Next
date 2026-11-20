@@ -9,54 +9,71 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GridReflowSnapshotTest {
-    @Test fun firstLayoutAndUnchangedLayoutDoNotCaptureOrReplay() {
+    @Test fun firstLayoutAndUnchangedLayoutDoNotOpenAGeneration() {
         val state = GridReflowSnapshot()
-        val unexpectedCapture: () -> Set<Any> = { error("Unchanged layout captured visibility") }
-        assertFalse(state.update(4, false, unexpectedCapture))
-        assertFalse(state.update(4, false, unexpectedCapture))
+        assertFalse(state.update(4, false))
+        assertFalse(state.update(4, false))
         assertEquals(0, state.layoutGeneration)
-    }
-
-    @Test fun reverseRotationCapturesTheLatestVisibleSet() {
-        val state = GridReflowSnapshot()
-        state.update(4, false) { emptySet() }
-        assertTrue(state.update(6, true) { setOf("a", "b") })
-        assertEquals(setOf("a", "b"), state.previousVisibleKeys)
-        assertTrue(state.update(4, false) { setOf("b", "c") })
-        assertEquals(setOf("b", "c"), state.previousVisibleKeys)
-        assertEquals(2, state.layoutGeneration)
     }
 
     @Test fun orientationChangesStillCountWhenColumnCountsMatch() {
         val state = GridReflowSnapshot()
-        state.update(4, false) { emptySet() }
-        assertTrue(state.update(4, true) { setOf("a") })
-        assertTrue(state.update(5, true) { setOf("b") })
-        assertEquals(setOf("b"), state.previousVisibleKeys)
-    }
-
-    @Test fun capturedVisibilityDoesNotFollowMutableProviderResults() {
-        val state = GridReflowSnapshot()
-        val visible = mutableSetOf<Any>("a", "b")
-        state.update(4, false) { emptySet() }
-        state.update(6, true) { visible }
-        visible.clear()
-        assertEquals(setOf("a", "b"), state.previousVisibleKeys)
+        state.update(4, false)
+        assertTrue(state.update(4, true))
+        assertTrue(state.update(5, true))
+        assertEquals(2, state.layoutGeneration)
     }
 
     @Test fun onlyRealColumnOrOrientationChangesOpenExactlyOneGeneration() {
         val state = GridReflowSnapshot()
-        val visible = mutableSetOf<Any>("old")
-        state.update(4, false) { visible }
-        visible.add("new")
-        assertFalse(state.update(4, false) { visible })
+        state.update(4, false)
+        assertFalse(state.update(4, false))
         assertEquals(0, state.layoutGeneration)
-        assertTrue(state.update(6, true) { visible })
+        assertTrue(state.update(6, true))
         assertEquals(1, state.layoutGeneration)
-        assertFalse(state.update(6, true) { emptySet() })
+        assertFalse(state.update(6, true))
         assertEquals(1, state.layoutGeneration)
-        assertTrue(state.update(4, false) { visible })
+        assertTrue(state.update(4, false))
         assertEquals(2, state.layoutGeneration)
+    }
+
+    @Test fun visibleKeysAreOrderedOnlyOnceForTheSameVisibleItemsList() {
+        data class Item(val index: Int, val key: String)
+        var items = listOf(Item(12, "c"), Item(10, "a"), Item(11, "b"))
+        var mappedKeys = 0
+        val cache = GridReflowVisibleKeys({ items }, Item::index) { item ->
+            mappedKeys++
+            item.key
+        }
+
+        val initial = cache()
+        assertEquals(listOf("a", "b", "c"), initial.toList())
+        repeat(8) { assertSame(initial, cache()) }
+        assertEquals(3, mappedKeys)
+
+        items = listOf(Item(13, "d"), Item(11, "b"))
+        val next = cache()
+        assertNotSame(initial, next)
+        assertEquals(listOf("b", "d"), next.toList())
+        repeat(8) { assertSame(next, cache()) }
+        assertEquals(5, mappedKeys)
+    }
+
+    @Test fun repeatedQueriesDoNotScanAnAlreadyScheduledSnapshot() {
+        val schedule = GridReflowEntranceSchedule().apply { reset() }
+        val visible = object : Set<Any> by linkedSetOf<Any>("a", "b") {
+            var iterationsAllowed = true
+            override fun iterator(): Iterator<Any> {
+                check(iterationsAllowed) { "Repeated placement scanned visible keys" }
+                return listOf<Any>("a", "b").iterator()
+            }
+        }
+        val slot = requireNotNull(schedule.slotFor("b", visible))
+        visible.iterationsAllowed = false
+        repeat(8) {
+            assertSame(slot, schedule.slotFor("b", visible))
+            assertNull(schedule.slotFor("outside", visible))
+        }
     }
 
     @Test fun initialVisibleCardsGetNoSlotsUntilARealLayoutChange() {
@@ -64,7 +81,7 @@ class GridReflowSnapshotTest {
         val schedule = GridReflowEntranceSchedule()
         val visible = linkedSetOf<Any>("old-a", "old-b", "new")
         fun update(columns: Int, landscape: Boolean) {
-            if (state.update(columns, landscape) { visible }) schedule.reset()
+            if (state.update(columns, landscape)) schedule.reset()
         }
 
         visible.forEach { assertNull(schedule.slotFor(it, visible)) }

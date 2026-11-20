@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items as lazyItems
@@ -67,6 +68,7 @@ import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
+import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.motion.BlurCrossfade
 import com.tyranor.next.ui.common.motion.ExpandVisibility
 import com.tyranor.next.ui.common.motion.rememberLastNonNull
@@ -76,6 +78,7 @@ import com.tyranor.next.ui.cover.coverErrorMessage
 import com.tyranor.next.ui.cover.coverSourceTitle
 import com.tyranor.next.ui.cover.playStatusErrorMessage
 import com.tyranor.next.ui.cover.playStatusError
+import com.tyranor.next.theme.DangerFill
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.SecondaryTextColor
 import kotlinx.coroutines.CancellationException
@@ -630,6 +633,7 @@ internal fun PlayStatusDialog(
     AppAlertDialog(
         onDismissRequest = onDismiss,
         textScrollEnabled = true,
+        showButtonRow = false,
         title = { Text(stringResource(R.string.game_play_status_title), style = MaterialTheme.typography.titleMedium) },
         text = {
             PlayStatusSourceList(
@@ -644,7 +648,7 @@ internal fun PlayStatusDialog(
                 onBindSource = { bindSource = it },
             )
         },
-        confirmButton = { DialogTextButton(text = stringResource(R.string.common_cancel), onClick = onDismiss) },
+        confirmButton = {},
     )
 
     activePickSource?.let { source ->
@@ -958,7 +962,7 @@ internal fun playStatusDrawerSummary(
 
 /**
  * 状态选择：单选列表，点选即写入（写入期间禁点）；底部提供「解绑条目」。
- * 等待语义（BK-56 文档固化）：写入期间遮罩/返回/取消钮/条目点选一致禁用——底层为阻塞 IO、
+ * 等待语义（BK-56 文档固化）：写入期间遮罩/返回/条目点选一致禁用——底层为阻塞 IO、
  * 单请求最坏 ~35s（connect 15s + read 20s，core/net HttpJson 超时），无中途取消途径；
  * 与凭据弹窗（CredentialTokenDialog）同口径，防半保存状态。
  */
@@ -983,7 +987,6 @@ private fun PlayStatusPickDialog(
         title = { Text(stringResource(R.string.game_play_status_pick_title, sourceTitle), style = MaterialTheme.typography.titleMedium) },
         text = {
             val displayHint = rememberLastNonNull(statusHint?.takeIf { it.isNotBlank() })
-            val displayRetry = rememberLastNonNull(onRetry)
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 ExpandVisibility(visible = !statusHint.isNullOrBlank()) {
                     if (displayHint != null) {
@@ -997,20 +1000,6 @@ private fun PlayStatusPickDialog(
                                 color = if (isError) MaterialTheme.colorScheme.error else SecondaryTextColor,
                             )
                         }
-                    }
-                }
-                ExpandVisibility(visible = onRetry != null) {
-                    if (displayRetry != null) {
-                        AppNavItem(
-                            title = stringResource(R.string.common_retry),
-                            // 退场动画窗口内 onRetry 已置 null（displayRetry 仍保留上一帧供渲染）：
-                            // 一并禁点，防止退场期连点重复递增 nextmoeRefreshNonce
-                            onClick = if (writing || onRetry == null) null else displayRetry,
-                            leadingIcon = R.drawable.ic_refresh,
-                            indication = null,
-                            showArrow = false,
-                            containerColor = DialogItemSurface,
-                        )
                     }
                 }
                 LazyColumn(
@@ -1034,34 +1023,35 @@ private fun PlayStatusPickDialog(
                             containerColor = DialogItemSurface,
                         )
                     }
-                    item(key = "unbind", contentType = "play_status_unbind") {
-                        AppNavItem(
-                            title = stringResource(R.string.game_play_status_unbind),
-                            // 大字体窄屏下与候选条目同口径允许两行（候选条目见 titleMaxLines = 2）
-                            titleMaxLines = 2,
-                            onClick = if (writing) null else ({ onUnbind() }),
-                            leadingIcon = R.drawable.ic_sheet_delete,
-                            leadingIconTint = MaterialTheme.colorScheme.error,
-                            titleColor = MaterialTheme.colorScheme.error,
-                            // 弹窗条目自足禁用按压反馈（AGENTS.md 弹窗条目约定）
-                            indication = null,
-                            // 破坏性动作条目：隐藏跳转箭头（AGENTS.md 功能跳转条目规范）
-                            showArrow = false,
-                            containerColor = DialogItemSurface,
-                        )
-                    }
                 }
             }
         },
         confirmButton = {
-            DialogTextButton(
-                text = stringResource(R.string.common_cancel),
-                enabled = !writing,
-                // 与遮罩/返回一致：写期间不允许取消（写协程后台继续）——底层单请求最坏 ~35s
-                // （connect 15s + read 20s，HttpJson 超时），无中途取消途径，等待语义与凭据
-                // 弹窗同口径（BK-56），防半保存状态
-                onClick = { if (!writing) onDismiss() },
-            )
+            val displayRetry = rememberLastNonNull(onRetry)
+            Column(Modifier.fillMaxWidth()) {
+                ExpandVisibility(visible = onRetry != null) {
+                    if (displayRetry != null) {
+                        NoRippleButton(
+                            text = stringResource(R.string.common_retry),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            // 退场时保留按钮用于绘制，同时禁用点击。
+                            enabled = !writing && onRetry != null,
+                            leadingIcon = painterResource(R.drawable.ic_game_scan),
+                            maxLines = 2,
+                            onClick = displayRetry,
+                        )
+                    }
+                }
+                NoRippleButton(
+                    text = stringResource(R.string.game_play_status_unbind),
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !writing,
+                    leadingIcon = painterResource(R.drawable.ic_sheet_delete),
+                    fillColor = DangerFill,
+                    maxLines = 2,
+                    onClick = onUnbind,
+                )
+            }
         },
     )
 }

@@ -2,6 +2,7 @@ package com.tyranor.next.ui.game
 
 import android.content.Context
 import android.content.res.Configuration
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -22,8 +23,14 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -32,6 +39,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
@@ -259,8 +267,8 @@ private fun GameCardColumnsControl(cardColor: Color) {
         else -> null
     }
     // 预订阅每组列数，旋转时标题和读数由同一组状态同步切换。
-    val values = GameCardColumnsSetting.entries.map { it.columns.collectSettingAsState() }
-    val snapshot = setting?.let { GameCardColumnsSnapshot(it, values[it.ordinal].value) }
+    val values = GameCardColumnsSetting.entries.associateWith { it.columns.collectSettingAsState() }
+    val snapshot = setting?.let { GameCardColumnsSnapshot(it, values.getValue(it).value) }
     val lastSnapshot = rememberLastNonNull(snapshot)
     val activeSetting by rememberUpdatedState(setting)
     ExpandVisibility(visible = snapshot != null) {
@@ -290,6 +298,11 @@ private fun GameCardColumnsCard(
     onColumnsChange: (Int) -> Unit,
 ) {
     val title = stringResource(snapshot.setting.title)
+    // Switching setting, external values or enabled state discards an unfinished draft.
+    var draftColumns by remember(snapshot.setting, snapshot.columns, enabled) { mutableIntStateOf(snapshot.columns) }
+    val finishChange: () -> Unit = {
+        if (enabled) onColumnsChange(draftColumns)
+    }
     MiuixCard(
         modifier = Modifier.fillMaxWidth().glassBorder().then(
             if (enabled) Modifier else Modifier.clearAndSetSemantics { hideFromAccessibility() },
@@ -300,13 +313,40 @@ private fun GameCardColumnsCard(
         Column(Modifier.padding(horizontal = FilterSheetInset)) {
             SliderValueHeader(
                 title = title,
-                value = stringResource(R.string.settings_game_card_columns_value, snapshot.columns),
+                value = stringResource(R.string.settings_game_card_columns_value, draftColumns),
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
             )
+            val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
             Slider(
-                value = snapshot.columns.toFloat(),
-                onValueChange = { raw -> onColumnsChange(AppSettingsStore.normalizeGameGridColumns(raw.roundToInt())) },
-                modifier = Modifier.padding(vertical = 4.dp).semantics { contentDescription = title },
+                value = draftColumns.toFloat(),
+                onValueChange = { raw ->
+                    if (enabled && raw.isFinite()) {
+                        draftColumns = AppSettingsStore.normalizeGameGridColumns(raw.roundToInt())
+                    }
+                },
+                onValueChangeFinished = finishChange,
+                onValueChangeCancelled = { draftColumns = snapshot.columns },
+                modifier = Modifier.padding(vertical = 4.dp)
+                    .semantics { contentDescription = title }
+                    .onPreviewKeyEvent { event ->
+                        if (!enabled) return@onPreviewKeyEvent false
+                        val next = when (event.key) {
+                            Key.DirectionRight -> draftColumns + if (rtl) -1 else 1
+                            Key.DirectionLeft -> draftColumns + if (rtl) 1 else -1
+                            Key.DirectionUp -> draftColumns + 1
+                            Key.DirectionDown -> draftColumns - 1
+                            Key.MoveHome -> AppSettingsStore.MIN_GAME_GRID_COLUMNS
+                            Key.MoveEnd -> AppSettingsStore.MAX_GAME_GRID_COLUMNS
+                            else -> return@onPreviewKeyEvent false
+                        }
+                        when (event.type) {
+                            KeyEventType.KeyDown -> draftColumns = AppSettingsStore.normalizeGameGridColumns(next)
+                            KeyEventType.KeyUp -> finishChange()
+                            else -> return@onPreviewKeyEvent false
+                        }
+                        true
+                    }
+                    .focusable(enabled),
                 enabled = enabled,
                 valueRange = AppSettingsStore.MIN_GAME_GRID_COLUMNS.toFloat()..AppSettingsStore.MAX_GAME_GRID_COLUMNS.toFloat(),
                 steps = AppSettingsStore.MAX_GAME_GRID_COLUMNS - AppSettingsStore.MIN_GAME_GRID_COLUMNS - 1,

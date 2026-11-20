@@ -236,7 +236,7 @@ Column(fillMaxSize)                                // 页面根
 | --- | --- |
 | 主标签与引擎分类切页；独立页面推入、返回 | 常驻页共用 `TabPageMotion` 的弹簧与 `tabPageTransform`，两种宿主保留各自的交互时钟。Activity 走 `startActivityWithPageTransition` / `AppScreenActivity`；背景、翻折和遮罩由 `PageTransitionBackground`、`depthFoldStack`、`pageEnterFold` 处理。 |
 | 抽屉、侧栏、弹窗、下拉、提示条 | 抽屉使用 `AppBottomSheet`（内部复用 `MotionSheetController` / `SheetBackdrop`），其余复用 `AppSidePanel`、`AppAlertDialog`、`OverlayDropdownPreference`、`AppNotice`。公共窗口负责遮罩与释放触摸；灵动岛的变形、阴影、排队、按住/滑动与离页时机归 `NoticeHost` / `NoticeCenter`。业务页只提交内容及回调。 |
-| 入场、重播、增删补位、拖拽排序、删除消散 | 入场用 `EntranceState` / `staggeredEntrance`；有稳定 key 的 lazy 列表、网格、瀑布流在原修饰符位置调用 `listItemMotion()`。仅原本快速补位的场景用 `ListItemPlacement.Reflow`。普通 Column 的补位用 `reorderPlacement`；滤镜链的拖动归 `GraphicsChainMotion.kt`；游戏删除走 `GameRemovalMotion.kt` 与 `dissolve`。 |
+| 入场、重播、增删补位、拖拽排序、删除消散 | 入场用 `EntranceState` / `staggeredEntrance`；有稳定 key 的 lazy 列表、网格、瀑布流在原修饰符位置调用 `listItemMotion()`。仅原本快速补位的场景用 `ListItemPlacement.Reflow`。游戏卡片旋转重排用 `GridReflowMotion.kt` 的 `rememberGridReflowState` / `gridReflowHost`，复用 `listItemMotion` 和 `staggeredEntrance`，不在页面另写补位动画。普通 Column 的补位用 `reorderPlacement`；滤镜链的拖动归 `GraphicsChainMotion.kt`；游戏删除走 `GameRemovalMotion.kt` 与 `dissolve`。 |
 | 内容替换、区块显隐、读数与反馈 | 用 `BlurCrossfade`、`BlurVisibility`、`ExpandVisibility`、`ExpandSectionVisibility` 或 `RollingNumberText`，按原效果选有无模糊与是否等待退场。失败、等待、占位、图标回弹、滚动、触觉走 `shakeOnTrigger`、`DelayedProgress` / `breathing`、`shimmerSweep`、`bounceOnChange`、`scrollJelly`、`MotionHaptics`。 |
 | 控件、按压、拖动 | 行和卡片用已有公共控件、`pressSquish` / `pressSquishGroup`；开关、滑条、搜索、进度、可用态、刷新、分类指示器由对应控件持有。跟手输入与松手弹簧分别处理；不要给拖动每一帧重新建动画。 |
 | 封面、横向卡片、可见性与换肤 | 图像加载用 `rememberCoverReveal`，卡片翻页、视差和指示点用 `ParallaxCardPager` / `CardPagerIndicator`，封面流用 `CoverFlowMotion.kt`。常驻页显隐走 `skipDrawWhenHidden`，重设置页分帧用 `stagedItem`。换肤、语言与系统深浅色交接走 `rememberThemeSwitch`、`ThemeRevealHost` / `SystemThemeSync`。 |
@@ -272,7 +272,7 @@ Column(fillMaxSize)                                // 页面根
 - **侧栏（妙妙工具）唤出手势：子内容优先，绝不误滑出**：`rememberSidePanelSwipeModifier` 挂在主界面根布局上，分两阶段——**观察阶段在 Main 传递**（子内容先处理）只观察、不抢：手势期间只要有任何控件消费了这次手势的位移（横向分页器 / 封面流翻页、滑条与开关拇指拖动、下拉滑选、拖拽排序、竖向列表滚动、分类栏透镜、滑动删除……），侧栏就整段放弃；竖向为主 / 向左 / 多指也放弃；没人接手且已是「向右、横向位移 >= 2 倍纵向位移」后才**接管，此后改在 Initial 传递消费**每个事件（Compose 的点击只在手指移出控件或事件被消费时才取消，不吞掉的话，在卡片上横着划一下并在卡片内抬手会被当成点击）。只有从**空白背景 / 左缘留白**起手（起点落在可点击控件上的不算，它们会消费按下事件）且滑过 40dp 才唤出；起点在可点击控件上的右滑被吞掉，既不唤出也不触发点击。**不要再把侧栏手势改回一上来就在 Initial 传递判定并消费**（曾因此从首页快捷启动卡 / 滑条 / 分页器的左侧往右滑时误弹出侧栏）。新增横向可拖动控件只需正常消费自己的拖动即可，不必再向侧栏登记排除；例外只有不消费事件的自绘拖动（用 `excludeStart` 或 `SidePanelGestureExclusions`）。
 - **打断与重入**：抽屉收起途中（下沉到完全离屏之前，约 0.2 秒内）点抽屉内的条目 / 按钮 = 先把抽屉接回来再执行（`MotionSheetController.interact()` → `reopen()`），按下再拖 = 抓住抽屉从当前位置继续跟手（`dragBy` 内的 `reopenForGrab`）；收起一旦越过离屏线（抽屉当即被移出组合，此时执行动作会被取消丢失、连点还会重复启动），或页面跳转 / 交接收起已提交（`busy`），条目点击一律拒绝并给拒绝触觉。抽屉随页面被二级页盖住（`stayDuringNavigation`）时，「页面跳转已提交」的门控只撑到下层页面开始收回的那一刻（上层 `finish()` 的 `PageTransitions.notifyPopStarted`，或回到前台 RESUMED）就释放，不等压暗收完，否则返回过程中再点条目会被当成拒绝（无法再次进入 + 拒绝触觉）；推入 / 返回的起点登记按层级栈（`popLevels`）配对，连点只启动一个实例。主题揭开途中再次触发（连续切换深浅色 / 外观 / 色调轮盘确认）不再直接应用：把当前合成画面（含进行中的揭开）重新截下来当旧画面、从新的按压点重新扩散（进度时钟按代数接管，旧时钟自行结束）。
 - **加载 / 状态变化补充**：被动等待的加载转圈（页面 / 区块首次加载）一律包 `DelayedProgress`（「增强」档 180ms 后才用模糊 + 缩放浮现，更快加载完的场景不闪转圈；「普通」档立刻显示）；用户刚点了按钮的进度（顶栏刮削转圈等）不要延迟。`ArrowPreference` 在「增强」档下带 `summary` 时，摘要变化原位模糊替换（用 Miuix 槽位重载自绘标题与摘要，字号 / 字重 / 颜色与字符串重载逐像素一致，已用截图比对）。顶栏刷新类图标传 `TopBarIcon(spin = true)`：点击转一圈（目标始终是 360° 的整数倍，连点每次再转一圈）。
-- **封面流与拖拽排序补充**：封面流甩动时卡片顺势侧倾（`rememberPagerVelocity`：滚动期间逐帧低通估速，只在图层块读取，停下归零；空闲时无逐帧工作），并在「增强」档的滑动 / 甩动中暂缓封面解码（`rememberCoverBitmap(uri, isScrolling)`，「普通」档与原版一致）；封面流的卡也挂 `dissolve`，删除确认后与瀑布 / 网格卡一样播放消散；滤镜链拖拽排序：拿起的行除缩放外浮起一层投影（白雾玻璃不加，随提升弹簧进出），拿起给 `MotionHaptics.Kind.LongPress`、每次换位给 `Tick`。
+- **封面流与拖拽排序补充**：封面流甩动时卡片顺势侧倾（`rememberPagerVelocity`：滚动期间逐帧低通估速，只在图层块读取，停下归零；空闲时无逐帧工作）；封面流的卡也挂 `dissolve`，删除确认后与瀑布 / 网格卡一样播放消散；滤镜链拖拽排序：拿起的行除缩放外浮起一层投影（白雾玻璃不加，随提升弹簧进出），拿起给 `MotionHaptics.Kind.LongPress`、每次换位给 `Tick`。
 - **删除消散与扯动**：删除一经确认，对象在逻辑上已经不存在，只是视觉还在播——消散期间该卡片的触摸由 `Modifier.dissolve` 自己吞掉并退出无障碍树（点击 / 长按处理器里**不要**再写 `if (dissolve.running) return` 之类的守卫）；确认后的删除用 `NonCancellable` 保证做完。卡片类删除用 `ui/common/motion/DeleteEffect.kt` 的 `DissolveState` + `Modifier.dissolve` / `dissolveTint`（先播消散再删数据；游戏库经 `dissolvingGames` 按 uri 登记）；`pressSquish` 的单个控件拖出范围后被橡皮筋「扯动」并弹回，整卡（`pressSquishGroup`，仅限约一行高的入口卡片）不扯动。这些只改变交互过程中的绘制，静止外观不变。首页「快捷启动 + 最近打开」共用同一个 `LazyVerticalGrid`，快捷启动卡是稳定 key 的整行网格项，「加载中 / 空状态 / 有记录」只替换其后的项；不要再拆成各画一份快捷启动卡的两个容器交叉淡入（删光记录时快捷启动卡会抖动）。删除消散播到约一半就删数据，补位用 `MotionTokens.reflow`。
 - **下拉条目**：设置类下拉统一使用 `ui/common/OverlayDropdownPreference.kt`，不直接 import Miuix 同名组件。右侧当前值保留原地模糊替换。按用户最新要求，普通与增强两档共用无选框选择：展开后不绘制椭圆高亮、选中底色或勾选，只以文字主题色表示当前已选项；长按原条目展开或在弹层选项上长按，成立后拖动只预览候选（弹层选项全部可见、无需滚动时没有按动时长：按下的那一刻该项即进入选择状态，文字变主题色并震动一次，原已选项变回未选中样式，按下后可继续滑动改选，松手选定；需要滚动的长列表仍以长按为准），松手才一次提交。候选项文字变成主题色时震动一次，同一候选停留不重复；展开、无障碍点击、松手选定、取消与收起均不增加震动；触摸到未选项的那一刻属于切换候选，震动一次。长按前保留列表滚动，短滑、移出、禁用项、多指或系统取消不得提交。候选与业务已选值分离，`selected` 无障碍语义只反映已提交值。页内仍用 OverlayListPopup，抽屉仍用 WindowListPopup，不改库进退场动画；新增下拉照此统一。
 - **主题切换过渡**：切换深浅色、外观主题等整屏换皮的设置，把「应用新主题」交给 `ui/common/motion/ThemeReveal.kt` 的 `rememberThemeSwitch()` 返回的函数执行：先截下当前画面（半分辨率），应用新主题后从点击处向四周扩散揭开新界面：前沿是很宽的羽化渐变（没有一条清晰的圆边），叠一层主题色柔光与几粒飘散的柔光点，旧画面轻微放大后退、新主题略大地落稳；动画在新主题首次重组的重帧之后才开始计时，进度由「每帧最多推进 24ms」的帧时钟驱动（重帧不会吞掉动画的一大段）；宿主已挂在 `ProvideMotionEnvironment`，新页面自动具备，「普通」档与截屏失败时直接应用。**切换界面语言（应用设置「语言」）也走同一个 `rememberThemeSwitch()`**：整屏文字一起换，先截旧画面、再换语言，从点击处揭开新语言的界面（整屏文字不再各自模糊替换，见 `BlurText` 的 `animateOnLocaleChange`；选了当前语言什么都没变，不播放过渡）；今后新增任何会让整屏重组的全局设置（语言、主题、外观……）都照此接入。系统深浅色自动变化（下拉通知栏 / 定时切换）走同一套过渡：`MainActivity` 与所有 `AppScreenActivity` 子类在清单里声明 `android:configChanges="uiMode"`，由 `SystemThemeSync` 在 `onConfigurationChanged` 里先保持旧主题（`AppThemeColors.systemDarkHold`）并截下旧画面，再应用新主题、从屏幕顶部中央揭开；新增 Compose 页面 Activity 必须同样声明 `uiMode`，否则系统切换会销毁重建页面、没有过渡。揭开的绘制保持「离屏图层 + `DstOut` 混合擦除」，不要改用 `clipPath(ClipOp.Difference)`（实测每帧更贵，掉帧率 0.6% → 5.7%）。 **揭开的节奏（主题 / 语言 / 配色统一，同一个控制器）**：时长按「前沿推进速度恒定」定——`revealMillis`：圆心到最远屏幕角的距离（dp）× 1.4ms，夹在 [720, 1000]ms，所以从屏幕上方的语言行、下方的深浅色行、系统自动切换（顶部中央）揭开，前沿每毫秒扫过的 dp 数一样（原来固定 900ms，上方圆心的前沿比下方快约 1/4）；进度曲线 `PathInterpolator(0.3, 0.1, 0.55, 1)`（起步柔和但立刻有反应、峰值约平均速度 1.6 倍、尾部缓收，原曲线 (0.25, 0.2, 0.2, 1) 峰值 2.5 倍）；羽化前沿外沿 = 最远角距离 × 2.0 × 进度（原 2.6：前沿太宽，整屏被擦掉的 90% 在前 0.28 秒内就完成，其余 0.6 秒是几乎看不见的拖尾，体感急促又拖沓；现在肉眼可见的扫过约占整段的 57%），远角残留的旧画面在最后 20% 进度里整体淡出收尾。度量方法：录屏逐帧与最终帧求平均差，取「完成度 10%→90%」的时间（深浅色切换：原 183ms → 现 300ms，前沿速度因圆心不同而不一的情况消除）。新增会让整屏重组的入口照旧接 `rememberThemeSwitch()`，不要在调用处自带时长 / 曲线。
@@ -294,6 +294,8 @@ Column(fillMaxSize)                                // 页面根
 - 组件统一圆角由应用设置「应用圆角调整」控制（**5–50dp，十档：5/10/15/20/25/30/35/40/45/50，默认 15dp**），默认外观、复古玻璃与白雾玻璃共用该值；列表项卡片、功能项卡片、弹窗等圆角组件统一引用 `theme/AppShapes.kt`：
   `AppComponentShape`、Miuix 组件用 `AppComponentCornerRadius`、
   抽屉顶部用 `AppSheetTopShape`；禁止再散落圆角字面量。外观风格不得自带圆角默认值或按风格覆盖该设置。
+- 游戏页瀑布与网格分别按 `Configuration.orientation` 保存横竖屏每行卡片数（2–10，默认竖屏 4、横屏 6）；「筛选与排序」抽屉只展示当前方向的滑条，拖动只更新草稿、松手提交一次，封面流隐藏滑条，重置筛选条件保留四项列数。竖屏平板同样使用竖屏设置。
+- 游戏页的瀑布、网格和封面流卡片经 `AppShapes.kt` 的 `gameCardShape` 取值，裁切与玻璃描边共用该形状。「游戏卡片单独圆角」默认关闭，跟随应用圆角；开启后使用保存的独立值。
 
 - **平板侧栏**：`isSideRailLayout()`（`isTabletScreen()` 命中且应用设置「平板侧边栏」开关开启，默认开）命中时主导航移到侧边（`ui/common/AppNavigationRail.kt`）：侧栏形态按外观风格取该主题「经典 MD 导航栏」（原「默认导航栏」）形态（默认与白雾玻璃用 Material3 侧栏，复古玻璃用悬浮玻璃柱），液态玻璃两档与「悬浮按钮」不适配侧栏；侧栏占布局宽度，底部留白归零。选中态图标动画统一用 `ui/common/NavigationTabIcon.kt`。
 
@@ -341,7 +343,7 @@ Column(fillMaxSize)                                // 页面根
 
 - **明文豁免**：游戏页卡片左上角的引擎类型角标（`ui/game/GameScreen.kt` 的 `GameCoverEngineBadge`，`GameCard` 与 `UniformGameCard` 共用，仅覆盖在封面上）使用 `MaterialTheme.typography.labelSmall`（11sp）——角标属封面上的小型标注，按两档制会过大；仅此一处豁免，其余正文仍遵循两档制。角标底色/文字色为**固定样式**（`theme/Color.kt` 的 `CoverBadgeBackground` / `CoverBadgeText`：半透明黑底 + 白字），**不随主题色与外观模式变化**。
 
-- **明文豁免**：游戏页瀑布流卡片（`ui/game/GameScreen.kt` 的 `GameCard`）标题在 `bodyMedium` 基础上缩小 2sp（12sp），用于 3/6 列窄卡片；仅此一处豁免，其余正文仍遵循两档制。
+- **明文豁免**：游戏页瀑布流卡片（`ui/game/GameScreen.kt` 的 `GameCard`）标题在 `bodyMedium` 基础上缩小 2sp（12sp），用于可调列数的窄卡片；仅此一处豁免，其余正文仍遵循两档制。
 
 ***
 
@@ -506,7 +508,7 @@ Column(fillMaxSize)                                // 页面根
 | 妙妙工具面板（WebDAV 存档同步） | `MainScreen.kt`（`AppSidePanel` 的 `content` 槽） | `ic_save_cloud` |
 | 妙妙工具面板（输入与手柄） | `MainScreen.kt`（`AppSidePanel` 的 `content` 槽） | `ic_input_gamepad` |
 | 妙妙工具面板（引擎模块管理） | `MainScreen.kt`（`AppSidePanel` 的 `content` 槽） | `ic_engine_manage` |
-| 游玩状态同步（来源/状态选项/解绑/绑定搜索候选/重试） | `PlayStatusDialog.kt`（`PlaySourceRow` / `PlayStatusPickDialog` / `SubjectBindDialog`） | `ic_sheet_play_status` / `ic_sheet_delete` / `ic_cover_source` / `ic_refresh` |
+| 游玩状态同步（来源/状态选项/解绑/绑定搜索候选/重试） | `PlayStatusDialog.kt`（`PlaySourceRow` / `PlayStatusPickDialog` / `SubjectBindDialog`） | `ic_play_status_source` / `ic_sheet_play_status` / `ic_sheet_delete` / `ic_cover_source` / `ic_game_scan` |
 
 ***
 

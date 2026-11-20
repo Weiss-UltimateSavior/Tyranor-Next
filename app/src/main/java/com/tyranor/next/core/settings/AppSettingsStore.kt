@@ -12,6 +12,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
+internal data class GameCardCornerSettings(
+    val enabled: Boolean = false,
+    val radiusDp: Int = AppSettingsStore.DEFAULT_APP_CORNER_RADIUS,
+)
+
 /**
  * 应用设置存储层：与引擎无关的应用级偏好（如主题色、导航栏样式）。
  * 使用独立 prefs 文件 app_settings，避免混入引擎进程读取的 tyranor_prefs。
@@ -121,6 +126,9 @@ object AppSettingsStore {
     const val KEY_GAME_GRID_LANDSCAPE_COLUMNS = "game_grid_landscape_columns"
     const val KEY_GAME_WATERFALL_PORTRAIT_COLUMNS = "game_waterfall_portrait_columns"
     const val KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS = "game_waterfall_landscape_columns"
+
+    private const val KEY_GAME_CARD_CORNER_ENABLED = "game_card_corner_enabled"
+    private const val KEY_GAME_CARD_CORNER_RADIUS = "game_card_corner_radius"
 
     /** 游戏页卡片左上角引擎类型角标；默认关。 */
     const val KEY_GAME_CARD_BADGE = "game_card_badge"
@@ -400,6 +408,9 @@ object AppSettingsStore {
     val gameWaterfallPortraitColumnsState: MutableStateFlow<Int> = MutableStateFlow(DEFAULT_GAME_WATERFALL_PORTRAIT_COLUMNS)
     val gameWaterfallLandscapeColumnsState: MutableStateFlow<Int> = MutableStateFlow(DEFAULT_GAME_WATERFALL_LANDSCAPE_COLUMNS)
 
+    private val mutableGameCardCorners = MutableStateFlow(GameCardCornerSettings())
+    internal val gameCardCorners = mutableGameCardCorners.asStateFlow()
+
     /** 卡片引擎角标内存态：设置页切换后游戏页卡片即时重组。 */
     val gameCardBadgeState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_GAME_CARD_BADGE)
 
@@ -460,7 +471,7 @@ object AppSettingsStore {
     private val privacyLock = Any()
 
     /**
-     * 首次组合时从持久化加载导航栏样式到内存态（幂等）。
+     * 从持久化加载导航栏样式到内存态（幂等）；主界面在首帧前调用。
      *
      * 与 [setNavStyle] 共用 [navStyleLock]：设置页在 IO 线程调用本方法的同时，下拉仍可交互，
      * 若不加锁，迁移的「读—改—写」可能覆盖用户在这一窗口内刚选择的样式。
@@ -568,7 +579,7 @@ object AppSettingsStore {
         backgroundImageBlurState.value = normalized
     }
 
-    /** 首次组合时从持久化加载平板侧边栏开关到内存态（幂等）。 */
+    /** 从持久化加载平板侧边栏开关到内存态（幂等）；主界面在首帧前调用。 */
     fun initSideRail(c: Context) {
         sideRailState.value = isSideRailEnabled(c)
     }
@@ -722,6 +733,33 @@ object AppSettingsStore {
 
     fun setAppCornerRadius(c: Context, radius: Int) {
         prefs(c).edit().putInt(KEY_APP_CORNER_RADIUS, normalizeAppCornerRadius(radius)).apply()
+    }
+
+    @Synchronized
+    internal fun initGameCardCorners(context: Context) {
+        val settings = prefs(context)
+        mutableGameCardCorners.value = GameCardCornerSettings(
+            enabled = settings.getBoolean(KEY_GAME_CARD_CORNER_ENABLED, false),
+            radiusDp = normalizeAppCornerRadius(
+                settings.getInt(KEY_GAME_CARD_CORNER_RADIUS, DEFAULT_APP_CORNER_RADIUS),
+            ),
+        )
+    }
+
+    @Synchronized
+    internal fun updateGameCardCorners(
+        context: Context,
+        transform: (GameCardCornerSettings) -> GameCardCornerSettings,
+    ) {
+        val current = mutableGameCardCorners.value
+        val updated = transform(current)
+        val normalized = updated.copy(radiusDp = normalizeAppCornerRadius(updated.radiusDp))
+        if (normalized == current) return
+        prefs(context).edit {
+            putBoolean(KEY_GAME_CARD_CORNER_ENABLED, normalized.enabled)
+            putInt(KEY_GAME_CARD_CORNER_RADIUS, normalized.radiusDp)
+        }
+        mutableGameCardCorners.value = normalized
     }
 
     /** 首次组合时从持久化加载「卡片隐藏名称标签」到内存态（幂等）。 */

@@ -50,6 +50,14 @@ _Avoid_: 把 Impacto 当作引擎名（界面、文档中的引擎名一律写 M
 同一份 Windows／Steam 版《秋之回忆6》数据按文本语言（日文、简体、繁体）对应的三个启动 profile 之一，三者构成一个变体族。宿主按「profile + 目录」隔离存档，所以换变体等于换一份存档。
 _Avoid_: 语言包、语言补丁
 
+**MAGES. 识别规则（Host Detection Rules）**:
+决定游戏目录对应哪个 MAGES. profile 的条目清单，由 MAGES. 宿主维护并提供给主 App；宿主不提供时主 App 用自己的内置目录表（来源与回退见 SPEC、ARCHITECTURE）。
+_Avoid_: 把内置目录表当作唯一来源
+
+**暂不支持的 MAGES. 游戏（Unsupported MAGES. Game）**:
+目录布局像 MAGES. 游戏、但没有任何 profile 全部命中的游戏库条目；照常入库，以识别规则指定的 profile 尝试运行，不代表能运行。
+_Avoid_: 未识别游戏、未知引擎游戏
+
 **第三方 APK 运行时模块（Third-party APK Runtime Module）**:
 用户自行安装、以 `com.tyranor.runtime.` 包名前缀并声明 `com.tyranor.runtime.action.LAUNCH` 的独立 APK，接收游戏文件夹路径自行运行游戏。主 App 负责发现、启用、扫描与交棒，并按模块可选声明提供单游戏配置及游戏目录内的统一存档管理。
 _Avoid_: 插件、外置引擎（指 JoiPlay 时）、外置 APK 引擎模块（指 JoiPlay 注册表体系时）
@@ -261,7 +269,7 @@ _Avoid_: 乳白玻璃（旧显示名）、Milk glass（旧英文名）
 _Avoid_: 妙妙工具侧边栏、工具抽屉
 
 **平板侧栏（Side Rail）**:
-平板/大窗口（sw600dp 或宽 ≥ 840dp）下主导航的侧边形态（应用设置「平板侧边栏」开关控制，默认开）：按外观风格取该主题「经典 MD 导航栏」形态（默认与白雾玻璃 = Material3 `NavigationRail`、复古玻璃 = 悬浮玻璃柱），液态玻璃两档不适配侧栏（平板下降级为主题默认形态）；侧栏占布局宽度，`glassNavBottomInset()` 返回 0。
+平板或大窗口下主导航的侧边形态，占独立布局宽度，通过应用设置「平板侧边栏」控制，默认开启。栏体贴边纵向延伸，导航项垂直居中，朝向内容区的两角跟随应用圆角，材质随外观风格变化。
 _Avoid_: 导航抽屉（NavigationDrawer）、侧边栏（与抽屉混淆时）
 
 **外观模式（Appearance）**:
@@ -269,8 +277,11 @@ _Avoid_: 导航抽屉（NavigationDrawer）、侧边栏（与抽屉混淆时）
 _Avoid_: 深色模式（仅指其一）
 
 **应用圆角（App Corner Radius）**:
-应用设置的统一圆角数值（5–50dp，十档，默认 15dp），默认外观、复古玻璃与白雾玻璃共用；卡片、条目、弹窗与抽屉经 `theme/AppShapes.kt` 的 `AppComponentShape` / `AppComponentCornerRadius` / `AppSheetTopShape` 统一取值，不按外观风格分档。
+卡片、条目、弹窗与抽屉默认共用的圆角数值，适用于默认外观、复古玻璃和白雾玻璃。
 _Avoid_: 组件圆角、卡片圆角（仅指其一）
+
+**游戏卡片单独圆角（Custom Game Card Corner Radius）**:
+游戏页瀑布、网格和封面流卡片共用的独立圆角。此设置默认关闭，关闭时三种卡片跟随应用圆角。
 
 **背景粒子（Floating Particles）**:
 默认外观风格页面背景上随色调轮盘换色的装饰图形，可选择「气泡上升」或「按键瀑布」。
@@ -319,7 +330,7 @@ _Avoid_: 关联、绑定（泛指 UI 控件绑定）
 _Avoid_: 进度同步（各站均无逐章进度概念）、成就同步
 
 **封面缓存（CoverImageCache / CoverThumbnailLoader）**:
-封面缩略图的内存 + 磁盘持久化缓存与受限并发解码器；滚动感知解码配合批量回填避免滑动卡顿。
+保存已获取的封面文件和已解码的缩略图，供游戏卡片重复使用。
 _Avoid_: 图片加载器（通用概念不入表）
 
 ## 存档与数据

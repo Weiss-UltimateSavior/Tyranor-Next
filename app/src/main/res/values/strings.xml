@@ -104,6 +104,7 @@
     <string name="game_sort_engine">引擎</string>
     <string name="game_sort_recent">最近游玩</string>
     <string name="settings_game_card_style">游戏卡片风格</string>
+    <string name="settings_game_card_corner_radius">游戏卡片单独圆角</string>
     <string name="settings_game_card_style_waterfall">瀑布</string>
     <string name="settings_game_card_style_grid">网格</string>
     <string name="settings_game_card_style_cover_flow">列表</string>
@@ -659,6 +660,7 @@
     <string name="patch_processing">处理中</string>
     <string name="patch_download_install">下载并安装</string>
     <string name="scan_unnamed_game">未命名游戏</string>
+    <string name="scan_impacto_unsupported_title">%1$s · MAGES. 游戏（暂不支持）</string>
     <string name="scan_unnamed_directory">未命名目录</string>
 
     <string name="auth_hikarinagi_client_id_missing">Hikarinagi Client ID 未配置</string>
