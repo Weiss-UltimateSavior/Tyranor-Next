@@ -89,6 +89,17 @@ abstract class VerifyGraphicsResources extends DefaultTask {
             if (!descriptor.isFile() || !descriptor.name.endsWith('.json')) return
             def data = new JsonSlurper().parse(descriptor)
             data.filters.each { definition ->
+                // Tile tiling pins the restore target to input*nativeScale geometry, which an
+                // outputSized definition cannot guarantee; haloPerPass>0 is what makes a
+                // definition tileable at all. Reject the pair regardless of whether an asset
+                // is declared (matches GenerateGraphicsFilters), before the null-asset shortcut.
+                if (definition.haloPerPass instanceof Number
+                        && ((Number) definition.haloPerPass).intValue() > 0
+                        && definition.outputSized == true) {
+                    throw new GradleException('Graphics filter descriptor combines haloPerPass>0 with outputSized:true; '
+                            + 'the tiled path cannot preserve output-sized geometry: '
+                            + (definition.asset ?: definition.id))
+                }
                 if (definition.asset == null) return
                 File asset = GenerateGraphicsFilters.requireAsset(assets, definition.asset)
                 if (!verified.contains(asset)) {

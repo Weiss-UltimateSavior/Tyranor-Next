@@ -26,6 +26,10 @@ abstract class GenerateGraphicsFilters extends DefaultTask {
                 if (!['zh','en','ja'].every { d[field][it] instanceof String && d[field][it] }) GenerateGraphicsFilters.fail('missing localized label')
             }
             if (!(d.color ==~ /#[0-9A-Fa-f]{8}/) || !(d.nativeScale in [1,2]) || !(d.haloPerPass in [0,1]) || !(d.maxOutputScale in [1,2])) GenerateGraphicsFilters.fail('invalid geometry or color')
+            // Tile tiling requires fixed native-scale restore geometry; an outputSized
+            // definition derives that geometry from the request, so the pair can never run
+            // tiled. Same rule as VerifyGraphicsResources and the runtime plan guard.
+            if (d.haloPerPass > 0 && d.outputSized == true) GenerateGraphicsFilters.fail('haloPerPass>0 with outputSized:true cannot run tiled')
             if (d.outputSized && d.maxOutputScale < d.nativeScale) GenerateGraphicsFilters.fail('output limit below native scale')
             if (d.asset != null) GenerateGraphicsFilters.requireAsset(assetsDirectory.get().asFile, d.asset)
             if (!d.scaleModes || !d.scaleModes.every { it in ['none','fit','factor'] } || !(d.defaultScaleMode in d.scaleModes)) GenerateGraphicsFilters.fail('invalid scale modes')

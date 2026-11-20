@@ -2,6 +2,11 @@ package com.core.gl;
 
 /** Geometry and GLES3 shaders for the optional separable resampling stage. */
 final class LanczosScale {
+    static final String UNIFORM_SOURCE = "uSource";
+    static final String UNIFORM_SOURCE_SIZE = "uSourceSize";
+    static final String UNIFORM_AXIS = "uAxis";
+    static final String UNIFORM_OUTPUT_SIZE = "uOutputSize";
+
     // Lanczos2: four reads per changed axis, versus six for Lanczos3. The shorter
     // support reduces mobile bandwidth and ringing around high-contrast VN text.
     static final ResampleKernel DEFAULT_KERNEL = ResampleKernel.LANCZOS2;
@@ -33,9 +38,9 @@ final class LanczosScale {
             "precision highp sampler2D;\n" +
             "in vec2 vPos;\n" +
             "out vec4 fragColor;\n" +
-            "uniform sampler2D uSource;\n" +
-            "uniform ivec2 uSourceSize;\n" +
-            "uniform int uAxis;\n" +
+            "uniform sampler2D " + UNIFORM_SOURCE + ";\n" +
+            "uniform ivec2 " + UNIFORM_SOURCE_SIZE + ";\n" +
+            "uniform int " + UNIFORM_AXIS + ";\n" +
             "@@EXTRA_UNIFORMS@@" +
             "@@WEIGHT_HELPERS@@" +
             "void main() {\n" +
@@ -89,7 +94,7 @@ final class LanczosScale {
         double strength = rounded(lanczosAntiRingingStrength);
         boolean antiring = kernel == ResampleKernel.LANCZOS2 && strength > 0.0;
         String shader = TEMPLATE
-                .replace("@@EXTRA_UNIFORMS@@", resample ? "uniform ivec2 uOutputSize;\n" : "")
+                .replace("@@EXTRA_UNIFORMS@@", resample ? "uniform ivec2 " + UNIFORM_OUTPUT_SIZE + ";\n" : "")
                 .replace("@@WEIGHT_HELPERS@@", weightHelpers(kernel, bicubicB, bicubicC))
                 .replace("@@TAP_START@@", resample ? "1 - support" : Integer.toString(1 - kernel.radius))
                 .replace("@@TAP_END@@", resample ? "support" : radius)
@@ -193,6 +198,27 @@ final class LanczosScale {
     static boolean fitsLimits(int sw, int sh, int ow, int oh, int maxWidth, int maxHeight) {
         return isPositive(sw, sh, ow, oh) && maxWidth > 0 && maxHeight > 0
                 && sw <= maxWidth && ow <= maxWidth && sh <= maxHeight && oh <= maxHeight;
+    }
+
+    /** Saturating byte addition; negative inputs saturate to {@link Long#MAX_VALUE}. */
+    static long addBytes(long accumulated, long nodeBytes) {
+        if (accumulated < 0 || nodeBytes < 0) return Long.MAX_VALUE;
+        try { return Math.addExact(accumulated, nodeBytes); }
+        catch (ArithmeticException overflow) { return Long.MAX_VALUE; }
+    }
+
+    /** Saturating byte multiplication; negative inputs saturate to {@link Long#MAX_VALUE}. */
+    static long multiplyBytes(long count, long unitBytes) {
+        if (count < 0 || unitBytes < 0) return Long.MAX_VALUE;
+        try { return Math.multiplyExact(count, unitBytes); }
+        catch (ArithmeticException overflow) { return Long.MAX_VALUE; }
+    }
+
+    /** Saturating RGBA8 byte storage for an owned {@code width x height} surface. */
+    static long ownedSurfaceBytes(int width, int height) {
+        if (width <= 0 || height <= 0) return Long.MAX_VALUE;
+        try { return Math.multiplyExact(Math.multiplyExact((long) width, height), 4L); }
+        catch (ArithmeticException overflow) { return Long.MAX_VALUE; }
     }
 
     /** Saturating estimate of owned texture storage; borrowed source texture is excluded. */
