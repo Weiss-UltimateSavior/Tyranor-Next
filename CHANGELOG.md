@@ -14,7 +14,7 @@
 
 - 将「隐私设置」入口移至工具页，改名为「隐私管理设置」并使用钥匙图标。
 
-- 修复内置及外置引擎启动时方向被清单与宿主写死标准横屏、无法随设备握持朝向进入反向横屏的问题：主进程前台监测设备方向，拉起子进程前判定具体单向横屏（`LANDSCAPE` / `REVERSE_LANDSCAPE`）并下发，清单放开 `sensorLandscape` 避免入场二次翻转，各子进程宿主在 `super.onCreate` 前锁定该方向并在运行期拦截旋转，同时为 `Xs4ManualActivity` 补全 `configChanges`、为 Tyrano / RPG Maker 两个 WebView 宿主的 `configChanges` 追加 `keyboard|navigation`（软键盘弹出/收起与导航键可用性变化不再触发宿主重建，避免打断网页运行时状态与会话方向锁），并在视频/手册/Artemis 回退重试链路透传锁定方向。
+- 修复内置及外置引擎启动时方向被清单与宿主写死标准横屏、无法随设备握持朝向进入反向横屏的问题：主进程前台监测设备方向，拉起子进程前判定具体单向横屏（`LANDSCAPE` / `REVERSE_LANDSCAPE`）并下发，清单放开 `sensorLandscape` 避免入场二次翻转，各子进程宿主在 `super.onCreate` 前锁定该方向、于 `onResume` 复锁并在运行期拦截旋转（反向锁定异常时二次退回标准横屏兜底），同时为 `Xs4ManualActivity` 声明方向/窗口尺寸 `configChanges`（保留字号/语言/主题变更重建并持久化锁定方向）、为 Tyrano / RPG Maker 两个 WebView 宿主的 `configChanges` 追加 `keyboard|navigation`（软键盘弹出/收起与导航键可用性变化不再触发宿主重建，避免打断网页运行时状态与会话方向锁），并在视频/手册/Artemis 回退重试链路透传锁定方向。
 
 - 引擎子进程不再注册前台生命周期观察者：子进程退后台不再排队 `BackgroundUpdateWorker` 更新检查，该检查推迟到主进程下次退后台时执行；主进程意外退出期间，自动更新检查会有最多一个引擎会话的延迟。
 
