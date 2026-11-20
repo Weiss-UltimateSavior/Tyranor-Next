@@ -120,7 +120,9 @@ class GridReflowDeviceTest(private val staggered: Boolean) {
         compose.runOnIdle { columns.intValue = 3 }
         awaitWaterfallReady()
         repeat(6) { compose.mainClock.advanceTimeByFrame() }
-        assertTrue("The first entrance must have started before interrupting it", capture().card(0).count > 0)
+        val firstEntrance = capture()
+        assertTrue("The first entrance must have started before interrupting it", firstEntrance.card(0).count > 0)
+        assertEquals("A scheduled later card must still be waiting when interrupted", 0, firstEntrance.card(5).count)
 
         compose.runOnIdle { columns.intValue = 2 }
         val frames = List(32) {

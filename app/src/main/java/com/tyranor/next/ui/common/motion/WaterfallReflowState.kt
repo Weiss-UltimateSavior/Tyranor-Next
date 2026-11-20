@@ -12,17 +12,21 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.IntOffset
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
+
+private const val RESTORE_SLICE_NANOS = 4_000_000L
 
 /** Rebuilds lane history with public APIs instead of anchoring an unmeasured fresh state. */
 class WaterfallReflowState private constructor(
     private var columns: Int,
     private var landscape: Boolean,
+    private val itemIdentity: (Any) -> Any,
     private var pendingAnchor: Anchor? = null,
 ) {
     var gridState = LazyStaggeredGridState()
@@ -32,7 +36,7 @@ class WaterfallReflowState private constructor(
     var isRestoring by mutableStateOf(pendingAnchor != null)
         private set
 
-    private data class Anchor(val index: Int, val key: Any?, val y: Int, val atBottom: Boolean)
+    private data class Anchor(val index: Int, val identity: Any?, val y: Int, val atBottom: Boolean)
 
     private fun capture(): Anchor? {
         val visible = gridState.layoutInfo.visibleItemsInfo
@@ -41,7 +45,7 @@ class WaterfallReflowState private constructor(
             ?: return null
         return Anchor(
             item.index,
-            item.key,
+            itemIdentity(item.key),
             item.offset.y,
             !gridState.canScrollForward && gridState.canScrollBackward,
         )
@@ -62,7 +66,7 @@ class WaterfallReflowState private constructor(
     @OptIn(ExperimentalFoundationApi::class)
     internal suspend fun restore(state: LazyStaggeredGridState, contentReady: Boolean) {
         val anchor = pendingAnchor ?: return
-        // Wait outside the uninterrupted scroll transaction until layout and data are resolved.
+        // Wait for layout and data before taking the scroll mutation.
         snapshotFlow {
             state.layoutInfo.viewportSize.height to
                 (state.layoutInfo.totalItemsCount > 0 || contentReady)
@@ -76,23 +80,35 @@ class WaterfallReflowState private constructor(
                     if (count == 0) return@with
                     val target = anchor.index.coerceIn(0, count - 1)
                     // Foundation 1.11.2 needs forward measurement history for stable upward lanes.
-                    // This is O(anchorIndex), or O(itemCount) at the bottom; a large library can
-                    // block the UI thread. Do not replace these measured steps with teleportation.
+                    // Pause between measured steps without releasing the scroll mutation.
+                    var sliceStart = System.nanoTime()
+                    suspend fun awaitBudget() {
+                        if (System.nanoTime() - sliceStart >= RESTORE_SLICE_NANOS) {
+                            withFrameNanos { }
+                            sliceStart = System.nanoTime()
+                        }
+                    }
                     val maxSteps = count.toLong() * 4L + 1024L
                     var steps = 0L
                     var anchorFound = false
                     while (steps++ < maxSteps) {
                         context.ensureActive()
+                        awaitBudget()
                         val before = state.layoutInfo
                         val visible = before.visibleItemsInfo
-                        val item = if (anchor.key != null) visible.firstOrNull { it.key == anchor.key }
-                            else visible.firstOrNull { it.index == target }
                         if (anchor.atBottom) {
                             if (!state.canScrollForward) break
-                        } else if (item != null) {
-                            anchorFound = true
-                            scrollBy((item.offset.y - anchor.y).toFloat())
-                            break
+                        } else {
+                            val item = if (anchor.identity != null) {
+                                visible.firstOrNull { itemIdentity(it.key) == anchor.identity }
+                            } else {
+                                visible.firstOrNull { it.index == target }
+                            }
+                            if (item != null) {
+                                anchorFound = true
+                                scrollBy((item.offset.y - anchor.y).toFloat())
+                                break
+                            }
                         }
                         if (!state.canScrollForward) break
                         val lastIndex = visible.maxOfOrNull { it.index } ?: break
@@ -107,10 +123,11 @@ class WaterfallReflowState private constructor(
                         ) break
                     }
                     // A missing identity falls back only after the forward scan has exhausted it.
-                    if (!anchor.atBottom && !anchorFound && anchor.key != null) {
+                    if (!anchor.atBottom && !anchorFound && anchor.identity != null) {
                         steps = 0L
                         while (steps++ < maxSteps) {
                             context.ensureActive()
+                            awaitBudget()
                             val item = state.layoutInfo.visibleItemsInfo.firstOrNull { it.index == target }
                             if (item != null) {
                                 scrollBy((item.offset.y - anchor.y).toFloat())
@@ -124,7 +141,7 @@ class WaterfallReflowState private constructor(
                 }
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            // A higher-priority user scroll may preempt this non-suspending history rebuild.
+            // A higher-priority user scroll may preempt the history rebuild.
             // Preserve cancellation of the owning effect, but let input take over the viewport.
             context.ensureActive()
         }
@@ -135,20 +152,22 @@ class WaterfallReflowState private constructor(
     }
 
     companion object {
-        internal fun create(columns: Int, landscape: Boolean) = WaterfallReflowState(columns, landscape)
+        internal fun create(columns: Int, landscape: Boolean, itemIdentity: (Any) -> Any = { it }) =
+            WaterfallReflowState(columns, landscape, itemIdentity)
 
-        internal val Saver = listSaver<WaterfallReflowState, Any>(
+        internal fun saver(itemIdentity: (Any) -> Any) = listSaver<WaterfallReflowState, Any>(
             save = {
                 val anchor = it.pendingAnchor ?: it.capture()
-                val key = anchor?.key?.takeIf { value -> canBeSaved(value) }
+                val identity = anchor?.identity?.takeIf { value -> canBeSaved(value) }
                 listOf(it.columns, it.landscape, anchor?.index ?: -1, anchor?.y ?: 0,
-                    anchor?.atBottom ?: false, key != null, key ?: "")
+                    anchor?.atBottom ?: false, identity != null, identity ?: "")
             },
             restore = {
                 val index = it[2] as Int
                 WaterfallReflowState(
                     it[0] as Int,
                     it[1] as Boolean,
+                    itemIdentity,
                     if (index < 0) null else Anchor(index, if (it[5] as Boolean) it[6] else null,
                         it[3] as Int, it[4] as Boolean),
                 )
@@ -157,14 +176,16 @@ class WaterfallReflowState private constructor(
     }
 }
 
+/** [itemIdentity] maps a Lazy key to a stable, saveable anchor identity across layouts. */
 @Composable
 fun rememberWaterfallReflowState(
     columns: Int,
     landscape: Boolean,
     contentReady: Boolean = true,
+    itemIdentity: (Any) -> Any = { it },
 ): WaterfallReflowState {
-    val state = rememberSaveable(saver = WaterfallReflowState.Saver) {
-        WaterfallReflowState.create(columns, landscape)
+    val state = rememberSaveable(saver = WaterfallReflowState.saver(itemIdentity)) {
+        WaterfallReflowState.create(columns, landscape, itemIdentity)
     }
     Snapshot.withoutReadObservation { state.update(columns, landscape) }
     val gridState = state.gridState

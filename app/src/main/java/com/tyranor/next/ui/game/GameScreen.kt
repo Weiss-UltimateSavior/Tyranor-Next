@@ -428,7 +428,12 @@ private fun GameLibraryContent(
     val waterfallColumns = if (landscape) waterfallLandscapeColumns else waterfallPortraitColumns
     // 条件变化仍回顶；列数或方向变化则从零重建测量历史，恢复业务锚点。
     val waterfallReflow = key(conditions) {
-        rememberWaterfallReflowState(waterfallColumns, landscape, contentReady = loaded)
+        rememberWaterfallReflowState(
+            waterfallColumns,
+            landscape,
+            contentReady = loaded,
+            itemIdentity = { (it as String).substringBefore('\u0000') },
+        )
     }
     val gridState = waterfallReflow.gridState
     val uniformGridState = key(conditions) { rememberLazyGridState() }
