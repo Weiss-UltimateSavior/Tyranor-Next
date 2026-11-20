@@ -76,9 +76,6 @@ object EngineScanner {
     private const val XS4_ALICESTART_INI = "alicestart.ini"
     private const val XS4_AIN_EXTENSION = ".ain"
 
-    /** RealLive `SEEN.TXT` 场景头尺寸（`0x1d0`，AVG2000 为 `0x1cc`）。 */
-    private val REALLIVE_HEADER_SIZES = intArrayOf(0x1d0, 0x1cc)
-
     // ============ 扫描游戏 ============
 
     /** 全量扫描所有根目录（结果以本次扫描为准，用于首次/无数据场景）。 */
@@ -202,7 +199,7 @@ object EngineScanner {
             val node = session.nodeOf(Uri.parse(game.uri)) ?: return Xs4RedetectOutcome.Missing
             val children = session.children(node)
             if (session.queryFailed) return Xs4RedetectOutcome.Unreadable
-            return Xs4RedetectOutcome.Done(detectEngine(children, session::children, session::readHead), node.name)
+            return Xs4RedetectOutcome.Done(detectEngine(children, session), node.name)
         }
         val dir = File(game.uri)
         if (!dir.isDirectory) return Xs4RedetectOutcome.Missing
@@ -346,8 +343,7 @@ object EngineScanner {
 
         val detected = detectEngine(
             children,
-            session::children,
-            session::readHead,
+            session,
             if (level == 0) RuntimeModuleIndex.EMPTY else runtimeModules,
         )
         if (detected.engine != EngineType.UNKNOWN) {
@@ -424,8 +420,7 @@ object EngineScanner {
         // 1) 本级目录本身可能是游戏（含引擎特征文件）
         val detected = detectEngine(
             children,
-            session::children,
-            session::readHead,
+            session,
             if (level == 0) RuntimeModuleIndex.EMPTY else runtimeModules,
         )
         if (detected.engine != EngineType.UNKNOWN) {
@@ -540,7 +535,10 @@ object EngineScanner {
             }
         }.getOrNull()
 
-        /** Bounded content evidence shared by the framebuffer and Ethornell scanners. */
+        fun detectSeenArchive(node: SafNode): EngineType? =
+            SeenArchiveProbe.detect(node.size) { resolver.openInputStream(node.uri) }
+
+        /** Bounded content evidence for the engine scanners. */
         fun readHead(node: SafNode, maxBytes: Int = 64 * 1024): ByteArray? = try {
             resolver.openInputStream(node.uri)?.use { input ->
                 EthornellArchiveProbe.readHead(input, maxBytes)
@@ -820,7 +818,7 @@ object EngineScanner {
             dir.listFiles() ?: emptyArray()
         }
 
-        /** Bounded content evidence shared by the framebuffer and Ethornell scanners. */
+        /** Bounded content evidence for the engine scanners. */
         fun readHead(file: File, maxBytes: Int = 64 * 1024): ByteArray? =
             headCache.getOrPut(file.absolutePath) {
                 try {
@@ -993,6 +991,11 @@ object EngineScanner {
                 }
             },
             sizeOf = { it.length().takeIf { size -> size > 0 } },
+            seenArchiveKind = { file ->
+                SeenArchiveProbe.detect(file.length().takeIf { it > 0 }) {
+                    context.contentResolver.openInputStream(file.uri)
+                }
+            },
         )
     }
 
@@ -1025,20 +1028,20 @@ object EngineScanner {
             childrenOf = { session.children(it).asIterable() },
             headOf = { session.readHead(it) },
             sizeOf = { it.length() },
+            seenArchiveKind = { file -> SeenArchiveProbe.detect(file.length(), file::inputStream) },
         )
     }
 
     private fun detectEngine(
         children: List<SafNode>,
-        childrenOf: (SafNode) -> List<SafNode>,
-        headOf: (SafNode) -> ByteArray?,
+        session: SafScanSession,
         runtimeModules: RuntimeModuleIndex = RuntimeModuleIndex.EMPTY,
     ): Detection {
         matchRuntimeModule(
             entries = children.map { RuntimeModuleEntry(it.name, it.isDirectory) },
             childrenOf = { entry ->
                 children.firstOrNull { it.isDirectory && it.name == entry.name }
-                    ?.let(childrenOf)
+                    ?.let(session::children)
                     ?.map { RuntimeModuleEntry(it.name, it.isDirectory) }
                     .orEmpty()
             },
@@ -1048,9 +1051,10 @@ object EngineScanner {
             children = children,
             nameOf = { it.name },
             isDirectory = { it.isDirectory },
-            childrenOf = childrenOf,
-            headOf = headOf,
+            childrenOf = session::children,
+            headOf = session::readHead,
             sizeOf = { it.size },
+            seenArchiveKind = session::detectSeenArchive,
         )
     }
 
@@ -1082,6 +1086,7 @@ object EngineScanner {
         childrenOf: (T) -> Iterable<T>,
         headOf: (T) -> ByteArray? = { null },
         sizeOf: (T) -> Long? = { null },
+        seenArchiveKind: (T) -> EngineType? = { null },
     ): Detection {
 
         val xp3Files = mutableListOf<String>()
@@ -1297,7 +1302,9 @@ object EngineScanner {
                     }
                 }
                 SEEN_SCENE_AVG32_RE.matches(lower) -> hasSeenSceneAvg32 = true
-                SEEN_SCENE_REALLIVE_RE.matches(lower) -> hasSeenSceneReallive = true
+                SEEN_SCENE_REALLIVE_RE.matches(lower) && !hasSeenSceneReallive -> {
+                    hasSeenSceneReallive = sizeOf(entry)?.let { it > 0 } ?: (headOf(entry)?.isNotEmpty() == true)
+                }
                 lower.endsWith(".mes") -> if (uk2MesNode == null) uk2MesNode = entry
                 lower == "yscfg.dat" -> hasYscfgDat = true
                 lower == "cs2.exe" -> hasCs2Exe = true
@@ -1384,7 +1391,7 @@ object EngineScanner {
         if (!ambiguousEthornellSystem && ethornellSystemNode?.let { EthornellArchiveProbe.hasBootstrap(headOf(it), sizeOf(it)) } == true) {
             return Detection(EngineType.ETHORNELL, 96, LAUNCH_TARGET_GAME_DIR)
         }
-        val seenKind = classifySeenArchive(seenArchiveNode?.let { headOf(it) })
+        val seenKind = seenArchiveNode?.let(seenArchiveKind)
         if (hasGameexeIni && seenKind != null) {
             return Detection(seenKind, 96, LAUNCH_TARGET_GAME_DIR)
         }
@@ -1592,46 +1599,6 @@ object EngineScanner {
     /** System3.x（xsystem35）辅助特征文件名判定（调用方传 lowercase 名称）。 */
     private fun isXs35SupportName(lowerName: String): Boolean =
         lowerName in XS35_SUPPORT_EXACT_NAMES || XS35_SUPPORT_EXTENSIONS.any(lowerName::endsWith)
-
-    /**
-     * 区分共享 `SEEN.TXT` 文件名的 AVG32 与 RealLive：
-     * `PACL` 头 → AVG32；10000 项 TOC（每项 8 字节 offset/length，场景头 `0x1d0`/`0x1cc`）→ RealLive。
-     * 参考上游 `engine-detect`，只读文件头即可判定。
-     */
-    private fun classifySeenArchive(head: ByteArray?): EngineType? {
-        if (head == null || head.size < 8) return null
-        if (head.size >= 4 &&
-            head[0] == 'P'.code.toByte() &&
-            head[1] == 'A'.code.toByte() &&
-            head[2] == 'C'.code.toByte() &&
-            head[3] == 'L'.code.toByte()
-        ) {
-            return EngineType.AVG32
-        }
-        var valid = 0
-        for (index in 0 until 4) {
-            val at = index * 8
-            if (at + 8 > head.size) break
-            val offset = readU32(head, at)
-            val length = readU32(head, at + 4)
-            if (offset == 0L || length < 4) continue
-            if (offset + 4 <= head.size) {
-                val header = readU32(head, offset.toInt())
-                if (REALLIVE_HEADER_SIZES.none { it.toLong() == header }) return null
-            }
-            valid++
-            if (valid >= 4) break
-        }
-        return if (valid > 0) EngineType.REALLIVE else null
-    }
-
-    private fun readU32(bytes: ByteArray, at: Int): Long {
-        if (at < 0 || at + 4 > bytes.size) return 0
-        return (bytes[at].toLong() and 0xFF) or
-            ((bytes[at + 1].toLong() and 0xFF) shl 8) or
-            ((bytes[at + 2].toLong() and 0xFF) shl 16) or
-            ((bytes[at + 3].toLong() and 0xFF) shl 24)
-    }
 
     const val LAUNCH_TARGET_GAME_DIR = "DIR"
 
