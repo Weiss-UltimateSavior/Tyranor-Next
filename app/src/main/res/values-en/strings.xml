@@ -657,6 +657,7 @@
     <string name="patch_processing">Processing</string>
     <string name="patch_download_install">Download and install</string>
     <string name="scan_unnamed_game">Unnamed game</string>
+    <string name="scan_impacto_unsupported_title">%1$s · MAGES. game (not supported yet)</string>
     <string name="scan_unnamed_directory">Unnamed folder</string>
 
     <string name="auth_hikarinagi_client_id_missing">Hikarinagi Client ID is not configured</string>

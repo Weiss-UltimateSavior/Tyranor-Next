@@ -1,5 +1,6 @@
 package com.tyranor.next.core.game.scan
 
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -7,6 +8,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ImpactoGameCatalogTest {
+    @After
+    fun backToTheBuiltInRules() {
+        ImpactoGameCatalog.useHostRules(null)
+    }
+
     private fun entriesOf(profileId: String): Set<String> =
         ImpactoGameCatalog.byProfileId(profileId)!!.requiredEntries
 
@@ -35,7 +41,7 @@ class ImpactoGameCatalogTest {
         // Kept in sync with ImpactoRequest.PROFILES in the host repository (yuukana1/Tyranor-Next-MAGES; the host refuses anything else).
         assertEquals(
             setOf(
-                "chlcc", "cclcc", "cclcc-switch", "mo6tw", "mo6tw-pc", "mo6tw-pc-zhs", "mo6tw-pc-zht",
+                "chlcc", "cclcc", "cclcc-switch", "mo6tw", "mo6tw-pc", "mo6tw-pc-zhs", "mo6tw-pc-zht", "sg-pc",
                 "darling", "dash", "rne",
             ),
             ids.toSet(),
@@ -224,19 +230,27 @@ class ImpactoGameCatalogTest {
     }
 
     @Test
-    fun windowsEditionsNeedHostZeroPointTwoAndOtherProfilesDoNot() {
+    fun windowsEditionsNeedANewerHostAndOtherProfilesDoNot() {
         for (game in ImpactoGameCatalog.games) {
-            val expected = if (game.family == "mo6tw-pc") 4 else 0
+            val expected = when {
+                game.family == "mo6tw-pc" -> 4
+                game.profileId == "sg-pc" -> 5
+                else -> 0
+            }
             assertEquals(game.profileId, expected, game.minHostVersionCode)
+            assertEquals(game.profileId, expected, ImpactoGameCatalog.minHostVersionCodeFor(game.profileId))
         }
+        assertEquals(0, ImpactoGameCatalog.minHostVersionCodeFor("not-a-profile"))
     }
 
     @Test
-    fun theScannerOnlyKeepsTheDataFileNamesSomeProfileAsksFor() {
+    fun theScannerOnlyKeepsTheSubdirectoryFileNamesSomeRuleAsksFor() {
         // A large data/ folder of another engine must not be copied name by name into the scan state.
+        val rules = ImpactoGameCatalog.currentRules()
+        assertEquals(setOf("data", "usrdir"), rules.subdirectoryNames)
         assertEquals(
-            setOf("script.cpk", "mes00.cpk", "mes01.cpk", "mes02.cpk"),
-            ImpactoGameCatalog.dataEntryNames,
+            setOf("script.cpk", "system.cpk", "mes00.cpk", "mes01.cpk", "mes02.cpk", "script.mpk", "system.mpk"),
+            rules.subdirectoryEntryNames,
         )
     }
 
@@ -276,5 +290,115 @@ class ImpactoGameCatalogTest {
         assertEquals("mo6tw-pc-zht", ImpactoGameCatalog.preferredProfileId(listOf("mo6tw-pc-zht"), "ja"))
         assertNull(ImpactoGameCatalog.preferredProfileId(emptyList(), "zh-CN"))
         assertNull(ImpactoGameCatalog.preferredProfileId(listOf("not-a-profile"), "zh-CN"))
+    }
+
+    // ---- 宿主提供的识别规则 ----
+
+    /** 只在宿主规则里出现的 profile（内置目录表没有），用来区分「来自宿主规则」与「来自内置目录表」。 */
+    private val hostOnly = ImpactoGameCatalog.Game(
+        profileId = "host-only-pc",
+        title = "Host only (PC)",
+        requiredEntries = setOf("Game.exe", "USRDIR/script.mpk", "USRDIR/host.mpk"),
+    )
+
+    @Test
+    fun theHostRulesReplaceTheBuiltInCatalogAndUnknownIdsFallBackToIt() {
+        ImpactoGameCatalog.useHostRules(ImpactoGameCatalog.Rules(listOf(hostOnly), emptyList()))
+
+        assertEquals(listOf("host-only-pc"), ImpactoGameCatalog.games.map { it.profileId })
+        assertEquals(hostOnly, ImpactoGameCatalog.byProfileId("host-only-pc"))
+        // a library entry of a profile the host rules do not list still resolves (and keeps its host version need)
+        assertEquals(4, ImpactoGameCatalog.byProfileId("mo6tw-pc")!!.minHostVersionCode)
+        assertEquals(
+            listOf(hostOnly),
+            ImpactoGameCatalog.candidatesFor(setOf("Game.exe", "USRDIR/script.mpk", "USRDIR/host.mpk")),
+        )
+
+        ImpactoGameCatalog.useHostRules(null)
+        assertNull(ImpactoGameCatalog.byProfileId("host-only-pc"))
+    }
+
+    @Test
+    fun hostRulesWithoutVersionNeedsKeepTheBuiltInNeeds() {
+        // The host rules carry no version needs; sg-pc must still ask for host 0.3.0 (versionCode 5).
+        val sgPc = ImpactoGameCatalog.builtInGames.single { it.profileId == "sg-pc" }.copy(minHostVersionCode = 0)
+        ImpactoGameCatalog.useHostRules(ImpactoGameCatalog.Rules(listOf(sgPc, hostOnly), emptyList()))
+
+        assertEquals(5, ImpactoGameCatalog.minHostVersionCodeFor("sg-pc"))
+        assertEquals(0, ImpactoGameCatalog.minHostVersionCodeFor("host-only-pc"))
+    }
+
+    @Test
+    fun theSubdirectoriesToExpandFollowTheRulesSnapshot() {
+        val rules = ImpactoGameCatalog.Rules(
+            listOf(hostOnly),
+            listOf(ImpactoGameCatalog.UnsupportedLayout("other", setOf("Other/a.cpk", "Other/b.cpk"), "host-only-pc")),
+        )
+        assertEquals(setOf("usrdir", "other"), rules.subdirectoryNames)
+        assertEquals(setOf("script.mpk", "host.mpk", "a.cpk", "b.cpk"), rules.subdirectoryEntryNames)
+    }
+
+    @Test
+    fun aRulesSnapshotIsUsedEvenAfterTheActiveRulesChange() {
+        val snapshot = ImpactoGameCatalog.currentRules()
+        ImpactoGameCatalog.useHostRules(ImpactoGameCatalog.Rules(listOf(hostOnly), emptyList()))
+        val sg = setOf("Game.exe", "USRDIR/script.mpk", "USRDIR/system.mpk")
+
+        assertEquals(listOf("sg-pc"), ImpactoGameCatalog.candidatesFor(sg, snapshot).map { it.profileId })
+        assertTrue(ImpactoGameCatalog.candidatesFor(sg).isEmpty())
+    }
+
+    @Test
+    fun anUnsupportedLayoutIsOnlyOfferedWhenNoProfileMatchesCompletely() {
+        val steam = steamRootNames + steamDataNames.map { "data/$it" }
+        assertNull(ImpactoGameCatalog.unsupportedLayoutFor(steam))
+        assertEquals("pc-data-cpk", ImpactoGameCatalog.unsupportedLayoutFor(steam - "data/mes00.cpk")?.id)
+        assertEquals(
+            "mo6tw-pc",
+            ImpactoGameCatalog.unsupportedLayoutFor(setOf("Data", "Data/SCRIPT.CPK", "Data/System.cpk"))?.tryProfile,
+        )
+        assertEquals(
+            "sg-pc",
+            ImpactoGameCatalog.unsupportedLayoutFor(setOf("Game.exe", "usrdir/SCRIPT.MPK", "usrdir/system.mpk"))
+                ?.tryProfile,
+        )
+        assertNull(ImpactoGameCatalog.unsupportedLayoutFor(setOf("game.exe", "readme.txt")))
+    }
+
+    @Test
+    fun aSingleCommonArchiveNameIsNotEnoughForAnUnsupportedLayout() {
+        // Other CRI-based engines also ship script.cpk or system.mpk; one or two common names are not a MAGES. layout.
+        listOf(
+            setOf("data", "data/script.cpk"),
+            setOf("USRDIR", "USRDIR/script.mpk"),
+            setOf("system.mpk"),
+            setOf("script.mpk", "system.mpk"),
+            setOf("script.cpk", "system.cpk"),
+        ).forEach { entries ->
+            assertNull(entries.toString(), ImpactoGameCatalog.unsupportedLayoutFor(entries))
+        }
+        assertEquals("cclcc", ImpactoGameCatalog.unsupportedLayoutFor(setOf("script.mpk", "system.mpk", "bgm.mpk"))?.tryProfile)
+        assertEquals("chlcc", ImpactoGameCatalog.unsupportedLayoutFor(setOf("script.cpk", "system.cpk", "bgm.cpk"))?.tryProfile)
+    }
+
+    @Test
+    fun theBuiltInUnsupportedLayoutsTryAnExistingProfile() {
+        for (layout in ImpactoGameCatalog.builtInUnsupportedLayouts) {
+            assertNotNull(layout.id, ImpactoGameCatalog.byProfileId(layout.tryProfile))
+            assertTrue(layout.id, layout.requiredEntries.size >= 2)
+            assertTrue(layout.id, layout.requiredEntries.all(ImpactoHostProfiles::isValidEntry))
+        }
+    }
+
+    @Test
+    fun anUnsupportedLayoutWhoseTryProfileIsUnknownIsSkipped() {
+        ImpactoGameCatalog.useHostRules(
+            ImpactoGameCatalog.Rules(
+                listOf(hostOnly),
+                listOf(ImpactoGameCatalog.UnsupportedLayout("broken", setOf("a.mpk", "b.mpk"), "nope")),
+            ),
+        )
+
+        assertNull(ImpactoGameCatalog.unsupportedLayoutFor(setOf("a.mpk", "b.mpk")))
     }
 }

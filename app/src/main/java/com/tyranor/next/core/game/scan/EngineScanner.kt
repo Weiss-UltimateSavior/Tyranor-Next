@@ -85,6 +85,8 @@ object EngineScanner {
         val roots = GameLibraryFacade.loadRoots(context)
         // 扫描索引在开始时快照：启用/禁用模块不影响正在进行的扫描。
         val runtimeModules = RuntimeModuleRegistry.scanIndex(context.applicationContext)
+        // MAGES. 识别规则同样在开始时从已安装的宿主读取一次。
+        ImpactoGameCatalog.refresh(context)
         // 多个存储卷可以并行扫描，但限制为 2，避免同时向 DocumentsProvider 发起过多查询。
         val gate = Semaphore(2)
         val all = coroutineScope {
@@ -300,6 +302,7 @@ object EngineScanner {
         RuntimeModuleBindings.reconcile(context.applicationContext)
         val runtimeModules = RuntimeModuleRegistry.scanIndex(context.applicationContext)
         return runInterruptible(Dispatchers.IO) {
+            ImpactoGameCatalog.refresh(context)
             val existing = GameLibraryFacade.loadGames(context)
             val known = existing.mapTo(HashSet()) { it.uri }
             val seen = HashSet<String>()
@@ -348,12 +351,13 @@ object EngineScanner {
         )
         if (detected.engine != EngineType.UNKNOWN) {
             val coverUri = findLocalCoverUri(children)
+            val launchTarget = scanLaunchTarget(context, detected, dir.uri.toString())
             out.add(
                 ScanGame(
-                    title = scanTitle(context, detected, dir.name),
+                    title = scanTitle(context, detected, dir.name, launchTarget),
                     uri = dir.uri.toString(),
                     engine = detected.engine,
-                    launchTarget = scanLaunchTarget(context, detected, dir.uri.toString()),
+                    launchTarget = launchTarget,
                     externalModuleAlias = detected.externalModuleAlias,
                     runtimeModulePackage = detected.runtimeModulePackage,
                     detectedRenpyVersion = detectRenpyVersionIfNeeded(detected, children, session),
@@ -377,6 +381,7 @@ object EngineScanner {
         RuntimeModuleBindings.reconcile(context.applicationContext)
         val runtimeModules = RuntimeModuleRegistry.scanIndex(context.applicationContext)
         return runInterruptible(Dispatchers.IO) {
+            ImpactoGameCatalog.refresh(context)
             scanRootInternal(context.applicationContext, rootUriStr, maxDepth, runtimeModules)
         }
     }
@@ -425,12 +430,13 @@ object EngineScanner {
         )
         if (detected.engine != EngineType.UNKNOWN) {
             val coverUri = findLocalCoverUri(children)
+            val launchTarget = scanLaunchTarget(context, detected, dir.uri.toString())
             out.add(
                 ScanGame(
-                    title = scanTitle(context, detected, dir.name),
+                    title = scanTitle(context, detected, dir.name, launchTarget),
                     uri = dir.uri.toString(),
                     engine = detected.engine,
-                    launchTarget = scanLaunchTarget(context, detected, dir.uri.toString()),
+                    launchTarget = launchTarget,
                     externalModuleAlias = detected.externalModuleAlias,
                     runtimeModulePackage = detected.runtimeModulePackage,
                     detectedRenpyVersion = detectRenpyVersionIfNeeded(detected, children, session),
@@ -679,14 +685,29 @@ object EngineScanner {
         return ImpactoGameCatalog.preferredProfileId(choices, uiLanguageTag) ?: detected.launchTarget
     }
 
-    /** 扫描标题：识别期标题 > 目录名；Ruffle 包装目录在目录名缺失时回退 SWF 文件主名。 */
-    private fun scanTitle(context: Context, detected: Detection, dirName: String): String {
+    /**
+     * 扫描标题：识别期标题 > 目录名；Ruffle 包装目录在目录名缺失时回退 SWF 文件主名。
+     * MAGES. 未支持布局的标题是「目录名 · MAGES. 游戏（暂不支持）」；有多个语言变体时用最终选定的 profile（[launchTarget]）
+     * 的标题（宿主规则里变体标题带语言，取默认变体的会与实际启动的语言不符）。
+     */
+    private fun scanTitle(context: Context, detected: Detection, dirName: String, launchTarget: String): String {
+        if (detected.unsupported) {
+            val name = dirName.takeIf { it.isNotBlank() } ?: localizedText(context, R.string.scan_unnamed_game)
+            return AppLocaleController.wrap(context.applicationContext)
+                .getString(R.string.scan_impacto_unsupported_title, name)
+        }
         val ruffleFallback = if (detected.engine == EngineType.RUFFLE) {
             romTitle(detected.launchTarget).takeIf { it.isNotBlank() }
         } else {
             null
         }
-        return detected.titleHint
+        val variantTitle = if (detected.engine == EngineType.IMPACTO && detected.launchTargetChoices.size > 1) {
+            ImpactoGameCatalog.byProfileId(launchTarget)?.title
+        } else {
+            null
+        }
+        return variantTitle
+            ?: detected.titleHint
             ?: dirName.takeIf { it.isNotBlank() }
             ?: ruffleFallback
             ?: localizedText(context, R.string.scan_unnamed_game)
@@ -856,12 +877,13 @@ object EngineScanner {
         )
         if (detected.engine != EngineType.UNKNOWN) {
             val coverUri = findLocalCoverUri(children)
+            val launchTarget = scanLaunchTarget(context, detected, dir.absolutePath)
             out.add(
                 ScanGame(
-                    title = scanTitle(context, detected, dir.name),
+                    title = scanTitle(context, detected, dir.name, launchTarget),
                     uri = dir.absolutePath,
                     engine = detected.engine,
-                    launchTarget = scanLaunchTarget(context, detected, dir.absolutePath),
+                    launchTarget = launchTarget,
                     externalModuleAlias = detected.externalModuleAlias,
                     runtimeModulePackage = detected.runtimeModulePackage,
                     detectedRenpyVersion = detectRenpyVersionIfNeeded(detected, dir),
@@ -896,12 +918,13 @@ object EngineScanner {
         )
         if (detected.engine != EngineType.UNKNOWN) {
             val coverUri = findLocalCoverUri(children)
+            val launchTarget = scanLaunchTarget(context, detected, dir.absolutePath)
             out.add(
                 ScanGame(
-                    title = scanTitle(context, detected, dir.name),
+                    title = scanTitle(context, detected, dir.name, launchTarget),
                     uri = dir.absolutePath,
                     engine = detected.engine,
-                    launchTarget = scanLaunchTarget(context, detected, dir.absolutePath),
+                    launchTarget = launchTarget,
                     externalModuleAlias = detected.externalModuleAlias,
                     runtimeModulePackage = detected.runtimeModulePackage,
                     detectedRenpyVersion = detectRenpyVersionIfNeeded(detected, dir),
@@ -950,6 +973,11 @@ object EngineScanner {
          * 识别只回答「磁盘上有什么」，选哪个属于偏好，由持有 Context 的调用方经 [scanLaunchTarget] 决定。
          */
         val launchTargetChoices: List<String> = emptyList(),
+        /**
+         * MAGES. 的「未支持布局」：目录像 MAGES. 游戏但没有 profile 能识别（[ImpactoGameCatalog.unsupportedLayoutFor]）。
+         * 仍入库、可启动，[launchTarget] 是该布局指定的尝试用 profile，标题标注「暂不支持」。
+         */
+        val unsupported: Boolean = false,
     )
 
     /**
@@ -1168,24 +1196,27 @@ object EngineScanner {
         var cmvsStartCount = 0
         var hasCmvsStartHeader = false
         var hasCmvsExe = false
-        // Impacto 按精确大小写匹配根目录条目名（上游 Android 路径区分大小写），故另存原名；
-        // Windows／Steam 版把档案放在根下的 `data/` 里，同样另存该目录里的文件原名
-        val impactoRootNames = HashSet<String>()
-        val impactoDataNames = HashSet<String>()
+        // Impacto 按精确大小写匹配条目名（上游 Android 路径区分大小写），故另存原名：根目录条目名，
+        // 以及识别规则里出现的子目录（如 Windows／Steam 版的 `data/`、`USRDIR/`）里的文件，记为 `目录名/文件名`
+        val impactoEntries = HashSet<String>()
+        val impactoRules = ImpactoGameCatalog.currentRules()
+        val impactoSubdirectories = impactoRules.subdirectoryNames
+        val impactoSubdirectoryEntries = impactoRules.subdirectoryEntryNames
 
         fun collect(entry: T, rel: String) {
             if (Thread.currentThread().isInterrupted) throw java.util.concurrent.CancellationException()
             val lower = nameOf(entry).lowercase(Locale.ROOT)
             if (lower.isEmpty()) return
-            if (rel.isEmpty()) impactoRootNames.add(nameOf(entry))
+            if (rel.isEmpty()) impactoEntries.add(nameOf(entry))
             val childRel = if (rel.isEmpty()) lower else "$rel/$lower"
             if (isDirectory(entry)) {
                 hasChildDirectory = true
-                if (rel.isEmpty() && nameOf(entry) == ImpactoGameCatalog.DATA_DIR) {
+                if (rel.isEmpty() && lower in impactoSubdirectories) {
+                    val dirName = nameOf(entry)
                     childrenOf(entry).forEach { child ->
                         val childName = nameOf(child)
-                        if (childName in ImpactoGameCatalog.dataEntryNames && !isDirectory(child)) {
-                            impactoDataNames.add(childName)
+                        if (childName.lowercase(Locale.ROOT) in impactoSubdirectoryEntries && !isDirectory(child)) {
+                            impactoEntries.add("$dirName/$childName")
                         }
                     }
                 }
@@ -1576,7 +1607,7 @@ object EngineScanner {
         }
         // Impacto：排在所有既有引擎之后；launchTarget 保存 profile id（`-g` 参数）。
         // 同一份数据有多个语言变体（Windows／Steam 版）时，这里取默认变体并带上全部候选，由 scanLaunchTarget 按偏好选。
-        val impacto = ImpactoGameCatalog.candidates(impactoRootNames, impactoDataNames)
+        val impacto = ImpactoGameCatalog.candidatesFor(impactoEntries, impactoRules)
         ImpactoGameCatalog.pick(impacto)?.let {
             return Detection(
                 EngineType.IMPACTO,
@@ -1586,6 +1617,10 @@ object EngineScanner {
                 titleHint = it.title,
                 launchTargetChoices = if (impacto.size > 1) impacto.map { game -> game.profileId } else emptyList(),
             )
+        }
+        // 像 MAGES. 但没有 profile 能识别：仍作为 MAGES. 游戏入库（标题标注「暂不支持」），用布局指定的 profile 尝试运行
+        ImpactoGameCatalog.unsupportedLayoutFor(impactoEntries, impactoRules)?.let {
+            return Detection(EngineType.IMPACTO, 60, it.tryProfile, IMPACTO_MODULE_ALIAS, unsupported = true)
         }
         return UNKNOWN_DETECTION
     }

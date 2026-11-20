@@ -657,6 +657,7 @@
     <string name="patch_processing">処理中</string>
     <string name="patch_download_install">ダウンロードしてインストール</string>
     <string name="scan_unnamed_game">名称未設定のゲーム</string>
+    <string name="scan_impacto_unsupported_title">%1$s · MAGES. ゲーム（未対応）</string>
     <string name="scan_unnamed_directory">名称未設定フォルダ</string>
 
     <string name="auth_hikarinagi_client_id_missing">Hikarinagi Client ID が設定されていません</string>

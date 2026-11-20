@@ -7,10 +7,11 @@ entry is not something upstream mounts, a title differs, or a catalog profile do
 Lua and does not prove any game runs.
 
 Scope: the upstream profiles, declared as game("id", "title", "entry", ...). The Windows/Steam editions
-(pcEdition("mo6tw-pc...", ...)) are defined by the host repository's patch series, not by the pinned upstream commit,
-so the upstream comparison skips them and lists them as a note. With --host-profiles they are compared against the
-"pc" detect blocks of the host's engine/impacto/profiles.json (yuukana1/Tyranor-Next-MAGES): same profile ids, languages,
-text archives and required files. That is a comparison of two copies of the same contract, not a game run.
+(pcEdition("mo6tw-pc...", ...) for language variants, pcGame("sg-pc", ...) for the others) are defined by the host
+repository's patch series, not by the pinned upstream commit, so the upstream comparison skips them and lists them as a
+note. With --host-profiles they are compared against the "pc" detect blocks of the host's engine/impacto/profiles.json
+(yuukana1/Tyranor-Next-MAGES): same profile ids, languages, text archives and required files. That is a comparison of two
+copies of the same contract, not a game run.
 
 Kotlin comments are ignored: a commented-out or mentioned call is not a catalog entry.
 """
@@ -44,6 +45,10 @@ PC_EDITION_CALL = re.compile(r'pcEdition\(\s*"([^"]+)"')
 # Every call site of the helper (not its declaration): all of them must be read completely.
 PC_EDITION_ANY = re.compile(r'(?<!fun )pcEdition\(')
 PC_EDITION_FULL = re.compile(r'pcEdition\(\s*"([^"]+)"\s*,\s*("[^"]+"|\w+)\s*,\s*"([^"]+)"\s*,?\s*\)')
+# Host patch series profiles without language variants: pcGame("id", "title", MIN_VERSION, "entry", ...).
+PC_GAME_ANY = re.compile(r'(?<!fun )pcGame\(')
+PC_GAME_CALL = re.compile(r'(?<!fun )pcGame\(\s*"([^"]+)"')
+PC_GAME_FULL = re.compile(r'pcGame\(\s*"([^"]+)"\s*,\s*"[^"]*"\s*,\s*\w+\s*,((?:\s*"[^"]+"\s*,?)+)\s*\)', re.S)
 # A string constant is exactly one string literal. "a" + ".b" or any other expression is not recorded: a member that
 # refers to it is then unreadable and reported, never compared with a truncated value.
 CONST_STRING = re.compile(r'const val (\w+) = "([^"]*)"[ \t]*(?:\r?\n|$)', re.M)
@@ -138,6 +143,15 @@ def parse_pc_editions(text):
     return editions
 
 
+def parse_pc_games(text):
+    """profile id -> set of required paths for every pcGame(...) call; None when any call cannot be read completely."""
+    text = strip_comments(text)
+    parsed = PC_GAME_FULL.findall(text)
+    if len(parsed) != len(PC_GAME_ANY.findall(text)):
+        return None
+    return {profile: set(re.findall(r'"([^"]+)"', entries)) for profile, entries in parsed}
+
+
 def resolve_members(arguments, constants):
     """Members of a Kotlin setOf(...) argument list as strings: string literals and string constants.
 
@@ -197,7 +211,8 @@ def check(catalog_path, source):
     games = parse_catalog(text)
     if not games:
         return ['no game(...) entries found in the catalog'], notes
-    editions = sorted(set(PC_EDITION_CALL.findall(strip_comments(text))))
+    stripped = strip_comments(text)
+    editions = sorted(set(PC_EDITION_CALL.findall(stripped)) | set(PC_GAME_CALL.findall(stripped)))
     if editions:
         notes.append(
             f'{editions}: defined by the host patch series, not by upstream; skipped here '
@@ -230,23 +245,33 @@ def check(catalog_path, source):
 
 
 def check_host_profiles(catalog_text, profiles_path):
-    """Compare the catalog's pcEdition entries with the "pc" detect blocks of the host's profiles.json."""
+    """Compare the catalog's pcEdition / pcGame entries with the "pc" detect blocks of the host's profiles.json."""
     data = json.loads(Path(profiles_path).read_text(encoding='utf-8'))
     host = {p['id']: p for p in data.get('profiles', []) if (p.get('detect') or {}).get('layout') == 'pc'}
     editions = parse_pc_editions(catalog_text)
+    games = parse_pc_games(catalog_text)
     required = pc_requirements(catalog_text)
-    if editions is None or required is None:
+    if editions is None or required is None or games is None:
         return [
             'cannot read the Windows/Steam editions or their requirements '
-            '(pcEdition calls, DATA_DIR, PC_COMMON_DATA_ENTRIES, the pcEdition helper) from the catalog',
+            '(pcEdition / pcGame calls, DATA_DIR, PC_COMMON_DATA_ENTRIES, the pcEdition helper) from the catalog',
         ]
     if not host:
         return ['the host profiles.json has no profile with detect.layout "pc"']
     problems = []
-    for profile in sorted(set(host) - set(editions)):
+    for profile in sorted(set(host) - set(editions) - set(games)):
         problems.append(f'{profile}: a "pc" profile of the host is missing from the catalog')
-    for profile in sorted(set(editions) - set(host)):
-        problems.append(f'{profile}: catalog pcEdition is not a "pc" profile in the host profiles.json')
+    for profile in sorted((set(editions) | set(games)) - set(host)):
+        problems.append(f'{profile}: catalog pcEdition / pcGame is not a "pc" profile in the host profiles.json')
+    for profile in sorted(set(host) & set(games)):
+        detect = host[profile]['detect']
+        if host[profile].get('language') is not None or detect.get('textArchive') is not None:
+            problems.append(f'{profile}: the host has a language variant, the catalog a pcGame without one')
+        if set(detect.get('allOf', [])) != games[profile]:
+            problems.append(
+                f'{profile}: required files {sorted(games[profile])} differ from the host allOf '
+                f'{sorted(detect.get("allOf", []))}',
+            )
     for profile in sorted(set(host) & set(editions)):
         detect, edition = host[profile]['detect'], editions[profile]
         if host[profile].get('language') != edition['language']:
