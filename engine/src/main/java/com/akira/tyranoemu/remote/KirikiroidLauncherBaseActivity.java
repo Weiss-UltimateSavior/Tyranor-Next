@@ -3,7 +3,6 @@ package com.akira.tyranoemu.remote;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.os.Build;
@@ -15,6 +14,7 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Toast;
 
+import com.core.engine.EnginePlayerOrientation;
 import com.core.engine.EngineStartupOverlay;
 import com.core.engine.LaunchContract;
 
@@ -70,7 +70,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
 
     @Override
     public void setRequestedOrientation(int requestedOrientation) {
-        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        EnginePlayerOrientation.applyWithSuper(this, super::setRequestedOrientation);
     }
     private String pendingGamePath;
     private boolean pendingMaps;
@@ -92,6 +92,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
 
     @Override
     public void onCreate(Bundle bundle) {
+        EnginePlayerOrientation.lockOnCreate(this, bundle);
         doSetSystemUiVisibility();
         NativeBridge.configureSafMirror(
                 getIntent().getStringExtra(LaunchContract.SAF_MIRROR_INDEX),
@@ -771,6 +772,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     @Override
     public void onResume() {
         super.onResume();
+        EnginePlayerOrientation.applyLocked(this);
         if (graphicsOverlay != null) graphicsOverlay.show();
     }
 

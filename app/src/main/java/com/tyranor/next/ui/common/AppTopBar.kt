@@ -28,7 +28,7 @@ import androidx.compose.ui.unit.Dp
 internal val TopBarEntranceDistance: Dp = 10.dp
 
 /**
- * 一级页面（首页 / 游戏 / 引擎 / 设置）的统一顶部栏。
+ * 一级页面（首页 / 游戏 / 引擎 / 工具 / 设置）的统一顶部栏。
  *
  * 透明背景 → statusBarsPadding → 64dp 标题行；标题居左、titleLarge Bold，
  * 默认使用页面前景色 [PageTextColor]。背景由页面根层提供，不能用不透明色覆盖。

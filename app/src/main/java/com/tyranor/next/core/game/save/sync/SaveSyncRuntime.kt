@@ -14,6 +14,8 @@ import com.core.engine.LaunchContract
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.engine.runtime.RuntimeModuleRegistry
+import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.SystemNnnGameDirectory
 import com.tyranor.next.core.game.save.GameSaveException
 import com.tyranor.next.core.game.save.GameSaveManager
@@ -63,6 +65,14 @@ object SaveSyncRuntime {
         internal val launches: List<ExternalSaveLaunch>,
         internal val sessionToken: String,
         internal val sessionActiveKey: String,
+    )
+    internal data class ExternalExitConfirmationSummary(
+        val uri: String,
+        val title: String,
+        val modulePackageName: String?,
+        val declarationFingerprint: String?,
+        val directoryIdentity: String?,
+        val token: String,
     )
     private data class CachedBaseline(val contentHash: String, val metadataHash: String)
     private data class SaveMetadataObservation(val root: File, val files: List<File>, val metadataHash: String)
@@ -732,15 +742,40 @@ object SaveSyncRuntime {
 
     /** Read on IO before showing the external-player exit dialog, even with WebDAV disabled. */
     internal fun externalExitConfirmation(context: Context, game: ScanGame): ExternalExitConfirmation? {
-        if (!requiresExternalSaveExitConfirmation(game.engine)) return null
-        val directoryKey = activeKey(context, game)
         return synchronized(externalLaunchLock) {
             val marker = externalLaunchStore(context).confirmation(game.uri)
             val launches = externalLaunches.values.filter { it.uri == game.uri }.sortedBy { it.token }
+            val durable = externalLaunchStore(context).pending().filter { it.uri == game.uri }.sortedBy { it.token }
+            val directoryKey = (launches + durable).firstOrNull()?.activeKey ?: activeKey(context, game)
             val session = sessions(context, recoverCorrupt = false).load(SaveContentHash.text(game.uri))
             if (!marker.hasEvidence && launches.isEmpty() && !externalSessionNeedsExitConfirmation(session)) null
             else ExternalExitConfirmation(game.uri, directoryKey, marker, launches,
                 session.optString("token"), session.optString("activeKey"))
+        }
+    }
+
+    /** Opaque token-bound confirmation for a game that is no longer in the library. */
+    internal fun externalExitConfirmation(
+        context: Context,
+        summary: ExternalExitConfirmationSummary,
+    ): ExternalExitConfirmation? = synchronized(externalLaunchLock) {
+        val durable = externalLaunchStore(context).pending()
+        val record = durable.firstOrNull { it.uri == summary.uri && it.token == summary.token } ?: return null
+        if (record.modulePackageName != summary.modulePackageName ||
+            record.declarationFingerprint != summary.declarationFingerprint ||
+            record.activeKey != summary.directoryIdentity) return null
+        val marker = externalLaunchStore(context).confirmation(summary.uri)
+        val launches = externalLaunches.values.filter { it.uri == summary.uri }.sortedBy { it.token }
+        val session = sessions(context, recoverCorrupt = false).load(SaveContentHash.text(summary.uri))
+        ExternalExitConfirmation(summary.uri, record.activeKey ?: summary.uri, marker, launches,
+            session.optString("token"), session.optString("activeKey"))
+    }
+
+    internal fun pendingExternalExitConfirmations(context: Context): List<ExternalExitConfirmationSummary> {
+        val library = GameLibraryFacade.loadGames(context).associateBy { it.uri }
+        return externalLaunchStore(context).pending().distinctBy { it.uri to it.token }.map { record ->
+            ExternalExitConfirmationSummary(record.uri, library[record.uri]?.title.orEmpty(),
+                record.modulePackageName, record.declarationFingerprint, record.activeKey, record.token)
         }
     }
 
@@ -750,16 +785,22 @@ object SaveSyncRuntime {
         game: ScanGame,
         confirmation: ExternalExitConfirmation,
     ) = withContext(Dispatchers.IO) {
-        if (!requiresExternalSaveExitConfirmation(game.engine) || game.uri != confirmation.uri) {
+        if (game.uri != confirmation.uri) {
             throw SaveSyncException(SaveSyncError.LOCAL_STATE_CHANGED)
         }
         SaveSyncLocks.active(confirmation.activeKey) {
             SaveSyncLocks.mutation(confirmation.activeKey) {
                 SaveSyncLocks.session(SaveContentHash.text(game.uri)) {
-                    requireSameSaveDirectory(confirmation.activeKey, activeKey(context, game))
                     synchronized(externalLaunchLock) {
                         val launches = externalLaunches.values.filter { it.uri == game.uri }.sortedBy { it.token }
                         if (launches != confirmation.launches) throw SaveSyncException(SaveSyncError.LOCAL_STATE_CHANGED)
+                        val durable = externalLaunchStore(context).pending().filter { it.uri == game.uri }
+                        val runtimeExternal = durable.any { it.modulePackageName != null } ||
+                            launches.any { it.modulePackageName != null }
+                        if (!runtimeExternal) {
+                            if (!requiresExternalSaveExitConfirmation(game.engine)) throw SaveSyncException(SaveSyncError.LOCAL_STATE_CHANGED)
+                            requireSameSaveDirectory(confirmation.activeKey, activeKey(context, game))
+                        }
                         if (launches.any { it.dispatchSequence == 0L } ||
                             isGameRunning(context, game, includeExternal = false)) {
                             throw SaveSyncException(SaveSyncError.GAME_RUNNING)
@@ -768,7 +809,10 @@ object SaveSyncRuntime {
                         val key = SaveContentHash.text(game.uri)
                         val session = store.load(key)
                         requireExternalConfirmationSession(session, confirmation.sessionToken, confirmation.sessionActiveKey)
-                        externalLaunchStore(context).confirmExit(confirmation.marker, externalLaunches.keys.toSet()) {
+                        externalLaunchStore(context).confirmExit(
+                            confirmation.marker,
+                            externalLaunches.keys.toSet(),
+                        ) {
                             if (confirmation.sessionToken.isNotBlank()) {
                                 store.save(key, session.put("returned", true)
                                     .put("externalExitConfirmedToken", confirmation.sessionToken))
@@ -783,7 +827,70 @@ object SaveSyncRuntime {
         onForeground(context)
     }
 
+    /** Confirms a removed game's exact durable marker; this only releases its exit fence. */
+    internal suspend fun confirmExternalExit(
+        context: Context,
+        summary: ExternalExitConfirmationSummary,
+        confirmation: ExternalExitConfirmation,
+    ) = withContext(Dispatchers.IO) {
+        if (summary.uri != confirmation.uri) throw SaveSyncException(SaveSyncError.LOCAL_STATE_CHANGED)
+        val activeKey = confirmation.activeKey
+        SaveSyncLocks.active(activeKey) {
+            SaveSyncLocks.mutation(activeKey) {
+                SaveSyncLocks.session(SaveContentHash.text(summary.uri)) {
+                    synchronized(externalLaunchLock) {
+                        val durable = externalLaunchStore(context).pending().filter { it.uri == summary.uri }
+                        val record = durable.firstOrNull { it.token == summary.token }
+                            ?: throw SaveSyncException(SaveSyncError.LOCAL_STATE_CHANGED)
+                        if (record.modulePackageName != summary.modulePackageName ||
+                            record.declarationFingerprint != summary.declarationFingerprint ||
+                            record.activeKey != summary.directoryIdentity) {
+                            throw SaveSyncException(SaveSyncError.LOCAL_STATE_CHANGED)
+                        }
+                        val launches = externalLaunches.values.filter { it.uri == summary.uri }.sortedBy { it.token }
+                        if (launches != confirmation.launches) throw SaveSyncException(SaveSyncError.LOCAL_STATE_CHANGED)
+                        val store = sessions(context, recoverCorrupt = false)
+                        val key = SaveContentHash.text(summary.uri)
+                        val session = store.load(key)
+                        requireExternalConfirmationSession(session, confirmation.sessionToken, confirmation.sessionActiveKey)
+                        externalLaunchStore(context).confirmExit(
+                            confirmation.marker,
+                            externalLaunches.keys.toSet(),
+                            tokensToRetire = setOf(summary.token),
+                        ) {
+                            if (confirmation.sessionToken.isNotBlank()) {
+                                store.save(key, session.put("returned", true)
+                                    .put("externalExitConfirmedToken", confirmation.sessionToken))
+                            }
+                        }
+                        externalLaunches.remove(summary.token)
+                    }
+                }
+            }
+        }
+        onForeground(context)
+    }
+
     internal fun launchAdmission(context: Context, game: ScanGame): SaveSyncLaunchAdmission {
+        if (game.engine == EngineType.RUNTIME_MODULE) {
+            val packageName = game.runtimeModulePackage ?: return SaveSyncLaunchAdmission.Unmanaged
+            val snapshot = RuntimeModuleRegistry.state.value
+            if (snapshot.lastError != null) return SaveSyncLaunchAdmission.Unresolved
+            val module = snapshot.modules.firstOrNull { it.packageName == packageName }
+                ?: return SaveSyncLaunchAdmission.Unmanaged
+            val saves = module.saves ?: return SaveSyncLaunchAdmission.Unmanaged
+            val directory = try {
+                GameSaveManager(context).resolveRuntimeSaveLocation(game, packageName, saves.fingerprint).directory
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                return SaveSyncLaunchAdmission.Unresolved
+            } ?: return SaveSyncLaunchAdmission.Unresolved
+            return SaveSyncLaunchAdmission.Directory(
+                SAVE_DIRECTORY_KEY_PREFIX + directory.canonicalPath,
+                bindingIdentity = "$packageName:${saves.fingerprint}",
+            )
+        }
         if (!supportsManagedSave(game.engine)) return SaveSyncLaunchAdmission.Unmanaged
         val admission = optionalSaveSyncLaunchAdmission({ WebDavSettingsStore.isEnabled(context) }) {
             GameSaveManager(context).resolveSaveLocation(game).directory?.canonicalPath?.let { SAVE_DIRECTORY_KEY_PREFIX + it }
@@ -797,18 +904,37 @@ object SaveSyncRuntime {
      * Start hint for every managed launch. Always returns a token, even when optional persistence
      * fails; the caller must keep the in-memory protection and only clear it on a failed launch.
      */
-    internal fun prepareOptionalLaunchGrace(context: Context, game: ScanGame, directoryKey: String? = null): String {
+    internal fun prepareOptionalLaunchGrace(
+        context: Context,
+        game: ScanGame,
+        directoryKey: String? = null,
+        runtimeModulePackageName: String? = null,
+        runtimeSaveFingerprint: String? = null,
+    ): String {
         val token = UUID.randomUUID().toString()
-        if (requiresExternalSaveExitConfirmation(game.engine)) {
+        if (requiresExternalSaveExitConfirmation(game.engine) || runtimeModulePackageName != null) {
             synchronized(externalLaunchLock) {
-                externalLaunches[token] = ExternalSaveLaunch(game.uri, token, directoryKey, externalLaunchOwner)
+                externalLaunches[token] = ExternalSaveLaunch(game.uri, token, directoryKey, externalLaunchOwner,
+                    modulePackageName = runtimeModulePackageName,
+                    declarationFingerprint = runtimeSaveFingerprint)
                 try {
-                    updateExternalLaunch(game) { externalLaunchStore(context).prepare(game.uri, token, directoryKey) }
+                    val prepare = {
+                        externalLaunchStore(context).prepare(
+                            game.uri, token, directoryKey, runtimeModulePackageName, runtimeSaveFingerprint,
+                        )
+                    }
+                    // Declared third-party saves require evidence that survives this process.
+                    if (runtimeModulePackageName != null) prepare() else updateExternalLaunch(game, prepare)
                 } catch (cancelled: CancellationException) {
                     externalLaunches.remove(token)
                     try { externalLaunchStore(context).failed(game.uri, token) }
                     catch (cleanup: Exception) { if (cleanup !== cancelled) cancelled.addSuppressed(cleanup) }
                     throw cancelled
+                } catch (failure: Exception) {
+                    externalLaunches.remove(token)
+                    try { externalLaunchStore(context).failed(game.uri, token) }
+                    catch (cleanup: Exception) { if (cleanup !== failure) failure.addSuppressed(cleanup) }
+                    throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)
                 }
             }
             return token
@@ -827,13 +953,18 @@ object SaveSyncRuntime {
 
     internal fun optionalLaunchDispatched(context: Context, game: ScanGame, token: String?, directoryKey: String?) {
         if (token == null) return
-        if (requiresExternalSaveExitConfirmation(game.engine)) {
+        val prepared = synchronized(externalLaunchLock) { externalLaunches[token] }
+        if (requiresExternalSaveExitConfirmation(game.engine) || prepared?.modulePackageName != null) {
             synchronized(externalLaunchLock) {
                 val sequence = externalDispatchSequence.incrementAndGet()
-                externalLaunches[token] = ExternalSaveLaunch(game.uri, token, directoryKey, externalLaunchOwner, sequence)
+                val modulePackage = prepared?.modulePackageName
+                val fingerprint = prepared?.declarationFingerprint
+                externalLaunches[token] = ExternalSaveLaunch(game.uri, token, directoryKey, externalLaunchOwner,
+                    sequence, modulePackage, fingerprint)
                 // A failed ACK write must retain the prepared marker across app/process restarts.
                 updateExternalLaunch(game) {
-                    externalLaunchStore(context).dispatched(game.uri, token, directoryKey, sequence)
+                    externalLaunchStore(context).dispatched(game.uri, token, directoryKey, sequence,
+                        modulePackage, fingerprint)
                 }
             }
         } else {
@@ -848,7 +979,9 @@ object SaveSyncRuntime {
     internal fun finishOptionalLaunchGrace(context: Context, game: ScanGame, token: String?, success: Boolean) {
         if (success || token == null) return
         nativeLaunchGraces.clear(game.uri, token)
-        if (requiresExternalSaveExitConfirmation(game.engine)) {
+        val isExternal = requiresExternalSaveExitConfirmation(game.engine) ||
+            synchronized(externalLaunchLock) { externalLaunches[token]?.modulePackageName != null }
+        if (isExternal) {
             synchronized(externalLaunchLock) {
                 updateExternalLaunch(game) { externalLaunchStore(context).failed(game.uri, token) }
                 externalLaunches.remove(token)

@@ -63,7 +63,9 @@ object HomeWebUrls {
         return candidate
     }
 
-    /** 是否命中内置预设（鲲Gal / 一起萌）。 */
+    /** 是否命中内置预设。 */
     fun isPreset(url: String): Boolean =
-        url == AppSettingsStore.HOME_WEB_URL_KUNGAL || url == AppSettingsStore.HOME_WEB_URL_LETMOE
+        url == AppSettingsStore.HOME_WEB_URL_KUNGAL ||
+            url == AppSettingsStore.HOME_WEB_URL_LETMOE ||
+            url == AppSettingsStore.HOME_WEB_URL_TAKANASHI
 }

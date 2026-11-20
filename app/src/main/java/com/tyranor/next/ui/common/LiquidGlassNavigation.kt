@@ -86,11 +86,10 @@ fun LiquidGlassNavigationBar(
     val mutedColor = unselectedColor
     // 圆角纳入「应用圆角调整」统一控制
     val shape = AppComponentShape
-    // 宽度与「液态玻璃 · 透镜」共用同一套几何：手机取自然宽度（N×76dp + 8dp）并居中，
-    // 宽屏拉伸铺满可用宽度；内部每槽宽度随栏宽自适应。
+    // 与「液态玻璃 · 透镜」共用栏宽，导航项均分栏内空间。
     val spec = GlassBottomBarSpec.Default
     val windowWidthDp = with(density) { LocalWindowInfo.current.containerSize.width.toDp() }
-    val barWidth = spec.clampedBarWidth(items.size, windowWidthDp, stretch = isWideScreen())
+    val barWidth = spec.clampedBarWidth(items.size, windowWidthDp)
     // blur 依赖 RenderEffect（Android 12+ 才生效）；低版本使用轻量实色表面。
     val backdropSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     // 高版本表面半透明以透出模糊内容
@@ -210,9 +209,8 @@ private fun LiquidGlassNavItemView(
 }
 
 /**
- * 当前实际生效的导航栏样式：用户显式选择的样式原样生效；未显式设置时按外观风格解析
- * （白雾玻璃沿用液态玻璃 · 经典，仅做亮玻璃 + 主题色轻染的配色适配）
- * （默认外观 → 液态玻璃 · 经典，玻璃系外观 → 经典 MD），随外观风格切换即时重组。
+ * 当前实际生效的导航栏样式：用户显式选择优先；三个外观主题均默认液态玻璃 · 经典。
+ * 各外观主题的玻璃配色由导航组件负责。
  */
 @Composable
 fun effectiveNavStyle(): String {
@@ -220,7 +218,6 @@ fun effectiveNavStyle(): String {
     return AppSettingsStore.resolveNavStyle(
         style = navStyle,
         enhancedSupported = AppSettingsStore.supportsLiquidGlassEnhanced,
-        glassAppearance = AppThemeColors.isGlass,
     )
 }
 

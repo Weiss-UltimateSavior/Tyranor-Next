@@ -25,7 +25,6 @@ import com.tyranor.next.ui.common.SwitchPreference
  *
  * 仅承载插件 `RenPyConfigurationParser` 实际解析的字段（app.cheats + 8 个 renpy_*）；
  * 版本下拉仍在独立卡片，不在本卡片内。控件只更新本地状态，由外层顶部保存按钮统一落盘。
- * `renpy_dont_use_gl2` 与 JoiPlay 一致采用反选语义：UI 文案为“禁用模型渲染”，checked=!dontUseGl2。
  */
 @Composable
 internal fun RenPySettingsCard(
@@ -57,8 +56,8 @@ internal fun RenPySettingsCard(
         SwitchPreference(
             modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
             title = stringResource(R.string.engine_settings_renpy_dont_use_gl2),
-            checked = !settings.dontUseGl2,
-            onCheckedChange = { onSettings(settings.copy(dontUseGl2 = !it)) },
+            checked = settings.dontUseGl2,
+            onCheckedChange = { onSettings(settings.copy(dontUseGl2 = it)) },
         )
         SwitchPreference(
             modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),

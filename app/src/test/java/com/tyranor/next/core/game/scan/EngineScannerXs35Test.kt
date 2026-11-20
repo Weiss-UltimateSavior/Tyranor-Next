@@ -161,7 +161,7 @@ class EngineScannerXs35Test {
 
         val reallive = temporaryFolder.newFolder("RealLive With Stray Ald")
         reallive.resolve("Gameexe.ini").writeText("[REGNAME]")
-        reallive.resolve("SEEN.TXT").writeBytes(realliveToc())
+        reallive.resolve("SEEN.TXT").writeBytes(realLiveSeenArchive())
         reallive.resolve("SA.ALD").writeText("fake")
         assertEquals(EngineType.REALLIVE, EngineScanner.detectEngine(reallive).engine)
 
@@ -197,21 +197,5 @@ class EngineScannerXs35Test {
         nested.resolve("System39.ini").writeText("fake")
 
         assertNotEquals(EngineType.XSYS35, EngineScanner.detectEngine(gameRoot).engine)
-    }
-
-    /** 构造 RealLive `SEEN.TXT` 头：首项 offset/length 指向 `0x1d0` 场景头。 */
-    private fun realliveToc(): ByteArray {
-        val bytes = ByteArray(0x100)
-        writeU32(bytes, 0, 0x40)
-        writeU32(bytes, 4, 16)
-        writeU32(bytes, 0x40, 0x1d0)
-        return bytes
-    }
-
-    private fun writeU32(bytes: ByteArray, at: Int, value: Int) {
-        bytes[at] = (value and 0xFF).toByte()
-        bytes[at + 1] = ((value ushr 8) and 0xFF).toByte()
-        bytes[at + 2] = ((value ushr 16) and 0xFF).toByte()
-        bytes[at + 3] = ((value ushr 24) and 0xFF).toByte()
     }
 }

@@ -46,6 +46,7 @@ import com.tyranor.next.core.game.save.sync.SaveSyncException
 import com.tyranor.next.core.game.save.sync.SaveSyncMode
 import com.tyranor.next.core.game.save.sync.SaveSyncRetention
 import com.tyranor.next.core.game.save.sync.SaveSyncService
+import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
 import com.tyranor.next.core.game.save.sync.WebDavClient
 import com.tyranor.next.core.game.save.sync.WebDavConfig
 import com.tyranor.next.core.game.save.sync.WebDavSettingsStore
@@ -154,6 +155,9 @@ private fun WebDavSettingsScreen() {
     val manualDirection = SaveSyncDirection.entries.firstOrNull { it.name == manualDirectionName }
         ?: SaveSyncDirection.PULL
     var showResetConfirm by remember { mutableStateOf(false) }
+    var pendingExitSessions by remember { mutableStateOf<List<SaveSyncRuntime.ExternalExitConfirmationSummary>>(emptyList()) }
+    var confirmingExitSession by remember { mutableStateOf<SaveSyncRuntime.ExternalExitConfirmationSummary?>(null) }
+    var exitConfirmationSnapshot by remember { mutableStateOf<SaveSyncRuntime.ExternalExitConfirmation?>(null) }
     // 控件的视觉置灰按「忙碌持续超过一瞬」才出现：未配置 / 秒失败的操作 busy 只翻转几毫秒，直接当 enabled 用，连点会让整页闪灰。
     // 重复提交仍由各处理函数里即时的 canInteract()（含 busy）拦截。
     val busyShown = rememberDelayedBusy(busy)
@@ -363,6 +367,18 @@ private fun WebDavSettingsScreen() {
         }
     }
 
+    LaunchedEffect("pendingExternalExitConfirmations") {
+        try {
+            pendingExitSessions = withContext(Dispatchers.IO) {
+                SaveSyncRuntime.pendingExternalExitConfirmations(context)
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            pendingExitSessions = emptyList()
+        }
+    }
+
     // 动效兜底：任务门闩放开时，在途标记一定收回（避免未启动即被取消的任务留下呼吸）
     LaunchedEffect(busy) {
         if (!busy) {
@@ -416,6 +432,54 @@ private fun WebDavSettingsScreen() {
                                 enabled = masterAvailable,
                                 onCheckedChange = { setMasterEnabled(it) },
                             )
+                        }
+                    }
+                }
+                if (pendingExitSessions.isNotEmpty()) {
+                    item(key = "pendingExternalExitSessions") {
+                        MiuixCard(
+                            modifier = Modifier.pressSquishGroup().then(listItemMotion()).staggeredEntrance(1).fillMaxWidth().glassBorder(),
+                            cornerRadius = AppComponentCornerRadius,
+                        ) {
+                            Column(Modifier.padding(vertical = 4.dp)) {
+                                pendingExitSessions.forEach { session ->
+                                    AppNavItem(
+                                        title = session.title.ifBlank { session.uri },
+                                        summary = stringResource(
+                                            R.string.save_external_exit_identity,
+                                            session.modulePackageName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.save_external_exit_identity_unrecorded),
+                                            session.directoryIdentity?.takeIf { it.isNotBlank() } ?: stringResource(R.string.save_external_exit_identity_unrecorded),
+                                        ),
+                                        leadingIcon = R.drawable.ic_sheet_saves,
+                                        leadingIconTint = MiuixTheme.colorScheme.primary,
+                                        showArrow = false,
+                                        onClick = if (busy) null else ({
+                                            busy = true
+                                            scope.launch {
+                                                try {
+                                                    val confirmation = withContext(Dispatchers.IO) {
+                                                        SaveSyncRuntime.externalExitConfirmation(context, session)
+                                                    }
+                                                    if (confirmation != null) {
+                                                        confirmingExitSession = session
+                                                        exitConfirmationSnapshot = confirmation
+                                                    } else {
+                                                        pendingExitSessions = withContext(Dispatchers.IO) {
+                                                            SaveSyncRuntime.pendingExternalExitConfirmations(context)
+                                                        }
+                                                    }
+                                                } catch (cancelled: CancellationException) {
+                                                    throw cancelled
+                                                } catch (failure: Exception) {
+                                                    showToast(failureMessage(failure), AppNotice.Kind.Limit)
+                                                } finally {
+                                                    busy = false
+                                                }
+                                            }
+                                        }),
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -692,6 +756,65 @@ private fun WebDavSettingsScreen() {
                 )
             },
             dismissButton = { DialogTextButton(stringResource(R.string.common_cancel)) { cancelEdit() } },
+        )
+    }
+
+    confirmingExitSession?.let { session ->
+        val confirmation = exitConfirmationSnapshot
+        val exitDoneMessage = stringResource(R.string.save_external_exit_done)
+        AppAlertDialog(
+            onDismissRequest = { confirmingExitSession = null; exitConfirmationSnapshot = null },
+            title = { Text(stringResource(R.string.save_external_exit_title), style = MaterialTheme.typography.titleMedium) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.save_external_exit_message, session.title.ifBlank { session.uri }))
+                    Text(
+                        stringResource(
+                            R.string.save_external_exit_identity,
+                            session.modulePackageName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.save_external_exit_identity_unrecorded),
+                            session.directoryIdentity?.takeIf { it.isNotBlank() } ?: stringResource(R.string.save_external_exit_identity_unrecorded),
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                DialogTextButton(
+                    text = stringResource(R.string.common_confirm),
+                    enabled = !busy && confirmation != null,
+                    onClick = {
+                        if (busy || confirmation == null) return@DialogTextButton
+                        busy = true
+                        scope.launch {
+                            try {
+                                withContext(Dispatchers.IO) {
+                                    SaveSyncRuntime.confirmExternalExit(context, session, confirmation)
+                                    SaveSyncRuntime.pendingExternalExitConfirmations(context)
+                                }.also { pendingExitSessions = it }
+                                confirmingExitSession = null
+                                exitConfirmationSnapshot = null
+                                showToast(exitDoneMessage, AppNotice.Kind.Success)
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (failure: Exception) {
+                                showToast(failureMessage(failure), AppNotice.Kind.Limit)
+                                pendingExitSessions = withContext(Dispatchers.IO) {
+                                    SaveSyncRuntime.pendingExternalExitConfirmations(context)
+                                }
+                            } finally {
+                                busy = false
+                            }
+                        }
+                    },
+                )
+            },
+            dismissButton = {
+                DialogTextButton(text = stringResource(R.string.common_cancel), onClick = {
+                    confirmingExitSession = null
+                    exitConfirmationSnapshot = null
+                })
+            },
         )
     }
 

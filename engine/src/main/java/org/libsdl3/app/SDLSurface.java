@@ -156,6 +156,10 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         boolean skip = false;
         int requestedOrientation = SDLActivity.mSingleton.getRequestedOrientation();
 
+        // 为何不与 org.libsdl.app / app32 副本一样补齐 REVERSE_PORTRAIT / USER_PORTRAIT
+        // （P3-3）：本副本为 SDL3 上游原样，其下方「多窗口不跳过」豁免（Build.VERSION.SDK_INT
+        // >= 24 时 skip = false）在本仓库 minSdk 26 下恒为真，整个 skip 判定是死分支，
+        // 扩常量没有任何行为影响；保留上游原样并以此注释锚定副本差异。
         if (requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT) {
             if (mWidth > mHeight) {
                skip = true;

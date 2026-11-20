@@ -30,6 +30,7 @@
 - [外置主机模拟器跳转接入方案（PPSSPP / Eden / Winlator）](外置主机模拟器跳转接入方案.md)
 - [第三方 APK 运行时模块接入方案（计划）](第三方APK运行时模块接入方案.md)
 - [第三方 APK 运行时模块接入指南](第三方APK运行时模块接入指南.md)
+- [第三方 APK 运行时模块单游戏引擎配置与存档管理计划](第三方APK运行时模块单游戏引擎配置计划.md)
 - [统一引擎宿主启动加载界面实施计划](统一引擎宿主启动加载界面实施计划.md)
 - [汉化补丁字体映射移植适配说明](汉化补丁字体映射移植适配说明.md)
 
@@ -67,6 +68,7 @@
 - [Ethornell 测试验收记录](Ethornell测试验收记录.md)
 - [WebDAV Android 设备验收记录](WebDAV-device-acceptance.md)
 - [应用层代码审查问题清单](应用层代码审查问题清单.md)
+- 游玩状态/四源绑定审计快照九份（`play-status-audit-20261114.md`、`play-status-audit-20261115.md`、`play-status-audit-20261115-cf56a52e.md`、`play-status-audit-20261115-post-cf56a52e.md`、`play-status-audit-20261115-r5.md`、`play-status-audit-20261115-r6.md`、`play-status-audit-20261116.md`、`play-status-audit-20261116-r8.md`、`play-status-audit-20261116-r9.md`）：分支 `codex/bangumi-vndb-play-status` 逐轮审计/修复记录；快照时效——每份仅对其标注的 HEAD 版本有效，当前行为以 SPEC.md 与 ARCHITECTURE.md 为准，跨轮汇总裁决以各轮汇总报告为准。
 
 ## ADR
 

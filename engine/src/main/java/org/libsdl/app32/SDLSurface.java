@@ -140,11 +140,20 @@ public class SDLSurface extends SurfaceView implements SurfaceHolder.Callback,
         boolean skip = false;
         int requestedOrientation = SDLActivity.mSingleton.getRequestedOrientation();
 
-        if (requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT) {
+        // 竖屏分支补齐 REVERSE_PORTRAIT / USER_PORTRAIT（P3-3）：与 org.libsdl.app（ONS 2.26.3）
+        // 副本及横屏分支保持同一套常量面，消除三份 SDLSurface 的方向判断漂移。
+        // 本仓库宿主（Xs35/Xs4）只锁定具体横屏常量（0/8），竖屏常量实际不会出现，行为无影响。
+        if (requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
+                || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT) {
             if (mWidth > mHeight) {
                skip = true;
             }
-        } else if (requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
+        } else if (requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+                || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE) {
             if (mWidth < mHeight) {
                skip = true;
             }

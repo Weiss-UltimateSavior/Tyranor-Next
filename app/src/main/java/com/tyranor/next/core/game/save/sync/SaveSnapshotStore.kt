@@ -4,6 +4,8 @@ import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.nio.file.AtomicMoveNotSupportedException
+import org.json.JSONArray
+import org.json.JSONObject
 
 /** Private, per-game immutable ZIP history. Only a successful new version can evict an old one. */
 class SaveSnapshotStore(private val root: File) {
@@ -25,13 +27,26 @@ class SaveSnapshotStore(private val root: File) {
             val source = if (File(directory, file.name + ".cloud").isFile) {
                 SaveVersionSource.CLOUD
             } else SaveVersionSource.LOCAL
-            SaveVersion(parsed.name, parsed.contentHash, parsed.createdAt, file.length(), source, parsed.restored, parsed.previousCreatedAt)
+            SaveVersion(parsed.name, parsed.contentHash, parsed.createdAt, file.length(), source, parsed.restored,
+                parsed.previousCreatedAt, readProvenance(File(directory, file.name + ".runtime.json")))
         }.sortedWith(compareByDescending<SaveVersion> { it.createdAt }.thenByDescending { it.id })
     }
 
     fun file(gameKey: String, id: String): File {
         if (SaveVersionNames.parse(id) == null) throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
         return File(directory(gameKey), id)
+    }
+
+    /** Records provenance only after the caller has matched these bytes to a stable active save. */
+    fun recordRuntimeProvenance(gameKey: String, version: SaveVersion, provenance: RuntimeSaveProvenance): SaveVersion {
+        if (version.contentHash != SaveVersionNames.parse(version.id)?.contentHash) {
+            throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
+        }
+        val archive = file(gameKey, version.id)
+        if (!archive.isFile) throw SaveSyncException(SaveSyncError.LOCAL_IO)
+        val merged = version.runtimeProvenances + provenance
+        writeProvenance(File(archive.parentFile, archive.name + ".runtime.json"), merged)
+        return version.copy(runtimeProvenances = merged)
     }
 
     /** Reads one cached ZIP on demand; false is limited to an archive-integrity failure. */
@@ -57,6 +72,7 @@ class SaveSnapshotStore(private val root: File) {
         refreshExisting: Boolean = false,
         previousCreatedAt: Long? = null,
         protectedHashes: Set<String> = emptySet(),
+        runtimeProvenance: RuntimeSaveProvenance? = null,
         check: () -> Unit = {},
     ): SaveVersion {
         val hash = SaveContentHash.archive(archive, check)
@@ -77,11 +93,14 @@ class SaveSnapshotStore(private val root: File) {
             } else {
                 replaceVerifiedArchive(gameKey, it, archive, hash, check)
             }
-            if (refreshExisting || (restored && !current.restored)) {
-                return refreshVersion(gameKey, current, if (refreshExisting) createdAt else current.createdAt,
-                    previousCreatedAt ?: if (refreshExisting) current.createdAt else null)
+            val withProvenance = if (runtimeProvenance == null) current else {
+                recordRuntimeProvenance(gameKey, current, runtimeProvenance)
             }
-            return current
+            if (refreshExisting || (restored && !withProvenance.restored)) {
+                return refreshVersion(gameKey, withProvenance, if (refreshExisting) createdAt else withProvenance.createdAt,
+                    previousCreatedAt ?: if (refreshExisting) withProvenance.createdAt else null)
+            }
+            return withProvenance
         }
         if (!directory.isDirectory && !directory.mkdirs()) throw SaveSyncException(SaveSyncError.LOCAL_IO)
         val id = if (restored) SaveVersionNames.createRestored(createdAt, hash, previousCreatedAt)
@@ -97,11 +116,13 @@ class SaveSnapshotStore(private val root: File) {
                 Files.move(temp.toPath(), destination.toPath())
             }
             try {
+                if (runtimeProvenance != null) writeProvenance(File(directory, id + ".runtime.json"), setOf(runtimeProvenance))
                 if (source == SaveVersionSource.CLOUD) File(directory, id + ".cloud").writeText("")
             } finally {
                 prune(gameKey, keepId = id, protectedHashes = protectedHashes, check = check)
             }
-            return SaveVersion(id, hash, createdAt, destination.length(), source, restored, previousCreatedAt)
+            return SaveVersion(id, hash, createdAt, destination.length(), source, restored, previousCreatedAt,
+                runtimeProvenance?.let(::setOf).orEmpty())
         } finally {
             SaveSyncTemporaryFiles.release(temp)
         }
@@ -170,16 +191,21 @@ class SaveSnapshotStore(private val root: File) {
         val target = file(gameKey, id)
         val oldCloudMarker = File(source.parentFile, source.name + ".cloud")
         val newCloudMarker = File(target.parentFile, target.name + ".cloud")
+        val oldRuntimeMarker = File(source.parentFile, source.name + ".runtime.json")
+        val newRuntimeMarker = File(target.parentFile, target.name + ".runtime.json")
         // Write source metadata first; a failed rename leaves the old valid ZIP untouched.
         if (version.source == SaveVersionSource.CLOUD) newCloudMarker.writeText("")
+        if (oldRuntimeMarker.isFile) Files.copy(oldRuntimeMarker.toPath(), newRuntimeMarker.toPath(), StandardCopyOption.REPLACE_EXISTING)
         try {
             try { Files.move(source.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE) }
             catch (_: AtomicMoveNotSupportedException) { Files.move(source.toPath(), target.toPath()) }
         } catch (failure: Exception) {
             newCloudMarker.delete()
+            newRuntimeMarker.delete()
             throw failure
         }
         oldCloudMarker.delete()
+        oldRuntimeMarker.delete()
         removeOrphanMarkers(directory(gameKey))
         return version.copy(id = id, createdAt = createdAt, restored = true, previousCreatedAt = previousCreatedAt)
     }
@@ -215,6 +241,7 @@ class SaveSnapshotStore(private val root: File) {
             val archive = file(gameKey, old.id)
             if (!archive.delete()) throw SaveSyncException(SaveSyncError.LOCAL_IO)
             File(archive.parentFile, archive.name + ".cloud").delete()
+            File(archive.parentFile, archive.name + ".runtime.json").delete()
         }
     }
 
@@ -222,11 +249,56 @@ class SaveSnapshotStore(private val root: File) {
         if (!directory.exists()) return
         val files = directory.listFiles() ?: throw SaveSyncException(SaveSyncError.LOCAL_IO)
         for (file in files) {
-            if (!file.isFile || !file.name.endsWith(".cloud")) continue
-            val archive = file.name.removeSuffix(".cloud")
+            if (!file.isFile || (!file.name.endsWith(".cloud") && !file.name.endsWith(".runtime.json"))) continue
+            val archive = if (file.name.endsWith(".cloud")) file.name.removeSuffix(".cloud")
+                else file.name.removeSuffix(".runtime.json")
             if (SaveVersionNames.parse(archive) != null && !File(directory, archive).isFile && !file.delete()) {
                 throw SaveSyncException(SaveSyncError.LOCAL_IO)
             }
+        }
+    }
+
+    private fun readProvenance(file: File): Set<RuntimeSaveProvenance> {
+        if (!file.isFile) return emptySet()
+        return try {
+            val array = JSONObject(file.readText()).optJSONArray("items") ?: return emptySet()
+            buildSet {
+                for (index in 0 until array.length()) {
+                    val item = array.optJSONObject(index) ?: continue
+                    val packageName = item.optString("package")
+                    val fingerprint = item.optString("fingerprint")
+                    val directory = item.optString("directory")
+                    if (packageName.isNotBlank() && fingerprint.matches(Regex("[a-f0-9]{64}")) && directory.isNotBlank()) {
+                        add(RuntimeSaveProvenance(packageName, fingerprint, directory))
+                    }
+                }
+            }
+        } catch (failure: Exception) {
+            if (failure is SecurityException) throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)
+            emptySet() // Corrupt/missing provenance is unknown and activation fails closed.
+        }
+    }
+
+    private fun writeProvenance(file: File, provenance: Set<RuntimeSaveProvenance>) {
+        val parent = file.parentFile ?: throw SaveSyncException(SaveSyncError.LOCAL_IO)
+        if (!parent.isDirectory && !parent.mkdirs()) throw SaveSyncException(SaveSyncError.LOCAL_IO)
+        val array = JSONArray()
+        provenance.sortedWith(compareBy({ it.packageName }, { it.savesFingerprint }, { it.canonicalDirectory })).forEach {
+            array.put(JSONObject().put("package", it.packageName).put("fingerprint", it.savesFingerprint)
+                .put("directory", it.canonicalDirectory))
+        }
+        val temp = SaveSyncTemporaryFiles.create("snapshot_meta_", ".tmp", parent)
+        try {
+            java.io.FileOutputStream(temp).use { output ->
+                output.write(JSONObject().put("items", array).toString().toByteArray(Charsets.UTF_8))
+                output.fd.sync()
+            }
+            try { Files.move(temp.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING) }
+            catch (_: AtomicMoveNotSupportedException) { Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING) }
+        } catch (failure: Exception) {
+            throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)
+        } finally {
+            SaveSyncTemporaryFiles.release(temp)
         }
     }
 

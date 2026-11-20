@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.net.Uri
 import androidx.exifinterface.media.ExifInterface
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -14,28 +15,42 @@ import kotlin.math.max
 private const val CROP_SOURCE_MAX_DIMENSION_PX = 2048
 
 /** Decodes an image for the shortcut cropper, including EXIF orientation correction. */
-internal fun decodeShortcutCropBitmap(context: Context, uri: Uri): Bitmap? = runCatching {
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    openShortcutCropInputStream(context, uri)?.use { input ->
-        BitmapFactory.decodeStream(input, null, bounds)
-    }
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+internal fun decodeShortcutCropBitmap(context: Context, uri: Uri): Bitmap? {
+    var decoded: Bitmap? = null
+    var oriented: Bitmap? = null
+    var returned = false
+    return try {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        openShortcutCropInputStream(context, uri)?.use { input ->
+            BitmapFactory.decodeStream(input, null, bounds)
+        }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
 
-    val maxDimension = max(bounds.outWidth, bounds.outHeight)
-    var sampleSize = 1
-    while (maxDimension / sampleSize > CROP_SOURCE_MAX_DIMENSION_PX && sampleSize < (1 shl 30)) {
-        sampleSize = sampleSize shl 1
+        val maxDimension = max(bounds.outWidth, bounds.outHeight)
+        var sampleSize = 1
+        while (maxDimension / sampleSize > CROP_SOURCE_MAX_DIMENSION_PX && sampleSize < (1 shl 30)) {
+            sampleSize = sampleSize shl 1
+        }
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+            inScaled = false
+        }
+        decoded = openShortcutCropInputStream(context, uri)?.use { input ->
+            BitmapFactory.decodeStream(input, null, options)
+        } ?: return null
+        oriented = applyShortcutCropExifOrientation(context, uri, decoded)
+        returned = true
+        oriented
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        null
+    } finally {
+        if (!returned && oriented != null && !oriented.isRecycled) oriented.recycle()
+        if (decoded != null && decoded !== oriented && !decoded.isRecycled) decoded.recycle()
     }
-    val options = BitmapFactory.Options().apply {
-        inSampleSize = sampleSize
-        inPreferredConfig = Bitmap.Config.ARGB_8888
-        inScaled = false
-    }
-    val decoded = openShortcutCropInputStream(context, uri)?.use { input ->
-        BitmapFactory.decodeStream(input, null, options)
-    } ?: return@runCatching null
-    applyShortcutCropExifOrientation(context, uri, decoded)
-}.getOrNull()
+}
 
 /** Writes the selected square crop to a private temporary PNG for ShortcutManager. */
 internal fun writeShortcutCropBitmap(
@@ -46,6 +61,7 @@ internal fun writeShortcutCropBitmap(
 ): Uri? {
     val sourceRect = cropSourceRect(transform, metrics) ?: return null
     var outputFile: File? = null
+    var committed = false
     return try {
         val cropped = Bitmap.createBitmap(
             bitmap,
@@ -54,16 +70,24 @@ internal fun writeShortcutCropBitmap(
             sourceRect.size,
             sourceRect.size,
         )
-        clearPreviousShortcutCropFiles(context.cacheDir)
-        outputFile = File.createTempFile("shortcut_crop_", ".png", context.cacheDir)
-        FileOutputStream(outputFile).use { output ->
-            check(cropped.compress(Bitmap.CompressFormat.PNG, 100, output))
+        try {
+            clearPreviousShortcutCropFiles(context.cacheDir)
+            outputFile = File.createTempFile("shortcut_crop_", ".png", context.cacheDir)
+            FileOutputStream(outputFile).use { output ->
+                check(cropped.compress(Bitmap.CompressFormat.PNG, 100, output))
+            }
+            val resultUri = Uri.fromFile(outputFile)
+            committed = true
+            resultUri
+        } finally {
+            if (cropped !== bitmap) cropped.recycle()
         }
-        if (cropped !== bitmap) cropped.recycle()
-        Uri.fromFile(outputFile)
-    } catch (_: Throwable) {
-        outputFile?.delete()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
         null
+    } finally {
+        if (!committed) outputFile?.delete()
     }
 }
 
@@ -80,24 +104,30 @@ internal fun deleteShortcutCropBitmap(context: Context, uri: Uri?) {
     }
 }
 
-/** Opens a crop source through ContentResolver and falls back to its local file path. */
+/** Opens a crop source through ContentResolver and falls back to its local file path for file/empty schemes. */
 private fun openShortcutCropInputStream(context: Context, uri: Uri): InputStream? {
     val resolverStream = runCatching { context.contentResolver.openInputStream(uri) }.getOrNull()
     if (resolverStream != null) return resolverStream
+    val scheme = uri.scheme
+    if (!scheme.equals("file", ignoreCase = true) && !scheme.isNullOrBlank()) return null
     val path = uri.path?.takeIf { it.isNotBlank() } ?: return null
     return runCatching { File(path).inputStream() }.getOrNull()
 }
 
 /** Applies the source photo's EXIF orientation without changing the crop math contract. */
 private fun applyShortcutCropExifOrientation(context: Context, uri: Uri, bitmap: Bitmap): Bitmap {
-    val orientation = runCatching {
+    val orientation = try {
         openShortcutCropInputStream(context, uri)?.use { input ->
             ExifInterface(input).getAttributeInt(
                 ExifInterface.TAG_ORIENTATION,
                 ExifInterface.ORIENTATION_NORMAL,
             )
-        }
-    }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+        } ?: ExifInterface.ORIENTATION_NORMAL
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        ExifInterface.ORIENTATION_NORMAL
+    }
     val matrix = Matrix().apply {
         when (orientation) {
             ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> setScale(-1f, 1f)
@@ -116,9 +146,11 @@ private fun applyShortcutCropExifOrientation(context: Context, uri: Uri, bitmap:
         }
     }
     if (matrix.isIdentity) return bitmap
-    return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true).also {
-        if (it !== bitmap) bitmap.recycle()
+    val transformed = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    if (transformed !== bitmap && !bitmap.isRecycled) {
+        bitmap.recycle()
     }
+    return transformed
 }
 
 /** Deletes only PNGs generated by the shortcut cropper, leaving unrelated cache files intact. */

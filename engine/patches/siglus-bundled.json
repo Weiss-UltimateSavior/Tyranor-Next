@@ -1,17 +1,20 @@
 {
-  "upstream": "https://github.com/Weiss-UltimateSavior/Tyranor-Next",
+  "upstream": "https://github.com/xmoezzz/siglus_rs",
   "libraryFile": "engine/src/main/jniLibs/arm64-v8a/libsiglus.so",
-  "librarySha256": "c04b44f8a7cb76c5db0fc022839ebcdf64fda1beabbb3652243d69bd43e4e253",
+  "librarySha256": "3817e78c78211e83ca010aab96b388f12114d245f9adeefc4dd681a802825e2e",
   "libraryStatus": "rebuilt-from-siglus_rs",
   "builtFrom": {
     "repository": "https://github.com/Weiss-UltimateSavior/siglus_rs",
     "revision": "19066ea7f36b92fdecaea240a223c9bef14efd2c",
-    "package": "siglus_scene_vm",
+    "package": "game_launcher",
     "target": "aarch64-linux-android",
     "profile": "release",
-    "ndkVersion": "28.0.13004108"
+    "ndkVersion": "28.0.13004108",
+    "androidApi": 26,
+    "rustcVersion": "1.96.0",
+    "cargoNdkVersion": "4.1.2"
   },
-  "purpose": "Use the runtime rebuilt from siglus_rs; read engine-generated key.toml and Gameexe SCREEN_SIZE in the host.",
+  "purpose": "Exports the Siglus Android and RealLive/AVG32/UK2 framebuffer ABIs from one shared library.",
   "configurationFormatReference": {
     "upstream": "https://github.com/xmoezzz/siglus_rs",
     "revision": "5f358ef1360b0439e92aed2b749e8f25d8721954",

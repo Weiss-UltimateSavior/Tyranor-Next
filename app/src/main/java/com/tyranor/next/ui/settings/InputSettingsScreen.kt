@@ -10,6 +10,7 @@ import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -552,7 +553,7 @@ internal fun InputSettingsScreen() {
  * `onDelete` 为 null 表示不可删除（内置默认方案）：入口整体隐藏而不是点击后才报错。
  */
 @Composable
-private fun ProfileRow(
+internal fun ProfileRow(
     profile: InputRemapRepository.ProfileSummary,
     selected: Boolean,
     onUse: () -> Unit,
@@ -586,32 +587,26 @@ private fun ProfileRow(
             modifier = Modifier.fillMaxWidth(),
             label = "profileActions",
         ) { inUse ->
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
             if (!inUse) {
-                Box(Modifier.weight(1f)) {
-                    NoRippleTextButton(text = stringResource(R.string.input_settings_profile_use), onClick = onUse)
-                }
+                NoRippleTextButton(text = stringResource(R.string.input_settings_profile_use), onClick = onUse)
             }
             if (onRename != null) {
-                Box(Modifier.weight(1f)) {
-                    NoRippleTextButton(text = stringResource(R.string.input_settings_profile_rename), onClick = onRename)
-                }
+                NoRippleTextButton(text = stringResource(R.string.input_settings_profile_rename), onClick = onRename)
             }
-            Box(Modifier.weight(1f)) {
-                NoRippleTextButton(text = stringResource(R.string.input_settings_profile_copy), onClick = onCopy)
-            }
-            Box(Modifier.weight(1f)) {
-                NoRippleTextButton(text = stringResource(R.string.input_settings_profile_export), onClick = onExport)
-            }
+            NoRippleTextButton(text = stringResource(R.string.input_settings_profile_copy), onClick = onCopy)
+            NoRippleTextButton(text = stringResource(R.string.input_settings_profile_export), onClick = onExport)
             if (onDelete != null) {
-                Box(Modifier.weight(1f)) {
-                    NoRippleTextButton(
-                        text = stringResource(R.string.input_settings_profile_delete),
-                        // 删除是破坏性动作：语义色取 colorScheme.error（AGENTS.md 3.3）
-                        contentColor = MaterialTheme.colorScheme.error,
-                        onClick = onDelete,
-                    )
-                }
+                NoRippleTextButton(
+                    text = stringResource(R.string.input_settings_profile_delete),
+                    // 删除是破坏性动作：语义色取 colorScheme.error（AGENTS.md 3.3）
+                    contentColor = MaterialTheme.colorScheme.error,
+                    onClick = onDelete,
+                )
             }
         }
         }

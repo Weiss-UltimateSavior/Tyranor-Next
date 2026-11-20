@@ -43,12 +43,18 @@ fun GlassBackground(
         contentColor = MaterialTheme.colorScheme.onBackground,
     ) {
         Box(Modifier.fillMaxSize()) {
+            // 外观风格自带背景（纯色+粒子 / 玻璃渐变 / 白雾底图）
             when {
                 // 白雾玻璃：模糊图片底图 + 白纱提亮 + 主题色环境光
                 AppThemeColors.isMilkGlass -> MilkGlassPageBackgroundLayer()
                 // 复古玻璃：黑灰渐变 + 环境光；默认风格：纯色底 + 主题色粒子
                 AppThemeColors.isGlass -> Box(Modifier.fillMaxSize().glassPageBackground(AppThemeColors.primary))
                 else -> DefaultPageBackgroundLayer()
+            }
+            // 自定义背景图：默认风格由 DefaultPageBackgroundLayer 内部绘制（保证在粒子下方）；
+            // 玻璃系风格自带底图，背景图叠在它之上、页面内容之下
+            if (AppThemeColors.isGlass || AppThemeColors.isMilkGlass) {
+                CustomBackgroundImageLayer()
             }
             Box(Modifier.fillMaxSize()) {
                 content()

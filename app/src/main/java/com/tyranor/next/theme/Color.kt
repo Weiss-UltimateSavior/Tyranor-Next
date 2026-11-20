@@ -223,6 +223,15 @@ val PageSecondaryTextColor: Color
 val SheetSecondaryTextColor: Color
     get() = if (AppThemeColors.isMilkGlass) TextColor else PageSecondaryTextColor
 
+/** 卡片/弹窗内的次要说明文字：与所在面板表面匹配。 */
+val SecondaryTextColor: Color
+    get() = when {
+        AppThemeColors.isMilkGlass -> MilkTextSecondary
+        AppThemeColors.isGlass -> GlassTextSecondary
+        AppThemeColors.isDark -> TextColorDark.copy(alpha = 0.72f)
+        else -> TextColorLight.copy(alpha = 0.6f)
+    }
+
 /** 抽屉遮罩：玻璃面板需要加深与页面之间的层次。 */
 val SheetScrimColor: Color
     get() = Color.Black.copy(

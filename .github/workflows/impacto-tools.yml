@@ -1,0 +1,31 @@
+name: Impacto tools
+
+# Read-only helpers for the Impacto integration (game catalog check, CPK inspector). The host APK itself is built
+# and released from https://github.com/yuukana1/Tyranor-Next-MAGES
+on:
+  pull_request:
+    paths:
+      - 'tools/impacto/**'
+      - 'app/src/main/java/com/tyranor/next/core/engine/external/Impacto*'
+      - 'app/src/main/java/com/tyranor/next/core/game/scan/Impacto*'
+      - '.github/workflows/impacto-tools.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tools:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Run the tool tests
+        run: |
+          python tools/impacto/test-inspect-cpk.py
+          python tools/impacto/test-check-game-catalog.py

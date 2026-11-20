@@ -42,7 +42,7 @@ public final class EngineOrientationDeviceTest {
             "com.ies_net.artemis.VideoViewActivity",
     };
 
-    @Test public void installedPlayersAndVideoKeepFixedLandscapeOnLargeScreens() throws Exception {
+    @Test public void installedPlayersAndVideoAllowSensorLandscapeEntryOnLargeScreens() throws Exception {
         Context app = InstrumentationRegistry.getInstrumentation().getTargetContext();
         assumeTrue("Dedicated startup acceptance package required",
                 "com.tyranor.next.startuptest".equals(app.getPackageName()));
@@ -52,8 +52,8 @@ public final class EngineOrientationDeviceTest {
         for (String host : HOSTS) {
             ComponentName component = new ComponentName(app.getPackageName(), host);
             ActivityInfo info = manager.getActivityInfo(component, 0);
-            assertEquals(host + " allows sensor or reverse rotation",
-                    ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, info.screenOrientation);
+            assertEquals(host + " must allow initial sensor landscape entry before activity lock",
+                    ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE, info.screenOrientation);
             if (Build.VERSION.SDK_INT >= 31) {
                 PackageManager.Property compatibility = manager.getProperty(
                         "android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY", component);

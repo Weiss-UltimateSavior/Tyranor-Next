@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * 导航样式归一化的纯 JVM 测试：四态取值、缺省/未知值回退、透镜档的版本门槛，以及默认外观的
+ * 导航样式归一化的纯 JVM 测试：缺省/未知值回退、透镜档的版本门槛、悬浮按钮停用，以及三个外观主题统一的
  * 默认样式（液态玻璃 · 经典）。这层规则决定旧版本与从新版备份恢复的数据会不会落到降级画面。
  */
 class NavStyleNormalizationTest {
@@ -20,7 +20,6 @@ class NavStyleNormalizationTest {
         assertEquals(classicMd, AppSettingsStore.normalizeNavStyle(classicMd, enhancedSupported = true))
         assertEquals(glass, AppSettingsStore.normalizeNavStyle(glass, enhancedSupported = true))
         assertEquals(enhanced, AppSettingsStore.normalizeNavStyle(enhanced, enhancedSupported = true))
-        assertEquals(floating, AppSettingsStore.normalizeNavStyle(floating, enhancedSupported = true))
     }
 
     @Test
@@ -30,9 +29,11 @@ class NavStyleNormalizationTest {
     }
 
     @Test
-    fun floatingButton_hasNoVersionGate() {
-        // 悬浮按钮在低版本走组件内实底降级，读取时不做归一化降级
-        assertEquals(floating, AppSettingsStore.normalizeNavStyle(floating, enhancedSupported = false))
+    fun disabledFloatingButton_usesClassicLiquidGlassOnAllVersions() {
+        for (supported in listOf(true, false)) {
+            assertEquals(glass, AppSettingsStore.normalizeNavStyle(floating, supported))
+            assertEquals(glass, AppSettingsStore.resolveNavStyle(floating, supported))
+        }
     }
 
     @Test
@@ -50,33 +51,29 @@ class NavStyleNormalizationTest {
     }
 
     @Test
-    fun automaticStyle_usesClassicLiquidGlassForDefaultAppearance() {
-        // 默认外观的默认导航栏为图示的磨砂玻璃（液态玻璃 · 经典）；透镜需显式选择
+    fun automaticStyle_usesClassicLiquidGlassRegardlessOfAppearance() {
         for (supported in listOf(true, false)) {
-            assertEquals(glass, AppSettingsStore.resolveNavStyle(auto, supported, glassAppearance = false))
-            assertEquals(classicMd, AppSettingsStore.resolveNavStyle(auto, supported, glassAppearance = true))
+            assertEquals(glass, AppSettingsStore.resolveNavStyle(auto, supported))
         }
     }
 
     @Test
-    fun appearanceChanges_doNotOverwriteExplicitChoice() {
+    fun explicitChoices_arePreservedWithVersionCompatibility() {
         for (supported in listOf(true, false)) {
-            for (style in listOf(classicMd, glass, enhanced, floating)) {
+            for (style in listOf(classicMd, glass, enhanced)) {
                 val expected = AppSettingsStore.normalizeNavStyle(style, supported)
-                for (glassAppearance in listOf(false, true, false)) {
-                    assertEquals(expected, AppSettingsStore.resolveNavStyle(style, supported, glassAppearance))
-                }
+                assertEquals(expected, AppSettingsStore.resolveNavStyle(style, supported))
             }
         }
     }
 
     @Test
-    fun automaticStyle_followsAppearanceChangesWithoutBeingPinned() {
+    fun missingOrUnknownStyles_useClassicLiquidGlass() {
         for (supported in listOf(true, false)) {
-            val defaultAppearanceStyle = glass
-            assertEquals(defaultAppearanceStyle, AppSettingsStore.resolveNavStyle(auto, supported, glassAppearance = false))
-            assertEquals(classicMd, AppSettingsStore.resolveNavStyle(auto, supported, glassAppearance = true))
-            assertEquals(defaultAppearanceStyle, AppSettingsStore.resolveNavStyle(auto, supported, glassAppearance = false))
+            for (stored in listOf(null, "", "liquid", auto)) {
+                val normalized = AppSettingsStore.normalizeNavStyle(stored, supported)
+                assertEquals(glass, AppSettingsStore.resolveNavStyle(normalized, supported))
+            }
         }
     }
 

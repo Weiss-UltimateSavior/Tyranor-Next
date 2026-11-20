@@ -2,7 +2,6 @@ package com.tyranor.next.core.engine.external
 
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.os.Environment
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
@@ -56,19 +55,19 @@ object RuffleExternalEngineModule : ExternalEngineModule {
             )
         }
         val settings = request.resolvedSettings?.ruffle ?: EngineSettingsStore.Ruffle()
-        // 插件读取顺序：`<gameFolder>/configuration.json`（存在时）> intent `settings`。
-        // 目录级配置是共享的：多 SWF 目录或外部存储根不能按单个游戏改写它，
-        // 此时保留 intent settings 作为事实源，避免同一目录的游戏互相串设置。
-        val swfFileCount = File(folder).listFiles()
-            ?.count { it.isFile && !it.name.startsWith(".") && it.length() > 0L && it.name.endsWith(".swf", ignoreCase = true) }
-            ?: 0
-        if (RuffleRuntimeEnvironment.shouldSyncConfigurationFile(folder, swfFileCount, Environment.getExternalStorageDirectory())) {
-            runCatching {
-                RuffleRuntimeEnvironment.syncConfigurationFile(
-                    RuffleRuntimeEnvironment.configFileFor(folder, gameIdFor(folder, execFile)),
-                    settings,
-                )
-            }
+        val externalRoot = Environment.getExternalStorageDirectory()
+        val file = RuffleRuntimeEnvironment.configFileFor(folder, gameIdFor(folder, execFile), externalRoot)
+        val writable = RuffleRuntimeEnvironment.shouldWriteConfigurationFile(file, File(folder), externalRoot)
+        when (RuffleRuntimeEnvironment.reconcileConfigurationFile(file, settings, writable)) {
+            ExternalEngineSettingsFile.Result.READY -> Unit
+            ExternalEngineSettingsFile.Result.CONFLICT -> return ExternalEngineLaunchResult.failure(
+                ExternalEngineErrorCode.PREPARE_FAILED,
+                messageRes = R.string.external_ruffle_shared_configuration_conflict,
+            )
+            ExternalEngineSettingsFile.Result.UNAVAILABLE -> return ExternalEngineLaunchResult.failure(
+                ExternalEngineErrorCode.PREPARE_FAILED,
+                messageRes = R.string.external_engine_settings_file_unavailable,
+            )
         }
         return null
     }
@@ -81,7 +80,10 @@ object RuffleExternalEngineModule : ExternalEngineModule {
                 ExternalEngineContract.SETTINGS,
                 buildSettingsJson(request.resolvedSettings?.ruffle),
             )
-            putExtra(ExternalEngineContract.ORIENTATION, ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
+            putExtra(
+                ExternalEngineContract.ORIENTATION,
+                ExternalEngineContract.normalizeOrientation(request.orientation),
+            )
             putExtra(ExternalEngineContract.ROOT_URI, request.game.uri)
             putExtra(
                 ExternalEngineContract.LAUNCH_TARGET,
