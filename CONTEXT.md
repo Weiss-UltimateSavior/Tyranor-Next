@@ -50,6 +50,14 @@ _Avoid_: 把 Impacto 当作引擎名（界面、文档中的引擎名一律写 M
 同一份 Windows／Steam 版《秋之回忆6》数据按文本语言（日文、简体、繁体）对应的三个启动 profile 之一，三者构成一个变体族。宿主按「profile + 目录」隔离存档，所以换变体等于换一份存档。
 _Avoid_: 语言包、语言补丁
 
+**MAGES. 识别规则（Host Detection Rules）**:
+决定游戏目录对应哪个 MAGES. profile 的条目清单，由 MAGES. 宿主维护并提供给主 App；宿主不提供时主 App 用自己的内置目录表（来源与回退见 SPEC、ARCHITECTURE）。
+_Avoid_: 把内置目录表当作唯一来源
+
+**暂不支持的 MAGES. 游戏（Unsupported MAGES. Game）**:
+目录布局像 MAGES. 游戏、但没有任何 profile 全部命中的游戏库条目；照常入库，以识别规则指定的 profile 尝试运行，不代表能运行。
+_Avoid_: 未识别游戏、未知引擎游戏
+
 **第三方 APK 运行时模块（Third-party APK Runtime Module）**:
 用户自行安装、以 `com.tyranor.runtime.` 包名前缀并声明 `com.tyranor.runtime.action.LAUNCH` 的独立 APK，接收游戏文件夹路径自行运行游戏。主 App 负责发现、启用、扫描与交棒，并按模块可选声明提供单游戏配置及游戏目录内的统一存档管理。
 _Avoid_: 插件、外置引擎（指 JoiPlay 时）、外置 APK 引擎模块（指 JoiPlay 注册表体系时）

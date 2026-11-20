@@ -157,6 +157,8 @@ HOST_PROFILES = {
         {'id': 'mo6tw-pc-zht', 'language': 'zh-Hant',
          'detect': {'layout': 'pc', 'allOf': ['game.exe', 'data/script.cpk', 'data/mes00.cpk'],
                     'textArchive': 'data/mes01.cpk'}},
+        {'id': 'sg-pc', 'language': None,
+         'detect': {'layout': 'pc', 'allOf': ['Game.exe', 'USRDIR/script.mpk', 'USRDIR/system.mpk']}},
         {'id': 'darling', 'language': None, 'detect': None},
     ],
 }
@@ -193,6 +195,27 @@ class HostProfilesTests(unittest.TestCase):
                 'mo6tw-pc-zht': {'language': 'zh-Hant', 'textArchive': 'data/mes01.cpk'},
             },
         )
+
+    def test_pc_games_without_variants_are_read_and_compared(self):
+        self.assertEqual(
+            tool.parse_pc_games(self.catalog_text),
+            {'sg-pc': {'Game.exe', 'USRDIR/script.mpk', 'USRDIR/system.mpk'}},
+        )
+        fewer = self.mutated(lambda p: p['sg-pc']['detect'].update(allOf=['Game.exe', 'USRDIR/script.mpk']))
+        self.assertTrue(any('sg-pc' in x and 'required files' in x for x in self.compare(fewer)))
+        variant = self.mutated(lambda p: p['sg-pc'].update(language='ja'))
+        self.assertTrue(any('sg-pc' in x and 'language variant' in x for x in self.compare(variant)))
+        without = self.catalog_text.replace('pcGame(\n', 'pcGameRemoved(\n', 1)
+        self.assertNotEqual(without, self.catalog_text)
+        self.assertTrue(any(
+            'sg-pc' in x and 'missing from the catalog' in x for x in self.compare(HOST_PROFILES, without)
+        ))
+
+    def test_a_pc_game_call_that_cannot_be_read_is_reported(self):
+        text = self.catalog_text.replace('"sg-pc", "STEINS;GATE (PC, Steam)"', 'SG_ID, "STEINS;GATE (PC, Steam)"', 1)
+        self.assertNotEqual(text, self.catalog_text)
+        self.assertIsNone(tool.parse_pc_games(text))
+        self.assertTrue(any('cannot read' in x for x in self.compare(HOST_PROFILES, text)))
 
     def test_a_different_text_archive_is_a_problem(self):
         problems = self.compare(self.mutated(lambda p: p['mo6tw-pc-zhs']['detect'].update(textArchive='data/mes01.cpk')))

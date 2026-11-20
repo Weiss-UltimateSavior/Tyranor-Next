@@ -44,7 +44,7 @@ object ImpactoExternalEngineModule : ExternalEngineModule {
     override fun minimumVersionCodeFor(launchTarget: String): Long =
         maxOf(
             minimumVersionCode,
-            ImpactoGameCatalog.byProfileId(launchTarget)?.minHostVersionCode?.toLong() ?: 0L,
+            ImpactoGameCatalog.minHostVersionCodeFor(launchTarget).toLong(),
         )
 
     override val requiresGameDirectoryPath: Boolean = true
@@ -53,6 +53,8 @@ object ImpactoExternalEngineModule : ExternalEngineModule {
         context: Context,
         request: ExternalEngineLaunchRequest,
     ): ExternalEngineLaunchResult? {
+        // 识别规则可能来自已安装的宿主（App 启动后还没扫描过时尚未读取）：先刷新，宿主新增的 profile 才能找到。
+        ImpactoGameCatalog.refresh(context)
         val game = ImpactoGameCatalog.byProfileId(request.launchTarget)
         val folder = File(request.gameDirectoryPath.trim())
         if (game == null || !folder.isAbsolute) {

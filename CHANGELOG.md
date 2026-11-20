@@ -2,6 +2,10 @@
 
 ## 未发布
 
+- MAGES. 引擎的游戏识别规则改为优先从已安装的宿主读取（宿主 0.3.1 起随包带 `tyn/profiles.json`）：宿主新增 profile 后，本 App 不用更新就能识别对应的游戏目录；宿主未安装或是旧版本时仍用内置目录表。内置目录表新增 Steam 版 STEINS;GATE（`sg-pc`，`Game.exe` + `USRDIR/script.mpk`、`USRDIR/system.mpk`，需宿主 0.3.0 及以上）。识别条目支持子目录一层。
+
+- 目录布局像 MAGES. 游戏（至少两个 MAGES. 档案，如 `data/` 里的 `script.cpk` + `system.cpk`）、但没有 profile 能识别时（如缺某个文本档、大小写不符、尚无 profile 的其他 MAGES. 作品），不再直接忽略，而是以「目录名 · MAGES. 游戏（暂不支持）」列入游戏库，可以点启动用最接近的 profile 尝试运行；多个 profile 同时命中的有歧义布局仍不列出。
+
 - 修复 RealLive 场景档前几个目录项为空时误识别为 Siglus 的问题，以及随包运行库缺少接口导致 RealLive、AVG32、UK2 无法启动的回归（[#196](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/196)）。已入库的受影响游戏可通过设置中的重新扫描更新引擎识别结果。
 
 - 应用设置新增「游戏卡片单独圆角」。开启后可在同一条目内为游戏页的瀑布、网格和封面流卡片调整圆角，默认跟随应用圆角。
@@ -300,7 +304,6 @@
 - 修复 WebDAV 界面与无障碍：密码输入具备正确 label、遮罩和 `Password` 语义，长确认弹窗可滚动且按钮固定可见，任务中弹窗不能经遮罩或返回误关闭；同步方向、待补齐信息、真实失败与危险色分别呈现。
 - 修复游玩状态 Bangumi 端点误用：单条收藏 GET 不支持 `me`/`-` 通配（实测恒 404 并被误显示为「未收藏」），曾改为经 `GET /v0/me` 解析当前用户名（授权/令牌成功后缓存）后走 `/v0/users/{username}/collections/{id}` 的读取路径——该读取路径随后随只写模型调整被移除（「新增」节的只写措辞现已被本节下一条的 GET 读回取代），本条保留的结论为「通配不可用」与「授权成功后缓存用户名身份」；身份缓存沿用至今。登录点击到浏览器打开的延迟经授权服务预热解决。
 - 修复游玩状态写入恒失败（HTTP 415）：Bangumi API 要求 Content-Type 精确为 `application/json`，`charset=utf-8` 后缀会被拒绝（设备 logcat + curl 双重实证）；JSON 请求助手去除该后缀，同时修复 Bangumi 封面搜索 POST（同样受此影响）。
-
 
 
 ### 说明
