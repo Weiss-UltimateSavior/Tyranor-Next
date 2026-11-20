@@ -730,11 +730,12 @@ Room schema 变更须提交 `app/schemas/` 并添加显式 `Migration`；仅既�
 | `python tools/check-hardcoded-ui-strings.py` | 离线检查三语言字符串键与 Kotlin CJK 字面量 |
 | `python tools/check-motion-boundaries.py` | 检查业务页面是否绕开具名动效入口 |
 | `./gradlew -p buildSrc graphicsResourcesRegression --no-daemon` | 验证图形资源归属与校验逻辑 |
-| `./gradlew :engine:jsHarness --no-daemon` | 用本地 Node.js 验证 Web v2 桥；也接入 `:engine:check`（本地/人工门禁） |
-| `cargo test --manifest-path engine/rust/Cargo.toml --locked` | 修改 XP3 Rust 时运行宿主测试（本地/人工门禁） |
+| `./gradlew :engine:jsHarness --no-daemon` | 用本地 Node.js 验证 Web v2 桥；也接入 `:engine:check` |
+| `./gradlew :engine:dkToolsHarness --no-daemon` | 用本地 Node.js 验证 DKTools 索引接管、模式隔离与回退；也接入 `:engine:check` |
+| `cargo test --manifest-path engine/rust/Cargo.toml --locked` | 修改 XP3 Rust 时运行宿主测试 |
 | `./gradlew :app:printAppVersion --no-daemon` | 输出版本名与自动推导的 versionCode |
 
-`:engine:jsHarness` 与 `cargo test` 目前是本地/人工门禁，Android CI 不自动执行；PR 必须记录实际执行结果（未执行时说明原因），不得用 JVM 回归或构建成功替代。
+Android CI 显式执行 `:engine:jsHarness` 与 `:engine:dkToolsHarness`；`cargo test` 仍为本地/人工门禁。PR 必须记录实际执行结果（未执行时说明原因），不得用 JVM 回归或构建成功替代。
 
 Windows PowerShell 使用 `./gradlew.bat`；Linux/macOS 使用 `./gradlew`。Python、Node、Rust 按相关任务安装；普通 Gradle 构建不运行 Rust 重编。执行 `check` 时仅在明确缺 Node 的场景可用 `-PskipJsHarness` 跳过，并在验证记录中说明。
 
