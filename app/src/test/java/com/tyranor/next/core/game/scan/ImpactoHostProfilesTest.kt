@@ -66,7 +66,8 @@ class ImpactoHostProfilesTest {
             "two levels deep" to json("""{"id":"x","name":"X","language":null,"detect":{"allOf":["a/b/c"]}}"""),
             "empty segment" to json("""{"id":"x","name":"X","language":null,"detect":{"allOf":["a//"]}}"""),
             "blank name" to json("""{"id":"x","name":"","language":null,"detect":{"allOf":["a"]}}"""),
-            "unknown tryProfile" to json(sg, """{"id":"l","allOf":["USRDIR/script.mpk"],"tryProfile":"nope"}"""),
+            "unknown tryProfile" to
+                json(sg, """{"id":"l","allOf":["USRDIR/script.mpk","USRDIR/system.mpk"],"tryProfile":"nope"}"""),
             "layout without entries" to json(sg, """{"id":"l","allOf":[],"tryProfile":"sg-pc"}"""),
             "layout with one entry" to json(sg, """{"id":"l","allOf":["system.cpk"],"tryProfile":"sg-pc"}"""),
             "layout with one entry twice" to

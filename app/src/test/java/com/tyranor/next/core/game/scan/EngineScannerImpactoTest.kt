@@ -136,7 +136,7 @@ class EngineScannerImpactoTest {
         assertEquals("Memories Off 6 ~T-Wave~ (PC)", detection.titleHint)
         assertEquals(94, detection.confidence)
         // titles come from the same rules snapshot as the candidates, for the variant the caller finally picks
-        assertEquals(detection.launchTargetChoices.toSet(), detection.launchTargetTitles.keys)
+        assertEquals(detection.launchTargetChoices.toSet(), detection.launchTargetGames.keys)
     }
 
     @Test
@@ -379,6 +379,36 @@ class EngineScannerImpactoTest {
         val sub = root.resolve(dir).apply { mkdirs() }
         files.forEach { sub.resolve(it).writeBytes(byteArrayOf(0)) }
         return root
+    }
+
+    @Test
+    fun theVariantIsChosenAndTitledFromTheDetectionSnapshotEvenAfterTheRulesChange() {
+        fun variant(id: String, language: String, archive: String) = ImpactoGameCatalog.Game(
+            profileId = id,
+            title = "Host game ($language)",
+            requiredEntries = setOf("Game.exe", "GAMEDATA/script.mpk", "GAMEDATA/$archive"),
+            family = "host-game",
+            textLanguage = language,
+        )
+        ImpactoGameCatalog.useHostRules(
+            ImpactoGameCatalog.Rules(
+                listOf(
+                    variant("host-ja", ImpactoGameCatalog.TEXT_JA, "ja.mpk"),
+                    variant("host-zhs", ImpactoGameCatalog.TEXT_ZH_HANS, "zhs.mpk"),
+                ),
+                emptyList(),
+            ),
+        )
+        val detection = EngineScanner.detectEngine(
+            pcMpkFolder("host-variants", "GAMEDATA", files = listOf("script.mpk", "ja.mpk", "zhs.mpk")),
+        )
+        assertEquals(listOf("host-ja", "host-zhs"), detection.launchTargetChoices)
+
+        // Another scan or a launch replaces the rules before the caller picks the variant.
+        ImpactoGameCatalog.useHostRules(null)
+
+        assertEquals("host-zhs", EngineScanner.selectLaunchTarget(detection, null, "zh-CN"))
+        assertEquals("Host game (zh-Hans)", detection.launchTargetGames["host-zhs"]?.title)
     }
 
     @Test

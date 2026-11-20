@@ -682,7 +682,11 @@ object EngineScanner {
         val choices = detected.launchTargetChoices
         if (choices.size < 2) return detected.launchTarget
         savedLaunchTarget?.takeIf { it in choices }?.let { return it }
-        return ImpactoGameCatalog.preferredProfileId(choices, uiLanguageTag) ?: detected.launchTarget
+        // 按识别时的规则快照里的候选选（标题、文本语言），不重新查询可能已被替换的当前规则；
+        // 没有快照的旧 Detection 才回落到当前规则。
+        val candidates = choices.mapNotNull { detected.launchTargetGames[it] ?: ImpactoGameCatalog.byProfileId(it) }
+        return ImpactoGameCatalog.pick(candidates, ImpactoGameCatalog.textLanguageForUiTag(uiLanguageTag))?.profileId
+            ?: detected.launchTarget
     }
 
     /**
@@ -701,7 +705,7 @@ object EngineScanner {
         } else {
             null
         }
-        return detected.launchTargetTitles[launchTarget]
+        return detected.launchTargetGames[launchTarget]?.title
             ?: detected.titleHint
             ?: dirName.takeIf { it.isNotBlank() }
             ?: ruffleFallback
@@ -969,10 +973,10 @@ object EngineScanner {
          */
         val launchTargetChoices: List<String> = emptyList(),
         /**
-         * [launchTargetChoices] 各 profile 的标题（取自识别时的规则快照）：扫描标题按最终选定的变体取，
+         * [launchTargetChoices] 各 profile 在识别时的规则快照里的条目：选变体（文本语言）与生成扫描标题都用它，
          * 不再查一次可能已被替换的当前规则。
          */
-        val launchTargetTitles: Map<String, String> = emptyMap(),
+        val launchTargetGames: Map<String, ImpactoGameCatalog.Game> = emptyMap(),
         /**
          * MAGES. 的「未支持布局」：目录像 MAGES. 游戏但没有 profile 能识别（[ImpactoGameCatalog.unsupportedLayoutFor]）。
          * 仍入库、可启动，[launchTarget] 是该布局指定的尝试用 profile，标题标注「暂不支持」。
@@ -1616,7 +1620,7 @@ object EngineScanner {
                 IMPACTO_MODULE_ALIAS,
                 titleHint = it.title,
                 launchTargetChoices = if (impacto.size > 1) impacto.map { game -> game.profileId } else emptyList(),
-                launchTargetTitles = if (impacto.size > 1) impacto.associate { game -> game.profileId to game.title } else emptyMap(),
+                launchTargetGames = if (impacto.size > 1) impacto.associateBy { game -> game.profileId } else emptyMap(),
             )
         }
         // 像 MAGES. 但没有 profile 能识别：仍作为 MAGES. 游戏入库（标题标注「暂不支持」），用布局指定的 profile 尝试运行
