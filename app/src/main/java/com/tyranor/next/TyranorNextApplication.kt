@@ -63,12 +63,10 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
     private fun initializeStartup() {
         val mainProcess = AppProcess.isMain(this, unknownIsMainProcess = true)
         mainOrUnknownProcess = mainProcess
-        // 方向监听器只允许在已确认的主进程安装（引擎子进程或 API 26/27 进程列表缺失时跳过，
-        // 避免传感器监听与隐私/应用锁门控耦合）。
-        if (AppProcess.isMain(this, unknownIsMainProcess = false)) {
-            LaunchOrientationMonitor.install(this)
-        }
         if (mainProcess) {
+            // 与其余主进程能力同口径安装方向监听（引擎子进程 processName 已知会返回 false；
+            // API 26/27 进程列表不可得时仍按主进程安装，避免反向横屏能力静默失效）。
+            LaunchOrientationMonitor.install(this)
             // commit 失败时 OnboardingPreferences 保留基于旧数据的内存快照：存量用户仍直接进入主界面，
             // 新安装用户仍显示引导；下一次启动或完成引导时会再次尝试落盘。
             AppSettingsStore.initializeOnboarding(this)

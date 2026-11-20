@@ -255,7 +255,7 @@ class LaunchOrientationMonitorTest {
 
     @Test
     fun probeConditionCoversFreshSnapshotWithoutLandscapeSample() {
-        // LOGIC-03 窗口：快照新鲜（lastObservedAtMs 刚更新）但只有竖屏死区样本时，
+        // LOGIC-03 窗口：刚记录过竖屏死区样本但无横屏样本时，
         // sensorDegrees 为 null 仍允许后台线程的一次瞬时探测。
         LaunchOrientationMonitor.recordSensorSample(degrees = 5, nowMs = 1_000L, naturalIsLandscape = false)
         val degreesAfterFreshPortraitSnapshot = LaunchOrientationMonitor.recentLandscapeDegrees(1_100L)
@@ -275,7 +275,7 @@ class LaunchOrientationMonitorTest {
                 onMainThread = true,
             ),
         )
-        // 未安装方向监听的进程不探测（unknown 进程降级口径）。
+        // 未安装方向监听的进程不探测（如引擎子进程或监听安装失败时）。
         assertFalse(
             LaunchOrientationMonitor.shouldProbeAccelerometer(
                 sensorDegrees = null,

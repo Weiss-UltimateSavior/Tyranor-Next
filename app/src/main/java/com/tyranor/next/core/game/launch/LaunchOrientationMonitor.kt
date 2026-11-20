@@ -42,7 +42,12 @@ import kotlin.math.roundToInt
  * 读取实时显示状态，不受缓存影响。
  */
 object LaunchOrientationMonitor {
+    // 握持切回竖屏死区与传感器短时丢帧的滞回保留窗口：足够覆盖从竖屏轻斜或平放抬起点击启动按钮，
+    // 又不会把几秒前的旧握持角带入本次启动。
     private const val SENSOR_STALE_MS = 3_000L
+
+    // 冷启动或刚离开竖屏死区且无横屏缓存时，后台线程等待首帧加速度计样本的上限：控制在用户无感范围内，
+    // 超时即回落标准横屏而不阻塞启动。
     private const val COLD_START_SENSOR_TIMEOUT_MS = 80L
 
     /** 显示状态缓存的存活窗口：事件失效为主、该 TTL 为兜底重算间隔。 */
@@ -56,7 +61,6 @@ object LaunchOrientationMonitor {
     private const val PORTRAIT_DEADZONE_HALF_WIDTH_DEGREES = 25
 
     private data class SensorState(
-        val lastObservedAtMs: Long = 0L,
         val landscapeDegrees: Int? = null,
         val landscapeAtMs: Long = 0L,
     )
@@ -212,21 +216,15 @@ object LaunchOrientationMonitor {
     internal fun recordSensorSample(degrees: Int, nowMs: Long, naturalIsLandscape: Boolean) {
         sensorState.updateAndGet { prev ->
             when {
-                degrees == OrientationEventListener.ORIENTATION_UNKNOWN ->
-                    prev.copy(lastObservedAtMs = nowMs)
+                degrees == OrientationEventListener.ORIENTATION_UNKNOWN -> prev
                 isLandscapeSector(degrees, naturalIsLandscape) ->
                     SensorState(
-                        lastObservedAtMs = nowMs,
                         landscapeDegrees = degrees,
                         landscapeAtMs = nowMs,
                     )
                 isPortraitDeadzone(degrees, naturalIsLandscape) ->
-                    SensorState(
-                        lastObservedAtMs = nowMs,
-                        landscapeDegrees = null,
-                        landscapeAtMs = 0L,
-                    )
-                else -> prev.copy(lastObservedAtMs = nowMs)
+                    SensorState()
+                else -> prev
             }
         }
     }
@@ -246,7 +244,7 @@ object LaunchOrientationMonitor {
 
     /**
      * 回调路径专用的显示状态读取：缓存未失效时直接复用，避免每次传感器回调都在主线程做
-     * 完整显示查询；缓存为空（事件失效、退后台清理或首次）或超过 [DISPLAY_CACHE_STALE_MS]
+     * 完整显示查询；缓存为空（事件失效、退后台清理或首次）或达到或超过 [DISPLAY_CACHE_STALE_MS]
      * 时重算一次并写回。启动判定路径（[resolvePlayerOrientation]）不走本函数。
      */
     private fun cachedDisplayState(context: Context, nowMs: Long): DisplayState {
@@ -262,7 +260,7 @@ object LaunchOrientationMonitor {
     /**
      * 显示缓存失效纯判定（JVM 测试钉住）：[capturedAtMs] 为 null 表示缓存已被
      * [DisplayManager.DisplayListener] 事件、退后台清理或测试重置清除，必须重算；
-     * 缓存存在时自捕获起超过 [ttlMs] 同样视为失效。
+     * 缓存存在时自捕获起达到或超过 [ttlMs] 同样视为失效。
      */
     internal fun isDisplayCacheStale(capturedAtMs: Long?, nowMs: Long, ttlMs: Long): Boolean =
         capturedAtMs == null || nowMs - capturedAtMs >= ttlMs
@@ -338,18 +336,12 @@ object LaunchOrientationMonitor {
         }
         val degrees = sensorDegrees ?: return ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         val naturalIsLandscape = isNaturalLandscape(displayOrientation, displayRotation)
-        return if (naturalIsLandscape) {
-            if (degrees in 135..225) {
-                ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
-            } else {
-                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            }
+        // 反向横屏扇区中心：自然横屏设备为 180°，自然竖屏设备为 90°；宽度与 isLandscapeSector 共用常量。
+        val reverseCenter = if (naturalIsLandscape) 180 else 90
+        return if (angularDistanceToCenter(degrees, reverseCenter) <= LANDSCAPE_SECTOR_HALF_WIDTH_DEGREES) {
+            ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
         } else {
-            if (degrees in 45..135) {
-                ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
-            } else {
-                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            }
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         }
     }
 
@@ -388,8 +380,8 @@ object LaunchOrientationMonitor {
                     if (values != null && values.size >= 3) {
                         result.set(degreesFromAccelerometer(values[0], values[1], values[2]))
                     }
-                } catch (_: Throwable) {
-                    // 传感器回调异常时静默降级为 null
+                } catch (_: RuntimeException) {
+                    // 传感器回调异常时静默降级为 null，不吞 Error
                 } finally {
                     latch.countDown()
                 }

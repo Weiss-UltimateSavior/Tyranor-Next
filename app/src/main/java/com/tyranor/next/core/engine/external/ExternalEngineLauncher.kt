@@ -88,6 +88,14 @@ object ExternalEngineLauncher {
         }
     }
 
+    /**
+     * 拉起外置 APK 引擎宿主。
+     *
+     * @param orientationResolver 可选启动朝向解析回调；在 [ExternalEngineModule.prepareForLaunch]
+     *   成功完成后、`startActivity` 之前执行，异常（除 [CancellationException]）回落 [request] 原方向。
+     * @param cancellationCheck 可重入取消检查点（生产为 `launchContext.ensureActive()`），将在
+     *   准备完成后与方向解析完成后各触发一次，确保已取消的启动不会继续拉起宿主。
+     */
     fun launch(
         context: Context,
         module: ExternalEngineModule,
