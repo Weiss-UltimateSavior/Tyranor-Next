@@ -2181,7 +2181,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         else if(runner==null||titlePanel!=null)finish();
         else showMenu();
     }
-    @Override protected void onResume() { super.onResume(); foreground=true; immersive();
+    @Override protected void onResume() { super.onResume(); EnginePlayerOrientation.applyLocked(this); foreground=true; immersive();
         if(gamePanel!=null)gamePanel.uiActive(moviePlayback==null&&movieErrorPanel==null);
         statusActive(true);
         if(runner!=null) runner.active(true);

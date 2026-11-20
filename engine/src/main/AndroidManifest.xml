@@ -227,7 +227,7 @@
             android:taskAffinity="com.core.Xsys4"
             android:screenOrientation="sensorLandscape"
             android:theme="@style/Theme.Xsys4"
-            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize">
             <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY" android:value="true" />
         </activity>
 

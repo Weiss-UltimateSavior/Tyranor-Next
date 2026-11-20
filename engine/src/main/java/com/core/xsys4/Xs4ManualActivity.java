@@ -90,6 +90,18 @@ public final class Xs4ManualActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        EnginePlayerOrientation.applyLocked(this);
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        EnginePlayerOrientation.saveState(this, outState);
+        super.onSaveInstanceState(outState);
+    }
+
+    @Override
     public void onBackPressed() {
         finish();
     }

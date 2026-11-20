@@ -298,6 +298,7 @@ public final class SiglusActivity extends AppCompatActivity implements
     @Override
     protected void onResume() {
         super.onResume();
+        EnginePlayerOrientation.applyLocked(this);
         resumed = true;
         applyImmersive();
         startDirectStartupProbe();

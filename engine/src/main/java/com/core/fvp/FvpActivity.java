@@ -154,6 +154,7 @@ public final class FvpActivity extends AppCompatActivity implements
     @Override
     protected void onResume() {
         super.onResume();
+        EnginePlayerOrientation.applyLocked(this);
         resumed = true;
         windowFocused = hasWindowFocus();
         applyImmersive();

@@ -138,11 +138,7 @@ class RpgMakerActivity : Activity() {
                 intent.removeExtra(LaunchContract.PLAYTIME_SESSION_STARTED_AT)
             }
         }
-        if (!changed) {
-            EnginePlayerOrientation.forwardToIntent(this, intent)
-        } else {
-            EnginePlayerOrientation.updateForNewIntent(this, intent)
-        }
+        EnginePlayerOrientation.syncOnNewIntent(this, intent, changed)
         setIntent(intent)
         if (changed && !isFinishing) {
             Log.i(TAG, "onNewIntent relaunch with changed intent; recreate")
@@ -912,6 +908,7 @@ class RpgMakerActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        EnginePlayerOrientation.applyLocked(this)
         enterFullscreen()
         inputRemap?.onResume()
         if (firstResume) firstResume = false else {

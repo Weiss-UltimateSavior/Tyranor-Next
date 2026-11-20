@@ -27,9 +27,9 @@ import java.util.function.IntConsumer
  */
 object EnginePlayerOrientation {
     private const val TAG = "EngineOrientation"
-    private const val STATE_LOCKED_ORIENTATION = "com.core.engine.LOCKED_ORIENTATION"
+    internal const val STATE_LOCKED_ORIENTATION = "com.core.engine.LOCKED_ORIENTATION"
 
-    private val activityLocks: MutableMap<Activity, Int> =
+    private val activityLocks: MutableMap<Any, Int> =
         Collections.synchronizedMap(WeakHashMap())
 
     /** 将传入的方向值归一化为具体单向横屏常量（`0` 或 `8`）。 */
@@ -41,15 +41,9 @@ object EnginePlayerOrientation {
             ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         }
 
-    /** 从启动 Intent 解析具体横屏常量；缺失或非具体反向值时回落标准横屏。 */
-    @JvmStatic
-    fun resolveFixedLandscape(intent: Intent?): Int {
-        val requested = intent?.getIntExtra(
-            LaunchContract.ORIENTATION,
-            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
-        ) ?: ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        return normalizeLandscapeOrientation(requested)
-    }
+    private fun Intent?.orientationExtraOrNull(): Int? =
+        this?.takeIf { it.hasExtra(LaunchContract.ORIENTATION) }
+            ?.getIntExtra(LaunchContract.ORIENTATION, ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
 
     /**
      * 会话方向锁定的四级优先纯决策（抽出为可 JVM 测试的纯函数钉住行为）：
@@ -75,6 +69,89 @@ object EnginePlayerOrientation {
             else -> displayFallback()
         }
 
+    internal fun resolveLocked(
+        key: Any,
+        intentValue: Int?,
+        displayFallback: () -> Int,
+    ): Int =
+        synchronized(activityLocks) {
+            val resolved = resolveLockedTarget(
+                restored = null,
+                cached = activityLocks[key],
+                intentValue = intentValue,
+                displayFallback = displayFallback,
+            )
+            activityLocks[key] = resolved
+            resolved
+        }
+
+    internal fun lockOnCreate(
+        key: Any,
+        restored: Int?,
+        intentValue: Int?,
+        displayFallback: () -> Int,
+        applySetter: (Int) -> Unit,
+    ): Int {
+        val target = synchronized(activityLocks) {
+            val resolved = resolveLockedTarget(
+                restored = restored,
+                cached = activityLocks[key],
+                intentValue = intentValue,
+                displayFallback = displayFallback,
+            )
+            activityLocks[key] = resolved
+            resolved
+        }
+        applySetter(target)
+        return target
+    }
+
+    internal fun saveLockedState(
+        key: Any,
+        intentValue: Int?,
+        displayFallback: () -> Int,
+        writeState: (String, Int) -> Unit,
+    ): Int {
+        val locked = resolveLocked(key, intentValue, displayFallback)
+        writeState(STATE_LOCKED_ORIENTATION, locked)
+        return locked
+    }
+
+    internal fun refreshOnNewIntent(
+        key: Any,
+        intentValue: Int?,
+        displayFallback: () -> Int,
+    ): Int {
+        // 刷新决策 = 同一四级决策去掉恢复与缓存两档：新 Intent 携带 extra 时按 extra 刷新，
+        // 否则按当前显示兜底重判，绝不沿用旧缓存方向。
+        val updated = resolveLockedTarget(
+            restored = null,
+            cached = null,
+            intentValue = intentValue,
+            displayFallback = displayFallback,
+        )
+        synchronized(activityLocks) {
+            activityLocks[key] = updated
+        }
+        return updated
+    }
+
+    internal fun syncOnNewIntent(
+        key: Any,
+        relaunchNeeded: Boolean,
+        activeIntentValue: Int?,
+        newIntentValue: Int?,
+        displayFallback: () -> Int,
+        forwardExtra: (String, Int) -> Unit,
+    ): Int =
+        if (relaunchNeeded) {
+            refreshOnNewIntent(key, newIntentValue, displayFallback)
+        } else {
+            resolveLocked(key, activeIntentValue, displayFallback).also {
+                forwardExtra(LaunchContract.ORIENTATION, it)
+            }
+        }
+
     /**
      * 解析并缓存宿主 Activity 本次会话应锁定的具体横屏方向。
      *
@@ -82,20 +159,12 @@ object EnginePlayerOrientation {
      * 若未携带该 extra（如直接测试拉起或未透传路径），再按当前显示横屏旋转角兜底。
      */
     @JvmStatic
-    fun resolveForActivity(activity: Activity): Int {
-        synchronized(activityLocks) {
-            val intent = activity.intent
-            val resolved = resolveLockedTarget(
-                restored = null,
-                cached = activityLocks[activity],
-                intentValue = intent?.takeIf { it.hasExtra(LaunchContract.ORIENTATION) }
-                    ?.getIntExtra(LaunchContract.ORIENTATION, ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE),
-                displayFallback = { currentDisplayLandscapeOrientation(activity) },
-            )
-            activityLocks[activity] = resolved
-            return resolved
-        }
-    }
+    fun resolveForActivity(activity: Activity): Int =
+        resolveLocked(
+            key = activity,
+            intentValue = activity.intent.orientationExtraOrNull(),
+            displayFallback = { currentDisplayLandscapeOrientation(activity) },
+        )
 
     /**
      * 在宿主 `onCreate` 中初始化或恢复并安全锁定方向；必须先于 `super.onCreate` 调用
@@ -104,46 +173,51 @@ object EnginePlayerOrientation {
      */
     @JvmStatic
     @JvmOverloads
-    fun lockOnCreate(activity: Activity, savedInstanceState: Bundle? = null): Int {
-        val target = synchronized(activityLocks) {
-            val intent = activity.intent
-            val resolved = resolveLockedTarget(
-                restored = savedInstanceState
-                    ?.takeIf { it.containsKey(STATE_LOCKED_ORIENTATION) }
-                    ?.getInt(STATE_LOCKED_ORIENTATION),
-                cached = activityLocks[activity],
-                intentValue = intent?.takeIf { it.hasExtra(LaunchContract.ORIENTATION) }
-                    ?.getIntExtra(LaunchContract.ORIENTATION, ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE),
-                displayFallback = { currentDisplayLandscapeOrientation(activity) },
-            )
-            activityLocks[activity] = resolved
-            resolved
-        }
-        applySafely(activity, target) { activity.setRequestedOrientation(it) }
-        return target
-    }
+    fun lockOnCreate(activity: Activity, savedInstanceState: Bundle? = null): Int =
+        lockOnCreate(
+            key = activity,
+            restored = savedInstanceState
+                ?.takeIf { it.containsKey(STATE_LOCKED_ORIENTATION) }
+                ?.getInt(STATE_LOCKED_ORIENTATION),
+            intentValue = activity.intent.orientationExtraOrNull(),
+            displayFallback = { currentDisplayLandscapeOrientation(activity) },
+            applySetter = { target ->
+                applySafely(activity, target) { activity.setRequestedOrientation(it) }
+            },
+        )
 
     /** 保存当前实例已锁定的方向，供系统因外设/配置重建时原样恢复。 */
     @JvmStatic
     fun saveState(activity: Activity, outState: Bundle) {
-        outState.putInt(STATE_LOCKED_ORIENTATION, resolveForActivity(activity))
+        saveLockedState(
+            key = activity,
+            intentValue = activity.intent.orientationExtraOrNull(),
+            displayFallback = { currentDisplayLandscapeOrientation(activity) },
+            writeState = outState::putInt,
+        )
     }
 
     /** 热切换不同游戏触发 `recreate()` 前刷新实例缓存，避免 `onSaveInstanceState` 写回旧方向。 */
     @JvmStatic
     fun updateForNewIntent(activity: Activity, newIntent: Intent) {
-        // 刷新决策 = 同一四级决策去掉恢复与缓存两档：新 Intent 携带 extra 时按 extra 刷新，
-        // 否则按当前显示兜底重判，绝不沿用旧缓存方向。
-        val updated = resolveLockedTarget(
-            restored = null,
-            cached = null,
-            intentValue = newIntent.takeIf { it.hasExtra(LaunchContract.ORIENTATION) }
-                ?.getIntExtra(LaunchContract.ORIENTATION, ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE),
+        refreshOnNewIntent(
+            key = activity,
+            intentValue = newIntent.orientationExtraOrNull(),
             displayFallback = { currentDisplayLandscapeOrientation(activity) },
         )
-        synchronized(activityLocks) {
-            activityLocks[activity] = updated
-        }
+    }
+
+    /** 同步 `onNewIntent` 的方向状态：同游戏继续沿用并透传已锁定方向；切换/重建前按新 Intent 刷新缓存。 */
+    @JvmStatic
+    fun syncOnNewIntent(activity: Activity, newIntent: Intent, relaunchNeeded: Boolean) {
+        syncOnNewIntent(
+            key = activity,
+            relaunchNeeded = relaunchNeeded,
+            activeIntentValue = activity.intent.orientationExtraOrNull(),
+            newIntentValue = newIntent.orientationExtraOrNull(),
+            displayFallback = { currentDisplayLandscapeOrientation(activity) },
+            forwardExtra = newIntent::putExtra,
+        )
     }
 
     /** 在非 `setRequestedOrientation` 回调中安全重新断言已锁定的方向，并返回该值供宿主日志/透传复用。 */
@@ -154,7 +228,13 @@ object EnginePlayerOrientation {
         return target
     }
 
-    /** 供各宿主覆盖 `setRequestedOrientation` 时统一调用，捕获受限窗口/非全屏异常。 */
+    /**
+     * 供各宿主覆盖 `setRequestedOrientation` 时统一调用，拦截运行期外部/SDL 方向切换请求并捕获受限窗口异常。
+     *
+     * 本入口仅接受并维持启动期锁定的具体单向横屏方向（`0` 或 `8`），其余一切方向请求（如竖屏、
+     * `SENSOR`、视频/原生 SDK 重置）一律收敛为当前会话方向；若未来需支持竖屏玩法或可变方向，
+     * 必须新增显式白名单策略，不可直接放行传入参数。
+     */
     @JvmStatic
     fun applyWithSuper(activity: Activity, superSetter: IntConsumer) {
         val target = resolveForActivity(activity)
@@ -229,8 +309,9 @@ object EnginePlayerOrientation {
 
     /**
      * 安全执行方向设置：只吞 [RuntimeException] 家族（受限窗口/非全屏/宿主覆写实现的失败
-     * 均属该家族，方向锁定失败不阻断宿主启动）；[Error] 与其他致命 Throwable 原样传播，
-     * 不掩盖进程级错误。测试经 [applyOrientationSafely] 钉住该语义。
+     * 均属该家族，方向锁定失败不阻断宿主启动）；若首次以反向横屏锁定失败，二次退回
+     * [ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE] 重试一次，防止在清单已放开 `sensorLandscape`
+     * 的受限 ROM 上退化为运行期随传感器自由旋转。[Error] 原样传播。
      */
     @JvmStatic
     internal fun applyOrientationSafely(
@@ -242,6 +323,13 @@ object EnginePlayerOrientation {
             setter(orientation)
         } catch (failure: RuntimeException) {
             onSwallowed(orientation, failure)
+            if (orientation != ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE) {
+                try {
+                    setter(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
+                } catch (fallbackFailure: RuntimeException) {
+                    onSwallowed(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, fallbackFailure)
+                }
+            }
         }
     }
 

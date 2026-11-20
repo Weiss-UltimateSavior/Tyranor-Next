@@ -259,6 +259,7 @@ public final class FramebufferGameActivity extends AppCompatActivity
     @Override
     protected void onResume() {
         super.onResume();
+        EnginePlayerOrientation.applyLocked(this);
         applyImmersive();
         maybeStartFrameLoop();
     }

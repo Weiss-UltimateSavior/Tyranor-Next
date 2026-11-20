@@ -75,6 +75,7 @@ class CmvsActivity : NativeActivity() {
 
     override fun onResume() {
         super.onResume()
+        EnginePlayerOrientation.applyLocked(this)
         startupController?.onResume()
     }
 

@@ -140,6 +140,8 @@ class VideoViewActivity : Activity(), IMediaPlayer.OnCompletionListener, IMediaP
             pausedBySystem = false
             setResult(RESULT_CANCELED, Intent())
             finish()
+        } else {
+            EnginePlayerOrientation.applyLocked(this)
         }
     }
 

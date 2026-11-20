@@ -772,6 +772,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     @Override
     public void onResume() {
         super.onResume();
+        EnginePlayerOrientation.applyLocked(this);
         if (graphicsOverlay != null) graphicsOverlay.show();
     }
 

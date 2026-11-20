@@ -280,6 +280,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
     }
     @Override protected void onResume() {
         super.onResume(); resumed = true;
+        EnginePlayerOrientation.applyLocked(this);
         if (session == null) return;
         if (remap != null) remap.onResume();
         session.pause(EthornellSession.PAUSE_ACTIVITY, false);
