@@ -3,6 +3,7 @@ package com.core.rpgmaker
 import com.core.web.PluginFileIndexCache
 import java.io.IOException
 import java.io.InterruptedIOException
+import java.nio.file.DirectoryIteratorException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -108,6 +109,24 @@ class PluginFileIndexCacheTest {
         val cache = PluginFileIndexCache(build = {
             calls++
             throw IOException("unreadable disk root")
+        }, isLimitFailure = { it is RpgMakerFileIndex.LimitExceeded }, nanoTime = { now }, retryNanos = 10)
+        repeat(3) {
+            try { cache.get(); fail("attempt ${it + 1} must fail") } catch (_: IOException) { }
+        }
+        assertEquals(3, calls)
+        try { cache.get(); fail("terminal failure must be cached during backoff") } catch (_: IOException) { }
+        assertEquals(3, calls)
+        now = 11L
+        try { cache.get(); fail("backoff expiry allows a fresh retry") } catch (_: IOException) { }
+        assertEquals(4, calls)
+    }
+
+    @Test fun directoryIteratorExceptionOnRootTraversalBecomesTerminalAndBacksOff() {
+        var now = 0L
+        var calls = 0
+        val cache = PluginFileIndexCache(build = {
+            calls++
+            throw DirectoryIteratorException(IOException("root directory iteration failed"))
         }, isLimitFailure = { it is RpgMakerFileIndex.LimitExceeded }, nanoTime = { now }, retryNanos = 10)
         repeat(3) {
             try { cache.get(); fail("attempt ${it + 1} must fail") } catch (_: IOException) { }

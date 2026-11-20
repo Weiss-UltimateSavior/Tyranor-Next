@@ -2,6 +2,7 @@ package com.core.web
 
 import java.io.IOException
 import java.io.InterruptedIOException
+import java.nio.file.DirectoryIteratorException
 import java.util.concurrent.Executor
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -49,7 +50,7 @@ internal class PluginFileIndexCache(
         try {
             available()?.let { return it }
             try {
-                val bytes = build(false)
+                val bytes = invokeBuild(false)
                 checkActive()
                 consecutiveTransientFailures = 0
                 snapshot = Snapshot(bytes, null)
@@ -62,7 +63,7 @@ internal class PluginFileIndexCache(
                 }
                 onDegraded(error)
                 try {
-                    val bytes = build(true)
+                    val bytes = invokeBuild(true)
                     checkActive()
                     consecutiveTransientFailures = 0
                     snapshot = Snapshot(bytes, null, nanoTime() + retryNanos)
@@ -79,6 +80,12 @@ internal class PluginFileIndexCache(
                 }
             }
         } finally { building.set(false) }
+    }
+
+    private fun invokeBuild(focused: Boolean): ByteArray = try {
+        build(focused)
+    } catch (error: DirectoryIteratorException) {
+        throw (error.cause ?: error)
     }
 
     private fun publishTransientOrTerminal(error: IOException) {
