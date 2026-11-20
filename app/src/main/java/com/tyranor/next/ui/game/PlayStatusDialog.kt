@@ -633,6 +633,7 @@ internal fun PlayStatusDialog(
     AppAlertDialog(
         onDismissRequest = onDismiss,
         textScrollEnabled = true,
+        showButtonRow = false,
         title = { Text(stringResource(R.string.game_play_status_title), style = MaterialTheme.typography.titleMedium) },
         text = {
             PlayStatusSourceList(
@@ -647,7 +648,7 @@ internal fun PlayStatusDialog(
                 onBindSource = { bindSource = it },
             )
         },
-        confirmButton = { DialogTextButton(text = stringResource(R.string.common_cancel), onClick = onDismiss) },
+        confirmButton = {},
     )
 
     activePickSource?.let { source ->

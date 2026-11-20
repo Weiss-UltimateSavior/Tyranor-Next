@@ -1,21 +1,25 @@
 package com.tyranor.next.ui.game
 
 import android.content.Context
+import android.view.KeyEvent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
-import androidx.test.espresso.Espresso.pressBack
+import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.tyranor.next.R
@@ -105,6 +109,8 @@ class PlayStatusDialogUiTest {
 
     @Test
     fun playStatusDialogCoversBindSearchRetryWriteLockAndUnbind() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+
         val baseGame = ScanGame(
             title = "Sakura",
             uri = "content://games/ui_flow_1",
@@ -177,6 +183,9 @@ class PlayStatusDialogUiTest {
                 }
             }
 
+            val cancelText = context.getString(R.string.common_cancel)
+            composeRule.onNodeWithText(cancelText).assertDoesNotExist()
+
             // 1) 未绑定 Bangumi：替换搜索词并绑定候选条目
             composeRule.onNodeWithText("Bangumi").performClick()
             composeRule.onNodeWithText(context.getString(R.string.game_bind_subject_title, "Bangumi")).assertIsDisplayed()
@@ -190,13 +199,10 @@ class PlayStatusDialogUiTest {
             composeRule.waitUntil(5_000) { currentGame.bangumiId == "4154" }
 
             // 2) 已绑定 VNDB：首次回读 500 展示内联报错 + 重试；点击重试后显示「当前」
-            val cancelText = context.getString(R.string.common_cancel)
-            val cancelNodes = composeRule.onAllNodes(hasText(cancelText))
-            val parentCancelCount = cancelNodes.fetchSemanticsNodes().size
             composeRule.onNodeWithText("VNDB").performClick()
             val pickerTitle = context.getString(R.string.game_play_status_pick_title, "VNDB")
             composeRule.onNodeWithText(pickerTitle).assertIsDisplayed()
-            assertEquals(parentCancelCount, cancelNodes.fetchSemanticsNodes().size)
+            composeRule.onNodeWithText(cancelText).assertDoesNotExist()
             val retryLabel = context.getString(R.string.common_retry)
             val errorLabel = AppLocaleController.wrap(context).getString(R.string.play_error_vndb_network)
             val unbindText = context.getString(R.string.game_play_status_unbind)
@@ -228,9 +234,9 @@ class PlayStatusDialogUiTest {
             statusList.performScrollToNode(hasText(vndbFinished))
             composeRule.onNodeWithText(vndbFinished).performClick()
             assertTrue(writeStarted.await(5, TimeUnit.SECONDS))
-            pressBack()
-            composeRule.onNodeWithText(pickerTitle).assertIsDisplayed()
             unbind.assertIsNotEnabled()
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            composeRule.onNodeWithText(pickerTitle).assertIsDisplayed()
         } finally {
             allowWriteFinish.countDown()
         }
@@ -247,6 +253,8 @@ class PlayStatusDialogUiTest {
         composeRule.waitUntil(5_000) { currentGame.vndbId == null }
         assertNull(currentGame.vndbId)
         assertEquals(0, dismissCount.get())
+        composeRule.onNode(isDialog()).performTouchInput { click(Offset(width * 0.1f, height * 0.1f)) }
+        composeRule.waitUntil(5_000) { dismissCount.get() == 1 }
     }
 
     @Test
