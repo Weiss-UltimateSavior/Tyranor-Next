@@ -432,7 +432,7 @@ private fun GameLibraryContent(
             waterfallColumns,
             landscape,
             contentReady = loaded,
-            itemIdentity = { (it as String).substringBefore('\u0000') },
+            itemIdentity = { (it as? String)?.substringBefore('\u0000') ?: it },
         )
     }
     val gridState = waterfallReflow.gridState
