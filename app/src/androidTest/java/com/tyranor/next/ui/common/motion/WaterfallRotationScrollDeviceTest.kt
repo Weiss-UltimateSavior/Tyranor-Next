@@ -2,6 +2,12 @@ package com.tyranor.next.ui.common.motion
 
 import android.os.SystemClock
 import android.util.Log
+import android.view.KeyEvent as AndroidKeyEvent
+import android.view.View
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.InputModeManager
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
@@ -27,7 +33,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
@@ -40,6 +50,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
@@ -243,6 +255,61 @@ class WaterfallRotationScrollDeviceTest {
     }
 
     @Test
+    fun backwardScanFindsIdentityMovedBehindTheForwardCursor() = withProduction(
+        manualRestore = true,
+        uniformCards = true,
+    ) { fixture ->
+        compose.runOnIdle { fixture.keyOrder = (0 until 150).toList() }
+        settle()
+        compose.runOnIdle { fixture.scope.launch { fixture.state.scrollToItem(50) } }
+        settle()
+        val anchor = compose.runOnIdle {
+            fixture.state.layoutInfo.visibleItemsInfo.first { it.index == fixture.state.firstVisibleItemIndex }
+        }
+        val anchorId = (anchor.key as String).removePrefix("waterfall-").toInt()
+        compose.runOnIdle {
+            fixture.keyOrder = fixture.keyOrder.filter { it != anchorId }
+            fixture.columns = 3
+        }
+        settle()
+        val originalAutoAdvance = compose.mainClock.autoAdvance
+        var owner: Job? = null
+        var fallbackResolutions = 0
+        try {
+            compose.mainClock.autoAdvance = false
+            compose.runOnIdle {
+                owner = fixture.scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                    fixture.holder!!.restore(fixture.state, true) { identity ->
+                        fallbackResolutions++
+                        fixture.keyOrder.indexOfFirst { fixture.itemKey(it) == identity }.takeIf { it >= 0 }
+                    }
+                }
+            }
+            for (frame in 0 until 120) {
+                if (compose.runOnIdle { fixture.state.layoutInfo.visibleItemsInfo.maxOf { it.index } >= 80 }) break
+                compose.mainClock.advanceTimeByFrame()
+            }
+            compose.runOnIdle {
+                assertTrue("The forward scan must still be in progress beyond the old anchor", owner?.isActive == true && fixture.state.canScrollForward)
+                assertTrue("The identity must be inserted behind the measured cursor", fixture.state.layoutInfo.visibleItemsInfo.minOf { it.index } > anchor.index)
+                fixture.keyOrder = fixture.keyOrder.toMutableList().apply { add(10, anchorId) }
+            }
+            compose.mainClock.autoAdvance = true
+            awaitRestore(fixture)
+            compose.runOnIdle {
+                val restored = fixture.state.layoutInfo.visibleItemsInfo.firstOrNull { it.key == anchor.key }
+                assertTrue("Backtracking must restore the game identity instead of another game at the old index", restored?.index == 10)
+                checkNotNull(restored)
+                assertTrue("Backtracking must preserve the anchor offset", kotlin.math.abs(restored.offset.y - anchor.offset.y) <= 1)
+                assertTrue("The identity must be found by measured backtracking, not timeout fallback", fallbackResolutions == 0)
+            }
+        } finally {
+            owner?.cancel()
+            compose.mainClock.autoAdvance = originalAutoAdvance
+        }
+    }
+
+    @Test
     fun longUserInputWaitPreservesScanBudgetAndMovedGameIdentity() = withProduction(
         manualRestore = true,
         compositeKeys = true,
@@ -260,8 +327,13 @@ class WaterfallRotationScrollDeviceTest {
             fixture.columns = 3
         }
         settle()
+        val capturedKeys = compose.runOnIdle {
+            fixture.holder!!.previousItemOffsets.keys.map { (it as String).replace('\u0000', '|') }
+        }
+        assertTrue("The column boundary must capture the original URI before the dataset replacement: expected=$identity captured=$capturedKeys", capturedKeys.any { it.substringBefore('|') == identity })
         val releaseInput = CompletableDeferred<Unit>()
         val returned = CompletableDeferred<Unit>()
+        var fallbackResolutions = 0
         lateinit var input: Job
         lateinit var owner: Job
         compose.runOnIdle {
@@ -270,6 +342,7 @@ class WaterfallRotationScrollDeviceTest {
             }
             owner = fixture.scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 fixture.holder!!.restore(fixture.state, true) { savedIdentity ->
+                    fallbackResolutions++
                     fixture.keyOrder.indexOfFirst {
                         fixture.itemKey(it).substringBefore('\u0000') == savedIdentity
                     }.takeIf { it >= 0 }
@@ -293,6 +366,7 @@ class WaterfallRotationScrollDeviceTest {
                     (it.key as String).substringBefore('\u0000') == identity
                 }
                 assertTrue("The original owner must complete after the long wait", returned.isCompleted && !owner.isCancelled)
+                assertTrue("Waiting for input must not spend the scan budget or enter coarse fallback", fallbackResolutions == 0)
                 assertTrue("The same game URI must survive the changed cover key and prepended items", restored != null)
                 checkNotNull(restored)
                 assertTrue("The game must restore at its current index", restored.index == anchor.index + 40)
@@ -413,6 +487,70 @@ class WaterfallRotationScrollDeviceTest {
     }
 
     @Test
+    fun restoringHostBlocksFocusAndKeyboardActivationUntilRevealed() = withProduction(
+        manualRestore = true,
+        probeInteractions = true,
+    ) { fixture ->
+        val host = compose.onNodeWithTag(TOUCH_TARGET_TAG)
+        val inputMode = fixture.inputModeManager
+        val originalInputMode = inputMode.inputMode
+        try {
+            compose.runOnIdle {
+                fixture.probeKeyboard = true
+                inputMode.requestInputMode(InputMode.Keyboard)
+            }
+            settle()
+            compose.runOnIdle { fixture.cardFocusRequester.requestFocus() }
+            host.performKeyInput { pressKey(Key.Enter); pressKey(Key.DirectionCenter) }
+            compose.runOnIdle {
+                assertTrue("Visible cards must accept both activation keys: taps=${fixture.taps}, focused=${fixture.cardFocused}", fixture.taps == 2 && fixture.cardFocused)
+                fixture.holder!!.update(3, true)
+                // The old focused card is still attached until composition applies the focus cleanup.
+                for (keyCode in intArrayOf(AndroidKeyEvent.KEYCODE_ENTER, AndroidKeyEvent.KEYCODE_DPAD_CENTER)) {
+                    fixture.hostView.dispatchKeyEvent(AndroidKeyEvent(AndroidKeyEvent.ACTION_DOWN, keyCode))
+                    fixture.hostView.dispatchKeyEvent(AndroidKeyEvent(AndroidKeyEvent.ACTION_UP, keyCode))
+                }
+                assertTrue("Keys arriving before focus cleanup must not activate hidden cards", fixture.taps == 2)
+                fixture.columns = 3
+            }
+            settle()
+            compose.runOnIdle {
+                assertTrue("Keyboard probe must run while the host is hidden", fixture.holder!!.isRestoring)
+                fixture.cardFocusRequester.requestFocus()
+            }
+            host.performKeyInput { pressKey(Key.Enter); pressKey(Key.DirectionCenter) }
+            compose.runOnIdle {
+                assertTrue("Hidden cards must neither keep nor acquire focus", !fixture.cardFocused)
+                assertTrue("Activation keys must not reach hidden cards", fixture.taps == 2)
+                fixture.scope.launch { fixture.holder!!.restore(fixture.state, true) }
+            }
+            awaitRestore(fixture)
+            compose.runOnIdle { fixture.cardFocusRequester.requestFocus() }
+            host.performKeyInput { pressKey(Key.Enter); pressKey(Key.DirectionCenter) }
+            compose.runOnIdle {
+                assertTrue("Revealed cards must regain focus and keyboard activation", fixture.taps == 4 && fixture.cardFocused)
+                // Earlier unfocused keys may already have activated the external sibling.
+                fixture.externalTaps = 0
+                fixture.externalFocusRequester.requestFocus()
+                fixture.columns = 2
+            }
+            settle()
+            compose.runOnIdle {
+                assertTrue("External focus must already be retained while the viewport is hidden", fixture.holder!!.isRestoring && fixture.externalFocused)
+            }
+            host.performKeyInput { pressKey(Key.Enter); pressKey(Key.DirectionCenter) }
+            compose.runOnIdle {
+                assertTrue("Restoration must preserve an external control's focus and activation: externalFocused=${fixture.externalFocused}, externalTaps=${fixture.externalTaps}, cardTaps=${fixture.taps}", fixture.externalFocused && fixture.externalTaps == 2 && fixture.taps == 4)
+                fixture.scope.launch { fixture.holder!!.restore(fixture.state, true) }
+            }
+            awaitRestore(fixture)
+            compose.runOnIdle { assertTrue("Revealing the grid must not steal external focus", fixture.externalFocused) }
+        } finally {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { inputMode.requestInputMode(originalInputMode) }
+        }
+    }
+
+    @Test
     fun ownerCancellationKeepsPendingRestorationForItsSuccessor() = withProduction(manualRestore = true) { fixture ->
         compose.runOnIdle { fixture.scope.launch { fixture.state.scrollToItem(50) } }
         settle()
@@ -462,6 +600,7 @@ class WaterfallRotationScrollDeviceTest {
         manualRestore: Boolean = false,
         compositeKeys: Boolean = false,
         probeInteractions: Boolean = false,
+        uniformCards: Boolean = false,
         check: (Fixture) -> Unit,
     ) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -476,10 +615,19 @@ class WaterfallRotationScrollDeviceTest {
                 manualRestore = manualRestore,
                 compositeKeys = compositeKeys,
                 probeInteractions = probeInteractions,
+                uniformCards = uniformCards,
             )
             compose.setContent {
                 if (probeInteractions) {
-                    Box(Modifier.testTag(TOUCH_TARGET_TAG)) { Waterfall(fixture) }
+                    Column {
+                        if (fixture.probeKeyboard) {
+                            Box(Modifier.size(48.dp)
+                                .focusRequester(fixture.externalFocusRequester)
+                                .onFocusChanged { fixture.externalFocused = it.isFocused }
+                                .combinedClickable(onClick = { fixture.externalTaps++ }))
+                        }
+                        Box(Modifier.testTag(TOUCH_TARGET_TAG)) { Waterfall(fixture) }
+                    }
                 } else {
                     Waterfall(fixture)
                 }
@@ -607,10 +755,9 @@ class WaterfallRotationScrollDeviceTest {
                     item.key to (item.position.y - old.y)
                 }
             }
-            val expectedDy = deltas.firstOrNull()?.second
             deltas.forEach { (key, dy) ->
-                if (expectedDy != null && kotlin.math.abs(dy - expectedDy) > 1) {
-                    violations += "$transition step=$step key=$key dy=$dy commonDy=$expectedDy consumed=$consumed residual=${dy + consumed}"
+                if (kotlin.math.abs(dy + consumed) > 1f) {
+                    violations += "$transition step=$step key=$key dy=$dy expectedDy=${-consumed} consumed=$consumed residual=${dy + consumed}"
                 }
             }
             previous = frame.items.associate { it.key to it.position }
@@ -628,6 +775,13 @@ class WaterfallRotationScrollDeviceTest {
 
     @Composable
     private fun Waterfall(fixture: Fixture) {
+        fixture.hostView = LocalView.current
+        fixture.inputModeManager = LocalInputModeManager.current
+        // Match GameGrid: old lazy closures retain their composition's list and cover keys.
+        val keyOrder = fixture.keyOrder
+        val coverVersion = fixture.coverVersion
+        val compositeKeys = fixture.compositeKeys
+        fun itemKey(id: Int): String = if (compositeKeys) "waterfall-$id\u0000cover-$coverVersion\u0000fixture" else "waterfall-$id"
         val columns = fixture.columns
         val holder = if (fixture.manualRestore) {
             remember {
@@ -673,22 +827,28 @@ class WaterfallRotationScrollDeviceTest {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalItemSpacing = 8.dp,
         ) {
-            items(count = fixture.keyOrder.size, key = { fixture.itemKey(fixture.keyOrder[it]) }) { index ->
-                val id = fixture.keyOrder[index]
-                val coverRatio = 0.60f + (id % 5) * 0.05f
+            items(count = keyOrder.size, key = { itemKey(keyOrder[it]) }) { index ->
+                val id = keyOrder[index]
+                val coverRatio = if (fixture.uniformCards) 0.70f else 0.60f + (id % 5) * 0.05f
                 Column(
                     listItemMotion(ListItemPlacement.Reflow)
-                        .staggeredEntrance(index, stepMillis = 0L, reflow = reflow, key = fixture.itemKey(id))
+                        .staggeredEntrance(index, stepMillis = 0L, reflow = reflow, key = itemKey(id))
                         .fillMaxWidth()
                         .then(
-                            if (fixture.probeInteractions) Modifier.combinedClickable(
-                                onClick = { fixture.taps++ },
-                                onLongClick = { fixture.longPresses++ },
-                            ) else Modifier,
+                            if (fixture.probeInteractions) {
+                                val focusProbe = if (id == 0) Modifier
+                                    .focusRequester(fixture.cardFocusRequester)
+                                    .onFocusChanged { fixture.cardFocused = it.isFocused }
+                                else Modifier
+                                focusProbe.combinedClickable(
+                                    onClick = { fixture.taps++ },
+                                    onLongClick = { fixture.longPresses++ },
+                                )
+                            } else Modifier,
                         ),
                 ) {
                     Box(Modifier.fillMaxWidth().aspectRatio(coverRatio).background(Color(0xFF00897B)))
-                    Box(Modifier.fillMaxWidth().height((18 + id % 4 * 9).dp).background(Color(0xFF263238)))
+                    Box(Modifier.fillMaxWidth().height((if (fixture.uniformCards) 24 else 18 + id % 4 * 9).dp).background(Color(0xFF263238)))
                 }
             }
         }
@@ -701,9 +861,18 @@ class WaterfallRotationScrollDeviceTest {
         val manualRestore: Boolean = false,
         val compositeKeys: Boolean = false,
         val probeInteractions: Boolean = false,
+        val uniformCards: Boolean = false,
     ) {
         var taps = 0
         var longPresses = 0
+        val cardFocusRequester = FocusRequester()
+        var cardFocused = false
+        val externalFocusRequester = FocusRequester()
+        var externalFocused = false
+        var externalTaps = 0
+        var probeKeyboard by mutableStateOf(false)
+        lateinit var hostView: View
+        lateinit var inputModeManager: InputModeManager
         var coverVersion by mutableIntStateOf(0)
         fun itemKey(id: Int): String = if (compositeKeys) "waterfall-$id\u0000cover-$coverVersion\u0000fixture" else "waterfall-$id"
         var holder: WaterfallReflowState? = null

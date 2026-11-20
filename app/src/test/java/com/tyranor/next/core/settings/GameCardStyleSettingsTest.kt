@@ -1,9 +1,18 @@
 package com.tyranor.next.core.settings
 
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.SharedPreferences
 import com.tyranor.next.testing.InMemoryPreferencesContext
+import com.tyranor.next.testing.InMemorySharedPreferences
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -213,6 +222,135 @@ class GameCardStyleSettingsTest {
 
         assertEquals(10, AppSettingsStore.gameWaterfallPortraitColumnsState.value)
         assertEquals(2, AppSettingsStore.gameWaterfallLandscapeColumnsState.value)
+    }
+
+    @Test
+    fun initializationKeepsColumnReadAndPublicationSerializedWithSetters() {
+        for (setting in columnSettings()) {
+            assertInitializationAndSetterAreSerialized(setting, pauseInitialization = true)
+        }
+    }
+
+    @Test
+    fun columnSettersKeepApplyAndPublicationSerializedWithInitialization() {
+        for (setting in columnSettings()) {
+            assertInitializationAndSetterAreSerialized(setting, pauseInitialization = false)
+        }
+    }
+
+    private data class ColumnSetting(
+        val key: String,
+        val state: MutableStateFlow<Int>,
+        val setter: (Context, Int) -> Unit,
+    )
+
+    private fun columnSettings() = listOf(
+        ColumnSetting(
+            AppSettingsStore.KEY_GAME_GRID_PORTRAIT_COLUMNS,
+            AppSettingsStore.gameGridPortraitColumnsState,
+            AppSettingsStore::setGameGridPortraitColumns,
+        ),
+        ColumnSetting(
+            AppSettingsStore.KEY_GAME_GRID_LANDSCAPE_COLUMNS,
+            AppSettingsStore.gameGridLandscapeColumnsState,
+            AppSettingsStore::setGameGridLandscapeColumns,
+        ),
+        ColumnSetting(
+            AppSettingsStore.KEY_GAME_WATERFALL_PORTRAIT_COLUMNS,
+            AppSettingsStore.gameWaterfallPortraitColumnsState,
+            AppSettingsStore::setGameWaterfallPortraitColumns,
+        ),
+        ColumnSetting(
+            AppSettingsStore.KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS,
+            AppSettingsStore.gameWaterfallLandscapeColumnsState,
+            AppSettingsStore::setGameWaterfallLandscapeColumns,
+        ),
+    )
+
+    private fun assertInitializationAndSetterAreSerialized(
+        setting: ColumnSetting,
+        pauseInitialization: Boolean,
+    ) {
+        val paused = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val competitorStarted = CountDownLatch(1)
+        val failure = AtomicReference<Throwable?>(null)
+        val pause = {
+            paused.countDown()
+            check(release.await(5, TimeUnit.SECONDS)) { "Timed out releasing ${setting.key}" }
+        }
+        val backing = InMemorySharedPreferences(
+            backing = mutableMapOf(setting.key to 4),
+            onCommit = { if (!pauseInitialization) pause() },
+        )
+        val preferences = object : SharedPreferences by backing {
+            override fun getInt(key: String, defValue: Int): Int {
+                val value = backing.getInt(key, defValue)
+                if (pauseInitialization && key == setting.key) pause()
+                return value
+            }
+        }
+        val context = object : ContextWrapper(null) {
+            override fun getApplicationContext(): Context = this
+
+            override fun getSharedPreferences(name: String, mode: Int): SharedPreferences = preferences
+        }
+        val initialize = { AppSettingsStore.initGameCardStyle(context) }
+        val update = { setting.setter(context, 8) }
+        val firstAction = if (pauseInitialization) initialize else update
+        val secondAction = if (pauseInitialization) update else initialize
+        val first = Thread({
+            try {
+                firstAction()
+            } catch (error: Throwable) {
+                failure.compareAndSet(null, error)
+            }
+        }, "card-columns-first")
+        val second = Thread({
+            competitorStarted.countDown()
+            try {
+                secondAction()
+            } catch (error: Throwable) {
+                failure.compareAndSet(null, error)
+            }
+        }, "card-columns-second")
+
+        try {
+            setting.state.value = 2
+            first.start()
+            assertTrue("${setting.key}: first operation did not pause", paused.await(5, TimeUnit.SECONDS))
+            second.start()
+            assertTrue(competitorStarted.await(5, TimeUnit.SECONDS))
+            // Wait for actual monitor contention, rather than assuming a scheduled thread has run.
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            while (second.isAlive && second.state != Thread.State.BLOCKED && System.nanoTime() < deadline) {
+                Thread.yield()
+            }
+            assertEquals("${setting.key}: competing operation must wait", Thread.State.BLOCKED, second.state)
+            assertEquals(2, setting.state.value)
+            assertEquals(if (pauseInitialization) 4 else 8, backing.getInt(setting.key, 0))
+
+            release.countDown()
+            first.join(5_000)
+            second.join(5_000)
+            assertFalse("${setting.key}: first operation did not finish", first.isAlive)
+            assertFalse("${setting.key}: competing operation did not finish", second.isAlive)
+            failure.get()?.let { throw AssertionError("${setting.key}: worker failed", it) }
+            assertEquals(8, backing.getInt(setting.key, 0))
+            assertEquals(8, setting.state.value)
+        } finally {
+            release.countDown()
+            try {
+                for (thread in listOf(first, second)) {
+                    thread.interrupt()
+                    thread.join(5_000)
+                }
+            } finally {
+                restoreSettingsState()
+            }
+            assertFalse("${setting.key}: first worker leaked", first.isAlive)
+            assertFalse("${setting.key}: competing worker leaked", second.isAlive)
+        }
     }
 
     @Test

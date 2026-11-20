@@ -1,6 +1,15 @@
 package com.tyranor.next.ui.common.motion
 
 import android.animation.ValueAnimator
+import android.graphics.Bitmap
+import android.graphics.Rect
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.view.PixelCopy
+import android.view.ViewTreeObserver
+import android.view.Window
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,18 +25,28 @@ import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
+import androidx.annotation.RequiresApi
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.test.platform.app.InstrumentationRegistry
 import com.tyranor.next.ui.common.MotionDeviceAcceptance
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -155,17 +174,51 @@ class GridReflowDeviceTest(private val staggered: Boolean) {
 
     @Test
     fun ordinaryModeIsStableOnFirstRestoredFrame() = withFixture(enhanced = false) {
-        compose.runOnIdle { columns.intValue = 3 }
-        awaitWaterfallReady()
-        compose.mainClock.advanceTimeByFrame()
-        val first = capture()
-        assertResting(first, 3)
-        compose.mainClock.advanceTimeBy(SETTLE_MILLIS)
-        assertArrayEquals("Ordinary mode must have no deferred placement or entrance", first.pixels, capture().pixels)
-        compose.runOnIdle { columns.intValue = 2 }
-        awaitWaterfallReady()
-        compose.mainClock.advanceTimeByFrame()
-        assertResting(capture(), 2)
+        assumeTrue("Frame commit callbacks require API 29", Build.VERSION.SDK_INT >= 29)
+        for (next in listOf(3, 2)) {
+            val first = captureFirstRestoredDraw(next)
+            assertResting(first, next)
+            compose.mainClock.advanceTimeBy(SETTLE_MILLIS)
+            assertArrayEquals(
+                "Ordinary mode must have no deferred placement or entrance ($next columns)",
+                first.pixels,
+                captureSettledWindow().pixels,
+            )
+        }
+    }
+
+    private fun Fixture.captureFirstRestoredDraw(next: Int): Frame {
+        val request = RestoredDraw(next)
+        compose.runOnIdle {
+            restoredDraw = request
+            columns.intValue = next
+        }
+        try {
+            repeat(60) {
+                val registered = compose.runOnIdle {
+                    // Both the check and the clock step run on the main thread.
+                    if (request.registered) true else {
+                        compose.mainClock.advanceTimeByFrame()
+                        false
+                    }
+                }
+                if (registered) return request.result.get(5, TimeUnit.SECONDS)
+            }
+            check(compose.runOnIdle { request.registered }) {
+                "No restored draw for $next columns within 60 clock frames"
+            }
+            return request.result.get(5, TimeUnit.SECONDS)
+        } finally {
+            compose.runOnUiThread { restoredDraw = null }
+        }
+    }
+
+    private fun Fixture.captureSettledWindow(): Frame {
+        val result = CompletableFuture<Frame>()
+        compose.runOnIdle {
+            copyViewport(checkNotNull(window), checkNotNull(viewportBounds), result)
+        }
+        return result.get(5, TimeUnit.SECONDS)
     }
 
     private fun Fixture.awaitWaterfallReady() {
@@ -179,8 +232,17 @@ class GridReflowDeviceTest(private val staggered: Boolean) {
         error("Waterfall restoration did not become ready within 60 frames")
     }
 
-    private class Fixture(val entranceStepMillis: Long) {
+    private class RestoredDraw(val columns: Int) {
+        var registered = false
+        val result = CompletableFuture<Frame>()
+    }
+
+    private class Fixture(val entranceStepMillis: Long, val captureRestoredDraws: Boolean) {
         val columns = mutableIntStateOf(2)
+        var restoredDraw: RestoredDraw? = null
+        var appliedColumns = 0
+        var window: Window? = null
+        var viewportBounds: Rect? = null
         var waterfall: WaterfallReflowState? = null
         var reflow: GridReflowState? = null
     }
@@ -196,7 +258,7 @@ class GridReflowDeviceTest(private val staggered: Boolean) {
         try {
             MotionDeviceAcceptance.require()
             if (!enhanced) instrumentation.runOnMainSync { MotionMode.sync(false) }
-            val fixture = Fixture(entranceStepMillis)
+            val fixture = Fixture(entranceStepMillis, captureRestoredDraws = !enhanced)
             compose.setContent { GridFixture(fixture) }
             compose.waitForIdle()
             compose.mainClock.autoAdvance = false
@@ -237,6 +299,11 @@ class GridReflowDeviceTest(private val staggered: Boolean) {
         // Integral pixel geometry keeps screenshots independent of emulator density.
         val viewport = Modifier
             .size(with(density) { WIDTH.toDp() }, with(density) { HEIGHT.toDp() })
+            .then(
+                if (fixture.captureRestoredDraws && Build.VERSION.SDK_INT >= 29) {
+                    windowFrameObserver(fixture, columns, waterfallReflow, reflow)
+                } else Modifier,
+            )
             .background(Color.Black)
             .testTag(GRID_TAG)
         val frame = Modifier.fillMaxSize()
@@ -289,6 +356,73 @@ class GridReflowDeviceTest(private val staggered: Boolean) {
         }
     }
 
+    @RequiresApi(29)
+    @Composable
+    private fun windowFrameObserver(
+        fixture: Fixture,
+        columns: Int,
+        waterfall: WaterfallReflowState,
+        reflow: GridReflowState,
+    ): Modifier {
+        val view = LocalView.current
+        val window = checkNotNull(LocalActivity.current).window
+        SideEffect {
+            fixture.appliedColumns = columns
+            fixture.window = window
+        }
+        DisposableEffect(view, window, waterfall, reflow) {
+            val observer = view.viewTreeObserver
+            val listener = ViewTreeObserver.OnPreDrawListener {
+                val request = fixture.restoredDraw
+                val bounds = fixture.viewportBounds
+                if (request != null && !request.registered && bounds != null &&
+                    request.columns == fixture.appliedColumns &&
+                    (!staggered || !waterfall.isRestoring) && reflow.isReady
+                ) {
+                    request.registered = true
+                    val source = Rect(bounds)
+                    // Register before performDraw captures this frame's commit callbacks.
+                    observer.registerFrameCommitCallback {
+                        copyViewport(window, source, request.result)
+                    }
+                }
+                true
+            }
+            observer.addOnPreDrawListener(listener)
+            onDispose {
+                if (observer.isAlive) observer.removeOnPreDrawListener(listener)
+            }
+        }
+        return Modifier.onGloballyPositioned { coordinates ->
+            val bounds = coordinates.boundsInWindow()
+            fixture.viewportBounds = Rect(
+                bounds.left.roundToInt(), bounds.top.roundToInt(),
+                bounds.right.roundToInt(), bounds.bottom.roundToInt(),
+            )
+        }
+    }
+
+    private fun copyViewport(window: Window, bounds: Rect, result: CompletableFuture<Frame>) {
+        val bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
+        try {
+            PixelCopy.request(window, bounds, bitmap, { status ->
+                try {
+                    check(status == PixelCopy.SUCCESS) { "Viewport PixelCopy failed: $status" }
+                    val pixels = IntArray(WIDTH * HEIGHT)
+                    bitmap.getPixels(pixels, 0, WIDTH, 0, 0, WIDTH, HEIGHT)
+                    result.complete(Frame(WIDTH, HEIGHT, pixels))
+                } catch (failure: Throwable) {
+                    result.completeExceptionally(failure)
+                } finally {
+                    bitmap.recycle()
+                }
+            }, Handler(Looper.getMainLooper()))
+        } catch (failure: Throwable) {
+            bitmap.recycle()
+            result.completeExceptionally(failure)
+        }
+    }
+
     @Composable
     private fun FixtureCard(index: Int, modifier: Modifier) {
         val density = LocalDensity.current
@@ -329,14 +463,14 @@ class GridReflowDeviceTest(private val staggered: Boolean) {
         }
     }
 
-    private fun capture(): Frame {
-        val image = compose.onNodeWithTag(GRID_TAG).captureToImage()
-        assertEquals("Fixture width", WIDTH, image.width)
-        assertEquals("Fixture height", HEIGHT, image.height)
-        val pixels = IntArray(image.width * image.height)
-        image.readPixels(pixels)
-        val frame = Frame(image.width, image.height, pixels)
-        return frame
+    private fun capture(): Frame = compose.onNodeWithTag(GRID_TAG).captureToImage().readFrame()
+
+    private fun ImageBitmap.readFrame(): Frame {
+        assertEquals("Fixture width", WIDTH, width)
+        assertEquals("Fixture height", HEIGHT, height)
+        val pixels = IntArray(width * height)
+        readPixels(pixels)
+        return Frame(width, height, pixels)
     }
 
     private fun assertResting(frame: Frame, columns: Int) {

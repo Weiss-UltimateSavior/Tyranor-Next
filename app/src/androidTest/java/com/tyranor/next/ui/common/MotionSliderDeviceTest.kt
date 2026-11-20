@@ -56,6 +56,21 @@ class MotionSliderDeviceTest(private val enhanced: Boolean) {
         assertProgress(DRAGGED)
     }
 
+    @Test
+    fun systemCancelWithoutCancellationCallbackCommitsDraftExactlyOnce() = withSlider(
+        withCancellationCallback = false,
+    ) { fixture ->
+        dragToDraft(fixture)
+        compose.onNodeWithTag(SLIDER).performTouchInput { cancel() }
+
+        compose.runOnIdle {
+            assertEquals(listOf(DRAGGED), fixture.commits)
+            assertEquals(DRAGGED, fixture.committed, 0f)
+            assertEquals(DRAGGED, fixture.draft.floatValue, 0f)
+        }
+        assertProgress(DRAGGED)
+    }
+
     private fun dragToDraft(fixture: Fixture) {
         compose.onNodeWithTag(SLIDER).performTouchInput {
             down(center)
@@ -79,7 +94,7 @@ class MotionSliderDeviceTest(private val enhanced: Boolean) {
         )
     }
 
-    private fun withSlider(test: (Fixture) -> Unit) {
+    private fun withSlider(withCancellationCallback: Boolean = true, test: (Fixture) -> Unit) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val originalMode = MotionMode.enhanced
         try {
@@ -97,10 +112,12 @@ class MotionSliderDeviceTest(private val enhanced: Boolean) {
                             fixture.committed = fixture.draft.floatValue
                             fixture.commits += fixture.committed
                         },
-                        onValueChangeCancelled = {
-                            fixture.cancelCalls++
-                            fixture.draft.floatValue = fixture.committed
-                        },
+                        onValueChangeCancelled = if (withCancellationCallback) {
+                            {
+                                fixture.cancelCalls++
+                                fixture.draft.floatValue = fixture.committed
+                            }
+                        } else null,
                     )
                 }
             }

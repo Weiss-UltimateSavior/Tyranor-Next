@@ -403,6 +403,8 @@ object AppSettingsStore {
     /** 卡片风格内存态：设置页切换后游戏页即时切换布局。 */
     val gameCardStyleState: MutableStateFlow<String> = MutableStateFlow(DEFAULT_GAME_CARD_STYLE)
 
+    private val gameCardColumnsLock = Any()
+
     val gameGridPortraitColumnsState: MutableStateFlow<Int> = MutableStateFlow(DEFAULT_GAME_GRID_PORTRAIT_COLUMNS)
     val gameGridLandscapeColumnsState: MutableStateFlow<Int> = MutableStateFlow(DEFAULT_GAME_GRID_LANDSCAPE_COLUMNS)
     val gameWaterfallPortraitColumnsState: MutableStateFlow<Int> = MutableStateFlow(DEFAULT_GAME_WATERFALL_PORTRAIT_COLUMNS)
@@ -879,10 +881,12 @@ object AppSettingsStore {
     }
 
     fun initGameCardStyle(c: Context) {
-        gameGridPortraitColumnsState.value = getGameGridPortraitColumns(c)
-        gameGridLandscapeColumnsState.value = getGameGridLandscapeColumns(c)
-        gameWaterfallPortraitColumnsState.value = getGameWaterfallPortraitColumns(c)
-        gameWaterfallLandscapeColumnsState.value = getGameWaterfallLandscapeColumns(c)
+        synchronized(gameCardColumnsLock) {
+            gameGridPortraitColumnsState.value = getGameGridPortraitColumns(c)
+            gameGridLandscapeColumnsState.value = getGameGridLandscapeColumns(c)
+            gameWaterfallPortraitColumnsState.value = getGameWaterfallPortraitColumns(c)
+            gameWaterfallLandscapeColumnsState.value = getGameWaterfallLandscapeColumns(c)
+        }
         gameCardStyleState.value = getGameCardStyle(c)
     }
 
@@ -897,14 +901,18 @@ object AppSettingsStore {
 
     fun setGameGridPortraitColumns(c: Context, columns: Int) {
         val normalized = normalizeGameGridColumns(columns)
-        prefs(c).edit().putInt(KEY_GAME_GRID_PORTRAIT_COLUMNS, normalized).apply()
-        gameGridPortraitColumnsState.value = normalized
+        synchronized(gameCardColumnsLock) {
+            prefs(c).edit().putInt(KEY_GAME_GRID_PORTRAIT_COLUMNS, normalized).apply()
+            gameGridPortraitColumnsState.value = normalized
+        }
     }
 
     fun setGameGridLandscapeColumns(c: Context, columns: Int) {
         val normalized = normalizeGameGridColumns(columns)
-        prefs(c).edit().putInt(KEY_GAME_GRID_LANDSCAPE_COLUMNS, normalized).apply()
-        gameGridLandscapeColumnsState.value = normalized
+        synchronized(gameCardColumnsLock) {
+            prefs(c).edit().putInt(KEY_GAME_GRID_LANDSCAPE_COLUMNS, normalized).apply()
+            gameGridLandscapeColumnsState.value = normalized
+        }
     }
 
     fun getGameWaterfallPortraitColumns(c: Context): Int =
@@ -915,14 +923,18 @@ object AppSettingsStore {
 
     fun setGameWaterfallPortraitColumns(c: Context, columns: Int) {
         val normalized = normalizeGameGridColumns(columns)
-        prefs(c).edit().putInt(KEY_GAME_WATERFALL_PORTRAIT_COLUMNS, normalized).apply()
-        gameWaterfallPortraitColumnsState.value = normalized
+        synchronized(gameCardColumnsLock) {
+            prefs(c).edit().putInt(KEY_GAME_WATERFALL_PORTRAIT_COLUMNS, normalized).apply()
+            gameWaterfallPortraitColumnsState.value = normalized
+        }
     }
 
     fun setGameWaterfallLandscapeColumns(c: Context, columns: Int) {
         val normalized = normalizeGameGridColumns(columns)
-        prefs(c).edit().putInt(KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS, normalized).apply()
-        gameWaterfallLandscapeColumnsState.value = normalized
+        synchronized(gameCardColumnsLock) {
+            prefs(c).edit().putInt(KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS, normalized).apply()
+            gameWaterfallLandscapeColumnsState.value = normalized
+        }
     }
 
     fun getGameCardStyle(c: Context): String =

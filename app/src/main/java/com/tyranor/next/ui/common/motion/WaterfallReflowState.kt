@@ -3,12 +3,15 @@ package com.tyranor.next.ui.common.motion
 import android.os.SystemClock
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.MutatePriority
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.lazy.staggeredgrid.LazyLayoutScrollScope
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
@@ -20,7 +23,11 @@ import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -188,7 +195,19 @@ class WaterfallReflowState private constructor(
             if (!consumed.isFinite() || consumed <= 0f) break
         }
         if (!anchor.atBottom && anchor.identity != null) {
-            // Preserve the measured lanes when falling back after an exhaustive identity scan.
+            // Data may move the identity behind the forward cursor while we yield a frame.
+            steps = 0L
+            while (steps++ < maxSteps && canContinue()) {
+                val item = state.layoutInfo.visibleItemsInfo.firstOrNull { itemIdentity(it.key) == anchor.identity }
+                if (item != null) {
+                    scrollBy((item.offset.y - anchor.y).toFloat())
+                    return@with
+                }
+                if (!state.canScrollBackward ||
+                    scrollBy(-(state.layoutInfo.viewportSize.height / 2f).coerceAtLeast(1f)) >= 0f
+                ) break
+            }
+            // Only an exhausted identity search may fall back to the numeric anchor.
             steps = 0L
             while (steps++ < maxSteps && canContinue()) {
                 val item = state.layoutInfo.visibleItemsInfo.firstOrNull { it.index == target }
@@ -196,8 +215,8 @@ class WaterfallReflowState private constructor(
                     scrollBy((item.offset.y - anchor.y).toFloat())
                     return@with
                 }
-                if (!state.canScrollBackward ||
-                    scrollBy(-(state.layoutInfo.viewportSize.height / 2f).coerceAtLeast(1f)) >= 0f
+                if (!state.canScrollForward ||
+                    scrollBy((state.layoutInfo.viewportSize.height / 2f).coerceAtLeast(1f)) <= 0f
                 ) break
             }
         }
@@ -257,8 +276,13 @@ fun rememberWaterfallReflowState(
     return state
 }
 
-/** Keep the intermediate viewport out of drawing, hit actions and accessibility. */
+/** Keep the intermediate viewport out of drawing, focus, hit actions and accessibility. */
 fun Modifier.waterfallReflowHost(state: WaterfallReflowState): Modifier = composed {
+    var hostHasFocus by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    if (state.isRestoring && hostHasFocus) {
+        SideEffect { focusManager.clearFocus(force = true) }
+    }
     val gate = if (state.isRestoring) {
         Modifier.clearAndSetSemantics { hideFromAccessibility() }
             .pointerInput(state) {
@@ -271,5 +295,10 @@ fun Modifier.waterfallReflowHost(state: WaterfallReflowState): Modifier = compos
                 }
             }
     } else Modifier
-    gate.graphicsLayer { alpha = if (state.isRestoring) 0f else 1f }
+    Modifier.onFocusChanged { hostHasFocus = it.hasFocus }
+        .focusProperties { onEnter = { if (state.isRestoring) cancelFocusChange() } }
+        .focusGroup()
+        .onPreviewKeyEvent { state.isRestoring }
+        .then(gate)
+        .graphicsLayer { alpha = if (state.isRestoring) 0f else 1f }
 }

@@ -39,6 +39,8 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -50,6 +52,25 @@ class WaterfallRestoreResponsivenessDeviceTest {
     @Test fun hundredCardsRestoreWithoutBlockingInput() = measure(100)
     @Test fun threeThousandCardsRestoreWithoutBlockingInput() = measure(3000)
 
+    @Test fun overdueTouchProbeIncludesTailBlockAfterRestoreCompletes() {
+        val delay = requireNotNull(touchProbeDelay(scheduledAt = 1000L, now = 1900L, completedAt = 1800L))
+        assertEquals(800L, delay)
+        assertTrue("An 800 ms tail block must exceed the input threshold", delay >= 250L)
+        assertEquals(800L, touchProbeDelay(scheduledAt = 1000L, now = 1800L, completedAt = 0L))
+    }
+
+    @Test fun touchProbeEligibilityIncludesCompletionButExcludesLaterDeadlines() {
+        assertEquals(0L, touchProbeDelay(scheduledAt = 1800L, now = 1900L, completedAt = 1800L))
+        assertNull(touchProbeDelay(scheduledAt = 1801L, now = 1900L, completedAt = 1800L))
+        assertNull(touchProbeDelay(scheduledAt = 1000L, now = 999L, completedAt = 0L))
+        assertEquals(100L, touchProbeDelay(scheduledAt = 1000L, now = 1100L, completedAt = 1800L))
+    }
+
+    private fun touchProbeDelay(scheduledAt: Long, now: Long, completedAt: Long): Long? {
+        val waitEnd = if (completedAt == 0L) now else minOf(now, completedAt)
+        return (waitEnd - scheduledAt).takeIf { it >= 0L }
+    }
+
     private fun measure(count: Int) {
         MotionDeviceAcceptance.require()
         val fixture = Fixture(count)
@@ -57,8 +78,7 @@ class WaterfallRestoreResponsivenessDeviceTest {
         var scheduledAt = 0L
         val probe = object : Runnable {
             override fun run() {
-                if (fixture.completed.get() != 0L) return
-                if (fixture.holder?.isRestoring == true) {
+                if (touchProbeDelay(scheduledAt, SystemClock.uptimeMillis(), fixture.completed.get()) != null) {
                     val event = MotionEvent.obtain(scheduledAt, scheduledAt, MotionEvent.ACTION_DOWN, 2f, 2f, 0)
                     try {
                         fixture.touchView.dispatchTouchEvent(event)
@@ -68,6 +88,7 @@ class WaterfallRestoreResponsivenessDeviceTest {
                     val up = MotionEvent.obtain(scheduledAt, scheduledAt, MotionEvent.ACTION_UP, 2f, 2f, 0)
                     try { fixture.touchView.dispatchTouchEvent(up) } finally { up.recycle() }
                 }
+                if (fixture.completed.get() != 0L) return
                 scheduledAt = SystemClock.uptimeMillis() + 8L
                 handler.postDelayed(this, 8L)
             }
@@ -100,13 +121,14 @@ class WaterfallRestoreResponsivenessDeviceTest {
                 }
             }
             assertTrue("Restored content must actually be drawn", painted)
-            assertTrue("A native touch must be processed while restore is pending", fixture.inputCount.get() > 0L)
+            assertTrue("A native touch due during restore must be processed", fixture.inputCount.get() > 0L)
             assertTrue("Input callbacks must not wait for the whole restore", fixture.maxInputDelay.get() < 250L)
-            assertTrue("A restored frame must have been recorded", fixture.firstDraw.get() >= fixture.started.get())
+            assertTrue("A post-restore draw callback must have been recorded",
+                fixture.firstPostRestoreDrawCallbackAt.get() >= fixture.started.get())
             assertTrue("Restoration including coarse fallback must finish within 2500 ms",
                 fixture.completed.get() - fixture.started.get() < 2500L)
             compose.runOnIdle { assertTrue("Bottom must remain anchored", !fixture.state.canScrollForward) }
-            Log.i("WaterfallRestoreMetrics", "count=$count restoreMs=${fixture.completed.get() - fixture.started.get()} maxTouchDispatchDelayMs=${fixture.maxInputDelay.get()} visibleFrameMs=${fixture.firstDraw.get() - fixture.started.get()} touchesDuringRestore=${fixture.inputCount.get()}")
+            Log.i("WaterfallRestoreMetrics", "count=$count restoreMs=${fixture.completed.get() - fixture.started.get()} maxTouchDispatchDelayMs=${fixture.maxInputDelay.get()} firstPostRestoreDrawCallbackMs=${fixture.firstPostRestoreDrawCallbackAt.get() - fixture.started.get()} touchesDueDuringRestore=${fixture.inputCount.get()}")
         } finally {
             handler.removeCallbacks(probe)
         }
@@ -116,7 +138,6 @@ class WaterfallRestoreResponsivenessDeviceTest {
     private fun Content(fixture: Fixture) {
         val columns = fixture.columns
         val holder = rememberWaterfallReflowState(columns, columns == 3)
-        fixture.holder = holder
         fixture.state = holder.gridState
         fixture.scope = rememberCoroutineScope()
         LaunchedEffect(holder.gridState) {
@@ -129,10 +150,12 @@ class WaterfallRestoreResponsivenessDeviceTest {
                     View(context).also { view ->
                         fixture.touchView = view
                         view.setOnTouchListener { _, event ->
-                            if (event.actionMasked == MotionEvent.ACTION_DOWN && holder.isRestoring) {
-                                fixture.inputCount.incrementAndGet()
-                                val delay = SystemClock.uptimeMillis() - event.eventTime
-                                fixture.maxInputDelay.updateAndGet { maxOf(it, delay) }
+                            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                                val delay = touchProbeDelay(event.eventTime, SystemClock.uptimeMillis(), fixture.completed.get())
+                                if (delay != null) {
+                                    fixture.inputCount.incrementAndGet()
+                                    fixture.maxInputDelay.updateAndGet { maxOf(it, delay) }
+                                }
                             }
                             true
                         }
@@ -148,7 +171,8 @@ class WaterfallRestoreResponsivenessDeviceTest {
                     .drawWithContent {
                         drawContent()
                         if (!holder.isRestoring && fixture.started.get() > 0L) {
-                            fixture.firstDraw.compareAndSet(0L, SystemClock.uptimeMillis())
+                            // This callback does not prove that this same frame contains visible content.
+                            fixture.firstPostRestoreDrawCallbackAt.compareAndSet(0L, SystemClock.uptimeMillis())
                         }
                     },
                 verticalItemSpacing = 8.dp,
@@ -163,13 +187,12 @@ class WaterfallRestoreResponsivenessDeviceTest {
 
     private class Fixture(val count: Int) {
         var columns by mutableIntStateOf(2)
-        var holder: WaterfallReflowState? = null
         lateinit var state: LazyStaggeredGridState
         lateinit var scope: CoroutineScope
         lateinit var touchView: View
         val started = AtomicLong()
         val completed = AtomicLong()
-        val firstDraw = AtomicLong()
+        val firstPostRestoreDrawCallbackAt = AtomicLong()
         val inputCount = AtomicLong()
         val maxInputDelay = AtomicLong()
     }

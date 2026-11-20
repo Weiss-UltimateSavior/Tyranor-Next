@@ -136,7 +136,7 @@ fun Slider(
         valueRange = valueRange,
         steps = steps,
         onValueChangeFinished = onValueChangeFinished,
-        onValueChangeCancelled = onValueChangeCancelled ?: {},
+        onValueChangeCancelled = onValueChangeCancelled ?: onValueChangeFinished ?: {},
         height = height,
         haptics = hapticEffect != SliderDefaults.SliderHapticEffect.None,
         showKeyPoints = showKeyPoints,
@@ -343,8 +343,8 @@ private fun TickSlider(
                                 }
                                 scope.launch { overshoot.animateTo(0f, MotionTokens.control(0.0005f)) }
                                 scope.launch { press.animateTo(1f, MotionTokens.release(0.001f)) }
-                                if (cancelled) onCancelled() else onFinished?.invoke()
                                 finished = true
+                                if (cancelled) onCancelled() else onFinished?.invoke()
                             } finally {
                                 if (!finished) onCancelled()
                                 if (!finished && generation == interaction.generation) {
