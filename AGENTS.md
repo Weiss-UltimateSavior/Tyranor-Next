@@ -506,7 +506,7 @@ Column(fillMaxSize)                                // 页面根
 | 妙妙工具面板（WebDAV 存档同步） | `MainScreen.kt`（`AppSidePanel` 的 `content` 槽） | `ic_save_cloud` |
 | 妙妙工具面板（输入与手柄） | `MainScreen.kt`（`AppSidePanel` 的 `content` 槽） | `ic_input_gamepad` |
 | 妙妙工具面板（引擎模块管理） | `MainScreen.kt`（`AppSidePanel` 的 `content` 槽） | `ic_engine_manage` |
-| 游玩状态同步（来源/状态选项/解绑/绑定搜索候选/重试） | `PlayStatusDialog.kt`（`PlaySourceRow` / `PlayStatusPickDialog` / `SubjectBindDialog`） | `ic_sheet_play_status` / `ic_sheet_delete` / `ic_cover_source` / `ic_refresh` |
+| 游玩状态同步（来源/状态选项/解绑/绑定搜索候选/重试） | `PlayStatusDialog.kt`（`PlaySourceRow` / `PlayStatusPickDialog` / `SubjectBindDialog`） | `ic_play_status_source` / `ic_sheet_play_status` / `ic_sheet_delete` / `ic_cover_source` / `ic_game_scan` |
 
 ***
 
