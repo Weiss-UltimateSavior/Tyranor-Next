@@ -40,6 +40,8 @@ import com.tyranor.next.theme.SecondaryTextColor
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.CoverSurface
+import com.tyranor.next.ui.common.motion.rememberCoverReveal
 import com.tyranor.next.ui.home.formatPlaytimeHours
 
 /**
@@ -144,6 +146,8 @@ private fun ShelfStatCell(
 @Composable
 internal fun GameSheetHeader(game: ScanGame, coverShape: Shape, modifier: Modifier = Modifier) {
     val cover by rememberCoverBitmap(game.coverUri)
+    val bitmap = cover
+    val reveal = rememberCoverReveal(bitmap != null, CoverSurface.Grid)
     val context = LocalContext.current.applicationContext
     val statsFlow = remember(context, game.uri) { GamePlaytimeRepository.observe(context, game.uri) }
     val stats: GamePlaytimeStats? by statsFlow.collectAsStateWithLifecycle(initialValue = null)
@@ -158,11 +162,15 @@ internal fun GameSheetHeader(game: ScanGame, coverShape: Shape, modifier: Modifi
                 .glassBorder(shape = coverShape),
             contentAlignment = Alignment.Center,
         ) {
-            val bitmap = cover
             // 与列表一致：已知封面存在、只是还没解码好时先留底色，不闪占位文字
             if (bitmap == null && !isCoverKnown(game.coverUri)) GameCoverPlaceholder(gameCardEngineName(game))
             if (bitmap != null) {
-                Image(bitmap = bitmap, contentDescription = game.title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = game.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = reveal.image(Modifier.fillMaxSize()),
+                )
             }
         }
         Column(Modifier.weight(1f).padding(start = 16.dp)) {
