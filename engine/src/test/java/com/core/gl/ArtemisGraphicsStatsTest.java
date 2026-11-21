@@ -264,6 +264,33 @@ public class ArtemisGraphicsStatsTest {
         assertEquals(3.0, partial.nodeGpuMs[0], 0.001);
         assertTrue("Missing node in active interval must not borrow old held timing",
                 Double.isNaN(partial.nodeGpuMs[1]));
+
+        // Subsequent static frame must keep last complete active total (10.0) rather than mixing partial (3.0) with held (2.0).
+        ArtemisGraphicsStats.ResolvedTimings heldAfterPartial = tracker.resolve(stats.snapshot(3), false);
+        assertTrue("Static frame after partial active interval must keep last complete total", heldAfterPartial.complete);
+        assertEquals(10.0, heldAfterPartial.gpuMs, 0.001);
+        assertEquals(8.0, heldAfterPartial.nodeGpuMs[0], 0.001);
+        assertEquals(2.0, heldAfterPartial.nodeGpuMs[1], 0.001);
+    }
+
+    @Test public void displayTrackerClearsHeldTimingsWhenTimingGenerationChangesAcrossSameConfig() {
+        ArtemisGraphicsStats stats = new ArtemisGraphicsStats();
+        ArtemisGraphicsStats.DisplayTimingTracker tracker = new ArtemisGraphicsStats.DisplayTimingTracker();
+        GraphicsFilterChain chain = GraphicsFilterChain.parse("v1:lanczos");
+        stats.configureNodes(chain, "GPU");
+        stats.frame(1280, 720, 2560, 1440, 2133, 1200);
+        stats.nodeFrame(new int[]{1280}, new int[]{720}, new int[]{2560}, new int[]{1440}, new boolean[]{true});
+        stats.nodeGpu(0, 6.5);
+        assertEquals(6.5, tracker.resolve(stats.snapshot(1), false).gpuMs, 0.001);
+
+        // Even after resetInterval(0) and reconfiguring with identical chain/dimensions,
+        // bumped timingGeneration must prevent stale held values from leaking across generations.
+        stats.resetInterval(0);
+        stats.configureNodes(chain, "GPU");
+        ArtemisGraphicsStats.ResolvedTimings afterReconfig = tracker.resolve(stats.snapshot(2), false);
+        assertFalse(afterReconfig.complete);
+        assertTrue(Double.isNaN(afterReconfig.gpuMs));
+        assertTrue(Double.isNaN(afterReconfig.nodeGpuMs[0]));
     }
 
 }

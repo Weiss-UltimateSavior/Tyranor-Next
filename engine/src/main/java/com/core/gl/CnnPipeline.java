@@ -3,6 +3,7 @@ package com.core.gl;
 import android.content.Context;
 import android.content.res.AssetManager;
 import android.opengl.GLES30;
+import android.opengl.GLES31Ext;
 import android.opengl.GLES32;
 import android.util.Log;
 
@@ -121,12 +122,41 @@ public final class CnnPipeline {
         }
 
         private static final IndexedDrawBufferOps GLES32_INDEXED_OPS = new IndexedDrawBufferOps() {
+            private boolean useExt;
+
+            private boolean hasExtension(String target) {
+                int[] count = new int[1];
+                GLES30.glGetIntegerv(GLES30.GL_NUM_EXTENSIONS, count, 0);
+                for (int i = 0; i < count[0]; i++) {
+                    if (target.equals(GLES30.glGetStringi(GLES30.GL_EXTENSIONS, i))) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
             @Override public int getDrawBufferCount() {
+                useExt = false;
                 int[] ver = new int[2];
                 GLES30.glGetIntegerv(GLES30.GL_MAJOR_VERSION, ver, 0);
                 GLES30.glGetIntegerv(GLES30.GL_MINOR_VERSION, ver, 1);
-                if (ver[0] < 3 || (ver[0] == 3 && ver[1] < 2)) {
-                    return 0;
+                boolean isEs32 = ver[0] > 3 || (ver[0] == 3 && ver[1] >= 2);
+                if (!isEs32) {
+                    if (!hasExtension("GL_EXT_draw_buffers_indexed")) {
+                        return 0;
+                    }
+                    useExt = true;
+                    try {
+                        while (GLES30.glGetError() != GLES30.GL_NO_ERROR) {}
+                        int[] probe = new int[4];
+                        GLES32.glGetIntegeri_v(GLES30.GL_COLOR_WRITEMASK, 0, probe, 0);
+                        GLES31Ext.glIsEnablediEXT(GLES30.GL_BLEND, 0);
+                        if (GLES30.glGetError() != GLES30.GL_NO_ERROR) {
+                            return -1;
+                        }
+                    } catch (RuntimeException | UnsatisfiedLinkError unavailable) {
+                        return -1;
+                    }
                 }
                 int[] maxBufs = new int[1];
                 GLES30.glGetIntegerv(GLES30.GL_MAX_DRAW_BUFFERS, maxBufs, 0);
@@ -138,16 +168,24 @@ public final class CnnPipeline {
             }
 
             @Override public boolean isBlendEnabledi(int index) {
-                return GLES32.glIsEnabledi(GLES30.GL_BLEND, index);
+                return useExt
+                        ? GLES31Ext.glIsEnablediEXT(GLES30.GL_BLEND, index)
+                        : GLES32.glIsEnabledi(GLES30.GL_BLEND, index);
             }
 
             @Override public void colorMaski(int index, boolean red, boolean green, boolean blue, boolean alpha) {
-                GLES32.glColorMaski(index, red, green, blue, alpha);
+                if (useExt) GLES31Ext.glColorMaskiEXT(index, red, green, blue, alpha);
+                else GLES32.glColorMaski(index, red, green, blue, alpha);
             }
 
             @Override public void setBlendEnabledi(int index, boolean enabled) {
-                if (enabled) GLES32.glEnablei(GLES30.GL_BLEND, index);
-                else GLES32.glDisablei(GLES30.GL_BLEND, index);
+                if (useExt) {
+                    if (enabled) GLES31Ext.glEnableiEXT(GLES30.GL_BLEND, index);
+                    else GLES31Ext.glDisableiEXT(GLES30.GL_BLEND, index);
+                } else {
+                    if (enabled) GLES32.glEnablei(GLES30.GL_BLEND, index);
+                    else GLES32.glDisablei(GLES30.GL_BLEND, index);
+                }
             }
         };
 
@@ -161,6 +199,7 @@ public final class CnnPipeline {
         final int[] samplers = new int[MAX_BINDINGS];
         IndexedDrawBufferOps indexedOps = GLES32_INDEXED_OPS;
         boolean indexedSupportChecked;
+        boolean indexedExtUnavailable;
         int indexedDrawBufferCount;
         int textureCount;
         int program;
@@ -183,6 +222,7 @@ public final class CnnPipeline {
 
         void resetIndexedSupport() {
             indexedSupportChecked = false;
+            indexedExtUnavailable = false;
             indexedDrawBufferCount = 0;
         }
 
@@ -191,15 +231,27 @@ public final class CnnPipeline {
             return query[0];
         }
 
+        void captureForRender(int count) {
+            capture(count, true);
+        }
+
         void capture(int count) {
+            capture(count, false);
+        }
+
+        private void capture(int count, boolean bypassOnBrokenExt) {
+            if (!indexedSupportChecked) {
+                int probed = indexedOps.getDrawBufferCount();
+                indexedExtUnavailable = probed < 0;
+                indexedDrawBufferCount = indexedExtUnavailable ? 0 : Math.min(MAX_INDEXED_DRAW_BUFFERS, probed);
+                indexedSupportChecked = true;
+            }
+            if (indexedExtUnavailable && bypassOnBrokenExt) {
+                throw new TargetUnavailableException("GL_EXT_draw_buffers_indexed entry points unavailable", false);
+            }
             textureCount = count;
             GLES30.glGetIntegerv(GLES30.GL_VIEWPORT, viewport, 0);
             GLES30.glGetIntegerv(GLES30.GL_COLOR_WRITEMASK, colorMask, 0);
-            if (!indexedSupportChecked) {
-                indexedDrawBufferCount = Math.min(MAX_INDEXED_DRAW_BUFFERS,
-                        Math.max(0, indexedOps.getDrawBufferCount()));
-                indexedSupportChecked = true;
-            }
             for (int i = 0; i < indexedDrawBufferCount; i++) {
                 indexedOps.getColorMaski(i, indexedColorMask[i], 0);
                 indexedBlend[i] = indexedOps.isBlendEnabledi(i);
@@ -576,7 +628,9 @@ public final class CnnPipeline {
     private static boolean isMrtTargetFailure(TargetUnavailableException failure) {
         if (failure == null || failure.getMessage() == null) return false;
         String msg = failure.getMessage();
-        return msg.startsWith("device MRT capacity exceeded") || msg.startsWith("MRT FBO incomplete");
+        return msg.startsWith("device MRT capacity exceeded")
+                || msg.startsWith("MRT FBO incomplete")
+                || msg.startsWith("MRT program link failed");
     }
 
     private boolean canFallbackFromRuntimeFusion(boolean mrtFailure) {
@@ -677,10 +731,12 @@ public final class CnnPipeline {
         }
         if (targetsBlocked(width, height, outWidth, outHeight)) return 0;
         if (!beginOwnedGlOperations()) return 0;
-        mState.capture(mMaxBindings);
+        boolean stateCaptured = false;
         int rendered = 0;
         boolean restoreStrictly = false;
         try {
+            mState.captureForRender(mMaxBindings);
+            stateCaptured = true;
             for (int attempt = 0; attempt < 2; attempt++) {
                 try {
                     if (!ensureTargets(width, height, outWidth, outHeight)) {
@@ -720,22 +776,30 @@ public final class CnnPipeline {
                     break;
                 }
             }
+        } catch (TargetUnavailableException unavailable) {
+            try {
+                targetUnavailable(width, height, outWidth, outHeight, unavailable);
+            } catch (RuntimeException cleanupFailure) {
+                fail(cleanupFailure);
+            }
         } catch (RuntimeException failure) {
             fail(failure);
         } finally {
-            try {
-                mState.restore();
-                // Restoration belongs to this node, before the next entry drains inherited errors.
-                requireGlSuccess("filter state restoration", false);
-            } catch (RuntimeException restoreFailure) {
-                // Keep node state consistent when state restoration fails (N3): fail(restoreFailure)
-                // sets mFailed=true, releases owned targets, and logs without throwing out of renderTexture
-                // or upgrading an earlier TargetUnavailable bypass unless restoration itself broke GL state.
-                if (restoreStrictly || !mFailed) {
-                    fail(restoreFailure);
-                    GlErrors.drainBestEffortNoThrow(GLES30.GL_NO_ERROR, GL_ERRORS);
+            if (stateCaptured) {
+                try {
+                    mState.restore();
+                    // Restoration belongs to this node, before the next entry drains inherited errors.
+                    requireGlSuccess("filter state restoration", false);
+                } catch (RuntimeException restoreFailure) {
+                    // Keep node state consistent when state restoration fails (N3): fail(restoreFailure)
+                    // sets mFailed=true, releases owned targets, and logs without throwing out of renderTexture
+                    // or upgrading an earlier TargetUnavailable bypass unless restoration itself broke GL state.
+                    if (restoreStrictly || !mFailed) {
+                        fail(restoreFailure);
+                        GlErrors.drainBestEffortNoThrow(GLES30.GL_NO_ERROR, GL_ERRORS);
+                    }
+                    rendered = 0;
                 }
-                rendered = 0;
             }
         }
         return rendered;
@@ -753,10 +817,12 @@ public final class CnnPipeline {
         }
         if (targetsBlocked(width, height, width, height)) return 0;
         if (!beginOwnedGlOperations()) return 0;
-        mState.capture(1);
+        boolean stateCaptured = false;
         int copied = 0;
         boolean restoreStrictly = false;
         try {
+            mState.captureForRender(1);
+            stateCaptured = true;
             if (mTextureLimit == 0 || mLimitWidth == 0 || mLimitHeight == 0) loadDeviceLimits();
             if (width > mLimitWidth || height > mLimitHeight) {
                 mBypassReason = BYPASS_GL_LIMIT;
@@ -817,20 +883,22 @@ public final class CnnPipeline {
         } catch (RuntimeException failure) {
             fail(failure);
         } finally {
-            try {
-                if (mBorrowedReadFbo[0] != 0) {
-                    GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, mBorrowedReadFbo[0]);
-                    GLES30.glFramebufferTexture2D(GLES30.GL_READ_FRAMEBUFFER, GLES30.GL_COLOR_ATTACHMENT0,
-                            GLES30.GL_TEXTURE_2D, 0, 0);
+            if (stateCaptured) {
+                try {
+                    if (mBorrowedReadFbo[0] != 0) {
+                        GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, mBorrowedReadFbo[0]);
+                        GLES30.glFramebufferTexture2D(GLES30.GL_READ_FRAMEBUFFER, GLES30.GL_COLOR_ATTACHMENT0,
+                                GLES30.GL_TEXTURE_2D, 0, 0);
+                    }
+                    mState.restore();
+                    requireGlSuccess("borrowed state restoration", false);
+                } catch (RuntimeException restoreFailure) {
+                    if (restoreStrictly || !mFailed) {
+                        fail(restoreFailure);
+                        GlErrors.drainBestEffortNoThrow(GLES30.GL_NO_ERROR, GL_ERRORS);
+                    }
+                    copied = 0;
                 }
-                mState.restore();
-                requireGlSuccess("borrowed state restoration", false);
-            } catch (RuntimeException restoreFailure) {
-                if (restoreStrictly || !mFailed) {
-                    fail(restoreFailure);
-                    GlErrors.drainBestEffortNoThrow(GLES30.GL_NO_ERROR, GL_ERRORS);
-                }
-                copied = 0;
             }
         }
         return copied;
@@ -1434,6 +1502,10 @@ public final class CnnPipeline {
                     if (mQuery[0] == 0) {
                         String linkLog = mGl.glGetProgramInfoLog(program);
                         GlErrors.requireGlSuccess("program link for " + pass.desc, true, mGl::glGetError);
+                        if (targetSlots.length > 1 && canFallbackFromRuntimeFusion(true)) {
+                            throw new TargetUnavailableException("MRT program link failed for "
+                                    + pass.desc + ": " + linkLog, false);
+                        }
                         throw new IllegalStateException("link failed for " + pass.desc + ": " + linkLog);
                     }
 

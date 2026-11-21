@@ -215,11 +215,17 @@ public final class MpvHookShaderTest {
         assertFalse("Headers separated only by directive newline must not fuse",
                 GraphicsShaderTransforms.canFusePasses(headerA, headerB));
 
-        // Multiline hook() signature inside an unknown preprocessor conditional must be rejected.
-        assertThrows(IllegalArgumentException.class, () -> MpvHookShader.parse(
+        // Multiline hook() signature inside an unknown preprocessor conditional must be rejected
+        // even when it is the sole candidate definition, while a valid unconditional multiline
+        // void hook() must continue to parse cleanly.
+        IllegalArgumentException condEx = assertThrows(IllegalArgumentException.class, () -> MpvHookShader.parse(
                 "//!DESC multiline_cond_hook\n//!BIND MAIN\n"
-                + "#ifdef USE_VOID\nvoid\nhook(){fragColor=vec4(1.0);}\n#endif\n"
-                + "vec4 hook(){return vec4(1.0);}\n"));
+                + "#ifdef USE_VOID\nvoid\nhook(){fragColor=vec4(1.0);}\n#endif\n"));
+        assertTrue(condEx.getMessage().contains("unverified or ambiguous hook() entry point"));
+        List<MpvHookShader.Pass> validMultiline = MpvHookShader.parse(
+                "//!DESC multiline_valid\n//!BIND MAIN\nvoid\nhook(){fragColor=vec4(1.0);}\n");
+        assertEquals(1, validMultiline.size());
+        assertTrue(MpvHookShader.fragmentSource(validMultiline.get(0), false, false).contains("out vec4 fragColor;"));
 
         // Convolution mat4(...) inside inactive #if 0 branch must not mark a non-CNN pass as CNN.
         MpvHookShader.Pass deadMatPass = MpvHookShader.parse(
@@ -249,6 +255,13 @@ public final class MpvHookShaderTest {
                 "//!DESC remap_fragcolor\n//!BIND MAIN\n//!SAVE A B\n"
                 + "#define fragColor1 fragColor0\n"
                 + "void hook() { fragColor0 = vec4(1.0); fragColor1 = vec4(0.5); }\n"
+                + "//!DESC final\n//!BIND MAIN\n//!BIND A\n//!BIND B\nvec4 hook() { return vec4(1.0); }\n"));
+
+        // Macro expanding to control-flow keyword (e.g. #define STOP return) in multi-SAVE pass must be rejected.
+        assertThrows(IllegalArgumentException.class, () -> MpvHookShader.parse(
+                "//!DESC control_flow_macro_multisave\n//!BIND MAIN\n//!SAVE A B\n"
+                + "#define STOP return\n"
+                + "void hook() { fragColor0 = vec4(1.0); STOP; fragColor1 = vec4(0.5); }\n"
                 + "//!DESC final\n//!BIND MAIN\n//!BIND A\n//!BIND B\nvec4 hook() { return vec4(1.0); }\n"));
     }
 }

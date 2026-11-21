@@ -220,6 +220,11 @@ struct StageGlState {
     GLboolean depthMask = GL_TRUE, colorMask[4]{GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE};
     GLfloat clearColor[4]{};
     GLboolean enabled[sizeof(kCaps) / sizeof(kCaps[0])]{};
+    bool useIndexedBuffer0 = false;
+    void (*colorMaskiFn)(GLuint, GLboolean, GLboolean, GLboolean, GLboolean) = nullptr;
+    void (*enableiFn)(GLenum, GLuint) = nullptr;
+    void (*disableiFn)(GLenum, GLuint) = nullptr;
+    GLboolean (*isEnablediFn)(GLenum, GLuint) = nullptr;
     // Restore-surface coverage note (two-sided capture complete):
     // Host-side GL work in this file (stage FBO creation in ensureStageResources, the swap
     // present draw, redirect binds) never writes glCullFace/glFrontFace parameters,
@@ -230,6 +235,17 @@ struct StageGlState {
     // ...), preserving asymmetric ops if an engine ever uses glStencilOpSeparate. Caps that
     // gate those states (GL_CULL_FACE, GL_BLEND, ...) are disabled for our draws and
     // restored through kCaps below.
+
+    static bool hasGlExtension(const char* name) {
+        if (!name) return false;
+        GLint extCount = 0;
+        glGetIntegerv(GL_NUM_EXTENSIONS, &extCount);
+        for (GLint i = 0; i < extCount; ++i) {
+            const auto* ext = reinterpret_cast<const char*>(glGetStringi(GL_EXTENSIONS, static_cast<GLuint>(i)));
+            if (ext && std::strcmp(ext, name) == 0) return true;
+        }
+        return false;
+    }
 
     StageGlState() {
         glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readFbo);
@@ -272,6 +288,34 @@ struct StageGlState {
         for (size_t i = 0; i < sizeof(kCaps) / sizeof(kCaps[0]); ++i) {
             enabled[i] = glIsEnabled(kCaps[i]);
         }
+        // Probe indexed draw-buffer-0 state (GLES 3.2 core or GL_EXT_draw_buffers_indexed)
+        // so displayStage only touches/restores buffer 0 instead of overwriting buffers 1..N.
+        GLint glMajor = 0, glMinor = 0;
+        glGetIntegerv(GL_MAJOR_VERSION, &glMajor);
+        glGetIntegerv(GL_MINOR_VERSION, &glMinor);
+        const bool isEs32 = glMajor > 3 || (glMajor == 3 && glMinor >= 2);
+        const bool hasIndexedExt = !isEs32 && hasGlExtension("GL_EXT_draw_buffers_indexed");
+        if (isEs32 || hasIndexedExt) {
+            colorMaskiFn = reinterpret_cast<decltype(colorMaskiFn)>(
+                    eglGetProcAddress(isEs32 ? "glColorMaski" : "glColorMaskiEXT"));
+            enableiFn = reinterpret_cast<decltype(enableiFn)>(
+                    eglGetProcAddress(isEs32 ? "glEnablei" : "glEnableiEXT"));
+            disableiFn = reinterpret_cast<decltype(disableiFn)>(
+                    eglGetProcAddress(isEs32 ? "glDisablei" : "glDisableiEXT"));
+            isEnablediFn = reinterpret_cast<decltype(isEnablediFn)>(
+                    eglGetProcAddress(isEs32 ? "glIsEnabledi" : "glIsEnablediEXT"));
+            if (colorMaskiFn && enableiFn && disableiFn && isEnablediFn) {
+                while (glGetError() != GL_NO_ERROR) {}
+                GLint mask0[4]{};
+                glGetIntegeri_v(GL_COLOR_WRITEMASK, 0, mask0);
+                const GLboolean blend0 = isEnablediFn(GL_BLEND, 0);
+                if (glGetError() == GL_NO_ERROR) {
+                    for (int c = 0; c < 4; ++c) colorMask[c] = mask0[c] ? GL_TRUE : GL_FALSE;
+                    enabled[0] = blend0;
+                    useIndexedBuffer0 = true;
+                }
+            }
+        }
         for (size_t i = 0; i < kUnits; ++i) {
             glActiveTexture(GL_TEXTURE0 + static_cast<GLenum>(i));
             glGetIntegerv(GL_TEXTURE_BINDING_2D, &textures[i]);
@@ -307,9 +351,14 @@ struct StageGlState {
         glStencilOpSeparate(GL_BACK, stencilBackFail, stencilBackZFail, stencilBackZPass);
         glDepthFunc(depthFunc);
         glDepthMask(depthMask);
-        glColorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
+        if (useIndexedBuffer0) {
+            colorMaskiFn(0, colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
+            if (enabled[0]) enableiFn(GL_BLEND, 0); else disableiFn(GL_BLEND, 0);
+        } else {
+            glColorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
+        }
         glClearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
-        for (size_t i = 0; i < sizeof(kCaps) / sizeof(kCaps[0]); ++i) {
+        for (size_t i = useIndexedBuffer0 ? 1 : 0; i < sizeof(kCaps) / sizeof(kCaps[0]); ++i) {
             if (enabled[i]) glEnable(kCaps[i]); else glDisable(kCaps[i]);
         }
         for (size_t i = 0; i < kUnits; ++i) {
@@ -1184,6 +1233,10 @@ void hookGlBindFramebuffer(GLenum target, GLuint framebuffer) {
         frameTracker.stageReadRedirected = false;
     }
     glBindFramebuffer(target, normalized);
+    if (target == GL_FRAMEBUFFER || target == GL_DRAW_FRAMEBUFFER) {
+        frameTracker.logicalFramebuffer = normalized;
+        if (target == GL_FRAMEBUFFER) frameTracker.logicalReadFramebuffer = normalized;
+    }
     frameTracker.hashOp(0x101, target, normalized);
 }
 
@@ -2532,8 +2585,14 @@ EGLBoolean swap(EGLDisplay display,EGLSurface surface) {
         const int fitX=std::max(0,(screenW-fitW)/2), fitY=std::max(0,(screenH-fitH)/2);
         glBindFramebuffer(GL_FRAMEBUFFER,0);
         glViewport(0,0,screenW,screenH);
-        for(GLenum cap : StageGlState::kCaps)glDisable(cap);
-        glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
+        if(saved.useIndexedBuffer0) {
+            for(size_t i=1;i<sizeof(StageGlState::kCaps)/sizeof(StageGlState::kCaps[0]);++i)glDisable(StageGlState::kCaps[i]);
+            saved.disableiFn(GL_BLEND,0);
+            saved.colorMaskiFn(0,GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
+        } else {
+            for(GLenum cap : StageGlState::kCaps)glDisable(cap);
+            glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
+        }
         glClearColor(0.0f,0.0f,0.0f,1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         glUseProgram(stageProgram);

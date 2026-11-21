@@ -511,10 +511,14 @@ public final class CnnPipelineTest {
         }
     }
 
-    /** Broadcasts a single evaluated texel across the 3x3 window for translation-invariant chaining. */
+    /** Fills a deterministic spatially varying 3x3 window so shifted intermediate taps cannot cancel out. */
     private static void broadcastSave(Map<String, double[][]> textures, String name, double[] texel) {
         double[][] window = new double[9][];
-        for (int t = 0; t < 9; t++) window[t] = texel;
+        for (int t = 0; t < 9; t++) {
+            double[] cell = new double[4];
+            for (int c = 0; c < 4; c++) cell[c] = texel[c] + 0.03125 * (t + 1) * (c + 1);
+            window[t] = cell;
+        }
         textures.put(name, window);
     }
 
@@ -846,12 +850,15 @@ public final class CnnPipelineTest {
                         assertEquals("Pass " + p + " save[" + s + "][" + c + "] mismatch in " + asset,
                                 rawOut[s][c], optOut[s][c], 0.0f);
                     }
-                    // Broadcast single test center cell outputs across 3x3 for downstream chaining
+                    // Populate a deterministic spatially varying 3x3 window so shifted/transposed taps cannot pass.
                     float[][] tileOutRaw = new float[9][4];
                     float[][] tileOutOpt = new float[9][4];
                     for (int t = 0; t < 9; t++) {
-                        tileOutRaw[t] = rawOut[s];
-                        tileOutOpt[t] = optOut[s];
+                        for (int c = 0; c < 4; c++) {
+                            float delta = 0.03125f * (t + 1) * (c + 1);
+                            tileOutRaw[t][c] = rawOut[s][c] + delta;
+                            tileOutOpt[t][c] = optOut[s][c] + delta;
+                        }
                     }
                     rawTextures.put(rawP.saves.get(s), tileOutRaw);
                     optTextures.put(optP.saves.get(s), tileOutOpt);
@@ -982,20 +989,45 @@ public final class CnnPipelineTest {
                 glOps.fboDrawBuffers.get(plans[1].fbo));
         assertEquals(0, glOps.drawBuffersOnFboZeroCalls);
 
-        // Recover with valid targetsChanged && !sizeChanged -> re-uploads uniforms and renders cleanly
+        // Recover with the ORIGINAL intermediates (!targetsChanged && !sizeChanged) after mid-loop failure ->
+        // targetsValid=false must re-attach original intermediate textures AND re-upload uniforms.
         GlRenderTarget restoreTarget = new GlRenderTarget(640, 480);
         restoreTarget.texture[0] = 90;
         restoreTarget.fbo[0] = 91;
+        int uniformCallsBefore = glOps.uniformUpdates;
+        pipeline.runPasses(50, 320, 240, intermediates, restoreTarget, false, 1, 0.0, false);
+        assertTrue("Recovery after mid-loop failure must refresh uniforms even with identical intermediate array",
+                glOps.uniformUpdates > uniformCallsBefore);
+        for (CnnPipeline.PassPlan plan : plans) {
+            for (int k = 0; k < plan.targetSlots.length; k++) {
+                assertEquals("Pass FBO must re-attach original intermediate texture",
+                        Integer.valueOf(200 + plan.targetSlots[k]),
+                        glOps.fboSlotTextures.get(plan.fbo + ":" + (GLES30.GL_COLOR_ATTACHMENT0 + k)));
+            }
+        }
+        int uniformCallsSteady = glOps.uniformUpdates;
+        pipeline.runPasses(50, 320, 240, intermediates, restoreTarget, false, 1, 0.0, false);
+        assertEquals("Steady-state repeat with recovered intermediates must keep cached uniforms",
+                uniformCallsSteady, glOps.uniformUpdates);
+
+        // Switch to freshIntermediates (targetsChanged && !sizeChanged) -> re-uploads uniforms and re-attaches new targets.
         GlRenderTarget[] freshIntermediates = new GlRenderTarget[targets.count];
         for (int i = 0; i < freshIntermediates.length; i++) {
             freshIntermediates[i] = new GlRenderTarget(320, 240);
             freshIntermediates[i].texture[0] = 600 + i;
             freshIntermediates[i].fbo[0] = 700 + i;
         }
-        int uniformCallsBefore = glOps.uniformUpdates;
+        uniformCallsBefore = glOps.uniformUpdates;
         pipeline.runPasses(50, 320, 240, freshIntermediates, restoreTarget, false, 1, 0.0, false);
         assertTrue("targetsChanged && !sizeChanged must refresh uniforms",
                 glOps.uniformUpdates > uniformCallsBefore);
+        for (CnnPipeline.PassPlan plan : plans) {
+            for (int k = 0; k < plan.targetSlots.length; k++) {
+                assertEquals("Pass FBO must re-attach fresh intermediate texture",
+                        Integer.valueOf(600 + plan.targetSlots[k]),
+                        glOps.fboSlotTextures.get(plan.fbo + ":" + (GLES30.GL_COLOR_ATTACHMENT0 + k)));
+            }
+        }
 
         // Steady-state re-run with identical params should execute 0 uniform updates
         int steadyUniformsBefore = glOps.uniformUpdates;
@@ -2170,6 +2202,7 @@ public final class CnnPipelineTest {
         int boundTex2d = 0;
         int currentProgram = 0;
         final Map<Integer, Integer> textureInternalFormats = new HashMap<>();
+        final Map<String, Integer> fboSlotTextures = new HashMap<>();
         int maxDrawBuffers = 8;
         int maxColorAttachments = 8;
         int createProgramCalls = 0;
@@ -2233,7 +2266,13 @@ public final class CnnPipelineTest {
         @Override public void glBindFramebuffer(int target, int framebuffer) {
             if (target == GLES30.GL_DRAW_FRAMEBUFFER || target == GLES30.GL_FRAMEBUFFER) boundDrawFbo = framebuffer;
         }
-        @Override public void glFramebufferTexture2D(int target, int attachment, int textarget, int texture, int level) {}
+        @Override public void glFramebufferTexture2D(int target, int attachment, int textarget, int texture, int level) {
+            if (target == GLES30.GL_DRAW_FRAMEBUFFER || target == GLES30.GL_FRAMEBUFFER) {
+                String key = boundDrawFbo + ":" + attachment;
+                if (texture == 0) fboSlotTextures.remove(key);
+                else fboSlotTextures.put(key, texture);
+            }
+        }
         @Override public int glCheckFramebufferStatus(int target) { return GLES30.GL_FRAMEBUFFER_COMPLETE; }
         @Override public void glDrawBuffers(int n, int[] bufs, int offset) {
             if (boundDrawFbo == 0) {
@@ -2340,12 +2379,25 @@ public final class CnnPipelineTest {
         List<String> detachCalls = new ArrayList<>();
         RecordingPipelineGlOps trackingGl = new RecordingPipelineGlOps() {
             @Override public void glFramebufferTexture2D(int target, int attachment, int textarget, int texture, int level) {
+                super.glFramebufferTexture2D(target, attachment, textarget, texture, level);
                 if (texture == 0) detachCalls.add(boundDrawFbo + ":" + attachment);
             }
         };
         CnnPipeline pipeline = new CnnPipeline(passes, targets, true, 2, 8,
                 GraphicsShaderTransforms.Config.DEFAULT, trackingGl);
         pipeline.buildPrograms(1);
+        Set<String> expectedDetaches = new HashSet<>();
+        for (CnnPipeline.PassPlan plan : pipeline.getPlans()) {
+            if (plan.fbo != 0 && plan.targetSlots.length > 0) {
+                trackingGl.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, plan.fbo);
+                for (int k = 0; k < plan.targetSlots.length; k++) {
+                    int attachment = GLES30.GL_COLOR_ATTACHMENT0 + k;
+                    trackingGl.glFramebufferTexture2D(GLES30.GL_DRAW_FRAMEBUFFER, attachment, GLES30.GL_TEXTURE_2D, 800 + k, 0);
+                    expectedDetaches.add(plan.fbo + ":" + attachment);
+                }
+            }
+        }
+        trackingGl.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, 999);
         Object glState = getField(pipeline, "mState");
         Field drawFboField = glState.getClass().getDeclaredField("drawFramebuffer");
         drawFboField.setAccessible(true);
@@ -2353,9 +2405,12 @@ public final class CnnPipelineTest {
         Method rel = CnnPipeline.class.getDeclaredMethod("releaseTargets");
         rel.setAccessible(true);
         rel.invoke(pipeline);
-        assertFalse("releaseTargets must detach pass FBO color attachments", detachCalls.isEmpty());
+        assertEquals("releaseTargets must detach every pass FBO color attachment",
+                expectedDetaches, new HashSet<>(detachCalls));
         assertEquals("releaseTargets must restore non-owned host draw FBO snapshot without clobbering",
                 999, drawFboField.getInt(glState));
+        assertEquals("releaseTargets must restore GL draw FBO binding to non-owned host FBO",
+                999, trackingGl.boundDrawFbo);
 
         // Runtime-fused Anime4K Restore_CNN_L must fall back cleanly through renderTexture()
         // when dual-attachment MRT FBO check returns incomplete, preserving its loaded config
@@ -2394,6 +2449,34 @@ public final class CnnPipelineTest {
         assertNotNull("Fallback must preserve original loaded Config snapshot", configAfterFallback);
         assertTrue(configAfterFallback.tieredPrecisionEnabled);
         assertEquals(CnnPipeline.BYPASS_NONE, fallbackNode.bypassReason());
+
+        // [Minor #2] Runtime-fused MRT program link failure (LINK_STATUS == 0) must also fall back
+        // to unfused single-output passes in the same renderTexture() call without failing permanently.
+        Set<Integer> mrtShaders = new HashSet<>();
+        Set<Integer> mrtPrograms = new HashSet<>();
+        RecordingPipelineGlOps linkFailGl = new RecordingPipelineGlOps() {
+            @Override public void glShaderSource(int shader, String string) {
+                if (string != null && string.contains("fragColor1")) mrtShaders.add(shader);
+            }
+            @Override public void glAttachShader(int program, int shader) {
+                if (mrtShaders.contains(shader)) mrtPrograms.add(program);
+            }
+            @Override public void glGetProgramiv(int program, int pname, int[] params, int offset) {
+                params[offset] = (pname == GLES30.GL_LINK_STATUS && mrtPrograms.contains(program)) ? 0 : 1;
+            }
+        };
+        CnnPipeline linkFallbackNode = CnnPipeline.createForTesting(
+                p -> Files.newInputStream(resolveAsset(p)), asset, true, 1, 1, 0, linkFailGl);
+        setField(linkFallbackNode, "mLimitWidth", 4096);
+        setField(linkFallbackNode, "mLimitHeight", 4096);
+        setField(linkFallbackNode, "mQuadVao", new int[]{1});
+        setField(linkFallbackNode, "mHalfFloatChecked", true);
+        setField(linkFallbackNode, "mHalfFloatRenderable", true);
+        int linkFallbackOut = linkFallbackNode.renderTexture(100, 64, 64, 64, 64);
+        assertTrue("renderTexture must recover via unfused fallback after MRT program link failure", linkFallbackOut > 0);
+        assertFalse(linkFallbackNode.isFailed());
+        assertEquals(unfusedL.size(), linkFallbackNode.getBuiltPassCount());
+        assertEquals(unfusedL.size(), linkFailGl.drawCalls);
 
         // Whole-chain 256 MiB budget check after runtime fusion fallback via GraphicsFilterPipeline:
         // Under tiled 4K geometry (tileCoreSize=1024), unfused 9-pass halo padding strictly exceeds
@@ -2640,5 +2723,41 @@ public final class CnnPipelineTest {
                 new boolean[]{true, true, true, false}, bufMasks[1]);
         assertFalse(bufBlends[0]);
         assertTrue("Buffer 1 blend enable must be restored per-index", bufBlends[1]);
+
+        // [Minor #1] Unavailable GL_EXT_draw_buffers_indexed entry points (getDrawBufferCount() < 0)
+        // must fail closed inside capture() before mutating draw state or running draws.
+        RecordingPipelineGlOps failIndexedGl = new RecordingPipelineGlOps();
+        CnnPipeline failIndexedNode = new CnnPipeline(Collections.singletonList(noopPass),
+                new GraphicsShaderTargets(Collections.singletonList(noopPass)),
+                false, 1, 1, GraphicsShaderTransforms.Config.DEFAULT, failIndexedGl);
+        setField(failIndexedNode, "mLimitWidth", 4096);
+        setField(failIndexedNode, "mLimitHeight", 4096);
+        setField(failIndexedNode, "mQuadVao", new int[]{1});
+        setField(failIndexedNode, "mHalfFloatChecked", true);
+        setField(failIndexedNode, "mHalfFloatRenderable", true);
+        CnnPipeline.GlState failState = (CnnPipeline.GlState) getField(failIndexedNode, "mState");
+        int[] indexedMutateCalls = {0};
+        failState.indexedOps = new CnnPipeline.GlState.IndexedDrawBufferOps() {
+            @Override public int getDrawBufferCount() { return -1; }
+            @Override public void getColorMaski(int index, int[] out, int offset) {}
+            @Override public boolean isBlendEnabledi(int index) { return false; }
+            @Override public void colorMaski(int index, boolean r, boolean g, boolean b, boolean a) { indexedMutateCalls[0]++; }
+            @Override public void setBlendEnabledi(int index, boolean enabled) { indexedMutateCalls[0]++; }
+        };
+        RuntimeException indexedEx = assertThrows(RuntimeException.class, () -> failState.captureForRender(1));
+        assertTrue(indexedEx.getMessage().contains("draw_buffers_indexed"));
+        assertEquals(0, failIndexedNode.renderTexture(10, 64, 64, 64, 64));
+        assertFalse("Missing EXT indexed entry points must bypass cleanly rather than fatally failing",
+                failIndexedNode.isFailed());
+        assertEquals(0, indexedMutateCalls[0]);
+        assertEquals(0, failIndexedGl.drawCalls);
+
+        // [8] Parameter shadowing of sampling environment (vPos) in sample_k must fail closed.
+        String sampleShadowBody = "vec4 sample_0(vec2 vPos) { return max(MAIN_tex(MAIN_pos + vPos * MAIN_pt), 0.0); }\n"
+                + "void hook() { vec4 v0 = vec4(0.0); vec4 s = sample_0(vec2(1.0, 0.0)); v0 += mat4(1.0) * s; fragColor = v0; }\n";
+        MpvHookShader.Pass sampleShadowPass = new MpvHookShader.Pass(
+                "vnsr sample shadow", List.of("MAIN"), List.of("MAIN"), null, null, sampleShadowBody);
+        assertEquals("sample_k parameter shadowing vPos must skip VN-SR optimization",
+                sampleShadowBody, GraphicsShaderTransforms.optimizePassBody(sampleShadowPass).body);
     }
 }

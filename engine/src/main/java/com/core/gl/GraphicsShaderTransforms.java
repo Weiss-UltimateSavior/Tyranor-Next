@@ -500,6 +500,7 @@ final class GraphicsShaderTransforms {
             String bindPt = sampleMatcher.group(6);
             String expectedBind = pass.binds.get(sampleIdx);
             if (!argName.equals(usedArg)
+                    || hasShadowedSamplingEnv(argName, Collections.singletonList(expectedBind))
                     || !expectedBind.equals(bindTex)
                     || !expectedBind.equals(bindPos)
                     || !expectedBind.equals(bindPt)) {

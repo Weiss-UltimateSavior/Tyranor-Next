@@ -114,6 +114,10 @@ public final class ArtemisOfficialBridge implements ArtemisPerformanceOverlay.So
             return 0;
         }
         if (!original || texture == 0 || sw <= 0 || sh <= 0 || screenW <= 0 || screenH <= 0) {
+            if (singleMode) {
+                if (screenW > 0 && screenH > 0) singleOutputSize.presented(screenW, screenH);
+                else singleOutputSize.clear();
+            }
             // Leaving stage rendering (original == false) must drop any stale held filter
             // timings so direct output does not keep presenting old pass GPU timings.
             if (analyzer) {
@@ -209,6 +213,9 @@ public final class ArtemisOfficialBridge implements ArtemisPerformanceOverlay.So
             // failures counted against the torn-down context must not survive its
             // disposal, or a healthy new context would inherit a spent circuit breaker.
             singlePipelineConstructionFailures = 0;
+        }
+        if (state == GraphicsStatus.FILTER_FAILED) {
+            state = GraphicsStatus.WAITING;
         }
         singleMode = false;
         singleStats.reset();

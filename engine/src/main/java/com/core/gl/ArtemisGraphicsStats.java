@@ -16,6 +16,7 @@ public final class ArtemisGraphicsStats {
     private double[] nodeGpu = new double[0], nodeScale = new double[0], nodeScaleMin = new double[0], nodeScaleMax = new double[0];
     private int[] nodeGpuSamples = new int[0];
     private boolean[] nodeExecuted = new boolean[0], nodeGpuError = new boolean[0];
+    private long timingGeneration;
 
     public synchronized void configureNodes(GraphicsFilterChain chain, String renderer) {
         nodeIds = new String[chain.steps().size()];
@@ -26,6 +27,7 @@ public final class ArtemisGraphicsStats {
         nodeExecuted = new boolean[nodeIds.length];
         nodeGpuError = new boolean[nodeIds.length];
         gpuError = false;
+        timingGeneration++;
         this.renderer = renderer == null ? "" : renderer;
     }
     public synchronized void nodeFrame(int[] widths, int[] heights, int[] outputs, int[] outputHeights, boolean[] execute) {
@@ -64,6 +66,7 @@ public final class ArtemisGraphicsStats {
         Arrays.fill(nodeGpuSamples, 0);
         Arrays.fill(nodeExecuted, false);
         Arrays.fill(nodeGpuError, true);
+        timingGeneration++;
     }
 
     public synchronized void reset() {
@@ -79,6 +82,7 @@ public final class ArtemisGraphicsStats {
         nodeGpuSamples = new int[0];
         nodeExecuted = new boolean[0];
         nodeGpuError = new boolean[0];
+        timingGeneration++;
     }
 
     public synchronized void frame(int sw, int sh, int ow, int oh, int vw, int vh) {
@@ -140,7 +144,7 @@ public final class ArtemisGraphicsStats {
         }
         Snapshot result = new Snapshot(sourceWidth, sourceHeight, outputWidth, outputHeight,
                 viewportWidth, viewportHeight, surfaceWidth, surfaceHeight, fps,
-                measuredGpu, timingError, renderer, nodes);
+                measuredGpu, timingError, timingGeneration, renderer, nodes);
         resetInterval(nowNanos);
         return result;
     }
@@ -159,13 +163,15 @@ public final class ArtemisGraphicsStats {
         public final int viewportWidth, viewportHeight, surfaceWidth, surfaceHeight;
         public final double fps, gpuMs;
         final boolean timingError;
+        final long timingGeneration;
         public final String renderer;
         public final Node[] nodes;
         Snapshot(int sw, int sh, int ow, int oh, int vw, int vh, int dw, int dh,
-                 double fps, double gpuMs, boolean timingError, String renderer, Node[] nodes) {
+                 double fps, double gpuMs, boolean timingError, long timingGeneration, String renderer, Node[] nodes) {
             sourceWidth = sw; sourceHeight = sh; outputWidth = ow; outputHeight = oh;
             viewportWidth = vw; viewportHeight = vh; surfaceWidth = dw; surfaceHeight = dh;
             this.fps = fps; this.gpuMs = gpuMs; this.timingError = timingError;
+            this.timingGeneration = timingGeneration;
             this.renderer = renderer; this.nodes = nodes;
         }
     }
@@ -189,6 +195,7 @@ public final class ArtemisGraphicsStats {
      */
     static final class DisplayTimingTracker {
         private int lastSourceWidth, lastSourceHeight, lastOutputWidth, lastOutputHeight;
+        private long lastTimingGeneration = -1L;
         private String[] lastNodeIds = new String[0];
         private boolean[] lastExecuted = new boolean[0];
         private double[] heldNodeGpuMs = new double[0];
@@ -196,6 +203,7 @@ public final class ArtemisGraphicsStats {
 
         void clear() {
             hasHeldMetrics = false;
+            lastTimingGeneration = -1L;
             lastSourceWidth = lastSourceHeight = lastOutputWidth = lastOutputHeight = 0;
             lastNodeIds = new String[0];
             lastExecuted = new boolean[0];
@@ -220,12 +228,15 @@ public final class ArtemisGraphicsStats {
             }
 
             boolean sameContext = hasHeldMetrics
+                    && lastTimingGeneration == snapshot.timingGeneration
                     && lastSourceWidth == snapshot.sourceWidth
                     && lastSourceHeight == snapshot.sourceHeight
                     && lastOutputWidth == snapshot.outputWidth
                     && lastOutputHeight == snapshot.outputHeight
                     && sameActiveTopology(snapshot.nodes, activeCount);
             if (!sameContext) {
+                hasHeldMetrics = false;
+                lastTimingGeneration = snapshot.timingGeneration;
                 lastSourceWidth = snapshot.sourceWidth;
                 lastSourceHeight = snapshot.sourceHeight;
                 lastOutputWidth = snapshot.outputWidth;
@@ -254,12 +265,10 @@ public final class ArtemisGraphicsStats {
                 double ms;
                 if (!row.executed) {
                     ms = Double.NaN;
-                    heldNodeGpuMs[idx] = Double.NaN;
                 } else {
                     hasExecution = true;
                     if (Double.isFinite(row.gpuMs)) {
                         ms = row.gpuMs;
-                        heldNodeGpuMs[idx] = row.gpuMs;
                     } else if (!hasAnyNewNodeSample && sameContext && Double.isFinite(heldNodeGpuMs[idx])) {
                         ms = heldNodeGpuMs[idx];
                     } else {
@@ -283,7 +292,13 @@ public final class ArtemisGraphicsStats {
                 Arrays.fill(resolvedNodes, Double.NaN);
                 return new ResolvedTimings(Double.NaN, resolvedNodes, false, 0);
             }
-            hasHeldMetrics = true;
+            if (!hasExecution) {
+                Arrays.fill(heldNodeGpuMs, Double.NaN);
+                hasHeldMetrics = false;
+            } else if (complete && (!sameContext || hasAnyNewNodeSample)) {
+                System.arraycopy(resolvedNodes, 0, heldNodeGpuMs, 0, activeCount);
+                hasHeldMetrics = true;
+            }
             return new ResolvedTimings(totalGpu, resolvedNodes, complete, sum);
         }
 

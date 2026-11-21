@@ -78,10 +78,9 @@ owner 确认断开显示，再由 engine owner 确认替换私有 producer，最
 | --- | --- |
 | v1（Tyranor/Rev.2762） | 否：缺少所需输出入口 |
 | v2（Tyranor/Rev.3049/emote） | 是 |
-| v3（Tyranor/Rev.3201/emote） | 是 |
-| V1（TyranorNext/Rev.2958） | 是 |
-| V3（TyranorNext/Rev.3288） | 是 |
 | V4（TyranorNext/Rev.3294/emote） | 是 |
+
+> **历史内核记录（已移除）**：`v3（Tyranor/Rev.3201/emote）`、`V1（TyranorNext/Rev.2958）` 与 `V3（TyranorNext/Rev.3288）` 曾支持画质滤镜，但已随早先运行库精简自随包目录移除，当前安装包仅保留 `auto` / `v1` / `v2` / `V4` 对映版本。
 
 启动、兼容回退与实际能力判断共用 engine 的 `ArtemisVersion` 映射表，库名沿用 `NativePluginConstants`。设置中的自动版本尚未解析游戏候选，显示“自动选择：滤镜支持取决于实际内核”并保留用户请求，不把 auto 预览成固定受支持版本；实际启动及每次回退仍按最终库严格门禁。内部版本值只是库选择标识，不能将用户界面版本统称为 V1–V6。自动回退到不支持的版本时不启用滤镜。尺寸可信前不统计为原始帧。
 

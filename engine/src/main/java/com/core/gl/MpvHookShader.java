@@ -503,6 +503,8 @@ final class MpvHookShader {
             "\\b(?:const\\s+|(?:highp|mediump|lowp)\\s+)?[A-Za-z_][A-Za-z0-9_]*\\s+(?:[^;{}]*,\\s*)?fragColor\\d*\\b");
     private static final Pattern MULTI_SAVE_FRAGCOLOR_DEFINE = Pattern.compile(
             "^\\s*#\\s*(?:define|undef)\\s+fragColor\\d*\\b", Pattern.MULTILINE);
+    private static final Pattern MULTI_SAVE_CONTROL_FLOW_DEFINE = Pattern.compile(
+            "^\\s*#\\s*define\\s+[A-Za-z_][A-Za-z0-9_]*(?:\\([^)]*\\))?\\s+(.*)$", Pattern.MULTILINE);
     private static final Pattern MULTI_SAVE_FRAGCOLOR_WRITE = Pattern.compile(
             "(?:^|[;{])\\s*fragColor(\\d+)\\s*=(?!=)");
 
@@ -510,6 +512,12 @@ final class MpvHookShader {
         String stripped = stripGlslCommentsOrNull(body);
         String effective = resolveEffectiveBodyOrNull(stripped, true);
         if (effective == null || MULTI_SAVE_FRAGCOLOR_DEFINE.matcher(effective).find()) return false;
+        Matcher cfDef = MULTI_SAVE_CONTROL_FLOW_DEFINE.matcher(effective);
+        while (cfDef.find()) {
+            if (MULTI_SAVE_UNSUPPORTED_FLOW.matcher(cfDef.group(1)).find()) {
+                return false;
+            }
+        }
         Matcher m = VOID_HOOK_PATTERN.matcher(effective);
         if (!m.find()) return false;
         int openBrace = m.end() - 1;

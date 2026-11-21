@@ -123,6 +123,49 @@ public final class ArtemisOfficialSingleModeTest {
                 0, getInt("singlePipelineConstructionFailures"));
     }
 
+    @Test
+    public void directOutputWhileSingleModeActiveUpdatesOrClearsPublishedOutputSize() throws Exception {
+        setBoolean("requested", true);
+        setBoolean("singleMode", true);
+        ArtemisOfficialOutputSize expected = new ArtemisOfficialOutputSize();
+        expected.presented(1920, 1080);
+
+        assertEquals(0, ArtemisOfficialBridge.renderStage(7, 1280, 720, 1920, 1080, false, false, 1L));
+        assertTrue("Direct output while singleMode was active keeps singleMode latched", getBoolean("singleMode"));
+        assertEquals("Direct output with valid screen dims must update published logical size",
+                expected.get(), ((ArtemisOfficialOutputSize) getObject("singleOutputSize")).get());
+
+        assertEquals(0, ArtemisOfficialBridge.renderStage(7, 1280, 720, 0, 1080, false, false, 1L));
+        assertEquals("Direct output with invalid screen dims must clear published logical size",
+                0L, ((ArtemisOfficialOutputSize) getObject("singleOutputSize")).get());
+
+        // When singleMode was not active, direct output must neither latch singleMode nor publish a size.
+        setBoolean("singleMode", false);
+        assertEquals(0, ArtemisOfficialBridge.renderStage(7, 1280, 720, 1920, 1080, false, false, 1L));
+        assertFalse(getBoolean("singleMode"));
+        assertEquals(0L, ((ArtemisOfficialOutputSize) getObject("singleOutputSize")).get());
+    }
+
+    @Test
+    public void contextDestroyedClearsFilterFailedWhilePreservingStickyPermanentStatuses() throws Exception {
+        setInt("state", GraphicsStatus.FILTER_FAILED);
+        ArtemisOfficialBridge.contextDestroyed();
+        assertEquals("FILTER_FAILED must reset to WAITING across contextDestroyed",
+                GraphicsStatus.WAITING, getInt("state"));
+
+        int[] permanent = {
+                GraphicsStatus.MISSING_ABI,
+                GraphicsStatus.GLES3_UNAVAILABLE,
+                GraphicsStatus.NATIVE_FAILED
+        };
+        for (int status : permanent) {
+            setInt("state", status);
+            ArtemisOfficialBridge.contextDestroyed();
+            assertEquals("Permanent failure status " + status + " must survive contextDestroyed",
+                    status, getInt("state"));
+        }
+    }
+
     private static boolean getBoolean(String name) throws Exception {
         Field f = ArtemisOfficialBridge.class.getDeclaredField(name);
         f.setAccessible(true);
