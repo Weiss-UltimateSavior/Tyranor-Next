@@ -19,11 +19,17 @@ import androidx.compose.material3.SheetValue
 import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -48,6 +54,9 @@ import com.tyranor.next.ui.common.motion.nativeScrim
 import com.tyranor.next.ui.common.motion.rememberMotionSheetController
 import com.tyranor.next.ui.common.motion.rememberMotionSheetState
 import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 
 internal val LocalAppSheetContent = staticCompositionLocalOf { false }
 
@@ -123,8 +132,32 @@ internal fun AppBottomSheet(
             isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
         )
         MotionSheetEffects(controller, onDismissRequest)
+        // Material3 只在没有动画持有拖动锁时才把面板吸到新的展开位：内容在展开途中变高 / 变矮（例如游戏抽屉里
+        // 异步多出「确认已退出外部游戏」一行）时，面板停在按旧高度算出的位置，变高的那一截连同底部固定的启动按钮
+        // 被推到屏幕外，之后也不会自己回来。内容高度一变（首次测量之后）就重新对齐到展开位。
+        var contentHeight by remember { mutableIntStateOf(0) }
+        LaunchedEffect(sheetState) {
+            snapshotFlow { contentHeight }
+                .filter { it > 0 }
+                .drop(1)
+                .collectLatest {
+                    if (sheetState.currentValue == SheetValue.Expanded &&
+                        sheetState.targetValue == SheetValue.Expanded &&
+                        !controller.closing
+                    ) {
+                        sheetState.expand()
+                    }
+                }
+        }
         ProvideEntrance {
-            Box(Modifier.fillMaxWidth().skipEntranceOnDrag().motionSheetDrag(controller).clip(AppSheetTopShape)) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .onSizeChanged { contentHeight = it.height }
+                    .skipEntranceOnDrag()
+                    .motionSheetDrag(controller)
+                    .clip(AppSheetTopShape),
+            ) {
                 if (AppThemeColors.isMilkGlass) {
                     MilkGlassPanelBackground(Modifier.matchParentSize())
                 }
