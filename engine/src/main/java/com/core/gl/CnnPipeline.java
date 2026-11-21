@@ -158,7 +158,14 @@ public final class CnnPipeline {
                     }
                     useExt = true;
                     try {
-                        while (GLES30.glGetError() != GLES30.GL_NO_ERROR) {}
+                        // Bounded drain via the shared GlErrors discipline (MAX_GL_ERRORS=16):
+                        // a lost context makes glGetError return the sticky GL_CONTEXT_LOST_KHR
+                        // forever, so an unbounded drain would hang the render thread;
+                        // drainBestEffortNoThrow stops on context loss and never throws. Any
+                        // residual sticky flag fails the probe checks below (useExt=false,
+                        // return -1) and is classified by GlErrors as non-retryable — recovery
+                        // stays with the existing fail/abandon/direct-output paths.
+                        GlErrors.drainBestEffortNoThrow(GLES30.glGetError(), GLES30::glGetError);
                         int[] probe = new int[4];
                         GLES32.glGetIntegeri_v(GLES30.GL_COLOR_WRITEMASK, 0, probe, 0);
                         boolean blend0 = GLES31Ext.glIsEnablediEXT(GLES30.GL_BLEND, 0);
@@ -654,12 +661,10 @@ public final class CnnPipeline {
     }
 
     private static boolean isMrtTargetFailure(TargetUnavailableException failure) {
-        if (failure == null || failure.getMessage() == null) return false;
-        String msg = failure.getMessage();
-        return msg.startsWith("device MRT capacity exceeded")
-                || msg.startsWith("MRT FBO incomplete")
-                || msg.startsWith("MRT program link failed")
-                || msg.startsWith("MRT fragment shader compile failed");
+        // Typed classification (FailureKind carried by the exception): the message text is
+        // human-facing only, so rewording a throw site can no longer silently disable the
+        // runtime fusion fallback.
+        return TargetUnavailableException.isMrtFailure(failure);
     }
 
     private boolean canFallbackFromRuntimeFusion(boolean mrtFailure) {
@@ -1499,7 +1504,8 @@ public final class CnnPipeline {
                         throw new TargetUnavailableException(
                                 "device MRT capacity exceeded for pass " + pass.desc + ": requires "
                                         + targetSlots.length + " targets (max draw buffers=" + maxDrawBuffers
-                                        + ", max color attachments=" + maxColorAttachments + ")", false);
+                                        + ", max color attachments=" + maxColorAttachments + ")",
+                                false, TargetUnavailableException.FailureKind.MRT_CAPACITY);
                     }
                     drawBuffers = new int[targetSlots.length];
                     for (int k = 0; k < targetSlots.length; k++) {
@@ -1525,7 +1531,9 @@ public final class CnnPipeline {
                     } catch (GlOps.ShaderCompileException compileFailure) {
                         if (targetSlots.length > 1 && canFallbackFromRuntimeFusion(true)) {
                             throw new TargetUnavailableException("MRT fragment shader compile failed for "
-                                    + pass.desc + ": " + compileFailure.getMessage(), false, compileFailure);
+                                    + pass.desc + ": " + compileFailure.getMessage(), false,
+                                    TargetUnavailableException.FailureKind.MRT_FRAGMENT_SHADER_COMPILE,
+                                    compileFailure);
                         }
                         throw compileFailure;
                     }
@@ -1541,7 +1549,8 @@ public final class CnnPipeline {
                         GlErrors.requireGlSuccess("program link for " + pass.desc, true, mGl::glGetError);
                         if (targetSlots.length > 1 && canFallbackFromRuntimeFusion(true)) {
                             throw new TargetUnavailableException("MRT program link failed for "
-                                    + pass.desc + ": " + linkLog, false);
+                                    + pass.desc + ": " + linkLog, false,
+                                    TargetUnavailableException.FailureKind.MRT_PROGRAM_LINK);
                         }
                         throw new IllegalStateException("link failed for " + pass.desc + ": " + linkLog);
                     }
@@ -1745,7 +1754,8 @@ public final class CnnPipeline {
                         GlErrors.requireGlSuccess("MRT FBO setup", true, mGl::glGetError);
                         if (status != GLES30.GL_FRAMEBUFFER_COMPLETE) {
                             throw new TargetUnavailableException("MRT FBO incomplete for pass "
-                                    + plan.pass.desc + ": 0x" + Integer.toHexString(status));
+                                    + plan.pass.desc + ": 0x" + Integer.toHexString(status),
+                                    true, TargetUnavailableException.FailureKind.MRT_FBO_INCOMPLETE);
                         }
                     }
                 }

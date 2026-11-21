@@ -868,7 +868,8 @@ struct FrameDirtyTracker {
         if (activeUnit < kUnits && boundTextures[activeUnit] != 0) {
             const GLuint tex = boundTextures[activeUnit];
             const uint64_t ver = mutateTexture(tex);
-            if (stageFrame) hashOp(0x109, tex, ver);
+            // 0x136 (texture-content mutation domain) — do not reuse the buffer-bind tag 0x109.
+            if (stageFrame) hashOp(0x136, tex, ver);
         } else if (stageFrame) {
             frameValid = false;
         } else {
@@ -899,7 +900,8 @@ struct FrameDirtyTracker {
 
     void hashCurrentReadSourceForBlit(GLbitfield mask) {
         if (!stageFrame) return;
-        mix64(frameHash, 0x12C);
+        // 0x137 (blit read-source domain) — do not reuse the attachment-mount tag 0x12C.
+        mix64(frameHash, 0x137);
         mix64(frameHash, logicalReadFramebuffer);
         if ((mask & (GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT)) != 0) {
             frameValid = false;
@@ -959,6 +961,28 @@ struct FrameDirtyTracker {
         }
     }
 
+    // Frame-hash op-tag allocation (one tag per tracked command domain; assigned tags are
+    // unique across the whole table except the intentional same-state-domain pairs below,
+    // where a draw-time state snapshot reuses its setter's tag — value payloads differ).
+    //   0x101 bindFramebuffer        0x102 activeTexture        0x103 bindTexture
+    //   0x104 texImage2D             0x105 compressedTexImage2D 0x106 copyTexImage2D
+    //   0x107 texSubImage2D          0x108 boundTexParameteri   0x109 bindBuffer
+    //   0x10A bufferData             0x10B bufferSubData
+    //   0x110 useProgram             0x111 viewport (event + draw-state snapshot)
+    //   0x112 scissor (event + hashScissorAndColorMask snapshot)
+    //   0x113 enable                 0x114 disable
+    //   0x115 colorMask (event + hashScissorAndColorMask snapshot)
+    //   0x116 clearColor             0x117 clear                0x118 blendFuncSeparate
+    //   0x119 blendEquationSeparate  0x11A stencilFunc          0x11B stencilOp
+    //   0x11C stencilMask            0x11D depthFunc            0x11E clearStencil
+    //   0x11F clearDepthf            0x120..0x127 uniform uploads (event tag = val-hash tag)
+    //   0x128 copyTexSubImage2D      0x129 blitFramebuffer      0x12A generateMipmap
+    //   0x12B texStorage2D           0x12C framebufferTexture2D
+    //   0x130 drawElements op        0x131 drawElements common  0x132 drawArrays op
+    //   0x133 cullFace event         0x134 frontFace (event + snapshot)
+    //   0x135 bindVertexArray[OES]   0x136 bound-texture content mutation (version mix)
+    //   0x137 blit read-source block 0x138 drawArrays common block
+    //   0x139 draw-state cull snapshot; 0x140 program-uniform snapshot; 0x200+i attributes.
     void hashOp(uint64_t tag, uint64_t a = 0, uint64_t b = 0, uint64_t c = 0, uint64_t d = 0) {
         if (!stageFrame) return;
         mix64(frameHash, tag);
@@ -1983,7 +2007,9 @@ void hashDrawCommon(uint64_t opTag, GLuint maxCpuVertex, bool hasMaxCpuVertex) {
         FrameDirtyTracker::hashBytes(frameTracker.frameHash, frameTracker.lastViewport, sizeof(frameTracker.lastViewport));
     }
     if (frameTracker.hasCullFace) {
-        FrameDirtyTracker::mix64(frameTracker.frameHash, 0x133);
+        // 0x139 (draw-state cull snapshot) — distinct from the glCullFace event tag 0x133
+        // and the DrawArrays common block tag 0x138.
+        FrameDirtyTracker::mix64(frameTracker.frameHash, 0x139);
         FrameDirtyTracker::mix64(frameTracker.frameHash, frameTracker.lastCullFace);
     }
     if (frameTracker.hasFrontFace) {
@@ -2135,7 +2161,9 @@ void hookGlDrawArrays(GLenum mode, GLint first, GLsizei count) {
             const bool okRange = first >= 0 && count > 0
                     && static_cast<uint64_t>(first) + static_cast<uint64_t>(count) - 1 <= FrameDirtyTracker::kMaxCpuVertexIndex;
             const uint32_t maxV = okRange ? static_cast<uint32_t>(first + count - 1) : 0;
-            hashDrawCommon(0x133, maxV, okRange);
+            // 0x138 (DrawArrays draw-state block) — distinct from the glCullFace event tag
+            // 0x133 and the draw-state cull snapshot tag 0x139.
+            hashDrawCommon(0x138, maxV, okRange);
         }
     }
     glDrawArrays(mode, first, count);
