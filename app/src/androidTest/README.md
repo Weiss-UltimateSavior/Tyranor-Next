@@ -250,6 +250,12 @@ failed identity_sha256=<64hex> token=<session token>
 
 单独执行某方法时仍使用上文 `-e class ...#method` 形式；设备结果只对应记录时的 APK、库、header 与源码四元组，不能跨候选外推。
 
+## PR195 真实主页面旋转验收
+
+`ui/game/GameScreenMainActivityAcceptanceDeviceTest` 仅运行在 `com.tyranor.next.pr195fix`，要求 `-e motion_device_acceptance true -e motion_target_package com.tyranor.next.pr195fix`。附加 `-e pr195_appearance default-light`（另有 `default-dark`、`retro-glass`、`milk-glass`），默认 100 条私有原创封面记录；`-e pr195_game_count 3000` 显式加压。通过生产 MainActivity 隐藏游戏标签、旋转、返回，核对触底与末项，使用系统合成截图及单次原生触摸打开生产抽屉；不启动游戏。
+
+仅接受空库或私有目录内的 PR195 夹具，不扫描外部目录。结束时删除本轮记录与素材、还原设置和方向，证据保留在目标包 `files/pr195-game-screen-evidence/<主题>-<UUID>/`。导航用生产条目的 `performClick` 语义回调，卡片响应仍用单次系统触摸；Compose 测试规则自动推进动画时钟，系统单调时钟仅记录观察上界。本用例不覆盖旋转后导航触摸命中、Activity 重建或逐帧零闪现。耗时包含观察、截图及抽屉响应，属于端到端上界，不代表最早可交互帧或发布包流畅度；截图使用原创测试素材，不作为真实游戏兼容性证据。
+
 ## WebDAV 弹窗忙碌状态回归
 
 `ui/save/SaveDialogDismissDeviceTest` 补充两个隔离目标用例：任务中点击遮罩/返回保持弹窗可见，任务结束后允许关闭；退场动画已经开始后 busy 改变仍清除父状态。执行沿用 `com.tyranor.next.webdavacceptance*` 与 `-e webdav_device_acceptance true` 的双重门槛。

@@ -20,7 +20,7 @@
 
 额外修复：风格初始化与 setter 也纳入共享锁，锁闩回归覆盖两种竞争顺序；第三段前扫在按旧索引完成前检查最新 URI，避免原游戏重新出现时恢复到其他游戏。
 
-## 验证
+## 首轮验证
 
 - JDK 17，隔离包名 `com.tyranor.next.pr195fix`。
 - `:app:testDebugUnitTest --tests '*GameCardStyleSettingsTest' --tests '*GridReflowSnapshotTest'`：29 项通过（14 + 15），0 失败。
@@ -31,3 +31,16 @@
 - TB323FU 平板（Android 16 / API 36）四组设备测试：50 项登记，46 项通过、4 项按条件跳过、0 失败，203.536 秒。跳过项为 3 个历史诊断假设用例（未开启 waterfall_diagnostics）和 1 个仅适用于增强档的祖先移动接管用例在普通档的参数组合。覆盖 MotionSliderDeviceTest、GridReflowDeviceTest、WaterfallRotationScrollDeviceTest、WaterfallRestoreResponsivenessDeviceTest；100/3000 卡恢复、输入延迟阈值、真实绘制像素检查均通过。
 
 本轮未执行全量 JVM 测试；合成卡片设备回归不替代真实游戏库、真实页面主题截图或发布包流畅度验收。
+
+## 第三轮返修（审查输入 `6804195b`）
+
+- 整合主分支 `03634f459eb8fe9c005faa38343352b57c27a0ba`，解决 CHANGELOG 冲突，保留快捷方式修复及既有卡片条目；不改写已推送历史。
+- 瀑布封面改为按实际解码目标宽高选择最小可覆盖档位，显示比例与四档缓存保持原样。`456px / 0.67` 原 CARD 目标为 `444×683`，现 FLOW 为 `666×1024`；`493px / 0.60` 仍选 FLOW。最大档超界仍取最大档，小源图仍不放大。
+- README 收敛为功能概述，CHANGELOG 明确竖屏平板默认列数从 6 改为 4；清理两个未使用测试导入。PR 正文更新取消语义与参数展开后的统计。
+- JVM 定向回归 41 项通过，0 失败、0 跳过：Style 14、Badge 2、Corner 1、Snapshot 15、CoverDecodeTier 9。封面测试覆盖 21 个比例、126 个档位边界。
+- 隔离包 `:app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug` 通过，lint 421 Warning、11 Hint、0 Error。首次 lint 在文件并发编辑时发生 `Unknown annotation target AndroidJUnit4` 内部分析异常，冻结文件后重跑通过。硬编码文案检查、动效边界检查、`git diff --check` 通过。
+- 最终代码 TB323FU / API 36 原四类设备回归 181.564 秒：50 项登记，46 通过、4 条件跳过、0 失败；跳过原因与首轮相同。新增 3000 条真实主页面默认浅色两方向通过（9.635 秒），返回画面横/竖观察上界 1879/1822ms，正确抽屉 2302/2229ms；原记录集合保留，本轮剩余 0。
+- 新增真实 `MainActivity` 验收：默认 100 条私有原创封面记录，显式 `pr195_game_count=3000` 加压；隐藏游戏标签后旋转，再返回核对尾部锚点、系统截图中的封面颜色与一次真实触摸打开正确游戏抽屉。四主题分轮运行，参数 `pr195_appearance=default-light|default-dark|retro-glass|milk-glass`。仅支持显式指定的隔离包，保留证据并清理本轮数据、还原设置与方向。
+- TB323FU / API 36 四主题各两方向通过，原触底、封面颜色、完整卡片及单次原生触摸抽屉断言均通过。返回画面观察上界 521–634ms，正确抽屉 985–1647ms。8 张原始系统截图、分主题数据及视觉验收边界见 [平板证据](pr195-evidence/README.md)。手机、修复前对照与人工视觉审看仍缺。
+- 真实页面验收发现隐藏时旧瀑布仍随新窗口重测，返回才捕获锚点会丢失离页时触底状态。现首次离页保存锚点与偏移快照；隐藏期不覆盖，返回换布局优先使用，未换布局则丢弃快照。
+- 导航通过生产条目的 `performClick` 语义回调切换，卡片仍单次系统触摸；测试规则自动推进 Compose 动画时钟，使用系统单调时钟记录包含空闲等待、截图与抽屉响应的观察上界，不代表自然显示帧下的最早可交互时刻或硬件延迟。未覆盖 Activity 重建或逐帧零闪现；debug 数据不当作发布包流畅度证据。

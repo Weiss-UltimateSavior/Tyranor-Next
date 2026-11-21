@@ -2333,10 +2333,8 @@ internal fun GameCard(
         val hash = game.uri.hashCode().let { if (it == Int.MIN_VALUE) 0 else kotlin.math.abs(it) }
         0.60f + (hash % 21) / 100f
     }
-    // 窄幅裁剪会先触及档位的高度上限，再触及宽度上限。
-    val tier = CoverDecodeTier.forWidth(
-        kotlin.math.ceil(coverWidthPx * maxOf(1f, 0.75f / coverAspect)).toInt(),
-    )
+    // 显示盒保留原始比例；按量化后的解码目标尺寸选档。
+    val tier = CoverDecodeTier.forDisplay(coverWidthPx, coverAspect)
     val coverBitmap by rememberCoverBitmap(
         coverUri = game.coverUri,
         tier = tier,

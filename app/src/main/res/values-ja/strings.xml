@@ -232,7 +232,8 @@
     <string name="game_add_quick_launch">ホームに追加</string>
     <string name="game_quick_launch_full">ホームのクイック起動は最大 3 件までです</string>
     <string name="game_add_desktop_shortcut">デスクトップに追加</string>
-    <string name="game_desktop_shortcut_requested">システムダイアログで追加を確認してください</string>
+    <string name="game_desktop_shortcut_requested">追加をリクエストしました。アイコンが表示されない場合は、システム設定でショートカットの権限を確認してください。</string>
+    <string name="game_desktop_shortcut_added">ホーム画面にショートカットを追加しました</string>
     <string name="game_desktop_shortcut_updated">ホーム画面ショートカットを更新しました</string>
     <string name="game_desktop_shortcut_unsupported">現在のランチャーは固定ショートカットに対応していません</string>
     <string name="game_desktop_shortcut_failed">ホーム画面ショートカットを追加できませんでした</string>

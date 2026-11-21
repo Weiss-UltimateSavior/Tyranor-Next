@@ -25,6 +25,59 @@ class CoverDecodeTierTest {
     }
 
     @Test
+    fun `显示盒按量化后的目标尺寸选档`() {
+        val tier = CoverDecodeTier.forDisplay(456, 0.67f)
+        assertEquals(444 to 683, coverTargetSize(CoverDecodeTier.CARD, 0.67f))
+        assertEquals(CoverDecodeTier.FLOW, tier)
+        assertEquals(666 to 1024, coverTargetSize(tier, 0.67f))
+
+        assertEquals(CoverDecodeTier.FLOW, CoverDecodeTier.forDisplay(493, 0.60f))
+    }
+
+    @Test
+    fun `瀑布布局的每个比例都在实际尺寸边界升档`() {
+        // 各显示比例下，GRID / CARD / FLOW 最多能覆盖的显示宽度（px）。
+        val maxWidths = listOf(
+            listOf(307, 410, 614), // 0.60
+            listOf(307, 410, 614), // 0.61
+            listOf(307, 410, 614), // 0.62
+            listOf(322, 430, 645), // 0.63
+            listOf(328, 437, 655), // 0.64
+            listOf(333, 444, 665), // 0.65
+            listOf(333, 444, 666), // 0.66
+            listOf(333, 444, 666), // 0.67
+            listOf(348, 464, 696), // 0.68
+            listOf(353, 471, 706), // 0.69
+            listOf(358, 478, 717), // 0.70
+            listOf(358, 478, 717), // 0.71
+            listOf(358, 478, 717), // 0.72
+            listOf(374, 498, 747), // 0.73
+            listOf(379, 505, 758), // 0.74
+            listOf(384, 512, 768), // 0.75
+            listOf(384, 512, 768), // 0.76
+            listOf(384, 512, 768), // 0.77
+            listOf(374, 499, 749), // 0.78
+            listOf(379, 505, 758), // 0.79
+            listOf(384, 512, 768), // 0.80
+        )
+        val tiers = listOf(CoverDecodeTier.GRID, CoverDecodeTier.CARD, CoverDecodeTier.FLOW, CoverDecodeTier.FLOW_LARGE)
+        maxWidths.forEachIndexed { index, widths ->
+            val aspect = 0.60f + index / 100f
+            widths.forEachIndexed { tierIndex, width ->
+                assertEquals("$width px / $aspect", tiers[tierIndex], CoverDecodeTier.forDisplay(width, aspect))
+                assertEquals("${width + 1} px / $aspect", tiers[tierIndex + 1], CoverDecodeTier.forDisplay(width + 1, aspect))
+            }
+        }
+    }
+
+    @Test
+    fun `显示盒超出最大目标尺寸时用最大档`() {
+        assertEquals(819 to 1365, coverTargetSize(CoverDecodeTier.FLOW_LARGE, 0.60f))
+        assertEquals(CoverDecodeTier.FLOW_LARGE, CoverDecodeTier.forDisplay(820, 0.60f))
+        assertEquals(CoverDecodeTier.FLOW_LARGE, CoverDecodeTier.forDisplay(1025, 0.75f))
+    }
+
+    @Test
     fun `缓存 key 按档位与宽高比分桶且保留原 uri`() {
         val uri = "content://cover/test-tier"
         assertNotEquals(CoverDecodeTier.GRID.cacheKey(uri), CoverDecodeTier.FLOW.cacheKey(uri))

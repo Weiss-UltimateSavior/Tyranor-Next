@@ -1,5 +1,6 @@
 package com.tyranor.next.core.game.shortcut
 
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ShortcutInfo
@@ -30,6 +31,7 @@ object GameShortcutManager {
         game: ScanGame,
         launchIntent: Intent,
         customIconUri: Uri? = null,
+        pinResultIntent: Intent? = null,
     ): RequestResult {
         val appContext = context.applicationContext
         val shortcutManager = appContext.getSystemService(ShortcutManager::class.java)
@@ -73,10 +75,20 @@ object GameShortcutManager {
                 if (!shortcutManager.isRequestPinShortcutSupported) {
                     return@runCatching RequestResult.UNSUPPORTED
                 }
-                if (shortcutManager.requestPinShortcut(shortcut, null)) {
-                    RequestResult.REQUESTED
-                } else {
-                    RequestResult.FAILED
+                val callback = pinResultIntent?.let {
+                    PendingIntent.getBroadcast(
+                        appContext,
+                        0,
+                        it,
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_ONE_SHOT,
+                    )
+                }
+                var accepted = false
+                try {
+                    accepted = shortcutManager.requestPinShortcut(shortcut, callback?.intentSender)
+                    if (accepted) RequestResult.REQUESTED else RequestResult.FAILED
+                } finally {
+                    if (!accepted) callback?.cancel()
                 }
             }.getOrElse { error ->
                 if (error is kotlinx.coroutines.CancellationException) throw error

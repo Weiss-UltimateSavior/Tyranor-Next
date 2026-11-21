@@ -33,7 +33,6 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.test.platform.app.InstrumentationRegistry
 import com.tyranor.next.ui.common.MotionDeviceAcceptance
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope

@@ -51,6 +51,16 @@ internal enum class CoverDecodeTier(val maxWidthPx: Int, val maxHeightPx: Int) {
             widthPx <= FLOW.maxWidthPx -> FLOW
             else -> FLOW_LARGE
         }
+
+        /** 取解码目标能覆盖显示盒的最小档，超出上限时使用最大档。 */
+        fun forDisplay(widthPx: Int, aspect: Float): CoverDecodeTier {
+            val displayAspect = if (aspect.isFinite() && aspect > 0f) aspect else GRID.defaultAspect
+            val heightPx = (widthPx / displayAspect).roundToInt()
+            return entries.firstOrNull { tier ->
+                val (targetWidth, targetHeight) = coverTargetSize(tier, displayAspect)
+                targetWidth >= widthPx && targetHeight >= heightPx
+            } ?: FLOW_LARGE
+        }
     }
 }
 

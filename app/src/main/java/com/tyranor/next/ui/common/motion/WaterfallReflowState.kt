@@ -82,12 +82,28 @@ class WaterfallReflowState private constructor(
         )
     }
 
+    private var inactiveAnchor: Anchor? = null
+    private var inactiveOffsets: Map<Any, IntOffset> = emptyMap()
+
+    internal fun preserveInactiveAnchor() {
+        if (inactiveAnchor != null || pendingAnchor != null) return
+        inactiveAnchor = capture()
+        inactiveOffsets = gridState.layoutInfo.visibleItemsInfo.associate { it.key to it.offset }
+    }
+
     internal fun update(columns: Int, landscape: Boolean) {
-        if (layoutColumns == columns && layoutLandscape == landscape) return
-        if (pendingAnchor == null) {
-            previousItemOffsets = gridState.layoutInfo.visibleItemsInfo.associate { it.key to it.offset }
-            pendingAnchor = capture()
+        if (layoutColumns == columns && layoutLandscape == landscape) {
+            inactiveAnchor = null
+            inactiveOffsets = emptyMap()
+            return
         }
+        if (pendingAnchor == null) {
+            previousItemOffsets = if (inactiveAnchor != null) inactiveOffsets else
+                gridState.layoutInfo.visibleItemsInfo.associate { it.key to it.offset }
+            pendingAnchor = inactiveAnchor ?: capture()
+        }
+        inactiveAnchor = null
+        inactiveOffsets = emptyMap()
         layout = Layout(columns, landscape)
         isRestoring = pendingAnchor != null
     }
@@ -251,7 +267,7 @@ class WaterfallReflowState private constructor(
 
         internal fun saver(itemIdentity: (Any) -> Any) = listSaver<WaterfallReflowState, Any>(
             save = {
-                val anchor = it.pendingAnchor ?: it.capture()
+                val anchor = it.pendingAnchor ?: it.inactiveAnchor ?: it.capture()
                 val identity = anchor?.identity?.takeIf { value -> canBeSaved(value) }
                 listOf(it.layoutColumns, it.layoutLandscape, anchor?.index ?: -1, anchor?.y ?: 0,
                     anchor?.atBottom ?: false, identity != null, identity ?: "")
@@ -309,6 +325,8 @@ private fun UpdateWaterfallReflow(
         LaunchedEffect(gridState, contentReady) {
             state.restore(gridState, contentReady) { identity -> currentItemIndex?.invoke(identity) }
         }
+    } else {
+        Snapshot.withoutReadObservation { state.preserveInactiveAnchor() }
     }
 }
 
