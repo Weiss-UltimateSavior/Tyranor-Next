@@ -236,7 +236,7 @@ Column(fillMaxSize)                                // 页面根
 | --- | --- |
 | 主标签与引擎分类切页；独立页面推入、返回 | 常驻页共用 `TabPageMotion` 的弹簧与 `tabPageTransform`，两种宿主保留各自的交互时钟。Activity 走 `startActivityWithPageTransition` / `AppScreenActivity`；背景、翻折和遮罩由 `PageTransitionBackground`、`depthFoldStack`、`pageEnterFold` 处理。 |
 | 抽屉、侧栏、弹窗、下拉、提示条 | 抽屉使用 `AppBottomSheet`（内部复用 `MotionSheetController` / `SheetBackdrop`），其余复用 `AppSidePanel`、`AppAlertDialog`、`OverlayDropdownPreference`、`AppNotice`。公共窗口负责遮罩与释放触摸；灵动岛的变形、阴影、排队、按住/滑动与离页时机归 `NoticeHost` / `NoticeCenter`。业务页只提交内容及回调。 |
-| 入场、重播、增删补位、拖拽排序、删除消散 | 入场用 `EntranceState` / `staggeredEntrance`；有稳定 key 的 lazy 列表、网格、瀑布流在原修饰符位置调用 `listItemMotion()`。仅原本快速补位的场景用 `ListItemPlacement.Reflow`。普通 Column 的补位用 `reorderPlacement`；滤镜链的拖动归 `GraphicsChainMotion.kt`；游戏删除走 `GameRemovalMotion.kt` 与 `dissolve`。 |
+| 入场、重播、增删补位、拖拽排序、删除消散 | 入场用 `EntranceState` / `staggeredEntrance`；有稳定 key 的 lazy 列表、网格、瀑布流在原修饰符位置调用 `listItemMotion()`。仅原本快速补位的场景用 `ListItemPlacement.Reflow`。游戏卡片旋转重排用 `GridReflowMotion.kt` 的 `rememberGridReflowState` / `gridReflowHost`，复用 `listItemMotion` 和 `staggeredEntrance`；瀑布列历史、锚点恢复及恢复期交互门控由 `WaterfallReflowState.kt` 的 `rememberWaterfallReflowState` / `waterfallReflowHost` 管理，不在页面另写补位动画或恢复流程。普通 Column 的补位用 `reorderPlacement`；滤镜链的拖动归 `GraphicsChainMotion.kt`；游戏删除走 `GameRemovalMotion.kt` 与 `dissolve`。 |
 | 内容替换、区块显隐、读数与反馈 | 用 `BlurCrossfade`、`BlurVisibility`、`ExpandVisibility`、`ExpandSectionVisibility` 或 `RollingNumberText`，按原效果选有无模糊与是否等待退场。失败、等待、占位、图标回弹、滚动、触觉走 `shakeOnTrigger`、`DelayedProgress` / `breathing`、`shimmerSweep`、`bounceOnChange`、`scrollJelly`、`MotionHaptics`。 |
 | 控件、按压、拖动 | 行和卡片用已有公共控件、`pressSquish` / `pressSquishGroup`；开关、滑条、搜索、进度、可用态、刷新、分类指示器由对应控件持有。跟手输入与松手弹簧分别处理；不要给拖动每一帧重新建动画。 |
 | 封面、横向卡片、可见性与换肤 | 图像加载用 `rememberCoverReveal`，卡片翻页、视差和指示点用 `ParallaxCardPager` / `CardPagerIndicator`，封面流用 `CoverFlowMotion.kt`。常驻页显隐走 `skipDrawWhenHidden`，重设置页分帧用 `stagedItem`。换肤、语言与系统深浅色交接走 `rememberThemeSwitch`、`ThemeRevealHost` / `SystemThemeSync`。 |
@@ -294,6 +294,7 @@ Column(fillMaxSize)                                // 页面根
 - 组件统一圆角由应用设置「应用圆角调整」控制（**5–50dp，十档：5/10/15/20/25/30/35/40/45/50，默认 15dp**），默认外观、复古玻璃与白雾玻璃共用该值；列表项卡片、功能项卡片、弹窗等圆角组件统一引用 `theme/AppShapes.kt`：
   `AppComponentShape`、Miuix 组件用 `AppComponentCornerRadius`、
   抽屉顶部用 `AppSheetTopShape`；禁止再散落圆角字面量。外观风格不得自带圆角默认值或按风格覆盖该设置。
+- 游戏页瀑布与网格分别按 `Configuration.orientation` 保存横竖屏每行卡片数（2–10，默认竖屏 4、横屏 6）；「筛选与排序」抽屉只展示当前方向的滑条，拖动只更新草稿、松手提交一次，封面流隐藏滑条，重置筛选条件保留四项列数。竖屏平板同样使用竖屏设置。
 - 游戏页的瀑布、网格和封面流卡片经 `AppShapes.kt` 的 `gameCardShape` 取值，裁切与玻璃描边共用该形状。「游戏卡片单独圆角」默认关闭，跟随应用圆角；开启后使用保存的独立值。
 
 - **平板侧栏**：`isSideRailLayout()`（`isTabletScreen()` 命中且应用设置「平板侧边栏」开关开启，默认开）命中时主导航移到侧边（`ui/common/AppNavigationRail.kt`）：侧栏形态按外观风格取该主题「经典 MD 导航栏」（原「默认导航栏」）形态（默认与白雾玻璃用 Material3 侧栏，复古玻璃用悬浮玻璃柱），液态玻璃两档与「悬浮按钮」不适配侧栏；侧栏占布局宽度，底部留白归零。选中态图标动画统一用 `ui/common/NavigationTabIcon.kt`。
@@ -342,7 +343,7 @@ Column(fillMaxSize)                                // 页面根
 
 - **明文豁免**：游戏页卡片左上角的引擎类型角标（`ui/game/GameScreen.kt` 的 `GameCoverEngineBadge`，`GameCard` 与 `UniformGameCard` 共用，仅覆盖在封面上）使用 `MaterialTheme.typography.labelSmall`（11sp）——角标属封面上的小型标注，按两档制会过大；仅此一处豁免，其余正文仍遵循两档制。角标底色/文字色为**固定样式**（`theme/Color.kt` 的 `CoverBadgeBackground` / `CoverBadgeText`：半透明黑底 + 白字），**不随主题色与外观模式变化**。
 
-- **明文豁免**：游戏页瀑布流卡片（`ui/game/GameScreen.kt` 的 `GameCard`）标题在 `bodyMedium` 基础上缩小 2sp（12sp），用于 3/6 列窄卡片；仅此一处豁免，其余正文仍遵循两档制。
+- **明文豁免**：游戏页瀑布流卡片（`ui/game/GameScreen.kt` 的 `GameCard`）标题在 `bodyMedium` 基础上缩小 2sp（12sp），用于列数可调的瀑布流卡片标题；仅此一处豁免，其余正文仍遵循两档制。
 
 ***
 

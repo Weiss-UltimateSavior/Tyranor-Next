@@ -184,7 +184,6 @@ fun MainScreen(
     withContext(Dispatchers.IO) { AppSettingsStore.initEngineCardIcon(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardHideTitleTag(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardBadge(context) }
-    withContext(Dispatchers.IO) { AppSettingsStore.initGameCardStyle(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardCorners(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initHomeStyle(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initFloatingNavPosition(context) }
@@ -609,6 +608,8 @@ private fun ColumnScope.MainTabPages(
         val visiblePages = if (homePageEnabled) tabItems.indices.toList() else tabItems.indices.drop(1)
         // key(page)：页面身份按 Tab 下标固定。可见集合变化（如关闭/恢复首页）时，
         // 未变化页面的组合槽位与 pageOffset/pageAlpha 动画状态不会被错位复用而闪现。
+        val currentSelection = rememberUpdatedState(selectedIndex)
+        val gameTabSelected = remember { { currentSelection.value == 1 } }
         visiblePages.forEach { page ->
           key(page) {
             MainTabPageHost(
@@ -652,6 +653,7 @@ private fun ColumnScope.MainTabPages(
                   onAddManualGame = libraryViewModel::addManualGame,
                   onCoachAnchorChanged = onCoachAnchorChanged,
                   isActive = pageActive,
+                   isVisible = gameTabSelected,
                 )
                 2 -> EngineScreen(
                   Modifier.fillMaxSize(),

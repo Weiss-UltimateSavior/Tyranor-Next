@@ -4,6 +4,11 @@ import com.tyranor.next.ui.common.motion.CoverSurface
 import com.tyranor.next.ui.common.motion.CoverReveal
 import com.tyranor.next.ui.common.motion.listItemMotion
 import com.tyranor.next.ui.common.motion.ListItemPlacement
+import com.tyranor.next.ui.common.motion.gridReflowHost
+import com.tyranor.next.ui.common.motion.rememberGridReflowState
+import com.tyranor.next.ui.common.motion.WaterfallReflowState
+import com.tyranor.next.ui.common.motion.rememberWaterfallReflowState
+import com.tyranor.next.ui.common.motion.waterfallReflowHost
 import com.tyranor.next.ui.common.motion.rememberCoverReveal
 import com.tyranor.next.ui.common.motion.startActivityWithPageTransition
 import com.tyranor.next.ui.common.motion.rememberMotionSheetController
@@ -23,6 +28,7 @@ import com.tyranor.next.ui.common.NoRippleButton
 import androidx.compose.foundation.lazy.staggeredgrid.itemsIndexed as staggeredGridItemsIndexed
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -70,10 +76,8 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
-import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LocalContentColor
@@ -112,6 +116,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -122,6 +127,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -195,7 +201,6 @@ import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.CoachAnchor
 import com.tyranor.next.ui.common.coachAnchor
 import com.tyranor.next.ui.common.glassNavBottomInset
-import com.tyranor.next.ui.common.isWideScreen
 import com.tyranor.next.ui.common.LaunchErrorDialog
 import com.tyranor.next.ui.common.LaunchErrorState
 import com.tyranor.next.ui.common.toErrorState
@@ -254,6 +259,7 @@ fun GameScreen(
     onAddManualGame: (ScanGame) -> Boolean,
     onCoachAnchorChanged: (Int, Rect) -> Unit = { _, _ -> },
     isActive: Boolean = true,
+    isVisible: () -> Boolean = { true },
 ) {
     val context = LocalContext.current
     val batchScrapeRunningMessage = stringResource(R.string.game_batch_scraping_running)
@@ -345,6 +351,7 @@ fun GameScreen(
         onCoachAnchorChanged = onCoachAnchorChanged,
         onSearchQueryChanged = onSearchQueryChanged,
         isActive = isActive,
+        isVisible = isVisible,
     )
 
     // ===== 点击游戏卡片的底部抽屉栏（启动相关动作与设置/存档/补丁入口） =====
@@ -407,6 +414,7 @@ private fun GameLibraryContent(
     onAddManualGame: (ScanGame) -> Boolean,
     onCoachAnchorChanged: (Int, Rect) -> Unit,
     isActive: Boolean,
+    isVisible: () -> Boolean,
 ) {
     // 「添加游戏」分支流程：null=关闭；CHOICE=分支弹窗，PC/ANDROID=对应二级添加弹窗
     var addGameStep by rememberSaveable { mutableStateOf<AddGameStep?>(null) }
@@ -418,8 +426,12 @@ private fun GameLibraryContent(
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val conditions by AppSettingsStore.gameConditions.collectSettingAsState()
-    // 条件变化时重新创建滚动状态，避免 Lazy 布局按旧首卡键锚定到排序后的其它位置。
-    val gridState = key(conditions) { rememberLazyStaggeredGridState() }
+    val cardStyle by AppSettingsStore.gameCardStyleState.collectSettingAsState()
+    val waterfallSelected = cardStyle == AppSettingsStore.GAME_CARD_STYLE_WATERFALL
+    val (landscape, waterfallColumns) = rememberGameCardColumns(
+        AppSettingsStore.gameWaterfallPortraitColumnsState,
+        AppSettingsStore.gameWaterfallLandscapeColumnsState,
+    )
     val uniformGridState = key(conditions) { rememberLazyGridState() }
     val sortedGames = remember(games, conditions.sortMode) { sortGames(games, conditions.sortMode) }
     LaunchedEffect(query) { onSearchQueryChanged(query) }
@@ -437,6 +449,21 @@ private fun GameLibraryContent(
     val filteredGames = remember(searchedGames, conditions) {
         filterGames(searchedGames, conditions.engineFilter, conditions.playedFilter)
     }
+    val currentFilteredGames by rememberUpdatedState(filteredGames)
+    // 条件变化仍回顶；列数或方向变化则从零重建测量历史，恢复业务锚点。
+    val waterfallReflow = key(conditions) {
+        rememberWaterfallReflowState(
+            waterfallColumns,
+            landscape,
+            contentReady = loaded,
+            enabled = { waterfallSelected && isVisible() },
+            itemIdentity = { (it as? String)?.substringBefore('\u0000') ?: it },
+            itemIndex = { identity ->
+                currentFilteredGames.indexOfFirst { it.uri == identity }.takeIf { it >= 0 }
+            },
+        )
+    }
+    val gridState = waterfallReflow.gridState
     val availableEngines = remember(games) { games.map { it.engine }.distinct().sortedBy { it.ordinal } }
     val selectedEngine = conditions.engineFilter
     LaunchedEffect(loaded, scanning, confirmedEngineTypes, availableEngines, selectedEngine) {
@@ -449,14 +476,19 @@ private fun GameLibraryContent(
     }
 
     val scrapingCoversDescription = stringResource(R.string.game_scraping_covers_content_description)
-    val cardStyle by AppSettingsStore.gameCardStyleState.collectSettingAsState()
     // 搜索栏仅在列表顶部显示：离开顶部立即收起，向上滚动过程中不提前展开，滚回顶部才重新出现。
     // 封面流无纵向滚动，始终显示。
     var searchBarVisible by remember { mutableStateOf(true) }
     val searchAndFilterVisible = searchBarVisible || (loaded && !scanning && filteredGames.isEmpty())
-    LaunchedEffect(cardStyle, gridState, uniformGridState) {
-        searchBarVisible = true
-        if (cardStyle == AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW) return@LaunchedEffect
+    val restoringWaterfall = waterfallSelected && waterfallReflow.isRestoring
+    LaunchedEffect(cardStyle, gridState, uniformGridState, restoringWaterfall) {
+        if (cardStyle == AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW) {
+            searchBarVisible = true
+            return@LaunchedEffect
+        }
+        if (restoringWaterfall) {
+            return@LaunchedEffect
+        }
         val positions = when (cardStyle) {
             AppSettingsStore.GAME_CARD_STYLE_GRID -> snapshotFlow {
                 uniformGridState.firstVisibleItemIndex to uniformGridState.firstVisibleItemScrollOffset
@@ -577,8 +609,8 @@ private fun GameLibraryContent(
                 filteredGames.isEmpty() -> LibraryPane.NoMatch
                 else -> LibraryPane.Content
             }
-            // 退场列表仍参与绘制，但扫描/空态已接管页面时不得再打开卡片或启动游戏。
-            val contentInteractive by rememberUpdatedState(pane == LibraryPane.Content)
+            // 退场列表和恢复中的隐形卡片不响应业务动作；保留瀑布流的滚动接管。
+            val contentInteractive by rememberUpdatedState(pane == LibraryPane.Content && !restoringWaterfall)
             BlurCrossfade(pane, modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { current ->
                 when (current) {
                     LibraryPane.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -638,7 +670,7 @@ private fun GameLibraryContent(
                             else -> GameGrid(
                                 games = filteredGames,
                                 cardShape = cardShape,
-                                gridState = gridState,
+                                waterfallReflow = waterfallReflow,
                                 onGameClick = { if (contentInteractive) onGameClick(it) },
                                 onGameLongClick = { if (contentInteractive) onGameLongClick(it) },
                             )
@@ -2211,10 +2243,11 @@ private fun LaunchFileDialog(
 internal fun GameGrid(
     games: List<ScanGame>,
     cardShape: Shape,
-    gridState: LazyStaggeredGridState,
+    waterfallReflow: WaterfallReflowState,
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
-) {
+) = BoxWithConstraints(Modifier.fillMaxSize()) {
+    val gridState = waterfallReflow.gridState
     // 液态玻璃导航悬浮时不占布局：列表底部预留导航高度，滚动到底时最后一行可完全露出不被遮挡；
     // 滚动过程中内容仍可经过玻璃后面（沉浸）
     val glassBottomInset = glassNavBottomInset()
@@ -2222,16 +2255,30 @@ internal fun GameGrid(
     val hideTitleTag by AppSettingsStore.gameCardTitleTagState.collectSettingAsState()
     // 应用设置「卡片引擎角标」：左上角引擎类型角标（默认关）
     val showEngineBadge by AppSettingsStore.gameCardBadgeState.collectSettingAsState()
-    // 大屏（横屏/平板）一行六个卡片，避免卡片被撑得过大；窄屏保持一行三个
-    val columns = if (isWideScreen()) 6 else 3
+    val columns = waterfallReflow.layoutColumns
+    val coverWidthPx = gameCardColumnWidthPx(constraints.maxWidth, columns)
+    val reflow = rememberGridReflowState(
+        columns,
+        waterfallReflow.layoutLandscape,
+        gridState,
+        ready = !waterfallReflow.isRestoring,
+        placementDelta = { key ->
+            val previous = waterfallReflow.previousItemOffsets[key]
+            val current = gridState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == key }?.offset
+            if (previous != null && current != null) previous - current else IntOffset.Zero
+        },
+    )
     // 滚动果冻：滚得越快卡片沿滚动方向拉长越多，停下 Q 弹回原样（只在图层里读，不触发重组；「普通」档不挂）
     val gridJelly = rememberScrollJellyState()
     LazyVerticalStaggeredGrid(
         columns = StaggeredGridCells.Fixed(columns),
         state = gridState,
-        modifier = Modifier.fillMaxSize().scrollJellyHost(gridJelly),
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp + glassBottomInset),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxSize()
+            .waterfallReflowHost(waterfallReflow)
+            .gridReflowHost(reflow)
+            .scrollJellyHost(gridJelly),
+        contentPadding = gameGridContentPadding(glassBottomInset),
+        horizontalArrangement = Arrangement.spacedBy(GameGridColumnSpacing),
         verticalItemSpacing = 12.dp,
     ) {
         staggeredGridItemsIndexed(
@@ -2243,11 +2290,13 @@ internal fun GameGrid(
         ) { index, game ->
             GameCard(
                 // 搜索 / 排序 / 增删时卡片位置弹簧过渡；首屏依次弹入
-                modifier = listItemMotion(ListItemPlacement.Reflow).staggeredEntrance(index)
-                    // 窄卡片（3/6 列）拉伸略收一点，避免高速滚动时显得过软
+                modifier = listItemMotion(ListItemPlacement.Reflow)
+                    .staggeredEntrance(index, reflow = reflow, key = gameCardItemKey(game))
+                    // 多列卡片拉伸略收一点，避免高速滚动时显得过软
                     .scrollJelly(gridJelly, strength = 0.03f),
                 game = game,
                 cardShape = cardShape,
+                coverWidthPx = coverWidthPx,
                 onClick = { onGameClick(game) },
                 onLongClick = { onGameLongClick(game) },
                 hideTitleTag = hideTitleTag,
@@ -2261,8 +2310,7 @@ internal fun gameCardItemKey(game: ScanGame): String =
     "${game.uri}\u0000${game.coverUri.orEmpty()}\u0000${game.coverSource.orEmpty()}"
 
 /**
- * Renders a stable-aspect library card with optional long press and engine badge. Cover decoding
- * follows the supplied scrolling query, while the chosen motion mode controls its reveal animation.
+ * Renders a stable-aspect library card with optional long press and engine badge.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -2272,7 +2320,7 @@ internal fun GameCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
-    /** 当前是否正在滑动/惯性滚动的只读查询；在 producer 协程内读取，避免组合期订阅滚动状态。 */
+    coverWidthPx: Int = 0,
     /** 卡片名称隐藏【】/[] 标签（应用设置「卡片隐藏名称标签」）。 */
     hideTitleTag: Boolean = false,
     /** 左上角引擎类型角标（应用设置「卡片引擎角标」，默认关）。 */
@@ -2285,8 +2333,13 @@ internal fun GameCard(
         val hash = game.uri.hashCode().let { if (it == Int.MIN_VALUE) 0 else kotlin.math.abs(it) }
         0.60f + (hash % 21) / 100f
     }
+    // 窄幅裁剪会先触及档位的高度上限，再触及宽度上限。
+    val tier = CoverDecodeTier.forWidth(
+        kotlin.math.ceil(coverWidthPx * maxOf(1f, 0.75f / coverAspect)).toInt(),
+    )
     val coverBitmap by rememberCoverBitmap(
         coverUri = game.coverUri,
+        tier = tier,
         targetAspect = coverAspect,
     )
     // 删除消散中：登记在 dissolvingGames 里的卡片播放消散效果，期间不再响应点击
@@ -2356,7 +2409,7 @@ internal fun GameCard(
 
 /**
  * 游戏页「网格」卡片风格：恢复瀑布流之前的等高网格（3:4 封面 + 封面下方单行标题）。
- * 列数、封面加载优化、名称标签与角标设置与瀑布流一致。
+ * 列数按当前横竖屏独立配置；封面加载优化、名称标签与角标设置与瀑布流一致。
  */
 @Composable
 internal fun UniformGameGrid(
@@ -2365,21 +2418,26 @@ internal fun UniformGameGrid(
     gridState: LazyGridState,
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
-) {
+) = BoxWithConstraints(Modifier.fillMaxSize()) {
     // 液态玻璃导航悬浮时不占布局：列表底部预留导航高度（与瀑布流一致）
     val glassBottomInset = glassNavBottomInset()
     val hideTitleTag by AppSettingsStore.gameCardTitleTagState.collectSettingAsState()
     val showEngineBadge by AppSettingsStore.gameCardBadgeState.collectSettingAsState()
-    // 大屏（横屏/平板）一行六个卡片，窄屏保持一行三个
-    val columns = if (isWideScreen()) 6 else 3
+    // 按屏幕方向选择，竖屏平板也使用竖屏配置。
+    val (landscape, columns) = rememberGameCardColumns(
+        AppSettingsStore.gameGridPortraitColumnsState,
+        AppSettingsStore.gameGridLandscapeColumnsState,
+    )
+    val coverTier = CoverDecodeTier.forWidth(gameCardColumnWidthPx(constraints.maxWidth, columns))
+    val reflow = rememberGridReflowState(columns, landscape, gridState)
     // 滚动果冻：快速滚动时卡片沿滚动方向轻微拉长，停下 Q 弹复原（「普通」档不挂）
     val gridJelly = rememberScrollJellyState()
     LazyVerticalGrid(
         columns = GridCells.Fixed(columns),
         state = gridState,
-        modifier = Modifier.fillMaxSize().scrollJellyHost(gridJelly),
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp + glassBottomInset),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxSize().gridReflowHost(reflow).scrollJellyHost(gridJelly),
+        contentPadding = gameGridContentPadding(glassBottomInset),
+        horizontalArrangement = Arrangement.spacedBy(GameGridColumnSpacing),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         gridItemsIndexed(
@@ -2389,10 +2447,12 @@ internal fun UniformGameGrid(
         ) { index, game ->
             UniformGameCard(
                 // 搜索 / 排序 / 增删时卡片位置弹簧过渡；首屏依次弹入（与瀑布流一致）
-                modifier = listItemMotion(ListItemPlacement.Reflow).staggeredEntrance(index)
+                modifier = listItemMotion(ListItemPlacement.Reflow)
+                    .staggeredEntrance(index, reflow = reflow, key = gameCardItemKey(game))
                     .scrollJelly(gridJelly, strength = 0.03f),
                 game = game,
                 cardShape = cardShape,
+                coverTier = coverTier,
                 onClick = { onGameClick(game) },
                 onLongClick = { onGameLongClick(game) },
                 hideTitleTag = hideTitleTag,
@@ -2414,14 +2474,14 @@ internal fun UniformGameCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
-    /** 当前是否正在滑动/惯性滚动的只读查询；在 producer 协程内读取，避免组合期订阅滚动状态。 */
+    coverTier: CoverDecodeTier = CoverDecodeTier.GRID,
     /** 卡片名称隐藏【】/[] 标签（应用设置「卡片隐藏名称标签」）。 */
     hideTitleTag: Boolean = false,
     /** 左上角引擎类型角标（应用设置「卡片引擎角标」，默认关）。 */
     showEngineBadge: Boolean = false,
 ) {
     val engineName = gameCardEngineName(game)
-    val coverBitmap by rememberCoverBitmap(game.coverUri)
+    val coverBitmap by rememberCoverBitmap(game.coverUri, tier = coverTier)
     // 删除消散中：登记在 dissolvingGames 里的卡片播放消散效果，期间不再响应点击
     val dissolve = rememberLastNonNull(dissolvingGames[game.uri])
     val pressModifier = if (onLongClick != null) {
@@ -2479,6 +2539,35 @@ internal fun UniformGameCard(
                 .padding(top = 4.dp),
         )
     }
+}
+
+private val GameGridHorizontalPadding = 12.dp
+private val GameGridColumnSpacing = 10.dp
+
+/** 两种可调列数卡片共用当前方向与已保存列数的选择规则。 */
+@Composable
+private fun rememberGameCardColumns(
+    portraitColumns: kotlinx.coroutines.flow.StateFlow<Int>,
+    landscapeColumns: kotlinx.coroutines.flow.StateFlow<Int>,
+): Pair<Boolean, Int> {
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val portrait by portraitColumns.collectSettingAsState()
+    val landscape by landscapeColumns.collectSettingAsState()
+    return isLandscape to if (isLandscape) landscape else portrait
+}
+
+private fun gameGridContentPadding(bottomInset: Dp) = PaddingValues(
+    start = GameGridHorizontalPadding,
+    end = GameGridHorizontalPadding,
+    top = 12.dp,
+    bottom = 12.dp + bottomInset,
+)
+
+@Composable
+private fun gameCardColumnWidthPx(viewportWidth: Int, columns: Int): Int = with(LocalDensity.current) {
+    val gutters = 2 * GameGridHorizontalPadding.roundToPx() + (columns - 1) * GameGridColumnSpacing.roundToPx()
+    val availableWidth = (viewportWidth - gutters).coerceAtLeast(0)
+    (availableWidth + columns - 1) / columns
 }
 
 /** 卡片无封面占位使用的引擎显示名：Switch / Plugin 等短名处理，两种卡片共用。 */
@@ -2606,7 +2695,6 @@ private object CoverDecodedKeys {
 internal fun isCoverKnown(coverUri: String?): Boolean =
     coverUri != null && CoverAvailability.isKnown(coverUri)
 
-/** 不感知滚动的默认查询（首页/封面流等非网格调用方复用，避免默认参数每次新建 lambda）。 */
 /** 读取游戏封面。缓存命中时直接出图，未命中时在后台解码并在完成后更新状态。 */
 @Composable
 internal fun rememberCoverBitmap(
@@ -2626,6 +2714,7 @@ internal fun rememberCoverBitmap(
             // 缓存命中也要登记：解码写入缓存后、回到调用方调度器前协程可能被取消
             // （withContext 丢弃结果），不登记则位图被 LRU 逐出后占位文字会重新出现
             CoverAvailability.markKnown(uri)
+            value = cached.asImageBitmap()
             return@produceState
         }
         val bitmap = CoverThumbnailLoader.load(context.applicationContext, uri, tier, aspect)

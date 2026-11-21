@@ -37,6 +37,7 @@ import androidx.compose.ui.node.observeReads
 import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -107,16 +108,21 @@ class EntranceState internal constructor() {
         if (i >= 0) nodes.removeAt(i)
     }
 
+    /** 打开新的入场窗口，但不重播已挂载节点。 */
+    internal fun openWindow(quick: Boolean = false) {
+        startedAt = SystemClock.uptimeMillis()
+        skipMark = skipCounter
+        this.quick = quick
+        generation++
+    }
+
     /**
      * 重新播放一次入场（例如主界面切回该标签页时）。
      *
      * @param quick 快速入场：错开更短、封顶更低
      */
     fun replay(quick: Boolean = false) {
-        startedAt = SystemClock.uptimeMillis()
-        skipMark = skipCounter
-        this.quick = quick
-        generation++
+        openWindow(quick)
         // 已挂载的元素按它们此刻在屏幕上的纵向位置领号并（重新）开始入场；不再触发任何重组。
         // 不能按挂载顺序：同一个节拍下可能挂着好几页（引擎页的四个分类常驻组合）、列表又会边滚边回收重建，
         // 挂载顺序 ≠ 屏幕顺序——列表往下翻过之后，当前页的行排在别的分类页的几十个节点后面，
@@ -260,33 +266,42 @@ fun Modifier.staggeredEntrance(
     index: Int,
     distance: Dp = 22.dp,
     stepMillis: Long = 30L,
-): Modifier = this then StaggeredEntranceElement(index, distance, stepMillis)
+    reflow: GridReflowState? = null,
+    key: Any? = null,
+): Modifier = this then StaggeredEntranceElement(index, distance, stepMillis, reflow, key)
 
 private class StaggeredEntranceElement(
     val index: Int,
     val distance: Dp,
     val stepMillis: Long,
+    val reflow: GridReflowState?,
+    val key: Any?,
 ) : ModifierNodeElement<StaggeredEntranceNode>() {
-    override fun create(): StaggeredEntranceNode = StaggeredEntranceNode(index, distance, stepMillis)
+    override fun create(): StaggeredEntranceNode =
+        StaggeredEntranceNode(index, distance, stepMillis, reflow, key)
 
     override fun update(node: StaggeredEntranceNode) {
         node.index = index
         node.stepMillis = stepMillis
         // 下一个动画帧图层块重跑时即读到新值；静止时 distance 不参与绘制
         node.distance = distance
+        node.updateReflow(reflow, key)
     }
 
     /** 按完整入场参数比较，让参数未变的修饰符继续复用现有节点。 */
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is StaggeredEntranceElement) return false
-        return index == other.index && distance == other.distance && stepMillis == other.stepMillis
+        return index == other.index && distance == other.distance && stepMillis == other.stepMillis &&
+            reflow === other.reflow && key == other.key
     }
 
     override fun hashCode(): Int {
         var result = index
         result = 31 * result + distance.hashCode()
         result = 31 * result + stepMillis.hashCode()
+        result = 31 * result + (reflow?.hashCode() ?: 0)
+        result = 31 * result + (key?.hashCode() ?: 0)
         return result
     }
 
@@ -300,6 +315,7 @@ private class StaggeredEntranceElement(
 
 /** 一次入场用到的动画与「是否隐藏」标记；只有真正要播放的节点才会创建。 */
 private class EntranceAnim {
+    var placementDelta = IntOffset.Zero
     val progress = Animatable(0f)
     val alpha = Animatable(0f)
 
@@ -314,9 +330,43 @@ internal class StaggeredEntranceNode(
     var index: Int,
     var distance: Dp,
     var stepMillis: Long,
+    private var reflow: GridReflowState? = null,
+    private var itemKey: Any? = null,
 ) : Modifier.Node(), LayoutModifierNode, LayoutAwareModifierNode, CompositionLocalConsumerModifierNode, ObserverModifierNode {
 
     private var state: EntranceState? = null
+    private var reflowGeneration = -1
+
+    internal fun onGridReflow() {
+        if (isAttached) checkReflow(relayout = true)
+    }
+
+    internal fun updateReflow(next: GridReflowState?, key: Any?) {
+        if (reflow !== next || itemKey != key) {
+            if (isAttached) reflow?.detach(this)
+            reflow = next
+            if (isAttached) reflow?.attach(this)
+            itemKey = key
+            reflowGeneration = -1
+            playJob?.cancel()
+            playJob = null
+            anim?.let {
+                it.token++
+                it.mode = MODE_DONE
+            }
+        }
+    }
+
+    private fun checkReflow(relayout: Boolean) {
+        val flow = reflow ?: return
+        val key = itemKey ?: return
+        val entrance = flow.entrance
+        if (reflowGeneration == entrance.generation) return
+        val delayMillis = flow.entranceDelayMillis(key, stepMillis) ?: return
+        if (beginPlay(entrance, relayout, delayOverrideMillis = delayMillis, placementDelta = flow.placementDelta(key))) {
+            reflowGeneration = entrance.generation
+        }
+    }
 
     /** 最近一次放置的坐标：重播入场时按屏幕位置排次序用（只存引用，不在每次放置时计算）。 */
     private var placedCoordinates: LayoutCoordinates? = null
@@ -344,7 +394,8 @@ internal class StaggeredEntranceNode(
         }
         if (p != 1f || a != 1f) {
             this.alpha = a.coerceIn(0f, 1f)
-            translationY = (1f - p) * distance.toPx() * ENTRANCE_TRAVEL
+            translationX = (1f - p) * an.placementDelta.x
+            translationY = (1f - p) * (distance.toPx() * ENTRANCE_TRAVEL + an.placementDelta.y)
             val s = ENTRANCE_MIN_SCALE + (1f - ENTRANCE_MIN_SCALE) * p
             scaleX = s
             scaleY = s
@@ -354,6 +405,7 @@ internal class StaggeredEntranceNode(
 
     override fun onPlaced(coordinates: LayoutCoordinates) {
         placedCoordinates = coordinates
+        checkReflow(relayout = true)
     }
 
     /** 在根坐标系里的顶边（px）；还没放置过、或已脱离布局树为正无穷。 */
@@ -369,7 +421,9 @@ internal class StaggeredEntranceNode(
 
     /** 挂载时订阅最近的入场作用域，并在有效窗口内准备首帧隐藏态。 */
     override fun onAttach() {
+        reflow?.attach(this)
         observeEntranceState(relayout = false)
+        checkReflow(relayout = false)
     }
 
     /** 提供者替换后重新绑定作用域，必要时请求放置以启用图层。 */
@@ -399,6 +453,7 @@ internal class StaggeredEntranceNode(
 
     /** 卸载时解除节拍登记并丢弃动画，避免懒列表复用继承半透明状态。 */
     override fun onDetach() {
+        reflow?.detach(this)
         state?.detach(this)
         state = null
         playJob?.cancel()
@@ -407,10 +462,12 @@ internal class StaggeredEntranceNode(
         anim = null
         layerActive = false
         placedCoordinates = null
+        reflowGeneration = -1
     }
 
     /** 懒列表回收节点时作废当前动画，让旧内容立即恢复完整显示。 */
     override fun onReset() {
+        reflowGeneration = -1
         // 懒列表回收：中途的入场立刻作废，内容以原样显示
         playJob?.cancel()
         playJob = null
@@ -427,34 +484,58 @@ internal class StaggeredEntranceNode(
     }
 
     /** 为本轮领取屏幕顺序并替换旧任务；协程启动前先隐藏，防止首帧闪现。 */
-    private fun beginPlay(st: EntranceState, relayout: Boolean, slotOverride: Int = -1) {
+    private fun beginPlay(
+        st: EntranceState,
+        relayout: Boolean,
+        slotOverride: Int = -1,
+        delayOverrideMillis: Long? = null,
+        placementDelta: IntOffset = IntOffset.Zero,
+    ): Boolean {
+        if (!android.animation.ValueAnimator.areAnimatorsEnabled()) {
+            playJob?.cancel()
+            playJob = null
+            anim?.let {
+                it.token++
+                it.mode = MODE_DONE
+            }
+            return false
+        }
         val an = anim ?: EntranceAnim().also { anim = it }
+        an.placementDelta = placementDelta
         an.token++
         val token = an.token
-        // 立刻按隐藏画：协程还没来得及运行的那几帧也不会先以原样闪一下
         an.mode = MODE_HIDDEN
         val generation = st.generation
-        // 屏幕次序：首次挂载时按元素启动入场的先后发放（与组合 / 挂载顺序一致）；重播由 replay 按屏幕位置算好后经 slotOverride 传入
-        val slot = if (slotOverride >= 0) slotOverride else st.takeSlot(generation)
+        // 重排已有独立有序节拍；页面入场仍按挂载 / 屏幕次序领号。
+        val slot = when {
+            delayOverrideMillis != null -> 0
+            slotOverride >= 0 -> slotOverride
+            else -> st.takeSlot(generation)
+        }
         val newLayer = !layerActive
         layerActive = true
         playJob?.cancel()
         playJob = coroutineScope.launch {
-            // 协程开跑时才读 index / stepMillis：懒列表复用时节点先于元素更新挂载，此刻读到的才是新元素的值
-            val quick = st.quick
-            val order = minOf(index, slot).coerceIn(0, if (quick) QUICK_MAX_ORDER else MAX_ORDER)
-            val step = if (quick) minOf(stepMillis, QUICK_STEP_MILLIS) else stepMillis
-            play(st, an, generation, token, order * step)
+            // 重排延时绕过页面 index 与尾部封顶，保留可见列表各项的顺序延时。
+            val delayMillis = delayOverrideMillis ?: run {
+                // 懒列表复用时节点先于元素更新挂载，此刻才读新元素的 index / stepMillis。
+                val quick = st.quick
+                val order = minOf(index, slot).coerceIn(0, if (quick) QUICK_MAX_ORDER else MAX_ORDER)
+                val step = if (quick) minOf(stepMillis, QUICK_STEP_MILLIS) else stepMillis
+                order * step
+            }
+            play(st, an, generation, token, delayMillis)
         }
         // 挂载时不用手动失效：节点随布局节点一起挂载，首次测量 / 放置本来就会发生
         if (newLayer && relayout) invalidatePlacement()
+        return true
     }
 
     /** 播放错峰入场并响应拖动跳过；取消时只收尾仍属于本轮的动画值。 */
     private suspend fun play(st: EntranceState, an: EntranceAnim, generation: Int, token: Int, delayMillis: Long) {
         val progress = an.progress
         val alpha = an.alpha
-        if (!st.isFresh()) {
+        if (!st.isFresh() || !android.animation.ValueAnimator.areAnimatorsEnabled()) {
             // 协程真正开跑前窗口已过 / 用户已拖动：直接收尾到原样
             if (progress.value != 1f) progress.snapTo(1f)
             if (alpha.value != 1f) alpha.snapTo(1f)
@@ -499,6 +580,7 @@ internal class StaggeredEntranceNode(
     override fun MeasureScope.measure(measurable: Measurable, constraints: Constraints): MeasureResult {
         val placeable = measurable.measure(constraints)
         return layout(placeable.width, placeable.height) {
+            checkReflow(relayout = false)
             if (layerActive) {
                 placeable.placeWithLayer(0, 0, layerBlock = layerBlock)
             } else {
