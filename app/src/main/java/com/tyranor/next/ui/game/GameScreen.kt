@@ -2490,19 +2490,28 @@ internal fun gameCardEngineName(game: ScanGame): String = when (game.engine) {
     else -> game.engine.displayName
 }
 
-/** 无封面占位（Tyranor + 引擎名）：瀑布流与网格两种卡片共用。 */
+/** 无封面占位（Tyranor + 引擎名）：瀑布流、网格与操作抽屉档案卡共用。 */
 @Composable
 internal fun GameCoverPlaceholder(engineName: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        modifier = Modifier.padding(horizontal = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Text(
             "Tyranor",
             style = MaterialTheme.typography.bodyMedium,
             color = Color.White.copy(alpha = 0.7f),
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
         Text(
             engineName,
             style = MaterialTheme.typography.bodyMedium,
             color = Color.White,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 4.dp),
         )
     }

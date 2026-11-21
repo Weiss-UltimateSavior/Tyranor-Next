@@ -1,4 +1,4 @@
-package com.tyranor.next.ui.home
+package com.tyranor.next.ui.common
 
 /** Round to tenths of an hour without floating-point error or overflowing a millisecond value. */
 internal fun formatPlaytimeHours(millis: Long): String {

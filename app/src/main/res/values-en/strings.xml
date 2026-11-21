@@ -1040,7 +1040,7 @@
     <string name="game_shelf_stat_session">Last session</string>
     <string name="game_shelf_stat_none">—</string>
     <string name="game_shelf_stat_untracked">External, untracked</string>
-    <string name="game_shelf_not_started">Not yet</string>
+    <string name="game_shelf_not_started">Not played</string>
     <string name="game_shelf_today">Today</string>
     <string name="game_shelf_yesterday">Yesterday</string>
     <string name="game_shelf_days_ago">%1$d days ago</string>

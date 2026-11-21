@@ -23,9 +23,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -57,6 +59,7 @@ import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 
 internal val LocalAppSheetContent = staticCompositionLocalOf { false }
 
@@ -133,17 +136,27 @@ internal fun AppBottomSheet(
         )
         MotionSheetEffects(controller, onDismissRequest)
         // Material3 只在没有动画持有拖动锁时才把面板吸到新的展开位：内容在展开途中变高 / 变矮（例如游戏抽屉里
-        // 异步多出「确认已退出外部游戏」一行）时，面板停在按旧高度算出的位置，变高的那一截连同底部固定的启动按钮
-        // 被推到屏幕外，之后也不会自己回来。内容高度一变（首次测量之后）就重新对齐到展开位。
+        // 异步多出「确认已退出外部游戏」一行）、旋转改变窗口高度或关闭中途接回时，面板可能停在旧展开位，
+        // 变高的那一截连同底部固定的启动按钮被推到屏幕外。尺寸或展开恢复变更后（首次测量之后）重新对齐到展开位。
         var contentHeight by remember { mutableIntStateOf(0) }
-        LaunchedEffect(sheetState) {
-            snapshotFlow { contentHeight }
-                .filter { it > 0 }
+        val screenHeightDp by rememberUpdatedState(configuration.screenHeightDp)
+        LaunchedEffect(sheetState, controller) {
+            snapshotFlow { Triple(contentHeight, screenHeightDp, controller.closing) }
+                .filter { (height, _, _) -> height > 0 }
                 .drop(1)
-                .collectLatest {
-                    if (sheetState.currentValue == SheetValue.Expanded &&
-                        sheetState.targetValue == SheetValue.Expanded &&
-                        !controller.closing
+                .collectLatest { (_, _, closing) ->
+                    if (closing || sheetState.targetValue != SheetValue.Expanded) return@collectLatest
+                    // 普通动效档下初次展开动画期间 currentValue 仍为 Hidden：等落到 Expanded 后再补齐对齐
+                    if (sheetState.currentValue != SheetValue.Expanded) {
+                        val settled = snapshotFlow { sheetState.currentValue to sheetState.targetValue }
+                            .first { (cur, target) -> cur == SheetValue.Expanded || target != SheetValue.Expanded }
+                        if (settled.first != SheetValue.Expanded || controller.closing) return@collectLatest
+                    }
+                    // 等一帧合并同一帧或逐帧高度动画中的连续回调，停稳后再对齐，避免反复取消重启 expand()
+                    withFrameNanos { }
+                    if (!controller.closing &&
+                        sheetState.currentValue == SheetValue.Expanded &&
+                        sheetState.targetValue == SheetValue.Expanded
                     ) {
                         sheetState.expand()
                     }

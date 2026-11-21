@@ -1,4 +1,4 @@
-package com.tyranor.next.ui.home
+package com.tyranor.next.ui.common
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
