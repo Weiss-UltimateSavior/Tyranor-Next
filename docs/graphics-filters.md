@@ -5,7 +5,7 @@
 ## 发布说明：画质增强入口与支持范围
 
 - 全局和单游戏的单模式“画面超分”入口由“画质滤镜链”的有序滤镜链替代；原有 Anime4K 配置只读迁移，原偏好不删除。
-- 随包支持 **krkrsdl3 OpenGL** 的尺寸限制舞台输出，并保留 **Kirikiroid2 1.3.4 / 1.3.9**（Kirikiroid2 1.2.6 已移除，详见上方更新说明）。不恢复旧屏幕级 Anime4K，不将缩放后的屏幕帧冒充原始输入。实现、二进制身份和验证边界见 [KR 接入报告](krkr-local-raw-filters.md)。
+- 随包支持 **krkrsdl3 OpenGL** 的尺寸限制舞台输出，并保留 **Kirikiroid2 1.3.4 / 1.3.9**（Kirikiroid2 1.2.6 已移除，详见本文顶部「更新（当前实现）」说明）。不恢复旧屏幕级 Anime4K，不将缩放后的屏幕帧冒充原始输入。实现、二进制身份和验证边界见 [KR 接入报告](krkr-local-raw-filters.md)。
 - 设置页按实际内核及渲染器判定能力；krkrsdl3 软件渲染仍标为不支持滤镜，已有自定义链和分析器偏好继续保存。SDL3 的能力不受 Kirikiroid2 版本选择影响。
 - 自研 Artemis 的画质增强接入待 artemis-compat 上游合并。官方 Artemis 支持范围见下表；不能将所有 Artemis 版本统称为 V1–V6。
 - `AGENTS.md` 已完整恢复为 PR 基线；输入兼容、无图标入口和弹窗取色仅在实际代码处说明，不修改项目规范。krkrsdl3 OpenGL 接入与 Kirikiroid2 1.2.6 移除后的清理已按维护约定整理；无图标跳转入口仍待维护者批准，局部注释不等同于规范豁免。
@@ -26,7 +26,7 @@
 
 历史版本中 Kirikiroid2 1.2.6 曾使用独立的公共 Cocos 接口适配（现已随 1.2.6 内核一并移除）：其 `UpdateDrawBuffer` 参数与 1.3.x 不同，且关键绘制调用没有可替换的 PLT 入口。当时适配器在可信的单个窗口舞台上处理纹理，通过引擎自己的 `Texture2D` 暂借处理结果，待原生渲染队列完成后还原纹理及 UV；不更改舞台几何或触摸映射。旧屏幕级 Anime4K 入口仍不执行。
 
-当前随包支持 Kirikiroid2 1.3.4 / 1.3.9（1.2.6 已移除）；自动选择走同样地受支持路径，设置与启动使用同一库名门禁。启动阶段只规范化库路径并核对库名，不重新读取整库计算 SHA-256；GL 上下文建立后由 native 核对已加载映射的 GNU Build ID、符号、虚表及重定位入口。ELF note 仅从可读加载段读取，并检查地址、对齐和长度边界。这是兼容版本识别，不是文件完整性校验；外置插件安装的 ZIP SHA-256 校验保持不变。原生桥（`krkr_raw_frame_bridge.cpp`）持续追踪 `drawBufferUpdated` 并向 Java 侧传入 `frameDirty`（宿主脏帧静态复用）：仅在 clean 帧（`frameDirty=false`）且命中有效输出缓存（输入纹理名、源尺寸、绑定尺寸、裁剪 UV 与物理行序均未变化）时，`GraphicsFilterPipeline.renderCroppedTexture` 跳过 CNN 与重采样绘制直接复用 `lastCachedOutput`（但若性能分析器存在有效 GPU 计时器，仍可调用 `timer.poll(stats)` 查询已有计时样本，不保证零 GL 调用）；缓存未命中时仍须重新执行滤镜——若仅裁剪 UV 改变且源尺寸、绑定尺寸及裁剪缓冲字节数（计划输入）未变，则沿用现有计划；只有计划输入变化等条件时才触发重新规划。
+当前随包支持 Kirikiroid2 1.3.4 / 1.3.9（1.2.6 已移除）；自动选择走同样的受支持路径，设置与启动使用同一库名门禁。启动阶段只规范化库路径并核对库名，不重新读取整库计算 SHA-256；GL 上下文建立后由 native 核对已加载映射的 GNU Build ID、符号、虚表及重定位入口。ELF note 仅从可读加载段读取，并检查地址、对齐和长度边界。这是兼容版本识别，不是文件完整性校验；外置插件安装的 ZIP SHA-256 校验保持不变。原生桥（`krkr_raw_frame_bridge.cpp`）持续追踪 `drawBufferUpdated` 并向 Java 侧传入 `frameDirty`（宿主脏帧静态复用）：仅在 clean 帧（`frameDirty=false`）且命中有效输出缓存（输入纹理名、源尺寸、绑定尺寸、裁剪 UV 与物理行序均未变化）时，`GraphicsFilterPipeline.renderCroppedTexture` 跳过 CNN 与重采样绘制直接复用 `lastCachedOutput`（但若性能分析器存在有效 GPU 计时器，仍可调用 `timer.poll(stats)` 查询已有计时样本，不保证零 GL 调用）；缓存未命中时仍须重新执行滤镜——若仅裁剪 UV 改变且源尺寸、绑定尺寸及裁剪缓冲字节数（计划输入）未变，则沿用现有计划；只有计划输入变化等条件时才触发重新规划。
 
 ### krkrsdl3（OpenGL）
 

@@ -58,7 +58,7 @@ C24/C32 为本 PR 未引入的通道规模（不打包其资源或保留其生�
    - 共享输入特征的相邻卷积 Pass 合并，片元寄存器级复用采样抽头，静态卷积纹理采样大幅削减 30%~66.7%。
 2. **P1: 分级 `mediump` 精度重构（允许移动 GPU 选用较低精度 ALU）**
    - 片元着色器头部统一以 `precision highp float;`、`highp int` 与 `highp sampler2D` 起手，对 UV 坐标、视口与纹理尺寸、倒数向量（`u_*_pt`）及采样器实施 `highp` 强类型保护以确保高分辨率寻址零漂移；仅在检测到非注释卷积调用（`mat4(` / `mat3x4(`）时，于 `pass.body` 前切换为 `precision mediump float;`，在源码语义上允许驱动/GPU 将卷积乘加降为较低精度执行（GLSL 规范中 `mediump` 仅规定最小精度下限，是否真正以 FP16 执行或获得吞吐增益取决于具体 GPU 与驱动，仅对实测机型有效）。
-   - **2xFP16 双份 CPU 仿真实现的共同阈值来源**：`2xFP16` 的数值验证由两份独立 CPU binary16 仿真模型共同支撑（用于建模精度边界而非保证 GPU 驱动逐操作 `mediump` 舍入）——JVM 侧 `CnnPipelineTest.tieredFp16AccuracyAcrossAllSixAnime4kRestoreCnnModels`（含纯 Java IEEE-754 binary16 舍入仿真）与离线逐层 `tools/test-anime4k-coordinates.py` 仿真（SPEC §12 记载的验证口径）；两者运行环境不同、有意不合并，但必须共享 SPEC §12 冻结的同一组阈值（Anime4K 模型下逐像素 8-bit 误差 $\le 1$ LSB、相对 FP64 的 PSNR 下限 60 dB，当前模型实测带 71.10–74.75 dB），任一侧不得私自放宽或另立阈值。
+   - **2xFP16 双份 CPU 仿真实现的共同阈值来源**：`2xFP16` 的数值验证由两份独立 CPU binary16 仿真模型共同支撑（用于建模精度边界而非保证 GPU 驱动逐操作 `mediump` 舍入）——JVM 侧 `CnnPipelineTest.tieredFp16AccuracyAcrossAllSixAnime4kRestoreCnnModels`（含纯 Java IEEE-754 binary16 舍入仿真）与离线逐层 `tools/test-anime4k-coordinates.py` 仿真（SPEC §12 记载的验证口径）；两者运行环境不同、有意不合并，但必须共享 SPEC §12 冻结的同一组阈值（Anime4K 模型下逐像素 8-bit 误差 $\le 1$ LSB、相对 FP64 的 PSNR 下限 60 dB；实测带按实现分别记录——Python 离线夹具为 71.10–74.75 dB，JVM 夹具实测带见 `CnnPipelineTest` 注释），任一侧不得私自放宽或另立阈值。
 3. **P3-B: 运行期着色器指令流水优化 (Codegen)**
    - **Pass 0 `mat3x4` 零列剪裁**：识别 RGB 输入 Alpha 列权重为 0.0，改写全部 `mat4` 为 `mat3x4(...) * _sK.rgb`（C08 为 18 处、C12 为 27 处、C16 为 36 处），削减 Pass 0 中对应 Alpha 列的全零乘加开销；
    - **9 抽头共享坐标预计算**：确认 Pass 内全部绑定纹理共享分辨率后，在片元入口一次性预计算 9 抽头局部坐标并跨绑定通道共享，C16 Passes 1..5 单 Pass 至多节省 $36 - 9 = 27$ 次重复步长乘加（Pass 0 仅 9 抽头，节省 0 次）；
