@@ -2,6 +2,8 @@
 
 ## 未发布
 
+- 「添加桌面」不再假定桌面一定会弹出确认框；系统确认固定后才提示已添加，并为 MIUI / HyperOS 声明快捷方式权限、提供手动授权指引（[#207](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/207)）。
+
 - MAGES. 引擎的游戏识别规则改为优先从已安装的宿主读取（宿主 0.3.1 起随包带 `tyn/profiles.json`）：宿主新增 profile 后，本 App 不用更新就能识别对应的游戏目录；宿主未安装或是旧版本时仍用内置目录表。内置目录表新增 Steam 版 STEINS;GATE（`sg-pc`，`Game.exe` + `USRDIR/script.mpk`、`USRDIR/system.mpk`，需宿主 0.3.0 及以上）。识别条目支持子目录一层。
 
 - 目录布局像 MAGES. 游戏（至少两个 MAGES. 档案，如 `data/` 里的 `script.cpk` + `system.cpk`）、但没有 profile 能识别时（如缺某个文本档、大小写不符、尚无 profile 的其他 MAGES. 作品），不再直接忽略，而是以「目录名 · MAGES. 游戏（暂不支持）」列入游戏库，可以点启动用最接近的 profile 尝试运行；多个 profile 同时命中的有歧义布局仍不列出。

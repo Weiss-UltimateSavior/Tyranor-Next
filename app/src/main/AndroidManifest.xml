@@ -6,6 +6,7 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT" />
     <!-- 应用内下载更新后调起系统安装器所需（canRequestPackageInstalls 判断依据） -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
@@ -82,6 +83,7 @@
             android:configChanges="uiMode" />
         <activity android:name=".ui.save.WebDavSettingsActivity" android:exported="false" android:configChanges="uiMode" />
         <receiver android:name=".core.game.save.sync.SaveSyncExitReceiver" android:exported="false" />
+        <receiver android:name=".ui.game.GameShortcutResultReceiver" android:exported="false" />
         <!-- 桌面快捷方式回跳蹦床：exported=true 为桌面 Launcher 跨进程显式启动所必需，勿改回 false（见 GameShortcutActivity KDoc） -->
         <activity
             android:name=".ui.game.GameShortcutActivity"

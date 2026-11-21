@@ -229,7 +229,8 @@
     <string name="game_add_quick_launch">Add to Home</string>
     <string name="game_quick_launch_full">Home quick launch is full (max 3)</string>
     <string name="game_add_desktop_shortcut">Add to desktop</string>
-    <string name="game_desktop_shortcut_requested">Confirm the shortcut in the system dialog</string>
+    <string name="game_desktop_shortcut_requested">Request sent. If no icon appears, check the Home screen shortcut permission in system settings.</string>
+    <string name="game_desktop_shortcut_added">Home screen shortcut added</string>
     <string name="game_desktop_shortcut_updated">Home screen shortcut updated</string>
     <string name="game_desktop_shortcut_unsupported">The current launcher does not support pinned shortcuts</string>
     <string name="game_desktop_shortcut_failed">Could not request the Home screen shortcut</string>

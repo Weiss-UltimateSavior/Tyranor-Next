@@ -147,7 +147,6 @@ internal fun GameQuickActionsDialog(
     fun requestDesktopShortcut(customIconUri: Uri? = null) {
         val appContext = context.applicationContext
         if (shortcutRequestInFlight) {
-            // 上一次请求（系统确认框）尚未结束：丢弃新生成的临时图标，避免孤儿文件
             if (customIconUri != null) {
                 scope.launch(NonCancellable + Dispatchers.IO) {
                     deleteShortcutCropBitmap(appContext, customIconUri)
@@ -163,6 +162,7 @@ internal fun GameQuickActionsDialog(
                     game = game,
                     launchIntent = GameShortcutActivity.createIntent(context, game.uri),
                     customIconUri = customIconUri,
+                    pinResultIntent = GameShortcutResultReceiver.createIntent(context),
                 )
             } catch (error: Throwable) {
                 if (error is CancellationException) throw error
@@ -181,12 +181,17 @@ internal fun GameQuickActionsDialog(
                 GameShortcutManager.RequestResult.UNSUPPORTED -> shortcutUnsupportedMessage
                 GameShortcutManager.RequestResult.FAILED -> shortcutFailedMessage
             }
-            val requested = result == GameShortcutManager.RequestResult.REQUESTED || result == GameShortcutManager.RequestResult.UPDATED
+            val kind = when (result) {
+                GameShortcutManager.RequestResult.REQUESTED -> AppNotice.Kind.Info
+                GameShortcutManager.RequestResult.UPDATED -> AppNotice.Kind.Success
+                GameShortcutManager.RequestResult.UNSUPPORTED, GameShortcutManager.RequestResult.FAILED -> AppNotice.Kind.Failure
+            }
             AppNotice.makeText(
-                context, message, android.widget.Toast.LENGTH_SHORT,
-                if (requested) AppNotice.Kind.Success else AppNotice.Kind.Failure,
+                context, message,
+                if (result == GameShortcutManager.RequestResult.REQUESTED) Toast.LENGTH_LONG else Toast.LENGTH_SHORT,
+                kind,
             ).show()
-            if (requested) {
+            if (kind != AppNotice.Kind.Failure) {
                 exitHandle.closeThen(onDismiss)
             } else {
                 feedback.rejectShortcut()
