@@ -985,20 +985,22 @@ fun PerGameSettingsScreen(game: ScanGame) {
                         if (!isSdl3) {
                             item(key = if (motionEnhanced) "krFont" else null) {
                                 SectionCard(stringResource(R.string.engine_settings_font), modifier = listItemMotion(enabled = motionEnhanced)) {
-                                    // 「跟随全局」必须删除覆盖键（null），存 "" 会被引擎当作
-                                    // 显式内置字体覆盖，导致全局字体设置对该游戏永久失效
+                                    // 三态语义：「跟随全局」必须删除覆盖键（null）；「内置字体」
+                                    // 存空串（game scope 空 Item，仅该游戏回落内置）；「选择文件」
+                                    // 存导入后的真实路径
                                     val krFontValue = krFont?.ifEmpty { stringResource(R.string.engine_settings_builtin_font) }
                                         ?: stringResource(
                                             R.string.engine_settings_follow_global_font,
                                             globalKrFont.ifEmpty { stringResource(R.string.engine_settings_builtin_font) },
                                         )
-                                    // 值落定（跟随全局 ↔ 选中字体）时整行轻轻弹一下；Box 贴合行尺寸
+                                    // 值落定（跟随全局 ↔ 内置字体 ↔ 选中字体）时整行轻轻弹一下；Box 贴合行尺寸
                                     Box(Modifier.bounceOnChange(krFontValue, depth = ROW_SETTLE_DEPTH)) {
                                     FontPreference(
                                         label = stringResource(R.string.engine_settings_default_font),
                                         value = krFontValue,
                                         followLabel = stringResource(R.string.engine_settings_follow_global),
                                         onFollow = { krFont = null },
+                                        onBuiltIn = { krFont = "" },
                                         onPick = { fontLauncher.launch("*/*") },
                                         valueInSummary = true,
                                     )
