@@ -2884,7 +2884,8 @@ uintptr_t address(uintptr_t base,Elf64_Addr pointer){return pointer<base?base+po
 //   geometry output into bound buffers outside any tracked write/draw/clear command,
 //   so imported-but-untracked use would be invisible to the command-stream hash), and
 //   indirect draws whose parameter counts live in buffer contents: glDrawArraysIndirect /
-//   glDrawElementsIndirect.
+//   glDrawElementsIndirect, as well as unhooked GLES 3.0 instanced/range draw entry points
+//   glDrawArraysInstanced / glDrawElementsInstanced / glDrawRangeElements.
 // - Unhooked uniform upload entry points (uniform values are render-affecting state the
 //   hash cannot observe without a hook; the eight hooked forms glUniform1f / glUniform1fv /
 //   glUniform1i / glUniform2f / glUniform3f / glUniform4f / glUniform4fv /
@@ -2929,6 +2930,7 @@ static const char* const kDeniedContentChangeImports[] = {
     "glBeginTransformFeedback", "glEndTransformFeedback",
     "glPauseTransformFeedback", "glResumeTransformFeedback",
     "glDrawArraysIndirect", "glDrawElementsIndirect",
+    "glDrawArraysInstanced", "glDrawElementsInstanced", "glDrawRangeElements",
     "glUniform1iv", "glUniform2i", "glUniform3i", "glUniform4i",
     "glUniform2fv", "glUniform3fv", "glUniform2iv", "glUniform3iv", "glUniform4iv",
     "glUniform1ui", "glUniform2ui", "glUniform3ui", "glUniform4ui",
