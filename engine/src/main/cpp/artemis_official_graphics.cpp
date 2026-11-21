@@ -207,13 +207,15 @@ struct HostGlScope {
 constexpr int kMaxGlErrorDrain = 16;
 
 // Bounded drain, never latches: consume at most kMaxGlErrorDrain error records and stop
-// early on GL_CONTEXT_LOST_KHR. By GL_KHR_context_lost glGetError reports GL_CONTEXT_LOST_KHR
-// on the next query (single-report semantics in spec, though some drivers or persistent fault
-// streams can keep emitting errors), so bounding the drain guarantees the render thread cannot
-// spin permanently on a broken context. Any record left after stopping early or hitting the
-// 16-record cap is handled by existing paths — contextDestroyed → stageResources abandon chain,
-// stageFailureStreak backoff to direct output, and the Java-side GlErrors classification (context
-// loss is never classified retryable).
+// early on GL_CONTEXT_LOST_KHR. Under GL_KHR_robustness, glGetError clears error flags
+// one at a time in arbitrary order — so GL_CONTEXT_LOST_KHR is not guaranteed on the first call
+// nor guaranteed to be followed immediately by GL_NO_ERROR if other flags are pending, though once
+// no other errors remain that single context-lost flag clears on read (unless a broken driver or
+// persistent fault stream keeps emitting errors). Bounding to kMaxGlErrorDrain and returning early on
+// GL_CONTEXT_LOST_KHR guarantees the render thread cannot spin permanently in either case. Any record
+// left after stopping early or hitting the 16-record cap is handled by existing paths — contextDestroyed
+// → stageResources abandon chain, stageFailureStreak backoff to direct output, and the Java-side
+// GlErrors classification (context loss is never classified retryable).
 void drainGlErrorsBounded() {
     for (int i = 0; i < kMaxGlErrorDrain; ++i) {
         const GLenum error = glGetError();

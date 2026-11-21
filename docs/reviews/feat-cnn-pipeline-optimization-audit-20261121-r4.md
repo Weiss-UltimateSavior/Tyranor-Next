@@ -20,7 +20,7 @@
 - 证据(主控亲核,当前工作树):
   1. `artemis_official_graphics.cpp` `StageGlState` 构造器(:248 起,约 40 项状态捕获后)以 `while (glGetError() != GL_NO_ERROR) {}` 无界排空(约 :300)——**该构造器在 swap 每帧执行**;
   2. `CnnPipeline.java:161`(DefaultIndexedDrawBufferOps.getDrawBufferCount):`while (GLES30.glGetError() != GLES30.GL_NO_ERROR) {}`——非 ES3.2 + `GL_EXT_draw_buffers_indexed` 探测路径。
-  3. 历史发现与后续语义更正：R1''' 审计初判「`GL_KHR_context_lost` 下 `glGetError` 会持续返回粘滞错误 `GL_CONTEXT_LOST_KHR` 从而必然死循环」；后续复核（见 [收口报告](feat-cnn-pipeline-optimization-loop-closure-20261121.md) 第三节 `Z-R3p4-1`）已按 Khronos `GL_KHR_context_lost` 规范更正：规范语义为首次调用返回一次 `GL_CONTEXT_LOST_KHR` 后清除至 `GL_NO_ERROR`，而部分驱动或持续错误流仍可能连续上报错误，属于另需防护的循环挂起场景——保留本条历史发现的同时以此澄清规范口径，避免将原判断表述为规范结论（两端已统一以 16 次上限与遇 `context lost` 提前返回做双保险）。
+  3. 历史发现与后续语义更正：R1''' 审计初判「上下文丢失下 `glGetError` 会持续返回粘滞错误 `GL_CONTEXT_LOST_KHR` 从而必然死循环」；后续复核（见 [收口报告](feat-cnn-pipeline-optimization-loop-closure-20261121.md) 第三节 `Z-R3p4-1`）已按 Khronos `GL_KHR_robustness` 规范更正扩展名与错误标志语义：OpenGL ES 允许同时挂起多个错误标志并以任意顺序逐个清除，因此当先前已有其它挂起错误时，首次 `glGetError()` 并不保证立即返回 `GL_CONTEXT_LOST_KHR`，读取到 `GL_CONTEXT_LOST_KHR` 后若队列中仍有其它错误标志也不保证下一次即返回 `GL_NO_ERROR`；在无其余挂起错误的前提下，`GL_CONTEXT_LOST_KHR` 本身按 `GL_KHR_robustness` 规范为单次报告并在读取后清除，而部分驱动异常或持续错误流仍可能连续上报错误、构成另一类循环挂起风险——保留本条历史发现的同时以此限定适用前提，避免将原判断或单一标志清除行为表述为通用保证（两端已统一以 16 次上限与遇 `GL_CONTEXT_LOST_KHR` 提前返回做双保险）。
   4. 自相矛盾:同文件 `drainStageGlErrors()`(:963-967)自立「Bounded drain, never latches」纪律(16 次上限);Java 侧 `GlErrors.MAX_GL_ERRORS=16` 同纪律——两处新代码绕过了本分支自己建立的规范。
 - 触发面:上下文丢失(驱动重置/后台回收)是 Android 真机常规事件;每次 swap 都执行该构造器,命中概率随运行时长累积。
 - **修复要求(合入前必须)**:两处均改为有界排空(16 次上限,与 `drainStageGlErrors`/`GlErrors.MAX_GL_ERRORS` 口径一致);上下文丢失场景的后续状态由既有失活/直出路径承接(native 侧上下文丢失已有 abandon 链,Java 侧 GlErrors 已分类)——修复轮须论证「排空有界后,丢失上下文的残余错误标志不会引发二次缺陷」。
