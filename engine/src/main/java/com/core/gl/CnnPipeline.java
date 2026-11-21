@@ -159,12 +159,11 @@ public final class CnnPipeline {
                     useExt = true;
                     try {
                         // Bounded drain via the shared GlErrors discipline (MAX_GL_ERRORS=16):
-                        // a lost context makes glGetError return the sticky GL_CONTEXT_LOST_KHR
-                        // forever, so an unbounded drain would hang the render thread;
-                        // drainBestEffortNoThrow stops on context loss and never throws. Any
-                        // residual sticky flag fails the probe checks below (useExt=false,
-                        // return -1) and is classified by GlErrors as non-retryable — recovery
-                        // stays with the existing fail/abandon/direct-output paths.
+                        // stop early on GL_CONTEXT_LOST_KHR and cap any persistent driver error stream
+                        // so an unbounded loop cannot hang the render thread whether a driver reports
+                        // context loss once per KHR spec or repeatedly. Any failure on the probe checks
+                        // below fails closed (useExt=false, return -1) and is handled by the existing
+                        // fail/abandon/direct-output paths.
                         GlErrors.drainBestEffortNoThrow(GLES30.glGetError(), GLES30::glGetError);
                         int[] probe = new int[4];
                         GLES32.glGetIntegeri_v(GLES30.GL_COLOR_WRITEMASK, 0, probe, 0);

@@ -207,14 +207,13 @@ struct HostGlScope {
 constexpr int kMaxGlErrorDrain = 16;
 
 // Bounded drain, never latches: consume at most kMaxGlErrorDrain error records and stop
-// early on GL_CONTEXT_LOST_KHR. Under GL_KHR_context_lost glGetError returns that sticky
-// record forever, so an unbounded drain would spin the render thread permanently after a
-// driver reset / background reclaim. Residual flags after a bounded stop are the sticky
-// lost record itself (driver-owned: the engine observes it regardless of this drain) or
-// engine-generated records we never created; recovery from there is owned by the existing
-// paths — contextDestroyed → stageResources abandon chain, stageFailureStreak backoff to
-// direct output, and the Java-side GlErrors classification (context loss is never classified
-// retryable).
+// early on GL_CONTEXT_LOST_KHR. By GL_KHR_context_lost glGetError reports GL_CONTEXT_LOST_KHR
+// on the next query (single-report semantics in spec, though some drivers or persistent fault
+// streams can keep emitting errors), so bounding the drain guarantees the render thread cannot
+// spin permanently on a broken context. Any record left after stopping early or hitting the
+// 16-record cap is handled by existing paths — contextDestroyed → stageResources abandon chain,
+// stageFailureStreak backoff to direct output, and the Java-side GlErrors classification (context
+// loss is never classified retryable).
 void drainGlErrorsBounded() {
     for (int i = 0; i < kMaxGlErrorDrain; ++i) {
         const GLenum error = glGetError();
@@ -321,10 +320,10 @@ struct StageGlState {
             isEnablediFn = reinterpret_cast<decltype(isEnablediFn)>(
                     eglGetProcAddress(isEs32 ? "glIsEnabledi" : "glIsEnablediEXT"));
             if (colorMaskiFn && enableiFn && disableiFn && isEnablediFn) {
-                // Bounded drain (never unbounded: a lost context returns GL_CONTEXT_LOST_KHR
-                // from every glGetError and would otherwise hang this per-frame constructor);
-                // if flags remain, the probe below fails its GL_NO_ERROR check and capture
-                // falls back to the non-indexed global colorMask path.
+                // Bounded drain (never unbounded: caps residual engine flags and exits early on
+                // GL_CONTEXT_LOST_KHR regardless of whether the driver reports it once per spec or
+                // repeatedly); if flags remain, the probe below fails its GL_NO_ERROR check and
+                // capture falls back to the non-indexed global colorMask path.
                 drainGlErrorsBounded();
                 GLint mask0[4]{};
                 glGetIntegeri_v(GL_COLOR_WRITEMASK, 0, mask0);

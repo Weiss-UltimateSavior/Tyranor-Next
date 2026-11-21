@@ -25,11 +25,13 @@
 
 ## 三、未决项清单(挂账/移交,逐条附触发条件与复核入口)
 
-1. **K-p4-1..18 维持挂账**(内容+触发条件+复核入口详见四期审计报告第四节与 review-R3p4-report.md §五),要点:GLES<3.2 确定性旁路(K-p4-1)、KR2 复用键信任边界(K-p4-2)、FB0 读入口视图差(K-p4-3)、swap 直通瞬态(K-p4-4)、ES2 枚举误归因(K-p4-5)、discardTargets 吞错【存量偏差】(K-p4-6)、窗外直写边界(K-p4-7)、StageGlState EBO/VAO 隐含前提(K-p4-8)、finally 失败路径(K-p4-9)、顶点内存裸读(K-p4-10)、多 SAVE 槽位预算(K-p4-11)、restore 闭环依赖 hook+deny(K-p4-12,四期已 dynsym 重证)、设备验收未重跑真机(K-p4-13,发布前验收)、测试反射(K-p4-14)、提交聚焦度(K-p4-15)、GLES32 规范口径(K-p4-16)、scale-only blit 错误归类(K-p4-17)、VNSR 坐标溯源(K-p4-18)。
-2. **Z-R3p4-1(新增 P3 注释口径)**:StageGlState 注释对 GL_CONTEXT_LOST「粘滞 forever」的表述与 KHR 规范「一次性返回」语义有出入(代码在两种语义下均安全,16 上限为普适挂死防护)。触发条件:下次触碰 StageGlState/GlErrors 注释时;复核入口:`artemis_official_graphics.cpp` StageGlState 构造器注释与 `review-R3p4-report.md`。
-3. **真机验收缺口**(沿二期/三期 K-p3-1 清单):非 Adreno 设备(Mali 优先)满载、Scheme B 停帧专项、ES3 升级对照、无 half-float 设备旁路、逃生门用户可达性——发布前按清单执行,结果回填缺口清单。
+1. **K-p4-1..18 维持挂账**(内容+触发条件+复核入口详见四期审计报告第四节与 review-R3p4-report.md §五),要点:GLES<3.2 确定性旁路(K-p4-1)、KR2 复用键信任边界(K-p4-2)、FB0 读入口视图差(K-p4-3)、swap 直通瞬态(K-p4-4)、ES2 枚举误归因(K-p4-5)、discardTargets 吞错【存量偏差】(K-p4-6)、窗外直写边界(K-p4-7)、StageGlState EBO/VAO 隐含前提(K-p4-8)、finally 失败路径(K-p4-9)、顶点内存裸读(K-p4-10)、多 SAVE 槽位预算(K-p4-11)、restore 闭环依赖 hook+deny(K-p4-12,四期已 dynsym 重证)、设备验收(K-p4-13,**Adreno 740 本轮已补跑,非 Adreno/Siglus/krkrsdl3 仍待条件具备后补测**)、测试反射(K-p4-14)、提交聚焦度(K-p4-15)、GLES32 规范口径(K-p4-16)、scale-only blit 错误归类(K-p4-17)、VNSR 坐标溯源(K-p4-18)。
+2. **Z-R3p4-1(P3 注释口径 → 已闭环)**:已将 `artemis_official_graphics.cpp`(`drainGlErrorsBounded()` 与 `StageGlState` 构造器)以及 `CnnPipeline.java`(`DefaultIndexedDrawBufferOps`)中关于 `GL_CONTEXT_LOST_KHR` 无限重复返回的注释统一修正为「按 KHR 规范为单次报告语义、部分驱动或错误流仍可能持续上报,故 16 上限 + 遇 context lost 提前返回在两种语义下均保证render thread 不挂死」。
+3. **真机验收进展与仍开放缺口**(沿二期/三期 K-p3-1 清单):
+   - **已完成(Adreno 740 / `SM-X710` / OpenGL ES 3.2, 2026-11-21)**:隔离包 `com.tyranor.next.glverify` 在最终收口修订上实机跑通 Kirikiroid2 `1.3.9`(`VNC16 2X`, `59–62 FPS / GPU 6.4–12.9 ms`)、Kirikiroid2 `1.3.4`(`VNC16 2X`, `59–62 FPS / GPU 7.4–11.4 ms`, 补齐 `1.3.4` 空白)、Artemis 单上下文 GLES3(`VNC16 2X + Resize`, 7 passes, `62 FPS / GPU 12.7–13.1 ms` 与 `Anime4K_Restore_CNN_L` 运行期 MRT 融合 5 passes, `60–61 FPS / GPU 10.7–12.1 ms`),ES3 升级日志正常且零 GL/JNI 致命错误(见 `docs/vnsr-filters.md` 与 `docs/graphics-filter-coordinates.md`)。
+   - **因硬件/环境暂无条件仍挂账**:非 Adreno 设备(Mali 优先)满载测试、GLES 3.0/3.1 `GL_EXT_draw_buffers_indexed` 与无 half-float 设备旁路、Siglus/krkrsdl3 当前修订重跑、纯静态停帧(`GPU —ms`)专项及逃生门用户可达性——发布或具备非 Adreno 真机条件时再按清单补测回填。
 4. **历轮沿袭挂账**:二期 K-p2-1..11、一期 K-1..K-8 中未被四期演进覆盖的条目(逐条触发条件+复核入口见各期台账/审计报告);其中 deny/记账类已在四期演进中部分闭合(K-p4-12 重证)。
-5. **工作区卫生**:`docs/reviews/` 中历期报告随重写清理后仅存 README + 四期审计/收口报告;`tools/__pycache__/` 未跟踪(如出现)建议 .gitignore。
+5. **工作区卫生(已清理)**:已清理 `tools/__pycache__/` 并在本次收口验证全程使用 `python -B`;`docs/reviews/` 当前保留 README/模板及四期审计/收口报告。
 
 ## 四、流程纪律执行记录
 

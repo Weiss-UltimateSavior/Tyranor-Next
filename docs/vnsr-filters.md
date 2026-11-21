@@ -112,10 +112,19 @@ CI与PR中的验证命令及链接单独记录；没有新增或更换任何原�
 
 ### 宿主脏帧静态复用与 Adreno 840 实机复核（2026-11-18）
 
-> **时效说明**：以下 `Adreno (TM) 840` 真机样本与离屏微基准均采集于 2026-11-18 整理重基之前，最终 rebase 及收尾修复后未重新运行设备回归，不作为当前最终提交修订的真机验收结果。
+> **时效说明**：以下 `Adreno (TM) 840` 真机样本与离屏微基准均采集于 2026-11-18 整理重基之前，不直接代表当前最终提交在 Siglus 与 `840` 上的回归结果；四期审改收口后的当前修订真机重跑见下文 `Adreno 740` 节。
 
 将执行器统一收口至 `CnnPipeline` 并启用分级精度、运行期 MRT 融合与宿主脏帧静态复用后，基于 `Adreno (TM) 840` 完成真机样本与离屏微基准复核：
 
 - **真机样本（`VNC16 (2X) → 2133×1200`）**：Siglus（`anemoi`，`1080p` 动态/字幕场景）稳定 `55–60 FPS · GPU 9.9–11.6 ms`；Artemis（`ATRI`，`720p` 单上下文 GLES3 + 宿主脏帧静态复用）动态 `52–58 FPS / 10.1–12.2 ms`、静态稳态 `60 FPS / GPU —ms`；Kirikiroid2 1.3.9（`9-nine-`，`720p` + 宿主脏帧静态复用）动态 `60 FPS / 4.4–11.1 ms`、静态稳态 `60 FPS / GPU —ms`。
 - **离屏精度 / 融合优化验证**：`vnsr-c16-x2` 上 `720p→1440p` 从 `raw_fp32`（`gpuMean=16.016 ms`）降至 `p3b_fp16`（`gpuMean=10.957 ms`，`-31.6%`），`1080p→2160p` 下 `p3b_fp16` 为 `gpuMean=13.454 ms` / `wallMean=17.041 ms`；`Anime4K_Restore_CNN_L` 在运行期 MRT 融合 + CReLU 去重（`9 → 5` passes）后 `720p→1440p` 由 `14.701 ms` 降至 `9.822 ms`（`-33.2%`）。
 - **单元测试回归**：`.\main\gradlew.bat -p main :engine:testDebugUnitTest --tests "com.core.gl.*" --no-daemon --console=plain` 全量通过。
+
+### Adreno 740 当前修订实机复核（2026-11-21）
+
+在完成四期审改与 `Z-R3p4-1` 注释口径收口后，使用隔离 Debug 包（`com.tyranor.next.glverify`，测后卸载清理）于 `SM-X710`（Qualcomm `Adreno (TM) 740`，Android 15，OpenGL ES 3.2 `V@0676.71`）完成真实游戏复核：
+
+- **Kirikiroid2 1.3.9（`libgame.so`，`9-nine-九次九日九重色`，`1280×720 → VNC16 (2X) → 2560×1440`）**：`CnnPipeline` 构建 7 pass（`texture bytes 66355200`），WARNING 静帧 `60 FPS / GPU 12.9 ms`、主界面飘花 `59–60 FPS / GPU 8.3 ms`、新游戏弹窗 `61 FPS / GPU 6.4 ms`、对话场景 `59–62 FPS / GPU 6.8–11.0 ms`，渲染正常且零 GL/JNI 错误。
+- **Kirikiroid2 1.3.4（`libgame134.so`，`9-nine-九次九日九重色`，`1280×720 → VNC16 (2X) → 2560×1440`）**：补齐 `1.3.4` 实机空白，`CnnPipeline` 构建 7 pass（`texture bytes 66355200`），WARNING 页 `60 FPS / GPU 11.4 ms`、主界面 `59 FPS / GPU 7.5 ms`、Config 页面 `62 FPS / GPU 7.4 ms`，渲染正常且零错误。
+- **Artemis 官方单上下文 GLES3（`ArtemisActivityV1`，`HENPRI`，`1600×900 → 2560×1440`）**：日志实证 `Official stage hooks registered`、`Upgraded Artemis EGLContext to GLES3`、`Single-context GLES3 window created: screen=2560x1600 stage=1600x900`；其中 **`VNC16 (2X) + Resize (0.8X)`** 构建 7 pass（`texture bytes 103680000`）运行于 `62 FPS / GPU 12.7–13.1 ms`，**`Anime4K_Restore_CNN_L + Resize (1.6X)`** 运行期 MRT 融合成功降为 5 pass（`texture bytes 51840000`）且无回退或 GL 错误，实测 `60–61 FPS / GPU 10.7–12.1 ms`。
+- **仍未覆盖范围（暂无测试条件）**：非 Adreno GPU（Mali 等）、Siglus / krkrsdl3 当前修订真机重跑、不支持 `GL_RGBA16F` 与 GLES 3.0/3.1 `GL_EXT_draw_buffers_indexed` 旧驱动分支。
