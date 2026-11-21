@@ -53,6 +53,10 @@ public final class ArtemisGraphicsStats {
             nodeGpuError[index] = true;
             return;
         }
+        // Negative-sentinel contract (deliberately asymmetric with gpu()): a node-level
+        // negative sample means "this node's timer failed" and clears the node's held
+        // samples with nodeGpuError=true (snapshot() folds it into timingError). Anchored
+        // by ArtemisGraphicsStatsTest node-timer cases and the per-node held-timing display.
         if (Double.isFinite(ms) && ms >= 0) {
             nodeGpu[index] += ms;
             nodeGpuSamples[index]++;
@@ -105,6 +109,11 @@ public final class ArtemisGraphicsStats {
             gpuError = true;
             return;
         }
+        // Negative-sentinel contract (deliberately asymmetric with nodeGpu()): the single-
+        // context path calls gpu(-1) every frame merely to declare "no whole-chain timer ran
+        // this frame"; that must neither raise gpuError nor wipe a still-valid held sample
+        // (snapshot() keeps the last valid timing via DisplayTimingTracker when gpuAvailable
+        // stays false and gpuError stays false). Anchored by ArtemisGraphicsStatsTest.
         gpuAvailable = Double.isFinite(ms) && ms >= 0;
         if (gpuAvailable) { gpuTotalMs += ms; gpuSamples++; gpuError = false; }
         else { gpuTotalMs = 0; gpuSamples = 0; }
@@ -165,8 +174,11 @@ public final class ArtemisGraphicsStats {
         public final int sourceWidth, sourceHeight, outputWidth, outputHeight;
         public final int viewportWidth, viewportHeight, surfaceWidth, surfaceHeight;
         public final double fps, gpuMs;
-        final boolean timingError;
-        final long timingGeneration;
+        // Same visibility as the sibling fields: Snapshot is an outward data holder and
+        // timingError/timingGeneration are consumed by the same-package analyzer today and
+        // must not be second-class citizens if a future consumer moves cross-package.
+        public final boolean timingError;
+        public final long timingGeneration;
         public final String renderer;
         public final Node[] nodes;
         Snapshot(int sw, int sh, int ow, int oh, int vw, int vh, int dw, int dh,

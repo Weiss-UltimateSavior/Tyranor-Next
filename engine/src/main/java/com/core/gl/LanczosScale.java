@@ -200,6 +200,11 @@ final class LanczosScale {
                 && sw <= maxWidth && ow <= maxWidth && sh <= maxHeight && oh <= maxHeight;
     }
 
+    // Chain-budget byte arithmetic lives here rather than in the Level-4 orchestrator or the
+    // Level-3 executor: these helpers are pure Level-0 Java with no resampling coupling, and
+    // hosting them above Level 0 would create an L3→L4 / L4→L3 reverse dependency for pure
+    // functions. Consumers: CnnPipeline target estimates and GraphicsFilterPipeline chain
+    // budget amortization (256 MiB whole-chain cap).
     /** Saturating byte addition; negative inputs saturate to {@link Long#MAX_VALUE}. */
     static long addBytes(long accumulated, long nodeBytes) {
         if (accumulated < 0 || nodeBytes < 0) return Long.MAX_VALUE;

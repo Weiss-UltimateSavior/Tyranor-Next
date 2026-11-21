@@ -979,6 +979,13 @@ public final class CnnPipeline {
     void release() {
         mTargetRetry.reset();
         mHalfFloatChecked = mHalfFloatRenderable = false;
+        // release() is a full teardown for object reuse (surface destroy/rebuild path):
+        // reset the runtime fusion fallback latch symmetrically with abandonContext() so
+        // the next loadPasses() re-attempts fusion (releasePrograms(true) re-parses the
+        // passes) and the setRuntimeMrtFusionEnabled(true) escape hatch works without
+        // abandoning the context. The latch re-arms itself if the device still cannot
+        // fuse — one bounded build attempt per release cycle (L-6).
+        mRuntimeFusionFallback = false;
         if (mPlans == null && mOwnedTargets.isEmpty() && mQuadBuffer[0] == 0
                 && mQuadVao[0] == 0 && mSampler[0] == 0 && mVertexShader == 0
                 && mScaleProgram == 0 && mBorrowedReadFbo[0] == 0) {

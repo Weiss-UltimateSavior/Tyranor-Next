@@ -560,6 +560,10 @@ final class MpvHookShader {
             if (innerDepth == 0) topLevelInner.append(c);
         }
         boolean[] written = new boolean[saveCount];
+        // Only top-level direct fragColorN assignments are recognized. GLSL out/inout
+        // function parameters could write a target indirectly; recognizing that form would
+        // require a full call-graph parse of untrusted shader code, so it stays fail-closed
+        // rejected here (known limitation, registered in SPEC §12 multi-SAVE validation).
         Matcher w = MULTI_SAVE_FRAGCOLOR_WRITE.matcher(topLevelInner);
         while (w.find()) {
             int slot;

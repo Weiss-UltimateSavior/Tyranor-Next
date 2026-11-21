@@ -1989,6 +1989,13 @@ void hashDrawCommon(uint64_t opTag, GLuint maxCpuVertex, bool hasMaxCpuVertex) {
         } else {
             auto pit = frameTracker.programUniforms.find(frameTracker.currentProgram);
             if (pit != frameTracker.programUniforms.end() && !pit->second.empty()) {
+                // Perf evaluation (kept per-draw sort, no snapshot cache): the map is bounded
+                // by kMaxProgramUniforms (1024) per program and holds tens of entries in
+                // practice; the copy+sort cost is negligible next to the GL draw call itself
+                // and the CPU vertex/index hashing below. A cached sorted snapshot would add
+                // invalidation coupling to every uniform-write path (noteUniform* / context
+                // reset) for no measurable gain on the fixed supported kernels, whose program
+                // sets are static; revisit only if device profiling shows this segment.
                 std::vector<std::pair<GLint, uint64_t>> items(pit->second.begin(), pit->second.end());
                 std::sort(items.begin(), items.end(),
                         [](const auto& a, const auto& b) { return a.first < b.first; });

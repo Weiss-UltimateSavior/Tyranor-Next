@@ -2306,7 +2306,6 @@ public final class CnnPipelineTest {
             }
         }
         @Override public void glBindBuffer(int target, int buffer) {}
-        @Override public boolean glIsEnabled(int cap) { return false; }
         @Override public void glEnable(int cap) {}
         @Override public void glDisable(int cap) {}
         @Override public void glColorMask(boolean red, boolean green, boolean blue, boolean alpha) {

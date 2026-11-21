@@ -50,7 +50,6 @@ interface GlOps {
     void glTexImage2D(int target, int level, int internalformat, int width, int height,
                       int border, int format, int type, Buffer pixels);
     void glBindBuffer(int target, int buffer);
-    boolean glIsEnabled(int cap);
     void glEnable(int cap);
     void glDisable(int cap);
     void glViewport(int x, int y, int width, int height);
@@ -144,7 +143,6 @@ interface GlOps {
             GLES30.glTexImage2D(target, level, internalformat, width, height, border, format, type, pixels);
         }
         @Override public void glBindBuffer(int target, int buffer) { GLES30.glBindBuffer(target, buffer); }
-        @Override public boolean glIsEnabled(int cap) { return GLES30.glIsEnabled(cap); }
         @Override public void glEnable(int cap) { GLES30.glEnable(cap); }
         @Override public void glDisable(int cap) { GLES30.glDisable(cap); }
         @Override public void glViewport(int x, int y, int width, int height) { GLES30.glViewport(x, y, width, height); }

@@ -58,7 +58,6 @@ abstract class StrictStubGlOps implements GlOps {
         throw unexpected("glTexImage2D");
     }
     @Override public void glBindBuffer(int target, int buffer) { throw unexpected("glBindBuffer"); }
-    @Override public boolean glIsEnabled(int cap) { throw unexpected("glIsEnabled"); }
     @Override public void glEnable(int cap) { throw unexpected("glEnable"); }
     @Override public void glDisable(int cap) { throw unexpected("glDisable"); }
     @Override public void glViewport(int x, int y, int width, int height) { throw unexpected("glViewport"); }

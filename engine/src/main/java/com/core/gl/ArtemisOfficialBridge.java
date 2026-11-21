@@ -35,6 +35,10 @@ public final class ArtemisOfficialBridge implements ArtemisPerformanceOverlay.So
     private static GraphicsFilterPipeline singlePipeline;
     private static EGLContext singlePipelineContext = EGL14.EGL_NO_CONTEXT;
     private static long singlePipelineContextGeneration = -1L;
+    // Chain identity of the constructed single-context pipeline (reference comparison):
+    // renderStage rebuilds when it differs from the chain prepared for the current launch,
+    // so a stale pipeline can never keep rendering with a previous launch's chain.
+    private static GraphicsFilterChain singlePipelineChain;
     private static int singleStageWidth, singleStageHeight;
     private final ArtemisGraphicsStats empty = new ArtemisGraphicsStats();
     private ArtemisOfficialBridge() {}
@@ -51,7 +55,16 @@ public final class ArtemisOfficialBridge implements ArtemisPerformanceOverlay.So
         analyzer = requested && intent.getBooleanExtra(LaunchContract.GRAPHICS_FILTER_ANALYZER, false);
         state = GraphicsStatus.WAITING;
         singleMode = false;
-        synchronized (SINGLE_LOCK) { singlePipelineConstructionFailures = 0; }
+        synchronized (SINGLE_LOCK) {
+            // A new engine launch re-parses the chain: dispose any stale single-context
+            // pipeline from the previous launch. Normal teardown clears it via close() /
+            // contextDestroyed, but if the previous EGLContext was never observed destroyed
+            // (teardown can bypass the engine's PLT hooks), renderStage would otherwise keep
+            // rendering with the previous game's chain. abandonContext clears GL names
+            // without deletes and is safe off the render thread.
+            disposeSinglePipelineLocked(true);
+            singlePipelineConstructionFailures = 0;
+        }
         singleOutputSize.clear();
         singleStats.reset();
         INSTANCE.empty.reset();
@@ -151,13 +164,21 @@ public final class ArtemisOfficialBridge implements ArtemisPerformanceOverlay.So
                     // keep presenting the unfiltered engine texture without per-frame rebuilds
                     // and log storms (in-process disable; bypass direction is safe).
                     if (analyzer) singleStats.presented();
+                    // Keep health/analyzer state consistent with the latched bypass: the 4th
+                    // construction failure already reported FILTER_FAILED through the catch
+                    // path, but a later native status report could otherwise leave the status
+                    // showing READY/WAITING while every frame is presented unfiltered, and
+                    // the analyzer's held-timing display keys off a non-failure status.
+                    state = GraphicsStatus.preserveFailure(state, GraphicsStatus.FILTER_FAILED);
                     return 0;
                 }
-                if (singlePipeline == null || sw != singleStageWidth || sh != singleStageHeight) {
+                if (singlePipeline == null || sw != singleStageWidth || sh != singleStageHeight
+                        || chain != singlePipelineChain) {
                     disposeSinglePipelineLocked(false);
                     // Host owns the stage color texture (RGBA8) and depth/stencil renderbuffer (D24S8).
                     long bytes = Math.multiplyExact(Math.multiplyExact((long) sw, sh), 8L);
                     singlePipeline = new GraphicsFilterPipeline(context, chain, bytes);
+                    singlePipelineChain = chain;
                     singlePipelineContext = current;
                     singlePipelineContextGeneration = contextGeneration;
                     singleStageWidth = sw;
@@ -231,6 +252,7 @@ public final class ArtemisOfficialBridge implements ArtemisPerformanceOverlay.So
         singlePipeline = null;
         singlePipelineContext = EGL14.EGL_NO_CONTEXT;
         singlePipelineContextGeneration = -1L;
+        singlePipelineChain = null;
         singleStageWidth = 0;
         singleStageHeight = 0;
     }

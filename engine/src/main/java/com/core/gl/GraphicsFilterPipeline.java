@@ -267,8 +267,14 @@ public final class GraphicsFilterPipeline {
             }
             bypassReason = CnnPipeline.BYPASS_TARGET_UNAVAILABLE;
             targetRetry.failed(surfaceAdapter.retriesTargetsAfterDelay());
+            // discardTargets() already clears the output cache and invalidates measurements;
+            // the RuntimeException branch below calls invalidateMeasurements() directly
+            // because it does not go through discardTargets(). Defensive-dead-branch caveat
+            // (kept deliberately): if a future path lets TargetUnavailableException escape
+            // to this catch, discardTargets() -> GlState.capture can itself throw TUE out of
+            // renderCroppedTexture; it is then caught by the JNI ExceptionCheck boundary
+            // (single-frame direct output) rather than this class's failure classification.
             discardTargets();
-            invalidateMeasurements();
             return 0;
         } catch (RuntimeException failure) {
             // Non-retryable escapes (broken GL discipline, invalid state) stay permanently
