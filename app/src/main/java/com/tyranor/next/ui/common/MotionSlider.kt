@@ -59,7 +59,7 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
  * - 单点：点哪一格直接跳到最近的刻度，轻震 + 圆钮带回弹落位；
  * - 松手：圆钮从手指位置弹簧吸附到刻度，略冲过再落稳。
  * 连续滑条与「普通」档直接使用 Miuix 原组件。
- * @param onValueChangeCancelled 手势取消时回滚草稿；未设置时保留 Miuix 的默认结束语义。
+ * @param onValueChangeCancelled 增强离散手势取消时回滚草稿；未设置时取消不产生回调。普通档仍保留 Miuix 的默认结束语义。
  */
 @Composable
 fun Slider(
@@ -85,13 +85,13 @@ fun Slider(
             remember { SliderRelease() }
         } else null
         val observedModifier = if (release == null) modifier else modifier.pointerInput(release) {
-            // Miuix's draggable reports both release and cancellation through onDragStopped.
+            // Miuix 的拖动结束回调同时覆盖正常抬手和手势取消。
             awaitEachGesture {
                 awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                 release.released = false
                 var event = awaitPointerEvent(PointerEventPass.Initial)
                 while (event.changes.any { it.pressed }) event = awaitPointerEvent(PointerEventPass.Initial)
-                // Compose synthesizes consumed up changes when the platform cancels the stream.
+                // 平台取消指针流时，Compose 会合成已消费的抬手事件。
                 release.released = event.changes.any { it.previousPressed && !it.isConsumed }
             }
         }
@@ -136,7 +136,7 @@ fun Slider(
         valueRange = valueRange,
         steps = steps,
         onValueChangeFinished = onValueChangeFinished,
-        onValueChangeCancelled = onValueChangeCancelled ?: onValueChangeFinished ?: {},
+        onValueChangeCancelled = onValueChangeCancelled,
         height = height,
         haptics = hapticEffect != SliderDefaults.SliderHapticEffect.None,
         showKeyPoints = showKeyPoints,
@@ -164,7 +164,7 @@ private fun TickSlider(
     valueRange: ClosedFloatingPointRange<Float>,
     steps: Int,
     onValueChangeFinished: (() -> Unit)?,
-    onValueChangeCancelled: () -> Unit,
+    onValueChangeCancelled: (() -> Unit)?,
     height: Dp,
     haptics: Boolean,
     showKeyPoints: Boolean,
@@ -291,8 +291,12 @@ private fun TickSlider(
                                     dx += d.x
                                     dy += d.y
                                     lastX = change.position.x
+                                    if (change.isConsumed) {
+                                        cancelled = true
+                                        break
+                                    }
                                     if (!moved) {
-                                        if (change.isConsumed || (abs(dy) > slop && abs(dy) > abs(dx))) {
+                                        if (abs(dy) > slop && abs(dy) > abs(dx)) {
                                             cancelled = true
                                             break
                                         }
@@ -344,9 +348,8 @@ private fun TickSlider(
                                 scope.launch { overshoot.animateTo(0f, MotionTokens.control(0.0005f)) }
                                 scope.launch { press.animateTo(1f, MotionTokens.release(0.001f)) }
                                 finished = true
-                                if (cancelled) onCancelled() else onFinished?.invoke()
+                                if (cancelled) onCancelled?.invoke() else onFinished?.invoke()
                             } finally {
-                                if (!finished) onCancelled()
                                 if (!finished && generation == interaction.generation) {
                                     dragging = false
                                     interacting = false

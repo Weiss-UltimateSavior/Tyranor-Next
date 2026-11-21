@@ -145,7 +145,7 @@ class GridReflowSnapshotTest {
         val initial = (0 until 3).map { "old-$it" }.toCollection(LinkedHashSet())
         val original = initial.associateWith { requireNotNull(schedule.slotFor(it, initial)) }
         val additions = (0 until 7).map { "late-$it" }
-        // New keys can precede old keys in list order, but existing slots remain fixed.
+        // 新键在列表顺序中可能排在旧键之前，但已有时隙保持不变。
         val expanded = (additions.take(3) + initial.toList().asReversed() + additions.drop(3)).toCollection(LinkedHashSet())
         schedule.slotFor(additions.last(), expanded)
         val appended = additions.map { requireNotNull(schedule.slotFor(it, expanded)) }

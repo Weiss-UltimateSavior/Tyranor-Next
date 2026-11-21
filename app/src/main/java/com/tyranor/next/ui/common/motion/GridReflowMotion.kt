@@ -17,7 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.IntOffset
 
-/** Tracks layout changes independently from the page's initial entrance. */
+/** 独立记录布局变化，不与页面首次入场混用。 */
 @Stable
 class GridReflowState internal constructor() {
     internal val entrance = EntranceState()
@@ -79,13 +79,13 @@ class GridReflowState internal constructor() {
                 keys,
                 maxOf(stepMillis, GridReflowEntranceSchedule.DEFAULT_STEP_MILLIS),
             ) ?: return@withoutReadObservation null
-            // Explicit zero preserves callers that need placement without entrance staggering.
+            // 显式传入 0 时保留零延迟，供不需要错峰入场的调用方使用。
             if (stepMillis <= 0L) 0L else slot.delayMillis
         }
     }
 }
 
-/** Orders each visible-items list once, after an active entrance actually requests it. */
+/** 仅在活动入场首次请求时，对可见项列表排序一次。 */
 internal class GridReflowVisibleKeys<T>(
     private val items: () -> List<T>,
     private val index: (T) -> Int,
@@ -104,7 +104,7 @@ internal class GridReflowVisibleKeys<T>(
     }
 }
 
-/** Pure layout identity bookkeeping, separated from Android's animation clock. */
+/** 纯布局身份记录，与 Android 动画时钟分离。 */
 internal class GridReflowSnapshot {
     private var columns = 0
     private var landscape = false
@@ -126,8 +126,8 @@ internal class GridReflowSnapshot {
 }
 
 /**
- * Assigns visible keys on the first eligible callback in the ordered snapshot's iteration order.
- * Slots stay fixed for the generation; later keys append in the new snapshot's order.
+ * 按有序快照的迭代顺序，为首次符合条件的可见项分配槽位。
+ * 同一布局代内槽位固定；之后出现的新项按新快照顺序追加。
  */
 internal class GridReflowEntranceSchedule {
     internal data class Slot(val order: Int, val delayMillis: Long)
@@ -156,7 +156,7 @@ internal class GridReflowEntranceSchedule {
             if (additions > 0) {
                 val intervals = if (slots.isEmpty()) additions - 1 else additions
                 val remaining = STAGGER_BUDGET_MILLIS - lastDelay
-                // Large batches compress toward one 60 Hz frame per card, rather than sharing a tail delay.
+                // 可见项较多时压缩间隔至每张至少一帧，避免把大量项合并到相同的尾部延迟。
                 val step = minOf(
                     preferredStepMillis.coerceAtLeast(MIN_STEP_MILLIS),
                     (remaining / intervals.coerceAtLeast(1)).coerceAtLeast(MIN_STEP_MILLIS),
@@ -178,7 +178,7 @@ internal class GridReflowEntranceSchedule {
     }
 }
 
-/** Tracks reflow entrance for a lazy grid, ordering visible items by their list index. */
+/** 为规则懒网格跟踪重排入场，并按列表下标排序可见项。 */
 @Composable
 fun rememberGridReflowState(
     columns: Int,
@@ -200,7 +200,7 @@ fun rememberGridReflowState(
     },
 )
 
-/** Tracks reflow entrance for a lazy staggered grid, ordering visible items by their list index. */
+/** 为瀑布懒网格跟踪重排入场，并按列表下标排序可见项。 */
 @Composable
 fun rememberGridReflowState(
     columns: Int,

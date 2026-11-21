@@ -56,7 +56,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
 
-/** Isolated, synthetic grid: no business screen, storage, or device setting changes. */
+/** 使用隔离的合成网格，不涉及业务页面、存储或设备设置。 */
 @RunWith(Parameterized::class)
 class GridReflowDeviceTest(private val staggered: Boolean) {
     @get:Rule val compose = createComposeRule()
@@ -75,7 +75,7 @@ class GridReflowDeviceTest(private val staggered: Boolean) {
         assertResting(settled, 3)
         val target = settled.card(1)
 
-        // Scan rendered pixels: semantic bounds alone do not prove entrance translation.
+        // 检查实际绘制像素：仅看语义边界无法证明卡片发生了入场位移。
         val oldTarget = settled.card(0)
         assertTrue("Previously visible card must also enter from below", frames.any {
             val card = it.card(0)
@@ -196,7 +196,7 @@ class GridReflowDeviceTest(private val staggered: Boolean) {
         try {
             repeat(60) {
                 val registered = compose.runOnIdle {
-                    // Both the check and the clock step run on the main thread.
+                    // 检查条件与时钟步进都在主线程上执行。
                     if (request.registered) true else {
                         compose.mainClock.advanceTimeByFrame()
                         false
@@ -262,7 +262,7 @@ class GridReflowDeviceTest(private val staggered: Boolean) {
             compose.setContent { GridFixture(fixture) }
             compose.waitForIdle()
             compose.mainClock.autoAdvance = false
-            // Drain initial lazy measurement/placement before changing the layout identity.
+            // 在更改布局标识前，先完成懒布局的初始测量与放置。
             compose.mainClock.advanceTimeBy(SETTLE_MILLIS)
             assertResting(capture(), 2)
             fixture.check()
@@ -296,7 +296,7 @@ class GridReflowDeviceTest(private val staggered: Boolean) {
         }
         fixture.waterfall = waterfallReflow
         fixture.reflow = reflow
-        // Integral pixel geometry keeps screenshots independent of emulator density.
+        // 使用整数像素几何，使截图不受模拟器密度影响。
         val viewport = Modifier
             .size(with(density) { WIDTH.toDp() }, with(density) { HEIGHT.toDp() })
             .then(
@@ -310,7 +310,7 @@ class GridReflowDeviceTest(private val staggered: Boolean) {
             .then(if (staggered) Modifier.waterfallReflowHost(waterfallReflow) else Modifier)
             .gridReflowHost(reflow)
         val gap = with(density) { GAP.toDp() }
-        // Capture outside the hidden accessibility subtree, including its preparation frames.
+        // 在被隐藏的无障碍子树之外截图，包括准备阶段的帧。
         Box(viewport) {
             if (staggered) {
                 LazyVerticalStaggeredGrid(
@@ -381,7 +381,7 @@ class GridReflowDeviceTest(private val staggered: Boolean) {
                 ) {
                     request.registered = true
                     val source = Rect(bounds)
-                    // Register before performDraw captures this frame's commit callbacks.
+                    // 在执行绘制以捕获本帧提交回调前先完成登记。
                     observer.registerFrameCommitCallback {
                         copyViewport(window, source, request.result)
                     }
@@ -499,7 +499,7 @@ class GridReflowDeviceTest(private val staggered: Boolean) {
         private const val GAP = 8
         private const val SETTLE_MILLIS = 2_000L
         private val CHANNEL_SHIFTS = intArrayOf(16, 8, 0)
-        // Chromaticity vertices cannot be reproduced by blending the other fixture colors.
+        // 其他夹具颜色无法通过混合重现这些色度顶点。
         private val COLORS = intArrayOf(
             0xFFFF4000.toInt(), 0xFF40FF00.toInt(), 0xFF00FF40.toInt(),
             0xFF0040FF.toInt(), 0xFF4000FF.toInt(), 0xFFFF0040.toInt(),

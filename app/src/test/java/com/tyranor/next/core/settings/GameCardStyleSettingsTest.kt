@@ -57,16 +57,16 @@ class GameCardStyleSettingsTest {
 
     @Test
     fun gridColumnsClampToTwoThroughTen() {
-        assertEquals(2, AppSettingsStore.MIN_GAME_GRID_COLUMNS)
-        assertEquals(10, AppSettingsStore.MAX_GAME_GRID_COLUMNS)
+        assertEquals(2, AppSettingsStore.MIN_GAME_CARD_COLUMNS)
+        assertEquals(10, AppSettingsStore.MAX_GAME_CARD_COLUMNS)
         for (columns in listOf(Int.MIN_VALUE, -1, 0, 1)) {
-            assertEquals("columns=$columns", 2, AppSettingsStore.normalizeGameGridColumns(columns))
+            assertEquals("columns=$columns", 2, AppSettingsStore.normalizeGameCardColumns(columns))
         }
         for (columns in 2..10) {
-            assertEquals("columns=$columns", columns, AppSettingsStore.normalizeGameGridColumns(columns))
+            assertEquals("columns=$columns", columns, AppSettingsStore.normalizeGameCardColumns(columns))
         }
         for (columns in listOf(11, Int.MAX_VALUE)) {
-            assertEquals("columns=$columns", 10, AppSettingsStore.normalizeGameGridColumns(columns))
+            assertEquals("columns=$columns", 10, AppSettingsStore.normalizeGameCardColumns(columns))
         }
     }
 
@@ -227,48 +227,69 @@ class GameCardStyleSettingsTest {
     @Test
     fun initializationKeepsColumnReadAndPublicationSerializedWithSetters() {
         for (setting in columnSettings()) {
-            assertInitializationAndSetterAreSerialized(setting, pauseInitialization = true)
+            assertInitializationAndSetterAreSerialized(setting, 2, 4, 8, pauseInitialization = true)
         }
     }
 
     @Test
     fun columnSettersKeepApplyAndPublicationSerializedWithInitialization() {
         for (setting in columnSettings()) {
-            assertInitializationAndSetterAreSerialized(setting, pauseInitialization = false)
+            assertInitializationAndSetterAreSerialized(setting, 2, 4, 8, pauseInitialization = false)
         }
     }
 
-    private data class ColumnSetting(
+    @Test
+    fun styleInitializationAndSetterKeepPreferencesAndFlowInSync() {
+        val setting = CardSetting(
+            AppSettingsStore.KEY_GAME_CARD_STYLE,
+            AppSettingsStore.gameCardStyleState,
+            AppSettingsStore::setGameCardStyle,
+        )
+        for (pauseInitialization in listOf(true, false)) {
+            assertInitializationAndSetterAreSerialized(
+                setting,
+                initialState = AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW,
+                savedValue = AppSettingsStore.GAME_CARD_STYLE_WATERFALL,
+                updatedValue = AppSettingsStore.GAME_CARD_STYLE_GRID,
+                pauseInitialization = pauseInitialization,
+            )
+        }
+    }
+
+    private data class CardSetting<T : Any>(
         val key: String,
-        val state: MutableStateFlow<Int>,
-        val setter: (Context, Int) -> Unit,
+        val state: MutableStateFlow<T>,
+        val setter: (Context, T) -> Unit,
     )
 
     private fun columnSettings() = listOf(
-        ColumnSetting(
+        CardSetting(
             AppSettingsStore.KEY_GAME_GRID_PORTRAIT_COLUMNS,
             AppSettingsStore.gameGridPortraitColumnsState,
             AppSettingsStore::setGameGridPortraitColumns,
         ),
-        ColumnSetting(
+        CardSetting(
             AppSettingsStore.KEY_GAME_GRID_LANDSCAPE_COLUMNS,
             AppSettingsStore.gameGridLandscapeColumnsState,
             AppSettingsStore::setGameGridLandscapeColumns,
         ),
-        ColumnSetting(
+        CardSetting(
             AppSettingsStore.KEY_GAME_WATERFALL_PORTRAIT_COLUMNS,
             AppSettingsStore.gameWaterfallPortraitColumnsState,
             AppSettingsStore::setGameWaterfallPortraitColumns,
         ),
-        ColumnSetting(
+        CardSetting(
             AppSettingsStore.KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS,
             AppSettingsStore.gameWaterfallLandscapeColumnsState,
             AppSettingsStore::setGameWaterfallLandscapeColumns,
         ),
     )
 
-    private fun assertInitializationAndSetterAreSerialized(
-        setting: ColumnSetting,
+    private fun <T : Any> assertInitializationAndSetterAreSerialized(
+        setting: CardSetting<T>,
+        initialState: T,
+        savedValue: T,
+        updatedValue: T,
         pauseInitialization: Boolean,
     ) {
         val paused = CountDownLatch(1)
@@ -280,12 +301,18 @@ class GameCardStyleSettingsTest {
             check(release.await(5, TimeUnit.SECONDS)) { "Timed out releasing ${setting.key}" }
         }
         val backing = InMemorySharedPreferences(
-            backing = mutableMapOf(setting.key to 4),
+            backing = mutableMapOf(setting.key to savedValue),
             onCommit = { if (!pauseInitialization) pause() },
         )
         val preferences = object : SharedPreferences by backing {
             override fun getInt(key: String, defValue: Int): Int {
                 val value = backing.getInt(key, defValue)
+                if (pauseInitialization && key == setting.key) pause()
+                return value
+            }
+
+            override fun getString(key: String, defValue: String?): String? {
+                val value = backing.getString(key, defValue)
                 if (pauseInitialization && key == setting.key) pause()
                 return value
             }
@@ -296,7 +323,7 @@ class GameCardStyleSettingsTest {
             override fun getSharedPreferences(name: String, mode: Int): SharedPreferences = preferences
         }
         val initialize = { AppSettingsStore.initGameCardStyle(context) }
-        val update = { setting.setter(context, 8) }
+        val update = { setting.setter(context, updatedValue) }
         val firstAction = if (pauseInitialization) initialize else update
         val secondAction = if (pauseInitialization) update else initialize
         val first = Thread({
@@ -316,19 +343,19 @@ class GameCardStyleSettingsTest {
         }, "card-columns-second")
 
         try {
-            setting.state.value = 2
+            setting.state.value = initialState
             first.start()
             assertTrue("${setting.key}: first operation did not pause", paused.await(5, TimeUnit.SECONDS))
             second.start()
             assertTrue(competitorStarted.await(5, TimeUnit.SECONDS))
-            // Wait for actual monitor contention, rather than assuming a scheduled thread has run.
+            // 等待实际发生监视器竞争，而不是假设已调度线程一定运行过。
             val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
             while (second.isAlive && second.state != Thread.State.BLOCKED && System.nanoTime() < deadline) {
                 Thread.yield()
             }
             assertEquals("${setting.key}: competing operation must wait", Thread.State.BLOCKED, second.state)
-            assertEquals(2, setting.state.value)
-            assertEquals(if (pauseInitialization) 4 else 8, backing.getInt(setting.key, 0))
+            assertEquals(initialState, setting.state.value)
+            assertEquals(if (pauseInitialization) savedValue else updatedValue, backing.snapshot()[setting.key])
 
             release.countDown()
             first.join(5_000)
@@ -336,8 +363,8 @@ class GameCardStyleSettingsTest {
             assertFalse("${setting.key}: first operation did not finish", first.isAlive)
             assertFalse("${setting.key}: competing operation did not finish", second.isAlive)
             failure.get()?.let { throw AssertionError("${setting.key}: worker failed", it) }
-            assertEquals(8, backing.getInt(setting.key, 0))
-            assertEquals(8, setting.state.value)
+            assertEquals(updatedValue, backing.snapshot()[setting.key])
+            assertEquals(updatedValue, setting.state.value)
         } finally {
             release.countDown()
             try {

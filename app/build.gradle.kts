@@ -568,7 +568,8 @@ dependencies {
   // Instrumented tests
    if (!ethornellReleaseProbe) androidTestImplementation(libs.androidx.compose.ui.test.junit4)
   debugImplementation(libs.androidx.compose.ui.test.manifest)
-  // ActivityScenario helper activities must be available in the target process.
+  // createComposeRule 通过 ActivityScenario 启动目标包 Activity，core 的引导/占位 Activity 也须合入 debug 目标包。
+  // androidTestImplementation 仅进入测试 APK，不能替代目标 APK 的这项依赖。
   debugImplementation(libs.androidx.test.core)
 
   // Local tests: jUnit, coroutines, Android runner

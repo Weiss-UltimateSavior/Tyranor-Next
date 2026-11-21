@@ -108,7 +108,7 @@ class EntranceState internal constructor() {
         if (i >= 0) nodes.removeAt(i)
     }
 
-    /** Opens a fresh entrance window without replaying attached nodes. */
+    /** 打开新的入场窗口，但不重播已挂载节点。 */
     internal fun openWindow(quick: Boolean = false) {
         startedAt = SystemClock.uptimeMillis()
         skipMark = skipCounter

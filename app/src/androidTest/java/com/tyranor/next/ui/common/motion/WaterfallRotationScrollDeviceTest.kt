@@ -16,6 +16,7 @@ import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,6 +26,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +45,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasClickAction
@@ -70,7 +73,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
-/** Frozen, stable-key data: only column count and scroll position change. */
+/** 固定且键稳定的夹具，用于隔离列数、滚动与恢复边界。 */
 class WaterfallRotationScrollDeviceTest {
     @get:Rule val compose = createComposeRule()
 
@@ -111,6 +114,143 @@ class WaterfallRotationScrollDeviceTest {
             }
             assertStableUpwardScroll(fixture, "production-bottom-$columns")
         }
+    }
+
+    @Test
+    fun forcedTimeoutAlignsTallLastCardToBottom() = withProduction(manualRestore = true) { fixture ->
+        compose.runOnIdle {
+            fixture.tallLastCard = true
+            fixture.scope.launch {
+                fixture.state.scrollToItem(99)
+                while (fixture.state.canScrollForward) {
+                    fixture.state.scrollBy(fixture.state.layoutInfo.viewportSize.height.toFloat())
+                }
+            }
+        }
+        settle()
+        compose.runOnIdle {
+            assertTrue("Setup must reach the tall card's bottom", !fixture.state.canScrollForward)
+            fixture.columns = 3
+        }
+        settle()
+        compose.runOnIdle {
+            assertTrue("Column change must retain a pending bottom anchor", fixture.holder!!.isRestoring)
+            fixture.scope.launch {
+                // 零预算直接进入兜底，不依赖设备是否在真实的 1500ms 内完成扫描。
+                fixture.holder!!.restore(fixture.state, true, scanBudgetMillis = 0L)
+            }
+        }
+        awaitRestore(fixture)
+        compose.runOnIdle {
+            val info = fixture.state.layoutInfo
+            val last = info.visibleItemsInfo.first { it.index == 99 }
+            assertTrue("The final card must be taller than two viewports", last.size.height > info.viewportSize.height * 2)
+            assertTrue("Timeout fallback must fully reach bottom", !fixture.state.canScrollForward)
+            assertTrue("The tall last card must end at the viewport bottom", kotlin.math.abs(last.offset.y + last.size.height - info.viewportSize.height) <= 1)
+        }
+    }
+
+    @Test
+    fun forcedTimeoutAlignsShortLastRowToPaddedBottom() = withProduction(
+        manualRestore = true,
+        uniformCards = true,
+    ) { fixture ->
+        compose.runOnIdle { fixture.bottomPaddingDp = 24 }
+        settle()
+        val setup = compose.runOnIdle {
+            val state = fixture.state
+            val height = state.layoutInfo.viewportSize.height.toFloat()
+            assertTrue("The padded viewport must be measured", height > 0f && state.layoutInfo.afterContentPadding > 0)
+            fixture.scope.launch {
+                repeat(MAX_STEPS) {
+                    if (!state.canScrollForward || state.scrollBy(height) <= 0f) return@launch
+                }
+            }
+        }
+        compose.waitUntil(timeoutMillis = 10_000L) { setup.isCompleted }
+        compose.runOnIdle {
+            val state = fixture.state
+            assertTrue("Setup must reach the bottom of a scrollable grid", !state.canScrollForward && state.canScrollBackward)
+            assertTrue("Setup must expose the last card", state.layoutInfo.visibleItemsInfo.any { it.index == 99 })
+            fixture.columns = 3
+        }
+        settle()
+        compose.runOnIdle {
+            val holder = checkNotNull(fixture.holder)
+            assertTrue("Column change must retain a pending bottom anchor", holder.isRestoring)
+            fixture.scope.launch { holder.restore(fixture.state, true, scanBudgetMillis = 0L) }
+        }
+        awaitRestore(fixture)
+        compose.runOnIdle {
+            val state = fixture.state
+            val info = state.layoutInfo
+            val last = info.visibleItemsInfo.first { it.index == 99 }
+            val rowBottom = info.visibleItemsInfo.maxOf { it.offset.y + it.size.height }
+            val viewportBottom = info.viewportEndOffset - info.afterContentPadding
+            assertTrue("The fixture must have bottom padding and a short last card",
+                info.afterContentPadding > 0 && last.size.height < info.viewportSize.height)
+            assertTrue("The short last row must end at the padded viewport bottom: ${viewportBottom - rowBottom}px",
+                kotlin.math.abs(viewportBottom - rowBottom) <= 1)
+            // 100 项分成三列时末项所在列未必最长；触底按所有可见列的最底边计算。
+            assertTrue("The last card must remain fully visible above the padded bottom",
+                last.offset.y >= info.viewportStartOffset && last.offset.y + last.size.height <= viewportBottom)
+            assertTrue("Timeout fallback must fully reach bottom", !state.canScrollForward)
+        }
+    }
+
+    @Test
+    fun visibilityReadDoesNotRecomposeCallerAndPublishesDeferredLayout() = withProduction { fixture ->
+        val originalState = compose.runOnIdle { fixture.state }
+        val beforeHide = compose.runOnIdle { fixture.compositions }
+        compose.runOnIdle { fixture.enabled = false }
+        settle()
+        compose.runOnIdle {
+            assertTrue("Visibility alone must not recompose the caller", fixture.compositions == beforeHide)
+            fixture.columns = 3
+        }
+        settle()
+        compose.runOnIdle {
+            assertTrue("Hidden layout must retain the original grid", fixture.state === originalState)
+            assertTrue("Hidden layout must retain its matching columns", fixture.holder!!.layoutColumns == 2)
+            fixture.enabled = true
+        }
+        awaitRestore(fixture)
+        compose.runOnIdle {
+            assertTrue("Observable layout must publish the replacement grid", fixture.state !== originalState)
+            assertTrue("Deferred columns and orientation must publish together", fixture.holder!!.layoutColumns == 3 && fixture.holder!!.layoutLandscape)
+        }
+        val beforeToggle = compose.runOnIdle { fixture.compositions }
+        compose.runOnIdle { fixture.enabled = false }
+        settle()
+        compose.runOnIdle { fixture.enabled = true }
+        settle()
+        compose.runOnIdle {
+            assertTrue("Visibility without a layout change must stay inside the helper", fixture.compositions == beforeToggle)
+        }
+    }
+
+    @Test
+    fun savedAnchorRebuildsLaneHistoryBeforeRevealingBottom() = withProduction { fixture ->
+        compose.runOnIdle {
+            fixture.scope.launch {
+                fixture.state.scrollToItem(99)
+                fixture.state.scrollBy(fixture.state.layoutInfo.viewportSize.height.toFloat())
+            }
+        }
+        settle()
+        val oldHolder = compose.runOnIdle {
+            assertTrue("Saved anchor setup must reach bottom", !fixture.state.canScrollForward)
+            fixture.holder!!
+        }
+        fixture.restoreSavedState()
+        awaitRestore(fixture)
+        compose.runOnIdle {
+            assertTrue("Saved state must recreate the holder", fixture.holder !== oldHolder)
+            assertTrue("Saved bottom must be restored", !fixture.state.canScrollForward)
+            assertTrue("Saved bottom must retain the last item", fixture.state.layoutInfo.visibleItemsInfo.any { it.index == 99 })
+        }
+        // 保存载荷没有完整列历史，不能仅跳到保存的索引就结束恢复。
+        assertStableUpwardScroll(fixture, "production-saved-bottom")
     }
 
     @Test
@@ -310,6 +450,74 @@ class WaterfallRotationScrollDeviceTest {
     }
 
     @Test
+    fun finalForwardScanKeepsIdentityThatReappearsBeyondBackwardCursor() = withProduction(
+        manualRestore = true,
+        uniformCards = true,
+    ) { fixture ->
+        val newIndex = 320
+        compose.runOnIdle { fixture.keyOrder = (0 until 400).toList() }
+        settle()
+        compose.runOnIdle { fixture.scope.launch { fixture.state.scrollToItem(30) } }
+        settle()
+        val anchor = compose.runOnIdle {
+            fixture.state.layoutInfo.visibleItemsInfo.first { it.index == fixture.state.firstVisibleItemIndex }
+        }
+        val anchorId = (anchor.key as String).removePrefix("waterfall-").toInt()
+        compose.runOnIdle {
+            fixture.keyOrder = fixture.keyOrder.filter { it != anchorId }
+            fixture.columns = 3
+        }
+        settle()
+        val originalAutoAdvance = compose.mainClock.autoAdvance
+        var owner: Job? = null
+        var resolvedAtOldIndex = false
+        try {
+            compose.mainClock.autoAdvance = false
+            compose.runOnIdle {
+                owner = fixture.scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                    fixture.holder!!.restore(fixture.state, true, scanBudgetMillis = 60_000L) { identity ->
+                        val index = fixture.keyOrder.indexOfFirst { fixture.itemKey(it) == identity }
+                        if (index == newIndex && fixture.state.layoutInfo.visibleItemsInfo.any { it.index == anchor.index }) {
+                            resolvedAtOldIndex = true
+                        }
+                        index.takeIf { it >= 0 }
+                    }
+                }
+            }
+            var passedNewIndex = false
+            var reinserted = false
+            for (frame in 0 until 240) {
+                reinserted = compose.runOnIdle {
+                    val visible = fixture.state.layoutInfo.visibleItemsInfo
+                    val minIndex = visible.minOf { it.index }
+                    val maxIndex = visible.maxOf { it.index }
+                    if (maxIndex >= newIndex) passedNewIndex = true
+                    if (passedNewIndex && maxIndex < newIndex && minIndex > anchor.index && owner?.isActive == true) {
+                        // 已经经过新位置且正在退回顶部；后向扫描不会再见到刚插回的身份。
+                        fixture.keyOrder = fixture.keyOrder.toMutableList().apply { add(newIndex, anchorId) }
+                        true
+                    } else false
+                }
+                if (reinserted || owner?.isCompleted == true) break
+                compose.mainClock.advanceTimeByFrame()
+            }
+            assertTrue("The identity must be reinserted beyond the backwards cursor", reinserted)
+            compose.mainClock.autoAdvance = true
+            awaitRestore(fixture)
+            compose.runOnIdle {
+                val restored = fixture.state.layoutInfo.visibleItemsInfo.firstOrNull { it.key == anchor.key }
+                assertTrue("Latest identity must be checked before settling on the old index", resolvedAtOldIndex)
+                assertTrue("The final scan must restore the same item at its new index", restored?.index == newIndex)
+                checkNotNull(restored)
+                assertTrue("The final scan must preserve the anchor's viewport offset", kotlin.math.abs(restored.offset.y - anchor.offset.y) <= 1)
+            }
+        } finally {
+            owner?.cancel()
+            compose.mainClock.autoAdvance = originalAutoAdvance
+        }
+    }
+
+    @Test
     fun longUserInputWaitPreservesScanBudgetAndMovedGameIdentity() = withProduction(
         manualRestore = true,
         compositeKeys = true,
@@ -351,7 +559,7 @@ class WaterfallRotationScrollDeviceTest {
             }
         }
         try {
-            // Compose's virtual clock does not advance SystemClock.uptimeMillis().
+            // Compose 虚拟时钟不会推进 SystemClock.uptimeMillis()。
             val waitStarted = SystemClock.uptimeMillis()
             runBlocking { delay(1_600L) }
             compose.runOnIdle {
@@ -419,7 +627,7 @@ class WaterfallRotationScrollDeviceTest {
                 assertTrue("Restore must still own the scroll", owner?.isActive == true && state.isScrollInProgress)
                 input = fixture.scope.launch(start = CoroutineStart.UNDISPATCHED) {
                     state.scroll(MutatePriority.UserInput) {
-                        // Move beyond the stable key and its old numeric index before allowing the retry.
+                        // 先移过稳定键及旧数字索引，再允许恢复重试。
                         LazyLayoutScrollScope(state, this).snapToItem(330, 0)
                         releaseInput.await()
                     }
@@ -505,7 +713,7 @@ class WaterfallRotationScrollDeviceTest {
             compose.runOnIdle {
                 assertTrue("Visible cards must accept both activation keys: taps=${fixture.taps}, focused=${fixture.cardFocused}", fixture.taps == 2 && fixture.cardFocused)
                 fixture.holder!!.update(3, true)
-                // The old focused card is still attached until composition applies the focus cleanup.
+                // 组合应用焦点清理前，旧的已聚焦卡片仍挂在树上。
                 for (keyCode in intArrayOf(AndroidKeyEvent.KEYCODE_ENTER, AndroidKeyEvent.KEYCODE_DPAD_CENTER)) {
                     fixture.hostView.dispatchKeyEvent(AndroidKeyEvent(AndroidKeyEvent.ACTION_DOWN, keyCode))
                     fixture.hostView.dispatchKeyEvent(AndroidKeyEvent(AndroidKeyEvent.ACTION_UP, keyCode))
@@ -529,7 +737,7 @@ class WaterfallRotationScrollDeviceTest {
             host.performKeyInput { pressKey(Key.Enter); pressKey(Key.DirectionCenter) }
             compose.runOnIdle {
                 assertTrue("Revealed cards must regain focus and keyboard activation", fixture.taps == 4 && fixture.cardFocused)
-                // Earlier unfocused keys may already have activated the external sibling.
+                // 先前未聚焦时的按键可能已经激活外部同级控件。
                 fixture.externalTaps = 0
                 fixture.externalFocusRequester.requestFocus()
                 fixture.columns = 2
@@ -617,7 +825,9 @@ class WaterfallRotationScrollDeviceTest {
                 probeInteractions = probeInteractions,
                 uniformCards = uniformCards,
             )
-            compose.setContent {
+            val restoration = StateRestorationTester(compose)
+            fixture.restoreSavedState = { restoration.emulateSavedInstanceStateRestore() }
+            restoration.setContent {
                 if (probeInteractions) {
                     Column {
                         if (fixture.probeKeyboard) {
@@ -709,7 +919,7 @@ class WaterfallRotationScrollDeviceTest {
                 var steps = 0
                 fixture.state.scroll {
                     val layoutScope = LazyLayoutScrollScope(fixture.state, this)
-                    // Public scope scrollBy remeasures synchronously: never suspend or jump history here.
+                    // 公共滚动作用域的 scrollBy 同步重测量，此处不挂起也不跳过历史。
                     with(layoutScope) {
                         while (fixture.state.layoutInfo.visibleItemsInfo.none { it.key == key } && steps < MAX_STEPS) {
                             val distance = fixture.state.layoutInfo.viewportSize.height / 2f
@@ -777,7 +987,7 @@ class WaterfallRotationScrollDeviceTest {
     private fun Waterfall(fixture: Fixture) {
         fixture.hostView = LocalView.current
         fixture.inputModeManager = LocalInputModeManager.current
-        // Match GameGrid: old lazy closures retain their composition's list and cover keys.
+        // 与游戏网格一致：旧懒布局闭包保留其组合时的列表和封面键。
         val keyOrder = fixture.keyOrder
         val coverVersion = fixture.coverVersion
         val compositeKeys = fixture.compositeKeys
@@ -791,6 +1001,7 @@ class WaterfallRotationScrollDeviceTest {
             }
         } else if (fixture.production) rememberWaterfallReflowState(
             columns, columns == 3,
+            enabled = { fixture.enabled },
             itemIdentity = { (it as String).substringBefore('\u0000') },
             itemIndex = { identity ->
                 fixture.keyOrder.indexOfFirst {
@@ -798,7 +1009,9 @@ class WaterfallRotationScrollDeviceTest {
                 }.takeIf { it >= 0 }
             },
         ) else null
+        SideEffect { fixture.compositions++ }
         fixture.holder = holder
+        val layoutColumns = holder?.layoutColumns ?: columns
         val state = if (holder != null) {
             holder.gridState
         } else if (fixture.freshState) {
@@ -812,15 +1025,16 @@ class WaterfallRotationScrollDeviceTest {
         fixture.state = state
         fixture.scope = rememberCoroutineScope()
         val reflow = rememberGridReflowState(
-            columns = columns,
-            landscape = columns == 3,
+            columns = layoutColumns,
+            landscape = holder?.layoutLandscape ?: (columns == 3),
             gridState = state,
             ready = holder?.isRestoring != true,
         )
-        // Keep the lazy node alive when replacing its state; no key(columns) wrapper.
+        // 更换状态时保留懒布局节点，不使用 key(columns) 包装。
         LazyVerticalStaggeredGrid(
-            columns = StaggeredGridCells.Fixed(columns),
+            columns = StaggeredGridCells.Fixed(layoutColumns),
             state = state,
+            contentPadding = PaddingValues(bottom = fixture.bottomPaddingDp.dp),
             modifier = Modifier.size(240.dp, 350.dp)
                 .then(if (holder != null) Modifier.waterfallReflowHost(holder) else Modifier)
                 .gridReflowHost(reflow),
@@ -847,7 +1061,9 @@ class WaterfallRotationScrollDeviceTest {
                             } else Modifier,
                         ),
                 ) {
-                    Box(Modifier.fillMaxWidth().aspectRatio(coverRatio).background(Color(0xFF00897B)))
+                    Box(Modifier.fillMaxWidth()
+                        .then(if (fixture.tallLastCard && id == 99) Modifier.height(1_400.dp) else Modifier.aspectRatio(coverRatio))
+                        .background(Color(0xFF00897B)))
                     Box(Modifier.fillMaxWidth().height((if (fixture.uniformCards) 24 else 18 + id % 4 * 9).dp).background(Color(0xFF263238)))
                 }
             }
@@ -863,6 +1079,11 @@ class WaterfallRotationScrollDeviceTest {
         val probeInteractions: Boolean = false,
         val uniformCards: Boolean = false,
     ) {
+        var enabled by mutableStateOf(true)
+        var tallLastCard by mutableStateOf(false)
+        var bottomPaddingDp by mutableIntStateOf(0)
+        var compositions = 0
+        lateinit var restoreSavedState: () -> Unit
         var taps = 0
         var longPresses = 0
         val cardFocusRequester = FocusRequester()

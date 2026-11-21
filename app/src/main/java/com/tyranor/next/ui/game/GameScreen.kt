@@ -201,7 +201,6 @@ import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.CoachAnchor
 import com.tyranor.next.ui.common.coachAnchor
 import com.tyranor.next.ui.common.glassNavBottomInset
-import com.tyranor.next.ui.common.isWideScreen
 import com.tyranor.next.ui.common.LaunchErrorDialog
 import com.tyranor.next.ui.common.LaunchErrorState
 import com.tyranor.next.ui.common.toErrorState
@@ -427,15 +426,12 @@ private fun GameLibraryContent(
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val conditions by AppSettingsStore.gameConditions.collectSettingAsState()
-    val cardStyle by remember(context) {
-        AppSettingsStore.initGameCardStyle(context)
-        AppSettingsStore.gameCardStyleState
-    }.collectSettingAsState()
+    val cardStyle by AppSettingsStore.gameCardStyleState.collectSettingAsState()
     val waterfallSelected = cardStyle == AppSettingsStore.GAME_CARD_STYLE_WATERFALL
-    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val waterfallPortraitColumns by AppSettingsStore.gameWaterfallPortraitColumnsState.collectSettingAsState()
-    val waterfallLandscapeColumns by AppSettingsStore.gameWaterfallLandscapeColumnsState.collectSettingAsState()
-    val waterfallColumns = if (landscape) waterfallLandscapeColumns else waterfallPortraitColumns
+    val (landscape, waterfallColumns) = rememberGameCardColumns(
+        AppSettingsStore.gameWaterfallPortraitColumnsState,
+        AppSettingsStore.gameWaterfallLandscapeColumnsState,
+    )
     val uniformGridState = key(conditions) { rememberLazyGridState() }
     val sortedGames = remember(games, conditions.sortMode) { sortGames(games, conditions.sortMode) }
     LaunchedEffect(query) { onSearchQueryChanged(query) }
@@ -460,7 +456,7 @@ private fun GameLibraryContent(
             waterfallColumns,
             landscape,
             contentReady = loaded,
-            enabled = waterfallSelected && isVisible(),
+            enabled = { waterfallSelected && isVisible() },
             itemIdentity = { (it as? String)?.substringBefore('\u0000') ?: it },
             itemIndex = { identity ->
                 currentFilteredGames.indexOfFirst { it.uri == identity }.takeIf { it >= 0 }
@@ -2337,7 +2333,7 @@ internal fun GameCard(
         val hash = game.uri.hashCode().let { if (it == Int.MIN_VALUE) 0 else kotlin.math.abs(it) }
         0.60f + (hash % 21) / 100f
     }
-    // Narrow crops hit the tier height limit before its width limit.
+    // 窄幅裁剪会先触及档位的高度上限，再触及宽度上限。
     val tier = CoverDecodeTier.forWidth(
         kotlin.math.ceil(coverWidthPx * maxOf(1f, 0.75f / coverAspect)).toInt(),
     )
@@ -2428,10 +2424,10 @@ internal fun UniformGameGrid(
     val hideTitleTag by AppSettingsStore.gameCardTitleTagState.collectSettingAsState()
     val showEngineBadge by AppSettingsStore.gameCardBadgeState.collectSettingAsState()
     // 按屏幕方向选择，竖屏平板也使用竖屏配置。
-    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val portraitColumns by AppSettingsStore.gameGridPortraitColumnsState.collectSettingAsState()
-    val landscapeColumns by AppSettingsStore.gameGridLandscapeColumnsState.collectSettingAsState()
-    val columns = if (landscape) landscapeColumns else portraitColumns
+    val (landscape, columns) = rememberGameCardColumns(
+        AppSettingsStore.gameGridPortraitColumnsState,
+        AppSettingsStore.gameGridLandscapeColumnsState,
+    )
     val coverTier = CoverDecodeTier.forWidth(gameCardColumnWidthPx(constraints.maxWidth, columns))
     val reflow = rememberGridReflowState(columns, landscape, gridState)
     // 滚动果冻：快速滚动时卡片沿滚动方向轻微拉长，停下 Q 弹复原（「普通」档不挂）
@@ -2547,6 +2543,18 @@ internal fun UniformGameCard(
 
 private val GameGridHorizontalPadding = 12.dp
 private val GameGridColumnSpacing = 10.dp
+
+/** 两种可调列数卡片共用当前方向与已保存列数的选择规则。 */
+@Composable
+private fun rememberGameCardColumns(
+    portraitColumns: kotlinx.coroutines.flow.StateFlow<Int>,
+    landscapeColumns: kotlinx.coroutines.flow.StateFlow<Int>,
+): Pair<Boolean, Int> {
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val portrait by portraitColumns.collectSettingAsState()
+    val landscape by landscapeColumns.collectSettingAsState()
+    return isLandscape to if (isLandscape) landscape else portrait
+}
 
 private fun gameGridContentPadding(bottomInset: Dp) = PaddingValues(
     start = GameGridHorizontalPadding,

@@ -298,7 +298,7 @@ private fun GameCardColumnsCard(
     onColumnsChange: (Int) -> Unit,
 ) {
     val title = stringResource(snapshot.setting.title)
-    // Switching setting, external values or enabled state discards an unfinished draft.
+    // 设置项、外部值或可用状态变化时，丢弃尚未提交的草稿。
     var draftColumns by remember(snapshot.setting, snapshot.columns, enabled) { mutableIntStateOf(snapshot.columns) }
     val finishChange: () -> Unit = {
         if (enabled) onColumnsChange(draftColumns)
@@ -321,7 +321,7 @@ private fun GameCardColumnsCard(
                 value = draftColumns.toFloat(),
                 onValueChange = { raw ->
                     if (enabled && raw.isFinite()) {
-                        draftColumns = AppSettingsStore.normalizeGameGridColumns(raw.roundToInt())
+                        draftColumns = AppSettingsStore.normalizeGameCardColumns(raw.roundToInt())
                     }
                 },
                 onValueChangeFinished = finishChange,
@@ -335,12 +335,12 @@ private fun GameCardColumnsCard(
                             Key.DirectionLeft -> draftColumns + if (rtl) 1 else -1
                             Key.DirectionUp -> draftColumns + 1
                             Key.DirectionDown -> draftColumns - 1
-                            Key.MoveHome -> AppSettingsStore.MIN_GAME_GRID_COLUMNS
-                            Key.MoveEnd -> AppSettingsStore.MAX_GAME_GRID_COLUMNS
+                            Key.MoveHome -> AppSettingsStore.MIN_GAME_CARD_COLUMNS
+                            Key.MoveEnd -> AppSettingsStore.MAX_GAME_CARD_COLUMNS
                             else -> return@onPreviewKeyEvent false
                         }
                         when (event.type) {
-                            KeyEventType.KeyDown -> draftColumns = AppSettingsStore.normalizeGameGridColumns(next)
+                            KeyEventType.KeyDown -> draftColumns = AppSettingsStore.normalizeGameCardColumns(next)
                             KeyEventType.KeyUp -> finishChange()
                             else -> return@onPreviewKeyEvent false
                         }
@@ -348,8 +348,8 @@ private fun GameCardColumnsCard(
                     }
                     .focusable(enabled),
                 enabled = enabled,
-                valueRange = AppSettingsStore.MIN_GAME_GRID_COLUMNS.toFloat()..AppSettingsStore.MAX_GAME_GRID_COLUMNS.toFloat(),
-                steps = AppSettingsStore.MAX_GAME_GRID_COLUMNS - AppSettingsStore.MIN_GAME_GRID_COLUMNS - 1,
+                valueRange = AppSettingsStore.MIN_GAME_CARD_COLUMNS.toFloat()..AppSettingsStore.MAX_GAME_CARD_COLUMNS.toFloat(),
+                steps = AppSettingsStore.MAX_GAME_CARD_COLUMNS - AppSettingsStore.MIN_GAME_CARD_COLUMNS - 1,
                 showKeyPoints = true,
                 hapticEffect = SliderDefaults.SliderHapticEffect.Step,
             )

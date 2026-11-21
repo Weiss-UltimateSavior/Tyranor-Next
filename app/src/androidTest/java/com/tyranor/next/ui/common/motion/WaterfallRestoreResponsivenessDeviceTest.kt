@@ -45,7 +45,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
-/** Wall-clock metrics for the production restore, including a dispatched native touch callback. */
+/** 统计生产恢复流程的实际耗时，包括已分发的原生触摸回调。 */
 class WaterfallRestoreResponsivenessDeviceTest {
     @get:Rule val compose = createComposeRule()
 
@@ -171,7 +171,7 @@ class WaterfallRestoreResponsivenessDeviceTest {
                     .drawWithContent {
                         drawContent()
                         if (!holder.isRestoring && fixture.started.get() > 0L) {
-                            // This callback does not prove that this same frame contains visible content.
+                            // 此回调不能证明同一帧中已经绘制出可见内容。
                             fixture.firstPostRestoreDrawCallbackAt.compareAndSet(0L, SystemClock.uptimeMillis())
                         }
                     },
