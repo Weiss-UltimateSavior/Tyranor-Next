@@ -269,6 +269,16 @@ public final class MpvHookShaderTest {
                 + "#define STOP \\\nreturn\n"
                 + "void hook() { fragColor0 = vec4(1.0); STOP; fragColor1 = vec4(0.5); }\n"
                 + "//!DESC final\n//!BIND MAIN\n//!BIND A\n//!BIND B\nvec4 hook() { return vec4(1.0); }\n"));
+        assertThrows(IllegalArgumentException.class, () -> MpvHookShader.parse(
+                "//!DESC control_flow_macro_func_nospace\n//!BIND MAIN\n//!SAVE A B\n"
+                + "#define STOP()return\n"
+                + "void hook() { fragColor0 = vec4(1.0); STOP(); fragColor1 = vec4(0.5); }\n"
+                + "//!DESC final\n//!BIND MAIN\n//!BIND A\n//!BIND B\nvec4 hook() { return vec4(1.0); }\n"));
+        assertThrows(IllegalArgumentException.class, () -> MpvHookShader.parse(
+                "//!DESC control_flow_macro_formfeed\n//!BIND MAIN\n//!SAVE A B\n"
+                + "#define STOP\freturn\n"
+                + "void hook() { fragColor0 = vec4(1.0); STOP; fragColor1 = vec4(0.5); }\n"
+                + "//!DESC final\n//!BIND MAIN\n//!BIND A\n//!BIND B\nvec4 hook() { return vec4(1.0); }\n"));
         List<MpvHookShader.Pass> emptyDefineValid = MpvHookShader.parse(
                 "//!DESC empty_define_before_helper\n//!BIND MAIN\n//!SAVE A B\n"
                 + "#define EMPTY\nvec4 helper() { return vec4(1.0); }\n"

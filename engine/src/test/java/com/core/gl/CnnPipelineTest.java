@@ -28,6 +28,7 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThrows;
@@ -2481,12 +2482,18 @@ public final class CnnPipelineTest {
         // Runtime-fused MRT fragment shader compile failure (COMPILE_STATUS == 0) must likewise fall back
         // to unfused single-output passes in the same renderTexture() call instead of permanently disabling the node.
         Set<Integer> mrtCompileShaders = new HashSet<>();
+        int[] compileFailureInjected = {0};
         RecordingPipelineGlOps compileFailGl = new RecordingPipelineGlOps() {
             @Override public void glShaderSource(int shader, String string) {
                 if (string != null && string.contains("fragColor1")) mrtCompileShaders.add(shader);
             }
             @Override public void glGetShaderiv(int shader, int pname, int[] params, int offset) {
-                params[offset] = (pname == GLES30.GL_COMPILE_STATUS && mrtCompileShaders.contains(shader)) ? 0 : 1;
+                if (pname == GLES30.GL_COMPILE_STATUS && mrtCompileShaders.contains(shader)) {
+                    compileFailureInjected[0]++;
+                    params[offset] = 0;
+                } else {
+                    params[offset] = 1;
+                }
             }
         };
         CnnPipeline compileFallbackNode = CnnPipeline.createForTesting(
@@ -2497,11 +2504,40 @@ public final class CnnPipelineTest {
         setField(compileFallbackNode, "mHalfFloatChecked", true);
         setField(compileFallbackNode, "mHalfFloatRenderable", true);
         int compileFallbackOut = compileFallbackNode.renderTexture(100, 64, 64, 64, 64);
+        assertTrue("Test must observe injected MRT fragment shader compile failure", compileFailureInjected[0] > 0);
         assertTrue("renderTexture must recover via unfused fallback after MRT fragment shader compile failure",
                 compileFallbackOut > 0);
         assertFalse(compileFallbackNode.isFailed());
         assertEquals(unfusedL.size(), compileFallbackNode.getBuiltPassCount());
         assertEquals(unfusedL.size(), compileFailGl.drawCalls);
+
+        // Compile failure caused by GL_CONTEXT_LOST_KHR must fail the pipeline permanently instead of
+        // misclassifying context loss into an unfused MRT fallback.
+        Set<Integer> lostShaders = new HashSet<>();
+        RecordingPipelineGlOps contextLostGl = new RecordingPipelineGlOps() {
+            @Override public void glShaderSource(int shader, String string) {
+                if (string != null && string.contains("fragColor1")) lostShaders.add(shader);
+            }
+            @Override public void glGetShaderiv(int shader, int pname, int[] params, int offset) {
+                if (pname == GLES30.GL_COMPILE_STATUS && lostShaders.contains(shader)) {
+                    pendingErrors.add(GlErrors.GL_CONTEXT_LOST_KHR);
+                    params[offset] = 0;
+                } else {
+                    params[offset] = 1;
+                }
+            }
+        };
+        CnnPipeline lostNode = CnnPipeline.createForTesting(
+                p -> Files.newInputStream(resolveAsset(p)), asset, true, 1, 1, 0, contextLostGl);
+        setField(lostNode, "mLimitWidth", 4096);
+        setField(lostNode, "mLimitHeight", 4096);
+        setField(lostNode, "mQuadVao", new int[]{1});
+        setField(lostNode, "mHalfFloatChecked", true);
+        setField(lostNode, "mHalfFloatRenderable", true);
+        assertEquals(0, lostNode.renderTexture(100, 64, 64, 64, 64));
+        assertTrue("GL_CONTEXT_LOST during MRT shader compile must fail permanently rather than falling back",
+                lostNode.isFailed());
+        assertEquals(0, contextLostGl.drawCalls);
 
         // Whole-chain 256 MiB budget check after runtime fusion fallback via GraphicsFilterPipeline:
         // Under tiled 4K geometry (tileCoreSize=1024), unfused 9-pass halo padding strictly exceeds
@@ -2777,9 +2813,11 @@ public final class CnnPipelineTest {
         assertEquals(0, indexedMutateCalls[0]);
         assertEquals(0, failIndexedGl.drawCalls);
 
-        // Distinct GlState instances must own independent indexed entry dispatchers (multi-context isolation).
-        assertTrue("Each GlState must own an independent indexedOps instance",
-                glState.indexedOps != new CnnPipeline.GlState().indexedOps);
+        // Distinct default GlState instances must own independent indexed entry dispatchers (multi-context isolation).
+        CnnPipeline.GlState defaultStateA = new CnnPipeline.GlState();
+        CnnPipeline.GlState defaultStateB = new CnnPipeline.GlState();
+        assertNotSame("Each default GlState must own an independent indexedOps instance",
+                defaultStateA.indexedOps, defaultStateB.indexedOps);
 
         // Differential VN-SR fixture: only changing sample_0 parameter name from `off` -> `vPos`
         // must inhibit optimization via hasShadowedSamplingEnv while `off` gets rewritten.

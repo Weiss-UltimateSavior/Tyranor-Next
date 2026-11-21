@@ -1522,10 +1522,10 @@ public final class CnnPipeline {
                             pass, true, mConfig.tieredPrecisionEnabled);
                     try {
                         fragmentShader = compileShader(GLES30.GL_FRAGMENT_SHADER, fragmentSource);
-                    } catch (IllegalStateException compileFailure) {
+                    } catch (GlOps.ShaderCompileException compileFailure) {
                         if (targetSlots.length > 1 && canFallbackFromRuntimeFusion(true)) {
                             throw new TargetUnavailableException("MRT fragment shader compile failed for "
-                                    + pass.desc + ": " + compileFailure.getMessage(), false);
+                                    + pass.desc + ": " + compileFailure.getMessage(), false, compileFailure);
                         }
                         throw compileFailure;
                     }

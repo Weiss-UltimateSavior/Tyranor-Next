@@ -210,8 +210,6 @@ struct StageGlState {
     GLint unpackAlign = 4, packAlign = 4;
     GLint viewport[4]{}, scissorBox[4]{};
     GLint textures[kUnits]{}, samplers[kUnits]{};
-    GLint blendSrcRgb = GL_ONE, blendDstRgb = GL_ZERO, blendSrcAlpha = GL_ONE, blendDstAlpha = GL_ZERO;
-    GLint blendEqRgb = GL_FUNC_ADD, blendEqAlpha = GL_FUNC_ADD;
     GLint stencilFrontFunc = GL_ALWAYS, stencilFrontRef = 0, stencilFrontValueMask = ~0, stencilFrontMask = ~0;
     GLint stencilBackFunc = GL_ALWAYS, stencilBackRef = 0, stencilBackValueMask = ~0, stencilBackMask = ~0;
     GLint stencilFail = GL_KEEP, stencilZFail = GL_KEEP, stencilZPass = GL_KEEP;
@@ -221,13 +219,10 @@ struct StageGlState {
     GLfloat clearColor[4]{};
     GLboolean enabled[sizeof(kCaps) / sizeof(kCaps[0])]{};
     bool useIndexedBuffer0 = false;
-    bool useIndexedBlendFunc0 = false;
     void (*colorMaskiFn)(GLuint, GLboolean, GLboolean, GLboolean, GLboolean) = nullptr;
     void (*enableiFn)(GLenum, GLuint) = nullptr;
     void (*disableiFn)(GLenum, GLuint) = nullptr;
     GLboolean (*isEnablediFn)(GLenum, GLuint) = nullptr;
-    void (*blendFuncSeparateiFn)(GLuint, GLenum, GLenum, GLenum, GLenum) = nullptr;
-    void (*blendEquationSeparateiFn)(GLuint, GLenum, GLenum) = nullptr;
     // Restore-surface coverage note (two-sided capture complete):
     // Host-side GL work in this file (stage FBO creation in ensureStageResources, the swap
     // present draw, redirect binds) never writes glCullFace/glFrontFace parameters,
@@ -264,12 +259,6 @@ struct StageGlState {
         glGetIntegerv(GL_PACK_ALIGNMENT, &packAlign);
         glGetIntegerv(GL_VIEWPORT, viewport);
         glGetIntegerv(GL_SCISSOR_BOX, scissorBox);
-        glGetIntegerv(GL_BLEND_SRC_RGB, &blendSrcRgb);
-        glGetIntegerv(GL_BLEND_DST_RGB, &blendDstRgb);
-        glGetIntegerv(GL_BLEND_SRC_ALPHA, &blendSrcAlpha);
-        glGetIntegerv(GL_BLEND_DST_ALPHA, &blendDstAlpha);
-        glGetIntegerv(GL_BLEND_EQUATION_RGB, &blendEqRgb);
-        glGetIntegerv(GL_BLEND_EQUATION_ALPHA, &blendEqAlpha);
         glGetIntegerv(GL_STENCIL_FUNC, &stencilFrontFunc);
         glGetIntegerv(GL_STENCIL_REF, &stencilFrontRef);
         glGetIntegerv(GL_STENCIL_VALUE_MASK, &stencilFrontValueMask);
@@ -307,10 +296,6 @@ struct StageGlState {
                     eglGetProcAddress(isEs32 ? "glDisablei" : "glDisableiEXT"));
             isEnablediFn = reinterpret_cast<decltype(isEnablediFn)>(
                     eglGetProcAddress(isEs32 ? "glIsEnabledi" : "glIsEnablediEXT"));
-            blendFuncSeparateiFn = reinterpret_cast<decltype(blendFuncSeparateiFn)>(
-                    eglGetProcAddress(isEs32 ? "glBlendFuncSeparatei" : "glBlendFuncSeparateiEXT"));
-            blendEquationSeparateiFn = reinterpret_cast<decltype(blendEquationSeparateiFn)>(
-                    eglGetProcAddress(isEs32 ? "glBlendEquationSeparatei" : "glBlendEquationSeparateiEXT"));
             if (colorMaskiFn && enableiFn && disableiFn && isEnablediFn) {
                 while (glGetError() != GL_NO_ERROR) {}
                 GLint mask0[4]{};
@@ -320,27 +305,6 @@ struct StageGlState {
                     for (int c = 0; c < 4; ++c) colorMask[c] = mask0[c] ? GL_TRUE : GL_FALSE;
                     enabled[0] = blend0;
                     useIndexedBuffer0 = true;
-                }
-            }
-            if (blendFuncSeparateiFn && blendEquationSeparateiFn) {
-                while (glGetError() != GL_NO_ERROR) {}
-                GLint bSrcRgb = blendSrcRgb, bDstRgb = blendDstRgb;
-                GLint bSrcAlpha = blendSrcAlpha, bDstAlpha = blendDstAlpha;
-                GLint bEqRgb = blendEqRgb, bEqAlpha = blendEqAlpha;
-                glGetIntegeri_v(GL_BLEND_SRC_RGB, 0, &bSrcRgb);
-                glGetIntegeri_v(GL_BLEND_DST_RGB, 0, &bDstRgb);
-                glGetIntegeri_v(GL_BLEND_SRC_ALPHA, 0, &bSrcAlpha);
-                glGetIntegeri_v(GL_BLEND_DST_ALPHA, 0, &bDstAlpha);
-                glGetIntegeri_v(GL_BLEND_EQUATION_RGB, 0, &bEqRgb);
-                glGetIntegeri_v(GL_BLEND_EQUATION_ALPHA, 0, &bEqAlpha);
-                if (glGetError() == GL_NO_ERROR) {
-                    blendSrcRgb = bSrcRgb;
-                    blendDstRgb = bDstRgb;
-                    blendSrcAlpha = bSrcAlpha;
-                    blendDstAlpha = bDstAlpha;
-                    blendEqRgb = bEqRgb;
-                    blendEqAlpha = bEqAlpha;
-                    useIndexedBlendFunc0 = true;
                 }
             }
         }
@@ -369,16 +333,6 @@ struct StageGlState {
         glBindRenderbuffer(GL_RENDERBUFFER, renderbuffer);
         glPixelStorei(GL_UNPACK_ALIGNMENT, unpackAlign);
         glPixelStorei(GL_PACK_ALIGNMENT, packAlign);
-        if (useIndexedBlendFunc0) {
-            blendFuncSeparateiFn(0, blendSrcRgb, blendDstRgb, blendSrcAlpha, blendDstAlpha);
-            blendEquationSeparateiFn(0, blendEqRgb, blendEqAlpha);
-        } else {
-            // Fallback limitation: when indexed blend entry points (GLES 3.2 or
-            // GL_EXT_draw_buffers_indexed) are unavailable, non-indexed blend setters overwrite
-            // draw buffers 1..N with buffer 0's captured blend func/equation.
-            glBlendFuncSeparate(blendSrcRgb, blendDstRgb, blendSrcAlpha, blendDstAlpha);
-            glBlendEquationSeparate(blendEqRgb, blendEqAlpha);
-        }
         glStencilFuncSeparate(GL_FRONT, stencilFrontFunc, stencilFrontRef, static_cast<GLuint>(stencilFrontValueMask));
         glStencilFuncSeparate(GL_BACK, stencilBackFunc, stencilBackRef, static_cast<GLuint>(stencilBackValueMask));
         glStencilMaskSeparate(GL_FRONT, static_cast<GLuint>(stencilFrontMask));

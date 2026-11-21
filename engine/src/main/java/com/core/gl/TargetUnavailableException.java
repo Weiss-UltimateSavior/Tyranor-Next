@@ -12,4 +12,9 @@ final class TargetUnavailableException extends RuntimeException {
         super(detail);
         this.retryAfterDelay = retryAfterDelay;
     }
+
+    TargetUnavailableException(String detail, boolean retryAfterDelay, Throwable cause) {
+        super(detail, cause);
+        this.retryAfterDelay = retryAfterDelay;
+    }
 }

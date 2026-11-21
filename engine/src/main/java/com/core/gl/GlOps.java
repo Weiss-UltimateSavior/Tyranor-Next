@@ -57,6 +57,12 @@ interface GlOps {
     void glColorMask(boolean red, boolean green, boolean blue, boolean alpha);
     void glDrawArrays(int mode, int first, int count);
 
+    static final class ShaderCompileException extends IllegalStateException {
+        ShaderCompileException(String message) {
+            super(message);
+        }
+    }
+
     static int compileShader(GlOps gl, int type, String source, int[] query) {
         int shader = gl.glCreateShader(type);
         boolean transferred = false;
@@ -72,7 +78,7 @@ interface GlOps {
                 shader = 0;
                 gl.glDeleteShader(toDelete);
                 GlErrors.requireGlSuccess("shader compile", true, gl::glGetError);
-                throw new IllegalStateException("shader compile failed: " + log);
+                throw new ShaderCompileException("shader compile failed: " + log);
             }
             transferred = true;
             return shader;
