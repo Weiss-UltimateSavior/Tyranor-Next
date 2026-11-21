@@ -33,6 +33,11 @@
 #define EGL_OPENGL_ES3_BIT_KHR 0x0040
 #endif
 
+// GL_KHR_robustness / GLES 3.2; not declared by the GLES3 (3.0) headers this file includes.
+#ifndef GL_CONTEXT_LOST_KHR
+#define GL_CONTEXT_LOST_KHR 0x0507
+#endif
+
 namespace {
 constexpr const char* kDisplay = "_ZN7artemis6CStage7DisplayEv";
 // Stage canvas ceiling for the single-context path (RGBA8 + D24S8, 8 bytes per pixel),
@@ -198,6 +203,25 @@ struct HostGlScope {
     ~HostGlScope() { inHostGl = previous; }
 };
 
+// Bound matches the Java-side GlErrors.MAX_GL_ERRORS discipline (and drainStageGlErrors below).
+constexpr int kMaxGlErrorDrain = 16;
+
+// Bounded drain, never latches: consume at most kMaxGlErrorDrain error records and stop
+// early on GL_CONTEXT_LOST_KHR. Under GL_KHR_context_lost glGetError returns that sticky
+// record forever, so an unbounded drain would spin the render thread permanently after a
+// driver reset / background reclaim. Residual flags after a bounded stop are the sticky
+// lost record itself (driver-owned: the engine observes it regardless of this drain) or
+// engine-generated records we never created; recovery from there is owned by the existing
+// paths — contextDestroyed → stageResources abandon chain, stageFailureStreak backoff to
+// direct output, and the Java-side GlErrors classification (context loss is never classified
+// retryable).
+void drainGlErrorsBounded() {
+    for (int i = 0; i < kMaxGlErrorDrain; ++i) {
+        const GLenum error = glGetError();
+        if (error == GL_NO_ERROR || error == GL_CONTEXT_LOST_KHR) return;
+    }
+}
+
 struct StageGlState {
     static constexpr size_t kUnits = 8;
     static constexpr GLenum kCaps[] = {
@@ -297,7 +321,11 @@ struct StageGlState {
             isEnablediFn = reinterpret_cast<decltype(isEnablediFn)>(
                     eglGetProcAddress(isEs32 ? "glIsEnabledi" : "glIsEnablediEXT"));
             if (colorMaskiFn && enableiFn && disableiFn && isEnablediFn) {
-                while (glGetError() != GL_NO_ERROR) {}
+                // Bounded drain (never unbounded: a lost context returns GL_CONTEXT_LOST_KHR
+                // from every glGetError and would otherwise hang this per-frame constructor);
+                // if flags remain, the probe below fails its GL_NO_ERROR check and capture
+                // falls back to the non-indexed global colorMask path.
+                drainGlErrorsBounded();
                 GLint mask0[4]{};
                 glGetIntegeri_v(GL_COLOR_WRITEMASK, 0, mask0);
                 const GLboolean blend0 = isEnablediFn(GL_BLEND, 0);
@@ -958,12 +986,11 @@ void resetStageRedirectOnScopeExit() {
 }
 
 // Align with the Java-side GlErrors discipline: stage GL work must not leak error
-// flags into the engine's subsequent glGetError calls. Bounded drain, never latches;
+// flags into the engine's subsequent glGetError calls. Bounded drain, never latches
+// (see drainGlErrorsBounded: stops on GL_NO_ERROR, GL_CONTEXT_LOST_KHR, or 16 records);
 // stage failures already degrade safely through direct output.
 void drainStageGlErrors() {
-    for (int i = 0; i < 16; ++i) {
-        if (glGetError() == GL_NO_ERROR) return;
-    }
+    drainGlErrorsBounded();
 }
 
 bool ensureStageResources(int w, int h, GLuint* outFbo = nullptr) {
@@ -2143,6 +2170,15 @@ EGLBoolean hookEglChooseConfig(EGLDisplay display, const EGLint* attribList, EGL
                 return EGL_TRUE;
             }
         }
+        if (!terminated) {
+            // No EGL_NONE inside the 128-entry scan bound (list longer than the bound or
+            // malformed): the original list is passed through unchanged below, which skips
+            // the ES3 renderable upgrade and — if the context stays ES2 — later latches
+            // es3UpgradeFailed and closes single-context mode. Log so the silent degradation
+            // is diagnosable instead of surfacing only as a status code.
+            __android_log_print(ANDROID_LOG_WARN, "ArtemisOfficial",
+                    "eglChooseConfig attribute list has no EGL_NONE within 128 entries; skipping ES3 renderable upgrade");
+        }
     }
     return eglChooseConfig(display, attribList, configs, configSize, numConfig);
 }
@@ -2823,12 +2859,25 @@ uintptr_t address(uintptr_t base,Elf64_Addr pointer){return pointer<base?base+po
 //   glUniform3fv / glUniform2iv / glUniform3iv / glUniform4iv / glUniform1ui..4ui /
 //   glUniform1uiv..4uiv / glUniformMatrix2fv / glUniformMatrix3fv /
 //   glUniformMatrix2x3fv..4x3fv.
+// - GLES 3.1 named-program uniform uploads, the full glProgramUniform* family (all 33
+//   signed/unsigned/float/matrix forms): they address a program object directly instead of
+//   the current program, so the tracker's (currentProgram, loc) uniform snapshot can never
+//   observe the write. The unsigned forms mirror the glUniform1ui..4uiv denials above, and
+//   Matrix4fv mirrors the hooked glUniformMatrix4fv (the hook does not transfer: this entry
+//   point bypasses the current program entirely).
+// - GLES 3.1 program-pipeline objects: a bound pipeline replaces the current-program uniform
+//   model entirely (glUseProgramStages binds per-stage programs; glActiveShaderProgram
+//   selects the program glUniform* applies to while a pipeline is bound). The lifecycle
+//   entries are denied as usage markers of that class — an import-based gate cannot see
+//   object use, only symbol presence — deliberately overriding the generic object-lifecycle
+//   carve-out below for this family.
 // - Multi-render-target draw-target selection: glDrawBuffers (which attachments a draw
 //   writes is part of the rendered result).
 // Known-harmless carve-outs (never denied): glGet*/glIs*/query objects, glReadPixels,
-// sync primitives, object lifecycle (glGen*/glCreate*/glDelete*/glAttach*/glLink*/...),
-// debug/markers; renderbuffer allocation (glRenderbufferStorage / glRenderbufferStorageMultisample
-// — allocation only, content is produced by tracked draws and renderbuffers are never sampled);
+// sync primitives, object lifecycle (glGen*/glCreate*/glDelete*/glAttach*/glLink*/... —
+// except the program-pipeline lifecycle above), debug/markers; renderbuffer allocation
+// (glRenderbufferStorage / glRenderbufferStorageMultisample — allocation only, content is
+// produced by tracked draws and renderbuffers are never sampled);
 // render-state setters outside the hook table remain the documented FrameDirtyTracker residual posture
 // (see SPEC §12), not a content-write class; glBindVertexArray / glBindVertexArrayOES are tracked in
 // optionalHooks (invalidating elementBufferSynced so host VAO switches re-read GL_ELEMENT_ARRAY_BUFFER_BINDING),
@@ -2854,6 +2903,23 @@ static const char* const kDeniedContentChangeImports[] = {
     "glUniformMatrix2x3fv", "glUniformMatrix3x2fv",
     "glUniformMatrix2x4fv", "glUniformMatrix4x2fv",
     "glUniformMatrix3x4fv", "glUniformMatrix4x3fv",
+    // GLES 3.1 named-program uniform uploads: full glProgramUniform* family (writes address
+    // a program object directly, invisible to the current-program uniform snapshot).
+    "glProgramUniform1i", "glProgramUniform2i", "glProgramUniform3i", "glProgramUniform4i",
+    "glProgramUniform1iv", "glProgramUniform2iv", "glProgramUniform3iv", "glProgramUniform4iv",
+    "glProgramUniform1ui", "glProgramUniform2ui", "glProgramUniform3ui", "glProgramUniform4ui",
+    "glProgramUniform1uiv", "glProgramUniform2uiv", "glProgramUniform3uiv", "glProgramUniform4uiv",
+    "glProgramUniform1f", "glProgramUniform2f", "glProgramUniform3f", "glProgramUniform4f",
+    "glProgramUniform1fv", "glProgramUniform2fv", "glProgramUniform3fv", "glProgramUniform4fv",
+    "glProgramUniformMatrix2fv", "glProgramUniformMatrix3fv", "glProgramUniformMatrix4fv",
+    "glProgramUniformMatrix2x3fv", "glProgramUniformMatrix3x2fv",
+    "glProgramUniformMatrix2x4fv", "glProgramUniformMatrix4x2fv",
+    "glProgramUniformMatrix3x4fv", "glProgramUniformMatrix4x3fv",
+    // GLES 3.1 program-pipeline lifecycle (usage markers of the pipeline class; a bound
+    // pipeline replaces the current-program uniform model entirely).
+    "glGenProgramPipelines", "glDeleteProgramPipelines", "glBindProgramPipeline",
+    "glUseProgramStages", "glActiveShaderProgram", "glValidateProgramPipeline",
+    "glGetProgramPipelineiv", "glProgramParameteri",
     "glDrawBuffers",
 };
 
