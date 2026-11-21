@@ -29,7 +29,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
   <img src="screenshots/index5.png" alt="Tyranor Next" width="900" />
 </p>
 
-画面超分（展示配置）
+画质滤镜链（展示配置）
 <p align="center">
   <img src="screenshots/index6.png" alt="Tyranor Next" width="900" />
 </p>

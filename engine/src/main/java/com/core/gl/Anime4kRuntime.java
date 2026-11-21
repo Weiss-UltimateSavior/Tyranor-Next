@@ -75,7 +75,7 @@ public final class Anime4kRuntime {
     static void onRawFrame(int sw,int sh,int width,int height,GraphicsFilterPipeline processor) {
         status = sw <= 0 || sh <= 0 ? GraphicsStatus.SIZE_UNAVAILABLE
                 : processor != null && processor.isFailed() ? GraphicsStatus.FILTER_FAILED
-                : processor != null && processor.bypassReason() != Anime4kPostProcessor.BYPASS_NONE
+                : processor != null && processor.bypassReason() != CnnPipeline.BYPASS_NONE
                 ? GraphicsStatus.SIZE_UNAVAILABLE : GraphicsStatus.READY;
         if (analyzing) {
             GraphicsOutputSize.Size fitted = GraphicsOutputSize.fit(sw,sh,width,height);
