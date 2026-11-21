@@ -502,9 +502,9 @@ final class MpvHookShader {
     private static final Pattern MULTI_SAVE_FRAGCOLOR_DECL = Pattern.compile(
             "\\b(?:const\\s+|(?:highp|mediump|lowp)\\s+)?[A-Za-z_][A-Za-z0-9_]*\\s+(?:[^;{}]*,\\s*)?fragColor\\d*\\b");
     private static final Pattern MULTI_SAVE_FRAGCOLOR_DEFINE = Pattern.compile(
-            "^\\s*#\\s*(?:define|undef)\\s+fragColor\\d*\\b", Pattern.MULTILINE);
+            "^[ \\t\\f]*#[ \\t\\f]*(?:define|undef)[ \\t\\f]+fragColor\\d*\\b", Pattern.MULTILINE);
     private static final Pattern MULTI_SAVE_CONTROL_FLOW_DEFINE = Pattern.compile(
-            "^\\s*#\\s*define\\s+[A-Za-z_][A-Za-z0-9_]*(?:\\([^)]*\\))?\\s+(.*)$", Pattern.MULTILINE);
+            "^[ \\t\\f]*#[ \\t\\f]*define[ \\t\\f]+[A-Za-z_][A-Za-z0-9_]*(?:\\([^)]*\\))?(?:[ \\t\\f]+(.*))?$");
     private static final Pattern MULTI_SAVE_FRAGCOLOR_WRITE = Pattern.compile(
             "(?:^|[;{])\\s*fragColor(\\d+)\\s*=(?!=)");
 
@@ -512,10 +512,13 @@ final class MpvHookShader {
         String stripped = stripGlslCommentsOrNull(body);
         String effective = resolveEffectiveBodyOrNull(stripped, true);
         if (effective == null || MULTI_SAVE_FRAGCOLOR_DEFINE.matcher(effective).find()) return false;
-        Matcher cfDef = MULTI_SAVE_CONTROL_FLOW_DEFINE.matcher(effective);
-        while (cfDef.find()) {
-            if (MULTI_SAVE_UNSUPPORTED_FLOW.matcher(cfDef.group(1)).find()) {
-                return false;
+        for (String line : effective.split("\\R", -1)) {
+            Matcher cfDef = MULTI_SAVE_CONTROL_FLOW_DEFINE.matcher(line);
+            if (cfDef.matches()) {
+                String rhs = cfDef.group(1);
+                if (rhs != null && MULTI_SAVE_UNSUPPORTED_FLOW.matcher(rhs).find()) {
+                    return false;
+                }
             }
         }
         Matcher m = VOID_HOOK_PATTERN.matcher(effective);

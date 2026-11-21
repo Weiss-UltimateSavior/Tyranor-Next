@@ -283,14 +283,35 @@ public class ArtemisGraphicsStatsTest {
         stats.nodeGpu(0, 6.5);
         assertEquals(6.5, tracker.resolve(stats.snapshot(1), false).gpuMs, 0.001);
 
-        // Even after resetInterval(0) and reconfiguring with identical chain/dimensions,
+        // Even after resetInterval(0) and reconfiguring with identical chain/dimensions + executed=true,
         // bumped timingGeneration must prevent stale held values from leaking across generations.
         stats.resetInterval(0);
         stats.configureNodes(chain, "GPU");
+        stats.nodeFrame(new int[]{1280}, new int[]{720}, new int[]{2560}, new int[]{1440}, new boolean[]{true});
         ArtemisGraphicsStats.ResolvedTimings afterReconfig = tracker.resolve(stats.snapshot(2), false);
         assertFalse(afterReconfig.complete);
         assertTrue(Double.isNaN(afterReconfig.gpuMs));
         assertTrue(Double.isNaN(afterReconfig.nodeGpuMs[0]));
+    }
+
+    @Test public void configureNodesClearsUnsnapshottedOverallGpuSampleAcrossGenerations() {
+        ArtemisGraphicsStats stats = new ArtemisGraphicsStats();
+        ArtemisGraphicsStats.DisplayTimingTracker tracker = new ArtemisGraphicsStats.DisplayTimingTracker();
+        GraphicsFilterChain chain = GraphicsFilterChain.parse("v1:lanczos");
+        stats.configureNodes(chain, "GPU");
+        stats.frame(1280, 720, 2560, 1440, 2133, 1200);
+        stats.nodeFrame(new int[]{1280}, new int[]{720}, new int[]{2560}, new int[]{1440}, new boolean[]{true});
+        stats.gpu(8.0);
+
+        // Reconfigure before any snapshot drained the 8.0 ms overall sample: new generation must not inherit it.
+        stats.configureNodes(chain, "GPU");
+        stats.nodeFrame(new int[]{1280}, new int[]{720}, new int[]{2560}, new int[]{1440}, new boolean[]{true});
+        ArtemisGraphicsStats.Snapshot snap = stats.snapshot(1);
+        assertTrue("Reconfigured generation must clear prior unsnapshotted gpuTotalMs/gpuAvailable",
+                Double.isNaN(snap.gpuMs));
+        ArtemisGraphicsStats.ResolvedTimings resolved = tracker.resolve(snap, false);
+        assertFalse(resolved.complete);
+        assertTrue(Double.isNaN(resolved.gpuMs));
     }
 
 }

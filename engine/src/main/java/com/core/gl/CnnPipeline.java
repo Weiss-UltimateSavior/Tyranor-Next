@@ -119,12 +119,13 @@ public final class CnnPipeline {
             boolean isBlendEnabledi(int index);
             void colorMaski(int index, boolean red, boolean green, boolean blue, boolean alpha);
             void setBlendEnabledi(int index, boolean enabled);
+            default void reset() {}
         }
 
-        private static final IndexedDrawBufferOps GLES32_INDEXED_OPS = new IndexedDrawBufferOps() {
+        private static final class DefaultIndexedDrawBufferOps implements IndexedDrawBufferOps {
             private boolean useExt;
 
-            private boolean hasExtension(String target) {
+            private static boolean hasExtension(String target) {
                 int[] count = new int[1];
                 GLES30.glGetIntegerv(GLES30.GL_NUM_EXTENSIONS, count, 0);
                 for (int i = 0; i < count[0]; i++) {
@@ -135,14 +136,24 @@ public final class CnnPipeline {
                 return false;
             }
 
+            @Override public void reset() {
+                useExt = false;
+            }
+
             @Override public int getDrawBufferCount() {
                 useExt = false;
                 int[] ver = new int[2];
                 GLES30.glGetIntegerv(GLES30.GL_MAJOR_VERSION, ver, 0);
                 GLES30.glGetIntegerv(GLES30.GL_MINOR_VERSION, ver, 1);
                 boolean isEs32 = ver[0] > 3 || (ver[0] == 3 && ver[1] >= 2);
+                int[] maxBufs = new int[1];
+                GLES30.glGetIntegerv(GLES30.GL_MAX_DRAW_BUFFERS, maxBufs, 0);
+                int drawBufferCount = Math.min(MAX_INDEXED_DRAW_BUFFERS, Math.max(0, maxBufs[0]));
                 if (!isEs32) {
                     if (!hasExtension("GL_EXT_draw_buffers_indexed")) {
+                        return 0;
+                    }
+                    if (drawBufferCount == 0) {
                         return 0;
                     }
                     useExt = true;
@@ -150,17 +161,33 @@ public final class CnnPipeline {
                         while (GLES30.glGetError() != GLES30.GL_NO_ERROR) {}
                         int[] probe = new int[4];
                         GLES32.glGetIntegeri_v(GLES30.GL_COLOR_WRITEMASK, 0, probe, 0);
-                        GLES31Ext.glIsEnablediEXT(GLES30.GL_BLEND, 0);
+                        boolean blend0 = GLES31Ext.glIsEnablediEXT(GLES30.GL_BLEND, 0);
                         if (GLES30.glGetError() != GLES30.GL_NO_ERROR) {
+                            useExt = false;
+                            return -1;
+                        }
+                        // Probe all EXT write entry points in idempotent noop->toggle->noop order
+                        // before touching host state so missing restore symbols never fail mid-restore.
+                        GLES31Ext.glColorMaskiEXT(0, probe[0] != 0, probe[1] != 0, probe[2] != 0, probe[3] != 0);
+                        if (blend0) {
+                            GLES31Ext.glEnableiEXT(GLES30.GL_BLEND, 0);
+                            GLES31Ext.glDisableiEXT(GLES30.GL_BLEND, 0);
+                            GLES31Ext.glEnableiEXT(GLES30.GL_BLEND, 0);
+                        } else {
+                            GLES31Ext.glDisableiEXT(GLES30.GL_BLEND, 0);
+                            GLES31Ext.glEnableiEXT(GLES30.GL_BLEND, 0);
+                            GLES31Ext.glDisableiEXT(GLES30.GL_BLEND, 0);
+                        }
+                        if (GLES30.glGetError() != GLES30.GL_NO_ERROR) {
+                            useExt = false;
                             return -1;
                         }
                     } catch (RuntimeException | UnsatisfiedLinkError unavailable) {
+                        useExt = false;
                         return -1;
                     }
                 }
-                int[] maxBufs = new int[1];
-                GLES30.glGetIntegerv(GLES30.GL_MAX_DRAW_BUFFERS, maxBufs, 0);
-                return Math.min(MAX_INDEXED_DRAW_BUFFERS, Math.max(0, maxBufs[0]));
+                return drawBufferCount;
             }
 
             @Override public void getColorMaski(int index, int[] out, int offset) {
@@ -187,7 +214,7 @@ public final class CnnPipeline {
                     else GLES32.glDisablei(GLES30.GL_BLEND, index);
                 }
             }
-        };
+        }
 
         final int[] query = new int[1];
         final int[] viewport = new int[4];
@@ -197,7 +224,7 @@ public final class CnnPipeline {
         final int[] scissorBox = new int[4];
         final int[] textures = new int[MAX_BINDINGS];
         final int[] samplers = new int[MAX_BINDINGS];
-        IndexedDrawBufferOps indexedOps = GLES32_INDEXED_OPS;
+        IndexedDrawBufferOps indexedOps = new DefaultIndexedDrawBufferOps();
         boolean indexedSupportChecked;
         boolean indexedExtUnavailable;
         int indexedDrawBufferCount;
@@ -224,6 +251,7 @@ public final class CnnPipeline {
             indexedSupportChecked = false;
             indexedExtUnavailable = false;
             indexedDrawBufferCount = 0;
+            indexedOps.reset();
         }
 
         int integer(int name) {
@@ -630,7 +658,8 @@ public final class CnnPipeline {
         String msg = failure.getMessage();
         return msg.startsWith("device MRT capacity exceeded")
                 || msg.startsWith("MRT FBO incomplete")
-                || msg.startsWith("MRT program link failed");
+                || msg.startsWith("MRT program link failed")
+                || msg.startsWith("MRT fragment shader compile failed");
     }
 
     private boolean canFallbackFromRuntimeFusion(boolean mrtFailure) {
@@ -1491,7 +1520,15 @@ public final class CnnPipeline {
 
                     String fragmentSource = GraphicsShaderTransforms.generateFragmentShader(
                             pass, true, mConfig.tieredPrecisionEnabled);
-                    fragmentShader = compileShader(GLES30.GL_FRAGMENT_SHADER, fragmentSource);
+                    try {
+                        fragmentShader = compileShader(GLES30.GL_FRAGMENT_SHADER, fragmentSource);
+                    } catch (IllegalStateException compileFailure) {
+                        if (targetSlots.length > 1 && canFallbackFromRuntimeFusion(true)) {
+                            throw new TargetUnavailableException("MRT fragment shader compile failed for "
+                                    + pass.desc + ": " + compileFailure.getMessage(), false);
+                        }
+                        throw compileFailure;
+                    }
                     program = mGl.glCreateProgram();
                     GlErrors.requireTargetName(program, "GL program for pass " + pass.desc, mGl::glGetError);
                     mGl.glAttachShader(program, vertexShader);

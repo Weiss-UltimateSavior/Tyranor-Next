@@ -26,6 +26,9 @@ public final class ArtemisGraphicsStats {
         nodeGpuSamples = new int[nodeIds.length];
         nodeExecuted = new boolean[nodeIds.length];
         nodeGpuError = new boolean[nodeIds.length];
+        gpuTotalMs = 0;
+        gpuSamples = 0;
+        gpuAvailable = false;
         gpuError = false;
         timingGeneration++;
         this.renderer = renderer == null ? "" : renderer;

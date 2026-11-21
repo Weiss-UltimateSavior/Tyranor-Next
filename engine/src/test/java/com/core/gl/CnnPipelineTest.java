@@ -2478,6 +2478,31 @@ public final class CnnPipelineTest {
         assertEquals(unfusedL.size(), linkFallbackNode.getBuiltPassCount());
         assertEquals(unfusedL.size(), linkFailGl.drawCalls);
 
+        // Runtime-fused MRT fragment shader compile failure (COMPILE_STATUS == 0) must likewise fall back
+        // to unfused single-output passes in the same renderTexture() call instead of permanently disabling the node.
+        Set<Integer> mrtCompileShaders = new HashSet<>();
+        RecordingPipelineGlOps compileFailGl = new RecordingPipelineGlOps() {
+            @Override public void glShaderSource(int shader, String string) {
+                if (string != null && string.contains("fragColor1")) mrtCompileShaders.add(shader);
+            }
+            @Override public void glGetShaderiv(int shader, int pname, int[] params, int offset) {
+                params[offset] = (pname == GLES30.GL_COMPILE_STATUS && mrtCompileShaders.contains(shader)) ? 0 : 1;
+            }
+        };
+        CnnPipeline compileFallbackNode = CnnPipeline.createForTesting(
+                p -> Files.newInputStream(resolveAsset(p)), asset, true, 1, 1, 0, compileFailGl);
+        setField(compileFallbackNode, "mLimitWidth", 4096);
+        setField(compileFallbackNode, "mLimitHeight", 4096);
+        setField(compileFallbackNode, "mQuadVao", new int[]{1});
+        setField(compileFallbackNode, "mHalfFloatChecked", true);
+        setField(compileFallbackNode, "mHalfFloatRenderable", true);
+        int compileFallbackOut = compileFallbackNode.renderTexture(100, 64, 64, 64, 64);
+        assertTrue("renderTexture must recover via unfused fallback after MRT fragment shader compile failure",
+                compileFallbackOut > 0);
+        assertFalse(compileFallbackNode.isFailed());
+        assertEquals(unfusedL.size(), compileFallbackNode.getBuiltPassCount());
+        assertEquals(unfusedL.size(), compileFailGl.drawCalls);
+
         // Whole-chain 256 MiB budget check after runtime fusion fallback via GraphicsFilterPipeline:
         // Under tiled 4K geometry (tileCoreSize=1024), unfused 9-pass halo padding strictly exceeds
         // fused 5-pass halo padding so recheckChainBudgetAfterFallback deterministically rejects over-budget fallback.
@@ -2752,12 +2777,30 @@ public final class CnnPipelineTest {
         assertEquals(0, indexedMutateCalls[0]);
         assertEquals(0, failIndexedGl.drawCalls);
 
-        // [8] Parameter shadowing of sampling environment (vPos) in sample_k must fail closed.
-        String sampleShadowBody = "vec4 sample_0(vec2 vPos) { return max(MAIN_tex(MAIN_pos + vPos * MAIN_pt), 0.0); }\n"
-                + "void hook() { vec4 v0 = vec4(0.0); vec4 s = sample_0(vec2(1.0, 0.0)); v0 += mat4(1.0) * s; fragColor = v0; }\n";
-        MpvHookShader.Pass sampleShadowPass = new MpvHookShader.Pass(
-                "vnsr sample shadow", List.of("MAIN"), List.of("MAIN"), null, null, sampleShadowBody);
-        assertEquals("sample_k parameter shadowing vPos must skip VN-SR optimization",
-                sampleShadowBody, GraphicsShaderTransforms.optimizePassBody(sampleShadowPass).body);
+        // Distinct GlState instances must own independent indexed entry dispatchers (multi-context isolation).
+        assertTrue("Each GlState must own an independent indexedOps instance",
+                glState.indexedOps != new CnnPipeline.GlState().indexedOps);
+
+        // Differential VN-SR fixture: only changing sample_0 parameter name from `off` -> `vPos`
+        // must inhibit optimization via hasShadowedSamplingEnv while `off` gets rewritten.
+        String sampleTemplate = "vec4 sample_0(vec2 %s) { return MAIN_tex(MAIN_pos + %s * MAIN_pt); }\n"
+                + "void hook() {\n"
+                + "vec4 v0 = vec4(0.0, 0.0, 0.0, 0.0);\n"
+                + "vec4 s;\n"
+                + "s = sample_0(vec2(1.0, 0.0));\n"
+                + "v0 += mat4(1.0,0.0,0.0,0.0, 0.0,1.0,0.0,0.0, 0.0,0.0,1.0,0.0, 0.0,0.0,0.0,0.0) * s;\n"
+                + "fragColor0 = v0;\n"
+                + "}\n";
+        MpvHookShader.Pass offPass = new MpvHookShader.Pass(
+                "vnsr sample off", List.of("MAIN"), List.of("S0"), null, null,
+                String.format(sampleTemplate, "off", "off"));
+        MpvHookShader.Pass vPosPass = new MpvHookShader.Pass(
+                "vnsr sample vPos", List.of("MAIN"), List.of("S0"), null, null,
+                String.format(sampleTemplate, "vPos", "vPos"));
+        String optimizedOff = GraphicsShaderTransforms.optimizePassBody(offPass).body;
+        assertTrue("Valid VN-SR fixture with `off` parameter must be rewritten by VN-SR optimizer",
+                optimizedOff.contains("_p_1_0") && !offPass.body.equals(optimizedOff));
+        assertEquals("Identical VN-SR fixture with `vPos` parameter must skip optimization fail-closed",
+                vPosPass.body, GraphicsShaderTransforms.optimizePassBody(vPosPass).body);
     }
 }

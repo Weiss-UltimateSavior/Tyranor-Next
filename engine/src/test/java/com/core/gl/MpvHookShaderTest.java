@@ -257,11 +257,23 @@ public final class MpvHookShaderTest {
                 + "void hook() { fragColor0 = vec4(1.0); fragColor1 = vec4(0.5); }\n"
                 + "//!DESC final\n//!BIND MAIN\n//!BIND A\n//!BIND B\nvec4 hook() { return vec4(1.0); }\n"));
 
-        // Macro expanding to control-flow keyword (e.g. #define STOP return) in multi-SAVE pass must be rejected.
+        // Macro expanding to control-flow keyword (e.g. #define STOP return) in multi-SAVE pass must be rejected,
+        // including via backslash line continuation, while an empty #define followed by a helper returning vec4 is allowed.
         assertThrows(IllegalArgumentException.class, () -> MpvHookShader.parse(
                 "//!DESC control_flow_macro_multisave\n//!BIND MAIN\n//!SAVE A B\n"
                 + "#define STOP return\n"
                 + "void hook() { fragColor0 = vec4(1.0); STOP; fragColor1 = vec4(0.5); }\n"
                 + "//!DESC final\n//!BIND MAIN\n//!BIND A\n//!BIND B\nvec4 hook() { return vec4(1.0); }\n"));
+        assertThrows(IllegalArgumentException.class, () -> MpvHookShader.parse(
+                "//!DESC control_flow_macro_continued\n//!BIND MAIN\n//!SAVE A B\n"
+                + "#define STOP \\\nreturn\n"
+                + "void hook() { fragColor0 = vec4(1.0); STOP; fragColor1 = vec4(0.5); }\n"
+                + "//!DESC final\n//!BIND MAIN\n//!BIND A\n//!BIND B\nvec4 hook() { return vec4(1.0); }\n"));
+        List<MpvHookShader.Pass> emptyDefineValid = MpvHookShader.parse(
+                "//!DESC empty_define_before_helper\n//!BIND MAIN\n//!SAVE A B\n"
+                + "#define EMPTY\nvec4 helper() { return vec4(1.0); }\n"
+                + "void hook() { fragColor0 = helper(); fragColor1 = vec4(0.5); }\n"
+                + "//!DESC final\n//!BIND MAIN\n//!BIND A\n//!BIND B\nvec4 hook() { return vec4(1.0); }\n");
+        assertEquals(2, emptyDefineValid.size());
     }
 }
