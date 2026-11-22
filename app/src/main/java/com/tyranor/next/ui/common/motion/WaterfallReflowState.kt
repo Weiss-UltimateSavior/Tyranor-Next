@@ -98,6 +98,8 @@ class WaterfallReflowState private constructor(
 
     private fun capture(): Anchor? {
         val visible = gridState.layoutInfo.visibleItemsInfo
+        // 列表为空（命中为空或数据还没装载）时没有可信位置：返回 null 让调用方走「无锚点」路径，
+        // 而不是拿 -1 去落地。数据回来后由 contentReady / 下一次换布局重新捕获。
         val item = visible.firstOrNull { it.index == gridState.firstVisibleItemIndex }
             ?: visible.minByOrNull { it.index }
             ?: return null
@@ -382,6 +384,9 @@ class WaterfallReflowState private constructor(
 }
 
 /**
+ * [columns] 与 [landscape] 构成布局代：二者任一变化即换列重建列历史并重新恢复阅读位置，
+ * 隐藏期间的重测也据此判断离页锚点还能不能采信。
+ * [contentReady] 表示上层数据已装载，即使当前命中为空也允许进入恢复（空库不该永久遮蔽）。
  * [itemIdentity] 把懒布局键映射到跨布局稳定、可保存的锚点标识。
  * [itemIndex] 在测量扫描超时时从最新数据解析该标识的位置。
  * [enabled] 在独立组合范围内读取，使显隐变化不订阅持有本状态的整个页面。

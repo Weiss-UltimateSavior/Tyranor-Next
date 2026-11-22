@@ -1,5 +1,6 @@
 package com.tyranor.next.ui.common.motion
 
+import android.animation.ValueAnimator
 import android.os.SystemClock
 import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.Composable
@@ -506,7 +507,7 @@ internal class StaggeredEntranceNode(
         delayOverrideMillis: Long? = null,
         placementDelta: IntOffset = IntOffset.Zero,
     ): Boolean {
-        if (!android.animation.ValueAnimator.areAnimatorsEnabled()) {
+        if (!ValueAnimator.areAnimatorsEnabled()) {
             playJob?.cancel()
             playJob = null
             anim?.let {
@@ -550,7 +551,7 @@ internal class StaggeredEntranceNode(
     private suspend fun play(st: EntranceState, an: EntranceAnim, generation: Int, token: Int, delayMillis: Long) {
         val progress = an.progress
         val alpha = an.alpha
-        if (!st.isFresh() || !android.animation.ValueAnimator.areAnimatorsEnabled()) {
+        if (!st.isFresh() || !ValueAnimator.areAnimatorsEnabled()) {
             // 协程真正开跑前窗口已过 / 用户已拖动：直接收尾到原样
             if (progress.value != 1f) progress.snapTo(1f)
             if (alpha.value != 1f) alpha.snapTo(1f)

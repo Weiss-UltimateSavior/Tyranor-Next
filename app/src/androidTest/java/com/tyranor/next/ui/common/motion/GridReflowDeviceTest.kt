@@ -462,7 +462,20 @@ class GridReflowDeviceTest(private val staggered: Boolean) {
         }
     }
 
-    private fun capture(): Frame = compose.onNodeWithTag(GRID_TAG).captureToImage().readFrame()
+    private fun capture(): Frame {
+        // 连跑多个测试类时宿主 Activity 可能还在重建，这一帧里 Compose 层级会短暂不可见
+        // （captureToImage 抛 "No compose hierarchies found in the app"）。这类等待与
+        // 断言内容无关，重试到层级回来；autoAdvance 已关闭，重试不会推进动效时钟。
+        repeat(CAPTURE_ATTEMPTS) { attempt ->
+            try {
+                return compose.onNodeWithTag(GRID_TAG).captureToImage().readFrame()
+            } catch (error: IllegalStateException) {
+                if (attempt == CAPTURE_ATTEMPTS - 1) throw error
+                compose.waitForIdle()
+            }
+        }
+        error("unreachable")
+    }
 
     private fun ImageBitmap.readFrame(): Frame {
         assertEquals("Fixture width", WIDTH, width)
@@ -497,6 +510,8 @@ class GridReflowDeviceTest(private val staggered: Boolean) {
         private const val CARD_HEIGHT = 64
         private const val GAP = 8
         private const val SETTLE_MILLIS = 2_000L
+        // 宿主层级重建时会是连续若干次失败，给足重试余量但不超过一次紧张的重建等待。
+        private const val CAPTURE_ATTEMPTS = 5
         private val CHANNEL_SHIFTS = intArrayOf(16, 8, 0)
         // 其他夹具颜色无法通过混合重现这些色度顶点。
         private val COLORS = intArrayOf(

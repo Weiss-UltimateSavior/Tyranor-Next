@@ -151,6 +151,35 @@ class WaterfallRotationScrollDeviceTest {
     }
 
     @Test
+    fun restoreWithoutResolverLandsOnTheSavedIndex() = withProduction(manualRestore = true) { fixture ->
+        compose.runOnIdle { fixture.keyOrder = (0 until 200).toList() }
+        settle()
+        compose.runOnIdle { fixture.scope.launch { fixture.state.scrollToItem(40) } }
+        settle()
+        val anchor = compose.runOnIdle {
+            fixture.state.layoutInfo.visibleItemsInfo.first { it.index == fixture.state.firstVisibleItemIndex }
+        }
+        val anchorId = (anchor.key as String).removePrefix("waterfall-").toInt()
+        compose.runOnIdle {
+            // 身份从数据里消失，且调用方没有传解析器：无从判断「按索引落地的那一项还是不是原目标」，
+            // 只能继续按标识扫描、扫不通再交回 coarseRestore() 按保存的索引落地。
+            fixture.keyOrder = fixture.keyOrder.filter { it != anchorId }
+            fixture.columns = 3
+        }
+        settle()
+        compose.runOnIdle { fixture.scope.launch { fixture.holder!!.restore(fixture.state, true) } }
+        awaitRestore(fixture)
+        compose.runOnIdle {
+            assertTrue("Restore must finish without a resolver", !fixture.holder!!.isRestoring)
+            val info = fixture.state.layoutInfo
+            val first = info.visibleItemsInfo.minOf { it.index }
+            assertTrue("Every remaining card must survive", info.totalItemsCount == fixture.keyOrder.size)
+            assertTrue("The viewport must stay near the saved index, first=$first anchor=${anchor.index}",
+                first <= anchor.index && first >= anchor.index - 3)
+        }
+    }
+
+    @Test
     fun forcedTimeoutAlignsShortLastRowToPaddedBottom() = withProduction(
         manualRestore = true,
         uniformCards = true,

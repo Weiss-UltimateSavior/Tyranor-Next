@@ -243,12 +243,19 @@ class GameScreenMainActivityAcceptanceDeviceTest {
             retainErrors(failure,
                 { scenario?.close() },
                 {
-                    // 清理阶段同样不能无限等待：库写入卡住时先放弃这一段，
-                    // 由 retainErrors 记为失败，其余还原步骤照常执行。
+                    // 清理阶段同样不能无限等待，但超时不能当作清理成功：
+                    // 库写入卡住时本轮夹具会留在设备上，必须记为失败，而只放弃这一段，
+                    // 后面的还原步骤由 retainErrors 继续执行。
                     runBlocking {
-                        withTimeoutOrNull(15_000L) {
+                        val removed = withTimeoutOrNull(15_000L) {
                             GameLibraryFacade.updateGames(context) { current -> current.filterNot { it.uri in ownedUris } }
                             GameLibraryRepository.awaitPendingWrites()
+                            true
+                        }
+                        if (removed == null) {
+                            throw IllegalStateException(
+                                "Cleanup timed out after 15000 ms; ${ownedUris.size} fixture(s) may remain on the device",
+                            )
                         }
                         val restored = GameLibraryRepository.loadGames(context)
                         if (evidence.isDirectory) report(evidence, "cleanupAfterCount=${restored.size} existingCount=${existing.size} " +
