@@ -94,6 +94,27 @@ class DkToolsRootFallbackTest {
         )
     }
 
+    @Test fun staleDiskNameCacheStillPrefersExistingDiskOverlayOverArchive() {
+        val root = temporary.newFolder("stale-overlay")
+        val locales = File(root, "locales").apply { mkdir() }
+        val diskOverlay = File(locales, "en.json").apply { writeText("disk overlay") }
+        val resolved = DkToolsResourceResolver.resolve(
+            root = root,
+            uri = "locales/EN.json",
+            archivePrefix = "",
+            archiveChildren = { parent ->
+                when (parent) {
+                    "" -> listOf("locales" to true)
+                    "locales" -> listOf("en.json" to false)
+                    else -> emptyList()
+                }
+            },
+            archiveIsFile = { false },
+            diskChildren = { emptyList() },
+        )
+        assertEquals(diskOverlay.canonicalFile, resolved?.file)
+    }
+
     @Test fun bothHttpHostsServeArchiveRootScriptsAndKeepDiskOverlays() {
         for (legacy in listOf(false, true)) {
             val root = temporary.newFolder("host-$legacy")

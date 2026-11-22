@@ -52,7 +52,7 @@ internal object DkToolsResourceResolver {
                 }
             archiveNames.forEach { names.add(it.first) }
             val matched = RpgMakerNameMatcher.match(names.toList(), part) ?: return null
-            disk = if (disk != null && diskNames.contains(matched)) {
+            disk = if (disk != null) {
                 val canonical = try { File(disk, matched).canonicalFile } catch (_: IOException) { return null }
                     catch (_: SecurityException) { return null }
                 if (canonical != root && !canonical.path.startsWith(root.path + File.separator)) return null
