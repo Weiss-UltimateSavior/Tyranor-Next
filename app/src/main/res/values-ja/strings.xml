@@ -944,6 +944,8 @@
     <string name="engine_settings_impacto_close_backlog">バックログが最後までスクロールしたら閉じる</string>
     <string name="engine_settings_impacto_delusion_mouse">妄想トリガー：マウス / タッチ操作（Chaos;Head と Chaos;Child の Love Chu Chu 版のみ）</string>
     <string name="engine_settings_impacto_log_level">ログレベル</string>
+    <string name="engine_settings_impacto_debug_mode">デバッグモード（移植用ツール）</string>
+    <string name="engine_settings_impacto_debug_mode_summary">新しいゲームの移植用：ゲーム中に3本指で同時に画面に触れるとデバッグメニューが開きます（高速化、強制スキップ、1文ずつ巻き戻し、状態の保存、スクリプトへのジャンプ）。ホスト 0.4.3 以降が必要です。通常のプレイではオフにしてください。</string>
     <string name="engine_settings_impacto_log_off">オフ</string>
     <string name="engine_settings_impacto_log_fatal">致命的</string>
     <string name="engine_settings_impacto_log_error">エラー</string>

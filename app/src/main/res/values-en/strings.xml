@@ -944,6 +944,8 @@
     <string name="engine_settings_impacto_close_backlog">Close backlog when scrolled to the end</string>
     <string name="engine_settings_impacto_delusion_mouse">Delusion Trigger: mouse / touch input (Chaos;Head and Chaos;Child Love Chu Chu only)</string>
     <string name="engine_settings_impacto_log_level">Log level</string>
+    <string name="engine_settings_impacto_debug_mode">Debug mode (porting tools)</string>
+    <string name="engine_settings_impacto_debug_mode_summary">For porting new games: touch the screen with three fingers at once in game to open the debug menu (speed up, forced skip, rewind by line, saved states, script jumps). Requires host 0.4.3 or later; keep it off for normal play.</string>
     <string name="engine_settings_impacto_log_off">Off</string>
     <string name="engine_settings_impacto_log_fatal">Fatal</string>
     <string name="engine_settings_impacto_log_error">Error</string>

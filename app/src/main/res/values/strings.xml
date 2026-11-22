@@ -944,6 +944,8 @@
     <string name="engine_settings_impacto_close_backlog">回看记录滚到底时自动关闭</string>
     <string name="engine_settings_impacto_delusion_mouse">妄想触发：鼠标 / 触摸操作（仅 Chaos;Head 与 Chaos;Child 的 Love Chu Chu 版）</string>
     <string name="engine_settings_impacto_log_level">日志等级</string>
+    <string name="engine_settings_impacto_debug_mode">调试模式（适配工具）</string>
+    <string name="engine_settings_impacto_debug_mode_summary">给适配新游戏用：游戏中三指同时按住屏幕打开调试菜单，可加速、强制快进、按句回退、保存状态和跳转剧本。需要宿主 0.4.3 及以上，正常游玩请保持关闭。</string>
     <string name="engine_settings_impacto_log_off">关闭</string>
     <string name="engine_settings_impacto_log_fatal">致命</string>
     <string name="engine_settings_impacto_log_error">错误</string>
