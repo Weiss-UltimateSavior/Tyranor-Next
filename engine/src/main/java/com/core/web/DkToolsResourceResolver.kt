@@ -15,6 +15,7 @@ internal object DkToolsResourceResolver {
         archiveChildren: (String) -> List<Pair<String, Boolean>>,
         archiveIsFile: (String) -> Boolean,
         archiveDirectChildren: ((String) -> List<Pair<String, Boolean>>)? = null,
+        diskChildren: (File) -> List<String> = { it.list()?.toList().orEmpty() },
     ): Resource? {
         val parts = uri.replace('\\', '/').split('/').filter { it.isNotEmpty() && it != "." }
         if (parts.isEmpty() || parts.any { it == ".." || it.any(Char::isISOControl) }) return null
@@ -39,9 +40,9 @@ internal object DkToolsResourceResolver {
         var disk: File? = root
         var archivePath = archivePrefix.trimEnd('/')
         for ((index, part) in parts.withIndex()) {
-            val diskChildren = disk?.takeIf { it.isDirectory }?.listFiles().orEmpty()
+            val diskNames = disk?.takeIf { it.isDirectory }?.let(diskChildren).orEmpty()
             val names = linkedSetOf<String>()
-            diskChildren.forEach { names.add(it.name) }
+            names.addAll(diskNames)
             val archiveNames = try { archiveChildren(archivePath) }
                 // Directory metadata is optional. Fall back to a direct-child scan when
                 // an unrelated archive subtree exhausts the archive-wide metadata node budget.
@@ -51,12 +52,12 @@ internal object DkToolsResourceResolver {
                 }
             archiveNames.forEach { names.add(it.first) }
             val matched = RpgMakerNameMatcher.match(names.toList(), part) ?: return null
-            disk = diskChildren.firstOrNull { it.name == matched }?.let { candidate ->
-                val canonical = try { candidate.canonicalFile } catch (_: IOException) { return null }
+            disk = if (disk != null && diskNames.contains(matched)) {
+                val canonical = try { File(disk, matched).canonicalFile } catch (_: IOException) { return null }
                     catch (_: SecurityException) { return null }
                 if (canonical != root && !canonical.path.startsWith(root.path + File.separator)) return null
-                canonical
-            }
+                canonical.takeIf { it.exists() }
+            } else null
             archivePath = if (archivePath.isEmpty()) matched else "$archivePath/$matched"
             // A disk file shadows the archive directory, just as it does in the file index.
             if (disk != null && !disk.isDirectory && index != parts.lastIndex) return null

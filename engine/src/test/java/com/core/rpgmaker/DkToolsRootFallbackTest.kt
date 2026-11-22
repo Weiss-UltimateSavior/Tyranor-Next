@@ -71,6 +71,29 @@ class DkToolsRootFallbackTest {
             { throw AsarChildrenIndex.LimitExceeded() }, { false }))
     }
 
+    @Test fun resourceResolverReusesDirIndexCacheAndSeesInvalidatedWrites() {
+        val root = temporary.newFolder("dir-index-reuse")
+        val img = File(root, "img").apply { mkdir() }
+        File(img, "Hero　1.png").writeText("one")
+        val dirIndex = RpgMakerDirIndex()
+        var listCalls = 0
+        val cachedLookup: (File) -> List<String> = { dir ->
+            listCalls++
+            dirIndex.children(dir).orEmpty()
+        }
+        assertEquals(
+            File(img, "Hero　1.png").canonicalFile,
+            DkToolsResourceResolver.resolve(root, "img/hero 1.png", "", { emptyList() }, { false }, diskChildren = cachedLookup)?.file,
+        )
+        assertEquals(2, listCalls)
+        File(img, "Hero　2.png").writeText("two")
+        dirIndex.invalidate(img)
+        assertEquals(
+            File(img, "Hero　2.png").canonicalFile,
+            DkToolsResourceResolver.resolve(root, "img/hero 2.png", "", { emptyList() }, { false }, diskChildren = cachedLookup)?.file,
+        )
+    }
+
     @Test fun bothHttpHostsServeArchiveRootScriptsAndKeepDiskOverlays() {
         for (legacy in listOf(false, true)) {
             val root = temporary.newFolder("host-$legacy")
