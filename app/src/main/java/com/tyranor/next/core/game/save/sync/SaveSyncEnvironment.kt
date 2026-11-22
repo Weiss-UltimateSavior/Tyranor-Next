@@ -5,6 +5,7 @@ import android.net.Uri
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
 import com.tyranor.next.core.engine.runtime.RuntimeModuleRegistry
+import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.RpgSaveFormat
@@ -26,6 +27,7 @@ internal interface SaveSyncEnvironment {
         dispatch()
     }
     fun games(): List<ScanGame>
+    fun gamePath(game: ScanGame): String? = GamePathUtils.safUriToPath(game.uri)
     fun available(game: ScanGame): Boolean
     fun runtimeSaveCapability(game: ScanGame): GameSaveManager.RuntimeSaveCapability? = null
     fun runtimeSaveCapabilitySnapshot(game: ScanGame): GameSaveManager.RuntimeSaveCapabilitySnapshot? = null
@@ -94,6 +96,10 @@ internal class AndroidSaveSyncEnvironment(private val context: Context) : SaveSy
         }
     }
     override fun games() = RuntimeModuleBindings.loadLibraryWithBuiltInSystemNnn(context)
+    override fun gamePath(game: ScanGame): String? =
+        if (GamePathUtils.isMediaStoreDownload(game.uri)) GamePathUtils.resolveLocalPath(context, game.uri)
+        else super.gamePath(game)
+
     override fun available(game: ScanGame) = manager.resolveSaveLocation(game).available
     override fun runtimeSaveCapability(game: ScanGame): GameSaveManager.RuntimeSaveCapability? {
         if (game.engine == EngineType.UNKNOWN && !game.runtimeModulePackage.isNullOrBlank()) {

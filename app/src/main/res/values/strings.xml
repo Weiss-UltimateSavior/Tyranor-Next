@@ -229,7 +229,8 @@
     <string name="game_add_quick_launch">添加首页</string>
     <string name="game_quick_launch_full">首页快捷启动已满（最多 3 个）</string>
     <string name="game_add_desktop_shortcut">添加桌面</string>
-    <string name="game_desktop_shortcut_requested">请在系统弹窗中确认添加</string>
+    <string name="game_desktop_shortcut_requested">已发送添加请求。若桌面没有图标，请检查系统设置中的桌面快捷方式权限。</string>
+    <string name="game_desktop_shortcut_added">桌面快捷方式已添加</string>
     <string name="game_desktop_shortcut_updated">桌面快捷方式已更新</string>
     <string name="game_desktop_shortcut_unsupported">当前桌面不支持固定快捷方式</string>
     <string name="game_desktop_shortcut_failed">无法请求添加桌面快捷方式</string>
@@ -1034,6 +1035,16 @@
     <string name="android_add_duplicate">该应用已在游戏库中</string>
     <string name="android_add_already_added">已在游戏库中</string>
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
+    <string name="game_shelf_stat_total">累计时长</string>
+    <string name="game_shelf_stat_last">上次游玩</string>
+    <string name="game_shelf_stat_session">最近一次</string>
+    <string name="game_shelf_stat_none">—</string>
+    <string name="game_shelf_stat_untracked">外置运行，不计时</string>
+    <string name="game_shelf_not_started">未开始</string>
+    <string name="game_shelf_today">今天</string>
+    <string name="game_shelf_yesterday">昨天</string>
+    <string name="game_shelf_days_ago">%1$d 天前</string>
+    <string name="game_shelf_minutes">%1$d 分钟</string>
 
     <!-- Shared ordered graphics-chain settings -->
     <string name="graphics_settings_title">画面超分</string>

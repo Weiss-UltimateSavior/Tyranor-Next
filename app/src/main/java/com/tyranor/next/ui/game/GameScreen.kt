@@ -1138,6 +1138,9 @@ internal fun GameActionsSheet(
         AppThemeColors.isMilkGlass -> DialogItemSurface
         else -> NavWhite
     }
+    // 档案卡里的封面与游戏列表用同一个圆角（游戏卡片单独圆角；关闭时跟随应用圆角）
+    val cardCorners by AppSettingsStore.gameCardCorners.collectSettingAsState()
+    val cardShape = gameCardShape(cardCorners.radiusDp.takeIf { cardCorners.enabled })
 
     AppBottomSheet(
         onDismissRequest = ::dismissSheet,
@@ -1151,14 +1154,9 @@ internal fun GameActionsSheet(
                 ) beginLaunch()
             },
         ) {
+            // 抽屉头部「档案卡」：游戏封面 + 引擎名牌、游戏名与三格数据（所有卡片风格与首页共用）
             item {
-                Text(
-                    game.title,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.gameSheetEntrance(0)
-                        .fillMaxWidth().padding(start = 4.dp, top = 4.dp, end = 4.dp, bottom = 8.dp),
-                )
+                GameSheetHeader(game, cardShape, Modifier.gameSheetEntrance(0).padding(top = 4.dp))
             }
 
             // KRKR 与所有 Winlator 系引擎（YU-RIS / CatSystem2 / PC）支持启动文件切换
@@ -2483,7 +2481,7 @@ internal fun UniformGameCard(
 
 /** 卡片无封面占位使用的引擎显示名：Switch / Plugin 等短名处理，两种卡片共用。 */
 @Composable
-private fun gameCardEngineName(game: ScanGame): String = when (game.engine) {
+internal fun gameCardEngineName(game: ScanGame): String = when (game.engine) {
     EngineType.UNKNOWN -> stringResource(R.string.engine_name_unknown)
     // 无封面占位卡用短名「Switch」，避免「Nintendo Switch」过长
     EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_name_switch)
@@ -2492,19 +2490,28 @@ private fun gameCardEngineName(game: ScanGame): String = when (game.engine) {
     else -> game.engine.displayName
 }
 
-/** 无封面占位（Tyranor + 引擎名）：瀑布流与网格两种卡片共用。 */
+/** 无封面占位（Tyranor + 引擎名）：瀑布流、网格与操作抽屉档案卡共用。 */
 @Composable
-private fun GameCoverPlaceholder(engineName: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+internal fun GameCoverPlaceholder(engineName: String) {
+    Column(
+        modifier = Modifier.padding(horizontal = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Text(
             "Tyranor",
             style = MaterialTheme.typography.bodyMedium,
             color = Color.White.copy(alpha = 0.7f),
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
         Text(
             engineName,
             style = MaterialTheme.typography.bodyMedium,
             color = Color.White,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 4.dp),
         )
     }

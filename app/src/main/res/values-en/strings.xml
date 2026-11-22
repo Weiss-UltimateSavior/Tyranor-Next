@@ -229,7 +229,8 @@
     <string name="game_add_quick_launch">Add to Home</string>
     <string name="game_quick_launch_full">Home quick launch is full (max 3)</string>
     <string name="game_add_desktop_shortcut">Add to desktop</string>
-    <string name="game_desktop_shortcut_requested">Confirm the shortcut in the system dialog</string>
+    <string name="game_desktop_shortcut_requested">Request sent. If no icon appears, check the Home screen shortcut permission in system settings.</string>
+    <string name="game_desktop_shortcut_added">Home screen shortcut added</string>
     <string name="game_desktop_shortcut_updated">Home screen shortcut updated</string>
     <string name="game_desktop_shortcut_unsupported">The current launcher does not support pinned shortcuts</string>
     <string name="game_desktop_shortcut_failed">Could not request the Home screen shortcut</string>
@@ -1034,6 +1035,16 @@
     <string name="android_add_duplicate">This app is already in the library</string>
     <string name="android_add_already_added">In library</string>
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
+    <string name="game_shelf_stat_total">Total</string>
+    <string name="game_shelf_stat_last">Last played</string>
+    <string name="game_shelf_stat_session">Last session</string>
+    <string name="game_shelf_stat_none">—</string>
+    <string name="game_shelf_stat_untracked">External, untracked</string>
+    <string name="game_shelf_not_started">Not played</string>
+    <string name="game_shelf_today">Today</string>
+    <string name="game_shelf_yesterday">Yesterday</string>
+    <string name="game_shelf_days_ago">%1$d days ago</string>
+    <string name="game_shelf_minutes">%1$d min</string>
 
     <!-- Shared ordered graphics-chain settings -->
     <string name="graphics_settings_title">Super resolution</string>

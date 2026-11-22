@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import androidx.annotation.StringRes
-import androidx.documentfile.provider.DocumentFile
 import com.core.nativeplugin.NativeRuntimePack
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
@@ -1182,36 +1181,7 @@ class GameSaveManager(private val context: Context) {
 
     private fun resolveGameDirectory(game: ScanGame): String? {
         if (game.engine == EngineType.SYSTEMNNN) return SystemNnnGameDirectory.accessible(appContext, game.uri)?.absolutePath
-        // 与 EngineLauncher.resolveGameDirectory 保持同源：镜像 key 由 (uri, path) 派生，
-        // 两边解析出不同路径会让存档管理/清理指向错误镜像。
-        GamePathUtils.safUriToPath(game.uri)?.let { path ->
-            val f = File(path)
-            if (f.isDirectory) return f.absolutePath
-            // 可移动存储上的 KRKR 允许仅 SAF 可读（启动器将以镜像模式运行），需解析出同一路径
-            if (game.engine == EngineType.KIRIKIRI && GamePathUtils.isRemovableStoragePath(path)) {
-                val readableBySaf = runCatching {
-                    DocumentFile.fromTreeUri(appContext, Uri.parse(game.uri))?.isDirectory == true
-                }.getOrDefault(false)
-                if (readableBySaf) return f.absolutePath
-            }
-        }
-        val uri = runCatching { Uri.parse(game.uri) }.getOrNull()
-        if (uri?.scheme == "file") return uri.path
-        // 兜底：_data 直查（与 EngineLauncher 的第二步一致）
-        return try {
-            val doc = DocumentFile.fromTreeUri(appContext, uri ?: return null)
-            if (doc == null || !doc.exists()) return null
-            appContext.contentResolver.query(uri, arrayOf("_data"), null, null, null)?.use { c ->
-                if (c.moveToFirst()) {
-                    val dataIdx = c.getColumnIndex("_data")
-                    if (dataIdx >= 0) c.getString(dataIdx) else null
-                } else {
-                    null
-                }
-            }
-        } catch (_: Exception) {
-            null
-        }
+        return GamePathUtils.resolveLocalDirectory(appContext, game.uri, allowSafOnly = game.engine == EngineType.KIRIKIRI)
     }
 
     @Throws(IOException::class)

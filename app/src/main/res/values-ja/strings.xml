@@ -229,7 +229,8 @@
     <string name="game_add_quick_launch">ホームに追加</string>
     <string name="game_quick_launch_full">ホームのクイック起動は最大 3 件までです</string>
     <string name="game_add_desktop_shortcut">デスクトップに追加</string>
-    <string name="game_desktop_shortcut_requested">システムダイアログで追加を確認してください</string>
+    <string name="game_desktop_shortcut_requested">追加をリクエストしました。アイコンが表示されない場合は、システム設定でショートカットの権限を確認してください。</string>
+    <string name="game_desktop_shortcut_added">ホーム画面にショートカットを追加しました</string>
     <string name="game_desktop_shortcut_updated">ホーム画面ショートカットを更新しました</string>
     <string name="game_desktop_shortcut_unsupported">現在のランチャーは固定ショートカットに対応していません</string>
     <string name="game_desktop_shortcut_failed">ホーム画面ショートカットを追加できませんでした</string>
@@ -1034,6 +1035,16 @@
     <string name="android_add_duplicate">このアプリは既に追加済みです</string>
     <string name="android_add_already_added">ライブラリに追加済み</string>
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
+    <string name="game_shelf_stat_total">累計時間</string>
+    <string name="game_shelf_stat_last">前回プレイ</string>
+    <string name="game_shelf_stat_session">前回時間</string>
+    <string name="game_shelf_stat_none">—</string>
+    <string name="game_shelf_stat_untracked">外部実行・記録なし</string>
+    <string name="game_shelf_not_started">未プレイ</string>
+    <string name="game_shelf_today">今日</string>
+    <string name="game_shelf_yesterday">昨日</string>
+    <string name="game_shelf_days_ago">%1$d 日前</string>
+    <string name="game_shelf_minutes">%1$d 分</string>
 
     <!-- Shared ordered graphics-chain settings -->
     <string name="graphics_settings_title">超解像</string>
