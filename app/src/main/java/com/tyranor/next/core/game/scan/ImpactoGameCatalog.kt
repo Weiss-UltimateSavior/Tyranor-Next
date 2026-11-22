@@ -112,6 +112,9 @@ object ImpactoGameCatalog {
     /** Steam 版 STEINS;GATE（`sg-pc`）由宿主补丁系列提供，宿主 0.3.0（versionCode 5）起才认识。 */
     private const val SG_PC_MIN_HOST_VERSION_CODE = 5
 
+    /** Steam 版 STEINS;GATE 0（`sg0-pc`）由宿主补丁系列提供，宿主 versionCode 11（0.4.3 之后的第一个版本）起才认识。 */
+    private const val SG0_PC_MIN_HOST_VERSION_CODE = 11
+
     /**
      * 宿主补丁系列提供、没有语言变体的 Windows／Steam 版 profile：[entries] 是相对游戏目录的路径（精确大小写，
      * 最多一层子目录，如 `USRDIR/script.mpk`），与宿主 `profiles.json` 对应项的 `detect.allOf` 一致。
@@ -173,6 +176,10 @@ object ImpactoGameCatalog {
             "Game.exe", "USRDIR/script.mpk", "USRDIR/system.mpk",
             // STEINS;GATE 0（宿主 `sg0-pc`）的目录也带着上面三项，`mpk_bg.lst` 只有它有（与宿主 detect.noneOf 一致）
             excludedEntries = setOf("USRDIR/mpk_bg.lst"),
+        ),
+        pcGame(
+            "sg0-pc", "STEINS;GATE 0 (PC, Steam)", SG0_PC_MIN_HOST_VERSION_CODE,
+            "Game.exe", "USRDIR/script.mpk", "USRDIR/system.mpk", "USRDIR/mpk_bg.lst",
         ),
         game(
             "darling", "STEINS;GATE: My Darling's Embrace",

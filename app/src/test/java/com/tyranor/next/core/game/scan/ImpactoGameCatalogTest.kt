@@ -42,7 +42,7 @@ class ImpactoGameCatalogTest {
         assertEquals(
             setOf(
                 "chlcc", "cclcc", "cclcc-switch", "mo6tw", "mo6tw-pc", "mo6tw-pc-zhs", "mo6tw-pc-zht", "sg-pc",
-                "darling", "dash", "rne",
+                "sg0-pc", "darling", "dash", "rne",
             ),
             ids.toSet(),
         )
@@ -235,6 +235,7 @@ class ImpactoGameCatalogTest {
             val expected = when {
                 game.family == "mo6tw-pc" -> 4
                 game.profileId == "sg-pc" -> 5
+                game.profileId == "sg0-pc" -> 11
                 else -> 0
             }
             assertEquals(game.profileId, expected, game.minHostVersionCode)
@@ -380,11 +381,12 @@ class ImpactoGameCatalogTest {
     }
 
     @Test
-    fun theBuiltInCatalogNoLongerTakesASteinsGate0FolderForTheEarlierGame() {
-        // the built-in table has no sg0-pc: the folder is not sg-pc, only a layout to try
-        assertTrue(ImpactoGameCatalog.candidatesFor(sg0Folder).isEmpty())
-        assertEquals("pc-usrdir-mpk", ImpactoGameCatalog.unsupportedLayoutFor(sg0Folder)?.id)
+    fun theBuiltInCatalogTellsSteinsGateAndSteinsGate0Apart() {
+        assertEquals(listOf("sg0-pc"), ImpactoGameCatalog.candidatesFor(sg0Folder).map { it.profileId })
         assertEquals(listOf("sg-pc"), ImpactoGameCatalog.candidatesFor(sgFolder).map { it.profileId })
+        assertNull(ImpactoGameCatalog.unsupportedLayoutFor(sg0Folder))
+        // the built-in sg0-pc mirrors the host profiles.json detect block
+        assertEquals(sg0.requiredEntries, ImpactoGameCatalog.byProfileId("sg0-pc")!!.requiredEntries)
     }
 
     @Test

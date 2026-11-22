@@ -160,6 +160,9 @@ HOST_PROFILES = {
         {'id': 'sg-pc', 'language': None,
          'detect': {'layout': 'pc', 'allOf': ['Game.exe', 'USRDIR/script.mpk', 'USRDIR/system.mpk'],
                     'noneOf': ['USRDIR/mpk_bg.lst']}},
+        {'id': 'sg0-pc', 'language': None,
+         'detect': {'layout': 'pc',
+                    'allOf': ['Game.exe', 'USRDIR/script.mpk', 'USRDIR/system.mpk', 'USRDIR/mpk_bg.lst']}},
         {'id': 'darling', 'language': None, 'detect': None},
     ],
 }
@@ -200,7 +203,10 @@ class HostProfilesTests(unittest.TestCase):
     def test_pc_games_without_variants_are_read_and_compared(self):
         self.assertEqual(
             tool.parse_pc_games(self.catalog_text),
-            {'sg-pc': {'Game.exe', 'USRDIR/script.mpk', 'USRDIR/system.mpk'}},
+            {
+                'sg-pc': {'Game.exe', 'USRDIR/script.mpk', 'USRDIR/system.mpk'},
+                'sg0-pc': {'Game.exe', 'USRDIR/script.mpk', 'USRDIR/system.mpk', 'USRDIR/mpk_bg.lst'},
+            },
         )
         fewer = self.mutated(lambda p: p['sg-pc']['detect'].update(allOf=['Game.exe', 'USRDIR/script.mpk']))
         self.assertTrue(any('sg-pc' in x and 'required files' in x for x in self.compare(fewer)))
@@ -214,7 +220,9 @@ class HostProfilesTests(unittest.TestCase):
         ))
 
     def test_excluded_files_are_read_and_compared_with_the_host_none_of(self):
-        self.assertEqual(tool.parse_pc_game_exclusions(self.catalog_text), {'sg-pc': {'USRDIR/mpk_bg.lst'}})
+        self.assertEqual(
+            tool.parse_pc_game_exclusions(self.catalog_text), {'sg-pc': {'USRDIR/mpk_bg.lst'}, 'sg0-pc': set()},
+        )
         missing = self.mutated(lambda p: p['sg-pc']['detect'].pop('noneOf'))
         self.assertTrue(any('sg-pc' in x and 'excluded files' in x for x in self.compare(missing)))
         other = self.mutated(lambda p: p['sg-pc']['detect'].update(noneOf=['USRDIR/other.lst']))
