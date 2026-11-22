@@ -160,7 +160,8 @@ import com.tyranor.next.ui.common.notice.AppNotice
 fun EngineScreen(
     modifier: Modifier = Modifier,
     onCoachAnchorChanged: (Rect) -> Unit = {},
-    isActive: Boolean = true,
+    reportCoachAnchor: Boolean = true,
+    isSelected: Boolean = true,
     gameCount: Int = 0,
 ) {
     val latestOnCoachAnchorChanged = rememberUpdatedState(onCoachAnchorChanged)
@@ -173,8 +174,8 @@ fun EngineScreen(
         mutableStateOf(readExternalModuleStatus(context))
     }
     val lifecycleOwner = LocalLifecycleOwner.current
-    val moduleUpdates by produceState<Map<String, ExternalEngineUpdate>>(emptyMap(), isActive, lifecycleOwner) {
-        if (isActive) lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+    val moduleUpdates by produceState<Map<String, ExternalEngineUpdate>>(emptyMap(), isSelected, lifecycleOwner) {
+        if (isSelected) lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             value = buildMap {
                 for (module in ExternalEngineModuleRegistry.modules) {
                     val update = ExternalEngineUpdateChecker.check(context, module) ?: continue
@@ -404,7 +405,7 @@ fun EngineScreen(
                         .scrollJelly(scrollJellyState)
                         .staggeredEntrance(engineIndex + 1)
                         .coachAnchor(
-                            enabled = isCoachTarget && isActive && pageTab == activePageState.value,
+                            enabled = isCoachTarget && reportCoachAnchor && pageTab == activePageState.value,
                             onBounds = onCoachAnchorChanged,
                         )
                         .then(listItemMotion()),
