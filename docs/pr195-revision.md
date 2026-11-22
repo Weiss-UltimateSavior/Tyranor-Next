@@ -48,13 +48,24 @@
 ## 第三轮返修（审查输入 `5af6fc81`）
 
 - 整合主分支 `4704d757`（含 #207 桌面快捷方式与 #209 Android 10 下载目录启动修复），只保留 CHANGELOG 双方条目，不改写已推送历史。
-- 恢复流程补齐异常兜底：`restore()` 外层 `try/catch(Throwable)`，取消仍原样重抛并保留锚点（`WaterfallRotationScrollDeviceTest` 的「取消不得清空 pending anchor」断言不变），非取消异常只解除遮蔽；复位抽成 `finishRestore()` 并校验 `gridState` 身份，避免上一代网格把新一代的恢复状态清掉。
-- 保存态七字段改为 `size == 7` + `runCatching` + 列数 `coerceIn(1, 32)`，坏载荷回落新建状态而不是让 `rememberSaveable` 恢复阶段抛异常。
+- 恢复流程补齐异常兜底：`restore()` 外层 `try/catch(Exception)`，取消仍原样重抛并保留锚点（`WaterfallRotationScrollDeviceTest` 的「取消不得清空 pending anchor」断言不变），非取消异常记日志后解除遮蔽；复位抽成 `finishRestore()` 并校验 `gridState` 身份，避免上一代网格把新一代的恢复状态清掉。
+- 保存态七字段改为 `size == 7` + `runCatching` + 列数 `coerceIn(2, 10)` 与锚点 `y` 限幅，坏载荷回落新建状态而不是让 `rememberSaveable` 恢复阶段抛异常。
 - 三处「拖动只改内存态、抬手才落盘」的滑条补 `onValueChangeCancelled` 回滚草稿：应用设置扫描深度、背景图不透明度与模糊。其余即时落盘的调用点与唯一已有回调的列数滑条保持原样；未传回调时普通档仍与基线逐字节等价。
 - 封面选档口径统一：等高网格改用 `forDisplay(列宽, 3:4)` 并把固定比例提为 `UniformGameCardAspect`，`forWidth` 只留封面流；穷举 1–3000px 宽度两函数选档完全一致，缓存键与视觉不变。
 - 文档与规范：`docs/pr195-revision.md` 去掉旧 head 与工作站绝对路径、截图状态与文末对齐、Kotlin 文件数标注当轮、修正轮次标题；CHANGELOG 补手机竖屏 3→4；`docs/README.md` 登记平板证据目录；动效门禁 `OWNERS` 补齐 `ui/common/motion/` 全部 31 个文件；`initGameCardStyle` 只取一次 `prefs`；`MainScreen` 缩进对齐。
 - 更正前两轮结论：`gridReflowHost` 的 alpha 与 `waterfallReflowHost` 的遮蔽**先后串接、互不重叠**（重排窗口 → 恢复期），不是两个宿主同时设值；删除它会让瀑布重排卡在第 0 帧就完成入场，`GridReflowDeviceTest` 三项逐帧错峰断言随即失败，故保留并按两段边界补注释。`coarseRestore` 的尾部补齐故意不受扫描预算约束，零预算用例要求它仍滚到底，因此不给它加预算门。
 - JVM 定向 41 项通过（Style 14 / Badge 2 / Corner 1 / Snapshot 15 / CoverDecodeTier 9），0 失败 0 跳过。
-- TB323FU / API 36 设备 54 项全部通过、0 跳过：`GridReflowDeviceTest` 12、`MotionSliderDeviceTest` 14（类名在 `com.tyranor.next.ui.common`，不带 `.motion`）、`WaterfallRotationScrollDeviceTest` 20、`WaterfallRestoreResponsivenessDeviceTest` 4，四主题各一轮 `GameScreenMainActivityAcceptanceDeviceTest`。
+- TB323FU / API 36 设备本轮登记 56 项：**52 项通过、4 项按条件跳过、0 失败**。四类登记 52 项（`GridReflowDeviceTest` 12、`MotionSliderDeviceTest` 16、`WaterfallRotationScrollDeviceTest` 20、`WaterfallRestoreResponsivenessDeviceTest` 4）实测 48 通过、4 跳过，另四主题各一轮 `GameScreenMainActivityAcceptanceDeviceTest` 4 项通过。跳过项为 3 个需显式传 `-e waterfall_diagnostics true` 的诊断假设用例，以及 1 个仅适用于增强档的 `consumedMoveAfterHorizontalDragDoesNotFinish[enhanced=false]` 参数组合。`MotionSliderDeviceTest` 位于 `com.tyranor.next.ui.common`，不带 `.motion`。补上连续档取消用例后登记数由 54 增至 56（`MotionSliderDeviceTest` 14 → 16）。
 - 全量 JVM 2092 项中 36 项失败。基线对照：在 `4704d757`（`origin/main`）独立工作树上跑同一任务得 2062 项、**同样这 36 项失败**，失败类与用例名逐条一致（RuffleRuntimeEnvironmentTest 3、RuntimeModuleFileImportTest 1、EthornellOperationGateTest 5、EthornellSaveStoreTest 14、EthornellSettingsTest 2、WebDavClientTest 6、WebDavRequestGuardTest 5），本分支未触碰这些路径 → 属基线既有失败，非本次返修引入。
 - 隔离包 `:app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug` 通过，lint 431（420 Warning、11 Hint、0 Error）；硬编码文案检查、动效边界检查（400 个 Kotlin 文件、0 违规）、`git diff --check` 通过。
+
+### 第三轮自审补修
+
+- 恢复异常路径改调 `finishRestore(state)`：此前只把 `isRestoring` 置假、留下非空 `pendingAnchor`，会让下一次换布局跳过重新捕获、拿旧列宽的 `index/y` 去滚；现在异常后锚点一并清空，`isRestoring == (pendingAnchor != null)` 不变量在所有出口成立。捕获类型收窄到 `Exception`，不再吞 `Error`。
+- 保存态列数范围由 `1..32` 收紧到业务值域 `2..10`，并给锚点 `y` 加 `±2^20` 限幅，避免坏载荷把 `Int.MIN_VALUE` 取负后仍为负。
+- `MotionSliderDeviceTest` 补一条连续档（`steps = 0`）的系统取消用例：应用设置页两个背景图滑条正是连续档，此前只有离散档覆盖。
+- `GameSheetHeader` 的 78dp 头部封面显式说明仍用 GRID 档：不跟列表 `forDisplay` 走是为一张小图不常驻更大的解码结果，与列表各取所需而非口径遗漏。
+- 更正 `gridReflowHost` 的 KDoc：两层 alpha 是相乘而非「单一来源」，值恒等靠调用方的 `ready` 绑定（恢复期两层同为 0、完成帧两层同为 1）。
+- 恢复异常路径补日志：这条路径会同时解除整表遮蔽、放开吞输入与无障碍移除，静默收尾无从定位，故 `Log.w` 记录一次。
+- `coarseRestore` 的尾部补齐在不加预算门的前提下补上步数上限（`列数规模 × 4 + 1024`），保留零预算仍滚到底的语义，同时排除无限滚动的静态可能。
+- 验收用例的旋转恢复拆成「锁回原方向」与「解冻」两个动作：前者失败不再跳过解冻，避免设备带着测试写入的固定旋转退回桌面。

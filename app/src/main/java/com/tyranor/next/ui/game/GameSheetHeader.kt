@@ -154,6 +154,8 @@ private fun gameSheetEngineName(game: ScanGame): String = when (game.engine) {
 internal fun GameSheetHeader(game: ScanGame, coverShape: Shape, modifier: Modifier = Modifier) {
     val displayGame = remember(game) { RuntimeModuleBindings.builtInSystemNnn(game) }
     val tracked = GamePlaytimeRepository.supports(displayGame.engine)
+    // 头部封面只有 78dp 宽，GRID 档（384×512）在任何密度的手机上都已经过采样；
+    // 刻意不跟列表的 forDisplay 档位走，避免为一张小图常驻一份更大的解码结果。
     val cover by rememberCoverBitmap(displayGame.coverUri)
     val bitmap = cover
     val reveal = rememberCoverReveal(bitmap != null, CoverSurface.Grid)

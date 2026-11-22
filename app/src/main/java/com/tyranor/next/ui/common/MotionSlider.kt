@@ -59,7 +59,9 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
  * - 单点：点哪一格直接跳到最近的刻度，轻震 + 圆钮带回弹落位；
  * - 松手：圆钮从手指位置弹簧吸附到刻度，略冲过再落稳。
  * 连续滑条与「普通」档直接使用 Miuix 原组件。
- * @param onValueChangeCancelled 增强离散手势取消时回滚草稿；未设置时取消不产生回调。普通档仍保留 Miuix 的默认结束语义。
+ * @param onValueChangeCancelled 手势被打断（系统取消、上级容器接手）时回滚草稿。增强离散档由滑条自己的手势状态机判定；
+ *   普通档与连续档从 Miuix 的结束回调旁听收尾事件推断。传了本回调的两档都会区分提交与取消，
+ *   不传时与 Miuix 原组件逐字节等价。
  */
 @Composable
 fun Slider(
@@ -91,7 +93,9 @@ fun Slider(
                 release.released = false
                 var event = awaitPointerEvent(PointerEventPass.Initial)
                 while (event.changes.any { it.pressed }) event = awaitPointerEvent(PointerEventPass.Initial)
-                // 平台取消指针流时，Compose 会合成已消费的抬手事件。
+                // 收尾事件「已消费」有两种来源：平台取消指针流（Compose 合成的抬手）与上级容器
+                // 在 Initial 阶段接手（竖向滚动、抽屉下拉）。实测两者都被判为已消费，
+                // 故这里与增强档 TickSlider 的 isConsumed 判据保持一致。
                 release.released = event.changes.any { it.previousPressed && !it.isConsumed }
             }
         }

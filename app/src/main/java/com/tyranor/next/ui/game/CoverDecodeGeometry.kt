@@ -44,7 +44,10 @@ internal enum class CoverDecodeTier(val maxWidthPx: Int, val maxHeightPx: Int) {
     }
 
     companion object {
-        /** 按卡片宽度取档位：档位数量有限，缓存 key 不会随窗口宽度无限膨胀。 */
+        /**
+         * 按卡片宽度取档位：档位数量有限，缓存 key 不会随窗口宽度无限膨胀。
+         * 仅用于固定 3:4 的封面流，等价于 [forDisplay] 传 3:4；其它比例请用 [forDisplay]。
+         */
         fun forWidth(widthPx: Int): CoverDecodeTier = when {
             widthPx <= GRID.maxWidthPx -> GRID
             widthPx <= CARD.maxWidthPx -> CARD

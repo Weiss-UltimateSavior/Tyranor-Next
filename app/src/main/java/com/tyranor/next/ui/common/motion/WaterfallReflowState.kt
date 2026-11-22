@@ -44,10 +44,15 @@ import kotlinx.coroutines.flow.first
 private const val RESTORE_SLICE_NANOS = 4_000_000L
 private const val RESTORE_TIMEOUT_MILLIS = 1500L
 
-// 保存态落回网格列数时的合法范围：0 会流向 StaggeredGridCells.Fixed 与列宽整除。
-private const val MIN_SAVED_COLUMNS = 1
-private const val MAX_SAVED_COLUMNS = 32
+// 保存态落回网格列数时的合法范围：与设置侧 2..10 的卡片列数一致。
+// 0 会流向 StaggeredGridCells.Fixed 与列宽整除，越界值只可能来自被篡改或跨版本的载荷。
+private const val MIN_SAVED_COLUMNS = 2
+private const val MAX_SAVED_COLUMNS = 10
 private const val DEFAULT_SAVED_COLUMNS = 2
+
+// 锚点纵向偏移来自懒布局的真实滚动量，正常不会超过若干屏高；
+// 限幅只为挡住 Int.MIN_VALUE 之类的坏载荷在取负后仍然为负。
+private const val MAX_SAVED_OFFSET_Y = 1 shl 20
 
 /** 从头测量以重建列历史，避免直接把未测量的新状态跳到锚点。 */
 class WaterfallReflowState private constructor(
@@ -156,12 +161,21 @@ class WaterfallReflowState private constructor(
                 }
             }
             finishRestore(state)
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             // 取消（自身作用域销毁或被更高优先级滚动打断后未恢复）保留锚点与隐藏状态，
-            // 由 enabled()/生命周期重新进入本流程时接续；其它异常必须解除遮蔽：
+            // 由 enabled()/生命周期重新进入本流程时接续；其它异常必须整体收尾：
             // 否则宿主会永久透明、吞掉触摸并退出无障碍树，且组合键不变时不会重启恢复。
+            // 这里用 finishRestore 而不是只清 isRestoring，避免留下「有锚点却未在恢复」的
+            // 不一致状态，让下一次换布局跳过重新捕获、拿旧列宽的位置去滚动。
             if (error is CancellationException) throw error
-            if (gridState === state) isRestoring = false
+            // 非取消异常在生产路径上未知，但一旦发生必须留下痕迹：
+            // 这条路径会把整表的遮蔽、吞输入与无障碍移除一并收尾，静默的话无从定位。
+            android.util.Log.w(
+                "WaterfallReflow",
+                "Restore aborted before reaching the anchor; layout is released without it",
+                error,
+            )
+            finishRestore(state)
         }
     }
 
@@ -205,8 +219,10 @@ class WaterfallReflowState private constructor(
             // 只按实际可滚距离补齐，不能假定再滚一屏就已到底。
             // 这段补齐故意不受扫描预算限制：预算耗尽后仍要真正落到尾部，否则超时兜底会停在
             // 半途的中间位置（WaterfallRotationScrollDeviceTest 的超时用例守着这一点）；
-            // 它的代价由两处约束兜住——每 4ms 让出一帧，且每步都检查取消。
-            while (anchor.atBottom && state.canScrollForward) {
+            // 它的代价由三处约束兜住——每 4ms 让出一帧、每步检查取消、补齐步数按列表规模设上限。
+            var coarseSteps = 0L
+            val coarseMaxSteps = currentCount.toLong() * 4L + 1024L
+            while (anchor.atBottom && state.canScrollForward && coarseSteps++ < coarseMaxSteps) {
                 currentCoroutineContext().ensureActive()
                 val consumed = scrollBy(state.layoutInfo.viewportSize.height.toFloat().coerceAtLeast(1f))
                 if (!consumed.isFinite() || consumed <= 0f) break
@@ -298,10 +314,11 @@ class WaterfallReflowState private constructor(
                     val columns = (values[0] as Int).coerceIn(MIN_SAVED_COLUMNS, MAX_SAVED_COLUMNS)
                     val landscape = values[1] as Boolean
                     val index = values[2] as Int
+                    val offsetY = (values[3] as Int).coerceIn(-MAX_SAVED_OFFSET_Y, MAX_SAVED_OFFSET_Y)
                     val anchor = if (index < 0) null else Anchor(
                         index,
                         if (values[5] as Boolean) values[6] else null,
-                        values[3] as Int,
+                        offsetY,
                         values[4] as Boolean,
                     )
                     WaterfallReflowState(columns, landscape, itemIdentity, anchor)

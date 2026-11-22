@@ -13,7 +13,8 @@ LIST_OWNER = "ui/common/motion/ListItemMotion.kt"
 MOTION = "com.tyranor.next.ui.common.motion."
 
 # Reviewed implementation files, not naming conventions. A new FooMotion.kt is
-# still checked until it is explicitly registered. These do NOT bypass list rules.
+# still checked until it is explicitly registered. These do NOT bypass list rules,
+# except LIST_OWNER, which owns the item-animation implementation itself.
 OWNERS = set("""
 ui/archive/ArchiveMotion.kt
 ui/engine/EngineStorageMotion.kt

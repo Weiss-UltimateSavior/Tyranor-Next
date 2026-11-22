@@ -124,6 +124,32 @@ class MotionSliderDeviceTest(private val enhanced: Boolean) {
         assertProgress(DRAGGED)
     }
 
+    /**
+     * 连续档（`steps = 0`，与应用设置页两个背景图滑条一致）同样要在取消时回滚草稿。
+     * 连续值取决于滑条拇指半径，不断言具体读数，只钉住「有草稿、未提交、取消后归位」。
+     */
+    @Test
+    fun continuousSliderSystemCancelRollsBackWithoutFinishing() = withSlider(steps = 0) { fixture ->
+        compose.onNodeWithTag(SLIDER).performTouchInput {
+            down(center)
+            moveTo(Offset(width * 0.8f, center.y))
+        }
+        compose.runOnIdle {
+            assertTrue("连续档拖动后草稿必须已改变", fixture.draft.floatValue != INITIAL)
+            assertEquals(INITIAL, fixture.committed, 0f)
+            assertEquals(emptyList<Float>(), fixture.commits)
+        }
+
+        compose.onNodeWithTag(SLIDER).performTouchInput { cancel() }
+        compose.runOnIdle {
+            assertEquals(1, fixture.cancelCalls)
+            assertEquals(emptyList<Float>(), fixture.commits)
+            assertEquals(INITIAL, fixture.committed, 0f)
+            assertEquals(INITIAL, fixture.draft.floatValue, 0f)
+        }
+        assertProgress(INITIAL, steps = 0)
+    }
+
     @Test
     fun systemCancelWithoutCancellationCallbackDoesNotFinishEnhancedSlider() = withSlider(
         withCancellationCallback = false,
@@ -159,11 +185,11 @@ class MotionSliderDeviceTest(private val enhanced: Boolean) {
         assertProgress(DRAGGED)
     }
 
-    private fun assertProgress(value: Float) {
+    private fun assertProgress(value: Float, steps: Int = STEPS) {
         compose.onNodeWithTag(SLIDER).assert(
             SemanticsMatcher.expectValue(
                 SemanticsProperties.ProgressBarRangeInfo,
-                ProgressBarRangeInfo(value, 0f..1f, STEPS),
+                ProgressBarRangeInfo(value, 0f..1f, steps),
             ),
         )
     }
@@ -171,6 +197,7 @@ class MotionSliderDeviceTest(private val enhanced: Boolean) {
     private fun withSlider(
         withCancellationCallback: Boolean = true,
         scrollableParent: Boolean = false,
+        steps: Int = STEPS,
         test: (Fixture) -> Unit,
     ) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -202,7 +229,7 @@ class MotionSliderDeviceTest(private val enhanced: Boolean) {
                                 value = fixture.draft.floatValue,
                                 onValueChange = { fixture.draft.floatValue = it },
                                 modifier = Modifier.width(240.dp).testTag(SLIDER),
-                                steps = STEPS,
+                                steps = steps,
                                 hapticEffect = SliderDefaults.SliderHapticEffect.None,
                                 onValueChangeFinished = {
                                     fixture.committed = fixture.draft.floatValue

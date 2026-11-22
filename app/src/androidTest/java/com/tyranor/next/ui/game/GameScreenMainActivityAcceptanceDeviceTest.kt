@@ -246,10 +246,7 @@ class GameScreenMainActivityAcceptanceDeviceTest {
                 { reloadSettings() },
                 { Locale.setDefault(originalLocale) },
                 { restorePreferences(updatePreferences, savedUpdatePreferences, setOf("notification_permission_requested")) },
-                {
-                    assertTrue(automation.setRotation(originalRotation))
-                    if (automaticRotation) assertTrue(automation.setRotation(UiAutomation.ROTATION_UNFREEZE))
-                },
+                { restoreRotation(originalRotation, automaticRotation) },
             )
         }
     }
@@ -258,6 +255,16 @@ class GameScreenMainActivityAcceptanceDeviceTest {
 
     private fun rotation() = requireNotNull(context.getSystemService(DisplayManager::class.java)
         .getDisplay(Display.DEFAULT_DISPLAY)).rotation
+
+    // 恢复旋转与解冻是两个独立动作：锁回原方向失败时也必须继续解冻，
+    // 否则设备会带着测试写入的固定旋转退回桌面。
+    private fun restoreRotation(original: Int, automatic: Boolean) {
+        val restored = runCatching { automation.setRotation(original) }
+        val unfrozen = if (automatic) runCatching { automation.setRotation(UiAutomation.ROTATION_UNFREEZE) }
+        else Result.success(true)
+        assertEquals("Restoring rotation failed", true, restored.getOrNull())
+        assertEquals("Unfreezing rotation failed", true, unfrozen.getOrNull())
+    }
 
     private fun orient(scenario: ActivityScenario<MainActivity>, desired: Int) {
         var current = Configuration.ORIENTATION_UNDEFINED

@@ -242,9 +242,10 @@ private fun rememberGridReflowState(
 /**
  * 重排窗口期隐藏尚未重排的旧位置，并负责入场错峰。
  *
- * 两个宿主各管一段、不重叠：本修饰符只在重排开始到 [GridReflowState.dispatchReflow] 之间遮蔽
- * （[GridReflowState.isReady] 为假），瀑布网格的恢复期遮蔽、吞输入与无障碍移除归 [Modifier.waterfallReflowHost]
- * （它在外层，先遮蔽、后放行）。两者串起来遮蔽时间更长，任一时刻的可见性都有单一来源。
+ * 两层 alpha 会相乘，值恒等靠调用方的 `ready` 绑定：瀑布网格把 `ready` 传成
+ * `!waterfall.isRestoring`，因此恢复期两层同为 0、恢复完成的那一帧两层同为 1，
+ * 不存在「外层已放行、内层仍遮蔽」的中间态。外层 [Modifier.waterfallReflowHost]
+ * 还负责吞输入与移除无障碍语义，本修饰符只管绘制。
  */
 @Composable
 fun Modifier.gridReflowHost(state: GridReflowState): Modifier =
