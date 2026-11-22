@@ -11,6 +11,13 @@ import android.opengl.GLES30;
  * to drawing the uncropped original directly, never exposing half a chain.</p>
  */
 public final class GraphicsFilterPipeline {
+    /**
+     * Upper bound on consecutive static-frame cache hits before forcing one full re-run.
+     * Bounds any host dirty-signal miss (e.g. out-of-band video/RTT updates) from permanent
+     * freeze down to a periodic single-frame refresh at ~1/60 worst-case steady-state cost.
+     */
+    static final int MAX_CONSECUTIVE_STATIC_REUSES = 60;
+
     private final GraphicsFilterChain chain;
     private final long reservedBytes;
     private final CnnPipeline[] nodes;
@@ -29,6 +36,7 @@ public final class GraphicsFilterPipeline {
     private int lastOutputWidth, lastOutputHeight;
     private float lastU0, lastV0, lastU1, lastV1;
     private boolean lastCachedTopLeft, lastCachedCropped;
+    private int consecutiveStaticReuses;
     private long targetBytes, extraOwnedBytes;
     private ArtemisGraphicsStats stats;
     private boolean gpuProfiling, profilingStarted;
@@ -304,6 +312,7 @@ public final class GraphicsFilterPipeline {
     private boolean canReuseOutput(int texture, int sw, int sh, float u0, float v0,
                                    float u1, float v1, int bw, int bh, boolean topLeft, boolean cropped) {
         return lastCachedOutput != 0
+                && consecutiveStaticReuses < MAX_CONSECUTIVE_STATIC_REUSES
                 && lastCachedTexture == texture
                 && lastCachedSourceWidth == sw
                 && lastCachedSourceHeight == sh
@@ -331,6 +340,7 @@ public final class GraphicsFilterPipeline {
         lastV1 = v1;
         lastCachedTopLeft = topLeft;
         lastCachedCropped = cropped;
+        consecutiveStaticReuses = 0;
     }
 
     private void clearOutputCache() {
@@ -348,9 +358,11 @@ public final class GraphicsFilterPipeline {
         lastV1 = 0f;
         lastCachedTopLeft = false;
         lastCachedCropped = false;
+        consecutiveStaticReuses = 0;
     }
 
     private int reuseCachedOutput() {
+        consecutiveStaticReuses++;
         actualWidth = lastOutputWidth;
         actualHeight = lastOutputHeight;
         bypassReason = CnnPipeline.BYPASS_NONE;
@@ -444,7 +456,14 @@ public final class GraphicsFilterPipeline {
         if (recomputed > CnnPipeline.TARGET_MEMORY_BUDGET_BYTES) {
             return false;
         }
-        targetBytes = recomputed;
+        boolean retainsLargerTargets = false;
+        for (int i = 0; i < nodes.length; i++) {
+            if (execute[i] && nodes[i].hasStaleAllocatedTileSize()) {
+                retainsLargerTargets = true;
+                break;
+            }
+        }
+        targetBytes = retainsLargerTargets ? Math.max(targetBytes, recomputed) : recomputed;
         applyChainNodeBudgets();
         return true;
     }

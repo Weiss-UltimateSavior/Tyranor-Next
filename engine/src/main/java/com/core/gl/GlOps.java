@@ -63,6 +63,11 @@ interface GlOps {
     }
 
     static int compileShader(GlOps gl, int type, String source, int[] query) {
+        return compileShader(gl, type, source, query, TargetUnavailableException.FailureKind.GENERIC);
+    }
+
+    static int compileShader(GlOps gl, int type, String source, int[] query,
+                             TargetUnavailableException.FailureKind failureKind) {
         int shader = gl.glCreateShader(type);
         boolean transferred = false;
         try {
@@ -76,7 +81,7 @@ interface GlOps {
                 int toDelete = shader;
                 shader = 0;
                 gl.glDeleteShader(toDelete);
-                GlErrors.requireGlSuccess("shader compile", true, gl::glGetError);
+                GlErrors.requireGlSuccess("shader compile", true, failureKind, gl::glGetError);
                 throw new ShaderCompileException("shader compile failed: " + log);
             }
             transferred = true;

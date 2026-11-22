@@ -510,7 +510,7 @@ public final class CnnPipeline {
     private boolean mTargetFailed;
     private final GraphicsTargetRetry mTargetRetry = new GraphicsTargetRetry();
     private int mFailedSourceWidth, mFailedSourceHeight, mFailedOutputWidth, mFailedOutputHeight;
-    private int mWidth, mHeight;
+    private int mWidth, mHeight, mAllocatedTileCoreSize;
     private boolean mGlReady;
     private boolean mHalfFloatChecked, mHalfFloatRenderable;
     private boolean mFailed;
@@ -718,6 +718,10 @@ public final class CnnPipeline {
 
     int getPlanVersion() {
         return mPlanVersion;
+    }
+
+    boolean hasStaleAllocatedTileSize() {
+        return mGlReady && mAllocatedTileCoreSize != mTileCoreSize;
     }
 
     void setChainBudgetBytes(long maxBudgetBytes) {
@@ -996,6 +1000,7 @@ public final class CnnPipeline {
         mBorrowedReadFbo[0] = 0;
         mTargetFailed = false;
         mTargetRetry.reset();
+        mAllocatedTileCoreSize = 0;
         mGlReady = false;
         mHalfFloatChecked = mHalfFloatRenderable = false;
         mState.resetIndexedSupport();
@@ -1094,6 +1099,7 @@ public final class CnnPipeline {
         mIntermediateTargets = null;
         mRestore = mTileInput = mTileRestore = null;
         mOutput = mScaleHorizontal = mBorrowedCopy = null;
+        mAllocatedTileCoreSize = 0;
         mGlReady = false;
     }
 
@@ -1118,7 +1124,8 @@ public final class CnnPipeline {
             return false;
         }
         if (mGlReady && mWidth == width && mHeight == height
-                && mOutput.width == outWidth && mOutput.height == outHeight) return true;
+                && mOutput.width == outWidth && mOutput.height == outHeight
+                && mAllocatedTileCoreSize == mTileCoreSize) return true;
         if (mLimitWidth == 0 || mLimitHeight == 0) loadDeviceLimits();
         GraphicsShaderGeometry geometry = new GraphicsShaderGeometry(width, height, outWidth, outHeight,
                 mNativeScale, mOutputSizedShader, mMaxOutputScale);
@@ -1193,6 +1200,7 @@ public final class CnnPipeline {
             return targetUnavailable(width, height, outWidth, outHeight, unavailable);
         }
         mTargetFailed = false;
+        mAllocatedTileCoreSize = mTileCoreSize;
         mGlReady = true;
         int passCount = getBuiltPassCount();
         Log.i(TAG, "pipeline ready: " + passCount + " restore passes, "
@@ -1236,6 +1244,7 @@ public final class CnnPipeline {
             mIntermediateTargets = null;
             mRestore = mTileInput = mTileRestore = null;
             mOutput = mScaleHorizontal = mBorrowedCopy = null;
+            mAllocatedTileCoreSize = 0;
             mGlReady = false;
         }
         requireGlSuccess("target bypass cleanup", false);
@@ -1432,9 +1441,17 @@ public final class CnnPipeline {
             GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, mBorrowedReadFbo[0]);
             GLES30.glFramebufferTexture2D(GLES30.GL_READ_FRAMEBUFFER, GLES30.GL_COLOR_ATTACHMENT0,
                     GLES30.GL_TEXTURE_2D, inputTexture, 0);
+            int status = GLES30.glCheckFramebufferStatus(GLES30.GL_READ_FRAMEBUFFER);
+            requireGlSuccess("scale pass-through attachment", true);
+            if (status != GLES30.GL_FRAMEBUFFER_COMPLETE) {
+                throw new TargetUnavailableException("scale pass-through framebuffer incomplete");
+            }
+            GLES30.glReadBuffer(GLES30.GL_COLOR_ATTACHMENT0);
             GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, mOutput.fbo[0]);
+            requireGlSuccess("scale pass-through setup", true);
             GLES30.glBlitFramebuffer(0, 0, width, height, 0, 0, mOutput.width, mOutput.height,
                     GLES30.GL_COLOR_BUFFER_BIT, GLES30.GL_NEAREST);
+            requireGlSuccess("scale pass-through blit", true);
         } finally {
             GLES30.glBindFramebuffer(GLES30.GL_READ_FRAMEBUFFER, mBorrowedReadFbo[0]);
             GLES30.glFramebufferTexture2D(GLES30.GL_READ_FRAMEBUFFER, GLES30.GL_COLOR_ATTACHMENT0,
@@ -1573,16 +1590,30 @@ public final class CnnPipeline {
 
                     String fragmentSource = GraphicsShaderTransforms.generateFragmentShader(
                             pass, true, mConfig.tieredPrecisionEnabled);
+                    boolean mrtFallbackEligible = targetSlots.length > 1 && canFallbackFromRuntimeFusion(true);
+                    TargetUnavailableException.FailureKind compileFailureKind = mrtFallbackEligible
+                            ? TargetUnavailableException.FailureKind.MRT_FRAGMENT_SHADER_COMPILE
+                            : TargetUnavailableException.FailureKind.GENERIC;
                     try {
-                        fragmentShader = compileShader(GLES30.GL_FRAGMENT_SHADER, fragmentSource);
+                        fragmentShader = GlOps.compileShader(
+                                mGl, GLES30.GL_FRAGMENT_SHADER, fragmentSource, mQuery, compileFailureKind);
                     } catch (GlOps.ShaderCompileException compileFailure) {
-                        if (targetSlots.length > 1 && canFallbackFromRuntimeFusion(true)) {
+                        if (mrtFallbackEligible) {
                             throw new TargetUnavailableException("MRT fragment shader compile failed for "
                                     + pass.desc + ": " + compileFailure.getMessage(), false,
                                     TargetUnavailableException.FailureKind.MRT_FRAGMENT_SHADER_COMPILE,
                                     compileFailure);
                         }
                         throw compileFailure;
+                    } catch (TargetUnavailableException unavailable) {
+                        if (mrtFallbackEligible && !TargetUnavailableException.isMrtFailure(unavailable)) {
+                            throw new TargetUnavailableException("MRT fragment shader compile GL failure for "
+                                    + pass.desc + ": " + unavailable.getMessage(),
+                                    unavailable.retryAfterDelay,
+                                    TargetUnavailableException.FailureKind.MRT_FRAGMENT_SHADER_COMPILE,
+                                    unavailable);
+                        }
+                        throw unavailable;
                     }
                     program = mGl.glCreateProgram();
                     GlErrors.requireTargetName(program, "GL program for pass " + pass.desc, mGl::glGetError);
@@ -1593,8 +1624,12 @@ public final class CnnPipeline {
                     mGl.glGetProgramiv(program, GLES30.GL_LINK_STATUS, mQuery, 0);
                     if (mQuery[0] == 0) {
                         String linkLog = mGl.glGetProgramInfoLog(program);
-                        GlErrors.requireGlSuccess("program link for " + pass.desc, true, mGl::glGetError);
-                        if (targetSlots.length > 1 && canFallbackFromRuntimeFusion(true)) {
+                        TargetUnavailableException.FailureKind linkFailureKind = mrtFallbackEligible
+                                ? TargetUnavailableException.FailureKind.MRT_PROGRAM_LINK
+                                : TargetUnavailableException.FailureKind.GENERIC;
+                        GlErrors.requireGlSuccess("program link for " + pass.desc, true,
+                                linkFailureKind, mGl::glGetError);
+                        if (mrtFallbackEligible) {
                             throw new TargetUnavailableException("MRT program link failed for "
                                     + pass.desc + ": " + linkLog, false,
                                     TargetUnavailableException.FailureKind.MRT_PROGRAM_LINK);
@@ -1652,7 +1687,10 @@ public final class CnnPipeline {
             }
 
             mMaxRequiredIntermediateSlot = maxRequiredSlot;
-            GlErrors.requireGlSuccess("CNN program setup", true, mGl::glGetError);
+            TargetUnavailableException.FailureKind setupKind = canFallbackFromRuntimeFusion(true)
+                    ? TargetUnavailableException.FailureKind.MRT_PROGRAM_LINK
+                    : TargetUnavailableException.FailureKind.GENERIC;
+            GlErrors.requireGlSuccess("CNN program setup", true, setupKind, mGl::glGetError);
         } catch (RuntimeException failure) {
             releasePrograms();
             throw failure;
@@ -1797,11 +1835,14 @@ public final class CnnPipeline {
                         }
                         mGl.glDrawBuffers(plan.drawBuffers.length, plan.drawBuffers, 0);
                         int status = mGl.glCheckFramebufferStatus(GLES30.GL_DRAW_FRAMEBUFFER);
-                        GlErrors.requireGlSuccess("MRT FBO setup", true, mGl::glGetError);
+                        TargetUnavailableException.FailureKind fboFailureKind = plan.targetSlots.length > 1
+                                ? TargetUnavailableException.FailureKind.MRT_FBO_INCOMPLETE
+                                : TargetUnavailableException.FailureKind.GENERIC;
+                        GlErrors.requireGlSuccess("MRT FBO setup", true, fboFailureKind, mGl::glGetError);
                         if (status != GLES30.GL_FRAMEBUFFER_COMPLETE) {
                             throw new TargetUnavailableException("MRT FBO incomplete for pass "
                                     + plan.pass.desc + ": 0x" + Integer.toHexString(status),
-                                    true, TargetUnavailableException.FailureKind.MRT_FBO_INCOMPLETE);
+                                    true, fboFailureKind);
                         }
                     }
                 }

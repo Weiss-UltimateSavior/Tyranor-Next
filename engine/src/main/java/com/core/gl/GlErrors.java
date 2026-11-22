@@ -55,13 +55,31 @@ public final class GlErrors {
      * {@link TargetUnavailableException}; otherwise throws {@link IllegalStateException}.
      */
     static void requireGlSuccess(String operation, boolean targetFailure, IntSupplier errors) {
+        requireGlSuccess(operation, targetFailure, TargetUnavailableException.FailureKind.GENERIC, errors);
+    }
+
+    /**
+     * Variant of {@link #requireGlSuccess(String, boolean, IntSupplier)} that carries an
+     * explicit {@link TargetUnavailableException.FailureKind}. On MRT-exclusive setup/compile/link
+     * sites ({@code targetFailure == true && failureKind.mrt}), any non-context-lost GL error
+     * (including driver-specific {@code GL_INVALID_OPERATION} / {@code GL_INVALID_VALUE} on
+     * multi-target draw buffers or shader compilation) throws a typed
+     * {@link TargetUnavailableException} so runtime MRT fusion can fall back once to the unfused
+     * single-output plan. {@code GL_CONTEXT_LOST_KHR} always throws {@link ContextLostException}.
+     */
+    static void requireGlSuccess(String operation, boolean targetFailure,
+                                 TargetUnavailableException.FailureKind failureKind,
+                                 IntSupplier errors) {
+        TargetUnavailableException.FailureKind effectiveKind =
+                failureKind != null ? failureKind : TargetUnavailableException.FailureKind.GENERIC;
+        boolean mrtSite = targetFailure && effectiveKind.mrt;
         StringBuilder detail = null;
         boolean retryable = targetFailure;
         for (int i = 0; i < MAX_GL_ERRORS; i++) {
             int error = errors.getAsInt();
             if (error == GL_NO_ERROR) {
                 if (detail == null) return;
-                if (retryable) throw new TargetUnavailableException(detail.toString());
+                if (retryable) throw new TargetUnavailableException(detail.toString(), true, effectiveKind);
                 throw new IllegalStateException(detail.toString());
             }
             if (error == GL_CONTEXT_LOST_KHR) {
@@ -70,8 +88,11 @@ public final class GlErrors {
             if (detail == null) detail = new StringBuilder(operation).append(": GL errors");
             detail.append(" 0x").append(Integer.toHexString(error));
             // Resource pressure and unusable attachments can recover after backoff;
-            // invalid API use or a lost context cannot be repaired by retrying.
-            retryable &= (error == GL_OUT_OF_MEMORY
+            // on MRT-exclusive sites, driver-specific multi-target GL errors also route to the
+            // bounded one-shot unfused fallback. Invalid API use elsewhere or a lost context
+            // cannot be repaired by retrying.
+            retryable &= (mrtSite
+                    || error == GL_OUT_OF_MEMORY
                     || error == GL_INVALID_FRAMEBUFFER_OPERATION);
         }
         // A lost/broken context must not loop forever or be cached as a geometry rejection.

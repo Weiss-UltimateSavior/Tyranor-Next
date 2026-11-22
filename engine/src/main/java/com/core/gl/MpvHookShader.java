@@ -34,12 +34,17 @@ final class MpvHookShader {
      * when directives are unbalanced/ambiguous or multiple/conditional `hook()` entries appear.
      */
     private static String resolveEffectiveBodyOrNull(String stripped, boolean requireSingleHook) {
+        return resolveEffectiveBodyOrNull(stripped, requireSingleHook, null);
+    }
+
+    private static String resolveEffectiveBodyOrNull(String stripped, boolean requireSingleHook,
+                                                     List<int[]> outUnknownSpans) {
         if (stripped == null) return null;
         int[] stack = new int[64];
         boolean[] hadElse = new boolean[64];
         int depth = 0;
         StringBuilder out = new StringBuilder(stripped.length());
-        List<int[]> unknownCharSpans = new ArrayList<>();
+        List<int[]> unknownCharSpans = outUnknownSpans != null ? outUnknownSpans : new ArrayList<>();
         String[] lines = stripped.split("\n", -1);
         for (int idx = 0; idx < lines.length; idx++) {
             String line = lines[idx];
@@ -178,17 +183,26 @@ final class MpvHookShader {
     /** Unsupported mpv features fail explicitly rather than changing shader semantics. */
     static List<Pass> parse(String source) {
         if (source == null) throw new IllegalArgumentException("null shader source");
+        if (source.startsWith("\uFEFF")) {
+            source = source.substring(1);
+        }
         List<Pass> passes = new ArrayList<>();
         List<String> binds = new ArrayList<>();
         List<String> saves = new ArrayList<>();
         StringBuilder body = new StringBuilder();
         String desc = null, widthRef = null, heightRef = null;
         boolean inPass = false;
-        for (String raw : source.split("\n")) {
+        for (String raw : source.split("\\r\\n|[\\r\\n]")) {
             String line = raw.trim();
             if (line.startsWith("//!")) {
                 String directive = line.substring(3).trim();
-                int space = directive.indexOf(' ');
+                int space = -1;
+                for (int i = 0; i < directive.length(); i++) {
+                    if (Character.isWhitespace(directive.charAt(i))) {
+                        space = i;
+                        break;
+                    }
+                }
                 String key = space < 0 ? directive : directive.substring(0, space);
                 String value = space < 0 ? "" : directive.substring(space + 1).trim();
                 if ("DESC".equals(key)) {
@@ -347,8 +361,21 @@ final class MpvHookShader {
         if (pass == null) return false;
         String stripped = stripGlslCommentsOrNull(pass.body);
         if (stripped == null) return false;
-        String effective = resolveEffectiveBodyOrNull(stripped, false);
-        return effective != null && MAT_CALL_PATTERN.matcher(effective).find();
+        List<int[]> unknownSpans = new ArrayList<>();
+        String effective = resolveEffectiveBodyOrNull(stripped, false, unknownSpans);
+        if (effective == null) return false;
+        Matcher m = MAT_CALL_PATTERN.matcher(effective);
+        while (m.find()) {
+            boolean inUnknownCond = false;
+            for (int[] span : unknownSpans) {
+                if (span[1] > m.start() && span[0] < m.end()) {
+                    inUnknownCond = true;
+                    break;
+                }
+            }
+            if (!inUnknownCond) return true;
+        }
+        return false;
     }
 
     /**
@@ -510,7 +537,7 @@ final class MpvHookShader {
     private static final Pattern MULTI_SAVE_CONTROL_FLOW_DEFINE = Pattern.compile(
             "^[ \\t\\f]*#[ \\t\\f]*define[ \\t\\f]+[A-Za-z_][A-Za-z0-9_]*(?:\\([^)]*\\)(.*)|(?:[ \\t\\f]+(.*))?)$");
     private static final Pattern MULTI_SAVE_FRAGCOLOR_WRITE = Pattern.compile(
-            "(?:^|[;{])\\s*fragColor(\\d+)\\s*=(?!=)");
+            "(?:^|[;{])\\s*fragColor(\\d*)\\s*=(?!=)");
 
     private static boolean multiSaveWritesAllTargets(String body, int saveCount) {
         String stripped = stripGlslCommentsOrNull(body);
@@ -570,11 +597,19 @@ final class MpvHookShader {
         // rejected here (known limitation, registered in SPEC §12 multi-SAVE validation).
         Matcher w = MULTI_SAVE_FRAGCOLOR_WRITE.matcher(topLevelInner);
         while (w.find()) {
+            String suffix = w.group(1);
             int slot;
-            try {
-                slot = Integer.parseInt(w.group(1));
-            } catch (NumberFormatException nfe) {
-                return false;
+            if (suffix.isEmpty()) {
+                // Single-SAVE void hook() accepts fragColor as an alias for fragColor0
+                // (consistent with terminal MAIN passes); multi-SAVE keeps explicit fragColorN.
+                if (saveCount != 1) continue;
+                slot = 0;
+            } else {
+                try {
+                    slot = Integer.parseInt(suffix);
+                } catch (NumberFormatException nfe) {
+                    return false;
+                }
             }
             if (slot >= 0 && slot < saveCount) {
                 written[slot] = true;
