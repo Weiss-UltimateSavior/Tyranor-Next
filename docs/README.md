@@ -65,7 +65,6 @@
 
 ## 验收 / 历史记录
 
-- [PR #195 卡片布局返修记录](pr195-revision.md)
 - [Ethornell 测试验收记录](Ethornell测试验收记录.md)
 - [WebDAV Android 设备验收记录](WebDAV-device-acceptance.md)
 - [应用层代码审查问题清单](应用层代码审查问题清单.md)
@@ -80,10 +79,3 @@
 
 - [审核模板目录说明](reviews/README.md)
 - [PR 审核回复模板](reviews/PR-REVIEW-TEMPLATE.md)
-
-## 子目录
-
-- [ADR 目录](adr/)
-- [审核模板与记录](reviews/)
-- [文档工作流 skills](skills/)
-- [PR #195 游戏页四主题平板截图与观察上界](pr195-evidence/README.md)
