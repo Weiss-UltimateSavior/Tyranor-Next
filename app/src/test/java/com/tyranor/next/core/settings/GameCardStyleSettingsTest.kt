@@ -56,18 +56,78 @@ class GameCardStyleSettingsTest {
     }
 
     @Test
-    fun gridColumnsClampToTwoThroughTen() {
+    fun gridColumnsClampToTwoThroughEight() {
         assertEquals(2, AppSettingsStore.MIN_GAME_CARD_COLUMNS)
-        assertEquals(10, AppSettingsStore.MAX_GAME_CARD_COLUMNS)
+        assertEquals(8, AppSettingsStore.MAX_GAME_CARD_COLUMNS)
         for (columns in listOf(Int.MIN_VALUE, -1, 0, 1)) {
             assertEquals("columns=$columns", 2, AppSettingsStore.normalizeGameCardColumns(columns))
         }
-        for (columns in 2..10) {
+        for (columns in 2..8) {
             assertEquals("columns=$columns", columns, AppSettingsStore.normalizeGameCardColumns(columns))
         }
-        for (columns in listOf(11, Int.MAX_VALUE)) {
-            assertEquals("columns=$columns", 10, AppSettingsStore.normalizeGameCardColumns(columns))
+        for (columns in listOf(9, Int.MAX_VALUE)) {
+            assertEquals("columns=$columns", 8, AppSettingsStore.normalizeGameCardColumns(columns))
         }
+    }
+
+    @Test
+    fun legacyNarrowAndWideColumnsMigrateIntoAllFourKeys() {
+        val context = InMemoryPreferencesContext()
+        context.getSharedPreferences(AppStorageNames.APP_SETTINGS_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(AppSettingsStore.KEY_GAME_CARD_COLUMNS_NARROW_LEGACY, 5)
+            .putInt(AppSettingsStore.KEY_GAME_CARD_COLUMNS_WIDE_LEGACY, 7)
+            .apply()
+
+        AppSettingsStore.initGameCardStyle(context)
+
+        // 旧版只有「窄屏 / 宽屏」一对键，升级后网格与瀑布各自按方向继承同一份值。
+        assertEquals(5, AppSettingsStore.getGameGridPortraitColumns(context))
+        assertEquals(7, AppSettingsStore.getGameGridLandscapeColumns(context))
+        assertEquals(5, AppSettingsStore.getGameWaterfallPortraitColumns(context))
+        assertEquals(7, AppSettingsStore.getGameWaterfallLandscapeColumns(context))
+        val stored = context.prefSnapshot(AppStorageNames.APP_SETTINGS_PREFS)
+        assertEquals(5, stored[AppSettingsStore.KEY_GAME_GRID_PORTRAIT_COLUMNS])
+        assertEquals(7, stored[AppSettingsStore.KEY_GAME_GRID_LANDSCAPE_COLUMNS])
+        assertEquals(5, stored[AppSettingsStore.KEY_GAME_WATERFALL_PORTRAIT_COLUMNS])
+        assertEquals(7, stored[AppSettingsStore.KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS])
+    }
+
+    @Test
+    fun legacyMigrationClampsOutOfRangeAndKeepsExistingKeys() {
+        val context = InMemoryPreferencesContext()
+        context.getSharedPreferences(AppStorageNames.APP_SETTINGS_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(AppSettingsStore.KEY_GAME_CARD_COLUMNS_NARROW_LEGACY, 99)
+            .putInt(AppSettingsStore.KEY_GAME_CARD_COLUMNS_WIDE_LEGACY, 1)
+            .putInt(AppSettingsStore.KEY_GAME_GRID_PORTRAIT_COLUMNS, 6)
+            .apply()
+
+        AppSettingsStore.initGameCardStyle(context)
+
+        // 已存在的新键不迁移、不被旧值覆盖；其余缺失键补上并夹到 2–8。
+        assertEquals(6, AppSettingsStore.getGameGridPortraitColumns(context))
+        assertEquals(2, AppSettingsStore.getGameGridLandscapeColumns(context))
+        assertEquals(8, AppSettingsStore.getGameWaterfallPortraitColumns(context))
+        assertEquals(2, AppSettingsStore.getGameWaterfallLandscapeColumns(context))
+    }
+
+    @Test
+    fun legacyWideOnlyKeepsPortraitDefault() {
+        val context = InMemoryPreferencesContext()
+        context.getSharedPreferences(AppStorageNames.APP_SETTINGS_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(AppSettingsStore.KEY_GAME_CARD_COLUMNS_WIDE_LEGACY, 7)
+            .apply()
+
+        AppSettingsStore.initGameCardStyle(context)
+
+        // 旧版只在用户拖动后落盘：只调过宽屏的用户没有窄屏值，
+        // 竖屏应保持本次的默认 4 列，而不是沿用旧版窄屏默认 3 列。
+        assertEquals(4, AppSettingsStore.getGameGridPortraitColumns(context))
+        assertEquals(4, AppSettingsStore.getGameWaterfallPortraitColumns(context))
+        assertEquals(7, AppSettingsStore.getGameGridLandscapeColumns(context))
+        assertEquals(7, AppSettingsStore.getGameWaterfallLandscapeColumns(context))
     }
 
     @Test
@@ -107,12 +167,12 @@ class GameCardStyleSettingsTest {
         AppSettingsStore.setGameGridLandscapeColumns(context, Int.MAX_VALUE)
 
         assertEquals(2, AppSettingsStore.getGameGridPortraitColumns(context))
-        assertEquals(10, AppSettingsStore.getGameGridLandscapeColumns(context))
+        assertEquals(8, AppSettingsStore.getGameGridLandscapeColumns(context))
         assertEquals(2, AppSettingsStore.gameGridPortraitColumnsState.value)
-        assertEquals(10, AppSettingsStore.gameGridLandscapeColumnsState.value)
+        assertEquals(8, AppSettingsStore.gameGridLandscapeColumnsState.value)
         val stored = context.prefSnapshot(AppStorageNames.APP_SETTINGS_PREFS)
         assertEquals(2, stored[AppSettingsStore.KEY_GAME_GRID_PORTRAIT_COLUMNS])
-        assertEquals(10, stored[AppSettingsStore.KEY_GAME_GRID_LANDSCAPE_COLUMNS])
+        assertEquals(8, stored[AppSettingsStore.KEY_GAME_GRID_LANDSCAPE_COLUMNS])
     }
 
     @Test
@@ -124,12 +184,12 @@ class GameCardStyleSettingsTest {
             .putInt(AppSettingsStore.KEY_GAME_GRID_LANDSCAPE_COLUMNS, Int.MIN_VALUE)
             .apply()
 
-        assertEquals(10, AppSettingsStore.getGameGridPortraitColumns(context))
+        assertEquals(8, AppSettingsStore.getGameGridPortraitColumns(context))
         assertEquals(2, AppSettingsStore.getGameGridLandscapeColumns(context))
 
         AppSettingsStore.initGameCardStyle(context)
 
-        assertEquals(10, AppSettingsStore.gameGridPortraitColumnsState.value)
+        assertEquals(8, AppSettingsStore.gameGridPortraitColumnsState.value)
         assertEquals(2, AppSettingsStore.gameGridLandscapeColumnsState.value)
     }
 
@@ -157,17 +217,17 @@ class GameCardStyleSettingsTest {
         AppSettingsStore.setGameWaterfallLandscapeColumns(context, Int.MAX_VALUE)
 
         assertEquals(2, AppSettingsStore.getGameWaterfallPortraitColumns(context))
-        assertEquals(10, AppSettingsStore.getGameWaterfallLandscapeColumns(context))
+        assertEquals(8, AppSettingsStore.getGameWaterfallLandscapeColumns(context))
         assertEquals(2, AppSettingsStore.gameWaterfallPortraitColumnsState.value)
-        assertEquals(10, AppSettingsStore.gameWaterfallLandscapeColumnsState.value)
+        assertEquals(8, AppSettingsStore.gameWaterfallLandscapeColumnsState.value)
         val stored = context.prefSnapshot(AppStorageNames.APP_SETTINGS_PREFS)
         assertEquals(2, stored[AppSettingsStore.KEY_GAME_WATERFALL_PORTRAIT_COLUMNS])
-        assertEquals(10, stored[AppSettingsStore.KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS])
+        assertEquals(8, stored[AppSettingsStore.KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS])
 
         AppSettingsStore.setGameWaterfallPortraitColumns(context, 1)
         AppSettingsStore.setGameWaterfallLandscapeColumns(context, 11)
         assertEquals(2, AppSettingsStore.getGameWaterfallPortraitColumns(context))
-        assertEquals(10, AppSettingsStore.getGameWaterfallLandscapeColumns(context))
+        assertEquals(8, AppSettingsStore.getGameWaterfallLandscapeColumns(context))
     }
 
     @Test
@@ -181,7 +241,7 @@ class GameCardStyleSettingsTest {
 
         AppSettingsStore.setGameCardStyle(context, AppSettingsStore.GAME_CARD_STYLE_GRID)
         AppSettingsStore.setGameGridPortraitColumns(context, 4)
-        AppSettingsStore.setGameWaterfallPortraitColumns(context, 9)
+        AppSettingsStore.setGameWaterfallPortraitColumns(context, 8)
         AppSettingsStore.setGameCardStyle(context, AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW)
         AppSettingsStore.gameGridPortraitColumnsState.value = 2
         AppSettingsStore.gameGridLandscapeColumnsState.value = 2
@@ -192,17 +252,17 @@ class GameCardStyleSettingsTest {
         assertEquals(AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW, AppSettingsStore.gameCardStyleState.value)
         assertEquals(4, AppSettingsStore.gameGridPortraitColumnsState.value)
         assertEquals(8, AppSettingsStore.gameGridLandscapeColumnsState.value)
-        assertEquals(9, AppSettingsStore.gameWaterfallPortraitColumnsState.value)
+        assertEquals(8, AppSettingsStore.gameWaterfallPortraitColumnsState.value)
         assertEquals(7, AppSettingsStore.gameWaterfallLandscapeColumnsState.value)
         assertEquals(4, AppSettingsStore.getGameGridPortraitColumns(context))
         assertEquals(8, AppSettingsStore.getGameGridLandscapeColumns(context))
-        assertEquals(9, AppSettingsStore.getGameWaterfallPortraitColumns(context))
+        assertEquals(8, AppSettingsStore.getGameWaterfallPortraitColumns(context))
         assertEquals(7, AppSettingsStore.getGameWaterfallLandscapeColumns(context))
 
         val stored = context.prefSnapshot(AppStorageNames.APP_SETTINGS_PREFS)
         assertEquals(4, stored[AppSettingsStore.KEY_GAME_GRID_PORTRAIT_COLUMNS])
         assertEquals(8, stored[AppSettingsStore.KEY_GAME_GRID_LANDSCAPE_COLUMNS])
-        assertEquals(9, stored[AppSettingsStore.KEY_GAME_WATERFALL_PORTRAIT_COLUMNS])
+        assertEquals(8, stored[AppSettingsStore.KEY_GAME_WATERFALL_PORTRAIT_COLUMNS])
         assertEquals(7, stored[AppSettingsStore.KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS])
     }
 
@@ -215,12 +275,12 @@ class GameCardStyleSettingsTest {
             .putInt(AppSettingsStore.KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS, Int.MIN_VALUE)
             .apply()
 
-        assertEquals(10, AppSettingsStore.getGameWaterfallPortraitColumns(context))
+        assertEquals(8, AppSettingsStore.getGameWaterfallPortraitColumns(context))
         assertEquals(2, AppSettingsStore.getGameWaterfallLandscapeColumns(context))
 
         AppSettingsStore.initGameCardStyle(context)
 
-        assertEquals(10, AppSettingsStore.gameWaterfallPortraitColumnsState.value)
+        assertEquals(8, AppSettingsStore.gameWaterfallPortraitColumnsState.value)
         assertEquals(2, AppSettingsStore.gameWaterfallLandscapeColumnsState.value)
     }
 

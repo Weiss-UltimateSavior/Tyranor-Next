@@ -129,10 +129,11 @@ object AppSettingsStore {
 
     /**
      * 主分支上一版列数键（窄屏/宽屏共用一套，不分风格）。
-     * 仅在四个新键都不存在时作为一次性迁移来源，见 [initGameCardStyle]。
+     * 仅作为一次性迁移来源，见 [initGameCardStyle]；可见性为 internal 是为了让
+     * 回归测试能构造「只有旧键」的偏好状态，生产代码之外不得写入这两个键。
      */
-    private const val KEY_GAME_CARD_COLUMNS_NARROW_LEGACY = "game_card_columns_narrow"
-    private const val KEY_GAME_CARD_COLUMNS_WIDE_LEGACY = "game_card_columns_wide"
+    internal const val KEY_GAME_CARD_COLUMNS_NARROW_LEGACY = "game_card_columns_narrow"
+    internal const val KEY_GAME_CARD_COLUMNS_WIDE_LEGACY = "game_card_columns_wide"
 
     /** 主分支上一版列数默认值（窄屏 3、宽屏 6），仅用于迁移时判断旧键缺省。 */
     private const val DEFAULT_GAME_CARD_COLUMNS_NARROW_LEGACY = 3
@@ -305,7 +306,7 @@ object AppSettingsStore {
     const val DEFAULT_GAME_WATERFALL_PORTRAIT_COLUMNS = 4
     const val DEFAULT_GAME_WATERFALL_LANDSCAPE_COLUMNS = 6
     const val MIN_GAME_CARD_COLUMNS = 2
-    const val MAX_GAME_CARD_COLUMNS = 10
+    const val MAX_GAME_CARD_COLUMNS = 8
 
     /** 卡片引擎角标默认值：关。 */
     const val DEFAULT_GAME_CARD_BADGE = false
@@ -901,28 +902,29 @@ object AppSettingsStore {
 
     fun initGameCardStyle(c: Context) {
         synchronized(gameCardStyleLock) {
-            // 一次取偏好句柄，避免主线程连续五次 prefs(c)。
+            // 一次取偏好句柄，避免主线程反复 prefs(c)。
             val p = prefs(c)
-            // 主分支上一版只存一对「窄屏 / 宽屏」列数，网格与瀑布共用。四个新键全缺、
-            // 旧键有值时按它迁移一次，刚从主分支升级的用户不会丢已选列数；之后各风格与方向独立保存。
-            val hasOwnColumns = p.contains(KEY_GAME_GRID_PORTRAIT_COLUMNS) ||
-                p.contains(KEY_GAME_GRID_LANDSCAPE_COLUMNS) ||
-                p.contains(KEY_GAME_WATERFALL_PORTRAIT_COLUMNS) ||
-                p.contains(KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS)
-            if (!hasOwnColumns && (p.contains(KEY_GAME_CARD_COLUMNS_NARROW_LEGACY) || p.contains(KEY_GAME_CARD_COLUMNS_WIDE_LEGACY))) {
-                val portrait = normalizeGameCardColumns(
-                    p.getInt(KEY_GAME_CARD_COLUMNS_NARROW_LEGACY, DEFAULT_GAME_CARD_COLUMNS_NARROW_LEGACY),
-                )
-                val landscape = normalizeGameCardColumns(
-                    p.getInt(KEY_GAME_CARD_COLUMNS_WIDE_LEGACY, DEFAULT_GAME_CARD_COLUMNS_WIDE_LEGACY),
-                )
-                p.edit()
-                    .putInt(KEY_GAME_GRID_PORTRAIT_COLUMNS, portrait)
-                    .putInt(KEY_GAME_GRID_LANDSCAPE_COLUMNS, landscape)
-                    .putInt(KEY_GAME_WATERFALL_PORTRAIT_COLUMNS, portrait)
-                    .putInt(KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS, landscape)
-                    .apply()
+            // 主分支上一版只存一对「窄屏 / 宽屏」列数，网格与瀑布共用。迁移逐键进行：
+            // 历史版本可能只落过其中一部分键，整体判断会让缺的那组静默回落默认值、
+            // 把用户已选列数丢掉。旧键保留不动，只补缺失的新键。
+            val legacyNarrow = p.getInt(KEY_GAME_CARD_COLUMNS_NARROW_LEGACY, DEFAULT_GAME_CARD_COLUMNS_NARROW_LEGACY)
+            val legacyWide = p.getInt(KEY_GAME_CARD_COLUMNS_WIDE_LEGACY, DEFAULT_GAME_CARD_COLUMNS_WIDE_LEGACY)
+            val editor = p.edit()
+            var migrated = false
+            fun adoptLegacy(key: String, legacyValue: Int) {
+                if (p.contains(key)) return
+                editor.putInt(key, normalizeGameCardColumns(legacyValue))
+                migrated = true
             }
+            if (p.contains(KEY_GAME_CARD_COLUMNS_NARROW_LEGACY)) {
+                adoptLegacy(KEY_GAME_GRID_PORTRAIT_COLUMNS, legacyNarrow)
+                adoptLegacy(KEY_GAME_WATERFALL_PORTRAIT_COLUMNS, legacyNarrow)
+            }
+            if (p.contains(KEY_GAME_CARD_COLUMNS_WIDE_LEGACY)) {
+                adoptLegacy(KEY_GAME_GRID_LANDSCAPE_COLUMNS, legacyWide)
+                adoptLegacy(KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS, legacyWide)
+            }
+            if (migrated) editor.apply()
             gameGridPortraitColumnsState.value = normalizeGameCardColumns(
                 p.getInt(KEY_GAME_GRID_PORTRAIT_COLUMNS, DEFAULT_GAME_GRID_PORTRAIT_COLUMNS),
             )
@@ -935,7 +937,7 @@ object AppSettingsStore {
             gameWaterfallLandscapeColumnsState.value = normalizeGameCardColumns(
                 p.getInt(KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS, DEFAULT_GAME_WATERFALL_LANDSCAPE_COLUMNS),
             )
-            gameCardStyleState.value = getGameCardStyle(c)
+            gameCardStyleState.value = normalizeGameCardStyle(p.getString(KEY_GAME_CARD_STYLE, DEFAULT_GAME_CARD_STYLE))
         }
     }
 
