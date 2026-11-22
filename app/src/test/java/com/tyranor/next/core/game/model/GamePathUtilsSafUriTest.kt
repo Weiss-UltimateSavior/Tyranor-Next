@@ -14,6 +14,37 @@ import org.junit.Test
  * android.net.Uri（设备验证覆盖），此处按项目惯例覆盖纯决策部分。
  */
 class GamePathUtilsSafUriTest {
+    private val downloads = "com.android.providers.downloads.documents"
+
+    @Test
+    fun downloadsRootAndRawIdResolveUnderCurrentUsersDownloadFolder() {
+        val folder = "$secureFolderRoot/Download"
+        assertEquals(folder, GamePathUtils.documentPath(downloads, "downloads", secureFolderRoot))
+        assertEquals("$folder/yugame", GamePathUtils.documentPath(downloads, "raw:$folder/yugame", secureFolderRoot))
+        assertNull(GamePathUtils.documentPath(downloads, "raw:$folder/../outside", secureFolderRoot))
+        assertNull(GamePathUtils.documentPath(downloads, "raw:/storage/emulated/0/Download/yugame", secureFolderRoot))
+    }
+
+    @Test
+    fun downloadsMediaIdsUseQueryResultInsteadOfStorageVolume() {
+        val folder = "$secureFolderRoot/Download/yugame"
+        val paths = mapOf(12L to folder, 42L to "$folder/game.swf")
+        assertEquals(folder, GamePathUtils.documentPath(downloads, "msd:12", secureFolderRoot, paths::get))
+        assertEquals("$folder/game.swf", GamePathUtils.documentPath(downloads, "msf:42", secureFolderRoot, paths::get))
+        assertNull(GamePathUtils.documentPath(downloads, "msd:12", secureFolderRoot))
+        assertNull(GamePathUtils.documentPath(downloads, "msd:99", secureFolderRoot, paths::get))
+        assertNull(GamePathUtils.documentPath(downloads, "msd:12", secureFolderRoot) { "relative/path" })
+    }
+
+    @Test
+    fun downloadsIdParsingRejectsUnsupportedIdsAndUnrelatedProviders() {
+        for (id in listOf("12", "msd:0", "msd:-12", "msd:+12", "msd:12/child", "msf:9223372036854775808")) {
+            assertNull(GamePathUtils.documentPath(downloads, id, secureFolderRoot) { error("Unexpected query for $id") })
+        }
+        assertNull(GamePathUtils.documentPath("example.documents", "primary:Download/yugame", secureFolderRoot))
+        assertNull(GamePathUtils.documentPath("example.documents", "msd:12", secureFolderRoot) { error("Unexpected query") })
+    }
+
 
     private val secureFolderRoot = "/storage/emulated/150"
 

@@ -2,6 +2,8 @@
 
 ## 未发布
 
+- 修复 Android 10 从系统「下载」入口添加的本地游戏启动时无法解析目录的问题。已有游戏记录可直接重试；Android 8–10 缺少共享存储读写权限时，会引导到系统的应用权限设置（[#209](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/209)）。
+
 - 「添加桌面」不再假定桌面一定会弹出确认框；系统确认固定后才提示已添加，并为 MIUI / HyperOS 声明快捷方式权限、提供手动授权指引（[#207](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/207)）。
 
 - MAGES. 引擎的游戏识别规则改为优先从已安装的宿主读取（宿主 0.3.1 起随包带 `tyn/profiles.json`）：宿主新增 profile 后，本 App 不用更新就能识别对应的游戏目录；宿主未安装或是旧版本时仍用内置目录表。内置目录表新增 Steam 版 STEINS;GATE（`sg-pc`，`Game.exe` + `USRDIR/script.mpk`、`USRDIR/system.mpk`，需宿主 0.3.0 及以上）。识别条目支持子目录一层。

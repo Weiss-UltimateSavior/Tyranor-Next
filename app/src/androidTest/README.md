@@ -6,6 +6,21 @@
 
 WebDAV 存档同步、恢复与 Compose UI 的独立验收入口见 [WebDAV 设备验收记录](../../../docs/WebDAV-device-acceptance.md)。这些测试要求专用 application ID 与显式 opt-in；其纯框架辅助 Activity 不证明原生游戏兼容性。
 
+## 下载目录启动回归
+
+`DownloadsLaunchDeviceTest` 在 Android 8–10 使用 Downloads provider 的 `raw:` 游戏 URI，验证权限不足时打开系统设置、权限已授予时可向 Web 宿主交棒。Android 10 在已授权时还通过 MediaStore 索引原创 HTML 夹具，验证 `msd:` 目录交棒和混合 tree/document URI 的 `msf:` 路径解析。
+
+以 `TYRANOR_APPLICATION_ID=com.tyranor.next.downloadstest` 构建并安装 `:app:assembleDebug` 与 `:app:assembleDebugAndroidTest` 的 APK。用下列命令先在未授予存储权限时运行，再授予两项权限，以 `downloads_permission_granted true` 重跑。
+
+```bash
+adb shell am instrument -w -e class com.tyranor.next.core.game.launch.DownloadsLaunchDeviceTest \
+  -e downloads_permission_granted false com.tyranor.next.downloadstest.test/androidx.test.runner.AndroidJUnitRunner
+adb shell pm grant com.tyranor.next.downloadstest android.permission.READ_EXTERNAL_STORAGE
+adb shell pm grant com.tyranor.next.downloadstest android.permission.WRITE_EXTERNAL_STORAGE
+```
+
+2026-11-22 在 ARM64 模拟器 API 26 和 API 29 上验证通过，共 5 次测试执行。结果覆盖存储权限引导、路径解析和 Web 宿主交棒。
+
 ## 界面动效设备验收
 
 `GameSheetShortWindowDeviceTest` 在真实抽屉窗口内限制内容为 100dp，覆盖普通/增强与 1.0/1.5 字体比例，滚动到底后验证启动文字不溢出并以真实触摸触发合成回调；常规高度另外验证启动按钮不随列表滚动。测试不会启动游戏。可与 `AppBottomSheetDeviceTest` 一起运行，复核下拉菜单及抽屉关闭守卫。
