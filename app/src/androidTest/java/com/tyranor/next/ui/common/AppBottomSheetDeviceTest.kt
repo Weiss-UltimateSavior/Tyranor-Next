@@ -17,13 +17,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import androidx.test.espresso.Espresso.pressBack
@@ -34,6 +41,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.core.settings.GameCardColumnSettings
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.MotionSheetController
@@ -75,6 +83,51 @@ class AppBottomSheetDeviceTest {
     @Test fun enhancedUnchangedHeightControlKeepsBottomActionAligned() =
         unchangedHeightControl(enhanced = true)
 
+    @Test fun columnSliderAppearsOnlyForGridStylesAndReportsChanges() {
+        compose.runOnUiThread { MotionMode.sync(false) }
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val slider = compose.onNodeWithContentDescription(context.getString(R.string.game_filter_card_columns))
+        var cardStyle by mutableStateOf(AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW)
+        var columns by mutableStateOf(3)
+        var wideScreen by mutableStateOf(false)
+        compose.setContent {
+            TyranorNextTheme {
+                GameFilterSheet(
+                    sortMode = AppSettingsStore.GAME_SORT_ALPHA,
+                    engineFilter = AppSettingsStore.GAME_FILTER_ENGINE_ALL,
+                    playedFilter = AppSettingsStore.GAME_FILTER_PLAYED_ALL,
+                    availableEngines = listOf(EngineType.UNKNOWN),
+                    searchQuery = "",
+                    cardStyle = cardStyle,
+                    cardColumns = columns,
+                    columnRange = GameCardColumnSettings.range(wideScreen),
+                    onSortChange = {}, onEngineChange = {}, onPlayedChange = {},
+                    onColumnsChange = { columns = it },
+                    onReset = {}, onDismiss = {},
+                )
+            }
+        }
+        compose.onNodeWithText(context.getString(R.string.game_filter_title)).assertIsDisplayed()
+        slider.assertDoesNotExist()
+        compose.runOnIdle { cardStyle = AppSettingsStore.GAME_CARD_STYLE_WATERFALL }
+        slider.performScrollTo().assertIsDisplayed().performSemanticsAction(SemanticsActions.SetProgress) { it(8f) }
+        compose.runOnIdle {
+            assertEquals(6, columns)
+            cardStyle = AppSettingsStore.GAME_CARD_STYLE_GRID
+            wideScreen = true
+        }
+        slider.assertIsDisplayed().performSemanticsAction(SemanticsActions.SetProgress) { it(8f) }
+        slider.assert(SemanticsMatcher.expectValue(
+            SemanticsProperties.StateDescription,
+            context.getString(R.string.game_filter_card_columns_value, 8),
+        ))
+        compose.runOnIdle {
+            assertEquals(8, columns)
+            cardStyle = AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW
+        }
+        slider.assertDoesNotExist()
+    }
+
     private fun filterDropdownConsumesBack(enhanced: Boolean) {
         compose.runOnUiThread { MotionMode.sync(enhanced) }
         // The enhanced popup intentionally samples its follow spring every frame while open.
@@ -94,7 +147,11 @@ class AppBottomSheetDeviceTest {
                             playedFilter = AppSettingsStore.GAME_FILTER_PLAYED_ALL,
                             availableEngines = listOf(EngineType.UNKNOWN),
                             searchQuery = "",
+                            cardStyle = AppSettingsStore.GAME_CARD_STYLE_WATERFALL,
+                            cardColumns = 3,
+                            columnRange = 2..6,
                             onSortChange = {}, onEngineChange = {}, onPlayedChange = {}, onReset = {},
+                            onColumnsChange = {},
                             onDismiss = { dismissals++; visible = false },
                         )
                     }

@@ -212,6 +212,8 @@
     <string name="game_filter_sort_section">排序方式</string>
     <string name="game_filter_engine_section">引擎类型</string>
     <string name="game_filter_played_section">游玩状态</string>
+    <string name="game_filter_card_columns">每行卡片数</string>
+    <string name="game_filter_card_columns_value">%1$d 列</string>
     <string name="game_filter_all">全部</string>
     <string name="game_filter_played_only">已游玩</string>
     <string name="game_filter_played_none">未游玩</string>

@@ -21,16 +21,16 @@ internal const val CoverDecodeBudgetBytes = 32L * 1024 * 1024
  * 首页最近打开与封面流可能以不同清晰度 / 形状驻留，LruCache 仍按真实字节数统一计费与逐出。
  */
 internal enum class CoverDecodeTier(val maxWidthPx: Int, val maxHeightPx: Int) {
-    /** 3/6 列网格、封面搜索预览与首页快捷启动卡的模糊底图（卡片最大边约 180–384px）。 */
+    /** 窄卡片、封面搜索预览与首页快捷启动卡的模糊底图。 */
     GRID(384, 512),
 
-    /** 首页最近打开（手机约 500px 宽）等中等卡片；长按操作弹窗、网格与搜索预览共用 GRID。 */
+    /** 首页最近打开（手机约 500px 宽）等中等卡片。 */
     CARD(512, 683),
 
-    /** 封面流（1080p 竖屏卡片约 648px 宽）。 */
+    /** 封面流（1080p 竖屏卡片约 648px 宽）等较宽的卡片。 */
     FLOW(768, 1024),
 
-    /** 大屏 / 平板封面流。 */
+    /** 大屏 / 平板上的大卡片。 */
     FLOW_LARGE(1024, 1365),
     ;
 
@@ -51,7 +51,20 @@ internal enum class CoverDecodeTier(val maxWidthPx: Int, val maxHeightPx: Int) {
             widthPx <= FLOW.maxWidthPx -> FLOW
             else -> FLOW_LARGE
         }
+
+        fun forCoverBox(widthPx: Int, targetAspect: Float): CoverDecodeTier {
+            val heightPx = (widthPx / targetAspect).roundToInt()
+            return entries.firstOrNull { tier ->
+                val (decodedWidth, decodedHeight) = coverTargetSize(tier, targetAspect)
+                decodedWidth >= widthPx && decodedHeight >= heightPx
+            } ?: FLOW_LARGE
+        }
     }
+}
+
+internal fun gameGridCoverWidthPx(gridWidthPx: Int, columns: Int, horizontalPaddingPx: Int, columnGapPx: Int): Int {
+    val available = (gridWidthPx - horizontalPaddingPx - columnGapPx * (columns - 1)).coerceAtLeast(0)
+    return available / columns + if (available % columns == 0) 0 else 1
 }
 
 /**

@@ -17,6 +17,17 @@ internal data class GameCardCornerSettings(
     val radiusDp: Int = AppSettingsStore.DEFAULT_APP_CORNER_RADIUS,
 )
 
+internal data class GameCardColumnSettings(
+    val narrow: Int = 3,
+    val wide: Int = 6,
+) {
+    fun forScreen(wideScreen: Boolean): Int = if (wideScreen) wide else narrow
+
+    companion object {
+        fun range(wideScreen: Boolean): IntRange = if (wideScreen) 2..8 else 2..6
+    }
+}
+
 /**
  * 应用设置存储层：与引擎无关的应用级偏好（如主题色、导航栏样式）。
  * 使用独立 prefs 文件 app_settings，避免混入引擎进程读取的 tyranor_prefs。
@@ -122,6 +133,8 @@ object AppSettingsStore {
     /** 游戏页卡片风格：瀑布（默认）/ 网格 / 列表（封面流）。 */
     const val KEY_GAME_CARD_STYLE = "game_card_style"
 
+    private const val KEY_GAME_CARD_COLUMNS_NARROW = "game_card_columns_narrow"
+    private const val KEY_GAME_CARD_COLUMNS_WIDE = "game_card_columns_wide"
     private const val KEY_GAME_CARD_CORNER_ENABLED = "game_card_corner_enabled"
     private const val KEY_GAME_CARD_CORNER_RADIUS = "game_card_corner_radius"
 
@@ -389,6 +402,9 @@ object AppSettingsStore {
 
     /** 卡片风格内存态：设置页切换后游戏页即时切换布局。 */
     val gameCardStyleState: MutableStateFlow<String> = MutableStateFlow(DEFAULT_GAME_CARD_STYLE)
+
+    private val mutableGameCardColumns = MutableStateFlow(GameCardColumnSettings())
+    internal val gameCardColumns = mutableGameCardColumns.asStateFlow()
 
     private val mutableGameCardCorners = MutableStateFlow(GameCardCornerSettings())
     internal val gameCardCorners = mutableGameCardCorners.asStateFlow()
@@ -880,6 +896,29 @@ object AppSettingsStore {
         val normalized = normalizeGameCardStyle(style)
         prefs(c).edit().putString(KEY_GAME_CARD_STYLE, normalized).apply()
         gameCardStyleState.value = normalized
+    }
+
+    /** 主进程启动时初始化；页面只订阅列数，不重新从偏好回填。 */
+    @Synchronized
+    internal fun initGameCardColumns(context: Context) {
+        val settings = prefs(context)
+        val defaults = GameCardColumnSettings()
+        mutableGameCardColumns.value = GameCardColumnSettings(
+            narrow = settings.getInt(KEY_GAME_CARD_COLUMNS_NARROW, defaults.narrow)
+                .coerceIn(GameCardColumnSettings.range(wideScreen = false)),
+            wide = settings.getInt(KEY_GAME_CARD_COLUMNS_WIDE, defaults.wide)
+                .coerceIn(GameCardColumnSettings.range(wideScreen = true)),
+        )
+    }
+
+    @Synchronized
+    internal fun setGameCardColumns(context: Context, wideScreen: Boolean, columns: Int) {
+        val normalized = columns.coerceIn(GameCardColumnSettings.range(wideScreen))
+        val current = mutableGameCardColumns.value
+        if (current.forScreen(wideScreen) == normalized) return
+        val key = if (wideScreen) KEY_GAME_CARD_COLUMNS_WIDE else KEY_GAME_CARD_COLUMNS_NARROW
+        prefs(context).edit { putInt(key, normalized) }
+        mutableGameCardColumns.value = if (wideScreen) current.copy(wide = normalized) else current.copy(narrow = normalized)
     }
 
     fun setGameSort(c: Context, sort: String) {

@@ -161,6 +161,7 @@ import com.tyranor.next.core.game.model.GameSortKeys
 import com.tyranor.next.core.game.model.sortGames
 import com.tyranor.next.core.cover.stableKey
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.core.settings.GameCardColumnSettings
 import com.tyranor.next.core.auth.BangumiAuthStore
 import com.tyranor.next.core.auth.HikarinagiAuthStatus
 import com.tyranor.next.core.auth.HikarinagiAuthStore
@@ -209,6 +210,7 @@ import com.tyranor.next.ui.patch.KrkrOnlinePatchActivity
 import com.tyranor.next.ui.save.SaveManagementActivity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -453,6 +455,9 @@ private fun GameLibraryContent(
 
     val scrapingCoversDescription = stringResource(R.string.game_scraping_covers_content_description)
     val cardStyle by AppSettingsStore.gameCardStyleState.collectSettingAsState()
+    val wideScreen = isWideScreen()
+    val columnSettings by AppSettingsStore.gameCardColumns.collectSettingAsState()
+    val columns = columnSettings.forScreen(wideScreen)
     // 搜索栏仅在列表顶部显示：离开顶部立即收起，向上滚动过程中不提前展开，滚回顶部才重新出现。
     // 封面流无纵向滚动，始终显示。
     var searchBarVisible by remember { mutableStateOf(true) }
@@ -633,6 +638,7 @@ private fun GameLibraryContent(
                             AppSettingsStore.GAME_CARD_STYLE_GRID -> UniformGameGrid(
                                 games = filteredGames,
                                 cardShape = cardShape,
+                                columns = columns,
                                 gridState = uniformGridState,
                                 onGameClick = { if (contentInteractive) onGameClick(it) },
                                 onGameLongClick = { if (contentInteractive) onGameLongClick(it) },
@@ -641,6 +647,7 @@ private fun GameLibraryContent(
                             else -> GameGrid(
                                 games = filteredGames,
                                 cardShape = cardShape,
+                                columns = columns,
                                 gridState = gridState,
                                 onGameClick = { if (contentInteractive) onGameClick(it) },
                                 onGameLongClick = { if (contentInteractive) onGameLongClick(it) },
@@ -681,9 +688,13 @@ private fun GameLibraryContent(
             playedFilter = conditions.playedFilter,
             availableEngines = availableEngines,
             searchQuery = query,
+            cardStyle = cardStyle,
+            cardColumns = columns,
+            columnRange = GameCardColumnSettings.range(wideScreen),
             onSortChange = { AppSettingsStore.setGameSort(context, it) },
             onEngineChange = { AppSettingsStore.setGameFilterEngine(context, it) },
             onPlayedChange = { AppSettingsStore.setGameFilterPlayed(context, it) },
+            onColumnsChange = { AppSettingsStore.setGameCardColumns(context, wideScreen, it) },
             onReset = { AppSettingsStore.resetGameConditions(context) },
             onDismiss = { showFilterSheet = false },
         )
@@ -2236,6 +2247,22 @@ private fun LaunchFileDialog(
     )
 }
 
+private val GameGridSideInset = 12.dp
+private val GameGridColumnGap = 10.dp
+
+/** 瀑布流先合并两侧留白再取整；等高网格对两侧留白分别取整。 */
+@Composable
+private fun GameGridCoverWidth(columns: Int, staggered: Boolean, content: @Composable (Int) -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val density = LocalDensity.current
+        val coverWidthPx = with(density) {
+            val horizontalPadding = if (staggered) (GameGridSideInset * 2).roundToPx() else GameGridSideInset.roundToPx() * 2
+            gameGridCoverWidthPx(constraints.maxWidth, columns, horizontalPadding, GameGridColumnGap.roundToPx())
+        }
+        content(coverWidthPx)
+    }
+}
+
 /**
  * 游戏页默认瀑布流（列数、封面加载优化、卡片名称标签与角标设置均按游戏页设置生效）。
  */
@@ -2243,10 +2270,11 @@ private fun LaunchFileDialog(
 internal fun GameGrid(
     games: List<ScanGame>,
     cardShape: Shape,
+    columns: Int,
     gridState: LazyStaggeredGridState,
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
-) {
+) = GameGridCoverWidth(columns, staggered = true) { coverWidthPx ->
     // 液态玻璃导航悬浮时不占布局：列表底部预留导航高度，滚动到底时最后一行可完全露出不被遮挡；
     // 滚动过程中内容仍可经过玻璃后面（沉浸）
     val glassBottomInset = glassNavBottomInset()
@@ -2254,16 +2282,16 @@ internal fun GameGrid(
     val hideTitleTag by AppSettingsStore.gameCardTitleTagState.collectSettingAsState()
     // 应用设置「卡片引擎角标」：左上角引擎类型角标（默认关）
     val showEngineBadge by AppSettingsStore.gameCardBadgeState.collectSettingAsState()
-    // 大屏（横屏/平板）一行六个卡片，避免卡片被撑得过大；窄屏保持一行三个
-    val columns = if (isWideScreen()) 6 else 3
     // 滚动果冻：滚得越快卡片沿滚动方向拉长越多，停下 Q 弹回原样（只在图层里读，不触发重组；「普通」档不挂）
     val gridJelly = rememberScrollJellyState()
     LazyVerticalStaggeredGrid(
         columns = StaggeredGridCells.Fixed(columns),
         state = gridState,
         modifier = Modifier.fillMaxSize().scrollJellyHost(gridJelly),
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp + glassBottomInset),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(
+            start = GameGridSideInset, end = GameGridSideInset, top = 12.dp, bottom = 12.dp + glassBottomInset,
+        ),
+        horizontalArrangement = Arrangement.spacedBy(GameGridColumnGap),
         verticalItemSpacing = 12.dp,
     ) {
         staggeredGridItemsIndexed(
@@ -2276,10 +2304,10 @@ internal fun GameGrid(
             GameCard(
                 // 搜索 / 排序 / 增删时卡片位置弹簧过渡；首屏依次弹入
                 modifier = listItemMotion(ListItemPlacement.Reflow).staggeredEntrance(index)
-                    // 窄卡片（3/6 列）拉伸略收一点，避免高速滚动时显得过软
                     .scrollJelly(gridJelly, strength = 0.03f),
                 game = game,
                 cardShape = cardShape,
+                coverWidthPx = coverWidthPx,
                 onClick = { onGameClick(game) },
                 onLongClick = { onGameLongClick(game) },
                 hideTitleTag = hideTitleTag,
@@ -2293,32 +2321,33 @@ internal fun gameCardItemKey(game: ScanGame): String =
     "${game.uri}\u0000${game.coverUri.orEmpty()}\u0000${game.coverSource.orEmpty()}"
 
 /**
- * Renders a stable-aspect library card with optional long press and engine badge. Cover decoding
- * follows the supplied scrolling query, while the chosen motion mode controls its reveal animation.
+ * Renders a stable-aspect library card with optional long press and engine badge.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun GameCard(
     game: ScanGame,
     cardShape: Shape,
+    coverWidthPx: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
-    /** 当前是否正在滑动/惯性滚动的只读查询；在 producer 协程内读取，避免组合期订阅滚动状态。 */
     /** 卡片名称隐藏【】/[] 标签（应用设置「卡片隐藏名称标签」）。 */
     hideTitleTag: Boolean = false,
     /** 左上角引擎类型角标（应用设置「卡片引擎角标」，默认关）。 */
     showEngineBadge: Boolean = false,
 ) {
     val engineName = gameCardEngineName(game)
-    // 瀑布流：按游戏 uri 稳定取 0.60–0.80 的封面宽高比，让卡片高低错落（列数不变）。
+    // 瀑布流：按游戏 uri 稳定取 0.60–0.80 的封面宽高比，让同一列数下的卡片高低错落。
     // 解码按这个比例裁剪，避免先把图裁成 3:4 再被卡片盒二次裁切。
     val coverAspect = remember(game.uri) {
         val hash = game.uri.hashCode().let { if (it == Int.MIN_VALUE) 0 else kotlin.math.abs(it) }
         0.60f + (hash % 21) / 100f
     }
+    val coverTier = remember(coverWidthPx, coverAspect) { CoverDecodeTier.forCoverBox(coverWidthPx, coverAspect) }
     val coverBitmap by rememberCoverBitmap(
         coverUri = game.coverUri,
+        tier = coverTier,
         targetAspect = coverAspect,
     )
     // 删除消散中：登记在 dissolvingGames 里的卡片播放消散效果，期间不再响应点击
@@ -2394,24 +2423,26 @@ internal fun GameCard(
 internal fun UniformGameGrid(
     games: List<ScanGame>,
     cardShape: Shape,
+    columns: Int,
     gridState: LazyGridState,
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
-) {
+) = GameGridCoverWidth(columns, staggered = false) { coverWidthPx ->
     // 液态玻璃导航悬浮时不占布局：列表底部预留导航高度（与瀑布流一致）
     val glassBottomInset = glassNavBottomInset()
     val hideTitleTag by AppSettingsStore.gameCardTitleTagState.collectSettingAsState()
     val showEngineBadge by AppSettingsStore.gameCardBadgeState.collectSettingAsState()
-    // 大屏（横屏/平板）一行六个卡片，窄屏保持一行三个
-    val columns = if (isWideScreen()) 6 else 3
     // 滚动果冻：快速滚动时卡片沿滚动方向轻微拉长，停下 Q 弹复原（「普通」档不挂）
     val gridJelly = rememberScrollJellyState()
+    val coverTier = CoverDecodeTier.forWidth(coverWidthPx)
     LazyVerticalGrid(
         columns = GridCells.Fixed(columns),
         state = gridState,
         modifier = Modifier.fillMaxSize().scrollJellyHost(gridJelly),
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp + glassBottomInset),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(
+            start = GameGridSideInset, end = GameGridSideInset, top = 12.dp, bottom = 12.dp + glassBottomInset,
+        ),
+        horizontalArrangement = Arrangement.spacedBy(GameGridColumnGap),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         gridItemsIndexed(
@@ -2425,6 +2456,7 @@ internal fun UniformGameGrid(
                     .scrollJelly(gridJelly, strength = 0.03f),
                 game = game,
                 cardShape = cardShape,
+                coverTier = coverTier,
                 onClick = { onGameClick(game) },
                 onLongClick = { onGameLongClick(game) },
                 hideTitleTag = hideTitleTag,
@@ -2443,17 +2475,17 @@ internal fun UniformGameGrid(
 internal fun UniformGameCard(
     game: ScanGame,
     cardShape: Shape,
+    coverTier: CoverDecodeTier,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
-    /** 当前是否正在滑动/惯性滚动的只读查询；在 producer 协程内读取，避免组合期订阅滚动状态。 */
     /** 卡片名称隐藏【】/[] 标签（应用设置「卡片隐藏名称标签」）。 */
     hideTitleTag: Boolean = false,
     /** 左上角引擎类型角标（应用设置「卡片引擎角标」，默认关）。 */
     showEngineBadge: Boolean = false,
 ) {
     val engineName = gameCardEngineName(game)
-    val coverBitmap by rememberCoverBitmap(game.coverUri)
+    val coverBitmap by rememberCoverBitmap(game.coverUri, tier = coverTier)
     // 删除消散中：登记在 dissolvingGames 里的卡片播放消散效果，期间不再响应点击
     val dissolve = rememberLastNonNull(dissolvingGames[game.uri])
     val pressModifier = if (onLongClick != null) {
@@ -2660,13 +2692,15 @@ internal fun rememberCoverBitmap(
     val aspect = quantizedCoverAspect(targetAspect ?: tier.defaultAspect)
     val cacheKey = coverUri?.let { tier.cacheKey(it, aspect) }
     val cached = cacheKey?.let(CoverBitmapCache::get)
-    return produceState<ImageBitmap?>(initialValue = cached?.asImageBitmap(), coverUri, tier, aspect) {
+    val cachedImage = remember(cached) { cached?.asImageBitmap() }
+    return produceState<ImageBitmap?>(initialValue = cachedImage, coverUri, tier, aspect) {
         val uri = coverUri
         if (uri.isNullOrBlank()) return@produceState
-        if (cached != null) {
+        if (cachedImage != null) {
             // 缓存命中也要登记：解码写入缓存后、回到调用方调度器前协程可能被取消
             // （withContext 丢弃结果），不登记则位图被 LRU 逐出后占位文字会重新出现
             CoverAvailability.markKnown(uri)
+            value = cachedImage
             return@produceState
         }
         val bitmap = CoverThumbnailLoader.load(context.applicationContext, uri, tier, aspect)
@@ -2685,7 +2719,7 @@ internal fun rememberCoverBitmap(
 private fun rememberCandidateCoverPreview(candidate: CoverSearchCandidate): androidx.compose.runtime.State<CoverPreviewState> {
     val context = LocalContext.current
     val cacheKey = candidate.coverUrl
-    // 搜索结果缩略图与游戏库网格同档；缓存 key 带档位与宽高比，避免与其它消费方互相覆盖
+    // 搜索结果使用 GRID 档；缓存 key 带档位与宽高比，避免与其它消费方互相覆盖
     val cacheKeyWithTier = cacheKey.takeIf { it.isNotBlank() }?.let { uri ->
         CoverDecodeTier.GRID.cacheKey(uri)
     }
@@ -2837,6 +2871,7 @@ private object CoverThumbnailLoader {
         ) {
             withContext(Dispatchers.IO) {
                 decodeCoverThumbnail(context, uriText, tier, targetAspect)?.also {
+                    ensureActive()
                     CoverBitmapCache.putDecoded(cacheKey, it)
                 }
             }
