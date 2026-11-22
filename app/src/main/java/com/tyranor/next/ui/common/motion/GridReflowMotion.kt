@@ -239,6 +239,13 @@ private fun rememberGridReflowState(
     return state
 }
 
+/**
+ * 重排窗口期隐藏尚未重排的旧位置，并负责入场错峰。
+ *
+ * 两个宿主各管一段、不重叠：本修饰符只在重排开始到 [GridReflowState.dispatchReflow] 之间遮蔽
+ * （[GridReflowState.isReady] 为假），瀑布网格的恢复期遮蔽、吞输入与无障碍移除归 [Modifier.waterfallReflowHost]
+ * （它在外层，先遮蔽、后放行）。两者串起来遮蔽时间更长，任一时刻的可见性都有单一来源。
+ */
 @Composable
 fun Modifier.gridReflowHost(state: GridReflowState): Modifier =
     skipEntranceOnDrag(state.entrance).graphicsLayer {

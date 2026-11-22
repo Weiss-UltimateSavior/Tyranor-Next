@@ -1038,6 +1038,16 @@
     <string name="android_add_duplicate">This app is already in the library</string>
     <string name="android_add_already_added">In library</string>
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
+    <string name="game_shelf_stat_total">Total</string>
+    <string name="game_shelf_stat_last">Last played</string>
+    <string name="game_shelf_stat_session">Last session</string>
+    <string name="game_shelf_stat_none">—</string>
+    <string name="game_shelf_stat_untracked">External, untracked</string>
+    <string name="game_shelf_not_started">Not played</string>
+    <string name="game_shelf_today">Today</string>
+    <string name="game_shelf_yesterday">Yesterday</string>
+    <string name="game_shelf_days_ago">%1$d days ago</string>
+    <string name="game_shelf_minutes">%1$d min</string>
 
     <!-- Shared ordered graphics-chain settings -->
     <string name="graphics_settings_title">Super resolution</string>

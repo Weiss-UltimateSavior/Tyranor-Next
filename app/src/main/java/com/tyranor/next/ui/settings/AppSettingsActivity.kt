@@ -463,6 +463,12 @@ internal fun AppSettingsScreen() {
                                         onValueChangeFinished = {
                                             AppSettingsStore.setBackgroundImageAlpha(ctx, backgroundImageAlpha)
                                         },
+                                        // 手势被系统或上层容器取消：预览回到已存设置，避免读数与落盘值分叉。
+                                        onValueChangeCancelled = {
+                                            AppSettingsStore.previewBackgroundImageAlpha(
+                                                AppSettingsStore.getBackgroundImageAlpha(ctx),
+                                            )
+                                        },
                                         valueRange = 0f..100f,
                                         steps = 0,
                                         hapticEffect = SliderDefaults.SliderHapticEffect.Step,
@@ -487,6 +493,12 @@ internal fun AppSettingsScreen() {
                                         },
                                         onValueChangeFinished = {
                                             AppSettingsStore.setBackgroundImageBlur(ctx, backgroundImageBlur)
+                                        },
+                                        // 同上：取消时把模糊预览回滚到已存值。
+                                        onValueChangeCancelled = {
+                                            AppSettingsStore.previewBackgroundImageBlur(
+                                                AppSettingsStore.getBackgroundImageBlur(ctx),
+                                            )
                                         },
                                         valueRange = 0f..100f,
                                         steps = 0,

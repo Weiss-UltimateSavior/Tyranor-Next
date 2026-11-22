@@ -74,9 +74,15 @@ class GameScreenMainActivityAcceptanceDeviceTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
     private val automation by lazy { instrumentation.uiAutomation }
+    // 本用例的整体截止时间：所有 await 都收敛到它，超时在同一测试线程抛出。
+    private var testDeadline = Long.MAX_VALUE
 
-    @Test(timeout = 180_000)
+    // 不用 JUnit 的 timeout：它会把用例搬到守护线程并在超时后放弃等待，
+    // finally 清理与下一条设备测试并发跑同一进程状态（设置单例、旋转、夹具目录）。
+    // 改用测试内截止时间，超时仍然从同一线程抛出并走 finally。
+    @Test
     fun hiddenGameTabRotatesAndReturnsToInteractiveCards() {
+        testDeadline = SystemClock.uptimeMillis() + TEST_BUDGET_MILLIS
         MotionDeviceAcceptance.require(enhanced = null)
         assertEquals("Dedicated PR195 installation required", "com.tyranor.next.pr195fix", context.packageName)
         assertTrue("Screenshot prevention must already be off", !AppSettingsStore.isPrivacyPreventScreenshot(context))
@@ -328,8 +334,10 @@ class GameScreenMainActivityAcceptanceDeviceTest {
     }
 
     private fun await(message: String, condition: () -> Boolean) {
-        val deadline = SystemClock.uptimeMillis() + 15_000L
-        while (SystemClock.uptimeMillis() < deadline) {
+        val limit = minOf(SystemClock.uptimeMillis() + 15_000L, testDeadline)
+        while (SystemClock.uptimeMillis() < limit) {
+            // 被中断时立刻退出，避免测试线程在超时后仍继续驱动界面。
+            if (Thread.currentThread().isInterrupted) throw InterruptedException("Interrupted while awaiting: $message")
             if (condition()) return
             SystemClock.sleep(25L)
         }
@@ -501,6 +509,8 @@ class GameScreenMainActivityAcceptanceDeviceTest {
     }
 
     companion object {
+        // 100 条夹具实测约 25 秒；3000 条加压轮留足余量，仍远小于同类用例的历史超时。
+        private const val TEST_BUDGET_MILLIS = 180_000L
         private val SETTINGS_KEYS = setOf(
             AppSettingsStore.KEY_HOME_PAGE_ENABLED, AppSettingsStore.KEY_HOME_STYLE, AppSettingsStore.KEY_LANGUAGE,
             AppSettingsStore.KEY_NAV_STYLE, AppSettingsStore.KEY_SIDE_RAIL, AppSettingsStore.KEY_GAME_CARD_STYLE,

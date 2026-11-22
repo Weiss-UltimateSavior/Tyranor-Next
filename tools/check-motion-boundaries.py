@@ -32,10 +32,12 @@ NoPressFeedbackButtons OverlayDropdownPreference SlidingTabRow TabPagerState
 TopBarIcon notice/NoticeHost
 """.split())
 OWNERS.update("ui/common/motion/" + f + ".kt" for f in """
-BlurText ContentMotion DeleteEffect Entrance ExpandSectionVisibility FeedbackMotion GameCoverMotion
-ListItemMotion MotionMode MotionSprings MotionTokens PagerMotion PageTransitions
-ParallaxCardPager PressSquish ReorderPlacementMotion ReplayEntranceSprings
-ScrollMotion SheetMotion TabPageMotion
+BlurText ContentMotion DeleteEffect DialogDimStack DialogWindowMotion DrawPhaseLayers
+Entrance ExpandSectionVisibility FeedbackMotion GameCoverMotion GridReflowMotion
+ListItemMotion MotionHaptics MotionIntent MotionMode MotionSprings MotionTokens
+OvershootRoom PageTransitions PageVisibility PagerMotion ParallaxCardPager PressSquish
+ReorderPlacementMotion ReplayEntranceSprings ScrollMotion SheetMotion SystemThemeSync
+TabPageMotion ThemeReveal WaterfallReflowState
 """.split())
 
 # The existing navigation implementations are outside this refactor. New

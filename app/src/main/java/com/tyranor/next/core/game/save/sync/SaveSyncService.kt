@@ -2,7 +2,6 @@ package com.tyranor.next.core.game.save.sync
 
 import android.content.Context
 import com.tyranor.next.core.engine.EngineType
-import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.save.GameSaveException
 import com.tyranor.next.core.game.save.GameSaveManager
@@ -1444,7 +1443,7 @@ class SaveSyncService internal constructor(
     }
 
     private fun defaultIdentity(game: ScanGame): String {
-        val path = GamePathUtils.safUriToPath(game.uri)
+        val path = environment.gamePath(game)
         val folder = path?.let { File(it).name }?.takeIf { it.isNotBlank() }
             ?: throw SaveSyncException(SaveSyncError.SAVE_UNAVAILABLE)
         return Normalizer.normalize(folder, Normalizer.Form.NFC).lowercase(Locale.ROOT)

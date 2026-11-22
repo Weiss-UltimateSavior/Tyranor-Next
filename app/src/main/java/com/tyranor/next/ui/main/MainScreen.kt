@@ -653,7 +653,7 @@ private fun ColumnScope.MainTabPages(
                   onAddManualGame = libraryViewModel::addManualGame,
                   onCoachAnchorChanged = onCoachAnchorChanged,
                   isActive = pageActive,
-                   isVisible = gameTabSelected,
+                  isVisible = gameTabSelected,
                 )
                 2 -> EngineScreen(
                   Modifier.fillMaxSize(),

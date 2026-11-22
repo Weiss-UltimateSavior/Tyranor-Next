@@ -66,6 +66,7 @@
 ## 验收 / 历史记录
 
 - [PR #195 卡片布局返修记录](pr195-revision.md)
+- [PR #195 游戏页四主题平板截图与观察上界](pr195-evidence/README.md)
 - [Ethornell 测试验收记录](Ethornell测试验收记录.md)
 - [WebDAV Android 设备验收记录](WebDAV-device-acceptance.md)
 - [应用层代码审查问题清单](应用层代码审查问题清单.md)

@@ -121,7 +121,6 @@ object EngineLauncher {
     private const val TAG = "EngineLauncher"
     private const val KR_LEGACY_PATCH_MARKER = "// TYRANOR_NEXT_KRKR_LEGACY_PATCH_V1"
     private const val KR_FBF_STEAM_STUB_MARKER = "// TYRANOR_NEXT_FBF_STEAM_STUB_V1"
-    private const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
 
     /** 承载输入重映射（虚拟按键 + 手柄映射）的 Web 系引擎：旧触屏手柄数据迁移仅对这些引擎触发。 */
     private val WEB_INPUT_ENGINES = setOf(
@@ -444,7 +443,7 @@ object EngineLauncher {
         // 外置模块先于内置目录解析确定路径：文件型入口（SWF）取所在目录，其余保持目录解析
         val defaultModule = ExternalEngineModuleRegistry.moduleForEngine(game.engine)
         val path = if (defaultModule?.launchEntryIsFile == true) {
-            resolveLaunchEntryDirectory(context, game) ?: return LaunchResult.Failure.GameDirUnresolved
+            resolveLaunchEntryDirectory(context, game)
         } else {
             resolveGameDirectory(context, game)
         }
@@ -461,12 +460,9 @@ object EngineLauncher {
             ExternalEngineLauncher.checkInstallation(context, module, game.launchTarget)?.let {
                 return LaunchResult.Failure.ExternalModuleFailed(it)
             }
-            if (module.requiresGameDirectoryPath && path == null) {
-                return LaunchResult.Failure.GameDirUnresolved
-            }
-            // 需要目录解析的外置引擎同样要「所有文件访问」权限才能读取游戏目录（SAF 授权对外置 APK 无效）
-            if (module.requiresGameDirectoryPath && path != null) {
-                requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
+            if (module.requiresGameDirectoryPath) {
+                requestGameStorageAccess(context, game, path)?.let { return it }
+                if (path == null) return LaunchResult.Failure.GameDirUnresolved
             }
             val launchContext = currentCoroutineContext()
             launchContext.ensureActive()
@@ -487,11 +483,9 @@ object EngineLauncher {
             }
             return LaunchResult.Failure.ExternalModuleFailed(result)
         }
-        if (path == null) {
-            return LaunchResult.Failure.GameDirUnresolved
-        }
         // SystemNNN already admitted its selected root; an app-private imported copy needs no broad grant.
-        if (game.engine != EngineType.SYSTEMNNN) requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
+        if (game.engine != EngineType.SYSTEMNNN) requestGameStorageAccess(context, game, path)?.let { return it }
+        if (path == null) return LaunchResult.Failure.GameDirUnresolved
         if (game.engine == EngineType.ETHORNELL) {
             prepareEthornell(context, game, path, settings)?.let { return it }
         }
@@ -737,9 +731,8 @@ object EngineLauncher {
                 return LaunchResult.Failure.SavePreparationFailed(SaveSyncError.SAVE_UNAVAILABLE)
             }
         }
-        // 先做词法映射：模块自己校验目录是否存在/可读，主 App 不要求“所有文件访问”。
-        val path = GamePathUtils.safUriToPath(game.uri)
-            ?: resolveGameDirectory(context, game)
+        // 模块自己校验目录是否存在、可读，主 App 不要求「所有文件访问」。
+        val path = GamePathUtils.resolveLocalPath(context, game.uri)
             ?: return LaunchResult.Failure.RuntimeModuleFailed(RuntimeModuleLaunchResult.PathUnresolved)
         val settingsPayload = try {
             module.settings?.let { spec ->
@@ -1139,6 +1132,26 @@ object EngineLauncher {
         }
     }
 
+    private fun requestGameStorageAccess(context: Context, game: ScanGame, path: String?): LaunchResult.Failure? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return path?.let { requestAllFilesAccessIfNeeded(context, game, it) }
+        }
+        if (path == null && game.engine == EngineType.ETHORNELL) return null
+        // File.isDirectory 和 MediaStore 查询都可能因缺少旧版存储权限而失败。
+        val candidate = path ?: GamePathUtils.safUriToPath(game.uri)
+        if (candidate == null) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+                !GamePathUtils.isMediaStoreDownload(game.uri)
+            ) return null
+        } else {
+            if (!needsAllFilesAccess(candidate)) return null
+            if (game.engine == EngineType.KIRIKIRI && GamePathUtils.isRemovableStoragePath(candidate)) return null
+            val directory = File(candidate)
+            if (directory.isDirectory && directory.canRead() && directory.canWrite()) return null
+        }
+        return requestLegacyStorageAccess(context)
+    }
+
     /** Resuming a verified live player must not re-enter save recovery or start a second Activity. */
     private suspend fun restoreSystemNnn(context: Context, game: ScanGame): LaunchResult? {
         return try {
@@ -1228,6 +1241,10 @@ object EngineLauncher {
     private fun requestSystemNnnStorage(context: Context, game: ScanGame, path: String): LaunchResult.Failure? {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) return requestAllFilesAccessIfNeeded(context, game, path)
         if (!needsAllFilesAccess(path) && !path.startsWith("/storage/")) return null
+        return requestLegacyStorageAccess(context)
+    }
+
+    private fun requestLegacyStorageAccess(context: Context): LaunchResult.Failure? {
         val app = context.applicationContext
         if (app.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
             app.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
@@ -1479,8 +1496,9 @@ object EngineLauncher {
         target: ExternalEmulatorTarget,
         onDispatched: () -> Unit,
     ): LaunchResult {
-        val path = resolveGameDirectory(context, game) ?: return LaunchResult.Failure.GameDirUnresolved
-        requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
+        val path = resolveGameDirectory(context, game)
+        requestGameStorageAccess(context, game, path)?.let { return it }
+        if (path == null) return LaunchResult.Failure.GameDirUnresolved
         val exeName = YurisLaunchFiles.resolveExeName(game, path)
             ?: return LaunchResult.Failure.YurisExeMissing
         currentCoroutineContext().ensureActive()
@@ -2333,10 +2351,10 @@ object EngineLauncher {
     ): ArtemisManualPatchResult = withContext(Dispatchers.IO) {
         if (game.engine != EngineType.ARTEMIS) return@withContext ArtemisManualPatchResult.FAILED
         val path = resolveGameDirectory(context, game)
-            ?: return@withContext ArtemisManualPatchResult.GAME_DIR_UNRESOLVED
-        requestAllFilesAccessIfNeeded(context, game, path)?.let {
+        requestGameStorageAccess(context, game, path)?.let {
             return@withContext ArtemisManualPatchResult.PERMISSION_REQUIRED
         }
+        if (path == null) return@withContext ArtemisManualPatchResult.GAME_DIR_UNRESOLVED
         if (action(path)) ArtemisManualPatchResult.SUCCESS else ArtemisManualPatchResult.FAILED
     }
 
@@ -2835,104 +2853,35 @@ object EngineLauncher {
         return v
     }
 
-    /**
-     * 文件型外置入口（SWF）→ 入口所在目录。用于 [ExternalEngineModule.launchEntryIsFile]：
-     * 游戏记录 uri 指向文件本身，插件需要 `folder` 目录 + `execFile` 文件名。
-     *
-     * 路径来源按 provider 区分：
-     * - `com.android.externalstorage.documents`：优先 SAF documentId 映射，失败再用 `_data`；
-     * - 其它 `content://`（Downloads / 媒体库等）：`documentId` 不是真实路径，**禁止**
-     *   经 [GamePathUtils.safUriToPath] 拼成 `/storage/<docid>`，只信任 `_data`；
-     * - `file://` / 绝对路径：直接使用。
-     *
-     * 空白或相对 URI 没有可靠的真实路径语义，直接拒绝。
-     */
+    /** 文件型外置入口使用解析出的文件父目录，包装目录仍使用自身。 */
     private fun resolveLaunchEntryDirectory(context: Context, game: ScanGame): String? {
         val uriText = game.uri.trim()
-        if (uriText.isEmpty()) return null
-        val uri = runCatching { Uri.parse(uriText) }.getOrNull() ?: return null
-        val scheme = uri.scheme?.lowercase(Locale.ROOT)
-        if (scheme == null && !uriText.startsWith('/')) return null
-        val isContent = scheme == "content"
-        val isExternalStorage = isContent && uri.authority == EXTERNAL_STORAGE_AUTHORITY
-        // 只有外部存储 provider 的 documentId 能安全映射为真实路径。
-        val safMapped = if (isExternalStorage) GamePathUtils.safUriToPath(uriText) else null
-        // 其它 provider 或外部存储映射失败时才查 `_data`（provider 自己报告的真实路径）。
-        val dataPath = if (isContent && (safMapped == null || !isExternalStorage)) {
-            queryDocumentDataPath(context, uriText)
-        } else {
-            null
-        }
-        return resolveLaunchEntryPath(uriText, safMapped, dataPath, game.launchTarget)
+        val path = GamePathUtils.resolveLocalPath(context, uriText) ?: return null
+        return resolveLaunchEntryPath(uriText, path, game.launchTarget)
     }
 
-    /**
-     * 入口 URI → 目录的纯决策函数（无 Android 依赖，供 JVM 单测）。
-     *
-     * [safMappedPath] 仅对 `com.android.externalstorage.documents` 有效；[dataPath] 为
-     * provider `_data` 查询结果。两者都不可用或映射结果不是绝对路径时返回 null。
-     */
-    internal fun resolveLaunchEntryPath(
-        uriText: String,
-        safMappedPath: String?,
-        dataPath: String?,
-        launchTarget: String,
-    ): String? {
-        val text = uriText.trim()
-        if (text.isEmpty()) return null
-        val lower = text.lowercase(Locale.ROOT)
-        val mapped = when {
-            text.startsWith('/') -> text
-            lower.startsWith("file:") -> runCatching { java.net.URI(text).path }.getOrNull()
-            lower.startsWith("content://") -> {
-                if (isExternalStorageDocumentUri(text)) safMappedPath ?: dataPath else dataPath
-            }
-            else -> null
-        }?.trim().orEmpty()
-        if (mapped.isEmpty() || !mapped.startsWith('/')) return null
-        val entry = File(mapped)
-        // 纯 tree URI（无 /document/ 段）映射的是目录；带 /document/ 的混合 URI 仍是文件文档，
-        // 不能因为路径里出现过 /tree/ 就当成目录。
-        val isPureTreeUri = text.contains("/tree/") && !text.contains("/document/")
+    /** 将已解析的入口路径转成外置模块所需的目录。 */
+    internal fun resolveLaunchEntryPath(uriText: String, path: String, launchTarget: String): String? {
+        val entry = File(path)
+        if (!entry.isAbsolute) return null
+        // 纯 tree URI 映射的是树根；混合 URI 按实际子文档判断。
+        val isPureTreeUri = uriText.startsWith("content://") && uriText.contains("/tree/") && !uriText.contains("/document/")
         // 包装目录记录（uri=目录、launchTarget=目录内 SWF）与单文件记录（uri=SWF）都会带
         // .swf 的 launchTarget；只有映射路径本身就是该入口文件时才取父目录，否则目录会丢一级。
         val launchName = launchTarget.substringAfterLast('/').trim()
-        val mappedIsEntryFile = mapped.endsWith(".swf", ignoreCase = true) ||
+        val mappedIsEntryFile = path.endsWith(".swf", ignoreCase = true) ||
             (launchName.endsWith(".swf", ignoreCase = true) && entry.name.equals(launchName, ignoreCase = true))
         // 刻意在确认文件存在之前返回目录：缺少「所有文件访问」权限时 File.isDirectory/isFile
-        // 都会失败，若在此提前返回 null，权限门禁（requestAllFilesAccessIfNeeded）就没机会运行。
+        // 都会失败，仍按入口名称判断文件及其父目录。
         return when {
-            isPureTreeUri -> mapped
+            isPureTreeUri -> path
             entry.isDirectory -> entry.absolutePath
             entry.isFile -> entry.parentFile?.absolutePath
             mappedIsEntryFile -> entry.parentFile?.absolutePath
-            else -> mapped
+            else -> path
         }
     }
 
-    private fun isExternalStorageDocumentUri(uriText: String): Boolean =
-        uriText.substringAfter("://", "").substringBefore('/')
-            .equals(EXTERNAL_STORAGE_AUTHORITY, ignoreCase = true)
-
-    /** `_data` 兜底查询（文件型入口用；目录解析仍走 [resolveGameDirectory] 的既有逻辑）。 */
-    private fun queryDocumentDataPath(context: Context, uriText: String): String? {
-        return try {
-            val uri = Uri.parse(uriText) ?: return null
-            context.contentResolver.query(uri, arrayOf("_data"), null, null, null)?.use { cursor ->
-                if (!cursor.moveToFirst()) return@use null
-                val dataIdx = cursor.getColumnIndex("_data")
-                if (dataIdx >= 0) cursor.getString(dataIdx) else null
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    /**
-     * 将游戏 URI 解析为真实文件路径。优先按 SAF documentId 映射（主存储→进程视角挂载根，
-     * 见 [PrimaryStorageRoot]；安全文件夹等隔离 user 下不是 emulated/0），
-     * 映射失败再用 _data 查询兜底（该列在隔离 user 下可能为 null）。引擎 native 需要真实文件路径。
-     */
     private fun resolveGameDirectory(context: Context, game: ScanGame): String? {
         val uriText = game.uri
         if (game.engine == EngineType.SYSTEMNNN) return SystemNnnGameDirectory.accessible(context, uriText)?.absolutePath
@@ -2943,7 +2892,7 @@ object EngineLauncher {
                 val mapped = GamePathUtils.safUriToPath(uriText) ?: return null
                 val file = File(mapped)
                 // Resolve identity/provider/containment first. Actual access is tested only after
-                // requestAllFilesAccessIfNeeded, so an unreadable directory can reach the grant UI.
+                // requestGameStorageAccess, so an unreadable directory can reach the grant UI.
                 if (!file.isAbsolute) return null
                 // Provider/path validation is lexical until the storage permission gate. Canonical
                 // containment and actual readability are checked in prepareEthornell afterwards.
@@ -2961,29 +2910,7 @@ object EngineLauncher {
             }
         }
 
-        // 1) 首选 SAF documentId → 文件路径映射（兼容 child 子目录 document uri）
-        GamePathUtils.safUriToPath(uriText)?.let { mapped ->
-            val f = java.io.File(mapped)
-            if (f.isDirectory) return f.absolutePath
-            if (game.engine == EngineType.KIRIKIRI && GamePathUtils.isRemovableStoragePath(mapped)) {
-                val readableBySaf = runCatching {
-                    DocumentFile.fromTreeUri(context.applicationContext, Uri.parse(uriText))?.isDirectory == true
-                }.getOrDefault(false)
-                if (readableBySaf) return f.absolutePath
-            }
-        }
-
-        val uri = Uri.parse(uriText) ?: return null
-        if (uri.scheme == "file") return uri.path
-
-        // 2) 兜底：尝试 _data 直查
-        return try {
-            val doc = DocumentFile.fromTreeUri(context, uri)
-            if (doc == null || !doc.exists()) return null
-            queryDocumentDataPath(context, uriText)
-        } catch (e: Exception) {
-            null
-        }
+        return GamePathUtils.resolveLocalDirectory(context, uriText, allowSafOnly = game.engine == EngineType.KIRIKIRI)
     }
 }
 

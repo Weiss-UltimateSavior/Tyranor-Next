@@ -21,7 +21,7 @@ internal const val CoverDecodeBudgetBytes = 32L * 1024 * 1024
  * 首页最近打开与封面流可能以不同清晰度 / 形状驻留，LruCache 仍按真实字节数统一计费与逐出。
  */
 internal enum class CoverDecodeTier(val maxWidthPx: Int, val maxHeightPx: Int) {
-    /** 3/6 列网格、封面搜索预览与首页快捷启动卡的模糊底图（卡片最大边约 180–384px）。 */
+    /** 多列网格（每行 2–10 列）、封面搜索预览与首页快捷启动卡的模糊底图（卡片最大边约 180–384px）。 */
     GRID(384, 512),
 
     /** 首页最近打开（手机约 500px 宽）等中等卡片；长按操作弹窗、网格与搜索预览共用 GRID。 */

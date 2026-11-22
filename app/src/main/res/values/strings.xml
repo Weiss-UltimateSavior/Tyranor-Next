@@ -1038,6 +1038,16 @@
     <string name="android_add_duplicate">该应用已在游戏库中</string>
     <string name="android_add_already_added">已在游戏库中</string>
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
+    <string name="game_shelf_stat_total">累计时长</string>
+    <string name="game_shelf_stat_last">上次游玩</string>
+    <string name="game_shelf_stat_session">最近一次</string>
+    <string name="game_shelf_stat_none">—</string>
+    <string name="game_shelf_stat_untracked">外置运行，不计时</string>
+    <string name="game_shelf_not_started">未开始</string>
+    <string name="game_shelf_today">今天</string>
+    <string name="game_shelf_yesterday">昨天</string>
+    <string name="game_shelf_days_ago">%1$d 天前</string>
+    <string name="game_shelf_minutes">%1$d 分钟</string>
 
     <!-- Shared ordered graphics-chain settings -->
     <string name="graphics_settings_title">画面超分</string>

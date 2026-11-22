@@ -405,9 +405,16 @@ object AppSettingsStore {
 
     private val gameCardStyleLock = Any()
 
+    /** 网格风格竖屏每行卡片数内存态；写入与风格初始化共用 [gameCardStyleLock]。 */
     val gameGridPortraitColumnsState: MutableStateFlow<Int> = MutableStateFlow(DEFAULT_GAME_GRID_PORTRAIT_COLUMNS)
+
+    /** 网格风格横屏每行卡片数内存态。 */
     val gameGridLandscapeColumnsState: MutableStateFlow<Int> = MutableStateFlow(DEFAULT_GAME_GRID_LANDSCAPE_COLUMNS)
+
+    /** 瀑布风格竖屏每行卡片数内存态。 */
     val gameWaterfallPortraitColumnsState: MutableStateFlow<Int> = MutableStateFlow(DEFAULT_GAME_WATERFALL_PORTRAIT_COLUMNS)
+
+    /** 瀑布风格横屏每行卡片数内存态。 */
     val gameWaterfallLandscapeColumnsState: MutableStateFlow<Int> = MutableStateFlow(DEFAULT_GAME_WATERFALL_LANDSCAPE_COLUMNS)
 
     private val mutableGameCardCorners = MutableStateFlow(GameCardCornerSettings())
@@ -882,10 +889,20 @@ object AppSettingsStore {
 
     fun initGameCardStyle(c: Context) {
         synchronized(gameCardStyleLock) {
-            gameGridPortraitColumnsState.value = getGameGridPortraitColumns(c)
-            gameGridLandscapeColumnsState.value = getGameGridLandscapeColumns(c)
-            gameWaterfallPortraitColumnsState.value = getGameWaterfallPortraitColumns(c)
-            gameWaterfallLandscapeColumnsState.value = getGameWaterfallLandscapeColumns(c)
+            // 一次取偏好句柄，避免主线程连续五次 prefs(c)。
+            val p = prefs(c)
+            gameGridPortraitColumnsState.value = normalizeGameCardColumns(
+                p.getInt(KEY_GAME_GRID_PORTRAIT_COLUMNS, DEFAULT_GAME_GRID_PORTRAIT_COLUMNS),
+            )
+            gameGridLandscapeColumnsState.value = normalizeGameCardColumns(
+                p.getInt(KEY_GAME_GRID_LANDSCAPE_COLUMNS, DEFAULT_GAME_GRID_LANDSCAPE_COLUMNS),
+            )
+            gameWaterfallPortraitColumnsState.value = normalizeGameCardColumns(
+                p.getInt(KEY_GAME_WATERFALL_PORTRAIT_COLUMNS, DEFAULT_GAME_WATERFALL_PORTRAIT_COLUMNS),
+            )
+            gameWaterfallLandscapeColumnsState.value = normalizeGameCardColumns(
+                p.getInt(KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS, DEFAULT_GAME_WATERFALL_LANDSCAPE_COLUMNS),
+            )
             gameCardStyleState.value = getGameCardStyle(c)
         }
     }

@@ -1,8 +1,14 @@
 package com.tyranor.next.core.game.model
 
+import android.content.ContentUris
+import android.content.Context
 import android.net.Uri
+import android.os.Build
 import android.provider.DocumentsContract
+import android.provider.MediaStore
+import androidx.documentfile.provider.DocumentFile
 import bridge.PrimaryStorageRoot
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import kotlin.math.abs
 
@@ -11,11 +17,13 @@ import kotlin.math.abs
  * 从 EngineScanner 拆出，供扫描 / 启动 / 存档 / 在线补丁共用。
  */
 object GamePathUtils {
+    private const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
+    private const val DOWNLOADS_AUTHORITY = "com.android.providers.downloads.documents"
 
     /**
      * 将 SAF tree/document URI 映射为真实文件路径（用于引擎 native 启动）。
-     * 移植自 RinneMobile ScriptEngineLaunchers.uriToFilePath：
-     * documentId 形如 "primary:path" → 主存储挂载根/path；其他卷 → /storage/<volume>/path。
+     * 外部存储 provider 的 documentId 形如 "primary:path" → 主存储挂载根/path；其他卷 →
+     * /storage/<volume>/path。Downloads 的 raw 文档和根目录也能直接映射。
      * 主存储根按进程视角解析（[PrimaryStorageRoot]）：单 user 环境为 /storage/emulated/0，
      * 三星安全文件夹等隔离 user 下为 /storage/emulated/<userId>，`primary:` 卷标识不随
      * user 变化，不得硬编码 emulated/0（issue #152）。
@@ -26,27 +34,110 @@ object GamePathUtils {
             val uri = Uri.parse(uriText)
             if (uri.scheme.equals("file", ignoreCase = true)) return uri.path
             if (!uri.scheme.equals("content", ignoreCase = true)) return null
-
-            var documentId: String? = null
-            val encodedPath = uri.encodedPath
-            val documentMarker = encodedPath?.indexOf("/document/")
-            if (documentMarker != null && documentMarker >= 0) {
-                // 兼容 tree/document 混合 URI：取 /document/ 之后的编码段解码得子文档 id
-                documentId = runCatching {
-                    Uri.decode(encodedPath.substring(documentMarker + "/document/".length))
-                }.getOrNull()
-            }
-            if (documentId.isNullOrEmpty()) {
-                documentId = runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
-            }
-            if (documentId.isNullOrEmpty()) {
-                documentId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
-            }
-            documentId?.let { id -> return documentIdToPath(id, primaryRoot) }
-            null
-        } catch (e: Exception) {
+            documentPath(uri.authority, documentId(uri) ?: return null, primaryRoot)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: RuntimeException) {
             null
         }
+    }
+
+    /** 含 provider 查询的路径解析。文件或目录是否可读由调用方验证。 */
+    internal fun resolveLocalPath(context: Context, uriText: String): String? {
+        safUriToPath(uriText)?.takeIf { it.startsWith('/') }?.let { return it }
+        val uri = Uri.parse(uriText)
+        if (uri.scheme != "content") return null
+        if (uri.authority == DOWNLOADS_AUTHORITY) {
+            val id = documentId(uri) ?: return null
+            // OEM provider 若对旧数字下载 ID 提供 _data，可继续使用该路径。
+            if (id.toLongOrNull() != null) return queryDataPath(context, uri)
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+            return documentPath(uri.authority, id, PrimaryStorageRoot.get()) { mediaId ->
+                queryDataPath(context, ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, mediaId))
+            }
+        }
+        return queryDataPath(context, uri)
+    }
+
+    /** 启动与存档共用实际目录判断，可移动存储上的 Kirikiri 可通过 SAF 镜像访问。 */
+    internal fun resolveLocalDirectory(context: Context, uriText: String, allowSafOnly: Boolean): String? {
+        return try {
+            val uri = Uri.parse(uriText)
+            val externalStorage = uri.authority == EXTERNAL_STORAGE_AUTHORITY
+            if (uri.scheme == "content" && !externalStorage && uri.authority != DOWNLOADS_AUTHORITY &&
+                (!DocumentsContract.isTreeUri(uri) || DocumentFile.fromTreeUri(context, uri)?.exists() != true)
+            ) return null
+            val path = resolveLocalPath(context, uriText) ?: return null
+            if (File(path).isDirectory) return path
+            if (!allowSafOnly || !externalStorage || !isRemovableStoragePath(path) ||
+                !DocumentsContract.isTreeUri(uri)
+            ) return null
+            path.takeIf { DocumentFile.fromTreeUri(context, uri)?.isDirectory == true }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: RuntimeException) {
+            null
+        }
+    }
+
+    internal fun isMediaStoreDownload(uriText: String): Boolean {
+        val uri = Uri.parse(uriText)
+        return uri.scheme == "content" && uri.authority == DOWNLOADS_AUTHORITY &&
+            documentId(uri)?.let(::downloadMediaId) != null
+    }
+
+    private fun documentId(uri: Uri): String? = try {
+        // 混合 URI 取实际子文档的 ID，纯 tree URI 才取根 ID。
+        if (uri.pathSegments.size == 2 && uri.pathSegments.first() == "tree") {
+            DocumentsContract.getTreeDocumentId(uri)
+        } else {
+            DocumentsContract.getDocumentId(uri)
+        }
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+
+    internal fun documentPath(
+        authority: String?,
+        id: String,
+        primaryRoot: String,
+        mediaPath: (Long) -> String? = { null },
+    ): String? = when (authority) {
+        EXTERNAL_STORAGE_AUTHORITY -> documentIdToPath(id, primaryRoot)
+        DOWNLOADS_AUTHORITY -> {
+            val downloads = "$primaryRoot/Download"
+            when {
+                id == "downloads" -> downloads
+                id.startsWith("raw:") -> id.removePrefix("raw:").takeIf { path ->
+                    (path == downloads || path.startsWith("$downloads/")) && isAbsoluteDocumentPath(path)
+                }
+                else -> downloadMediaId(id)?.let(mediaPath)?.takeIf(::isAbsoluteDocumentPath)
+            }
+        }
+        else -> null
+    }
+
+    private fun downloadMediaId(id: String): Long? {
+        if (!id.startsWith("msd:") && !id.startsWith("msf:")) return null
+        val number = id.substring(4)
+        if (number.isEmpty() || number.any { it !in '0'..'9' }) return null
+        return number.toLongOrNull()?.takeIf { it > 0 }
+    }
+
+    private fun isAbsoluteDocumentPath(path: String): Boolean =
+        path.startsWith('/') && '\\' !in path && '\u0000' !in path &&
+            path.split('/').none { it == "." || it == ".." }
+
+    private fun queryDataPath(context: Context, uri: Uri): String? = try {
+        val column = MediaStore.MediaColumns.DATA
+        context.contentResolver.query(uri, arrayOf(column), null, null, null)?.use { cursor ->
+            val index = cursor.getColumnIndex(column)
+            if (index >= 0 && cursor.moveToFirst()) cursor.getString(index)?.takeIf(::isAbsoluteDocumentPath) else null
+        }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: RuntimeException) {
+        null
     }
 
     /**

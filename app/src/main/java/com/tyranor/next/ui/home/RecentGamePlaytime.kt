@@ -16,6 +16,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tyranor.next.R
 import com.tyranor.next.core.game.playtime.GamePlaytimeRepository
 import com.tyranor.next.core.game.playtime.GamePlaytimeStats
+import com.tyranor.next.ui.common.formatPlaytimeHours
 
 /** Cumulative hours for a built-in game's recent-list card. Refreshing belongs to the page. */
 @Composable

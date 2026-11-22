@@ -1038,6 +1038,16 @@
     <string name="android_add_duplicate">このアプリは既に追加済みです</string>
     <string name="android_add_already_added">ライブラリに追加済み</string>
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
+    <string name="game_shelf_stat_total">累計時間</string>
+    <string name="game_shelf_stat_last">前回プレイ</string>
+    <string name="game_shelf_stat_session">前回時間</string>
+    <string name="game_shelf_stat_none">—</string>
+    <string name="game_shelf_stat_untracked">外部実行・記録なし</string>
+    <string name="game_shelf_not_started">未プレイ</string>
+    <string name="game_shelf_today">今日</string>
+    <string name="game_shelf_yesterday">昨日</string>
+    <string name="game_shelf_days_ago">%1$d 日前</string>
+    <string name="game_shelf_minutes">%1$d 分</string>
 
     <!-- Shared ordered graphics-chain settings -->
     <string name="graphics_settings_title">超解像</string>

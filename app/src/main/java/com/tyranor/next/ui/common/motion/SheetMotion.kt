@@ -102,7 +102,7 @@ class MotionSheetController internal constructor(
     internal val offset = Animatable(if (enhanced) OFFSCREEN else 0f)
     internal var height by mutableFloatStateOf(0f)
         private set
-    internal var closing = false
+    internal var closing by mutableStateOf(false)
         private set
 
     /** 所在页面的景深（点击进入二级页面时抽屉随整个界面一起翻折 / 褪色）；由 [rememberMotionSheetController] 同步。 */

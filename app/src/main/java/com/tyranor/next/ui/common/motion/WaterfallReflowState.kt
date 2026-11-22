@@ -44,6 +44,11 @@ import kotlinx.coroutines.flow.first
 private const val RESTORE_SLICE_NANOS = 4_000_000L
 private const val RESTORE_TIMEOUT_MILLIS = 1500L
 
+// 保存态落回网格列数时的合法范围：0 会流向 StaggeredGridCells.Fixed 与列宽整除。
+private const val MIN_SAVED_COLUMNS = 1
+private const val MAX_SAVED_COLUMNS = 32
+private const val DEFAULT_SAVED_COLUMNS = 2
+
 /** 从头测量以重建列历史，避免直接把未测量的新状态跳到锚点。 */
 class WaterfallReflowState private constructor(
     columns: Int,
@@ -116,43 +121,54 @@ class WaterfallReflowState private constructor(
         itemIndex: ((Any) -> Int?)? = null,
     ) {
         val anchor = pendingAnchor ?: return
-        // 等待布局与数据就绪后再获取滚动修改权。
-        snapshotFlow {
-            state.layoutInfo.viewportSize.height to
-                (state.layoutInfo.totalItemsCount > 0 || contentReady)
-        }.first { it.first > 0 && it.second }
-        val context = currentCoroutineContext()
-        var scanMillis = 0L
-        var retry = false
-        while (true) {
-            try {
-                state.scroll(MutatePriority.Default) {
-                    val startedAt = SystemClock.uptimeMillis()
-                    try {
-                        restoreAnchor(
-                            state, anchor, LazyLayoutScrollScope(state, this),
-                            scanBudgetMillis - scanMillis, retry, itemIndex,
-                        )
-                    } finally {
-                        // 等待更高优先级滚动期间不消耗扫描预算。
-                        scanMillis += SystemClock.uptimeMillis() - startedAt
+        try {
+            // 等待视口高度与数据就绪后再获取滚动修改权。
+            snapshotFlow {
+                state.layoutInfo.viewportSize.height to
+                    (state.layoutInfo.totalItemsCount > 0 || contentReady)
+            }.first { it.first > 0 && it.second }
+            val context = currentCoroutineContext()
+            var scanMillis = 0L
+            var retry = false
+            while (true) {
+                try {
+                    state.scroll(MutatePriority.Default) {
+                        val startedAt = SystemClock.uptimeMillis()
+                        try {
+                            restoreAnchor(
+                                state, anchor, LazyLayoutScrollScope(state, this),
+                                scanBudgetMillis - scanMillis, retry, itemIndex,
+                            )
+                        } finally {
+                            // 等待更高优先级滚动期间不消耗扫描预算。
+                            scanMillis += SystemClock.uptimeMillis() - startedAt
+                        }
                     }
+                    break
+                } catch (cancelled: CancellationException) {
+                    context.ensureActive()
+                    // 输入打断后仍隐藏中间扫描位置。
+                    retry = true
+                    // 更高优先级的修改者可能先预约互斥锁，稍后才开启滚动标记。
+                    // 让出一帧供其取得互斥锁，避免此处立即重试而空转。
+                    withFrameNanos { }
+                    snapshotFlow { state.isScrollInProgress }.first { !it }
                 }
-                break
-            } catch (cancelled: CancellationException) {
-                context.ensureActive()
-                // 输入打断后仍隐藏中间扫描位置。
-                retry = true
-                // 更高优先级的修改者可能先预约互斥锁，稍后才开启滚动标记。
-                // 让出一帧供其取得互斥锁，避免此处立即重试而空转。
-                withFrameNanos { }
-                snapshotFlow { state.isScrollInProgress }.first { !it }
             }
+            finishRestore(state)
+        } catch (error: Throwable) {
+            // 取消（自身作用域销毁或被更高优先级滚动打断后未恢复）保留锚点与隐藏状态，
+            // 由 enabled()/生命周期重新进入本流程时接续；其它异常必须解除遮蔽：
+            // 否则宿主会永久透明、吞掉触摸并退出无障碍树，且组合键不变时不会重启恢复。
+            if (error is CancellationException) throw error
+            if (gridState === state) isRestoring = false
         }
-        if (gridState === state) {
-            pendingAnchor = null
-            isRestoring = false
-        }
+    }
+
+    private fun finishRestore(state: LazyStaggeredGridState) {
+        if (gridState !== state) return
+        pendingAnchor = null
+        isRestoring = false
     }
 
     @OptIn(ExperimentalFoundationApi::class)
@@ -168,6 +184,15 @@ class WaterfallReflowState private constructor(
         val count = state.layoutInfo.totalItemsCount
         if (count == 0) return@with
         val target = if (anchor.atBottom) count - 1 else anchor.index.coerceIn(0, count - 1)
+        var sliceStart = System.nanoTime()
+        suspend fun canContinue(): Boolean {
+            currentCoroutineContext().ensureActive()
+            if (System.nanoTime() - sliceStart >= RESTORE_SLICE_NANOS) {
+                withFrameNanos { }
+                sliceStart = System.nanoTime()
+            }
+            return SystemClock.uptimeMillis() - startedAt < budgetMillis
+        }
         suspend fun coarseRestore() {
             val currentCount = state.layoutInfo.totalItemsCount
             if (currentCount == 0) return
@@ -177,8 +202,10 @@ class WaterfallReflowState private constructor(
             }
             snapToItem(currentTarget, if (anchor.atBottom) 0 else -anchor.y)
             // Foundation 1.11.2 会在尾部不足一屏时同步回填；高于视口的尾卡仍可能继续滚动。
-            // 只按实际可滚距离补齐，不能假定再滚一屏就已到底，也不在超时后继续重建全量列历史。
-            var sliceStart = System.nanoTime()
+            // 只按实际可滚距离补齐，不能假定再滚一屏就已到底。
+            // 这段补齐故意不受扫描预算限制：预算耗尽后仍要真正落到尾部，否则超时兜底会停在
+            // 半途的中间位置（WaterfallRotationScrollDeviceTest 的超时用例守着这一点）；
+            // 它的代价由两处约束兜住——每 4ms 让出一帧，且每步都检查取消。
             while (anchor.atBottom && state.canScrollForward) {
                 currentCoroutineContext().ensureActive()
                 val consumed = scrollBy(state.layoutInfo.viewportSize.height.toFloat().coerceAtLeast(1f))
@@ -192,15 +219,6 @@ class WaterfallReflowState private constructor(
         if (retry || state.canScrollBackward) {
             // 输入或上一代效果可能把状态留在扫描中途。
             snapToItem(0, 0)
-        }
-        var sliceStart = System.nanoTime()
-        suspend fun canContinue(): Boolean {
-            currentCoroutineContext().ensureActive()
-            if (System.nanoTime() - sliceStart >= RESTORE_SLICE_NANOS) {
-                withFrameNanos { }
-                sliceStart = System.nanoTime()
-            }
-            return SystemClock.uptimeMillis() - startedAt < budgetMillis
         }
         // 向前测量重建回滚所需的列历史；保存的锚点只有位置，没有每项的列归属。
         val maxSteps = count.toLong() * 4L + 1024L
@@ -272,15 +290,23 @@ class WaterfallReflowState private constructor(
                 listOf(it.layoutColumns, it.layoutLandscape, anchor?.index ?: -1, anchor?.y ?: 0,
                     anchor?.atBottom ?: false, identity != null, identity ?: "")
             },
+            // 坏载荷或跨版本格式不符时回落到新状态：Compose 不包裹 saver.restore，
+            // 直接强转会把崩溃抛进恢复阶段。
             restore = {
-                val index = it[2] as Int
-                WaterfallReflowState(
-                    it[0] as Int,
-                    it[1] as Boolean,
-                    itemIdentity,
-                    if (index < 0) null else Anchor(index, if (it[5] as Boolean) it[6] else null,
-                        it[3] as Int, it[4] as Boolean),
-                )
+                val values = it
+                val restored = if (values.size == 7) runCatching {
+                    val columns = (values[0] as Int).coerceIn(MIN_SAVED_COLUMNS, MAX_SAVED_COLUMNS)
+                    val landscape = values[1] as Boolean
+                    val index = values[2] as Int
+                    val anchor = if (index < 0) null else Anchor(
+                        index,
+                        if (values[5] as Boolean) values[6] else null,
+                        values[3] as Int,
+                        values[4] as Boolean,
+                    )
+                    WaterfallReflowState(columns, landscape, itemIdentity, anchor)
+                }.getOrNull() else null
+                restored ?: WaterfallReflowState(DEFAULT_SAVED_COLUMNS, false, itemIdentity)
             },
         )
     }

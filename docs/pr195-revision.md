@@ -1,6 +1,6 @@
 # PR #195 返修记录
 
-审查对象：PR head `1dc3c2d1e8e491552b746c69f37442149fe23926` 与本地已有返修；本轮仅在 `I:\AI\TyranorNext-pr195-review` 集成。主工作树的存档和引擎改动未修改。
+本文记录 PR #195 的返修轮次与验证结果。各轮「审查输入」记录当轮开始时的 head；最终 head 以 PR 页面为准，正文不写工作站绝对路径。
 
 ## 问题清单对应
 
@@ -10,7 +10,7 @@
 | 2 切页重组 | 可见性读取移入独立 UpdateWaterfallReflow 组合范围，夹具验证显隐不重组调用方。 |
 | 3 初始化 | MainActivity 在 setContent 前初始化风格及列数，游戏页只订阅。 |
 | 4 超时触底 | Foundation 1.11.2 对短尾同步回填；高尾卡按实际可滚距离分帧补齐。零预算分别覆盖高尾卡和带 24dp 底部内边距的短尾。三列尾部不满整行时以所有列最底边判定触底，末项不必处于最长列。 |
-| 5 UI 截图 | 仍待补齐手机/平板横竖、深浅色及两档玻璃的真实页面前后截图。本机只连接 TB323FU 平板；隔离应用当前游戏库为空，空页截图不算卡片验收。 |
+| 5 UI 截图 | 平板四主题（默认浅色、默认深色、复古玻璃、白雾玻璃）横竖两方向的修复后截图已入库，见[平板证据](pr195-evidence/README.md)。手机矩阵、修复前对照与人工视觉审看仍缺：本机只连接 TB323FU 平板，且当前模型无图像输入，未对截图做人工排版判读。 |
 | 6 宿主重建 | 保留重建列历史以保证回滚稳定的取舍，SPEC 明确非旋转重建也暂时隐藏视口及时间预算边界。 |
 | 7–10 注释/命名/可观察状态/import | 新增注释中文化；公共列数命名改为 GameCard；列数、方向、gridState 原子可观察发布；删除未使用 import。 |
 | 11 测试依赖 | 保留 debug test.core，注释说明 createComposeRule 经 ActivityScenario 启动目标包辅助 Activity 的需要。 |
@@ -26,13 +26,13 @@
 - `:app:testDebugUnitTest --tests '*GameCardStyleSettingsTest' --tests '*GridReflowSnapshotTest'`：29 项通过（14 + 15），0 失败。
 - `:app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug`：通过。lint 报告有 421 Warning、11 Hint、0 Error；未宣称全仓无警告。
 - `tools/check-hardcoded-ui-strings.py`：通过。
-- `tools/check-motion-boundaries.py`：398 Kotlin 文件，0 违规。
+- `tools/check-motion-boundaries.py`：当轮 398 个 Kotlin 文件，0 违规（文件数随本分支新增文件增长，最新值见文末本轮记录）。
 - `git diff --check`：通过。
 - TB323FU 平板（Android 16 / API 36）四组设备测试：50 项登记，46 项通过、4 项按条件跳过、0 失败，203.536 秒。跳过项为 3 个历史诊断假设用例（未开启 waterfall_diagnostics）和 1 个仅适用于增强档的祖先移动接管用例在普通档的参数组合。覆盖 MotionSliderDeviceTest、GridReflowDeviceTest、WaterfallRotationScrollDeviceTest、WaterfallRestoreResponsivenessDeviceTest；100/3000 卡恢复、输入延迟阈值、真实绘制像素检查均通过。
 
 本轮未执行全量 JVM 测试；合成卡片设备回归不替代真实游戏库、真实页面主题截图或发布包流畅度验收。
 
-## 第三轮返修（审查输入 `6804195b`）
+## 第二轮返修（审查输入 `6804195b`）
 
 - 整合主分支 `03634f459eb8fe9c005faa38343352b57c27a0ba`，解决 CHANGELOG 冲突，保留快捷方式修复及既有卡片条目；不改写已推送历史。
 - 瀑布封面改为按实际解码目标宽高选择最小可覆盖档位，显示比例与四档缓存保持原样。`456px / 0.67` 原 CARD 目标为 `444×683`，现 FLOW 为 `666×1024`；`493px / 0.60` 仍选 FLOW。最大档超界仍取最大档，小源图仍不放大。
@@ -44,3 +44,17 @@
 - TB323FU / API 36 四主题各两方向通过，原触底、封面颜色、完整卡片及单次原生触摸抽屉断言均通过。返回画面观察上界 521–634ms，正确抽屉 985–1647ms。8 张原始系统截图、分主题数据及视觉验收边界见 [平板证据](pr195-evidence/README.md)。手机、修复前对照与人工视觉审看仍缺。
 - 真实页面验收发现隐藏时旧瀑布仍随新窗口重测，返回才捕获锚点会丢失离页时触底状态。现首次离页保存锚点与偏移快照；隐藏期不覆盖，返回换布局优先使用，未换布局则丢弃快照。
 - 导航通过生产条目的 `performClick` 语义回调切换，卡片仍单次系统触摸；测试规则自动推进 Compose 动画时钟，使用系统单调时钟记录包含空闲等待、截图与抽屉响应的观察上界，不代表自然显示帧下的最早可交互时刻或硬件延迟。未覆盖 Activity 重建或逐帧零闪现；debug 数据不当作发布包流畅度证据。
+
+## 第三轮返修（审查输入 `5af6fc81`）
+
+- 整合主分支 `4704d757`（含 #207 桌面快捷方式与 #209 Android 10 下载目录启动修复），只保留 CHANGELOG 双方条目，不改写已推送历史。
+- 恢复流程补齐异常兜底：`restore()` 外层 `try/catch(Throwable)`，取消仍原样重抛并保留锚点（`WaterfallRotationScrollDeviceTest` 的「取消不得清空 pending anchor」断言不变），非取消异常只解除遮蔽；复位抽成 `finishRestore()` 并校验 `gridState` 身份，避免上一代网格把新一代的恢复状态清掉。
+- 保存态七字段改为 `size == 7` + `runCatching` + 列数 `coerceIn(1, 32)`，坏载荷回落新建状态而不是让 `rememberSaveable` 恢复阶段抛异常。
+- 三处「拖动只改内存态、抬手才落盘」的滑条补 `onValueChangeCancelled` 回滚草稿：应用设置扫描深度、背景图不透明度与模糊。其余即时落盘的调用点与唯一已有回调的列数滑条保持原样；未传回调时普通档仍与基线逐字节等价。
+- 封面选档口径统一：等高网格改用 `forDisplay(列宽, 3:4)` 并把固定比例提为 `UniformGameCardAspect`，`forWidth` 只留封面流；穷举 1–3000px 宽度两函数选档完全一致，缓存键与视觉不变。
+- 文档与规范：`docs/pr195-revision.md` 去掉旧 head 与工作站绝对路径、截图状态与文末对齐、Kotlin 文件数标注当轮、修正轮次标题；CHANGELOG 补手机竖屏 3→4；`docs/README.md` 登记平板证据目录；动效门禁 `OWNERS` 补齐 `ui/common/motion/` 全部 31 个文件；`initGameCardStyle` 只取一次 `prefs`；`MainScreen` 缩进对齐。
+- 更正前两轮结论：`gridReflowHost` 的 alpha 与 `waterfallReflowHost` 的遮蔽**先后串接、互不重叠**（重排窗口 → 恢复期），不是两个宿主同时设值；删除它会让瀑布重排卡在第 0 帧就完成入场，`GridReflowDeviceTest` 三项逐帧错峰断言随即失败，故保留并按两段边界补注释。`coarseRestore` 的尾部补齐故意不受扫描预算约束，零预算用例要求它仍滚到底，因此不给它加预算门。
+- JVM 定向 41 项通过（Style 14 / Badge 2 / Corner 1 / Snapshot 15 / CoverDecodeTier 9），0 失败 0 跳过。
+- TB323FU / API 36 设备 54 项全部通过、0 跳过：`GridReflowDeviceTest` 12、`MotionSliderDeviceTest` 14（类名在 `com.tyranor.next.ui.common`，不带 `.motion`）、`WaterfallRotationScrollDeviceTest` 20、`WaterfallRestoreResponsivenessDeviceTest` 4，四主题各一轮 `GameScreenMainActivityAcceptanceDeviceTest`。
+- 全量 JVM 2092 项中 36 项失败。基线对照：在 `4704d757`（`origin/main`）独立工作树上跑同一任务得 2062 项、**同样这 36 项失败**，失败类与用例名逐条一致（RuffleRuntimeEnvironmentTest 3、RuntimeModuleFileImportTest 1、EthornellOperationGateTest 5、EthornellSaveStoreTest 14、EthornellSettingsTest 2、WebDavClientTest 6、WebDavRequestGuardTest 5），本分支未触碰这些路径 → 属基线既有失败，非本次返修引入。
+- 隔离包 `:app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug` 通过，lint 431（420 Warning、11 Hint、0 Error）；硬编码文案检查、动效边界检查（400 个 Kotlin 文件、0 违规）、`git diff --check` 通过。

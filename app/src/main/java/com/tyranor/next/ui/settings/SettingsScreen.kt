@@ -359,6 +359,8 @@ fun SettingsScreen(
                                 value = depth.toFloat(),
                                 onValueChange = { depth = it.roundToInt().coerceIn(1, 5) },
                                 onValueChangeFinished = { AppSettingsStore.setScanDepth(ctx, depth) },
+                                // 手势被系统或上层容器取消时回滚草稿，避免读数与已存设置分叉。
+                                onValueChangeCancelled = { depth = AppSettingsStore.getScanDepth(ctx) },
                                 valueRange = 1f..5f,
                                 showKeyPoints = true,
                                 keyPoints = (1..5).map { it.toFloat() },
