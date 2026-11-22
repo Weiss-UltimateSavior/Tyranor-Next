@@ -147,7 +147,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.saveable.Saver
 import com.tyranor.next.core.engine.external.EmulatorLaunchStyle
 import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
+import com.tyranor.next.core.engine.external.ExternalEngineLauncher
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
+import com.tyranor.next.core.engine.external.ExternalEngineUpdate
+import com.tyranor.next.core.engine.external.ExternalEngineUpdateChecker
 import com.tyranor.next.core.game.save.RpgSaveFormat
 import com.tyranor.next.core.game.save.sync.SaveSyncService
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
@@ -834,6 +837,17 @@ internal fun GameActionsSheet(
     }
     var hasPendingExternalExit by remember(game.uri) { mutableStateOf(false) }
     val sheetLifecycleOwner = LocalLifecycleOwner.current
+    val externalModule = ExternalEngineModuleRegistry.moduleForEngine(game.engine)
+    var moduleUpdate by remember(game.uri, externalModule) {
+        mutableStateOf<ExternalEngineUpdate?>(null)
+    }
+    LaunchedEffect(game.uri, externalModule, sheetLifecycleOwner) {
+        if (externalModule?.updateSource != null) {
+            sheetLifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                moduleUpdate = ExternalEngineUpdateChecker.check(context, externalModule)
+            }
+        }
+    }
     LaunchedEffect(game.uri, sheetLifecycleOwner) {
         sheetLifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             try {
@@ -1157,6 +1171,26 @@ internal fun GameActionsSheet(
             // 抽屉头部「档案卡」：游戏封面 + 引擎名牌、游戏名与三格数据（所有卡片风格与首页共用）
             item {
                 GameSheetHeader(game, cardShape, Modifier.gameSheetEntrance(0).padding(top = 4.dp))
+            }
+
+            moduleUpdate?.let { update ->
+                item(key = "engine_module_update") {
+                    val openFailed = stringResource(R.string.engine_open_download_failed)
+                    AppNavItem(
+                        title = stringResource(R.string.engine_module_download_latest),
+                        summary = stringResource(R.string.engine_module_update_versions, update.installedVersion, update.latestVersion),
+                        modifier = Modifier.gameSheetEntrance(2),
+                        leadingIcon = R.drawable.ic_update_download,
+                        containerColor = drawerItemSurface,
+                        leadingIconTint = drawerPrimaryColor,
+                        indication = null,
+                        onClick = {
+                            if (sheetMotion.interact() && !ExternalEngineLauncher.openInstallPage(context, update.releasesUrl)) {
+                                AppNotice.makeText(context, openFailed, Toast.LENGTH_SHORT, AppNotice.Kind.Failure).show()
+                            }
+                        },
+                    )
+                }
             }
 
             // KRKR 与所有 Winlator 系引擎（YU-RIS / CatSystem2 / PC）支持启动文件切换

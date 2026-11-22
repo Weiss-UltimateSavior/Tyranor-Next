@@ -158,6 +158,9 @@
     <string name="engine_open_download_failed">无法打开下载页面</string>
     <string name="engine_integrated">已集成</string>
     <string name="engine_module_installed">模块已安装</string>
+    <string name="engine_module_update_available">模块有新版本</string>
+    <string name="engine_module_update_versions">已安装 %1$s · 最新 %2$s</string>
+    <string name="engine_module_download_latest">下载最新版本</string>
     <string name="engine_module_download">去下载</string>
     <string name="engine_module_not_installed">模块未安装</string>
     <string name="engine_tab_rpgm">RPGM</string>

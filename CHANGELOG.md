@@ -2,6 +2,8 @@
 
 ## 未发布
 
+- MAGES. 宿主支持检查新版本。游戏操作抽屉会显示已安装版本和最新版，引擎页用问号提示可更新，两个入口均可打开宿主项目的 Releases 页面。
+
 - 修复 Android 10 从系统「下载」入口添加的本地游戏启动时无法解析目录的问题。已有游戏记录可直接重试；Android 8–10 缺少共享存储读写权限时，会引导到系统的应用权限设置（[#209](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/209)）。
 
 - 「添加桌面」不再假定桌面一定会弹出确认框；系统确认固定后才提示已添加，并为 MIUI / HyperOS 声明快捷方式权限、提供手动授权指引（[#207](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/207)）。
