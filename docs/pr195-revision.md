@@ -71,3 +71,20 @@
 - 验收用例的旋转恢复拆成「锁回原方向」与「解冻」两个动作：前者失败不再跳过解冻，避免设备带着测试写入的固定旋转退回桌面。
 - 引擎设置页的 `SliderRow`（扫描深度之外的五个离散档、两个连续档）同样补 `onValueChangeCancelled` 回滚：这些行也是「拖动只改本地读数、抬手才 `onSelect` 落盘」，取消时不写盘但读数原本会停在被取消的位置，与已存设置分叉。回滚目标经 `rememberUpdatedState` 跟随当前已提交值，而不是组合开始时的 `initIndex` 快照——拖动期间设置被外部改写时也能落到正确档位。补上后公共 `Slider` 的 9 个调用点里，6 个「拖动只改草稿」的都有回滚（另 3 个在 `onValueChange` 里即时落盘，本就不产生草稿）。
 - 补完滑条回调后重跑：隔离包 `:app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug` 与定向 JVM 通过，lint 仍为 431（420 Warning、11 Hint、0 Error），JVM 41 项 0 失败 0 跳过；TB323FU / API 36 上 `MotionSliderDeviceTest` 16 项、`GridReflowDeviceTest` 12 + `WaterfallRotationScrollDeviceTest` 20 + `WaterfallRestoreResponsivenessDeviceTest` 4（36 项）、四主题 `GameScreenMainActivityAcceptanceDeviceTest` 各 1 项均通过，登记 56 项中 52 通过、4 按条件跳过、0 失败；硬编码文案检查、动效边界检查（400 个 Kotlin 文件、0 违规）、`git diff --check` 通过。
+
+## 第四轮返修（审查输入 `0ce4f3c`）
+
+- 整合主分支 `ecbe80e1`（含 MAGES. 宿主版本检查、新手引导后引擎页更新检查），只保留 CHANGELOG 双方条目，不改写已推送历史。
+- 证据页删掉多余尾随换行：`git diff --check 4704d757..HEAD` 此前报 `docs/pr195-evidence/README.md:21: new blank line at EOF.`（退出码 2），现整条命令无输出。
+- 证据页第三轮段落末句由「四类设备回归同轮实测 46 通过、4 条件跳过」改为「登记 52 项，实测 48 通过、4 条件跳过」，与本文及 PR 正文一致（46 通过 4 跳过是上一轮 50 项的旧数）。
+- 恢复异常路径捕获类型由 `Exception` 放宽到 `Throwable`，收尾与记日志后对 `Error` 原样重抛：`Error` 同样会逃出协程，只写 `Exception` 会让 OOM 或 `StackOverflowError` 带着永久遮蔽出去，只写 `Throwable` 又会吞掉崩溃报告。
+- 保存态常量改为直接引用 `AppSettingsStore.MIN_GAME_CARD_COLUMNS`、`MAX_GAME_CARD_COLUMNS` 与 `DEFAULT_GAME_WATERFALL_PORTRAIT_COLUMNS`：原先另写 `2`、`10`、`2`，范围与设置重复、回落默认值又与设置默认竖屏 4 列不一致。
+- 引擎设置页 `SliderRow` 的取消回滚目标由 `initIndex` 改为 `rememberUpdatedState(initIndex)` 的当前值：`initIndex` 是每次重组重算的局部值，取消回调捕获的是最近一次组合的快照，拖动期间设置被外部改写时会回滚到旧索引。
+- `GameScreen` 的 `coverWidthPx: Int = 0` 补 KDoc 说明 0 表示宽度尚未测出、选档回落 GRID，避免把默认值当成真实宽度。
+- `CoverDecodeGeometry.forDisplay` 补 KDoc 说明「需求高度按原始比例、解码目标按量化比例」的不对称是刻意的：显示盒本身就是原始比例，按量化比例求需求高度会低估、反而选出覆盖不住的档位。
+- `docs/README.md` 把平板证据条目从「验收 / 历史记录」章节移到文件末尾新增的「子目录」段，符合同文件「子目录在末尾单独列出」的约定。
+- 未采纳：瀑布按每个游戏自身封面比例入参、等高网格固定 3:4，是同一函数两种入参，不改成统一按高度取档（`forWidth` 在 3:4 下与 `forDisplay(w, 3:4)` 逐档等价已穷举确认）；隐藏期锚点的布局代际校验与 `staggeredEntrance` 对 `GridReflowState` 的依赖倒置属结构性改动，本轮不做。
+- 全量 JVM 本轮未复跑；上一轮结果为 2092 项中 36 项失败，失败全部位于 Ethornell、WebDAV、Ruffle、RuntimeModuleFileImport，本分支未触碰这些路径，同一环境基线同样这 36 项失败。
+- TB323FU / API 36 设备登记 56 项：**52 项通过、4 项按条件跳过、0 失败**。四类登记 52 项实测 48 通过、4 跳过，另四主题各一轮 `GameScreenMainActivityAcceptanceDeviceTest` 4 项通过；四组 `anchorIndex=99`、`singleCardTap=true`、`engineLaunch=false`、`ownedRemainingCount=0`。返回画面观察上界 495–639ms，正确抽屉 915–1576ms。
+- 隔离包 `:app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug` 通过，lint 431（420 Warning、11 Hint、0 Error）；硬编码文案检查、动效边界检查（401 个 Kotlin 文件、0 违规）、`git diff --check` 与 `git diff --check ecbe80e1..HEAD` 均通过。
+- 本轮 UI 代码零变更（只改注释、文档与异常捕获），故沿用第三轮的平板四主题截图，未重新截图；手机矩阵、修复前对照与人工视觉审看仍缺。
