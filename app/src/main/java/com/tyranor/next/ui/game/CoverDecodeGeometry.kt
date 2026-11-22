@@ -55,7 +55,14 @@ internal enum class CoverDecodeTier(val maxWidthPx: Int, val maxHeightPx: Int) {
             else -> FLOW_LARGE
         }
 
-        /** 取解码目标能覆盖显示盒的最小档，超出上限时使用最大档。 */
+        /**
+         * 取解码目标能覆盖显示盒的最小档，超出上限时使用最大档。
+         *
+         * 需求高度按原始比例算、目标尺寸按量化比例算，这个不对称是刻意的：显示盒
+         * 本身就是原始比例（`GameScreen` 的 `aspectRatio(coverAspect)`），所以「需要多高」
+         * 必须按原始比例求；而解码目标的宽高比只能取量化值，否则缓存 key 会随浮点尾数分裂。
+         * 两者混用时需求端会低估高度，反而选出覆盖不住显示盒的档。
+         */
         fun forDisplay(widthPx: Int, aspect: Float): CoverDecodeTier {
             val displayAspect = if (aspect.isFinite() && aspect > 0f) aspect else GRID.defaultAspect
             val heightPx = (widthPx / displayAspect).roundToInt()

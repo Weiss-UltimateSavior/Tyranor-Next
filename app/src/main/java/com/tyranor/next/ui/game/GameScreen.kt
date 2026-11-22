@@ -2318,6 +2318,7 @@ internal fun GameCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
+    /** 卡片可用宽度（px）。传 0 表示调用方还没测出宽度，此时选档回落到最省的 GRID。 */
     coverWidthPx: Int = 0,
     /** 卡片名称隐藏【】/[] 标签（应用设置「卡片隐藏名称标签」）。 */
     hideTitleTag: Boolean = false,

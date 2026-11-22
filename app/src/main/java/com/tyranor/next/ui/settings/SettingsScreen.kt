@@ -49,6 +49,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -1949,6 +1950,9 @@ private fun SliderRow(
 ) {
     val initIndex = options.indexOfFirst { it.first == current }.takeIf { it >= 0 } ?: 0
     var sliderIndex by remember(current) { mutableIntStateOf(initIndex) }
+    // 取消回滚要落到「此刻」的已提交值：拖动期间外部改写 current 时，
+    // 直接捕获 initIndex 会拿到组合开始那一刻的旧快照。
+    val committedIndex by rememberUpdatedState(initIndex)
     ArrowPreference(
         title = label,
         endActions = {
@@ -1976,7 +1980,7 @@ private fun SliderRow(
                     value = sliderIndex.toFloat(),
                     onValueChange = { sliderIndex = it.roundToInt().coerceIn(0, options.size - 1) },
                     onValueChangeFinished = { onSelect(options[sliderIndex].first) },
-                    onValueChangeCancelled = { sliderIndex = initIndex },
+                    onValueChangeCancelled = { sliderIndex = committedIndex },
                     valueRange = 0f..(options.size - 1).toFloat(),
                     showKeyPoints = true,
                     keyPoints = (0 until options.size).map { it.toFloat() },
@@ -1988,7 +1992,7 @@ private fun SliderRow(
                     value = sliderIndex.toFloat(),
                     onValueChange = { sliderIndex = it.roundToInt().coerceIn(0, options.size - 1) },
                     onValueChangeFinished = { onSelect(options[sliderIndex].first) },
-                    onValueChangeCancelled = { sliderIndex = initIndex },
+                    onValueChangeCancelled = { sliderIndex = committedIndex },
                     valueRange = 0f..(options.size - 1).toFloat(),
                 )
             }

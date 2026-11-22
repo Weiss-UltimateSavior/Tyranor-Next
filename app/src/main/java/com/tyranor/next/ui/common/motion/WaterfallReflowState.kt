@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
+import com.tyranor.next.core.settings.AppSettingsStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -44,11 +45,12 @@ import kotlinx.coroutines.flow.first
 private const val RESTORE_SLICE_NANOS = 4_000_000L
 private const val RESTORE_TIMEOUT_MILLIS = 1500L
 
-// 保存态落回网格列数时的合法范围：与设置侧 2..10 的卡片列数一致。
+// 保存态落回网格列数时的合法范围直接取设置侧常量，避免两处各写一份数字后漂移。
 // 0 会流向 StaggeredGridCells.Fixed 与列宽整除，越界值只可能来自被篡改或跨版本的载荷。
-private const val MIN_SAVED_COLUMNS = 2
-private const val MAX_SAVED_COLUMNS = 10
-private const val DEFAULT_SAVED_COLUMNS = 2
+// 坏载荷没有可信方向，回落按竖屏默认列数，交由下一次真实布局立即改写。
+private const val MIN_SAVED_COLUMNS = AppSettingsStore.MIN_GAME_CARD_COLUMNS
+private const val MAX_SAVED_COLUMNS = AppSettingsStore.MAX_GAME_CARD_COLUMNS
+private const val DEFAULT_SAVED_COLUMNS = AppSettingsStore.DEFAULT_GAME_WATERFALL_PORTRAIT_COLUMNS
 
 // 锚点纵向偏移来自懒布局的真实滚动量，正常不会超过若干屏高；
 // 限幅只为挡住 Int.MIN_VALUE 之类的坏载荷在取负后仍然为负。
@@ -161,7 +163,7 @@ class WaterfallReflowState private constructor(
                 }
             }
             finishRestore(state)
-        } catch (error: Exception) {
+        } catch (error: Throwable) {
             // 取消（自身作用域销毁或被更高优先级滚动打断后未恢复）保留锚点与隐藏状态，
             // 由 enabled()/生命周期重新进入本流程时接续；其它异常必须整体收尾：
             // 否则宿主会永久透明、吞掉触摸并退出无障碍树，且组合键不变时不会重启恢复。
@@ -176,6 +178,8 @@ class WaterfallReflowState private constructor(
                 error,
             )
             finishRestore(state)
+            // Error 同样会逃出本协程，收尾后原样重抛，既不压掉崩溃报告也不留永久遮蔽。
+            if (error is Error) throw error
         }
     }
 
