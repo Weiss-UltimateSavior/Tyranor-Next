@@ -50,7 +50,7 @@
 - 整合主分支 `4704d757`（含 #207 桌面快捷方式与 #209 Android 10 下载目录启动修复），只保留 CHANGELOG 双方条目，不改写已推送历史。
 - 恢复流程补齐异常兜底：`restore()` 外层 `try/catch(Exception)`，取消仍原样重抛并保留锚点（`WaterfallRotationScrollDeviceTest` 的「取消不得清空 pending anchor」断言不变），非取消异常记日志后解除遮蔽；复位抽成 `finishRestore()` 并校验 `gridState` 身份，避免上一代网格把新一代的恢复状态清掉。
 - 保存态七字段改为 `size == 7` + `runCatching` + 列数 `coerceIn(2, 10)` 与锚点 `y` 限幅，坏载荷回落新建状态而不是让 `rememberSaveable` 恢复阶段抛异常。
-- 三处「拖动只改内存态、抬手才落盘」的滑条补 `onValueChangeCancelled` 回滚草稿：应用设置扫描深度、背景图不透明度与模糊。其余即时落盘的调用点与唯一已有回调的列数滑条保持原样；未传回调时普通档仍与基线逐字节等价。
+- 「拖动只改内存态、抬手才落盘」的滑条补 `onValueChangeCancelled` 回滚草稿：应用设置扫描深度、背景图不透明度与模糊，以及引擎设置页 `SliderRow` 的七个档位行（见下）。即时落盘的调用点与唯一已有回调的列数滑条保持原样；未传回调时普通档仍与基线逐字节等价。
 - 封面选档口径统一：等高网格改用 `forDisplay(列宽, 3:4)` 并把固定比例提为 `UniformGameCardAspect`，`forWidth` 只留封面流；穷举 1–3000px 宽度两函数选档完全一致，缓存键与视觉不变。
 - 文档与规范：`docs/pr195-revision.md` 去掉旧 head 与工作站绝对路径、截图状态与文末对齐、Kotlin 文件数标注当轮、修正轮次标题；CHANGELOG 补手机竖屏 3→4；`docs/README.md` 登记平板证据目录；动效门禁 `OWNERS` 补齐 `ui/common/motion/` 全部 31 个文件；`initGameCardStyle` 只取一次 `prefs`；`MainScreen` 缩进对齐。
 - 更正前两轮结论：`gridReflowHost` 的 alpha 与 `waterfallReflowHost` 的遮蔽**先后串接、互不重叠**（重排窗口 → 恢复期），不是两个宿主同时设值；删除它会让瀑布重排卡在第 0 帧就完成入场，`GridReflowDeviceTest` 三项逐帧错峰断言随即失败，故保留并按两段边界补注释。`coarseRestore` 的尾部补齐故意不受扫描预算约束，零预算用例要求它仍滚到底，因此不给它加预算门。
@@ -69,3 +69,5 @@
 - 恢复异常路径补日志：这条路径会同时解除整表遮蔽、放开吞输入与无障碍移除，静默收尾无从定位，故 `Log.w` 记录一次。
 - `coarseRestore` 的尾部补齐在不加预算门的前提下补上步数上限（`列数规模 × 4 + 1024`），保留零预算仍滚到底的语义，同时排除无限滚动的静态可能。
 - 验收用例的旋转恢复拆成「锁回原方向」与「解冻」两个动作：前者失败不再跳过解冻，避免设备带着测试写入的固定旋转退回桌面。
+- 引擎设置页的 `SliderRow`（扫描深度之外的五个离散档、两个连续档）同样补 `onValueChangeCancelled = { sliderIndex = initIndex }`：这些行也是「拖动只改本地读数、抬手才 `onSelect` 落盘」，取消时不写盘但读数原本会停在被取消的位置，与已存设置分叉。补上后全部 11 处公共 `Slider` 调用点在拖动被打断时都会回滚草稿。
+- 补完滑条回调后重跑：隔离包 `:app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug` 与定向 JVM 通过，lint 仍为 431（420 Warning、11 Hint、0 Error），JVM 41 项 0 失败 0 跳过；TB323FU / API 36 上 `MotionSliderDeviceTest` 16 项、`GridReflowDeviceTest` 12 + `WaterfallRotationScrollDeviceTest` 20 + `WaterfallRestoreResponsivenessDeviceTest` 4（36 项）、四主题 `GameScreenMainActivityAcceptanceDeviceTest` 各 1 项均通过，登记 56 项中 52 通过、4 按条件跳过、0 失败；硬编码文案检查、动效边界检查（400 个 Kotlin 文件、0 违规）、`git diff --check` 通过。

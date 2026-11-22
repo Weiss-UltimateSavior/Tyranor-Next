@@ -1976,6 +1976,7 @@ private fun SliderRow(
                     value = sliderIndex.toFloat(),
                     onValueChange = { sliderIndex = it.roundToInt().coerceIn(0, options.size - 1) },
                     onValueChangeFinished = { onSelect(options[sliderIndex].first) },
+                    onValueChangeCancelled = { sliderIndex = initIndex },
                     valueRange = 0f..(options.size - 1).toFloat(),
                     showKeyPoints = true,
                     keyPoints = (0 until options.size).map { it.toFloat() },
@@ -1987,6 +1988,7 @@ private fun SliderRow(
                     value = sliderIndex.toFloat(),
                     onValueChange = { sliderIndex = it.roundToInt().coerceIn(0, options.size - 1) },
                     onValueChangeFinished = { onSelect(options[sliderIndex].first) },
+                    onValueChangeCancelled = { sliderIndex = initIndex },
                     valueRange = 0f..(options.size - 1).toFloat(),
                 )
             }
