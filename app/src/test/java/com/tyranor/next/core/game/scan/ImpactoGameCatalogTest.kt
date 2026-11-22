@@ -249,7 +249,11 @@ class ImpactoGameCatalogTest {
         val rules = ImpactoGameCatalog.currentRules()
         assertEquals(setOf("data", "usrdir"), rules.subdirectoryNames)
         assertEquals(
-            setOf("script.cpk", "system.cpk", "mes00.cpk", "mes01.cpk", "mes02.cpk", "script.mpk", "system.mpk"),
+            setOf(
+                "script.cpk", "system.cpk", "mes00.cpk", "mes01.cpk", "mes02.cpk", "script.mpk", "system.mpk",
+                // excluded by sg-pc: the scanner has to see it to exclude
+                "mpk_bg.lst",
+            ),
             rules.subdirectoryEntryNames,
         )
     }
@@ -346,6 +350,41 @@ class ImpactoGameCatalogTest {
 
         assertEquals(listOf("sg-pc"), ImpactoGameCatalog.candidatesFor(sg, snapshot).map { it.profileId })
         assertTrue(ImpactoGameCatalog.candidatesFor(sg).isEmpty())
+    }
+
+    // ---- 排除条目（detect.noneOf）----
+
+    private val sgFolder = setOf("Game.exe", "USRDIR", "USRDIR/script.mpk", "USRDIR/system.mpk")
+    private val sg0Folder = sgFolder + "USRDIR/mpk_bg.lst"
+    private val sg0 = ImpactoGameCatalog.Game(
+        profileId = "sg0-pc",
+        title = "STEINS;GATE 0 (PC, Steam)",
+        requiredEntries = setOf("Game.exe", "USRDIR/script.mpk", "USRDIR/system.mpk", "USRDIR/mpk_bg.lst"),
+    )
+
+    @Test
+    fun anExcludedEntryKeepsTheSequelOutOfTheEarlierGame() {
+        val sgPc = ImpactoGameCatalog.builtInGames.single { it.profileId == "sg-pc" }
+        ImpactoGameCatalog.useHostRules(ImpactoGameCatalog.Rules(listOf(sgPc, sg0), emptyList()))
+
+        assertEquals(listOf("sg0-pc"), ImpactoGameCatalog.candidatesFor(sg0Folder).map { it.profileId })
+        assertEquals(listOf("sg-pc"), ImpactoGameCatalog.candidatesFor(sgFolder).map { it.profileId })
+    }
+
+    @Test
+    fun withoutTheExclusionBothGamesMatchAndTheFolderIsAmbiguous() {
+        val sgPc = ImpactoGameCatalog.builtInGames.single { it.profileId == "sg-pc" }.copy(excludedEntries = emptySet())
+        ImpactoGameCatalog.useHostRules(ImpactoGameCatalog.Rules(listOf(sgPc, sg0), emptyList()))
+
+        assertTrue(ImpactoGameCatalog.candidatesFor(sg0Folder).isEmpty())
+    }
+
+    @Test
+    fun theBuiltInCatalogNoLongerTakesASteinsGate0FolderForTheEarlierGame() {
+        // the built-in table has no sg0-pc: the folder is not sg-pc, only a layout to try
+        assertTrue(ImpactoGameCatalog.candidatesFor(sg0Folder).isEmpty())
+        assertEquals("pc-usrdir-mpk", ImpactoGameCatalog.unsupportedLayoutFor(sg0Folder)?.id)
+        assertEquals(listOf("sg-pc"), ImpactoGameCatalog.candidatesFor(sgFolder).map { it.profileId })
     }
 
     @Test

@@ -45,6 +45,11 @@ object ImpactoGameCatalog {
         val textLanguage: String? = null,
         /** 该 profile 要求的宿主 APK 最低 versionCode；0 表示只受模块级最低版本约束。 */
         val minHostVersionCode: Int = 0,
+        /**
+         * 必须**不存在**的条目（路径规则同 [requiredEntries]，宿主规则的 `detect.noneOf`）：同一代引擎的另一个游戏
+         * 带着这个 profile 的全部特征时，用它把那个游戏排除掉（如 `sg-pc` 排除带 `USRDIR/mpk_bg.lst` 的 STEINS;GATE 0）。
+         */
+        val excludedEntries: Set<String> = emptySet(),
     )
 
     /**
@@ -63,7 +68,8 @@ object ImpactoGameCatalog {
      */
     class Rules(val games: List<Game>, val unsupportedLayouts: List<UnsupportedLayout>) {
         private val entries: List<String> by lazy {
-            games.flatMap { it.layout() } + unsupportedLayouts.flatMap { it.requiredEntries }
+            // 排除条目也要记录下来，否则扫描时看不到它们，排除不起作用
+            games.flatMap { it.layout() + it.excludedEntries } + unsupportedLayouts.flatMap { it.requiredEntries }
         }
 
         /** 规则里出现的子目录名（小写）：扫描时只展开根目录下这些子目录。 */
@@ -110,11 +116,18 @@ object ImpactoGameCatalog {
      * 宿主补丁系列提供、没有语言变体的 Windows／Steam 版 profile：[entries] 是相对游戏目录的路径（精确大小写，
      * 最多一层子目录，如 `USRDIR/script.mpk`），与宿主 `profiles.json` 对应项的 `detect.allOf` 一致。
      */
-    private fun pcGame(profileId: String, title: String, minHostVersionCode: Int, vararg entries: String) = Game(
+    private fun pcGame(
+        profileId: String,
+        title: String,
+        minHostVersionCode: Int,
+        vararg entries: String,
+        excludedEntries: Set<String> = emptySet(),
+    ) = Game(
         profileId = profileId,
         title = title,
         requiredEntries = entries.toSet(),
         minHostVersionCode = minHostVersionCode,
+        excludedEntries = excludedEntries,
     )
 
     /**
@@ -158,6 +171,8 @@ object ImpactoGameCatalog {
         pcGame(
             "sg-pc", "STEINS;GATE (PC, Steam)", SG_PC_MIN_HOST_VERSION_CODE,
             "Game.exe", "USRDIR/script.mpk", "USRDIR/system.mpk",
+            // STEINS;GATE 0（宿主 `sg0-pc`）的目录也带着上面三项，`mpk_bg.lst` 只有它有（与宿主 detect.noneOf 一致）
+            excludedEntries = setOf("USRDIR/mpk_bg.lst"),
         ),
         game(
             "darling", "STEINS;GATE: My Darling's Embrace",
@@ -298,7 +313,7 @@ object ImpactoGameCatalog {
     private val TRADITIONAL_CHINESE_REGIONS = setOf("TW", "HK", "MO")
 
     private fun fullMatches(entries: Set<String>, rules: Rules): List<Game> =
-        rules.games.filter { entries.containsAll(it.layout()) }
+        rules.games.filter { game -> entries.containsAll(game.layout()) && game.excludedEntries.none { it in entries } }
 
     /**
      * 没有任何 profile 全部命中时，目录是否是「未支持的 MAGES. 布局」：返回第一个命中的 [UnsupportedLayout]
