@@ -210,8 +210,17 @@ class GameScreenMainActivityAcceptanceDeviceTest {
                 compose.waitForIdle()
                 val sheet = requireNotNull(automation.takeScreenshot())
                 try { saveScreen(sheet, File(evidence, "$name-sheet.png")) } finally { sheet.recycle() }
-                assertTrue("Return-to-drawn-card upper bound must be under 5000 ms", drawnAt - started < 5_000L)
-                assertTrue("Return-to-interactive-sheet upper bound must be under 8000 ms", interactiveAt - started < 8_000L)
+                // 门槛与整轮预算挂钩：预算被前面步骤吃掉后，这里必须跟着收紧，
+                // 否则「超时」只会在最后的 finally 里才体现，等于用固定阈值掩盖总预算耗尽。
+                val budgetLeft = (testDeadline - started).coerceAtLeast(0L)
+                assertTrue(
+                    "Return-to-drawn-card upper bound must be under 5000 ms",
+                    drawnAt - started < minOf(5_000L, budgetLeft),
+                )
+                assertTrue(
+                    "Return-to-interactive-sheet upper bound must be under 8000 ms",
+                    interactiveAt - started < minOf(8_000L, budgetLeft),
+                )
                 instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
                 compose.waitForIdle()
                 await("Sheet must close without launching a game") { bounds(text(R.string.game_launch_action), true) == null }

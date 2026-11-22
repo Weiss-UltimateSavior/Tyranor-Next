@@ -79,7 +79,22 @@ class WaterfallReflowState private constructor(
     var isRestoring by mutableStateOf(pendingAnchor != null)
         private set
 
-    private data class Anchor(val index: Int, val identity: Any?, val y: Int, val atBottom: Boolean)
+    /**
+     * 阅读位置锚点。[columns] 与 [landscape] 是采样时的布局代：离页快照可能在隐藏期被重测改写，
+     * 带上这两项才能判断这份偏移属于哪一套列宽，避免用旧列宽的位置去校准新布局。
+     */
+    private data class Anchor(
+        val index: Int,
+        val identity: Any?,
+        val y: Int,
+        val atBottom: Boolean,
+        val columns: Int,
+        val landscape: Boolean,
+    ) {
+        /** 与目标布局同一代时 [y] 可直接采信；换了列数或方向时 [y] 只是近似值。 */
+        fun matchesGeneration(columns: Int, landscape: Boolean): Boolean =
+            this.columns == columns && this.landscape == landscape
+    }
 
     private fun capture(): Anchor? {
         val visible = gridState.layoutInfo.visibleItemsInfo
@@ -91,12 +106,22 @@ class WaterfallReflowState private constructor(
             itemIdentity(item.key),
             item.offset.y,
             !gridState.canScrollForward && gridState.canScrollBackward,
+            layoutColumns,
+            layoutLandscape,
         )
     }
 
     private var inactiveAnchor: Anchor? = null
     private var inactiveOffsets: Map<Any, IntOffset> = emptyMap()
 
+    /**
+     * 离页期间记录阅读位置。
+     *
+     * 只保留第一份：窗口在隐藏期仍会被重测，之后的采样拿到的 `y` 已属于新视口，
+     * 而 [Anchor.columns]/[Anchor.landscape] 只有在 [update] 换布局时才变，重采样会把
+     * 新布局的偏移贴成旧代标签、让 [Anchor.matchesGeneration] 误判为可采信。
+     * 已有待恢复锚点时也不再采样，那份锚点才是本次恢复的依据。
+     */
     internal fun preserveInactiveAnchor() {
         if (inactiveAnchor != null || pendingAnchor != null) return
         inactiveAnchor = capture()
@@ -202,6 +227,9 @@ class WaterfallReflowState private constructor(
         val count = state.layoutInfo.totalItemsCount
         if (count == 0) return@with
         val target = if (anchor.atBottom) count - 1 else anchor.index.coerceIn(0, count - 1)
+        // 偏移只在同一套列宽/方向下才有意义：换了列数或方向后，同一个 item 在屏幕上被放在
+        // 另一列、另一套高度里，旧 y 会把整表拉到错误位置，此时按「该项对齐顶端」恢复。
+        val anchorY = if (anchor.matchesGeneration(layoutColumns, layoutLandscape)) anchor.y else 0
         var sliceStart = System.nanoTime()
         suspend fun canContinue(): Boolean {
             currentCoroutineContext().ensureActive()
@@ -218,7 +246,7 @@ class WaterfallReflowState private constructor(
                 (anchor.identity?.let { itemIndex?.invoke(it) }?.takeIf { it >= 0 } ?: anchor.index)
                     .coerceIn(0, currentCount - 1)
             }
-            snapToItem(currentTarget, if (anchor.atBottom) 0 else -anchor.y)
+            snapToItem(currentTarget, if (anchor.atBottom) 0 else -anchorY)
             // Foundation 1.11.2 会在尾部不足一屏时同步回填；高于视口的尾卡仍可能继续滚动。
             // 只按实际可滚距离补齐，不能假定再滚一屏就已到底。
             // 这段补齐故意不受扫描预算限制：预算耗尽后仍要真正落到尾部，否则超时兜底会停在
@@ -256,7 +284,7 @@ class WaterfallReflowState private constructor(
                     if (anchor.identity == null) it.index == target else itemIdentity(it.key) == anchor.identity
                 }
                 if (item != null) {
-                    scrollBy((item.offset.y - anchor.y).toFloat())
+                    scrollBy((item.offset.y - anchorY).toFloat())
                     return@with
                 }
             }
@@ -270,7 +298,7 @@ class WaterfallReflowState private constructor(
             while (steps++ < maxSteps && canContinue()) {
                 val item = state.layoutInfo.visibleItemsInfo.firstOrNull { itemIdentity(it.key) == anchor.identity }
                 if (item != null) {
-                    scrollBy((item.offset.y - anchor.y).toFloat())
+                    scrollBy((item.offset.y - anchorY).toFloat())
                     return@with
                 }
                 if (!state.canScrollBackward ||
@@ -288,7 +316,7 @@ class WaterfallReflowState private constructor(
                     itemIndex?.invoke(anchor.identity)?.let { it >= 0 } != true
                 }
                 if (item != null) {
-                    scrollBy((item.offset.y - anchor.y).toFloat())
+                    scrollBy((item.offset.y - anchorY).toFloat())
                     return@with
                 }
                 if (!state.canScrollForward ||
@@ -304,17 +332,20 @@ class WaterfallReflowState private constructor(
             WaterfallReflowState(columns, landscape, itemIdentity)
 
         internal fun saver(itemIdentity: (Any) -> Any) = listSaver<WaterfallReflowState, Any>(
+            // 锚点自带采样时的布局代（列数 + 方向）：重建后据此判断这份偏移属于哪套列宽，
+            // 而不是拿当前布局去猜。
             save = {
                 val anchor = it.pendingAnchor ?: it.inactiveAnchor ?: it.capture()
                 val identity = anchor?.identity?.takeIf { value -> canBeSaved(value) }
                 listOf(it.layoutColumns, it.layoutLandscape, anchor?.index ?: -1, anchor?.y ?: 0,
-                    anchor?.atBottom ?: false, identity != null, identity ?: "")
+                    anchor?.atBottom ?: false, identity != null, identity ?: "",
+                    anchor?.columns ?: it.layoutColumns, anchor?.landscape ?: it.layoutLandscape)
             },
             // 坏载荷或跨版本格式不符时回落到新状态：Compose 不包裹 saver.restore，
-            // 直接强转会把崩溃抛进恢复阶段。
+            // 直接强转会把崩溃抛进恢复阶段。7 是布局代之前的旧格式，按当前布局补齐。
             restore = {
                 val values = it
-                val restored = if (values.size == 7) runCatching {
+                val restored = if (values.size == 7 || values.size == 9) runCatching {
                     val columns = (values[0] as Int).coerceIn(MIN_SAVED_COLUMNS, MAX_SAVED_COLUMNS)
                     val landscape = values[1] as Boolean
                     val index = values[2] as Int
@@ -324,6 +355,9 @@ class WaterfallReflowState private constructor(
                         if (values[5] as Boolean) values[6] else null,
                         offsetY,
                         values[4] as Boolean,
+                        (values.getOrNull(7) as? Int)?.coerceIn(MIN_SAVED_COLUMNS, MAX_SAVED_COLUMNS)
+                            ?: columns,
+                        (values.getOrNull(8) as? Boolean) ?: landscape,
                     )
                     WaterfallReflowState(columns, landscape, itemIdentity, anchor)
                 }.getOrNull() else null

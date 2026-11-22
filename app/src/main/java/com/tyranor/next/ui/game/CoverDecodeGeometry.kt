@@ -10,6 +10,12 @@ import kotlin.math.roundToInt
 internal const val CoverDecodeBudgetBytes = 32L * 1024 * 1024
 
 /**
+ * 游戏封面卡的标准宽高比（3:4）。网格、瀑布流、封面流、操作抽屉头部与搜索候选预览共用同一个值：
+ * 布局的 `aspectRatio` 与封面选档必须成对改，否则显示盒比例与解码目标比例会悄悄错开。
+ */
+internal const val GameCoverAspect = 3f / 4f
+
+/**
  * 封面解码档位：按消费方的最大显示宽度分档。
  *
  * `BitmapFactory.inSampleSize` 只能取 2 的幂，单靠采样无法精确命中目标尺寸（例如 1000×1333
@@ -35,7 +41,7 @@ internal enum class CoverDecodeTier(val maxWidthPx: Int, val maxHeightPx: Int) {
     ;
 
     /** 档位自身的目标宽高比（3:4）；未指定消费方比例时使用。 */
-    val defaultAspect: Float get() = maxWidthPx.toFloat() / maxHeightPx
+    val defaultAspect: Float get() = GameCoverAspect
 
     /** 缓存 key：档位 + 0.05 分桶的宽高比 + 原 uri。 */
     fun cacheKey(uri: String, targetAspect: Float? = null): String {

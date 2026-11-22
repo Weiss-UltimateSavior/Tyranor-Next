@@ -255,6 +255,21 @@ fun ProvideEntrance(state: EntranceState = rememberEntranceState(), content: @Co
 }
 
 /**
+ * 重排入场的宿主契约：[staggeredEntrance] 只依赖这组能力（本轮代数、逐项延迟、重排位移、节点登记），
+ * 不依赖任何具体网格状态，入场基础组件因此不必反向引用业务状态类。
+ *
+ * 登记参数取 [Any] 而不是具体节点类型：接口要为公开的 [staggeredEntrance] 所用，
+ * 不能把内部节点类写进公开签名，转换留在实现内部。
+ */
+interface EntranceReflowHost {
+    val entrance: EntranceState
+    fun entranceDelayMillis(key: Any, stepMillis: Long): Long?
+    fun placementDelta(key: Any): IntOffset
+    fun registerEntranceNode(node: Any)
+    fun unregisterEntranceNode(node: Any)
+}
+
+/**
  * 依次弹入：从透明、下方 [distance]、略小处带回弹地升到原位。只改绘制图层，停稳后与原样完全一致。
  *
  * 实现是修饰符节点（不再是 `composed`）：不播放的元素（入场已过 / 「普通」档 / 已被拖动跳过）
@@ -266,7 +281,7 @@ fun Modifier.staggeredEntrance(
     index: Int,
     distance: Dp = 22.dp,
     stepMillis: Long = 30L,
-    reflow: GridReflowState? = null,
+    reflow: EntranceReflowHost? = null,
     key: Any? = null,
 ): Modifier = this then StaggeredEntranceElement(index, distance, stepMillis, reflow, key)
 
@@ -274,7 +289,7 @@ private class StaggeredEntranceElement(
     val index: Int,
     val distance: Dp,
     val stepMillis: Long,
-    val reflow: GridReflowState?,
+    val reflow: EntranceReflowHost?,
     val key: Any?,
 ) : ModifierNodeElement<StaggeredEntranceNode>() {
     override fun create(): StaggeredEntranceNode =
@@ -330,7 +345,7 @@ internal class StaggeredEntranceNode(
     var index: Int,
     var distance: Dp,
     var stepMillis: Long,
-    private var reflow: GridReflowState? = null,
+    private var reflow: EntranceReflowHost? = null,
     private var itemKey: Any? = null,
 ) : Modifier.Node(), LayoutModifierNode, LayoutAwareModifierNode, CompositionLocalConsumerModifierNode, ObserverModifierNode {
 
@@ -341,11 +356,11 @@ internal class StaggeredEntranceNode(
         if (isAttached) checkReflow(relayout = true)
     }
 
-    internal fun updateReflow(next: GridReflowState?, key: Any?) {
+    internal fun updateReflow(next: EntranceReflowHost?, key: Any?) {
         if (reflow !== next || itemKey != key) {
-            if (isAttached) reflow?.detach(this)
+            if (isAttached) reflow?.unregisterEntranceNode(this)
             reflow = next
-            if (isAttached) reflow?.attach(this)
+            if (isAttached) reflow?.registerEntranceNode(this)
             itemKey = key
             reflowGeneration = -1
             playJob?.cancel()
@@ -421,7 +436,7 @@ internal class StaggeredEntranceNode(
 
     /** 挂载时订阅最近的入场作用域，并在有效窗口内准备首帧隐藏态。 */
     override fun onAttach() {
-        reflow?.attach(this)
+        reflow?.registerEntranceNode(this)
         observeEntranceState(relayout = false)
         checkReflow(relayout = false)
     }
@@ -453,7 +468,7 @@ internal class StaggeredEntranceNode(
 
     /** 卸载时解除节拍登记并丢弃动画，避免懒列表复用继承半透明状态。 */
     override fun onDetach() {
-        reflow?.detach(this)
+        reflow?.unregisterEntranceNode(this)
         state?.detach(this)
         state = null
         playJob?.cancel()

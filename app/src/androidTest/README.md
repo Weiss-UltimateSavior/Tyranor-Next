@@ -273,6 +273,8 @@ failed identity_sha256=<64hex> token=<session token>
 
 仅接受空库或私有目录内的 PR195 夹具，不扫描外部目录。结束时删除本轮记录与素材、还原设置和方向，证据保留在目标包 `files/pr195-game-screen-evidence/<主题>-<UUID>/`。导航用生产条目的 `performClick` 语义回调，卡片响应仍用单次系统触摸；Compose 测试规则自动推进动画时钟，系统单调时钟仅记录观察上界。本用例不覆盖旋转后导航触摸命中、Activity 重建或逐帧零闪现。耗时包含观察、截图及抽屉响应，属于端到端上界，不代表最早可交互帧或发布包流畅度；截图使用原创测试素材，不作为真实游戏兼容性证据。
 
+同一隔离包下还有另外四个 PR195 动效类：`ui/common/MotionSliderDeviceTest`、`ui/common/motion/GridReflowDeviceTest`、`ui/common/motion/WaterfallRotationScrollDeviceTest`、`ui/common/motion/WaterfallRestoreResponsivenessDeviceTest`，全部走 `MotionDeviceAcceptance` 双重门禁，`-e class` 需写完整类名（`MotionSliderDeviceTest` 在 `com.tyranor.next.ui.common`，不在 `.motion` 下）。三个 `WaterfallRotationScrollDeviceTest` 诊断用例要另加 `-e waterfall_diagnostics true` 才会执行，否则按条件跳过；`MotionSliderDeviceTest` 的两档参数化全部真实执行（含普通档「横拖后移动被消费」的回滚用例）。**设备测试是手动门禁**：`.github/workflows/android-ci.yml` 与 `webdav-macos.yml` 只跑 `:app:testDebugUnitTest`，不含 `connectedCheck`，本页所有仪器用例都需在真机按上面命令执行才算验证，CI 绿灯不代表设备回归已跑过。
+
 ## WebDAV 弹窗忙碌状态回归
 
 `ui/save/SaveDialogDismissDeviceTest` 补充两个隔离目标用例：任务中点击遮罩/返回保持弹窗可见，任务结束后允许关闭；退场动画已经开始后 busy 改变仍清除父状态。执行沿用 `com.tyranor.next.webdavacceptance*` 与 `-e webdav_device_acceptance true` 的双重门槛。

@@ -141,6 +141,9 @@ private val tabItems = listOf(
   Tab(R.string.nav_settings, R.drawable.ic_settings),
 )
 
+/** 游戏页在 [tabItems] 中的位置。关闭首页时下标不从 0 重编，所以它是固定值而不是「第二个可见页」。 */
+private const val GameTabIndex = 1
+
 /** 托管五个主标签页及根 Miuix 浮层；透明且零 inset 的宿主让菜单遮罩覆盖底栏。 */
 @Composable
 fun MainScreen(
@@ -609,7 +612,7 @@ private fun ColumnScope.MainTabPages(
         // key(page)：页面身份按 Tab 下标固定。可见集合变化（如关闭/恢复首页）时，
         // 未变化页面的组合槽位与 pageOffset/pageAlpha 动画状态不会被错位复用而闪现。
         val currentSelection = rememberUpdatedState(selectedIndex)
-        val gameTabSelected = remember { { currentSelection.value == 1 } }
+        val gameTabSelected = remember { { currentSelection.value == GameTabIndex } }
         visiblePages.forEach { page ->
           key(page) {
             val selected = page == selectedIndex

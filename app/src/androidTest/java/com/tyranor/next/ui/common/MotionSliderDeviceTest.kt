@@ -72,22 +72,27 @@ class MotionSliderDeviceTest(private val enhanced: Boolean) {
         }
     }
 
+    /**
+     * 横拖已经产生草稿后，上层容器在 Initial 阶段接手整段手势（位移与抬手都消费）。
+     * 增强档由滑条自己的状态机判定；普通档靠旁听 Miuix 的结束回调，看到的是「已消费的抬手」，
+     * 同样回滚。这里两种档位都必须给一次取消，不得把接手当成正常抬手提交。
+     */
     @Test
-    fun consumedMoveAfterHorizontalDragDoesNotFinish() {
-        org.junit.Assume.assumeTrue(enhanced)
-        withSlider { fixture ->
-            dragToDraft(fixture)
-            compose.runOnIdle { fixture.consumeMoves.value = true }
-            compose.onNodeWithTag(SLIDER).performTouchInput {
-                moveBy(Offset(12f, 0f))
-                up()
-            }
-            compose.runOnIdle {
-                assertEquals(1, fixture.cancelCalls)
-                assertEquals(emptyList<Float>(), fixture.commits)
-                assertEquals(INITIAL, fixture.committed, 0f)
-                assertEquals(INITIAL, fixture.draft.floatValue, 0f)
-            }
+    fun consumedDragAfterHorizontalMoveRollsBackDraft() = withSlider { fixture ->
+        dragToDraft(fixture)
+        compose.runOnIdle {
+            fixture.consumeMoves.value = true
+            fixture.consumeUp.value = true
+        }
+        compose.onNodeWithTag(SLIDER).performTouchInput {
+            moveBy(Offset(12f, 0f))
+            up()
+        }
+        compose.runOnIdle {
+            assertEquals(1, fixture.cancelCalls)
+            assertEquals(emptyList<Float>(), fixture.commits)
+            assertEquals(INITIAL, fixture.committed, 0f)
+            assertEquals(INITIAL, fixture.draft.floatValue, 0f)
         }
     }
 
@@ -214,6 +219,9 @@ class MotionSliderDeviceTest(private val enhanced: Boolean) {
                                 if (fixture.consumeMoves.value) {
                                     event.changes.filter { it.pressed && it.previousPressed }.forEach { it.consume() }
                                 }
+                                if (fixture.consumeUp.value) {
+                                    event.changes.filter { it.previousPressed && !it.pressed }.forEach { it.consume() }
+                                }
                             }
                         }
                     },
@@ -257,6 +265,7 @@ class MotionSliderDeviceTest(private val enhanced: Boolean) {
         val draft = mutableFloatStateOf(INITIAL)
         val visible = mutableStateOf(true)
         val consumeMoves = mutableStateOf(false)
+        val consumeUp = mutableStateOf(false)
         val scrollState = ScrollState(0)
         var committed = INITIAL
         val commits = mutableListOf<Float>()

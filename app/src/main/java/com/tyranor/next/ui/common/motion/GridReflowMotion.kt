@@ -1,6 +1,7 @@
 package com.tyranor.next.ui.common.motion
 
 import android.animation.ValueAnimator
+import androidx.annotation.VisibleForTesting
 import androidx.compose.foundation.lazy.grid.LazyGridItemInfo
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridItemInfo
@@ -19,8 +20,8 @@ import androidx.compose.ui.unit.IntOffset
 
 /** 独立记录布局变化，不与页面首次入场混用。 */
 @Stable
-class GridReflowState internal constructor() {
-    internal val entrance = EntranceState()
+class GridReflowState internal constructor() : EntranceReflowHost {
+    override val entrance = EntranceState()
     private val snapshot = GridReflowSnapshot()
     private val schedule = GridReflowEntranceSchedule()
     private var visibleKeys: (() -> Set<Any>)? = null
@@ -41,8 +42,13 @@ class GridReflowState internal constructor() {
         isReady = true
     }
 
-    internal fun attach(node: StaggeredEntranceNode) { nodes += node }
-    internal fun detach(node: StaggeredEntranceNode) { nodes -= node }
+    override fun registerEntranceNode(node: Any) {
+        (node as? StaggeredEntranceNode)?.let { nodes += it }
+    }
+
+    override fun unregisterEntranceNode(node: Any) {
+        (node as? StaggeredEntranceNode)?.let { nodes -= it }
+    }
 
     internal fun update(
         columns: Int,
@@ -66,10 +72,10 @@ class GridReflowState internal constructor() {
         entrance.skip()
     }
 
-    internal fun placementDelta(key: Any): IntOffset =
+    override fun placementDelta(key: Any): IntOffset =
         Snapshot.withoutReadObservation { placementDelta?.invoke(key) ?: IntOffset.Zero }
 
-    internal fun entranceDelayMillis(key: Any, stepMillis: Long): Long? {
+    override fun entranceDelayMillis(key: Any, stepMillis: Long): Long? {
         if (!animationsEnabled || pendingWindow || !entrance.isFresh()) return null
         return Snapshot.withoutReadObservation {
             if (!MotionMode.enhanced) return@withoutReadObservation null
@@ -109,6 +115,9 @@ internal class GridReflowSnapshot {
     private var columns = 0
     private var landscape = false
     private var initialized = false
+
+    /** 已发生的真实布局变化次数；生产侧不读它，只用于测试与调试确认快照换代。 */
+    @get:VisibleForTesting
     var layoutGeneration: Int = 0
         private set
 
@@ -130,7 +139,11 @@ internal class GridReflowSnapshot {
  * 同一布局代内槽位固定；之后出现的新项按新快照顺序追加。
  */
 internal class GridReflowEntranceSchedule {
-    internal data class Slot(val order: Int, val delayMillis: Long)
+    /**
+     * [order] 只是分配次序的序号（连续、从 0 起），生产侧只用 [delayMillis]；
+     * 保留它是为了让测试能断言「哪些卡拿到了槽位、顺序是否正确」。
+     */
+    internal data class Slot(@get:VisibleForTesting val order: Int, val delayMillis: Long)
 
     private var hasReflow = false
     private val slots = HashMap<Any, Slot>()

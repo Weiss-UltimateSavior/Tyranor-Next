@@ -14,7 +14,7 @@ python3 -B tools/check-motion-boundaries.py
 | 列表条目 | 直接调用 `animateItem` / `animateItemPlacement`；在同一组参数里手配 `fadeInSpec`、`placementSpec`、`fadeOutSpec`；直接拿 `ListItemPlacement.Layout.spec` / `Reflow.spec` | `listItemMotion()`、`listItemMotion(ListItemPlacement.Reflow)`、传 `enabled`、在两种公开变体中选择、叠加具名入场效果 |
 | 业务页面 | 直接构造 `Animatable`、`animate*AsState`、`rememberInfiniteTransition`、`tween`、`spring`、进退场原语，直接调用 `MotionTokens` / `MotionSprings` 的规格函数，或使用隐含默认动画的 `AnimatedContent` / `AnimatedVisibility` / `Crossfade` | 调用具名效果、传状态/动作；现有归档 `AnimatedContent` 仅在显式使用已登记的 `archivePaneTransition` 时允许。普通布局、绘制、滚动 API 和单纯的类型/import 不会因名称里有 animate 而报错 |
 
-列表规则覆盖 `app/src/main/{java,kotlin}/**/*.kt`，包括已登记的效果实现；由 `ui/common/motion/ListItemMotion.kt` 独占原始条目动画和变体配置。业务页面规则覆盖这两个源码根中 `com/tyranor/next/ui/` 下的 Kotlin 文件及 `MainActivity.kt`。动效实现文件在脚本的 `OWNERS` 中按完整相对路径登记；放进 `common/motion`、文件起名叫 `*Motion.kt` 都不会自动放行。
+列表规则覆盖 `app/src/main/{java,kotlin}/**/*.kt`，包括已登记的效果实现；由 `ui/common/motion/ListItemMotion.kt` 独占原始条目动画和变体配置。业务页面规则覆盖这两个源码根中 `com/tyranor/next/ui/` 下的 Kotlin 文件及 `MainActivity.kt`。动效实现文件在脚本的 `OWNERS` 中按完整相对路径登记；放进 `common/motion`、文件起名叫 `*Motion.kt` 都不会自动放行。登记的判据是「这个文件里确实持有动画原语（或直接的逐帧/绘制图层实现）」，不是「它放在动效目录」：`MotionMode`（档位标志）、`MotionHaptics`（触觉门面）、`MotionIntent`（意图枚举）没有原语，因此故意不登记，将来往里面加裸 `Animatable` 仍会被拦下。给 `common/motion` 加新文件后按此判据决定登记，不要整目录照抄。
 
 维护时先找已有 owner。例如归档普通档沿用的 220ms 淡入淡出归 `archivePaneTransition`，引擎的存储环归 `rememberStorageSweep`。若确实需要独立实现，登记实现文件，不登记调用它的业务页面。仍留在宿主的调用由 `EXISTING` 按**文件、函数、底层符号、最多次数**放行：目前只有 `MainScreen` 内一次 `updateTransition`，给增强档和普通档共享切页时钟。迁走时应删除该条目；引导退场已由 `CoachOverlayVisibility` 接管，因此 `MainActivity` 没有豁免。
 

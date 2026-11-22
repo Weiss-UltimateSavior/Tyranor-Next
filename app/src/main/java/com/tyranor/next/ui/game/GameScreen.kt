@@ -2056,7 +2056,7 @@ private fun CoverCandidateCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(3f / 4f)
+                .aspectRatio(GameCoverAspect)
                 .clip(AppComponentShape)
                 // 占位底色：默认风格 PageGrey，玻璃风格亮玻璃面（避免透明占位不可见）
                 .background(DialogItemSurface)
@@ -2462,7 +2462,7 @@ internal fun UniformGameGrid(
     // 与瀑布流同一选档口径：等高网格的卡片固定 3:4，因此两种风格对同一封面解析到同一档位与缓存 key。
     val coverTier = CoverDecodeTier.forDisplay(
         gameCardColumnWidthPx(constraints.maxWidth, columns),
-        UniformGameCardAspect,
+        GameCoverAspect,
     )
     val reflow = rememberGridReflowState(columns, landscape, gridState)
     // 滚动果冻：快速滚动时卡片沿滚动方向轻微拉长，停下 Q 弹复原（「普通」档不挂）
@@ -2537,7 +2537,7 @@ internal fun UniformGameCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(UniformGameCardAspect)
+                .aspectRatio(GameCoverAspect)
                 .clip(cardShape)
                 .dissolveTint(dissolve, MaterialTheme.colorScheme.error)
                 .background(game.engine.coverColor())
@@ -2578,9 +2578,6 @@ internal fun UniformGameCard(
 
 private val GameGridHorizontalPadding = 12.dp
 private val GameGridColumnSpacing = 10.dp
-
-/** 等高网格卡片固定 3:4；布局与封面选档共用同一比例，保证两处不会分出两套口径。 */
-private const val UniformGameCardAspect = 3f / 4f
 
 /** 两种可调列数卡片共用当前方向与已保存列数的选择规则。 */
 @Composable

@@ -174,7 +174,7 @@ internal fun GameSheetHeader(game: ScanGame, coverShape: Shape, modifier: Modifi
         Box(
             Modifier
                 .width(SHEET_COVER_WIDTH)
-                .aspectRatio(3f / 4f)
+                .aspectRatio(GameCoverAspect)
                 .clip(coverShape)
                 .background(displayGame.engine.coverColor())
                 .glassBorder(shape = coverShape)
