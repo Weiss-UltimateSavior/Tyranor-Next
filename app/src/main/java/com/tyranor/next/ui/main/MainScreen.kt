@@ -612,9 +612,10 @@ private fun ColumnScope.MainTabPages(
         val gameTabSelected = remember { { currentSelection.value == 1 } }
         visiblePages.forEach { page ->
           key(page) {
+            val selected = page == selectedIndex
             MainTabPageHost(
               page = page,
-              selected = page == selectedIndex,
+              selected = selected,
               pageTransition = pageTransition,
               motion = tabMotion[page],
               entrance = tabEntrances[page],
@@ -658,7 +659,8 @@ private fun ColumnScope.MainTabPages(
                 2 -> EngineScreen(
                   Modifier.fillMaxSize(),
                   onCoachAnchorChanged = { onCoachAnchorChanged(CoachAnchor.ENGINE, it) },
-                  isActive = pageActive,
+                  reportCoachAnchor = pageActive,
+                  isSelected = selected,
                   gameCount = libraryState.games.size,
                 )
                 3 -> ToolsScreen(Modifier.fillMaxSize())

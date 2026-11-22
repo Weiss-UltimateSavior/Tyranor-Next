@@ -161,6 +161,9 @@
     <string name="engine_open_download_failed">Unable to open the download page</string>
     <string name="engine_integrated">Built in</string>
     <string name="engine_module_installed">Module installed</string>
+    <string name="engine_module_update_available">Module update available</string>
+    <string name="engine_module_update_versions">Installed %1$s · Latest %2$s</string>
+    <string name="engine_module_download_latest">Download latest version</string>
     <string name="engine_module_download">Download</string>
     <string name="engine_module_not_installed">Module not installed</string>
     <string name="engine_tab_rpgm">RPGM</string>

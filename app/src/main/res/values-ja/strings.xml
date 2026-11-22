@@ -161,6 +161,9 @@
     <string name="engine_open_download_failed">ダウンロードページを開けません</string>
     <string name="engine_integrated">内蔵済み</string>
     <string name="engine_module_installed">モジュールはインストール済み</string>
+    <string name="engine_module_update_available">モジュールの新しいバージョンがあります</string>
+    <string name="engine_module_update_versions">インストール済み %1$s · 最新 %2$s</string>
+    <string name="engine_module_download_latest">最新版をダウンロード</string>
     <string name="engine_module_download">ダウンロード</string>
     <string name="engine_module_not_installed">モジュール未インストール</string>
     <string name="engine_tab_rpgm">RPGM</string>

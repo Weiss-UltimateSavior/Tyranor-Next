@@ -30,9 +30,11 @@ object ImpactoExternalEngineModule : ExternalEngineModule {
     override val defaultAlias: String = "internal.impacto"
     override val supportedAliases: Set<String> = setOf("external.impacto")
 
+    override val updateSource = ExternalEngineReleaseSource("yuukana1/Tyranor-Next-MAGES", "impacto-host-")
+
     /** 宿主仓库最新发布的 APK 直链（资产名固定）；宿主每发布新版本，这里自动指向它，无需改动本 App。 */
     override val installUrl: String =
-        "https://github.com/yuukana1/Tyranor-Next-MAGES/releases/latest/download/Tyranor-Next-MAGES.apk"
+        "${updateSource.releasesUrl}/latest/download/Tyranor-Next-MAGES.apk"
 
     /** 低于本版本的宿主不认识当前请求协议，按「已过期」处理并引导更新。 */
     override val minimumVersionCode: Long = ImpactoHostContract.VERSION_CODE.toLong()

@@ -3,6 +3,7 @@ package com.tyranor.next.core.engine.external
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -26,6 +27,16 @@ object ExternalEngineLauncher {
     fun isPackageInstalled(context: Context, module: ExternalEngineModule): Boolean =
         checkInstallation(context, module) == null
 
+    internal fun packageInfo(context: Context, module: ExternalEngineModule): PackageInfo {
+        val packageManager = context.applicationContext.packageManager
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.getPackageInfo(module.packageName, PackageManager.PackageInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(module.packageName, 0)
+        }
+    }
+
     /**
      * 模块缺失或版本不匹配时返回类型化失败，可用时返回 null。
      * 传入 [launchTarget] 时按该目标要求的最低版本（[ExternalEngineModule.minimumVersionCodeFor]）判定，
@@ -37,13 +48,7 @@ object ExternalEngineLauncher {
         launchTarget: String? = null,
     ): ExternalEngineLaunchResult? =
         try {
-            val packageManager = context.applicationContext.packageManager
-            val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                packageManager.getPackageInfo(module.packageName, PackageManager.PackageInfoFlags.of(0))
-            } else {
-                @Suppress("DEPRECATION")
-                packageManager.getPackageInfo(module.packageName, 0)
-            }
+            val packageInfo = packageInfo(context, module)
             val installedVersionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 packageInfo.longVersionCode
             } else {
