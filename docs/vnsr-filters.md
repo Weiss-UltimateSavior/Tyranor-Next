@@ -99,12 +99,12 @@ VN-SR 滤镜贡献由其着色器资产（`engine/src/main/assets/vnsr/`）、�
 
 ## 验证边界
 
-> **阶段说明**：本节 98–111 行记录的是初始 VN-SR 引入基线的静态与 CPU/JVM 验证边界（当时尚未补充后续 `2026-11-18` `Adreno 840` 与 `2026-11-21` `Adreno 740` 实机复核，见下文两节）；非 Adreno GPU、`GL_RGBA16F` 不可用分支、GLES 3.0/3.1 `GL_EXT_draw_buffers_indexed` 及 Siglus / krkrsdl3 当前修订实机重跑仍属待补测范围。
+> **阶段说明**：本节基线段落记录的是初始 VN-SR 引入基线的静态与 CPU/JVM 验证边界（当时尚未补充后续 `2026-11-18` `Adreno 840` 与 `2026-11-21` `Adreno 740` 历史实机样本，见下文两节）；非 Adreno GPU、`GL_RGBA16F` 不可用分支、GLES 3.0/3.1 `GL_EXT_draw_buffers_indexed`、Kirikiroid2 视频/开场动画静态复用样本、以及当前 HEAD 修订上的实机重跑仍属待补测范围。
 
 早期基线执行的验证为静态与CPU/JVM级别：来源与许可逐字节SHA核对、三档残差与最终合成坐标等价（CPU回归阈值为1e-10，当次运行残差误差为0.0、最终合成误差为2.22e-16，另含最终合成的逐像素8bit量化一致独立断言）、
 Anime4K六份Restore导出的CPU方向负对照、生成器与来源清单篡改负例、`texture_row_origin`编译期断言、
 资源来源回归、图形专项JVM测试、Debug宿主native构建与上游CI检查。
-当时基线未执行完整Release/R8 APK构建，也未执行实机验收（后续实机复核记录见下文 `Adreno 840` 历史样本与 `Adreno 740` 当前修订实机复核两节）；早期提交者“运行测试通过”的反馈是历史结论，
+当时基线未执行完整Release/R8 APK构建，也未执行实机验收（后续历史实机样本见下文 `Adreno 840` 与 `Adreno 740` 两节）；早期提交者“运行测试通过”的反馈是历史结论，
 对应早期提交的构建，不作为本轮验收证据，不借用早期其它模型的测试结果，
 也不将来源项目桌面GPU成绩作为移动设备性能承诺。早期来源提交者未逐项提供设备型号、系统、运行库身份、真实样本、GPU用时和单模型数据。
 方向变换的依据是上游 `src/vnsr/export.py` 将权重的行偏移直接写入采样偏移，
@@ -116,21 +116,26 @@ Anime4K六份Restore导出的CPU方向负对照、生成器与来源清单篡改
 本次验收未修改应用包名、版本或签名的仓库配置；本地测试构建通过Gradle属性使用独立包名。
 CI与PR中的验证命令及链接单独记录；没有新增或更换任何原生引擎运行库。
 
-### 宿主脏帧静态复用与 Adreno 840 实机复核（2026-11-18）
+### Adreno 840 历史实机样本（2026-11-18）
 
-> **时效说明**：以下 `Adreno (TM) 840` 真机样本与离屏微基准均采集于 2026-11-18 整理重基之前，不直接代表当前最终提交在 Siglus 与 `840` 上的回归结果；四期审改收口后的当前修订真机重跑见下文 `Adreno 740` 节。
+- **样本修订**：2026-11-18 分支整理重基与多轮审查修复之前的早期候选构建。
+- **采集日期**：2026-11-18（Qualcomm `Adreno (TM) 840`）。
+- **其后是否重跑**：**未在当前 HEAD 修订重跑**；仅作早期优化收益与静态复用观察参考，不作为当前最终提交的验收证据。
 
-将执行器统一收口至 `CnnPipeline` 并启用分级精度、运行期 MRT 融合与宿主脏帧静态复用后，基于 `Adreno (TM) 840` 完成真机样本与离屏微基准复核：
+将执行器统一收口至 `CnnPipeline` 并启用分级精度、运行期 MRT 融合与宿主脏帧静态复用后，基于 `Adreno (TM) 840` 完成真机样本与离屏微基准记录：
 
 - **真机样本（`VNC16 (2X) → 2133×1200`）**：Siglus（`anemoi`，`1080p` 动态/字幕场景）稳定 `55–60 FPS · GPU 9.9–11.6 ms`；Artemis（`ATRI`，`720p` 单上下文 GLES3 + 宿主脏帧静态复用）动态 `52–58 FPS / 10.1–12.2 ms`、静态稳态 `60 FPS / GPU —ms`；Kirikiroid2 1.3.9（`9-nine-`，`720p` + 宿主脏帧静态复用）动态 `60 FPS / 4.4–11.1 ms`、静态稳态 `60 FPS / GPU —ms`。
 - **离屏精度 / 融合优化验证**：`vnsr-c16-x2` 上 `720p→1440p` 从 `raw_fp32`（`gpuMean=16.016 ms`）降至 `p3b_fp16`（`gpuMean=10.957 ms`，`-31.6%`），`1080p→2160p` 下 `p3b_fp16` 为 `gpuMean=13.454 ms` / `wallMean=17.041 ms`；`Anime4K_Restore_CNN_L` 在运行期 MRT 融合 + CReLU 去重（`9 → 5` passes）后 `720p→1440p` 由 `14.701 ms` 降至 `9.822 ms`（`-33.2%`）。
-- **单元测试回归**：`.\main\gradlew.bat -p main :engine:testDebugUnitTest --tests "com.core.gl.*" --no-daemon --console=plain` 全量通过。
 
-### Adreno 740 当前修订实机复核（2026-11-21）
+### Adreno 740 历史实机样本（2026-11-21）
 
-在完成四期审改与 `Z-R3p4-1` 注释口径收口后，使用隔离 Debug 包（`com.tyranor.next.glverify`，测后卸载清理）于 `SM-X710`（Qualcomm `Adreno (TM) 740`，Android 15，OpenGL ES 3.2 `V@0676.71`）完成真实游戏复核：
+- **样本修订**：2026-11-21 四期审改与 `Z-R3p4-1` 收口后的分支构建（重排提交及 2026-11-22 审查修复前）。
+- **采集日期**：2026-11-21（`SM-X710`，Qualcomm `Adreno (TM) 740`，Android 15，OpenGL ES 3.2 `V@0676.71`，隔离 Debug 包 `com.tyranor.next.glverify`，测后卸载清理）。
+- **其后是否重跑**：**未在当前 HEAD 修订重跑**；2026-11-22 后续审查修复已改写 `CnnPipeline.java`、`GlErrors.java`、`GraphicsFilterPipeline.java`、`ArtemisOfficialBridge.java`、`artemis_official_graphics.cpp` 等核心文件，当前 HEAD 仅完成 JVM 回归、原生编译、应用编译与离线脚本校验，待真机到位后补跑最终修订验收。
+
+当时采集的真实游戏记录：
 
 - **Kirikiroid2 1.3.9（`libgame.so`，`9-nine-九次九日九重色`，`1280×720 → VNC16 (2X) → 2560×1440`）**：`CnnPipeline` 构建 7 pass（`texture bytes 66355200`），WARNING 静帧 `60 FPS / GPU 12.9 ms`、主界面飘花 `59–60 FPS / GPU 8.3 ms`、新游戏弹窗 `61 FPS / GPU 6.4 ms`、对话场景 `59–62 FPS / GPU 6.8–11.0 ms`，渲染正常且零 GL/JNI 错误。
-- **Kirikiroid2 1.3.4（`libgame134.so`，`9-nine-九次九日九重色`，`1280×720 → VNC16 (2X) → 2560×1440`）**：补齐 `1.3.4` 实机空白，`CnnPipeline` 构建 7 pass（`texture bytes 66355200`），WARNING 页 `60 FPS / GPU 11.4 ms`、主界面 `59 FPS / GPU 7.5 ms`、Config 页面 `62 FPS / GPU 7.4 ms`，渲染正常且零错误。
+- **Kirikiroid2 1.3.4（`libgame134.so`，`9-nine-九次九日九重色`，`1280×720 → VNC16 (2X) → 2560×1440`）**：补齐 `1.3.4` 实机样本，`CnnPipeline` 构建 7 pass（`texture bytes 66355200`），WARNING 页 `60 FPS / GPU 11.4 ms`、主界面 `59 FPS / GPU 7.5 ms`、Config 页面 `62 FPS / GPU 7.4 ms`，渲染正常且零错误。
 - **Artemis 官方单上下文 GLES3（`ArtemisActivityV1`，`HENPRI`，`1600×900 → 2560×1440`）**：日志实证 `Official stage hooks registered`、`Upgraded Artemis EGLContext to GLES3`、`Single-context GLES3 window created: screen=2560x1600 stage=1600x900`；其中 **`VNC16 (2X) + Resize (0.8X)`** 构建 7 pass（`texture bytes 103680000`）运行于 `62 FPS / GPU 12.7–13.1 ms`，**`Anime4K_Restore_CNN_L + Resize (1.6X)`** 运行期 MRT 融合成功降为 5 pass（`texture bytes 51840000`）且无回退或 GL 错误，实测 `60–61 FPS / GPU 10.7–12.1 ms`。
-- **仍未覆盖范围（暂无测试条件）**：非 Adreno GPU（Mali 等）、Siglus / krkrsdl3 当前修订真机重跑、不支持 `GL_RGBA16F` 与 GLES 3.0/3.1 `GL_EXT_draw_buffers_indexed` 旧驱动分支。
+- **仍未覆盖范围（待实机补测）**：当前 HEAD 修订重跑、Kirikiroid2 1.3.4/1.3.9 视频/开场动画静态复用专项（含 `frameDirty` 序列记录）、非 Adreno GPU（Mali 等）、Siglus / krkrsdl3 实机重跑、不支持 `GL_RGBA16F` 与 GLES 3.0/3.1 `GL_EXT_draw_buffers_indexed` 旧驱动分支。

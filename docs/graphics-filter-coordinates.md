@@ -26,14 +26,16 @@ CPU检查以原始导出为参考，不等同于设备GPU/FP16或训练检查点
 
 ### 设备验收缺口清单
 
-已记录的实机样本涵盖两台 Qualcomm Adreno 设备（详实数据见 [VN-SR 说明](vnsr-filters.md) 的实机复核节）：
-- `Adreno (TM) 840`（历史样本，2026-11-18，采集于最终变基清理与四期审改修复之前）：Artemis `720p` 单上下文、Kirikiroid2 `1.3.9` `720p` 与 Siglus `1080p` 目标 `2133×1200` 下的 `VNC16 (2X)` 与静态复用记录。
-- `Adreno (TM) 740`（`SM-X710` / Android 15 / OpenGL ES 3.2 `V@0676.71`，**2026-11-21 四期审改 + `Z-R3p4-1` 收口后**隔离包 `com.tyranor.next.glverify` 实测）：实机验证 Kirikiroid2 `1.3.9`（`1280×720 → VNC16 (2X) → 2560×1440`，`59–62 FPS / GPU 6.4–12.9 ms`）、Kirikiroid2 `1.3.4`（`1280×720 → VNC16 (2X) → 2560×1440`，`59–62 FPS / GPU 7.4–11.4 ms`）与 Artemis 单上下文 GLES3（`1600×900 → 2560×1440`，`VNC16 (2X) + Resize (0.8X)` 7 passes `62 FPS / GPU 12.7–13.1 ms` 及 `Anime4K_Restore_CNN_L + Resize (1.6X)` 运行期 MRT 融合 5 passes `60–61 FPS / GPU 10.7–12.1 ms`，ES3 升级与 `StageGlState` 正常、logcat 零 GL/JNI 致命错误）。
+已记录的历史实机样本涵盖两台 Qualcomm Adreno 设备（两份样本均采集于当前 HEAD 的 2026-11-22 审查修复与提交重排之前，其后均未在当前 HEAD 上重跑，详实数据见 [VN-SR 说明](vnsr-filters.md) 的历史实机样本节）：
+- `Adreno (TM) 840`（历史样本，2026-11-18，采集于最终变基清理与多轮审改之前，其后未重跑）：Artemis `720p` 单上下文、Kirikiroid2 `1.3.9` `720p` 与 Siglus `1080p` 目标 `2133×1200` 下的 `VNC16 (2X)` 与静态复用记录。
+- `Adreno (TM) 740`（历史样本，2026-11-21，`SM-X710` / Android 15 / OpenGL ES 3.2 `V@0676.71`，隔离包 `com.tyranor.next.glverify` 采集于 2026-11-22 审查修复前，其后未重跑）：Kirikiroid2 `1.3.9`（`1280×720 → VNC16 (2X) → 2560×1440`，`59–62 FPS / GPU 6.4–12.9 ms`）、Kirikiroid2 `1.3.4`（`1280×720 → VNC16 (2X) → 2560×1440`，`59–62 FPS / GPU 7.4–11.4 ms`）与 Artemis 单上下文 GLES3（`1600×900 → 2560×1440`，`VNC16 (2X) + Resize (0.8X)` 7 passes `62 FPS / GPU 12.7–13.1 ms` 及 `Anime4K_Restore_CNN_L + Resize (1.6X)` 运行期 MRT 融合 5 passes `60–61 FPS / GPU 10.7–12.1 ms`，ES3 升级与 `StageGlState` 正常、logcat 零 GL/JNI 致命错误）。
 
-以下缺口仍开放，不得将上述 Adreno 样本向未实测环境外推：
+以下缺口仍开放，不得将上述历史 Adreno 样本冒充当前 HEAD 验收或向未实测环境外推：
 
+- **当前 HEAD 修订实机重跑**：2026-11-22 审查修复改写了 `CnnPipeline`、`GlErrors`、`GraphicsFilterPipeline`、`ArtemisOfficialBridge` 与 `artemis_official_graphics.cpp` 等核心文件，当前 HEAD 仅通过 JVM 单测、原生 Debug 编译、应用编译与离线校验，尚未在真机重跑。
+- **Kirikiroid2 视频 / 开场动画静态复用样本**：`1.3.4` 与 `1.3.9` 已在 Java 侧引入 `MAX_CONSECUTIVE_STATIC_REUSES = 60` 有界连续复用上限以兜底潜在 `UpdateDrawBuffer` 漏报，但尚未在真实视频/开场动画场景采集 `frameDirty` 序列实证。
 - **非 Adreno GPU（Mali / 其他厂商驱动，当前暂无硬件测试条件）**：krkrsdl3 / Siglus / Artemis / Kirikiroid2 路径均未在 ARM Mali 或其他非 Adreno GPU 上完成真机验收；瓦片 GPU 的带宽、半浮点精度与驱动索引扩展行为须在实机到位后补测。
-- **Siglus / krkrsdl3 当前修订与静态停帧专项复核**：本轮 `Adreno 740` 实测覆盖 Artemis 与 Kirikiroid2 `1.3.9` / `1.3.4` 真实游戏，Siglus 与 krkrsdl3 尚未在当前最终修订上重跑，且 `HENPRI` / `9-nine-` 测试场景均处于持续动画刷新状态、未单独抓到 `GPU —ms` 静态零帧间隔（静态停帧实机数据仍仅来源于历史 `Adreno 840` 记录）。
+- **Siglus / krkrsdl3 与静态停帧专项复核**：Siglus 与 krkrsdl3 尚未在 2026-11-21 之后的修订上重跑，且 2026-11-21 的 `HENPRI` / `9-nine-` 样本均处于持续动画刷新状态、未单独抓到 `GPU —ms` 静态零帧间隔（静态停帧实机数据仍仅来源于 2026-11-18 `Adreno 840` 历史样本）。
 - **GLES 3.0/3.1 `GL_EXT_draw_buffers_indexed` 与无 `GL_RGBA16F` 设备旁路**：`SM-X710` 为 GLES 3.2 核心支持，不依赖 EXT 扩展的分支（包含缺失写入入口旁路与无半浮点渲染附件回退）未在真实老旧驱动上触发实测。
 - 新设备或剩余专项验收完成后应更新本清单，再解除对应外推限制。
 

@@ -90,7 +90,7 @@ owner 确认断开显示，再由 engine owner 确认替换私有 producer，最
 
 注册失败原因在直出恢复后保留，只有新启动准备清除；重复安装已成功的桥不会重复核验改写后的 PLT。默认关闭滤镜时版本验证返回拒绝，不执行 PLT / 输入重定向；这条短路经过静态核对，实机检查仍属于下方验证边界。
 
-单上下文 GLES3 路线的静态帧判定（`frameDirty`）按被 hook 的 GL 命令流哈希推导：帧开始需先经全表面清除（`GL_COLOR_BUFFER_BIT`、全通道写入与覆盖舞台区域的裁剪范围），随后在被跟踪纹理单元的绑定与内容版本、绑定/状态类命令（含每次 `glClear` 实际生效的清除颜色/模板/深度清除值）、uniform 与 draw/clear 命令均进哈希；内容变更入口按 mutate 语义递增版本并进哈希，附件挂载（含重挂载）作为命令流事件进哈希，`glCopyTexSubImage2D` 在逻辑 framebuffer 0 仅惰性重定向绘制端时临时从阶段 FBO 读取并恢复原读取绑定，非 2D 纹理目标绑定与窗口内未知 FBO 目标绘制因无法纳入版本模型而保守判脏，删除类 hook 同步清理版本映射以避免驱动句柄复用污染。stage 窗口外的内容变更同样记账：blit、clear 与 draw 族对已知 RTT 目标递增版本、未知目标与清除状态/已挂钩 uniform 值变化走单调外部计数器，帧哈希仍是窗口内命令流的纯函数。安装期 fail-closed：强制 hook 全有全无安装，且内核 PLT 导入任何「未挂钩内容变更类入口」（deny 集）即拒绝进入单上下文模式、回退 producer 路径并留 WARN 日志。受支持内核的导入面经 ELF dynsym 核对：其导入的内容变更入口均已被 hook 且不在 deny 集内，未导入的 blend/depth/cull 等状态入口不可达。强制/optional hook 与 deny 集的逐项清单、推导口径、无害豁免与残余覆盖姿态以 SPEC 第 12 节「宿主脏帧静态复用」条目及其指向的 `artemis_official_graphics.cpp` 安装表为唯一权威源，本节不重复维护逐项清单。判定判 clean 且缓存命中时跳过 CNN 与重采样绘制并复用上一帧输出（开启性能分析且存在有效 GPU 计时器时仍可调用 `timer.poll(stats)` 查询已有计时样本，不设额外心跳自愈；方向安全，不输出错误内容）。
+单上下文 GLES3 路线的静态帧判定（`frameDirty`）按被 hook 的 GL 命令流哈希推导：帧开始需先经全表面清除（`GL_COLOR_BUFFER_BIT`、全通道写入与覆盖舞台区域的裁剪范围；启用深度/模板测试时同样要求对应的全表面清除否则 fail-closed 判脏），随后在被跟踪纹理单元的绑定与内容版本、绑定/状态类命令（含每次 `glClear` 实际生效的清除颜色/模板/深度清除值）、uniform 与 draw/clear 命令均进哈希；内容变更入口按 mutate 语义递增版本并进哈希，附件挂载（含重挂载与 `glFramebufferRenderbuffer`）与程序生命周期（`glDeleteProgram`/`glLinkProgram`）均纳入追踪，`glCopyTexSubImage2D` 在逻辑 framebuffer 0 仅惰性重定向绘制端时临时从阶段 FBO 读取并恢复原读取绑定，非 2D 纹理目标绑定与窗口内未知 FBO 目标绘制因无法纳入版本模型而保守判脏，删除类 hook 同步清理版本映射以避免驱动句柄复用污染。stage 窗口外的内容变更同样记账：blit、clear 与 draw 族对已知 RTT 目标递增版本、未知目标与清除状态/已挂钩 uniform/视口/剔除/卷绕/混合/`glEnable`/`glDisable`/模板/深度函数值变化走单调外部计数器，帧哈希仍是窗口内命令流的纯函数。安装期 fail-closed：强制 hook 全有全无安装（缺失项记 WARN 日志），且内核 PLT 导入任何「未挂钩内容变更/状态修改入口」（deny 集，共 117 项）即拒绝进入单上下文模式、回退 producer 路径并留 WARN 日志。受支持内核 `libartemis.so` / `libartemis-v6.so` 的导入面经 ELF dynsym 核对：其导入的内容变更与状态修改入口均已被 hook 且不在 deny 集内（deny 命中为 0）。强制/optional hook 与 deny 集的逐项清单、推导口径、无害豁免与残余覆盖姿态以 SPEC 第 12 节「宿主脏帧静态复用」条目及其指向的 `artemis_official_graphics.cpp` 安装表为唯一权威源，本节不重复维护逐项清单。判定判 clean 且缓存命中时，在连续复用上限（`MAX_CONSECUTIVE_STATIC_REUSES = 60` 帧）内跳过 CNN 与重采样绘制并复用上一帧输出，达到上限后强制重跑 1 帧自愈（开启性能分析且存在有效 GPU 计时器时仍可调用 `timer.poll(stats)` 查询已有计时样本；方向安全，不输出错误内容）。
 
 自研 Artemis 的画质增强接入等待 [artemis-compat PR #11](https://github.com/Weiss-UltimateSavior/artemis-compat/pull/11) 合并。
 
@@ -143,7 +143,7 @@ python tools/generate-cas-filters.py --sources build/filter-sources/cas --check
 既有滤镜设置、官方 Artemis、Kirikiroid2 和 krkrsdl3 接入由提交者运行多个样本验收；
 官方 Artemis 开启画质处理实际游玩两小时未见问题。上述记录属于原候选功能的历史验收。
 Siglus 原库、配置解析和专用 owner 线程路线候选在 2026-10-18 获提交者测试通过；该结论不覆盖后续 TextureView 窗口所有权修复，也不套用旧重编库结果。
-本轮只通过 CI 执行项目测试与构建，具体候选 SHA 和运行链接记录在本地交付索引。
+2026-11-18（`Adreno 840`）与 2026-11-21（`Adreno 740`）两次实机样本均采集于 2026-11-22 审查修复之前，仅作历史实机参考（详见 [VN-SR 说明](vnsr-filters.md) 与 [方向接口](graphics-filter-coordinates.md)）。当前 HEAD 修订通过 JVM 专项回归、Debug 原生构建、应用编译、`buildSrc` 资源回归、ELF 导入面扫描与离线 Python 脚本校验，尚未在真机重跑。
 
 ## VN-SR
 
