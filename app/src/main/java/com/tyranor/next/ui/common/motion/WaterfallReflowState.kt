@@ -135,9 +135,18 @@ class WaterfallReflowState private constructor(
             return
         }
         if (pendingAnchor == null) {
-            previousItemOffsets = if (inactiveAnchor != null) inactiveOffsets else
-                gridState.layoutInfo.visibleItemsInfo.associate { it.key to it.offset }
-            pendingAnchor = inactiveAnchor ?: capture()
+            // 页在可见时换布局，当前 layoutInfo 就是旧代的有效数据，直接当补位基准。
+            // 页隐藏期间窗口也会重测：只有离线锚点仍属同一布局代时，隐藏前的偏移才可用；
+            // 换过列数或方向时那些偏移属于旧视口，而此刻的 layoutInfo 同样已被新视口改写，
+            // 因此宁可没有补位动画，也不要跨代错位滑入。
+            val offlineAnchor = inactiveAnchor
+            previousItemOffsets = when {
+                offlineAnchor == null ->
+                    gridState.layoutInfo.visibleItemsInfo.associate { it.key to it.offset }
+                offlineAnchor.matchesGeneration(columns, landscape) -> inactiveOffsets
+                else -> emptyMap()
+            }
+            pendingAnchor = offlineAnchor ?: capture()
         }
         inactiveAnchor = null
         inactiveOffsets = emptyMap()
@@ -154,7 +163,10 @@ class WaterfallReflowState private constructor(
     ) {
         val anchor = pendingAnchor ?: return
         try {
-            // 等待视口高度与数据就绪后再获取滚动修改权。
+            // 等待视口高度与数据就绪后再获取滚动修改权。这里不套时钟超时：
+            // 就绪条件由列表首次布局与数据装载推进，套上 timeout 会把恢复交给虚拟时钟
+            // （设备用例里 autoAdvance=false 时首帧不会到来，配合 advanceTimeByFrame 反而先超时），
+            // 真正会永久遮蔽的只有「数据始终不到」，而那属于数据源不产出的故障态。
             snapshotFlow {
                 state.layoutInfo.viewportSize.height to
                     (state.layoutInfo.totalItemsCount > 0 || contentReady)
@@ -313,7 +325,9 @@ class WaterfallReflowState private constructor(
                 val oldIndexItem = visible.firstOrNull { it.index == target }
                 val item = sameItem ?: oldIndexItem?.takeIf {
                     // 只有即将按索引完成时才查询最新数据，避免每步线性查找。
-                    itemIndex?.invoke(anchor.identity)?.let { it >= 0 } != true
+                    // 没有解析器时无从判断「按索引落地的那一项还是不是原目标」，
+                    // 此时必须继续按标识扫描，最终由 coarseRestore() 兜底。
+                    itemIndex != null && itemIndex.invoke(anchor.identity)?.let { it >= 0 } != true
                 }
                 if (item != null) {
                     scrollBy((item.offset.y - anchorY).toFloat())
@@ -411,7 +425,14 @@ private fun UpdateWaterfallReflow(
     }
 }
 
-/** 恢复期间隔离中间视口的绘制、焦点、触摸与无障碍操作。 */
+/**
+ * 恢复期间隔离中间视口的绘制、焦点、触摸与无障碍操作。
+ *
+ * 焦点相关修饰符（`onFocusChanged` / `focusProperties` / `focusGroup` / `onPreviewKeyEvent`）
+ * 常驻挂载：只有同一节点上常驻，才能在恢复开始时用 `cancelFocusChange()` 拦住正要进入的焦点；
+ * 条件挂载会在切换瞬间重建焦点节点，把当前焦点直接丢掉。触摸与无障碍门的 `pointerInput`
+ * 与 `clearAndSetSemantics` 相反，只在恢复期挂载，避免平时吞事件。
+ */
 fun Modifier.waterfallReflowHost(state: WaterfallReflowState): Modifier = composed {
     var hostHasFocus by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current

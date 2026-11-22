@@ -216,7 +216,11 @@ class GridReflowSnapshotTest {
         assertNotSame(original["a"], slots["a"])
         assertNotSame(original["b"], slots["b"])
         assertEquals(listOf(0, 1, 2), slots.values.map { it.order })
-        assertEquals(listOf(0L, 60L, 120L), slots.values.map { it.delayMillis })
+        // 间隔取自实现常量：改 DEFAULT_STEP_MILLIS 时这里的期望值跟着走，不会静默漂移。
+        assertEquals(
+            listOf(0L, GridReflowEntranceSchedule.DEFAULT_STEP_MILLIS, 2 * GridReflowEntranceSchedule.DEFAULT_STEP_MILLIS),
+            slots.values.map { it.delayMillis },
+        )
         assertNull(schedule.slotFor("c", next))
     }
 }

@@ -265,9 +265,9 @@ private fun GameCardColumnsControl(cardColor: Color) {
             if (landscape) GameCardColumnsSetting.WATERFALL_LANDSCAPE else GameCardColumnsSetting.WATERFALL_PORTRAIT
         else -> null
     }
-    // 预订阅每组列数，旋转时标题和读数由同一组状态同步切换。
-    val values = GameCardColumnsSetting.entries.associateWith { it.columns.collectSettingAsState() }
-    val snapshot = setting?.let { GameCardColumnsSnapshot(it, values.getValue(it).value) }
+    // 只订阅当前生效的那一组：四组全订阅会让另外三组的变化也重组本条控件。
+    // 切换组时 collectAsState 的初值直接取 StateFlow.value，不存在空帧。
+    val snapshot = setting?.let { GameCardColumnsSnapshot(it, it.columns.collectSettingAsState().value) }
     val lastSnapshot = rememberLastNonNull(snapshot)
     val activeSetting by rememberUpdatedState(setting)
     ExpandVisibility(visible = snapshot != null) {

@@ -147,6 +147,22 @@ class AppBottomSheetDeviceTest {
                 // 网格与瀑布各存一份：改网格不影响瀑布已选列数
                 assertEquals(8, waterfallColumns())
             }
+            // SetProgress 走的是「改值即完成」，测不到草稿语义；真实拖动必须松手才落盘。
+            compose.runOnUiThread { AppSettingsStore.setGameCardStyle(context, AppSettingsStore.GAME_CARD_STYLE_WATERFALL) }
+            slider.performScrollTo()
+            slider.performTouchInput {
+                down(center)
+                moveTo(Offset(centerLeft.x + 2f, center.y))
+            }
+            compose.runOnIdle {
+                // 拖动中只更新草稿与读数，已保存的列数保持原值。
+                assertEquals(8, waterfallColumns())
+            }
+            slider.performTouchInput { up() }
+            compose.runOnIdle {
+                // 松手才提交，并且落到滑条最小值。
+                assertEquals(AppSettingsStore.MIN_GAME_CARD_COLUMNS, waterfallColumns())
+            }
             compose.runOnUiThread { AppSettingsStore.setGameCardStyle(context, AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW) }
             slider.assertDoesNotExist()
         } finally {

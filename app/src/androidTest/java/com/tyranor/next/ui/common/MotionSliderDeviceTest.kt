@@ -108,8 +108,9 @@ class MotionSliderDeviceTest(private val enhanced: Boolean) {
         compose.onNodeWithTag(SLIDER).assertDoesNotExist()
 
         compose.runOnIdle {
-            // 节点移除会先收到 Compose 合成的手势取消；只允许显式回滚一次，绝不提交。
-            assertTrue(fixture.cancelCalls in 0..(if (withCancellationCallback) 1 else 0))
+            // 节点移除时普通档的 Miuix 滑条静默结束、不再回调，只有增强档能显式回滚一次；
+            // 两档都不得提交，也不得回滚超过一次。
+            assertEquals(if (withCancellationCallback && enhanced) 1 else 0, fixture.cancelCalls)
             assertEquals(emptyList<Float>(), fixture.commits)
             assertEquals(INITIAL, fixture.committed, 0f)
             assertEquals(if (fixture.cancelCalls == 0) DRAGGED else INITIAL, fixture.draft.floatValue, 0f)

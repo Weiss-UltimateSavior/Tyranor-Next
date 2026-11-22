@@ -2577,8 +2577,9 @@ internal fun UniformGameCard(
     }
 }
 
-private val GameGridHorizontalPadding = 12.dp
-private val GameGridColumnSpacing = 10.dp
+// 列宽计算与封面选档共用这两个值；测试从同一常量换算像素，避免只改 dp 而选档静默变小档。
+internal val GameGridHorizontalPadding = 12.dp
+internal val GameGridColumnSpacing = 10.dp
 
 /** 两种可调列数卡片共用当前方向与已保存列数的选择规则。 */
 @Composable

@@ -1,5 +1,6 @@
 package com.tyranor.next.ui.game
 
+import androidx.compose.ui.unit.Density
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
@@ -79,15 +80,22 @@ class CoverDecodeTierTest {
 
     @Test
     fun `卡宽扣除两侧留白与列间距后按最大列向上取整`() {
+        // 与生产包装共用同一组 dp 常量：只改常量而不同步这里时先在这里失败，
+        // 不会出现「生产留白变了、测试仍按旧像素通过」导致选档静默变小档。
+        assertEquals(12f, GameGridHorizontalPadding.value)
+        assertEquals(10f, GameGridColumnSpacing.value)
+        val density = Density(3f)
+        val horizontalPaddingPx = with(density) { GameGridHorizontalPadding.roundToPx() }
+        val columnGapPx = with(density) { GameGridColumnSpacing.roundToPx() }
         // horizontalPaddingPx 是单侧留白，列间距只出现在相邻列之间
-        val twoColumns = gameCardColumnWidthPx(1080, columns = 2, horizontalPaddingPx = 36, columnGapPx = 30)
-        val threeColumns = gameCardColumnWidthPx(1080, columns = 3, horizontalPaddingPx = 36, columnGapPx = 30)
+        val twoColumns = gameCardColumnWidthPx(1080, columns = 2, horizontalPaddingPx = horizontalPaddingPx, columnGapPx = columnGapPx)
+        val threeColumns = gameCardColumnWidthPx(1080, columns = 3, horizontalPaddingPx = horizontalPaddingPx, columnGapPx = columnGapPx)
         assertEquals(489, twoColumns)
         assertEquals(316, threeColumns)
-        assertEquals(490, gameCardColumnWidthPx(1081, columns = 2, horizontalPaddingPx = 36, columnGapPx = 30))
+        assertEquals(490, gameCardColumnWidthPx(1081, columns = 2, horizontalPaddingPx = horizontalPaddingPx, columnGapPx = columnGapPx))
         // 窄于留白与列间距之和时不返回负数，避免后续按 0 宽选档
-        assertEquals(0, gameCardColumnWidthPx(40, columns = 4, horizontalPaddingPx = 36, columnGapPx = 30))
-        assertEquals(0, gameCardColumnWidthPx(1080, columns = 0, horizontalPaddingPx = 36, columnGapPx = 30))
+        assertEquals(0, gameCardColumnWidthPx(40, columns = 4, horizontalPaddingPx = horizontalPaddingPx, columnGapPx = columnGapPx))
+        assertEquals(0, gameCardColumnWidthPx(1080, columns = 0, horizontalPaddingPx = horizontalPaddingPx, columnGapPx = columnGapPx))
     }
 
     @Test

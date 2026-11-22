@@ -75,6 +75,9 @@ class WaterfallRestoreResponsivenessDeviceTest {
         val fixture = Fixture(count)
         val handler = Handler(Looper.getMainLooper())
         var scheduledAt = 0L
+        // 首个探针的到期时刻：恢复若在此之前就结束，那段时间内本来没有触摸该到达，
+        // 触摸断言不适用，不能当成「输入被恢复阻塞」的失败。
+        var firstProbeDue = 0L
         val probe = object : Runnable {
             override fun run() {
                 if (touchProbeDelay(scheduledAt, SystemClock.uptimeMillis(), fixture.completed.get()) != null) {
@@ -107,6 +110,7 @@ class WaterfallRestoreResponsivenessDeviceTest {
                 fixture.started.set(SystemClock.uptimeMillis())
                 fixture.columns = 3
                 scheduledAt = SystemClock.uptimeMillis() + 8L
+                firstProbeDue = scheduledAt
                 handler.postDelayed(probe, 8L)
             }
             compose.waitUntil(timeoutMillis = 120_000L) { fixture.completed.get() > 0L }
@@ -120,14 +124,18 @@ class WaterfallRestoreResponsivenessDeviceTest {
                 }
             }
             assertTrue("Restored content must actually be drawn", painted)
-            assertTrue("A native touch due during restore must be processed", fixture.inputCount.get() > 0L)
-            assertTrue("Input callbacks must not wait for the whole restore", fixture.maxInputDelay.get() < 250L)
+            val completedAt = fixture.completed.get()
+            val restoreEndedBeforeFirstProbe = firstProbeDue > 0L && completedAt < firstProbeDue
             assertTrue("A post-restore draw callback must have been recorded",
                 fixture.firstPostRestoreDrawCallbackAt.get() >= fixture.started.get())
             assertTrue("Restoration including coarse fallback must finish within 2500 ms",
-                fixture.completed.get() - fixture.started.get() < 2500L)
+                completedAt - fixture.started.get() < 2500L)
+            if (!restoreEndedBeforeFirstProbe) {
+                assertTrue("A native touch due during restore must be processed", fixture.inputCount.get() > 0L)
+                assertTrue("Input callbacks must not wait for the whole restore", fixture.maxInputDelay.get() < 250L)
+            }
             compose.runOnIdle { assertTrue("Bottom must remain anchored", !fixture.state.canScrollForward) }
-            Log.i("WaterfallRestoreMetrics", "count=$count restoreMs=${fixture.completed.get() - fixture.started.get()} maxTouchDispatchDelayMs=${fixture.maxInputDelay.get()} firstPostRestoreDrawCallbackMs=${fixture.firstPostRestoreDrawCallbackAt.get() - fixture.started.get()} touchesDueDuringRestore=${fixture.inputCount.get()}")
+            Log.i("WaterfallRestoreMetrics", "count=$count restoreMs=${completedAt - fixture.started.get()} maxTouchDispatchDelayMs=${fixture.maxInputDelay.get()} firstPostRestoreDrawCallbackMs=${fixture.firstPostRestoreDrawCallbackAt.get() - fixture.started.get()} touchesDueDuringRestore=${fixture.inputCount.get()} restoreEndedBeforeFirstProbe=$restoreEndedBeforeFirstProbe firstProbeDueMs=${if (firstProbeDue > 0L) firstProbeDue - fixture.started.get() else -1L}")
         } finally {
             handler.removeCallbacks(probe)
         }

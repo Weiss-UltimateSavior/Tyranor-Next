@@ -56,6 +56,7 @@ import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -188,6 +189,7 @@ class GameScreenMainActivityAcceptanceDeviceTest {
                 awaitBounds(target, clickable = true)
                 compose.waitForIdle()
                 val card = awaitBounds(target, clickable = true)
+                awaitCoverDrawn(card)
                 val captureStarted = SystemClock.uptimeMillis()
                 val screen = requireNotNull(automation.takeScreenshot()) { "Missing actual screen screenshot" }
                 val drawnAt = SystemClock.uptimeMillis()
@@ -241,9 +243,13 @@ class GameScreenMainActivityAcceptanceDeviceTest {
             retainErrors(failure,
                 { scenario?.close() },
                 {
+                    // 清理阶段同样不能无限等待：库写入卡住时先放弃这一段，
+                    // 由 retainErrors 记为失败，其余还原步骤照常执行。
                     runBlocking {
-                        GameLibraryFacade.updateGames(context) { current -> current.filterNot { it.uri in ownedUris } }
-                        GameLibraryRepository.awaitPendingWrites()
+                        withTimeoutOrNull(15_000L) {
+                            GameLibraryFacade.updateGames(context) { current -> current.filterNot { it.uri in ownedUris } }
+                            GameLibraryRepository.awaitPendingWrites()
+                        }
                         val restored = GameLibraryRepository.loadGames(context)
                         if (evidence.isDirectory) report(evidence, "cleanupAfterCount=${restored.size} existingCount=${existing.size} " +
                             "ownedRemainingCount=${restored.count { it.uri in ownedUris }}")
@@ -351,13 +357,18 @@ class GameScreenMainActivityAcceptanceDeviceTest {
 
     private fun await(message: String, condition: () -> Boolean) {
         val limit = minOf(SystemClock.uptimeMillis() + 15_000L, testDeadline)
-        while (SystemClock.uptimeMillis() < limit) {
+        while (true) {
             // 被中断时立刻退出，避免测试线程在超时后仍继续驱动界面。
             if (Thread.currentThread().isInterrupted) throw InterruptedException("Interrupted while awaiting: $message")
-            if (condition()) return
+            if (condition()) {
+                // 条件成立也要复查整轮预算：前一步可能刚好把它吃完，
+                // 直接 return 会让超时只在最后的 finally 里体现。
+                if (SystemClock.uptimeMillis() < testDeadline) return
+                error("Timed out: $message")
+            }
+            if (SystemClock.uptimeMillis() >= limit) error("Timed out: $message")
             SystemClock.sleep(25L)
         }
-        error("Timed out: $message")
     }
 
     private fun awaitBounds(label: String, clickable: Boolean = false): Rect {
@@ -439,7 +450,26 @@ class GameScreenMainActivityAcceptanceDeviceTest {
         return started
     }
 
-    private fun assertCoverDrawn(screen: Bitmap, card: Rect) {
+    // 无障碍节点就位只说明卡片已布局，不代表封面已解码绘制；先轮询实际屏幕像素，
+    // 命中原始封面再截图，避免把「卡片已出现但封面还空」的帧当成返回完成。
+    private fun awaitCoverDrawn(card: Rect) {
+        var sky = 0
+        var moon = 0
+        await("Cover art drawn inside the visible card") {
+            val shot = automation.takeScreenshot() ?: return@await false
+            try {
+                val counts = coverArtCounts(shot, card)
+                sky = counts.first
+                moon = counts.second
+            } finally { shot.recycle() }
+            coverArtVisible(sky, moon)
+        }
+        assertTrue("Actual card must show original sky and moon art: sky=$sky moon=$moon", coverArtVisible(sky, moon))
+    }
+
+    private fun coverArtVisible(sky: Int, moon: Int) = sky > 20 && moon > 5
+
+    private fun coverArtCounts(screen: Bitmap, card: Rect): Pair<Int, Int> {
         // bounds 来自带点击动作的合并卡片节点；排除只命中标题文字矩形。
         assertTrue("Expected a full portrait-cover card, not its title", card.height() > card.width())
         // 月亮居中且位于封面上部，生产卡片 0.60–0.80 的裁切比例均会保留它。
@@ -454,7 +484,12 @@ class GameScreenMainActivityAcceptanceDeviceTest {
                 if (Color.red(pixel) > 215 && Color.green(pixel) > 165 && Color.blue(pixel) < 125) moon++
             }
         }
-        assertTrue("Actual card must show original sky and moon art: sky=$sky moon=$moon", sky > 20 && moon > 5)
+        return sky to moon
+    }
+
+    private fun assertCoverDrawn(screen: Bitmap, card: Rect) {
+        val (sky, moon) = coverArtCounts(screen, card)
+        assertTrue("Actual card must show original sky and moon art: sky=$sky moon=$moon", coverArtVisible(sky, moon))
     }
 
     private fun drawCover(file: File, variant: Int) {
@@ -531,6 +566,10 @@ class GameScreenMainActivityAcceptanceDeviceTest {
             AppSettingsStore.KEY_HOME_PAGE_ENABLED, AppSettingsStore.KEY_HOME_STYLE, AppSettingsStore.KEY_LANGUAGE,
             AppSettingsStore.KEY_NAV_STYLE, AppSettingsStore.KEY_SIDE_RAIL, AppSettingsStore.KEY_GAME_CARD_STYLE,
             AppSettingsStore.KEY_GAME_WATERFALL_PORTRAIT_COLUMNS, AppSettingsStore.KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS,
+            // 网格两键也要还原：遗留值会让下一次 initGameCardStyle 认为四键已存在，迁移分支不再被覆盖。
+            AppSettingsStore.KEY_GAME_GRID_PORTRAIT_COLUMNS, AppSettingsStore.KEY_GAME_GRID_LANDSCAPE_COLUMNS,
+            // 旧版窄/宽屏列数键一并还原，避免迁移把值再次写回四个新键。
+            "game_card_columns_narrow", "game_card_columns_wide",
             AppSettingsStore.KEY_GAME_SORT, AppSettingsStore.KEY_GAME_FILTER_ENGINE, AppSettingsStore.KEY_GAME_FILTER_PLAYED,
             AppSettingsStore.KEY_MOTION_ENHANCED, AppSettingsStore.KEY_APPEARANCE_STYLE, AppSettingsStore.KEY_THEME_MODE,
             "default_theme_particles_enabled", "migration_xsys4_rescan_done",

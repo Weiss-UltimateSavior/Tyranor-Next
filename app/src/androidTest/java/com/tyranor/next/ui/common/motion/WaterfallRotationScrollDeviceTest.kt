@@ -283,10 +283,17 @@ class WaterfallRotationScrollDeviceTest {
             }
         }
         settle()
+        var restoringAfterChange = 0
         for (columns in listOf(3, 2, 3, 2, 3)) {
             compose.runOnIdle { fixture.columns = columns }
             compose.mainClock.advanceTimeByFrame()
+            // 每代只放行一帧：只有上一代恢复仍在进行，后面的换代才算真的压住了它。
+            if (compose.runOnIdle { fixture.holder!!.isRestoring }) restoringAfterChange++
         }
+        // 每代只放行一帧：若上一代恢复仍在进行，后面的换代就是压在了它上面。
+        // 小样本下恢复也可能在一帧内跑完，重叠不是必然，因此只记录观测值、不设硬门槛；
+        // 真正要守住的是末代恢复完成后数据、键与触底状态仍然正确。
+        Log.i(TAG, "rapidColumnChanges overlaps=$restoringAfterChange")
         awaitRestore(fixture)
         compose.runOnIdle {
             assertTrue("Final restore must finish", !fixture.holder!!.isRestoring)
