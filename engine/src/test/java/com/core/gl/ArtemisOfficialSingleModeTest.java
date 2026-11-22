@@ -89,8 +89,17 @@ public final class ArtemisOfficialSingleModeTest {
     public void nativeTeardownEntriesResetTheSingleModeLatch() throws Exception {
         setBoolean("requested", true);
         setBoolean("singleMode", true);
+        ((ArtemisOfficialOutputSize) getObject("singleOutputSize")).presented(1600, 900);
+        assertTrue("healthy() must reflect active singleMode", ArtemisOfficialBridge.healthy());
+        assertTrue(ArtemisOfficialBridge.outputSize() != 0L);
+
         ArtemisOfficialBridge.contextDestroyed();
         assertFalse("contextDestroyed must reset singleMode", getBoolean("singleMode"));
+        assertFalse("contextDestroyed must clear healthy()", ArtemisOfficialBridge.healthy());
+        assertEquals("contextDestroyed must clear singleOutputSize",
+                0L, ((ArtemisOfficialOutputSize) getObject("singleOutputSize")).get());
+        assertEquals("contextDestroyed must clear reported outputSize()",
+                0L, ArtemisOfficialBridge.outputSize());
 
         setBoolean("singleMode", true);
         assertEquals(ArtemisOfficialDisconnect.DETACHED, ArtemisOfficialBridge.disconnect());

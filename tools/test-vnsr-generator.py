@@ -65,6 +65,7 @@ def main():
             cases.append(f"asset bytes:{name}")
         for name in names:
             cases.append(f"source bytes:{name}")
+        cases.append(f"asset missing:{names[0]}")
 
         for kind in cases:
             data = json.loads(original)
@@ -108,10 +109,31 @@ def main():
                 (sources_dir/tname).write_bytes((sources_dir/tname).read_bytes()+b" ")
             elif kind == "license bytes":
                 (assets_dir/"LICENSE-MIT").write_bytes((assets_dir/"LICENSE-MIT").read_bytes()+b" ")
+            elif kind.startswith("asset missing:"):
+                tname = kind.split(":", 1)[1]
+                (assets_dir/tname).unlink()
 
             result = subprocess.run([sys.executable,str(target/"tools/generate-vnsr-filters.py"),"--check"],capture_output=True,text=True)
             assert (result.returncode == 0) == (kind == "valid"), (kind,result.stdout,result.stderr)
+            if kind != "valid":
+                err = (result.stderr or result.stdout).strip()
+                assert err, f"Expected diagnostic error message for tampered case {kind}"
             print("PASS: "+kind)
+
+        # Verify generate idempotency: running generator twice leaves pinned bytes intact and --check passes.
+        manifest_path.write_text(original, encoding="utf-8")
+        assets_dir = target/"engine/src/main/assets/vnsr"
+        sources_dir = target/"engine/patches/vnsr/sources"
+        shutil.copyfile(root/"engine/src/main/assets/vnsr/LICENSE-MIT", assets_dir/"LICENSE-MIT")
+        for name in names:
+            shutil.copyfile(root/"engine/patches/vnsr/sources"/name, sources_dir/name)
+            shutil.copyfile(root/"engine/src/main/assets/vnsr"/name, assets_dir/name)
+        for run_idx in range(2):
+            gen_res = subprocess.run([sys.executable,str(target/"tools/generate-vnsr-filters.py")],capture_output=True,text=True)
+            assert gen_res.returncode == 0, (run_idx, gen_res.stdout, gen_res.stderr)
+        chk_res = subprocess.run([sys.executable,str(target/"tools/generate-vnsr-filters.py"),"--check"],capture_output=True,text=True)
+        assert chk_res.returncode == 0, (chk_res.stdout, chk_res.stderr)
+        print("PASS: generator idempotency")
 
 
 if __name__ == "__main__":

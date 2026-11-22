@@ -74,8 +74,8 @@ def run_2xfp16(passes, image):
 
     Models runtime precision boundaries on CPU rather than guaranteeing GPU driver
     per-op mediump rounding: raw MAIN remains full precision (`highp` sampler),
-    non-final GL_RGBA16F intermediates and convolution ALU use binary16, and final
-    residual addition stays high precision before final 8-bit quantization.
+    non-final GL_RGBA16F intermediates, convolution ALU, and final mediump residual
+    addition all round through IEEE binary16 before final 8-bit quantization.
     """
     h, w = len(image), len(image[0])
     textures = {'MAIN': [[px[:] for px in row] for row in image]}
@@ -100,7 +100,7 @@ def run_2xfp16(passes, image):
                 value = [fp16(value[out] + bias16[out]) for out in range(4)]
                 if residual:
                     main_px = image[y][x]
-                    value = [value[out] + main_px[out] for out in range(4)]
+                    value = [fp16(value[out] + fp16(main_px[out])) for out in range(4)]
                 row.append(value)
             output.append(row)
         textures[save] = output

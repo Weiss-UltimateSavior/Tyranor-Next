@@ -2608,7 +2608,7 @@ public final class CnnPipelineTest {
                 (Boolean) recheckM.invoke(tileFallbackPipeline));
         assertTrue("Tile size must shrink below 1024 after recheckChainBudgetAfterFallback",
                 ((Integer) getField(tileFallbackNode, "mTileCoreSize")).intValue() > 0
-                        && ((Integer) getField(tileFallbackNode, "mTileCoreSize")).intValue() <= 1024);
+                        && ((Integer) getField(tileFallbackNode, "mTileCoreSize")).intValue() < 1024);
 
         // abandonContext() resets mRuntimeFusionFallback so a fresh GL context retries MRT fusion,
         // while preserving retryAfterDelay across GraphicsFilterPipeline.discardTargets() for transient OOM.
@@ -2904,5 +2904,238 @@ public final class CnnPipelineTest {
                 optimizedOff.contains("_p_1_0") && !offPass.body.equals(optimizedOff));
         assertEquals("Identical VN-SR fixture with `vPos` parameter must skip optimization fail-closed",
                 vPosPass.body, GraphicsShaderTransforms.optimizePassBody(vPosPass).body);
+    }
+
+    @Test
+    public void mrtGlErrorCodesFallbackWhileContextLostStaysPermanent() throws Exception {
+        // [M1] GL error codes on MRT FBO setup (e.g. GL_INVALID_OPERATION on glDrawBuffers or OOM)
+        // must trigger the one-shot unfused fallback rather than bypassing/latching permanently.
+        final boolean[] injectedFboErr = {false};
+        RecordingPipelineGlOps mrtFboErrGl = new RecordingPipelineGlOps() {
+            @Override public void glDrawBuffers(int n, int[] bufs, int offset) {
+                super.glDrawBuffers(n, bufs, offset);
+                if (n > 1 && !injectedFboErr[0]) {
+                    injectedFboErr[0] = true;
+                    pendingErrors.add(GLES30.GL_INVALID_OPERATION);
+                }
+            }
+        };
+        CnnPipeline fboErrNode = CnnPipeline.createForTesting(
+                p -> Files.newInputStream(resolveAsset(p)),
+                "anime4k/Anime4K_Restore_CNN_L.glsl",
+                true, 1, 1, 0, mrtFboErrGl);
+        setField(fboErrNode, "mLimitWidth", 4096);
+        setField(fboErrNode, "mLimitHeight", 4096);
+        setField(fboErrNode, "mQuadVao", new int[]{1});
+        setField(fboErrNode, "mHalfFloatChecked", true);
+        setField(fboErrNode, "mHalfFloatRenderable", true);
+        int outTex = fboErrNode.renderTexture(100, 64, 64, 64, 64);
+        assertTrue("MRT FBO GL_INVALID_OPERATION must have been injected", injectedFboErr[0]);
+        assertTrue("MRT FBO GL error must fall back to unfused passes and render", outTex != 0);
+        assertFalse("Fused fallback must not latch mFailed", fboErrNode.isFailed());
+        assertEquals("Fused Anime4K_L (5 passes) must fall back to unfused (9 passes)",
+                9, fboErrNode.getBuiltPassCount());
+
+        // [M1] Fused fragment shader compile GL_OUT_OF_MEMORY must also fall back to unfused passes.
+        final boolean[] injectedCompileOom = {false};
+        RecordingPipelineGlOps compileOomGl = new RecordingPipelineGlOps() {
+            private final java.util.Set<Integer> mrtShaders = new java.util.HashSet<>();
+            @Override public void glShaderSource(int shader, String string) {
+                super.glShaderSource(shader, string);
+                if (string != null && string.contains("fragColor1")) {
+                    mrtShaders.add(shader);
+                }
+            }
+            @Override public void glGetShaderiv(int shader, int pname, int[] params, int offset) {
+                if (pname == GLES30.GL_COMPILE_STATUS && mrtShaders.contains(shader) && !injectedCompileOom[0]) {
+                    injectedCompileOom[0] = true;
+                    pendingErrors.add(GLES30.GL_OUT_OF_MEMORY);
+                    params[offset] = 0;
+                    return;
+                }
+                super.glGetShaderiv(shader, pname, params, offset);
+            }
+        };
+        CnnPipeline compileOomNode = CnnPipeline.createForTesting(
+                p -> Files.newInputStream(resolveAsset(p)),
+                "anime4k/Anime4K_Restore_CNN_L.glsl",
+                true, 1, 1, 0, compileOomGl);
+        setField(compileOomNode, "mLimitWidth", 4096);
+        setField(compileOomNode, "mLimitHeight", 4096);
+        setField(compileOomNode, "mQuadVao", new int[]{1});
+        setField(compileOomNode, "mHalfFloatChecked", true);
+        setField(compileOomNode, "mHalfFloatRenderable", true);
+        int compileFallbackOut = compileOomNode.renderTexture(100, 64, 64, 64, 64);
+        assertTrue("MRT shader compile OOM must have been injected", injectedCompileOom[0]);
+        assertTrue("MRT shader compile OOM must fall back to unfused passes", compileFallbackOut != 0);
+        assertEquals(9, compileOomNode.getBuiltPassCount());
+
+        // [M1] GL_CONTEXT_LOST_KHR on MRT FBO setup must NEVER fall back — stays permanent fail.
+        RecordingPipelineGlOps mrtContextLostGl = new RecordingPipelineGlOps() {
+            @Override public void glDrawBuffers(int n, int[] bufs, int offset) {
+                super.glDrawBuffers(n, bufs, offset);
+                if (n > 1) {
+                    pendingErrors.add(GlErrors.GL_CONTEXT_LOST_KHR);
+                }
+            }
+        };
+        CnnPipeline lostNode = CnnPipeline.createForTesting(
+                p -> Files.newInputStream(resolveAsset(p)),
+                "anime4k/Anime4K_Restore_CNN_L.glsl",
+                true, 1, 1, 0, mrtContextLostGl);
+        setField(lostNode, "mLimitWidth", 4096);
+        setField(lostNode, "mLimitHeight", 4096);
+        setField(lostNode, "mQuadVao", new int[]{1});
+        setField(lostNode, "mHalfFloatChecked", true);
+        setField(lostNode, "mHalfFloatRenderable", true);
+        assertEquals(0, lostNode.renderTexture(100, 64, 64, 64, 64));
+        assertTrue("GL_CONTEXT_LOST_KHR on MRT setup must latch permanent failure", lostNode.isFailed());
+        assertEquals(CnnPipeline.BYPASS_PIPELINE_FAILED, lostNode.bypassReason());
+
+        // [Low #25] GL_MAX_COLOR_ATTACHMENTS < required must also trigger MRT_CAPACITY fallback.
+        RecordingPipelineGlOps lowAttachmentsGl = new RecordingPipelineGlOps() {
+            @Override public void glGetIntegerv(int pname, int[] data, int offset) {
+                if (pname == GLES30.GL_MAX_COLOR_ATTACHMENTS) {
+                    data[offset] = 1;
+                    return;
+                }
+                super.glGetIntegerv(pname, data, offset);
+            }
+        };
+        CnnPipeline lowAttachmentsNode = CnnPipeline.createForTesting(
+                p -> Files.newInputStream(resolveAsset(p)),
+                "anime4k/Anime4K_Restore_CNN_L.glsl",
+                true, 1, 1, 0, lowAttachmentsGl);
+        setField(lowAttachmentsNode, "mLimitWidth", 4096);
+        setField(lowAttachmentsNode, "mLimitHeight", 4096);
+        setField(lowAttachmentsNode, "mQuadVao", new int[]{1});
+        setField(lowAttachmentsNode, "mHalfFloatChecked", true);
+        setField(lowAttachmentsNode, "mHalfFloatRenderable", true);
+        int lowAttachOut = lowAttachmentsNode.renderTexture(100, 64, 64, 64, 64);
+        assertTrue("GL_MAX_COLOR_ATTACHMENTS=1 must trigger MRT_CAPACITY fallback to unfused",
+                lowAttachOut != 0);
+        assertEquals(9, lowAttachmentsNode.getBuiltPassCount());
+    }
+
+    @Test
+    public void boundedStaticReuseRefreshesPeriodicallyAndKirikiroidForwardsFrameDirty() throws Exception {
+        // [M3] GraphicsFilterPipeline caps consecutive static reuse hits at MAX_CONSECUTIVE_STATIC_REUSES
+        // before forcing a single full refresh, bounding any missed dirty signal.
+        RecordingPipelineGlOps gl = new RecordingPipelineGlOps();
+        GraphicsFilterPipeline pipeline = new GraphicsFilterPipeline(
+                new android.content.ContextWrapper(null), GraphicsFilterChain.parse("v1:s"));
+        CnnPipeline node = CnnPipeline.createForTesting(
+                p -> Files.newInputStream(resolveAsset(p)),
+                "anime4k/Anime4K_Restore_CNN_S.glsl",
+                true, 1, 1, 0, gl);
+        setField(node, "mLimitWidth", 4096);
+        setField(node, "mLimitHeight", 4096);
+        setField(node, "mQuadVao", new int[]{1});
+        setField(node, "mHalfFloatChecked", true);
+        setField(node, "mHalfFloatRenderable", true);
+        ((CnnPipeline[]) getField(pipeline, "nodes"))[0] = node;
+
+        int firstOut = pipeline.renderTexture(77, 64, 64, 64, 64, true);
+        assertTrue("Dirty frame must render filtered output", firstOut != 0 && firstOut != 77);
+        int drawsAfterFirst = gl.drawCalls;
+        assertTrue(drawsAfterFirst > 0);
+
+        for (int i = 0; i < GraphicsFilterPipeline.MAX_CONSECUTIVE_STATIC_REUSES; i++) {
+            int reused = pipeline.renderTexture(77, 64, 64, 64, 64, false);
+            assertEquals("Clean frame within reuse bound must return cached output", firstOut, reused);
+            assertEquals("Clean frame within reuse bound must not issue draw calls",
+                    drawsAfterFirst, gl.drawCalls);
+        }
+        int refreshed = pipeline.renderTexture(77, 64, 64, 64, 64, false);
+        assertEquals(firstOut, refreshed);
+        assertTrue("Frame beyond MAX_CONSECUTIVE_STATIC_REUSES must force one refresh draw",
+                gl.drawCalls > drawsAfterFirst);
+
+        // [Low #25] Verify KirikiroidRawFrameBridge.process forwards frameDirty faithfully to pipeline.
+        Field bridgePipelineField = KirikiroidRawFrameBridge.class.getDeclaredField("pipeline");
+        bridgePipelineField.setAccessible(true);
+        Object savedBridgePipeline = bridgePipelineField.get(null);
+        Field runtimeChainField = Anime4kRuntime.class.getDeclaredField("chain");
+        runtimeChainField.setAccessible(true);
+        Object savedRuntimeChain = runtimeChainField.get(null);
+        Field runtimeEnabledField = Anime4kRuntime.class.getDeclaredField("enabled");
+        runtimeEnabledField.setAccessible(true);
+        boolean savedRuntimeEnabled = runtimeEnabledField.getBoolean(null);
+        try {
+            runtimeChainField.set(null, GraphicsFilterChain.parse("v1:s"));
+            runtimeEnabledField.setBoolean(null, true);
+            bridgePipelineField.set(null, pipeline);
+            Method processMethod = KirikiroidRawFrameBridge.class.getDeclaredMethod(
+                    "process", int.class, int.class, int.class, float.class, float.class,
+                    float.class, float.class, int.class, int.class, boolean.class, boolean.class);
+            processMethod.setAccessible(true);
+
+            int beforeDirty = gl.drawCalls;
+            int out1 = (Integer) processMethod.invoke(null, 88, 64, 64, 0f, 0f, 1f, 1f, 64, 64, false, true);
+            assertTrue("Dirty KirikiroidRawFrameBridge.process must render output", out1 != 0);
+            int afterDirty = gl.drawCalls;
+            assertTrue("Dirty process call must issue GL draws", afterDirty > beforeDirty);
+
+            int out2 = (Integer) processMethod.invoke(null, 88, 64, 64, 0f, 0f, 1f, 1f, 64, 64, false, false);
+            assertEquals("Clean KirikiroidRawFrameBridge.process must reuse cached output", out1, out2);
+            assertEquals("Clean process call must forward frameDirty=false and skip draws",
+                    afterDirty, gl.drawCalls);
+
+            int out3 = (Integer) processMethod.invoke(null, 88, 64, 64, 0f, 0f, 1f, 1f, 64, 64, false, true);
+            assertEquals(out1, out3);
+            assertTrue("Subsequent dirty process call must forward frameDirty=true and redraw",
+                    gl.drawCalls > afterDirty);
+        } finally {
+            bridgePipelineField.set(null, savedBridgePipeline);
+            runtimeChainField.set(null, savedRuntimeChain);
+            runtimeEnabledField.setBoolean(null, savedRuntimeEnabled);
+        }
+    }
+
+    @Test
+    public void mpvHookShaderNormalizationPrecisionGuardAndSingleSaveFragColor() {
+        // [Low #22] UTF-8 BOM, CR-only line endings, and tab-separated directives must parse cleanly.
+        String normalizedSource = "\uFEFF//!DESC\tNormalized Pass\r//!HOOK\tMAIN\r//!BIND\tMAIN\r"
+                + "vec4 hook() { return MAIN_tex(MAIN_pos); }\r";
+        List<MpvHookShader.Pass> parsed = MpvHookShader.parse(normalizedSource);
+        assertEquals(1, parsed.size());
+        assertEquals("Normalized Pass", parsed.get(0).desc);
+        assertEquals(Collections.singletonList("MAIN"), parsed.get(0).binds);
+
+        // [Low #21] mat4(...) gated behind an unresolvable #ifdef must fail-closed to highp (not mediump).
+        String guardedMat4Source = "//!DESC Guarded Mat4\n//!HOOK MAIN\n//!BIND MAIN\n"
+                + "vec4 hook() {\n"
+                + "vec4 v = MAIN_tex(MAIN_pos);\n"
+                + "#ifdef OPTIONAL_CONV\n"
+                + "v = mat4(1.0) * v;\n"
+                + "#endif\n"
+                + "return v;\n"
+                + "}\n";
+        MpvHookShader.Pass guardedPass = MpvHookShader.parse(guardedMat4Source).get(0);
+        assertFalse("mat4 inside unresolved #ifdef must not classify as convolution pass",
+                MpvHookShader.isCnnConvolutionPass(guardedPass));
+        assertFalse("Tiered precision must fail-closed to highp when mat4 is only in unknown #ifdef",
+                MpvHookShader.fragmentSource(guardedPass, true, true).contains("precision mediump float;"));
+
+        // [Low #20] Single-SAVE void hook() accepts fragColor = ... (consistent with terminal pass),
+        // while multi-SAVE void hook() still requires explicit fragColor0..N-1.
+        String singleSaveFragColor = "//!DESC Single Save\n//!HOOK MAIN\n//!BIND MAIN\n//!SAVE S0\n"
+                + "void hook() { fragColor = MAIN_tex(MAIN_pos); }\n"
+                + "//!DESC Final\n//!HOOK MAIN\n//!BIND S0\n"
+                + "vec4 hook() { return S0_tex(S0_pos); }\n";
+        List<MpvHookShader.Pass> singleSavePasses = MpvHookShader.parse(singleSaveFragColor);
+        assertEquals(2, singleSavePasses.size());
+
+        String multiSaveMissingTarget1 = "//!DESC Multi Save\n//!HOOK MAIN\n//!BIND MAIN\n"
+                + "//!SAVE S0\n//!SAVE S1\n"
+                + "void hook() { fragColor = MAIN_tex(MAIN_pos); }\n"
+                + "//!DESC Final\n//!HOOK MAIN\n//!BIND S0\n//!BIND S1\n"
+                + "vec4 hook() { return S0_tex(S0_pos) + S1_tex(S1_pos); }\n";
+        try {
+            MpvHookShader.parse(multiSaveMissingTarget1);
+            org.junit.Assert.fail("Multi-SAVE void hook() writing only fragColor must still be rejected");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("must write every target"));
+        }
     }
 }

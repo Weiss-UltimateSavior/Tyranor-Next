@@ -225,10 +225,37 @@ def evaluate(text, image, flip_coordinates=False):
                 output.append(row)
             textures[save] = output
 
-    final_stripped = strip_glsl_comments(passes[-1])
+    final_pass = passes[-1]
+    final_stripped = strip_glsl_comments(final_pass)
+    final_binds = re.findall(r"^//!BIND\s+(\S+)", final_pass, re.MULTILINE)
+    final_width = re.search(r"^//!WIDTH\s+(\S+)", final_pass, re.MULTILINE)
+    final_height = re.search(r"^//!HEIGHT\s+(\S+)", final_pass, re.MULTILINE)
+    if not final_width or final_width.group(1) != "MAIN.w":
+        raise ValueError(f"Unexpected final pass //!WIDTH: {final_width.group(1) if final_width else None!r}")
+    if not final_height or final_height.group(1) != "MAIN.h":
+        raise ValueError(f"Unexpected final pass //!HEIGHT: {final_height.group(1) if final_height else None!r}")
     residuals = re.findall(r"(vnsr_output_\d+)_tex\(center\)\[index\]", final_stripped)
-    assert len(residuals) == 3 and "//!SAVE MAIN" in passes[-1]
+    assert len(residuals) == 3 and "//!SAVE MAIN" in final_pass
+    for req_bind in ["MAIN"] + residuals:
+        if req_bind not in final_binds:
+            raise ValueError(f"Missing required //!BIND {req_bind} in final pass")
     assert re.search(r"return\s+vec4\(\s*MAIN_tex\(\s*MAIN_pos\s*\)\.rgb\s*\+\s*residual\s*,\s*1\.0\s*\);", final_stripped)
+    if not re.search(r"\bvec2\s+cell\s*=\s*floor\(\s*MAIN_pos\s*\*\s*MAIN_size\s*\)\s*;", final_stripped):
+        raise ValueError("Missing or unexpected PixelShuffle cell formula in final pass")
+    m_phase_scale = re.search(
+        r"\bivec2\s+phase\s*=\s*ivec2\(\s*floor\(\s*fract\(\s*MAIN_pos\s*\*\s*MAIN_size\s*\)\s*\*\s*([-+]?\d+(?:\.\d+)?)\s*\)\s*\)\s*;",
+        final_stripped,
+    )
+    if not m_phase_scale:
+        raise ValueError("Missing or unexpected PixelShuffle phase formula in final pass")
+    phase_scale = float(m_phase_scale.group(1))
+    m_center_off = re.search(
+        r"\bvec2\s+center\s*=\s*\(\s*cell\s*\+\s*vec2\(\s*([-+]?\d+(?:\.\d+)?)\s*\)\s*\)\s*\*\s*MAIN_pt\s*;",
+        final_stripped,
+    )
+    if not m_center_off:
+        raise ValueError("Missing or unexpected PixelShuffle center formula in final pass")
+    center_offset = float(m_center_off.group(1))
     m_phase_idx = re.search(r"\bint\s+index\s*=\s*([^;]+);", final_stripped)
     if not m_phase_idx:
         raise ValueError("Missing PixelShuffle index formula in final pass")
@@ -239,7 +266,6 @@ def evaluate(text, image, flip_coordinates=False):
         shader_flips_phase = False
     else:
         raise ValueError(f"Unsupported PixelShuffle index formula: {m_phase_idx.group(1).strip()!r}")
-    flip_phase = shader_flips_phase != flip_coordinates
 
     out_residuals = []
     out_final = []
@@ -248,18 +274,30 @@ def evaluate(text, image, flip_coordinates=False):
         res_row = []
         final_row = []
         for x in range(out_w):
-            idx = ((1 - y % 2) if flip_phase else y % 2) * 2 + x % 2
-            res = [textures[name][y // 2][x // 2][idx] for name in residuals]
-            res_row.append(res)
-
-            # Fragment center in physical coordinate of output pass:
-            # vPos = (x + 0.5) / out_w, (y + 0.5) / out_h
-            # When flip_coordinates is True (bottom-left physical input, declared top-left shader):
-            # u_FLIP_Y is 1; MAIN_pos.y = 1.0 - vPos.y;
-            # MAIN_tex(MAIN_pos) invokes texture(u_MAIN, hookCoord(MAIN_pos)) = texture(u_MAIN, vPos).
-            # So physical sampling of textures["MAIN"] occurs at vPos!
+            # Physical fragment center vPos = ((x + 0.5) / out_w, (y + 0.5) / out_h).
+            # When flip_coordinates is True (bottom-left physical input, top-left shader),
+            # MAIN_pos = hookCoord(vPos) = (vPos.x, 1.0 - vPos.y).
             u = (x + 0.5) / out_w
             v = (y + 0.5) / out_h
+            main_pos_u = u
+            main_pos_v = (1.0 - v) if flip_coordinates else v
+            cell_x = math.floor(main_pos_u * width)
+            cell_y = math.floor(main_pos_v * height)
+            frac_x = (main_pos_u * width) - cell_x
+            frac_y = (main_pos_v * height) - cell_y
+            phase_x = int(math.floor(frac_x * phase_scale))
+            phase_y = int(math.floor(frac_y * phase_scale))
+            idx = ((1 - phase_y) if shader_flips_phase else phase_y) * 2 + phase_x
+            if idx < 0 or idx >= 4:
+                raise ValueError(f"PixelShuffle index out of range: {idx} (phase=({phase_x},{phase_y}), scale={phase_scale})")
+            center_u = (cell_x + center_offset) / width
+            center_v = (cell_y + center_offset) / height
+            phys_center_u = center_u
+            phys_center_v = (1.0 - center_v) if flip_coordinates else center_v
+            res = [sample_bilinear(textures[name], phys_center_u, phys_center_v)[idx] for name in residuals]
+            res_row.append(res)
+
+            # MAIN_tex(MAIN_pos) invokes texture(u_MAIN, hookCoord(MAIN_pos)) = texture(u_MAIN, vPos).
             base_sample = sample_bilinear(textures["MAIN"], u, v)
             combined_rgb = [base_sample[c] + res[c] for c in range(3)]
             final_row.append(combined_rgb + [1.0])
@@ -453,6 +491,38 @@ def main():
             pass
         else:
             raise AssertionError((name, "unmodeled swapped X/Y PixelShuffle formula must be rejected"))
+        # Mutating PixelShuffle phase scale (*2.0 -> *4.0) must fail validation.
+        bad_phase_scale = adapted.replace("*2.0));", "*4.0));", 1)
+        assert bad_phase_scale != adapted, (name, "expected *2.0 in phase expression")
+        try:
+            evaluate(bad_phase_scale, image[::-1], flip_coordinates=True)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError((name, "mutated phase scale *4.0 must fail validation"))
+        # Mutating sampling center offset (0.5 -> 0.25) must diverge from expected residuals.
+        bad_center = adapted.replace("vec2(0.5)", "vec2(0.25)", 1)
+        assert bad_center != adapted, (name, "expected vec2(0.5) in center expression")
+        bad_center_res, _ = evaluate(bad_center, image[::-1], flip_coordinates=True)
+        bad_center_res = bad_center_res[::-1]
+        bad_center_err = max(
+            abs(a - b)
+            for ra, rb in zip(expected_residuals, bad_center_res)
+            for pa, pb in zip(ra, rb)
+            for a, b in zip(pa, pb)
+        )
+        assert bad_center_err > 1e-4, (name, "mutated center offset 0.25 must diverge from expected", bad_center_err)
+        # Missing/corrupted //!WIDTH MAIN.w on final pass must be rejected.
+        last_width_idx = adapted.rfind("//!WIDTH MAIN.w")
+        assert last_width_idx >= 0
+        bad_width = adapted[:last_width_idx] + "//!WIDTH MAIN.x" + adapted[last_width_idx + len("//!WIDTH MAIN.w"):]
+        assert bad_width != adapted
+        try:
+            evaluate(bad_width, image[::-1], flip_coordinates=True)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError((name, "invalid final pass //!WIDTH must be rejected"))
         print(name + ": residual & final combine equivalence passed; residual error=" + str(res_error)
               + ", final max error=" + str(final_error))
 
