@@ -214,6 +214,7 @@ import com.tyranor.next.ui.patch.KrkrOnlinePatchActivity
 import com.tyranor.next.ui.save.SaveManagementActivity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -2360,7 +2361,7 @@ internal fun GameCard(
     showEngineBadge: Boolean = false,
 ) {
     val engineName = gameCardEngineName(game)
-    // 瀑布流：按游戏 uri 稳定取 0.60–0.80 的封面宽高比，让卡片高低错落（列数不变）。
+    // 瀑布流：按游戏 uri 稳定取 0.60–0.80 的封面宽高比，让同一列数下的卡片高低错落。
     // 解码按这个比例裁剪，避免先把图裁成 3:4 再被卡片盒二次裁切。
     val coverAspect = remember(game.uri) {
         val hash = game.uri.hashCode().let { if (it == Int.MIN_VALUE) 0 else kotlin.math.abs(it) }
@@ -2600,9 +2601,30 @@ private fun gameGridContentPadding(bottomInset: Dp) = PaddingValues(
 
 @Composable
 private fun gameCardColumnWidthPx(viewportWidth: Int, columns: Int): Int = with(LocalDensity.current) {
-    val gutters = 2 * GameGridHorizontalPadding.roundToPx() + (columns - 1) * GameGridColumnSpacing.roundToPx()
+    gameCardColumnWidthPx(
+        viewportWidth = viewportWidth,
+        columns = columns,
+        horizontalPaddingPx = GameGridHorizontalPadding.roundToPx(),
+        columnGapPx = GameGridColumnSpacing.roundToPx(),
+    )
+}
+
+/**
+ * 扣除两侧留白与列间距后的单列卡宽（px）。
+ *
+ * 多列时各列实际宽度可能相差 1px，这里取向上取整的最大列宽，作为封面选档的显示盒宽度，
+ * 保证最宽的那一列也不会被放大。
+ */
+internal fun gameCardColumnWidthPx(
+    viewportWidth: Int,
+    columns: Int,
+    horizontalPaddingPx: Int,
+    columnGapPx: Int,
+): Int {
+    if (columns <= 0) return 0
+    val gutters = 2 * horizontalPaddingPx + (columns - 1) * columnGapPx
     val availableWidth = (viewportWidth - gutters).coerceAtLeast(0)
-    (availableWidth + columns - 1) / columns
+    return (availableWidth + columns - 1) / columns
 }
 
 /** 卡片无封面占位使用的引擎显示名：Switch / Plugin 等短名处理，两种卡片共用。 */
@@ -2751,14 +2773,15 @@ internal fun rememberCoverBitmap(
     val aspect = quantizedCoverAspect(targetAspect ?: tier.defaultAspect)
     val cacheKey = coverUri?.let { tier.cacheKey(it, aspect) }
     val cached = cacheKey?.let(CoverBitmapCache::get)
-    return produceState<ImageBitmap?>(initialValue = cached?.asImageBitmap(), coverUri, tier, aspect) {
+    val cachedImage = remember(cached) { cached?.asImageBitmap() }
+    return produceState<ImageBitmap?>(initialValue = cachedImage, coverUri, tier, aspect) {
         val uri = coverUri
         if (uri.isNullOrBlank()) return@produceState
-        if (cached != null) {
+        if (cachedImage != null) {
             // 缓存命中也要登记：解码写入缓存后、回到调用方调度器前协程可能被取消
             // （withContext 丢弃结果），不登记则位图被 LRU 逐出后占位文字会重新出现
             CoverAvailability.markKnown(uri)
-            value = cached.asImageBitmap()
+            value = cachedImage
             return@produceState
         }
         val bitmap = CoverThumbnailLoader.load(context.applicationContext, uri, tier, aspect)
@@ -2777,7 +2800,7 @@ internal fun rememberCoverBitmap(
 private fun rememberCandidateCoverPreview(candidate: CoverSearchCandidate): androidx.compose.runtime.State<CoverPreviewState> {
     val context = LocalContext.current
     val cacheKey = candidate.coverUrl
-    // 搜索结果缩略图与游戏库网格同档；缓存 key 带档位与宽高比，避免与其它消费方互相覆盖
+    // 搜索结果使用 GRID 档；缓存 key 带档位与宽高比，避免与其它消费方互相覆盖
     val cacheKeyWithTier = cacheKey.takeIf { it.isNotBlank() }?.let { uri ->
         CoverDecodeTier.GRID.cacheKey(uri)
     }
@@ -2929,6 +2952,7 @@ private object CoverThumbnailLoader {
         ) {
             withContext(Dispatchers.IO) {
                 decodeCoverThumbnail(context, uriText, tier, targetAspect)?.also {
+                    ensureActive()
                     CoverBitmapCache.putDecoded(cacheKey, it)
                 }
             }

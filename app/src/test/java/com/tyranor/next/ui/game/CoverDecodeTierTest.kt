@@ -78,6 +78,19 @@ class CoverDecodeTierTest {
     }
 
     @Test
+    fun `卡宽扣除两侧留白与列间距后按最大列向上取整`() {
+        // horizontalPaddingPx 是单侧留白，列间距只出现在相邻列之间
+        val twoColumns = gameCardColumnWidthPx(1080, columns = 2, horizontalPaddingPx = 36, columnGapPx = 30)
+        val threeColumns = gameCardColumnWidthPx(1080, columns = 3, horizontalPaddingPx = 36, columnGapPx = 30)
+        assertEquals(489, twoColumns)
+        assertEquals(316, threeColumns)
+        assertEquals(490, gameCardColumnWidthPx(1081, columns = 2, horizontalPaddingPx = 36, columnGapPx = 30))
+        // 窄于留白与列间距之和时不返回负数，避免后续按 0 宽选档
+        assertEquals(0, gameCardColumnWidthPx(40, columns = 4, horizontalPaddingPx = 36, columnGapPx = 30))
+        assertEquals(0, gameCardColumnWidthPx(1080, columns = 0, horizontalPaddingPx = 36, columnGapPx = 30))
+    }
+
+    @Test
     fun `缓存 key 按档位与宽高比分桶且保留原 uri`() {
         val uri = "content://cover/test-tier"
         assertNotEquals(CoverDecodeTier.GRID.cacheKey(uri), CoverDecodeTier.FLOW.cacheKey(uri))

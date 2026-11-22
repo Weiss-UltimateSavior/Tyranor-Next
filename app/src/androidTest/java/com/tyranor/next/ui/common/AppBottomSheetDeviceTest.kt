@@ -17,16 +17,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import androidx.test.espresso.Espresso.pressBack
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.util.Log
 import java.io.File
@@ -74,6 +82,81 @@ class AppBottomSheetDeviceTest {
         unchangedHeightControl(enhanced = false)
     @Test fun enhancedUnchangedHeightControlKeepsBottomActionAligned() =
         unchangedHeightControl(enhanced = true)
+
+    @Test fun columnSliderAppearsOnlyForGridStylesAndReportsChanges() {
+        compose.runOnUiThread { MotionMode.sync(false) }
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val slider = compose.onNodeWithContentDescription(context.getString(R.string.game_filter_card_columns))
+        // 列数按「风格 + 方向」各自保存，测试只动当前方向的那一对键，结束时恢复原值。
+        val landscape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        fun gridColumns() = if (landscape) {
+            AppSettingsStore.getGameGridLandscapeColumns(context)
+        } else {
+            AppSettingsStore.getGameGridPortraitColumns(context)
+        }
+        fun waterfallColumns() = if (landscape) {
+            AppSettingsStore.getGameWaterfallLandscapeColumns(context)
+        } else {
+            AppSettingsStore.getGameWaterfallPortraitColumns(context)
+        }
+        fun setGrid(columns: Int) = if (landscape) {
+            AppSettingsStore.setGameGridLandscapeColumns(context, columns)
+        } else {
+            AppSettingsStore.setGameGridPortraitColumns(context, columns)
+        }
+        fun setWaterfall(columns: Int) = if (landscape) {
+            AppSettingsStore.setGameWaterfallLandscapeColumns(context, columns)
+        } else {
+            AppSettingsStore.setGameWaterfallPortraitColumns(context, columns)
+        }
+        val originalStyle = AppSettingsStore.getGameCardStyle(context)
+        val originalGrid = gridColumns()
+        val originalWaterfall = waterfallColumns()
+        try {
+            compose.runOnUiThread {
+                AppSettingsStore.setGameCardStyle(context, AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW)
+                setGrid(3)
+                setWaterfall(3)
+            }
+            compose.setContent {
+                TyranorNextTheme {
+                    GameFilterSheet(
+                        sortMode = AppSettingsStore.GAME_SORT_ALPHA,
+                        engineFilter = AppSettingsStore.GAME_FILTER_ENGINE_ALL,
+                        playedFilter = AppSettingsStore.GAME_FILTER_PLAYED_ALL,
+                        availableEngines = listOf(EngineType.UNKNOWN),
+                        searchQuery = "",
+                        onSortChange = {}, onEngineChange = {}, onPlayedChange = {},
+                        onReset = {}, onDismiss = {},
+                    )
+                }
+            }
+            compose.onNodeWithText(context.getString(R.string.game_filter_title)).assertIsDisplayed()
+            slider.assertDoesNotExist()
+            compose.runOnUiThread { AppSettingsStore.setGameCardStyle(context, AppSettingsStore.GAME_CARD_STYLE_WATERFALL) }
+            slider.performScrollTo().assertIsDisplayed().performSemanticsAction(SemanticsActions.SetProgress) { it(8f) }
+            compose.runOnIdle { assertEquals(8, waterfallColumns()) }
+            compose.runOnUiThread { AppSettingsStore.setGameCardStyle(context, AppSettingsStore.GAME_CARD_STYLE_GRID) }
+            slider.assertIsDisplayed().performSemanticsAction(SemanticsActions.SetProgress) { it(5f) }
+            slider.assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.StateDescription,
+                context.getString(R.string.game_filter_card_columns_value, 5),
+            ))
+            compose.runOnIdle {
+                assertEquals(5, gridColumns())
+                // 网格与瀑布各存一份：改网格不影响瀑布已选列数
+                assertEquals(8, waterfallColumns())
+            }
+            compose.runOnUiThread { AppSettingsStore.setGameCardStyle(context, AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW) }
+            slider.assertDoesNotExist()
+        } finally {
+            compose.runOnUiThread {
+                setGrid(originalGrid)
+                setWaterfall(originalWaterfall)
+                AppSettingsStore.setGameCardStyle(context, originalStyle)
+            }
+        }
+    }
 
     private fun filterDropdownConsumesBack(enhanced: Boolean) {
         compose.runOnUiThread { MotionMode.sync(enhanced) }

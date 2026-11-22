@@ -225,30 +225,29 @@ private val FilterSheetInset = 16.dp
 // SlidingTabRow 自带 12dp 内容留白，首尾标签和抽屉条目共用 16dp 对齐线。
 private val FilterScrollableInset = 4.dp
 
+/**
+ * 列数滑条控制的四组设置：网格 / 瀑布 × 竖屏 / 横屏，由当前卡片风格与屏幕方向选出当前一组。
+ * 标题与读数对四组通用（「每行卡片数」「%1$d 列」），切换方向或风格时只换绑定，不换文案。
+ */
 private enum class GameCardColumnsSetting(
     val columns: StateFlow<Int>,
     val write: (Context, Int) -> Unit,
-    val title: Int,
 ) {
     GRID_PORTRAIT(
         AppSettingsStore.gameGridPortraitColumnsState,
         AppSettingsStore::setGameGridPortraitColumns,
-        R.string.settings_game_card_portrait_columns,
     ),
     GRID_LANDSCAPE(
         AppSettingsStore.gameGridLandscapeColumnsState,
         AppSettingsStore::setGameGridLandscapeColumns,
-        R.string.settings_game_card_landscape_columns,
     ),
     WATERFALL_PORTRAIT(
         AppSettingsStore.gameWaterfallPortraitColumnsState,
         AppSettingsStore::setGameWaterfallPortraitColumns,
-        R.string.settings_game_card_portrait_columns,
     ),
     WATERFALL_LANDSCAPE(
         AppSettingsStore.gameWaterfallLandscapeColumnsState,
         AppSettingsStore::setGameWaterfallLandscapeColumns,
-        R.string.settings_game_card_landscape_columns,
     ),
 }
 
@@ -297,7 +296,7 @@ private fun GameCardColumnsCard(
     cardColor: Color,
     onColumnsChange: (Int) -> Unit,
 ) {
-    val title = stringResource(snapshot.setting.title)
+    val title = stringResource(R.string.game_filter_card_columns)
     // 设置项、外部值或可用状态变化时，丢弃尚未提交的草稿。
     var draftColumns by remember(snapshot.setting, snapshot.columns, enabled) { mutableIntStateOf(snapshot.columns) }
     val finishChange: () -> Unit = {
@@ -313,7 +312,7 @@ private fun GameCardColumnsCard(
         Column(Modifier.padding(horizontal = FilterSheetInset)) {
             SliderValueHeader(
                 title = title,
-                value = stringResource(R.string.settings_game_card_columns_value, draftColumns),
+                value = stringResource(R.string.game_filter_card_columns_value, draftColumns),
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
             )
             val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
