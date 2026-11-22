@@ -36,6 +36,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -290,6 +291,9 @@ private fun GameCardColumnsControl(cardColor: Color) {
 }
 
 @Composable
+private fun columnsValue(columns: Int): String = stringResource(R.string.game_filter_card_columns_value, columns)
+
+@Composable
 private fun GameCardColumnsCard(
     snapshot: GameCardColumnsSnapshot,
     enabled: Boolean,
@@ -299,6 +303,8 @@ private fun GameCardColumnsCard(
     val title = stringResource(R.string.game_filter_card_columns)
     // 设置项、外部值或可用状态变化时，丢弃尚未提交的草稿。
     var draftColumns by remember(snapshot.setting, snapshot.columns, enabled) { mutableIntStateOf(snapshot.columns) }
+    // 两档滑条都不自带列数读数：拖动过程中要让无障碍读到草稿值，而不是已提交值。
+    val columnsText = columnsValue(draftColumns)
     val finishChange: () -> Unit = {
         if (enabled) onColumnsChange(draftColumns)
     }
@@ -312,7 +318,7 @@ private fun GameCardColumnsCard(
         Column(Modifier.padding(horizontal = FilterSheetInset)) {
             SliderValueHeader(
                 title = title,
-                value = stringResource(R.string.game_filter_card_columns_value, draftColumns),
+                value = columnsText,
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
             )
             val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
@@ -326,7 +332,10 @@ private fun GameCardColumnsCard(
                 onValueChangeFinished = finishChange,
                 onValueChangeCancelled = { draftColumns = snapshot.columns },
                 modifier = Modifier.padding(vertical = 4.dp)
-                    .semantics { contentDescription = title }
+                    .semantics {
+                        contentDescription = title
+                        stateDescription = columnsText
+                    }
                     .onPreviewKeyEvent { event ->
                         if (!enabled) return@onPreviewKeyEvent false
                         val next = when (event.key) {
