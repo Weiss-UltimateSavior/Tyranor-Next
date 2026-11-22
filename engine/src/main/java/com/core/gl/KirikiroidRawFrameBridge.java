@@ -3,7 +3,6 @@ package com.core.gl;
 import android.content.Context;
 import androidx.annotation.Keep;
 import java.io.File;
-import com.core.nativeplugin.NativePluginConstants;
 
 /** Leases a processed game-window texture to Cocos for one nativeRender call. */
 @Keep
@@ -18,8 +17,6 @@ public final class KirikiroidRawFrameBridge {
     }
     private static volatile InstallStatus installStatus = InstallStatus.UNCONFIGURED;
     private static String configuredLibrary;
-    private static Context pipelineContext;
-    private static long pipelineReservedBytes;
     private static boolean installed, frameSeen;
     private static GraphicsFilterPipeline pipeline;
     private KirikiroidRawFrameBridge() {}
@@ -69,8 +66,8 @@ public final class KirikiroidRawFrameBridge {
     public static void onContextCreated(Context context) {
         if (pipeline != null) pipeline.abandonContext();
         pipeline = null;
-        pipelineContext = context;
-        pipelineReservedBytes = 0;
+        Context appContext = context != null ? context.getApplicationContext() : null;
+        Context resolvedContext = appContext != null ? appContext : context;
         installed = false;
         if (!Anime4kRuntime.isEnabled()) installStatus = InstallStatus.DISABLED;
         else if (context == null) installStatus = InstallStatus.FILTER_UNAVAILABLE;
@@ -84,8 +81,8 @@ public final class KirikiroidRawFrameBridge {
         }
         if (installed) {
             try {
-                nativeResetContext(false);
-                ensurePipeline(0);
+                nativeResetContext();
+                ensurePipeline(resolvedContext);
             } catch (UnsatisfiedLinkError unavailable) {
                 installed = false;
                 installStatus = InstallStatus.NATIVE_UNAVAILABLE;
@@ -126,65 +123,27 @@ public final class KirikiroidRawFrameBridge {
     }
     @Keep
     private static int process(int texture,int sourceWidth,int sourceHeight,float u0,float v0,
-                               float u1,float v1,int width,int height,boolean topLeft) {
+                               float u1,float v1,int width,int height,boolean topLeft,boolean frameDirty) {
+        // Native binds by exact signature "(IIIFFFFIIZZ)I" (11 params); the historical
+        // 10-param frameDirty-less overload was dead code and has been removed.
         if (pipeline == null || !Anime4kRuntime.isEnabled()) return 0;
-        int output = pipeline.renderCroppedTexture(texture,sourceWidth,sourceHeight,u0,v0,u1,v1,width,height,topLeft);
+        int output = pipeline.renderCroppedTexture(
+                texture,sourceWidth,sourceHeight,u0,v0,u1,v1,width,height,topLeft,frameDirty);
         frameSeen = true;
         Anime4kRuntime.onRawFrame(sourceWidth,sourceHeight,width,height,pipeline);
         return output;
     }
-    /** Includes both possible RenderTexture color copies and NPOT padding. */
-    static long carrierBytes126(int width, int height) {
-        if (width <= 0 || height <= 0 || width > 16384 || height > 16384) return Long.MAX_VALUE;
-        int paddedWidth = Integer.highestOneBit(width - 1) << 1;
-        int paddedHeight = Integer.highestOneBit(height - 1) << 1;
-        if (width == 1) paddedWidth = 1;
-        if (height == 1) paddedHeight = 1;
-        return 8L * paddedWidth * paddedHeight;
-    }
-    private static void ensurePipeline(long reservedBytes) {
-        if (pipeline != null && pipelineReservedBytes == reservedBytes) return;
-        if (pipeline != null) pipeline.release();
-        pipeline = new GraphicsFilterPipeline(pipelineContext, Anime4kRuntime.chain(), reservedBytes);
-        pipelineReservedBytes = reservedBytes;
+    private static void ensurePipeline(Context context) {
+        if (pipeline != null) return;
+        // Reserved bytes stay 0: the hooked game texture is borrowed from the host's renderer on
+        // entry and the processed result is leased straight back. The former P0 temporal GPU
+        // probe was removed together with the unified-pipeline rewrite; static-frame reuse now
+        // relies solely on native dirty-frame static reuse tracking (frameDirty).
+        pipeline = new GraphicsFilterPipeline(context, Anime4kRuntime.chain(), 0);
         if (Anime4kRuntime.isAnalyzing()) pipeline.setProfiler(Anime4kRuntime.stats(), true);
     }
-    /** Low 32 bits: texture name. Remaining 16-bit fields: output width and height. */
-    @Keep
-    private static long process126(int texture,int sourceWidth,int sourceHeight,float u0,float v0,
-                                   float u1,float v1,int width,int height) {
-        if (pipelineContext == null || !Anime4kRuntime.isEnabled()) return 0;
-        GraphicsFilterPlan plan = GraphicsFilterPlan.create(Anime4kRuntime.chain(), sourceWidth, sourceHeight, width, height);
-        if (plan == null) return 0;
-        int last = plan.outputWidths.length - 1;
-        int plannedWidth = last < 0 ? sourceWidth : plan.outputWidths[last];
-        int plannedHeight = last < 0 ? sourceHeight : plan.outputHeights[last];
-        long reserved = carrierBytes126(plannedWidth, plannedHeight);
-        if (reserved == Long.MAX_VALUE) return 0;
-        // Release old-size native storage before releasing/rebuilding the
-        // pipeline. The outer native guard can then forget deleted GL names.
-        boolean prepared = nativePrepareCarrier(plannedWidth, plannedHeight);
-        if (plan.hasExecution && !prepared) {
-            frameSeen = true;
-            Anime4kRuntime.onRawUnavailable(width,height,GraphicsStatus.FILTER_FAILED);
-            return 0;
-        }
-        ensurePipeline(reserved);
-        // The legacy bitmap carrier and its unchanged carrier UVs use top-left rows.
-        boolean topLeft = true;
-        int output = pipeline.renderCroppedTexture(texture,sourceWidth,sourceHeight,u0,v0,u1,v1,width,height,topLeft);
-        frameSeen = true;
-        if (output != 0 && !nativeUploadCarrier(output,pipeline.outputWidth(),pipeline.outputHeight())) {
-            Anime4kRuntime.onRawUnavailable(width,height,GraphicsStatus.FILTER_FAILED);
-            return 0;
-        }
-        Anime4kRuntime.onRawFrame(sourceWidth,sourceHeight,width,height,pipeline);
-        int outputWidth = pipeline.outputWidth(), outputHeight = pipeline.outputHeight();
-        if (output == 0 || outputWidth <= 0 || outputHeight <= 0 || outputWidth > 16384 || outputHeight > 16384) return 0;
-        return (output & 0xffffffffL) | ((long) outputWidth << 32) | ((long) outputHeight << 48);
-    }
     public static void release() {
-        if (installed) nativeResetContext(true);
+        if (installed) nativeResetContext();
         // The host preserves its EGL context on pause. Keep this reusable
         // pipeline object so resume can allocate fresh targets on demand.
         if (pipeline != null) pipeline.release();
@@ -192,7 +151,5 @@ public final class KirikiroidRawFrameBridge {
     private static native int nativeInstall(String library);
     private static native void nativeBeginFrame(int width,int height);
     private static native void nativeEndFrame();
-    private static native boolean nativePrepareCarrier(int width,int height);
-    private static native boolean nativeUploadCarrier(int texture,int width,int height);
-    private static native void nativeResetContext(boolean release);
+    private static native void nativeResetContext();
 }

@@ -285,9 +285,12 @@ final class ArtemisOfficialSurfaceProxy {
     }
     private void allocate(int width,int height) {
         if (width==inputWidth && height==inputHeight) return;
+        // Adapter-owned storage beyond pipeline targets: the RGBA8 input texture+FBO below plus
+        // producer-side SurfaceTexture image buffers. Also doubles as the early size-rejection
+        // bound so an oversized stage fails before any pipeline allocation.
         long reserve=Math.multiplyExact(Math.multiplyExact((long)width,height),16L);
         GLES30.glGetIntegerv(GLES30.GL_MAX_TEXTURE_SIZE,scratch,0);
-        if (width<=0||height<=0||width>scratch[0]||height>scratch[0]||reserve>=Anime4kPostProcessor.TARGET_MEMORY_BUDGET_BYTES)
+        if (width<=0||height<=0||width>scratch[0]||height>scratch[0]||reserve>=CnnPipeline.TARGET_MEMORY_BUDGET_BYTES)
             throw new IllegalStateException("Input size unavailable");
         if (pipeline!=null) pipeline.release();
         if(input!=0) {scratch[0]=input;GLES30.glDeleteTextures(1,scratch,0);}
@@ -321,7 +324,7 @@ final class ArtemisOfficialSurfaceProxy {
         if(frame.original) {
             result=pipeline.renderTexture(input,frame.width,frame.height,screenWidth,screenHeight);
             ow=pipeline.outputWidth();oh=pipeline.outputHeight();
-            state=pipeline.isFailed()?GraphicsStatus.FILTER_FAILED:pipeline.bypassReason()!=Anime4kPostProcessor.BYPASS_NONE?
+            state=pipeline.isFailed()?GraphicsStatus.FILTER_FAILED:pipeline.bypassReason()!=CnnPipeline.BYPASS_NONE?
                     GraphicsStatus.SIZE_UNAVAILABLE:GraphicsStatus.READY;
         } else state=GraphicsStatus.WAITING;
         GraphicsOutputSize.Size v=GraphicsOutputSize.fit(frame.width,frame.height,screenWidth,screenHeight);
