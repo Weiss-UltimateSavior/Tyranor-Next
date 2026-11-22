@@ -479,6 +479,7 @@ struct FrameDirtyTracker {
     static constexpr size_t kMaxOutsideUniforms = 512;
     static constexpr size_t kMaxProgramUniforms = 1024;
     static constexpr size_t kMaxTexParamsPerTexture = 32;
+    static constexpr size_t kMaxTrackedCaps = 64;
     uint64_t frameHash = 0, previousHash = 0, lastExternalMutation = 0, nextMutationId = 1;
     int previousW = 0, previousH = 0;
     bool hasPrevious = false, frameValid = true;
@@ -492,9 +493,17 @@ struct FrameDirtyTracker {
     GLenum lastCullFace = GL_BACK, lastFrontFace = GL_CCW;
     GLenum lastBlendFunc[4] = {GL_ONE, GL_ZERO, GL_ONE, GL_ZERO};
     GLenum lastBlendEq[2] = {GL_FUNC_ADD, GL_FUNC_ADD};
+    GLenum lastStencilFunc = GL_ALWAYS;
+    GLint lastStencilRef = 0;
+    GLuint lastStencilFuncMask = ~0u;
+    GLenum lastStencilOp[3] = {GL_KEEP, GL_KEEP, GL_KEEP};
+    GLuint lastStencilWriteMask = ~0u;
+    GLenum lastDepthFunc = GL_LESS;
     bool hasClearColor = false, hasClearDepthf = false, hasClearStencil = false;
     bool hasViewport = false, hasCullFace = false, hasFrontFace = false;
     bool hasBlendFunc = false, hasBlendEq = false;
+    bool hasStencilFunc = false, hasStencilOp = false, hasStencilMask = false, hasDepthFunc = false;
+    std::unordered_map<GLenum, bool> lastCapEnabled;
     bool primitiveRestartFixed = false, primitiveRestartSynced = false;
     GLuint logicalFramebuffer = 0, logicalReadFramebuffer = 0, currentProgram = 0;
     GLuint arrayBuffer = 0, elementArrayBuffer = 0;
@@ -513,6 +522,8 @@ struct FrameDirtyTracker {
     bool stageRedirected = false, stageReadRedirected = false, stageDrawnThisFrame = false;
     bool stageFailedThisFrame = false, windowWrittenOutsideStage = false;
     bool stageColorClearedAtStart = false, stageColorWriteStarted = false;
+    bool stageDepthClearedAtStart = false, stageDepthUsed = false;
+    bool stageStencilClearedAtStart = false, stageStencilUsed = false;
 
     static void mix64(uint64_t& h, uint64_t v) {
         v ^= v >> 33;
@@ -603,9 +614,15 @@ struct FrameDirtyTracker {
         windowWrittenOutsideStage = false;
         stageColorClearedAtStart = false;
         stageColorWriteStarted = false;
+        stageDepthClearedAtStart = false;
+        stageDepthUsed = false;
+        stageStencilClearedAtStart = false;
+        stageStencilUsed = false;
         hasClearColor = hasClearDepthf = hasClearStencil = false;
         hasViewport = hasCullFace = hasFrontFace = false;
         hasBlendFunc = hasBlendEq = false;
+        hasStencilFunc = hasStencilOp = hasStencilMask = hasDepthFunc = false;
+        lastCapEnabled.clear();
         primitiveRestartFixed = false;
         primitiveRestartSynced = false;
     }
@@ -622,6 +639,8 @@ struct FrameDirtyTracker {
         hasClearColor = hasClearDepthf = hasClearStencil = false;
         hasViewport = hasCullFace = hasFrontFace = false;
         hasBlendFunc = hasBlendEq = false;
+        hasStencilFunc = hasStencilOp = hasStencilMask = hasDepthFunc = false;
+        lastCapEnabled.clear();
         primitiveRestartFixed = false;
         primitiveRestartSynced = false;
         stageRedirected = false;
@@ -724,16 +743,25 @@ struct FrameDirtyTracker {
     }
 
     void beforeStageColorWrite() {
-        if (!stageFrame || logicalFramebuffer != 0 || stageColorWriteStarted) return;
-        stageColorWriteStarted = true;
-        if (!stageColorClearedAtStart) frameValid = false;
+        if (!stageFrame || logicalFramebuffer != 0) return;
+        if (!stageColorWriteStarted) {
+            stageColorWriteStarted = true;
+            if (!stageColorClearedAtStart) frameValid = false;
+        }
+        // If depth or stencil testing is active on the stage FBO without a prior full-surface
+        // clear in this frame, rendering depends on previous-frame depth/stencil pixels:
+        // fail closed so static reuse cannot treat the frame as a pure function of commands.
+        if (glIsEnabled(GL_DEPTH_TEST) != GL_FALSE) {
+            stageDepthUsed = true;
+            if (!stageDepthClearedAtStart) frameValid = false;
+        }
+        if (glIsEnabled(GL_STENCIL_TEST) != GL_FALSE) {
+            stageStencilUsed = true;
+            if (!stageStencilClearedAtStart) frameValid = false;
+        }
     }
 
-    bool isFullUnscissoredColorClear(GLbitfield mask, bool checkStageScissorBounds) const {
-        if ((mask & GL_COLOR_BUFFER_BIT) == 0) return false;
-        GLboolean cm[4]{};
-        glGetBooleanv(GL_COLOR_WRITEMASK, cm);
-        if (!(cm[0] && cm[1] && cm[2] && cm[3])) return false;
+    bool isUnscissoredClearBox(bool checkStageScissorBounds) const {
         if (glIsEnabled(GL_SCISSOR_TEST)) {
             if (!checkStageScissorBounds) return false;
             GLint box[4]{};
@@ -747,10 +775,113 @@ struct FrameDirtyTracker {
         return true;
     }
 
+    bool isFullUnscissoredColorClear(GLbitfield mask, bool checkStageScissorBounds) const {
+        if ((mask & GL_COLOR_BUFFER_BIT) == 0) return false;
+        GLboolean cm[4]{};
+        glGetBooleanv(GL_COLOR_WRITEMASK, cm);
+        if (!(cm[0] && cm[1] && cm[2] && cm[3])) return false;
+        return isUnscissoredClearBox(checkStageScissorBounds);
+    }
+
     void noteStageColorClear(GLbitfield mask) {
-        if (!stageFrame || logicalFramebuffer != 0 || stageColorWriteStarted) return;
-        if (isFullUnscissoredColorClear(mask, true)) {
-            stageColorClearedAtStart = true;
+        if (!stageFrame || logicalFramebuffer != 0) return;
+        const bool unscissored = isUnscissoredClearBox(true);
+        if (!unscissored) return;
+        if (!stageColorWriteStarted && (mask & GL_COLOR_BUFFER_BIT) != 0) {
+            GLboolean cm[4]{};
+            glGetBooleanv(GL_COLOR_WRITEMASK, cm);
+            if (cm[0] && cm[1] && cm[2] && cm[3]) {
+                stageColorClearedAtStart = true;
+            }
+        }
+        if (!stageDepthUsed && (mask & GL_DEPTH_BUFFER_BIT) != 0) {
+            GLboolean dm = GL_FALSE;
+            glGetBooleanv(GL_DEPTH_WRITEMASK, &dm);
+            if (dm != GL_FALSE) {
+                stageDepthClearedAtStart = true;
+            }
+        }
+        if (!stageStencilUsed && (mask & GL_STENCIL_BUFFER_BIT) != 0) {
+            GLint sMask = 0;
+            GLint sBits = 8;
+            glGetIntegerv(GL_STENCIL_WRITEMASK, &sMask);
+            glGetIntegerv(GL_STENCIL_BITS, &sBits);
+            const GLuint fullMask = (sBits >= 32) ? ~0u : (sBits > 0 ? ((1u << sBits) - 1u) : 0u);
+            if (fullMask != 0u && (static_cast<GLuint>(sMask) & fullMask) == fullMask) {
+                stageStencilClearedAtStart = true;
+            }
+        }
+    }
+
+    void noteCapEnabled(GLenum cap, bool enabled, bool inWindow) {
+        auto it = lastCapEnabled.find(cap);
+        if (it != lastCapEnabled.end() && it->second == enabled) return;
+        if (it == lastCapEnabled.end() && lastCapEnabled.size() >= kMaxTrackedCaps) {
+            if (!inWindow) externalMutationCounter.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        lastCapEnabled[cap] = enabled;
+        if (!inWindow) externalMutationCounter.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void noteStencilFunc(GLenum func, GLint ref, GLuint mask, bool inWindow) {
+        if (hasStencilFunc && lastStencilFunc == func && lastStencilRef == ref && lastStencilFuncMask == mask) return;
+        lastStencilFunc = func;
+        lastStencilRef = ref;
+        lastStencilFuncMask = mask;
+        hasStencilFunc = true;
+        if (!inWindow) externalMutationCounter.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void noteStencilOp(GLenum fail, GLenum zfail, GLenum zpass, bool inWindow) {
+        const GLenum vals[3] = {fail, zfail, zpass};
+        if (hasStencilOp && !std::memcmp(vals, lastStencilOp, sizeof(vals))) return;
+        std::memcpy(lastStencilOp, vals, sizeof(vals));
+        hasStencilOp = true;
+        if (!inWindow) externalMutationCounter.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void noteStencilMask(GLuint mask, bool inWindow) {
+        if (hasStencilMask && lastStencilWriteMask == mask) return;
+        lastStencilWriteMask = mask;
+        hasStencilMask = true;
+        if (!inWindow) externalMutationCounter.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void noteDepthFunc(GLenum func, bool inWindow) {
+        if (hasDepthFunc && lastDepthFunc == func) return;
+        lastDepthFunc = func;
+        hasDepthFunc = true;
+        if (!inWindow) externalMutationCounter.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void onProgramDeleted(GLuint program) {
+        if (!program) return;
+        const bool tracked = programUniforms.erase(program) > 0
+                | lastOutsideUniforms.erase(program) > 0
+                | programUniformUnknown.erase(program) > 0;
+        if (program == currentProgram) {
+            // A deleted program remains active until unbound; mark its uniform snapshot unknown
+            // while it is still bound so subsequent draws fail closed.
+            programUniformUnknown.insert(program);
+        }
+        if (tracked) {
+            if (stageFrame) frameValid = false;
+            else externalMutationCounter.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+
+    void onProgramLinked(GLuint program, bool linkOk) {
+        if (!program) return;
+        const bool hadUniforms = programUniforms.erase(program) > 0
+                | lastOutsideUniforms.erase(program) > 0
+                | programUniformUnknown.erase(program) > 0;
+        if (!linkOk) {
+            programUniformUnknown.insert(program);
+        }
+        if (hadUniforms || !linkOk) {
+            if (stageFrame) frameValid = false;
+            else externalMutationCounter.fetch_add(1, std::memory_order_relaxed);
         }
     }
 
@@ -847,6 +978,10 @@ struct FrameDirtyTracker {
         stageFailedThisFrame = false;
         stageColorClearedAtStart = false;
         stageColorWriteStarted = false;
+        stageDepthClearedAtStart = false;
+        stageDepthUsed = false;
+        stageStencilClearedAtStart = false;
+        stageStencilUsed = false;
     }
 
     bool finishFrame(int w, int h, bool original) {
@@ -991,7 +1126,8 @@ struct FrameDirtyTracker {
     //   0x133 cullFace event         0x134 frontFace (event + snapshot)
     //   0x135 bindVertexArray[OES]   0x136 bound-texture content mutation (version mix)
     //   0x137 blit read-source block 0x138 drawArrays common block
-    //   0x139 draw-state cull snapshot; 0x140 program-uniform snapshot; 0x200+i attributes.
+    //   0x139 draw-state cull snapshot; 0x13A framebufferRenderbuffer event;
+    //   0x140 program-uniform snapshot; 0x200+i attributes.
     void hashOp(uint64_t tag, uint64_t a = 0, uint64_t b = 0, uint64_t c = 0, uint64_t d = 0) {
         if (!stageFrame) return;
         mix64(frameHash, tag);
@@ -1027,17 +1163,34 @@ bool drainStageGlErrors() {
 }
 
 void handleStageContextLost(EGLContext currentCtx) {
+    bool lostTrackedStage = false;
     {
         std::lock_guard<std::mutex> lock(stageResourcesMutex);
-        if (stageResources.context == currentCtx) {
+        if (stageResources.context == currentCtx && currentCtx != EGL_NO_CONTEXT) {
             stageResources.abandon();
+            stageResources.lastTrackedContext = EGL_NO_CONTEXT;
+            lostTrackedStage = true;
         }
     }
     frameTracker.invalidateHistory();
     frameTracker.stageRedirected = false;
     frameTracker.stageReadRedirected = false;
     frameTracker.windowWrittenOutsideStage = false;
+    singleContextMode = false;
+    logicalWidth = 0;
+    logicalHeight = 0;
     directOutput = true;
+    if (lostTrackedStage) {
+        // Notify Java immediately so singlePipeline targets (up to 256 MiB budget),
+        // singleMode, and singleOutputSize are released instead of staying stranded
+        // until process/Activity teardown. contextDestroyed() abandons without GL calls.
+        Env env;
+        if (env.value && bridge && contextDestroyedMethod) {
+            env.value->CallStaticVoidMethod(bridge, contextDestroyedMethod);
+            env.clear();
+        }
+        contextGeneration.fetch_add(1);
+    }
     status(3);
 }
 
@@ -1335,6 +1488,33 @@ void hookGlFramebufferTexture2D(GLenum target, GLenum attachment, GLenum textarg
                 && (target == GL_FRAMEBUFFER || target == GL_DRAW_FRAMEBUFFER)
                 && frameTracker.logicalFramebuffer != 0) {
             frameTracker.fboColorTextures[frameTracker.logicalFramebuffer] = texture;
+        }
+    }
+}
+
+void hookGlFramebufferRenderbuffer(GLenum target, GLenum attachment, GLenum renderbuffertarget, GLuint renderbuffer) {
+    glFramebufferRenderbuffer(target, attachment, renderbuffertarget, renderbuffer);
+    if (!inHostGl && singleContextMode.load() && !directOutput.load()) {
+        const GLuint fbo = (target == GL_READ_FRAMEBUFFER)
+                ? frameTracker.logicalReadFramebuffer
+                : frameTracker.logicalFramebuffer;
+        const bool isColorAttachment = (attachment >= GL_COLOR_ATTACHMENT0
+                && attachment < GL_COLOR_ATTACHMENT0 + 32);
+        if (fbo != 0 && isColorAttachment) {
+            frameTracker.fboColorTextures.erase(fbo);
+            if (stageFrame) {
+                // Renderbuffer color attachments are not version-tracked in the 2D texture
+                // model; fail closed so the frame is judged dirty.
+                frameTracker.frameValid = false;
+            } else {
+                externalMutationCounter.fetch_add(1, std::memory_order_relaxed);
+            }
+        } else {
+            if (stageFrame) {
+                frameTracker.hashOp(0x13A, target, attachment, renderbuffertarget, renderbuffer);
+            } else {
+                externalMutationCounter.fetch_add(1, std::memory_order_relaxed);
+            }
         }
     }
 }
@@ -1696,6 +1876,22 @@ void hookGlUseProgram(GLuint program) {
     }
 }
 
+void hookGlDeleteProgram(GLuint program) {
+    glDeleteProgram(program);
+    if (!inHostGl && singleContextMode.load() && !directOutput.load()) {
+        frameTracker.onProgramDeleted(program);
+    }
+}
+
+void hookGlLinkProgram(GLuint program) {
+    glLinkProgram(program);
+    if (!inHostGl && singleContextMode.load() && !directOutput.load()) {
+        GLint linked = GL_FALSE;
+        glGetProgramiv(program, GL_LINK_STATUS, &linked);
+        frameTracker.onProgramLinked(program, linked != GL_FALSE);
+    }
+}
+
 void hookGlViewport(GLint x, GLint y, GLsizei width, GLsizei height) {
     glViewport(x, y, width, height);
     if (!inHostGl && singleContextMode.load()) {
@@ -1720,6 +1916,7 @@ void hookGlEnable(GLenum cap) {
             frameTracker.primitiveRestartFixed = true;
             frameTracker.primitiveRestartSynced = true;
         }
+        if (!directOutput.load()) frameTracker.noteCapEnabled(cap, true, stageFrame);
         frameTracker.hashOp(0x113, cap);
     }
 }
@@ -1731,6 +1928,7 @@ void hookGlDisable(GLenum cap) {
             frameTracker.primitiveRestartFixed = false;
             frameTracker.primitiveRestartSynced = true;
         }
+        if (!directOutput.load()) frameTracker.noteCapEnabled(cap, false, stageFrame);
         frameTracker.hashOp(0x114, cap);
     }
 }
@@ -1830,22 +2028,34 @@ void hookGlBlendEquationSeparate(GLenum mrgb, GLenum ma) {
 
 void hookGlStencilFunc(GLenum func, GLint ref, GLuint mask) {
     glStencilFunc(func, ref, mask);
-    if (!inHostGl && singleContextMode.load()) frameTracker.hashOp(0x11A, func, static_cast<uint64_t>(ref), mask);
+    if (!inHostGl && singleContextMode.load()) {
+        if (!directOutput.load()) frameTracker.noteStencilFunc(func, ref, mask, stageFrame);
+        frameTracker.hashOp(0x11A, func, static_cast<uint64_t>(ref), mask);
+    }
 }
 
 void hookGlStencilOp(GLenum fail, GLenum zfail, GLenum zpass) {
     glStencilOp(fail, zfail, zpass);
-    if (!inHostGl && singleContextMode.load()) frameTracker.hashOp(0x11B, fail, zfail, zpass);
+    if (!inHostGl && singleContextMode.load()) {
+        if (!directOutput.load()) frameTracker.noteStencilOp(fail, zfail, zpass, stageFrame);
+        frameTracker.hashOp(0x11B, fail, zfail, zpass);
+    }
 }
 
 void hookGlStencilMask(GLuint mask) {
     glStencilMask(mask);
-    if (!inHostGl && singleContextMode.load()) frameTracker.hashOp(0x11C, mask);
+    if (!inHostGl && singleContextMode.load()) {
+        if (!directOutput.load()) frameTracker.noteStencilMask(mask, stageFrame);
+        frameTracker.hashOp(0x11C, mask);
+    }
 }
 
 void hookGlDepthFunc(GLenum func) {
     glDepthFunc(func);
-    if (!inHostGl && singleContextMode.load()) frameTracker.hashOp(0x11D, func);
+    if (!inHostGl && singleContextMode.load()) {
+        if (!directOutput.load()) frameTracker.noteDepthFunc(func, stageFrame);
+        frameTracker.hashOp(0x11D, func);
+    }
 }
 
 // Clear-value state belongs in the frame hash alongside glClearColor (0x116):
@@ -2273,7 +2483,15 @@ EGLContext hookEglCreateContext(EGLDisplay display, EGLConfig config, EGLContext
                     __android_log_print(ANDROID_LOG_INFO, "ArtemisOfficial", "Upgraded Artemis EGLContext to GLES3");
                     return ctx;
                 }
-                es3UpgradeFailed = true;
+                const EGLint eglErr = eglGetError();
+                // Permanently latch only on definitive unsupported-config/attribute errors;
+                // transient failures such as EGL_BAD_ALLOC fall back for this call without
+                // permanently disabling future ES3 upgrades.
+                if (eglErr == EGL_BAD_MATCH || eglErr == EGL_BAD_CONFIG || eglErr == EGL_BAD_ATTRIBUTE) {
+                    es3UpgradeFailed = true;
+                }
+                __android_log_print(ANDROID_LOG_WARN, "ArtemisOfficial",
+                        "GLES3 context upgrade failed (eglError=0x%x); falling back to requested context", eglErr);
             }
         }
     }
@@ -2338,7 +2556,22 @@ EGLSurface createSurface(EGLDisplay display,EGLConfig config,EGLNativeWindowType
                 ? createDirectSurface(display,config,window,attributes) : EGL_NO_SURFACE;
     }
     // lifecycle excludes concurrent consumer creation and handle retirement.
-    if(!noSurfaces())return eglCreateWindowSurface(display,config,window,attributes);
+    if(!noSurfaces()) {
+        // Fail closed: an existing registered surface (e.g. create-before-destroy or a prior
+        // destroySurface failure) must not keep single-context stage redirection active while
+        // the new unregistered surface swaps its default backbuffer.
+        singleContextMode = false;
+        directOutput = true;
+        logicalWidth = 0;
+        logicalHeight = 0;
+        resetStageRedirectOnScopeExit();
+        stageFrame = false;
+        frameTracker.invalidateHistory();
+        status(3);
+        __android_log_print(ANDROID_LOG_WARN, "ArtemisOfficial",
+                "Surface registry non-empty on createSurface; falling back to direct output");
+        return eglCreateWindowSurface(display,config,window,attributes);
+    }
     auto direct = [&]() { status(3); return createDirectSurface(display,config,window,attributes); };
     EGLint renderable = 0;
     // A denied import surface (unhooked GLES3 content-change entry points) keeps
@@ -2502,8 +2735,22 @@ EGLBoolean destroySurface(EGLDisplay display,EGLSurface surface) {
     std::lock_guard<std::mutex> operation(state->operationMutex);
     std::lock_guard<std::mutex> lifecycle(surfaceLifecycleMutex);
     if(state->destroyed)return EGL_FALSE;
+    auto failClosedOnDestroyError = [&]() {
+        state->direct = true;
+        if (state->singleContext) {
+            singleContextMode = false;
+            directOutput = true;
+            logicalWidth = 0;
+            logicalHeight = 0;
+            resetStageRedirectOnScopeExit();
+            stageFrame = false;
+            frameTracker.invalidateHistory();
+        }
+        status(3);
+        return EGL_FALSE;
+    };
     if(state->actual!=EGL_NO_SURFACE) {
-        if(!eglDestroySurface(display,state->actual))return EGL_FALSE;
+        if(!eglDestroySurface(display,state->actual))return failClosedOnDestroyError();
         EGLSurface destroyed=state->actual;
         state->actual=EGL_NO_SURFACE;
         // If retiring the retained producer fails, do not keep a freed actual
@@ -2514,7 +2761,7 @@ EGLBoolean destroySurface(EGLDisplay display,EGLSurface surface) {
         }
     }
     if(state->retainedProducer!=EGL_NO_SURFACE) {
-        if(!eglDestroySurface(display,state->retainedProducer))return EGL_FALSE;
+        if(!eglDestroySurface(display,state->retainedProducer))return failClosedOnDestroyError();
         state->retainedProducer=EGL_NO_SURFACE;
     }
     const bool disconnected=state->singleContext || state->direct || disconnect() == DisconnectResult::Detached;
@@ -2615,9 +2862,12 @@ EGLBoolean swap(EGLDisplay display,EGLSurface surface) {
                 stageSourceLoc=stageResources.sourceLoc;
             }
         }
+        // Only skip presenting the stage quad when the engine directly wrote the window
+        // backbuffer outside the stage window (and did not redraw the stage). Arbitrary
+        // off-stage mutations (externalMutationCounter) still mark frameDirty below without
+        // suppressing stage presentation and exposing an undrawn backbuffer.
         const bool skipUnwrittenStage = !frameTracker.stageDrawnThisFrame
-                && (frameTracker.windowWrittenOutsideStage
-                    || externalMutationCounter.load(std::memory_order_relaxed) != frameTracker.lastExternalMutation);
+                && frameTracker.windowWrittenOutsideStage;
         if(!stageValid || skipUnwrittenStage) {
             frameTracker.invalidateHistory();
             Env env;
@@ -2631,7 +2881,9 @@ EGLBoolean swap(EGLDisplay display,EGLSurface surface) {
             frameTracker.windowWrittenOutsideStage=false;
             return eglSwapBuffers(display,actualSurface);
         }
-        const bool frameDirty=frameTracker.stageDrawnThisFrame ? frameTracker.finishFrame(lw,lh,true) : false;
+        const bool frameDirty=frameTracker.stageDrawnThisFrame
+                ? frameTracker.finishFrame(lw,lh,true)
+                : (externalMutationCounter.load(std::memory_order_relaxed) != frameTracker.lastExternalMutation);
         StageGlState saved;
         if (saved.contextLost) {
             handleStageContextLost(currentCtx);
@@ -2991,6 +3243,13 @@ static const char* const kDeniedContentChangeImports[] = {
     "glUseProgramStages", "glActiveShaderProgram", "glValidateProgramPipeline",
     "glGetProgramPipelineiv", "glProgramParameteri",
     "glDrawBuffers",
+    // Unhooked render-state setters (zero imports in libartemis.so / libartemis-v6.so;
+    // fail closed to the producer path for future kernels instead of risking mis-clean reuse).
+    "glBlendFunc", "glBlendEquation", "glBlendColor",
+    "glDepthMask", "glDepthRangef", "glPolygonOffset",
+    "glTexParameterf", "glTexParameterfv", "glTexParameteriv",
+    "glStencilFuncSeparate", "glStencilOpSeparate", "glStencilMaskSeparate",
+    "glSampleCoverage", "glLineWidth",
 };
 
 bool installArtemisOfficialGraphics(void* handle,ANativeActivity* activity,const std::string& path) {
@@ -3136,7 +3395,10 @@ bool installArtemisOfficialGraphics(void* handle,ANativeActivity* activity,const
             {"glCullFace",reinterpret_cast<void*>(hookGlCullFace)},
             {"glFrontFace",reinterpret_cast<void*>(hookGlFrontFace)},
             {"glBindVertexArray",reinterpret_cast<void*>(hookGlBindVertexArray)},
-            {"glBindVertexArrayOES",reinterpret_cast<void*>(hookGlBindVertexArrayOES)}
+            {"glBindVertexArrayOES",reinterpret_cast<void*>(hookGlBindVertexArrayOES)},
+            {"glFramebufferRenderbuffer",reinterpret_cast<void*>(hookGlFramebufferRenderbuffer)},
+            {"glDeleteProgram",reinterpret_cast<void*>(hookGlDeleteProgram)},
+            {"glLinkProgram",reinterpret_cast<void*>(hookGlLinkProgram)}
         };
         std::map<std::string,int> found;
         std::vector<std::string> deniedImports;
@@ -3164,7 +3426,18 @@ bool installArtemisOfficialGraphics(void* handle,ANativeActivity* activity,const
             }
             ok=collect(image,changes,reinterpret_cast<void**>(image.base+relocs[i].r_offset),before,hook->second)&&ok;++found[name];
         }
-        for(auto& hook:hooks)if(!found[hook.first])ok=false;
+        std::string missingHooks;
+        for(auto& hook:hooks) {
+            if(!found[hook.first]) {
+                ok=false;
+                if(!missingHooks.empty())missingHooks+=',';
+                missingHooks+=hook.first;
+            }
+        }
+        if(!missingHooks.empty()) {
+            __android_log_print(ANDROID_LOG_WARN,"ArtemisOfficial",
+                    "Mandatory PLT hooks missing: %s",missingHooks.c_str());
+        }
         if(!deniedImports.empty()) {
             std::string list;
             for(auto& d:deniedImports){if(!list.empty())list+=',';list+=d;}

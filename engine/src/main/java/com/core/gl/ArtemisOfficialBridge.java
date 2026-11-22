@@ -230,11 +230,13 @@ public final class ArtemisOfficialBridge implements ArtemisPerformanceOverlay.So
         }
     }
 
-    /** Releases or abandons single-context filter GL resources when native tears down its EGLContext. */
+    /** Abandons single-context filter GL resources when native tears down or loses its EGLContext. */
     @Keep
     public static void contextDestroyed() {
         synchronized (SINGLE_LOCK) {
-            disposeSinglePipelineLocked(false);
+            // Context is already being destroyed or has reported GL_CONTEXT_LOST_KHR:
+            // abandon GL names without issuing glDelete* calls on a dead/lost context.
+            disposeSinglePipelineLocked(true);
             // Context recreation rebuilds from a fresh budget: deterministic construction
             // failures counted against the torn-down context must not survive its
             // disposal, or a healthy new context would inherit a spent circuit breaker.
@@ -244,6 +246,7 @@ public final class ArtemisOfficialBridge implements ArtemisPerformanceOverlay.So
             state = GraphicsStatus.WAITING;
         }
         singleMode = false;
+        singleOutputSize.clear();
         singleStats.reset();
     }
 
