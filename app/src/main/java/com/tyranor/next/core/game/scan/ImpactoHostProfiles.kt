@@ -81,7 +81,8 @@ object ImpactoHostProfiles {
     /**
      * 解析规则文本（纯函数，供 JVM 单测）。格式与宿主仓库 `engine/impacto/profiles.json` 一致：
      * - `profiles[]`：`id`、`name`、`language`（可为 null）、`variantOf`（可缺省）、
-     *   `detect`（可为 null）= `{ allOf: [条目…], textArchive?: 条目 }`；`textArchive` 同样必须存在。
+     *   `detect`（可为 null）= `{ allOf: [条目…], textArchive?: 条目, noneOf?: [条目…] }`；`textArchive` 同样必须存在，
+     *   `noneOf`（可缺省）里的条目必须都不存在，不得与必须存在的条目重叠。
      * - `unsupportedLayouts[]`（可缺省）：`{ id, allOf: [条目…], tryProfile }`，`allOf` 至少两个不同条目，
  *   `tryProfile` 必须是上面某个 profile。
      *
@@ -108,12 +109,19 @@ object ImpactoHostProfiles {
             val textArchive = detect.optionalString("textArchive")
             val required = entries + listOfNotNull(textArchive)
             require(entries.isNotEmpty() && required.all(::isValidEntry))
+            val excluded = when (val value = detect.opt("noneOf")) {
+                null -> emptyList()
+                is JSONArray -> value.strings()
+                else -> throw IllegalArgumentException("noneOf")
+            }
+            require(excluded.all(::isValidEntry) && excluded.none { it in required })
             games += ImpactoGameCatalog.Game(
                 profileId = id,
                 title = name,
                 requiredEntries = required.toSet(),
                 family = profile.optionalString("variantOf"),
                 textLanguage = profile.optionalString("language"),
+                excludedEntries = excluded.toSet(),
             )
         }
         val layouts = ArrayList<ImpactoGameCatalog.UnsupportedLayout>()

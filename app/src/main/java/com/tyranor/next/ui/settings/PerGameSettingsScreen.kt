@@ -783,6 +783,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
             )
             PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_IMPACTO_CLOSE_BACKLOG_AT_END, impacto.closeBacklogAtEnd)
             PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_IMPACTO_DELUSION_MOUSE, impacto.delusionMouse)
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_IMPACTO_DEBUG_MODE, impacto.debugMode)
             PerGameSettingsStore.setStr(
                 ctx,
                 gid,
@@ -1690,6 +1691,11 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                 globalImpacto.logLevel,
                                 impacto.logLevel,
                             ) { impactoOverride = impacto.copy(logLevel = it) }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_impacto_debug_mode),
+                                globalImpacto.debugMode,
+                                impacto.debugMode,
+                            ) { impactoOverride = impacto.copy(debugMode = it) }
                             Text(
                                 stringResource(R.string.engine_settings_impacto_module_description),
                                 style = MaterialTheme.typography.bodyMedium,

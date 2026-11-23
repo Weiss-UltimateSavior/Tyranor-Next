@@ -167,6 +167,11 @@ internal fun ImpactoSettingsScreen() {
                                 impactoLogLevelOptions(),
                                 settings.logLevel,
                             ) { settings = settings.copy(logLevel = EngineSettingsStore.normalizeImpactoLogLevel(it)) }
+                            ImpactoSwitchRow(
+                                stringResource(R.string.engine_settings_impacto_debug_mode),
+                                settings.debugMode,
+                                summary = stringResource(R.string.engine_settings_impacto_debug_mode_summary),
+                            ) { settings = settings.copy(debugMode = it) }
                             Text(
                                 stringResource(R.string.engine_settings_impacto_note),
                                 style = MaterialTheme.typography.bodyMedium,
@@ -216,10 +221,16 @@ private fun HostStatusRow(installed: Boolean) {
 }
 
 @Composable
-private fun ImpactoSwitchRow(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun ImpactoSwitchRow(
+    title: String,
+    checked: Boolean,
+    summary: String? = null,
+    onCheckedChange: (Boolean) -> Unit,
+) {
     SwitchPreference(
         modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
         title = title,
+        summary = summary,
         checked = checked,
         onCheckedChange = onCheckedChange,
     )
