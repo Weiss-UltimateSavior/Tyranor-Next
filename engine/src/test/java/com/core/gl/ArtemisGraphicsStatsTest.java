@@ -168,4 +168,150 @@ public class ArtemisGraphicsStatsTest {
         assertTrue(Double.isNaN(sample.gpuMs));
     }
 
+    @Test public void displayTrackerHoldsLastTimingDuringStaticScenesAndClearsOnProblem() {
+        ArtemisGraphicsStats stats = new ArtemisGraphicsStats();
+        ArtemisGraphicsStats.DisplayTimingTracker tracker = new ArtemisGraphicsStats.DisplayTimingTracker();
+        stats.configureNodes(GraphicsFilterChain.parse("v1:lanczos,cas"), "GPU");
+        stats.frame(1280, 720, 2560, 1440, 2133, 1200);
+        stats.nodeFrame(new int[]{1280, 2560}, new int[]{720, 1440},
+                new int[]{2560, 2560}, new int[]{1440, 1440}, new boolean[]{true, true});
+        stats.nodeGpu(0, 8.5); stats.nodeGpu(1, 1.5); stats.gpu(-1); stats.presented();
+
+        ArtemisGraphicsStats.ResolvedTimings dynamic = tracker.resolve(stats.snapshot(1_000_000_000L), false);
+        assertTrue(dynamic.complete);
+        assertEquals(10.0, dynamic.gpuMs, 0.001);
+        assertEquals(8.5, dynamic.nodeGpuMs[0], 0.001);
+        assertEquals(1.5, dynamic.nodeGpuMs[1], 0.001);
+
+        // Static interval under host dirty-frame reuse (no new GPU samples, status stays READY): must hold 10.0ms instead of '-'
+        stats.frame(1280, 720, 2560, 1440, 2133, 1200);
+        stats.nodeFrame(new int[]{1280, 2560}, new int[]{720, 1440},
+                new int[]{2560, 2560}, new int[]{1440, 1440}, new boolean[]{true, true});
+        stats.gpu(-1); stats.presented();
+        ArtemisGraphicsStats.ResolvedTimings staticSample = tracker.resolve(stats.snapshot(2_000_000_000L), false);
+        assertTrue(staticSample.complete);
+        assertEquals(10.0, staticSample.gpuMs, 0.001);
+        assertEquals(8.5, staticSample.nodeGpuMs[0], 0.001);
+        assertEquals(1.5, staticSample.nodeGpuMs[1], 0.001);
+
+        // Explicit GPU timer error (-1 from GL_GPU_DISJOINT_EXT) while status READY must clear to '-'
+        stats.nodeGpu(0, -1); stats.gpu(-1);
+        ArtemisGraphicsStats.ResolvedTimings timerFailed = tracker.resolve(stats.snapshot(3_000_000_000L), false);
+        assertFalse(timerFailed.complete);
+        assertTrue(Double.isNaN(timerFailed.gpuMs));
+        assertTrue(Double.isNaN(timerFailed.nodeGpuMs[0]));
+
+        // Recover with new sample, then verify status != READY clears to '-'
+        stats.nodeGpu(0, 6.0); stats.nodeGpu(1, 2.0); stats.gpu(-1);
+        ArtemisGraphicsStats.ResolvedTimings recovered = tracker.resolve(stats.snapshot(4_000_000_000L), false);
+        assertTrue(recovered.complete);
+        assertEquals(8.0, recovered.gpuMs, 0.001);
+
+        ArtemisGraphicsStats.ResolvedTimings statusIssue = tracker.resolve(stats.snapshot(5_000_000_000L), true);
+        assertFalse(statusIssue.complete);
+        assertTrue(Double.isNaN(statusIssue.gpuMs));
+        assertTrue(Double.isNaN(statusIssue.nodeGpuMs[0]));
+
+        // Following READY static interval after a problem must stay '-' until a fresh sample arrives
+        ArtemisGraphicsStats.ResolvedTimings afterIssue = tracker.resolve(stats.snapshot(6_000_000_000L), false);
+        assertFalse(afterIssue.complete);
+        assertTrue(Double.isNaN(afterIssue.gpuMs));
+    }
+
+    @Test public void displayTrackerClearsHeldTimingOnOutlierOrInvalidationOrResize() {
+        ArtemisGraphicsStats stats = new ArtemisGraphicsStats();
+        ArtemisGraphicsStats.DisplayTimingTracker tracker = new ArtemisGraphicsStats.DisplayTimingTracker();
+        stats.configureNodes(GraphicsFilterChain.parse("v1:lanczos"), "GPU");
+        stats.frame(1280, 720, 2560, 1440, 2133, 1200);
+        stats.nodeFrame(new int[]{1280}, new int[]{720}, new int[]{2560}, new int[]{1440}, new boolean[]{true});
+        stats.nodeGpu(0, 5.0); stats.gpu(-1);
+        assertEquals(5.0, tracker.resolve(stats.snapshot(1), false).gpuMs, 0.001);
+
+        // Outlier (>1000ms) without valid samples clears held timing
+        stats.nodeGpu(0, 1001);
+        assertTrue(Double.isNaN(tracker.resolve(stats.snapshot(2), false).gpuMs));
+
+        // Re-measure, then resize without new sample clears held timing
+        stats.nodeGpu(0, 5.0);
+        assertEquals(5.0, tracker.resolve(stats.snapshot(3), false).gpuMs, 0.001);
+        stats.frame(1920, 1080, 3840, 2160, 2133, 1200);
+        assertTrue(Double.isNaN(tracker.resolve(stats.snapshot(4), false).gpuMs));
+
+        // Re-measure, then invalidateNodes clears held timing
+        stats.nodeGpu(0, 7.0);
+        assertEquals(7.0, tracker.resolve(stats.snapshot(5), false).gpuMs, 0.001);
+        stats.invalidateNodes();
+        assertTrue(Double.isNaN(tracker.resolve(stats.snapshot(6), false).gpuMs));
+    }
+
+    @Test public void displayTrackerDoesNotMixPartialActiveNodeSamplesWithHeldValues() {
+        ArtemisGraphicsStats stats = new ArtemisGraphicsStats();
+        ArtemisGraphicsStats.DisplayTimingTracker tracker = new ArtemisGraphicsStats.DisplayTimingTracker();
+        stats.configureNodes(GraphicsFilterChain.parse("v1:lanczos,lanczos"), "GPU");
+        stats.frame(1280, 720, 2560, 1440, 2133, 1200);
+        stats.nodeFrame(new int[]{1280, 2560}, new int[]{720, 1440},
+                new int[]{2560, 2560}, new int[]{1440, 1440}, new boolean[]{true, true});
+        stats.nodeGpu(0, 8.0);
+        stats.nodeGpu(1, 2.0);
+        assertEquals(10.0, tracker.resolve(stats.snapshot(1), false).gpuMs, 0.001);
+
+        // Next active interval produces a new sample for node 0 only while node 1 is still pending.
+        stats.resetInterval(1);
+        stats.nodeGpu(0, 3.0);
+        ArtemisGraphicsStats.ResolvedTimings partial = tracker.resolve(stats.snapshot(2), false);
+        assertFalse("Partial active sample must not report complete total", partial.complete);
+        assertTrue("Partial active sample must leave total unavailable", Double.isNaN(partial.gpuMs));
+        assertEquals(3.0, partial.nodeGpuMs[0], 0.001);
+        assertTrue("Missing node in active interval must not borrow old held timing",
+                Double.isNaN(partial.nodeGpuMs[1]));
+
+        // Subsequent static frame must keep last complete active total (10.0) rather than mixing partial (3.0) with held (2.0).
+        ArtemisGraphicsStats.ResolvedTimings heldAfterPartial = tracker.resolve(stats.snapshot(3), false);
+        assertTrue("Static frame after partial active interval must keep last complete total", heldAfterPartial.complete);
+        assertEquals(10.0, heldAfterPartial.gpuMs, 0.001);
+        assertEquals(8.0, heldAfterPartial.nodeGpuMs[0], 0.001);
+        assertEquals(2.0, heldAfterPartial.nodeGpuMs[1], 0.001);
+    }
+
+    @Test public void displayTrackerClearsHeldTimingsWhenTimingGenerationChangesAcrossSameConfig() {
+        ArtemisGraphicsStats stats = new ArtemisGraphicsStats();
+        ArtemisGraphicsStats.DisplayTimingTracker tracker = new ArtemisGraphicsStats.DisplayTimingTracker();
+        GraphicsFilterChain chain = GraphicsFilterChain.parse("v1:lanczos");
+        stats.configureNodes(chain, "GPU");
+        stats.frame(1280, 720, 2560, 1440, 2133, 1200);
+        stats.nodeFrame(new int[]{1280}, new int[]{720}, new int[]{2560}, new int[]{1440}, new boolean[]{true});
+        stats.nodeGpu(0, 6.5);
+        assertEquals(6.5, tracker.resolve(stats.snapshot(1), false).gpuMs, 0.001);
+
+        // Even after resetInterval(0) and reconfiguring with identical chain/dimensions + executed=true,
+        // bumped timingGeneration must prevent stale held values from leaking across generations.
+        stats.resetInterval(0);
+        stats.configureNodes(chain, "GPU");
+        stats.nodeFrame(new int[]{1280}, new int[]{720}, new int[]{2560}, new int[]{1440}, new boolean[]{true});
+        ArtemisGraphicsStats.ResolvedTimings afterReconfig = tracker.resolve(stats.snapshot(2), false);
+        assertFalse(afterReconfig.complete);
+        assertTrue(Double.isNaN(afterReconfig.gpuMs));
+        assertTrue(Double.isNaN(afterReconfig.nodeGpuMs[0]));
+    }
+
+    @Test public void configureNodesClearsUnsnapshottedOverallGpuSampleAcrossGenerations() {
+        ArtemisGraphicsStats stats = new ArtemisGraphicsStats();
+        ArtemisGraphicsStats.DisplayTimingTracker tracker = new ArtemisGraphicsStats.DisplayTimingTracker();
+        GraphicsFilterChain chain = GraphicsFilterChain.parse("v1:lanczos");
+        stats.configureNodes(chain, "GPU");
+        stats.frame(1280, 720, 2560, 1440, 2133, 1200);
+        stats.nodeFrame(new int[]{1280}, new int[]{720}, new int[]{2560}, new int[]{1440}, new boolean[]{true});
+        stats.gpu(8.0);
+
+        // Reconfigure before any snapshot drained the 8.0 ms overall sample: new generation must not inherit it.
+        stats.configureNodes(chain, "GPU");
+        stats.nodeFrame(new int[]{1280}, new int[]{720}, new int[]{2560}, new int[]{1440}, new boolean[]{true});
+        ArtemisGraphicsStats.Snapshot snap = stats.snapshot(1);
+        assertTrue("Reconfigured generation must clear prior unsnapshotted gpuTotalMs/gpuAvailable",
+                Double.isNaN(snap.gpuMs));
+        ArtemisGraphicsStats.ResolvedTimings resolved = tracker.resolve(snap, false);
+        assertFalse(resolved.complete);
+        assertTrue(Double.isNaN(resolved.gpuMs));
+    }
+
 }

@@ -8,8 +8,37 @@ import sys
 import tempfile
 
 
+def check_retained_mrt_guards():
+    """Verify retained_bytes accepts valid upstream gles-mrt exports and rejects malformed inputs."""
+    root = Path(__file__).resolve().parents[1]
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "generate_vnsr_filters", root / "tools" / "generate-vnsr-filters.py")
+    gen = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gen)
+    name = "vnsr-c08-x2.glsl"
+    raw = (root / "engine/patches/vnsr/sources" / name).read_bytes()
+    assert gen.retained_bytes(raw) == raw, name
+
+    for label, needle, repl, expected_msg in (
+        ("missing reconstruction index", b"int index=phase.y*2+phase.x;", b"int index=0;", "Unexpected reconstruction"),
+        ("missing void hook", b"void hook() {", b"vec4 hook() {", "Expected GLES3 MRT fused shader body"),
+        ("missing fragColor0", b"fragColor0=", b"return ", "Expected GLES3 MRT fused shader body"),
+    ):
+        assert needle in raw, label
+        mutated = raw.replace(needle, repl)
+        try:
+            gen.retained_bytes(mutated)
+        except ValueError as failure:
+            assert expected_msg in str(failure), (label, failure)
+        else:
+            raise AssertionError(f"{label} must fail with ValueError")
+    print("PASS: retained MRT structural guards")
+
+
 def main():
     """Mutate isolated copies; never alter the working tree's pinned records."""
+    check_retained_mrt_guards()
     root = Path(__file__).resolve().parents[1]
     with tempfile.TemporaryDirectory(prefix="vnsr-generator-") as temp:
         target = Path(temp)
@@ -36,6 +65,7 @@ def main():
             cases.append(f"asset bytes:{name}")
         for name in names:
             cases.append(f"source bytes:{name}")
+        cases.append(f"asset missing:{names[0]}")
 
         for kind in cases:
             data = json.loads(original)
@@ -79,10 +109,31 @@ def main():
                 (sources_dir/tname).write_bytes((sources_dir/tname).read_bytes()+b" ")
             elif kind == "license bytes":
                 (assets_dir/"LICENSE-MIT").write_bytes((assets_dir/"LICENSE-MIT").read_bytes()+b" ")
+            elif kind.startswith("asset missing:"):
+                tname = kind.split(":", 1)[1]
+                (assets_dir/tname).unlink()
 
             result = subprocess.run([sys.executable,str(target/"tools/generate-vnsr-filters.py"),"--check"],capture_output=True,text=True)
             assert (result.returncode == 0) == (kind == "valid"), (kind,result.stdout,result.stderr)
+            if kind != "valid":
+                err = (result.stderr or result.stdout).strip()
+                assert err, f"Expected diagnostic error message for tampered case {kind}"
             print("PASS: "+kind)
+
+        # Verify generate idempotency: running generator twice leaves pinned bytes intact and --check passes.
+        manifest_path.write_text(original, encoding="utf-8")
+        assets_dir = target/"engine/src/main/assets/vnsr"
+        sources_dir = target/"engine/patches/vnsr/sources"
+        shutil.copyfile(root/"engine/src/main/assets/vnsr/LICENSE-MIT", assets_dir/"LICENSE-MIT")
+        for name in names:
+            shutil.copyfile(root/"engine/patches/vnsr/sources"/name, sources_dir/name)
+            shutil.copyfile(root/"engine/src/main/assets/vnsr"/name, assets_dir/name)
+        for run_idx in range(2):
+            gen_res = subprocess.run([sys.executable,str(target/"tools/generate-vnsr-filters.py")],capture_output=True,text=True)
+            assert gen_res.returncode == 0, (run_idx, gen_res.stdout, gen_res.stderr)
+        chk_res = subprocess.run([sys.executable,str(target/"tools/generate-vnsr-filters.py"),"--check"],capture_output=True,text=True)
+        assert chk_res.returncode == 0, (chk_res.stdout, chk_res.stderr)
+        print("PASS: generator idempotency")
 
 
 if __name__ == "__main__":

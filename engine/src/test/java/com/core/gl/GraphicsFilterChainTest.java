@@ -125,11 +125,12 @@ public final class GraphicsFilterChainTest {
     }
     @Test public void completeChainBudgetSumsAllNodesAndSaturatesOverflow() {
         long oneL = LanczosScale.estimatedOwnedBytes(1920, 1080, 1920, 1080, 8, 0, false);
-        long twoL = GraphicsFilterPipeline.addBytes(oneL, oneL);
-        assertTrue(oneL < Anime4kPostProcessor.TARGET_MEMORY_BUDGET_BYTES);
-        assertTrue(twoL > Anime4kPostProcessor.TARGET_MEMORY_BUDGET_BYTES);
-        assertEquals(Long.MAX_VALUE, GraphicsFilterPipeline.addBytes(Long.MAX_VALUE, 1));
-        assertEquals(8294400L, GraphicsFilterPipeline.ownedSurfaceBytes(1920, 1080));
+        long twoL = LanczosScale.addBytes(oneL, oneL);
+        assertTrue(oneL < CnnPipeline.TARGET_MEMORY_BUDGET_BYTES);
+        assertTrue(twoL > CnnPipeline.TARGET_MEMORY_BUDGET_BYTES);
+        assertEquals(Long.MAX_VALUE, LanczosScale.addBytes(Long.MAX_VALUE, 1));
+        assertEquals(Long.MAX_VALUE, LanczosScale.multiplyBytes(Long.MAX_VALUE, 2));
+        assertEquals(8294400L, LanczosScale.ownedSurfaceBytes(1920, 1080));
     }
     @Test public void scalePresetDefinitionsCarryKernelsAndStayWireCompatible() {
         GraphicsFilterDefinition lanczos = GraphicsFilterDefinitions.find("lanczos");
@@ -178,7 +179,7 @@ public final class GraphicsFilterChainTest {
     }
 
     @Test public void legacySixParameterConstructorIgnoresLegacySharpnessForDedicatedParameters() {
-        // The 6-parameter constructor is the legacy single-knob wire shape (audit RN3): bicubic
+        // The 6-parameter constructor is the legacy single-knob wire shape: bicubic
         // and lanczos carry dedicated parameters now, so the legacy sharpness must NOT migrate
         // into them (the definition defaults apply, matching the settings codec policy); cas
         // keeps its own value.
@@ -196,9 +197,51 @@ public final class GraphicsFilterChainTest {
         // In-range 5-token bicubic wires decode to the definition defaults (the single value
         // cannot map onto independent B/C — pinned above). Out-of-range values and NaN are
         // malformed: fail closed exactly like the lanczos/cas branches instead of silently
-        // yielding defaults (audit RN4 strictness asymmetry).
+        // yielding defaults.
         assertNull(GraphicsFilterChain.parse("v2:bicubic~99~fit~1.0~1.0"));
         assertNull(GraphicsFilterChain.parse("v2:bicubic~-1~fit~1.0~1.0"));
         assertNull(GraphicsFilterChain.parse("v2:bicubic~NaN~fit~1.0~1.0"));
+    }
+
+    @Test public void bundledDefinitionsNeverCombineTiledHaloWithOutputSizedGeometry() {
+        // Tile tiling pins the restore target to input*nativeScale, which an outputSized
+        // definition cannot guarantee; haloPerPass>0 is what makes a definition tileable at
+        // all. Bundled data must never carry both, and the plan guard refuses the tile
+        // downgrade for any active node that does (an oversized chain then takes the
+        // graceful target-unavailable bypass instead of latching a render-time failure).
+        for (GraphicsFilterDefinition definition : GraphicsFilterDefinitions.all()) {
+            assertFalse("bundled definition must not combine haloPerPass>0 with outputSized: "
+                            + definition.id,
+                    GraphicsFilterPipeline.blocksTileDowngrade(definition));
+        }
+        assertTrue(GraphicsFilterPipeline.tileDowngradeAllowed(
+                GraphicsFilterChain.parse("v1:s,vnsr_c16_x2,cas")));
+        // A paused node neither tiles nor blocks tiling for the rest of the chain.
+        assertTrue(GraphicsFilterPipeline.tileDowngradeAllowed(
+                GraphicsFilterChain.parse("v1:s,!vnsr_c16_x2")));
+    }
+
+    @Test public void planGuardRejectsSyntheticOutputSizedHaloDefinitions() {
+        // Package-private data constructor lets the guard's negative path be pinned without
+        // touching the generated catalog: the halo+outputSized pair blocks tiling, while each
+        // factor alone stays tileable.
+        GraphicsFilterDefinition outputSizedHalo = new GraphicsFilterDefinition(
+                "guard_pair", "Guard", 99, 0,
+                new String[]{"测试", "test", "テスト"}, new String[]{"守卫", "Guard", "ガード"},
+                "TG", 0xFF336699, null, 1, 1, false, new String[]{"none"}, "none",
+                0.4, true, false, false, null, 1);
+        assertTrue(GraphicsFilterPipeline.blocksTileDowngrade(outputSizedHalo));
+        GraphicsFilterDefinition outputSizedNoHalo = new GraphicsFilterDefinition(
+                "guard_sized", "Guard", 99, 1,
+                new String[]{"测试", "test", "テスト"}, new String[]{"守卫", "Guard", "ガード"},
+                "TG", 0xFF336699, null, 1, 0, false, new String[]{"none"}, "none",
+                0.4, true, false, false, null, 1);
+        assertFalse(GraphicsFilterPipeline.blocksTileDowngrade(outputSizedNoHalo));
+        GraphicsFilterDefinition haloNotOutputSized = new GraphicsFilterDefinition(
+                "guard_halo", "Guard", 99, 2,
+                new String[]{"测试", "test", "テスト"}, new String[]{"守卫", "Guard", "ガード"},
+                "TG", 0xFF336699, null, 1, 1, false, new String[]{"none"}, "none",
+                0.4, false, false, false, null, 1);
+        assertFalse(GraphicsFilterPipeline.blocksTileDowngrade(haloNotOutputSized));
     }
 }

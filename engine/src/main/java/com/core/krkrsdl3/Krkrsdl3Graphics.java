@@ -6,7 +6,7 @@ import android.opengl.EGL14;
 import android.opengl.EGLContext;
 import android.util.Log;
 import androidx.annotation.Keep;
-import com.core.gl.Anime4kPostProcessor;
+import com.core.gl.CnnPipeline;
 import com.core.gl.Anime4kRuntime;
 import com.core.gl.ArtemisGraphicsStats;
 import com.core.gl.ArtemisPerformanceOverlay;
@@ -118,7 +118,7 @@ public final class Krkrsdl3Graphics implements ArtemisPerformanceOverlay.Source 
                             screenWidth, screenHeight)
                     : pipeline.renderTexture(texture, width, height, screenWidth, screenHeight);
             status = pipeline.isFailed() ? GraphicsStatus.FILTER_FAILED
-                    : pipeline.bypassReason() != Anime4kPostProcessor.BYPASS_NONE
+                    : pipeline.bypassReason() != CnnPipeline.BYPASS_NONE
                     ? GraphicsStatus.SIZE_UNAVAILABLE : GraphicsStatus.READY;
             if (analyzerRequested) {
                 GraphicsOutputSize.Size fit = cropMain

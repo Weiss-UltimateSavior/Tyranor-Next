@@ -43,6 +43,9 @@ final class GraphicsAnalyzerPanel extends HorizontalScrollView {
         private final List<ArtemisGraphicsStats.Node> rows = new ArrayList<>();
         private final List<String> labels = new ArrayList<>();
         private final List<Float> labelWidths = new ArrayList<>();
+        private final ArtemisGraphicsStats.DisplayTimingTracker timingTracker =
+                new ArtemisGraphicsStats.DisplayTimingTracker();
+        private double[] nodeGpuMs = new double[0];
         private String summary, presentation = "", output;
         private float summaryWidth, labelsWidth, presentationWidth, outputWidth;
         private boolean complete;
@@ -64,19 +67,23 @@ final class GraphicsAnalyzerPanel extends HorizontalScrollView {
         }
         private float dp(float value) { return value * density; }
         void update(ArtemisGraphicsStats.Snapshot snapshot, String status) {
+            if (snapshot == null) {
+                // Align with DisplayTimingTracker.resolve's null contract: clear held
+                // timings instead of dereferencing a defensive null from a future caller.
+                timingTracker.clear();
+                return;
+            }
             rows.clear(); labels.clear(); labelWidths.clear();
             for (ArtemisGraphicsStats.Node node : snapshot.nodes) if (node.id != null) rows.add(node);
-            complete = true; total = 0;
-            boolean hasExecution = false;
+            ArtemisGraphicsStats.ResolvedTimings timings = timingTracker.resolve(snapshot, status != null);
+            nodeGpuMs = timings.nodeGpuMs;
+            complete = timings.complete;
+            total = timings.total;
             labelsWidth = 0;
             StringBuilder accessible = new StringBuilder();
-            for (ArtemisGraphicsStats.Node row : rows) {
-                double ms = row.executed ? row.gpuMs : Double.NaN;
-                if (row.executed) {
-                    hasExecution = true;
-                    complete &= Double.isFinite(ms);
-                    if (Double.isFinite(ms)) total += ms;
-                }
+            for (int i = 0; i < rows.size(); i++) {
+                ArtemisGraphicsStats.Node row = rows.get(i);
+                double ms = nodeGpuMs[i];
                 String scale = scale(row);
                 String label = getResources().getString(R.string.graphics_analyzer_node_label, model(row.id), scale, number(ms));
                 float width = paint.measureText(label) + dp(12);
@@ -84,7 +91,6 @@ final class GraphicsAnalyzerPanel extends HorizontalScrollView {
                 accessible.append(getResources().getString(R.string.graphics_analyzer_node_timing,
                         accessibleModel(row.id), scale, number(ms))).append('\n');
             }
-            complete &= hasExecution;
             String inputSize = dimensions(snapshot.sourceWidth, snapshot.sourceHeight);
             String processedSize = dimensions(snapshot.outputWidth, snapshot.outputHeight);
             String displaySize = dimensions(snapshot.viewportWidth, snapshot.viewportHeight);
@@ -103,7 +109,7 @@ final class GraphicsAnalyzerPanel extends HorizontalScrollView {
             outputWidth = paint.measureText(output) + dp(12);
             String fps = snapshot.sourceWidth > 0 ? String.format(locale, "%.0f", snapshot.fps) : unavailable();
             String metrics = getResources().getString(R.string.graphics_analyzer_metrics, fps,
-                    number(complete ? snapshot.gpuMs : Double.NaN),
+                    number(complete ? timings.gpuMs : Double.NaN),
                     status == null ? "" : getResources().getString(R.string.graphics_analyzer_status_marker), inputSize);
             String device = device(snapshot.renderer);
             // Prefer the complete resolution flow and filter labels over the device name.
@@ -137,7 +143,7 @@ final class GraphicsAnalyzerPanel extends HorizontalScrollView {
             float x = start;
             // Label cells reserve readable text space. The bottom stripe retains exact time proportions.
             for (int i = 0; i < rows.size(); i++) {
-                double weight = timingWeight(rows.get(i));
+                double weight = timingWeight(i);
                 float width = labelWidths.get(i) + extra * (float)weight;
                 int color = nodeColor(rows.get(i).id);
                 paint.setColor(Color.argb(185, Color.red(color), Color.green(color), Color.blue(color)));
@@ -149,7 +155,7 @@ final class GraphicsAnalyzerPanel extends HorizontalScrollView {
             if (complete && total > 0) {
                 x = start;
                 for (int i = 0; i < rows.size(); i++) {
-                    double weight = timingWeight(rows.get(i));
+                    double weight = timingWeight(i);
                     if (weight == 0) continue;
                     float next = Math.min(barEnd, x + barWidth * (float)weight);
                     paint.setColor(nodeColor(rows.get(i).id));
@@ -169,10 +175,10 @@ final class GraphicsAnalyzerPanel extends HorizontalScrollView {
         private float preferredLabelsWidth() {
             return labelsWidth * (complete && total > 0 ? 1.2f : 1);
         }
-        private double timingWeight(ArtemisGraphicsStats.Node node) {
+        private double timingWeight(int index) {
             // Missing measurements reserve only readable text space, never a fabricated time share.
-            return complete && total > 0 && node.executed && Double.isFinite(node.gpuMs)
-                    ? node.gpuMs / total : 0;
+            return complete && total > 0 && index < nodeGpuMs.length && Double.isFinite(nodeGpuMs[index])
+                    ? nodeGpuMs[index] / total : 0;
         }
         private String unavailable() { return getResources().getString(R.string.graphics_analyzer_unavailable); }
         private String dimensions(int width, int height) {

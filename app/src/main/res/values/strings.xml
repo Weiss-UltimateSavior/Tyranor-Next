@@ -1054,7 +1054,7 @@
     <string name="game_shelf_minutes">%1$d 分钟</string>
 
     <!-- Shared ordered graphics-chain settings -->
-    <string name="graphics_settings_title">画面超分</string>
+    <string name="graphics_settings_title">画质滤镜链</string>
     <string name="graphics_settings_enabled">启用滤镜链</string>
     <string name="graphics_chain_title">滤镜链</string>
     <string name="graphics_chain_custom">为此游戏设置滤镜链</string>
