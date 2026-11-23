@@ -24,6 +24,7 @@ class ImpactoSettingsKeysTest {
             EngineSettingsStore.KEY_IMPACTO_CLOSE_BACKLOG_AT_END to PerGameSettingsStore.F_IMPACTO_CLOSE_BACKLOG_AT_END,
             EngineSettingsStore.KEY_IMPACTO_DELUSION_MOUSE to PerGameSettingsStore.F_IMPACTO_DELUSION_MOUSE,
             EngineSettingsStore.KEY_IMPACTO_LOG_LEVEL to PerGameSettingsStore.F_IMPACTO_LOG_LEVEL,
+            EngineSettingsStore.KEY_IMPACTO_DEBUG_MODE to PerGameSettingsStore.F_IMPACTO_DEBUG_MODE,
         )
         pairs.forEach { (global, perGame) -> assertEquals(global, perGame) }
         // 键名都带 impacto_ 前缀，不会与其它引擎的键相撞
@@ -43,6 +44,8 @@ class ImpactoSettingsKeysTest {
         assertTrue(d.closeBacklogAtEnd)
         assertTrue(d.delusionMouse)
         assertEquals("warning", d.logLevel)
+        // 宿主自己的选项（CommonSettings.DebugMode，宿主补丁 0053），默认关闭
+        assertFalse(d.debugMode)
     }
 
     @Test
@@ -77,6 +80,7 @@ class ImpactoSettingsKeysTest {
                 .put(PerGameSettingsStore.F_IMPACTO_SUBTITLES, " Karaoke ")
                 .put(PerGameSettingsStore.F_IMPACTO_CLOSE_BACKLOG_AT_END, false)
                 .put(PerGameSettingsStore.F_IMPACTO_DELUSION_MOUSE, false)
+                .put(PerGameSettingsStore.F_IMPACTO_DEBUG_MODE, true)
                 .put(PerGameSettingsStore.F_IMPACTO_LOG_LEVEL, " Trace "),
         )
         assertEquals(
@@ -88,6 +92,7 @@ class ImpactoSettingsKeysTest {
                 closeBacklogAtEnd = false,
                 delusionMouse = false,
                 logLevel = "trace",
+                debugMode = true,
             ),
             full,
         )
@@ -132,6 +137,17 @@ class ImpactoSettingsKeysTest {
         val global = EngineSettingsStore.Impacto(subtitles = "translation")
         assertEquals("translation", EffectiveEngineSettings.mergeImpacto(global, ImpactoOverride(subtitles = "none")).subtitles)
         assertEquals("karaoke", EffectiveEngineSettings.mergeImpacto(global, ImpactoOverride(subtitles = " KARAOKE ")).subtitles)
+    }
+
+    @Test
+    fun debugModeCanBeTurnedOnForTheGameBeingPortedOnly() {
+        val global = EngineSettingsStore.Impacto()
+        assertTrue(EffectiveEngineSettings.mergeImpacto(global, ImpactoOverride(debugMode = true)).debugMode)
+        assertFalse(EffectiveEngineSettings.mergeImpacto(global, ImpactoOverride()).debugMode)
+        assertFalse(
+            EffectiveEngineSettings.mergeImpacto(global.copy(debugMode = true), ImpactoOverride(debugMode = false))
+                .debugMode,
+        )
     }
 
     @Test

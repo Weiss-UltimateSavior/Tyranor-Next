@@ -508,6 +508,7 @@ class GameOverridePartitionsTest {
             GameOverridePartitions.KEY_IMPACTO_CLOSE_BACKLOG_AT_END to PerGameSettingsStore.F_IMPACTO_CLOSE_BACKLOG_AT_END,
             GameOverridePartitions.KEY_IMPACTO_DELUSION_MOUSE to PerGameSettingsStore.F_IMPACTO_DELUSION_MOUSE,
             GameOverridePartitions.KEY_IMPACTO_LOG_LEVEL to PerGameSettingsStore.F_IMPACTO_LOG_LEVEL,
+            GameOverridePartitions.KEY_IMPACTO_DEBUG_MODE to PerGameSettingsStore.F_IMPACTO_DEBUG_MODE,
         )
         pairs.forEach { (partitionKey, perGameKey) ->
             assertEquals(perGameKey, partitionKey)
@@ -522,6 +523,7 @@ class GameOverridePartitionsTest {
             .put(PerGameSettingsStore.F_IMPACTO_CLOSE_BACKLOG_AT_END, false)
             .put(PerGameSettingsStore.F_IMPACTO_DELUSION_MOUSE, false)
             .put(PerGameSettingsStore.F_IMPACTO_LOG_LEVEL, "debug")
+            .put(PerGameSettingsStore.F_IMPACTO_DEBUG_MODE, true)
 
         val row = GameOverridePartitions.split("/games/mo6tw", blob, 1L)
         val tyranoPartition = JSONObject(row.tyranoJson!!)
@@ -539,6 +541,7 @@ class GameOverridePartitionsTest {
                 closeBacklogAtEnd = false,
                 delusionMouse = false,
                 logLevel = "debug",
+                debugMode = true,
             ),
             PerGameSettingsStore.toImpactoOverride(GameOverridePartitions.assemble(row)),
         )

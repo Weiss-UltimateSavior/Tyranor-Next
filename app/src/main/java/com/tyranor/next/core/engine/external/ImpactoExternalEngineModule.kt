@@ -97,6 +97,8 @@ object ImpactoExternalEngineModule : ExternalEngineModule {
             .put("closeBacklogAtEnd", s.closeBacklogAtEnd)
             .put("delusionMouse", s.delusionMouse)
             .put("logLevel", EngineSettingsStore.normalizeImpactoLogLevel(s.logLevel))
+            // 宿主 0.4.3 起认识；更早的宿主逐键读取，忽略不认识的键
+            .put("debugMode", s.debugMode)
             .toString()
     }
 

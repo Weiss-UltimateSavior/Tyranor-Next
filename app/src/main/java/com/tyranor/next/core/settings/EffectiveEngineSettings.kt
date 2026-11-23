@@ -224,6 +224,7 @@ object EffectiveEngineSettings {
             logLevel = override.logLevel?.trim()?.lowercase(java.util.Locale.ROOT)
                 ?.takeIf { it in EngineSettingsStore.IMPACTO_LOG_LEVELS }
                 ?: EngineSettingsStore.normalizeImpactoLogLevel(global.logLevel),
+            debugMode = resolveBool(override.debugMode, global.debugMode),
         )
     }
 
@@ -347,6 +348,7 @@ data class ImpactoOverride(
     val closeBacklogAtEnd: Boolean? = null,
     val delusionMouse: Boolean? = null,
     val logLevel: String? = null,
+    val debugMode: Boolean? = null,
 )
 
 /** ONS 单游戏覆盖字段（null = 跟随全局）。 */

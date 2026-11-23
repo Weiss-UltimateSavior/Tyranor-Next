@@ -48,7 +48,12 @@ PC_EDITION_FULL = re.compile(r'pcEdition\(\s*"([^"]+)"\s*,\s*("[^"]+"|\w+)\s*,\s
 # Host patch series profiles without language variants: pcGame("id", "title", MIN_VERSION, "entry", ...).
 PC_GAME_ANY = re.compile(r'(?<!fun )pcGame\(')
 PC_GAME_CALL = re.compile(r'(?<!fun )pcGame\(\s*"([^"]+)"')
-PC_GAME_FULL = re.compile(r'pcGame\(\s*"([^"]+)"\s*,\s*"[^"]*"\s*,\s*\w+\s*,((?:\s*"[^"]+"\s*,?)+)\s*\)', re.S)
+# ... optionally followed by `excludedEntries = setOf("entry", ...)` (the host's detect.noneOf).
+PC_GAME_FULL = re.compile(
+    r'pcGame\(\s*"([^"]+)"\s*,\s*"[^"]*"\s*,\s*\w+\s*,((?:\s*"[^"]+"\s*,?)+)'
+    r'(?:\s*excludedEntries\s*=\s*setOf\(((?:\s*"[^"]+"\s*,?)*)\s*\)\s*,?)?\s*\)',
+    re.S,
+)
 # A string constant is exactly one string literal. "a" + ".b" or any other expression is not recorded: a member that
 # refers to it is then unreadable and reported, never compared with a truncated value.
 CONST_STRING = re.compile(r'const val (\w+) = "([^"]*)"[ \t]*(?:\r?\n|$)', re.M)
@@ -149,7 +154,15 @@ def parse_pc_games(text):
     parsed = PC_GAME_FULL.findall(text)
     if len(parsed) != len(PC_GAME_ANY.findall(text)):
         return None
-    return {profile: set(re.findall(r'"([^"]+)"', entries)) for profile, entries in parsed}
+    return {profile: set(re.findall(r'"([^"]+)"', entries)) for profile, entries, _ in parsed}
+
+
+def parse_pc_game_exclusions(text):
+    """profile id -> set of excludedEntries paths for every pcGame(...) call (empty when it has none)."""
+    return {
+        profile: set(re.findall(r'"([^"]+)"', excluded))
+        for profile, _, excluded in PC_GAME_FULL.findall(strip_comments(text))
+    }
 
 
 def resolve_members(arguments, constants):
@@ -250,6 +263,7 @@ def check_host_profiles(catalog_text, profiles_path):
     host = {p['id']: p for p in data.get('profiles', []) if (p.get('detect') or {}).get('layout') == 'pc'}
     editions = parse_pc_editions(catalog_text)
     games = parse_pc_games(catalog_text)
+    exclusions = parse_pc_game_exclusions(catalog_text)
     required = pc_requirements(catalog_text)
     if editions is None or required is None or games is None:
         return [
@@ -272,6 +286,11 @@ def check_host_profiles(catalog_text, profiles_path):
                 f'{profile}: required files {sorted(games[profile])} differ from the host allOf '
                 f'{sorted(detect.get("allOf", []))}',
             )
+        if set(detect.get('noneOf', [])) != exclusions.get(profile, set()):
+            problems.append(
+                f'{profile}: excluded files {sorted(exclusions.get(profile, set()))} differ from the host noneOf '
+                f'{sorted(detect.get("noneOf", []))}',
+            )
     for profile in sorted(set(host) & set(editions)):
         detect, edition = host[profile]['detect'], editions[profile]
         if host[profile].get('language') != edition['language']:
@@ -286,6 +305,8 @@ def check_host_profiles(catalog_text, profiles_path):
             problems.append(
                 f'{profile}: required files {sorted(required)} differ from the host allOf {sorted(detect.get("allOf", []))}',
             )
+        if detect.get('noneOf'):
+            problems.append(f'{profile}: the host noneOf {detect["noneOf"]} has no counterpart in pcEdition')
     return problems
 
 
