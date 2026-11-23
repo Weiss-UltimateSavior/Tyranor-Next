@@ -45,7 +45,7 @@ adb -s '<serial>' shell am instrument -w -r \
   com.tyranor.next.ethornelltest.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-PowerShell 构建时先设 `$env:TYRANOR_APPLICATION_ID = 'com.tyranor.next.ethornelltest'`，再运行 `./gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon`，完成后恢复原环境变量。使用其它 `com.tyranor.next.*` 隔离包时，构建变量、`motion_target_package` 和 runner 前缀必须一起替换。执行其它动效类或 `类名#方法名` 时保留上述两个 `-e` 参数；没有这些参数的默认 instrumentation 执行会报告门禁失败。
+PowerShell 构建时先设 `$env:TYRANOR_APPLICATION_ID = 'com.tyranor.next.ethornelltest'`，再运行 `./gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon`，完成后恢复原环境变量。使用其它 `com.tyranor.next.*` 隔离包时，构建变量、`motion_target_package` 和 runner 前缀必须一起替换。执行其它动效类或 `类名#方法名` 时保留上述两个 `-e` 参数；没有这些参数的默认 instrumentation 执行会报告门禁失败（例外有两类：按条件跳过的诊断用例，以及不经过门禁的纯逻辑用例，见下文 PR195 一节）。
 
 新增遮罩回归包括 `com.tyranor.next.ui.common.motion.NestedWindowScrimDeviceTest`（实际屏幕像素）与 `DialogWindowDimDeviceTest`（真实窗口属性/释放）。测试通过只说明所执行场景，不证明商业游戏兼容性或完整性能矩阵。
 
@@ -275,13 +275,13 @@ failed identity_sha256=<64hex> token=<session token>
 
 仅接受空库或私有目录内的 PR195 夹具，不扫描外部目录。结束时删除本轮记录与素材、还原设置和方向，证据保留在目标包 `files/pr195-game-screen-evidence/<主题>-<UUID>/`。导航用生产条目的 `performClick` 语义回调，卡片响应仍用单次系统触摸；Compose 测试规则自动推进动画时钟，系统单调时钟仅记录观察上界。本用例不覆盖旋转后导航触摸命中、Activity 重建或逐帧零闪现。耗时包含观察、截图及抽屉响应，属于端到端上界，不代表最早可交互帧或发布包流畅度；截图使用原创测试素材，不作为真实游戏兼容性证据。
 
-同一隔离包下还有另外四个 PR195 动效类，`-e class` 用完整类名：
+同一隔离包下还有另外五个 PR195 动效类，`-e class` 用完整类名：
 
 ```
-com.tyranor.next.ui.common.MotionSliderDeviceTest,com.tyranor.next.ui.common.motion.GridReflowDeviceTest,com.tyranor.next.ui.common.motion.WaterfallRotationScrollDeviceTest,com.tyranor.next.ui.common.motion.WaterfallRestoreResponsivenessDeviceTest
+com.tyranor.next.ui.common.MotionSliderDeviceTest,com.tyranor.next.ui.common.AppBottomSheetDeviceTest,com.tyranor.next.ui.common.motion.GridReflowDeviceTest,com.tyranor.next.ui.common.motion.WaterfallRotationScrollDeviceTest,com.tyranor.next.ui.common.motion.WaterfallRestoreResponsivenessDeviceTest
 ```
 
-注意 `MotionSliderDeviceTest` 在 `com.tyranor.next.ui.common`，其余三个在 `...ui.common.motion`，写成源码路径形态（`ui/common/...`）会 `RuntimeException: Failed loading specified test class`。五类全部走 `MotionDeviceAcceptance` 双重门禁；`AppBottomSheetDeviceTest`（`com.tyranor.next.ui.common.AppBottomSheetDeviceTest`）的列数滑条用例同样在此门禁下。三个 `WaterfallRotationScrollDeviceTest` 诊断用例要另加 `-e waterfall_diagnostics true` 才会执行，否则按条件跳过；`MotionSliderDeviceTest` 的两档参数化全部真实执行（含普通档「横拖后移动被消费」的回滚用例）。`GridReflowDeviceTest` 另有 6 处 `assumeTrue`：其中 5 处要求系统动画开启（关闭「动画程序时长缩放」的设备会跳过 10 项，`OK` 并不等于这些用例跑过），1 处要求 API 29+（`ordinaryModeIsStableOnFirstRestoredFrame` 两项）。跑该类的验收结论前先确认 `settings get global animator_duration_scale` 非 0。**设备测试是手动门禁**：两个 workflow 都不执行 `connectedCheck`——`android-ci.yml` 跑 `./gradlew testDebugUnitTest` 与 `tools/` 下的脚本门禁（PR 事件另跑 lint），`webdav-macos.yml` 跑 `:app:testDebugUnitTest`；本页所有仪器用例都需在真机按上面命令执行才算验证，CI 绿灯不代表设备回归已跑过。
+注意 `MotionSliderDeviceTest` 与 `AppBottomSheetDeviceTest` 在 `com.tyranor.next.ui.common`，其余三个在 `...ui.common.motion`，写成源码路径形态（`ui/common/...`）会 `RuntimeException: Failed loading specified test class`。这五类的仪器用例都走 `MotionDeviceAcceptance` 双重门禁（`AppBottomSheetDeviceTest` 的列数滑条用例同样在此门禁下）；同一文件里的纯逻辑用例（`WaterfallRestoreResponsivenessDeviceTest` 的 `overdueTouchProbeIncludesTailBlockAfterRestoreCompletes`、`touchProbeEligibilityIncludesCompletionButExcludesLaterDeadlines`，只校验探针到期判据）不经过门禁，在正式包名下也能跑绿，不能当成设备验收。三个诊断用例（`retainedStateReportsLaneChangesDuringBottomReflowAndFullUpwardScroll`、`rebuiltStatePreservesLanesDuringBottomReflowAndFullUpwardScroll`、`forwardHistoryPreservesLanesDuringBottomReflowAndFullUpwardScroll`）要另加 `-e waterfall_diagnostics true` 才会执行，否则按条件跳过；`MotionSliderDeviceTest` 的两档参数化全部真实执行（含普通档「横拖后移动被消费」的回滚用例）。`GridReflowDeviceTest` 另有 6 处 `assumeTrue`：其中 5 处要求系统动画开启（关闭「动画程序时长缩放」的设备会跳过 10 项，`OK` 并不等于这些用例跑过），1 处要求 API 29+（`ordinaryModeIsStableOnFirstRestoredFrame` 两项）。跑该类的验收结论前先确认 `settings get global animator_duration_scale` 非 0。**设备测试是手动门禁**：两个 workflow 都不执行 `connectedCheck`——`android-ci.yml` 跑 `./gradlew testDebugUnitTest` 与 `tools/` 下的脚本门禁（PR 事件另跑 lint），`webdav-macos.yml` 跑 `:app:testDebugUnitTest`；本页所有仪器用例都需在真机按上面命令执行才算验证，CI 绿灯不代表设备回归已跑过。
 
 ## WebDAV 弹窗忙碌状态回归
 

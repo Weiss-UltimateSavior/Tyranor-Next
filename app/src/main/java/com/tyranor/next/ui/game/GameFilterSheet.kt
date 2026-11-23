@@ -22,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -307,6 +308,11 @@ private fun GameCardColumnsCard(
     var draftColumns by remember(snapshot.setting, snapshot.columns, enabled) { mutableIntStateOf(snapshot.columns) }
     // 两档滑条都不自带列数读数：拖动过程中要让无障碍读到草稿值，而不是已提交值。
     val columnsText = columnsValue(draftColumns)
+    // 键盘调节的配对状态：按下的键由本控件接管后才在对应抬键时提交。
+    // 只靠抬键那一刻是否还按着修饰键判断会漏提交——用户常在松开方向键前先松开 Ctrl。
+    // 与草稿同键重建：设置项、外部值或可用状态一变，草稿已被丢弃，旧的配对记录也必须作废，
+    // 否则之后那次抬键会把一个与当前草稿无关的值提交出去。
+    var ownedKey by remember(snapshot.setting, snapshot.columns, enabled) { mutableStateOf<Key?>(null) }
     val finishChange: () -> Unit = {
         if (enabled) onColumnsChange(draftColumns)
     }
@@ -338,27 +344,44 @@ private fun GameCardColumnsCard(
                         contentDescription = title
                         stateDescription = columnsText
                     }
+                    // 失焦兜底：拖动与键盘两条来源共用同一个判据——只要草稿还没落盘就丢弃。
+                    // 拖动时 ownedKey 为 null，之前只判 ownedKey 会漏掉「取消回调没送达」的情形。
+                    .onFocusChanged { focusState ->
+                        if (!focusState.isFocused && (ownedKey != null || draftColumns != snapshot.columns)) {
+                            ownedKey = null
+                            draftColumns = snapshot.columns
+                        }
+                    }
                     // 用 onKeyEvent（非 preview）并把纵向键交还焦点系统：焦点在这一格时，
                     // D-Pad 上下要能移到相邻条目，只有带修饰键的上下键才当作调列数。
                     .onKeyEvent { event ->
                         if (!enabled) return@onKeyEvent false
-                        val adjustVertically = event.isCtrlPressed || event.isShiftPressed
-                        val next = when (event.key) {
-                            Key.DirectionRight -> draftColumns + if (rtl) -1 else 1
-                            Key.DirectionLeft -> draftColumns + if (rtl) 1 else -1
-                            Key.DirectionUp -> if (adjustVertically) draftColumns + 1 else return@onKeyEvent false
-                            Key.DirectionDown -> if (adjustVertically) draftColumns - 1 else return@onKeyEvent false
-                            Key.MoveHome -> AppSettingsStore.MIN_GAME_CARD_COLUMNS
-                            Key.MoveEnd -> AppSettingsStore.MAX_GAME_CARD_COLUMNS
-                            else -> return@onKeyEvent false
-                        }
                         when (event.type) {
-                            KeyEventType.KeyDown -> draftColumns = AppSettingsStore.normalizeGameCardColumns(next)
-                            // 只有真的改过草稿才提交：孤立 KeyUp（KeyDown 被别处消费）不该落盘。
-                            KeyEventType.KeyUp -> if (draftColumns != snapshot.columns) finishChange()
-                            else -> return@onKeyEvent false
+                            KeyEventType.KeyDown -> {
+                                val adjustVertically = event.isCtrlPressed || event.isShiftPressed
+                                val next = when (event.key) {
+                                    Key.DirectionRight -> draftColumns + if (rtl) -1 else 1
+                                    Key.DirectionLeft -> draftColumns + if (rtl) 1 else -1
+                                    Key.DirectionUp -> if (adjustVertically) draftColumns + 1 else return@onKeyEvent false
+                                    Key.DirectionDown -> if (adjustVertically) draftColumns - 1 else return@onKeyEvent false
+                                    Key.MoveHome -> AppSettingsStore.MIN_GAME_CARD_COLUMNS
+                                    Key.MoveEnd -> AppSettingsStore.MAX_GAME_CARD_COLUMNS
+                                    else -> return@onKeyEvent false
+                                }
+                                ownedKey = event.key
+                                draftColumns = AppSettingsStore.normalizeGameCardColumns(next)
+                                true
+                            }
+                            // 抬键只认按下的同一个键：修饰键此时可能已经松开，
+                            // 再按 adjustVertically 判断会让草稿既不提交也不回滚。
+                            KeyEventType.KeyUp -> {
+                                if (ownedKey != event.key) return@onKeyEvent false
+                                ownedKey = null
+                                if (draftColumns != snapshot.columns) finishChange()
+                                true
+                            }
+                            else -> false
                         }
-                        true
                     }
                     .focusable(enabled),
                 enabled = enabled,

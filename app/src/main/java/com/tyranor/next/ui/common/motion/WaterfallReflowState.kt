@@ -1,6 +1,7 @@
 package com.tyranor.next.ui.common.motion
 
 import android.os.SystemClock
+import androidx.annotation.VisibleForTesting
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.focusGroup
@@ -80,11 +81,31 @@ class WaterfallReflowState private constructor(
      * 恢复中：还有待恢复的锚点，并且列表确实挂在组合里。
      *
      * 进程或宿主重建后同样必须重建列历史，期间由宿主隐藏中间位置并拦截交互。
-     * 三个写入点必须保持一致：[onHostAttached]、[onHostDetached]、[update]；
-     * 宿主离树时必须立即置 false——那之后没人能执行恢复，停在 true 会让
-     * 依赖它的逻辑（如搜索栏自动收起）永久失效。
+     * 写入点共六处，必须保持一致：构造初值（[pendingAnchor] 非空即 true）、[onHostAttached]、
+     * [onHostDetached]、[update]、[finishRestore]、[abortRestore]；宿主离树时必须立即置 false
+     * ——那之后没人能执行恢复，停在 true 会让依赖它的逻辑（如搜索栏自动收起）永久失效。
+     *
+     * 构造初值刻意不看挂载信号：[waterfallReflowHost] 的 `DisposableEffect` 要到 apply 阶段
+     * 才 attach，而首帧就必须已经遮蔽，否则会先画出未对齐的中间位置。因此首帧若 [update] 先跑，
+     * 会把初值按「未挂载」降为 false，紧接着 [onHostAttached] 再置回 true；Compose 按帧合并提交，
+     * 不会渲染出中间帧。
      */
     var isRestoring by mutableStateOf(pendingAnchor != null)
+        private set
+
+    /**
+     * 已完成的恢复次数。
+     *
+     * 口径是「[restore] 一路跑到收尾」：包含空表（`restoreAnchor` 里 `count == 0`）的提前收尾与
+     * 超时后 [restoreAnchor] 的粗恢复兜底——它们都算这一轮结束了，只是没有精确落到锚点。
+     * [restore] 开头的 `pendingAnchor ?: return` 是真正的空转，不计数；[abortRestore] 也不计数。
+     *
+     * 仅供回归测试：验收用例用它区分「这一轮恢复确实跑完过」与「根本没人恢复」，
+     * 以及「冻结时钟期间不得有恢复完成」。只读 [isRestoring] 证明不了这两点，因为每次换代
+     * 都会重建 pendingAnchor 使它必然为 true。
+     */
+    @get:VisibleForTesting
+    internal var completedRestores: Int = 0
         private set
 
     /**
@@ -224,8 +245,9 @@ class WaterfallReflowState private constructor(
             // 取消（自身作用域销毁或被更高优先级滚动打断后未恢复）保留锚点与隐藏状态，
             // 由 enabled()/生命周期重新进入本流程时接续；其它异常必须整体收尾：
             // 否则宿主会永久透明、吞掉触摸并退出无障碍树，且组合键不变时不会重启恢复。
-            // 这里用 finishRestore 而不是只清 isRestoring，避免留下「有锚点却未在恢复」的
-            // 不一致状态，让下一次换布局跳过重新捕获、拿旧列宽的位置去滚动。
+            // 收尾走 abortRestore：不计入 completedRestores（那次恢复并没有走到锚点，
+            // 算作完成会让依赖计数的验收用例在没有恢复时平凡通过），并丢弃补位基准
+            // （它属于崩溃前那一代，留着会让下一轮补位按过期坐标滑入）。
             if (error is CancellationException) throw error
             // 非取消异常在生产路径上未知，但一旦发生必须留下痕迹：
             // 这条路径会把整表的遮蔽、吞输入与无障碍移除一并收尾，静默的话无从定位。
@@ -234,7 +256,7 @@ class WaterfallReflowState private constructor(
                 "Restore aborted before reaching the anchor; layout is released without it",
                 error,
             )
-            finishRestore(state)
+            abortRestore(state)
             // Error 同样会逃出本协程，收尾后原样重抛，既不压掉崩溃报告也不留永久遮蔽。
             if (error is Error) throw error
         }
@@ -242,7 +264,22 @@ class WaterfallReflowState private constructor(
 
     private fun finishRestore(state: LazyStaggeredGridState) {
         if (gridState !== state) return
+        completedRestores++
         pendingAnchor = null
+        isRestoring = false
+    }
+
+    /**
+     * 异常收尾：释放遮蔽与吞输入，但**不计入** [completedRestores]。
+     *
+     * 那次恢复并没有走到锚点，把它算作「完成」会让依赖计数的验收用例（恢复期输入不被阻塞）
+     * 在没有恢复的情况下平凡通过。补位基准一并丢弃：它属于崩溃前那一代，留着会让下一轮补位
+     * 按过期坐标滑入。
+     */
+    private fun abortRestore(state: LazyStaggeredGridState) {
+        if (gridState !== state) return
+        pendingAnchor = null
+        previousItemOffsets = emptyMap()
         isRestoring = false
     }
 

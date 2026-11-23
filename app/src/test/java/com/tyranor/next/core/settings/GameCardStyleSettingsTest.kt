@@ -3,6 +3,7 @@ package com.tyranor.next.core.settings
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.SharedPreferences
+import android.content.res.Configuration
 import com.tyranor.next.testing.InMemoryPreferencesContext
 import com.tyranor.next.testing.InMemorySharedPreferences
 import java.util.concurrent.CountDownLatch
@@ -265,6 +266,9 @@ class GameCardStyleSettingsTest {
         // 上一版竖屏平板读的是「宽屏」键，手机读「窄屏」键；判据只看最小宽度。
         assertEquals(false, AppSettingsStore.wideKeyAppliesToPortrait(599))
         assertEquals(true, AppSettingsStore.wideKeyAppliesToPortrait(600))
+        // 没有可信宽度（未定义哨兵）与负值时都按手机处理，不会把手机误判成平板。
+        assertEquals(false, AppSettingsStore.wideKeyAppliesToPortrait(Configuration.SMALLEST_SCREEN_WIDTH_DP_UNDEFINED))
+        assertEquals(false, AppSettingsStore.wideKeyAppliesToPortrait(-1))
         assertEquals(7, AppSettingsStore.legacyPortraitValue(narrow = 5, wide = 7, wideAppliesToPortrait = true))
         assertEquals(5, AppSettingsStore.legacyPortraitValue(narrow = 5, wide = 7, wideAppliesToPortrait = false))
         // 只有宽屏值可用时，平板取宽屏值、手机保持默认（null 表示不迁移）。

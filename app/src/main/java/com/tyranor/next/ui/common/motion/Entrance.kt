@@ -565,6 +565,10 @@ internal class StaggeredEntranceNode(
             coroutineScope {
                 val play = launch {
                     delay(delayMillis)
+                    // 不要在这里按窗口是否过期提前落位：入场窗口（500ms）之外的追加批
+                    // 一旦直接跳到 1，就会抢在序号更小的卡片前面出现，破坏「按列表顺序
+                    // 依次入场」（GridReflowDeviceTest 的 All cards must enter in list order）。
+                    // 等待期间用户开始拖动的情况由下面的 watcher 统一快速收尾。
                     val springs = st.quickReplaySprings()
                     launch { alpha.animateTo(1f, springs?.alpha ?: MotionSprings.effects(300)) }
                     progress.animateTo(1f, springs?.progress ?: MotionSprings.spring(460, 0.28f, 0.0005f))

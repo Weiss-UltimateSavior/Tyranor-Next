@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -29,6 +30,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
@@ -162,6 +164,47 @@ class AppBottomSheetDeviceTest {
             compose.runOnIdle {
                 // 松手才提交，并且落到滑条最小值。
                 assertEquals(AppSettingsStore.MIN_GAME_CARD_COLUMNS, waterfallColumns())
+            }
+            // 键盘：按下的调节键由滑条接管，抬键即提交；修饰键先松开也不能丢提交。
+            compose.runOnUiThread { AppSettingsStore.setGameCardStyle(context, AppSettingsStore.GAME_CARD_STYLE_GRID) }
+            slider.performScrollTo()
+            // 按键事件只送到持有焦点的节点：触摸与 SetProgress 都不取焦，必须先显式请求焦点，
+            // 否则 keyDown/keyUp 被窗口丢弃，这一整段断言全都测不到真实行为。
+            slider.performSemanticsAction(SemanticsActions.RequestFocus)
+            compose.waitForIdle()
+            val gridBeforeKeys = compose.runOnIdle { gridColumns() }
+            slider.performKeyInput { keyDown(Key.DirectionRight) }
+            compose.runOnIdle {
+                // 按下只改草稿，落盘要等抬键。
+                assertEquals(gridBeforeKeys, gridColumns())
+            }
+            slider.performKeyInput { keyUp(Key.DirectionRight) }
+            compose.runOnIdle {
+                assertEquals(
+                    "抬键应提交一次并落在一格之后",
+                    AppSettingsStore.normalizeGameCardColumns(gridBeforeKeys + 1),
+                    gridColumns(),
+                )
+            }
+            val gridAfterKeys = compose.runOnIdle { gridColumns() }
+            // 抬键后的重组可能重置焦点，先重新取焦再发第二段按键。
+            slider.performSemanticsAction(SemanticsActions.RequestFocus)
+            compose.waitForIdle()
+            slider.performKeyInput {
+                // 上键只有带修饰键时才调列数（否则要留给焦点系统），所以这一段走的是
+                // 「按下时靠修饰键进分支、抬键时修饰键已松」的唯一有回归风险的路径：
+                // 先松 Ctrl 再抬 Up，旧实现会既不提交也不回滚。
+                keyDown(Key.CtrlLeft)
+                keyDown(Key.DirectionUp)
+                keyUp(Key.CtrlLeft)
+                keyUp(Key.DirectionUp)
+            }
+            compose.runOnIdle {
+                assertEquals(
+                    "松开修饰键后抬方向键仍要提交",
+                    AppSettingsStore.normalizeGameCardColumns(gridAfterKeys + 1),
+                    gridColumns(),
+                )
             }
             compose.runOnUiThread { AppSettingsStore.setGameCardStyle(context, AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW) }
             slider.assertDoesNotExist()

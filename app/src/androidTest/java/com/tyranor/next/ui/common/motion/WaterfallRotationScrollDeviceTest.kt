@@ -69,6 +69,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -312,17 +313,35 @@ class WaterfallRotationScrollDeviceTest {
             }
         }
         settle()
+        // 换列期间把测试时钟钉住：否则 runOnIdle 会把上一代恢复一路推完，
+        // 五次换代退化成五次串行恢复，「压住上一代」这条路径根本没被走到。
         var restoringAfterChange = 0
-        for (columns in listOf(3, 2, 3, 2, 3)) {
-            compose.runOnIdle { fixture.columns = columns }
-            compose.mainClock.advanceTimeByFrame()
-            // 每代只放行一帧：只有上一代恢复仍在进行，后面的换代才算真的压住了它。
-            if (compose.runOnIdle { fixture.holder!!.isRestoring }) restoringAfterChange++
+        val restoresBefore = compose.runOnIdle { fixture.holder!!.completedRestores }
+        compose.mainClock.autoAdvance = false
+        var restoresDuringChanges = 0
+        try {
+            for (columns in listOf(3, 2, 3, 2, 3)) {
+                compose.runOnIdle { fixture.columns = columns }
+                compose.mainClock.advanceTimeByFrame()
+                if (compose.runOnIdle { fixture.holder!!.isRestoring }) restoringAfterChange++
+            }
+            // 必须在时钟仍冻结时读：恢复成自动推进后 runOnIdle 会把等待中的恢复一路推完，
+            // 计数就变成「换代期间 + 最后一次恢复之后」，这条断言会退化成恒真。
+            restoresDuringChanges = compose.runOnIdle { fixture.holder!!.completedRestores } - restoresBefore
+        } finally {
+            compose.mainClock.autoAdvance = true
         }
-        // 每代只放行一帧：若上一代恢复仍在进行，后面的换代就是压在了它上面。
-        // 小样本下恢复也可能在一帧内跑完，重叠不是必然，因此只记录观测值、不设硬门槛；
-        // 真正要守住的是末代恢复完成后数据、键与触底状态仍然正确。
-        Log.i(TAG, "rapidColumnChanges overlaps=$restoringAfterChange")
+        // 换代当时就必须遮蔽：若 update() 漏了发布 isRestoring，这里会退化成 0。
+        assertEquals("Every generation must mask the grid immediately", 5, restoringAfterChange)
+        // 五次换代全程时钟冻结：换代会让 LaunchedEffect(gridState, contentReady) 换键、取消旧恢复协程并
+        // 重启一条，但两条在冻结时钟下都推不动，所以这期间不可能有恢复收尾。断言它确实没完成，与上一行
+        // 合起来才是「压住了上一代」的证据：若 isRestoring 只是每代新建一次、旧恢复其实早已跑完，上一行
+        // 同样会是 5。
+        assertEquals(
+            "No restore may complete while the generations are still being switched",
+            0,
+            restoresDuringChanges,
+        )
         awaitRestore(fixture)
         compose.runOnIdle {
             assertTrue("Final restore must finish", !fixture.holder!!.isRestoring)

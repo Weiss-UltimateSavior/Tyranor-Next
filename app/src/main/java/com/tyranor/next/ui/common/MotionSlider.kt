@@ -101,9 +101,11 @@ fun Slider(
                 while (event.changes.any { it.pressed }) {
                     event = awaitPointerEvent(PointerEventPass.Initial)
                 }
-                // 收尾事件「已消费」有两种来源：平台取消指针流（Compose 合成的抬手）与上级容器
-                // 在 Initial 阶段接手（竖向滚动、抽屉下拉）。实测两者都被判为已消费，
-                // 故这里与增强档 TickSlider 的 isConsumed 判据保持一致。
+                // 收尾事件「已消费」对应两类来源：上级容器在 Initial 阶段接手（竖向滚动、
+                // 抽屉下拉）与平台取消指针流。判据以设备用例为准：`MotionSliderDeviceTest`
+                // 的 systemCancel / consumedDrag 两组断言（两种档位各跑一遍）若在依赖升级后变红，
+                // 就说明平台取消的合成抬手不再带「已消费」，此时改用
+                // `change.uptimeMillis == change.previousUptimeMillis`（合成事件沿用上一事件的时间戳）区分。
                 release.released = event.changes.any { it.previousPressed && !it.isConsumed }
             }
         }
@@ -279,6 +281,9 @@ private fun TickSlider(
                             scope.launch { press.animateTo(1.127f, MotionTokens.press(0.001f)) }
                             // 指针流被异常取消时释放代码跑不到：finally 兜底还原交互状态
                             var finished = false
+                            // 一次手势最多通知一次：正常收尾与 finally 兜底都可能走到取消，
+                            // 重复通知会让调用方回滚两次（重复落盘或重复提示）。
+                            var notified = false
                             try {
                                 var index = nearestIndex(pos.value.coerceIn(0f, 1f))
                                 var dx = 0f
@@ -346,7 +351,10 @@ private fun TickSlider(
                                 }
                                 // 取消要让外部值先回滚：落位目标取当前位置，而不是此刻还没回滚的草稿刻度，
                                 // 否则松手会先冲向草稿格、等重组后才折返回来（两段式抖动）。
-                                if (cancelled) onCancelled?.invoke() else onFinished?.invoke()
+                                if (!notified) {
+                                    notified = true
+                                    if (cancelled) onCancelled?.invoke() else onFinished?.invoke()
+                                }
                                 val target = if (cancelled) pos.value else tickFractions[index]
                                 dragging = false
                                 // 拖动松手：带着手指速度吸附到刻度。取消时不带速度——目标就是当前位置，
@@ -370,12 +378,26 @@ private fun TickSlider(
                                 scope.launch { press.animateTo(1f, MotionTokens.release(0.001f)) }
                                 finished = true
                             } finally {
-                                if (!finished && generation == interaction.generation) {
-                                    dragging = false
-                                    interacting = false
-                                    interaction.settleJob = scope.launch { pos.animateTo(currentValueFraction, MotionTokens.control(0.0005f)) }
-                                    scope.launch { overshoot.animateTo(0f, MotionTokens.control(0.0005f)) }
-                                    scope.launch { press.animateTo(1f, MotionTokens.release(0.001f)) }
+                                try {
+                                    // 通知不受代次守卫约束：手势没走完就必须让调用方知道（草稿既不提交
+                                    // 也不回滚是更糟的结果）。这是「一次手势协程一次」的去重——pointerInput
+                                    // 的 key 变化会取消旧协程、开启新手势，那种情况下旧协程通知一次、新协程
+                                    // 若也被取消再通知一次，分别对应两次手势，不是重复。
+                                    if (!finished && !notified) {
+                                        notified = true
+                                        onCancelled?.invoke()
+                                    }
+                                } finally {
+                                    // 回调是外部代码，抛异常时不能让 dragging / interacting 永远停在
+                                    // true（那会让外部值再也同步不到滑条，直到组件离开组合）；复位与
+                                    // 弹簧也一并放在通知之后，让取消与正常收尾观察到相同的交互状态。
+                                    if (!finished && generation == interaction.generation) {
+                                        dragging = false
+                                        interacting = false
+                                        interaction.settleJob = scope.launch { pos.animateTo(currentValueFraction, MotionTokens.control(0.0005f)) }
+                                        scope.launch { overshoot.animateTo(0f, MotionTokens.control(0.0005f)) }
+                                        scope.launch { press.animateTo(1f, MotionTokens.release(0.001f)) }
+                                    }
                                 }
                             }
                         }

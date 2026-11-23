@@ -3,6 +3,7 @@ package com.tyranor.next.core.settings
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Build
+import android.util.Log
 import androidx.annotation.VisibleForTesting
 import androidx.core.content.edit
 import com.tyranor.next.core.game.model.GameFilterOptions
@@ -22,6 +23,8 @@ internal data class GameCardCornerSettings(
  * 使用独立 prefs 文件 app_settings，避免混入引擎进程读取的 tyranor_prefs。
  */
 object AppSettingsStore {
+
+    private const val TAG = "AppSettingsStore"
 
     /** 临时关闭首次使用引导展示，待页面入口稳定后再恢复。 */
     const val ONBOARDING_FEATURE_ENABLED = false
@@ -909,8 +912,9 @@ object AppSettingsStore {
      * 旧列数键迁移时，竖屏该取哪一个旧值。
      *
      * 上一版用 `isWideScreen()`（横屏 或 任一侧宽度 ≥ 600dp）挑键，竖屏平板读的是「宽屏」那一对。
-     * 竖屏下 `screenWidthDp` 与 `smallestScreenWidthDp` 相等，所以「这台设备竖屏会不会读宽屏键」
-     * 只取决于最小宽度，与本函数运行时所处方向无关。
+     * 竖屏下 `screenWidthDp` 不会小于 `smallestScreenWidthDp`（后者是各配置下的最小值，
+     * 分屏、自由窗口只会让前者更大），因此竖屏会不会命中旧宽屏键只取决于最小宽度，
+     * 与本函数运行时所处方向无关。
      * 抽成纯函数：JVM 单测没有真实 `Resources`，只有这样才能覆盖平板分支。
      */
     internal fun legacyPortraitValue(narrow: Int?, wide: Int?, wideAppliesToPortrait: Boolean): Int? = when {
@@ -919,18 +923,53 @@ object AppSettingsStore {
         else -> null
     }
 
-    /** 竖屏是否读旧「宽屏」键。 */
-    internal fun wideKeyAppliesToPortrait(smallestScreenWidthDp: Int): Boolean = smallestScreenWidthDp >= 600
+    /**
+     * 竖屏是否读旧「宽屏」键。
+     *
+     * 未定义哨兵 [Configuration.SMALLEST_SCREEN_WIDTH_DP_UNDEFINED] 与任何负值都不算平板：
+     * 没有可信宽度时按手机处理，宁可让竖屏沿用旧窄屏值，也不要凭空把手机判成平板。
+     * 抽成纯函数：JVM 单测没有真实 `Resources`，只有这样才能覆盖平板与未定义两条分支。
+     */
+    internal fun wideKeyAppliesToPortrait(smallestScreenWidthDp: Int): Boolean =
+        smallestScreenWidthDp != Configuration.SMALLEST_SCREEN_WIDTH_DP_UNDEFINED && smallestScreenWidthDp >= 600
 
     /**
      * 取最小宽度判断旧键归属。
      * JVM 单测的内存 Context 没有真实 `Resources`（`getResources` 直接抛「not mocked」），
      * 取不到时按普通手机处理：竖屏沿用旧窄屏值，与手机上的真实行为一致。
+     * 「取不到」有两条路径——抛异常，或返回 [Configuration.SMALLEST_SCREEN_WIDTH_DP_UNDEFINED]（0）。
+     * 两者都按手机处理，但都要留痕：迁移是一次性、不可重放的写操作，静默降级后用户无法自查
+     * 「为什么我的平板只排了 3 列」。注意迁移来源取决于「升级后第一次初始化时的设备形态」：
+     * 可折叠设备、多窗口下的最小宽度与之后日常使用的一致与否由系统决定，迁移只做一次，
+     * 不随后续形态变化重算。
      */
     private fun wideKeyAppliesToPortrait(c: Context): Boolean = try {
-        wideKeyAppliesToPortrait(c.resources.configuration.smallestScreenWidthDp)
-    } catch (_: RuntimeException) {
+        val smallestWidthDp = c.resources.configuration.smallestScreenWidthDp
+        if (smallestWidthDp == Configuration.SMALLEST_SCREEN_WIDTH_DP_UNDEFINED) {
+            logLegacyCardColumnsFallback("smallest width undefined ($smallestWidthDp dp)")
+        }
+        wideKeyAppliesToPortrait(smallestWidthDp)
+    } catch (error: RuntimeException) {
+        // 只兜 RuntimeException：这里唯一要防的是「JVM 单测的内存 Context 没有 Resources」
+        // 与「base Context 为 null」。但 Error（OOM 等）必须继续向上抛，不要顺手用
+        // runCatching 把 Throwable 一起吃掉。
+        logLegacyCardColumnsFallback("screen size unavailable", error)
         false
+    }
+
+    /**
+     * 旧列数迁移读不到设备宽度时的留痕。
+     *
+     * 日志是尽力而为的操作：JVM 单测里 `android.util.Log` 同样是桩，会抛「not mocked」，
+     * 所以单独吞一层 RuntimeException。日志用英文——app 侧 Kotlin 源码不得出现中文字面量
+     * （tools/check-hardcoded-ui-strings.py）。
+     */
+    private fun logLegacyCardColumnsFallback(reason: String, error: Throwable? = null) {
+        try {
+            Log.w(TAG, "Legacy card columns: $reason, treating this device as a phone", error)
+        } catch (_: RuntimeException) {
+            // 记录失败不影响迁移结论。
+        }
     }
 
     fun initGameCardStyle(c: Context) {
@@ -942,12 +981,25 @@ object AppSettingsStore {
             // 把用户已选列数丢掉。旧键保留不动，只补缺失的新键。
             val hasNarrow = p.contains(KEY_GAME_CARD_COLUMNS_NARROW_LEGACY)
             val hasWide = p.contains(KEY_GAME_CARD_COLUMNS_WIDE_LEGACY)
-            // 来源显式选定，不靠两次写入的先后顺序覆盖：竖屏的来源可能是旧宽屏值（平板）。
-            val portraitLegacy = legacyPortraitValue(
-                narrow = if (hasNarrow) p.getInt(KEY_GAME_CARD_COLUMNS_NARROW_LEGACY, DEFAULT_GAME_CARD_COLUMNS_NARROW_LEGACY) else null,
-                wide = if (hasWide) p.getInt(KEY_GAME_CARD_COLUMNS_WIDE_LEGACY, DEFAULT_GAME_CARD_COLUMNS_WIDE_LEGACY) else null,
-                wideAppliesToPortrait = wideKeyAppliesToPortrait(c),
+            // 迁移早已完成或从未用过旧版滑条时不必读设备宽度：那次读取既可能抛异常也可能打
+            // 降级日志，会让「本次真的迁移了」与「只是路过」在日志里分不出来。
+            val newKeys = listOf(
+                KEY_GAME_GRID_PORTRAIT_COLUMNS,
+                KEY_GAME_WATERFALL_PORTRAIT_COLUMNS,
+                KEY_GAME_GRID_LANDSCAPE_COLUMNS,
+                KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS,
             )
+            val migratesNow = (hasNarrow || hasWide) && newKeys.any { !p.contains(it) }
+            // 来源显式选定，不靠两次写入的先后顺序覆盖：竖屏的来源可能是旧宽屏值（平板）。
+            val portraitLegacy = if (!migratesNow) {
+                null
+            } else {
+                legacyPortraitValue(
+                    narrow = if (hasNarrow) p.getInt(KEY_GAME_CARD_COLUMNS_NARROW_LEGACY, DEFAULT_GAME_CARD_COLUMNS_NARROW_LEGACY) else null,
+                    wide = if (hasWide) p.getInt(KEY_GAME_CARD_COLUMNS_WIDE_LEGACY, DEFAULT_GAME_CARD_COLUMNS_WIDE_LEGACY) else null,
+                    wideAppliesToPortrait = wideKeyAppliesToPortrait(c),
+                )
+            }
             val landscapeLegacy = if (hasWide) {
                 p.getInt(KEY_GAME_CARD_COLUMNS_WIDE_LEGACY, DEFAULT_GAME_CARD_COLUMNS_WIDE_LEGACY)
             } else {
@@ -1032,8 +1084,16 @@ object AppSettingsStore {
         }
     }
 
-    fun getGameCardStyle(c: Context): String =
+    /**
+     * 读已提交的卡片风格。
+     *
+     * 与风格初始化、其 setter 以及四个列数 getter/setter 一样走同一把 [gameCardStyleLock]：
+     * `apply()` 写的是内存映射再异步落盘，单看一次 `getString` 并不会读到半写；加锁是为了让
+     * 这一组读写（共十一个入口）共用一个临界区，将来在其中加缓存或发布时不会出现两把锁各说各话。
+     */
+    fun getGameCardStyle(c: Context): String = synchronized(gameCardStyleLock) {
         normalizeGameCardStyle(prefs(c).getString(KEY_GAME_CARD_STYLE, DEFAULT_GAME_CARD_STYLE))
+    }
 
     /** 卡片风格归一：仅接受 waterfall / uniform_grid / cover_flow；历史值 grid 与空值回退瀑布。 */
     fun normalizeGameCardStyle(style: String?): String =

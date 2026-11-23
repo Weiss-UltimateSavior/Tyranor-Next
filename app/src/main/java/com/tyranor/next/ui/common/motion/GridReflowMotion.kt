@@ -172,9 +172,12 @@ internal class GridReflowEntranceSchedule {
                 // 一旦可见项多到压不进去，后段必须继续按 MIN_STEP 递增，
                 // 否则尾部若干张卡会拿到同一个延迟、同帧弹入（见 GridReflowSnapshotTest 的
                 // aDenseBatchKeepsAtLeastOneFrameBetweenCardsInsteadOfMergingTheTail）。
-                // 追加批在这里不受预算约束，末项可能比 720ms 再多出一格 step。
+                // 追加批在这里不受预算约束，且每追加一项都会再加一格 step，
+                // 末项可能比 720ms 多出「追加项数 × step」而不是只多一格。
                 // 另一道门在运行期：入场窗口（500ms）之外才进入可见集的项直接拿 null 延迟、
-                // 不参与错峰，所以「后段继续递增」只描述窗口内的排期。
+                // 不参与错峰；已经排进追加批、但等待中窗口过期的项仍按原延迟淡入——不要在
+                // Entrance.play 里改成「窗口过期就落位」，那会让它抢在序号更小的卡片前面出现。
+                // 所以「后段继续递增」描述的是全部已排期项，包含跨出窗口的那部分。
                 val remaining = STAGGER_BUDGET_MILLIS - lastDelay
                 // 可见项较多时压缩间隔至每张至少 MIN_STEP，避免把大量项合并到相同的尾部延迟。
                 val step = minOf(
