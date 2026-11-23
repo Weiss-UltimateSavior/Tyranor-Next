@@ -13,11 +13,11 @@ import java.security.MessageDigest
 /**
  * Impacto 外置 APK 引擎模块。
  *
- * 被承载的是 CommitteeOfZero/impacto：宿主仓库 yuukana1/Tyranor-Next-MAGES 固定上游提交，再按序应用该仓库的补丁系列
+ * 被承载的是 CommitteeOfZero/impacto：宿主仓库 SIRENA-Core/Tyranor-Next-MAGES 固定上游提交，再按序应用该仓库的补丁系列
  * （`engine/impacto/source-lock.json`、`engine/impacto/patches/`，逐个记录 SHA-256）。补丁里既有通用修复，也有只服务
  * Windows／Steam 版《秋之回忆6》的 `mo6tw-pc*` profile；其他游戏没有在设备上逐一回归。上游 impacto 自带 SDL3
  * 的 `org.libsdl.app`，与主 APK 内置的 SDL2 同名 Java 类冲突，所以必须是独立 APK：
- * 由宿主仓库 yuukana1/Tyranor-Next-MAGES 构建发布，包内只有上游 Java 源码、固定上游加补丁系列编出的库 `libimpacto.so` 和 TYN 自有的启动子类。
+ * 由宿主仓库 SIRENA-Core/Tyranor-Next-MAGES 构建发布，包内只有上游 Java 源码、固定上游加补丁系列编出的库 `libimpacto.so` 和 TYN 自有的启动子类。
  * 启动协议集中在本文件和 [ImpactoHostContract] 内，扫描器 / UI 不散落 package/action/extra 字符串。
  */
 object ImpactoExternalEngineModule : ExternalEngineModule {
@@ -30,7 +30,7 @@ object ImpactoExternalEngineModule : ExternalEngineModule {
     override val defaultAlias: String = "internal.impacto"
     override val supportedAliases: Set<String> = setOf("external.impacto")
 
-    override val updateSource = ExternalEngineReleaseSource("yuukana1/Tyranor-Next-MAGES", "impacto-host-")
+    override val updateSource = ExternalEngineReleaseSource("SIRENA-Core/Tyranor-Next-MAGES", "impacto-host-")
 
     /** 宿主仓库最新发布的 APK 直链（资产名固定）；宿主每发布新版本，这里自动指向它，无需改动本 App。 */
     override val installUrl: String =
@@ -113,7 +113,7 @@ object ImpactoExternalEngineModule : ExternalEngineModule {
     }
 }
 
-/** Impacto 宿主 APK 的 Intent 协议键；两端（本 App 与宿主仓库 yuukana1/Tyranor-Next-MAGES）各持一份常量，改动须同步。 */
+/** Impacto 宿主 APK 的 Intent 协议键；两端（本 App 与宿主仓库 SIRENA-Core/Tyranor-Next-MAGES）各持一份常量，改动须同步。 */
 object ImpactoHostContract {
     const val PACKAGE = "com.tyranor.next.impacto"
 

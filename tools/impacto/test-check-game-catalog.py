@@ -143,7 +143,7 @@ class CheckGameCatalogTests(unittest.TestCase):
 
 
 # The two copies of the Windows/Steam contract. HOST_PROFILES mirrors the "pc" blocks of engine/impacto/profiles.json in
-# yuukana1/Tyranor-Next-MAGES; set HOST_PROFILES_JSON to a checkout's file to compare against the real thing as well.
+# SIRENA-Core/Tyranor-Next-MAGES; set HOST_PROFILES_JSON to a checkout's file to compare against the real thing as well.
 HOST_PROFILES = {
     'version': 1,
     'profiles': [

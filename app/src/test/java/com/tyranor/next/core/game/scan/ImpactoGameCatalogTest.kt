@@ -38,7 +38,7 @@ class ImpactoGameCatalogTest {
     fun profileIdsAreUniqueAndMatchTheHostApkList() {
         val ids = ImpactoGameCatalog.games.map { it.profileId }
         assertEquals(ids.size, ids.toSet().size)
-        // Kept in sync with ImpactoRequest.PROFILES in the host repository (yuukana1/Tyranor-Next-MAGES; the host refuses anything else).
+        // Kept in sync with ImpactoRequest.PROFILES in the host repository (SIRENA-Core/Tyranor-Next-MAGES; the host refuses anything else).
         assertEquals(
             setOf(
                 "chlcc", "cclcc", "cclcc-switch", "mo6tw", "mo6tw-pc", "mo6tw-pc-zhs", "mo6tw-pc-zht", "sg-pc",
@@ -208,7 +208,7 @@ class ImpactoGameCatalogTest {
 
     @Test
     fun pcEditionsMirrorTheHostProfilesJsonDetectBlocks() {
-        // engine/impacto/profiles.json in yuukana1/Tyranor-Next-MAGES: detect.allOf + detect.textArchive per profile.
+        // engine/impacto/profiles.json in SIRENA-Core/Tyranor-Next-MAGES: detect.allOf + detect.textArchive per profile.
         val allOf = setOf("game.exe", "data/script.cpk", "data/mes00.cpk")
         val textArchive = mapOf(
             "mo6tw-pc" to "data/mes00.cpk",

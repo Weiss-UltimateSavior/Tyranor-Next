@@ -13,7 +13,7 @@ class ExternalEngineUpdateCheckerTest {
 
     @Test
     fun releaseTagMatchesTheHostVersionAndRequiresAnApk() {
-        assertEquals("https://github.com/yuukana1/Tyranor-Next-MAGES/releases", source.releasesUrl)
+        assertEquals("https://github.com/SIRENA-Core/Tyranor-Next-MAGES/releases", source.releasesUrl)
         assertEquals("0.3.1", ExternalEngineUpdateChecker.versionFromRelease(source, release()))
         assertNull(ExternalEngineUpdateChecker.versionFromRelease(source, release(tag = "v0.3.1")))
         assertNull(ExternalEngineUpdateChecker.versionFromRelease(source, release(tag = "impacto-host-0.3.1-rc1")))

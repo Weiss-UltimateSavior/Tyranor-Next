@@ -9,7 +9,7 @@ import java.util.Locale
  * 来源有两类：
  * - 上游 impacto 自带的 profile：固定提交 `ba0b6e0884b9016fcd7dfd3e50024c5af1e8aef7` 的 `gamedefinitions.lua` 与各
  *   `profiles/<id>/vfs.lua`（由 `tools/impacto/check-game-catalog.py` 对照校验）。查看器类条目不是游戏，不收录。
- * - 宿主仓库 yuukana1/Tyranor-Next-MAGES 的补丁系列新增的 `mo6tw-pc*`（Windows／Steam 版《秋之回忆6》）：上游没有，
+ * - 宿主仓库 SIRENA-Core/Tyranor-Next-MAGES 的补丁系列新增的 `mo6tw-pc*`（Windows／Steam 版《秋之回忆6》）：上游没有，
  *   判据与宿主 `engine/impacto/profiles.json` 里对应项的 `detect` 逐项一致（两边各持一份，改动须同步），
  *   不在 `check-game-catalog.py` 的校验范围内。
  *

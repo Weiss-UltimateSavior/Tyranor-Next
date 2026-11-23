@@ -10,7 +10,7 @@ Scope: the upstream profiles, declared as game("id", "title", "entry", ...). The
 (pcEdition("mo6tw-pc...", ...) for language variants, pcGame("sg-pc", ...) for the others) are defined by the host
 repository's patch series, not by the pinned upstream commit, so the upstream comparison skips them and lists them as a
 note. With --host-profiles they are compared against the "pc" detect blocks of the host's engine/impacto/profiles.json
-(yuukana1/Tyranor-Next-MAGES): same profile ids, languages, text archives and required files. That is a comparison of two
+(SIRENA-Core/Tyranor-Next-MAGES): same profile ids, languages, text archives and required files. That is a comparison of two
 copies of the same contract, not a game run.
 
 Kotlin comments are ignored: a commented-out or mentioned call is not a catalog entry.
@@ -316,7 +316,7 @@ def main(argv=None):
     ap.add_argument('--catalog', type=Path, default=DEFAULT_CATALOG)
     ap.add_argument(
         '--host-profiles', type=Path,
-        help='engine/impacto/profiles.json of yuukana1/Tyranor-Next-MAGES: also compare the pcEdition entries with it',
+        help='engine/impacto/profiles.json of SIRENA-Core/Tyranor-Next-MAGES: also compare the pcEdition entries with it',
     )
     args = ap.parse_args(argv)
     try:

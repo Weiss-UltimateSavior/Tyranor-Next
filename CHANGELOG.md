@@ -2,6 +2,8 @@
 
 ## 未发布
 
+- MAGES. 宿主迁入 `SIRENA-Core/Tyranor-Next-MAGES`，更新检测、Releases 页面和 APK 下载链接均指向组织仓库。
+
 - 引擎设置与单游戏设置中的画质处理卡片标题由「画质滤镜链」改回「画面超分」（三语言 `graphics_settings_title` 同步为「画面超分 / Super resolution / 超解像」），卡片内容与滤镜链行为不变。
 
 - 修复 RPG Maker MV 存档因 `global.title` 与 `$dataSystem.gameTitle` 不一致被误判为不可读取的问题（修改器可见但 `loadGame` / 游戏内读档返回 `false`）：在 Web 存档模式下保留 `globalId` 校验与 `isLocalMode()` 原行为，跳过跨版本/汉化标题字面校验，并增加 `load` 时防插件覆写的幂等保护，统一覆盖 `Tyranor-2.3.4`、`TynMV-0.1` 与 `TynMV-0.2`（[#148](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/148)）。
