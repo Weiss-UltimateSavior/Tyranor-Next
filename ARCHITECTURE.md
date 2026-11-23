@@ -131,6 +131,8 @@ RPG Maker v2 的插件 `localStorage` 由兼容层调用 [RpgMakerFsBridge](engi
 
 宿主启动加载由 engine 的 `EngineStartupOverlay` 负责原生 View 视觉与终态清理；`EngineSurfaceReadyProbe` 在 API 26+ 直接对宿主 Surface 做单请求 PixelCopy，`EngineSurfaceReadyState` 管理请求代际、暂停与迟到结果。SDL / NativeActivity 复用 `EngineSurfaceStartupController`；NativeActivity 通过原有 SurfaceHolder.Callback2 转发源窗口，遮罩使用应用内 TYPE_APPLICATION_PANEL，不能拿包含遮罩的 Window 截图判断游戏内容。该机制不依赖滤镜，不修改预编译运行库，不改变 native 引擎线程归属。Web / SystemNNN / krkr 使用各自的内容或场景信号；组件清理不替代引擎原有销毁 ACK 与进程退出规则。主题 / 语言读取 LaunchContract Intent 快照，固定黑底的文字配色与 App 卡片色板分开。
 
+播放器宿主弹窗由 `KrDialogStyle` 绘制。App 的 `EngineLauncher` 经 `LaunchContract` 传入主题色快照，engine 统一通过 `EngineThemeColors` 读取。`SdlMessageBox` 将三套 SDL 宿主的消息回调映射为原始按钮 ID，并在 Activity 退出时解除 native 等待。`EngineWebChromeClient` 向 WebView 回传 JS 对话框结果，销毁 WebView 前取消未完成的请求。
+
 WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano` 保留历史默认目录，`:rpgmaker` 自设后缀。更改 profile 或本地 HTTP 端口会影响历史网页存储作用域，须同时评估存档兼容。
 
 ## 6. 资源与原生构建链

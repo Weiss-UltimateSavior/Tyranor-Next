@@ -1,10 +1,9 @@
 package org.cocos2dx.lib;
 
-import android.app.AlertDialog;
-import android.content.DialogInterface;
 import android.os.Handler;
 import android.os.Message;
 import java.lang.ref.WeakReference;
+import org.tvp.kirikiri2.KrDialogStyle;
 
 public class Cocos2dxHandler extends Handler {
     public static final int HANDLER_SHOW_DIALOG = 1;
@@ -29,18 +28,10 @@ public class Cocos2dxHandler extends Handler {
 
     private void showDialog(Message message) {
         Cocos2dxActivity activity = this.mActivity.get();
-        if (activity == null) return;
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
         DialogMessage dialogMessage = (DialogMessage) message.obj;
-        new AlertDialog.Builder(activity)
-                .setTitle(dialogMessage.titile)
-                .setMessage(dialogMessage.message)
-                .setPositiveButton("Ok", new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialogInterface, int which) {
-                    }
-                })
-                .create()
-                .show();
+        KrDialogStyle.createDialog(activity, dialogMessage.titile, dialogMessage.message, null,
+                null, true, true, null).show();
     }
 
     @Override

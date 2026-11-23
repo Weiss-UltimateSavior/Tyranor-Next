@@ -1,24 +1,17 @@
 package org.libsdl3.app;
 
 import android.app.Activity;
-import android.app.AlertDialog;
-import android.app.Dialog;
 import android.app.UiModeManager;
 import android.content.ActivityNotFoundException;
 import android.content.ClipboardManager;
 import android.content.ClipData;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
-import android.graphics.Color;
-import android.graphics.Typeface;
-import android.graphics.drawable.ColorDrawable;
-import android.graphics.drawable.GradientDrawable;
 import android.hardware.Sensor;
 import android.net.Uri;
 import android.os.Build;
@@ -30,9 +23,7 @@ import android.os.Message;
 import android.os.ParcelFileDescriptor;
 import android.util.DisplayMetrics;
 import android.util.Log;
-import android.util.SparseArray;
 import android.view.Display;
-import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.PointerIcon;
@@ -44,15 +35,12 @@ import android.view.WindowManager;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.MimeTypeMap;
-import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
-import android.widget.ScrollView;
-import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.core.engine.SdlMessageBox;
 import com.core.engine.DoubleBackExit;
-import com.core.engine.EngineThemeColors;
 import org.libsdl.app.AudioRouteWatcher;
 
 import java.io.FileNotFoundException;
@@ -409,24 +397,8 @@ public class SDLActivity extends AppCompatActivity implements View.OnSystemUiVis
 
         if (mBrokenLibraries) {
             mSingleton = this;
-            AlertDialog.Builder dlgAlert  = new AlertDialog.Builder(this);
-            dlgAlert.setMessage("An error occurred while trying to start the application. Please try again and/or reinstall."
-                  + System.getProperty("line.separator")
-                  + System.getProperty("line.separator")
-                  + "Error: " + errorMsgBrokenLib);
-            dlgAlert.setTitle("SDL Error");
-            dlgAlert.setPositiveButton("Exit",
-                new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialog,int id) {
-                        // if this button is clicked, close current activity
-                        SDLActivity.mSingleton.finish();
-                    }
-                });
-           dlgAlert.setCancelable(false);
-           dlgAlert.create().show();
-
-           return;
+            SdlMessageBox.showStartupError(this, errorMsgBrokenLib);
+            return;
         }
 
 
@@ -720,7 +692,7 @@ public class SDLActivity extends AppCompatActivity implements View.OnSystemUiVis
         // A native message-box call blocks the SDL thread until its dialog is
         // dismissed. Wake it before joining during Activity teardown so a
         // rotation, task swipe, or engine exit cannot leave the thread stuck.
-        cancelPendingMessageBox();
+        messageBox.close();
 
         if (SDLActivity.mBrokenLibraries) {
            super.onDestroy();
@@ -1626,315 +1598,23 @@ public class SDLActivity extends AppCompatActivity implements View.OnSystemUiVis
         }
     }
 
-    // Messagebox
+    private final SdlMessageBox messageBox = new SdlMessageBox(this);
 
-    /** Result of current messagebox. Also used for blocking the calling thread. */
-    protected final int[] messageboxSelection = new int[1];
-    /** Guards the one-at-a-time native message-box request and its lifecycle. */
-    private boolean messageboxPending;
-    private AlertDialog messageboxDialog;
-
-    /**
-     * This method is called by SDL using JNI.
-     * Shows the messagebox from UI thread and block calling thread.
-     * buttonFlags, buttonIds and buttonTexts must have same length.
-     * @param buttonFlags array containing flags for every button.
-     * @param buttonIds array containing id for every button.
-     * @param buttonTexts array containing text for every button.
-     * @param colors null for default or array of length 5 containing colors.
-     * @return button id or -1.
-     */
-    public int messageboxShowMessageBox(
-            final int flags,
-            final String title,
-            final String message,
-            final int[] buttonFlags,
-            final int[] buttonIds,
-            final String[] buttonTexts,
-            final int[] colors) {
-
-        // sanity checks
-
-        if (buttonFlags == null || buttonIds == null || buttonTexts == null
-                || buttonTexts.length == 0
-                || buttonFlags.length != buttonIds.length
-                || buttonIds.length != buttonTexts.length) {
-            return -1; // implementation broken
-        }
-
-        if (shouldAutoSkipMessageBox(flags, title, message, buttonFlags, buttonIds, buttonTexts)) {
+    // JNI entry point. The host supplies the palette for the player window.
+    public int messageboxShowMessageBox(int flags, String title, String message, int[] buttonFlags,
+            int[] buttonIds, String[] buttonTexts, int[] colors) {
+        if (buttonIds != null && buttonTexts != null && buttonFlags != null
+                && buttonIds.length != 0 && buttonFlags.length == buttonIds.length
+                && buttonTexts.length == buttonIds.length
+                && shouldAutoSkipMessageBox(flags, title, message, buttonFlags, buttonIds, buttonTexts)) {
             return buttonIds[0];
         }
-
-        synchronized (messageboxSelection) {
-            // SDL exposes a synchronous message-box API. Reject a re-entrant
-            // request instead of allowing two native callers to overwrite the
-            // shared result slot and wake the wrong waiter.
-            if (messageboxPending) return -1;
-            messageboxSelection[0] = -1;
-            messageboxPending = true;
-        }
-
-        // collect arguments for Dialog
-
-        final Bundle args = new Bundle();
-        args.putInt("flags", flags);
-        args.putString("title", title);
-        args.putString("message", message);
-        args.putIntArray("buttonFlags", buttonFlags);
-        args.putIntArray("buttonIds", buttonIds);
-        args.putStringArray("buttonTexts", buttonTexts);
-        args.putIntArray("colors", colors);
-
-        // trigger Dialog creation on UI thread
-
-        try {
-            runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    messageboxCreateAndShow(args);
-                }
-            });
-        } catch (RuntimeException ex) {
-            completeMessageBox(-1);
-            return -1;
-        }
-
-        // block the calling thread
-
-        synchronized (messageboxSelection) {
-            while (messageboxPending) {
-                try {
-                    messageboxSelection.wait();
-                } catch (InterruptedException ex) {
-                    Thread.currentThread().interrupt();
-                    messageboxSelection[0] = -1;
-                    messageboxPending = false;
-                    messageboxSelection.notifyAll();
-                    return -1;
-                }
-            }
-            return messageboxSelection[0];
-        }
+        return messageBox.show(title, message, buttonFlags, buttonIds, buttonTexts, true, -1);
     }
 
-    /**
-     * Hook for an engine-specific message-box policy. SDL itself keeps the
-     * default behavior unchanged; KRKRActivity overrides this for its optional
-     * startup information-dialog suppression.
-     */
-    protected boolean shouldAutoSkipMessageBox(
-            int flags,
-            String title,
-            String message,
-            int[] buttonFlags,
-            int[] buttonIds,
-            String[] buttonTexts) {
+    protected boolean shouldAutoSkipMessageBox(int flags, String title, String message,
+                                               int[] buttonFlags, int[] buttonIds, String[] buttonTexts) {
         return false;
-    }
-
-    protected void messageboxCreateAndShow(Bundle args) {
-
-        synchronized (messageboxSelection) {
-            if (!messageboxPending) return;
-        }
-
-        // 统一风格：主题色从 Launcher 传入的 Intent extras 读取（跟随启动器主题与深浅色），
-        // 复刻 LauncherDialogFactory 视觉风格，替换 SDL 默认 AlertDialog 样式。
-
-        final EngineThemeColors.Palette theme = EngineThemeColors.fromIntent(getIntent());
-        final float density = getResources().getDisplayMetrics().density;
-
-        final AlertDialog dialog = new AlertDialog.Builder(this).create();
-        messageboxDialog = dialog;
-        dialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
-            @Override
-            public void onDismiss(DialogInterface unused) {
-                if (messageboxDialog == dialog) messageboxDialog = null;
-                completeMessageBox(-1);
-            }
-        });
-
-        // 根容器：圆角卡片背景 + 22dp padding
-
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(22f), dp(22f), dp(22f), dp(22f));
-        root.setBackground(roundedCard(theme.getCard(), 20f));
-
-        // 标题：16sp bold 居中
-
-        String title = args.getString("title");
-        if (title != null && title.length() != 0) {
-            TextView titleView = new TextView(this);
-            titleView.setText(title);
-            titleView.setTextColor(theme.getText());
-            titleView.setTextSize(16f);
-            titleView.setTypeface(titleView.getTypeface(), Typeface.BOLD);
-            titleView.setGravity(Gravity.CENTER);
-            root.addView(titleView, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        }
-
-        // 消息：13sp 居中；放进 ScrollView——长文本（汉化/移植组的启动说明等）若直接铺开，
-        // 卡片高度会超出屏幕，底部按钮被顶出屏幕，弹窗既无法确认也无法关闭。
-
-        ScrollView messageScroll = null;
-        String message = args.getString("message");
-        if (message != null && message.length() != 0) {
-            TextView messageView = new TextView(this);
-            messageView.setText(message);
-            messageView.setTextColor(theme.getTextMuted());
-            messageView.setTextSize(13f);
-            messageView.setGravity(Gravity.CENTER);
-            messageScroll = new ScrollView(this);
-            messageScroll.addView(messageView, new ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            LinearLayout.LayoutParams messageParams = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            messageParams.topMargin = dp(14f);
-            root.addView(messageScroll, messageParams);
-        }
-
-        // 按钮：药丸形，首按钮=确认（primary 底色），其余=次要（card 底色）
-
-        int[] buttonFlags = args.getIntArray("buttonFlags");
-        int[] buttonIds = args.getIntArray("buttonIds");
-        String[] buttonTexts = args.getStringArray("buttonTexts");
-
-        final SparseArray<View> mapping = new SparseArray<View>();
-
-        LinearLayout buttons = new LinearLayout(this);
-        buttons.setOrientation(LinearLayout.HORIZONTAL);
-        buttons.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        rowParams.topMargin = dp(22f);
-        root.addView(buttons, rowParams);
-
-        boolean multi = buttonTexts.length > 1;
-        for (int i = 0; i < buttonTexts.length; ++i) {
-            final int id = buttonIds[i];
-            boolean primaryStyle = (i == 0);
-            TextView button = new TextView(this);
-            button.setText(buttonTexts[i]);
-            button.setTextColor(primaryStyle ? theme.getOnPrimary() : theme.getPrimary());
-            button.setTextSize(13f);
-            button.setTypeface(button.getTypeface(), Typeface.BOLD);
-            button.setGravity(Gravity.CENTER);
-            button.setBackground(roundedCard(primaryStyle ? theme.getPrimary() : theme.getCard(), 999f));
-            button.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    completeMessageBox(id);
-                    dialog.dismiss();
-                }
-            });
-            if (buttonFlags[i] != 0) {
-                // see SDL_messagebox.h
-                if ((buttonFlags[i] & 0x00000001) != 0) {
-                    mapping.put(KeyEvent.KEYCODE_ENTER, button);
-                }
-                if ((buttonFlags[i] & 0x00000002) != 0) {
-                    mapping.put(KeyEvent.KEYCODE_ESCAPE, button); /* API 11 */
-                }
-            }
-            LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(
-                    multi ? 0 : ViewGroup.LayoutParams.MATCH_PARENT, dp(36f));
-            if (multi) {
-                buttonParams.weight = 1f;
-                if (i > 0) {
-                    buttonParams.leftMargin = dp(7f);
-                }
-            }
-            buttons.addView(button, buttonParams);
-        }
-
-        // 窗口尺寸与屏幕上限：宽度与 setLayout 共用；高度先预测量再决定是否收缩消息区
-
-        final int width = Math.min(dp(252f), getResources().getDisplayMetrics().widthPixels - dp(48f));
-        final int maxRootHeight = getResources().getDisplayMetrics().heightPixels - dp(32f);
-
-        // 长文本保护：卡片高度超出屏幕可用高度时压缩消息滚动区、腾出屏幕内空间，
-        // 保证底部按钮始终可见可点，超出的内容在滚动区内翻看（修复长文本把按钮顶出屏幕的卡死）
-
-        if (messageScroll != null) {
-            root.measure(
-                    View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
-                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-            int rootHeight = root.getMeasuredHeight();
-            if (rootHeight > maxRootHeight) {
-                ViewGroup.LayoutParams scrollParams = messageScroll.getLayoutParams();
-                scrollParams.height = Math.max(
-                        dp(96f),
-                        messageScroll.getMeasuredHeight() - (rootHeight - maxRootHeight));
-                messageScroll.setLayoutParams(scrollParams);
-            }
-        }
-
-        // 单按钮信息框允许返回键/点击外部关闭（等价于「跳过」）；多按钮确认框必须明确选择
-
-        boolean singleButton = buttonTexts.length == 1;
-        dialog.setCancelable(singleButton);
-        dialog.setCanceledOnTouchOutside(singleButton);
-
-        dialog.setView(root);
-        dialog.setOnKeyListener(new Dialog.OnKeyListener() {
-            @Override
-            public boolean onKey(DialogInterface d, int keyCode, KeyEvent event) {
-                View button = mapping.get(keyCode);
-                if (button != null) {
-                    if (event.getAction() == KeyEvent.ACTION_UP) {
-                        button.performClick();
-                    }
-                    return true; // also for ignored actions
-                }
-                return false;
-            }
-        });
-
-        try {
-            dialog.show();
-        } catch (RuntimeException ex) {
-            if (messageboxDialog == dialog) messageboxDialog = null;
-            completeMessageBox(-1);
-            return;
-        }
-
-        // 窗口：透明背景 + 252dp 宽度（带屏幕兜底），与 LauncherDialogFactory 一致
-
-        dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        dialog.getWindow().setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT);
-    }
-
-    /** Completes the current synchronous native request exactly once. */
-    private void completeMessageBox(int result) {
-        synchronized (messageboxSelection) {
-            if (!messageboxPending) return;
-            messageboxSelection[0] = result;
-            messageboxPending = false;
-            messageboxSelection.notifyAll();
-        }
-    }
-
-    /** Dismisses a dialog and wakes SDL before native teardown joins its thread. */
-    private void cancelPendingMessageBox() {
-        AlertDialog dialog = messageboxDialog;
-        if (dialog != null && dialog.isShowing()) dialog.dismiss();
-        completeMessageBox(-1);
-    }
-
-    /** dp 转 px（四舍五入）。 */
-    private int dp(float value) {
-        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
-    }
-
-    /** 圆角纯色背景。 */
-    private GradientDrawable roundedCard(int color, float radiusDp) {
-        GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(color);
-        drawable.setCornerRadius(radiusDp * getResources().getDisplayMetrics().density);
-        return drawable;
     }
 
     private final Runnable rehideSystemUi = new Runnable() {

@@ -41,6 +41,7 @@
     <string name="engine_yes">Yes</string>
     <string name="engine_no">No</string>
     <string name="engine_prompt">Notice</string>
+    <string name="engine_sdl_start_failed_detail">SDL failed to start. Try again or reinstall the app.\n\n%1$s</string>
     <string name="engine_error">Error</string>
     <string name="engine_exit_game">Exit game</string>
     <string name="engine_exit_game_message">Exit the current game?</string>

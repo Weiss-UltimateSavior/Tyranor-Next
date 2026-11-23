@@ -1,6 +1,6 @@
 package com.core.cmvs
 
-import android.app.AlertDialog
+import android.app.Dialog
 import android.app.NativeActivity
 import android.content.Intent
 import android.net.Uri
@@ -12,7 +12,6 @@ import android.view.KeyEvent
 import android.view.SurfaceHolder
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
-import android.widget.EditText
 import androidx.annotation.Keep
 import com.core.engine.DoubleBackExit
 import com.core.engine.EnginePlayerOrientation
@@ -25,6 +24,7 @@ import java.io.FileOutputStream
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
+import org.tvp.kirikiri2.KrDialogStyle
 
 /**
  * CMVS NativeActivity host.
@@ -43,7 +43,7 @@ class CmvsActivity : NativeActivity() {
     @Volatile private var choosingFont = false
     private var startupController: EngineSurfaceStartupController? = null
     @Volatile private var startupSurfaceHolder: SurfaceHolder? = null
-    private var commentDialog: AlertDialog? = null
+    private var commentDialog: Dialog? = null
     private val commentResult = AtomicReference<Pair<Int, String>?>()
 
     @Keep
@@ -170,29 +170,23 @@ class CmvsActivity : NativeActivity() {
             answer("")
             return@runOnUiThread
         }
-        val input = EditText(this).apply {
-            setSingleLine(true)
-            inputType = InputType.TYPE_CLASS_TEXT
-            imeOptions = EditorInfo.IME_ACTION_DONE
+        val input = KrDialogStyle.createInput(this, initial, InputType.TYPE_CLASS_TEXT).apply {
             filters = arrayOf(InputFilter.LengthFilter(maxChars))
             setText(initial)
             selectAll()
         }
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(R.string.engine_cmvs_save_comment)
-            .setView(input)
-            .setNegativeButton(android.R.string.cancel) { _, _ -> answer("") }
-            .setOnCancelListener { answer("") }
-            .setPositiveButton(android.R.string.ok) { _, _ -> answer(" ${input.text}") }
-            .create()
+        val dialog = KrDialogStyle.createDialog(
+            this, getString(R.string.engine_cmvs_save_comment), null, input,
+            arrayOf(getString(R.string.engine_ok), getString(R.string.engine_cancel)), true, true,
+        ) { _, which -> answer(if (which == 0) " ${input.text}" else "") }
+        dialog.setOnCancelListener { answer("") }
         input.setOnEditorActionListener { _, action, _ ->
             if (action != EditorInfo.IME_ACTION_DONE) return@setOnEditorActionListener false
             answer(" ${input.text}")
             dialog.dismiss()
             true
         }
-        input.requestFocus()
-        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+        KrDialogStyle.focusInput(dialog, input)
         commentDialog = dialog
         dialog.setOnDismissListener { if (commentDialog === dialog) commentDialog = null }
         dialog.show()
@@ -240,25 +234,19 @@ class CmvsActivity : NativeActivity() {
             answer("cancel\n")
             return
         }
-        val input = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_NUMBER
-            setText("0")
+        val input = KrDialogStyle.createInput(this, "0", InputType.TYPE_CLASS_NUMBER)
+        KrDialogStyle.createDialog(
+            this, getString(R.string.engine_cmvs_font_index_title),
+            getString(R.string.engine_cmvs_font_index_message), input,
+            arrayOf(getString(R.string.engine_ok), getString(R.string.engine_cancel)), true, true,
+        ) { _, which ->
+            val index = input.text.toString().toIntOrNull()
+            if (which == 0 && index != null && index in 0..1024) copyFontAsync(uri, index)
+            else answer("cancel\n")
+        }.apply {
+            setOnCancelListener { answer("cancel\n") }
+            show()
         }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.engine_cmvs_font_index_title)
-            .setMessage(R.string.engine_cmvs_font_index_message)
-            .setView(input)
-            .setNegativeButton(android.R.string.cancel) { _, _ -> answer("cancel\n") }
-            .setOnCancelListener { answer("cancel\n") }
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                val index = input.text.toString().toIntOrNull()
-                if (index == null || index !in 0..1024) {
-                    answer("cancel\n")
-                } else {
-                    copyFontAsync(uri, index)
-                }
-            }
-            .show()
     }
 
     private fun copyFontAsync(uri: Uri, index: Int) {

@@ -17,7 +17,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.JavascriptInterface
-import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -30,6 +29,7 @@ import com.core.engine.EnginePlayerOrientation
 import com.core.engine.EnginePrefs
 import com.core.engine.EngineSessionRegistry
 import com.core.engine.EngineStartupOverlay
+import com.core.engine.EngineWebChromeClient
 import com.core.engine.EngineThemeColors
 import com.core.engine.LaunchContract
 import com.core.engine.R
@@ -643,7 +643,7 @@ class RpgMakerActivity : Activity() {
                 return uri?.takeUnless(::isAllowedGameResource)?.let { blockedResponse() }
             }
         }
-        browser.webChromeClient = object : WebChromeClient() {
+        browser.webChromeClient = object : EngineWebChromeClient(this) {
             override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
                 if (consoleMessage != null) {
                     val level = Log.INFO
@@ -688,6 +688,7 @@ class RpgMakerActivity : Activity() {
     }
 
     private fun handleRendererGone(view: WebView): Boolean {
+        (view.webChromeClient as? EngineWebChromeClient)?.dismissDialogs()
         if (webView !== view) {
             (view.parent as? ViewGroup)?.removeView(view)
             runCatching { view.destroy() }
@@ -924,6 +925,7 @@ class RpgMakerActivity : Activity() {
     }
 
     override fun onDestroy() {
+        (webView?.webChromeClient as? EngineWebChromeClient)?.dismissDialogs()
         // 只有仍拥有会话的实例才能清理登记：旧实例的收尾晚于新实例 onCreate 时，
         // 无条件 clear 会把新会话刚写入的游戏目录抹掉
         if (sessionOwnership.isOwner(sessionEpochAtCreate)) {

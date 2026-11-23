@@ -41,6 +41,7 @@
     <string name="engine_yes">是</string>
     <string name="engine_no">否</string>
     <string name="engine_prompt">提示</string>
+    <string name="engine_sdl_start_failed_detail">SDL 启动失败。请重试或重新安装应用。\n\n%1$s</string>
     <string name="engine_error">错误</string>
     <string name="engine_exit_game">结束游戏</string>
     <string name="engine_exit_game_message">确定要结束当前游戏吗？</string>

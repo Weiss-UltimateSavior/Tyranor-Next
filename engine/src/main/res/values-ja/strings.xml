@@ -41,6 +41,7 @@
     <string name="engine_yes">はい</string>
     <string name="engine_no">いいえ</string>
     <string name="engine_prompt">お知らせ</string>
+    <string name="engine_sdl_start_failed_detail">SDL を起動できませんでした。再試行するか、アプリを再インストールしてください。\n\n%1$s</string>
     <string name="engine_error">エラー</string>
     <string name="engine_exit_game">ゲームを終了</string>
     <string name="engine_exit_game_message">現在のゲームを終了しますか？</string>

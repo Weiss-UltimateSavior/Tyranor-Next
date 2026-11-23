@@ -1,50 +1,39 @@
 package org.tvp.kirikiri2;
 
+import android.app.Activity;
 import android.app.Dialog;
 import android.content.Context;
-import android.content.Intent;
+import android.content.DialogInterface;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.text.InputType;
 import android.view.Gravity;
+import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
+import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
-import bridge.KrPathUtils;
+import com.core.engine.EngineThemeColors;
 import com.core.engine.EngineUiText;
-import com.core.engine.LaunchContract;
+import com.core.engine.R;
 
-/**
- * 统一弹窗样式 — KRKR / Artemis 共用。
- *
- * <p>从启动 Activity 的 Intent extras 读取主题色（由 LauncherUiBridge.appendEngineThemeExtras
- * 注入），使引擎弹窗在视觉上与 Launcher 主题一致。无 extras 时回退到 Material 深色默认值。</p>
- *
- * <p>样式规格遵循 AGENTS.md：20dp 卡片圆角、20dp 按钮圆角、16sp bold 标题、
- * 12sp muted 正文、13sp bold 按钮、38dp 按钮高度。</p>
- */
+/** 内置引擎宿主共用的 KRKR 消息、输入和内容弹窗。 */
 public final class KrDialogStyle {
-
-    // --- 回退颜色（无 Intent extras 时使用） ---
-    private static final int FALLBACK_CARD         = 0xFF2A2A2A;
-    private static final int FALLBACK_PRIMARY       = 0xFF18B978;
-    private static final int FALLBACK_ON_PRIMARY    = 0xFFFFFFFF;
-    private static final int FALLBACK_TEXT          = 0xFFFFFFFF;
-    private static final int FALLBACK_TEXT_MUTED    = 0xFFB0B0B0;
-    private static final int FALLBACK_INPUT_BG      = 0xFF3A3A3A;
-    private static final int FALLBACK_INPUT_TEXT    = 0xFFFFFFFF;
-    private static final int FALLBACK_INPUT_HINT    = 0xFF808080;
 
     // --- 尺寸常量（AGENTS.md） ---
     private static final float CARD_RADIUS_DP   = 20f;
     private static final float BUTTON_RADIUS_DP = 20f;
     private static final float INPUT_RADIUS_DP  = 8f;
     private static final int   DIALOG_WIDTH_DP  = 280;
+    private static final int   CONTENT_WIDTH_DP = 560;
     private static final int   BUTTON_HEIGHT_DP = 38;
     private static final int   BUTTON_TEXT_SP   = 13;
     private static final int   TITLE_TEXT_SP    = 16;
@@ -122,152 +111,105 @@ public final class KrDialogStyle {
         return String.valueOf(Math.min(Math.max(value, Math.min(min, max)), Math.max(min, max)));
     }
 
-    /**
-     * 输入弹窗核心：文本与数值入口共用同一卡片、按钮与键盘唤起流程。
-     *
-     * @param inputType 输入控件类型（文本或数值）。
-     * @param resolver 按钮点击时把输入框原文转换为回调的 inputText。
-     */
     private static Dialog showInputBoxInternal(Context context, String title, String message,
                                                String initialText, String[] buttons,
                                                boolean cancelable, Callback callback,
                                                int inputType, InputTextResolver resolver) {
-        Colors c = resolveColors(context);
+        EditText input = initialText == null ? null : createInput(context, initialText, inputType);
+        Dialog dialog = createDialog(context, title, message, input, buttons, cancelable, false,
+                (d, which) -> {
+                    String text = input == null ? "" : resolver.resolve(which, input.getText().toString());
+                    if (callback != null) callback.onButtonClicked(which, text);
+                });
+        if (cancelable && callback != null) {
+            dialog.setOnCancelListener(d -> callback.onButtonClicked(1, ""));
+        }
+        if (input != null) focusInput(dialog, input);
+        dialog.show();
+        return dialog;
+    }
 
-        // 用 Dialog 而非 AlertDialog，避免内部布局冲突。
-        // setContentView 必须在 show() 之前调用，使 Window 首次显示时
-        // 就能在视图树中找到已获焦的 EditText 并触发 SOFT_INPUT_STATE_ALWAYS_VISIBLE。
+    /** Buttons report their original array index. Back and outside taps use the dialog's cancel listener. */
+    public static Dialog createDialog(Context context, String title, String message, View content,
+                                      String[] buttons, boolean cancelable, boolean cancelOnOutside,
+                                      DialogInterface.OnClickListener action) {
+        return createDialog(context, title, message, content, buttons, cancelable, cancelOnOutside,
+                DIALOG_WIDTH_DP, action);
+    }
+
+    /** Wider card for a scrollable list, form or settings panel. */
+    public static Dialog createContentDialog(Context context, String title, String message, View content,
+                                             String[] buttons, boolean cancelable, boolean cancelOnOutside,
+                                             DialogInterface.OnClickListener action) {
+        return createDialog(context, title, message, content, buttons, cancelable, cancelOnOutside,
+                CONTENT_WIDTH_DP, action);
+    }
+
+    private static Dialog createDialog(Context context, String title, String message, View content,
+                                       String[] buttons, boolean cancelable, boolean cancelOnOutside,
+                                       int widthDp, DialogInterface.OnClickListener action) {
+        EngineThemeColors.Palette colors = palette(context);
         Dialog dialog = new Dialog(context);
-        dialog.setCancelable(false); // 始终不允许返回键直接 dismiss，用 OnCancelListener 模拟
-        dialog.setCanceledOnTouchOutside(false);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setCancelable(cancelable);
+        dialog.setCanceledOnTouchOutside(cancelable && cancelOnOutside);
 
-        // 按钮点击标志 — 区分"用户点击按钮 dismiss"和"系统意外 dismiss"
-        final boolean[] buttonClicked = {false};
-
-        LinearLayout card = createCard(context, c);
-        addTitle(card, title, c);
-        if (message != null && !message.isEmpty()) {
-            addMessage(card, message, c);
+        LinearLayout card = createCard(context, colors);
+        LinearLayout body = new LinearLayout(context);
+        body.setOrientation(LinearLayout.VERTICAL);
+        if (title != null && !title.isEmpty()) addTitle(body, title, colors);
+        if (message != null && !message.isEmpty()) addMessage(body, message, colors);
+        if (content != null) {
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+            if (body.getChildCount() != 0) params.topMargin = dp(context, 12);
+            body.addView(content, params);
         }
-        final EditText editText;
-        if (initialText != null) {
-            editText = addEditText(card, initialText, c, inputType);
-        } else {
-            editText = null;
-        }
-        addButtons(card, buttons, c, (which) -> {
-            buttonClicked[0] = true;
+        ScrollView scroll = new ScrollView(context);
+        scroll.addView(body, new ScrollView.LayoutParams(-1, -2));
+        // The body yields height to the actions when text or the keyboard limits the viewport.
+        if (body.getChildCount() != 0) card.addView(scroll, new LinearLayout.LayoutParams(-1, -2, 1f));
+        addButtons(card, buttons, colors, index -> {
+            if (!dialog.isShowing()) return;
             dialog.dismiss();
-            String text = editText != null ? resolver.resolve(which, editText.getText().toString()) : "";
-            if (callback != null) callback.onButtonClicked(which, text);
+            if (action != null) action.onClick(dialog, index);
         });
 
-        // 全屏容器拦截所有触摸事件，防止穿透到下层 GL Activity。
         FrameLayout root = new FrameLayout(context);
+        root.setPadding(dp(context, 16), dp(context, 8), dp(context, 16), dp(context, 8));
+        root.setOnClickListener(cancelable && cancelOnOutside ? v -> dialog.cancel() : null);
         root.setClickable(true);
-        root.setFocusable(true);
-        FrameLayout.LayoutParams cardParams = new FrameLayout.LayoutParams(
-                dialogWidthPx(context), FrameLayout.LayoutParams.WRAP_CONTENT);
-        cardParams.gravity = Gravity.CENTER;
-        root.addView(card, cardParams);
-
+        card.setClickable(true);
+        int maxWidth = Math.max(1, context.getResources().getDisplayMetrics().widthPixels - dp(context, 48));
+        root.addView(card, new FrameLayout.LayoutParams(Math.min(dp(context, widthDp), maxWidth), -2,
+                Gravity.CENTER));
         dialog.setContentView(root);
-
         Window window = dialog.getWindow();
         if (window != null) {
-            window.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
-            window.setDimAmount(0f);
-            window.setSoftInputMode(
-                    WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE
-                    | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-            // 弹窗 Window 必须持有焦点并消费所有触摸事件，
-            // 否则触摸会穿透到下层 GL Activity。
-            window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
-            window.clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
-            window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL);
-            // 全屏 Window 覆盖整个屏幕，确保所有触摸都由弹窗消费
-            WindowManager.LayoutParams lp = window.getAttributes();
-            lp.width = WindowManager.LayoutParams.MATCH_PARENT;
-            lp.height = WindowManager.LayoutParams.MATCH_PARENT;
-            window.setAttributes(lp);
-        }
-
-        // 可取消时，用 OnCancelListener 模拟原始 Artemis 行为（返回键 → close(0)）
-        if (cancelable) {
-            dialog.setOnCancelListener(d -> {
-                if (!buttonClicked[0] && callback != null) {
-                    buttonClicked[0] = true;
-                    callback.onButtonClicked(1, "");
-                }
-            });
-            dialog.setCancelable(true);
-        }
-
-        dialog.show();
-
-        if (editText != null) {
-            // Cocos2dx GL 环境下 focus 可能被抢回，延迟触发 IME 作为保底
-            editText.postDelayed(() -> {
-                try {
-                    editText.requestFocus();
-                    InputMethodManager imm = (InputMethodManager) editText.getContext()
-                            .getSystemService(Context.INPUT_METHOD_SERVICE);
-                    if (imm != null) {
-                        imm.showSoftInput(editText, InputMethodManager.SHOW_FORCED);
-                        if (!imm.isActive(editText)) {
-                            imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0);
-                        }
-                    }
-                } catch (Throwable ignored) {}
-            }, 300);
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND
+                    | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                    | WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+                    | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL);
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+            window.setLayout(-1, -1);
         }
         return dialog;
     }
 
-    // ---- 主题色解析 ----
-
-    private static class Colors {
-        int card, primary, onPrimary, text, textMuted;
-        int inputBg, inputText, inputHint;
+    public static void focusInput(Dialog dialog, EditText input) {
+        input.requestFocus();
+        dialog.setOnShowListener(d -> input.postDelayed(() -> {
+            if (!dialog.isShowing() || !input.hasFocus()) return;
+            InputMethodManager ime = input.getContext().getSystemService(InputMethodManager.class);
+            if (ime != null) ime.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
+        }, 300));
+        Window window = dialog.getWindow();
+        if (window != null) window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+                | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
     }
 
-    private static Colors resolveColors(Context context) {
-        Colors c = new Colors();
-        c.card        = FALLBACK_CARD;
-        c.primary     = FALLBACK_PRIMARY;
-        c.onPrimary   = FALLBACK_ON_PRIMARY;
-        c.text        = FALLBACK_TEXT;
-        c.textMuted   = FALLBACK_TEXT_MUTED;
-        c.inputBg     = FALLBACK_INPUT_BG;
-        c.inputText   = FALLBACK_INPUT_TEXT;
-        c.inputHint   = FALLBACK_INPUT_HINT;
-
-        try {
-            Intent intent = null;
-            if (context instanceof android.app.Activity) {
-                intent = ((android.app.Activity) context).getIntent();
-            }
-            // 同进程回退：从 KR2Activity singleton 读取
-            if (!hasThemeExtras(intent)) {
-                KR2Activity kr = KrPathUtils.currentActivity();
-                if (kr != null) intent = kr.getIntent();
-            }
-            if (hasThemeExtras(intent)) {
-                c.card       = intent.getIntExtra(LaunchContract.THEME_COLOR_CARD, c.card);
-                c.primary    = intent.getIntExtra(LaunchContract.THEME_COLOR_PRIMARY, c.primary);
-                c.onPrimary  = intent.getIntExtra(LaunchContract.THEME_COLOR_ON_PRIMARY, c.onPrimary);
-                c.text       = intent.getIntExtra(LaunchContract.THEME_COLOR_TEXT, c.text);
-                c.textMuted  = intent.getIntExtra(LaunchContract.THEME_COLOR_TEXT_MUTED, c.textMuted);
-                c.inputBg    = darken(c.card, 0.12f);
-                c.inputText  = c.text;
-                c.inputHint  = c.textMuted;
-            }
-        } catch (Throwable ignored) {}
-        return c;
-    }
-
-    private static boolean hasThemeExtras(Intent intent) {
-        return intent != null && intent.hasExtra(LaunchContract.THEME_COLOR_PRIMARY);
+    private static EngineThemeColors.Palette palette(Context context) {
+        return EngineThemeColors.fromIntent(context instanceof Activity ? ((Activity) context).getIntent() : null);
     }
 
     private static int darken(int color, float amount) {
@@ -279,30 +221,30 @@ public final class KrDialogStyle {
 
     // ---- 组件构建 ----
 
-    private static LinearLayout createCard(Context context, Colors c) {
+    private static LinearLayout createCard(Context context, EngineThemeColors.Palette c) {
         LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(context, 24), dp(context, 20), dp(context, 24), dp(context, 16));
-        card.setBackground(roundedRect(c.card, dp(context, CARD_RADIUS_DP)));
+        card.setBackground(roundedRect(c.getCard(), dp(context, CARD_RADIUS_DP)));
         return card;
     }
 
-    private static void addTitle(LinearLayout card, String text, Colors c) {
+    private static void addTitle(LinearLayout card, String text, EngineThemeColors.Palette c) {
         Context context = card.getContext();
         TextView view = new TextView(context);
         view.setText(EngineUiText.localizeCommonDialogText(context, text));
-        view.setTextColor(c.text);
+        view.setTextColor(c.getText());
         view.setTextSize(TITLE_TEXT_SP);
         view.setTypeface(null, Typeface.BOLD);
         view.setGravity(Gravity.CENTER);
         card.addView(view);
     }
 
-    private static void addMessage(LinearLayout card, String text, Colors c) {
+    private static void addMessage(LinearLayout card, String text, EngineThemeColors.Palette c) {
         Context context = card.getContext();
         TextView view = new TextView(context);
         view.setText(text);
-        view.setTextColor(c.textMuted);
+        view.setTextColor(c.getTextMuted());
         view.setTextSize(MESSAGE_TEXT_SP);
         view.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -311,58 +253,59 @@ public final class KrDialogStyle {
         card.addView(view, params);
     }
 
-    private static EditText addEditText(LinearLayout card, String initialText, Colors c, int inputType) {
-        Context context = card.getContext();
+    public static EditText createInput(Context context, String initialText, int inputType) {
+        EngineThemeColors.Palette colors = palette(context);
         EditText edit = new EditText(context);
-        edit.setText(initialText);
-        edit.setTextColor(c.inputText);
-        edit.setHintTextColor(c.inputHint);
         edit.setSingleLine(true);
         edit.setInputType(inputType);
-        edit.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
-        edit.setFocusable(true);
-        edit.setFocusableInTouchMode(true);
-        edit.setBackground(roundedRect(c.inputBg, dp(context, INPUT_RADIUS_DP)));
+        edit.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        edit.setText(initialText);
+        edit.setTextColor(colors.getText());
+        edit.setHintTextColor(colors.getTextMuted());
+        edit.setBackgroundTintList(null);
+        edit.setBackground(roundedRect(darken(colors.getCard(), 0.12f), dp(context, INPUT_RADIUS_DP)));
         edit.setPadding(dp(context, 12), dp(context, 10), dp(context, 12), dp(context, 10));
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.topMargin = dp(context, 12);
-        card.addView(edit, params);
         return edit;
     }
 
-    private static void addButtons(LinearLayout card, String[] buttonTexts, Colors c, ButtonClickCallback callback) {
+    private static void addButtons(LinearLayout card, String[] buttonTexts, EngineThemeColors.Palette c, ButtonClickCallback callback) {
         Context context = card.getContext();
-        String[] texts = buttonTexts != null ? buttonTexts : new String[]{"OK"};
+        String[] texts = buttonTexts != null ? buttonTexts : new String[]{EngineUiText.get(context, R.string.engine_ok)};
 
         LinearLayout buttonRow = new LinearLayout(context);
-        buttonRow.setOrientation(LinearLayout.HORIZONTAL);
+        boolean stacked = texts.length > 3;
+        buttonRow.setOrientation(stacked ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
         buttonRow.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        rowParams.topMargin = dp(context, 16);
-
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1, -2);
+        if (card.getChildCount() != 0) rowParams.topMargin = dp(context, 16);
+        int buttonHeight = dp(context, BUTTON_HEIGHT_DP);
         for (int i = 0; i < texts.length; i++) {
             final int index = i;
-            boolean isPrimary = (i == 0);
-            TextView btn = new TextView(context);
-            btn.setText(EngineUiText.localizeCommonDialogText(context, texts[i]));
-            btn.setGravity(Gravity.CENTER);
-            btn.setTextSize(BUTTON_TEXT_SP);
-            btn.setTypeface(null, Typeface.BOLD);
-            if (isPrimary) {
-                btn.setTextColor(c.onPrimary);
-                btn.setBackground(roundedRect(c.primary, dp(context, BUTTON_RADIUS_DP)));
-            } else {
-                btn.setTextColor(c.primary);
-                btn.setBackground(roundedRect(c.card, dp(context, BUTTON_RADIUS_DP)));
+            Button button = new Button(context);
+            button.setText(EngineUiText.localizeCommonDialogText(context, texts[i]));
+            button.setGravity(Gravity.CENTER);
+            button.setAllCaps(false);
+            button.setTextSize(BUTTON_TEXT_SP);
+            button.setTypeface(null, Typeface.BOLD);
+            button.setPadding(dp(context, 4), 0, dp(context, 4), 0);
+            button.setMinimumWidth(0);
+            button.setMinimumHeight(0);
+            button.setStateListAnimator(null);
+            button.setSoundEffectsEnabled(false);
+            button.setHapticFeedbackEnabled(false);
+            button.setTextColor(i == 0 ? c.getOnPrimary() : c.getPrimary());
+            button.setBackgroundTintList(null);
+            button.setBackground(roundedRect(i == 0 ? c.getPrimary() : c.getCard(),
+                    dp(context, BUTTON_RADIUS_DP)));
+            button.setOnClickListener(v -> callback.onClicked(index));
+            LinearLayout.LayoutParams params = stacked
+                    ? new LinearLayout.LayoutParams(-1, buttonHeight)
+                    : new LinearLayout.LayoutParams(0, buttonHeight, 1f);
+            if (i > 0) {
+                if (stacked) params.topMargin = dp(context, 8);
+                else params.setMarginStart(dp(context, 8));
             }
-            btn.setOnClickListener(v -> {
-                if (callback != null) callback.onClicked(index);
-            });
-            LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(0, dp(context, BUTTON_HEIGHT_DP), 1f);
-            if (i > 0) btnParams.leftMargin = dp(context, 8);
-            buttonRow.addView(btn, btnParams);
+            buttonRow.addView(button, params);
         }
         card.addView(buttonRow, rowParams);
     }
@@ -378,13 +321,6 @@ public final class KrDialogStyle {
 
     private static int dp(Context context, float value) {
         return (int) (value * context.getResources().getDisplayMetrics().density + 0.5f);
-    }
-
-    private static int dialogWidthPx(Context context) {
-        int desiredWidth = dp(context, DIALOG_WIDTH_DP);
-        int horizontalMargin = dp(context, 24) * 2;
-        int maxWidth = Math.max(0, context.getResources().getDisplayMetrics().widthPixels - horizontalMargin);
-        return Math.min(desiredWidth, maxWidth);
     }
 
     private interface ButtonClickCallback {

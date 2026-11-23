@@ -2,15 +2,11 @@ package org.libsdl.app;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.UiModeManager;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
-import android.graphics.PorterDuff;
-import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -18,9 +14,7 @@ import android.os.Handler;
 import android.os.Message;
 import android.util.DisplayMetrics;
 import android.util.Log;
-import android.util.SparseArray;
 import android.view.Display;
-import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.PointerIcon;
@@ -31,11 +25,9 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
-import android.widget.Button;
-import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
-import android.widget.TextView;
 import android.widget.Toast;
+import com.core.engine.SdlMessageBox;
 import com.core.engine.DoubleBackExit;
 import java.util.Hashtable;
 import java.util.Locale;
@@ -90,7 +82,6 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     protected static SDLSurface mSurface;
     protected static DummyEdit mTextEdit;
     Handler commandHandler = new SDLCommandHandler();
-    protected final int[] messageboxSelection = new int[1];
     private final Runnable rehideSystemUi = new Runnable() { // from class: org.libsdl.app.SDLActivity.7
         @Override // java.lang.Runnable
         public void run() {
@@ -765,131 +756,12 @@ return getContext().getApplicationInfo().nativeLibraryDir + "/" + (libraries.len
         }
     }
 
-    public void messageboxCreateAndShow(Bundle bundle) {
-        int i8;
-        int i9;
-        int i10;
-        int[] intArray = bundle.getIntArray("colors");
-        if (intArray != null) {
-            i8 = intArray[0];
-            i9 = intArray[1];
-            int i11 = intArray[2];
-            i10 = intArray[3];
-            int i12 = intArray[4];
-        } else {
-            i8 = 0;
-            i9 = 0;
-            i10 = 0;
-        }
-        final AlertDialog alertDialogCreate = new AlertDialog.Builder(this).create();
-        alertDialogCreate.setTitle(bundle.getString("title"));
-        alertDialogCreate.setCancelable(false);
-        alertDialogCreate.setOnDismissListener(new DialogInterface.OnDismissListener() { // from class: org.libsdl.app.SDLActivity.4
-            @Override // android.content.DialogInterface.OnDismissListener
-            public void onDismiss(DialogInterface dialogInterface) {
-                synchronized (SDLActivity.this.messageboxSelection) {
-                    SDLActivity.this.messageboxSelection.notify();
-                }
-            }
-        });
-        TextView textView = new TextView(this);
-        textView.setGravity(Gravity.CENTER);
-        textView.setText(bundle.getString("message"));
-        if (i9 != 0) {
-            textView.setTextColor(i9);
-        }
-        int[] intArray2 = bundle.getIntArray("buttonFlags");
-        int[] intArray3 = bundle.getIntArray("buttonIds");
-        String[] stringArray = bundle.getStringArray("buttonTexts");
-        final SparseArray sparseArray = new SparseArray();
-        LinearLayout linearLayout = new LinearLayout(this);
-        linearLayout.setOrientation(LinearLayout.HORIZONTAL);
-        linearLayout.setGravity(Gravity.CENTER);
-        for (int i13 = 0; i13 < stringArray.length; i13++) {
-            Button button = new Button(this);
-            final int i14 = intArray3[i13];
-            button.setOnClickListener(new View.OnClickListener() { // from class: org.libsdl.app.SDLActivity.5
-                @Override // android.view.View.OnClickListener
-                public void onClick(View view) {
-                    SDLActivity.this.messageboxSelection[0] = i14;
-                    alertDialogCreate.dismiss();
-                }
-            });
-            int i15 = intArray2[i13];
-            if (i15 != 0) {
-                if ((i15 & 1) != 0) {
-                    sparseArray.put(66, button);
-                }
-                if ((intArray2[i13] & 2) != 0) {
-                    sparseArray.put(111, button);
-                }
-            }
-            button.setText(stringArray[i13]);
-            if (i9 != 0) {
-                button.setTextColor(i9);
-            }
-            if (i10 != 0) {
-                Drawable background = button.getBackground();
-                if (background == null) {
-                    button.setBackgroundColor(i10);
-                } else {
-                    background.setColorFilter(i10, PorterDuff.Mode.MULTIPLY);
-                }
-            }
-            linearLayout.addView(button);
-        }
-        LinearLayout linearLayout2 = new LinearLayout(this);
-        linearLayout2.setOrientation(LinearLayout.VERTICAL);
-        linearLayout2.addView(textView);
-        linearLayout2.addView(linearLayout);
-        if (i8 != 0) {
-            linearLayout2.setBackgroundColor(i8);
-        }
-        alertDialogCreate.setView(linearLayout2);
-        alertDialogCreate.setOnKeyListener(new DialogInterface.OnKeyListener() { // from class: org.libsdl.app.SDLActivity.6
-            @Override // android.content.DialogInterface.OnKeyListener
-            public boolean onKey(DialogInterface dialogInterface, int i16, KeyEvent keyEvent) {
-                Button button2 = (Button) sparseArray.get(i16);
-                if (button2 == null) {
-                    return false;
-                }
-                if (keyEvent.getAction() == 1) {
-                    button2.performClick();
-                }
-                return true;
-            }
-        });
-        alertDialogCreate.show();
-    }
+    private final SdlMessageBox messageBox = new SdlMessageBox(this);
 
-    public int messageboxShowMessageBox(int i8, String str, String str2, int[] iArr, int[] iArr2, String[] strArr, int[] iArr3) {
-        this.messageboxSelection[0] = -1;
-        if (iArr.length != iArr2.length && iArr2.length != strArr.length) {
-            return -1;
-        }
-        final Bundle bundle = new Bundle();
-        bundle.putInt("flags", i8);
-        bundle.putString("title", str);
-        bundle.putString("message", str2);
-        bundle.putIntArray("buttonFlags", iArr);
-        bundle.putIntArray("buttonIds", iArr2);
-        bundle.putStringArray("buttonTexts", strArr);
-        bundle.putIntArray("colors", iArr3);
-        runOnUiThread(new Runnable() { // from class: org.libsdl.app.SDLActivity.3
-            @Override // java.lang.Runnable
-            public void run() {
-                SDLActivity.this.messageboxCreateAndShow(bundle);
-            }
-        });
-        synchronized (this.messageboxSelection) {
-            try {
-                this.messageboxSelection.wait();
-            } catch (InterruptedException e8) {
-                e8.printStackTrace();
-                return -1;
-            }
-        }
-        return this.messageboxSelection[0];
+    // JNI entry point shared with the SDL2 runtime.
+    public int messageboxShowMessageBox(int flags, String title, String message, int[] buttonFlags,
+            int[] buttonIds, String[] buttonTexts, int[] colors) {
+        return messageBox.show(title, message, buttonFlags, buttonIds, buttonTexts, false, -1);
     }
 
     @Override // b.AbstractActivityC0818o, android.app.Activity
@@ -950,17 +822,7 @@ return getContext().getApplicationInfo().nativeLibraryDir + "/" + (libraries.len
         }
         if (mBrokenLibraries) {
             mSingleton = this;
-            AlertDialog.Builder builder = new AlertDialog.Builder(this);
-            builder.setMessage("An error occurred while trying to start the application. Please try again and/or reinstall." + System.getProperty("line.separator") + System.getProperty("line.separator") + "Error: " + message);
-            builder.setTitle("SDL Error");
-            builder.setPositiveButton("Exit", new DialogInterface.OnClickListener() { // from class: org.libsdl.app.SDLActivity.1
-                @Override // android.content.DialogInterface.OnClickListener
-                public void onClick(DialogInterface dialogInterface, int i8) {
-                    SDLActivity.mSingleton.finish();
-                }
-            });
-            builder.setCancelable(false);
-            builder.create().show();
+            SdlMessageBox.showStartupError(this, message);
             return;
         }
         SDL.setupJNI();
@@ -993,6 +855,7 @@ return getContext().getApplicationInfo().nativeLibraryDir + "/" + (libraries.len
 
     @Override // i.AbstractActivityC1223l, androidx.fragment.app.B, android.app.Activity
     public void onDestroy() {
+        messageBox.close();
         Log.v(TAG, "onDestroy()");
         DoubleBackExit.clear(this);
         HIDDeviceManager hIDDeviceManager = mHIDDeviceManager;
