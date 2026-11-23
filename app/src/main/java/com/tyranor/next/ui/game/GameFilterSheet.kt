@@ -25,8 +25,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -336,21 +338,25 @@ private fun GameCardColumnsCard(
                         contentDescription = title
                         stateDescription = columnsText
                     }
-                    .onPreviewKeyEvent { event ->
-                        if (!enabled) return@onPreviewKeyEvent false
+                    // 用 onKeyEvent（非 preview）并把纵向键交还焦点系统：焦点在这一格时，
+                    // D-Pad 上下要能移到相邻条目，只有带修饰键的上下键才当作调列数。
+                    .onKeyEvent { event ->
+                        if (!enabled) return@onKeyEvent false
+                        val adjustVertically = event.isCtrlPressed || event.isShiftPressed
                         val next = when (event.key) {
                             Key.DirectionRight -> draftColumns + if (rtl) -1 else 1
                             Key.DirectionLeft -> draftColumns + if (rtl) 1 else -1
-                            Key.DirectionUp -> draftColumns + 1
-                            Key.DirectionDown -> draftColumns - 1
+                            Key.DirectionUp -> if (adjustVertically) draftColumns + 1 else return@onKeyEvent false
+                            Key.DirectionDown -> if (adjustVertically) draftColumns - 1 else return@onKeyEvent false
                             Key.MoveHome -> AppSettingsStore.MIN_GAME_CARD_COLUMNS
                             Key.MoveEnd -> AppSettingsStore.MAX_GAME_CARD_COLUMNS
-                            else -> return@onPreviewKeyEvent false
+                            else -> return@onKeyEvent false
                         }
                         when (event.type) {
                             KeyEventType.KeyDown -> draftColumns = AppSettingsStore.normalizeGameCardColumns(next)
-                            KeyEventType.KeyUp -> finishChange()
-                            else -> return@onPreviewKeyEvent false
+                            // 只有真的改过草稿才提交：孤立 KeyUp（KeyDown 被别处消费）不该落盘。
+                            KeyEventType.KeyUp -> if (draftColumns != snapshot.columns) finishChange()
+                            else -> return@onKeyEvent false
                         }
                         true
                     }

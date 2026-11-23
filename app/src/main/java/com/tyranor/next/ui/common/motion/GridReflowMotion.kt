@@ -168,15 +168,25 @@ internal class GridReflowEntranceSchedule {
             val additions = visibleKeys.count { it !in slots }
             if (additions > 0) {
                 val intervals = if (slots.isEmpty()) additions - 1 else additions
+                // 720ms 只是「正常情况下尽量压进一屏」的目标，不是硬上限：
+                // 一旦可见项多到压不进去，后段必须继续按 MIN_STEP 递增，
+                // 否则尾部若干张卡会拿到同一个延迟、同帧弹入（见 GridReflowSnapshotTest 的
+                // aDenseBatchKeepsAtLeastOneFrameBetweenCardsInsteadOfMergingTheTail）。
+                // 追加批在这里不受预算约束，末项可能比 720ms 再多出一格 step。
+                // 另一道门在运行期：入场窗口（500ms）之外才进入可见集的项直接拿 null 延迟、
+                // 不参与错峰，所以「后段继续递增」只描述窗口内的排期。
                 val remaining = STAGGER_BUDGET_MILLIS - lastDelay
-                // 可见项较多时压缩间隔至每张至少一帧，避免把大量项合并到相同的尾部延迟。
+                // 可见项较多时压缩间隔至每张至少 MIN_STEP，避免把大量项合并到相同的尾部延迟。
                 val step = minOf(
                     preferredStepMillis.coerceAtLeast(MIN_STEP_MILLIS),
                     (remaining / intervals.coerceAtLeast(1)).coerceAtLeast(MIN_STEP_MILLIS),
                 )
                 for (visibleKey in visibleKeys) {
                     if (visibleKey in slots) continue
-                    if (slots.isNotEmpty()) lastDelay += step
+                    if (slots.isNotEmpty()) {
+                        // 追加批从当前进度继续往后排，逐项至少隔 MIN_STEP，不与首批合批。
+                        lastDelay += step
+                    }
                     slots[visibleKey] = Slot(slots.size, lastDelay)
                 }
             }

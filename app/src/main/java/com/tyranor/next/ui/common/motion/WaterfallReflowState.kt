@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.lazy.staggeredgrid.LazyLayoutScrollScope
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
@@ -75,7 +76,14 @@ class WaterfallReflowState private constructor(
     val gridState: LazyStaggeredGridState get() = layout.gridState
     var previousItemOffsets: Map<Any, IntOffset> = emptyMap()
         private set
-    // 进程或宿主重建后同样必须重建列历史，期间由宿主隐藏中间位置并拦截交互。
+    /**
+     * 恢复中：还有待恢复的锚点，并且列表确实挂在组合里。
+     *
+     * 进程或宿主重建后同样必须重建列历史，期间由宿主隐藏中间位置并拦截交互。
+     * 三个写入点必须保持一致：[onHostAttached]、[onHostDetached]、[update]；
+     * 宿主离树时必须立即置 false——那之后没人能执行恢复，停在 true 会让
+     * 依赖它的逻辑（如搜索栏自动收起）永久失效。
+     */
     var isRestoring by mutableStateOf(pendingAnchor != null)
         private set
 
@@ -114,7 +122,19 @@ class WaterfallReflowState private constructor(
     }
 
     private var inactiveAnchor: Anchor? = null
-    private var inactiveOffsets: Map<Any, IntOffset> = emptyMap()
+
+    /** 瀑布流列表是否挂在组合里。没有宿主时没人能执行恢复，[isRestoring] 必须为 false。 */
+    private var hostAttached = false
+
+    internal fun onHostAttached() {
+        hostAttached = true
+        isRestoring = pendingAnchor != null
+    }
+
+    internal fun onHostDetached() {
+        hostAttached = false
+        isRestoring = false
+    }
 
     /**
      * 离页期间记录阅读位置。
@@ -127,33 +147,31 @@ class WaterfallReflowState private constructor(
     internal fun preserveInactiveAnchor() {
         if (inactiveAnchor != null || pendingAnchor != null) return
         inactiveAnchor = capture()
-        inactiveOffsets = gridState.layoutInfo.visibleItemsInfo.associate { it.key to it.offset }
     }
 
     internal fun update(columns: Int, landscape: Boolean) {
         if (layoutColumns == columns && layoutLandscape == landscape) {
             inactiveAnchor = null
-            inactiveOffsets = emptyMap()
             return
         }
+        val offlineAnchor = inactiveAnchor
         if (pendingAnchor == null) {
             // 页在可见时换布局，当前 layoutInfo 就是旧代的有效数据，直接当补位基准。
-            // 页隐藏期间窗口也会重测：只有离线锚点仍属同一布局代时，隐藏前的偏移才可用；
-            // 换过列数或方向时那些偏移属于旧视口，而此刻的 layoutInfo 同样已被新视口改写，
-            // 因此宁可没有补位动画，也不要跨代错位滑入。
-            val offlineAnchor = inactiveAnchor
-            previousItemOffsets = when {
-                offlineAnchor == null ->
-                    gridState.layoutInfo.visibleItemsInfo.associate { it.key to it.offset }
-                offlineAnchor.matchesGeneration(columns, landscape) -> inactiveOffsets
-                else -> emptyMap()
+            // 页隐藏期间窗口也会重测：那份离线锚点即使仍属同一布局代，偏移也已经属于新视口，
+            // 因此只在没有离线锚点的可见路径采信偏移，宁可没有补位动画也不要跨代错位滑入。
+            previousItemOffsets = if (offlineAnchor == null) {
+                gridState.layoutInfo.visibleItemsInfo.associate { it.key to it.offset }
+            } else {
+                emptyMap()
             }
             pendingAnchor = offlineAnchor ?: capture()
+        } else {
+            // 上一代恢复还没做完又换了一次布局：那份偏移属于更早的列宽，采信会让卡片从错误位置滑入。
+            previousItemOffsets = emptyMap()
         }
         inactiveAnchor = null
-        inactiveOffsets = emptyMap()
         layout = Layout(columns, landscape)
-        isRestoring = pendingAnchor != null
+        isRestoring = pendingAnchor != null && hostAttached
     }
 
     @OptIn(ExperimentalFoundationApi::class)
@@ -439,6 +457,12 @@ private fun UpdateWaterfallReflow(
  * 与 `clearAndSetSemantics` 相反，只在恢复期挂载，避免平时吞事件。
  */
 fun Modifier.waterfallReflowHost(state: WaterfallReflowState): Modifier = composed {
+    // 挂载信号与遮蔽同源：只有真挂了这个修饰符的宿主才可能在恢复期挡住中间视口，
+    // 也只有它能真正结束恢复。放在这里而不是各调用点，生产和测试夹具才不会分叉。
+    DisposableEffect(state) {
+        state.onHostAttached()
+        onDispose { state.onHostDetached() }
+    }
     var hostHasFocus by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
     if (state.isRestoring && hostHasFocus) {

@@ -60,8 +60,8 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
  * - 松手：圆钮从手指位置弹簧吸附到刻度，略冲过再落稳。
  * 连续滑条与「普通」档直接使用 Miuix 原组件。
  * @param onValueChangeCancelled 手势被打断（系统取消、上级容器接手）时回滚草稿。增强离散档由滑条自己的手势状态机判定；
- *   普通档与连续档从 Miuix 的结束回调旁听收尾事件推断。传了本回调的两档都会区分提交与取消，
- *   不传时与 Miuix 原组件逐字节等价。
+ *   普通档与连续档从 Miuix 的结束回调旁听收尾事件推断。不传时普通档与连续档完全透传 Miuix 原组件；
+ *   增强离散档是自绘刻度手感，取消路径不会调用 [onValueChangeFinished]，需要区分提交与取消必须同时传本回调。
  */
 @Composable
 fun Slider(
@@ -87,12 +87,20 @@ fun Slider(
             remember { SliderRelease() }
         } else null
         val observedModifier = if (release == null) modifier else modifier.pointerInput(release) {
-            // Miuix 的拖动结束回调同时覆盖正常抬手和手势取消。
+            // Miuix 的拖动结束回调同时覆盖正常抬手和手势取消：`draggable` 在指针全部抬起时
+            // 以零速发 DragStopped，取消路径同样走 DragStopped，两者在 Miuix 侧完全同形，
+            // 这里记录的「抬手有没有被接手」是唯一可用的区分依据（不要改成 velocity != 0 之类的判据：
+            // 取消时速度恰为 0，但正常轻点抬手速度也可能是 0）。
             awaitEachGesture {
                 awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
                 release.released = false
                 var event = awaitPointerEvent(PointerEventPass.Initial)
-                while (event.changes.any { it.pressed }) event = awaitPointerEvent(PointerEventPass.Initial)
+                // 与 Compose 拖动自己的生命周期保持一致：还有任何指针按着就继续等。
+                // 起始指针先抬起时 Compose 会把拖动转交给剩余指针、并不结束，
+                // 若这里只盯起始指针就会把「还要继续拖」误判成结束。
+                while (event.changes.any { it.pressed }) {
+                    event = awaitPointerEvent(PointerEventPass.Initial)
+                }
                 // 收尾事件「已消费」有两种来源：平台取消指针流（Compose 合成的抬手）与上级容器
                 // 在 Initial 阶段接手（竖向滚动、抽屉下拉）。实测两者都被判为已消费，
                 // 故这里与增强档 TickSlider 的 isConsumed 判据保持一致。
@@ -336,10 +344,19 @@ private fun TickSlider(
                                     }
                                     if (haptics) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
                                 }
-                                val target = if (cancelled) currentValueFraction else tickFractions[index]
+                                // 取消要让外部值先回滚：落位目标取当前位置，而不是此刻还没回滚的草稿刻度，
+                                // 否则松手会先冲向草稿格、等重组后才折返回来（两段式抖动）。
+                                if (cancelled) onCancelled?.invoke() else onFinished?.invoke()
+                                val target = if (cancelled) pos.value else tickFractions[index]
                                 dragging = false
-                                // 拖动松手：带着手指速度吸附到刻度
-                                val releaseVelocity = if (moved) tracker.calculateVelocity().x.coerceIn(-6f, 6f) else 0f
+                                // 拖动松手：带着手指速度吸附到刻度。取消时不带速度——目标就是当前位置，
+                                // 留着手指末速会让圆钮先朝原拖动方向甩出去再折回（弹簧 `control` 阻尼 0.62，
+                                // 6 行程/秒时过冲可达两成行程）。
+                                val releaseVelocity = if (moved && !cancelled) {
+                                    tracker.calculateVelocity().x.coerceIn(-6f, 6f)
+                                } else {
+                                    0f
+                                }
                                 interaction.settleJob = scope.launch {
                                     pos.animateTo(target, MotionTokens.control(0.0005f), initialVelocity = releaseVelocity)
                                     if (generation != interaction.generation) return@launch
@@ -352,7 +369,6 @@ private fun TickSlider(
                                 scope.launch { overshoot.animateTo(0f, MotionTokens.control(0.0005f)) }
                                 scope.launch { press.animateTo(1f, MotionTokens.release(0.001f)) }
                                 finished = true
-                                if (cancelled) onCancelled?.invoke() else onFinished?.invoke()
                             } finally {
                                 if (!finished && generation == interaction.generation) {
                                     dragging = false

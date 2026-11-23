@@ -482,7 +482,9 @@ private fun GameLibraryContent(
     val scrapingCoversDescription = stringResource(R.string.game_scraping_covers_content_description)
     // 搜索栏仅在列表顶部显示：离开顶部立即收起，向上滚动过程中不提前展开，滚回顶部才重新出现。
     // 封面流无纵向滚动，始终显示。
-    var searchBarVisible by remember { mutableStateOf(true) }
+    // 需要跨重建保持：Activity 重建时若先按「展开」建列历史、恢复完才收起，
+    // 视口会从矮变高、阅读位置跟着跳一下。
+    var searchBarVisible by rememberSaveable { mutableStateOf(true) }
     val searchAndFilterVisible = searchBarVisible || (loaded && !scanning && filteredGames.isEmpty())
     val restoringWaterfall = waterfallSelected && waterfallReflow.isRestoring
     LaunchedEffect(cardStyle, gridState, uniformGridState, restoringWaterfall) {
@@ -2419,6 +2421,15 @@ internal fun GameCard(
         // 封面下方延伸的白色信息区（不覆盖封面）：最多两行标题，小号字体、水平居中；
         // 字号缩小后同步收紧行高与纵向内边距，避免白色区域显得过高
         val displayTitle = if (hideTitleTag) GameTitleTags.stripAll(game.title) else game.title
+        // 标题内边距随卡片宽度收紧：高列数时卡片只有几十 dp，固定 12dp 会把标题挤成每行几个字。
+        val titleInset = with(LocalDensity.current) {
+            when {
+                coverWidthPx <= 0 -> 12.dp
+                coverWidthPx.toDp() >= 160.dp -> 12.dp
+                coverWidthPx.toDp() >= 110.dp -> 8.dp
+                else -> 4.dp
+            }
+        }
         Text(
             displayTitle,
             style = MaterialTheme.typography.bodyMedium.copy(
@@ -2434,7 +2445,7 @@ internal fun GameCard(
             modifier = Modifier
                 .bounceOnChange(displayTitle, depth = 0.06f)
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+                .padding(horizontal = titleInset, vertical = 6.dp),
         )
     }
 }
@@ -2460,7 +2471,8 @@ internal fun UniformGameGrid(
         AppSettingsStore.gameGridPortraitColumnsState,
         AppSettingsStore.gameGridLandscapeColumnsState,
     )
-    // 与瀑布流同一选档口径：等高网格的卡片固定 3:4，因此两种风格对同一封面解析到同一档位与缓存 key。
+    // 网格固定 3:4；瀑布流按 uri 散列 0.60–0.80 决定逐卡宽高比，所以同一封面在两种风格下
+    // 可能落到不同档位、写不同缓存 key（不要据此假设两者共享解码缓存）。
     val coverTier = CoverDecodeTier.forDisplay(
         gameCardColumnWidthPx(constraints.maxWidth, columns),
         GameCoverAspect,
