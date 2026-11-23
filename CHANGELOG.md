@@ -2,6 +2,8 @@
 
 ## 未发布
 
+- 修复 RPG Maker MV 存档因 `global.title` 与 `$dataSystem.gameTitle` 不一致被误判为不可读取的问题（修改器可见但 `loadGame` / 游戏内读档返回 `false`）：在 Web 存档模式下保留 `globalId` 校验与 `isLocalMode()` 原行为，跳过跨版本/汉化标题字面校验，并增加 `load` 时防插件覆写的幂等保护，统一覆盖 `Tyranor-2.3.4`、`TynMV-0.1` 与 `TynMV-0.2`（[#148](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/148)）。
+
 - 更新内置播放器的公共加载界面，加入每三秒循环的主题色频谱，并显示游戏封面与名称。缺少封面时显示应用图标，增强动效档通过翻页进入游戏。
 
 - 内置播放器的宿主提示、确认和输入弹窗统一采用 KRKR 样式，配色跟随应用外观。

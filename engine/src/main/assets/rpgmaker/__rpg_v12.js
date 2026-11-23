@@ -258,3 +258,30 @@ StorageManager.cleanWebStorageBackup = function(savefileId) {
 SceneManager.shouldUseCanvasRenderer = function() { return window.__tyranorUseLegacyCanvas === true; };
 Graphics._defaultStretchMode = function() {return true;};
 if (document.documentElement) document.documentElement.style.overflow = "hidden";
+// Web save directories are isolated per game; ignore $dataSystem.gameTitle mismatches while keeping globalId check and local-mode delegation.
+(function() {
+    function patchIsThisGameFile() {
+        try {
+            if (!window.DataManager || typeof window.DataManager.isThisGameFile !== "function") return;
+            if (window.DataManager.isThisGameFile.__tyranorTitlePatched) return;
+            var original = window.DataManager.isThisGameFile;
+            var wrapped = function(savefileId) {
+                if (window.StorageManager && typeof window.StorageManager.isLocalMode === "function" && window.StorageManager.isLocalMode()) {
+                    return original.call(this, savefileId);
+                }
+                var dm = (this && typeof this.loadGlobalInfo === "function") ? this : window.DataManager;
+                var globalInfo = dm && typeof dm.loadGlobalInfo === "function" ? dm.loadGlobalInfo() : null;
+                var slot = globalInfo && globalInfo[savefileId];
+                return !!(slot && typeof slot === "object" &&
+                    typeof slot.globalId === "string" &&
+                    slot.globalId === dm._globalId);
+            };
+            wrapped.__tyranorTitlePatched = true;
+            window.DataManager.isThisGameFile = wrapped;
+        } catch (e) {}
+    }
+    patchIsThisGameFile();
+    if (typeof window.addEventListener === "function") {
+        window.addEventListener("load", patchIsThisGameFile);
+    }
+})();
