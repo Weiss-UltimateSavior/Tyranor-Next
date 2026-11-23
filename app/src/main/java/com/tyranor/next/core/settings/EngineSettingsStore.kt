@@ -657,7 +657,8 @@ object EngineSettingsStore {
                 }
                 else -> rawValue
             }
-            json.put(pref.engineKey, JSONObject().put("v", value).put("s", if (sanitizedOverride != null) "game" else "global"))
+            json.put(pref.engineKey, JSONObject().put("v", value).put("s",
+                if (sanitizedOverride != null) LaunchContract.SCOPE_GAME else LaunchContract.SCOPE_GLOBAL))
         }
         return json.toString()
     }
