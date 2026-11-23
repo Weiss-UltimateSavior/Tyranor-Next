@@ -14,6 +14,7 @@ import com.tyranor.next.ui.common.motion.rememberCoverReveal
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,11 +23,16 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,6 +42,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -46,13 +53,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import kotlinx.coroutines.launch
@@ -65,23 +75,31 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
 import com.tyranor.next.core.game.playtime.GamePlaytimeRepository
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.NavWhiteOverlay
 import com.tyranor.next.theme.PageSecondaryTextColor
+import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.QuickLaunchFallback
 import com.tyranor.next.theme.glassBorder
@@ -91,6 +109,8 @@ import com.tyranor.next.ui.common.coachAnchor
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.boxBlurArgb
 import com.tyranor.next.ui.common.glassNavBottomInset
+import com.tyranor.next.ui.common.isSideRailLayout
+import com.tyranor.next.ui.common.isTabletScreen
 import com.tyranor.next.ui.common.isWideScreen
 import com.tyranor.next.ui.common.motion.BlurCrossfade
 import com.tyranor.next.ui.common.motion.BlurVisibility
@@ -117,7 +137,7 @@ import com.tyranor.next.ui.common.collectSettingAsState
 import com.tyranor.next.ui.common.motion.DelayedProgress
 import kotlinx.coroutines.CancellationException
 
-/** 最近打开展示策略：竖屏 2 列 × 5 行 = 10 张；横屏/大屏 5 列 × 3 行 = 15 张。 */
+/** 非平板布局的最近打开网格：窄屏 10 张，宽屏 15 张。 */
 private const val RECENT_COLUMNS_PORTRAIT = 2
 private const val RECENT_COLUMNS_WIDE = 5
 private const val RECENT_VISIBLE_PORTRAIT = 10
@@ -264,8 +284,7 @@ fun HomeScreen(
 }
 
 /**
- * 原生首页（应用设置「首页样式」= 默认时挂载）：快捷启动大卡 + 最近打开列表。
- * 交互：点按开操作抽屉；快捷启动卡长按打开操作弹窗；最近卡片长按删除该条记录（仅删记录不删库）。
+ * 默认首页按窗口尺寸选择网格或平板布局，共用顶部栏和游戏操作入口。
  */
 @Composable
 private fun NativeHomeContent(
@@ -277,8 +296,44 @@ private fun NativeHomeContent(
     onCoachAnchorChanged: (Rect) -> Unit,
     isActive: Boolean,
 ) {
+    val tablet = isTabletScreen()
+    val layoutState = rememberSaveableStateHolder()
+    Column(modifier.fillMaxSize()) {
+        AppTopBar(title = stringResource(R.string.nav_home))
+        layoutState.SaveableStateProvider(tablet) {
+            if (tablet) {
+                TabletHomeContent(
+                    libraryState = libraryState,
+                    onGameClick = onGameClick,
+                    onGameLongClick = onGameLongClick,
+                    onRecentRemoved = onRecentRemoved,
+                    onCoachAnchorChanged = onCoachAnchorChanged,
+                    isActive = isActive,
+                )
+            } else {
+                CompactHomeContent(
+                    libraryState = libraryState,
+                    onGameClick = onGameClick,
+                    onGameLongClick = onGameLongClick,
+                    onRecentRemoved = onRecentRemoved,
+                    onCoachAnchorChanged = onCoachAnchorChanged,
+                    isActive = isActive,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactHomeContent(
+    libraryState: MainLibraryUiState,
+    onGameClick: (ScanGame) -> Unit,
+    onGameLongClick: (ScanGame) -> Unit,
+    onRecentRemoved: (ScanGame) -> Unit,
+    onCoachAnchorChanged: (Rect) -> Unit,
+    isActive: Boolean,
+) {
     val quickLaunch = libraryState.quickLaunch
-    // 横屏/大屏一行五列，竖屏手机保持两列；展示总量随列数调整（竖屏 10 张 / 大屏 15 张）
     val wideScreen = isWideScreen()
     val recentColumns = if (wideScreen) RECENT_COLUMNS_WIDE else RECENT_COLUMNS_PORTRAIT
     val recentGames = libraryState.recentGames.take(
@@ -286,115 +341,252 @@ private fun NativeHomeContent(
     )
     // 滚动果冻：快速滚动时卡片沿滚动方向轻微拉长，停下 Q 弹回原样（静止 = 原样；「普通」档不挂节点）
     val scrollJelly = rememberScrollJellyState()
-    Column(modifier.fillMaxSize()) {
-        AppTopBar(title = stringResource(R.string.nav_home))
-
-        // ===== 快捷启动卡与最近打开列表合并为同一个滚动网格 =====
-        // 快捷启动卡始终是同一个网格项（key 不变）：加载中 / 空态 / 有记录之间切换时它纹丝不动，只有下面的内容换。
-        // （此前拆成「有记录用网格、没记录用列表」两套容器，快捷启动卡各渲染一份，删光记录时新旧容器交叉淡入淡出，
-        //  快捷启动卡会跟着晃动。）
-        val topPadding = 4.dp
-        val bottomPadding = 16.dp + glassNavBottomInset()
-        val itemSpacing = 10.dp
-        val density = LocalDensity.current
-        var viewportHeightPx by remember { mutableIntStateOf(0) }
-        var quickHeightPx by remember { mutableIntStateOf(0) }
-        // 加载中 / 空态占满快捷启动卡之外的剩余高度并居中（网格项没有 fillParentMaxSize，按实测高度计算）
-        val fillerHeight = with(density) {
-            (viewportHeightPx - quickHeightPx).toDp() - topPadding - bottomPadding - itemSpacing
-        }.coerceAtLeast(0.dp)
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(recentColumns),
-            modifier = Modifier
-                .fillMaxSize()
-                .onSizeChanged { viewportHeightPx = it.height }
-                .scrollJellyHost(scrollJelly),
-            contentPadding = PaddingValues(
-                start = 12.dp,
-                end = 12.dp,
-                top = topPadding,
-                bottom = bottomPadding,
-            ),
-            verticalArrangement = Arrangement.spacedBy(itemSpacing),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+    // ===== 快捷启动卡与最近打开列表合并为同一个滚动网格 =====
+    // 快捷启动卡始终是同一个网格项（key 不变）：加载中 / 空态 / 有记录之间切换时它纹丝不动，只有下面的内容换。
+    // （此前拆成「有记录用网格、没记录用列表」两套容器，快捷启动卡各渲染一份，删光记录时新旧容器交叉淡入淡出，
+    //  快捷启动卡会跟着晃动。）
+    val topPadding = 4.dp
+    val bottomPadding = 16.dp + glassNavBottomInset()
+    val itemSpacing = 10.dp
+    val density = LocalDensity.current
+    var viewportHeightPx by remember { mutableIntStateOf(0) }
+    var quickHeightPx by remember { mutableIntStateOf(0) }
+    // 加载中 / 空态占满快捷启动卡之外的剩余高度并居中（网格项没有 fillParentMaxSize，按实测高度计算）
+    val fillerHeight = with(density) {
+        (viewportHeightPx - quickHeightPx).toDp() - topPadding - bottomPadding - itemSpacing
+    }.coerceAtLeast(0.dp)
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(recentColumns),
+        modifier = Modifier
+            .fillMaxSize()
+            .onSizeChanged { viewportHeightPx = it.height }
+            .scrollJellyHost(scrollJelly),
+        contentPadding = PaddingValues(
+            start = 12.dp,
+            end = 12.dp,
+            top = topPadding,
+            bottom = bottomPadding,
+        ),
+        verticalArrangement = Arrangement.spacedBy(itemSpacing),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        item(
+            key = "quick_launch",
+            span = { GridItemSpan(maxLineSpan) },
+            contentType = "quick_launch",
         ) {
-            item(
-                key = "quick_launch",
+            QuickLaunchSection(
+                modifier = listItemMotion().onSizeChanged { quickHeightPx = it.height },
+                quickLaunch = quickLaunch,
+                onGameClick = onGameClick,
+                onGameLongClick = onGameLongClick,
+                onCoachAnchorChanged = onCoachAnchorChanged,
+                isActive = isActive,
+                jelly = scrollJelly,
+            )
+        }
+        when {
+            !libraryState.loaded -> item(
+                key = "loading",
                 span = { GridItemSpan(maxLineSpan) },
-                contentType = "quick_launch",
+                contentType = "loading",
             ) {
-                QuickLaunchSection(
-                    modifier = listItemMotion().onSizeChanged { quickHeightPx = it.height },
-                    quickLaunch = quickLaunch,
-                    onGameClick = onGameClick,
-                    onGameLongClick = onGameLongClick,
-                    onCoachAnchorChanged = onCoachAnchorChanged,
-                    isActive = isActive,
+                // 加载中 ↔ 空态 ↔ 列表互相替换时淡入淡出，而不是瞬间换掉
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(fillerHeight)
+                        .then(listItemMotion())
+                        .staggeredEntrance(1),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    RecentHomeStatus(loaded = false)
+                }
+            }
+            recentGames.isEmpty() -> item(
+                key = "recent_empty",
+                span = { GridItemSpan(maxLineSpan) },
+                contentType = "recent_empty",
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(fillerHeight)
+                        .then(listItemMotion())
+                        .staggeredEntrance(1),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    RecentHomeStatus(loaded = true)
+                }
+            }
+            else -> gridItemsIndexed(
+                items = recentGames,
+                key = { _, game -> game.uri },
+                contentType = { _, _ -> "recent_card" },
+            ) { index, game ->
+                RecentGameCard(
+                    game = game,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(listItemMotion(ListItemPlacement.Reflow))
+                        .staggeredEntrance(index / recentColumns + 1),
+                    onClick = { onGameClick(game) },
+                    onLongClick = { onRecentRemoved(game) },
                     jelly = scrollJelly,
                 )
-            }
-            when {
-                !libraryState.loaded -> item(
-                    key = "loading",
-                    span = { GridItemSpan(maxLineSpan) },
-                    contentType = "loading",
-                ) {
-                    // 加载中 ↔ 空态 ↔ 列表互相替换时淡入淡出，而不是瞬间换掉
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(fillerHeight)
-                            .then(listItemMotion())
-                            .staggeredEntrance(1),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        DelayedProgress { CircularProgressIndicator() }
-                    }
-                }
-                recentGames.isEmpty() -> item(
-                    key = "recent_empty",
-                    span = { GridItemSpan(maxLineSpan) },
-                    contentType = "recent_empty",
-                ) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(fillerHeight)
-                            .then(listItemMotion())
-                            .staggeredEntrance(1),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            stringResource(R.string.home_recent_empty),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = PageSecondaryTextColor,
-                        )
-                    }
-                }
-                else -> gridItemsIndexed(
-                    items = recentGames,
-                    key = { _, game -> game.uri },
-                    contentType = { _, _ -> "recent_card" },
-                ) { index, game ->
-                    RecentGameCard(
-                        game = game,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .then(listItemMotion(ListItemPlacement.Reflow))
-                            .staggeredEntrance(index / recentColumns + 1),
-                        onClick = { onGameClick(game) },
-                        onLongClick = { onRecentRemoved(game) },
-                        jelly = scrollJelly,
-                    )
-                }
             }
         }
     }
 }
 
+@Composable
+private fun TabletHomeContent(
+    libraryState: MainLibraryUiState,
+    onGameClick: (ScanGame) -> Unit,
+    onGameLongClick: (ScanGame) -> Unit,
+    onRecentRemoved: (ScanGame) -> Unit,
+    onCoachAnchorChanged: (Rect) -> Unit,
+    isActive: Boolean,
+) {
+    val recentGames = libraryState.recentGames
+    val scrollJelly = rememberScrollJellyState()
+    val bottomInset = if (isSideRailLayout()) {
+        WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    } else {
+        glassNavBottomInset()
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().scrollJellyHost(scrollJelly),
+        contentPadding = PaddingValues(
+            start = 24.dp,
+            end = 24.dp,
+            top = 8.dp,
+            bottom = 16.dp + bottomInset,
+        ),
+        verticalArrangement = Arrangement.spacedBy(24.dp, Alignment.Bottom),
+    ) {
+        item(key = "recent_games") {
+            BoxWithConstraints(Modifier.fillMaxWidth().then(listItemMotion()).staggeredEntrance(0)) {
+                val previewSize = (maxWidth * 0.18f).coerceIn(120.dp, 192.dp)
+                // Pager may resolve keys before the next subcomposition when a launch updates recents.
+                val recentSnapshot = rememberUpdatedState(recentGames)
+                val recentPagerState = rememberPagerState { recentSnapshot.value.size }
+                if (!libraryState.loaded || recentGames.isEmpty()) {
+                    Box(Modifier.fillMaxWidth().height(previewSize), contentAlignment = Alignment.Center) {
+                        RecentHomeStatus(libraryState.loaded)
+                    }
+                } else {
+                    TabletRecentGames(
+                        recentSnapshot = recentSnapshot,
+                        state = recentPagerState,
+                        availableWidth = maxWidth,
+                        previewSize = previewSize,
+                        onOpen = onGameClick,
+                        onRemove = onRecentRemoved,
+                        jelly = scrollJelly,
+                    )
+                }
+            }
+        }
+        item(key = "quick_launch") {
+            QuickLaunchSection(
+                quickLaunch = libraryState.quickLaunch,
+                onGameClick = onGameClick,
+                onGameLongClick = onGameLongClick,
+                modifier = listItemMotion(),
+                onCoachAnchorChanged = onCoachAnchorChanged,
+                isActive = isActive,
+                jelly = scrollJelly,
+                tabletLayout = true,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TabletRecentGames(
+    recentSnapshot: State<List<ScanGame>>,
+    state: PagerState,
+    availableWidth: Dp,
+    previewSize: Dp,
+    onOpen: (ScanGame) -> Unit,
+    onRemove: (ScanGame) -> Unit,
+    jelly: ScrollJellyState,
+) {
+    val recentGames = recentSnapshot.value
+    if (recentGames.isEmpty()) return
+    val selectedIndex = state.currentPage.coerceAtMost(recentGames.lastIndex)
+    val selectedGame = recentGames[selectedIndex]
+    val thumbnailSize = previewSize * 0.68f
+    val spacing = 12.dp
+    val scope = rememberCoroutineScope()
+    Box(Modifier.fillMaxWidth().heightIn(min = previewSize)) {
+        Column(
+            Modifier.fillMaxWidth().padding(start = previewSize + spacing)
+                .tabletRecentTitleMotion(state, thumbnailSize, spacing),
+        ) {
+            Text(
+                selectedGame.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = PageTextColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (selectedGame.supportsRecentPlaytime()) {
+                key(selectedGame.uri) {
+                    RecentGamePlaytime(
+                        gameUri = selectedGame.uri,
+                        color = PageSecondaryTextColor,
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+            Spacer(Modifier.height(thumbnailSize + 8.dp))
+        }
+        TabletRecentCoverPager(
+            modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().height(previewSize),
+            state = state,
+            availableWidth = availableWidth,
+            thumbnailSize = thumbnailSize,
+            previewSize = previewSize,
+            spacing = spacing,
+            key = { page -> recentSnapshot.value.getOrNull(page)?.uri ?: page },
+        ) { page, cardModifier, emphasis ->
+            val game = recentSnapshot.value.getOrNull(page) ?: return@TabletRecentCoverPager
+            val selected = page == selectedIndex
+            RecentGameCard(
+                game = game,
+                modifier = cardModifier.width(thumbnailSize),
+                onClick = {
+                    if (selected) onOpen(game) else scope.launch { state.animateScrollToPage(page) }
+                },
+                onLongClick = { onRemove(game) },
+                jelly = jelly,
+                showDetails = false,
+                isSelected = selected,
+                selectionEmphasis = emphasis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RecentHomeStatus(loaded: Boolean) {
+    if (loaded) {
+        Text(
+            stringResource(R.string.home_recent_empty),
+            style = MaterialTheme.typography.bodyMedium,
+            color = PageSecondaryTextColor,
+        )
+    } else {
+        DelayedProgress { CircularProgressIndicator() }
+    }
+}
+
 /**
- * 快捷启动区（最多 3 个）：小屏（可用宽度 < 600dp，竖屏手机）单张大卡左右滑动切换（限宽居中）；
- * 大屏（横屏/平板）一行三个卡位**占满可用宽度**，空槽显示占位。
+ * 平板布局或可用宽度至少 600dp 时并排显示全部卡位，空槽显示占位。
+ * 其余情况使用限宽居中的单卡轮播。
  */
 @Composable
 private fun QuickLaunchSection(
@@ -405,12 +597,14 @@ private fun QuickLaunchSection(
     onCoachAnchorChanged: (Rect) -> Unit = {},
     isActive: Boolean = true,
     jelly: ScrollJellyState? = null,
+    tabletLayout: Boolean = false,
 ) {
     BoxWithConstraints(
-        modifier = modifier.fillMaxWidth().staggeredEntrance(0).coachAnchor(isActive, onCoachAnchorChanged),
+        modifier = modifier.fillMaxWidth().staggeredEntrance(if (tabletLayout) 1 else 0)
+            .coachAnchor(isActive, onCoachAnchorChanged),
         contentAlignment = Alignment.Center,
     ) {
-        if (maxWidth >= 600.dp) {
+        if (tabletLayout || maxWidth >= 600.dp) {
             // 大屏（平板/横屏）三张卡并排**占满可用宽度**（不再设 900dp 上限，
             // 否则平板/大窗口下两侧会空出一条）；卡内封面宽度有 99dp 上限、文字列自适应，
             // 因此拉宽不会挤压内容。
@@ -418,7 +612,7 @@ private fun QuickLaunchSection(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                repeat(3) { i ->
+                repeat(GameLibraryFacade.MAX_QUICK_LAUNCH) { i ->
                     val game = quickLaunch.getOrNull(i)
                     // 卡位模糊替换：设为 / 取消快捷启动时，空槽与游戏卡互相模糊替换而不是瞬间换掉。
                     // 内容按游戏 uri 区分（contentKey）：删除卡片后状态仍跟随游戏而不是按位置复用，
@@ -436,6 +630,7 @@ private fun QuickLaunchSection(
                                 onLongClick = { onGameLongClick(slotGame) },
                                 modifier = Modifier.fillMaxWidth(),
                                 jelly = jelly,
+                                tabletSlot = tabletLayout,
                             )
                         } else {
                             QuickLaunchEmptyCard(modifier = Modifier.fillMaxWidth())
@@ -511,6 +706,7 @@ private fun QuickLaunchCard(
     onLongClick: (() -> Unit)? = null,
     jelly: ScrollJellyState? = null,
     layers: PagerCardLayers = PagerCardLayers.Static,
+    tabletSlot: Boolean = false,
 ) {
     val pressModifier = if (onLongClick != null) {
         Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
@@ -541,6 +737,7 @@ private fun QuickLaunchCard(
             else -> game.engine.displayName
         }
         val cardMaxWidth = maxWidth
+        val compact = tabletSlot && cardMaxWidth < 220.dp
         val coverBitmap by rememberCoverBitmap(game.coverUri)
         // 背景封面加载完成后淡入
         val backdropReveal = rememberCoverReveal(coverBitmap != null, CoverSurface.QuickLaunchBackdrop)
@@ -577,7 +774,9 @@ private fun QuickLaunchCard(
             Box(layers.backdrop(Modifier.matchParentSize()) { backdropReveal.alpha }.background(Color.Black.copy(alpha = 0.25f)))
         }
         Column(
-            modifier = layers.foreground(Modifier.fillMaxSize().then(pressModifier).padding(20.dp)),
+            modifier = layers.foreground(
+                Modifier.fillMaxSize().then(pressModifier).padding(if (compact) 12.dp else 20.dp),
+            ),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth().weight(1f),
@@ -585,7 +784,7 @@ private fun QuickLaunchCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         engineName,
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = if (compact) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                         maxLines = 2,
@@ -593,7 +792,7 @@ private fun QuickLaunchCard(
                     )
                     Text(
                         game.title,
-                        style = MaterialTheme.typography.titleLarge,
+                        style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                         maxLines = 2,
@@ -604,10 +803,11 @@ private fun QuickLaunchCard(
                 // 封面按卡宽取比例宽度（大屏三卡并排时自动缩小，给文字留空间），上限 99dp，
                 // 垂直居中于文字行高度内；左侧与文字列保持 12dp 间距
                 Box(
-                    modifier = Modifier.fillMaxHeight().padding(start = 12.dp),
+                    modifier = Modifier.fillMaxHeight().padding(start = if (compact) 8.dp else 12.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    val coverWidth = (cardMaxWidth * 0.32f).coerceAtMost(99.dp)
+                    val coverWidth = if (compact) (cardMaxWidth * 0.28f).coerceAtMost(58.dp)
+                    else (cardMaxWidth * 0.32f).coerceAtMost(99.dp)
                     Box(
                         modifier = Modifier
                             .width(coverWidth)
@@ -632,7 +832,7 @@ private fun QuickLaunchCard(
                             } else {
                                 // 替换容器会把内容撑满封面位：外包一层居中，保持原先居中的占位文字
                                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Text(
+                                    if (!compact) Text(
                                         "Tyranor",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = Color.White.copy(alpha = 0.7f),
@@ -643,15 +843,17 @@ private fun QuickLaunchCard(
                     }
                 }
                 // 封面右侧的指向箭头，仅作视觉引导，不单独响应点击；左侧与封面间距 9dp
-                Icon(
-                    painter = painterResource(R.drawable.ic_quick_launch_arrow),
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier
-                        .align(Alignment.CenterVertically)
-                        .padding(start = 9.dp)
-                        .size(24.dp),
-                )
+                if (!compact) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_quick_launch_arrow),
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier
+                            .align(Alignment.CenterVertically)
+                            .padding(start = 9.dp)
+                            .size(24.dp),
+                    )
+                }
             }
         }
     }
@@ -685,8 +887,7 @@ private fun QuickLaunchEmptyCard(modifier: Modifier = Modifier) {
 }
 
 /**
- * 最近打开卡片：竖屏两列、横屏/大屏五列网格，封面铺满卡片（无封面时用引擎分类色底），
- * 底部信息面板显示游戏名与内置引擎累计时长；点按打开操作抽屉，长按删除该条最近记录。
+ * 最近打开卡片共用方形封面与引擎分类色。网格卡片在底部显示信息，平板将信息放在卡片外。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -694,20 +895,17 @@ private fun RecentGameCard(
     game: ScanGame,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     jelly: ScrollJellyState? = null,
+    showDetails: Boolean = true,
+    isSelected: Boolean? = null,
+    selectionEmphasis: (() -> Float)? = null,
 ) {
     // 长按删除：「增强」档先播放消散（晃动 → 缩小变红 → 化成碎屑），播完再移除这条记录；「普通」档直接移除
     val dissolveScope = rememberCoroutineScope()
     val localDissolve = rememberDissolveState()
     // 从快捷启动弹窗删除游戏时登记在 dissolvingGames 里：同一个游戏出现在最近打开里也一起消散
     val dissolve = rememberLastNonNull(dissolvingGames[game.uri]) ?: localDissolve
-    val playtimeEngine = RuntimeModuleBindings.builtInSystemNnn(game).engine
-    val showPlaytime = GamePlaytimeRepository.supports(playtimeEngine)
-    val titleStyle = MaterialTheme.typography.bodyMedium
-    // Preserve the original one-line title plus 12.5dp padding at either edge, including font scaling.
-    val panelHeight = with(LocalDensity.current) { titleStyle.lineHeight.toDp() } + 25.dp
-    val compactStyle = titleStyle.copy(lineHeight = titleStyle.fontSize)
     val coverBitmap by rememberCoverBitmap(
         coverUri = game.coverUri,
         tier = CoverDecodeTier.CARD,
@@ -719,7 +917,7 @@ private fun RecentGameCard(
     Box(
         modifier
             .gameRemovalDust(dissolve)
-            .pressSquish(scale = PressSquishDefaults.CardScale, charge = true)
+            .pressSquish(scale = PressSquishDefaults.CardScale, charge = onLongClick != null)
             // 滚动果冻：快速滚动时沿滚动方向轻微拉长，停下回弹（静止 = 原样）
             .scrollJelly(jelly)
             .aspectRatio(1f)
@@ -727,17 +925,19 @@ private fun RecentGameCard(
             .dissolveTint(dissolve, MaterialTheme.colorScheme.error)
             .background(game.engine.coverColor())
             .glassBorder()
+            .then(if (isSelected != null) Modifier.semantics { selected = isSelected } else Modifier)
+            .then(if (showDetails) Modifier else Modifier.semantics { contentDescription = game.title })
             .combinedClickable(
                 onClick = onClick,
-                onLongClick = { dissolveScope.removeRecentGame(dissolve, onLongClick) },
-                onLongClickLabel = stringResource(R.string.common_delete),
+                onLongClick = onLongClick?.let { remove -> { dissolveScope.removeRecentGame(dissolve, remove) } },
+                onLongClickLabel = if (onLongClick != null) stringResource(R.string.common_delete) else null,
             ),
         contentAlignment = Alignment.Center,
     ) {
         if (bmp != null) {
             Image(
                 bitmap = bmp,
-                contentDescription = game.title,
+                contentDescription = if (showDetails) game.title else null,
                 contentScale = ContentScale.Crop,
                 modifier = reveal.image(Modifier.fillMaxSize()),
             )
@@ -748,34 +948,55 @@ private fun RecentGameCard(
                 "Tyranor",
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White.copy(alpha = 0.7f),
+                modifier = if (showDetails) Modifier else Modifier.clearAndSetSemantics {},
             )
         }
-        // 保持原遮罩高度；内置游戏用紧凑两行显示标题与小时数，外置游戏保持单行居中。
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .height(panelHeight)
-                .clipToBounds()
-                .background(NavWhiteOverlay)
-                .padding(horizontal = 12.dp),
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text(
-                game.title,
-                style = if (showPlaytime) compactStyle else titleStyle,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+        if (showDetails) {
+            RecentGameDetails(game, Modifier.align(Alignment.BottomCenter))
+        }
+        if (selectionEmphasis != null) {
+            Box(
+                Modifier.matchParentSize()
+                    .graphicsLayer { alpha = selectionEmphasis() }
+                    .border(2.dp, MaterialTheme.colorScheme.primary, AppComponentShape),
             )
-            if (showPlaytime) {
-                RecentGamePlaytime(
-                    gameUri = game.uri,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textStyle = compactStyle,
-                )
-            }
         }
     }
 }
+
+@Composable
+private fun RecentGameDetails(game: ScanGame, modifier: Modifier = Modifier) {
+    val showPlaytime = game.supportsRecentPlaytime()
+    val titleStyle = MaterialTheme.typography.bodyMedium
+    // 标题单行高度加上下各 12.5dp，随系统字体缩放。
+    val panelHeight = with(LocalDensity.current) { titleStyle.lineHeight.toDp() } + 25.dp
+    val compactStyle = titleStyle.copy(lineHeight = titleStyle.fontSize)
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(panelHeight)
+            .clipToBounds()
+            .background(NavWhiteOverlay)
+            .padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            game.title,
+            style = if (showPlaytime) compactStyle else titleStyle,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (showPlaytime) {
+            RecentGamePlaytime(
+                gameUri = game.uri,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textStyle = compactStyle,
+            )
+        }
+    }
+}
+
+private fun ScanGame.supportsRecentPlaytime(): Boolean =
+    GamePlaytimeRepository.supports(RuntimeModuleBindings.builtInSystemNnn(this).engine)
