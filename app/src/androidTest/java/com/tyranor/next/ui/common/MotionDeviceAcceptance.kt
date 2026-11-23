@@ -18,8 +18,8 @@ internal object MotionDeviceAcceptance {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val arguments = InstrumentationRegistry.getArguments()
         check(arguments.getString(ARGUMENT) == "true") {
-            "Motion device acceptance requires explicit '-e $ARGUMENT true'; no motion checks were run. " +
-                "See app/src/androidTest/README.md."
+            "Motion device acceptance requires explicit '-e $ARGUMENT true' and " +
+                "'-e $TARGET_PACKAGE_ARGUMENT <isolated applicationId>'; no motion checks were run."
         }
         val expectedPackage = arguments.getString(TARGET_PACKAGE_ARGUMENT)?.trim().orEmpty()
         check(expectedPackage.startsWith("com.tyranor.next.") && !expectedPackage.endsWith(".test")) {
