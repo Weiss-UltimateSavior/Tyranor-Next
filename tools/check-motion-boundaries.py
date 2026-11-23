@@ -37,11 +37,11 @@ NoPressFeedbackButtons OverlayDropdownPreference SlidingTabRow TabPagerState
 TopBarIcon notice/NoticeHost
 """.split())
 OWNERS.update("ui/common/motion/" + f + ".kt" for f in """
-BlurText ContentMotion DeleteEffect DialogDimStack DialogWindowMotion DrawPhaseLayers
-Entrance ExpandSectionVisibility FeedbackMotion GameCoverMotion GridReflowMotion
+BlurText ContentMotion DeleteEffect DialogWindowMotion DrawPhaseLayers
+Entrance ExpandSectionVisibility FeedbackMotion GameCoverMotion
 ListItemMotion MotionSprings MotionTokens
-OvershootRoom PageTransitions PageVisibility PagerMotion ParallaxCardPager PressSquish
-ReorderPlacementMotion ReplayEntranceSprings ScrollMotion SheetMotion SystemThemeSync
+PageTransitions PagerMotion ParallaxCardPager PressSquish
+ReorderPlacementMotion ReplayEntranceSprings ScrollMotion SheetMotion
 TabPageMotion ThemeReveal WaterfallReflowState
 """.split())
 

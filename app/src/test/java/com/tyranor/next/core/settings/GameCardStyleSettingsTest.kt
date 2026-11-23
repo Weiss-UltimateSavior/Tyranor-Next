@@ -8,7 +8,7 @@ import com.tyranor.next.testing.InMemorySharedPreferences
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -29,11 +29,13 @@ class GameCardStyleSettingsTest {
 
     @After
     fun restoreSettingsState() {
+        // 列数流对外只读，恢复也必须经 setter（顺带经过同一把锁与 2..8 钳制）。
+        val context = InMemoryPreferencesContext()
         AppSettingsStore.gameCardStyleState.value = originalStyle
-        AppSettingsStore.gameGridPortraitColumnsState.value = originalPortraitColumns
-        AppSettingsStore.gameGridLandscapeColumnsState.value = originalLandscapeColumns
-        AppSettingsStore.gameWaterfallPortraitColumnsState.value = originalWaterfallPortraitColumns
-        AppSettingsStore.gameWaterfallLandscapeColumnsState.value = originalWaterfallLandscapeColumns
+        AppSettingsStore.setGameGridPortraitColumns(context, originalPortraitColumns)
+        AppSettingsStore.setGameGridLandscapeColumns(context, originalLandscapeColumns)
+        AppSettingsStore.setGameWaterfallPortraitColumns(context, originalWaterfallPortraitColumns)
+        AppSettingsStore.setGameWaterfallLandscapeColumns(context, originalWaterfallLandscapeColumns)
     }
 
     @Test
@@ -46,8 +48,6 @@ class GameCardStyleSettingsTest {
         assertEquals(6, AppSettingsStore.getGameGridLandscapeColumns(context))
 
         AppSettingsStore.gameCardStyleState.value = AppSettingsStore.GAME_CARD_STYLE_GRID
-        AppSettingsStore.gameGridPortraitColumnsState.value = 9
-        AppSettingsStore.gameGridLandscapeColumnsState.value = 3
         AppSettingsStore.initGameCardStyle(context)
 
         assertEquals(AppSettingsStore.DEFAULT_GAME_CARD_STYLE, AppSettingsStore.gameCardStyleState.value)
@@ -202,8 +202,6 @@ class GameCardStyleSettingsTest {
         assertEquals(4, AppSettingsStore.getGameWaterfallPortraitColumns(context))
         assertEquals(6, AppSettingsStore.getGameWaterfallLandscapeColumns(context))
 
-        AppSettingsStore.gameWaterfallPortraitColumnsState.value = 9
-        AppSettingsStore.gameWaterfallLandscapeColumnsState.value = 3
         AppSettingsStore.initGameCardStyle(context)
 
         assertEquals(4, AppSettingsStore.gameWaterfallPortraitColumnsState.value)
@@ -243,10 +241,6 @@ class GameCardStyleSettingsTest {
         AppSettingsStore.setGameGridPortraitColumns(context, 4)
         AppSettingsStore.setGameWaterfallPortraitColumns(context, 8)
         AppSettingsStore.setGameCardStyle(context, AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW)
-        AppSettingsStore.gameGridPortraitColumnsState.value = 2
-        AppSettingsStore.gameGridLandscapeColumnsState.value = 2
-        AppSettingsStore.gameWaterfallPortraitColumnsState.value = 2
-        AppSettingsStore.gameWaterfallLandscapeColumnsState.value = 2
         AppSettingsStore.initGameCardStyle(context)
 
         assertEquals(AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW, AppSettingsStore.gameCardStyleState.value)
@@ -263,6 +257,41 @@ class GameCardStyleSettingsTest {
         assertEquals(4, stored[AppSettingsStore.KEY_GAME_GRID_PORTRAIT_COLUMNS])
         assertEquals(8, stored[AppSettingsStore.KEY_GAME_GRID_LANDSCAPE_COLUMNS])
         assertEquals(8, stored[AppSettingsStore.KEY_GAME_WATERFALL_PORTRAIT_COLUMNS])
+        assertEquals(7, stored[AppSettingsStore.KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS])
+    }
+
+    @Test
+    fun legacyPortraitSourceDependsOnSmallestWidthOnly() {
+        // 上一版竖屏平板读的是「宽屏」键，手机读「窄屏」键；判据只看最小宽度。
+        assertEquals(false, AppSettingsStore.wideKeyAppliesToPortrait(599))
+        assertEquals(true, AppSettingsStore.wideKeyAppliesToPortrait(600))
+        assertEquals(7, AppSettingsStore.legacyPortraitValue(narrow = 5, wide = 7, wideAppliesToPortrait = true))
+        assertEquals(5, AppSettingsStore.legacyPortraitValue(narrow = 5, wide = 7, wideAppliesToPortrait = false))
+        // 只有宽屏值可用时，平板取宽屏值、手机保持默认（null 表示不迁移）。
+        assertEquals(7, AppSettingsStore.legacyPortraitValue(narrow = null, wide = 7, wideAppliesToPortrait = true))
+        assertEquals(null, AppSettingsStore.legacyPortraitValue(narrow = null, wide = 7, wideAppliesToPortrait = false))
+        assertEquals(5, AppSettingsStore.legacyPortraitValue(narrow = 5, wide = null, wideAppliesToPortrait = true))
+        assertEquals(null, AppSettingsStore.legacyPortraitValue(narrow = null, wide = null, wideAppliesToPortrait = false))
+    }
+
+    @Test
+    fun resetGameConditionsKeepsCardColumns() {
+        val context = InMemoryPreferencesContext()
+        AppSettingsStore.setGameGridPortraitColumns(context, 3)
+        AppSettingsStore.setGameGridLandscapeColumns(context, 8)
+        AppSettingsStore.setGameWaterfallPortraitColumns(context, 5)
+        AppSettingsStore.setGameWaterfallLandscapeColumns(context, 7)
+
+        AppSettingsStore.resetGameConditions(context)
+
+        assertEquals(3, AppSettingsStore.getGameGridPortraitColumns(context))
+        assertEquals(8, AppSettingsStore.getGameGridLandscapeColumns(context))
+        assertEquals(5, AppSettingsStore.getGameWaterfallPortraitColumns(context))
+        assertEquals(7, AppSettingsStore.getGameWaterfallLandscapeColumns(context))
+        val stored = context.prefSnapshot(AppStorageNames.APP_SETTINGS_PREFS)
+        assertEquals(3, stored[AppSettingsStore.KEY_GAME_GRID_PORTRAIT_COLUMNS])
+        assertEquals(8, stored[AppSettingsStore.KEY_GAME_GRID_LANDSCAPE_COLUMNS])
+        assertEquals(5, stored[AppSettingsStore.KEY_GAME_WATERFALL_PORTRAIT_COLUMNS])
         assertEquals(7, stored[AppSettingsStore.KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS])
     }
 
@@ -304,6 +333,7 @@ class GameCardStyleSettingsTest {
             AppSettingsStore.KEY_GAME_CARD_STYLE,
             AppSettingsStore.gameCardStyleState,
             AppSettingsStore::setGameCardStyle,
+            seed = { AppSettingsStore.gameCardStyleState.value = it },
         )
         for (pauseInitialization in listOf(true, false)) {
             assertInitializationAndSetterAreSerialized(
@@ -316,10 +346,15 @@ class GameCardStyleSettingsTest {
         }
     }
 
+    /**
+     * 列数流对外只读（发布统一在 [AppSettingsStore] 内部加锁完成），所以预置状态也要走各自的正规入口：
+     * 列数用 setter 写进一个独立的内存偏好，不会污染用例自己构造的 backing。
+     */
     private data class CardSetting<T : Any>(
         val key: String,
-        val state: MutableStateFlow<T>,
+        val state: StateFlow<T>,
         val setter: (Context, T) -> Unit,
+        val seed: (T) -> Unit,
     )
 
     private fun columnSettings() = listOf(
@@ -327,21 +362,25 @@ class GameCardStyleSettingsTest {
             AppSettingsStore.KEY_GAME_GRID_PORTRAIT_COLUMNS,
             AppSettingsStore.gameGridPortraitColumnsState,
             AppSettingsStore::setGameGridPortraitColumns,
+            seed = { AppSettingsStore.setGameGridPortraitColumns(InMemoryPreferencesContext(), it) },
         ),
         CardSetting(
             AppSettingsStore.KEY_GAME_GRID_LANDSCAPE_COLUMNS,
             AppSettingsStore.gameGridLandscapeColumnsState,
             AppSettingsStore::setGameGridLandscapeColumns,
+            seed = { AppSettingsStore.setGameGridLandscapeColumns(InMemoryPreferencesContext(), it) },
         ),
         CardSetting(
             AppSettingsStore.KEY_GAME_WATERFALL_PORTRAIT_COLUMNS,
             AppSettingsStore.gameWaterfallPortraitColumnsState,
             AppSettingsStore::setGameWaterfallPortraitColumns,
+            seed = { AppSettingsStore.setGameWaterfallPortraitColumns(InMemoryPreferencesContext(), it) },
         ),
         CardSetting(
             AppSettingsStore.KEY_GAME_WATERFALL_LANDSCAPE_COLUMNS,
             AppSettingsStore.gameWaterfallLandscapeColumnsState,
             AppSettingsStore::setGameWaterfallLandscapeColumns,
+            seed = { AppSettingsStore.setGameWaterfallLandscapeColumns(InMemoryPreferencesContext(), it) },
         ),
     )
 
@@ -403,7 +442,7 @@ class GameCardStyleSettingsTest {
         }, "card-columns-second")
 
         try {
-            setting.state.value = initialState
+            setting.seed(initialState)
             first.start()
             assertTrue("${setting.key}: first operation did not pause", paused.await(5, TimeUnit.SECONDS))
             second.start()

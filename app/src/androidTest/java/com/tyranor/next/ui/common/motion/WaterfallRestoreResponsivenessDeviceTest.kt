@@ -33,7 +33,9 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.test.platform.app.InstrumentationRegistry
 import com.tyranor.next.ui.common.MotionDeviceAcceptance
+import com.tyranor.next.ui.common.motion.MotionMode
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
@@ -71,7 +73,8 @@ class WaterfallRestoreResponsivenessDeviceTest {
     }
 
     private fun measure(count: Int) {
-        MotionDeviceAcceptance.require()
+        // 门禁会临时把动效档位切到增强；记下原值，用例结束时还原，别让后续用例被动继承。
+        val originalEnhanced = MotionDeviceAcceptance.require()
         val fixture = Fixture(count)
         val handler = Handler(Looper.getMainLooper())
         var scheduledAt = 0L
@@ -109,9 +112,11 @@ class WaterfallRestoreResponsivenessDeviceTest {
                 assertTrue("Setup must reach the final card", !fixture.state.canScrollForward)
                 fixture.started.set(SystemClock.uptimeMillis())
                 fixture.columns = 3
-                scheduledAt = SystemClock.uptimeMillis() + 8L
+                // 首个探针立刻投递：只要恢复真的跨过了重启这一刻，就一定有触摸落在恢复期间，
+                // 触摸断言才不会因为「探针到期晚于恢复完成」而形同虚设。
+                scheduledAt = SystemClock.uptimeMillis()
                 firstProbeDue = scheduledAt
-                handler.postDelayed(probe, 8L)
+                handler.post(probe)
             }
             compose.waitUntil(timeoutMillis = 120_000L) { fixture.completed.get() > 0L }
             compose.waitForIdle()
@@ -125,12 +130,15 @@ class WaterfallRestoreResponsivenessDeviceTest {
             }
             assertTrue("Restored content must actually be drawn", painted)
             val completedAt = fixture.completed.get()
+            // 探针在重启那一刻就投递，所以只要这次恢复确实耗了时间（不是同一时刻瞬时完成），
+            // 恢复期间必定有触摸到达；此时「输入不被恢复阻塞」必须被真正验证，不能再短路跳过。
+            val restoreTookTime = completedAt > fixture.started.get()
             val restoreEndedBeforeFirstProbe = firstProbeDue > 0L && completedAt < firstProbeDue
             assertTrue("A post-restore draw callback must have been recorded",
                 fixture.firstPostRestoreDrawCallbackAt.get() >= fixture.started.get())
             assertTrue("Restoration including coarse fallback must finish within 2500 ms",
                 completedAt - fixture.started.get() < 2500L)
-            if (!restoreEndedBeforeFirstProbe) {
+            if (!restoreEndedBeforeFirstProbe || restoreTookTime) {
                 assertTrue("A native touch due during restore must be processed", fixture.inputCount.get() > 0L)
                 assertTrue("Input callbacks must not wait for the whole restore", fixture.maxInputDelay.get() < 250L)
             }
@@ -138,6 +146,7 @@ class WaterfallRestoreResponsivenessDeviceTest {
             Log.i("WaterfallRestoreMetrics", "count=$count restoreMs=${completedAt - fixture.started.get()} maxTouchDispatchDelayMs=${fixture.maxInputDelay.get()} firstPostRestoreDrawCallbackMs=${fixture.firstPostRestoreDrawCallbackAt.get() - fixture.started.get()} touchesDueDuringRestore=${fixture.inputCount.get()} restoreEndedBeforeFirstProbe=$restoreEndedBeforeFirstProbe firstProbeDueMs=${if (firstProbeDue > 0L) firstProbeDue - fixture.started.get() else -1L}")
         } finally {
             handler.removeCallbacks(probe)
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { MotionMode.sync(originalEnhanced) }
         }
     }
 

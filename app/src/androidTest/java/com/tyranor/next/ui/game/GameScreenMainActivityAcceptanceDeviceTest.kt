@@ -576,7 +576,7 @@ class GameScreenMainActivityAcceptanceDeviceTest {
             // 网格两键也要还原：遗留值会让下一次 initGameCardStyle 认为四键已存在，迁移分支不再被覆盖。
             AppSettingsStore.KEY_GAME_GRID_PORTRAIT_COLUMNS, AppSettingsStore.KEY_GAME_GRID_LANDSCAPE_COLUMNS,
             // 旧版窄/宽屏列数键一并还原，避免迁移把值再次写回四个新键。
-            "game_card_columns_narrow", "game_card_columns_wide",
+            AppSettingsStore.KEY_GAME_CARD_COLUMNS_NARROW_LEGACY, AppSettingsStore.KEY_GAME_CARD_COLUMNS_WIDE_LEGACY,
             AppSettingsStore.KEY_GAME_SORT, AppSettingsStore.KEY_GAME_FILTER_ENGINE, AppSettingsStore.KEY_GAME_FILTER_PLAYED,
             AppSettingsStore.KEY_MOTION_ENHANCED, AppSettingsStore.KEY_APPEARANCE_STYLE, AppSettingsStore.KEY_THEME_MODE,
             "default_theme_particles_enabled", "migration_xsys4_rescan_done",
