@@ -1,14 +1,23 @@
 package com.core.engine;
 
+import android.animation.ValueAnimator;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Rect;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
 import android.app.AlertDialog;
+import android.net.Uri;
 import android.os.SystemClock;
 import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.View;
+import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 
 import androidx.activity.ComponentActivity;
 import androidx.annotation.NonNull;
@@ -20,11 +29,14 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.util.Arrays;
 
 import static org.junit.Assert.*;
 import static org.junit.Assume.assumeTrue;
@@ -38,6 +50,234 @@ public final class EngineStartupDeviceTest {
                         .equals("com.tyranor.next.startuptest"));
         assumeTrue("Explicit device-test opt-in required",
                 "true".equals(InstrumentationRegistry.getArguments().getString("startup_test")));
+    }
+
+    @Test public void fastStartupShowsTheGameCoverAndCompletesTheSpectrum() throws Exception {
+        requireIsolatedTarget();
+        assumeTrue("The emulator must enable animations", ValueAnimator.areAnimatorsEnabled());
+        var instrumentation = InstrumentationRegistry.getInstrumentation();
+        File coverFile = File.createTempFile("startup-cover", ".png", instrumentation.getTargetContext().getCacheDir());
+        Bitmap fixtureCover = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888);
+        Canvas art = new Canvas(fixtureCover);
+        art.drawColor(0xFFAD5D91);
+        android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(0xFFF5AAC4);
+        art.drawCircle(70, 25, 18, paint);
+        paint.setColor(0xFF382547);
+        art.drawRect(0, 55, 96, 96, paint);
+        try (FileOutputStream output = new FileOutputStream(coverFile)) {
+            assertTrue(fixtureCover.compress(Bitmap.CompressFormat.PNG, 100, output));
+        } finally {
+            fixtureCover.recycle();
+        }
+
+        try (ActivityScenario<ComponentActivity> scenario = ActivityScenario.launch(ComponentActivity.class)) {
+            AtomicReference<EngineStartupOverlay> overlay = new AtomicReference<>();
+            long beforeAttach = SystemClock.uptimeMillis();
+            scenario.onActivity(activity -> {
+                activity.getIntent()
+                        .putExtra(LaunchContract.UI_LANGUAGE_TAG, "zh-CN")
+                        .putExtra(LaunchContract.GAMES_TITLE, "星光庭院")
+                        .putExtra(LaunchContract.GAME_COVER_URI, Uri.fromFile(coverFile).toString())
+                        .putExtra(LaunchContract.THEME_COLOR_PRIMARY, 0xFF77C2CD);
+                FrameLayout content = new FrameLayout(activity);
+                activity.setContentView(content);
+                EngineStartupOverlay loading = new EngineStartupOverlay(activity);
+                loading.attachTo(content);
+                loading.reveal();
+                overlay.set(loading);
+            });
+
+            long coverDeadline = SystemClock.uptimeMillis() + 1_800;
+            AtomicBoolean decoded = new AtomicBoolean();
+            while (SystemClock.uptimeMillis() < coverDeadline) {
+                scenario.onActivity(activity -> decoded.set(hasFixtureCover(overlay.get())));
+                if (decoded.get()) break;
+                SystemClock.sleep(30);
+            }
+            scenario.onActivity(activity -> {
+                assertTrue("Cover was not decoded from the launch URI", hasFixtureCover(overlay.get()));
+                assertEquals("Fast engine readiness should keep the startup graphic visible",
+                        View.VISIBLE, overlay.get().getVisibility());
+            });
+            saveScreenshot("startup-spectrum.png");
+
+            long revealDeadline = SystemClock.uptimeMillis() + 5_000;
+            AtomicInteger visibility = new AtomicInteger();
+            do {
+                scenario.onActivity(activity -> visibility.set(overlay.get().getVisibility()));
+                if (visibility.get() == View.GONE) break;
+                SystemClock.sleep(30);
+            } while (SystemClock.uptimeMillis() < revealDeadline);
+            assertEquals("Ready content never became visible", View.GONE, visibility.get());
+            assertTrue("Ready content appeared before the three-second spectrum",
+                    SystemClock.uptimeMillis() - beforeAttach >= 3_000);
+            scenario.onActivity(activity -> overlay.get().dispose());
+        } finally {
+            assertTrue(coverFile.delete());
+        }
+    }
+
+    private static boolean hasFixtureCover(EngineStartupOverlay overlay) {
+        Drawable drawable = findChild(overlay, ImageView.class).getDrawable();
+        return drawable instanceof BitmapDrawable
+                && ((BitmapDrawable) drawable).getBitmap().getPixel(0, 0) == 0xFFAD5D91;
+    }
+
+    @Test public void missingCoverUsesAppIconAndPageTurnRevealsTheHostWindow() throws Exception {
+        requireIsolatedTarget();
+        assumeTrue("The emulator must enable animations", ValueAnimator.areAnimatorsEnabled());
+        int icon = com.tyranor.next.R.mipmap.ic_launcher_classic;
+        int hostColor = 0xFF345CB4;
+        try (ActivityScenario<ComponentActivity> scenario = ActivityScenario.launch(ComponentActivity.class)) {
+            AtomicReference<EngineStartupOverlay> overlay = new AtomicReference<>();
+            AtomicReference<ValueAnimator> paused = new AtomicReference<>();
+            CountDownLatch halfway = new CountDownLatch(1);
+            scenario.onActivity(activity -> {
+                activity.getIntent().putExtra(LaunchContract.STARTUP_APP_ICON, icon);
+                FrameLayout content = new FrameLayout(activity);
+                content.setBackgroundColor(hostColor);
+                activity.setContentView(content);
+                EngineStartupOverlay loading = new EngineStartupOverlay(activity);
+                ImageView cover = findChild(loading, ImageView.class);
+                assertNotNull(cover);
+                assertNotNull(cover.getDrawable());
+                Bitmap expected = renderIcon(activity.getDrawable(icon));
+                Bitmap actual = renderIcon(cover.getDrawable());
+                try {
+                    assertTrue("The fallback should display the selected app icon", expected.sameAs(actual));
+                } finally {
+                    expected.recycle();
+                    actual.recycle();
+                }
+                View page = loading.getChildAt(0);
+                page.animate().setUpdateListener(animation -> {
+                    if (page.getRotationY() >= 55f && paused.compareAndSet(null, animation)) {
+                        animation.pause();
+                        halfway.countDown();
+                    }
+                });
+                loading.attachToWindow();
+                overlay.set(loading);
+                loading.reveal();
+            });
+
+            assertTrue("The loading page did not turn", halfway.await(8, TimeUnit.SECONDS));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            Rect left = new Rect();
+            Rect right = new Rect();
+            scenario.onActivity(activity -> {
+                EngineStartupOverlay loading = overlay.get();
+                int[] location = new int[2];
+                loading.getLocationOnScreen(location);
+                int y = location[1] + loading.getHeight() / 2;
+                int leftX = location[0] + loading.getWidth() / 12;
+                int rightX = location[0] + loading.getWidth() * 11 / 12;
+                left.set(leftX, y, leftX + 1, y + 1);
+                right.set(rightX, y, rightX + 1, y + 1);
+            });
+            // Let the window compositor present the paused frame before sampling it.
+            SystemClock.sleep(120);
+            saveScreenshot("startup-page-turn.png");
+            assertEquals("The folded page still covers the hinge", Color.BLACK, capturePixels(left)[0]);
+            assertEquals("The host is visible through the turned page", hostColor, capturePixels(right)[0]);
+            scenario.onActivity(activity -> paused.get().resume());
+
+            AtomicInteger visibility = new AtomicInteger(View.VISIBLE);
+            long deadline = SystemClock.uptimeMillis() + 2_000;
+            do {
+                scenario.onActivity(activity -> visibility.set(overlay.get().getVisibility()));
+                if (visibility.get() == View.GONE) break;
+                SystemClock.sleep(30);
+            } while (SystemClock.uptimeMillis() < deadline);
+            assertEquals("The turned page finishes hiding", View.GONE, visibility.get());
+            scenario.onActivity(activity -> overlay.get().dispose());
+        }
+    }
+
+    private static Bitmap renderIcon(Drawable icon) {
+        Bitmap bitmap = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888);
+        Rect bounds = icon.copyBounds();
+        icon.setBounds(0, 0, bitmap.getWidth(), bitmap.getHeight());
+        icon.draw(new Canvas(bitmap));
+        icon.setBounds(bounds);
+        return bitmap;
+    }
+
+    @Test public void slowStartupContinuesDrawingAfterTheFirstCycle() {
+        requireIsolatedTarget();
+        assumeTrue("The emulator must enable animations", ValueAnimator.areAnimatorsEnabled());
+        try (ActivityScenario<ComponentActivity> scenario = ActivityScenario.launch(ComponentActivity.class)) {
+            AtomicReference<EngineStartupOverlay> overlay = new AtomicReference<>();
+            scenario.onActivity(activity -> {
+                FrameLayout content = new FrameLayout(activity);
+                activity.setContentView(content);
+                EngineStartupOverlay loading = new EngineStartupOverlay(activity);
+                loading.attachTo(content);
+                overlay.set(loading);
+            });
+            AtomicLong firstCycleEnd = new AtomicLong(-1);
+            long drawDeadline = SystemClock.uptimeMillis() + 5_000;
+            do {
+                scenario.onActivity(activity -> {
+                    StartupSpectrumView spectrum = findChild(overlay.get(), StartupSpectrumView.class);
+                    firstCycleEnd.set(spectrum.firstCycleEndsAt());
+                });
+                if (firstCycleEnd.get() > 0) break;
+                SystemClock.sleep(30);
+            } while (SystemClock.uptimeMillis() < drawDeadline);
+            assertTrue("The startup spectrum never drew", firstCycleEnd.get() > 0);
+            SystemClock.sleep(Math.max(0, firstCycleEnd.get() + 100 - SystemClock.uptimeMillis()));
+
+            Rect bounds = new Rect();
+            scenario.onActivity(activity -> {
+                StartupSpectrumView spectrum = findChild(overlay.get(), StartupSpectrumView.class);
+                int[] location = new int[2];
+                spectrum.getLocationOnScreen(location);
+                bounds.set(location[0], location[1], location[0] + spectrum.getWidth(),
+                        location[1] + spectrum.getHeight());
+                assertTrue(overlay.get().isLoading());
+            });
+            int[] firstFrame = capturePixels(bounds);
+            SystemClock.sleep(200);
+            assertFalse("The spectrum stopped drawing after the first cycle",
+                    Arrays.equals(firstFrame, capturePixels(bounds)));
+
+            scenario.onActivity(activity -> overlay.get().reveal());
+            AtomicInteger visibility = new AtomicInteger(View.VISIBLE);
+            long revealDeadline = SystemClock.uptimeMillis() + 2_000;
+            do {
+                scenario.onActivity(activity -> visibility.set(overlay.get().getVisibility()));
+                if (visibility.get() == View.GONE) break;
+                SystemClock.sleep(30);
+            } while (SystemClock.uptimeMillis() < revealDeadline);
+            assertEquals("Ready content should reveal during a later cycle", View.GONE, visibility.get());
+            scenario.onActivity(activity -> overlay.get().dispose());
+        }
+    }
+
+    private static int[] capturePixels(Rect bounds) {
+        Bitmap screen = InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();
+        assertNotNull("Screenshot unavailable", screen);
+        try {
+            int[] pixels = new int[bounds.width() * bounds.height()];
+            screen.getPixels(pixels, 0, bounds.width(), bounds.left, bounds.top, bounds.width(), bounds.height());
+            return pixels;
+        } finally {
+            screen.recycle();
+        }
+    }
+
+    private static <T extends View> T findChild(View view, Class<T> type) {
+        if (type.isInstance(view)) return type.cast(view);
+        if (view instanceof ViewGroup) {
+            ViewGroup parent = (ViewGroup) view;
+            for (int index = 0; index < parent.getChildCount(); index++) {
+                T found = findChild(parent.getChildAt(index), type);
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 
     @Test public void noQueuedBufferWaitsAndBlackBufferRevealsThroughOpaqueOverlay() throws Exception {

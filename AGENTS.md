@@ -244,6 +244,7 @@ Column(fillMaxSize)                                // 页面根
 | 页面意图 | 应使用的入口 / 实现归属 |
 | --- | --- |
 | 主标签与引擎分类切页；独立页面推入、返回 | 常驻页共用 `TabPageMotion` 的弹簧与 `tabPageTransform`，两种宿主保留各自的交互时钟。Activity 走 `startActivityWithPageTransition` / `AppScreenActivity`；背景、翻折和遮罩由 `PageTransitionBackground`、`depthFoldStack`、`pageEnterFold` 处理。 |
+| 内置播放器加载与游戏就绪 | 由 engine 的 `EngineStartupOverlay` 统一负责频谱和退场。增强档翻页，普通档保留淡出。各宿主只提交就绪或失败信号，并保留各自的首帧判定。 |
 | 抽屉、侧栏、弹窗、下拉、提示条 | 抽屉使用 `AppBottomSheet`（内部复用 `MotionSheetController` / `SheetBackdrop`），其余复用 `AppSidePanel`、`AppAlertDialog`、`OverlayDropdownPreference`、`AppNotice`。公共窗口负责遮罩与释放触摸；灵动岛的变形、阴影、排队、按住/滑动与离页时机归 `NoticeHost` / `NoticeCenter`。业务页只提交内容及回调。 |
 | 入场、重播、增删补位、拖拽排序、删除消散 | 入场用 `EntranceState` / `staggeredEntrance`；有稳定 key 的 lazy 列表、网格、瀑布流在原修饰符位置调用 `listItemMotion()`。仅原本快速补位的场景用 `ListItemPlacement.Reflow`。普通 Column 的补位用 `reorderPlacement`；滤镜链的拖动归 `GraphicsChainMotion.kt`；游戏删除走 `GameRemovalMotion.kt` 与 `dissolve`。 |
 | 内容替换、区块显隐、读数与反馈 | 用 `BlurCrossfade`、`BlurVisibility`、`ExpandVisibility`、`ExpandSectionVisibility` 或 `RollingNumberText`，按原效果选有无模糊与是否等待退场。失败、等待、占位、图标回弹、滚动、触觉走 `shakeOnTrigger`、`DelayedProgress` / `breathing`、`shimmerSweep`、`bounceOnChange`、`scrollJelly`、`MotionHaptics`。 |

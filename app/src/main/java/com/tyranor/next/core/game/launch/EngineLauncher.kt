@@ -83,6 +83,8 @@ import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.EngineDetectionRepository
 import com.tyranor.next.core.game.scan.GameDirFingerprint
+import com.tyranor.next.core.settings.AppIconSwitcher
+import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.GraphicsCapabilities
 import com.tyranor.next.core.settings.GraphicsFamily
 import com.tyranor.next.core.settings.GraphicsSettings
@@ -1437,6 +1439,10 @@ object EngineLauncher {
         if (!intent.hasExtra(LaunchContract.GRAPHICS_FILTER_CHAIN)) intent.putDisabledGraphicsRequest()
         intent.putExtra(LaunchContract.ORIENTATION, LaunchOrientationMonitor.resolvePlayerOrientation(context))
         intent.putExtra(LaunchContract.UI_LANGUAGE_TAG, AppLocaleController.engineUiLanguageTag(context))
+        intent.putExtra(LaunchContract.GAMES_TITLE, game.title)
+        game.coverUri?.let { intent.putExtra(LaunchContract.GAME_COVER_URI, it) }
+        intent.putExtra(LaunchContract.STARTUP_APP_ICON, AppIconSwitcher.iconResource(context))
+        intent.putExtra(LaunchContract.STARTUP_ENHANCED_MOTION, AppSettingsStore.isMotionEnhanced(context))
         // 注入 App 统一主题色与深浅色：引擎壳自绘 UI（确认/输入弹窗按钮等）经
         // EngineThemeColors.fromIntent / KrDialogStyle 读取，缺失时回落默认绿。
         // 主题色来自 ui 层写入的纯数据快照（ThemeColorPayloadStore），core 不反向依赖 theme。
@@ -1583,7 +1589,6 @@ object EngineLauncher {
         if (nls.isNotBlank() && nls != EngineSettingsStore.FB_NLS_AUTO) {
             putExtra(LaunchContract.GAMES_NLS, nls)
         }
-        putExtra(LaunchContract.GAMES_TITLE, game.title)
     }
 
     /** EngineType → 上游 `game_fb_open` 的 engine id（未知/歧义时交给引擎按内容自动探测）。 */

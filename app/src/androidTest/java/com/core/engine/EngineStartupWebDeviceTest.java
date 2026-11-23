@@ -3,6 +3,7 @@ package com.core.engine;
 import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.ActivityManager;
 import android.content.Context;
+import android.content.res.Configuration;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Color;
@@ -27,6 +28,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.UUID;
 
 import static org.junit.Assert.assertNotNull;
@@ -153,6 +155,12 @@ public final class EngineStartupWebDeviceTest {
             host.putExtra(LaunchContract.RPG_MAKER_VERSION, "v1");
         }
 
+        Configuration english = new Configuration(context.getResources().getConfiguration());
+        english.setLocale(Locale.ENGLISH);
+        Context ui = context.createConfigurationContext(english);
+        String startupTitle = ui.getString(R.string.engine_starting_game);
+        String failedTitle = ui.getString(R.string.engine_launch_failed);
+
         try {
             context.startActivity(host);
             waitFor("host process foreground", () -> isProcessForeground(context, processSuffix));
@@ -160,27 +168,27 @@ public final class EngineStartupWebDeviceTest {
                 waitForText(token);
                 waitForText(token + "_COUNT_1");
                 waitForColorBadge(true);
-                waitForTextAbsentStable("Starting game", 500L);
-                assertTextAbsent("Failed to start");
+                waitForTextAbsentStable(startupTitle, 500L);
+                assertTextAbsent(failedTitle);
 
                 waitForColorBadge(false);
-                waitForTextAbsentStable("Starting game", 500L);
-                assertTextAbsent("Failed to start");
+                waitForTextAbsentStable(startupTitle, 500L);
+                assertTextAbsent(failedTitle);
             } else if (scenario == Scenario.MAIN_FRAME_ERROR) {
-                waitForText("Failed to start");
-                waitForTextAbsentStable("Starting game", 500L);
+                waitForText(failedTitle);
+                waitForTextAbsentStable(startupTitle, 500L);
                 SystemClock.sleep(1200L);
-                waitForText("Failed to start");
-                waitForTextAbsentStable("Starting game", 500L);
+                waitForText(failedTitle);
+                waitForTextAbsentStable(startupTitle, 500L);
             } else if (scenario == Scenario.CONSUMED_SCHEME) {
-                waitForText("Failed to start");
-                waitForTextAbsentStable("Starting game", 500L);
+                waitForText(failedTitle);
+                waitForTextAbsentStable(startupTitle, 500L);
                 SystemClock.sleep(1200L);
-                waitForText("Failed to start");
-                waitForTextAbsentStable("Starting game", 500L);
+                waitForText(failedTitle);
+                waitForTextAbsentStable(startupTitle, 500L);
             } else {
-                waitForTextAbsentStable("Starting game", 1500L);
-                assertTextAbsent("Failed to start");
+                waitForTextAbsentStable(startupTitle, 1500L);
+                assertTextAbsent(failedTitle);
             }
             saveUiEvidence(context, token, null);
         } catch (Throwable failure) {

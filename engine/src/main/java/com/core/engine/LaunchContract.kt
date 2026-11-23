@@ -18,6 +18,11 @@ object LaunchContract {
     const val PROJECT_ROOT = "projectRoot"
     const val GAME_DIR = "gamedir"
     const val ROOT_URI = "rootUri"
+    /** 游戏库中的名称和封面供播放器加载层显示。 */
+    const val GAMES_TITLE = "games_title"
+    const val GAME_COVER_URI = "gameCoverUri"
+    const val STARTUP_APP_ICON = "startupAppIcon"
+    const val STARTUP_ENHANCED_MOTION = "startupEnhancedMotion"
     /** Stable identifier shared by activities belonging to one game launch for playtime attribution. */
     const val PLAYTIME_SESSION_ID = "playtimeSessionId"
     /** Monotonic launch ordering timestamp shared by activities in a playtime session. */
@@ -201,9 +206,6 @@ object LaunchContract {
 
     /** 文本编码：`auto` | `sjis` | `gbk` | `big5` | `utf8` | `korean`（不传使用引擎默认）。 */
     const val GAMES_NLS = "games_nls"
-
-    /** 游戏标题（加载层/窗口标题兜底用）。 */
-    const val GAMES_TITLE = "games_title"
 
     // ---------- launchMode 固定取值 ----------
 

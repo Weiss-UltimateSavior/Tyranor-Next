@@ -3,6 +3,7 @@ package com.tyranor.next.core.settings
 import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
+import com.tyranor.next.R
 
 /**
  * 启动器图标切换：Android 不支持运行时直接替换应用图标，manifest 中为新/旧图标各声明一个
@@ -17,6 +18,9 @@ object AppIconSwitcher {
     // package, including isolated builds. The target Activity keeps the source namespace.
     private const val ALIAS_DEFAULT = ".LauncherDefault"
     private const val ALIAS_CLASSIC = ".LauncherClassic"
+
+    fun iconResource(context: Context): Int =
+        if (AppSettingsStore.isClassicIconEnabled(context)) R.mipmap.ic_launcher_classic else R.mipmap.ic_launcher
 
     /** 按设置启用对应别名；幂等，启动时调用一次可纠正升级或切换失败导致的不一致。 */
     fun apply(context: Context, useClassicIcon: Boolean) {
