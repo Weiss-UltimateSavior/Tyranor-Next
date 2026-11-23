@@ -580,7 +580,7 @@ object EngineLauncher {
             if (cmvsFont == null) return LaunchResult.Failure.CmvsFontUnavailable
             val token = java.util.UUID.randomUUID().toString()
             cmvsLaunchToken = token
-            if (!CmvsLaunchFiles.write(context, game, File(path), cmvsFont, cmvsFace, token)) {
+            if (!CmvsLaunchFiles.write(context, game, File(path), cmvsFont, cmvsFace, settings.cmvsProfile, token)) {
                 return LaunchResult.Failure.CmvsLaunchConfigUnavailable
             }
         }

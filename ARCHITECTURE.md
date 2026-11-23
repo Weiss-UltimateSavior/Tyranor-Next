@@ -90,6 +90,8 @@ Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并�
 
 大体积引擎运行库（`libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、`libcmvs_android.so`、IJK 三件套、System35/4 与 `libSDL2x.so`、`libsystemnnn.so`）不随 `lib/` 在安装期解压：构建期打成 `assets/engine-runtime/<pack>.zip.xz`，`EngineLauncher` 在拉起对应引擎前于 IO 线程调用 `NativeRuntimePack.ensure` 解压到 `files/engine_runtime/<pack>/`（以 APK `lastUpdateTime:versionName` 判定是否重新解压），宿主进程再按绝对路径 `dlopen`；除 IJK 仅服务视频覆盖层、解压失败只记日志继续启动外，其余分片失败返回 `LaunchResult.Failure.EngineLibraryPackFailed`。`libSDL3.so`、`libSDL2_mixer_xs35.so` 仍留在 `lib/` 作为依赖；CMVS 另在 `lib/` 保留 `libcmvs_loader.so`（NativeActivity `android.app.lib_name`），由 loader 从 `files/engine_runtime/cmvs/` dlopen 真实库并转发 `ANativeActivity_onCreate`。这与 native plugin（Kirikiroid2 / ONS / Artemis）的资产形态一致，但分片按引擎家族划分，为后续单独下载留出入口。
 
+CMVS 运行库通过 JNI 请求 `CmvsActivity` 打开、读取或关闭存档备注输入。宿主在 Android 主线程管理输入框，运行库按请求 ID 取回结果并负责文本编码与存档写入。单游戏选择的启动配置通过 `launch.cfg` 的 `profile=` 传给运行库，菜单由运行库构建脚本从同一上游版本的作品登记生成。[CMVS 运行库构建与验收记录](docs/CMVS-cmvs-rs引擎接入方案.md#10-运行库更新2026-11-23)
+
 - SystemNNN 在读取游戏文件前解析真实路径并完成共享存储授权。支持绝对路径、文件 URI 及系统外部存储文档 URI。私有 `:systemnnn` 宿主通过显式 Intent 启动，原 Emberfall 独立 APK 的绑定迁为内置类型。游戏资源和存档从生效目录原地读取，存档写回生效目录。原目录不可访问时返回类型化启动错误。App 的 `SystemNnnCopyStore` 负责识别与回收旧副本；宿主接收绝对路径及任务身份，运行中的任务记录随会话退出清理。应用持有副本状态和回收队列。
 
 ### 第三方 APK 运行时模块

@@ -181,9 +181,18 @@ class GameOverridePartitionsTest {
         assertEquals(blob.length(), GameOverridePartitions.assemble(row).length())
     }
 
-    fun cmvsFontKeysArePartitionedIntoTyrano() {
+    @Test
+    fun cmvsSettingsArePartitionedIntoTyrano() {
         assertEquals(PerGameSettingsStore.F_CMVS_FONT, GameOverridePartitions.KEY_CMVS_FONT)
         assertTrue(GameOverridePartitions.KEY_CMVS_FONT in GameOverridePartitions.TYRANO_KEYS)
+        assertEquals(PerGameSettingsStore.F_CMVS_PROFILE, GameOverridePartitions.KEY_CMVS_PROFILE)
+        assertTrue(GameOverridePartitions.KEY_CMVS_PROFILE in GameOverridePartitions.TYRANO_KEYS)
+
+        val key = PerGameSettingsStore.F_CMVS_PROFILE
+        val blob = JSONObject().put(key, "realive")
+        val row = GameOverridePartitions.split("/games/REALIVE", blob, 1L)
+        assertEquals("realive", JSONObject(row.tyranoJson!!).getString(key))
+        assertEquals("realive", GameOverridePartitions.assemble(row).getString(key))
     }
 
     @Test

@@ -128,6 +128,7 @@ object PerGameSettingsStore {
     const val F_ETHORNELL_NLS = "ethornell_nls"
     const val F_ETHORNELL_FONT = "ethornell_font"
     const val F_CMVS_FONT = "cmvs_font"
+    const val F_CMVS_PROFILE = "cmvs_profile"
     const val F_SYSTEMNNN_FULLSCREEN = "systemnnn_fullscreen"
     const val F_SYSTEMNNN_READING_SIZE = "systemnnn_reading_size"
     const val F_SYSTEMNNN_EXE_ANALYSIS = "systemnnn_exe_analysis"

@@ -92,7 +92,7 @@
 | Siglus | `Gameexe.dat/ini`、`Scene.pck` | 内置 Siglus |
 | RealLive / AVG32 / UK2 | RealLive 的 `SEEN.TXT` 完整目录表及有效场景头，或 `Gameexe.ini` 与非空 `SEEN####.TXT`。AVG32 的 `PACL` 场景档或三位数散装场景。UK2 的 `UK2.CFG` 与 `.MES` 等 | 内置 game_launcher + Framebuffer 宿主 |
 | FVP | `.hcb/.bch` 脚本与资源包 | 内置 rfvp |
-| CMVS | `data/pack/script.cpz` + 唯一 `start.ps3/ps2`；仅 19 部登记作品 | 内置 cmvs-rs（NativeActivity + loader），需 Vulkan |
+| CMVS | `data/pack/script.cpz` + 唯一 `start.ps3/ps2/pss`；单游戏引擎设置可选择全部登记作品，直接按所选配置启动并跳过识别哈希 | 内置 cmvs-rs（NativeActivity + loader），需 Vulkan，支持游戏内存档备注输入 |
 | System35 / System4 | ALD、System39 特征 / `System40.ini`、`AliceStart.ini` | 内置 xsystem35 / xsystem4，两类独立识别 |
 | SystemNNN | 游戏根目录下的 `spt/sys.spt`，不区分大小写 | 内置 SystemNNN-Emberfall。TYN 提供全局和单游戏显示设置 |
 | Ethornell / BGI | BGI 特征与资源组合 | 内置实验宿主，见第 10 节 |

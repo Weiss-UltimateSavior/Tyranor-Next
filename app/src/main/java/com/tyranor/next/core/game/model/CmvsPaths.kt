@@ -10,6 +10,9 @@ import java.util.Locale
  * resolve to the exact same directory.
  */
 object CmvsPaths {
+    const val CVNS_START_SCRIPT = "start.pss"
+    val startScriptNames: Set<String> = setOf("start.ps3", "start.ps2", CVNS_START_SCRIPT)
+
     fun userDataDir(filesDir: File, gameIdentity: String): File =
         File(File(filesDir, "cmvs/users"), hash(gameIdentity))
 

@@ -93,6 +93,7 @@ internal object GameOverridePartitions {
     const val KEY_ETHORNELL_NLS = "ethornell_nls"
     const val KEY_ETHORNELL_FONT = "ethornell_font"
     const val KEY_CMVS_FONT = "cmvs_font"
+    const val KEY_CMVS_PROFILE = "cmvs_profile"
     const val KEY_FVP_SYSTEM_FONT = "fvp_system_font"
     const val KEY_FVP_TEXT_HIDPI = "fvp_text_hidpi"
     const val KEY_FVP_FONT = "fvp_font"
@@ -177,7 +178,7 @@ internal object GameOverridePartitions {
         KEY_RPG_SPEED_UP, KEY_RPG_FONT_SCALE,
         KEY_SIGLUS_LANGUAGE, KEY_SIGLUS_GRAPHICS,
         KEY_FB_NLS,
-        KEY_ETHORNELL_NLS, KEY_ETHORNELL_FONT, KEY_CMVS_FONT,
+        KEY_ETHORNELL_NLS, KEY_ETHORNELL_FONT, KEY_CMVS_FONT, KEY_CMVS_PROFILE,
         KEY_FVP_NLS, KEY_FVP_SYSTEM_FONT, KEY_FVP_TEXT_HIDPI, KEY_FVP_FONT,
         KEY_XSYS35_SCOPED_SAVE_DIR, KEY_XSYS35_RENDERER,
         KEY_XSYS35_INTEGER_SCALE, KEY_XSYS35_MUTE_UNFOCUS,
