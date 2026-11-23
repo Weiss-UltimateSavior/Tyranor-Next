@@ -273,6 +273,7 @@ MAGES. 引擎（经开源重新实现项目 impacto）由外置 Impacto 宿主 A
 - ZIP 导入检查路径安全，最多 **20,000 个条目（含目录）**、展开内容 **1 GiB**；MV/MZ 可剥除最多 **3 层**单目录包装。适用的会话/操作门禁阻止运行中冲突。
 - **外置游戏的文件存档管理**：YU-RIS 管理游戏根 `save/`；Ren’Py 在 Android 11（API 30）及以上管理游戏根 `saves/`，第三方 APK 运行时模块按有效 saves 声明管理独立游戏内子目录；覆盖手动导入、导出、删除、版本管理与 WebDAV 同步。Ren’Py 在 Android 10 及以下不开放入口、不解析目录或纳入整库同步，也不访问模块专属存档。外置游戏的手动操作与启动/同步共用目录门禁，运行标记未确认退出时拒绝操作。PSP、Switch、CatSystem2、PC、安卓游戏、RPG Maker RGSS、Ruffle、无有效 saves 的第三方模块、VN 与 WebOther 当前不提供该统一文件存档接口。
 - MV/MZ 标准格式与 Tyranor 格式仅作文件名映射，不重新编码内容；MV 支持哈希名及历史键名，MZ 使用 `fileN.bin` 等 ASCII 键名。
+- RPG Maker MV 在 Web 存档模式（`StorageManager.isLocalMode()` 为 `false`）下，`Tyranor-2.3.4`、`TynMV-0.1` 与 `TynMV-0.2` 均已按游戏隔离存档目录，故 `DataManager.isThisGameFile` 忽略 `global.title` 与 `$dataSystem.gameTitle` 的字面对比，仅校验 `slot.globalId === this._globalId`（含 `load` 事件防插件覆写的幂等重挂）；`isLocalMode()` 仍保持 `false`，当处于本地模式时委托原实现，RPG Maker MZ 不受影响。
 - 启动时发现适用标准存档可询问转化，已有目标不覆盖，原件留在 `original/`。
 - MV/MZ 存档互通默认关闭，支持全局/单游戏设置；开启后启动前与回前台进行双向同步，并等待引擎会话结束。按槽位比较时间与哈希；删除副本隔离到 `deleted/`，同步清单损坏时中止文件修改。
 - Ethornell 的 App 存档管理已开放，生效目录为 `<游戏根>/savedata`，提供备份/恢复/删除；运行时的 `UserData/**`、`BGI.gdb` 和 `BGI####.cad` 相对路径位于该目录中，不自动导入资源根原有的 `UserData`，不承诺 PC 存档格式互通。旧私有数据在启动或存档操作前一次性迁入，不覆盖目标同名文件，完成后删档不会再次恢复旧数据；旧源保留以防迁移冲突。游戏目录不可用或不可写时失败，不回退私有目录；移除游戏库条目不删除游戏目录内的存档。
