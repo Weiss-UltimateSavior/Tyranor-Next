@@ -30,6 +30,7 @@ import java.io.InputStream;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ThreadLocalRandom;
 
 /** Native, theme-aware startup mask shared by engine host Activities. */
 public final class EngineStartupOverlay extends FrameLayout {
@@ -111,7 +112,9 @@ public final class EngineStartupOverlay extends FrameLayout {
 
         LinearLayout labels = new LinearLayout(activity);
         labels.setOrientation(LinearLayout.VERTICAL);
-        TextView title = label(EngineUiText.get(activity, R.string.engine_starting_game), 23, Color.WHITE, true);
+        String[] quotes = EngineUiText.localizedContext(activity).getResources().getStringArray(R.array.engine_startup_quotes);
+        String quote = quotes[ThreadLocalRandom.current().nextInt(quotes.length)];
+        TextView title = label(quote, 23, Color.WHITE, true);
         title.setMaxLines(2);
         title.setEllipsize(TextUtils.TruncateAt.END);
         labels.addView(title);

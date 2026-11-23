@@ -18,6 +18,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
+import android.widget.TextView;
 
 import androidx.activity.ComponentActivity;
 import androidx.annotation.NonNull;
@@ -97,6 +98,11 @@ public final class EngineStartupDeviceTest {
             }
             scenario.onActivity(activity -> {
                 assertTrue("Cover was not decoded from the launch URI", hasFixtureCover(overlay.get()));
+                String[] quotes = EngineUiText.localizedContext(activity).getResources()
+                        .getStringArray(R.array.engine_startup_quotes);
+                String displayed = findChild(overlay.get(), TextView.class).getText().toString();
+                assertTrue("The loading title should be one of the localized quotes",
+                        Arrays.asList(quotes).contains(displayed));
                 assertEquals("Fast engine readiness should keep the startup graphic visible",
                         View.VISIBLE, overlay.get().getVisibility());
             });

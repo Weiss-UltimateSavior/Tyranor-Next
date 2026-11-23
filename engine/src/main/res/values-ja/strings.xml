@@ -15,7 +15,14 @@
     <string name="engine_ethornell_dialog_month">月</string>
     <string name="engine_ethornell_dialog_day">日</string>
     <string name="engine_ethornell_dialog_empty_option">（空）</string>
-    <string name="engine_starting_game">甘いひとときを始めよう…</string>
+    <string-array name="engine_startup_quotes">
+        <item>甘いひとときを始めよう…</item>
+        <item>妹は僕のすべてかもしれない！</item>
+        <item>原X、起動！</item>
+        <item>君は光を信じるか？</item>
+        <item>どうしてそんなに慣れてるんだよ！</item>
+        <item>宇宙が私に歌いかけてくる！</item>
+    </string-array>
     <string name="engine_krkr_initialization_failed">KRKR エンジンの初期化に失敗しました</string>
     <string name="engine_launch_failed">起動に失敗しました</string>
     <string name="engine_return_and_retry">戻ってからもう一度お試しください</string>

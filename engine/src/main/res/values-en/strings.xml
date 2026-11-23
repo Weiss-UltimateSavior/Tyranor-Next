@@ -15,7 +15,14 @@
     <string name="engine_ethornell_dialog_month">Month</string>
     <string name="engine_ethornell_dialog_day">Day</string>
     <string name="engine_ethornell_dialog_empty_option">(empty)</string>
-    <string name="engine_starting_game">Let your sweet time begin...</string>
+    <string-array name="engine_startup_quotes">
+        <item>Let your sweet time begin ... ...</item>
+        <item>Maybe my little sister is my whole world!</item>
+        <item>Gen X, launch!</item>
+        <item>Do you believe in the light?</item>
+        <item>Why are you so good at this!</item>
+        <item>The universe is singing to me!</item>
+    </string-array>
     <string name="engine_krkr_initialization_failed">Failed to initialize the KRKR engine</string>
     <string name="engine_launch_failed">Failed to start</string>
     <string name="engine_return_and_retry">Go back and try again</string>

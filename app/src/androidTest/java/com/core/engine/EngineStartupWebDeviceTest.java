@@ -158,7 +158,7 @@ public final class EngineStartupWebDeviceTest {
         Configuration english = new Configuration(context.getResources().getConfiguration());
         english.setLocale(Locale.ENGLISH);
         Context ui = context.createConfigurationContext(english);
-        String startupTitle = ui.getString(R.string.engine_starting_game);
+        String[] startupQuotes = ui.getResources().getStringArray(R.array.engine_startup_quotes);
         String failedTitle = ui.getString(R.string.engine_launch_failed);
 
         try {
@@ -168,26 +168,26 @@ public final class EngineStartupWebDeviceTest {
                 waitForText(token);
                 waitForText(token + "_COUNT_1");
                 waitForColorBadge(true);
-                waitForTextAbsentStable(startupTitle, 500L);
+                waitForTextAbsentStable(startupQuotes, 500L);
                 assertTextAbsent(failedTitle);
 
                 waitForColorBadge(false);
-                waitForTextAbsentStable(startupTitle, 500L);
+                waitForTextAbsentStable(startupQuotes, 500L);
                 assertTextAbsent(failedTitle);
             } else if (scenario == Scenario.MAIN_FRAME_ERROR) {
                 waitForText(failedTitle);
-                waitForTextAbsentStable(startupTitle, 500L);
+                waitForTextAbsentStable(startupQuotes, 500L);
                 SystemClock.sleep(1200L);
                 waitForText(failedTitle);
-                waitForTextAbsentStable(startupTitle, 500L);
+                waitForTextAbsentStable(startupQuotes, 500L);
             } else if (scenario == Scenario.CONSUMED_SCHEME) {
                 waitForText(failedTitle);
-                waitForTextAbsentStable(startupTitle, 500L);
+                waitForTextAbsentStable(startupQuotes, 500L);
                 SystemClock.sleep(1200L);
                 waitForText(failedTitle);
-                waitForTextAbsentStable(startupTitle, 500L);
+                waitForTextAbsentStable(startupQuotes, 500L);
             } else {
-                waitForTextAbsentStable(startupTitle, 1500L);
+                waitForTextAbsentStable(startupQuotes, 1500L);
                 assertTextAbsent(failedTitle);
             }
             saveUiEvidence(context, token, null);
@@ -260,16 +260,16 @@ public final class EngineStartupWebDeviceTest {
         }
     }
 
-    private static boolean nodeContainsText(AccessibilityNodeInfo node, String expected) {
+    private static boolean nodeContainsText(AccessibilityNodeInfo node, String... expectedTexts) {
         if (node == null || !node.refresh()) return false;
         CharSequence text = node.getText();
         CharSequence description = node.getContentDescription();
-        if ((text != null && text.toString().contains(expected))
-                || (description != null && description.toString().contains(expected))) {
-            return true;
+        for (String expected : expectedTexts) {
+            if ((text != null && text.toString().contains(expected))
+                    || (description != null && description.toString().contains(expected))) return true;
         }
         for (int i = 0; i < node.getChildCount(); i++) {
-            if (nodeContainsText(node.getChild(i), expected)) return true;
+            if (nodeContainsText(node.getChild(i), expectedTexts)) return true;
         }
         return false;
     }
@@ -287,12 +287,12 @@ public final class EngineStartupWebDeviceTest {
         });
     }
 
-    private void waitForTextAbsentStable(String text, long stableMillis) throws Exception {
+    private void waitForTextAbsentStable(String[] texts, long stableMillis) throws Exception {
         long deadline = SystemClock.elapsedRealtime() + WAIT_MILLIS;
         long absentSince = -1L;
         while (SystemClock.elapsedRealtime() < deadline) {
             AccessibilityNodeInfo root = freshRoot();
-            if (root != null && !nodeContainsText(root, text)) {
+            if (root != null && !nodeContainsText(root, texts)) {
                 if (absentSince < 0L) absentSince = SystemClock.elapsedRealtime();
                 if (SystemClock.elapsedRealtime() - absentSince >= stableMillis) return;
             } else {
@@ -300,7 +300,7 @@ public final class EngineStartupWebDeviceTest {
             }
             SystemClock.sleep(100L);
         }
-        throw new AssertionError("Text remained visible or window unavailable: " + text);
+        throw new AssertionError("Startup quote remained visible or window unavailable");
     }
 
     private void waitForColorBadge(boolean red) throws Exception {
