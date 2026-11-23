@@ -94,7 +94,7 @@
 | Siglus | `Gameexe.dat/ini`、`Scene.pck` | 内置 Siglus |
 | RealLive / AVG32 / UK2 | RealLive 的 `SEEN.TXT` 完整目录表及有效场景头，或 `Gameexe.ini` 与非空 `SEEN####.TXT`。AVG32 的 `PACL` 场景档或三位数散装场景。UK2 的 `UK2.CFG` 与 `.MES` 等 | 内置 game_launcher + Framebuffer 宿主 |
 | FVP | `.hcb/.bch` 脚本与资源包 | 内置 rfvp |
-| CMVS | `data/pack/script.cpz` + 唯一 `start.ps3/ps2`；仅 19 部登记作品 | 内置 cmvs-rs（NativeActivity + loader），需 Vulkan |
+| CMVS | `data/pack/script.cpz` + 唯一 `start.ps3/ps2/pss`；单游戏引擎设置可选择全部登记作品，直接按所选配置启动并跳过识别哈希 | 内置 cmvs-rs（NativeActivity + loader），需 Vulkan，支持游戏内存档备注输入 |
 | System35 / System4 | ALD、System39 特征 / `System40.ini`、`AliceStart.ini` | 内置 xsystem35 / xsystem4，两类独立识别 |
 | SystemNNN | 游戏根目录下的 `spt/sys.spt`，不区分大小写 | 内置 SystemNNN-Emberfall。TYN 提供全局和单游戏显示设置 |
 | Ethornell / BGI | BGI 特征与资源组合 | 内置实验宿主，见第 10 节 |
@@ -103,7 +103,7 @@
 | RPG Maker RGSS | XP/VX/VX Ace 资源或 mkxp-z 模块选择 | 外置 RPGM APK 模块 |
 | Ren'Py | `.rpa`、`.rpy/.rpyc` 等组合 | 外置 Ren'Py APK；自动或指定 8.5.0 / 8.5.3 / 7.7.1 |
 | Ruffle / Flash | 顶层 `.swf`；根 `index.html/index.htm` + 唯一 SWF 的叶子目录 | 外置 Ruffle APK；一 SWF 一条记录 |
-| MAGES.（impacto） | 按精确大小写的条目命中 profile，恰好一个（或同一语言变体族）全命中才识别；规则优先从已安装的宿主读取（`tyn/profiles.json`），否则用内置目录表：上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`；其中 `mo6tw` 是 PS3 版数据、`cclcc` 是 PS4 版、`cclcc-switch` 是 Switch 版）看根目录条目名；Windows／Steam 版《秋之回忆6》（`mo6tw-pc*`）为根目录 `game.exe` + `data/` 内的 `script.cpk`、`mes00.cpk`；Steam 版 STEINS;GATE（`sg-pc`）为 `Game.exe` + `USRDIR/` 内的 `script.mpk`、`system.mpk`。像 MAGES. 但没有 profile 的目录列为「暂不支持」，可尝试运行 | 外置 Impacto 宿主 APK（宿主仓库固定上游 impacto 并应用其补丁系列；`mo6tw-pc*` 需宿主 0.2.0、`sg-pc` 需 0.3.0 及以上） |
+| MAGES.（impacto） | 按精确大小写的条目命中 profile，恰好一个（或同一语言变体族）全命中才识别；规则优先从已安装的宿主读取（`tyn/profiles.json`），否则用内置目录表：上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`；其中 `mo6tw` 是 PS3 版数据、`cclcc` 是 PS4 版、`cclcc-switch` 是 Switch 版）看根目录条目名；Windows／Steam 版《秋之回忆6》（`mo6tw-pc*`）为根目录 `game.exe` + `data/` 内的 `script.cpk`、`mes00.cpk`；Steam 版 STEINS;GATE（`sg-pc`）为 `Game.exe` + `USRDIR/` 内的 `script.mpk`、`system.mpk`，且没有 `USRDIR/mpk_bg.lst`；Steam 版 STEINS;GATE 0（`sg0-pc`）在此基础上有 `USRDIR/mpk_bg.lst`。像 MAGES. 但没有 profile 的目录列为「暂不支持」，可尝试运行 | 外置 Impacto 宿主 APK（宿主仓库固定上游 impacto 并应用其补丁系列；`mo6tw-pc*` 需宿主 0.2.0、`sg-pc` 需 0.3.0 及以上、`sg0-pc` 需 versionCode 11 及以上） |
 | 第三方运行时模块 | 已安装的 `com.tyranor.runtime.*` APK + 模块 `res/raw` 扫描描述 | 显式组件交棒游戏文件夹，模块自行运行 |
 | YU-RIS / CatSystem2 | YPF/DLL/配置或 INT/CST/HG3 等组合 | 外置 Winlator |
 | PC / 安卓游戏 | 手动添加目录+exe / 应用包名 | 外置 Winlator / 直接启动应用 |
@@ -133,7 +133,9 @@ MAGES. 引擎（经开源重新实现项目 impacto）由外置 Impacto 宿主 A
 
 - 扫描：按**精确大小写**的条目名匹配 profile，恰好一个 profile（或同一语言变体族）全部命中才识别；`launchTarget` 为 profile id，别名 `internal.impacto`。条目是相对游戏目录的路径，最多一层子目录（如 `data/script.cpk`、`USRDIR/script.mpk`）。
   - 识别规则的来源：已安装的宿主带有规则（0.3.1 起的 APK 资产 `tyn/profiles.json`，即宿主仓库的 `engine/impacto/profiles.json`）时，每次扫描开始前与每次启动前从宿主读取并以它为准，宿主新增的 profile 不用更新本 App 就能识别；宿主未安装、是没有这份资产的旧版本、或内容不合格式（整份放弃，不部分采纳）时，用 App 内置的目录表（`ImpactoGameCatalog`）。按 profile id 查找时先查生效的规则、再查内置目录表，已入库的旧 profile 照常启动。
-  - Steam 版 STEINS;GATE（`sg-pc`，由宿主补丁系列提供）：游戏目录根有 `Game.exe`，`USRDIR/` 里有 `script.mpk`、`system.mpk`；内置目录表也收录，要求宿主 0.3.0（versionCode 5）及以上。
+  - Steam 版 STEINS;GATE（`sg-pc`，由宿主补丁系列提供）：游戏目录根有 `Game.exe`，`USRDIR/` 里有 `script.mpk`、`system.mpk`，且**没有** `USRDIR/mpk_bg.lst`；内置目录表也收录，要求宿主 0.3.0（versionCode 5）及以上。
+  - Steam 版 STEINS;GATE 0（`sg0-pc`，由宿主补丁系列提供，宿主那边仍在适配）：在 `sg-pc` 的条目之外还有 `USRDIR/mpk_bg.lst`；内置目录表也收录，要求宿主 versionCode 11（0.4.3 之后的第一个版本）及以上。
+  - 排除条目：识别规则的 `detect.noneOf`（可缺省）列出必须**不存在**的条目，路径规则同 `allOf`，不得与必须存在的条目重叠；扫描时这些条目也会被记录。用于同一代引擎的续作带着前作全部特征的情况（`sg-pc` 排除 `USRDIR/mpk_bg.lst`）。不认识这个字段的旧版 App 会把这样的目录当作两个 profile 同时命中、按歧义不识别。
   - 上游布局（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`）：看游戏目录根下的条目名；`darling` 与全小写 `mo6tw` 的要求集合相同，一律不识别。
   - Windows／Steam 版《秋之回忆6》（Steam App 2184580；`mo6tw-pc`、`mo6tw-pc-zhs`、`mo6tw-pc-zht`，由宿主补丁系列提供）：游戏目录根有 `game.exe` 和 `data/` 目录，`data/` 里有 `script.cpk`、`mes00.cpk`，判据与宿主 `engine/impacto/profiles.json` 的 `detect` 一致。`data/` 里其余档案（`system.cpk`、`bg.cpk`、`movie.cpk` 等）不作为特征，缺失时启动会失败（具体表现没有在设备上核对）；按宿主 profile 的约定，`mes00.cpk`、`mes01.cpk`、`mes02.cpk` 依次是日文、繁体、简体文本，Steam 版里三份同时存在，所以一个目录对应至多三个候选 profile（设备上只用过简体）。
   - 语言变体：扫描按应用界面语言选一个候选：简体中文界面 → `mo6tw-pc-zhs`，日文及其他界面语言 → `mo6tw-pc`，「跟随系统」且系统语言是繁体中文（`zh-TW`、`zh-HK`、`zh-MO` 或 `Hant`）→ `mo6tw-pc-zht`（应用没有繁体中文界面，只有这一条路）；显式写了 `Hans` / `Hant` 的标签以脚本为准。缺哪份文本档就不提供对应变体，想要的语言不在盘上时回落到日文。选择记在游戏库条目里：全量重扫时，只要已存的 profile 仍在候选里就沿用，因为宿主按「profile + 目录」隔离存档，换 profile 等于换了一份存档；已存的 profile 对应的文本档已不在盘上时按界面语言重新选。条目被移除（包括目录暂时不可达而被重扫丢弃）后重新入库，也会按当时的界面语言重新选。目前没有在界面里切换语言变体的入口。
@@ -142,7 +144,7 @@ MAGES. 引擎（经开源重新实现项目 impacto）由外置 Impacto 宿主 A
 - 获取：引擎页点击 MAGES. 条目跳转到 `https://github.com/yuukana1/Tyranor-Next-MAGES/releases/latest/download/Tyranor-Next-MAGES.apk`（资产名固定，随宿主新发布自动指向最新版）；未安装或版本低于 `ImpactoHostContract.VERSION_CODE` 时与其他外置模块一样提示并引导下载。`mo6tw-pc*` 另要求宿主 0.2.0（versionCode 4）及以上、`sg-pc` 要求 0.3.0（versionCode 5）及以上：更老的宿主会拒绝这些 profile，所以只对这些游戏提示更新（`ExternalEngineModule.minimumVersionCodeFor`），其余 profile 仍只要求 0.1.2；规则来自已安装的宿主时，内置目录表里的这些要求照样生效（取较大值），只在宿主规则里出现的 profile 不另设要求。该检查在「所有文件访问」授权之前执行。
 - 启动：发 `com.tyranor.next.impacto.action.RUN`，携带游戏目录、profile、`gameKey` 与标题，需要「所有文件访问」；宿主没有桌面入口。
 - 存档在宿主私有目录内按游戏隔离，主 App 不提供文件存档管理。
-- 设置：引擎页 MAGES. 条目的「全局引擎设置」与单游戏设置，格式与 Ruffle 一致（全局值 + 单游戏覆盖，覆盖为 null 时跟随全局）。可调项只收录上游 `userconfig.toml` 里在 Android 上有意义的：交换确认 / 取消键、垂直同步、影片播放（`FFmpeg` / `None`）、影片字幕（全部 / 仅翻译 / 仅卡拉 OK；引擎的字幕配置是标志枚举，没有可读回的“全部关闭”）、回看记录滚到底时自动关闭、妄想触发的鼠标 / 触摸支持（仅 `chlcc`、`cclcc`）、日志等级。分辨率与显示模式（Android 上窗口固定全屏）、渲染器与音频后端（只有 OpenGL / OpenAL）、补丁（宿主私有目录里无法放入补丁档案）不提供。
+- 设置：引擎页 MAGES. 条目的「全局引擎设置」与单游戏设置，格式与 Ruffle 一致（全局值 + 单游戏覆盖，覆盖为 null 时跟随全局）。可调项只收录上游 `userconfig.toml` 里在 Android 上有意义的：交换确认 / 取消键、垂直同步、影片播放（`FFmpeg` / `None`）、影片字幕（全部 / 仅翻译 / 仅卡拉 OK；引擎的字幕配置是标志枚举，没有可读回的“全部关闭”）、回看记录滚到底时自动关闭、妄想触发的鼠标 / 触摸支持（仅 `chlcc`、`cclcc`）、日志等级，以及宿主自己的调试模式（`CommonSettings.DebugMode`，宿主 0.4.3 起；适配新游戏用，游戏中三指同时按住屏幕打开调试菜单；默认关闭，关闭时也下发 `false`，更早的宿主忽略这个键）。分辨率与显示模式（Android 上窗口固定全屏）、渲染器与音频后端（只有 OpenGL / OpenAL）、补丁（宿主私有目录里无法放入补丁档案）不提供。
 - 更新提醒：打开 MAGES. 游戏操作抽屉或进入引擎页时，异步将已安装宿主的版本名与 GitHub 最新正式发布的标签版本比较。检测到含 APK 的较新版本时，抽屉显示版本和「下载最新版本」入口，引擎条目显示问号，条目弹窗在「全局引擎设置」上方提供同名按钮。两个入口均打开宿主项目的 Releases 页面。返回 App 后重新读取已安装版本，安装到最新版后提示消失。检查独立于启动所需的最低版本判断。
 - 设置下发：启动请求带 `com.tyranor.next.impacto.extra.SETTINGS`（扁平 JSON），宿主 0.1.2（versionCode 3）起在引擎启动前把它们合并进该游戏的 `userconfig.toml`（只改受管键，其余保留）；因此这些值每次启动都会覆盖引擎内置设置页里的同名项。更老的宿主不认识该 extra，所以 `ImpactoHostContract.VERSION_CODE` 为 3，更老的宿主按“需要更新”处理。设置页的保存与启动请求都不依赖宿主是否已安装。
 - 验证状态：

@@ -1,6 +1,7 @@
 package com.tyranor.next.core.settings
 
 import android.content.Context
+import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
@@ -235,6 +236,9 @@ object EngineSettingsResolver {
                 EngineSettingsStore.getCmvsFont(app),
             ),
             cmvsFontFace = EngineSettingsStore.getCmvsFontFace(app),
+            cmvsProfile = str(PerGameSettingsStore.F_CMVS_PROFILE)?.takeIf {
+                game.engine == EngineType.CMVS && it in app.resources.getStringArray(R.array.cmvs_profile_ids)
+            },
             systemNnnFullscreen = if (systemNnn) {
                 (override.opt(PerGameSettingsStore.F_SYSTEMNNN_FULLSCREEN) as? Boolean)
                     ?: EngineSettingsStore.isSystemNnnFullscreen(app)
@@ -398,6 +402,8 @@ data class ResolvedEngineSettings(
     val cmvsFont: String,
     /** CMVS 字体集合索引。 */
     val cmvsFontFace: Int,
+    /** 已登记作品标识。空值沿用运行库的识别流程。 */
+    val cmvsProfile: String?,
     /** FVP 生效系统字体回退开关。 */
     val fvpSystemFont: Boolean,
     /** FVP 生效文本高分辨率渲染开关。 */

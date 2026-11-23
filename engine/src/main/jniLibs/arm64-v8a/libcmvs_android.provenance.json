@@ -1,20 +1,24 @@
 {
   "library": "libcmvs_android.so",
   "upstream": "cmvs-rs",
-  "upstream_commit": "c073414b",
-  "source_state": "c073414b + tools/cmvs/patches/0001-absolute-launch-paths.patch (fork is sync-only; no committed changes)",
+  "upstream_commit": "23718ecf515022722dca6bc2e58a8b95b4f362e9",
+  "source_state": "23718ecf515022722dca6bc2e58a8b95b4f362e9 + tools/cmvs/patches/0001-absolute-launch-paths.patch",
   "dirty": true,
   "patches": [
     {
       "path": "tools/cmvs/patches/0001-absolute-launch-paths.patch",
-      "sha256": "4da1957786c88fc64c1b571977a8f7197a518de8f4d5973472503ea925ea2ce3"
+      "sha256": "06660458619449753b087dc7aca1f6174d3ebd3fb6c79357aeff671efbd5b194"
     }
   ],
-  "sha256": "ee6f0f618d3d2770898d445ebf709d2aa9a7317fe0d43d44cb628bb7a86f94fd",
-  "size": 9318864,
+  "sha256": "9e48d6579a74a59b440c99fe99c925459a9524b9a2a24bd02cf26e15dd899267",
+  "size": 9728376,
   "api_level": 26,
   "ndk": "28.0.13004108",
-  "build_command": "CARGO_TARGET_DIR=/tmp/cmvs-build-target ANDROID_NDK_HOME=/Users/weiss/Library/Android/sdk/ndk/28.0.13004108 cargo ndk -t arm64-v8a --platform 26 -o /tmp/cmvs-jni build --locked --release -p cmvs-android && llvm-strip --strip-unneeded /tmp/cmvs-jni/arm64-v8a/libcmvs_android.so",
+  "build_command": "CMVS_SOURCE=/Volumes/HUAWEI-M2LITE/app/cmvs-rs bash tools/cmvs/build_android.sh",
   "instrumentation": "local patch only; no engine repository changes",
-  "xz_size": 2620532
+  "source_repository": "https://github.com/Weiss-UltimateSavior/cmvs-rs",
+  "rustc": "1.96.0 (ac68faa20 2026-05-25)",
+  "cargo_ndk": "4.1.2",
+  "profiles_sha256": "571af2f41228be40695b4f4efd9a64b0d903573198613507ea4882c1a19c4c7f",
+  "xz_size": 2881540
 }

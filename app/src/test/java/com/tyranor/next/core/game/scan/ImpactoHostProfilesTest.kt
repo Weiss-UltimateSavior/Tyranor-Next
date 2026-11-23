@@ -42,6 +42,17 @@ class ImpactoHostProfilesTest {
     }
 
     @Test
+    fun readsExcludedEntriesAndTreatsAMissingListAsNone() {
+        val sgExcludingSg0 = """{"id":"sg-pc","name":"STEINS;GATE (PC, Steam)","language":null,
+            "detect":{"layout":"pc","allOf":["Game.exe","USRDIR/script.mpk","USRDIR/system.mpk"],
+            "noneOf":["USRDIR/mpk_bg.lst"]}}"""
+        val rules = ImpactoHostProfiles.parse(json("$sgExcludingSg0,$zhs"))!!
+
+        assertEquals(setOf("USRDIR/mpk_bg.lst"), rules.games[0].excludedEntries)
+        assertTrue(rules.games[1].excludedEntries.isEmpty())
+    }
+
+    @Test
     fun readsUnsupportedLayoutsThatPointAtAKnownProfile() {
         val rules = ImpactoHostProfiles.parse(
             json(sg, """{"id":"pc-usrdir-mpk","allOf":["USRDIR/script.mpk","USRDIR/system.mpk"],"tryProfile":"sg-pc"}"""),
@@ -78,6 +89,14 @@ class ImpactoHostProfilesTest {
             "number language" to json("""{"id":"x","name":"X","language":3,"detect":{"allOf":["a"]}}"""),
             "detect not an object" to json("""{"id":"x","name":"X","language":null,"detect":"a"}"""),
             "layouts not an array" to """{"profiles":[$sg],"unsupportedLayouts":{}}""",
+            "noneOf not an array" to
+                json("""{"id":"x","name":"X","language":null,"detect":{"allOf":["a"],"noneOf":"b"}}"""),
+            "noneOf with a bad entry" to
+                json("""{"id":"x","name":"X","language":null,"detect":{"allOf":["a"],"noneOf":["../b"]}}"""),
+            "noneOf with a number" to
+                json("""{"id":"x","name":"X","language":null,"detect":{"allOf":["a"],"noneOf":[1]}}"""),
+            "noneOf overlapping allOf" to
+                json("""{"id":"x","name":"X","language":null,"detect":{"allOf":["a"],"noneOf":["a"]}}"""),
             "deeply nested" to "{\"profiles\":" + "[".repeat(100_000),
         )
         for ((name, text) in cases) assertNull(name, ImpactoHostProfiles.parse(text))

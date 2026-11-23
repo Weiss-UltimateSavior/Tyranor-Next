@@ -128,6 +128,7 @@ object PerGameSettingsStore {
     const val F_ETHORNELL_NLS = "ethornell_nls"
     const val F_ETHORNELL_FONT = "ethornell_font"
     const val F_CMVS_FONT = "cmvs_font"
+    const val F_CMVS_PROFILE = "cmvs_profile"
     const val F_SYSTEMNNN_FULLSCREEN = "systemnnn_fullscreen"
     const val F_SYSTEMNNN_READING_SIZE = "systemnnn_reading_size"
     const val F_SYSTEMNNN_EXE_ANALYSIS = "systemnnn_exe_analysis"
@@ -191,6 +192,7 @@ object PerGameSettingsStore {
     const val F_IMPACTO_CLOSE_BACKLOG_AT_END = "impacto_close_backlog_at_end"
     const val F_IMPACTO_DELUSION_MOUSE = "impacto_delusion_mouse"
     const val F_IMPACTO_LOG_LEVEL = "impacto_log_level"
+    const val F_IMPACTO_DEBUG_MODE = "impacto_debug_mode"
 
     // ONS 子对象键
     const val ONS_KEY = "ons"
@@ -421,6 +423,7 @@ object PerGameSettingsStore {
             },
             closeBacklogAtEnd = boolOrNull(F_IMPACTO_CLOSE_BACKLOG_AT_END),
             delusionMouse = boolOrNull(F_IMPACTO_DELUSION_MOUSE),
+            debugMode = boolOrNull(F_IMPACTO_DEBUG_MODE),
             logLevel = if (json.has(F_IMPACTO_LOG_LEVEL)) {
                 json.optString(F_IMPACTO_LOG_LEVEL).trim().lowercase(Locale.ROOT)
             } else {

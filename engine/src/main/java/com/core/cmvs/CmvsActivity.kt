@@ -6,10 +6,12 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Process
+import android.text.InputFilter
 import android.text.InputType
 import android.view.KeyEvent
 import android.view.SurfaceHolder
 import android.view.WindowManager
+import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import androidx.annotation.Keep
 import com.core.engine.DoubleBackExit
@@ -22,6 +24,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.nio.charset.StandardCharsets
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * CMVS NativeActivity host.
@@ -40,6 +43,8 @@ class CmvsActivity : NativeActivity() {
     @Volatile private var choosingFont = false
     private var startupController: EngineSurfaceStartupController? = null
     @Volatile private var startupSurfaceHolder: SurfaceHolder? = null
+    private var commentDialog: AlertDialog? = null
+    private val commentResult = AtomicReference<Pair<Int, String>?>()
 
     @Keep
     @Synchronized
@@ -154,6 +159,59 @@ class CmvsActivity : NativeActivity() {
             getString(R.string.engine_another_game_running),
             android.widget.Toast.LENGTH_SHORT,
         ).show()
+    }
+
+    /** Called by the native engine when a save slot requests a comment. */
+    @Keep
+    fun beginCommentInput(id: Int, initial: String, maxChars: Int) = runOnUiThread {
+        clearCommentInput()
+        fun answer(value: String) = commentResult.set(id to value)
+        if (isFinishing || isDestroyed) {
+            answer("")
+            return@runOnUiThread
+        }
+        val input = EditText(this).apply {
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT
+            imeOptions = EditorInfo.IME_ACTION_DONE
+            filters = arrayOf(InputFilter.LengthFilter(maxChars))
+            setText(initial)
+            selectAll()
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.engine_cmvs_save_comment)
+            .setView(input)
+            .setNegativeButton(android.R.string.cancel) { _, _ -> answer("") }
+            .setOnCancelListener { answer("") }
+            .setPositiveButton(android.R.string.ok) { _, _ -> answer(" ${input.text}") }
+            .create()
+        input.setOnEditorActionListener { _, action, _ ->
+            if (action != EditorInfo.IME_ACTION_DONE) return@setOnEditorActionListener false
+            answer(" ${input.text}")
+            dialog.dismiss()
+            true
+        }
+        input.requestFocus()
+        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+        commentDialog = dialog
+        dialog.setOnDismissListener { if (commentDialog === dialog) commentDialog = null }
+        dialog.show()
+    }
+
+    /** JNI returns null while pending, an empty string on cancel, or a space-prefixed draft. */
+    @Keep
+    fun takeCommentInput(id: Int): String? {
+        val result = commentResult.get() ?: return null
+        if (result.first != id || !commentResult.compareAndSet(result, null)) return null
+        return result.second
+    }
+
+    @Keep
+    fun dismissCommentInput() = runOnUiThread { clearCommentInput() }
+
+    private fun clearCommentInput() {
+        commentDialog?.dismiss()
+        commentResult.set(null)
     }
 
     /** Called by the engine on the Java main thread for the in-game 0x213d font dialog. */
@@ -278,6 +336,7 @@ class CmvsActivity : NativeActivity() {
     override fun onDestroy() {
         choosingFont = false
         try {
+            clearCommentInput()
             startupController?.dispose()
             startupController = null
             startupSurfaceHolder = null
