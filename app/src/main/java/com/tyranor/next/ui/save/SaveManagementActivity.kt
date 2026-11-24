@@ -22,6 +22,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -67,6 +68,7 @@ import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.LocalDialogExit
 import com.tyranor.next.ui.common.motion.BlurCrossfade
 import com.tyranor.next.ui.common.motion.ExpandVisibility
 import com.tyranor.next.ui.common.motion.listItemMotion
@@ -78,6 +80,7 @@ import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.common.toSaveSyncMessage
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -118,12 +121,21 @@ class SaveManagementActivity : AppScreenActivity() {
 @Composable
 internal fun SaveManagementDialog(game: ScanGame, onDismiss: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
+    val canDismiss = { !busy }
     AppAlertDialog(
         onDismissRequest = onDismiss,
-        dismissEnabled = !busy,
+        dismissEnabledNow = canDismiss,
         title = { Text(stringResource(R.string.save_management_title), style = MaterialTheme.typography.titleMedium) },
         text = { SaveManagementContent(game = game, inBook = true, onBusyChange = { busy = it }) },
-        confirmButton = { DialogTextButton(text = stringResource(R.string.common_close), enabled = !busy, onClick = onDismiss) },
+        confirmButton = {
+            val exit = LocalDialogExit.current
+            CompositionLocalProvider(LocalDialogExit provides null) {
+                DialogTextButton(text = stringResource(R.string.common_close), enabled = !busy) {
+                    if (!canDismiss()) return@DialogTextButton
+                    if (exit != null) exit.closeThen(onDismiss) else onDismiss()
+                }
+            }
+        },
     )
 }
 
@@ -174,7 +186,6 @@ private fun SaveManagementContent(
     // 导入/导出/删除互斥：并发任务会互相清掉对方的暂存目录，破坏导入的原子性
     var taskRunning by remember { mutableStateOf(false) }
     val opMutex = remember(game.uri) { Mutex() }
-    LaunchedEffect(taskRunning) { onBusyChange(taskRunning) }
     DisposableEffect(Unit) { onDispose { onBusyChange(false) } }
     var versionsRevision by remember { mutableIntStateOf(0) }
     var externalExitConfirmation by remember(game.uri) {
@@ -251,7 +262,8 @@ private fun SaveManagementContent(
     fun runSaveTask(shortFeedback: Boolean = false, block: suspend () -> String?) {
         if (taskRunning) return
         taskRunning = true
-        scope.launch {
+        onBusyChange(true)
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
                 opMutex.withLock {
                     val message = withContext(Dispatchers.IO) {
@@ -272,6 +284,7 @@ private fun SaveManagementContent(
                 }
             } finally {
                 taskRunning = false
+                onBusyChange(false)
             }
         }
     }

@@ -370,7 +370,6 @@ fun GameScreen(
                     val updater = onGameLaunchFileUpdated
                     if (updater != null) updater(uri, name) else replaceGame(game.copy(launchFile = name))
                 }
-                val onEngineSettings = { openPerGameSettingsFromSheet(context, game) { selectedGameUri = null } }
                 if (cardStyle == AppSettingsStore.GAME_CARD_STYLE_SHELF) {
                     ShelfOpenBook(
                         game = game,
@@ -384,7 +383,7 @@ fun GameScreen(
                         onGameRenamed = onGameRenamed,
                         onDeleteGame = { deleteGame(game) },
                         onQuickLaunchToggle = { onQuickLaunchToggle(game) },
-                        onEngineSettings = onEngineSettings,
+                        onEngineSettings = { openPerGameSettingsFromSheet(context, game) {} },
                     )
                 } else {
                     GameActionsSheet(
@@ -394,7 +393,7 @@ fun GameScreen(
                         onGameCoverUpdated = onGameCoverUpdated,
                         onGameLaunchFileUpdated = onLaunchFileUpdated,
                         onGameBindingUpdated = onGameBindingUpdated,
-                        onEngineSettings = onEngineSettings,
+                        onEngineSettings = { openPerGameSettingsFromSheet(context, game) { selectedGameUri = null } },
                     )
                 }
             }
@@ -461,6 +460,7 @@ private fun GameLibraryContent(
     var catalogSelectedUri by rememberSaveable { mutableStateOf<String?>(null) }
     val focusManager = LocalFocusManager.current
     val conditions by AppSettingsStore.gameConditions.collectSettingAsState()
+    var shelfFocusConditions by remember { mutableStateOf(conditions) }
     // 条件变化时重新创建滚动状态，避免 Lazy 布局按旧首卡键锚定到排序后的其它位置。
     val gridState = key(conditions) { rememberLazyStaggeredGridState() }
     val uniformGridState = key(conditions) { rememberLazyGridState() }
@@ -685,6 +685,7 @@ private fun GameLibraryContent(
                             AppSettingsStore.GAME_CARD_STYLE_SHELF -> key(conditions) {
                                 GameShelf(
                                     games = filteredGames,
+                                    isInteractive = { contentInteractive && cardStyle == AppSettingsStore.GAME_CARD_STYLE_SHELF },
                                     onGameClick = { if (contentInteractive) onGameClick(it) },
                                     onGameLongClick = { target ->
                                         if (contentInteractive && games.isNotEmpty()) {
@@ -696,8 +697,9 @@ private fun GameLibraryContent(
                                     },
                                     book = shelfBook,
                                     catalog = shelfCatalog,
-                                    initialUri = shelfCurrentUri,
+                                    initialUri = shelfCurrentUri.takeIf { shelfFocusConditions == conditions },
                                     onCurrentGameChanged = { current ->
+                                        shelfFocusConditions = conditions
                                         shelfCurrentUri = current.uri
                                         AppSettingsStore.setGameShelfFocusUri(context, current.uri)
                                     },
@@ -798,8 +800,15 @@ private fun GameLibraryContent(
                 AppSettingsStore.resetGameConditions(context)
             },
             onPickGame = { picked ->
-                shelfCurrentUri = picked.uri
-                shelfCatalog.requestFocus(picked.uri)
+                when {
+                    filteredGames.none { it.uri == picked.uri } -> 0
+                    scanning || !loaded -> {
+                        shelfFocusConditions = conditions
+                        shelfCurrentUri = picked.uri
+                        0
+                    }
+                    else -> shelfCatalog.requestFocus(picked.uri)
+                }
             },
             onDismiss = { showShelfCatalog = false },
         )

@@ -1,9 +1,12 @@
 package com.tyranor.next.ui.game
 
+import androidx.compose.runtime.MonotonicFrameClock
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.theme.Amber40
 import com.tyranor.next.theme.Blue40
@@ -11,6 +14,13 @@ import com.tyranor.next.theme.Teal40
 import com.tyranor.next.theme.shelfBookDeleteStyle
 import com.tyranor.next.theme.shelfBookLaunchStyle
 import com.tyranor.next.theme.shelfBookPaperSurface
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -21,7 +31,96 @@ import kotlin.math.abs
  * 「游戏盒」翻开的书：书在屏幕上的摆放（手机竖屏 / 平板 / 横屏 / 很矮的窗口），与目录随条目增删的排列
  * （新插进来的章、正在收起的章、章号重排、收起完撤走、撤到一半又回来）。
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class ShelfBookLayoutTest {
+
+    private fun TestScope.withBookFrameClock(): CoroutineScope = CoroutineScope(
+        coroutineContext + object : MonotonicFrameClock {
+            override suspend fun <R> withFrameNanos(onFrame: (Long) -> R): R {
+                delay(16)
+                return onFrame(testScheduler.currentTime * 1_000_000L).also { Snapshot.sendApplyNotifications() }
+            }
+        },
+    )
+
+    @Test
+    fun cancellingCoverDragPastCloseThresholdReopensWithoutDismissing() = runTest {
+        val motion = ShelfBookMotion(withBookFrameClock(), true, ShelfBookStage(), "book", false)
+        var dismissals = 0
+        motion.dismissAction = { dismissals++ }
+        motion.dragBy(50f, 100f)
+        assertEquals(0.5f, motion.cover.value, 0f)
+
+        motion.dragCancel()
+        advanceUntilIdle()
+
+        assertEquals(1f, motion.cover.value, 0f)
+        assertFalse(motion.closing)
+        assertEquals(0, dismissals)
+    }
+
+    @Test
+    fun cancellingLeafDragRestoresTheTurnWithoutClosingTheLeaf() = runTest {
+        val pages = ShelfBookPages(withBookFrameClock(), enhanced = true)
+        val leaf = ShelfBookLeaf(null)
+        pages.push(leaf)
+        advanceUntilIdle()
+        pages.dragStart()
+        pages.dragBy(50f, 100f)
+        assertEquals(0.5f, pages.toc.value, 0f)
+
+        pages.dragCancel()
+        advanceUntilIdle()
+
+        assertEquals(listOf(leaf), pages.leaves)
+        assertEquals(1f, pages.toc.value, 0f)
+    }
+
+    @Test
+    fun removingTheDraggedLeafDoesNotRetargetTheRemainingDragToItsParent() = runTest {
+        val pages = ShelfBookPages(withBookFrameClock(), enhanced = true)
+        val parent = ShelfBookLeaf(null)
+        val child = ShelfBookLeaf(null)
+        pages.push(parent)
+        pages.push(child)
+        advanceUntilIdle()
+        pages.dragStart()
+        pages.dragBy(50f, 100f)
+        assertEquals(0.5f, parent.turn.value, 0f)
+
+        pages.remove(child)
+        pages.dragBy(100f, 100f)
+        pages.dragEnd(4_000f, 100f)
+        advanceUntilIdle()
+
+        assertEquals(listOf(parent), pages.leaves)
+        assertEquals(0f, parent.turn.value, 0f)
+        assertEquals(1f, pages.toc.value, 0f)
+    }
+
+    @Test
+    fun previousCloseCannotDeliverAfterReopenAndSecondClose() = runTest {
+        val motion = ShelfBookMotion(withBookFrameClock(), true, ShelfBookStage(), "book", false)
+        var dismissals = 0
+        motion.dismissAction = { dismissals++ }
+        motion.close()
+        runCurrent()
+        assertTrue(motion.reopen())
+        motion.close()
+        runCurrent()
+
+        assertEquals(0, dismissals)
+        advanceUntilIdle()
+        assertEquals(1, dismissals)
+    }
+
+    @Test
+    fun rotationPaperFitsEachOuterSlotWithoutStretchingAndReturnsToOneToOne() {
+        val finalSize = IntSize(720, 1080)
+        assertEquals(0.5f, shelfBookPaperScale(finalSize, IntSize(360, 900)), 0.0001f)
+        assertEquals(0.75f, shelfBookPaperScale(finalSize, IntSize(650, 810)), 0.0001f)
+        assertEquals(1f, shelfBookPaperScale(finalSize, finalSize), 0f)
+    }
 
     private fun assertFits(frame: ShelfBookFrame, width: Dp, height: Dp, top: Dp, bottom: Dp) {
         // 2:3，很矮的窗口里最多矮胖到正方形

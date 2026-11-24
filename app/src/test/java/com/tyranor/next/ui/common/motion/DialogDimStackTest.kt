@@ -6,6 +6,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DialogDimStackTest {
+    @Test fun foldedDimMatchesIndependentLayersAtIntermediateProgress() {
+        val oneLayer = drawnDialogScrim(0f, 0.5f, 0.5f)
+        assertEquals(64f / 255f, oneLayer, 0.0001f)
+        assertEquals(1f - (1f - oneLayer) * (1f - oneLayer), drawnDialogScrim(0.5f, 0.5f, 0.5f), 0.0001f)
+        assertEquals(oneLayer, drawnDialogScrim(0.5f, 0f, 0.5f), 0.0001f)
+        assertEquals(0f, drawnDialogScrim(0.5f, 0.5f, 0f), 0f)
+        assertEquals(0.75f, drawnDialogScrim(0.5f, 0.5f, 1f), 0f)
+    }
+
     private class Window {
         var visible = true
         var applied = -1f

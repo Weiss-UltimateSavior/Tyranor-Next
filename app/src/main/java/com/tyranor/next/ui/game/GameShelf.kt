@@ -5,12 +5,12 @@ import android.graphics.RectF
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
@@ -43,6 +43,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
@@ -51,12 +52,12 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -83,6 +84,11 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.changedToUp
+import androidx.compose.ui.input.pointer.isOutOfBounds
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
@@ -178,6 +184,7 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.platform.LocalLocale
 import kotlinx.coroutines.flow.collectLatest
@@ -204,6 +211,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 @Composable
 internal fun GameShelf(
     games: List<ScanGame>,
+    isInteractive: () -> Boolean,
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
     book: ShelfBookStage? = null,
@@ -212,35 +220,49 @@ internal fun GameShelf(
     onCurrentGameChanged: ((ScanGame) -> Unit)? = null,
 ) {
     val hideTitleTag by AppSettingsStore.gameCardTitleTagState.collectSettingAsState()
-    // 打开书架时停在：藏书阁刚指定聚焦的游戏 > 上次停留的那一盒（[initialUri]，筛选后仍在列表里才算）> 最近玩过的那一盒
-    val initialPage = remember {
-        catalog?.consumeFocusIndex(games)
-            ?: initialUri?.let { uri -> games.indexOfFirst { it.uri == uri }.takeIf { it >= 0 } }
-            ?: run {
-                val latest = games.indices.maxByOrNull { games[it].openTime } ?: 0
-                if (games.getOrNull(latest)?.openTime ?: 0L > 0L) latest else 0
-            }
-    }
+    val initialPage = remember { shelfFocusPage(games, initialUri) }
     val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { games.size })
     val scope = rememberCoroutineScope()
 
-    // 藏书阁选中游戏后，无论列表是否刚因筛选改变，立刻对准该游戏到正中英雄位并回执对齐完成的帧信号
-    LaunchedEffect(games, catalog?.focusRequestToken) {
-        val stage = catalog ?: return@LaunchedEffect
-        val token = stage.focusRequestToken
-        val target = stage.consumeFocusIndex(games)
-        if (target != null && (target != pagerState.currentPage || pagerState.currentPageOffsetFraction != 0f)) {
-            pagerState.scrollToPage(target)
+    var focusedUri by remember { mutableStateOf(games.getOrNull(initialPage)?.uri) }
+    val notifyCurrentGame by rememberUpdatedState(onCurrentGameChanged)
+    val latestGames by rememberUpdatedState(games)
+    val pendingUri = catalog?.pendingFocusUri
+    val focusToken = catalog?.focusRequestToken
+    val interactive = isInteractive()
+    LaunchedEffect(pagerState, games, catalog, focusToken, pendingUri, interactive) {
+        if (!isInteractive() || games.isEmpty()) return@LaunchedEffect
+        val requestPage = pendingUri?.let { uri -> games.indexOfFirst { it.uri == uri } } ?: -1
+        if (catalog != null && focusToken != null && pendingUri != null && requestPage >= 0) {
+            fun requestIsPending() = catalog.focusRequestToken == focusToken && catalog.pendingFocusUri == pendingUri &&
+                latestGames.getOrNull(requestPage)?.uri == pendingUri && isInteractive()
+            if (!requestIsPending()) return@LaunchedEffect
+            if (!pagerState.isShelfPageCentered(requestPage, pendingUri)) {
+                with(pagerState) {
+                    scroll(MutatePriority.PreventUserInput) {
+                        if (requestIsPending()) updateCurrentPage(requestPage)
+                    }
+                }
+            }
+            snapshotFlow { !requestIsPending() || pagerState.isShelfPageCentered(requestPage, pendingUri) }.first { it }
+            if (!requestIsPending() || !pagerState.isShelfPageCentered(requestPage, pendingUri) ||
+                !catalog.markFocusAligned(focusToken, pendingUri)
+            ) return@LaunchedEffect
+            focusedUri = pendingUri
+        } else {
+            val page = shelfFocusPage(games, focusedUri)
+            if (page != pagerState.currentPage || games[page].uri != focusedUri) {
+                pagerState.requestScrollToPage(page)
+            }
         }
-        if (token > 0) {
-            withFrameNanos { }
-            stage.markFocusAligned(token)
-        }
-    }
-    LaunchedEffect(pagerState, games, onCurrentGameChanged) {
-        if (onCurrentGameChanged == null) return@LaunchedEffect
-        snapshotFlow { pagerState.currentPage }.collect { page ->
-            games.getOrNull(page)?.let(onCurrentGameChanged)
+        snapshotFlow {
+            val page = pagerState.currentPage
+            games.getOrNull(page)?.takeIf { pagerState.hasShelfPageKey(page, it.uri) }
+        }.collect { current ->
+            if (current != null && isInteractive()) {
+                focusedUri = current.uri
+                notifyCurrentGame?.invoke(current)
+            }
         }
     }
 
@@ -248,12 +270,6 @@ internal fun GameShelf(
     if (book != null) {
         val locale = LocalLocale.current.platformLocale
         LaunchedEffect(locale) { withContext(Dispatchers.IO) { warmShelfBookSerif(locale) } }
-    }
-    // 同一条件下列表缩短时收敛到最后一本。
-    LaunchedEffect(games.size) {
-        if (games.isNotEmpty() && pagerState.currentPage > games.lastIndex) {
-            pagerState.scrollToPage(games.lastIndex)
-        }
     }
     val listChangedAt = rememberCoverBatchChange(games)
     // 点按进度轨道跳转时旋钮自己飞过去；跳转途中翻页触觉静音（只在点按那一下震）
@@ -263,14 +279,17 @@ internal fun GameShelf(
     // 每本封面的主色（背景色晕解出来时顺手算一次）：正中那一盒脚下与身后的光用它
     val coverTints = remember { mutableStateMapOf<String, Color>() }
     LaunchedEffect(games) {
-        val active = games.mapTo(HashSet(games.size)) { it.uri }
+        val active = games.mapNotNullTo(HashSet(games.size)) { it.coverUri }
         coverTints.keys.retainAll(active)
     }
     // 直接启动：不经操作抽屉，走与桌面快捷方式相同的启动蹦床（Artemis 补丁确认、存档格式确认、SystemNNN、
     // 错误提示都在里面），书架只负责发起
     val launchContext = LocalContext.current
-    val launchGame: (ScanGame) -> Unit = remember(launchContext) {
-        { game -> launchContext.startActivity(GameShortcutActivity.createIntent(launchContext, game.uri)) }
+    val launchGame: (ScanGame) -> Unit = { game ->
+        if (isInteractive()) launchContext.startActivity(GameShortcutActivity.createIntent(launchContext, game.uri))
+    }
+    val centerGame: (Int) -> Unit = { page ->
+        if (isInteractive()) scope.launch { if (isInteractive()) pagerState.centerCover(page) }
     }
 
     // 书正在合上时书架被拨动（拖动、甩动、点别的书脊、拖进度条）：合上的书不再飞回，就地淡出（见 ShelfBookStage.interruptClosing）
@@ -279,7 +298,7 @@ internal fun GameShelf(
         snapshotFlow { pagerState.isScrollInProgress }.collect { scrolling -> if (scrolling) book.interruptClosing() }
     }
 
-    Box(Modifier.fillMaxSize().shelfTouchIntent { catalog?.interruptExit() }) {
+    Box(Modifier.fillMaxSize().shelfTouchIntent { if (isInteractive()) catalog?.interruptExit() }) {
         ShelfBackdrop(pagerState, games, coverTints, Modifier.fillMaxSize())
         Column(
             modifier = Modifier
@@ -295,10 +314,11 @@ internal fun GameShelf(
                 coverTints = coverTints,
                 book = book,
                 catalog = catalog,
+                isInteractive = isInteractive,
                 onGameClick = onGameClick,
                 onGameLongClick = onGameLongClick,
                 onPlay = launchGame,
-                onCenter = { page -> scope.launch { pagerState.centerCover(page) } },
+                onCenter = centerGame,
                 // 旋转过渡：书架的书不逐帧重排，第一帧按最终尺寸排好后等比缩放贴进分给它的矩形（见 rotationMorphBlock）
                 modifier = Modifier.fillMaxWidth().weight(1f).rotationMorphBlock(),
             )
@@ -307,7 +327,7 @@ internal fun GameShelf(
                 knobSeek = knobSeek,
                 games = games,
                 hideTitleTag = hideTitleTag,
-                onContinue = { page -> scope.launch { pagerState.centerCover(page) } },
+                onContinue = centerGame,
                 modifier = Modifier
                     .fillMaxWidth()
                     .shelfCatalogChromeRecede(catalog)
@@ -320,6 +340,7 @@ internal fun GameShelf(
                     knobSeek = knobSeek,
                     games = games,
                     hideTitleTag = hideTitleTag,
+                    isInteractive = isInteractive,
                     modifier = Modifier
                         .fillMaxWidth()
                         .shelfCatalogChromeRecede(catalog)
@@ -333,6 +354,18 @@ internal fun GameShelf(
     }
 }
 
+internal fun shelfFocusPage(games: List<ScanGame>, uri: String?): Int =
+    games.indexOfFirst { it.uri == uri }.takeIf { it >= 0 }
+        ?: games.indices.maxByOrNull { games[it].openTime }?.takeIf { games[it].openTime > 0L }
+        ?: 0
+
+private fun PagerState.hasShelfPageKey(page: Int, uri: String): Boolean =
+    layoutInfo.visiblePagesInfo.any { it.index == page && it.key == uri }
+
+private fun PagerState.isShelfPageCentered(page: Int, uri: String): Boolean =
+    currentPage == page && currentPageOffsetFraction == 0f && !isScrollInProgress &&
+        layoutInfo.visiblePagesInfo.any { it.index == page && it.key == uri && it.offset == 0 }
+
 /** 书架主体：玻璃搁板与一排游戏盒。 */
 @Composable
 private fun ShelfStage(
@@ -343,6 +376,7 @@ private fun ShelfStage(
     coverTints: Map<String, Color>,
     book: ShelfBookStage?,
     catalog: ShelfCatalogStage?,
+    isInteractive: () -> Boolean,
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
     onPlay: (ScanGame) -> Unit,
@@ -453,7 +487,7 @@ private fun ShelfStage(
                             floorYScreen = floorYScreen,
                             liftPx = liftPx,
                             trait = shelfBookTrait(game.uri),
-                            tint = coverTints[game.uri] ?: game.engine.coverColor(),
+                            tint = coverTints[game.coverUri] ?: game.engine.coverColor(),
                             stageOverflowPx = stageOverflowPx,
                         ),
                     )
@@ -475,7 +509,7 @@ private fun ShelfStage(
                         floorYScreen = floorYScreen,
                         liftPx = liftPx,
                         trait = shelfBookTrait(game.uri),
-                        tint = coverTints[game.uri] ?: game.engine.coverColor(),
+                        tint = coverTints[game.coverUri] ?: game.engine.coverColor(),
                         stageOverflowPx = stageOverflowPx,
                     )
                 }
@@ -512,7 +546,7 @@ private fun ShelfStage(
                 val base = kotlin.math.floor(position).toInt().coerceIn(0, games.lastIndex)
                 val next = (base + 1).coerceAtMost(games.lastIndex)
                 val fraction = (position - base).coerceIn(0f, 1f)
-                fun tintOf(page: Int): Color = games[page].let { coverTints[it.uri] ?: it.engine.coverColor() }
+                fun tintOf(page: Int): Color = games[page].let { coverTints[it.coverUri] ?: it.engine.coverColor() }
                 androidx.compose.ui.graphics.lerp(tintOf(base), tintOf(next), fraction).copy(alpha = LEDGE_GLOW_ALPHA)
             }
         }
@@ -547,6 +581,8 @@ private fun ShelfStage(
             )
             HorizontalPager(
                 state = pagerState,
+                key = { games[it].uri },
+                userScrollEnabled = isInteractive(),
                 modifier = Modifier.fillMaxSize(),
                 pageSize = PageSize.Fixed(dragPitchDp),
                 contentPadding = PaddingValues(horizontal = sidePadding),
@@ -557,48 +593,47 @@ private fun ShelfStage(
                 overscrollEffect = rememberShelfOverscroll(),
             ) { page ->
                 val game = games.getOrNull(page) ?: return@HorizontalPager
-                key(game.uri) {
-                    ShelfBox(
-                        game = game,
-                        page = page,
-                        pagerState = pagerState,
-                        geometry = geometry,
-                        slotPitch = dragPitch,
-                        viewport = viewport,
-                        rowShift = rowShift,
-                        rail = rail,
-                        dims = dims,
-                        shapes = sharedShapes,
-                        velocity = velocity,
-                        batchChangedAt = batchChangedAt,
-                        hideTitleTag = hideTitleTag,
-                        book = book,
-                        catalog = catalog,
-                        coverTints = coverTints,
-                        onClick = {
-                            if (page == pagerState.currentPage && book?.reopenClosing(game.uri) == true) {
-                                // 这一本正在合上、还没落回：点回它就从此刻的样子接着翻开（见 ShelfBookStage.reopenClosing）
-                            } else if (page == pagerState.currentPage) {
-                                // 抽出来翻开：记下这一盒（位置在书那边按坐标现取）、序号与封面主色
-                                book?.capture(
-                                    uri = game.uri,
-                                    index = page,
-                                    count = count,
-                                    tint = coverTints[game.uri] ?: Color.Unspecified,
-                                    faceShade = geometry.faceShade(0f, spine = false),
-                                    spineShade = geometry.faceShade(0f, spine = true),
-                                )
-                                onGameClick(game)
-                            } else {
-                                onCenter(page)
-                            }
-                        },
-                        onLongClick = { onGameLongClick(game) },
-                        onPlay = {
-                            if (page == pagerState.currentPage) onPlay(game) else onCenter(page)
-                        },
-                    )
-                }
+                ShelfBox(
+                    game = game,
+                    page = page,
+                    pagerState = pagerState,
+                    geometry = geometry,
+                    slotPitch = dragPitch,
+                    viewport = viewport,
+                    rowShift = rowShift,
+                    rail = rail,
+                    dims = dims,
+                    shapes = sharedShapes,
+                    velocity = velocity,
+                    batchChangedAt = batchChangedAt,
+                    hideTitleTag = hideTitleTag,
+                    book = book,
+                    catalog = catalog,
+                    coverTints = coverTints,
+                    onClick = click@{
+                        if (!isInteractive()) return@click
+                        if (page == pagerState.currentPage && book?.reopenClosing(game.uri) == true) {
+                            // 这一本正在合上、还没落回：点回它就从此刻的样子接着翻开（见 ShelfBookStage.reopenClosing）
+                        } else if (page == pagerState.currentPage) {
+                            // 抽出来翻开：记下这一盒（位置在书那边按坐标现取）、序号与封面主色
+                            book?.capture(
+                                uri = game.uri,
+                                index = page,
+                                count = count,
+                                tint = coverTints[game.coverUri] ?: Color.Unspecified,
+                                faceShade = geometry.faceShade(0f, spine = false),
+                                spineShade = geometry.faceShade(0f, spine = true),
+                            )
+                            onGameClick(game)
+                        } else {
+                            onCenter(page)
+                        }
+                    },
+                    onLongClick = { if (isInteractive()) onGameLongClick(game) },
+                    onPlay = {
+                        if (page == pagerState.currentPage) onPlay(game) else onCenter(page)
+                    },
+                )
             }
         }
     }
@@ -664,7 +699,7 @@ private fun ShelfBox(
     onLongClick: () -> Unit,
     onPlay: () -> Unit,
 ) {
-    val cover by rememberCoverBitmap(game.coverUri)
+    val cover by key(game.coverUri) { rememberCoverBitmap(game.coverUri) }
     if (book != null) {
         DisposableEffect(book, game.uri) { onDispose { book.forget(game.uri) } }
     }
@@ -673,7 +708,7 @@ private fun ShelfBox(
     }
     // 抽出来的那一盒按它在屏幕上的实际像素换高清档（书脊和远处的盒子用网格档就够了）：同一时间只有当前那一盒多解一张
     val isHero by remember(pagerState, page) { derivedStateOf { pagerState.currentPage == page } }
-    val heroCover by rememberCoverBitmap(game.coverUri.takeIf { isHero }, dims.heroTier)
+    val heroCover by key(game.coverUri) { rememberCoverBitmap(game.coverUri.takeIf { isHero }, dims.heroTier) }
     val faceCover = cover ?: heroCover
     // 删除消散：与其他卡片风格一致，期间触摸由 dissolve 吞掉
     val dissolve = rememberLastNonNull(dissolvingGames[game.uri])
@@ -751,6 +786,7 @@ private fun ShelfBox(
             .shelfBatchArrival(batchChangedAt, kotlin.math.abs(page - anchorPage))
             .pressSquish(scale = PressSquishDefaults.CardScale, charge = true)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .semantics { contentDescription = game.title }
             .shelfVisibleWidth(geometry) { visibleWidthPx.value },
     ) {
         ShelfSpine(
@@ -833,7 +869,7 @@ private fun ShelfBox(
                     frontShadeProvider = { geometry.faceShade(page - pagerState.pagePosition(), spine = false) },
                     spineShadeProvider = { geometry.faceShade(page - pagerState.pagePosition(), spine = true) },
                     heroFactorProvider = { shelfHeroness(page - pagerState.pagePosition()) },
-                    tintProvider = { coverTints[game.uri] ?: engineColor },
+                    tintProvider = { coverTints[game.coverUri] ?: engineColor },
                 )
                 .dissolveTint(dissolve, errorColor),
         )
@@ -970,12 +1006,13 @@ private fun ShelfFront(
         contentAlignment = Alignment.Center,
     ) {
         // 占位文字只在没有封面时组合：被封面盖住也照样会画，而且在透视下要逐字按路径绘制
-        if (safeCover == null && safeHero == null) ShelfCoverPlaceholder(game.engine.displayName, dims.coverWidth)
+        if (safeCover == null && safeHero == null) {
+            ShelfCoverPlaceholder(game.engine.displayName, dims.coverWidth, Modifier.clearAndSetSemantics { })
+        }
         safeCover?.let { bitmap ->
             val mips = if (mipLevel != null) rememberShelfCoverMips(bitmap) else null
             Spacer(
                 Modifier
-                    .semantics { contentDescription = game.title }
                     .then(reveal.image(Modifier.fillMaxSize()))
                     .shelfCoverMipped(bitmap, mips, mipLevel),
             )
@@ -1118,9 +1155,11 @@ internal fun rememberShelfCoverMips(cover: ImageBitmap): List<ImageBitmap>? {
     if (source.isRecycled) return null
     val cached = remember(source) { shelfCoverMipCache.getIfPresent(source) }
     if (cached != null) return cached
-    val computed by androidx.compose.runtime.produceState<List<ImageBitmap>?>(initialValue = null, key1 = source) {
-        value = withContext(Dispatchers.Default) {
-            shelfCoverMipCache.getOrCompute(source) { buildShelfCoverMips(source) }
+    val computed by key(source) {
+        produceState<List<ImageBitmap>?>(initialValue = null) {
+            value = withContext(Dispatchers.Default) {
+                shelfCoverMipCache.getOrCompute(source) { buildShelfCoverMips(source) }
+            }
         }
     }
     return computed
@@ -1459,17 +1498,19 @@ internal fun rememberShelfSpineWash(cover: ImageBitmap?): ImageBitmap? {
     if (cover == null || source == null || source.isRecycled) return null
     val cached = remember(source) { spineWashCache.getIfPresent(source)?.wash }
     if (cached != null) return cached
-    val computed by androidx.compose.runtime.produceState<ImageBitmap?>(initialValue = null, key1 = source) {
-        value = withContext(Dispatchers.Default) {
-            spineWashCache.getOrCompute(source) {
-                coverWash(cover, SPINE_WASH_WIDTH, SPINE_WASH_HEIGHT, 1)?.let { wash ->
-                    val ink = shelfCoverTint(wash)
-                    synchronized(spineResultByWash) {
-                        spineResultByWash[wash.asAndroidBitmap()] = ink
+    val computed by key(source) {
+        produceState<ImageBitmap?>(initialValue = null) {
+            value = withContext(Dispatchers.Default) {
+                spineWashCache.getOrCompute(source) {
+                    coverWash(cover, SPINE_WASH_WIDTH, SPINE_WASH_HEIGHT, 1)?.let { wash ->
+                        val ink = shelfCoverTint(wash)
+                        synchronized(spineResultByWash) {
+                            spineResultByWash[wash.asAndroidBitmap()] = ink
+                        }
+                        SpineWashResult(wash, ink)
                     }
-                    SpineWashResult(wash, ink)
-                }
-            }?.wash
+                }?.wash
+            }
         }
     }
     return computed
@@ -1699,13 +1740,14 @@ private fun rememberBackdropWashResult(
     game: ScanGame?,
     tints: MutableMap<String, Color>,
 ): BackdropWashResult? {
-    val cover by rememberCoverBitmap(game?.coverUri)
-    val source = cover?.asAndroidBitmap()?.takeUnless { it.isRecycled }
-    val cached = remember(source) { source?.let { backdropWashCache.getIfPresent(it) } }
-    val computed by androidx.compose.runtime.produceState<BackdropWashResult?>(initialValue = null, key1 = source) {
-        if (source != null && cached == null) {
+    val coverUri = game?.coverUri ?: return null
+    val cover by key(coverUri) { rememberCoverBitmap(coverUri) }
+    val coverSnapshot = cover ?: return null
+    val source = coverSnapshot.asAndroidBitmap().takeUnless { it.isRecycled } ?: return null
+    val cached = remember(source) { backdropWashCache.getIfPresent(source) }
+    val resolved = cached ?: key(source) {
+        val computed by produceState<BackdropWashResult?>(initialValue = null) {
             value = withContext(Dispatchers.Default) {
-                val coverSnapshot = cover ?: return@withContext null
                 backdropWashCache.getOrCompute(source) {
                     coverWash(coverSnapshot, BACKDROP_WASH_WIDTH, BACKDROP_WASH_HEIGHT, 2)?.let { wash ->
                         BackdropWashResult(wash, shelfCoverTint(wash))
@@ -1713,13 +1755,13 @@ private fun rememberBackdropWashResult(
                 }
             }
         }
+        computed
     }
-    val resolved = cached ?: computed
-    val tint = resolved?.tint
-    if (game != null && tint != null) {
-        LaunchedEffect(game.uri, tint) { tints[game.uri] = tint }
+    val valid = resolved?.takeUnless { it.wash.asAndroidBitmap().isRecycled }
+    if (valid != null) {
+        SideEffect { tints[coverUri] = valid.tint }
     }
-    return resolved?.takeUnless { it.wash.asAndroidBitmap().isRecycled }
+    return valid
 }
 
 /**
@@ -2423,6 +2465,31 @@ private fun ShelfSummaryNumber(value: Int, label: String) {
     }
 }
 
+private suspend fun AwaitPointerEventScope.awaitShelfTrackTapOrDrag(down: PointerInputChange): PointerInputChange? {
+    val slop = viewConfiguration.touchSlop
+    var withinTapSlop = true
+    while (true) {
+        val event = awaitPointerEvent()
+        val change = event.changes.singleOrNull() ?: return null
+        if (change.id != down.id || change.isConsumed) return null
+        val travel = change.position - down.position
+        withinTapSlop = withinTapSlop && travel.getDistance() < slop && !change.isOutOfBounds(size, extendedTouchPadding)
+        if (change.changedToUp()) {
+            if (!withinTapSlop || change.uptimeMillis - down.uptimeMillis >= viewConfiguration.longPressTimeoutMillis) {
+                return null
+            }
+            change.consume()
+            return change
+        }
+        if (abs(travel.x) >= slop) {
+            change.consume()
+            return change
+        }
+        val finalChange = awaitPointerEvent(PointerEventPass.Final).changes.singleOrNull() ?: return null
+        if (finalChange.isConsumed) return null
+    }
+}
+
 /**
  * 进度轨道（似有似无）：一根两端渐隐的发丝线，翻过的那段略深，每本一颗小点（多了改成竖直短刻度）；
  * 书架静止时淡到几乎看不出，一滑动、一拖动就浮现。轨道上的旋钮是当前那一盒的封面小头像。按住旋钮直接拖（旋钮 Q 弹放大、上方气泡显示正在经过的游戏，书架实时跟手转动，
@@ -2435,6 +2502,7 @@ private fun ShelfScrubber(
     knobSeek: ShelfKnobSeek,
     games: List<ScanGame>,
     hideTitleTag: Boolean,
+    isInteractive: () -> Boolean,
     modifier: Modifier = Modifier,
 ) {
     val count = games.size
@@ -2444,6 +2512,8 @@ private fun ShelfScrubber(
     val knobLift = rememberTrackKnobLift(scrubbing)
     val scrubberMotion = rememberShelfScrubberMotion()
     val glide = rememberShelfGlide(pagerState)
+    val interactive = isInteractive()
+    val canSeek by rememberUpdatedState(isInteractive)
     // 旋钮一动轨道就跟着 Q 弹：单协程连续驱动弹簧，滑动期间零协程取消与重建
     LaunchedEffect(pagerState, knobSeek, scrubberMotion, count) {
         scrubberMotion.trackKnob(pagerState, knobSeek, count)
@@ -2451,9 +2521,10 @@ private fun ShelfScrubber(
     val scrubChannel = remember(pagerState) { Channel<Float>(Channel.CONFLATED) }
     LaunchedEffect(pagerState, scrubChannel) {
         for (targetPos in scrubChannel) {
+            if (!canSeek()) continue
             val nearest = targetPos.roundToInt()
             val fraction = targetPos - nearest
-            pagerState.scrollToPage(nearest, fraction)
+            coroutineScope { launch { pagerState.scrollToPage(nearest, fraction) }.join() }
         }
     }
     val localDensity = LocalDensity.current
@@ -2470,9 +2541,11 @@ private fun ShelfScrubber(
             Modifier
                 .fillMaxSize()
                 .semantics { contentDescription = description }
-                .pointerInput(count, glide) {
+                .pointerInput(count, glide, interactive) {
+                    if (!interactive) return@pointerInput
                     awaitEachGesture {
                         val down = awaitFirstDown()
+                        if (!canSeek()) return@awaitEachGesture
                         val width = size.width.toFloat()
                         val inset = rulerInset(width, count, this)
                         val overpullLimit = maxOverpull(inset, this)
@@ -2517,13 +2590,14 @@ private fun ShelfScrubber(
                             scrubbing = true
                             down.id
                         } else {
-                            val drag = awaitHorizontalTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
-                            if (drag == null) {
+                            val drag = awaitShelfTrackTapOrDrag(down) ?: return@awaitEachGesture
+                            if (!canSeek()) return@awaitEachGesture
+                            if (!drag.pressed) {
                                 // 轻点轨道：只在这一下震一次，旋钮带着 Q 弹果冻拉伸飞到手指下，书架跟着翻到那一本
                                 val tapped = shelfRulerPosition(down.position.x, count, width, inset).roundToInt()
                                 scrubberMotion.onTapSeek()
                                 MotionHaptics.perform(MotionHaptics.Kind.Tick)
-                                scope.launch { knobSeek.seek(pagerState, glide, tapped) }
+                                scope.launch { if (canSeek()) knobSeek.seek(pagerState, glide, tapped) }
                                 return@awaitEachGesture
                             }
                             knobSeek.cancel()
@@ -2537,7 +2611,8 @@ private fun ShelfScrubber(
                             drag.id
                         }
                         try {
-                            drag(pointer) { change ->
+                            drag(pointer) dragMotion@{ change ->
+                                if (!canSeek()) return@dragMotion
                                 val dt = (change.uptimeMillis - lastTimeMs) / 1000f
                                 val dx = change.position.x - lastX
                                 lastX = change.position.x
@@ -2558,7 +2633,9 @@ private fun ShelfScrubber(
                             scrubSpeed = 1f
                             scrubberMotion.onDragEnd()
                         }
-                        scope.launch { pagerState.settleScrub(last) }
+                        if (canSeek()) {
+                            scope.launch { if (canSeek()) pagerState.settleScrub(last) }
+                        }
                     }
                 }
                 .shelfTrack(

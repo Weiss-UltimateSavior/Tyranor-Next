@@ -40,6 +40,8 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.AbsoluteCutCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.GenericShape
@@ -61,6 +63,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -242,7 +245,7 @@ internal fun ShelfOpenBook(
     // 选项弹出的二级弹窗翻到书的下一页上（见 ShelfBookPages）；书里的选项、弹窗、跳转都从这里经过
     val pages = rememberShelfBookPages()
     val tabMotion = rememberShelfBookTabMotion()
-    var spreadLeafSource by remember { mutableStateOf(ShelfBookTab.Contents) }
+    var spreadLeafSource by rememberSaveable(game.uri) { mutableStateOf(ShelfBookTab.Contents) }
     val host = remember(motion, owner) { ShelfBookHost(motion, owner) }
     val scrimAlpha = SheetScrimColor.alpha
     val quickActions = rememberGameQuickActionsController(
@@ -258,6 +261,7 @@ internal fun ShelfOpenBook(
         onDeleteGame = onDeleteGame,
         onQuickLaunchToggle = onQuickLaunchToggle,
         canInteract = { motion.interact() && !pages.turned },
+        onShortcutCropOpened = { spreadLeafSource = ShelfBookTab.Manage },
     )
     CompositionLocalProvider(LocalAppDialogHost provides pages) {
         GameActions(
@@ -484,20 +488,22 @@ private fun ShelfBookScene(
     val keyboard = WindowInsets.ime
     val tablet = isTabletScreen()
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val targetFrame = shelfBookFrame(
-            width = maxWidth,
-            height = maxHeight,
-            insetTop = insets.calculateTopPadding(),
-            insetBottom = insets.calculateBottomPadding(),
-            tablet = tablet,
-        )
-        val morph = rememberShelfBookLayoutMorph(targetFrame, maxWidth, maxHeight) {
+        val insetTop = insets.calculateTopPadding()
+        val insetBottom = insets.calculateBottomPadding()
+        val targetFrame = remember(maxWidth, maxHeight, insetTop, insetBottom, tablet) {
+            shelfBookFrame(maxWidth, maxHeight, insetTop, insetBottom, tablet)
+        }
+        val morph = rememberShelfBookLayoutMorph(targetFrame, maxWidth, maxHeight, tablet) {
             motion.flight.value >= 0.99f && motion.cover.value >= 0.5f
         }
         val frame = morph.visualFrame(maxWidth, maxHeight)
-        val metrics = shelfBookMetrics(targetFrame.pageWidth)
+        val pageLayout = morph.rotationPageLayout(targetFrame, maxWidth, maxHeight, tablet)
+        val layoutFrame = pageLayout ?: targetFrame
+        val metrics = remember(layoutFrame.pageWidth) { shelfBookMetrics(layoutFrame.pageWidth) }
+        val rightPaperSize = pageLayout?.let { with(density) { shelfBookPaperSize(it, left = false) } }
+        val leftPaperSize = pageLayout?.let { with(density) { shelfBookPaperSize(it, left = true) } }
         val screenHeight = maxHeight
-        val dragSpan = with(density) { frame.pageWidth.toPx() } * BOOK_DRAG_SPAN
+        val latestDragSpan by rememberUpdatedState(with(density) { frame.pageWidth.toPx() } * BOOK_DRAG_SPAN)
         val glowCenter = with(density) {
             val centerX = when (frame.layoutMode) {
                 ShelfBookLayoutMode.Spread -> frame.gutterX
@@ -539,23 +545,38 @@ private fun ShelfBookScene(
                     }
                 }
                 // 书上任何地方往右拖：翻到了后面的页时那一页跟着手指翻回来，在目录页时封面跟着手指合回来
-                .pointerInput(motion, pages, dragSpan) {
+                .pointerInput(motion, pages) {
                     val tracker = VelocityTracker()
+                    var active = false
                     var turning = false
-                    detectHorizontalDragGestures(
-                        onDragStart = {
-                            tracker.resetTracking()
-                            turning = pages.turned
-                        },
-                        onDragEnd = {
-                            val velocity = tracker.calculateVelocity().x
-                            if (turning) pages.dragEnd(velocity, dragSpan) else motion.dragEnd(velocity, dragSpan)
-                        },
-                        onDragCancel = { if (turning) pages.dragEnd(0f, dragSpan) else motion.dragEnd(0f, dragSpan) },
-                    ) { change, amount ->
-                        tracker.addPosition(change.uptimeMillis, change.position)
-                        change.consume()
-                        if (turning) pages.dragBy(amount, dragSpan) else motion.dragBy(amount, dragSpan)
+                    var dragSpan = 0f
+                    fun cancelDrag() {
+                        if (!active) return
+                        active = false
+                        if (turning) pages.dragCancel() else motion.dragCancel()
+                    }
+                    try {
+                        detectHorizontalDragGestures(
+                            onDragStart = {
+                                tracker.resetTracking()
+                                active = true
+                                turning = pages.turned
+                                dragSpan = latestDragSpan
+                                if (turning) pages.dragStart()
+                            },
+                            onDragEnd = {
+                                active = false
+                                val velocity = tracker.calculateVelocity().x
+                                if (turning) pages.dragEnd(velocity, dragSpan) else motion.dragEnd(velocity, dragSpan)
+                            },
+                            onDragCancel = ::cancelDrag,
+                        ) { change, amount ->
+                            tracker.addPosition(change.uptimeMillis, change.position)
+                            change.consume()
+                            if (turning) pages.dragBy(amount, dragSpan) else motion.dragBy(amount, dragSpan)
+                        }
+                    } finally {
+                        cancelDrag()
                     }
                 },
         ) {
@@ -589,6 +610,8 @@ private fun ShelfBookScene(
                         frame = frame,
                         morph = morph,
                         metrics = metrics,
+                        paperSize = rightPaperSize,
+                        paperMode = pageLayout?.layoutMode,
                         activeLeafTab = activeLeafTab,
                         onLeafSource = onLeafSource,
                     )
@@ -607,6 +630,7 @@ private fun ShelfBookScene(
                         quickActions = quickActions,
                         metrics = metrics,
                         shape = leftShape,
+                        paperSize = leftPaperSize,
                         enabled = !pages.turned && morph.isInteractiveLeftMode(ShelfBookLayoutMode.Spread),
                         onOpenLeaf = { onLeafSource(ShelfBookTab.Manage) },
                         modifier = Modifier
@@ -620,6 +644,17 @@ private fun ShelfBookScene(
             NoticeHost(Modifier.matchParentSize())
         }
     }
+}
+
+private fun Density.shelfBookPaperSize(frame: ShelfBookFrame, left: Boolean): IntSize {
+    val width = if (left) {
+        frame.pageWidth.roundToPx() - (BOOK_LIP + BOOK_LEFT_STACK).roundToPx()
+    } else {
+        frame.pageWidth.roundToPx() - BOOK_LIP.roundToPx() - BOOK_STACK_RIGHT.roundToPx()
+    }
+    val bottom = if (left) (BOOK_LIP + BOOK_STACK_BOTTOM).roundToPx() else BOOK_LIP.roundToPx() + BOOK_STACK_BOTTOM.roundToPx()
+    val height = frame.pageHeight.roundToPx() - BOOK_LIP.roundToPx() - bottom
+    return IntSize(width.coerceAtLeast(1), height.coerceAtLeast(1))
 }
 
 private fun shelfBookLeftPageCut(frame: ShelfBookFrame, origin: ShelfBookOrigin?, density: Density): Dp {
@@ -647,6 +682,8 @@ private fun ShelfBookBody(
     frame: ShelfBookFrame,
     morph: ShelfBookLayoutMorph,
     metrics: ShelfBookMetrics,
+    paperSize: IntSize?,
+    paperMode: ShelfBookLayoutMode?,
     activeLeafTab: ShelfBookTab,
     onLeafSource: (ShelfBookTab) -> Unit,
 ) {
@@ -746,6 +783,8 @@ private fun ShelfBookBody(
         frame = frame,
         morph = morph,
         metrics = metrics,
+        paperSize = paperSize,
+        paperMode = paperMode,
         activeLeafTab = activeLeafTab,
         onLeafSource = onLeafSource,
     )
@@ -794,6 +833,8 @@ private fun ShelfBookPageBlock(
     frame: ShelfBookFrame,
     morph: ShelfBookLayoutMorph,
     metrics: ShelfBookMetrics,
+    paperSize: IntSize?,
+    paperMode: ShelfBookLayoutMode?,
     activeLeafTab: ShelfBookTab,
     onLeafSource: (ShelfBookTab) -> Unit,
 ) {
@@ -845,7 +886,7 @@ private fun ShelfBookPageBlock(
                         turnedClipWidth = turnedClipWidth,
                         turnedCorner = turnedCorner,
                     ) {
-                        ShelfBookLeafPage(leaf, level, pages, activeLeafTab, metrics)
+                        ShelfBookLeafPage(leaf, level, pages, activeLeafTab, metrics, paperSize)
                     }
                 }
                 // 换页：撤掉的那一页叠在它翻开后露出的这一页上面，往前翻过去
@@ -874,7 +915,11 @@ private fun ShelfBookPageBlock(
                 turnedClipWidth = turnedClipWidth,
                 turnedCorner = turnedCorner,
                 backContent = if (morph.currentMode == ShelfBookLayoutMode.Spread) {
-                    { ShelfBookSpreadVerso(game = game, stage = stage, stats = stats, tint = tint, metrics = metrics) }
+                    {
+                        Box(Modifier.fillMaxSize().shelfBookFitPaper(paperSize, gutterAtRight = true)) {
+                            ShelfBookSpreadVerso(game = game, stage = stage, stats = stats, tint = tint, metrics = metrics)
+                        }
+                    }
                 } else {
                     null
                 },
@@ -892,6 +937,8 @@ private fun ShelfBookPageBlock(
                     stats = stats,
                     morph = morph,
                     metrics = metrics,
+                    paperSize = paperSize,
+                    paperMode = paperMode,
                     onLeafSource = onLeafSource,
                 )
                 if (isShelfLastPlayed(game)) {
@@ -1306,6 +1353,7 @@ private fun ShelfBookLeafPage(
     pages: ShelfBookPages,
     activeTab: ShelfBookTab,
     metrics: ShelfBookMetrics,
+    paperSize: IntSize?,
 ) {
     val spec = leaf.spec
     // 翻回途中这一页已经关了：收起键盘与输入焦点（与弹窗退场时一致）
@@ -1321,6 +1369,7 @@ private fun ShelfBookLeafPage(
     Column(
         Modifier
             .fillMaxSize()
+            .shelfBookFitPaper(paperSize)
             .padding(start = metrics.gutterPad, end = metrics.outerPad, top = metrics.topPad, bottom = metrics.bottomPad),
     ) {
         ShelfBookBackLink(
@@ -1867,6 +1916,7 @@ private fun ShelfBookSpreadLeftPage(
     quickActions: GameQuickActionsController,
     metrics: ShelfBookMetrics,
     shape: AbsoluteCutCornerShape,
+    paperSize: IntSize?,
     enabled: Boolean,
     onOpenLeaf: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1881,6 +1931,7 @@ private fun ShelfBookSpreadLeftPage(
         BoxWithConstraints(
             Modifier
                 .fillMaxSize()
+                .shelfBookFitPaper(paperSize, gutterAtRight = true)
                 .padding(start = metrics.outerPad, end = metrics.gutterPad, top = metrics.topPad, bottom = metrics.bottomPad),
         ) {
             val compact = maxHeight < BOOK_PAGE_COMPACT_HEIGHT
@@ -2315,6 +2366,8 @@ private fun ShelfBookPage(
     stats: GamePlaytimeStats?,
     morph: ShelfBookLayoutMorph,
     metrics: ShelfBookMetrics,
+    paperSize: IntSize?,
+    paperMode: ShelfBookLayoutMode?,
     onLeafSource: (ShelfBookTab) -> Unit,
 ) {
     val entries = remember(ui.launchFile, ui.items) { listOfNotNull(ui.launchFile) + ui.items }
@@ -2325,6 +2378,7 @@ private fun ShelfBookPage(
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
+            .shelfBookFitPaper(paperSize)
             .padding(start = metrics.gutterPad, end = metrics.outerPad, top = metrics.topPad, bottom = metrics.bottomPad),
     ) {
         // 书页很矮（手机横屏两页摊开、分屏）时放不下固定头部 + 正文内容：整页一起滚动
@@ -2347,7 +2401,7 @@ private fun ShelfBookPage(
                         entriesCount = entries.size,
                         stats = stats,
                         metrics = metrics,
-                        sectionLabelWeight = morph.leftPaperAlpha,
+                        sectionLabelWeight = if (paperMode != null) 1f else morph.leftPaperAlpha,
                         onOpenLeaf = { onLeafSource(ShelfBookTab.Contents) },
                     )
                 }
@@ -2372,13 +2426,14 @@ private fun ShelfBookPage(
                 }
             }
         }
-        val showHeaderPosition = morph.leftPaperAlpha < 0.5f
+        val showHeaderPosition = paperMode?.let { it != ShelfBookLayoutMode.Spread } ?: (morph.leftPaperAlpha < 0.5f)
         val renderHeaderAndBody: @Composable (Boolean, Modifier) -> Unit = { isCompact, bodyModifier ->
             ShelfBookHalfTitle(game, stage, showPosition = showHeaderPosition, modifier = Modifier.shelfBookInk(motion, 1))
             ShelfBookRightHeaderSlot(
                 tabMotion = tabMotion,
                 canInteract = canSwitch,
                 morph = morph,
+                paperMode = paperMode,
                 modifier = Modifier.padding(top = 8.dp).shelfBookInk(motion, 2),
             )
             val fillMod = if (isCompact) Modifier.fillMaxWidth() else Modifier.fillMaxSize()
@@ -2415,6 +2470,7 @@ private fun ShelfBookRightHeaderSlot(
     tabMotion: ShelfBookTabMotion,
     canInteract: () -> Boolean,
     morph: ShelfBookLayoutMorph,
+    paperMode: ShelfBookLayoutMode?,
     modifier: Modifier = Modifier,
 ) {
     val tabSurface = ShelfBookTabSurface
@@ -2427,7 +2483,8 @@ private fun ShelfBookRightHeaderSlot(
     val contentsLabel = stringResource(R.string.game_book_contents)
     val manageLabel = stringResource(R.string.game_book_tab_manage)
     val tabWeight = morph.horizontalTabWeight
-    val slotHeight = lerp(BOOK_DOUBLE_RULE_SLOT_HEIGHT, BOOK_TAB_BAR_HEIGHT, tabWeight)
+    val layoutWeight = paperMode?.let { if (it == ShelfBookLayoutMode.Spread) 0f else 1f } ?: tabWeight
+    val slotHeight = lerp(BOOK_DOUBLE_RULE_SLOT_HEIGHT, BOOK_TAB_BAR_HEIGHT, layoutWeight)
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -2521,10 +2578,11 @@ private fun ShelfBookRightHeaderSlot(
             },
         verticalAlignment = Alignment.Top,
     ) {
-        if (tabWeight > 0.01f) {
+        if (layoutWeight > 0.01f) {
             Row(
                 Modifier
                     .fillMaxSize()
+                    .selectableGroup()
                     .shelfBookMorphTabSlot { morph.horizontalTabWeight },
                 verticalAlignment = Alignment.Top,
             ) {
@@ -2557,7 +2615,13 @@ private fun ShelfBookTabItem(
 ) {
     Box(
         modifier = modifier
-            .clickable(interactionSource = null, indication = null, role = Role.Tab, onClick = onClick)
+            .selectable(
+                selected = tabMotion.selected.ordinal == tabIndex,
+                interactionSource = null,
+                indication = null,
+                role = Role.Tab,
+                onClick = onClick,
+            )
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
@@ -2858,7 +2922,7 @@ private fun ShelfBookManageTab(
             title = toggleLabel,
             height = rowHeight,
             enabled = enabled,
-            onClick = quickActions::toggleQuickLaunch,
+            onClick = { quickActions.toggleQuickLaunch() },
             tabMotion = tabMotion,
             tabRole = tabRole,
             revealOrder = 1,
@@ -2871,7 +2935,7 @@ private fun ShelfBookManageTab(
             title = shortcutLabel,
             height = rowHeight,
             enabled = enabled,
-            onClick = quickActions::addDesktopShortcut,
+            onClick = { quickActions.addDesktopShortcut() },
             tabMotion = tabMotion,
             tabRole = tabRole,
             revealOrder = 2,

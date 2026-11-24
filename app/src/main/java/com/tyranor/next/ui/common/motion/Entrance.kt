@@ -18,6 +18,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
@@ -27,6 +28,7 @@ import androidx.compose.ui.layout.MeasureResult
 import androidx.compose.ui.layout.MeasureScope
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.node.CompositionLocalConsumerModifierNode
+import androidx.compose.ui.node.DrawModifierNode
 import androidx.compose.ui.node.LayoutAwareModifierNode
 import androidx.compose.ui.node.LayoutModifierNode
 import androidx.compose.ui.node.ModifierNodeElement
@@ -324,7 +326,7 @@ internal class StaggeredEntranceNode(
     var distance: Dp,
     var stepMillis: Long,
     var replayable: Boolean = true,
-) : Modifier.Node(), LayoutModifierNode, LayoutAwareModifierNode, CompositionLocalConsumerModifierNode, ObserverModifierNode {
+) : Modifier.Node(), LayoutModifierNode, LayoutAwareModifierNode, CompositionLocalConsumerModifierNode, ObserverModifierNode, DrawModifierNode {
 
     private var state: EntranceState? = null
 
@@ -335,6 +337,12 @@ internal class StaggeredEntranceNode(
 
     /** 一旦播放过就一直走图层（避免动画结束时图层抖动）；从未播放过则不挂图层。 */
     private var layerActive = false
+    private var drawnWithoutEntrance = false
+
+    override fun ContentDrawScope.draw() {
+        if (!replayable && !layerActive) drawnWithoutEntrance = true
+        drawContent()
+    }
 
     /** 只存一份的图层块：动画值在块里读取，变化只失效图层，放置时不分配。 */
     private val layerBlock: GraphicsLayerScope.() -> Unit = block@{
@@ -404,7 +412,7 @@ internal class StaggeredEntranceNode(
         if (st == null) return
         st.attach(this)
         // 与旧版「组合时 isFresh」同一时刻决定：入场窗口内、未被拖动跳过、「增强」档才播放
-        if (MotionMode.enhanced && st.isFresh()) beginPlay(st, relayout)
+        if (MotionMode.enhanced && st.isFresh() && (replayable || !drawnWithoutEntrance)) beginPlay(st, relayout)
     }
 
     /** 卸载时解除节拍登记并丢弃动画，避免懒列表复用继承半透明状态。 */
@@ -416,6 +424,7 @@ internal class StaggeredEntranceNode(
         // 卸载 = 旧版整个组合被销毁：丢掉动画；重新挂载（懒列表复用）按新元素重新决定，不会停在半透明
         anim = null
         layerActive = false
+        drawnWithoutEntrance = false
         placedCoordinates = null
     }
 
@@ -434,7 +443,7 @@ internal class StaggeredEntranceNode(
     fun onReplay(st: EntranceState, slot: Int) {
         if (!MotionMode.enhanced) return
         // 只入场一次的元素（书架的书 / 搁板）：播过一次之后不再随切回标签页重播
-        if (!replayable && layerActive) return
+        if (!replayable && (layerActive || drawnWithoutEntrance)) return
         beginPlay(st, relayout = true, slotOverride = slot)
     }
 

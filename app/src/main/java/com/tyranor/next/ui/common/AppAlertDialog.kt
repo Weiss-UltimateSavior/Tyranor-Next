@@ -117,9 +117,13 @@ internal class AppDialogSpec(
     val dismissButton: (@Composable () -> Unit)?,
     val buttonArrangement: Arrangement.Horizontal,
     val textScrollEnabled: Boolean,
-    val dismissEnabled: Boolean,
+    dismissEnabled: Boolean,
     val showButtonRow: Boolean,
-)
+    private val dismissEnabledNow: (() -> Boolean)? = null,
+) {
+    private val fallbackDismissEnabled = dismissEnabled
+    val dismissEnabled: Boolean get() = dismissEnabledNow?.invoke() ?: fallbackDismissEnabled
+}
 
 /**
  * 弹窗的替代宿主：组合树里提供了它时，[AppAlertDialog] 不另开窗口，把同一份标题 / 正文 / 按钮交给宿主摆放。
@@ -148,7 +152,8 @@ internal fun Modifier.dialogListFixedHeight(windowHeight: Dp): Modifier =
 /**
  * Miuix 风格弹窗：小屏底部弹入 + 窗口变暗 + 标题居中。
  * 面板和圆角跟随动态主题，动画节奏复刻 miuix OverlayDialog。
- * dismissEnabled 在退场前阻止关闭；已接受的退场始终交付 onDismissRequest。
+ * [dismissEnabledNow] 若提供则覆盖 [dismissEnabled]，在处理关闭时读取实时状态，无需等待重组。
+ * 门禁只影响是否接受关闭，不拦截已接受退场的回调或应用锁的强制关闭。
  */
 @Composable
 internal fun AppAlertDialog(
@@ -176,6 +181,7 @@ internal fun AppAlertDialog(
      * （如归档进度弹窗），必须传入不经过该守卫的收尾动作，否则独立窗口会留在锁门之上。
      */
     onLockDismiss: (() -> Unit)? = null,
+    dismissEnabledNow: (() -> Boolean)? = null,
 ) {
     // 应用锁生效时**退出组合**而不是只请求关闭：弹窗是独立窗口，层级在锁门之上；
     // 调用方若在 onDismissRequest 里有「运行中只能重建」等守卫，只发回调会让窗口留在门上方。
@@ -199,6 +205,7 @@ internal fun AppAlertDialog(
                 textScrollEnabled = textScrollEnabled,
                 dismissEnabled = dismissEnabled,
                 showButtonRow = showButtonRow,
+                dismissEnabledNow = dismissEnabledNow,
             ),
         )
         return
@@ -229,6 +236,9 @@ internal fun AppAlertDialog(
     val pendingExitDelivered = remember { mutableStateOf(false) }
     val currentOnDismiss by rememberUpdatedState(onDismissRequest)
     val currentDismissEnabled by rememberUpdatedState(dismissEnabled)
+    val currentDismissEnabledNow by rememberUpdatedState(dismissEnabledNow)
+    fun canDismiss(): Boolean = currentDismissEnabledNow?.invoke() ?: currentDismissEnabled
+
     val focusManager = LocalFocusManager.current
     val lifecycleOwner = LocalLifecycleOwner.current
     // Dialog 内容是独立的 Compose 根，自带一个焦点管理器；这里拿到的 focusManager 只管页面层。
@@ -399,7 +409,7 @@ internal fun AppAlertDialog(
 
     /** 接受一次允许的关闭请求，先释放触摸并同步退场，再交付最新关闭回调。 */
     fun dismiss() {
-        if (!currentDismissEnabled || dismissing.value || inTail()) return
+        if (!canDismiss() || dismissing.value || inTail()) return
         dismissing.value = true
         pendingExitIsDismiss.value = true
         pendingExitAction.value = { currentOnDismiss() }
@@ -437,7 +447,7 @@ internal fun AppAlertDialog(
         // 弹窗窗口避让到键盘之上，Compose 仍上报完整 IME inset，imePadding 会再抬一次（离键盘过远）。
         properties = DialogProperties(usePlatformDefaultWidth = false,
             decorFitsSystemWindows = false,
-            dismissOnBackPress = currentDismissEnabled, dismissOnClickOutside = currentDismissEnabled),
+            dismissOnBackPress = canDismiss(), dismissOnClickOutside = canDismiss()),
     ) {
         dialogFocus[0] = LocalFocusManager.current
         dialogView[0] = LocalView.current
@@ -446,7 +456,7 @@ internal fun AppAlertDialog(
             progress = { dimAlpha.value },
             onWindow = { dialogWindow[0] = it },
             onDismissRequest = { dismiss() },
-            dismissEnabled = currentDismissEnabled,
+            dismissEnabled = canDismiss(),
             onScrimTap = { scrimTapDuringExit(it) },
         ) {
             // 弹窗整体（卡片 + 可选的超框内容）：底部对齐，从屏底弹入

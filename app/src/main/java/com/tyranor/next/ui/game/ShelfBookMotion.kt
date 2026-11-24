@@ -11,8 +11,6 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -63,6 +61,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.constrainHeight
+import androidx.compose.ui.unit.constrainWidth
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -371,6 +371,7 @@ internal class ShelfBookMotion(
     private enum class CloseMode { Fly, Interrupted, Reopened }
 
     private var closeMode = CloseMode.Fly
+    private var closeGeneration = 0
     private var closeJob: Job? = null
 
     /** 合上并落回书架；[velocity] 是封面合上方向的初速度（每秒多少个「全开」）。 */
@@ -378,6 +379,7 @@ internal class ShelfBookMotion(
         if (closing) return
         closing = true
         closeMode = CloseMode.Fly
+        val generation = ++closeGeneration
         openJob?.cancel()
         openJob = null
         if (!enhanced) {
@@ -414,7 +416,9 @@ internal class ShelfBookMotion(
                     presence.animateTo(0f, BOOK_HANDOFF)
                 }
             } finally {
-                if (closeMode == CloseMode.Fly) withContext(NonCancellable) { deliver() }
+                withContext(NonCancellable) {
+                    if (generation == closeGeneration && closeMode == CloseMode.Fly) deliver()
+                }
             }
         }
     }
@@ -567,6 +571,11 @@ internal class ShelfBookMotion(
         }
     }
 
+    fun dragCancel() {
+        if (!enhanced || closing) return
+        scope.launch { cover.animateTo(1f, BOOK_COVER_OPEN) }
+    }
+
     internal fun deliverIfLeaving(event: Lifecycle.Event) {
         // 旋转 / 重建前先走 onSaveInstanceState：正在合上的书在暂停时提前交还，免得重建后又摊开；
         // 等游戏盖上来再收起的那一种在 onStop 时交还
@@ -699,6 +708,10 @@ internal class ShelfBookPages(
     /** 正在翻回、翻完才交付的关闭（[closeTop]）；宿主暂停时立即交付（见 [deliverPending]）。 */
     private var pendingClose: PendingClose? = null
 
+    private class PageDrag(val leaf: ShelfBookLeaf, val below: Animatable<Float, AnimationVector1D>)
+
+    private var drag: PageDrag? = null
+
     private class PendingClose(
         val leaf: ShelfBookLeaf,
         val below: Animatable<Float, AnimationVector1D>,
@@ -729,7 +742,9 @@ internal class ShelfBookPages(
         }
     }
 
-    private fun push(leaf: ShelfBookLeaf) {
+    internal fun push(leaf: ShelfBookLeaf) {
+        dragCancel()
+        val turn = turnOf(leaves.size)
         val replaced = ghost?.takeIf { ghostPending }
         if (replaced != null) {
             // 同一帧里先撤掉了上一页：不再把它翻回来盖住，改成它往前翻过去
@@ -740,17 +755,21 @@ internal class ShelfBookPages(
             ghost = null
             leaves.add(leaf)
             depart(replaced, above = leaf)
+            if (turn.value != 1f) openPage(turn)
             return
         }
-        val turn = turnOf(leaves.size)
         leaves.add(leaf)
         justPushed = leaf
         scope.launch {
             withFrameNanos { }
             if (justPushed === leaf) justPushed = null
         }
+        openPage(turn)
+    }
+
+    private fun openPage(turn: Animatable<Float, AnimationVector1D>, velocity: Float = 0f) {
         scope.launch {
-            if (enhanced && resumed()) turn.animateTo(1f, BOOK_PAGE_TURN) else turn.snapTo(1f)
+            if (enhanced && resumed()) turn.animateTo(1f, BOOK_PAGE_TURN, initialVelocity = velocity) else turn.snapTo(1f)
         }
     }
 
@@ -779,9 +798,11 @@ internal class ShelfBookPages(
         return if (index < 0) 1f else turnOf(index).value
     }
 
-    private fun remove(leaf: ShelfBookLeaf) {
+    internal fun remove(leaf: ShelfBookLeaf) {
         val index = leaves.indexOf(leaf)
         if (index < 0) return
+        val dragged = drag
+        if (dragged != null && (dragged.leaf === leaf || dragged.below === leaf.turn)) drag = null
         val top = index == leaves.lastIndex
         // 换页的另一种先后：新的一页已经翻开、这一页正被翻过去时它才被撤掉，就让它照常翻完再撤
         val above = leaves.getOrNull(index + 1)
@@ -829,6 +850,7 @@ internal class ShelfBookPages(
             return
         }
         if (leaf.leaving) return
+        drag = null
         leaf.leaving = true
         val below = turnOf(leaves.size - 1)
         val pending = PendingClose(leaf, below, action)
@@ -881,34 +903,52 @@ internal class ShelfBookPages(
         }
         closeTop {
             val latest = leaf.spec
-            if (latest != null) latest.onDismissRequest() else if (leaves.remove(leaf)) leaf.release()
+            if (latest != null) latest.onDismissRequest() else remove(leaf)
         }
+    }
+
+    fun dragStart() {
+        if (!enhanced) return
+        val leaf = leaves.lastOrNull() ?: return
+        if (!leaf.leaving) drag = PageDrag(leaf, turnOf(leaves.lastIndex))
     }
 
     /** 往右拖：最上面那一页下面的那一页跟着手指翻回来，拖过 [span] 像素翻到底。 */
     fun dragBy(delta: Float, span: Float) {
-        val leaf = leaves.lastOrNull() ?: return
-        if (!enhanced || leaf.leaving || span <= 0f) return
-        val below = turnOf(leaves.size - 1)
+        val current = drag ?: return
+        if (span <= 0f || !ownsTop(current)) return
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            below.snapTo((below.value - delta / span).coerceIn(0f, 1f))
+            current.below.snapTo((current.below.value - delta / span).coerceIn(0f, 1f))
         }
     }
 
     /** 松手：翻回过半或往右甩得够快就关闭这一页，否则弹回翻开。 */
     fun dragEnd(velocity: Float, span: Float) {
-        val leaf = leaves.lastOrNull() ?: return
-        if (!enhanced || leaf.leaving || span <= 0f) return
-        val below = turnOf(leaves.size - 1)
+        val current = drag ?: return
+        drag = null
+        if (!ownsTop(current)) return
+        if (span <= 0f) {
+            openPage(current.below)
+            return
+        }
         val turnVelocity = -velocity / span
-        val spec = leaf.spec
-        val closable = spec == null || spec.dismissEnabled
-        if (closable && (below.value < BOOK_DRAG_CLOSE_AT || turnVelocity < -BOOK_DRAG_CLOSE_SPEED)) {
+        if (current.leaf.spec?.dismissEnabled != false &&
+            (current.below.value < BOOK_DRAG_CLOSE_AT || turnVelocity < -BOOK_DRAG_CLOSE_SPEED)
+        ) {
             dismissTop()
         } else {
-            scope.launch { below.animateTo(1f, BOOK_PAGE_TURN, initialVelocity = turnVelocity) }
+            openPage(current.below, turnVelocity)
         }
     }
+
+    fun dragCancel() {
+        val current = drag ?: return
+        drag = null
+        if (ownsTop(current)) openPage(current.below)
+    }
+
+    private fun ownsTop(current: PageDrag): Boolean =
+        leaves.lastOrNull() === current.leaf && !current.leaf.leaving && turnOf(leaves.lastIndex) === current.below
 
     fun releaseAll() {
         leaves.forEach { it.release() }
@@ -1691,9 +1731,8 @@ internal fun Modifier.shelfBookTabPageWash(motion: ShelfBookTabMotion, tint: Col
  * 书页逐字晕墨显影文字：
  * - 静止期与退场期直接渲染单个普通 `Text`（零额外图层与排版开销）；
  * - 增强档新页进场期间按字符/短段逐个从高斯墨晕中浮现清晰（单行通过定制 `Layout` 保留 [FirstBaseline] 与紧致宽度，
- *   多行使用 [FlowRow] 自然折行）。
+ *   多行保留原生 Text 的折行与省略，对整段做显影）。
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ShelfBookInkText(
     text: String,
@@ -1708,10 +1747,14 @@ internal fun ShelfBookInkText(
     overflow: TextOverflow = TextOverflow.Ellipsis,
     textAlign: TextAlign? = null,
 ) {
-    if (!tabMotion.enhanced || !tabMotion.isTransitioning || tabRole == ShelfBookTabRole.Exiting || text.isEmpty()) {
+    if (maxLines != 1 || !tabMotion.enhanced || !tabMotion.isTransitioning || tabRole == ShelfBookTabRole.Exiting || text.isEmpty()) {
         Text(
             text = text,
-            modifier = modifier,
+            modifier = if (maxLines != 1 && tabRole == ShelfBookTabRole.Entering) {
+                modifier.shelfBookTabItem(tabMotion, tabRole, order, subDelay)
+            } else {
+                modifier
+            },
             style = style,
             color = color,
             maxLines = maxLines,
@@ -1747,38 +1790,32 @@ internal fun ShelfBookInkText(
             )
         }
     }
-    if (maxLines == 1) {
-        Layout(content = content, modifier = modifier.clipToBounds()) { measurables, constraints ->
-            val loose = Constraints(maxWidth = Constraints.Infinity, maxHeight = constraints.maxHeight)
-            val placeables = measurables.map { it.measure(loose) }
-            val totalWidth = placeables.sumOf { it.width }
-            val height = placeables.maxOfOrNull { it.height } ?: constraints.minHeight
-            val layoutWidth = totalWidth.coerceIn(constraints.minWidth, constraints.maxWidth)
-            val firstPlaceable = placeables.firstOrNull()
-            val firstBaseline = firstPlaceable?.get(FirstBaseline)?.takeIf { it != AlignmentLine.Unspecified }
-            val alignmentLines: Map<AlignmentLine, Int> = if (firstBaseline != null) {
-                val firstY = (height - firstPlaceable.height) / 2
-                mapOf<AlignmentLine, Int>(FirstBaseline to firstY + firstBaseline)
-            } else {
-                emptyMap()
-            }
-            val startX = when {
-                totalWidth >= layoutWidth -> 0
-                textAlign == TextAlign.Center -> (layoutWidth - totalWidth) / 2
-                textAlign == TextAlign.End || textAlign == TextAlign.Right -> layoutWidth - totalWidth
-                else -> 0
-            }
-            layout(layoutWidth, height, alignmentLines) {
-                var x = startX
-                for (p in placeables) {
-                    p.placeRelative(x, (height - p.height) / 2)
-                    x += p.width
-                }
-            }
+    Layout(content = content, modifier = modifier.clipToBounds()) { measurables, constraints ->
+        val loose = Constraints(maxWidth = Constraints.Infinity, maxHeight = constraints.maxHeight)
+        val placeables = measurables.map { it.measure(loose) }
+        val totalWidth = placeables.sumOf { it.width }
+        val height = placeables.maxOfOrNull { it.height } ?: constraints.minHeight
+        val layoutWidth = totalWidth.coerceIn(constraints.minWidth, constraints.maxWidth)
+        val firstPlaceable = placeables.firstOrNull()
+        val firstBaseline = firstPlaceable?.get(FirstBaseline)?.takeIf { it != AlignmentLine.Unspecified }
+        val alignmentLines: Map<AlignmentLine, Int> = if (firstBaseline != null) {
+            val firstY = (height - firstPlaceable.height) / 2
+            mapOf<AlignmentLine, Int>(FirstBaseline to firstY + firstBaseline)
+        } else {
+            emptyMap()
         }
-    } else {
-        FlowRow(modifier = modifier) {
-            content()
+        val startX = when {
+            totalWidth >= layoutWidth -> 0
+            textAlign == TextAlign.Center -> (layoutWidth - totalWidth) / 2
+            textAlign == TextAlign.End || textAlign == TextAlign.Right -> layoutWidth - totalWidth
+            else -> 0
+        }
+        layout(layoutWidth, height, alignmentLines) {
+            var textX = startX
+            for (placeable in placeables) {
+                placeable.placeRelative(textX, (height - placeable.height) / 2)
+                textX += placeable.width
+            }
         }
     }
 }
@@ -1979,6 +2016,16 @@ internal class ShelfBookLayoutMorph(
             leftPageWidth = leftPageWidth.value.dp,
         )
 
+    private var rotationPaperFrame by mutableStateOf<ShelfBookFrame?>(null)
+
+    private fun viewportFlipped(width: Dp, height: Dp): Boolean = lastViewportWidth > 0.dp &&
+        ((lastViewportWidth > lastViewportHeight) != (width > height))
+
+    fun rotationPageLayout(target: ShelfBookFrame, width: Dp, height: Dp, tablet: Boolean): ShelfBookFrame? {
+        if (!tablet || !enhanced) return null
+        return if (viewportFlipped(width, height)) target else rotationPaperFrame
+    }
+
     /** 同步裁剪当前视觉帧至最新视口安全边界，消除旋转首帧尚未执行 [LaunchedEffect] 前的越界裁底。 */
     fun visualFrame(viewportWidth: Dp, viewportHeight: Dp): ShelfBookFrame =
         shelfBookMorphReprojectedStart(animatedFrame, viewportWidth, viewportHeight)
@@ -2016,7 +2063,7 @@ internal class ShelfBookLayoutMorph(
             ((prev == ShelfBookLayoutMode.Spread) != (currentMode == ShelfBookLayoutMode.Spread))
     }
 
-    fun update(target: ShelfBookFrame, viewportWidth: Dp, viewportHeight: Dp, flightReady: Boolean) {
+    fun update(target: ShelfBookFrame, viewportWidth: Dp, viewportHeight: Dp, flightReady: Boolean, tablet: Boolean) {
         val immediate = !initialized || !flightReady || !ValueAnimator.areAnimatorsEnabled()
         if (immediate) {
             initialized = true
@@ -2025,6 +2072,7 @@ internal class ShelfBookLayoutMorph(
             morphGeneration++
             geometryJob?.cancel()
             morphJob?.cancel()
+            rotationPaperFrame = null
             previousMode = null
             currentMode = target.layoutMode
             animateMorphEffects = false
@@ -2042,8 +2090,7 @@ internal class ShelfBookLayoutMorph(
             return
         }
 
-        val viewportFlipped = lastViewportWidth > 0.dp &&
-            ((lastViewportWidth > lastViewportHeight) != (viewportWidth > viewportHeight))
+        val viewportFlipped = viewportFlipped(viewportWidth, viewportHeight)
         lastViewportWidth = viewportWidth
         lastViewportHeight = viewportHeight
         val modeChanged = target.layoutMode != currentMode
@@ -2072,6 +2119,15 @@ internal class ShelfBookLayoutMorph(
         val currentSnap = animatedFrame
         val start = shelfBookMorphReprojectedStart(currentSnap, viewportWidth, viewportHeight)
         geometryJob?.cancel()
+        val paperFrame = target.takeIf { tablet && (viewportFlipped || rotationPaperFrame != null) }
+        rotationPaperFrame = paperFrame
+        if (modeChanged) {
+            val spreadBoundary = (currentMode == ShelfBookLayoutMode.Spread) != (target.layoutMode == ShelfBookLayoutMode.Spread)
+            val peak = if (spreadBoundary) BOOK_MORPH_HINGE_LARGE_DEG else BOOK_MORPH_HINGE_SAME_DEG
+            startModeTransition(target.layoutMode, animateFX = true, durationMs = BOOK_MORPH_MILLIS, peakDeg = peak)
+        } else if (viewportFlipped) {
+            startSameModeBreath(peakDeg = BOOK_MORPH_HINGE_SAME_DEG, durationMs = BOOK_MORPH_SAME_BREATH_MILLIS)
+        }
         geometryJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             if (start !== currentSnap) {
                 gutterX.snapTo(start.gutterX.value)
@@ -2082,20 +2138,19 @@ internal class ShelfBookLayoutMorph(
             }
             val targetPaper = leftPaperTarget(target.layoutMode)
             val targetTab = tabBarTarget(target.layoutMode)
-            launch { gutterX.animateTo(target.gutterX.value, BOOK_MORPH_GEOMETRY_SPRING) }
-            launch { top.animateTo(target.top.value, BOOK_MORPH_GEOMETRY_SPRING) }
-            launch { pageWidth.animateTo(target.pageWidth.value, BOOK_MORPH_GEOMETRY_SPRING) }
-            launch { pageHeight.animateTo(target.pageHeight.value, BOOK_MORPH_GEOMETRY_SPRING) }
-            launch { leftPageWidth.animateTo(target.leftPageWidth.value, BOOK_MORPH_GEOMETRY_SPRING) }
-            launch { leftPaperWeight.animateTo(targetPaper, BOOK_MORPH_WEIGHT_SPRING) }
-            launch { tabBarWeight.animateTo(targetTab, BOOK_MORPH_WEIGHT_SPRING) }
-        }
-        if (modeChanged) {
-            val spreadBoundary = (currentMode == ShelfBookLayoutMode.Spread) != (target.layoutMode == ShelfBookLayoutMode.Spread)
-            val peak = if (spreadBoundary) BOOK_MORPH_HINGE_LARGE_DEG else BOOK_MORPH_HINGE_SAME_DEG
-            startModeTransition(target.layoutMode, animateFX = true, durationMs = BOOK_MORPH_MILLIS, peakDeg = peak)
-        } else if (viewportFlipped) {
-            startSameModeBreath(peakDeg = BOOK_MORPH_HINGE_SAME_DEG, durationMs = BOOK_MORPH_SAME_BREATH_MILLIS)
+            coroutineScope {
+                launch { gutterX.animateTo(target.gutterX.value, BOOK_MORPH_GEOMETRY_SPRING) }
+                launch { top.animateTo(target.top.value, BOOK_MORPH_GEOMETRY_SPRING) }
+                launch { pageWidth.animateTo(target.pageWidth.value, BOOK_MORPH_GEOMETRY_SPRING) }
+                launch { pageHeight.animateTo(target.pageHeight.value, BOOK_MORPH_GEOMETRY_SPRING) }
+                launch { leftPageWidth.animateTo(target.leftPageWidth.value, BOOK_MORPH_GEOMETRY_SPRING) }
+                launch { leftPaperWeight.animateTo(targetPaper, BOOK_MORPH_WEIGHT_SPRING) }
+                launch { tabBarWeight.animateTo(targetTab, BOOK_MORPH_WEIGHT_SPRING) }
+            }
+            if (paperFrame != null) {
+                morphJob?.join()
+                rotationPaperFrame = null
+            }
         }
     }
 
@@ -2149,6 +2204,7 @@ internal fun rememberShelfBookLayoutMorph(
     target: ShelfBookFrame,
     viewportWidth: Dp,
     viewportHeight: Dp,
+    tablet: Boolean,
     flightReady: () -> Boolean,
 ): ShelfBookLayoutMorph {
     val enhanced = MotionMode.enhanced
@@ -2163,11 +2219,32 @@ internal fun rememberShelfBookLayoutMorph(
         target.layoutMode,
         viewportWidth,
         viewportHeight,
+        tablet,
     ) {
-        morph.update(target, viewportWidth, viewportHeight, flightReady())
+        morph.update(target, viewportWidth, viewportHeight, flightReady(), tablet)
     }
     return morph
 }
+
+internal fun shelfBookPaperScale(finalSize: IntSize, slotSize: IntSize): Float =
+    minOf(slotSize.width.toFloat() / finalSize.width, slotSize.height.toFloat() / finalSize.height)
+
+/** 正文按旋转终态测量，在逐帧变化的纸面里靠书脊等比缩放。 */
+internal fun Modifier.shelfBookFitPaper(finalSize: IntSize?, gutterAtRight: Boolean = false): Modifier =
+    if (finalSize == null) this else layout { measurable, constraints ->
+        val placeable = measurable.measure(Constraints.fixed(finalSize.width, finalSize.height))
+        val slot = IntSize(constraints.constrainWidth(placeable.width), constraints.constrainHeight(placeable.height))
+        val scale = shelfBookPaperScale(finalSize, slot)
+        val left = if (gutterAtRight) (slot.width - placeable.width * scale).roundToInt() else 0
+        val top = ((slot.height - placeable.height * scale) / 2f).roundToInt()
+        layout(slot.width, slot.height) {
+            placeable.placeWithLayer(left, top) {
+                transformOrigin = TransformOrigin(0f, 0f)
+                scaleX = scale
+                scaleY = scale
+            }
+        }
+    }
 
 /**
  * 左页交互层（`Spread` 管理页）显隐、散焦交叉与同步 3D 翻合：

@@ -597,10 +597,10 @@ fun ProvideMotionEnvironment(content: @Composable () -> Unit) {
     CompositionLocalProvider(LocalOverscrollFactory provides overscroll) {
         // 主题揭开宿主：切换深浅色 / 外观主题时的整屏过渡（见 ThemeReveal.kt）；不改布局
         // 提示条槽位（页面根）：与主题揭开宿主叠放，提示条只在自己的矩形内拦截触摸
-        Box(propagateMinConstraints = true) {
-            // 屏幕旋转（平板横竖屏）过渡宿主：旧画面随设备转过去、新布局转进来（见 ScreenRotation.kt）；不改布局
-            ScreenRotationHost { ThemeRevealHost(content) }
-            NoticeHost(Modifier.matchParentSize())
+        val rotation = remember { ScreenRotationState() }
+        Box(Modifier.blockRotationTouches(rotation), propagateMinConstraints = true) {
+            ScreenRotationHost(rotation) { ThemeRevealHost(content) }
+            NoticeHost(Modifier.matchParentSize().handoffRotationNotice(rotation))
         }
     }
 }

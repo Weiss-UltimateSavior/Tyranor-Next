@@ -1,11 +1,14 @@
 package com.tyranor.next.ui.game
 
+import androidx.compose.foundation.lazy.LazyListItemInfo
+import androidx.compose.foundation.lazy.LazyListLayoutInfo
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -132,11 +135,60 @@ class ShelfCatalogLayoutTest {
         val rows = buildShelfCatalogVerticalRows(games, columns = 3, groupByEngine = true)
         assertEquals(3, findShelfCatalogAnchorRow(rows, "content://games/4"))
         assertEquals(4, findShelfCatalogAnchorRow(rows, "content://games/5"))
-        assertEquals(0, findShelfCatalogAnchorRow(rows, "content://games/missing"))
+        assertEquals(-1, findShelfCatalogAnchorRow(rows, "content://games/missing"))
 
         assertEquals(1 to 2, findShelfCatalogGridCoord(rows, "content://games/4"))
         assertEquals(2 to 0, findShelfCatalogGridCoord(rows, "content://games/5"))
         assertNull(findShelfCatalogGridCoord(rows, "content://games/missing"))
+    }
+
+    @Test
+    fun alignedScrollDistinguishesMissingAnchorFromFirstRow() {
+        val rows = buildShelfCatalogCoverRows((0 until 6).map { fakeGame(it) }, columns = 3, groupByEngine = false)
+        assertEquals(0 to 40, shelfCatalogAlignedScroll(rows, "content://games/1", 20f, 100f, 60f))
+        assertNull(shelfCatalogAlignedScroll(rows, "content://games/missing", 20f, 100f, 60f))
+        assertEquals(0, shelfCatalogInitialRow(rows, "content://games/missing", visibleTiersHint = 2))
+    }
+
+    @Test
+    fun reflowFindsOldCenterEvenWhenDifferentColumnsProduceTheSameRowCount() {
+        val games = (0 until 85).map { fakeGame(it) }
+        val before = buildShelfCatalogVerticalRows(games, columns = 21, groupByEngine = false)
+        val after = buildShelfCatalogVerticalRows(games, columns = 18, groupByEngine = false)
+        val oldLayout = object : LazyListLayoutInfo {
+            override val totalItemsCount = before.size + 1
+            override val viewportStartOffset = 0
+            override val viewportEndOffset = 100
+            override val visibleItemsInfo = listOf(object : LazyListItemInfo {
+                override val index = 3
+                override val key = before[index].key
+                override val offset = 0
+                override val size = 100
+            })
+        }
+        assertEquals(before.size, after.size)
+        val anchor = resolveCatalogCenterUri(oldLayout, before)
+        assertEquals(games[73].uri, anchor)
+        assertNull(resolveCatalogCenterUri(oldLayout, after))
+        assertEquals(4, shelfCatalogInitialRow(after, anchor, visibleTiersHint = 2))
+    }
+
+    @Test
+    fun focusAcknowledgementRejectsMissingWrongAndSupersededRequests() {
+        val stage = ShelfCatalogStage()
+        val first = stage.requestFocus("first")
+        stage.clearPendingFocus(first)
+        assertFalse(stage.markFocusAligned(first, "first"))
+        assertEquals(0, stage.settledFocusToken)
+
+        val second = stage.requestFocus("second")
+        stage.clearPendingFocus(first)
+        assertFalse(stage.markFocusAligned(first, "second"))
+        assertFalse(stage.markFocusAligned(second, "first"))
+        assertEquals("second", stage.pendingFocusUri)
+        assertTrue(stage.markFocusAligned(second, "second"))
+        assertEquals(second, stage.settledFocusToken)
+        assertNull(stage.pendingFocusUri)
     }
 
     @Test
@@ -338,6 +390,72 @@ class ShelfCatalogLayoutTest {
             val factor = shelfCatalogSpineHeightFactor(uri)
             assertEquals(factor, shelfCatalogSpineHeightFactor(uri), 0f)
             assertTrue("factor $factor out of range", factor in 0.88f..1f)
+        }
+    }
+
+    @Test
+    fun interruptedPickContinuesFullPoseThroughStaggerAndTurnsTowardNewHeroLanding() {
+        val game = fakeGame(1)
+        val original = ShelfCatalogBookOrigin(
+            uri = game.uri,
+            pageIndex = 1,
+            frontRect = Rect(40f, 300f, 220f, 566f),
+            spineRect = Rect(100f, 300f, 134f, 566f),
+            spineThicknessPx = 36f,
+            boxHeightPx = 266f,
+            coverWidthPx = 200f,
+            yawDegrees = -86f,
+            tiltDegrees = 3f,
+            tint = Color.Blue,
+            isHero = false,
+            leanDegrees = -1.3f,
+            frontShade = 0.42f,
+            spineShade = 0.1f,
+        )
+        val hero = ShelfCatalogBookOrigin(
+            uri = original.uri,
+            pageIndex = 3,
+            frontRect = original.frontRect,
+            spineRect = Rect(280f, 240f, 322f, 540f),
+            spineThicknessPx = 42f,
+            boxHeightPx = 300f,
+            coverWidthPx = 225f,
+            yawDegrees = 14f,
+            tiltDegrees = 5f,
+            tint = original.tint,
+            isHero = true,
+            leanDegrees = 0f,
+            frontShade = 0f,
+            spineShade = 0f,
+            heroFactor = 1f,
+        )
+        for (mode in ShelfCatalogLayoutMode.entries) {
+            val slot = if (mode == ShelfCatalogLayoutMode.SPINES) {
+                Rect(60f, 420f, 90f, 558f)
+            } else {
+                Rect(60f, 420f, 180f, 582f)
+            }
+            val entering = ShelfCatalogBookFlight(
+                game, 1, original, slot, mode, 0.18f, 15f, false, false, 90f, catalogLeanDegrees = -6.5f,
+            )
+            val takeoff = shelfCatalogBookPose(0.20f, entering)
+            assertTrue(takeoff.facingSign < 0f)
+            val returning = ShelfCatalogBookFlight(
+                game, 1, hero, slot, mode, 0.18f, 20f, true, false, 200f,
+                catalogLeanDegrees = -6.5f,
+                takeoffPose = takeoff,
+            )
+            assertEquals(takeoff, shelfCatalogBookPose(0f, returning))
+            assertEquals(takeoff, shelfCatalogBookPose(0.18f, returning))
+            assertEquals(takeoff, shelfCatalogBookPose(0.8f, entering.fadeFrom(0.20f)))
+            val poses = (0..1000).map { shelfCatalogBookPose(it / 1000f, returning) }
+            val facingChange = poses.zipWithNext().first { (before, after) -> before.facingSign != after.facingSign }
+            assertTrue(facingChange.first.absYawDeg > 89f && facingChange.second.absYawDeg > 89f)
+            val landing = poses.last()
+            assertEquals(hero.spineRect.center.x, landing.spineCenterX, 1e-3f)
+            assertEquals(hero.spineRect.center.y, landing.spineCenterY, 1e-3f)
+            assertEquals(hero.yawDegrees, landing.absYawDeg, 1e-3f)
+            assertEquals(1f, landing.playBadgeAlpha, 1e-3f)
         }
     }
 

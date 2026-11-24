@@ -36,7 +36,7 @@ TopBarIcon notice/NoticeHost
 """.split())
 OWNERS.update("ui/common/motion/" + f + ".kt" for f in """
 BlurText ContentMotion DeleteEffect Entrance ExpandSectionVisibility FeedbackMotion GameCoverMotion
-HostNavigation ListItemMotion MotionMode MotionSprings MotionTokens PagerMotion PageTransitions
+ListItemMotion MotionMode MotionSprings MotionTokens PagerMotion PageTransitions
 ParallaxCardPager PressSquish ReorderPlacementMotion ReplayEntranceSprings ScreenRotation
 ScrollMotion SheetMotion TabPageMotion
 """.split())

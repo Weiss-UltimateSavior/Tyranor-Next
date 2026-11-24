@@ -225,31 +225,42 @@ fun syncDialogWindow(
     // drawnOnly：原生 dim 并入自绘遮罩（两层叠加的合成暗度），原生这一层关掉
     val baseDim = if (drawnOnly) 0f else nativeBase
     val dimEnabled = nativeEnabled && !drawnOnly
-    val drawnScrim = if (drawnOnly && nativeEnabled) {
-        1f - (1f - nativeBase.coerceIn(0f, 1f)) * (1f - scrimAlpha.coerceIn(0f, 1f))
-    } else {
-        scrimAlpha
-    }
+    val foldedNative = if (drawnOnly && nativeEnabled) nativeBase else 0f
+    val drawnScrim = drawnDialogScrim(foldedNative, scrimAlpha, 1f)
+    fun dimAt(amount: Float) = quantizedDim(baseDim, amount)
+    fun scrimAt(amount: Float) = drawnDialogScrim(foldedNative, scrimAlpha, amount)
     val animations = if (preserveWindowAnimations) originalAnimations else 0
     DisposableEffect(window, owner) {
         val binding = if (window != null && owner != null) {
-            DialogWindowDims.bind(owner, window, quantizedDim(baseDim, progress.value()), dimEnabled, animations,
-                baseDim, quantizedDim(drawnScrim, progress.value()), drawnScrim)
+            val amount = progress.value()
+            DialogWindowDims.bind(owner, window, dimAt(amount), dimEnabled, animations, baseDim, scrimAt(amount), drawnScrim)
         } else null
         onDispose { binding?.dispose() }
     }
     SideEffect {
-        if (window != null) DialogWindowDims.update(window, quantizedDim(baseDim, progress.value()), dimEnabled, animations,
-            baseDim, quantizedDim(drawnScrim, progress.value()), drawnScrim)
+        if (window != null) {
+            val amount = progress.value()
+            DialogWindowDims.update(window, dimAt(amount), dimEnabled, animations, baseDim, scrimAt(amount), drawnScrim)
+        }
     }
-    LaunchedEffect(window, baseDim, dimEnabled, animations, drawnScrim) {
+    LaunchedEffect(window, baseDim, dimEnabled, animations, foldedNative, scrimAlpha) {
         if (window == null) return@LaunchedEffect
         // 暗度只有 8 位精度：弹簧尾段肉眼不可辨的微小变化不再触发一次窗口布局与 WMS 调用；两端仍精确落到 0 与 baseDim
-        snapshotFlow { quantizedDim(baseDim, progress.value()) to quantizedDim(drawnScrim, progress.value()) }.collect { (dim, scrim) ->
+        snapshotFlow {
+            val amount = progress.value()
+            dimAt(amount) to scrimAt(amount)
+        }.collect { (dim, scrim) ->
             DialogWindowDims.update(window, dim, dimEnabled, animations, baseDim, scrim, drawnScrim)
         }
     }
     return window
+}
+
+internal fun drawnDialogScrim(nativeBase: Float, scrimBase: Float, progress: Float): Float {
+    if (nativeBase == 0f) return quantizedDim(scrimBase, progress)
+    val native = quantizedDim(nativeBase.coerceIn(0f, 1f), progress)
+    val drawn = quantizedDim(scrimBase.coerceIn(0f, 1f), progress)
+    return 1f - (1f - native) * (1f - drawn)
 }
 
 private fun quantizedDim(baseDim: Float, progress: Float): Float {

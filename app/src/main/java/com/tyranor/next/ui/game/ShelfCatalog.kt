@@ -804,13 +804,14 @@ private fun ShelfCatalogWall(
                 initialFirstVisibleItemIndex = aligned?.first ?: initialRow,
                 initialFirstVisibleItemScrollOffset = aligned?.second ?: 0,
             )
-            KeepCatalogAnchorOnReflow(listState, rows, columns, visibleTiersHint)
+            val keepAnchor = rememberCatalogAnchorOnReflow(listState, rows, columns, visibleTiersHint)
             val jelly = rememberScrollJellyState()
 
             LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .fillMaxSize()
+                    .then(keepAnchor)
                     .shelfCatalogTopFade()
                     .scrollJellyHost(jelly),
                 contentPadding = PaddingValues(top = 6.dp, bottom = 28.dp),
@@ -913,13 +914,14 @@ private fun ShelfCatalogWall(
                 initialFirstVisibleItemIndex = aligned?.first ?: initialRow,
                 initialFirstVisibleItemScrollOffset = aligned?.second ?: 0,
             )
-            KeepCatalogAnchorOnReflow(listState, rows, columns, visibleTiersHint)
+            val keepAnchor = rememberCatalogAnchorOnReflow(listState, rows, columns, visibleTiersHint)
             val jelly = rememberScrollJellyState()
 
             LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .fillMaxSize()
+                    .then(keepAnchor)
                     .shelfCatalogTopFade()
                     .scrollJellyHost(jelly),
                 contentPadding = PaddingValues(top = 6.dp, bottom = 28.dp),
@@ -1016,14 +1018,18 @@ private fun Modifier.shelfCatalogTopFade(): Modifier =
             }
         }
 
-private fun resolveCatalogCenterUri(
+internal fun resolveCatalogCenterUri(
     info: androidx.compose.foundation.lazy.LazyListLayoutInfo,
     rows: List<ShelfCatalogRowItem>,
 ): String? {
     if (info.totalItemsCount != rows.size + 1) return null
     val center = (info.viewportStartOffset + info.viewportEndOffset) / 2
-    val item = info.visibleItemsInfo.minByOrNull { kotlin.math.abs(it.offset + it.size / 2 - center) } ?: return null
-    val games = when (val tier = rows.getOrNull(item.index)) {
+    val item = info.visibleItemsInfo.filter { item ->
+        val row = rows.getOrNull(item.index)
+        row != null && row.key == item.key && row !is ShelfCatalogRowItem.SectionHeader
+    }.minByOrNull { kotlin.math.abs(it.offset + it.size / 2 - center) } ?: return null
+    val tier = rows.getOrNull(item.index)?.takeIf { it.key == item.key } ?: return null
+    val games = when (tier) {
         is ShelfCatalogRowItem.VerticalTier -> tier.games
         is ShelfCatalogRowItem.CoverTier -> tier.games
         else -> null
@@ -1036,30 +1042,40 @@ private fun resolveCatalogCenterUri(
  * 仅在列表停稳或刚完成排布时更新中心锚点，滚动过程中零协程唤醒与可视项遍历；若滑行途中突发转屏则现场读取兜底。
  */
 @Composable
-private fun KeepCatalogAnchorOnReflow(
+private fun rememberCatalogAnchorOnReflow(
     listState: androidx.compose.foundation.lazy.LazyListState,
     rows: List<ShelfCatalogRowItem>,
     columns: Int,
     visibleTiersHint: Int,
-) {
-    val holder = remember { CatalogAnchorHolder() }
-    if (holder.columns != 0 && holder.columns != columns) {
-        val uri = resolveCatalogCenterUri(listState.layoutInfo, rows) ?: holder.centerUri
-        if (uri != null) listState.requestScrollToItem(shelfCatalogInitialRow(rows, uri, visibleTiersHint))
+) : Modifier {
+    val holder = remember(listState) { CatalogAnchorHolder() }
+    SideEffect {
+        if (holder.columns != 0 && holder.columns != columns) {
+            val uri = resolveCatalogCenterUri(listState.layoutInfo, holder.laidOutRows) ?: holder.centerUri
+            if (uri != null && findShelfCatalogAnchorRow(rows, uri) >= 0) {
+                listState.requestScrollToItem(shelfCatalogInitialRow(rows, uri, visibleTiersHint))
+            }
+        }
+        holder.columns = columns
     }
-    holder.columns = columns
     LaunchedEffect(listState, rows) {
         androidx.compose.runtime.snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
             if (!scrolling) {
-                resolveCatalogCenterUri(listState.layoutInfo, rows)?.let { holder.centerUri = it }
+                resolveCatalogCenterUri(listState.layoutInfo, holder.laidOutRows)?.let { holder.centerUri = it }
             }
         }
+    }
+    return Modifier.layout { measurable, constraints ->
+        val placeable = measurable.measure(constraints)
+        holder.laidOutRows = rows
+        layout(placeable.width, placeable.height) { placeable.placeRelative(0, 0) }
     }
 }
 
 private class CatalogAnchorHolder {
     var columns = 0
     var centerUri: String? = null
+    var laidOutRows: List<ShelfCatalogRowItem> = emptyList()
 }
 
 /** 按引擎分架时的书柜章节横梁铭牌。 */
@@ -1972,7 +1988,7 @@ private fun ShelfCatalogTroupeBook(
     val highlightStroke = shelfCatalogSelectedChipBorder(accent)
     val gridCover by rememberCoverBitmap(game.coverUri, CoverDecodeTier.GRID)
     val heroCover by rememberCoverBitmap(
-        game.coverUri.takeIf { flight.shelfOrigin.isHero },
+        game.coverUri.takeIf { flight.useHeroCover },
         motion.heroDecodeTier,
     )
     val cover = heroCover ?: gridCover
@@ -1993,7 +2009,8 @@ private fun ShelfCatalogTroupeBook(
                 originProvider = originProvider,
                 containerWidthPx = containerWidthPx,
                 containerHeightPx = containerHeightPx,
-            ),
+            )
+            .then(if (flight.fadeInPlace) Modifier.shelfCatalogTroupeAlpha { motion.fadeInPlaceAlpha() } else Modifier),
         contentAlignment = Alignment.BottomCenter,
     ) {
         // 中层控制单排 Hero 仰角 tilt 与微侧斜倚 lean，旋转中心与单排 / 书脊斜靠支点严格同源
@@ -2129,7 +2146,7 @@ private fun ShelfCatalogTroupeBook(
                         .shelfCatalogTroupeAlpha(modulate = true) { poseProvider().frontShade }
                         .background(ShelfFaceShade),
                 )
-                if (flight.shelfOrigin.heroFactor > 0.05f) {
+                if (flight.shelfOrigin.heroFactor > 0.05f || (flight.takeoffPose?.playBadgeAlpha ?: 0f) > 0f) {
                     Box(Modifier.fillMaxSize()) {
                         ShelfPlayBadge(
                             visibility = { poseProvider().playBadgeAlpha },

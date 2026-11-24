@@ -19,7 +19,6 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -33,9 +32,14 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.node.DrawModifierNode
+import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.node.invalidateDraw
+import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Constraints
@@ -48,8 +52,9 @@ import com.tyranor.next.theme.PageGrey
 import kotlinx.coroutines.flow.collectLatest
 import java.lang.ref.WeakReference
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -105,8 +110,7 @@ internal class ScreenRotationState {
     /** 起止各加一：驱动时钟协程与绘制。 */
     var epoch by mutableIntStateOf(0)
 
-    /** 过渡进行中（给触摸拦截与 [LocalScreenRotationMorph] 用，组合里读）。 */
-    var running by mutableStateOf(false)
+    var noticeDrawNode: RotationNoticeDrawNode? = null
 
     private var transitionGeneration = 0
     private var committedGeneration = 0
@@ -121,16 +125,29 @@ internal class ScreenRotationState {
     fun drawProgress(coverThisFrame: Boolean): Float =
         if (coverThisFrame || transitionGeneration != committedGeneration) 0f else progress
 
+    fun snapshotAlpha(): Float {
+        if (epoch < 0 || !frozen || snapshot == null || rectWidth <= 0 || rectHeight <= 0) return 0f
+        return 1f - smoothStepRotation(drawProgress(coverNextDraw) / SNAPSHOT_FADE_SPAN)
+    }
+
+    fun showsSnapshot(): Boolean = snapshotAlpha() > SNAPSHOT_VISIBLE_ALPHA
+
     /** 布局阶段调用：窗口大小有变化时，判断是否开始过渡（要有 [activity] 刚收到的方向翻转配置变化）。 */
     fun onMeasured(activity: Activity?, size: IntSize, enabled: Boolean) {
         val previous = lastSize
         lastSize = size
-        if (!enabled || activity == null || previous.width <= 0 || previous.height <= 0 || size.width <= 0 || size.height <= 0) return
+        if (!enabled) {
+            if (frozen) finishFromLayout()
+            if (activity != null) ScreenRotationController.discard(activity)
+            return
+        }
+        if (activity == null || previous.isEmptyForRotation() || size.isEmptyForRotation()) return
         // 方向翻转（竖 ↔ 横）才播
         if ((previous.width > previous.height) == (size.width > size.height)) return
         // 上一段还没放完又转了一次：不叠着播，直接放掉，按新方向正常画
         if (frozen) {
             finishFromLayout()
+            ScreenRotationController.discard(activity)
             return
         }
         val taken = ScreenRotationController.take(activity) ?: return
@@ -140,6 +157,7 @@ internal class ScreenRotationState {
         firstFrame = true
         coverNextDraw = true
         transitionGeneration++
+        noticeDrawNode?.invalidateDraw()
         scheduleCommit()
     }
 
@@ -149,6 +167,7 @@ internal class ScreenRotationState {
         coverNextDraw = false
         snapshot = null
         transitionGeneration++
+        noticeDrawNode?.invalidateDraw()
         scheduleCommit()
     }
 
@@ -159,13 +178,7 @@ internal class ScreenRotationState {
 
     private fun commitSnapshotState() {
         committedGeneration = transitionGeneration
-        if (frozen) {
-            progress = 0f
-            running = true
-        } else {
-            progress = 1f
-            running = false
-        }
+        progress = if (frozen) 0f else 1f
         epoch++
     }
 
@@ -174,7 +187,6 @@ internal class ScreenRotationState {
         frozen = false
         firstFrame = false
         coverNextDraw = false
-        running = false
         progress = 1f
         snapshot = null
         committedGeneration = transitionGeneration
@@ -190,6 +202,43 @@ internal class ScreenRotationState {
     }
 }
 
+internal fun Modifier.handoffRotationNotice(state: ScreenRotationState): Modifier =
+    this.then(RotationNoticeDrawElement(state))
+
+internal fun Modifier.blockRotationTouches(state: ScreenRotationState): Modifier = pointerInput(state) {
+    awaitPointerEventScope {
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            if (state.frozen) event.changes.forEach { it.consume() }
+        }
+    }
+}
+
+private data class RotationNoticeDrawElement(val state: ScreenRotationState) : ModifierNodeElement<RotationNoticeDrawNode>() {
+    override fun create() = RotationNoticeDrawNode(state)
+    override fun update(node: RotationNoticeDrawNode) = node.bind(state)
+    override fun InspectorInfo.inspectableProperties() { name = "handoffRotationNotice" }
+}
+
+internal class RotationNoticeDrawNode(private var state: ScreenRotationState) : Modifier.Node(), DrawModifierNode {
+    override fun onAttach() { state.noticeDrawNode = this }
+
+    override fun onDetach() {
+        if (state.noticeDrawNode === this) state.noticeDrawNode = null
+    }
+
+    fun bind(next: ScreenRotationState) {
+        if (next === state) return
+        if (isAttached) onDetach()
+        state = next
+        if (isAttached) onAttach()
+    }
+
+    override fun ContentDrawScope.draw() {
+        if (!state.showsSnapshot()) drawContent()
+    }
+}
+
 /** 当前页面的旋转过渡状态（[rotationMorphBlock] 用）；没有宿主时为 null。 */
 internal val LocalScreenRotationMorph = staticCompositionLocalOf<ScreenRotationState?> { null }
 
@@ -200,73 +249,83 @@ internal val LocalScreenRotationMorph = staticCompositionLocalOf<ScreenRotationS
 internal object ScreenRotationController {
     class Taken(val bitmap: Bitmap?)
 
-    private const val COPY_PENDING = 0
-    private const val COPY_SUCCESS = 1
-    private const val COPY_FAILED = 2
-    private const val COPY_TIMED_OUT = 3
-
     private var owner: WeakReference<Activity>? = null
     private var bitmap: Bitmap? = null
     private var capturedAt = 0L
-    private val copyThread by lazy { HandlerThread("screen-rotation-copy").apply { start() } }
-    private val copyHandler by lazy { Handler(copyThread.looper) }
+    private val copyExecutor = Executors.newSingleThreadExecutor { work -> Thread(work, "screen-rotation-copy") }
+    private val callbackHandler by lazy {
+        val thread = HandlerThread("screen-rotation-copy-result").apply { start() }
+        Handler(thread.looper)
+    }
+    private val copyInFlight = AtomicBoolean(false)
 
     /** 记下 [activity] 刚旋转过，并尽力截下窗口此刻的画面（旧画面）。在主线程调用，截屏最多阻塞 [CAPTURE_LIMIT_MILLIS]。 */
     fun capture(activity: Activity) {
+        val start = SystemClock.uptimeMillis()
         synchronized(this) {
             owner = WeakReference(activity)
-            capturedAt = SystemClock.uptimeMillis()
+            capturedAt = start
             bitmap = null
         }
         val window = activity.window ?: return
         val decor = window.peekDecorView() ?: return
         val width = decor.width
         val height = decor.height
-        if (width <= 0 || height <= 0) return
-        val target = try {
-            Bitmap.createBitmap(
-                (width * SNAPSHOT_SCALE).roundToInt().coerceAtLeast(1),
-                (height * SNAPSHOT_SCALE).roundToInt().coerceAtLeast(1),
-                Bitmap.Config.ARGB_8888,
-            )
-        } catch (_: OutOfMemoryError) {
-            return
-        }
+        if (width <= 0 || height <= 0 || !copyInFlight.compareAndSet(false, true)) return
+        val deadline = start + CAPTURE_LIMIT_MILLIS
         val latch = CountDownLatch(1)
-        val copyState = AtomicInteger(COPY_PENDING)
-        try {
-            // 回调放在专门的线程上：主线程在这里等，回调若也落在主线程会死锁
-            PixelCopy.request(window, target, { result ->
-                val next = if (result == PixelCopy.SUCCESS) COPY_SUCCESS else COPY_FAILED
-                copyState.compareAndSet(COPY_PENDING, next)
-                latch.countDown()
-            }, copyHandler)
-        } catch (_: Exception) {
-            return
+        var resultBitmap: Bitmap? = null
+        fun complete(result: Bitmap? = null) {
+            resultBitmap = result
+            copyInFlight.set(false)
+            latch.countDown()
+        }
+        copyExecutor.execute {
+            try {
+                val handler = callbackHandler
+                if (SystemClock.uptimeMillis() >= deadline) {
+                    complete()
+                    return@execute
+                }
+                val target = Bitmap.createBitmap(
+                    (width * SNAPSHOT_SCALE).roundToInt().coerceAtLeast(1),
+                    (height * SNAPSHOT_SCALE).roundToInt().coerceAtLeast(1),
+                    Bitmap.Config.ARGB_8888,
+                )
+                if (SystemClock.uptimeMillis() >= deadline) {
+                    complete()
+                    return@execute
+                }
+                PixelCopy.request(window, target, { result ->
+                    complete(target.takeIf { result == PixelCopy.SUCCESS })
+                }, handler)
+            } catch (_: Exception) {
+                complete()
+            } catch (_: OutOfMemoryError) {
+                complete()
+            }
         }
         val finished = try {
-            latch.await(CAPTURE_LIMIT_MILLIS, TimeUnit.MILLISECONDS)
+            latch.await((deadline - SystemClock.uptimeMillis()).coerceAtLeast(0L), TimeUnit.MILLISECONDS)
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
             false
         }
-        if (finished && copyState.get() == COPY_SUCCESS) {
+        if (finished && SystemClock.uptimeMillis() <= deadline) {
             synchronized(this) {
-                if (owner?.get() === activity) bitmap = target
+                if (owner?.get() === activity) bitmap = resultBitmap
             }
-        } else {
-            copyState.compareAndSet(COPY_PENDING, COPY_TIMED_OUT)
         }
     }
 
     @Synchronized
     fun take(activity: Activity): Taken? {
+        if (owner?.get() !== activity) return null
         val fresh = SystemClock.uptimeMillis() - capturedAt <= SNAPSHOT_TTL_MILLIS
-        val mine = owner?.get() === activity
         val b = bitmap
         bitmap = null
         owner = null
-        return if (fresh && mine) Taken(b) else null
+        return if (fresh) Taken(b) else null
     }
 
     @Synchronized
@@ -302,7 +361,7 @@ class ScreenRotationSync(private val activity: Activity) {
 }
 
 @Composable
-internal fun ScreenRotationHost(content: @Composable () -> Unit) {
+internal fun ScreenRotationHost(state: ScreenRotationState, content: @Composable () -> Unit) {
     val configuration = LocalConfiguration.current
     val enabled = MotionMode.enhanced &&
         (configuration.smallestScreenWidthDp >= TABLET_MIN_SMALLEST_WIDTH_DP) &&
@@ -311,7 +370,6 @@ internal fun ScreenRotationHost(content: @Composable () -> Unit) {
     val enabledNow = rememberUpdatedState(enabled)
     val context = LocalContext.current
     val activity = remember(context) { PageTransitions.findActivity(context) }
-    val state = remember { ScreenRotationState() }
     val fill = rotationFill()
 
     DisposableEffect(state, activity) {
@@ -346,6 +404,7 @@ internal fun ScreenRotationHost(content: @Composable () -> Unit) {
                     return@drawWithContent
                 }
                 val coverThisFrame = state.coverNextDraw
+                val alpha = state.snapshotAlpha()
                 if (coverThisFrame) {
                     // 第一帧：新方向的正常排版画在底下，整个盖上底色（旧画面在上面画）
                     state.coverNextDraw = false
@@ -356,17 +415,14 @@ internal fun ScreenRotationHost(content: @Composable () -> Unit) {
                     drawContent()
                 }
                 val snapshot = state.snapshot
-                if (snapshot != null && state.rectWidth > 0 && state.rectHeight > 0) {
-                    val alpha = 1f - smoothStepRotation(state.drawProgress(coverThisFrame) / SNAPSHOT_FADE_SPAN)
-                    if (alpha > 0.001f) {
-                        drawImage(
-                            snapshot,
-                            dstOffset = IntOffset(state.rectLeft, state.rectTop),
-                            dstSize = IntSize(state.rectWidth, state.rectHeight),
-                            alpha = alpha,
-                            filterQuality = FilterQuality.Medium,
-                        )
-                    }
+                if (snapshot != null && alpha > SNAPSHOT_VISIBLE_ALPHA) {
+                    drawImage(
+                        snapshot,
+                        dstOffset = IntOffset(state.rectLeft, state.rectTop),
+                        dstSize = IntSize(state.rectWidth, state.rectHeight),
+                        alpha = alpha,
+                        filterQuality = FilterQuality.Medium,
+                    )
                 }
             }
             .layout { measurable, constraints ->
@@ -410,20 +466,10 @@ internal fun ScreenRotationHost(content: @Composable () -> Unit) {
         CompositionLocalProvider(LocalScreenRotationMorph provides state) {
             content()
         }
-        if (state.running) {
-            // 控件还在动：按下去的位置与看到的对不上，过渡期间先不接收触摸
-            Box(
-                Modifier
-                    .matchParentSize()
-                    .pointerInput(Unit) {
-                        awaitPointerEventScope {
-                            while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
-                        }
-                    },
-            )
-        }
     }
 }
+
+private fun IntSize.isEmptyForRotation(): Boolean = width <= 0 || height <= 0
 
 /**
  * 重的内容块（书架的书、藏书阁的书柜、后台的其它标签页）：旋转过渡里不跟着虚拟窗口逐帧重排——
@@ -491,6 +537,7 @@ private const val MAX_STEP_NANOS = 24_000_000L
 
 /** 旧画面（拉伸盖在虚拟窗口上）在过渡进度的前这一段里淡出。 */
 private const val SNAPSHOT_FADE_SPAN = 0.28f
+private const val SNAPSHOT_VISIBLE_ALPHA = 0.001f
 private const val SNAPSHOT_SCALE = 0.5f
 private const val SNAPSHOT_TTL_MILLIS = 2000L
 private const val CAPTURE_LIMIT_MILLIS = 80L

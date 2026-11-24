@@ -31,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -65,6 +66,7 @@ import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.LocalDialogExit
 import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.NoRippleButton
@@ -84,6 +86,7 @@ import com.tyranor.next.ui.common.motion.scrollJellyHost
 import com.tyranor.next.ui.common.motion.shakeOnTrigger
 import com.tyranor.next.ui.common.motion.staggeredEntrance
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -135,12 +138,21 @@ class KrkrOnlinePatchActivity : AppScreenActivity() {
 @Composable
 internal fun KrkrOnlinePatchDialog(game: ScanGame, onDismiss: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
+    val canDismiss = { !busy }
     AppAlertDialog(
         onDismissRequest = onDismiss,
-        dismissEnabled = !busy,
+        dismissEnabledNow = canDismiss,
         title = { Text(stringResource(R.string.patch_title), style = MaterialTheme.typography.titleMedium) },
         text = { KrkrOnlinePatchContent(game = game, inBook = true, onBusyChange = { busy = it }) },
-        confirmButton = { DialogTextButton(text = stringResource(R.string.common_close), enabled = !busy, onClick = onDismiss) },
+        confirmButton = {
+            val exit = LocalDialogExit.current
+            CompositionLocalProvider(LocalDialogExit provides null) {
+                DialogTextButton(text = stringResource(R.string.common_close), enabled = !busy) {
+                    if (!canDismiss()) return@DialogTextButton
+                    if (exit != null) exit.closeThen(onDismiss) else onDismiss()
+                }
+            }
+        },
     )
 }
 
@@ -167,14 +179,13 @@ private fun KrkrOnlinePatchContent(
     var message by remember { mutableStateOf<String?>(null) }
     var entries by remember { mutableStateOf<List<KrkrPatchEntry>>(emptyList()) }
 
-    LaunchedEffect(installing) { onBusyChange(installing) }
     DisposableEffect(Unit) { onDispose { onBusyChange(false) } }
 
     fun loadIndex() {
         if (loading || installing) return
+        loading = true
+        message = null
         scope.launch {
-            loading = true
-            message = null
             try {
                 val result = withContext(Dispatchers.IO) {
                     try {
@@ -311,12 +322,14 @@ private fun KrkrOnlinePatchContent(
                         .then(listItemMotion()),
                     entry = entry,
                     inBook = inBook,
+                    loading = loading,
                     installing = installing,
                     onInstall = { selected ->
-                        if (installing) return@PatchEntryCard
-                        scope.launch {
-                            installing = true
-                            message = null
+                        if (loading || installing) return@PatchEntryCard
+                        installing = true
+                        onBusyChange(true)
+                        message = null
+                        scope.launch(start = CoroutineStart.UNDISPATCHED) {
                             try {
                                 val result = try {
                                     Result.success(
@@ -337,6 +350,7 @@ private fun KrkrOnlinePatchContent(
                                 }
                             } finally {
                                 installing = false
+                                onBusyChange(false)
                             }
                         }
                     },
@@ -354,11 +368,12 @@ private fun KrkrOnlinePatchContent(
     }
 }
 
-/** 按补丁条目保存文件勾选状态；安装期间禁用提交，由调用方执行下载与写入。 */
+/** 按补丁条目保存文件勾选状态；刷新或安装期间禁用提交，由调用方执行下载与写入。 */
 @Composable
 private fun PatchEntryCard(
     entry: KrkrPatchEntry,
     inBook: Boolean,
+    loading: Boolean,
     installing: Boolean,
     onInstall: (List<String>) -> Unit,
     modifier: Modifier = Modifier,
@@ -450,8 +465,8 @@ private fun PatchEntryCard(
                         installStartedHere = true
                         onInstall(selected)
                     },
-                    // 可用态仍取实时的 installing：退场中的旧按钮也不能重复提交
-                    enabled = selected.isNotEmpty() && !installing,
+                    // 可用态取当前任务状态：退场中的旧按钮也不能提交
+                    enabled = selected.isNotEmpty() && !loading && !installing,
                     modifier = Modifier.fillMaxWidth().breathing(shownInstalling && installStartedHere),
                     leadingIcon = rememberVectorPainter(Icons.Filled.CloudDownload),
                 )

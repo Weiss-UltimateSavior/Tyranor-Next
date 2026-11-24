@@ -116,6 +116,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import com.tyranor.next.ui.common.privacy.blockAppInteractionKeys
 import com.tyranor.next.ui.common.motion.rememberEntranceState
@@ -184,7 +186,9 @@ fun MainScreen(
   val libraryViewModel: MainLibraryViewModel = viewModel()
   val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
   val interactScope = rememberCoroutineScope()
-  val resumeJobs = remember { arrayOfNulls<Job>(2) }
+  var pendingSaveSync by remember { mutableStateOf<Job?>(null) }
+  var pendingModuleReconcile by remember { mutableStateOf<Job?>(null) }
+  val moduleReconcileMutex = remember { Mutex() }
   val unselectedColor = UnselectedGrey
   LaunchedEffect(Unit) {
     withContext(Dispatchers.IO) { AppSettingsStore.initEngineTabs(context) }
@@ -201,8 +205,8 @@ fun MainScreen(
     libraryViewModel.onForeground()
     // 存档互通前台兜底：对已退出会话的待回写游戏补一次 Tyranor→标准同步
     // （引擎退出后 500ms 强杀、无回调，故在应用回到前台时补齐）。
-    resumeJobs[0]?.cancel()
-    resumeJobs[0] = interactScope.launch {
+    pendingSaveSync?.cancel()
+    pendingSaveSync = interactScope.launch {
       // runCatching 会把协程取消也当作失败吞掉，故显式区分：取消原样传播，其余仅记日志
       try {
         withContext(Dispatchers.IO) { EngineLauncher.flushPendingSaveSync(context) }
@@ -213,23 +217,26 @@ fun MainScreen(
       }
     }
     // 第三方运行时模块：卸载/禁用后把绑定游戏降级为 UNKNOWN；同时刷新模块 label 缓存。
-    resumeJobs[1]?.cancel()
-    resumeJobs[1] = interactScope.launch {
+    pendingModuleReconcile?.cancel()
+    pendingModuleReconcile = interactScope.launch {
       try {
         // 给安装器/包替换留出稳定窗口，避免模块更新瞬间把全部绑定误降级。
         delay(1500)
-        val degraded = withContext(Dispatchers.IO) {
-          val count = RuntimeModuleBindings.reconcile(context)
-          RuntimeModuleRegistry.refresh(context)
-          count
-        }
-        libraryViewModel.refreshFromStorage()
-        if (degraded > 0) {
-          AppNotice.makeText(
-            context,
-            R.string.engine_module_management_degraded_toast,
-            android.widget.Toast.LENGTH_SHORT,
-          ).show()
+        moduleReconcileMutex.withLock {
+          pendingModuleReconcile = null
+          val degraded = withContext(Dispatchers.IO) {
+            val count = RuntimeModuleBindings.reconcile(context)
+            RuntimeModuleRegistry.refresh(context)
+            count
+          }
+          libraryViewModel.refreshFromStorage()
+          if (degraded > 0) {
+            AppNotice.makeText(
+              context,
+              R.string.engine_module_management_degraded_toast,
+              android.widget.Toast.LENGTH_SHORT,
+            ).show()
+          }
         }
       } catch (ce: CancellationException) {
         throw ce

@@ -102,17 +102,19 @@ private val QuickActionHeaderHeight =
 @Stable
 internal class GameQuickActionsController(
     val feedback: QuickActionFeedback,
+    private val quickLaunchShown: () -> Boolean,
+    private val shortcutPending: () -> Boolean,
+    private val deleteConfirmShown: () -> Boolean,
+    private val pickCoverAction: () -> Unit,
+    private val toggleQuickLaunchAction: () -> Unit,
+    private val addDesktopShortcutAction: () -> Unit,
+    private val openRenameAction: () -> Unit,
+    private val openDeleteAction: () -> Unit,
+    private val hostDialogs: @Composable () -> Unit,
 ) {
-    internal var shownQuickLaunched by mutableStateOf(false)
-    internal var shortcutRequestInFlight by mutableStateOf(false)
-    internal var showDeleteConfirm by mutableStateOf(false)
-
-    internal var pickCoverAction: () -> Unit = {}
-    internal var toggleQuickLaunchAction: () -> Unit = {}
-    internal var addDesktopShortcutAction: () -> Unit = {}
-    internal var openRenameAction: () -> Unit = {}
-    internal var openDeleteAction: () -> Unit = {}
-    internal var hostDialogs: @Composable () -> Unit = {}
+    val shownQuickLaunched: Boolean get() = quickLaunchShown()
+    val shortcutRequestInFlight: Boolean get() = shortcutPending()
+    val showDeleteConfirm: Boolean get() = deleteConfirmShown()
 
     fun pickCover() = pickCoverAction()
     fun toggleQuickLaunch() = toggleQuickLaunchAction()
@@ -141,6 +143,7 @@ internal fun rememberGameQuickActionsController(
     onQuickLaunchToggle: () -> Boolean,
     exitHandle: GameDialogExitHandle? = null,
     canInteract: () -> Boolean = { true },
+    onShortcutCropOpened: () -> Unit = {},
 ): GameQuickActionsController {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -150,9 +153,8 @@ internal fun rememberGameQuickActionsController(
     var shortcutCropUriText by rememberSaveable(game.uri) { mutableStateOf<String?>(null) }
     var shortcutPickerForNoCover by rememberSaveable(game.uri) { mutableStateOf(false) }
     val feedback = remember(game.uri) { QuickActionFeedback() }
-    val controller = remember(game.uri, feedback) { GameQuickActionsController(feedback) }
-
     val latestGame by rememberUpdatedState(game)
+    val latestQuickLaunched by rememberUpdatedState(quickLaunched)
     val latestOnDismiss by rememberUpdatedState(onDismiss)
     val latestOnGameUpdated by rememberUpdatedState(onGameUpdated)
     val latestOnGameCoverUpdated by rememberUpdatedState(onGameCoverUpdated)
@@ -160,14 +162,15 @@ internal fun rememberGameQuickActionsController(
     val latestOnDeleteGame by rememberUpdatedState(onDeleteGame)
     val latestOnQuickLaunchToggle by rememberUpdatedState(onQuickLaunchToggle)
     val latestCanInteract by rememberUpdatedState(canInteract)
+    val latestOnShortcutCropOpened by rememberUpdatedState(onShortcutCropOpened)
 
-    val batchScrapeRunningMessage = stringResource(R.string.game_batch_scraping_running)
+    val batchScrapeRunningMessage by rememberUpdatedState(stringResource(R.string.game_batch_scraping_running))
     val coverSetFailedMessage = stringResource(R.string.game_cover_set_failed)
-    val quickLaunchFullMessage = stringResource(R.string.game_quick_launch_full)
-    val shortcutRequestedMessage = stringResource(R.string.game_desktop_shortcut_requested)
-    val shortcutUpdatedMessage = stringResource(R.string.game_desktop_shortcut_updated)
-    val shortcutUnsupportedMessage = stringResource(R.string.game_desktop_shortcut_unsupported)
-    val shortcutFailedMessage = stringResource(R.string.game_desktop_shortcut_failed)
+    val quickLaunchFullMessage by rememberUpdatedState(stringResource(R.string.game_quick_launch_full))
+    val shortcutRequestedMessage by rememberUpdatedState(stringResource(R.string.game_desktop_shortcut_requested))
+    val shortcutUpdatedMessage by rememberUpdatedState(stringResource(R.string.game_desktop_shortcut_updated))
+    val shortcutUnsupportedMessage by rememberUpdatedState(stringResource(R.string.game_desktop_shortcut_unsupported))
+    val shortcutFailedMessage by rememberUpdatedState(stringResource(R.string.game_desktop_shortcut_failed))
 
     fun finishQuickAction() {
         if (!closeOnQuickAction) return
@@ -243,6 +246,7 @@ internal fun rememberGameQuickActionsController(
     val shortcutIconPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             shortcutPickerForNoCover = false
+            latestOnShortcutCropOpened()
             shortcutCropUriText = uri.toString()
         } else if (shortcutPickerForNoCover) {
             shortcutPickerForNoCover = false
@@ -252,6 +256,7 @@ internal fun rememberGameQuickActionsController(
 
     /** Opens cover cropping, falling back to custom-image selection when no cover exists. */
     fun openShortcutCrop() {
+        latestOnShortcutCropOpened()
         val coverUri = latestGame.coverUri?.takeIf { it.isNotBlank() }
         if (coverUri != null) {
             shortcutCropUriText = coverUri
@@ -294,13 +299,10 @@ internal fun rememberGameQuickActionsController(
         }
     }
 
-    controller.shownQuickLaunched = if (closeOnQuickAction) feedback.shownQuickLaunch(quickLaunched) else quickLaunched
-    controller.shortcutRequestInFlight = shortcutRequestInFlight
-    controller.showDeleteConfirm = showDeleteConfirm
-    controller.pickCoverAction = {
+    fun pickCover() {
         if (latestCanInteract() && !isBatchScrapingActive()) imagePicker.launch("image/*")
     }
-    controller.toggleQuickLaunchAction = {
+    fun toggleQuickLaunch() {
         if (latestCanInteract()) {
             if (closeOnQuickAction) {
                 feedback.toggle(latestOnQuickLaunchToggle, close = ::finishQuickAction) {
@@ -319,18 +321,18 @@ internal fun rememberGameQuickActionsController(
             }
         }
     }
-    controller.addDesktopShortcutAction = {
+    fun addDesktopShortcut() {
         if (latestCanInteract()) {
             if (!shortcutRequestInFlight) openShortcutCrop() else feedback.rejectShortcut()
         }
     }
-    controller.openRenameAction = {
+    fun openRename() {
         if (latestCanInteract()) showRenameDialog = true
     }
-    controller.openDeleteAction = {
+    fun openDelete() {
         if (latestCanInteract()) showDeleteConfirm = true
     }
-    controller.hostDialogs = {
+    val dialogs: @Composable () -> Unit = {
         shortcutCropUriText?.let { uriText ->
             GameShortcutCropDialog(
                 imageUri = Uri.parse(uriText),
@@ -411,7 +413,22 @@ internal fun rememberGameQuickActionsController(
             )
         }
     }
-    return controller
+    return remember(game.uri, feedback, context, scope, closeOnQuickAction, exitHandle, imagePicker, shortcutIconPicker) {
+        GameQuickActionsController(
+            feedback = feedback,
+            quickLaunchShown = {
+                if (closeOnQuickAction) feedback.shownQuickLaunch(latestQuickLaunched) else latestQuickLaunched
+            },
+            shortcutPending = { shortcutRequestInFlight },
+            deleteConfirmShown = { showDeleteConfirm },
+            pickCoverAction = ::pickCover,
+            toggleQuickLaunchAction = ::toggleQuickLaunch,
+            addDesktopShortcutAction = ::addDesktopShortcut,
+            openRenameAction = ::openRename,
+            openDeleteAction = ::openDelete,
+            hostDialogs = dialogs,
+        )
+    }
 }
 
 /**

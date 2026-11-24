@@ -1,5 +1,6 @@
 package com.tyranor.next.ui.game
 
+import android.animation.ValueAnimator
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.animation.core.FloatSpringSpec
 import androidx.compose.animation.core.animateFloatAsState
@@ -2108,7 +2109,9 @@ internal class ShelfGlideCurve(val distance: Float, speed: Float, arrival: Float
 /** 书架的甩动：增强档按手指速度一路滑行（[ShelfGlideFling]），普通档沿用 Pager 默认吸附、不限本数。 */
 @Composable
 internal fun rememberShelfFling(state: PagerState): TargetedFlingBehavior {
-    if (!MotionMode.enhanced) return rememberPagerSnapFling(state, maxFlingPages = state.pageCount.coerceAtLeast(1))
+    if (!MotionMode.enhanced || !ValueAnimator.areAnimatorsEnabled()) {
+        return rememberPagerSnapFling(state, maxFlingPages = state.pageCount.coerceAtLeast(1))
+    }
     val decay = rememberSplineBasedDecay<Float>()
     val density = LocalDensity.current
     return remember(state, decay, density) {
@@ -2172,7 +2175,7 @@ private const val HERO_COVER_FADE_MILLIS = 140
 /** 点按进度轨道要用的连续滑行（增强档）；普通档为 null，直接用 Pager 的翻页补间。 */
 @Composable
 internal fun rememberShelfGlide(state: PagerState): ShelfGlideFling? {
-    if (!MotionMode.enhanced) return null
+    if (!MotionMode.enhanced || !ValueAnimator.areAnimatorsEnabled()) return null
     val decay = rememberSplineBasedDecay<Float>()
     val density = LocalDensity.current
     return remember(state, decay, density) {
@@ -2196,7 +2199,6 @@ internal class ShelfRubberBand(private val maxPull: Float, private val scope: Co
     private var overshoot by mutableFloatStateOf(0f)
 
     /** 越界正在自己弹回（撞头后的弹回被新的手指打断，或往里甩的那一刻）：这期间往里的位移直接交给书架，不再先「还」越界量。 */
-    private var recovering = false
     private var recoveryJob: Job? = null
 
     /**
@@ -2213,27 +2215,21 @@ internal class ShelfRubberBand(private val maxPull: Float, private val scope: Co
             overshoot = 0f
             return
         }
-        recovering = true
         recoveryJob = scope.launch {
-            try {
-                animate(
-                    initialValue = start,
-                    targetValue = 0f,
-                    animationSpec = MotionSprings.response(RUBBER_RECOVER_RESPONSE, 1f, 0.5f),
-                ) { value, _ ->
-                    overshoot = if (sign(value) == sign(start)) unpull(value) else 0f
-                }
-                overshoot = 0f
-            } finally {
-                recovering = false
+            animate(
+                initialValue = start,
+                targetValue = 0f,
+                animationSpec = MotionSprings.response(RUBBER_RECOVER_RESPONSE, 1f, 0.5f),
+            ) { value, _ ->
+                overshoot = if (sign(value) == sign(start)) unpull(value) else 0f
             }
+            overshoot = 0f
         }
     }
 
     private fun stopRecovery() {
         recoveryJob?.cancel()
         recoveryJob = null
-        recovering = false
     }
 
     /** 画面上整排书的位移：原始距离越大越拉不动，渐近 [maxPull]。 */
@@ -2252,7 +2248,7 @@ internal class ShelfRubberBand(private val maxPull: Float, private val scope: Co
         performScroll: (Offset) -> Offset,
     ): Offset {
         val dx = delta.x
-        if (recovering && dx != 0f) {
+        if (recoveryJob?.isActive == true && dx != 0f) {
             // 弹回途中：往里的位移直接交给书架（越界自己在弹回）；又往外拉就停下弹回，由手指接着拉
             if (sign(dx) != sign(overshoot)) return performScroll(delta)
             stopRecovery()

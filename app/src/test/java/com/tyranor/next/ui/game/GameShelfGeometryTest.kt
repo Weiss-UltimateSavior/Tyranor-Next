@@ -3,8 +3,18 @@ package com.tyranor.next.ui.game
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.unit.Velocity
+import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.game.model.ScanGame
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.plus
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import kotlin.math.abs
 
@@ -230,6 +240,42 @@ class GameShelfGeometryTest {
         repeat(5) { band.applyToScroll(Offset(-30f, 0f), NestedScrollSource.UserInput, scroll) }
         assertEquals(50f, position, 1e-3f)
         assertFalse(band.isInProgress)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun cancelledRecoveryCannotStealInwardDragFromItsReplacement() = runTest {
+        val clock = BroadcastFrameClock()
+        val band = ShelfRubberBand(maxPull = 300f, scope = backgroundScope + clock)
+        band.applyToScroll(Offset(120f, 0f), NestedScrollSource.UserInput) { Offset.Zero }
+        val inward = Velocity(-400f, 0f)
+        val firstFling = backgroundScope.launch { band.applyToFling(inward) { awaitCancellation() } }
+        runCurrent()
+        assertTrue(clock.hasAwaiters)
+
+        firstFling.cancel()
+        backgroundScope.launch { band.applyToFling(inward) { awaitCancellation() } }
+        runCurrent()
+        assertTrue(clock.hasAwaiters)
+
+        var handedToPager = Offset.Zero
+        val drag = Offset(-20f, 0f)
+        band.applyToScroll(drag, NestedScrollSource.UserInput) { delta ->
+            handedToPager = delta
+            delta
+        }
+        assertEquals(drag, handedToPager)
+        assertTrue(band.isInProgress)
+    }
+
+    @Test
+    fun shelfFocusSurvivesReorderingAndFallsBackOnlyWhenMissing() {
+        val recent = ScanGame("A", "a", EngineType.UNKNOWN, "", openTime = 10L)
+        val focused = recent.copy(title = "B", uri = "b", openTime = 0L)
+        val other = focused.copy(title = "C", uri = "c")
+        assertEquals(2, shelfFocusPage(listOf(other, recent, focused), focused.uri))
+        assertEquals(1, shelfFocusPage(listOf(other, recent), focused.uri))
+        assertEquals(0, shelfFocusPage(listOf(other), focused.uri))
     }
 
     @Test

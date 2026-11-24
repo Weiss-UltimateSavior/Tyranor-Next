@@ -222,17 +222,16 @@ internal fun buildShelfCatalogCoverRows(
     ShelfCatalogRowItem.CoverTier(key, tierIndex, slice, startIndex, rowGridIndex)
 }
 
-/** 定位包含 [uri] 的搁板行下标（若无匹配则返回 0）。 */
+/** 定位包含 [uri] 的搁板行下标（若无匹配则返回 -1）。 */
 internal fun findShelfCatalogAnchorRow(rows: List<ShelfCatalogRowItem>, uri: String?): Int {
-    if (uri.isNullOrBlank() || rows.isEmpty()) return 0
-    val hit = rows.indexOfFirst { row ->
+    if (uri.isNullOrBlank()) return -1
+    return rows.indexOfFirst { row ->
         when (row) {
             is ShelfCatalogRowItem.VerticalTier -> row.games.any { it.uri == uri }
             is ShelfCatalogRowItem.CoverTier -> row.games.any { it.uri == uri }
             is ShelfCatalogRowItem.SectionHeader -> false
         }
     }
-    return if (hit >= 0) hit else 0
 }
 
 /**
@@ -466,9 +465,6 @@ internal class ShelfCatalogStage {
     var settledFocusToken by mutableIntStateOf(0)
         private set
 
-    private var lastHeroSpineThickness = 0f
-    private var lastHeroWidth = 0f
-    private var lastHeroHeight = 0f
     internal var stageDensity = 3f
     internal var heroDecodeTier: CoverDecodeTier = CoverDecodeTier.GRID
     private var stageGeometryOriginProvider: ((Offset, IntSize, String?) -> List<ShelfCatalogBookOrigin>)? = null
@@ -493,6 +489,8 @@ internal class ShelfCatalogStage {
         stageCoords = coordinates
         if (density > 0f) stageDensity = density
     }
+
+    fun stageSize(): IntSize? = stageCoords?.takeIf { it.isAttached }?.size
 
     internal fun placeSpine(uri: String, coordinates: LayoutCoordinates) {
         val slot = anchors.getOrPut(uri) { ShelfCatalogSlotAnchor() }
@@ -534,20 +532,15 @@ internal class ShelfCatalogStage {
         return ++focusRequestToken
     }
 
-    fun markFocusAligned(token: Int) {
-        if (token > settledFocusToken) settledFocusToken = token
+    fun markFocusAligned(token: Int, uri: String): Boolean {
+        if (token != focusRequestToken || pendingFocusUri != uri) return false
+        settledFocusToken = token
+        pendingFocusUri = null
+        return true
     }
 
-    fun consumeFocusIndex(games: List<ScanGame>): Int? {
-        val uri = pendingFocusUri ?: return null
-        val index = games.indexOfFirst { it.uri == uri }
-        if (index < 0) return null
-        pendingFocusUri = null
-        return index
-    }
-
-    fun clearPendingFocus() {
-        pendingFocusUri = null
+    fun clearPendingFocus(token: Int = focusRequestToken) {
+        if (token == focusRequestToken) pendingFocusUri = null
     }
 
     fun release() {
@@ -638,11 +631,6 @@ internal class ShelfCatalogStage {
             sCenterY + boxHeightPx * 0.5f,
         )
         val isHero = abs(yawDeg - HERO_YAW_DEGREES) < 8f
-        if (isHero) {
-            lastHeroSpineThickness = spineThicknessPx
-            lastHeroWidth = coverWidthPx
-            lastHeroHeight = boxHeightPx
-        }
         return ShelfCatalogBookOrigin(
             uri = uri,
             pageIndex = slot.pageIndex,
@@ -668,14 +656,7 @@ internal class ShelfCatalogStage {
         val provider = stageGeometryOriginProvider
         if (stage != null && provider != null && stage.size.width > 0 && stage.size.height > 0) {
             val topLeft = stage.localToScreen(Offset.Zero)
-            provider(topLeft, stage.size, uri).firstOrNull()?.let { measured ->
-                if (measured.isHero) {
-                    lastHeroSpineThickness = measured.spineThicknessPx
-                    lastHeroWidth = measured.coverWidthPx
-                    lastHeroHeight = measured.boxHeightPx
-                }
-                return measured
-            }
+            provider(topLeft, stage.size, uri).firstOrNull()?.let { return it }
         }
         return anchors[uri]?.let { measureSlotOrigin(uri, it) }
     }
@@ -701,11 +682,6 @@ internal class ShelfCatalogStage {
         }
         val list = ArrayList<ShelfCatalogBookOrigin>(12)
         for (measured in candidates) {
-            if (measured.isHero) {
-                lastHeroSpineThickness = measured.spineThicknessPx
-                lastHeroWidth = measured.coverWidthPx
-                lastHeroHeight = measured.boxHeightPx
-            }
             // 仅收集书脊实体完全在书架左右净边界之内的书（主角除外），避免飞出侧栏外越界绘在导航轨上方
             val spineInside = measured.spineRect.left >= stageLeftScreen - 4f &&
                 measured.spineRect.right <= stageRightScreen + 4f
@@ -717,34 +693,6 @@ internal class ShelfCatalogStage {
         return list
     }
 
-    fun fallbackHeroOrigin(uri: String, tint: Color): ShelfCatalogBookOrigin? {
-        val stage = stageCoords?.takeIf { it.isAttached } ?: return null
-        if (stage.size.width <= 0 || stage.size.height <= 0) return null
-        val centerScreen = stage.localToScreen(Offset(stage.size.width * 0.5f, stage.size.height * 0.48f))
-        val cx = centerScreen.x
-        val cy = centerScreen.y
-        val h = if (lastHeroHeight > 0f) lastHeroHeight else (stage.size.height * 0.62f).coerceAtLeast(120f)
-        val w = if (lastHeroWidth > 0f) lastHeroWidth else h * 0.75f
-        val spineT = if (lastHeroSpineThickness > 0f) lastHeroSpineThickness else w * 0.15f
-        val yawRad = Math.toRadians(HERO_YAW_DEGREES.toDouble()).toFloat()
-        val spineVisW = spineT * sin(yawRad)
-        val frontRect = Rect(cx - w * 0.5f, cy - h * 0.5f, cx + w * 0.5f, cy + h * 0.5f)
-        val spineCenterX = cx - w * 0.35f
-        val spineRect = Rect(spineCenterX - spineVisW * 0.5f, cy - h * 0.5f, spineCenterX + spineVisW * 0.5f, cy + h * 0.5f)
-        return ShelfCatalogBookOrigin(
-            uri = uri,
-            pageIndex = 0,
-            frontRect = frontRect,
-            spineRect = spineRect,
-            spineThicknessPx = spineT,
-            boxHeightPx = h,
-            coverWidthPx = w,
-            yawDegrees = HERO_YAW_DEGREES,
-            tiltDegrees = HERO_TILT_DEGREES,
-            tint = tint,
-            isHero = true,
-        )
-    }
 }
 
 /** 飞行编队中单本书盒的起止契约（含目标书格陈列模式、末书斜倚角、当前高亮态及绘制层级优先级）。 */
@@ -760,10 +708,32 @@ internal class ShelfCatalogBookFlight(
     val isCurrentInCatalog: Boolean,
     val zPriority: Float,
     val catalogLeanDegrees: Float = 0f,
+    val takeoffPose: ShelfCatalogBookPose? = null,
+    val useHeroCover: Boolean = shelfOrigin.isHero,
+    val fadeInPlace: Boolean = false,
 ) {
     /** 同帧 `troupeFlight` 下跨 6 个修饰符复用姿态计算，避免重复三角计算与对象分配。 */
     internal var cachedRawProgress: Float = Float.NaN
     internal var cachedPose: ShelfCatalogBookPose? = null
+    internal val landingPose: ShelfCatalogBookPose? =
+        if (takeoffPose != null && !fadeInPlace) shelfCatalogPathPose(1f, this) else null
+
+    fun fadeFrom(rawProgress: Float): ShelfCatalogBookFlight = ShelfCatalogBookFlight(
+        game = game,
+        spineIndex = spineIndex,
+        shelfOrigin = shelfOrigin,
+        catalogRect = catalogRect,
+        catalogMode = catalogMode,
+        delayFraction = 0f,
+        arcLiftPx = 0f,
+        returningToShelf = true,
+        isCurrentInCatalog = isCurrentInCatalog,
+        zPriority = zPriority,
+        catalogLeanDegrees = catalogLeanDegrees,
+        takeoffPose = shelfCatalogBookPose(rawProgress, this),
+        useHeroCover = useHeroCover,
+        fadeInPlace = true,
+    )
 }
 
 /** 编队中单本书在任意进度帧的精确三维投影姿态（包含光学阴影、倾角、启动徽章与文字/装饰交接比例）。 */
@@ -800,9 +770,17 @@ internal fun shelfCatalogBookPose(
     rawProgress: Float,
     flight: ShelfCatalogBookFlight,
 ): ShelfCatalogBookPose {
+    if (flight.fadeInPlace) return checkNotNull(flight.takeoffPose)
     val delay = flight.delayFraction.coerceIn(0f, 0.4f)
     val span = (1f - delay).coerceAtLeast(0.1f)
     val t = ((rawProgress.coerceIn(0f, 1f) - delay) / span).coerceIn(0f, 1f)
+    val start = flight.takeoffPose
+    val end = flight.landingPose
+    if (start != null && end != null) return shelfCatalogRetargetPose(t, flight, start, end)
+    return shelfCatalogPathPose(t, flight)
+}
+
+private fun shelfCatalogPathPose(t: Float, flight: ShelfCatalogBookFlight): ShelfCatalogBookPose {
     val origin = flight.shelfOrigin
     val coverAspect = (origin.coverWidthPx / origin.boxHeightPx.coerceAtLeast(1f)).coerceIn(0.55f, 0.9f)
     val startAbsYaw = abs(origin.yawDegrees).coerceIn(0f, 90f)
@@ -973,6 +951,47 @@ internal fun shelfCatalogBookPose(
     }
 }
 
+private fun shelfCatalogRetargetPose(
+    progress: Float,
+    flight: ShelfCatalogBookFlight,
+    start: ShelfCatalogBookPose,
+    end: ShelfCatalogBookPose,
+): ShelfCatalogBookPose {
+    if (progress <= 0f) return start
+    if (progress >= 1f) return end
+    val spines = flight.catalogMode == ShelfCatalogLayoutMode.SPINES
+    val turn = catalogSmoothstep(if (spines) (progress - 0.08f) / 0.88f else progress / 0.72f)
+    val size = if (spines) progress else catalogSmoothstep((progress - 0.08f) / 0.92f)
+    val startYaw = if (start.facingSign >= 0f) start.absYawDeg else 180f - start.absYawDeg
+    val endYaw = if (end.facingSign >= 0f) end.absYawDeg else 180f - end.absYawDeg
+    val yaw = lerpCatalog(startYaw, endYaw, turn)
+    val absYaw = if (yaw <= 90f) yaw else 180f - yaw
+    val catalogMix = (if (spines) (progress - 0.14f) / 0.60f else (progress - 0.10f) / 0.48f).coerceIn(0f, 1f)
+    val badgeMix = if (start.playBadgeAlpha > end.playBadgeAlpha) {
+        catalogSmoothstep(progress / 0.25f)
+    } else {
+        catalogSmoothstep((progress - 0.72f) / 0.28f)
+    }
+    return ShelfCatalogBookPose(
+        spineCenterX = lerpCatalog(start.spineCenterX, end.spineCenterX, progress),
+        spineCenterY = lerpCatalog(start.spineCenterY, end.spineCenterY, progress) - flight.arcLiftPx * sin(PI.toFloat() * progress),
+        spineWidth = lerpCatalog(start.spineWidth, end.spineWidth, size),
+        spineHeight = lerpCatalog(start.spineHeight, end.spineHeight, size),
+        coverWidth = lerpCatalog(start.coverWidth, end.coverWidth, size),
+        absYawDeg = absYaw,
+        facingSign = if (yaw == 90f) start.facingSign else if (yaw < 90f) 1f else -1f,
+        tiltDegrees = lerpCatalog(start.tiltDegrees, end.tiltDegrees, turn),
+        frontAlpha = ((89.8f - absYaw) / 3.5f).coerceIn(0f, 1f),
+        catalogMix = lerpCatalog(start.catalogMix, end.catalogMix, catalogMix),
+        leanDegrees = lerpCatalog(start.leanDegrees, end.leanDegrees, turn),
+        frontShade = lerpCatalog(start.frontShade, end.frontShade, turn),
+        spineShade = lerpCatalog(start.spineShade, end.spineShade, turn),
+        playBadgeAlpha = lerpCatalog(start.playBadgeAlpha, end.playBadgeAlpha, badgeMix),
+    )
+}
+
+private fun lerpCatalog(start: Float, end: Float, fraction: Float): Float = start + (end - start) * fraction
+
 private class CatalogSlotPlacement(
     val rowGridIndex: Int,
     val colIndex: Int,
@@ -1001,7 +1020,8 @@ internal class ShelfCatalogMotion(
     initialLayoutMode: ShelfCatalogLayoutMode = ShelfCatalogLayoutMode.SPINES,
 ) {
     val progress = Animatable(if (enhanced) 0f else 1f)
-    val troupeFlight = Animatable(0f)
+    private val troupeFlight = Animatable(0f)
+    private val returnFlight = Animatable(0f)
     val troupePresence = Animatable(1f)
     val pullOffset = Animatable(0f)
 
@@ -1016,6 +1036,7 @@ internal class ShelfCatalogMotion(
         private set
 
     private val initialShelfOrigins: List<ShelfCatalogBookOrigin> = if (enhanced) stage.visibleOrigins() else emptyList()
+    private val initialShelfSize = stage.stageSize()
 
     var hiddenSlotUris by mutableStateOf(
         if (enhanced) {
@@ -1045,10 +1066,13 @@ internal class ShelfCatalogMotion(
     private var delivered = false
     private var interrupting = false
     private var transitionJob: Job? = null
+    private var exitFocusToken: Int? = null
+    private var reversingEntry = false
     /** 书格登记按（书、陈列方式）分开记：切换陈列时新旧两面书柜同时在组合，同一本书在两面里各有自己的位置，互不覆盖。 */
     private data class SlotKey(val uri: String, val mode: ShelfCatalogLayoutMode)
 
     private val slotPlacements = HashMap<SlotKey, CatalogSlotPlacement>()
+    private var slotPlacementVersion by mutableIntStateOf(0)
     private val tierPlacements = HashMap<Pair<ShelfCatalogLayoutMode, Int>, LayoutCoordinates>()
     private val indexLookup = HashMap<String, Int>()
 
@@ -1087,14 +1111,18 @@ internal class ShelfCatalogMotion(
         coords: LayoutCoordinates,
         leanDegrees: Float = 0f,
     ) {
-        slotPlacements[SlotKey(uri, layoutMode)] = CatalogSlotPlacement(rowGridIndex, colIndex, layoutMode, coords, leanDegrees)
+        val previous = slotPlacements.put(
+            SlotKey(uri, layoutMode),
+            CatalogSlotPlacement(rowGridIndex, colIndex, layoutMode, coords, leanDegrees),
+        )
+        if (previous?.coords !== coords) slotPlacementVersion++
         if (uri == initialAnchorUri && anchorCoord == null) {
             anchorCoord = rowGridIndex to colIndex
         }
     }
 
     fun forgetSlot(uri: String, layoutMode: ShelfCatalogLayoutMode) {
-        slotPlacements.remove(SlotKey(uri, layoutMode))
+        if (slotPlacements.remove(SlotKey(uri, layoutMode)) != null) slotPlacementVersion++
     }
 
     private fun snapshotVisibleSlots(
@@ -1102,10 +1130,10 @@ internal class ShelfCatalogMotion(
         mode: ShelfCatalogLayoutMode = layoutMode,
         /** 只露出一部分的书也算（陈列切换的变形要带上它们，不然它们要等变形放完才冒出来）。 */
         includePartial: Boolean = false,
+        viewport: Rect = wallViewport,
     ): Map<String, CatalogSlotSnapshot> {
         val map = HashMap<String, CatalogSlotSnapshot>(slotPlacements.size)
         val density = stage.stageDensity
-        val viewport = wallViewport
         for ((key, p) in slotPlacements) {
             if (key.mode != mode) continue
             val uri = key.uri
@@ -1319,7 +1347,8 @@ internal class ShelfCatalogMotion(
                 }
                 repeat(2) { withFrameNanos { } }
                 if (generation != morphGeneration) return@launch
-                val to = snapshotVisibleSlots(mode = target, includePartial = true)
+                val targetViewport = wallViewport
+                val to = snapshotVisibleSlots(mode = target, includePartial = true, viewport = targetViewport)
                 for (flight in flights) {
                     val index = indexByUri[flight.game.uri] ?: -1
                     val dst = to[flight.game.uri]?.rect ?: extrapolateRect(to, target, index, indexByUri)
@@ -1331,7 +1360,7 @@ internal class ShelfCatalogMotion(
                 for ((i, game) in games.withIndex()) {
                     if (game.uri in sources) continue
                     val dst = to[game.uri]?.rect ?: extrapolateRect(to, target, i, indexByUri) ?: continue
-                    if (viewport.width > 0f && !dst.overlaps(viewport)) continue
+                    if (targetViewport.width > 0f && !dst.overlaps(targetViewport)) continue
                     arrivalRects[game.uri] = dst
                 }
                 arrivalRects.entries.sortedBy { (_, rect) -> distanceToCenter(rect) }.forEachIndexed { rank, (uri, dst) ->
@@ -1404,16 +1433,8 @@ internal class ShelfCatalogMotion(
         }
     }
 
-    /**
-     * 退场的飞行从哪里起步：藏书阁还在入场途中就被收起 / 点选时，书不要先跳回「还在柜里」的原位再往回飞，
-     * 而是从它们此刻在空中的位置接着往回飞（入场飞行已走过 p，退场飞行就从 1 − p 起步）。
-     */
-    private fun exitFlightStart(): Float =
-        if (!hasEntered && activeTroupe.isNotEmpty() && troupePresence.value > 0.01f) {
-            (1f - troupeFlight.value).coerceIn(0f, 1f)
-        } else {
-            0f
-        }
+    private fun enteringTroupe(): List<ShelfCatalogBookFlight> =
+        if (!hasEntered && hiddenSlotUris.isNotEmpty()) activeTroupe else emptyList()
 
     /**
      * 退场（合上 / 点选）途中被手指打断：书架上的书立刻快速落到位，覆盖层随即收走，不再等整段动画放完——
@@ -1422,6 +1443,7 @@ internal class ShelfCatalogMotion(
     internal fun interruptExit() {
         if (!closing || delivered || interrupting || !enhanced) return
         interrupting = true
+        exitFocusToken?.let(stage::clearPendingFocus)
         val running = transitionJob
         transitionJob = scope.launch {
             try {
@@ -1431,7 +1453,16 @@ internal class ShelfCatalogMotion(
                         progress.animateTo(0f, CATALOG_INTERRUPT_SPRING) { stage.recedeProgress = value }
                     }
                     if (activeTroupe.isNotEmpty()) {
-                        launch { troupeFlight.animateTo(1f, CATALOG_INTERRUPT_SPRING) }
+                        val entryInterrupted = activeTroupe.any { !it.returningToShelf }
+                        launch {
+                            if (entryInterrupted && !reversingEntry) {
+                                troupePresence.animateTo(0f, tween(CATALOG_INTERRUPT_HANDOFF_MS))
+                            } else if (reversingEntry) {
+                                troupeFlight.animateTo(0f, CATALOG_INTERRUPT_SPRING)
+                            } else {
+                                returnFlight.animateTo(1f, CATALOG_INTERRUPT_SPRING)
+                            }
+                        }
                     }
                 }
                 if (activeTroupe.isNotEmpty()) {
@@ -1462,11 +1493,7 @@ internal class ShelfCatalogMotion(
         val heroUri = initialAnchorUri ?: origins.firstOrNull { it.isHero }?.uri ?: origins.firstOrNull()?.uri
         val heroOrigin = heroUri?.let { u -> origins.firstOrNull { it.uri == u } }
         withTimeoutOrNull(ENTER_WAIT_SLOT_MS) {
-            snapshotFlow {
-                val viewportReady = wallViewport.height > 0f
-                val heroReady = heroUri != null && slotPlacements[SlotKey(heroUri, layoutMode)]?.coords?.isAttached == true
-                viewportReady && (heroReady || (heroUri == null && slotPlacements.isNotEmpty()))
-            }.first { it }
+            snapshotFlow { isEnterSlotReady(heroUri) }.first { it }
         }
         if (closing) return
 
@@ -1546,101 +1573,114 @@ internal class ShelfCatalogMotion(
         }
     }
 
+    private fun isEnterSlotReady(heroUri: String?): Boolean {
+        if (wallViewport.height <= 0f) return false
+        slotPlacementVersion
+        val mode = layoutMode
+        return if (heroUri != null) {
+            slotPlacements[SlotKey(heroUri, mode)]?.coords?.isAttached == true
+        } else {
+            slotPlacements.any { (key, placement) -> key.mode == mode && placement.coords.isAttached }
+        }
+    }
+
     fun pickAndClose(game: ScanGame, onFocusGame: (ScanGame) -> Int) {
         if (closing) return
         if (morphing) finishMorphNow()
         closing = true
+        if (game.uri !in indexLookup) {
+            dismissImmediately()
+            return
+        }
         if (!enhanced || !ValueAnimator.areAnimatorsEnabled()) {
             onFocusGame(game)
             deliver()
             return
         }
         val prePickFocusUri = currentFocusUri
+        val takeoffs = enteringTroupe().associateBy { it.game.uri }
+        val takeoffProgress = troupeFlight.value
         val visibleSlots = snapshotVisibleSlots(allowPartialUri = game.uri)
         val pickedSlot = visibleSlots[game.uri]
-        if (pickedSlot != null) {
-            anchorCoord = pickedSlot.rowGridIndex to pickedSlot.colIndex
-        }
-        val fallbackTint = game.engine.coverColor()
+        if (pickedSlot != null) anchorCoord = pickedSlot.rowGridIndex to pickedSlot.colIndex
         val focusToken = onFocusGame(game)
+        exitFocusToken = focusToken.takeIf { it > 0 }
 
         transitionJob?.cancel()
         transitionJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
                 stage.lentAlpha = 0f
-                stage.lentUris = setOf(game.uri)
-                if (focusToken > 0) {
+                stage.lentUris = stage.lentUris + takeoffs.keys + game.uri
+                val aligned = focusToken > 0 && (
                     withTimeoutOrNull(EXIT_WAIT_ALIGN_MS) {
-                        snapshotFlow { stage.settledFocusToken >= focusToken }.first { it }
+                        snapshotFlow { stage.pendingFocusUri != game.uri || stage.focusRequestToken != focusToken }
+                            .first { it }
+                        stage.focusRequestToken == focusToken && stage.settledFocusToken == focusToken
+                    } == true
+                )
+                stage.clearPendingFocus(focusToken)
+                val heroTargetOrigin = if (aligned) {
+                    withTimeoutOrNull(EXIT_WAIT_ORIGIN_MS) {
+                        snapshotFlow { stage.origin(game.uri)?.takeIf { it.uri == game.uri && it.isHero } }
+                            .first { it != null }
                     }
+                } else {
+                    null
                 }
-                val heroTargetOrigin = withTimeoutOrNull(EXIT_WAIT_ORIGIN_MS) {
-                    snapshotFlow { stage.origin(game.uri) }.first { it != null }
-                } ?: stage.fallbackHeroOrigin(game.uri, fallbackTint)
-
-                val visibleTargets = stage.visibleOrigins()
-                val targetByUri = visibleTargets.associateBy { it.uri }.toMutableMap()
-                if (heroTargetOrigin != null) {
-                    targetByUri[game.uri] = heroTargetOrigin
-                }
-
-                val troupe = ArrayList<ShelfCatalogBookFlight>(targetByUri.size)
-                if (pickedSlot != null && heroTargetOrigin != null) {
+                val troupe = ArrayList<ShelfCatalogBookFlight>()
+                val pickedTakeoff = takeoffs[game.uri]
+                if ((pickedSlot != null || pickedTakeoff != null) && heroTargetOrigin != null) {
                     val heroPageIdx = heroTargetOrigin.pageIndex
-                    troupe += ShelfCatalogBookFlight(
-                        game = game,
-                        spineIndex = spineIndexOf(game.uri),
-                        shelfOrigin = heroTargetOrigin,
-                        catalogRect = pickedSlot.rect,
-                        catalogMode = pickedSlot.layoutMode,
-                        delayFraction = 0f,
-                        arcLiftPx = (heroTargetOrigin.boxHeightPx * 0.08f).coerceAtLeast(18f),
-                        returningToShelf = true,
-                        isCurrentInCatalog = game.uri == prePickFocusUri,
-                        zPriority = 200f,
-                    )
-                    for ((uri, targetOrigin) in targetByUri) {
-                        if (uri == game.uri) continue
-                        val srcSlot = visibleSlots[uri] ?: continue
-                        val neighborGame = gameByUri(uri) ?: continue
+                    val targets = stage.visibleOrigins().filter { it.uri != game.uri } + heroTargetOrigin
+                    for (targetOrigin in targets) {
+                        val uri = targetOrigin.uri
+                        val picked = uri == game.uri
+                        val takeoff = takeoffs[uri]
+                        val srcSlot = visibleSlots[uri]
+                        val catalogRect = takeoff?.catalogRect ?: srcSlot?.rect ?: continue
+                        val catalogMode = takeoff?.catalogMode ?: srcSlot?.layoutMode ?: continue
+                        val catalogLean = takeoff?.catalogLeanDegrees ?: srcSlot?.leanDegrees ?: 0f
+                        val flightGame = if (picked) game else gameByUri(uri) ?: takeoff?.game ?: continue
                         val distPages = abs(targetOrigin.pageIndex - heroPageIdx)
-                        val crossTier = srcSlot.rowGridIndex != pickedSlot.rowGridIndex
-                        // 跨层远距邻书与主角同步起飞并略抬高弧线，避免末段滞后穿过同层近邻背后
-                        val delay = if (crossTier) 0f else (distPages * CATALOG_PICK_STAGGER).coerceAtMost(CATALOG_FLIGHT_MAX_DELAY)
-                        val arcLift = if (crossTier) {
-                            (targetOrigin.boxHeightPx * 0.11f).coerceAtLeast(22f)
-                        } else {
-                            (targetOrigin.boxHeightPx * 0.03f).coerceAtLeast(6f)
+                        val crossTier = srcSlot != null && pickedSlot != null && srcSlot.rowGridIndex != pickedSlot.rowGridIndex
+                        val delay = if (picked || crossTier) 0f else (distPages * CATALOG_PICK_STAGGER).coerceAtMost(CATALOG_FLIGHT_MAX_DELAY)
+                        val arcLift = when {
+                            picked -> (targetOrigin.boxHeightPx * 0.08f).coerceAtLeast(18f)
+                            crossTier -> (targetOrigin.boxHeightPx * 0.11f).coerceAtLeast(22f)
+                            else -> (targetOrigin.boxHeightPx * 0.03f).coerceAtLeast(6f)
                         }
-                        val zPrio = 100f - distPages.toFloat()
                         troupe += ShelfCatalogBookFlight(
-                            game = neighborGame,
-                            spineIndex = spineIndexOf(uri),
+                            game = flightGame,
+                            spineIndex = takeoff?.spineIndex ?: spineIndexOf(uri),
                             shelfOrigin = targetOrigin,
-                            catalogRect = srcSlot.rect,
-                            catalogMode = srcSlot.layoutMode,
+                            catalogRect = catalogRect,
+                            catalogMode = catalogMode,
                             delayFraction = delay,
                             arcLiftPx = arcLift,
                             returningToShelf = true,
-                            isCurrentInCatalog = uri == prePickFocusUri,
-                            zPriority = zPrio,
-                            catalogLeanDegrees = srcSlot.leanDegrees,
+                            isCurrentInCatalog = takeoff?.isCurrentInCatalog ?: (uri == prePickFocusUri),
+                            zPriority = if (picked) 200f else 100f - distPages,
+                            catalogLeanDegrees = catalogLean,
+                            takeoffPose = takeoff?.let { shelfCatalogBookPose(takeoffProgress, it) },
+                            useHeroCover = targetOrigin.isHero || takeoff?.useHeroCover == true,
                         )
                     }
+                }
+                val landingUris = troupe.mapTo(HashSet()) { it.game.uri }
+                for ((uri, takeoff) in takeoffs) {
+                    if (uri !in landingUris) troupe += takeoff.fadeFrom(takeoffProgress)
                 }
                 troupe.sortBy { it.zPriority }
 
                 if (troupe.isNotEmpty()) {
-                    val troupeUris = troupe.map { it.game.uri }.toSet()
-                    val startAt = exitFlightStart()
-                    activeTroupe = troupe
                     troupePresence.snapTo(1f)
-                    troupeFlight.snapTo(startAt)
+                    activeTroupe = troupe
+                    if (takeoffs.isNotEmpty()) hiddenSlotUris = landingUris + takeoffs.keys
                     // 等待 2 帧完成组合与首帧光栅化纹理上传，再隐去书架静态槽并同步启动弹簧
                     withFrameNanos { }
-                    hiddenSlotUris = troupeUris
+                    hiddenSlotUris = landingUris + takeoffs.keys
                     stage.lentAlpha = 0f
-                    stage.lentUris = troupeUris
+                    stage.lentUris = landingUris
                     withFrameNanos { }
                 } else {
                     activeTroupe = emptyList()
@@ -1659,7 +1699,7 @@ internal class ShelfCatalogMotion(
                         launch {
                             // 书落位的最后一小段里，书架上真正的书（连同投影、倒影、书脊上的烫线与菱饰）就开始浮现，
                             // 与飞行的书交叠着交接，不是飞完了才一下子冒出来
-                            troupeFlight.animateTo(1f, CATALOG_PICK_SPRING) { stage.lentAlpha = shelfCatalogHandoffAlpha(value) }
+                            returnFlight.animateTo(1f, CATALOG_PICK_SPRING) { stage.lentAlpha = shelfCatalogHandoffAlpha(value) }
                         }
                     }
                 }
@@ -1685,6 +1725,9 @@ internal class ShelfCatalogMotion(
             deliver()
             return
         }
+        val incoming = enteringTroupe()
+        reversingEntry = incoming.isNotEmpty() && initialShelfSize != null && initialShelfSize == stage.stageSize()
+        val reverseFrom = troupeFlight.value.coerceIn(0f, 1f)
         val visibleSlots = snapshotVisibleSlots()
         val anchorUri = anchorGame?.uri
         anchorUri?.let { visibleSlots[it] }?.let { anchorCoord = it.rowGridIndex to it.colIndex }
@@ -1694,7 +1737,7 @@ internal class ShelfCatalogMotion(
             ?: visibleTargets.firstOrNull { it.isHero }?.pageIndex ?: 0
 
         val anchorSlot = anchorUri?.let { visibleSlots[it] }
-        for (targetOrigin in visibleTargets) {
+        for (targetOrigin in if (incoming.isNotEmpty()) emptyList() else visibleTargets) {
             val srcSlot = visibleSlots[targetOrigin.uri] ?: continue
             val g = gameByUri(targetOrigin.uri) ?: continue
             val dist = abs(targetOrigin.pageIndex - anchorPageIdx)
@@ -1723,6 +1766,29 @@ internal class ShelfCatalogMotion(
                 catalogLeanDegrees = srcSlot.leanDegrees,
             )
         }
+        if (reversingEntry) {
+            troupe.addAll(incoming)
+        } else if (incoming.isNotEmpty()) {
+            val targets = visibleTargets.associateBy { it.uri }
+            for (flight in incoming) {
+                val target = targets[flight.game.uri]
+                troupe += if (target == null) flight.fadeFrom(reverseFrom) else ShelfCatalogBookFlight(
+                    game = flight.game,
+                    spineIndex = flight.spineIndex,
+                    shelfOrigin = target,
+                    catalogRect = flight.catalogRect,
+                    catalogMode = flight.catalogMode,
+                    delayFraction = 0f,
+                    arcLiftPx = flight.arcLiftPx,
+                    returningToShelf = true,
+                    isCurrentInCatalog = flight.isCurrentInCatalog,
+                    zPriority = flight.zPriority,
+                    catalogLeanDegrees = flight.catalogLeanDegrees,
+                    takeoffPose = shelfCatalogBookPose(reverseFrom, flight),
+                    useHeroCover = target.isHero || flight.useHeroCover,
+                )
+            }
+        }
         troupe.sortBy { it.zPriority }
 
         transitionJob?.cancel()
@@ -1730,14 +1796,12 @@ internal class ShelfCatalogMotion(
             try {
                 if (troupe.isNotEmpty()) {
                     val troupeUris = troupe.map { it.game.uri }.toSet()
-                    val startAt = exitFlightStart()
                     activeTroupe = troupe
                     troupePresence.snapTo(1f)
-                    troupeFlight.snapTo(startAt)
                     // 等待 2 帧完成组合与首帧光栅化纹理上传，再隐去书架静态槽并同步启动退场弹簧
                     withFrameNanos { }
                     stage.lentAlpha = 0f
-                    stage.lentUris = troupeUris
+                    stage.lentUris = troupe.filterNot { it.fadeInPlace }.mapTo(HashSet()) { it.game.uri }
                     hiddenSlotUris = troupeUris
                     withFrameNanos { }
                 } else {
@@ -1754,7 +1818,14 @@ internal class ShelfCatalogMotion(
                     }
                     if (activeTroupe.isNotEmpty()) {
                         launch {
-                            troupeFlight.animateTo(1f, CATALOG_EXIT_SPRING) { stage.lentAlpha = shelfCatalogHandoffAlpha(value) }
+                            if (reversingEntry) {
+                                troupeFlight.animateTo(0f, CATALOG_EXIT_SPRING) {
+                                    val handoff = if (reverseFrom > 0f) 1f - value / reverseFrom else 1f
+                                    stage.lentAlpha = shelfCatalogHandoffAlpha(handoff)
+                                }
+                            } else {
+                                returnFlight.animateTo(1f, CATALOG_EXIT_SPRING) { stage.lentAlpha = shelfCatalogHandoffAlpha(value) }
+                            }
                         }
                     }
                 }
@@ -1787,10 +1858,23 @@ internal class ShelfCatalogMotion(
     private fun deliver() {
         if (delivered) return
         delivered = true
+        exitFocusToken?.let(stage::clearPendingFocus)
         stage.exitInterrupt = null
         stage.release()
         dismissAction?.invoke()
     }
+
+    internal fun currentBookPose(flight: ShelfCatalogBookFlight): ShelfCatalogBookPose {
+        val raw = if (flight.returningToShelf) returnFlight.value else troupeFlight.value
+        val cached = flight.cachedPose
+        if (cached != null && flight.cachedRawProgress == raw) return cached
+        return shelfCatalogBookPose(rawProgress = raw, flight = flight).also {
+            flight.cachedRawProgress = raw
+            flight.cachedPose = it
+        }
+    }
+
+    internal fun fadeInPlaceAlpha(): Float = 1f - catalogSmoothstep(returnFlight.value)
 }
 
 @Composable
@@ -2075,16 +2159,6 @@ internal fun rememberShelfCatalogPullToDismiss(
                 },
             )
         }
-    }
-}
-
-internal fun ShelfCatalogMotion.currentBookPose(flight: ShelfCatalogBookFlight): ShelfCatalogBookPose {
-    val raw = troupeFlight.value
-    val cached = flight.cachedPose
-    if (cached != null && flight.cachedRawProgress == raw) return cached
-    return shelfCatalogBookPose(rawProgress = raw, flight = flight).also {
-        flight.cachedRawProgress = raw
-        flight.cachedPose = it
     }
 }
 
