@@ -90,6 +90,22 @@ class HomePageMigrationSettingsTest {
     }
 
     @Test
+    fun startupPublishesTheDecisionBeforeDiskWriteAndBeforeGameLibraryCreation() {
+        val appSettings = MemoryPreferences()
+        val library = File(temp.root, AppStorageNames.GAME_LIBRARY_DATABASE)
+        val context = MigrationContext(appSettings.preferences, emptyMap(), library, temp.root)
+
+        AppSettingsStore.prepareHomePageEnabled(context)
+        assertFalse(AppSettingsStore.homePageEnabledState.value)
+        assertFalse(appSettings.disk.containsKey(AppSettingsStore.KEY_HOME_PAGE_ENABLED))
+
+        assertTrue(library.createNewFile())
+        AppSettingsStore.resetHomePageMigrationForTests()
+        AppSettingsStore.initHomePageEnabled(context)
+        assertEquals(false, appSettings.disk[AppSettingsStore.KEY_HOME_PAGE_ENABLED])
+    }
+
+    @Test
     fun failedFirstCommitRetainsFreshInstallDecisionAfterLibraryAppearsAndProcessRestarts() {
         val beforeDisk = MemoryPreferences(failedCommits = 1)
         val library = File(temp.root, AppStorageNames.GAME_LIBRARY_DATABASE)

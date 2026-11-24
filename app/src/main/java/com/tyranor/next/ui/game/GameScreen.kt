@@ -459,7 +459,7 @@ private fun GameLibraryContent(
     val focusManager = LocalFocusManager.current
     val conditionSelection = AppSettingsStore.gameConditions.collectSettingAsState().value
     val conditions = conditionSelection.conditions
-    var shelfCurrentUri by remember(conditionSelection) { mutableStateOf(AppSettingsStore.gameShelfFocusUri(context)) }
+    val shelfCurrentUri = remember(conditionSelection) { mutableStateOf(AppSettingsStore.gameShelfFocusUri(context)) }
     // 条件变化时重新创建滚动状态，避免 Lazy 布局按旧首卡键锚定到排序后的其它位置。
     val gridState = key(conditions) { rememberLazyStaggeredGridState() }
     val uniformGridState = key(conditions) { rememberLazyGridState() }
@@ -502,8 +502,8 @@ private fun GameLibraryContent(
     val wideScreen = isWideScreen()
     val columnSettings by AppSettingsStore.gameCardColumns.collectSettingAsState()
     val columns = columnSettings.forScreen(wideScreen)
-    LaunchedEffect(cardStyle, games.isEmpty()) {
-        if (cardStyle != AppSettingsStore.GAME_CARD_STYLE_SHELF || games.isEmpty()) {
+    LaunchedEffect(cardStyle, loaded, games.isEmpty()) {
+        if (cardStyle != AppSettingsStore.GAME_CARD_STYLE_SHELF || (loaded && games.isEmpty())) {
             showShelfCatalog = false
             shelfCatalog.release()
             shelfCatalog.clearPendingFocus()
@@ -697,16 +697,16 @@ private fun GameLibraryContent(
                                         if (contentInteractive && games.isNotEmpty()) {
                                             focusManager.clearFocus()
                                             catalogAnchorUri = target.uri
-                                            catalogSelectedUri = shelfCurrentUri ?: target.uri
+                                            catalogSelectedUri = shelfCurrentUri.value ?: target.uri
                                             showShelfCatalog = true
                                         }
                                     },
                                     book = shelfBook,
                                     catalog = shelfCatalog,
-                                    initialUri = shelfCurrentUri,
-                                    onCurrentGameChanged = { current ->
-                                        shelfCurrentUri = current.uri
-                                        AppSettingsStore.setGameShelfFocusUri(context, current.uri, conditionSelection)
+                                    initialUri = { shelfCurrentUri.value },
+                                    onCurrentGameChanged = { shelfCurrentUri.value = it.uri },
+                                    onSettledGameChanged = { uri ->
+                                        AppSettingsStore.setGameShelfFocusUri(context, uri, conditionSelection)
                                     },
                                 )
                             }
@@ -782,8 +782,9 @@ private fun GameLibraryContent(
                 filteredGames.firstOrNull { it.uri == uri } ?: games.firstOrNull { it.uri == uri }
             }
         }
-        val currentFocusGame = remember(filteredGames, shelfCurrentUri, anchorGame) {
-            shelfCurrentUri?.let { uri -> filteredGames.firstOrNull { it.uri == uri } } ?: anchorGame
+        val focusUri = shelfCurrentUri.value
+        val currentFocusGame = remember(filteredGames, focusUri, anchorGame) {
+            focusUri?.let { uri -> filteredGames.firstOrNull { it.uri == uri } } ?: anchorGame
         }
         ShelfCatalogOverlay(
             allGames = games,
@@ -808,7 +809,7 @@ private fun GameLibraryContent(
                 when {
                     filteredGames.none { it.uri == picked.uri } -> 0
                     scanning || !loaded -> {
-                        shelfCurrentUri = picked.uri
+                        shelfCurrentUri.value = picked.uri
                         AppSettingsStore.setGameShelfFocusUri(context, picked.uri, conditionSelection)
                         0
                     }
@@ -890,7 +891,7 @@ private enum class LibraryPane { Loading, Empty, NoMatch, Content }
 /**
  * 游戏操作条目描述（操作抽屉与书架翻开的书共用）；[key] 供列表 item key 使用。
  * [showArrow] 仅在跳转独立 Activity 时为 true，抽屉内弹窗及纯动作条目隐藏箭头。
- * [opensBookLeaf] 表示在「翻开的书」中点击该条目会翻到下一页（用于驱动页前翻页动画）。
+ * [opensBookLeaf] 表示该条目在书内打开操作子页；点击时先记录翻页起点，再执行条目动作。
  * [abandonsLaunch]：点这一条是否放弃还在等待的 SystemNNN 启动结果（启动文件选择不放弃）。
  */
 internal data class GameActionItem(

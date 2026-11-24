@@ -180,10 +180,14 @@ import java.lang.ref.WeakReference
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.platform.LocalLocale
 import kotlinx.coroutines.flow.first
@@ -212,15 +216,19 @@ internal fun GameShelf(
     onGameLongClick: (ScanGame) -> Unit,
     book: ShelfBookStage? = null,
     catalog: ShelfCatalogStage? = null,
-    initialUri: String? = null,
+    initialUri: () -> String? = { null },
     onCurrentGameChanged: ((ScanGame) -> Unit)? = null,
+    onSettledGameChanged: ((String) -> Unit)? = null,
 ) {
     val hideTitleTag by AppSettingsStore.gameCardTitleTagState.collectSettingAsState()
     val latestGames by rememberUpdatedState(games)
-    val pagerState = remember { PagerState(currentPage = shelfFocusPage(games, initialUri), pageCount = { latestGames.size }) }
+    val pagerState = remember { PagerState(currentPage = shelfFocusPage(games, initialUri()), pageCount = { latestGames.size }) }
     val scope = rememberCoroutineScope()
+    val knobSeek = rememberShelfKnobSeek()
+    val scrubbing = remember(pagerState) { mutableStateOf(false) }
 
     val notifyCurrentGame by rememberUpdatedState(onCurrentGameChanged)
+    val notifySettledGame by rememberUpdatedState(onSettledGameChanged)
     val latestInteractive by rememberUpdatedState(isInteractive)
     val pendingUri = catalog?.pendingFocusUri
     val focusToken = catalog?.focusRequestToken
@@ -272,6 +280,18 @@ internal fun GameShelf(
             }
         }
     }
+    LaunchedEffect(pagerState, catalog) {
+        snapshotFlow {
+            if (pagerState.isScrollInProgress || scrubbing.value || knobSeek.active ||
+                !latestInteractive() || catalog?.pendingFocusUri != null
+            ) {
+                null
+            } else {
+                val page = pagerState.settledPage
+                latestGames.getOrNull(page)?.uri?.takeIf { pagerState.isShelfPageCentered(page, it) }
+            }
+        }.collect { uri -> if (uri != null) notifySettledGame?.invoke(uri) }
+    }
 
     // 翻开的书用宋体：书架一出现就在后台把系统字体读好，不落到书起飞的第一帧上
     if (book != null) {
@@ -280,8 +300,6 @@ internal fun GameShelf(
     }
     val listChangedAt = rememberCoverBatchChange(games)
     // 点按进度轨道跳转时旋钮自己飞过去；跳转途中翻页触觉静音（只在点按那一下震）
-    val knobSeek = rememberShelfKnobSeek()
-    val scrubbing = remember(pagerState) { mutableStateOf(false) }
     // 手指翻过一本书脊轻点一下（程序化滚动、刻度尺定位不重复震）
     PagerTickHaptics(pagerState, muted = { knobSeek.active })
     // 每本封面的主色（背景色晕解出来时顺手算一次）：正中那一盒脚下与身后的光用它
@@ -308,61 +326,83 @@ internal fun GameShelf(
 
     Box(Modifier.fillMaxSize().shelfTouchIntent { if (isInteractive()) catalog?.interruptExit() }) {
         ShelfBackdrop(pagerState, games, coverTints, Modifier.fillMaxSize())
-        Column(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(bottom = glassNavBottomInset()),
-            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            ShelfStage(
-                games = games,
-                pagerState = pagerState,
-                hideTitleTag = hideTitleTag,
-                batchChangedAt = listChangedAt,
-                coverTints = coverTints,
-                book = book,
-                catalog = catalog,
-                isInteractive = isInteractive,
-                onGameClick = onGameClick,
-                onGameLongClick = onGameLongClick,
-                onPlay = launchGame,
-                onCenter = centerGame,
-                // 旋转过渡：书架的书不逐帧重排，第一帧按最终尺寸排好后等比缩放贴进分给它的矩形（见 rotationMorphBlock）
-                modifier = Modifier.fillMaxWidth().weight(1f).rotationMorphBlock(),
-            )
-            ShelfInfoRow(
-                pagerState = pagerState,
-                knobSeek = knobSeek,
-                scrubbing = scrubbing,
-                games = games,
-                hideTitleTag = hideTitleTag,
-                onContinue = centerGame,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .shelfCatalogChromeRecede(catalog)
-                    .staggeredEntrance(SHELF_INFO_ENTRANCE_INDEX, distance = 20.dp, stepMillis = 40L)
-                    .padding(start = 20.dp, end = 20.dp, top = 6.dp),
-            )
-            if (games.size > 1) {
-                ShelfScrubber(
-                    pagerState = pagerState,
-                    knobSeek = knobSeek,
-                    scrubbingState = scrubbing,
+            val chrome = shelfChromeForHeight(maxHeight, LocalDensity.current.fontScale, games.size > 1)
+            Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                ShelfStage(
                     games = games,
+                    pagerState = pagerState,
                     hideTitleTag = hideTitleTag,
+                    batchChangedAt = listChangedAt,
+                    coverTints = coverTints,
+                    book = book,
+                    catalog = catalog,
                     isInteractive = isInteractive,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .shelfCatalogChromeRecede(catalog)
-                        .staggeredEntrance(SHELF_SCRUBBER_ENTRANCE_INDEX, distance = 16.dp, stepMillis = 40L)
-                        .padding(top = 10.dp, bottom = 6.dp),
+                    onGameClick = onGameClick,
+                    onGameLongClick = onGameLongClick,
+                    onPlay = launchGame,
+                    onCenter = centerGame,
+                    // 旋转过渡：书架的书不逐帧重排，第一帧按最终尺寸排好后等比缩放贴进分给它的矩形（见 rotationMorphBlock）
+                    modifier = Modifier.fillMaxWidth().weight(1f).rotationMorphBlock(),
                 )
-            } else {
-                Spacer(Modifier.height(16.dp))
+                if (chrome.infoHeight > 0.dp) {
+                    ShelfInfoRow(
+                        pagerState = pagerState,
+                        knobSeek = knobSeek,
+                        scrubbing = scrubbing,
+                        games = games,
+                        hideTitleTag = hideTitleTag,
+                        onContinue = centerGame,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = chrome.infoHeight)
+                            .shelfCatalogChromeRecede(catalog)
+                            .staggeredEntrance(SHELF_INFO_ENTRANCE_INDEX, distance = 20.dp, stepMillis = 40L)
+                            .padding(start = 20.dp, end = 20.dp, top = 6.dp),
+                    )
+                }
+                if (chrome.showScrubber) {
+                    ShelfScrubber(
+                        pagerState = pagerState,
+                        knobSeek = knobSeek,
+                        scrubbingState = scrubbing,
+                        games = games,
+                        hideTitleTag = hideTitleTag,
+                        isInteractive = isInteractive,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .shelfCatalogChromeRecede(catalog)
+                            .staggeredEntrance(SHELF_SCRUBBER_ENTRANCE_INDEX, distance = 16.dp, stepMillis = 40L)
+                            .padding(top = SCRUBBER_TOP_SPACE, bottom = SCRUBBER_BOTTOM_SPACE),
+                    )
+                } else if (chrome.singleGameSpacer) {
+                    Spacer(Modifier.height(SINGLE_GAME_SPACER))
+                }
             }
         }
     }
 }
+
+internal data class ShelfChrome(val infoHeight: Dp, val showScrubber: Boolean, val singleGameSpacer: Boolean)
+
+internal fun shelfChromeForHeight(height: Dp, fontScale: Float, multipleGames: Boolean): ShelfChrome {
+    val spare = height - MIN_STAGE_HEIGHT
+    val bottomSpace = if (multipleGames) RULER_HEIGHT + SCRUBBER_TOP_SPACE + SCRUBBER_BOTTOM_SPACE else SINGLE_GAME_SPACER
+    val showBottomSpace = spare >= bottomSpace
+    val infoHeight = (spare - if (showBottomSpace) bottomSpace else 0.dp)
+        .takeIf { it >= MIN_INFO_HEIGHT * fontScale.coerceAtLeast(1f) } ?: 0.dp
+    return ShelfChrome(infoHeight, multipleGames && showBottomSpace, !multipleGames && showBottomSpace)
+}
+
+internal fun shelfStageScale(heightBudget: Dp): Float = (heightBudget / MIN_STAGE_HEIGHT).coerceIn(0f, 1f)
+
+internal fun shelfCoverWidthForHeight(heightBudget: Dp): Dp =
+    MIN_COVER_WIDTH * shelfStageScale(heightBudget) +
+        ((heightBudget - MIN_STAGE_HEIGHT) * (0.75f / (1f + FLOOR_RATIO + LIFT_ROOM_RATIO))).coerceAtLeast(0.dp)
 
 internal fun shelfFocusPage(games: List<ScanGame>, uri: String?): Int =
     games.indexOfFirst { it.uri == uri }.takeIf { it >= 0 }
@@ -399,6 +439,7 @@ private fun ShelfStage(
     // 书架落在舞台底部、贴着下面的对话框：多出来的高度留在上方，让夜景的「天空」透出来（像 galgame 里立绘站在
     // 画面下方、上面是背景 CG），而不是在搁板和对话框之间空出一截
     BoxWithConstraints(modifier.shelfCatalogStageRecede(catalog, LocalDensity.current.density), contentAlignment = Alignment.BottomCenter) {
+        if (maxWidth < 1.dp || maxHeight < 1.dp) return@BoxWithConstraints
         // 封面宽取「容器宽度一定比例」与「可用高度能容下的宽度」的较小值：横屏 / 平板时书脊更多、盒子不被裁切。
         // 游戏很少时盒子大一点，撑起画面。
         // 平板竖屏（又宽又高的舞台）：封面放大、整座书架抬高——原来按手机的比例放，封面只占舞台一半高，
@@ -410,16 +451,19 @@ private fun ShelfStage(
             else -> COVER_WIDTH_RATIO
         }
         val heightBudget = if (tall) maxHeight * TALL_STAGE_FILL else maxHeight
+        val compactScale = shelfStageScale(heightBudget)
+        val lift = LIFT * compactScale
+        val belowBoard = SHELF_BELOW_BOARD.dp * compactScale
         val coverWidth = minOf(
             maxWidth * widthRatio,
-            (heightBudget - LIFT_ROOM - STAGE_TOP_ROOM - SHELF_BELOW_BOARD.dp) / (1f + FLOOR_RATIO + LIFT_ROOM_RATIO) * 0.75f,
-        ).coerceAtLeast(MIN_COVER_WIDTH)
+            shelfCoverWidthForHeight(heightBudget),
+        )
         val coverHeight = coverWidth * 4f / 3f
         val floorDepth = coverHeight * FLOOR_RATIO
-        val topRoom = LIFT_ROOM + coverHeight * LIFT_ROOM_RATIO
+        val topRoom = LIFT_ROOM * compactScale + coverHeight * LIFT_ROOM_RATIO
         // 多出来的高度按比例分给搁板下面（抬高底板）与书顶上面：不再整块堆在上面
         val raise = if (tall) {
-            ((maxHeight - (topRoom + coverHeight + floorDepth + SHELF_BELOW_BOARD.dp)) * TALL_STAGE_RAISE).coerceAtLeast(0.dp)
+            ((maxHeight - (topRoom + coverHeight + floorDepth + belowBoard)) * TALL_STAGE_RAISE).coerceAtLeast(0.dp)
         } else {
             0.dp
         }
@@ -445,7 +489,7 @@ private fun ShelfStage(
         // 手指拖过「一本」的距离 = 正中那一盒移到相邻位置走过的距离：盒子与手指同速移动（跟手、不飘），
         // 也远大于书脊间距，轻碰不会滑到下一个游戏
         val dragPitch = geometry.dragPitch
-        val dragPitchDp = with(density) { dragPitch.toDp() }
+        val dragPitchDp = with(density) { dragPitch.coerceAtLeast(1f).toDp() }
         val sidePadding = ((maxWidth - dragPitchDp) / 2).coerceAtLeast(0.dp)
         // 书架投影：已放平（不再倾斜），投影为恒等，当前那盒停在正中；接口保留，各处照常调用
         val rail = remember(viewport, geometry) { ShelfRail(viewport, geometry.coverHeight * RAIL_EYE) }
@@ -467,8 +511,8 @@ private fun ShelfStage(
             CoverDecodeTier.forWidth(with(density) { (coverWidth * SHELF_HERO_MAX_ZOOM).roundToPx() })
         }
         val chamfer = remember(coverWidth) { shelfChamfer(coverWidth) }
-        val dims = remember(coverWidth, coverHeight, spineDepth, floorDepth, topRoom, heroTier, chamfer) {
-            ShelfDims(coverWidth, coverHeight, spineDepth, floorDepth, topRoom, heroTier, chamfer)
+        val dims = remember(coverWidth, coverHeight, spineDepth, floorDepth, topRoom, belowBoard, lift, heroTier, chamfer) {
+            ShelfDims(coverWidth, coverHeight, spineDepth, floorDepth, topRoom, belowBoard, lift, heroTier, chamfer)
         }
         val sharedShapes = remember(chamfer) { ShelfBoxShapes(chamfer) }
         if (catalog != null) {
@@ -477,11 +521,11 @@ private fun ShelfStage(
                     return@rememberUpdatedState emptyList()
                 }
                 val raisePx = with(density) { raise.toPx() }
-                val floorYScreen = stageTopLeft.y + stageSize.height - raisePx - with(density) { (dims.floorDepth + SHELF_BELOW_BOARD.dp).toPx() }
-                val desiredInnerHeightPx = with(density) { (dims.topRoom + dims.coverHeight + dims.floorDepth + SHELF_BELOW_BOARD.dp).toPx() }
+                val floorYScreen = stageTopLeft.y + stageSize.height - raisePx - with(density) { (dims.floorDepth + dims.belowBoard).toPx() }
+                val desiredInnerHeightPx = with(density) { (dims.topRoom + dims.coverHeight + dims.floorDepth + dims.belowBoard).toPx() }
                 val stageOverflowPx = (desiredInnerHeightPx - (stageSize.height.toFloat() - raisePx)).coerceAtLeast(0f)
                 val pagerZeroCenterX = stageTopLeft.x + with(density) { sidePadding.toPx() } + dragPitch * 0.5f
-                val liftPx = with(density) { LIFT.toPx() }
+                val liftPx = with(density) { dims.lift.toPx() }
                 val position = pagerState.pagePosition()
                 val shift = rowShift()
                 if (uriFilter != null) {
@@ -565,13 +609,13 @@ private fun ShelfStage(
         }
         val floorYPx = with(density) { (topRoom + coverHeight).toPx() }
         val floorDepthPx = with(density) { floorDepth.toPx() }
-        val boardEdgePx = with(density) { SHELF_BOARD_EDGE.dp.toPx() }
+        val boardEdgePx = with(density) { (SHELF_BOARD_EDGE.dp * compactScale).toPx() }
         val bookHeightPx = with(density) { coverHeight.toPx() }
         Box(
             modifier = Modifier
                 .padding(bottom = raise)
                 .fillMaxWidth()
-                .height(topRoom + coverHeight + floorDepth + SHELF_BELOW_BOARD.dp),
+                .height(topRoom + coverHeight + floorDepth + belowBoard),
         ) {
             // 搁板与书盒共用宿主全局入场节拍且互不嵌套，切回界面时搁板轻盈就位、书盒依次立起
             Spacer(
@@ -681,6 +725,8 @@ private class ShelfDims(
     val spineDepth: Dp,
     val floorDepth: Dp,
     val topRoom: Dp,
+    val belowBoard: Dp,
+    val lift: Dp,
     val heroTier: CoverDecodeTier,
     /** 封面开口那一侧两个角的倒角边长。 */
     val chamfer: Dp,
@@ -731,7 +777,7 @@ private fun ShelfBox(
     val density = LocalDensity.current
     val floorY = with(density) { (dims.topRoom + dims.coverHeight).toPx() }
     val floorDepth = with(density) { dims.floorDepth.toPx() }
-    val lift = with(density) { LIFT.toPx() }
+    val lift = with(density) { dims.lift.toPx() }
     val engineColor = game.engine.coverColor()
     val reflectionAlpha = ShelfReflectionAlpha
     val trait = remember(game.uri) { shelfBookTrait(game.uri) }
@@ -793,7 +839,7 @@ private fun ShelfBox(
                     (bs * cs).coerceIn(0f, 1f)
                 },
             )
-            .padding(top = dims.topRoom, bottom = dims.floorDepth + SHELF_BELOW_BOARD.dp)
+            .padding(top = dims.topRoom, bottom = dims.floorDepth + dims.belowBoard)
             .shelfBoxPose(pagerState, { localOffset.value }, lift, velocity, trait)
             .gameRemovalDust(dissolve)
             .shelfBatchArrival(batchChangedAt, kotlin.math.abs(page - anchorPage))
@@ -2204,7 +2250,7 @@ private fun ShelfInfoLayout(reveal: () -> Float, content: @Composable () -> Unit
         val body = (advHeight - overlap).coerceAtLeast(0)
         val summaryHeight = summary?.let { maxOf(body, it.minIntrinsicHeight(summaryWidth)).coerceAtMost(constraints.maxHeight) } ?: 0
         val summaryPlaceable = summary?.measure(Constraints.fixed(summaryWidth, summaryHeight))
-        val height = maxOf(advHeight, summaryHeight + overlap)
+        val height = maxOf(advHeight, summaryHeight + overlap).coerceAtMost(constraints.maxHeight)
         val width = used + (advPlaceable?.width ?: 0)
         layout(width, height) {
             // 卡片整张（内容排版不变）从左侧滑进来并淡入，不被挤窄
@@ -2502,7 +2548,15 @@ private fun ShelfScrubber(
             if (!canSeek()) continue
             val nearest = targetPos.roundToInt()
             val fraction = targetPos - nearest
-            coroutineScope { launch { pagerState.scrollToPage(nearest, fraction) }.join() }
+            coroutineScope {
+                val scroll = async { pagerState.scrollToPage(nearest, fraction) }
+                try {
+                    scroll.await()
+                } catch (_: CancellationException) {
+                    // Pager 的互斥滚动可抢占这次寻址；真正取消消费协程时仍向外传播。
+                    currentCoroutineContext().ensureActive()
+                }
+            }
         }
     }
     val localDensity = LocalDensity.current
@@ -2844,6 +2898,8 @@ private fun shelfSpeedLabel(speed: Float): String = when {
 private const val COVER_WIDTH_RATIO = 0.5f
 private const val COVER_WIDTH_RATIO_FEW = 0.5f
 private val MIN_COVER_WIDTH = 96.dp
+private val MIN_INFO_HEIGHT = 150.dp
+private val SINGLE_GAME_SPACER = 16.dp
 
 /**
  * 平板竖屏（舞台宽 ≥ [TALL_STAGE_MIN_WIDTH]、高宽比 ≥ [TALL_STAGE_MIN_ASPECT]）：封面占舞台宽的 [COVER_WIDTH_RATIO_TALL]，
@@ -2887,6 +2943,8 @@ private val STAGE_TOP_ROOM = 8.dp
 
 /** 搁板（倒影区）深度占盒子高度的比例。 */
 private const val FLOOR_RATIO = 0.14f
+private val MIN_STAGE_HEIGHT = LIFT_ROOM + STAGE_TOP_ROOM + SHELF_BELOW_BOARD.dp +
+    MIN_COVER_WIDTH * (4f / 3f * (1f + FLOOR_RATIO + LIFT_ROOM_RATIO))
 
 /** 居中盒子脚下与身后那团光（封面主色）的透明度。 */
 private const val LEDGE_GLOW_ALPHA = 0.42f
@@ -2955,6 +3013,8 @@ private val NAME_TAG_OVERLAP = 13.dp
 
 /** 进度轨道：区域高度、两端最小留白、游戏少时每本的最大间距；旋钮尺寸、两侧断口、触摸半径、按住放大；气泡间距。 */
 private val RULER_HEIGHT = 38.dp
+private val SCRUBBER_TOP_SPACE = 10.dp
+private val SCRUBBER_BOTTOM_SPACE = 6.dp
 private val RULER_INSET = 34.dp
 private val RULER_MAX_SPACING = 48.dp
 private val KNOB_SIZE = 26.dp

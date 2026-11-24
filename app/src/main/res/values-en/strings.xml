@@ -1070,7 +1070,7 @@
     <string name="game_shelf_catalog_count_total">%1$d titles</string>
     <string name="game_shelf_catalog_count_filtered">%1$d / %2$d</string>
     <string name="game_shelf_catalog_section_count">%1$d</string>
-    <string name="game_shelf_catalog_empty_title">No matching titles on this shelf</string>
+    <string name="game_shelf_catalog_empty_title">No matching games</string>
     <string name="game_shelf_catalog_empty_action">Show all games</string>
     <string name="game_shelf_catalog_current_badge">Current</string>
     <string name="game_shelf_catalog_layout_spines">Spines</string>

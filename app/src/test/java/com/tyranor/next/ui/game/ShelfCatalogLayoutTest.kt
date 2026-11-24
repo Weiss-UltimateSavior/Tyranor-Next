@@ -6,6 +6,8 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.game.model.GameFilterOptions
+import com.tyranor.next.core.game.model.GameLibraryConditions
 import com.tyranor.next.core.game.model.ScanGame
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -145,9 +147,62 @@ class ShelfCatalogLayoutTest {
     @Test
     fun alignedScrollDistinguishesMissingAnchorFromFirstRow() {
         val rows = buildShelfCatalogCoverRows((0 until 6).map { fakeGame(it) }, columns = 3, groupByEngine = false)
-        assertEquals(0 to 40, shelfCatalogAlignedScroll(rows, "content://games/1", 20f, 100f, 60f))
-        assertNull(shelfCatalogAlignedScroll(rows, "content://games/missing", 20f, 100f, 60f))
+        assertEquals(0 to 46, shelfCatalogAlignedScroll(rows, "content://games/1", 20f, 60f, 6))
+        assertEquals(0 to 0, shelfCatalogAlignedScroll(rows, "content://games/1", 90f, 60f, 6))
+        assertNull(shelfCatalogAlignedScroll(rows, "content://games/missing", 20f, 60f, 6))
         assertEquals(0, shelfCatalogInitialRow(rows, "content://games/missing", visibleTiersHint = 2))
+    }
+
+    @Test
+    fun engineGroupedModeSwitchKeepsAnchorHeightAcrossVariableHeaderSizes() {
+        val games = (0 until 24).map { fakeGame(it, if (it < 10) EngineType.KIRIKIRI else EngineType.ONS) }
+        val spines = buildShelfCatalogVerticalRows(games, columns = 8, groupByEngine = true)
+        val covers = buildShelfCatalogCoverRows(games, columns = 3, groupByEngine = true)
+        val anchorUri = games[11].uri
+        val viewportY = 180.5f
+
+        val coverScroll = requireNotNull(shelfCatalogAlignedScroll(covers, anchorUri, viewportY, 83.5f, 9))
+        val spineScroll = requireNotNull(shelfCatalogAlignedScroll(spines, anchorUri, viewportY, 108.5f, 9))
+        assertEquals(6 to -88, coverScroll)
+        assertEquals(4 to -63, spineScroll)
+
+        for (headerHeight in listOf(51, 78)) {
+            val coverHeights = listOf(headerHeight, 220, 220, 220, 220, headerHeight, 220, 220, 220, 220, 220)
+            val spineHeights = listOf(headerHeight, 230, 230, headerHeight, 230, 230)
+            for ((scroll, heights, center) in listOf(
+                Triple(coverScroll, coverHeights, 83.5f),
+                Triple(spineScroll, spineHeights, 108.5f),
+            )) {
+                val tierTop = heights.take(scroll.first).sum()
+                val absoluteScroll = tierTop + scroll.second
+                val firstVisible = heights.indices.first { heights.take(it + 1).sum() > absoluteScroll }
+                val firstOffset = absoluteScroll - heights.take(firstVisible).sum()
+                val (expectedFirst, expectedOffset) = when {
+                    scroll == coverScroll -> 4 to (220 + headerHeight - 88)
+                    headerHeight > 63 -> 3 to 15
+                    else -> 2 to 218
+                }
+                assertEquals(expectedFirst to expectedOffset, firstVisible to firstOffset)
+                val anchorTop = 9 - firstOffset + heights.subList(firstVisible, scroll.first).sum()
+                assertEquals(viewportY, anchorTop + center, 0f)
+            }
+        }
+    }
+
+    @Test
+    fun sortingKeepsCenterButFiltersTakePriorityAndResetToTop() {
+        val before = GameLibraryConditions()
+        val sorted = before.copy(sortMode = GameFilterOptions.GAME_SORT_ENGINE)
+        val engineFiltered = sorted.copy(engineFilter = EngineType.ONS.name)
+        val playedFiltered = sorted.copy(playedFilter = GameFilterOptions.GAME_FILTER_PLAYED_ONLY)
+
+        assertEquals(ShelfCatalogReflow.KEEP_CENTER, shelfCatalogReflow(before, sorted, columnsChanged = false))
+        assertEquals(ShelfCatalogReflow.KEEP_CENTER, shelfCatalogReflow(sorted, sorted, columnsChanged = true))
+        assertEquals(ShelfCatalogReflow.RESET_TOP, shelfCatalogReflow(before, engineFiltered, columnsChanged = true))
+        assertEquals(ShelfCatalogReflow.RESET_TOP, shelfCatalogReflow(sorted, playedFiltered, columnsChanged = false))
+        assertEquals(ShelfCatalogReflow.RESET_TOP, shelfCatalogReflow(engineFiltered, sorted, columnsChanged = false))
+        assertEquals(ShelfCatalogReflow.NONE, shelfCatalogReflow(sorted, sorted, columnsChanged = false))
+        assertEquals(ShelfCatalogReflow.NONE, shelfCatalogReflow(null, engineFiltered, columnsChanged = false))
     }
 
     @Test
@@ -171,6 +226,31 @@ class ShelfCatalogLayoutTest {
         assertEquals(games[73].uri, anchor)
         assertNull(resolveCatalogCenterUri(oldLayout, after))
         assertEquals(4, shelfCatalogInitialRow(after, anchor, visibleTiersHint = 2))
+    }
+
+    @Test
+    fun sortingIntoEngineSectionsRelocatesTheSameBookInsteadOfKeepingTheRowIndex() {
+        val games = (0 until 18).map { fakeGame(it, if (it % 2 == 0) EngineType.KIRIKIRI else EngineType.ONS) }
+        val before = buildShelfCatalogCoverRows(games, columns = 3, groupByEngine = false)
+        val after = buildShelfCatalogCoverRows(games.sortedBy { it.engine.ordinal }, columns = 3, groupByEngine = true)
+        val oldLayout = object : LazyListLayoutInfo {
+            override val totalItemsCount = before.size + 1
+            override val viewportStartOffset = -9
+            override val viewportEndOffset = 410
+            override val visibleItemsInfo = listOf(1 to -60, 2 to 120, 3 to 300).map { (rowIndex, rowOffset) ->
+                object : LazyListItemInfo {
+                    override val index = rowIndex
+                    override val key = before[rowIndex].key
+                    override val offset = rowOffset
+                    override val size = 180
+                }
+            }
+        }
+        val anchorUri = resolveCatalogCenterUri(oldLayout, before)
+        assertEquals(games[7].uri, anchorUri)
+        val anchorRow = findShelfCatalogAnchorRow(after, anchorUri)
+        assertTrue(anchorRow > 2)
+        assertEquals(anchorRow, shelfCatalogInitialRow(after, anchorUri, visibleTiersHint = 2))
     }
 
     @Test

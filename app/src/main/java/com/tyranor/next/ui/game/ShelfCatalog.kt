@@ -4,9 +4,11 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.stopScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +33,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -201,10 +204,12 @@ internal fun ShelfCatalogOverlay(
         initialLayoutMode = layoutMode,
         onDismiss = onDismiss,
     )
-    val conditionBatch = remember(motion, conditions) { Any() }
-    val openingBatch = remember(motion) { conditionBatch }
-    val openingUri = (anchorGame?.uri ?: currentFocusGame?.uri).takeIf { conditionBatch === openingBatch }
-    val initialAnchorUri = remember(filteredGames, openingUri) { shelfCatalogFocusUri(filteredGames, openingUri) }
+    val filterBatch = remember(motion, conditions.engineFilter, conditions.playedFilter) { Any() }
+    val openingBatch = remember(motion) { filterBatch }
+    val openingUri = anchorGame?.uri ?: currentFocusGame?.uri
+    val initialAnchorUri = remember(filteredGames, openingUri, filterBatch) {
+        if (filterBatch === openingBatch) shelfCatalogFocusUri(filteredGames, openingUri) else null
+    }
     LaunchedEffect(motion, motion.layoutMode) {
         if (layoutMode != motion.layoutMode) onLayoutModeChange(motion.layoutMode)
     }
@@ -276,6 +281,7 @@ internal fun ShelfCatalogOverlay(
                     } else {
                         ShelfCatalogModeSwitcher(
                             mode = motion.layoutMode,
+                            revision = motion.layoutRevision,
                             leavingMode = motion.activeMorph.firstOrNull()?.fromMode,
                             progress = { motion.morphProgress.value },
                             blockTouches = motion.morphing,
@@ -287,7 +293,6 @@ internal fun ShelfCatalogOverlay(
                                 initialAnchorUri = initialAnchorUri,
                                 currentFocusUri = selectedGame?.uri,
                                 conditions = conditions,
-                                conditionBatch = conditionBatch,
                                 hideTitleTag = hideTitleTag,
                                 motion = motion,
                                 onPickGame = { picked ->
@@ -741,16 +746,13 @@ private fun ShelfCatalogWall(
     initialAnchorUri: String?,
     currentFocusUri: String?,
     conditions: GameLibraryConditions,
-    conditionBatch: Any,
     hideTitleTag: Boolean,
     motion: ShelfCatalogMotion,
     onPickGame: (ScanGame) -> Unit,
 ) {
-    val canAlign = remember { conditionBatch } === conditionBatch
-    // 切换陈列时旧书柜会作为「退场面」重新组合：它和新书柜都要对齐到同一个锚点高度，
-    // 否则旧柜退回进入时的焦点行，没被变形卡片接管的书会从卡片后面冒出来。
-    val anchorY = motion.layoutAnchorY.takeIf { canAlign }
-    val anchorUri = if (anchorY != null) motion.layoutAnchorUri ?: initialAnchorUri else initialAnchorUri
+    val anchorY = motion.layoutAnchorY
+    val anchorUri = motion.layoutAnchorUri.takeIf { anchorY != null }
+    val isLeaving = LocalShelfCatalogLeavingWall.current
     val groupByEngine = conditions.sortMode == AppSettingsStore.GAME_SORT_ENGINE
     val accent = MaterialTheme.colorScheme.primary
     val highlightStroke = shelfCatalogSelectedChipBorder(accent)
@@ -779,8 +781,8 @@ private fun ShelfCatalogWall(
             val tierEstimate = VERTICAL_TIER_TOP_ROOM + spineHeight + TIER_LEDGE_DEPTH +
                 TIER_BOARD_EDGE + TIER_UNDER_SHADOW + VERTICAL_TIER_PLAQUE_EXTRA
             val visibleTiersHint = (maxHeight / tierEstimate).toInt().coerceAtLeast(1)
-            val initialRow = remember(rows, anchorUri, visibleTiersHint) {
-                shelfCatalogInitialRow(rows, anchorUri, visibleTiersHint)
+            val initialRow = remember(rows, initialAnchorUri, visibleTiersHint) {
+                shelfCatalogInitialRow(rows, initialAnchorUri, visibleTiersHint)
             }
             // 网格几何报给变形：看不见的书按它外推位置
             SideEffect {
@@ -795,25 +797,22 @@ private fun ShelfCatalogWall(
                 )
             }
             // 从另一种陈列切过来：让锚点书落在旧陈列里的同一高度（能落的话），不整排上蹿下跳
-            val aligned = remember(rows, anchorUri, anchorY, tierEstimate, spineHeight, wallDensity) {
-                val factor = anchorUri?.let { shelfCatalogSpineHeightFactor(it) } ?: 1f
+            val aligned = remember(rows, anchorUri, anchorY, spineHeight, currentFocusUri, wallDensity) {
+                val bookHeight = spineHeight * (anchorUri?.let(::shelfCatalogSpineHeightFactor) ?: 1f)
                 with(wallDensity) {
                     shelfCatalogAlignedScroll(
                         rows = rows,
                         anchorUri = anchorUri,
                         anchorY = anchorY,
-                        pitchPx = tierEstimate.toPx(),
-                        cellCenterPx = (VERTICAL_TIER_TOP_ROOM + spineHeight - spineHeight * factor / 2f).toPx(),
+                        cellCenterPx = (VERTICAL_TIER_TOP_ROOM + (spineHeight - bookHeight)).roundToPx() +
+                            bookHeight.roundToPx() / 2f + (if (anchorUri == currentFocusUri) SPINE_FOCUS_LIFT else 0.dp).roundToPx(),
+                        topPaddingPx = WALL_TOP_FADE_START.roundToPx(),
                     )
                 }
             }
-            val listState = key(conditions) {
-                rememberLazyListState(
-                    initialFirstVisibleItemIndex = aligned?.first ?: initialRow,
-                    initialFirstVisibleItemScrollOffset = aligned?.second ?: 0,
-                )
-            }
-            val keepAnchor = rememberCatalogAnchorOnReflow(listState, rows, columns, visibleTiersHint)
+            val listState = rememberLazyListState(aligned?.first ?: initialRow, aligned?.second ?: 0)
+            StopLeavingWallScroll(listState, isLeaving)
+            val keepAnchor = rememberCatalogAnchorOnReflow(listState, rows, columns, visibleTiersHint, conditions)
             val jelly = rememberScrollJellyState()
 
             LazyColumn(
@@ -823,7 +822,8 @@ private fun ShelfCatalogWall(
                     .then(keepAnchor)
                     .shelfCatalogTopFade()
                     .scrollJellyHost(jelly),
-                contentPadding = PaddingValues(top = 6.dp, bottom = 28.dp),
+                contentPadding = PaddingValues(top = WALL_TOP_FADE_START, bottom = 28.dp),
+                userScrollEnabled = !motion.morphing,
             ) {
                 items(
                     items = rows,
@@ -891,8 +891,8 @@ private fun ShelfCatalogWall(
             val tierEstimate = COVER_TIER_TOP_ROOM + coverHeight + TIER_LEDGE_DEPTH +
                 TIER_BOARD_EDGE + TIER_UNDER_SHADOW + COVER_TITLE_BAND_HEIGHT
             val visibleTiersHint = (maxHeight / tierEstimate).toInt().coerceAtLeast(1)
-            val initialRow = remember(rows, anchorUri, visibleTiersHint) {
-                shelfCatalogInitialRow(rows, anchorUri, visibleTiersHint)
+            val initialRow = remember(rows, initialAnchorUri, visibleTiersHint) {
+                shelfCatalogInitialRow(rows, initialAnchorUri, visibleTiersHint)
             }
             SideEffect {
                 motion.reportGrid(
@@ -905,24 +905,21 @@ private fun ShelfCatalogWall(
                     ),
                 )
             }
-            val aligned = remember(rows, anchorUri, anchorY, tierEstimate, coverHeight, wallDensity) {
+            val aligned = remember(rows, anchorUri, anchorY, coverHeight, currentFocusUri, wallDensity) {
                 with(wallDensity) {
                     shelfCatalogAlignedScroll(
                         rows = rows,
                         anchorUri = anchorUri,
                         anchorY = anchorY,
-                        pitchPx = tierEstimate.toPx(),
-                        cellCenterPx = (COVER_TIER_TOP_ROOM + coverHeight / 2f).toPx(),
+                        cellCenterPx = COVER_TIER_TOP_ROOM.roundToPx() + coverHeight.roundToPx() / 2f +
+                            (if (anchorUri == currentFocusUri) COVER_FOCUS_LIFT else 0.dp).roundToPx(),
+                        topPaddingPx = WALL_TOP_FADE_START.roundToPx(),
                     )
                 }
             }
-            val listState = key(conditions) {
-                rememberLazyListState(
-                    initialFirstVisibleItemIndex = aligned?.first ?: initialRow,
-                    initialFirstVisibleItemScrollOffset = aligned?.second ?: 0,
-                )
-            }
-            val keepAnchor = rememberCatalogAnchorOnReflow(listState, rows, columns, visibleTiersHint)
+            val listState = rememberLazyListState(aligned?.first ?: initialRow, aligned?.second ?: 0)
+            StopLeavingWallScroll(listState, isLeaving)
+            val keepAnchor = rememberCatalogAnchorOnReflow(listState, rows, columns, visibleTiersHint, conditions)
             val jelly = rememberScrollJellyState()
 
             LazyColumn(
@@ -932,7 +929,8 @@ private fun ShelfCatalogWall(
                     .then(keepAnchor)
                     .shelfCatalogTopFade()
                     .scrollJellyHost(jelly),
-                contentPadding = PaddingValues(top = 6.dp, bottom = 28.dp),
+                contentPadding = PaddingValues(top = WALL_TOP_FADE_START, bottom = 28.dp),
+                userScrollEnabled = !motion.morphing,
             ) {
                 items(
                     items = rows,
@@ -1045,26 +1043,39 @@ internal fun resolveCatalogCenterUri(
     return games?.getOrNull(games.size / 2)?.uri
 }
 
-/**
- * 每层放几本变了（平板旋转 / 分屏）：新的分层里让原来视口正中那一本所在的层回到视口里。
- * 仅在列表停稳或刚完成排布时更新中心锚点，滚动过程中零协程唤醒与可视项遍历；若滑行途中突发转屏则现场读取兜底。
- */
+@Composable
+private fun StopLeavingWallScroll(listState: LazyListState, isLeaving: Boolean) {
+    LaunchedEffect(listState, isLeaving) {
+        if (isLeaving && listState.isScrollInProgress) listState.stopScroll(MutatePriority.PreventUserInput)
+    }
+}
+
+/** 筛选回顶；排序或列数变化时仍让原来视口正中那一本所在的层留在视口内。 */
 @Composable
 private fun rememberCatalogAnchorOnReflow(
-    listState: androidx.compose.foundation.lazy.LazyListState,
+    listState: LazyListState,
     rows: List<ShelfCatalogRowItem>,
     columns: Int,
     visibleTiersHint: Int,
-) : Modifier {
+    conditions: GameLibraryConditions,
+): Modifier {
     val holder = remember(listState) { CatalogAnchorHolder() }
     SideEffect {
-        if (holder.columns != 0 && holder.columns != columns) {
-            val uri = resolveCatalogCenterUri(listState.layoutInfo, holder.laidOutRows) ?: holder.centerUri
-            if (uri != null && findShelfCatalogAnchorRow(rows, uri) >= 0) {
-                listState.requestScrollToItem(shelfCatalogInitialRow(rows, uri, visibleTiersHint))
+        when (shelfCatalogReflow(holder.conditions, conditions, holder.columns != columns)) {
+            ShelfCatalogReflow.RESET_TOP -> {
+                holder.centerUri = null
+                listState.requestScrollToItem(0)
             }
+            ShelfCatalogReflow.KEEP_CENTER -> {
+                val uri = resolveCatalogCenterUri(listState.layoutInfo, holder.laidOutRows) ?: holder.centerUri
+                if (uri != null && findShelfCatalogAnchorRow(rows, uri) >= 0) {
+                    listState.requestScrollToItem(shelfCatalogInitialRow(rows, uri, visibleTiersHint))
+                }
+            }
+            ShelfCatalogReflow.NONE -> Unit
         }
         holder.columns = columns
+        holder.conditions = conditions
     }
     LaunchedEffect(listState, rows) {
         androidx.compose.runtime.snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
@@ -1082,6 +1093,7 @@ private fun rememberCatalogAnchorOnReflow(
 
 private class CatalogAnchorHolder {
     var columns = 0
+    var conditions: GameLibraryConditions? = null
     var centerUri: String? = null
     var laidOutRows: List<ShelfCatalogRowItem> = emptyList()
 }
@@ -1482,7 +1494,7 @@ private fun ShelfCatalogVerticalSpine(
             wash = wash,
             spineShape = spineShape,
             modifier = Modifier
-                .then(if (isCurrent) Modifier.offset(y = (-3).dp) else Modifier)
+                .then(if (isCurrent) Modifier.offset(y = SPINE_FOCUS_LIFT) else Modifier)
                 .then(if (leanShiftX > 0.dp) Modifier.offset(x = leanShiftX) else Modifier)
                 .shelfCatalogSlotPlaced(motion, game.uri, rowGridIndex, colIndex, ShelfCatalogLayoutMode.SPINES, leanDegrees)
                 .shelfCatalogBookLean(leanDegrees)
@@ -1794,7 +1806,7 @@ private fun ShelfCatalogCoverBook(
         boxShape = boxShape,
         modifier = Modifier
             .shelfBatchArrival(batchChangedAt, colIndex)
-            .then(if (isCurrent) Modifier.offset(y = (-4).dp) else Modifier)
+            .then(if (isCurrent) Modifier.offset(y = COVER_FOCUS_LIFT) else Modifier)
             .shelfCatalogSlotVisible(motion, game.uri)
             .shelfCatalogSlotPlaced(motion, game.uri, rowGridIndex, colIndex, ShelfCatalogLayoutMode.COVERS)
             .pressSquish(scale = PressSquishDefaults.CardScale)
@@ -2203,6 +2215,8 @@ private val CABINET_INTERIOR_INSET = 10.dp
 private val VERTICAL_SPINE_GAP = 2.5.dp
 private val VERTICAL_TIER_TOP_ROOM = 10.dp
 private val VERTICAL_TIER_PLAQUE_EXTRA = 12.dp
+private val SPINE_FOCUS_LIFT = (-3).dp
+private val COVER_FOCUS_LIFT = (-4).dp
 private val COVER_TIER_TOP_ROOM = 24.dp
 private val COVER_TIER_GAP_COMPACT = 8.dp
 private val COVER_TIER_GAP_WIDE = 10.dp

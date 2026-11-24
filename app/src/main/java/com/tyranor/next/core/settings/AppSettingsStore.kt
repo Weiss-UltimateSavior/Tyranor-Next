@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.os.Build
 import androidx.annotation.VisibleForTesting
+import androidx.annotation.WorkerThread
 import androidx.core.content.edit
 import com.tyranor.next.core.game.model.GameFilterOptions
 import com.tyranor.next.core.game.model.GameLibraryConditions
@@ -837,7 +838,7 @@ object AppSettingsStore {
     @VisibleForTesting
     internal fun resetHomePageMigrationForTests() = synchronized(homePageLock) { homePagePending = null }
 
-    private fun resolveAndPersistHomePageEnabledLocked(c: Context): Boolean {
+    private fun resolveHomePageEnabledLocked(c: Context): Boolean {
         val settings = prefs(c)
         // commit 失败也可能改写 SharedPreferences 内存；有 pending 时必须使用首次判定重试。
         val pendingFile = homePagePendingFile(c)
@@ -855,11 +856,24 @@ object AppSettingsStore {
                 ),
             ),
         )
-        persistHomePageMigration(settings, pendingFile, resolved)
+        homePagePending = resolved
         return resolved
     }
 
-    /** 首次组合或应用启动时从持久化加载首页显示开关到内存态（未写入过时一次性迁移老用户并落盘；幂等）。 */
+    /** 首帧前锁定安装判定；只在迁移未完成时保留原判定，防止进程退出后把新建的游戏库识别为旧安装。 */
+    internal fun prepareHomePageEnabled(c: Context) = synchronized(homePageLock) {
+        val enabled = resolveHomePageEnabledLocked(c)
+        if (homePagePending != null) homePagePendingFile(c).write(enabled)
+        homePageEnabledState.value = enabled
+    }
+
+    private fun resolveAndPersistHomePageEnabledLocked(c: Context): Boolean =
+        resolveHomePageEnabledLocked(c).also { enabled ->
+            if (homePagePending != null) persistHomePageMigration(prefs(c), homePagePendingFile(c), enabled)
+        }
+
+    /** IO 线程调用；将首次安装判定落盘，失败时保留原判定以便重试。 */
+    @WorkerThread
     fun initHomePageEnabled(c: Context) {
         synchronized(homePageLock) {
             homePageEnabledState.value = resolveAndPersistHomePageEnabledLocked(c)
@@ -891,12 +905,14 @@ object AppSettingsStore {
         }
     }
 
-    /** 是否显示首页（关闭后首页不参与主导航）。 */
+    @VisibleForTesting
+    @WorkerThread
     fun isHomePageEnabled(c: Context): Boolean =
         synchronized(homePageLock) {
             resolveAndPersistHomePageEnabledLocked(c)
         }
 
+    @WorkerThread
     fun setHomePageEnabled(c: Context, enabled: Boolean) {
         synchronized(homePageLock) {
             val pendingFile = homePagePendingFile(c)

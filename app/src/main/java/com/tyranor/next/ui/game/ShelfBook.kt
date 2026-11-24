@@ -2367,7 +2367,8 @@ private fun ShelfBookPage(
     val entries = remember(ui.launchFile, ui.items) { listOfNotNull(ui.launchFile) + ui.items }
     val toc = remember { ShelfBookToc() }
     val settled = toc.settled
-    val rows = remember(entries, settled) { toc.rows(entries) }
+    val presentation = remember(entries) { entries.map { it.copy(onClick = ShelfBookTocNoAction) } }
+    val rows = remember(presentation, settled) { toc.rows(presentation) }
 
     BoxWithConstraints(
         Modifier
@@ -2795,6 +2796,7 @@ private fun ShelfBookContentsTab(
     onOpenLeaf: () -> Unit,
 ) {
     val exiting = tabMotion != null && tabRole == ShelfBookTabRole.Exiting
+    val currentUi by rememberUpdatedState(ui)
     val chapters: @Composable (Dp) -> Unit = { rowHeight ->
         rows.forEachIndexed { index, row ->
             val order = 1 + index
@@ -2804,9 +2806,13 @@ private fun ShelfBookContentsTab(
                     height = rowHeight,
                     onGone = { toc.gone(row.item.key) },
                     onClick = {
-                        // 在书内翻开子页的条目点击时翻页；其余保持直接呼出（外置窗体 / 跳转界面）
-                        if (row.item.opensBookLeaf) onOpenLeaf()
-                        ui.perform(row.item)
+                        val actions = currentUi
+                        val item = actions.launchFile?.takeIf { it.key == row.item.key }
+                            ?: actions.items.firstOrNull { it.key == row.item.key }
+                        if (item != null) {
+                            if (item.opensBookLeaf) onOpenLeaf()
+                            actions.perform(item)
+                        }
                     },
                     tabMotion = tabMotion,
                     tabRole = tabRole,
@@ -3271,6 +3277,8 @@ private fun ShelfBookHalfTitle(
 
 /** 目录里的一章与它在页上的状态：[present] 为 false 时这一章刚被撤掉、正在收起；[fresh] 为 true 时它是书翻开以后才插进来的。 */
 internal class ShelfBookTocRow(val item: GameActionItem, val number: Int, val present: Boolean, val fresh: Boolean)
+
+private val ShelfBookTocNoAction: () -> Unit = {}
 
 /**
  * 目录的章会随游戏状态增删（外部引擎退出待确认、运行模块能力刷新、模块设置加载完……书翻开着时也可能出现或消失）：

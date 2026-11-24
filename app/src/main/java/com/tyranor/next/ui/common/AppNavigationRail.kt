@@ -42,6 +42,7 @@ internal fun AppNavigationRail(
     items: List<LiquidGlassNavItem>,
     onItemClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    flushWithContent: Boolean = false,
 ) {
     val cornerRadius = AppComponentCornerRadius
     val shape = RoundedCornerShape(topEnd = cornerRadius, bottomEnd = cornerRadius)
@@ -58,9 +59,9 @@ internal fun AppNavigationRail(
         Surface(
             modifier = modifier
                 .fillMaxHeight()
-                // 横屏三键导航可能位于侧面，栏体需避开起始侧系统栏；右侧与内容区紧邻，保证全宽光效与搁板无缝衔接。
+                // 横屏三键导航可能位于侧面，栏体需避开起始侧系统栏。
                 .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Start))
-                .padding(top = 30.dp, bottom = 30.dp),
+                .padding(top = 30.dp, end = if (flushWithContent) 0.dp else 12.dp, bottom = 30.dp),
             shape = shape,
             color = if (AppThemeColors.isGlass) GlassNavSurface else NavWhite,
             contentColor = MaterialTheme.colorScheme.onSurface,

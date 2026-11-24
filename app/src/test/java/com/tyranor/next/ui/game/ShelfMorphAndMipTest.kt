@@ -3,7 +3,6 @@ package com.tyranor.next.ui.game
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -70,31 +69,25 @@ class ShelfMorphAndMipTest {
 
     @Test
     fun alignedScrollPutsTheAnchorCellCenterAtTheRequestedHeight() {
-        val rows = tiers(count = 40, columns = 4) // 10 层，每层 100px
-        val anchor = "content://games/22" // 第 5 层（下标 5）
-        val (index, offset) = shelfCatalogAlignedScroll(rows, anchor, anchorY = 300f, pitchPx = 100f, cellCenterPx = 60f)!!
-        // 锚点层顶部在视口里的位置 = (层号 - 首个可见层) * 100 - 偏移 + 0；中心在 +60，应落在 300
-        val centerY = (5 - index) * 100f - offset + 60f
-        assertEquals(300f, centerY, 0.5f)
+        val rows = tiers(count = 40, columns = 4)
+        val anchor = "content://games/22"
+        val result = shelfCatalogAlignedScroll(rows, anchor, anchorY = 300f, cellCenterPx = 60f, topPaddingPx = 6)
+        assertEquals(5 to -234, result)
     }
 
     @Test
     fun alignedScrollNeverScrollsAboveTheTop() {
         val rows = tiers(count = 40, columns = 4)
         // 锚点在第一层、要求落得很靠下：不能滚到负数
-        val result = shelfCatalogAlignedScroll(rows, "content://games/1", anchorY = 900f, pitchPx = 100f, cellCenterPx = 60f)!!
+        val result = shelfCatalogAlignedScroll(rows, "content://games/1", anchorY = 900f, cellCenterPx = 60f, topPaddingPx = 6)
         assertEquals(0 to 0, result)
     }
 
     @Test
-    fun alignedScrollGivesUpWhenSectionHeadersMakeRowHeightsIrregular() {
-        val games = (0 until 6).map { game(it).copy(engine = if (it < 3) EngineType.KIRIKIRI else EngineType.RENPY) }
-        val grouped = buildShelfCatalogVerticalRows(games, columns = 4, groupByEngine = true)
-        assertTrue(grouped.any { it is ShelfCatalogRowItem.SectionHeader })
-        assertNull(shelfCatalogAlignedScroll(grouped, "content://games/4", 300f, 100f, 60f))
-        assertNotNull(shelfCatalogAlignedScroll(tiers(8, 4), "content://games/4", 300f, 100f, 60f))
-        assertNull(shelfCatalogAlignedScroll(tiers(8, 4), null, 300f, 100f, 60f))
-        assertNull(shelfCatalogAlignedScroll(tiers(8, 4), "content://games/4", null, 100f, 60f))
+    fun alignedScrollRequiresBothAnchorAndHeight() {
+        val rows = tiers(8, 4)
+        assertNull(shelfCatalogAlignedScroll(rows, null, 300f, 60f, 6))
+        assertNull(shelfCatalogAlignedScroll(rows, "content://games/4", null, 60f, 6))
     }
 
 }

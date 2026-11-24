@@ -2,21 +2,23 @@ package com.tyranor.next.ui.common
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.State
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.staticCompositionLocalOf
 
 @Stable
 internal class MainOverlayEntry(
     val id: Long,
-    initialContent: @Composable () -> Unit,
+    private val content: State<@Composable () -> Unit>,
 ) {
-    var content by mutableStateOf(initialContent)
+    @Composable
+    fun Content() {
+        content.value.invoke()
+    }
 }
 
 @Stable
@@ -26,8 +28,8 @@ internal class MainOverlayHost {
     val stack: List<MainOverlayEntry> get() = entries
     val active: Boolean get() = entries.isNotEmpty()
 
-    internal fun allocate(initialContent: @Composable () -> Unit): MainOverlayEntry =
-        MainOverlayEntry(nextId++, initialContent)
+    internal fun allocate(content: State<@Composable () -> Unit>): MainOverlayEntry =
+        MainOverlayEntry(nextId++, content)
 
     internal fun attach(entry: MainOverlayEntry) {
         if (entries.none { it.id == entry.id }) entries.add(entry)
@@ -48,10 +50,12 @@ internal fun MainOverlayPortal(content: @Composable () -> Unit) {
         content()
         return
     }
-    val entry = remember(host) { host.allocate(content) }
-    SideEffect { entry.content = content }
-    DisposableEffect(host, entry) {
-        host.attach(entry)
-        onDispose { host.detach(entry) }
+    key(host) {
+        val currentContent = rememberUpdatedState(content)
+        val entry = remember { host.allocate(currentContent) }
+        DisposableEffect(entry) {
+            host.attach(entry)
+            onDispose { host.detach(entry) }
+        }
     }
 }

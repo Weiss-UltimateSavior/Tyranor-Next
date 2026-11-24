@@ -167,11 +167,8 @@ fun MainScreen(
   }
   // 「显示首页」开关（应用设置，默认关；老用户升级自动保留开）：关闭后首页不参与导航，游戏页作为第一页
   // 随生命周期订阅：设置页盖在上面、主界面不可见时不在后台增删首页（组合 / 销毁首页会占满主线程，让设置页开关卡顿）
-  // 先从 prefs 初始化要订阅的流；首帧页数和默认选中项使用同一个值，关闭首页时不会先闪出全部导航图标。
-  val homePageEnabled by remember(context) {
-    AppSettingsStore.initHomePageEnabled(context)
-    AppSettingsStore.homePageEnabledState
-  }.collectSettingAsState()
+  // Application 已在首帧前准备好设置；页数和默认选中项使用同一个值。
+  val homePageEnabled by AppSettingsStore.homePageEnabledState.collectSettingAsState()
   var selectedIndex by rememberSaveable {
     mutableIntStateOf(if (homePageEnabled) 0 else 1)
   }
@@ -460,11 +457,13 @@ fun MainScreen(
     ) {
     if (railLayout) {
       // 平板/大窗口：主导航移到侧边，按外观风格取该主题「默认导航栏」形态
+      val gameCardStyle by AppSettingsStore.gameCardStyleState.collectSettingAsState()
       Row(Modifier.fillMaxSize()) {
         AppNavigationRail(
           selectedIndex = selectedNavIndex,
           items = liquidGlassTabItems,
           onItemClick = onSelectNavPage,
+          flushWithContent = activeIndex == 1 && gameCardStyle == AppSettingsStore.GAME_CARD_STYLE_SHELF,
         )
         Column(Modifier.weight(1f).fillMaxHeight().then(contentLayerModifier)) {
           MainTabPages(
@@ -588,7 +587,7 @@ fun MainScreen(
       mainOverlayHost.stack.forEach { entry ->
         key(entry.id) {
           Box(Modifier.fillMaxSize().zIndex(10f)) {
-            entry.content()
+            entry.Content()
           }
         }
       }

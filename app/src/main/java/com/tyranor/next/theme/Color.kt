@@ -179,6 +179,18 @@ val PageGrey: Color
         AppThemeColors.isDark -> DarkGrey
         else -> GreyLight
     }
+
+/** 旋转过渡两侧的底色；页面背景透明时，使用接近实际背景的实色。 */
+internal val ScreenRotationFill: Color
+    get() {
+        val base = PageGrey
+        return when {
+            base.alpha >= 0.99f -> base
+            AppThemeColors.isDark || AppThemeColors.hasDarkBackdrop -> Color(0xFF0B0C0E)
+            else -> Color(0xFFDDE1E6)
+        }
+    }
+
 // 卡片/导航栏背景：随深色模式取深/浅；复古玻璃为半透明深色玻璃面，白雾玻璃为半透明白纱
 val NavWhite: Color
     get() = when {

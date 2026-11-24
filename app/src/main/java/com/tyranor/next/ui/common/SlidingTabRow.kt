@@ -8,6 +8,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.VectorConverter
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -551,14 +552,14 @@ private fun TabLabel(
             // 不会随手指落点滑到选框的上下半边
             .pressSquish(scale = 0.92f, follow = 0.dp)
             .clip(AppComponentShape)
-            // 藏书阁增强档只留形变，避免按下态与滑过来的选中胶囊重叠；普通档仍须有反馈。
+            // 既有标签继承主题反馈；藏书阁有形变时不叠高亮，否则用涟漪保留按压反馈。
             .selectable(
                 selected = selected,
                 interactionSource = null,
-                indication = if (LocalSlidingTabLightPanel.current && MotionMode.enhanced && ValueAnimator.areAnimatorsEnabled()) {
-                    null
-                } else {
-                    ripple()
+                indication = when {
+                    !LocalSlidingTabLightPanel.current -> LocalIndication.current
+                    MotionMode.enhanced && ValueAnimator.areAnimatorsEnabled() -> null
+                    else -> ripple()
                 },
                 role = Role.Tab,
                 onClick = onClick,

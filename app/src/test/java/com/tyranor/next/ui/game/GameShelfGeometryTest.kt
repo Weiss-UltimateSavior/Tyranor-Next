@@ -9,6 +9,7 @@ import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.unit.dp
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -27,6 +28,29 @@ import kotlin.math.abs
  * 只测数值性质（对称、单调、停稳间距、连续、不重叠），不涉及绘制。
  */
 class GameShelfGeometryTest {
+
+    @Test
+    fun phoneLandscapeGivesTheStagePriorityOverInfoAndScrubber() {
+        val afterTopBarsAndNavigation = 160.dp
+        val chrome = shelfChromeForHeight(afterTopBarsAndNavigation, fontScale = 1f, multipleGames = true)
+        assertEquals(0.dp, chrome.infoHeight)
+        assertFalse(chrome.showScrubber)
+        val coverWidth = shelfCoverWidthForHeight(afterTopBarsAndNavigation)
+        assertTrue(coverWidth > 60.dp)
+        assertTrue(coverWidth * (4f / 3f) < afterTopBarsAndNavigation)
+    }
+
+    @Test
+    fun tallerWindowsGraduallyRestoreShelfChromeWithoutShrinkingTheStage() {
+        val short = shelfChromeForHeight(285.dp, fontScale = 1f, multipleGames = true)
+        assertTrue(short.showScrubber)
+        assertEquals(0.dp, short.infoHeight)
+        val regular = shelfChromeForHeight(510.dp, fontScale = 1f, multipleGames = true)
+        assertTrue(regular.showScrubber)
+        assertTrue(regular.infoHeight >= 150.dp)
+        assertEquals(0.dp, shelfChromeForHeight(510.dp, fontScale = 2f, multipleGames = true).infoHeight)
+        assertFalse(shelfChromeForHeight(510.dp, fontScale = 1f, multipleGames = false).showScrubber)
+    }
 
     private fun geometry(maxTurn: Float = SHELF_SPINE_TURN) = ShelfGeometry(
         coverWidth = 500f,

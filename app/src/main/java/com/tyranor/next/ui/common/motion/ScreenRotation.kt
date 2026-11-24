@@ -30,7 +30,6 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.TransformOrigin
@@ -38,6 +37,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.node.DrawModifierNode
@@ -52,8 +52,7 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
-import com.tyranor.next.theme.AppThemeColors
-import com.tyranor.next.theme.PageGrey
+import com.tyranor.next.theme.ScreenRotationFill
 import kotlinx.coroutines.flow.collectLatest
 import java.lang.ref.WeakReference
 import java.util.WeakHashMap
@@ -76,7 +75,8 @@ import kotlin.math.roundToInt
  *   结束时与正常布局完全一致，不会有换版的一跳；
  * - 旋转的那一刻 Activity 先截下旧画面（[ScreenRotationSync]，`PixelCopy` 半分辨率位图，在专门的线程上跑，主线程最多等
  *   [CAPTURE_LIMIT_MILLIS]）：第一帧（新方向正常排版、整页重新布局，上百毫秒）整个被它盖住（起步矩形里是旧版式站直的样子），
- *   之后它被拉伸到虚拟窗口的矩形里、随进度淡出。截屏失败就直接画实时虚拟窗口，不用底色盖住页面。
+ *   之后它被拉伸到虚拟窗口的矩形里、随进度淡出。首次截屏失败直接使用最终布局；接力时截屏失败，
+ *   让最终布局只做缩放与位移，仍可接续上一帧留有的旧画面，不再逐帧测量重内容。
  * - 中途再转时，从上一帧已绘制的虚拟尺寸接力，改用页面弹簧；截取上一帧的 viewport，不把留白带进新的 viewport。
  *
  * 只在「增强」档、平板（最小宽度 ≥ 600dp）、系统动画开启时生效；折叠屏展开、分屏拖动、输入法顶起窗口不触发
@@ -90,18 +90,23 @@ internal class ScreenRotationState {
     private var snapshot: RotationSnapshot? = null
     private var leg: RotationLeg? = null
     val frozen: Boolean get() = leg != null
-    val freezesBlocks: Boolean get() = leg != null && hasTargetLayout
+
+    /** 测量订阅起止通知，但优先使用本次测量刚开始、尚未发布的过渡段。 */
+    fun layoutLeg(): RotationLeg? {
+        val published = publishedLeg
+        return if (published === leg) published else leg
+    }
 
     /** 只有完整的新截图才能盖住按目标窗口预排版的那一帧。 */
     var firstFrame = false
     var coverNextDraw = false
     var viewport: RotationViewport? = null
+    var finalLayoutViewport: RotationViewport? = null
     var windowOrigin = IntOffset.Zero
-    private var hasTargetLayout = false
     private var drawnWindow = IntSize.Zero
     private var drawnViewport: RotationViewport? = null
     private var drawnBoundsInWindow: IntRect? = null
-    private var drawnSnapshotAlpha = 0f
+    private var drawnSnapshotAlpha: Float? = null
     private var drawnSnapshotHasNotice = false
 
     private var progress by mutableFloatStateOf(0f)
@@ -118,8 +123,6 @@ internal class ScreenRotationState {
         val published = publishedLeg
         return if (published != null && published === leg) progress else 0f
     }
-
-    fun virtualSize(window: IntSize, timeFraction: Float): IntSize = leg?.virtualSize(window, timeFraction) ?: window
 
     fun snapshotAlpha(progress: Float): Float = rotationSnapshotAlpha(snapshot?.startAlpha ?: 0f, progress)
 
@@ -164,15 +167,15 @@ internal class ScreenRotationState {
             return
         }
         val taken = ScreenRotationController.take(activity, size) ?: return
-        val nextLeg = rotationRetarget(previous, leg, drawnViewport)
         val nextSnapshot = taken.bitmap?.let { RotationSnapshot(it.asImageBitmap(), taken.hasNotice, 1f) }
+        val nextLeg = rotationRetarget(previous, leg, drawnViewport, hasFreshSnapshot = nextSnapshot != null)
+        if (nextLeg == null) return
         snapshot = nextSnapshot ?: snapshot?.let { old ->
-            rotationFallbackAlpha(drawnSnapshotAlpha)?.let { old.copy(startAlpha = it) }
+            rotationFallbackAlpha(old.startAlpha, drawnSnapshotAlpha)?.let { old.copy(startAlpha = it) }
         }
-        drawnSnapshotAlpha = 0f
+        drawnSnapshotAlpha = null
         leg = nextLeg
-        hasTargetLayout = nextSnapshot != null
-        firstFrame = hasTargetLayout
+        firstFrame = nextLeg.usesVirtualLayout
         coverNextDraw = false
         noticeDrawNode?.invalidateDraw()
         scheduleCommit()
@@ -182,9 +185,9 @@ internal class ScreenRotationState {
         leg = null
         firstFrame = false
         coverNextDraw = false
-        hasTargetLayout = false
         snapshot = null
         viewport = null
+        finalLayoutViewport = null
         noticeDrawNode?.invalidateDraw()
     }
 
@@ -219,7 +222,7 @@ internal class ScreenRotationState {
     }
 }
 
-internal class RotationLeg(val from: IntSize, val redirected: Boolean) {
+internal class RotationLeg(val from: IntSize, val redirected: Boolean, val usesVirtualLayout: Boolean) {
     private val spring = if (redirected) MotionTokens.page(0.001f).let {
         FloatSpringSpec(it.dampingRatio, it.stiffness, visibilityThreshold = 0.001f)
     } else null
@@ -379,7 +382,7 @@ internal object ScreenRotationController {
             Thread.currentThread().interrupt()
             false
         }
-        if (finished && SystemClock.uptimeMillis() <= deadline) {
+        if (rotationCaptureWithinBudget(finished, start, SystemClock.uptimeMillis())) {
             capture.result = Taken(resultBitmap, resultBitmap != null && plan.mayContainNotice)
         }
     }
@@ -429,13 +432,12 @@ class ScreenRotationSync(private val activity: Activity) {
 internal fun ScreenRotationHost(state: ScreenRotationState, content: @Composable () -> Unit) {
     val configuration = LocalConfiguration.current
     val enabled = MotionMode.enhanced &&
-        (configuration.smallestScreenWidthDp >= TABLET_MIN_SMALLEST_WIDTH_DP) &&
-        ValueAnimator.areAnimatorsEnabled()
+        configuration.smallestScreenWidthDp >= TABLET_MIN_SMALLEST_WIDTH_DP
     // 组合结构不随 enabled 变化（在应用设置里切动效档不能把整个页面的内容重建）：不满足条件时只是直通
     val enabledNow = rememberUpdatedState(enabled)
     val context = LocalContext.current
     val activity = remember(context) { PageTransitions.findActivity(context) }
-    val fill = rotationFill()
+    val fill = ScreenRotationFill
 
     DisposableEffect(state, activity) {
         if (activity != null) ScreenRotationController.bind(activity, state)
@@ -452,6 +454,7 @@ internal fun ScreenRotationHost(state: ScreenRotationState, content: @Composable
             var lastFrameNanos = withFrameNanos { it }
             while (elapsedNanos < leg.durationNanos) {
                 val frameNanos = withFrameNanos { it }
+                if (!ValueAnimator.areAnimatorsEnabled()) break
                 elapsedNanos = advanceRotationTime(elapsedNanos, lastFrameNanos, frameNanos, leg.durationNanos)
                 lastFrameNanos = frameNanos
                 if (!state.advance(leg, elapsedNanos.toFloat() / leg.durationNanos)) return@collectLatest
@@ -500,22 +503,42 @@ internal fun ScreenRotationHost(state: ScreenRotationState, content: @Composable
                         filterQuality = FilterQuality.Medium,
                     )
                 }
-                state.recordDraw(window, viewport, if (drawsSnapshot) alpha else 0f)
+                val paintedViewport = if (drawsSnapshot) viewport else state.finalLayoutViewport ?: viewport
+                state.recordDraw(window, paintedViewport, if (drawsSnapshot) alpha else 0f)
             }
             .layout { measurable, constraints ->
                 val windowW = constraints.maxWidth
                 val windowH = constraints.maxHeight
                 val window = IntSize(windowW, windowH)
-                state.onMeasured(activity, window, enabledNow.value && constraints.hasBoundedWidth && constraints.hasBoundedHeight)
-                val progress = state.frameProgress()
-                if (!state.frozen) {
+                val canAnimate = enabledNow.value && constraints.hasBoundedWidth && constraints.hasBoundedHeight &&
+                    ValueAnimator.areAnimatorsEnabled()
+                state.onMeasured(activity, window, canAnimate)
+                val leg = state.layoutLeg()
+                if (leg == null) {
                     val placeable = measurable.measure(constraints)
                     layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+                } else if (!leg.usesVirtualLayout) {
+                    val placeable = measurable.measure(constraints)
+                    val finalSize = IntSize(placeable.width, placeable.height)
+                    layout(finalSize.width, finalSize.height) {
+                        if (finalSize.isEmptyForRotation()) {
+                            state.viewport = null
+                            state.finalLayoutViewport = null
+                            placeable.place(0, 0)
+                        } else {
+                            val viewport = rotationViewport(finalSize, leg.virtualSize(finalSize, state.frameProgress()))
+                            val placement = rotationFinalLayoutViewport(finalSize, viewport)
+                            state.viewport = viewport
+                            state.finalLayoutViewport = placement
+                            placeInRotationViewport(placeable, placement)
+                        }
+                    }
                 } else {
-                    // 虚拟窗口：宽高从旧窗口过渡到新窗口，再等比缩放贴进真实窗口
-                    val virtual = state.virtualSize(window, progress)
+                    // 虚拟视口的宽高从旧窗口过渡到新窗口，再等比缩放贴进真实窗口
+                    val virtual = leg.virtualSize(window, state.frameProgress())
                     val viewport = rotationViewport(window, virtual)
                     state.viewport = viewport
+                    state.finalLayoutViewport = null
                     if (state.firstFrame) {
                         // 第一帧：新方向按最终尺寸正常排版（重的内容块借此记下最终约束），盖在旧画面下面
                         val placeable = measurable.measure(constraints)
@@ -525,11 +548,7 @@ internal fun ScreenRotationHost(state: ScreenRotationState, content: @Composable
                     } else {
                         val placeable = measurable.measure(Constraints.fixed(virtual.width, virtual.height))
                         layout(windowW, windowH) {
-                            placeable.placeWithLayer(viewport.bounds.left, viewport.bounds.top) {
-                                transformOrigin = TransformOrigin(0f, 0f)
-                                scaleX = viewport.scale
-                                scaleY = viewport.scale
-                            }
+                            placeInRotationViewport(placeable, viewport)
                         }
                     }
                 }
@@ -545,6 +564,14 @@ internal fun ScreenRotationHost(state: ScreenRotationState, content: @Composable
 private fun IntSize.isEmptyForRotation(): Boolean = width <= 0 || height <= 0
 private fun IntSize.isLandscapeForRotation(): Boolean = width > height
 
+private fun Placeable.PlacementScope.placeInRotationViewport(placeable: Placeable, viewport: RotationViewport) {
+    placeable.placeWithLayer(viewport.bounds.left, viewport.bounds.top) {
+        transformOrigin = TransformOrigin(0f, 0f)
+        scaleX = viewport.scale
+        scaleY = viewport.scale
+    }
+}
+
 internal class RotationViewport(val virtualSize: IntSize, val bounds: IntRect, val scale: Float)
 
 internal fun rotationViewport(window: IntSize, virtual: IntSize): RotationViewport {
@@ -558,8 +585,21 @@ internal fun rotationViewport(window: IntSize, virtual: IntSize): RotationViewpo
     return RotationViewport(virtual, IntRect(left, top, right, bottom), scale)
 }
 
-internal fun rotationRetarget(previous: IntSize, active: RotationLeg?, drawn: RotationViewport?): RotationLeg =
-    RotationLeg(drawn?.virtualSize ?: active?.from ?: previous, redirected = drawn != null || active != null)
+internal fun rotationFinalLayoutViewport(window: IntSize, viewport: RotationViewport): RotationViewport {
+    val content = rotationViewport(viewport.bounds.size, window)
+    return RotationViewport(viewport.virtualSize, content.bounds.translate(viewport.bounds.topLeft), content.scale)
+}
+
+internal fun rotationRetarget(
+    previous: IntSize,
+    active: RotationLeg?,
+    drawn: RotationViewport?,
+    hasFreshSnapshot: Boolean,
+): RotationLeg? {
+    val redirected = drawn != null || active != null
+    if (!hasFreshSnapshot && !redirected) return null
+    return RotationLeg(drawn?.virtualSize ?: active?.from ?: previous, redirected, hasFreshSnapshot)
+}
 
 internal data class RotationCapturePlan(val crop: IntRect?, val mayContainNotice: Boolean)
 
@@ -577,6 +617,9 @@ internal fun rotationCapturePlan(
     return RotationCapturePlan(viewport, liveNotice || snapshotNotice)
 }
 
+internal fun rotationCaptureWithinBudget(finished: Boolean, startedAt: Long, checkedAt: Long): Boolean =
+    finished && checkedAt - startedAt <= CAPTURE_LIMIT_MILLIS
+
 internal fun advanceRotationTime(elapsed: Long, previousFrame: Long, frame: Long, duration: Long): Long =
     (elapsed + (frame - previousFrame).coerceIn(0L, MAX_STEP_NANOS)).coerceAtMost(duration)
 
@@ -591,9 +634,9 @@ internal fun advanceRotationTime(elapsed: Long, previousFrame: Long, frame: Long
 @Composable
 internal fun Modifier.rotationMorphBlock(freeze: Boolean = true): Modifier {
     val morph = LocalScreenRotationMorph.current ?: return this
-    val cache = remember { RotationBlockCache() }
+    val cache = remember(morph) { RotationBlockCache() }
     return this.layout { measurable, constraints ->
-        if (!morph.freezesBlocks || !freeze) {
+        if (!freeze || morph.layoutLeg()?.usesVirtualLayout != true) {
             cache.final = null
             val placeable = measurable.measure(constraints)
             return@layout layout(placeable.width, placeable.height) { placeable.place(0, 0) }
@@ -623,17 +666,6 @@ private class RotationBlockCache {
     var final: Constraints? = null
 }
 
-/** 转动过程中两侧留出的底色：页面底色；玻璃类外观页面底色是透明的（画在内容里），取接近的深 / 浅色。 */
-@Composable
-private fun rotationFill(): Color {
-    val base = PageGrey
-    return when {
-        base.alpha >= 0.99f -> base
-        AppThemeColors.isDark || AppThemeColors.hasDarkBackdrop -> Color(0xFF0B0C0E)
-        else -> Color(0xFFDDE1E6)
-    }
-}
-
 private fun lerpInt(from: Int, to: Int, t: Float): Int = (from + (to - from) * t).roundToInt()
 
 internal fun rotationSnapshotAlpha(startAlpha: Float, progress: Float): Float {
@@ -641,7 +673,8 @@ internal fun rotationSnapshotAlpha(startAlpha: Float, progress: Float): Float {
     return startAlpha * (1f - fraction * fraction * (3f - 2f * fraction))
 }
 
-internal fun rotationFallbackAlpha(drawnAlpha: Float): Float? = drawnAlpha.takeIf { it > SNAPSHOT_VISIBLE_ALPHA }
+internal fun rotationFallbackAlpha(startAlpha: Float, drawnAlpha: Float?): Float? =
+    (drawnAlpha ?: startAlpha).takeIf { it > SNAPSHOT_VISIBLE_ALPHA }
 
 internal fun rotationSnapshotOwnsNotice(hasNotice: Boolean, alpha: Float): Boolean =
     hasNotice && alpha > SNAPSHOT_VISIBLE_ALPHA

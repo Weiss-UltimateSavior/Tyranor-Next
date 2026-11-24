@@ -1070,7 +1070,7 @@
     <string name="game_shelf_catalog_count_total">共 %1$d 部</string>
     <string name="game_shelf_catalog_count_filtered">%1$d / %2$d 部</string>
     <string name="game_shelf_catalog_section_count">%1$d 部</string>
-    <string name="game_shelf_catalog_empty_title">这层书架空空如也</string>
+    <string name="game_shelf_catalog_empty_title">没有符合条件的游戏</string>
     <string name="game_shelf_catalog_empty_action">展示全部游戏</string>
     <string name="game_shelf_catalog_current_badge">当前浏览</string>
     <string name="game_shelf_catalog_layout_spines">书脊</string>

@@ -33,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -90,6 +91,7 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.ColorPicker
@@ -120,6 +122,7 @@ class AppSettingsActivity : AppScreenActivity() {
 @Composable
 internal fun AppSettingsScreen() {
     val ctx = LocalContext.current
+    val settingsScope = rememberCoroutineScope()
     val navStyle = effectiveNavStyle()
     val engineTabs by AppSettingsStore.engineTabsState.collectSettingAsState()
     val engineCardIcon by AppSettingsStore.engineCardIconState.collectSettingAsState()
@@ -605,7 +608,9 @@ internal fun AppSettingsScreen() {
                                 summary = stringResource(R.string.settings_show_home_page_summary),
                                 checked = homePageEnabled,
                                 onCheckedChange = { checked ->
-                                    AppSettingsStore.setHomePageEnabled(ctx, checked)
+                                    settingsScope.launch {
+                                        withContext(Dispatchers.IO) { AppSettingsStore.setHomePageEnabled(ctx, checked) }
+                                    }
                                 },
                             )
                             // 首页样式：默认（最近打开/快捷启动）/ 网页（内置 WebView 展示所选网址）

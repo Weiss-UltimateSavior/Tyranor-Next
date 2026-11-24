@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.game.model.GameLibraryConditions
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.ui.common.motion.MotionHaptics
 import com.tyranor.next.ui.common.motion.MotionMode
@@ -239,6 +240,20 @@ internal fun findShelfCatalogAnchorRow(rows: List<ShelfCatalogRowItem>, uri: Str
             is ShelfCatalogRowItem.SectionHeader -> false
         }
     }
+}
+
+internal enum class ShelfCatalogReflow { NONE, RESET_TOP, KEEP_CENTER }
+
+internal fun shelfCatalogReflow(
+    previous: GameLibraryConditions?,
+    current: GameLibraryConditions,
+    columnsChanged: Boolean,
+): ShelfCatalogReflow = when {
+    previous == null -> ShelfCatalogReflow.NONE
+    previous.engineFilter != current.engineFilter || previous.playedFilter != current.playedFilter ->
+        ShelfCatalogReflow.RESET_TOP
+    previous.sortMode != current.sortMode || columnsChanged -> ShelfCatalogReflow.KEEP_CENTER
+    else -> ShelfCatalogReflow.NONE
 }
 
 /**
@@ -1035,6 +1050,10 @@ internal class ShelfCatalogMotion(
     internal val heroDecodeTier: CoverDecodeTier get() = stage.heroDecodeTier
 
     var layoutMode by mutableStateOf(initialLayoutMode)
+        private set
+
+    var layoutRevision by mutableIntStateOf(0)
+        private set
 
     var hasEntered by mutableStateOf(!enhanced)
         private set
@@ -1226,6 +1245,7 @@ internal class ShelfCatalogMotion(
         morphGeneration++
         activeMorph = emptyList()
         hiddenSlotUris = emptySet()
+        layoutAnchorY = null
         morphing = false
     }
 
@@ -1300,13 +1320,13 @@ internal class ShelfCatalogMotion(
                     troupePresence.snapTo(0f)
                 }
             }
-            layoutMode = target
+            changeLayout(target)
             return
         }
         val fromMode = layoutMode
         val from = snapshotVisibleSlots(mode = fromMode, includePartial = true)
         if (from.isEmpty()) {
-            layoutMode = target
+            changeLayout(target)
             return
         }
         val viewport = wallViewport
@@ -1319,9 +1339,6 @@ internal class ShelfCatalogMotion(
         val anchor = from.entries.minByOrNull { (_, slot) ->
             distanceToCenter(slot.rect) + if (slot.rect.top >= viewport.top && slot.rect.bottom <= viewport.bottom) 0.0 else 1.0e6
         } ?: return
-        layoutAnchorUri = anchor.key
-        layoutAnchorY = anchor.value.rect.center.y - viewport.top
-
         val games = filteredGamesSnapshot
         val indexByUri = HashMap<String, Int>(games.size).apply {
             games.forEachIndexed { idx, g -> put(g.uri, idx) }
@@ -1333,7 +1350,7 @@ internal class ShelfCatalogMotion(
             if (viewport.width <= 0f || rect.overlaps(viewport)) sources[game.uri] = rect
         }
         if (sources.isEmpty()) {
-            layoutMode = target
+            changeLayout(target)
             return
         }
         val byUri = games.associateBy { it.uri }
@@ -1354,8 +1371,10 @@ internal class ShelfCatalogMotion(
         // 同一帧里：新陈列上场、旧书从原位换成变形卡片（卡片此刻与旧书完全重合），真正的书槽藏起来
         activeMorph = flights
         hiddenSlotUris = flights.mapTo(HashSet()) { it.game.uri }
+        layoutAnchorUri = anchor.key
+        layoutAnchorY = anchor.value.rect.center.y - viewport.top
         morphing = true
-        layoutMode = target
+        changeLayout(target)
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             var landed = false
             try {
@@ -1424,6 +1443,11 @@ internal class ShelfCatalogMotion(
                 }
             }
         }
+    }
+
+    private fun changeLayout(target: ShelfCatalogLayoutMode) {
+        layoutRevision++
+        layoutMode = target
     }
 
     /** 某一本变形卡片此刻的位置、大小与自己的进度 t（相对覆盖层左上角；终点还没摆好时停在起点）。 */
@@ -2455,6 +2479,7 @@ internal fun Modifier.noHitWhile(disabled: Boolean): Modifier = if (!disabled) t
 @Composable
 internal fun ShelfCatalogModeSwitcher(
     mode: ShelfCatalogLayoutMode,
+    revision: Int,
     /** 变形途中正在退场的旧形态；不在变形中为 null（直接换：只留新的一面）。 */
     leavingMode: ShelfCatalogLayoutMode?,
     progress: () -> Float,
@@ -2463,51 +2488,43 @@ internal fun ShelfCatalogModeSwitcher(
     content: @Composable (ShelfCatalogLayoutMode) -> Unit,
 ) {
     val leaving = leavingMode?.takeIf { it != mode }
-    val current = mode
     Box(modifier) {
-        leaving?.let { old ->
-            key(old) {
+        listOfNotNull(leaving, mode).forEach { wallMode ->
+            val isLeaving = wallMode == leaving
+            key(if (isLeaving) revision - 1 else revision) {
                 Box(
                     Modifier
                         // noHitWhile 必须在 fillMaxSize 之前：它把布局大小报成 0，放在铺满约束的里面，
                         // 约束会把 0 抬回满尺寸、内容反被居中偏移半个屏幕（旧书柜整个错位到右下角）
-                        .noHitWhile(true)
+                        .noHitWhile(isLeaving)
                         .fillMaxSize()
                         .graphicsLayer {
                             // 搁板 / 立柱 / 铭牌是书柜的「底」：与新书柜交叠着慢慢换（交叠处两边都在，底色不断档），
                             // 不是旧的先整块没了、新的再整块冒出来——中间露出一整片光秃秃的页面底色，看起来像背景闪了一下
-                            alpha = 1f - smoothStep((progress() - MODE_BODY_OUT_START) / MODE_BODY_OUT_SPAN)
-                        },
-                ) {
-                    // 板下的书名是跟着书走的字：书一飞走就不该还留在原地，仍然快速淡去
-                    CompositionLocalProvider(LocalShelfCatalogLeavingWall provides true) { content(old) }
-                }
-            }
-        }
-        key(current) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        if (leaving == null) return@graphicsLayer
-                        // 新书柜与旧书柜交叠着浮现（见上）：书还在空中时底已经在了，书落位时它也就位
-                        alpha = smoothStep((progress() - MODE_BODY_FADE_IN_START) / MODE_BODY_FADE_IN_SPAN)
-                    }
-                    .then(
-                        if (blockTouches) {
-                            // 变形途中不接触摸：卡片的终点是按当时书柜位置算好的
-                            Modifier.pointerInput(Unit) {
-                                awaitPointerEventScope {
-                                    while (true) {
-                                        awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                            alpha = when {
+                                isLeaving -> 1f - smoothStep((progress() - MODE_BODY_OUT_START) / MODE_BODY_OUT_SPAN)
+                                leaving != null -> smoothStep((progress() - MODE_BODY_FADE_IN_START) / MODE_BODY_FADE_IN_SPAN)
+                                else -> 1f
+                            }
+                        }
+                        .then(
+                            if (!isLeaving && blockTouches) {
+                                // 变形途中不接触摸：卡片的终点是按当时书柜位置算好的
+                                Modifier.pointerInput(Unit) {
+                                    awaitPointerEventScope {
+                                        while (true) {
+                                            awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                                        }
                                     }
                                 }
-                            }
-                        } else {
-                            Modifier
-                        },
-                    ),
-            ) { content(current) }
+                            } else {
+                                Modifier
+                            },
+                        ),
+                ) {
+                    CompositionLocalProvider(LocalShelfCatalogLeavingWall provides isLeaving) { content(wallMode) }
+                }
+            }
         }
     }
 }
@@ -2572,24 +2589,21 @@ internal class ShelfCatalogGridMetrics(
 
 /**
  * 切换陈列后首屏的滚动位置：让锚点书的中心落在视口里 [anchorY]（距视口顶，px）那么高。
- * 返回（首个可见层的下标，该层被卷走的偏移）；不能按规则算时（分架有章节横梁、没有锚点）返回 null，退回按行定位。
- * [pitchPx] 是一层的高度，[cellCenterPx] 是书格中心距一层顶部的距离。越过两端时由列表自己收回到有效范围。
+ * 返回（锚点所在的搁板行，带符号的滚动偏移），不是预估的首个可见行。负偏移由 LazyColumn 按前面各行
+ * 的实际高度向前测量（含随字体大小变化的章节横梁）；超出列表两端时由列表收回到有效范围。
  */
 internal fun shelfCatalogAlignedScroll(
     rows: List<ShelfCatalogRowItem>,
     anchorUri: String?,
     anchorY: Float?,
-    pitchPx: Float,
     cellCenterPx: Float,
+    topPaddingPx: Int,
 ): Pair<Int, Int>? {
-    if (anchorUri == null || anchorY == null || pitchPx <= 0f || rows.isEmpty()) return null
-    if (rows.any { it is ShelfCatalogRowItem.SectionHeader }) return null
+    if (anchorUri == null || anchorY == null || !anchorY.isFinite()) return null
     val rowIndex = findShelfCatalogAnchorRow(rows, anchorUri)
     if (rowIndex < 0) return null
-    val scroll = (rowIndex * pitchPx + cellCenterPx - anchorY).coerceAtLeast(0f)
-    val index = kotlin.math.floor(scroll / pitchPx).toInt().coerceIn(0, rows.lastIndex)
-    val offset = (scroll - index * pitchPx).toInt().coerceAtLeast(0)
-    return index to offset
+    val offset = (topPaddingPx + cellCenterPx - anchorY).roundToInt()
+    return rowIndex to if (rowIndex == 0) offset.coerceAtLeast(0) else offset
 }
 
 /** 变形卡片此刻的位置与大小（相对覆盖层）和这一本自己的进度 [t]。 */
