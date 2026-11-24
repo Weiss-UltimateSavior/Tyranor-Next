@@ -108,6 +108,7 @@
     <string name="settings_game_card_style_waterfall">瀑布</string>
     <string name="settings_game_card_style_grid">网格</string>
     <string name="settings_game_card_style_cover_flow">列表</string>
+    <string name="settings_game_card_style_shelf">书架</string>
     <string name="settings_game_card_badge">卡片引擎角标</string>
     <string name="settings_game_card_hide_title_tag">卡片隐藏名称标签</string>
     <string name="settings_engine_settings">引擎设置</string>
@@ -507,7 +508,7 @@
     <string name="engine_settings_external_network_resources">允许加载外部网络资源</string>
     <string name="engine_settings_external_network">允许外部网络</string>
     <string name="engine_settings_game_modifier">游戏修改器</string>
-    <string name="engine_settings_legacy_renderer">PIXI 兼容渲染（仅 TynMV引擎 会话生效）</string>
+    <string name="engine_settings_legacy_renderer">PIXI 兼容渲染（仅 TynMV 引擎 会话生效）</string>
     <string name="engine_settings_save_interop">存档互通（MV/MZ）</string>
     <string name="save_sync_now">互通存档同步</string>
     <string name="save_sync_result">同步完成：导入 %1$d，导出 %2$d，覆盖 %3$d，删除归置 %4$d</string>
@@ -1052,6 +1053,31 @@
     <string name="game_shelf_yesterday">昨天</string>
     <string name="game_shelf_days_ago">%1$d 天前</string>
     <string name="game_shelf_minutes">%1$d 分钟</string>
+    <string name="game_shelf_playtime">已经一起度过了 %1$s</string>
+    <string name="game_shelf_unplayed">初次见面，请多关照</string>
+    <string name="game_shelf_continue">故事还没完，接着翻吧</string>
+    <string name="game_shelf_position">第 %1$d 个，共 %2$d 个</string>
+    <string name="game_shelf_scrubber_description">游戏书架刻度尺，左右拖动快速翻找</string>
+    <string name="game_shelf_scrub_slow">上滑可放慢</string>
+    <string name="game_shelf_scrub_speed">%1$s 速</string>
+    <string name="game_shelf_summary_title">我的书架</string>
+    <string name="game_shelf_summary_count">收藏</string>
+    <string name="game_shelf_summary_opened">翻开过</string>
+    <string name="game_shelf_summary_continue">继续：%1$s</string>
+    <string name="game_shelf_summary_fresh">从哪一本开始呢？</string>
+    <string name="game_shelf_catalog_title">书架</string>
+    <string name="game_shelf_catalog_close">关闭书架</string>
+    <string name="game_shelf_catalog_count_total">共 %1$d 部</string>
+    <string name="game_shelf_catalog_count_filtered">%1$d / %2$d 部</string>
+    <string name="game_shelf_catalog_section_count">%1$d 部</string>
+    <string name="game_shelf_catalog_empty_title">这层书架空空如也</string>
+    <string name="game_shelf_catalog_empty_action">展示全部游戏</string>
+    <string name="game_shelf_catalog_current_badge">当前浏览</string>
+    <string name="game_shelf_catalog_layout_spines">书脊</string>
+    <string name="game_shelf_catalog_layout_covers">封面</string>
+    <string name="game_book_contents">目录</string>
+    <string name="game_book_tab_manage">管理</string>
+    <string name="game_book_cover_hint">轻点更换自定义封面</string>
 
     <!-- Shared ordered graphics-chain settings -->
     <string name="graphics_settings_title">画面超分</string>

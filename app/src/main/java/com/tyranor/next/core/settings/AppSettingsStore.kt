@@ -109,6 +109,9 @@ object AppSettingsStore {
     /** 游戏页游玩状态筛选（[GAME_FILTER_PLAYED_ALL] / [GAME_FILTER_PLAYED_ONLY] / [GAME_FILTER_PLAYED_NONE]）。 */
     const val KEY_GAME_FILTER_PLAYED = "game_filter_played"
 
+    /** 书架风格停留的那一本书（游戏 uri）：退出 / 清后台后再进来还停在这本上。 */
+    const val KEY_GAME_SHELF_FOCUS_URI = "game_shelf_focus_uri"
+
     /** 已启用的第三方 APK 运行时模块包名集合；默认空集（新发现模块默认关闭）。 */
     const val KEY_RUNTIME_MODULE_ENABLED = "runtime_module_enabled"
 
@@ -118,7 +121,7 @@ object AppSettingsStore {
     /** 首页样式：原生（最近打开/快捷启动）/ 网页。 */
     const val KEY_HOME_STYLE = "home_style"
 
-    /** 显示首页：关闭后首页与导航栏首页入口隐藏，游戏页作为第一页；默认开。 */
+    /** 显示首页：关闭后首页与导航栏首页入口隐藏，游戏页作为第一页；默认关（全新安装生效，老用户升级保留开启）。 */
     const val KEY_HOME_PAGE_ENABLED = "home_page_enabled"
 
     /** 经典应用图标：开启后启动器显示旧版图标；默认关。 */
@@ -130,7 +133,7 @@ object AppSettingsStore {
     /** 游戏页卡片隐藏名称标签（【】/[]）；默认开。 */
     const val KEY_GAME_CARD_HIDE_TITLE_TAG = "game_card_hide_title_tag"
 
-    /** 游戏页卡片风格：瀑布（默认）/ 网格 / 列表（封面流）。 */
+    /** 游戏页卡片风格：瀑布（默认）/ 网格 / 封面流 / 书架。 */
     const val KEY_GAME_CARD_STYLE = "game_card_style"
 
     private const val KEY_GAME_CARD_COLUMNS_NARROW = "game_card_columns_narrow"
@@ -292,6 +295,8 @@ object AppSettingsStore {
     /** 列表：封面流横向轮播。 */
     const val GAME_CARD_STYLE_COVER_FLOW = "cover_flow"
 
+    /** 书架：游戏盒立在搁板上，居中的一盒正面朝外，其余侧转露出书脊，下方刻度尺可拖动快速翻找。 */
+    const val GAME_CARD_STYLE_SHELF = "shelf"
 
     /** 卡片风格默认值：瀑布。 */
     const val DEFAULT_GAME_CARD_STYLE = GAME_CARD_STYLE_WATERFALL
@@ -332,8 +337,8 @@ object AppSettingsStore {
     /** 首页样式默认值：原生。 */
     const val DEFAULT_HOME_STYLE = HOME_STYLE_NATIVE
 
-    /** 显示首页默认值：开。 */
-    const val DEFAULT_HOME_PAGE_ENABLED = true
+    /** 显示首页默认值：关（全新安装生效，老用户升级与已有显式设置保持开启）。 */
+    const val DEFAULT_HOME_PAGE_ENABLED = false
 
     /** 经典应用图标默认值：关（使用当前新图标）。 */
     const val DEFAULT_CLASSIC_ICON = false
@@ -460,6 +465,9 @@ object AppSettingsStore {
 
     /** 首页样式读写的串行锁：init 的异步加载与用户写入必须互斥（同 [navStyleLock] 的理由）。 */
     private val homeStyleLock = Any()
+
+    /** 「显示首页」初始化迁移与读写的串行锁：首次判定落盘与用户手动切换必须互斥。 */
+    private val homePageLock = Any()
 
     /**
      * 隐私设置读写的串行锁：[initPrivacySettings] 可能在 IO 线程执行，与用户在同一时刻
@@ -786,9 +794,58 @@ object AppSettingsStore {
         }
     }
 
-    /** 首次组合时从持久化加载首页显示开关到内存态（幂等）。 */
+    /**
+     * 解析尚未持久化 `KEY_HOME_PAGE_ENABLED` 时的初始「显示首页」状态：
+     * 已检测到既有安装数据时为老用户升级保留开启（`true`），否则使用全新安装默认值（`false`）。
+     */
+    internal fun resolveInitialHomePageEnabled(
+        storedValue: Boolean?,
+        existingInstallDetected: Boolean,
+    ): Boolean = storedValue ?: if (existingInstallDetected) true else DEFAULT_HOME_PAGE_ENABLED
+
+    /**
+     * 判定升级迁移前的历史安装痕迹：忽略首次引导初始化写入的 `KEY_ONBOARDING_COMPLETED=false` 及本键自身，
+     * 仅当已完成过引导、存在其它应用设置项、旧版偏好非空或游戏库文件已存在时视为老用户。
+     */
+    internal fun hasExistingInstallForHomePageMigration(
+        onboardingCompleted: Boolean,
+        appSettingsKeys: Set<String>,
+        legacyPreferencesHaveData: Boolean,
+        gameLibraryExists: Boolean,
+    ): Boolean {
+        val hasOtherAppSettings = appSettingsKeys.any {
+            it != KEY_ONBOARDING_COMPLETED && it != KEY_HOME_PAGE_ENABLED
+        }
+        return onboardingCompleted || hasOtherAppSettings || legacyPreferencesHaveData || gameLibraryExists
+    }
+
+    private fun resolveAndPersistHomePageEnabledLocked(c: Context): Boolean {
+        val settings = prefs(c)
+        if (settings.contains(KEY_HOME_PAGE_ENABLED)) {
+            return settings.getBoolean(KEY_HOME_PAGE_ENABLED, DEFAULT_HOME_PAGE_ENABLED)
+        }
+        val existingInstall = hasExistingInstallForHomePageMigration(
+            onboardingCompleted = settings.getBoolean(KEY_ONBOARDING_COMPLETED, false),
+            appSettingsKeys = settings.all.keys,
+            legacyPreferencesHaveData = listOf(
+                AppStorageNames.ENGINE_PREFS,
+                AppStorageNames.LEGACY_ENGINE_PREFS,
+                AppStorageNames.GAME_SCANNER_PREFS,
+            ).any { name ->
+                c.getSharedPreferences(name, Context.MODE_PRIVATE).all.isNotEmpty()
+            },
+            gameLibraryExists = c.getDatabasePath(AppStorageNames.GAME_LIBRARY_DATABASE).exists(),
+        )
+        val resolved = resolveInitialHomePageEnabled(storedValue = null, existingInstallDetected = existingInstall)
+        settings.edit { putBoolean(KEY_HOME_PAGE_ENABLED, resolved) }
+        return resolved
+    }
+
+    /** 首次组合或应用启动时从持久化加载首页显示开关到内存态（未写入过时一次性迁移老用户并落盘；幂等）。 */
     fun initHomePageEnabled(c: Context) {
-        homePageEnabledState.value = isHomePageEnabled(c)
+        synchronized(homePageLock) {
+            homePageEnabledState.value = resolveAndPersistHomePageEnabledLocked(c)
+        }
     }
 
     /** 启动/设置页读取时把经典应用图标开关同步到内存态（幂等）。 */
@@ -818,11 +875,15 @@ object AppSettingsStore {
 
     /** 是否显示首页（关闭后首页不参与主导航）。 */
     fun isHomePageEnabled(c: Context): Boolean =
-        prefs(c).getBoolean(KEY_HOME_PAGE_ENABLED, DEFAULT_HOME_PAGE_ENABLED)
+        synchronized(homePageLock) {
+            resolveAndPersistHomePageEnabledLocked(c)
+        }
 
     fun setHomePageEnabled(c: Context, enabled: Boolean) {
-        prefs(c).edit().putBoolean(KEY_HOME_PAGE_ENABLED, enabled).apply()
-        homePageEnabledState.value = enabled
+        synchronized(homePageLock) {
+            prefs(c).edit { putBoolean(KEY_HOME_PAGE_ENABLED, enabled) }
+            homePageEnabledState.value = enabled
+        }
     }
 
     internal fun initDefaultThemeParticles(c: Context) {
@@ -883,11 +944,12 @@ object AppSettingsStore {
     fun getGameCardStyle(c: Context): String =
         normalizeGameCardStyle(prefs(c).getString(KEY_GAME_CARD_STYLE, DEFAULT_GAME_CARD_STYLE))
 
-    /** 卡片风格归一：仅接受 waterfall / uniform_grid / cover_flow；历史值 grid 与空值回退瀑布。 */
+    /** 卡片风格归一：仅接受 waterfall / uniform_grid / cover_flow / shelf；历史值 grid 与空值回退瀑布。 */
     fun normalizeGameCardStyle(style: String?): String =
         when (style?.trim()?.lowercase()) {
             GAME_CARD_STYLE_GRID -> GAME_CARD_STYLE_GRID
             GAME_CARD_STYLE_COVER_FLOW -> GAME_CARD_STYLE_COVER_FLOW
+            GAME_CARD_STYLE_SHELF -> GAME_CARD_STYLE_SHELF
             // 历史值 "grid"（当时渲染瀑布流）与空值/未知值统一归一到瀑布，避免升级后样式跳变
             else -> GAME_CARD_STYLE_WATERFALL
         }
@@ -931,6 +993,17 @@ object AppSettingsStore {
 
     fun setGameFilterPlayed(c: Context, played: String) {
         updateGameConditions(c) { it.copy(playedFilter = normalizeGameFilterPlayed(played)) }
+    }
+
+    /** 书架上最后停留的那本书的 uri；没记过为 null。 */
+    fun gameShelfFocusUri(c: Context): String? =
+        prefs(c).getString(KEY_GAME_SHELF_FOCUS_URI, null)?.takeIf { it.isNotEmpty() }
+
+    fun setGameShelfFocusUri(c: Context, uri: String) {
+        val p = prefs(c)
+        if (p.getString(KEY_GAME_SHELF_FOCUS_URI, null) != uri) {
+            p.edit().putString(KEY_GAME_SHELF_FOCUS_URI, uri).apply()
+        }
     }
 
     fun resetGameConditions(c: Context) {

@@ -260,18 +260,25 @@ fun Modifier.staggeredEntrance(
     index: Int,
     distance: Dp = 22.dp,
     stepMillis: Long = 30L,
-): Modifier = this then StaggeredEntranceElement(index, distance, stepMillis)
+    /**
+     * false = 只在第一次出现时入场，之后主界面切回这一页的 [EntranceState.replay] 不再重播：
+     * 书架上的书与搁板是「摆在那儿」的实物，切走再切回来不该一本本消失又重新立起（看起来像整排书重新加载）。
+     */
+    replay: Boolean = true,
+): Modifier = this then StaggeredEntranceElement(index, distance, stepMillis, replay)
 
 private class StaggeredEntranceElement(
     val index: Int,
     val distance: Dp,
     val stepMillis: Long,
+    val replay: Boolean,
 ) : ModifierNodeElement<StaggeredEntranceNode>() {
-    override fun create(): StaggeredEntranceNode = StaggeredEntranceNode(index, distance, stepMillis)
+    override fun create(): StaggeredEntranceNode = StaggeredEntranceNode(index, distance, stepMillis, replay)
 
     override fun update(node: StaggeredEntranceNode) {
         node.index = index
         node.stepMillis = stepMillis
+        node.replayable = replay
         // 下一个动画帧图层块重跑时即读到新值；静止时 distance 不参与绘制
         node.distance = distance
     }
@@ -280,13 +287,14 @@ private class StaggeredEntranceElement(
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is StaggeredEntranceElement) return false
-        return index == other.index && distance == other.distance && stepMillis == other.stepMillis
+        return index == other.index && distance == other.distance && stepMillis == other.stepMillis && replay == other.replay
     }
 
     override fun hashCode(): Int {
         var result = index
         result = 31 * result + distance.hashCode()
         result = 31 * result + stepMillis.hashCode()
+        result = 31 * result + replay.hashCode()
         return result
     }
 
@@ -295,6 +303,7 @@ private class StaggeredEntranceElement(
         properties["index"] = index
         properties["distance"] = distance
         properties["stepMillis"] = stepMillis
+        properties["replay"] = replay
     }
 }
 
@@ -314,6 +323,7 @@ internal class StaggeredEntranceNode(
     var index: Int,
     var distance: Dp,
     var stepMillis: Long,
+    var replayable: Boolean = true,
 ) : Modifier.Node(), LayoutModifierNode, LayoutAwareModifierNode, CompositionLocalConsumerModifierNode, ObserverModifierNode {
 
     private var state: EntranceState? = null
@@ -423,6 +433,8 @@ internal class StaggeredEntranceNode(
     /** [EntranceState.replay]：已挂载的元素重新（或首次）播放。 */
     fun onReplay(st: EntranceState, slot: Int) {
         if (!MotionMode.enhanced) return
+        // 只入场一次的元素（书架的书 / 搁板）：播过一次之后不再随切回标签页重播
+        if (!replayable && layerActive) return
         beginPlay(st, relayout = true, slotOverride = slot)
     }
 

@@ -38,7 +38,11 @@ import com.tyranor.next.core.game.save.sync.SaveVersion
 import com.tyranor.next.core.game.save.sync.SaveVersionSource
 import com.tyranor.next.core.game.save.sync.WebDavSettingsStore
 import com.tyranor.next.theme.AppComponentCornerRadius
+import com.tyranor.next.theme.DialogItemSurface
+import com.tyranor.next.theme.LocalAppDialogContent
+import com.tyranor.next.theme.SecondaryTextColor
 import com.tyranor.next.theme.glassBorder
+import top.yukonga.miuix.kmp.basic.CardDefaults
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
@@ -76,6 +80,7 @@ import com.tyranor.next.ui.common.collectSettingAsState
  */
 @Composable
 internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: Int, runTask: (suspend () -> String?) -> Unit) {
+    val inBook = LocalAppDialogContent.current
     val context = LocalContext.current
     val enabled by WebDavSettingsStore.enabled.collectSettingAsState()
     // 持久化开关首次读完之前，StateFlow 的初值（false）会在读完后变 true：这一次不算「用户开关」，不播放展开
@@ -105,6 +110,7 @@ private fun SaveCloudVersionsPanel(
     revision: Int,
     runTask: (suspend () -> String?) -> Unit,
 ) {
+    val inBook = LocalAppDialogContent.current
     val context = LocalContext.current
     val service = remember(context) { SaveSyncService(context) }
     var versions by remember(game.uri) { mutableStateOf(emptyList<SaveVersion>()) }
@@ -261,12 +267,21 @@ private fun SaveCloudVersionsPanel(
         val shownPanelTaskInfo = rememberLastNonNull(panelTaskInfo)
         ExpandVisibility(visible = panelTaskInfo != null, label = "saveVersionsTaskInfo") {
             shownPanelTaskInfo?.let { info ->
-                Text(info, style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
+                Text(
+                    info,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (inBook) SecondaryTextColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
             }
         }
+        val cardColors = if (inBook) CardDefaults.defaultColors(color = DialogItemSurface) else CardDefaults.defaultColors()
         ExpandVisibility(visible = loadError == null, label = "saveVersionsCard") {
-            MiuixCard(Modifier.pressSquishGroup().fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+            MiuixCard(
+                modifier = Modifier.pressSquishGroup().fillMaxWidth().glassBorder(),
+                cornerRadius = AppComponentCornerRadius,
+                colors = cardColors,
+            ) {
                 Column(Modifier.padding(vertical = 4.dp)) {
                     BlurCrossfade(targetState = if (loading) 0 else if (versions.isEmpty()) 1 else 2) { stateKey ->
                         when (stateKey) {
@@ -274,13 +289,13 @@ private fun SaveCloudVersionsPanel(
                             0 -> Text(
                                 stringResource(R.string.common_loading),
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = SecondaryTextColor,
                                 modifier = Modifier.breathing().padding(horizontal = 16.dp, vertical = 12.dp),
                             )
                             1 -> Text(
                                 stringResource(R.string.save_versions_none),
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = SecondaryTextColor,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                             )
                             else -> Column {
@@ -334,7 +349,11 @@ private fun SaveCloudVersionsPanel(
             }
         }
         // 「立即同步 / 云端标识」卡片
-        MiuixCard(Modifier.pressSquishGroup().fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+        MiuixCard(
+            modifier = Modifier.pressSquishGroup().fillMaxWidth().glassBorder(),
+            cornerRadius = AppComponentCornerRadius,
+            colors = cardColors,
+        ) {
             Column(Modifier.padding(vertical = 4.dp)) {
                 AppNavItem(
                     title = stringResource(R.string.save_sync_execute),
@@ -476,6 +495,7 @@ private fun SaveSelectionRecoveryPanel(
     revision: Int,
     runTask: (suspend () -> String?) -> Unit,
 ) {
+    val inBook = LocalAppDialogContent.current
     val context = LocalContext.current
     val service = remember(context) { SaveSyncService(context) }
     var needed by remember(game.uri) { mutableStateOf(false) }
@@ -489,8 +509,11 @@ private fun SaveSelectionRecoveryPanel(
     }
     // 需要恢复时入口卡片原位展开；恢复完成后原路收回（原先为提前 return，瞬间出现 / 消失）
     ExpandVisibility(visible = needed, label = "saveSelectionRecovery") {
-        MiuixCard(Modifier.pressSquishGroup().fillMaxWidth().padding(bottom = 12.dp).glassBorder(),
-            cornerRadius = AppComponentCornerRadius) {
+        MiuixCard(
+            modifier = Modifier.pressSquishGroup().fillMaxWidth().padding(bottom = 12.dp).glassBorder(),
+            cornerRadius = AppComponentCornerRadius,
+            colors = if (inBook) CardDefaults.defaultColors(color = DialogItemSurface) else CardDefaults.defaultColors(),
+        ) {
             AppNavItem(
                 title = stringResource(R.string.save_version_recover),
                 showLeadingIcon = false,

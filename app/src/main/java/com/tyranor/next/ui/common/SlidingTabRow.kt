@@ -33,6 +33,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Modifier
@@ -66,8 +67,10 @@ import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassSurfaceHigh
 import com.tyranor.next.theme.GlassText
 import com.tyranor.next.theme.GlassTextSecondary
+import com.tyranor.next.theme.MilkSurfaceStrong
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.PageSecondaryTextColor
+import com.tyranor.next.theme.SecondaryTextColor
 import com.tyranor.next.theme.SheetSecondaryTextColor
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.LocalAppDialogContent
@@ -82,7 +85,7 @@ import androidx.compose.animation.animateColorAsState
 import kotlinx.coroutines.launch
 
 /** 标签高度（两形态统一）。 */
-private val SlidingTabHeight = 42.dp
+internal val SlidingTabHeight = 42.dp
 private val TabLabelHorizontalPadding = 16.dp
 
 /** 等分宽度形态的标签间距。 */
@@ -546,7 +549,15 @@ private fun TabLabel(
             // 不会随手指落点滑到选框的上下半边
             .pressSquish(scale = 0.92f, follow = 0.dp)
             .clip(AppComponentShape)
-            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            // 不画系统的按压高亮（涟漪 / 胶囊状按下态）：选中块本身就是那枚胶囊，按下时目标标签再浮出一枚、
+            // 与从旁边滑过来的指示器叠在一起会出现两枚胶囊重叠；按压反馈只留上面的形变
+            .selectable(
+                selected = selected,
+                interactionSource = null,
+                indication = null,
+                role = Role.Tab,
+                onClick = onClick,
+            )
             .padding(horizontal = TabLabelHorizontalPadding),
         contentAlignment = Alignment.Center,
     ) {
@@ -583,11 +594,15 @@ private fun TabLabel(
     }
 }
 
+/** 藏书阁等浅底半透明面板内的取色标记：不触发弹窗/抽屉窗口语义，仅让白雾玻璃浅面托盘取亮指示器与深色次字。 */
+internal val LocalSlidingTabLightPanel = staticCompositionLocalOf { false }
+
 /** 弹窗上下文的局部取色适配：指示器复用反色条目，避免与弹窗面板同色。
- * 由公共弹窗提供上下文，调用方不传色值；页内标签栏保留既有取色分派，玻璃档各用自身动态常量。
+ * 由公共弹窗/浅底托盘提供上下文，调用方不传色值；页内标签栏保留既有取色分派，玻璃档各用自身动态常量。
  */
 @Composable
 private fun tabIndicatorContainer(): Color = when {
+    LocalSlidingTabLightPanel.current && AppThemeColors.isMilkGlass -> MilkSurfaceStrong
     LocalAppSheetContent.current && AppThemeColors.isMilkGlass -> DialogItemSurface
     LocalAppDialogContent.current -> DialogItemSurface
     AppThemeColors.isGlass -> GlassSurfaceHigh
@@ -600,6 +615,7 @@ private fun tabContentColor(selected: Boolean): Color = when {
     selected && AppThemeColors.isGlass -> GlassText
     selected -> TextColor
     AppThemeColors.isGlass -> GlassTextSecondary
+    LocalSlidingTabLightPanel.current && AppThemeColors.isMilkGlass -> SecondaryTextColor
     LocalAppSheetContent.current && AppThemeColors.isMilkGlass -> SheetSecondaryTextColor
     AppThemeColors.isMilkGlass -> PageSecondaryTextColor
     LocalAppDialogContent.current -> UnselectedGrey

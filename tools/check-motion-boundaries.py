@@ -18,6 +18,9 @@ OWNERS = set("""
 ui/archive/ArchiveMotion.kt
 ui/engine/EngineStorageMotion.kt
 ui/game/CoverFlowMotion.kt
+ui/game/GameShelfMotion.kt
+ui/game/ShelfBookMotion.kt
+ui/game/ShelfCatalogMotion.kt
 ui/game/CropGuides.kt
 ui/game/GameOverlayMotion.kt
 ui/main/MainTabMotion.kt
@@ -33,8 +36,8 @@ TopBarIcon notice/NoticeHost
 """.split())
 OWNERS.update("ui/common/motion/" + f + ".kt" for f in """
 BlurText ContentMotion DeleteEffect Entrance ExpandSectionVisibility FeedbackMotion GameCoverMotion
-ListItemMotion MotionMode MotionSprings MotionTokens PagerMotion PageTransitions
-ParallaxCardPager PressSquish ReorderPlacementMotion ReplayEntranceSprings
+HostNavigation ListItemMotion MotionMode MotionSprings MotionTokens PagerMotion PageTransitions
+ParallaxCardPager PressSquish ReorderPlacementMotion ReplayEntranceSprings ScreenRotation
 ScrollMotion SheetMotion TabPageMotion
 """.split())
 

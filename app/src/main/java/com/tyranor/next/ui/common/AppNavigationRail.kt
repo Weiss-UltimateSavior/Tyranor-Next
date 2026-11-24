@@ -58,9 +58,9 @@ internal fun AppNavigationRail(
         Surface(
             modifier = modifier
                 .fillMaxHeight()
-                // 横屏三键导航可能位于侧面，栏体需避开起始侧系统栏。
+                // 横屏三键导航可能位于侧面，栏体需避开起始侧系统栏；右侧与内容区紧邻，保证全宽光效与搁板无缝衔接。
                 .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Start))
-                .padding(top = 30.dp, end = 12.dp, bottom = 30.dp),
+                .padding(top = 30.dp, bottom = 30.dp),
             shape = shape,
             color = if (AppThemeColors.isGlass) GlassNavSurface else NavWhite,
             contentColor = MaterialTheme.colorScheme.onSurface,

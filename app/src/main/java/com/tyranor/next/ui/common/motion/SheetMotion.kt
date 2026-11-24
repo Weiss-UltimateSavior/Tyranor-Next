@@ -21,6 +21,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -58,7 +59,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineStart
 import com.tyranor.next.theme.AppSheetTopShape
-import kotlinx.coroutines.withTimeoutOrNull
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
@@ -217,29 +217,16 @@ class MotionSheetController internal constructor(
         if (!enhanced || closing || navigating) return
         navigating = true
         scope.launch {
-            var unfold: (() -> Unit)? = null
             try {
-                val paused = withTimeoutOrNull(NAVIGATION_START_TIMEOUT_MILLIS) {
-                    owner.lifecycle.currentStateFlow.first { !it.isAtLeast(Lifecycle.State.RESUMED) }
-                } != null
-                if (!paused) return@launch
+                if (!awaitHostLeft(owner)) return@launch
                 launch { navDim.animateTo(1f, tween(MotionSprings.PushDurationMillis, easing = MotionSprings.PushEasing)) }
                 // 回来：上层页面一开始退出（与窗口返回动画、页面区的收回同一个起点）或本页重新 RESUMED，先到者为准
-                val back = kotlinx.coroutines.CompletableDeferred<Unit>()
-                unfold = { back.complete(Unit) }
-                PageTransitions.registerPop(unfold)
-                val resumed = launch {
-                    owner.lifecycle.currentStateFlow.first { it.isAtLeast(Lifecycle.State.RESUMED) }
-                    back.complete(Unit)
-                }
-                back.await()
-                resumed.cancel()
+                awaitHostBack(owner)
                 // 抽屉已经回到眼前：条目立刻可以再点，不要等变亮动画放完才放行——
                 // 否则返回后马上再点同一个条目会被当成「正在跳转」拒绝（拒绝触觉，进不去）
                 navigating = false
                 navDim.animateTo(0f, tween(MotionSprings.PushDurationMillis, easing = MotionSprings.PushEasing))
             } finally {
-                unfold?.let { PageTransitions.unregisterPop(it) }
                 navigating = false
             }
         }
@@ -257,9 +244,7 @@ class MotionSheetController internal constructor(
         scope.launch {
             var paused = false
             try {
-                paused = withTimeoutOrNull(NAVIGATION_START_TIMEOUT_MILLIS) {
-                    owner.lifecycle.currentStateFlow.first { !it.isAtLeast(Lifecycle.State.RESUMED) }
-                } != null
+                paused = awaitHostLeft(owner)
                 if (!paused) {
                     closing = false
                     leaving = false
@@ -432,7 +417,6 @@ class MotionSheetController internal constructor(
 
         /** 退回到关闭线的这一比例以内才重新武装越线触觉（滞回，避免在线上来回抖动时连震）。 */
         const val LINE_REARM = 0.85f
-        const val NAVIGATION_START_TIMEOUT_MILLIS = 700L
         const val FLING_PROJECTION_SECONDS = 0.12f
 
         /** 松手回弹的底速度：每拉下 1px 给多少 px/s（朝向原位）。 */
@@ -589,6 +573,21 @@ class SheetBackdrop internal constructor(private val scope: CoroutineScope) {
      */
     private val sources = mutableStateListOf<Source>()
 
+    /**
+     * 登记「这一页现在不要景深」的个数：> 0 时 [depthFoldStack] 对这一页不做下沉 / 翻折 / 褪色（压暗不受影响）。
+     * 景深是给「页面被浮层 / 新页盖住」的后退感用的；页面自己已经被一层整屏的东西占满（如书架翻开的书）时，
+     * 背后的页面根本看不见，这些效果只剩一次整页离屏渲染的开销。由页面状态在**宿主层**统一决定（见 [SuppressDepth]），
+     * 书里以后新增的任何弹窗 / 抽屉 / 二级页都自动沿用，不需要各个控件分别处理。
+     */
+    private var depthSuppressors by mutableIntStateOf(0)
+
+    internal val depthSuppressed: Boolean get() = depthSuppressors > 0
+
+    internal fun suppressDepth(): () -> Unit {
+        depthSuppressors++
+        return { depthSuppressors-- }
+    }
+
     internal val cover: Float
         get() {
             var max = 0f
@@ -640,6 +639,19 @@ class SheetBackdrop internal constructor(private val scope: CoroutineScope) {
  * 在各自组合里读取并登记，页面随它们的展开进度向后翻折。没有提供者（独立窗口里的页面）时为 null，不做景深。
  */
 val LocalSheetBackdrop = staticCompositionLocalOf<SheetBackdrop?> { null }
+
+/**
+ * 放在页面里「这一段内容在的时候不要页面景深」的位置（例如书架翻开的书）：[active] 为真期间，本页的 [depthFoldStack]
+ * 不再下沉 / 翻折 / 褪色，离开组合或 [active] 变假时自动恢复。没有景深句柄（独立窗口里的页面）时什么也不做。
+ */
+@Composable
+fun SuppressPageDepth(active: Boolean = true) {
+    val backdrop = LocalSheetBackdrop.current ?: return
+    DisposableEffect(backdrop, active) {
+        val release = if (active) backdrop.suppressDepth() else null
+        onDispose { release?.invoke() }
+    }
+}
 
 /** 创建页面侧的抽屉背景句柄。 */
 @Composable

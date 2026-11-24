@@ -66,6 +66,7 @@ import com.tyranor.next.core.status.vndbLabelsToUnset
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
+import com.tyranor.next.ui.common.dialogListHeight
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
 import com.tyranor.next.ui.common.NoRippleButton
@@ -1003,7 +1004,7 @@ private fun PlayStatusPickDialog(
                     }
                 }
                 LazyColumn(
-                    modifier = Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = 320.dp),
+                    modifier = Modifier.fillMaxWidth().weight(1f, fill = false).dialogListHeight(320.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     lazyItems(options, key = { it.code }, contentType = { "play_status_option" }) { option ->
@@ -1223,7 +1224,7 @@ private fun SubjectBindDialog(
                                 color = SecondaryTextColor,
                             )
                             is SubjectBindContentState.Results -> LazyColumn(
-                                modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
+                                modifier = Modifier.fillMaxWidth().dialogListHeight(320.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 lazyItems(

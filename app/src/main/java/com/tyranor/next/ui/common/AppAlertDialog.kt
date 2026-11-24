@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
@@ -105,6 +106,46 @@ internal val AppDialogContentHorizontalPadding = 18.dp
 internal val AppDialogContentVerticalPadding = 16.dp
 
 /**
+ * [AppAlertDialog] 的一次调用（标题 / 正文 / 按钮与关闭语义），交给 [AppDialogHost] 摆放时使用。
+ * 宿主按与弹窗相同的约定提供 [LocalDialogExit] / [LocalDialogBodyExit]，并在自己的关闭动画结束后交付 [onDismissRequest]。
+ */
+internal class AppDialogSpec(
+    val onDismissRequest: () -> Unit,
+    val title: @Composable () -> Unit,
+    val text: @Composable () -> Unit,
+    val confirmButton: @Composable () -> Unit,
+    val dismissButton: (@Composable () -> Unit)?,
+    val buttonArrangement: Arrangement.Horizontal,
+    val textScrollEnabled: Boolean,
+    val dismissEnabled: Boolean,
+    val showButtonRow: Boolean,
+)
+
+/**
+ * 弹窗的替代宿主：组合树里提供了它时，[AppAlertDialog] 不另开窗口，把同一份标题 / 正文 / 按钮交给宿主摆放。
+ * 目前只有「游戏盒」风格翻开的书（`ui/game/ShelfBook.kt`）提供：书里的选项弹出的二级弹窗翻到书的下一页上。
+ */
+internal interface AppDialogHost {
+    @Composable
+    fun Present(dialog: AppDialogSpec)
+}
+
+internal val LocalAppDialogHost = staticCompositionLocalOf<AppDialogHost?> { null }
+
+/**
+ * 弹窗正文里列表的高度：窗口版按 [windowMax] 封顶（窗口高度有限）；翻开的书里书页大得多，列表不设上限，
+ * 有多高占多高（受页上剩下的高度约束），不留一大块空白。
+ */
+@Composable
+internal fun Modifier.dialogListHeight(windowMax: Dp): Modifier =
+    if (LocalAppDialogHost.current != null) this else heightIn(max = windowMax)
+
+/** 同上，窗口版是固定高度 [windowHeight]；书里占满页上剩下的高度。 */
+@Composable
+internal fun Modifier.dialogListFixedHeight(windowHeight: Dp): Modifier =
+    if (LocalAppDialogHost.current != null) fillMaxSize() else height(windowHeight)
+
+/**
  * Miuix 风格弹窗：小屏底部弹入 + 窗口变暗 + 标题居中。
  * 面板和圆角跟随动态主题，动画节奏复刻 miuix OverlayDialog。
  * dismissEnabled 在退场前阻止关闭；已接受的退场始终交付 onDismissRequest。
@@ -143,6 +184,23 @@ internal fun AppAlertDialog(
     if (locked) {
         val currentClose by rememberUpdatedState(onLockDismiss ?: onDismissRequest)
         LaunchedEffect(Unit) { currentClose() }
+        return
+    }
+    // 有替代宿主（游戏盒里翻开的书）时交给它摆放，不另开窗口
+    LocalAppDialogHost.current?.let { host ->
+        host.Present(
+            AppDialogSpec(
+                onDismissRequest = onDismissRequest,
+                title = title,
+                text = text,
+                confirmButton = confirmButton,
+                dismissButton = dismissButton,
+                buttonArrangement = buttonArrangement,
+                textScrollEnabled = textScrollEnabled,
+                dismissEnabled = dismissEnabled,
+                showButtonRow = showButtonRow,
+            ),
+        )
         return
     }
     val scope = rememberCoroutineScope()

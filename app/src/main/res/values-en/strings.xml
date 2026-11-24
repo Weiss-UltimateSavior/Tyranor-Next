@@ -108,6 +108,7 @@
     <string name="settings_game_card_style_waterfall">Waterfall</string>
     <string name="settings_game_card_style_grid">Grid</string>
     <string name="settings_game_card_style_cover_flow">List</string>
+    <string name="settings_game_card_style_shelf">Bookshelf</string>
     <string name="settings_game_card_badge">Card engine badge</string>
     <string name="settings_game_card_hide_title_tag">Hide name tags on cards</string>
     <string name="settings_engine_settings">Engine settings</string>
@@ -1052,6 +1053,31 @@
     <string name="game_shelf_yesterday">Yesterday</string>
     <string name="game_shelf_days_ago">%1$d days ago</string>
     <string name="game_shelf_minutes">%1$d min</string>
+    <string name="game_shelf_playtime">%1$s spent together so far</string>
+    <string name="game_shelf_unplayed">Nice to meet you</string>
+    <string name="game_shelf_continue">The story isn\'t over yet</string>
+    <string name="game_shelf_position">%1$d of %2$d</string>
+    <string name="game_shelf_scrubber_description">Shelf scale, drag left or right to browse quickly</string>
+    <string name="game_shelf_scrub_slow">Slide up to slow down</string>
+    <string name="game_shelf_scrub_speed">%1$s speed</string>
+    <string name="game_shelf_summary_title">My shelf</string>
+    <string name="game_shelf_summary_count">Titles</string>
+    <string name="game_shelf_summary_opened">Opened</string>
+    <string name="game_shelf_summary_continue">Continue: %1$s</string>
+    <string name="game_shelf_summary_fresh">Which story first?</string>
+    <string name="game_shelf_catalog_title">Bookshelf</string>
+    <string name="game_shelf_catalog_close">Close bookshelf</string>
+    <string name="game_shelf_catalog_count_total">%1$d titles</string>
+    <string name="game_shelf_catalog_count_filtered">%1$d / %2$d</string>
+    <string name="game_shelf_catalog_section_count">%1$d</string>
+    <string name="game_shelf_catalog_empty_title">No matching titles on this shelf</string>
+    <string name="game_shelf_catalog_empty_action">Show all games</string>
+    <string name="game_shelf_catalog_current_badge">Current</string>
+    <string name="game_shelf_catalog_layout_spines">Spines</string>
+    <string name="game_shelf_catalog_layout_covers">Covers</string>
+    <string name="game_book_contents">Contents</string>
+    <string name="game_book_tab_manage">Manage</string>
+    <string name="game_book_cover_hint">Tap to choose a custom cover</string>
 
     <!-- Shared ordered graphics-chain settings -->
     <string name="graphics_settings_title">Super resolution</string>
