@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -169,6 +170,9 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var ethornellNls by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ETHORNELL_NLS)) }
     var ethornellFont by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ETHORNELL_FONT)) }
     var cmvsFont by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_CMVS_FONT)) }
+    var cmvsProfile by remember(gid) {
+        mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_CMVS_PROFILE))
+    }
     var fvpSystemFont by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FVP_SYSTEM_FONT)) }
     var fvpTextHidpi by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FVP_TEXT_HIDPI)) }
     var ppssppVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_PPSSPP_VERSION)) }
@@ -624,6 +628,9 @@ fun PerGameSettingsScreen(game: ScanGame) {
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ETHORNELL_NLS, ethornellNls)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ETHORNELL_FONT, ethornellFont)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_CMVS_FONT, cmvsFont)
+        if (game.engine == EngineType.CMVS) {
+            PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_CMVS_PROFILE, cmvsProfile)
+        }
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FVP_SYSTEM_FONT, fvpSystemFont)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FVP_TEXT_HIDPI, fvpTextHidpi)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_PPSSPP_VERSION, ppssppVersion)
@@ -783,6 +790,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
             )
             PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_IMPACTO_CLOSE_BACKLOG_AT_END, impacto.closeBacklogAtEnd)
             PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_IMPACTO_DELUSION_MOUSE, impacto.delusionMouse)
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_IMPACTO_DEBUG_MODE, impacto.debugMode)
             PerGameSettingsStore.setStr(
                 ctx,
                 gid,
@@ -985,20 +993,22 @@ fun PerGameSettingsScreen(game: ScanGame) {
                         if (!isSdl3) {
                             item(key = if (motionEnhanced) "krFont" else null) {
                                 SectionCard(stringResource(R.string.engine_settings_font), modifier = listItemMotion(enabled = motionEnhanced)) {
-                                    // 「跟随全局」必须删除覆盖键（null），存 "" 会被引擎当作
-                                    // 显式内置字体覆盖，导致全局字体设置对该游戏永久失效
+                                    // 三态语义：「跟随全局」必须删除覆盖键（null）；「内置字体」
+                                    // 存空串（game scope 空 Item，仅该游戏回落内置）；「选择文件」
+                                    // 存导入后的真实路径
                                     val krFontValue = krFont?.ifEmpty { stringResource(R.string.engine_settings_builtin_font) }
                                         ?: stringResource(
                                             R.string.engine_settings_follow_global_font,
                                             globalKrFont.ifEmpty { stringResource(R.string.engine_settings_builtin_font) },
                                         )
-                                    // 值落定（跟随全局 ↔ 选中字体）时整行轻轻弹一下；Box 贴合行尺寸
+                                    // 值落定（跟随全局 ↔ 内置字体 ↔ 选中字体）时整行轻轻弹一下；Box 贴合行尺寸
                                     Box(Modifier.bounceOnChange(krFontValue, depth = ROW_SETTLE_DEPTH)) {
                                     FontPreference(
                                         label = stringResource(R.string.engine_settings_default_font),
                                         value = krFontValue,
                                         followLabel = stringResource(R.string.engine_settings_follow_global),
                                         onFollow = { krFont = null },
+                                        onBuiltIn = { krFont = "" },
                                         onPick = { fontLauncher.launch("*/*") },
                                         valueInSummary = true,
                                     )
@@ -1239,6 +1249,17 @@ fun PerGameSettingsScreen(game: ScanGame) {
                     }
                     EngineType.CMVS -> item {
                         SectionCard("CMVS") {
+                            val profileIds = stringArrayResource(R.array.cmvs_profile_ids)
+                            val profileTitles = stringArrayResource(R.array.cmvs_profile_titles)
+                            val profileLabels = profileTitles.zip(profileIds) { title, id -> "$title ($id)" }
+                            OverlayDropdownPreference(
+                                title = stringResource(R.string.cmvs_profile_title),
+                                summary = stringResource(R.string.cmvs_profile_summary),
+                                items = listOf(stringResource(R.string.cmvs_profile_auto)) + profileLabels,
+                                selectedIndex = profileIds.indexOf(cmvsProfile) + 1,
+                                maxHeight = 360.dp,
+                                onSelectedIndexChange = { cmvsProfile = profileIds.getOrNull(it - 1) },
+                            )
                             OverrideFontPreference(
                                 label = stringResource(R.string.cmvs_font_title),
                                 globalValue = EngineSettingsStore.getCmvsFont(ctx),
@@ -1690,6 +1711,11 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                 globalImpacto.logLevel,
                                 impacto.logLevel,
                             ) { impactoOverride = impacto.copy(logLevel = it) }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_impacto_debug_mode),
+                                globalImpacto.debugMode,
+                                impacto.debugMode,
+                            ) { impactoOverride = impacto.copy(debugMode = it) }
                             Text(
                                 stringResource(R.string.engine_settings_impacto_module_description),
                                 style = MaterialTheme.typography.bodyMedium,

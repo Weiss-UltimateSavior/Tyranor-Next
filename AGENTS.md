@@ -114,6 +114,15 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 
 ***
 
+## 内置播放器弹窗统一规范
+
+- 内置播放器的宿主消息、错误、确认和输入弹窗必须复用 `org.tvp.kirikiri2.KrDialogStyle`。复杂表单和列表通过公共弹窗的自定义内容入口接入，长正文与表单在正文区滚动，操作按钮固定在底部。宿主不得直接创建 `AlertDialog` 或另写一套弹窗样式。
+- 卡片、正文、输入框与按钮跟随应用启动播放器时的主题色与深浅色。应用通过 `LaunchContract` 传入主题色快照，引擎统一由 `EngineThemeColors.fromIntent` 读取。配色、排版与圆角由公共组件管理，宿主不得另设配色或直接依赖应用的 Compose 主题。
+- SDL 消息框统一接入 `SdlMessageBox`，保留原始按钮 ID、Enter / Esc 行为与取消规则，并在宿主销毁时解除原生线程等待。Tyrano 与 RPG Maker 的 JavaScript 弹窗统一接入 `EngineWebChromeClient`，确保确认、取消或 WebView 销毁时只向脚本回传一次结果。
+- 本节适用于内置宿主创建的弹窗。游戏自绘界面、短时 Toast、系统文档选择器、按键布局编辑器和外置宿主窗口各自遵循对应交互规范。改动公共弹窗时核对应用浅深色与自定义主题色、长正文、返回键取消和结果回传。行为基准见 [SPEC.md](SPEC.md#内置播放器弹窗)。
+
+***
+
 ## 错误处理协议（core → ui）
 
 功能抽象层（core）对 UI 的错误协议固定为以下三种，禁止再引入其它风格：
@@ -235,6 +244,7 @@ Column(fillMaxSize)                                // 页面根
 | 页面意图 | 应使用的入口 / 实现归属 |
 | --- | --- |
 | 主标签与引擎分类切页；独立页面推入、返回 | 常驻页共用 `TabPageMotion` 的弹簧与 `tabPageTransform`，两种宿主保留各自的交互时钟。Activity 走 `startActivityWithPageTransition` / `AppScreenActivity`；背景、翻折和遮罩由 `PageTransitionBackground`、`depthFoldStack`、`pageEnterFold` 处理。 |
+| 内置播放器加载与游戏就绪 | 由 engine 的 `EngineStartupOverlay` 统一负责频谱和退场。增强档翻页，普通档保留淡出。各宿主只提交就绪或失败信号，并保留各自的首帧判定。 |
 | 抽屉、侧栏、弹窗、下拉、提示条 | 抽屉使用 `AppBottomSheet`（内部复用 `MotionSheetController` / `SheetBackdrop`），其余复用 `AppSidePanel`、`AppAlertDialog`、`OverlayDropdownPreference`、`AppNotice`。公共窗口负责遮罩与释放触摸；灵动岛的变形、阴影、排队、按住/滑动与离页时机归 `NoticeHost` / `NoticeCenter`。业务页只提交内容及回调。 |
 | 入场、重播、增删补位、拖拽排序、删除消散 | 入场用 `EntranceState` / `staggeredEntrance`；有稳定 key 的 lazy 列表、网格、瀑布流在原修饰符位置调用 `listItemMotion()`。仅原本快速补位的场景用 `ListItemPlacement.Reflow`。普通 Column 的补位用 `reorderPlacement`；滤镜链的拖动归 `GraphicsChainMotion.kt`；游戏删除走 `GameRemovalMotion.kt` 与 `dissolve`。 |
 | 内容替换、区块显隐、读数与反馈 | 用 `BlurCrossfade`、`BlurVisibility`、`ExpandVisibility`、`ExpandSectionVisibility` 或 `RollingNumberText`，按原效果选有无模糊与是否等待退场。失败、等待、占位、图标回弹、滚动、触觉走 `shakeOnTrigger`、`DelayedProgress` / `breathing`、`shimmerSweep`、`bounceOnChange`、`scrollJelly`、`MotionHaptics`。 |
@@ -342,7 +352,7 @@ Column(fillMaxSize)                                // 页面根
 
 - **明文豁免**：游戏页卡片左上角的引擎类型角标（`ui/game/GameScreen.kt` 的 `GameCoverEngineBadge`，`GameCard` 与 `UniformGameCard` 共用，仅覆盖在封面上）使用 `MaterialTheme.typography.labelSmall`（11sp）——角标属封面上的小型标注，按两档制会过大；仅此一处豁免，其余正文仍遵循两档制。角标底色/文字色为**固定样式**（`theme/Color.kt` 的 `CoverBadgeBackground` / `CoverBadgeText`：半透明黑底 + 白字），**不随主题色与外观模式变化**。
 
-- **明文豁免**：游戏页瀑布流卡片（`ui/game/GameScreen.kt` 的 `GameCard`）标题在 `bodyMedium` 基础上缩小 2sp（12sp），用于 3/6 列窄卡片；仅此一处豁免，其余正文仍遵循两档制。
+- **明文豁免**：游戏页瀑布流卡片（`ui/game/GameScreen.kt` 的 `GameCard`）标题在 `bodyMedium` 基础上缩小 2sp（12sp），以兼顾高列数下的窄卡片；仅此一处豁免，其余正文仍遵循两档制。
 
 ***
 

@@ -4,11 +4,11 @@
 
 ## 发布说明：画质增强入口与支持范围
 
-- 全局和单游戏的单模式“画面超分”入口由“画面滤镜”的有序滤镜链替代；原有 Anime4K 配置只读迁移，原偏好不删除。
-- 新增 Kirikiroid2 **1.2.6** 的公共纹理接口适配，以及 **krkrsdl3 OpenGL** 的尺寸限制舞台输出；保留现有 **1.3.4 / 1.3.9**。不恢复旧屏幕级 Anime4K，不将缩放后的屏幕帧冒充原始输入。实现、二进制身份和验证边界见 [KR 接入报告](krkr-local-raw-filters.md)。
+- 全局和单游戏的单模式“画面超分”入口由“画质滤镜链”的有序滤镜链替代；原有 Anime4K 配置只读迁移，原偏好不删除。
+- 随包支持 **krkrsdl3 OpenGL** 的尺寸限制舞台输出，并保留 **Kirikiroid2 1.3.4 / 1.3.9**（Kirikiroid2 1.2.6 已移除，详见本文顶部「更新（当前实现）」说明）。不恢复旧屏幕级 Anime4K，不将缩放后的屏幕帧冒充原始输入。实现、二进制身份和验证边界见 [KR 接入报告](krkr-local-raw-filters.md)。
 - 设置页按实际内核及渲染器判定能力；krkrsdl3 软件渲染仍标为不支持滤镜，已有自定义链和分析器偏好继续保存。SDL3 的能力不受 Kirikiroid2 版本选择影响。
 - 自研 Artemis 的画质增强接入待 artemis-compat 上游合并。官方 Artemis 支持范围见下表；不能将所有 Artemis 版本统称为 V1–V6。
-- `AGENTS.md` 已完整恢复为 PR 基线；输入兼容、无图标入口和弹窗取色仅在实际代码处说明，不修改项目规范。Kirikiroid2 1.2.6 与 krkrsdl3 OpenGL 接入已按用户要求并入 PR 候选；无图标跳转入口仍待维护者批准，局部注释不等同于规范豁免。
+- `AGENTS.md` 已完整恢复为 PR 基线；输入兼容、无图标入口和弹窗取色仅在实际代码处说明，不修改项目规范。krkrsdl3 OpenGL 接入与 Kirikiroid2 1.2.6 移除后的清理已按维护约定整理；无图标跳转入口仍待维护者批准，局部注释不等同于规范豁免。
 
 ## 功能与设置
 
@@ -16,7 +16,7 @@
 
 适应缩放按照输入比例计算当前屏幕内可容纳的最大尺寸；固定原生倍率的模型保留训练输出倍率，超出屏幕时由显示层 Resize 等比适配。自定义缩放仅提供一个 0.25–4 倍的等比倍率；旧版横纵不同的配置按较小倍率统一，沿用已有存储和启动协议字段。CAS 额外提供锐度参数（缺省 0.40）；Bicubic 拆分为独立的 B 与 C 双参数调节（缺省 Mitchell 基准 B=0.33, C=0.33）；Lanczos 提供独立的抗振铃强度滑杆（缺省 0.50，可抑制高对比文字与边缘振铃，设为 0 时关闭抗振铃处理）。抗振铃把重采样结果钳制到采样窗内输入值的范围再按强度混合，放大与缩小同样生效，避免缩小高对比图案时对比外扩或细线压暗。Bilinear / Bicubic / Lanczos 为纯重采样节点，按性能开销排序，可作 CNN 滤镜在性能预算不足时的轻量放大替代；输入与目标 1:1（几何无变化）时这些节点自动跳过，显示层 Resize 行为不变。
 
-性能分析器使用顶部或底部居中的单行条：GPU / 帧率与输入尺寸 → 带简称、非 1X 倍率 `(2X)` 和 GPU 用时的滤镜色卡 → 必要时灰色 Resize 色卡 → 最终显示尺寸。仅在滤镜启用且所选内核支持时可选；数据刷新间隔使用预设菜单，默认两秒。颜色来自各滤镜定义，与排序无关；蓝色用于线条重建，紫色用于 VN-SR，绿色用于降噪，橙色用于锐化，棕色用于重采样三件套（Bilinear / Bicubic / Lanczos），灰色 Resize 表示未计时的默认显示处理。未提供可靠 GPU 时间时显示缺失值，不代用 CPU 提交时间。单节点及总 GPU 耗时丢弃超过 1000 ms 的异常数据，不计入均值或清空已有正常样本；汇总超过同一上限时显示缺失值。计时失效事件仍清空对应样本，零值与 1000 ms 边界正常统计。
+性能分析器使用顶部或底部居中的单行条：GPU / 帧率与输入尺寸 → 带简称、非 1X 倍率 `(2X)` 和 GPU 用时的滤镜色卡 → 必要时灰色 Resize 色卡 → 最终显示尺寸。仅在滤镜启用且所选内核支持时可选；数据刷新间隔使用预设菜单，默认两秒。颜色来自各滤镜定义，与排序无关；蓝色用于线条重建，紫色用于 VN-SR，绿色用于降噪，橙色用于锐化，棕色用于重采样三件套（Bilinear / Bicubic / Lanczos），灰色 Resize 表示未计时的默认显示处理。未提供可靠 GPU 时间或运行出现异常时显示缺失值，不代用 CPU 提交时间；任何宿主在无新 GPU 样本且状态/计时正常地刷新区间内，性能分析器保持显示上次有效的 GPU 计时统计值而不刷新为缺失值（`—`），仅在输入或输出尺寸、节点拓扑改变，或出现状态失败、尺寸失效、计时查询异常或管线重置时清除并显示缺失值。单节点及总 GPU 耗时丢弃超过 1000 ms 的异常数据，不计入均值或清空已有正常样本；汇总超过同一上限时显示缺失值。计时失效事件仍清空对应样本，零值与 1000 ms 边界正常统计。
 
 ## 引擎接入与支持范围
 
@@ -24,9 +24,9 @@
 
 保留项目随附的引擎二进制。宿主根据实际加载符号所在 ELF 的身份核对已知内核，并在合成纹理进入屏幕缩放前通过桥接执行滤镜；输入尺寸取实际纹理，不按屏幕尺寸推算。无法确认入口时保留正常呈现，不将屏幕尺寸伪装成原始输入。不同游戏的舞台尺寸可能是 720p 或 1080p；这些数值不代表单张背景素材尺寸。
 
-Kirikiroid2 1.2.6 使用独立的公共 Cocos 接口适配：其 `UpdateDrawBuffer` 参数与 1.3.x 不同，且关键绘制调用没有可替换的 PLT 入口。适配器在可信的单个窗口舞台上处理纹理，通过引擎自己的 `Texture2D` 暂借处理结果，待原生渲染队列完成后还原纹理及 UV；不更改舞台几何或触摸映射。旧屏幕级 Anime4K 入口仍不执行。
+历史版本中 Kirikiroid2 1.2.6 曾使用独立的公共 Cocos 接口适配（现已随 1.2.6 内核一并移除）：其 `UpdateDrawBuffer` 参数与 1.3.x 不同，且关键绘制调用没有可替换的 PLT 入口。当时适配器在可信的单个窗口舞台上处理纹理，通过引擎自己的 `Texture2D` 暂借处理结果，待原生渲染队列完成后还原纹理及 UV；不更改舞台几何或触摸映射。旧屏幕级 Anime4K 入口仍不执行。
 
-当前随包支持 Kirikiroid2 1.3.4 / 1.3.9（1.2.6 已移除）；自动选择走同样的受支持路径，设置与启动使用同一库名门禁。启动阶段只规范化库路径并核对库名，不重新读取整库计算 SHA-256；GL 上下文建立后由 native 核对已加载映射的 GNU Build ID、符号、虚表及重定位入口。ELF note 仅从可读加载段读取，并检查地址、对齐和长度边界。这是兼容版本识别，不是文件完整性校验；外置插件安装的 ZIP SHA-256 校验保持不变。
+当前随包支持 Kirikiroid2 1.3.4 / 1.3.9（1.2.6 已移除）；自动选择走同样的受支持路径，设置与启动使用同一库名门禁。启动阶段只规范化库路径并核对库名，不重新读取整库计算 SHA-256；GL 上下文建立后由 native 核对已加载映射的 GNU Build ID、符号、虚表及重定位入口。ELF note 仅从可读加载段读取，并检查地址、对齐和长度边界。这是兼容版本识别，不是文件完整性校验；外置插件安装的 ZIP SHA-256 校验保持不变。原生桥（`krkr_raw_frame_bridge.cpp`）持续追踪 `drawBufferUpdated` 并向 Java 侧传入 `frameDirty`（宿主脏帧静态复用）：仅在 clean 帧（`frameDirty=false`）且命中有效输出缓存（输入纹理名、源尺寸、绑定尺寸、裁剪 UV 与物理行序均未变化）时，`GraphicsFilterPipeline.renderCroppedTexture` 跳过 CNN 与重采样绘制直接复用 `lastCachedOutput`（但若性能分析器存在有效 GPU 计时器，仍可调用 `timer.poll(stats)` 查询已有计时样本，不保证零 GL 调用）；缓存未命中时仍须重新执行滤镜——若仅裁剪 UV 改变且源尺寸、绑定尺寸及裁剪缓冲字节数（计划输入）未变，则沿用现有计划；只有计划输入变化等条件时才触发重新规划。
 
 ### krkrsdl3（OpenGL）
 
@@ -78,10 +78,9 @@ owner 确认断开显示，再由 engine owner 确认替换私有 producer，最
 | --- | --- |
 | v1（Tyranor/Rev.2762） | 否：缺少所需输出入口 |
 | v2（Tyranor/Rev.3049/emote） | 是 |
-| v3（Tyranor/Rev.3201/emote） | 是 |
-| V1（TyranorNext/Rev.2958） | 是 |
-| V3（TyranorNext/Rev.3288） | 是 |
 | V4（TyranorNext/Rev.3294/emote） | 是 |
+
+> **历史内核记录（已移除）**：`v3（Tyranor/Rev.3201/emote）`、`V1（TyranorNext/Rev.2958）` 与 `V3（TyranorNext/Rev.3288）` 曾支持画质滤镜，但已随早先运行库精简自随包目录移除，当前安装包仅保留 `auto` / `v1` / `v2` / `V4` 对映版本。
 
 启动、兼容回退与实际能力判断共用 engine 的 `ArtemisVersion` 映射表，库名沿用 `NativePluginConstants`。设置中的自动版本尚未解析游戏候选，显示“自动选择：滤镜支持取决于实际内核”并保留用户请求，不把 auto 预览成固定受支持版本；实际启动及每次回退仍按最终库严格门禁。内部版本值只是库选择标识，不能将用户界面版本统称为 V1–V6。自动回退到不支持的版本时不启用滤镜。尺寸可信前不统计为原始帧。
 
@@ -91,11 +90,13 @@ owner 确认断开显示，再由 engine owner 确认替换私有 producer，最
 
 注册失败原因在直出恢复后保留，只有新启动准备清除；重复安装已成功的桥不会重复核验改写后的 PLT。默认关闭滤镜时版本验证返回拒绝，不执行 PLT / 输入重定向；这条短路经过静态核对，实机检查仍属于下方验证边界。
 
+单上下文 GLES3 路线的静态帧判定（`frameDirty`）按被 hook 的 GL 命令流哈希推导：帧开始需先经全表面清除（`GL_COLOR_BUFFER_BIT`、全通道写入与覆盖舞台区域的裁剪范围；启用深度/模板测试时同样要求对应的全表面清除否则 fail-closed 判脏），随后在被跟踪纹理单元的绑定与内容版本、绑定/状态类命令（含每次 `glClear` 实际生效的清除颜色/模板/深度清除值）、uniform 与 draw/clear 命令均进哈希；内容变更入口按 mutate 语义递增版本并进哈希，附件挂载（含重挂载与 `glFramebufferRenderbuffer`）与程序生命周期（`glDeleteProgram`/`glLinkProgram`）均纳入追踪，`glCopyTexSubImage2D` 在逻辑 framebuffer 0 仅惰性重定向绘制端时临时从阶段 FBO 读取并恢复原读取绑定，非 2D 纹理目标绑定与窗口内未知 FBO 目标绘制因无法纳入版本模型而保守判脏，删除类 hook 同步清理版本映射以避免驱动句柄复用污染。stage 窗口外的内容变更同样记账：blit、clear 与 draw 族对已知 RTT 目标递增版本、未知目标与清除状态/已挂钩 uniform/视口/剔除/卷绕/混合/`glEnable`/`glDisable`/模板/深度函数值变化走单调外部计数器，帧哈希仍是窗口内命令流的纯函数。安装期 fail-closed：强制 hook 全有全无安装（缺失项记 WARN 日志），且内核 PLT 导入任何「未挂钩内容变更/状态修改入口」（deny 集，共 117 项）即拒绝进入单上下文模式、回退 producer 路径并留 WARN 日志。受支持内核 `libartemis.so` / `libartemis-v6.so` 的导入面经 ELF dynsym 核对：其导入的内容变更与状态修改入口均已被 hook 且不在 deny 集内（deny 命中为 0）。强制/optional hook 与 deny 集的逐项清单、推导口径、无害豁免与残余覆盖姿态以 SPEC 第 12 节「宿主脏帧静态复用」条目及其指向的 `artemis_official_graphics.cpp` 安装表为唯一权威源，本节不重复维护逐项清单。判定判 clean 且缓存命中时，在连续复用上限（`MAX_CONSECUTIVE_STATIC_REUSES = 60` 帧）内跳过 CNN 与重采样绘制并复用上一帧输出，达到上限后强制重跑 1 帧自愈（开启性能分析且存在有效 GPU 计时器时仍可调用 `timer.poll(stats)` 查询已有计时样本；方向安全，不输出错误内容）。
+
 自研 Artemis 的画质增强接入等待 [artemis-compat PR #11](https://github.com/Weiss-UltimateSavior/artemis-compat/pull/11) 合并。
 
 ## 独立滤镜贡献
 
-`engine/src/main/graphicsfilters/*.json` 是各贡献的注册来源。构建生成纯 Java 目录，供协议、尺寸规划、GPU 执行、设置适配和性能色条读取。每个可选贡献独立携带稳定 ID、三语言菜单、简称/颜色、参数能力、原生倍率、内部输出限制、分块能力及旧配置迁移，移除该贡献不需要编辑共享枚举或名称映射。
+`engine/src/main/graphicsfilters/*.json` 是各贡献的注册来源。构建生成纯 Java 目录，供协议、尺寸规划、GPU 执行、设置适配和性能色条读取。每个可选贡献独立携带稳定 ID、三语言菜单、简称/颜色、参数能力、原生倍率、内部输出限制、分块能力及旧配置迁移，移除该贡献不需要编辑共享枚举或名称映射（例外：VN-SR 的多 Pass 卷积终局重建识别与代码生成优化在 `MpvHookShader` 与 `GraphicsShaderTransforms` 中保留了 `VN-SR` / `vnsr_*` 前缀分支，详见 [VN-SR 说明](vnsr-filters.md)）。
 
 基础 Anime4K 独立保留完整 MIT 许可 `anime4k/LICENSE.bundled.txt`，来源、固定 Git blob 与 SHA 登记在 bundled manifest；它不依赖可选扩展的许可文件或描述符。该修正补齐现有基础滤镜的许可归属，不引入新的算法或许可证类型。
 
@@ -135,14 +136,14 @@ python tools/generate-cas-filters.py --sources build/filter-sources/cas --check
 
 `prepare-filter-sources.py` 从完整提交读取原始 blob，不受检出换行转换影响；CAS 生成器固定 revision 并验证 blob。普通构建的 `verifyGraphicsResources` 核对各贡献本地 SHA-256、Anime4K 补充资源、CAS 生成资源及许可、Siglus 原库及配置读取器的来源许可。它不下载上游，不替代生成器重建；原 Anime4K GLSL 全部采用字节保留属性。Android CI 执行 app / engine JVM 回归和普通原库哈希校验，不再重建 Siglus Rust 运行库；CAS 的来源生成复核仍按下方命令独立执行。
 
-描述符的 `asset` 必须是完整的相对 `.glsl` 路径（例如 `anime4k/Anime4K_Restore_CNN_S.glsl`），不能依赖目录或扩展名拼接。生成器中的路径规则同时生成到运行时目录，普通构建检查路径、文件存在性与来源记录；贡献所有权目录及其子目录内的未登记 GLSL 阻止构建；所有权由清单的 `assetDirectory` 或已校验 generated GLSL 的父目录确定，按 canonical 路径边界判断。独立引擎着色器仍作为任务输入，但无需登记为滤镜贡献；描述器实际引用的每份资源仍必须有来源记录。Android CI 的 `graphicsResourcesRegression` 直接调用生产校验逻辑，覆盖目录、描述器、来源路径与哈希回归。该校验针对已提交滤镜资源及补丁清单，不是全仓文件清点。Siglus 当前安装库由 `siglus-bundled.json` 的 `librarySha256` 核验，文件与固定 TYN 上游提交保持一致；旧补丁库与 ABI 锚点已撤回。
+描述符的 `asset` 必须是完整的相对 `.glsl` 路径（例如 `anime4k/Anime4K_Restore_CNN_S.glsl`），不能依赖目录或扩展名拼接。生成器中的路径规则同时生成到运行时目录，普通构建检查路径、文件存在性与来源记录；贡献所有权目录及其子目录内的未登记 GLSL 阻止构建；所有权由清单的 `assetDirectory` 或已校验 generated GLSL 的父目录确定，按 canonical 路径边界判断。独立引擎着色器仍作为任务输入，但无需登记为滤镜贡献；描述器实际引用的每份资源仍必须有来源记录。Android CI 的 `graphicsResourcesRegression` 直接调用生产校验逻辑，覆盖目录、描述器、来源路径与哈希回归，并拒绝同时携带 `haloPerPass>0` 与 `outputSized:true` 的滤镜定义（分块处理要求固定原生倍率输出几何，构建期拒绝含该组合的描述符；运行时规划器不对此类定义尝试分块，整帧超预算时以 `targetRetry.failed(false)` 记录拒绝并保持 `planValid=false` 与 `temporaryFailed=true`，此类确定性超预算会持续旁路而不会仅因等待而退避重试，直到帧几何/裁剪尺寸变化或管线重置；这区别于 `planValid=true` 下临时显存/句柄压力触发的退避重试）。该校验针对已提交滤镜资源及补丁清单，不是全仓文件清点。Siglus 当前安装库由 `siglus-bundled.json` 的 `librarySha256` 核验，文件与固定 TYN 上游提交保持一致；旧补丁库与 ABI 锚点已撤回。
 
 ## 验证边界
 
 既有滤镜设置、官方 Artemis、Kirikiroid2 和 krkrsdl3 接入由提交者运行多个样本验收；
 官方 Artemis 开启画质处理实际游玩两小时未见问题。上述记录属于原候选功能的历史验收。
 Siglus 原库、配置解析和专用 owner 线程路线候选在 2026-10-18 获提交者测试通过；该结论不覆盖后续 TextureView 窗口所有权修复，也不套用旧重编库结果。
-本轮只通过 CI 执行项目测试与构建，具体候选 SHA 和运行链接记录在本地交付索引。
+2026-11-18（`Adreno 840`）与 2026-11-21（`Adreno 740`）两次实机样本均采集于 2026-11-22 审查修复之前，仅作历史实机参考（详见 [VN-SR 说明](vnsr-filters.md) 与 [方向接口](graphics-filter-coordinates.md)）。当前 HEAD 修订通过 JVM 专项回归、Debug 原生构建、应用编译、`buildSrc` 资源回归、ELF 导入面扫描与离线 Python 脚本校验，尚未在真机重跑。
 
 ## VN-SR
 

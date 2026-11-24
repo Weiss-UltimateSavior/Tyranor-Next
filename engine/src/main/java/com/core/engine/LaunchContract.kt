@@ -18,6 +18,11 @@ object LaunchContract {
     const val PROJECT_ROOT = "projectRoot"
     const val GAME_DIR = "gamedir"
     const val ROOT_URI = "rootUri"
+    /** 游戏库中的名称和封面供播放器加载层显示。 */
+    const val GAMES_TITLE = "games_title"
+    const val GAME_COVER_URI = "gameCoverUri"
+    const val STARTUP_APP_ICON = "startupAppIcon"
+    const val STARTUP_ENHANCED_MOTION = "startupEnhancedMotion"
     /** Stable identifier shared by activities belonging to one game launch for playtime attribution. */
     const val PLAYTIME_SESSION_ID = "playtimeSessionId"
     /** Monotonic launch ordering timestamp shared by activities in a playtime session. */
@@ -83,6 +88,20 @@ object LaunchContract {
     const val KR_ENGINE_VERSION = "krEngineVersion"
     const val DEFAULT_FONT = "default_font"
     const val FORCE_DEFAULT_FONT = "force_default_font"
+    // 字体 scope extra：值 = [SCOPE_GAME] 时写游戏目录 XML，缺省时写全局 XML（引擎 fontWriteTarget 分流；
+    // 与 engine-prefs 通道的 scopeTarget 回落语义刻意不同，字体通道不继承回落——该回落是 engine-prefs
+    // 通道既有已知边界，待后续收敛）。
+    const val FONT_SCOPE_DEFAULT = "font_scope_default"
+    const val FONT_SCOPE_FORCE = "font_scope_force"
+    // 字体全局参照 extra：App 当前全局字体值/强制开关，恒下发。GlobalPreference.xml 全仓仅
+    // launcher 一个写入者，故全局带标记值应与该参照一致；单游戏作用域写入后，引擎仅回收
+    // 「带 _rinne_injected_* 标记且值≠参照」的全局陈旧注入项（旧版泄漏值≠用户后来另设的全局值
+    // 均判陈旧；值一致=用户全局设置即该值，保留）。参照缺失（旧版宿主）时跳过回收。
+    const val FONT_GLOBAL_DEFAULT = "font_global_default"
+    const val FONT_GLOBAL_FORCE = "font_global_force"
+    // 通用偏好作用域取值（字体 extras 与 krkr_engine_prefs JSON 的 "s" 字段共用）。
+    const val SCOPE_GAME = "game"
+    const val SCOPE_GLOBAL = "global"
     const val KR_ENGINE_PREFS = "krkr_engine_prefs"
     const val KR_PATCH_OVERLAY_TARGET = "krPatchOverlayTarget"
     const val KR_PATCH_OVERLAY_PATH = "krPatchOverlayPath"
@@ -201,9 +220,6 @@ object LaunchContract {
 
     /** 文本编码：`auto` | `sjis` | `gbk` | `big5` | `utf8` | `korean`（不传使用引擎默认）。 */
     const val GAMES_NLS = "games_nls"
-
-    /** 游戏标题（加载层/窗口标题兜底用）。 */
-    const val GAMES_TITLE = "games_title"
 
     // ---------- launchMode 固定取值 ----------
 

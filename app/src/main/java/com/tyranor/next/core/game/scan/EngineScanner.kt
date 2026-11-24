@@ -14,6 +14,7 @@ import com.tyranor.next.core.engine.runtime.RuntimeModuleIndex
 import com.tyranor.next.core.engine.runtime.RuntimeModuleRegistry
 import com.tyranor.next.core.engine.runtime.RuntimeModuleSnapshot
 import com.tyranor.next.core.game.manual.AndroidAppGames
+import com.tyranor.next.core.game.model.CmvsPaths
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.Xs4Ini
@@ -1196,7 +1197,6 @@ object EngineScanner {
         var ethornellSystemNode: T? = null
         var ambiguousEthornellSystem = false
         var hasCmvsScript = false
-        var hasCmvsStart = false
         var cmvsStartCount = 0
         var hasCmvsStartHeader = false
         var hasCmvsExe = false
@@ -1258,15 +1258,14 @@ object EngineScanner {
                         }
                         childrenOf(pack).forEach { file ->
                             if (isDirectory(file)) return@forEach
-                            when (nameOf(file)) {
+                            when (val name = nameOf(file)) {
                                 "script.cpz" -> hasCmvsScript = true
-                                "start.ps3", "start.ps2" -> {
-                                    hasCmvsStart = true
+                                in CmvsPaths.startScriptNames -> {
                                     cmvsStartCount++
                                     val head = headOf(file)
-                                    if (head != null && head.size >= 4 &&
-                                        head[0] == 0x50.toByte() && head[1] == 0x53.toByte() &&
-                                        head[2] == 0x32.toByte() && head[3] == 0x41.toByte()
+                                    val magic = if (name == CmvsPaths.CVNS_START_SCRIPT) "PSS0" else "PS2A"
+                                    if (head != null && head.size >= magic.length &&
+                                        magic.indices.all { head[it].toInt() == magic[it].code }
                                     ) {
                                         hasCmvsStartHeader = true
                                     }
@@ -1298,7 +1297,7 @@ object EngineScanner {
                 return
             }
             when {
-                rel.isEmpty() && lower in setOf("cmvs.exe", "cmvs32.exe", "cmvs64.exe") -> {
+                rel.isEmpty() && lower in setOf("cmvs.exe", "cmvs32.exe", "cmvs64.exe", "cvns.exe") -> {
                     hasCmvsExe = true
                 }
                 rel.isEmpty() && lower == "system.arc" -> {
@@ -1599,7 +1598,7 @@ object EngineScanner {
         if (hasSystemNnnEntry) {
             return Detection(EngineType.SYSTEMNNN, 96, LAUNCH_TARGET_GAME_DIR)
         }
-        if (hasCmvsScript && hasCmvsStart && cmvsStartCount == 1) {
+        if (hasCmvsScript && cmvsStartCount == 1) {
             return Detection(
                 EngineType.CMVS,
                 if (hasCmvsStartHeader) 96 else 92,

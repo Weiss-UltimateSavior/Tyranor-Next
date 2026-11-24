@@ -8,6 +8,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SRC="${CMVS_SOURCE:-/Volumes/HUAWEI-M2LITE/app/cmvs-rs}"
 NDK="${ANDROID_NDK_HOME:-$HOME/Library/Android/sdk/ndk/28.0.13004108}"
 OUT="${CMVS_OUT:-$ROOT/engine/src/main/jniLibs/arm64-v8a}"
+PROFILES="${CMVS_PROFILES_OUT:-$ROOT/app/src/main/res/values/cmvs_profiles.xml}"
 WORK="${CMVS_WORK:-$(mktemp -d "${TMPDIR:-/tmp}/cmvs-build.XXXXXX")}"
 PATCH="$ROOT/tools/cmvs/patches/0001-absolute-launch-paths.patch"
 
@@ -29,6 +30,7 @@ STRIP="$NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-strip"
 if [[ -x "$STRIP" ]]; then
   "$STRIP" --strip-unneeded "$WORK/jni/arm64-v8a/libcmvs_android.so"
 fi
+python3 "$ROOT/tools/cmvs/export_profiles.py" "$WORK/src" "$PROFILES"
 mkdir -p "$OUT"
 cp "$WORK/jni/arm64-v8a/libcmvs_android.so" "$OUT/libcmvs_android.so"
 echo "built $OUT/libcmvs_android.so"

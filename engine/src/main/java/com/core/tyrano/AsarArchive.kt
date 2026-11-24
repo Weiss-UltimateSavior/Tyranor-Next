@@ -86,6 +86,15 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
         return e != null && e.directory
     }
 
+    /** True for explicit directories and implicit parent prefixes, without building the global tree. */
+    internal fun isDirectoryOrImplicit(path: String): Boolean {
+        val key = normalize(path).trimEnd('/')
+        if (key.isEmpty()) return true
+        if (entries[key]?.directory == true) return true
+        val prefix = "$key/"
+        return entries.keys.any { it.startsWith(prefix) }
+    }
+
     /** Direct child metadata for browser plugin indexes; file contents remain in the archive. */
     fun children(path: String): List<Pair<String, Boolean>> {
         return childrenIndex.children(normalize(path).trimEnd('/'))

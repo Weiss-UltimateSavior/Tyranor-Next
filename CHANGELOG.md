@@ -4,6 +4,33 @@
 
 - 修复 DKTools 缺失索引兼容：异步预取并在游戏脚本前安装加载门禁；独立执行器构建索引，HTTP 扫描中返回 202，关闭会话取消任务。ASAR 全局节点超限后语言/数据目录可独立降级，恢复归档根目录精确资源回退；隔离普通子目录 I/O 错误，聚焦扫描的临时错误允许立即重试。
 
+- 默认首页新增平板布局。上排可横向浏览最近打开的游戏，靠近首位的封面随滑动逐渐放大，列表起点不再拉伸。下排并列三个快捷启动卡位。
+- 修复平板首页在启动游戏并刷新「最近打开」时可能因封面索引越界闪退的问题。
+
+- MAGES. 宿主迁入 `SIRENA-Core/Tyranor-Next-MAGES`，更新检测、Releases 页面和 APK 下载链接均指向组织仓库。
+
+- 引擎设置与单游戏设置中的画质处理卡片标题由「画质滤镜链」改回「画面超分」（三语言 `graphics_settings_title` 同步为「画面超分 / Super resolution / 超解像」），卡片内容与滤镜链行为不变。
+
+- 修复 RPG Maker MV 存档因 `global.title` 与 `$dataSystem.gameTitle` 不一致被误判为不可读取的问题（修改器可见但 `loadGame` / 游戏内读档返回 `false`）：在 Web 存档模式下保留 `globalId` 校验与 `isLocalMode()` 原行为，跳过跨版本/汉化标题字面校验，并增加 `load` 时防插件覆写的幂等保护，统一覆盖 `Tyranor-2.3.4`、`TynMV-0.1` 与 `TynMV-0.2`（[#148](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/148)）。
+
+- 更新内置播放器的公共加载界面，加入每三秒循环的主题色频谱，并显示游戏封面、名称与随机启动语录。缺少封面时显示应用图标，增强动效档通过翻页进入游戏。
+
+- 内置播放器的宿主提示、确认和输入弹窗统一采用 KRKR 样式，配色跟随应用外观。
+
+- 更新 CMVS 运行库至 cmvs-rs `23718ec`，接入游戏内存档备注输入，保留独立存档路径。
+
+- CMVS 的单游戏引擎设置新增启动配置下拉菜单，列出运行库收录的 25 部作品。选定后跳过游戏哈希识别，直接按对应配置启动。游戏库也可识别使用 `start.pss` 的 CVNS 游戏目录。
+
+- MAGES. 引擎设置新增「调试模式（适配工具）」，全局与单游戏都能设置：打开后游戏中三指同时按住屏幕即可打开宿主的调试菜单（加速、强制快进、按句回退、保存状态、跳转剧本），给适配新游戏用，默认关闭。需要宿主 0.4.3 及以上。
+
+- MAGES. 识别规则支持排除条目 `noneOf`，并收录 Steam 版 STEINS;GATE 0（`sg0-pc`，宿主仍在适配，需要宿主 versionCode 11）：SG0 的目录不再被当成前作 STEINS;GATE（`sg-pc`）。
+
+- 游戏页「筛选与排序」抽屉在网格和瀑布风格下新增「每行卡片数」滑条，窄屏和宽屏分别记住列数。
+
+- MAGES. 宿主支持检查新版本。游戏操作抽屉会显示已安装版本和最新版，引擎页用问号提示可更新，两个入口均可打开宿主项目的 Releases 页面。
+
+- 修复完成新手引导后，引擎页未触发外置 APK 引擎模块更新检查的问题。
+
 - 修复 Android 10 从系统「下载」入口添加的本地游戏启动时无法解析目录的问题。已有游戏记录可直接重试；Android 8–10 缺少共享存储读写权限时，会引导到系统的应用权限设置（[#209](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/209)）。
 
 - 「添加桌面」不再假定桌面一定会弹出确认框；系统确认固定后才提示已添加，并为 MIUI / HyperOS 声明快捷方式权限、提供手动授权指引（[#207](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/207)）。
@@ -202,7 +229,9 @@
 - 补齐 WebDAV 专用设备验收：真机存档/恢复/Worker、实际 TalkBack 密码焦点反馈、API 26/27 框架与 UI、独立 WsgiDAV 的真机/模拟器并发；证据与未覆盖边界见 [设备记录](docs/WebDAV-device-acceptance.md)。
 - 新增 Ruffle（SWF / Flash）外置 APK 引擎模块接入：引擎页「网页」分类与安装状态、默认每个顶层 `.swf` 一条记录（根 `index.html/index.htm` + 唯一 SWF 的叶子目录识别为包装游戏）、`game` / `settings` 启动协议、全局与单游戏设置（渲染后端 / 画质 / 缩放 / 黑边 / 加载方式 / 自动关闭）及 `configuration.json` 受管键同步；不提供统一存档管理与虚拟按键重映射。设备与插件运行验证尚未执行。
 - 升级 Ethornell / BGI 内置宿主到上游 `0cfff1d` ABI v1：15 个导出（含 `request_payload`）、kind 5 输入对话框与 JSON 回答、engine 原生四类对话框；同步 ABI header、provenance 与 Release R8 probe。当前随包库为 `043fef05…`（27,259,224 B，provenance `dirty=true`、1 个本地补丁；`--local-static` 与 debug/release APK 精确库字节检查通过，严格来源审计未通过）。App 存档管理开放为 App 私有 user-root 备份/恢复/删除（单文件 64 MiB；不导入资源根 `UserData`，不承诺商业游戏槽位或 PC 存档互通）。设备核心 6/6（1.426s）、暂停 3/3（2.999s）、存档 9/9（`pm clear` 后，2.047s）、release probe SJIS/GBK 各 3/3；真实样本语言点击后宿主仍存活并生成 `BGI.gdb`（约 123,802 B），仅验证启动期全局数据写入，16KB/API26 完整重跑未执行。
-- 新增 VN-SR C08 / C12 / C16 三种原生 2× 滤镜预设。
+- 新增 VN-SR C08 / C12 / C16 三种原生 2× 画质滤镜预设：直接引用上游 VN-SR 仓库基于 OpenGL ES 3.0 MRT（多渲染目标）离线融合导出的 7-Pass 资产（`shaders/gles-mrt/`，由 `tools/generate-vnsr-filters.py` 在 `retained` 字节与哈希校验后直接发布，`--check` 模式仅校验现有资产与清单；按 C08 / C12 / C16 顺序与单目标 `shaders/gles/` 对比：各 Pass 着色器未加权静态采样调用数之和分别为 `148→103` / `328→148` / `580→193` 次，卷积 `sample_k` 分别为 `144→99` / `324→144` / `576→189` 次，按源像素统一折算 2× 重建后分别为 `160→115` / `340→160` / `592→205` 次）；上游在合成 FP64 数值对比中验证了 `shaders/gles/` 与 `shaders/gles-mrt/` 的等价性（误差 `0.0`），仓库内 `tools/test-vnsr-coordinates.py` 验证了 8×8 合成输入下顶左 MRT 源码与运行时底左坐标翻转后在 FP64 下的残差/重建等价（残差 `0.0`、重建 `<= 2.22e-16`）及 8-bit 一致性，PSNR / SSIM 与 FP16 精度评估数据源自上游离线评估集 `VN-SR-Tests`（含开发验证集 `development394` 与 `visual11`），不构成真机端侧性能与效果承诺；在缺少 GLES 3.0 MRT 支持、`GL_RGBA16F` 渲染能力或附件上限不足（C08/C12 需 ≥3，C16 需 ≥4）的设备上提供 `TargetUnavailable` 弹性旁路保护。
+- 重构画质滤镜链（原始帧滤镜桥接）中的 GLES CNN 多 Pass 执行管线，将多 Pass 卷积与可分离重采样统一收口至 `CnnPipeline` 并建立严格单向无环分层边界（`GlErrors` / `LanczosScale` / `MpvHookShader` / `GraphicsShaderGeometry` / `GraphicsShaderTargets` / `GlOps` / `GraphicsShaderTransforms` -> `CnnPipeline` -> `GraphicsFilterPipeline`）：在 Kirikiroid2 1.3.4 / 1.3.9 与 Artemis 单上下文 GLES3 落地原生桥 **宿主脏帧静态复用**（`frameDirty` 脏帧分流与命中缓存时跳过 CNN/重采样绘制的静态帧输出复用），保留分级 FP16 精度（P1 `2xFP16` 基准）、运行期 MRT Pass 融合与 CReLU 3×3/1×1 抽头去重、VN-SR P3-B 卷积代码生成优化、`TargetUnavailableException` 分级旁路与 256 MiB 整链显存预算。设计契约与宿主脏帧静态复用覆盖边界统一收敛于 SPEC 第 12 节（[SPEC.md](SPEC.md)）与 [docs/graphics-filters.md](docs/graphics-filters.md)。mpv-hook 资产解析校验收紧（空/重复 `SAVE`、多 `SAVE` 未写满全部 `fragColorN` 目标、非终局写 `MAIN`、hook 条件化/多 hook/嵌套等无法静态验证的形态均在解析期拒绝），升级后第三方 mpv-hook 资产需按新解析规则复验。
+- 同步引擎设置与单游戏设置中的画质处理卡片标题（三语言 `graphics_settings_title`）为领域标准术语「画质滤镜链 / Graphics filter chain / 画質フィルターチェーン」。
 - 新增 Bilinear / Bicubic 缩放处理滤镜（独立菜单项，按性能开销排序于 Lanczos 之前）：Bicubic 支持 B/C 独立参数双滑块调节（缺省 Mitchell 基准 B=0.33, C=0.33），Lanczos 提供独立抗振铃强度滑块（缺省 0.50，可抑制文字/边缘振铃，设为 0 时关闭）；二者与 Lanczos 同为纯重采样节点，可作 CNN 滤镜在性能预算不足时的轻量放大替代。滤镜链操作栏将缩放设定与参数设定拆分为独立弹窗，按钮采用圆角线框与短竖线分割布局。自动 Resize 行为不变。
 - 缩小安装包体积：引擎原生插件改为「未压缩 zip 容器 + LZMA2（`.zip.xz`）」随包，同一引擎家族的多个近重复 `.so`（Kirikiroid2 1.3.9/1.3.4 两个内核、Artemis V1/V2/V6 与 clean 四个 revision）共享同一份字典，首次启动由 `EnginePluginBootstrap` 流式解压安装；Runtime 侧新增 `org.tukaani:xz` 依赖，构建期新增 `CompressXzArchive` 任务（隔离 worker 进程压缩）。字体仍按上游要求保持不压缩。
 - `libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、IJK 三件套与 System35/4（含 `libSDL2x.so`）移出 APK 的 `lib/`：构建期打成 `assets/engine-runtime/{siglus,fvp,ethornell,krkrsdl3,ijk,xsystem}.zip.xz`，`EngineLauncher` 在拉起对应引擎前由 `NativeRuntimePack` 解压到 `files/engine_runtime/<pack>/`（按 APK `lastUpdateTime:versionName` 失效），宿主与 JNI 桥改为按绝对路径加载（IJK 经 `IjkRuntime` 的 `IjkLibLoader`，krkrsdl3 覆写 SDL 的 `loadLibraries`/`getMainSharedObject`）；除 IJK 解压失败只记日志继续启动外，其余分片失败返回新的类型化 `LaunchResult.Failure.EngineLibraryPackFailed`。首启对应引擎需额外解压一次。
@@ -245,6 +274,7 @@
 - 移除应用设置「色调切换」与「默认主题渐变」：默认外观恢复为纯色页面背景，组件色只随外观模式取档；历史键 `tone_switch` / `default_theme_gradient` 不再读取。
 - 移除「首页样式」中的「分类仓库」：首页只保留默认与网页两种形态；历史值 `category` 归一回默认。
 - 移除「外观风格」中的「高级玻璃」（后续版本另新增白雾玻璃，外观保留默认 / 复古玻璃 / 白雾玻璃）：删除 `AdvancedGlassStyle`、`AmbientBackdrop` 与 `glassShadow()`，历史值 `glass_advanced` 归一回默认。
+- 移除已停用的 Kirikiroid2 1.2.6 画质滤镜链（原始帧滤镜桥接）支持与死代码（`KirikiroidRawFrameBridge` 中的 `carrierBytes126` / `process126` / native carrier 接口及 `nativeResetContext` 冗余布尔参数、`krkr_bridge.cpp` 中 `supportedGameLibrary` 的 `libgame126.so` 白名单项、`krkr_raw_frame_bridge.cpp` 中的 `bitmap126` carrier/leased sprite 挂钩机制与残留 `updateWindow` / `TrackedSprite::window`、`Anime4kPostProcessor.presentTexture` 与 `KirikiroidCarrierBudgetTest`），KRKR 画质滤镜仅保留 1.3.9 / 1.3.4 与 krkrsdl3。
 
 ### 修复（续）
 
@@ -252,7 +282,9 @@
 - 修复部分 RPG Maker MV/MZ 游戏使用 DKTools 时，语言目录存在却因缺少文件索引而报找不到 `locales/en.json` 的问题；覆盖 Tyranor-2.3.4 与 TynMV/TynMZ 宿主，保留原有索引，并修正 unpacked ASAR 流式读取。
 - 补齐 Tyrano 宿主的 unpacked ASAR 整文件/Range 读取、隐式目录索引及实际文件长度；避免重复扫描 ASAR 容器和 unpacked 镜像。
 - 修复 DKTools 生成索引的重复加载及资源名大小写/空白匹配；过滤已知存档/备份目录，按会话区分 cookie，后台预热并在扫描超限时尝试语言/数据子集，补充重试退避、关闭取消及 CI 的 JavaScript 回归门禁。
+- 性能分析器在无新 GPU 样本且上下文与计时状态正常的刷新区间内保持显示上次有效 GPU 计时统计值，避免静态复用期间频闪为缺失值（`—`）；仅在输入/输出尺寸或节点拓扑改变、状态失败、尺寸失效、计时查询异常或管线重置时清除并显示缺失值。
 - 应用锁图案改为按**实际按下点序**精确匹配：此前按「形状」归一化会接受跳点 / 回扫变体（如 0→2 与 0→1→2 等价），削弱解锁强度；现在点序不同即不匹配，快速划过未命中的中间点不会自动补入。
+- CAS 主滤镜的可选值 Uniform（`u_SHARPNESS` / `u_OUTPUT_SIZED`）改由统一执行器的别名表驱动（`CnnPipeline` 解析后经同一入口下发锐度与输出缩放取值），并保留历史小写拼写变体作为防御性别名。经 git 考古核对：合并基线的 CAS 资源声明与基线执行器查询本就使用相同的大写拼写，基线并无大小写失配缺陷，此条为兼容性收敛记录而非缺陷修复。
 - SystemNNN 副本在 ZIP 或 WebDAV 存档恢复中断时保留旧存档绑定，恢复完成后可以重试回收。
 - SystemNNN 补帧只消耗已经累积的整帧，避免画面在每次更新都准时时仍然跳帧。
 - SystemNNN 自动播放在自动速度超出档位范围时按文字速度逐字显示。缩小剧情字号时保留游戏设定的行距，空正文按脚本显示对话窗口。
@@ -276,6 +308,7 @@
 - 修复 KR（Kirikiroid2）引擎的渲染/内存 8 项设置被内核静默忽略的问题（issue #109）：写入引擎 XML（GlobalPreference.xml/Kirikiroid2Preference.xml）的 Item 键此前误用了 App 侧 prefs 键（kr_renderer 等），而内核只按 Kirikiroid2 源码 PreferenceConfig.h 中各 tTVPPreferenceInfo* 构造参数第二项的存储键读取（renderer/memusage/fps_limit 等；preference_* 仅为界面文案 id），导致渲染器、软件绘制线程数、软件/OpenGL 压缩纹理、内存占用、最大纹理尺寸、OpenGL 精确渲染与 FPS 限制 8 项设置在引擎内不生效。现改用内核真名（新增 `EngineSettingsStore.ENGINE_*` 常量并由 `KrRenderPrefs` 统一映射），App 侧 kr_* 存储键与单游戏覆盖字段不变，已保存设置升级后无需迁移直接生效。新增 `KrRenderEngineKeyTest` 锚定键名映射防回退（新增用例通过；全量回归保持 Windows 既有基线的 43 条失败不变，无新增失败）。键名改用真名后，引擎侧对游戏目录 XML 的陈旧项清理同步改为所有权跟踪：仅移除带 `_rinne_injected_*` 标记且当前值仍等于宿主注入值的项；内核设置界面写入的无标记项不会被清除，用户改写过（与注入值不同）的项保留并去标记——若用户在内核界面把值改回恰好与注入值相同，回收该注入属所有权机制已知边界；偏好文件不存在（首次启动、新游戏目录或 `pm clear` 后）时按空配置创建写入，引擎偏好 XML 解析失败（截断/损坏）时跳过写回，避免以部分解析结果覆盖而丢失损坏点之后的配置条目。升级边界：旧版本写入的无标记单游戏 `force_default_font` 项无法与内核写入项区分，清理后会保留，处理方式待与维护者确认（见 PR 讨论）。旧版应用侧选择的 `default_font`（值位于应用私有字体目录）会按迁移逻辑清除，内核设置界面选择的字体不受影响。真机（PDVM00 / Android 11 / 内核 libgame.so 1.3.9）验证：全局切换渲染器后引擎 XML 写入 `renderer` 键，FPS 限制=30 时游戏按 30fps 渲染、清空后恢复 60fps；单游戏覆盖渲染器=OpenGL 落盘游戏目录 Kirikiroid2Preference.xml 并生效，清空覆盖后该键被正确清除。旧版本残留在引擎 XML 中的 kr_* Item 内核按未知键忽略、无读取冲突，本版不清理。
 - 修复单游戏设置页「OpenGL 精确渲染」在覆盖为跟随全局时显示成「关」的问题：该行把三态覆盖值（空串=跟随全局、"0"/"1"=显式值）直接以 `== "1"` 坍缩成布尔传给三态开关，空串与「关」无法区分，全局开着也显示为关，误导用户在单游戏页手动重开（issue #109 的反馈入口之一）；现按三态传递，跟随全局正确显示「跟随全局（开/关）」，且改存 null（不下发游戏级覆盖）而非空串，与同页下拉行的存储语义一致。同页覆盖下拉的「跟随全局 · X」首项标签同步修正为始终显示真实全局值：此前覆盖非空时首项显示的是覆盖值而非回落目标（悬空引用分支已在第八轮复审取全局值，普通覆盖分支遗漏）。真机复验跟随全局行标签；覆盖非空的下拉首项未真机复验（代码语义明确）。
 - 游戏库标题变化时立即废弃旧搜索命中，内存与 Room 使用相同的标题匹配规则。落库失败后刷新已保存的游戏库，清除较早的打开记录时保留后续启动。切换筛选条件时让网格与封面流从首项显示，短窗中可滚动到抽屉的重置按钮。
+- 修复单游戏字体覆盖（默认字体/强制默认字体）泄漏为全局生效的问题：App 侧启动链路只向引擎宿主下发字体值（`DEFAULT_FONT`/`FORCE_DEFAULT_FONT` extra）不携带作用域，引擎侧 `fontTarget` 收不到 scope 一律写全局 `GlobalPreference.xml`——单游戏覆盖被泄漏为全局生效（其他所有 KRKR 游戏的字体被同时改写或被强制内置字体），游戏目录 XML 从未收到覆盖，单游戏「内置字体」语义也以清空全局字体实现。现新增 `LaunchContract.FONT_SCOPE_DEFAULT/FONT_SCOPE_FORCE/SCOPE_GAME/SCOPE_GLOBAL` 常量；字体作用域由 `EngineSettingsResolver` 统一解析（`ResolvedEngineSettings` 新增 `krDefaultFontGameScope`/`krForceFontGameScope`，启动链只消费结果、不再直读 Store）：null=跟随全局→写全局（不带 scope extra，仅跟随全局路径兼容旧版 App；scope 语义依赖引擎与 App 一同更新）；""=内置字体→空 Item 写游戏目录（内核 `tTVPPreferenceInfoSelectFile` 对 default_font 的缺省即空串，仅该游戏回落内置）；显式路径→写游戏目录；单游戏字体弹窗补「内置字体」第三项（与 FVP/CMVS 覆盖字体三态一致），空串语义此前只能由旧版遗留数据触发，现可由 UI 直接产生。extras 装配抽为纯函数 `krFontLaunchExtras` 并以 JVM 回归 `EngineLauncherFontScopeTest` 锚定组合与 Boolean 类型；引擎侧 `applyFontPreferences` 仅在游戏作用域对空串改写空 Item（全局作用域保留 issue #74 的所有权清理语义），作用域所需偏好文件不可用时跳过写入并告警、互不阻断（game 作用域只需游戏目录 XML、global 作用域只需全局 XML，全局文件不可用不再阻断 game 作用域写入），偏好 XML 损坏/非普通文件导致的跳过写回在日志以 skipped 标注、与 unchanged 区分，scope 判定常量单源（字体与引擎偏好 JSON 共用 `SCOPE_GAME`/`SCOPE_GLOBAL`）。引擎偏好 JSON 通道同步改为逐键判定（全局偏好文件不可用时仅跳过相应键并告警，不再放弃整个 JSON）；单游戏覆盖 JSON 的 null 键与缺键同义（resolver 与 PerGameSettingsStore 读取共用同一守卫，对全部覆盖键生效的防御性收口，存量写入方不产出 null）。krkrsdl3 内核的字体下发链路本就不存在（单游戏字体区对其隐藏），为既有边界不在本修复范围。真机隔离测试包（V2338A/Android 16 与 PDVM00/Android 11）：修复前「强制默认字体=开」落盘全局 XML 并使其他游戏被强制内置字体（3/3 复现，logcat 与 XML 证据归档）；修复后行为级验证——真实字体经应用导入流程（FontImport/SAF）设置全局与单游戏覆盖后，显式覆盖与空串（内置字体）落盘游戏目录 Kirikiroid2Preference.xml、跟随全局游戏写全局 XML 且其他游戏目录不受影响、force 开关正确经 Boolean extra 生效（初版曾误将 force 值字符串化，被真机 Bundle 类型告警暴露并已修正）、覆盖清除后游戏目录注入项按所有权回收；渲染层已完成三配置对照（同一对白场景：黑体/仿宋/内置三种字体渲染，截图与同句同位置像素对照证实，空 Item 与显式路径文本区 mean abs diff 41.98；V2338A 隔离包）。升级自愈：旧版本泄漏进全局 XML 的单游戏字体注入项由本版按参照收敛——App 恒下发当前全局字体/强制值作为参照（`FONT_GLOBAL_DEFAULT`/`FONT_GLOBAL_FORCE`），单游戏作用域写入后引擎对「带 `_rinne_injected_*` 标记且值与参照不一致」的全局同键项改写为参照值（参照为空串则移除），其他游戏即时跟随 App 全局设置而非等待下一次「跟随全局」启动；值与参照一致=用户全局设置即该值（含恰好与单游戏覆盖同值的合法配置），保留；无标记的更早版本旧项无法与用户主动设置的全局字体区分，不做自动回收，需在引擎设置界面重设全局字体或手动清理；参照缺失（旧版宿主）时跳过收敛，「跟随全局」路径行为不变。
 - 修复 Tyrano 桌面导出游戏在宽屏手机上画面左对齐、右侧留大片黑边的问题：部分游戏在 `Config.tjs` 中把 `ScreenCentering` 设为 `false`，引擎布局因此只缩放、不写居中偏移（4.x 为 `left/top`，5.x 为 `margin-left/top`）；宿主现在包裹 4.x `fitBaseSize` / 5.x `_fitBaseSize` 并把该开关收敛为 true，复用引擎自带的居中与 resize 处理，同时保留 `vchat` / `useCamera` 的引擎决定。真机 1280×720 游戏在 2700×1224 横屏下恢复左右对称黑边（各约 262 物理 px）。
 - 修复妙妙工具侧边栏在横屏/小高度窗口下条目被截断且无法滑动的问题：面板不再强制满高，改为随内容自适应高度并水平/垂直居中；标题固定，条目区在剩余高度内滚动。
 - 修复设置页卡片内的 `AppNavItem` 在玻璃系外观下重复绘制条目表面（卡片套卡片）的问题：「添加滤镜」与单游戏设置「查看/修改 Winlator 全局设置」改传 `drawSurface = false`，只保留所在 `MiuixCard` 的单层材质；默认主题因卡片与条目同为不透明 `NavWhite` 而不易察觉。

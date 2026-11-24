@@ -154,16 +154,17 @@ wio 0.2.2: MIT/Apache-2.0
 yeslogic-fontconfig-sys 5.0.0: MIT
 
 MGV1 video backend dependencies:
-oxideav-theora 0.0.12: MIT; https://github.com/OxideAV/oxideav-theora
-  commit fb46b4791f860db085869491dfeac6f4463a86ad
-oxideav-core 0.1.41: MIT; https://github.com/OxideAV/oxideav-core
-  commit 11fcf35a26be9912e95a8a032c183fcef8fd6d56
-serde_json 1.0.154: MIT OR Apache-2.0
-itoa 1.0.18: MIT OR Apache-2.0
-zmij 1.0.23: MIT OR Apache-2.0
 ogg 0.9.2 (video), 0.8.0 (lewton): MIT OR Apache-2.0
 
-oxideav-theora and oxideav-core:
+Theora implementation reference and archived synthetic test outputs:
+oxideav-theora 0.0.12: MIT; https://github.com/OxideAV/oxideav-theora
+  commit fb46b4791f860db085869491dfeac6f4463a86ad
+https://crates.io/crates/oxideav-theora/0.0.12
+The in-tree cmvs-video Theora decoder used oxideav-theora as an
+implementation reference for specification tables, integer IDCT decomposition,
+and packet edge cases, and to generate fixed synthetic regression fixtures.
+The MIT notice is retained for that reference/adaptation work and those fixtures.
+No oxideav crate remains in runtime or test dependencies.
 
 MIT License
 
@@ -210,10 +211,14 @@ termcolor 1.4.1: Unlicense OR MIT (used under MIT)
 https://github.com/BurntSushi/termcolor
 Transitive shader diagnostic dependency enabled by wgpu/webgpu.
 
-self_cell 1.2.2 - Apache-2.0 OR GPL-2.0-only (used under Apache-2.0)
-https://crates.io/crates/self_cell/1.2.2
-https://github.com/Voultapher/self_cell
-Published package commit: 3b0f5c363ca8adbece7cb3c93c978e6153e3a4b7
-Owns a startup script and its borrowing runtime without leaking either.
+Apple bundles include upstream package notices in DEPENDENCY-LICENSES.txt.
+Apple launcher dependencies (no vendored source):
+zip 7.2.0 - MIT
+https://github.com/zip-rs/zip2
+Used to archive save slots and imported font faces.
+serde_json 1.0.154 - MIT OR Apache-2.0
+https://github.com/serde-rs/json
+Used for launcher metadata, session configuration and platform events.
+
 Exact package checksums are pinned in Cargo.lock. Distributions must retain
 applicable upstream license and notice files from the published packages.

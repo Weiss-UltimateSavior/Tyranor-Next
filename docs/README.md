@@ -49,7 +49,7 @@
 - [高级玻璃外观风格计划方案（含「玻璃 → 复古玻璃」更名）](高级玻璃外观风格计划方案.md)
 - [滤镜纹理方向接口](graphics-filter-coordinates.md)
 - [共用画质滤镜链](graphics-filters.md)
-- [Kirikiroid2 1.2.6 与 krkrsdl3 的画质滤镜接入](krkr-local-raw-filters.md)
+- [Kirikiroid2（含已移除 1.2.6 历史记录）与 krkrsdl3 的画质滤镜接入](krkr-local-raw-filters.md)
 - [VN-SR 滤镜集](vnsr-filters.md)
 
 ## 存档与网络

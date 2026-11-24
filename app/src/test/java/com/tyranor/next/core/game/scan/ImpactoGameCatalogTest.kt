@@ -38,11 +38,11 @@ class ImpactoGameCatalogTest {
     fun profileIdsAreUniqueAndMatchTheHostApkList() {
         val ids = ImpactoGameCatalog.games.map { it.profileId }
         assertEquals(ids.size, ids.toSet().size)
-        // Kept in sync with ImpactoRequest.PROFILES in the host repository (yuukana1/Tyranor-Next-MAGES; the host refuses anything else).
+        // Kept in sync with ImpactoRequest.PROFILES in the host repository (SIRENA-Core/Tyranor-Next-MAGES; the host refuses anything else).
         assertEquals(
             setOf(
                 "chlcc", "cclcc", "cclcc-switch", "mo6tw", "mo6tw-pc", "mo6tw-pc-zhs", "mo6tw-pc-zht", "sg-pc",
-                "darling", "dash", "rne",
+                "sg0-pc", "darling", "dash", "rne",
             ),
             ids.toSet(),
         )
@@ -208,7 +208,7 @@ class ImpactoGameCatalogTest {
 
     @Test
     fun pcEditionsMirrorTheHostProfilesJsonDetectBlocks() {
-        // engine/impacto/profiles.json in yuukana1/Tyranor-Next-MAGES: detect.allOf + detect.textArchive per profile.
+        // engine/impacto/profiles.json in SIRENA-Core/Tyranor-Next-MAGES: detect.allOf + detect.textArchive per profile.
         val allOf = setOf("game.exe", "data/script.cpk", "data/mes00.cpk")
         val textArchive = mapOf(
             "mo6tw-pc" to "data/mes00.cpk",
@@ -235,6 +235,7 @@ class ImpactoGameCatalogTest {
             val expected = when {
                 game.family == "mo6tw-pc" -> 4
                 game.profileId == "sg-pc" -> 5
+                game.profileId == "sg0-pc" -> 11
                 else -> 0
             }
             assertEquals(game.profileId, expected, game.minHostVersionCode)
@@ -249,7 +250,11 @@ class ImpactoGameCatalogTest {
         val rules = ImpactoGameCatalog.currentRules()
         assertEquals(setOf("data", "usrdir"), rules.subdirectoryNames)
         assertEquals(
-            setOf("script.cpk", "system.cpk", "mes00.cpk", "mes01.cpk", "mes02.cpk", "script.mpk", "system.mpk"),
+            setOf(
+                "script.cpk", "system.cpk", "mes00.cpk", "mes01.cpk", "mes02.cpk", "script.mpk", "system.mpk",
+                // excluded by sg-pc: the scanner has to see it to exclude
+                "mpk_bg.lst",
+            ),
             rules.subdirectoryEntryNames,
         )
     }
@@ -346,6 +351,42 @@ class ImpactoGameCatalogTest {
 
         assertEquals(listOf("sg-pc"), ImpactoGameCatalog.candidatesFor(sg, snapshot).map { it.profileId })
         assertTrue(ImpactoGameCatalog.candidatesFor(sg).isEmpty())
+    }
+
+    // ---- 排除条目（detect.noneOf）----
+
+    private val sgFolder = setOf("Game.exe", "USRDIR", "USRDIR/script.mpk", "USRDIR/system.mpk")
+    private val sg0Folder = sgFolder + "USRDIR/mpk_bg.lst"
+    private val sg0 = ImpactoGameCatalog.Game(
+        profileId = "sg0-pc",
+        title = "STEINS;GATE 0 (PC, Steam)",
+        requiredEntries = setOf("Game.exe", "USRDIR/script.mpk", "USRDIR/system.mpk", "USRDIR/mpk_bg.lst"),
+    )
+
+    @Test
+    fun anExcludedEntryKeepsTheSequelOutOfTheEarlierGame() {
+        val sgPc = ImpactoGameCatalog.builtInGames.single { it.profileId == "sg-pc" }
+        ImpactoGameCatalog.useHostRules(ImpactoGameCatalog.Rules(listOf(sgPc, sg0), emptyList()))
+
+        assertEquals(listOf("sg0-pc"), ImpactoGameCatalog.candidatesFor(sg0Folder).map { it.profileId })
+        assertEquals(listOf("sg-pc"), ImpactoGameCatalog.candidatesFor(sgFolder).map { it.profileId })
+    }
+
+    @Test
+    fun withoutTheExclusionBothGamesMatchAndTheFolderIsAmbiguous() {
+        val sgPc = ImpactoGameCatalog.builtInGames.single { it.profileId == "sg-pc" }.copy(excludedEntries = emptySet())
+        ImpactoGameCatalog.useHostRules(ImpactoGameCatalog.Rules(listOf(sgPc, sg0), emptyList()))
+
+        assertTrue(ImpactoGameCatalog.candidatesFor(sg0Folder).isEmpty())
+    }
+
+    @Test
+    fun theBuiltInCatalogTellsSteinsGateAndSteinsGate0Apart() {
+        assertEquals(listOf("sg0-pc"), ImpactoGameCatalog.candidatesFor(sg0Folder).map { it.profileId })
+        assertEquals(listOf("sg-pc"), ImpactoGameCatalog.candidatesFor(sgFolder).map { it.profileId })
+        assertNull(ImpactoGameCatalog.unsupportedLayoutFor(sg0Folder))
+        // the built-in sg0-pc mirrors the host profiles.json detect block
+        assertEquals(sg0.requiredEntries, ImpactoGameCatalog.byProfileId("sg0-pc")!!.requiredEntries)
     }
 
     @Test

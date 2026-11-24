@@ -19,6 +19,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
@@ -35,10 +39,14 @@ import com.tyranor.next.theme.SheetSecondaryTextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.AppBottomSheet
 import com.tyranor.next.ui.common.NoRippleButton
+import com.tyranor.next.ui.common.OverlayDropdownPreference
+import com.tyranor.next.ui.common.Slider
+import com.tyranor.next.ui.common.SliderValueHeader
 import com.tyranor.next.ui.common.SlidingTabRow
+import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.CardDefaults
-import com.tyranor.next.ui.common.OverlayDropdownPreference
+import top.yukonga.miuix.kmp.basic.SliderDefaults
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
@@ -54,6 +62,10 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * @param playedFilter 游玩状态过滤（`AppSettingsStore.GAME_FILTER_PLAYED_*`）
  * @param availableEngines 库中实际存在的引擎（调用方去重并按枚举顺序排好）
  * @param searchQuery 当前搜索词：非空时提示「重置不清搜索词」
+ * @param cardStyle 当前游戏页卡片风格；只有网格和瀑布显示列数滑条
+ * @param cardColumns 当前屏宽的列数
+ * @param columnRange 当前屏宽可选的连续整数列数区间
+ * @param onColumnsChange 滑条切换到新列数时的回调
  */
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,9 +75,13 @@ internal fun GameFilterSheet(
     playedFilter: String,
     availableEngines: List<EngineType>,
     searchQuery: String,
+    cardStyle: String,
+    cardColumns: Int,
+    columnRange: IntRange,
     onSortChange: (String) -> Unit,
     onEngineChange: (String) -> Unit,
     onPlayedChange: (String) -> Unit,
+    onColumnsChange: (Int) -> Unit,
     onReset: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -171,6 +187,40 @@ internal fun GameFilterSheet(
                                             onExpandedChange = { dropdownExpanded = it },
                                             onSelectedIndexChange = { playedOptions.getOrNull(it)?.first?.let(onPlayedChange) },
                                         )
+                                    }
+                                    if (cardStyle == AppSettingsStore.GAME_CARD_STYLE_GRID ||
+                                        cardStyle == AppSettingsStore.GAME_CARD_STYLE_WATERFALL
+                                    ) {
+                                        MiuixCard(
+                                            modifier = Modifier.fillMaxWidth().glassBorder(),
+                                            cornerRadius = AppComponentCornerRadius,
+                                            colors = CardDefaults.defaultColors(color = cardColor),
+                                        ) {
+                                            val title = stringResource(R.string.game_filter_card_columns)
+                                            val value = stringResource(R.string.game_filter_card_columns_value, cardColumns)
+                                            SliderValueHeader(
+                                                title = title,
+                                                value = value,
+                                                modifier = Modifier.fillMaxWidth()
+                                                    .padding(horizontal = FilterSheetInset)
+                                                    .padding(top = 10.dp)
+                                                    .clearAndSetSemantics {},
+                                            )
+                                            Slider(
+                                                value = cardColumns.toFloat(),
+                                                onValueChange = { onColumnsChange(it.roundToInt()) },
+                                                valueRange = columnRange.first.toFloat()..columnRange.last.toFloat(),
+                                                steps = columnRange.count() - 2,
+                                                showKeyPoints = true,
+                                                hapticEffect = SliderDefaults.SliderHapticEffect.Step,
+                                                modifier = Modifier.fillMaxWidth()
+                                                    .padding(horizontal = FilterSheetInset, vertical = 4.dp)
+                                                    .semantics {
+                                                        contentDescription = title
+                                                        stateDescription = value
+                                                    },
+                                            )
+                                        }
                                     }
                                 }
                             }

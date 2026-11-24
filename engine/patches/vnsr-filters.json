@@ -2,7 +2,7 @@
   "assetDirectory": "vnsr",
   "sources": [
     {
-      "description": "VN-SR 0.1.0 GLES exports. The three retained source shaders and MIT license were byte-verified against the public repository at the pinned revision.",
+      "description": "VN-SR 0.1.0 GLES3-MRT exports. The three retained source shaders and MIT license were byte-verified against the public repository at the pinned revision.",
       "version": "0.1.0",
       "license": {
         "spdx": "MIT",
@@ -12,23 +12,23 @@
       },
       "files": [
         {
-          "path": "shaders/gles/vnsr-c08-x2.glsl",
-          "sha256": "bd59396a8d0355ebf9748e9c4c10dbcde6f761bc07d3a74d47ed88edcf42c470",
+          "path": "shaders/gles-mrt/vnsr-c08-x2.glsl",
+          "sha256": "9243ae6f1aa6a2f4bb29fddd5531a436de847be9c0825906e1acc583b5407767",
           "localPath": "engine/patches/vnsr/sources/vnsr-c08-x2.glsl"
         },
         {
-          "path": "shaders/gles/vnsr-c12-x2.glsl",
-          "sha256": "b3927528e96671a5342b736a536382737f0dd3b4f9984964dd8f854a8c94a228",
+          "path": "shaders/gles-mrt/vnsr-c12-x2.glsl",
+          "sha256": "1be932e182b58ab433e4c414690d8d093c503019394afa676d8a8116e7f296ca",
           "localPath": "engine/patches/vnsr/sources/vnsr-c12-x2.glsl"
         },
         {
-          "path": "shaders/gles/vnsr-c16-x2.glsl",
-          "sha256": "029a71c924ee6e648556dfee18bb60060bf5989aa37764851515e15c60cea4e5",
+          "path": "shaders/gles-mrt/vnsr-c16-x2.glsl",
+          "sha256": "9d40950c11582675bc727874fcaadc7e800d253f90c1384d39312ef7aecd496b",
           "localPath": "engine/patches/vnsr/sources/vnsr-c16-x2.glsl"
         }
       ],
       "repository": "https://github.com/AAAA1111-Lab/VN-SR",
-      "revision": "014d9145b935b1ead465f795b91b7bdf68176fcf",
+      "revision": "4a9896612874ebfdc2a7393864445af32818cf4e",
       "verification": "retained"
     }
   ],
@@ -39,15 +39,15 @@
     },
     {
       "file": "vnsr/vnsr-c08-x2.glsl",
-      "sha256": "bd59396a8d0355ebf9748e9c4c10dbcde6f761bc07d3a74d47ed88edcf42c470"
+      "sha256": "9243ae6f1aa6a2f4bb29fddd5531a436de847be9c0825906e1acc583b5407767"
     },
     {
       "file": "vnsr/vnsr-c12-x2.glsl",
-      "sha256": "b3927528e96671a5342b736a536382737f0dd3b4f9984964dd8f854a8c94a228"
+      "sha256": "1be932e182b58ab433e4c414690d8d093c503019394afa676d8a8116e7f296ca"
     },
     {
       "file": "vnsr/vnsr-c16-x2.glsl",
-      "sha256": "029a71c924ee6e648556dfee18bb60060bf5989aa37764851515e15c60cea4e5"
+      "sha256": "9d40950c11582675bc727874fcaadc7e800d253f90c1384d39312ef7aecd496b"
     }
   ]
 }

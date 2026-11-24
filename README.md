@@ -29,7 +29,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
   <img src="screenshots/index5.png" alt="Tyranor Next" width="900" />
 </p>
 
-画面超分（展示配置）
+画面超分（共用画质滤镜链，历史配置截图）
 <p align="center">
   <img src="screenshots/index6.png" alt="Tyranor Next" width="900" />
 </p>
@@ -56,7 +56,7 @@ RPG Maker MV/MZ 的 DKTools 浏览器文件索引缺失时，可由宿主提供�
 | AVG32                | `Gameexe.ini` + `SEEN.TXT`（`PACL`）或 `SEEN###.TXT`（`TPC32`）          | 内置视觉小说运行时（game_launcher）  |
 | UK2（PC-98）          | `UK2.CFG`、`*.MES`（`<< UK2 TEXT Ver1.00 >>` 头）                       | 内置视觉小说运行时（game_launcher）  |
 | FVP                  | `*.hcb`/`*.bch` 脚本、`graph.bin`/`voice.bin` 等资源包                   | 内置 FVP 原生运行时（rfvp）          |
-| CMVS                 | `data/pack/script.cpz` + `start.ps3/ps2`（仅 19 部登记作品）              | 内置 CMVS 原生运行时（cmvs-rs，NativeActivity） |
+| CMVS                 | `data/pack/script.cpz` + `start.ps3/ps2/pss`，可在单游戏引擎设置指定启动配置 | 内置 CMVS 原生运行时（cmvs-rs，支持游戏内存档备注输入） |
 | System35             | `*.ALD`（`SA.ALD` 等；根目录或 `GAMEDATA/`）、`System39.ain`/`System39.ini`/`*.wai`/`*.bgi`/`*.alk` | 内置 System3.x 运行时（xsystem35） |
 | System4              | `System40.ini` 或 `AliceStart.ini`（根目录；`*.ain` 为辅助特征）                    | 内置 System4 运行时（xsystem4）      |
 | SystemNNN            | 游戏目录下的 `spt/sys.spt`（不区分大小写）                            | 内置 [SystemNNN-Emberfall 0.8.1](https://github.com/PorisRora/SystemNNN-Emberfall)（ARM64） |
@@ -75,7 +75,7 @@ RPG Maker MV/MZ 的 DKTools 浏览器文件索引缺失时，可由宿主提供�
 | WebOther             | 通用 `index.html` 网页游戏                                                | 内置 Web 运行环境                  |
 | Ren'Py               | `.rpa`、`game/script.rpy`、`game/options.rpy`、`renpy/` + `.rpy/.rpyc` | 外置 RenPy APK 模块（8.5.0 / 8.5.3 / 7.7.1；8.5.0 与 8.5.3 同包名，按所选版本下载安装） |
 | Ruffle / Flash       | 顶层 `.swf`；根 `index.html/index.htm` + 唯一 SWF 的叶子目录                   | 外置 Ruffle APK 模块              |
-| MAGES.（impacto）    | 按精确大小写识别 profile，规则优先取自已安装的宿主：上游 profile 看根目录条目（如 `mo6tw` 的 `SYSTEM.CPK`、`SCRIPT.cls`），Windows／Steam 版《秋之回忆6》看根目录 `game.exe` 与 `data/` 里的 `script.cpk`、`mes00.cpk`，Steam 版 STEINS;GATE 看 `Game.exe` 与 `USRDIR/` 里的 `script.mpk`、`system.mpk`；像 MAGES. 但没有 profile 的目录列为「暂不支持」，可尝试运行 | 外置 Impacto 宿主 APK（引擎页点击跳转下载；Windows／Steam 版需宿主 0.2.0、STEINS;GATE 需 0.3.0 及以上） |
+| MAGES.（impacto）    | 按精确大小写识别 profile，规则优先取自已安装的宿主：上游 profile 看根目录条目（如 `mo6tw` 的 `SYSTEM.CPK`、`SCRIPT.cls`），Windows／Steam 版《秋之回忆6》看根目录 `game.exe` 与 `data/` 里的 `script.cpk`、`mes00.cpk`，Steam 版 STEINS;GATE 看 `Game.exe` 与 `USRDIR/` 里的 `script.mpk`、`system.mpk`；像 MAGES. 但没有 profile 的目录列为「暂不支持」，可尝试运行 | 外置 [Impacto 宿主 APK](https://github.com/SIRENA-Core/Tyranor-Next-MAGES/releases)（引擎页点击跳转下载；Windows／Steam 版需宿主 0.2.0、STEINS;GATE 需 0.3.0 及以上） |
 | PSP                  | `.pbp`、`.cso`、`.iso`、`.chd`                                         | 外置 PPSSPP 模拟器                 |
 | Nintendo Switch      | `.nsp`、`.xci`、`.nca`、`.nro`                                         | 外置 Eden 模拟器                   |
 
@@ -85,7 +85,6 @@ RPG Maker MV/MZ 的 DKTools 浏览器文件索引缺失时，可由宿主提供�
 - 当前原生引擎库仅提供 `arm64-v8a`，设备需为 64 位 ARM 架构。
 - 游戏目录需位于 Android 可访问的本地存储，并通过系统文件选择器（SAF）授权。需要直接读取共享存储的引擎会在权限不足时引导授权：Android 8–10 使用系统的应用存储权限，Android 11 及以上使用「所有文件访问」。Android 10 的「下载」入口可通过 MediaStore 解析已索引的本地游戏目录。
 - 实际兼容性取决于游戏使用的引擎版本、封包/加密方式和脚本特性；特殊修改版可能需要调整引擎设置或补丁。
-- 长按游戏卡片可「添加桌面」。若 MIUI / HyperOS 未显示快捷方式，请在系统设置的 Tyranor Next 应用权限中允许创建桌面快捷方式，再重试。
 
 ## 参与贡献
 

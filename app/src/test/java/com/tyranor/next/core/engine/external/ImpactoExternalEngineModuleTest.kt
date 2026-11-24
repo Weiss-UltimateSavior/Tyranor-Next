@@ -32,7 +32,7 @@ class ImpactoExternalEngineModuleTest {
         ).forEach { assertTrue(it, it.startsWith(ImpactoHostContract.PACKAGE + ".")) }
         // Always the latest published host APK (fixed asset name), so new host releases need no app change.
         assertEquals(
-            "https://github.com/yuukana1/Tyranor-Next-MAGES/releases/latest/download/Tyranor-Next-MAGES.apk",
+            "https://github.com/SIRENA-Core/Tyranor-Next-MAGES/releases/latest/download/Tyranor-Next-MAGES.apk",
             ImpactoExternalEngineModule.installUrl,
         )
         assertEquals(ImpactoHostContract.VERSION_CODE.toLong(), ImpactoExternalEngineModule.minimumVersionCode)
@@ -53,7 +53,7 @@ class ImpactoExternalEngineModuleTest {
         assertEquals(
             setOf(
                 "swapConfirmCancel", "vsync", "videoPlayback", "subtitles",
-                "closeBacklogAtEnd", "delusionMouse", "logLevel",
+                "closeBacklogAtEnd", "delusionMouse", "logLevel", "debugMode",
             ),
             json.keys().asSequence().toSet(),
         )
@@ -64,6 +64,8 @@ class ImpactoExternalEngineModuleTest {
         assertTrue(json.getBoolean("closeBacklogAtEnd"))
         assertTrue(json.getBoolean("delusionMouse"))
         assertEquals("warning", json.getString("logLevel"))
+        // 调试模式默认关闭：显式下发 false，宿主会把之前打开过的 DebugMode 关掉
+        assertFalse(json.getBoolean("debugMode"))
     }
 
     @Test
@@ -78,6 +80,7 @@ class ImpactoExternalEngineModuleTest {
                     closeBacklogAtEnd = false,
                     delusionMouse = false,
                     logLevel = " DEBUG ",
+                    debugMode = true,
                 ),
             ),
         )
@@ -88,6 +91,7 @@ class ImpactoExternalEngineModuleTest {
         assertFalse(json.getBoolean("closeBacklogAtEnd"))
         assertFalse(json.getBoolean("delusionMouse"))
         assertEquals("debug", json.getString("logLevel"))
+        assertTrue(json.getBoolean("debugMode"))
         // 非法日志等级不会原样下发给宿主
         val bad = JSONObject(
             ImpactoExternalEngineModule.buildSettingsJson(EngineSettingsStore.Impacto(logLevel = "loud")),

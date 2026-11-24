@@ -83,6 +83,8 @@ import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.EngineDetectionRepository
 import com.tyranor.next.core.game.scan.GameDirFingerprint
+import com.tyranor.next.core.settings.AppIconSwitcher
+import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.GraphicsCapabilities
 import com.tyranor.next.core.settings.GraphicsFamily
 import com.tyranor.next.core.settings.GraphicsSettings
@@ -580,7 +582,7 @@ object EngineLauncher {
             if (cmvsFont == null) return LaunchResult.Failure.CmvsFontUnavailable
             val token = java.util.UUID.randomUUID().toString()
             cmvsLaunchToken = token
-            if (!CmvsLaunchFiles.write(context, game, File(path), cmvsFont, cmvsFace, token)) {
+            if (!CmvsLaunchFiles.write(context, game, File(path), cmvsFont, cmvsFace, settings.cmvsProfile, token)) {
                 return LaunchResult.Failure.CmvsLaunchConfigUnavailable
             }
         }
@@ -1315,7 +1317,8 @@ object EngineLauncher {
     }
 
     /** 构建引擎 Intent；path 为真实文件路径。
-     *  字体偏好契约：`default_font`（空串=引擎按所有权标记清理残留）与
+     *  字体偏好契约：`default_font`（全局作用域下空串=引擎按所有权标记清理残留；
+     *  游戏作用域下空串=写空 Item 表示内置字体，仅该游戏回落内置）与
      *  `force_default_font`（false 写 "0"）**必须无条件注入**——引擎侧
      *  applyFontPreferences 仅在 hasExtra 时执行写入/清理，缺省会让
      *  引擎配置里的旧值永久残留（issue #74）。 */
@@ -1437,6 +1440,10 @@ object EngineLauncher {
         if (!intent.hasExtra(LaunchContract.GRAPHICS_FILTER_CHAIN)) intent.putDisabledGraphicsRequest()
         intent.putExtra(LaunchContract.ORIENTATION, LaunchOrientationMonitor.resolvePlayerOrientation(context))
         intent.putExtra(LaunchContract.UI_LANGUAGE_TAG, AppLocaleController.engineUiLanguageTag(context))
+        intent.putExtra(LaunchContract.GAMES_TITLE, game.title)
+        game.coverUri?.let { intent.putExtra(LaunchContract.GAME_COVER_URI, it) }
+        intent.putExtra(LaunchContract.STARTUP_APP_ICON, AppIconSwitcher.iconResource(context))
+        intent.putExtra(LaunchContract.STARTUP_ENHANCED_MOTION, AppSettingsStore.isMotionEnhanced(context))
         // 注入 App 统一主题色与深浅色：引擎壳自绘 UI（确认/输入弹窗按钮等）经
         // EngineThemeColors.fromIntent / KrDialogStyle 读取，缺失时回落默认绿。
         // 主题色来自 ui 层写入的纯数据快照（ThemeColorPayloadStore），core 不反向依赖 theme。
@@ -1583,7 +1590,6 @@ object EngineLauncher {
         if (nls.isNotBlank() && nls != EngineSettingsStore.FB_NLS_AUTO) {
             putExtra(LaunchContract.GAMES_NLS, nls)
         }
-        putExtra(LaunchContract.GAMES_TITLE, game.title)
     }
 
     /** EngineType → 上游 `game_fb_open` 的 engine id（未知/歧义时交给引擎按内容自动探测）。 */
@@ -1914,8 +1920,15 @@ object EngineLauncher {
         val actualSaveRoot = safMirror?.let { File(it.mirrorRoot, "savedata") }
             ?: resolveKrSaveDir(context, path, kernel, scoped)
         val effectiveScoped = scoped || safMirror != null
+        // 字体值与其作用域由 EngineSettingsResolver 统一解析（ResolvedEngineSettings），
+        // 启动链只消费结果：覆盖存在→game scope 写游戏目录 XML；跟随全局→不带 scope extra
+        // （无 scope extra=引擎按全局落点，兼容旧版 App）。注意旧版引擎会忽略 scope extra
+        // 仍写全局 XML：新 App + 旧引擎的组合会退化为旧的全局泄漏行为，scope 语义依赖
+        // 引擎与 App 一同更新，注释在此写明以免被读成"双向安全"。
         val defaultFont = settings.krDefaultFont
         val forceFont = settings.krForceDefaultFont
+        val defaultFontGameScope = settings.krDefaultFontGameScope
+        val forceFontGameScope = settings.krForceFontGameScope
         val mirrorOverlayReader = if (settings.krPatchOverlayMode == EngineSettingsStore.KR_PATCH_OVERLAY_OFF) {
             null
         } else {
@@ -1962,12 +1975,26 @@ object EngineLauncher {
                 EngineSettingsStore.KR_134 -> "1.3.4"
                 else -> "1.3.9"
             })
-            // 字体偏好：两个 extra 必须无条件注入。引擎侧 applyFontPreferences 仅在
-            // hasExtra 时执行写入/按所有权标记清理——若仅在非空/为真时注入，用户关闭
-            // 强制或清空字体后引擎 XML 里的旧值会永久残留（issue #74「换字体无法生效」
-            // 的根因：残留的 force_default_font=1 一直压住新设置的字体）。
-            putExtra(LaunchContract.DEFAULT_FONT, defaultFont)
-            putExtra(LaunchContract.FORCE_DEFAULT_FONT, forceFont)
+            // 字体偏好：四个字体 extras（DEFAULT_FONT/FORCE_DEFAULT_FONT 与两个全局参照
+            // FONT_GLOBAL_*）必须无条件注入。引擎侧 applyFontPreferences 仅在 hasExtra 时
+            // 执行写入/按所有权标记清理——若仅在非空/为真时注入，用户关闭强制或清空字体
+            // 后引擎 XML 里的旧值会永久残留（issue #74「换字体无法生效」的根因：残留的
+            // force_default_font=1 一直压住新设置的字体）；全局参照的恒下发同样是引擎侧
+            // hasExtra 回收门控的判据，按需下发会静默破坏升级自愈。
+            // scope：单游戏覆盖（含 ""=内置字体）带 FONT_SCOPE_*="game" 写游戏目录 XML；
+            // 跟随全局不带 scope extra=按全局落点（兼容旧版 App；旧版引擎忽略 scope extra
+            // 会退化重泄漏，见上方说明）。
+            // 装配逻辑抽为纯函数（见 krFontLaunchExtras），JVM 用例锚定 extra 组合与 Boolean 类型。
+            krFontLaunchExtras(defaultFont, defaultFontGameScope, forceFont, forceFontGameScope,
+                settings.krGlobalDefaultFont, settings.krGlobalForceFont)
+                .forEach { (key, value) ->
+                    when (value) {
+                        is Boolean -> putExtra(key, value)
+                        is String -> putExtra(key, value)
+                        // 新增 extra 类型必须同步此分支：静默丢弃会产出类型不匹配的启动契约
+                        else -> error("krFontLaunchExtras: unexpected extra value type for $key")
+                    }
+                }
             putGraphicsSettings(settings.krGraphics, GraphicsCapabilities.forRuntime(GraphicsFamily.KR, kernel, settings.krEngineVersion, settings.krRenderer))
             // 渲染/内存偏好 JSON：单游戏覆盖 与 全局 逐键合并；字段映射由 KrRenderPrefs 单一来源提供
             runCatching {
@@ -2925,3 +2952,26 @@ internal fun effectiveRpgMakerModEnabled(
     perGameOverride: Boolean?,
     globalDefault: Boolean,
 ): Boolean = EffectiveEngineSettings.resolveRpgMakerModEnabled(engine, perGameOverride, globalDefault)
+
+/**
+ * 字体 extras 装配（纯函数，JVM 可断言接线）：值来自 ResolvedEngineSettings；scope extra
+ * 仅在游戏作用域出现（缺省=引擎 fontWriteTarget 落全局文件，无回落）。FORCE_DEFAULT_FONT 保持 Boolean
+ * 类型（引擎侧按 getBooleanExtra 读取，字符串化会导致恒读默认 false）。全局参照 extras
+ * 恒下发：GlobalPreference.xml 全仓仅 launcher 一个写入者，引擎在 game scope 写入后据其
+ * 回收与参照不一致的全局陈旧带标记注入项（旧版泄漏自愈判据，见 LaunchContract.FONT_GLOBAL_*）。
+ */
+internal fun krFontLaunchExtras(
+    defaultFont: String,
+    defaultFontGameScope: Boolean,
+    forceFont: Boolean,
+    forceFontGameScope: Boolean,
+    globalDefaultFont: String,
+    globalForceFont: Boolean,
+): List<Pair<String, Any>> = buildList {
+    add(LaunchContract.DEFAULT_FONT to defaultFont)
+    add(LaunchContract.FONT_GLOBAL_DEFAULT to globalDefaultFont)
+    if (defaultFontGameScope) add(LaunchContract.FONT_SCOPE_DEFAULT to LaunchContract.SCOPE_GAME)
+    add(LaunchContract.FORCE_DEFAULT_FONT to forceFont)
+    add(LaunchContract.FONT_GLOBAL_FORCE to globalForceFont)
+    if (forceFontGameScope) add(LaunchContract.FONT_SCOPE_FORCE to LaunchContract.SCOPE_GAME)
+}

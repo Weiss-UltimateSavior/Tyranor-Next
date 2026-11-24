@@ -29,10 +29,10 @@ import static org.junit.Assert.fail;
 public final class FilterCoordinateWrapperTest {
 
     @Test public void flipDecisionCoversEveryDeclaredAndPhysicalCombination() {
-        assertEquals(0, Anime4kPostProcessor.flipYUniform(true, true));
-        assertEquals(1, Anime4kPostProcessor.flipYUniform(true, false));
-        assertEquals(1, Anime4kPostProcessor.flipYUniform(false, true));
-        assertEquals(0, Anime4kPostProcessor.flipYUniform(false, false));
+        assertEquals(0, GraphicsShaderTransforms.flipYUniform(true, true));
+        assertEquals(1, GraphicsShaderTransforms.flipYUniform(true, false));
+        assertEquals(1, GraphicsShaderTransforms.flipYUniform(false, true));
+        assertEquals(0, GraphicsShaderTransforms.flipYUniform(false, false));
     }
 
     @Test public void emittedWrapperSemanticsMatchDeclaredRowOrderAcrossCombinations() {
@@ -78,7 +78,7 @@ public final class FilterCoordinateWrapperTest {
             int expectedStepRow = (int) tc[6];
             String desc = (String) tc[7];
 
-            assertEquals("flipYUniform mismatch for " + desc, flip, Anime4kPostProcessor.flipYUniform(declared, inputTopLeft));
+            assertEquals("flipYUniform mismatch for " + desc, flip, GraphicsShaderTransforms.flipYUniform(declared, inputTopLeft));
 
             // Populate physical OpenGL texture array according to inputTopLeft
             Texture2D tex = new Texture2D(w, h, 4);
@@ -130,7 +130,7 @@ public final class FilterCoordinateWrapperTest {
         double[] size = {16.0, 9.0};
         for (boolean declared : new boolean[]{true, false}) {
             for (boolean inputTopLeft : new boolean[]{true, false}) {
-                int flip = Anime4kPostProcessor.flipYUniform(declared, inputTopLeft);
+                int flip = GraphicsShaderTransforms.flipYUniform(declared, inputTopLeft);
                 int imageDownRows = declared ? 1 : -1;
                 int imageDownPhysical = inputTopLeft ? 1 : -1;
                 for (int row = 1; row < 8; row++) {
@@ -156,7 +156,7 @@ public final class FilterCoordinateWrapperTest {
         double[] size = {16.0, 9.0};
         for (boolean declared : new boolean[]{true, false}) {
             for (boolean inputTopLeft : new boolean[]{true, false}) {
-                int flip = Anime4kPostProcessor.flipYUniform(declared, inputTopLeft);
+                int flip = GraphicsShaderTransforms.flipYUniform(declared, inputTopLeft);
                 for (double[] vPos : new double[][]{{0.25, 0.25}, {0.5, 0.5}, {0.9375, 0.0625}}) {
                     double[] emitted = wrapper.evalHookBody(Wrapper.baseVars(vPos, size, flip));
                     // MAIN_pos is hookCoord(vPos); MAIN_tex applies hookCoord(MAIN_pos) = hookCoord(hookCoord(vPos)) = vPos.
@@ -336,7 +336,7 @@ public final class FilterCoordinateWrapperTest {
             double featureGain = sized == 1 ? 1.5 * 0.1 : 0.05;
             for (boolean declared : new boolean[]{true, false}) {
                 for (boolean inputTopLeft : new boolean[]{true, false}) {
-                    int flip = Anime4kPostProcessor.flipYUniform(declared, inputTopLeft);
+                    int flip = GraphicsShaderTransforms.flipYUniform(declared, inputTopLeft);
 
                     // Populate physical OpenGL textures according to inputTopLeft.
                     wrapper.setTexture("u_MAIN", physicalTexture(imageMain, mainW, mainH, inputTopLeft));
@@ -373,7 +373,7 @@ public final class FilterCoordinateWrapperTest {
         // wrong wiring must move some output channel, or this test has gone blind.
         wrapper.setTexture("u_MAIN", physicalTexture(imageMain, mainW, mainH, true));
         wrapper.setTexture("u_AUX", physicalTexture(imageAux, auxW, auxH, true));
-        int flip = Anime4kPostProcessor.flipYUniform(true, true);
+        int flip = GraphicsShaderTransforms.flipYUniform(true, true);
         boolean flipMoved = false;
         boolean sizeMoved = false;
         boolean modeMoved = false;

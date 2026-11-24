@@ -611,9 +611,10 @@ private fun ColumnScope.MainTabPages(
         // 未变化页面的组合槽位与 pageOffset/pageAlpha 动画状态不会被错位复用而闪现。
         visiblePages.forEach { page ->
           key(page) {
+            val selected = page == selectedIndex
             MainTabPageHost(
               page = page,
-              selected = page == selectedIndex,
+              selected = selected,
               pageTransition = pageTransition,
               motion = tabMotion[page],
               entrance = tabEntrances[page],
@@ -656,7 +657,8 @@ private fun ColumnScope.MainTabPages(
                 2 -> EngineScreen(
                   Modifier.fillMaxSize(),
                   onCoachAnchorChanged = { onCoachAnchorChanged(CoachAnchor.ENGINE, it) },
-                  isActive = pageActive,
+                  reportCoachAnchor = pageActive,
+                  isSelected = selected,
                   gameCount = libraryState.games.size,
                 )
                 3 -> ToolsScreen(Modifier.fillMaxSize())

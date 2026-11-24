@@ -93,6 +93,7 @@ internal object GameOverridePartitions {
     const val KEY_ETHORNELL_NLS = "ethornell_nls"
     const val KEY_ETHORNELL_FONT = "ethornell_font"
     const val KEY_CMVS_FONT = "cmvs_font"
+    const val KEY_CMVS_PROFILE = "cmvs_profile"
     const val KEY_FVP_SYSTEM_FONT = "fvp_system_font"
     const val KEY_FVP_TEXT_HIDPI = "fvp_text_hidpi"
     const val KEY_FVP_FONT = "fvp_font"
@@ -133,6 +134,7 @@ internal object GameOverridePartitions {
     const val KEY_IMPACTO_CLOSE_BACKLOG_AT_END = "impacto_close_backlog_at_end"
     const val KEY_IMPACTO_DELUSION_MOUSE = "impacto_delusion_mouse"
     const val KEY_IMPACTO_LOG_LEVEL = "impacto_log_level"
+    const val KEY_IMPACTO_DEBUG_MODE = "impacto_debug_mode"
     const val ONS_OBJECT_KEY = "ons"
     const val KEY_RUNTIME_MODULE_SETTINGS = "runtime_module_settings"
 
@@ -177,7 +179,7 @@ internal object GameOverridePartitions {
         KEY_RPG_SPEED_UP, KEY_RPG_FONT_SCALE,
         KEY_SIGLUS_LANGUAGE, KEY_SIGLUS_GRAPHICS,
         KEY_FB_NLS,
-        KEY_ETHORNELL_NLS, KEY_ETHORNELL_FONT, KEY_CMVS_FONT,
+        KEY_ETHORNELL_NLS, KEY_ETHORNELL_FONT, KEY_CMVS_FONT, KEY_CMVS_PROFILE,
         KEY_FVP_NLS, KEY_FVP_SYSTEM_FONT, KEY_FVP_TEXT_HIDPI, KEY_FVP_FONT,
         KEY_XSYS35_SCOPED_SAVE_DIR, KEY_XSYS35_RENDERER,
         KEY_XSYS35_INTEGER_SCALE, KEY_XSYS35_MUTE_UNFOCUS,
@@ -189,6 +191,7 @@ internal object GameOverridePartitions {
         KEY_IMPACTO_SWAP_CONFIRM_CANCEL, KEY_IMPACTO_VSYNC, KEY_IMPACTO_VIDEO_PLAYBACK,
         KEY_IMPACTO_SUBTITLES,
         KEY_IMPACTO_CLOSE_BACKLOG_AT_END, KEY_IMPACTO_DELUSION_MOUSE, KEY_IMPACTO_LOG_LEVEL,
+        KEY_IMPACTO_DEBUG_MODE,
     )
     // Ren'Py 分区：版本选择 + 外置模块配置，显式建模防止未来收紧分区时丢键
     val RENPY_KEYS: Set<String> = setOf(

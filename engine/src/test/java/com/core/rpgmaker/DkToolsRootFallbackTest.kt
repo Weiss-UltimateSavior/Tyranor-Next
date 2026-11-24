@@ -115,6 +115,45 @@ class DkToolsRootFallbackTest {
         assertEquals(diskOverlay.canonicalFile, resolved?.file)
     }
 
+    @Test fun prefixedDirectoryShadowsRootFallbackFileInIndexAndBothHttpHosts() {
+        for (legacy in listOf(false, true)) {
+            val root = temporary.newFolder("dir-shadows-file-$legacy")
+            val archiveFile = temporary.newFile("dir-shadows-file-$legacy.asar")
+            writeTestAsar(
+                archiveFile,
+                packed = mapOf(
+                    "www/index.html" to "<html></html>",
+                    "www/locales/en.json/nested.txt" to "nested",
+                    "locales/en.json" to "root-file",
+                ),
+            )
+            val archive = if (!legacy) AsarArchive(archiveFile) else null
+            val oldArchive = if (legacy) com.core.tyrano.AsarArchive(archiveFile) else null
+            val append = mapOf(DkToolsCompat.SCRIPT_PATH to byteArrayOf())
+            val server = if (!legacy) RpgMakerLocalHttpServer(root, archive, null, scriptAppends = append) else null
+            val oldServer = if (legacy) TyranoLocalHttpServer(root, oldArchive, null, scriptAppends = append) else null
+            server?.start(); oldServer?.start()
+            val port = server?.port ?: requireNotNull(oldServer).port
+            try {
+                val bootstrap = connection(port, "index.html")
+                val cookie = try {
+                    assertEquals(200, bootstrap.responseCode)
+                    bootstrap.inputStream.use { it.readBytes() }
+                    bootstrap.getHeaderField("Set-Cookie").substringBefore(';')
+                } finally { bootstrap.disconnect() }
+                val index = org.json.JSONObject(requestIndex(port, cookie))
+                assertEquals(
+                    "directory",
+                    index.getJSONObject("locales").getJSONObject("en.json").getJSONObject("__stats__").getString("type"),
+                )
+                val req = connection(port, "locales/en.json").apply { setRequestProperty("Cookie", cookie) }
+                try {
+                    assertEquals("legacy=$legacy prefixed directory must shadow root file", 404, req.responseCode)
+                } finally { req.disconnect() }
+            } finally { server?.stop(); oldServer?.stop(); archive?.close(); oldArchive?.close() }
+        }
+    }
+
     @Test fun bothHttpHostsServeArchiveRootScriptsAndKeepDiskOverlays() {
         for (legacy in listOf(false, true)) {
             val root = temporary.newFolder("host-$legacy")

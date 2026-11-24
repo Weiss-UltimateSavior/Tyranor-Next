@@ -16,14 +16,27 @@ internal object DkToolsResourceResolver {
         archiveIsFile: (String) -> Boolean,
         archiveDirectChildren: ((String) -> List<Pair<String, Boolean>>)? = null,
         diskChildren: (File) -> List<String> = { it.list()?.toList().orEmpty() },
+        archiveIsDirectory: (String) -> Boolean = { false },
     ): Resource? {
         val parts = uri.replace('\\', '/').split('/').filter { it.isNotEmpty() && it != "." }
         if (parts.isEmpty() || parts.any { it == ".." || it.any(Char::isISOControl) }) return null
         val normalizedPath = parts.joinToString("/")
         // Preserve the hosts' exact lookup order: web-root prefix, then archive root.
-        // Root fallback deliberately does not apply loose/case-insensitive matching.
-        val exactArchivePath = (if (archivePrefix.isEmpty()) listOf(normalizedPath)
-            else listOf(archivePrefix + normalizedPath, normalizedPath)).firstOrNull(archiveIsFile)
+        // Root fallback deliberately does not apply loose/case-insensitive matching,
+        // and a prefixed directory or ancestor file shadows any root-level fallback.
+        val exactArchivePath = if (archivePrefix.isEmpty()) {
+            normalizedPath.takeIf(archiveIsFile)
+        } else {
+            val prefixed = archivePrefix + normalizedPath
+            when {
+                archiveIsFile(prefixed) -> prefixed
+                archiveIsDirectory(prefixed) -> null
+                (1 until parts.size).any { len ->
+                    archiveIsFile(archivePrefix + parts.take(len).joinToString("/"))
+                } -> null
+                else -> normalizedPath.takeIf(archiveIsFile)
+            }
+        }
         if (exactArchivePath != null) {
             // Most packaged resource requests are already exact. They must not construct
             // the optional directory tree (which can exceed its separate metadata budget).

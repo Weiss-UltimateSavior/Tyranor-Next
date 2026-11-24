@@ -278,3 +278,25 @@ llvm-strip --strip-unneeded /tmp/cmvs-jni/arm64-v8a/libcmvs_android.so
 - 存档门禁：`GameSaveManager` 手动导入/导出/删除在 `:cmvs` 存活时抛 `SAVE_DIR_IN_USE`；删除游戏清理 `files/cmvs/users/<hash>`。
 - 测试样本说明：本地 REALIVE 为 CN 1.03，`start.ps3`/`cmvs32.exe` 不在登记表；实测时把 `cmvs32.exe`/`cmvs64.exe` 移至 `/sdcard/realive_exe_backup/` 走 data-only 识别。未移动时 App 正确提示「未登记」。
 - 未验证：游戏内 `chooseFont`（0x213d）真机流程；`.ttc` 面索引（已按死配置清理，face 固定 0）；存档导出/导入 UI 点验；升级覆盖安装路径；虚拟按键/手柄（Android 后端仅触摸）。
+
+## 10. 运行库更新（2026-11-23）
+
+- 源码从 `c073414b` 更新到 `23718ecf515022722dca6bc2e58a8b95b4f362e9`（fork 的 `main` 与 `origin/main`）。继续用 `tools/cmvs/build_android.sh` 在临时副本重放补丁，使用 Rust 1.96.0、cargo-ndk 4.1.2、NDK 28.0.13004108 构建 arm64-v8a。运行库、补丁的 SHA-256 见 `libcmvs_android.provenance.json`，许可和声明与该提交同步。
+- `ANativeActivity_onCreate`、`android_main` 导出和 ELF 动态依赖一致。构建产物的 Android API note 为 26，四个 LOAD 段按 16 KB 对齐。Gradle 将运行库装入 `assets/engine-runtime/cmvs.zip.xz`，APK 的 `lib/arm64-v8a/` 放置 loader。
+- 上游使用 `GameBootstrap::open_runtime` 创建会话。构建补丁把现有 `launch.cfg` 的绝对 `game`、`user` 路径传入该流程，兼容原字体路径和面索引、启动失败码及原生返回键。`chooseFont()V` 和 `font-result.cfg` 协议继续适用。上游支持可选缩放滤镜，TyranorNext 使用游戏配置或引擎默认值。
+- 宿主新增 `beginCommentInput(ILjava/lang/String;I)V`、`takeCommentInput(I)Ljava/lang/String;`、`dismissCommentInput()V`。输入框在 Android 主线程运行，按请求 ID 一次性回传待定、取消或确认结果，由运行库编码并保存备注。应用继续按现有 CMVS 目录布局识别游戏，上游 CVNS 新增作品的识别与兼容性待验证。
+- Debug APK 打包通过，包内运行库与来源清单的 SHA-256 一致。CMVS 扫描与存档路径的 6 项 JVM 测试通过，`javap -s` 确认新增方法及字体回调的 JVM 描述符与上游 JNI 调用一致。`:engine:lintDebug` 仍报告 54 个错误和 254 个警告，报告与更新前的本地报告逐字节一致。
+- 联想 TB375FC（Android 16 / API 36，arm64-v8a，4 KB 页）使用隔离 Debug APK，从游戏库启动本地 REALIVE 样本。设备解压的运行库 SHA-256 与来源清单一致，NativeActivity 进入 `android_main`。样本 `script.cpz` 匹配登记，但 `start.ps3` 的 SHA-256 为 `71c054d0…`，登记版本为 `9a331e2c…`。运行库写出 `code=unregistered`，应用显示未登记提示。本次覆盖运行库加载和失败回传，标题画面、存档读写、备注输入、API 26 和 16 KB 真机运行仍待验证。
+- 随后用同一提交的登记逻辑复核挂载样本。移出 `cmvs32_realive_1.03_cn.exe` 后，保留 `cmvs32.exe`、`cmvs64.exe` 的目录及仅含 `start.ps3`、`script.cpz` 的副本均返回未登记。该后缀的汉化启动文件名不在运行库检查的 EXE 名单中。
+
+### 指定游戏版本启动
+
+打开单游戏「引擎设置 → 启动配置」，选择作品并保存。菜单包含运行库登记的 25 部作品，由构建脚本根据同一版本的登记生成，名称来自上游游戏档案。应用将选择写入私有 `launch.cfg` 的 `profile=`。运行库按该标识选择引擎配置和存档格式，跳过对启动脚本、脚本包及 EXE 的识别哈希。
+
+「自动识别」沿用运行库流程。游戏根目录有 UTF-8 的 `cmvs.profile` 时优先使用其中的作品标识，REALIVE 为 `realive`。没有该文件时按游戏哈希识别。单游戏菜单的手动选择优先于目录里的 `cmvs.profile`。
+
+CMVS / CVNS 都须有 `data/pack/script.cpz` 和唯一的启动脚本。CVNS 的 `start.pss` 使用固定键码，App 预检允许缺少 `key.cfg`。字体和 Vulkan 启动条件适用于两者，存档写入 App 私有目录。
+
+同一台 TB375FC 在带有 `cmvs32_realive_1.03_cn.exe`、`cmvs32.exe`、`cmvs64.exe` 的 REALIVE 副本上实测通过。设备解压的运行库 SHA-256 为 `d84e6e4cc60659553da3edfbb4ab669a7ba0c2eae80256516bc7ef58888a58e4`。运行日志确认按 `realive` 选中 `cmvs-20190305`，到达标题菜单和序章 1。返回退出后，`system.dat` 和 `cmvs.cfg` 写入应用私有存档目录。剧情存档槽和备注输入未复测。
+
+接入单游戏菜单后，在同一设备用保留全部启动 EXE、没有 `cmvs.profile` 的副本复测。运行库 SHA-256 为 `9e48d6579a74a59b440c99fe99c925459a9524b9a2a24bd02cf26e15dd899267`。菜单选择并保存 REALIVE 后，私有 `launch.cfg` 写入 `profile=realive`，运行日志确认跳过哈希识别并进入标题菜单。重新打开设置后选择保留，菜单可滚动到最后一部 CVNS 作品。保存「自动识别」后，同一样本恢复未登记提示。CVNS 的扫描与配置持久化已通过 JVM 检查，游戏运行未逐部点验。

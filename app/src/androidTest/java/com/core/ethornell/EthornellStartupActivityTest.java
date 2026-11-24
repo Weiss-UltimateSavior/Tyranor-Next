@@ -155,8 +155,9 @@ public final class EthornellStartupActivityTest {
             } finally {
                 presented.recycle();
             }
+            String[] startupQuotes = app.getResources().getStringArray(com.core.engine.R.array.engine_startup_quotes);
             assertTrue("Native output was visible but startup title remained exposed",
-                    awaitTextAbsent(automation, app.getString(com.core.engine.R.string.engine_starting_game), 2500));
+                    awaitTextAbsent(automation, startupQuotes, 2500));
             assertForegroundHost(automation, app, hostPid);
             assertGameResourceUnchanged(fixture, userRoot);
 
@@ -291,13 +292,13 @@ public final class EthornellStartupActivityTest {
         assertTrue("Dispatched private host process is no longer live", isHostAlive(app, expectedPid));
     }
 
-    private static boolean awaitTextAbsent(UiAutomation automation, String text, long timeoutMs) {
+    private static boolean awaitTextAbsent(UiAutomation automation, String[] texts, long timeoutMs) {
         long deadline = SystemClock.elapsedRealtime() + timeoutMs;
         do {
             AccessibilityNodeInfo root = automation.getRootInActiveWindow();
             boolean present = false;
             if (root != null) {
-                try { present = containsText(root, text); }
+                try { present = containsText(root, texts); }
                 finally { root.recycle(); }
             }
             if (!present) return true;
@@ -349,13 +350,15 @@ public final class EthornellStartupActivityTest {
         return false;
     }
 
-    private static boolean containsText(AccessibilityNodeInfo node, String text) {
+    private static boolean containsText(AccessibilityNodeInfo node, String[] texts) {
         CharSequence label = node.getText();
-        if (label != null && text.contentEquals(label)) return true;
+        if (label != null) {
+            for (String text : texts) if (text.contentEquals(label)) return true;
+        }
         for (int i = 0; i < node.getChildCount(); i++) {
             AccessibilityNodeInfo child = node.getChild(i);
             if (child == null) continue;
-            try { if (containsText(child, text)) return true; }
+            try { if (containsText(child, texts)) return true; }
             finally { child.recycle(); }
         }
         return false;

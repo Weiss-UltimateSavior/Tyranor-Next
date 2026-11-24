@@ -15,9 +15,14 @@
     <string name="engine_ethornell_dialog_month">Month</string>
     <string name="engine_ethornell_dialog_day">Day</string>
     <string name="engine_ethornell_dialog_empty_option">(empty)</string>
-    <string name="engine_game_loading">Game loading</string>
-    <string name="engine_starting_game">Starting game</string>
-    <string name="engine_preparing_game">Please wait while the game content is prepared</string>
+    <string-array name="engine_startup_quotes">
+        <item>Let your sweet time begin ... ...</item>
+        <item>Maybe my little sister is my whole world!</item>
+        <item>Gen X, launch!</item>
+        <item>Do you believe in the light?</item>
+        <item>Why are you so good at this!</item>
+        <item>The universe is singing to me!</item>
+    </string-array>
     <string name="engine_krkr_initialization_failed">Failed to initialize the KRKR engine</string>
     <string name="engine_launch_failed">Failed to start</string>
     <string name="engine_return_and_retry">Go back and try again</string>
@@ -41,6 +46,7 @@
     <string name="engine_yes">Yes</string>
     <string name="engine_no">No</string>
     <string name="engine_prompt">Notice</string>
+    <string name="engine_sdl_start_failed_detail">SDL failed to start. Try again or reinstall the app.\n\n%1$s</string>
     <string name="engine_error">Error</string>
     <string name="engine_exit_game">Exit game</string>
     <string name="engine_exit_game_message">Exit the current game?</string>
@@ -152,5 +158,6 @@
     <string name="engine_cmvs_audio_failed">CMVS audio initialization failed</string>
     <string name="engine_cmvs_font_index_title">Font collection index</string>
     <string name="engine_cmvs_font_index_message">Use 0 for a normal font file</string>
+    <string name="engine_cmvs_save_comment">Save comment</string>
     <string name="engine_systemnnn_host_ext_unresolved">The EXT starting code required by this game could not be determined. Launch has stopped. Open this game\'s engine settings and select Analyze and generate configuration. If it remains Analysis failed, this EXE\'s save writer is not recognized yet.</string>
 </resources>

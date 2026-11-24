@@ -135,6 +135,7 @@ object EngineSettingsStore {
     const val KEY_IMPACTO_CLOSE_BACKLOG_AT_END = "impacto_close_backlog_at_end"
     const val KEY_IMPACTO_DELUSION_MOUSE = "impacto_delusion_mouse"
     const val KEY_IMPACTO_LOG_LEVEL = "impacto_log_level"
+    const val KEY_IMPACTO_DEBUG_MODE = "impacto_debug_mode"
 
     // Tyrano 与 RPG Maker Web 共用同一套 WebView 宿主设置；启动链路按同一键读取。
     const val KEY_TYRANO_EXTERNAL_NETWORK = "tyrano_external_network"
@@ -656,7 +657,8 @@ object EngineSettingsStore {
                 }
                 else -> rawValue
             }
-            json.put(pref.engineKey, JSONObject().put("v", value).put("s", if (sanitizedOverride != null) "game" else "global"))
+            json.put(pref.engineKey, JSONObject().put("v", value).put("s",
+                if (sanitizedOverride != null) LaunchContract.SCOPE_GAME else LaunchContract.SCOPE_GLOBAL))
         }
         return json.toString()
     }
@@ -1341,7 +1343,8 @@ object EngineSettingsStore {
      * swapConfirmCancel → CommonSettings.SwapConfirmCancelButtons；vsync → GameSettings.<profile>.UseVSync；
      * videoPlayback → AdvancedSettings.VideoPlayer（FFmpeg / None）；subtitles →
      * EnhancementsSettings.SubtitleConfig（影片字幕轨，三档 all / translation / karaoke）；closeBacklogAtEnd → EnhancementsSettings.CloseBacklogWhenReachedEnd；
-     * delusionMouse → EnhancementsSettings.CHLCC / CCLCC.DelusionMousePatch；logLevel → CommonSettings.LogLvl。
+     * delusionMouse → EnhancementsSettings.CHLCC / CCLCC.DelusionMousePatch；logLevel → CommonSettings.LogLvl；
+     * debugMode → CommonSettings.DebugMode（宿主 0.4.3 起的适配用调试模式，三指打开调试菜单；更早的宿主忽略这个键）。
      * 分辨率、显示模式、渲染器与音频后端在 Android 上由系统和宿主固定，不在此列。
      */
     data class Impacto(
@@ -1352,11 +1355,12 @@ object EngineSettingsStore {
         var closeBacklogAtEnd: Boolean = true,
         var delusionMouse: Boolean = true,
         var logLevel: String = IMPACTO_LOG_LEVEL_WARNING,
+        var debugMode: Boolean = false,
     )
 
     private val IMPACTO_BOOL_KEYS = listOf(
         KEY_IMPACTO_SWAP_CONFIRM_CANCEL, KEY_IMPACTO_VSYNC, KEY_IMPACTO_VIDEO_PLAYBACK,
-        KEY_IMPACTO_CLOSE_BACKLOG_AT_END, KEY_IMPACTO_DELUSION_MOUSE,
+        KEY_IMPACTO_CLOSE_BACKLOG_AT_END, KEY_IMPACTO_DELUSION_MOUSE, KEY_IMPACTO_DEBUG_MODE,
     )
 
     fun loadImpacto(c: Context): Impacto {
@@ -1370,6 +1374,7 @@ object EngineSettingsStore {
             closeBacklogAtEnd = p.getBoolean(KEY_IMPACTO_CLOSE_BACKLOG_AT_END, d.closeBacklogAtEnd),
             delusionMouse = p.getBoolean(KEY_IMPACTO_DELUSION_MOUSE, d.delusionMouse),
             logLevel = normalizeImpactoLogLevel(p.getString(KEY_IMPACTO_LOG_LEVEL, null)),
+            debugMode = p.getBoolean(KEY_IMPACTO_DEBUG_MODE, d.debugMode),
         )
     }
 
@@ -1382,6 +1387,7 @@ object EngineSettingsStore {
             putBoolean(KEY_IMPACTO_CLOSE_BACKLOG_AT_END, s.closeBacklogAtEnd)
             putBoolean(KEY_IMPACTO_DELUSION_MOUSE, s.delusionMouse)
             putString(KEY_IMPACTO_LOG_LEVEL, normalizeImpactoLogLevel(s.logLevel))
+            putBoolean(KEY_IMPACTO_DEBUG_MODE, s.debugMode)
         }.apply()
     }
 

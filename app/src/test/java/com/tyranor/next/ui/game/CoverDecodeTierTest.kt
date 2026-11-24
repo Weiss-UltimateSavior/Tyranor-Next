@@ -25,6 +25,25 @@ class CoverDecodeTierTest {
     }
 
     @Test
+    fun `实际网格宽度扣除边距和列间距后按最大列宽选档`() {
+        val twoColumns = gameGridCoverWidthPx(1080, columns = 2, horizontalPaddingPx = 72, columnGapPx = 30)
+        val threeColumns = gameGridCoverWidthPx(1080, columns = 3, horizontalPaddingPx = 72, columnGapPx = 30)
+        assertEquals(489, twoColumns)
+        assertEquals(316, threeColumns)
+        assertEquals(490, gameGridCoverWidthPx(1081, columns = 2, horizontalPaddingPx = 72, columnGapPx = 30))
+        assertEquals(CoverDecodeTier.GRID, CoverDecodeTier.forWidth(threeColumns))
+        assertEquals(CoverDecodeTier.CARD, CoverDecodeTier.forWidth(twoColumns))
+        assertEquals(CoverDecodeTier.FLOW, CoverDecodeTier.forCoverBox(twoColumns, 0.60f))
+        assertEquals(CoverDecodeTier.FLOW_LARGE, CoverDecodeTier.forCoverBox(1246, 0.60f))
+    }
+
+    @Test
+    fun `瀑布流档位同时覆盖分桶前的卡片高度`() {
+        assertEquals(CoverDecodeTier.GRID, CoverDecodeTier.forCoverBox(322, 0.63f))
+        assertEquals(CoverDecodeTier.CARD, CoverDecodeTier.forCoverBox(333, 0.63f))
+    }
+
+    @Test
     fun `缓存 key 按档位与宽高比分桶且保留原 uri`() {
         val uri = "content://cover/test-tier"
         assertNotEquals(CoverDecodeTier.GRID.cacheKey(uri), CoverDecodeTier.FLOW.cacheKey(uri))

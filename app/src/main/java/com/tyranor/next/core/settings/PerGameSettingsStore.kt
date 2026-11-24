@@ -128,6 +128,7 @@ object PerGameSettingsStore {
     const val F_ETHORNELL_NLS = "ethornell_nls"
     const val F_ETHORNELL_FONT = "ethornell_font"
     const val F_CMVS_FONT = "cmvs_font"
+    const val F_CMVS_PROFILE = "cmvs_profile"
     const val F_SYSTEMNNN_FULLSCREEN = "systemnnn_fullscreen"
     const val F_SYSTEMNNN_READING_SIZE = "systemnnn_reading_size"
     const val F_SYSTEMNNN_EXE_ANALYSIS = "systemnnn_exe_analysis"
@@ -191,6 +192,7 @@ object PerGameSettingsStore {
     const val F_IMPACTO_CLOSE_BACKLOG_AT_END = "impacto_close_backlog_at_end"
     const val F_IMPACTO_DELUSION_MOUSE = "impacto_delusion_mouse"
     const val F_IMPACTO_LOG_LEVEL = "impacto_log_level"
+    const val F_IMPACTO_DEBUG_MODE = "impacto_debug_mode"
 
     // ONS 子对象键
     const val ONS_KEY = "ons"
@@ -267,16 +269,16 @@ object PerGameSettingsStore {
         update(context, gameId) { put(family.overrideKey, GraphicsSettingsCodec.encode(value)) }
     }
 
-    /** 字符串字段覆盖值；null=未覆盖（跟随全局），""=覆盖为空串（如内置字体）。 */
+    /** 字符串字段覆盖值；null=未覆盖（跟随全局），""=覆盖为空串（如内置字体）。JSON null 与缺键同义。 */
     fun getStr(context: Context, gameId: String, key: String): String? {
         val j = load(context, gameId)
-        return if (j.has(key)) j.optString(key) else null
+        return overrideStr(j, key)
     }
 
-    /** 布尔字段覆盖值；null=未覆盖（跟随全局）。 */
+    /** 布尔字段覆盖值；null=未覆盖（跟随全局）。JSON null 与缺键同义。 */
     fun getBool(context: Context, gameId: String, key: String): Boolean? {
         val j = load(context, gameId)
-        return if (j.has(key)) j.optBoolean(key) else null
+        return overrideBool(j, key)
     }
 
     /** 设置字符串覆盖；value=null 表示移除该覆盖（跟随全局）。 */
@@ -421,6 +423,7 @@ object PerGameSettingsStore {
             },
             closeBacklogAtEnd = boolOrNull(F_IMPACTO_CLOSE_BACKLOG_AT_END),
             delusionMouse = boolOrNull(F_IMPACTO_DELUSION_MOUSE),
+            debugMode = boolOrNull(F_IMPACTO_DEBUG_MODE),
             logLevel = if (json.has(F_IMPACTO_LOG_LEVEL)) {
                 json.optString(F_IMPACTO_LOG_LEVEL).trim().lowercase(Locale.ROOT)
             } else {

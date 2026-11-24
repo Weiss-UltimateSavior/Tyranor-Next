@@ -3,27 +3,21 @@ package com.core.ethornell;
 import android.app.Activity;
 import android.app.Dialog;
 import android.content.Context;
-import android.graphics.Color;
-import android.graphics.Typeface;
-import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.text.InputType;
-import android.view.Gravity;
-import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
-import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
-import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
+import com.core.engine.EngineThemeColors;
 import com.core.engine.EngineUiText;
 import com.core.engine.R;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import org.tvp.kirikiri2.KrDialogStyle;
 
 /**
  * Native host UI for Ethornell kind-5 dialogs.
@@ -43,6 +37,7 @@ final class EthornellHostDialog {
 
     private final Activity activity;
     private final EthornellDialogProtocol.Request request;
+    private final EngineThemeColors.Palette colors;
     private final List<EditText> fields = new ArrayList<>();
     private Listener listener;
     private Dialog dialog;
@@ -51,6 +46,7 @@ final class EthornellHostDialog {
     private EthornellHostDialog(Activity activity, EthornellDialogProtocol.Request request) {
         this.activity = activity;
         this.request = request;
+        this.colors = EngineThemeColors.fromIntent(activity.getIntent());
     }
 
     static EthornellHostDialog forRequest(Activity activity, EthornellDialogProtocol.Request request) {
@@ -67,44 +63,32 @@ final class EthornellHostDialog {
         this.listener = listener;
     }
 
-    @SuppressWarnings("deprecation") // An explicit dialog-window resize is required on all supported releases.
     void show() {
         if (dialog != null || finished) return;
         if (listener == null) throw new IllegalStateException("listener missing");
-        Dialog shown = new Dialog(activity);
-        shown.requestWindowFeature(Window.FEATURE_NO_TITLE);
-        shown.setCancelable(true);
-        shown.setCanceledOnTouchOutside(false);
-        shown.setContentView(build());
-        Window window = shown.getWindow();
-        if (window != null) {
-            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-            window.setDimAmount(0.4f);
-            // The Activity stays adjustNothing; only this dialog window reacts to the IME.
-            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-            window.setGravity(Gravity.CENTER);
+        boolean acceptsInput = request != null && !"select".equals(request.type);
+        String cancel = text(R.string.engine_cancel);
+        String[] buttons = acceptsInput ? new String[]{text(R.string.engine_ok), cancel} : new String[]{cancel};
+        Dialog shown;
+        if (request == null) {
+            shown = KrDialogStyle.createDialog(activity, text(R.string.engine_ethornell_dialog_unavailable),
+                    text(R.string.engine_ethornell_dialog_unavailable_detail), null, buttons, true, false,
+                    (d, index) -> cancel());
+        } else {
+            LinearLayout form = new LinearLayout(activity);
+            form.setOrientation(LinearLayout.VERTICAL);
+            if (acceptsInput) addFields(form);
+            else addOptions(form);
+            String title = request.title.isEmpty()
+                    ? text("date".equals(request.type) ? R.string.engine_ethornell_dialog_date_title
+                            : R.string.engine_ethornell_dialog_default_title)
+                    : request.title;
+            shown = KrDialogStyle.createContentDialog(activity, title, request.prompt, form, buttons, true, false,
+                    (d, index) -> finish(acceptsInput && index == 0 ? submit() : EthornellDialogProtocol.cancel()));
+            if (acceptsInput && !fields.isEmpty()) KrDialogStyle.focusInput(shown, fields.get(0));
         }
-        shown.setOnCancelListener(v -> finish(EthornellDialogProtocol.cancel()));
-        shown.setOnDismissListener(v -> {
-            if (!finished) finish(EthornellDialogProtocol.cancel());
-        });
-        shown.setOnShowListener(v -> {
-            Window visible = shown.getWindow();
-            if (visible != null) {
-                int width = Math.min(activity.getResources().getDisplayMetrics().widthPixels - dp(32),
-                        dp(600));
-                visible.setLayout(Math.max(dp(240), width), ViewGroup.LayoutParams.WRAP_CONTENT);
-            }
-            if (!fields.isEmpty()) {
-                EditText first = fields.get(0);
-                first.requestFocus();
-                first.post(() -> {
-                    InputMethodManager imm = inputMethod();
-                    if (imm != null) imm.showSoftInput(first, InputMethodManager.SHOW_IMPLICIT);
-                });
-            }
-        });
+        shown.setOnCancelListener(v -> cancel());
+        shown.setOnDismissListener(v -> cancel());
         dialog = shown;
         shown.show();
     }
@@ -143,64 +127,6 @@ final class EthornellHostDialog {
         }
     }
 
-    private View build() {
-        FrameLayout root = new FrameLayout(activity);
-        int margin = dp(24);
-        root.setPadding(margin, margin, margin, margin);
-        ScrollView scroll = new ScrollView(activity);
-        scroll.setFillViewport(false);
-        scroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
-        LinearLayout panel = new LinearLayout(activity);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(20), dp(20), dp(20), dp(16));
-        panel.setBackground(panelBackground());
-        scroll.addView(panel, new ScrollView.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        root.addView(scroll, new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        String title;
-        if (request == null) {
-            title = text(R.string.engine_ethornell_dialog_unavailable);
-        } else if (!request.title.isEmpty()) {
-            title = request.title;
-        } else if ("date".equals(request.type)) {
-            title = text(R.string.engine_ethornell_dialog_date_title);
-        } else {
-            title = text(R.string.engine_ethornell_dialog_default_title);
-        }
-        TextView heading = textView(title, 15, Color.BLACK);
-        heading.setTypeface(null, Typeface.BOLD);
-        heading.setPadding(0, 0, 0, dp(8));
-        panel.addView(heading);
-
-        if (request == null) {
-            TextView message = textView(text(R.string.engine_ethornell_dialog_unavailable_detail),
-                    14, 0xFF666666);
-            message.setPadding(0, 0, 0, dp(4));
-            panel.addView(message);
-        } else {
-            if (!request.prompt.isEmpty()) {
-                TextView prompt = textView(request.prompt, 14, 0xFF666666);
-                prompt.setPadding(0, 0, 0, dp(4));
-                panel.addView(prompt);
-            }
-            if ("select".equals(request.type)) addOptions(panel);
-            else addFields(panel);
-        }
-
-        LinearLayout actions = new LinearLayout(activity);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setGravity(Gravity.END);
-        actions.setPadding(0, dp(12), 0, 0);
-        addAction(actions, text(R.string.engine_cancel), false, () -> finish(EthornellDialogProtocol.cancel()));
-        if (request != null && !"select".equals(request.type))
-            addAction(actions, text(R.string.engine_ok), true, () -> finish(submit()));
-        panel.addView(actions, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        return root;
-    }
-
     private void addFields(LinearLayout panel) {
         if ("input".equals(request.type)) {
             for (int i = 0; i < request.fields.size(); i++) {
@@ -230,7 +156,7 @@ final class EthornellHostDialog {
         for (int i = 0; i < request.options.size(); i++) {
             String option = request.options.get(i);
             TextView row = textView(option.isEmpty()
-                    ? text(R.string.engine_ethornell_dialog_empty_option) : option, 14, Color.BLACK);
+                    ? text(R.string.engine_ethornell_dialog_empty_option) : option, 14, colors.getText());
             row.setPadding(dp(12), dp(12), dp(12), dp(12));
             row.setBackground(rowBackground());
             row.setClickable(true);
@@ -266,19 +192,12 @@ final class EthornellHostDialog {
     }
 
     private EditText editText(String hint, String initial, boolean numeric) {
-        EditText field = new EditText(activity);
+        int inputType = numeric ? InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED
+                : InputType.TYPE_CLASS_TEXT;
+        EditText field = KrDialogStyle.createInput(activity, initial, inputType);
         field.setHint(hint);
-        field.setText(initial);
-        field.setSingleLine(true);
-        field.setTextSize(14);
-        field.setTextColor(Color.BLACK);
-        field.setHintTextColor(0xFF777777);
-        field.setPadding(dp(12), dp(10), dp(12), dp(10));
-        field.setBackground(fieldBackground());
         field.setSoundEffectsEnabled(false);
         field.setHapticFeedbackEnabled(false);
-        if (numeric) field.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED);
-        else field.setInputType(InputType.TYPE_CLASS_TEXT);
         fields.add(field);
         return field;
     }
@@ -290,22 +209,6 @@ final class EthornellHostDialog {
         return params;
     }
 
-    private void addAction(LinearLayout actions, String label, boolean strong, Runnable action) {
-        TextView button = textView(label, 14, Color.BLACK);
-        if (strong) button.setTypeface(null, Typeface.BOLD);
-        button.setGravity(Gravity.CENTER);
-        button.setPadding(dp(16), dp(10), dp(16), dp(10));
-        button.setBackground(null);
-        button.setClickable(true);
-        button.setSoundEffectsEnabled(false);
-        button.setHapticFeedbackEnabled(false);
-        button.setOnClickListener(v -> action.run());
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.leftMargin = dp(8);
-        actions.addView(button, params);
-    }
-
     private TextView textView(String value, int sp, int color) {
         TextView view = new TextView(activity);
         view.setText(value);
@@ -314,23 +217,9 @@ final class EthornellHostDialog {
         return view;
     }
 
-    private GradientDrawable panelBackground() {
-        GradientDrawable background = new GradientDrawable();
-        background.setColor(Color.WHITE);
-        background.setCornerRadius(dp(8));
-        return background;
-    }
-
-    private GradientDrawable fieldBackground() {
-        GradientDrawable background = new GradientDrawable();
-        background.setColor(0xFFF2F2F2);
-        background.setCornerRadius(dp(8));
-        return background;
-    }
-
     private GradientDrawable rowBackground() {
         GradientDrawable background = new GradientDrawable();
-        background.setColor(0xFFF7F7F7);
+        background.setColor(colors.getCard());
         background.setCornerRadius(dp(8));
         return background;
     }

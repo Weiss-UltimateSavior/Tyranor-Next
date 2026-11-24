@@ -23,6 +23,8 @@ adb shell pm grant com.tyranor.next.downloadstest android.permission.WRITE_EXTER
 
 ## 界面动效设备验收
 
+`MainEngineUpdateDeviceTest` 从新手引导已结束的主界面切换到引擎标签，验证 MAGES. 条目的更新状态与下载按钮。设备需安装使用数字版本名的 Impacto 宿主，测试通过模拟的 GitHub 响应提供新版本。使用本节的隔离包及 opt-in 参数运行。
+
 `GameSheetShortWindowDeviceTest` 在真实抽屉窗口内限制内容为 100dp，覆盖普通/增强与 1.0/1.5 字体比例，滚动到底后验证启动文字不溢出并以真实触摸触发合成回调；常规高度另外验证启动按钮不随列表滚动。测试不会启动游戏。可与 `AppBottomSheetDeviceTest` 一起运行，复核下拉菜单及抽屉关闭守卫。
 
 2026-11-18 验证：隔离包 `com.tyranor.next.sheetheighttest`，MAA_AN10 / Android 16，密度 530dpi。常规手机视口的 6 项新用例与 4 项原抽屉用例通过；以 `wm size` 临时模拟 1224×500、1224×600、1224×900，各运行 4 项短窗用例，以及 3072×2048、2048×3072 的平板横竖视口，各运行 6 项新用例，合计 34 次执行通过。截图已人工核对，测试后恢复原始 1224×2700 视口。平板结果来自同一手机上的大窗口模拟，不代表另一台平板的实测；本轮为默认浅色外观，未额外覆盖深色/玻璃外观或系统动画关闭。截图与各轮日志保存在本机 `/tmp/tyranor-game-sheet-evidence/`，未纳入仓库。

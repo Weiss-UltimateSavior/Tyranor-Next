@@ -101,8 +101,8 @@ public final class LanczosScaleTest {
         long enlarged = LanczosScale.estimatedOwnedBytes(2560, 1440, 3840, 2160, 8, 0, false);
         assertEquals(250675200L, sameSize);
         assertEquals(328089600L, enlarged);
-        assertTrue(sameSize < Anime4kPostProcessor.TARGET_MEMORY_BUDGET_BYTES);
-        assertTrue(enlarged > Anime4kPostProcessor.TARGET_MEMORY_BUDGET_BYTES);
+        assertTrue(sameSize < CnnPipeline.TARGET_MEMORY_BUDGET_BYTES);
+        assertTrue(enlarged > CnnPipeline.TARGET_MEMORY_BUDGET_BYTES);
     }
 
     @Test public void budgetUsesLongAndSaturatesOverflowInsteadOfAllowingNegativeBytes() {
@@ -309,5 +309,15 @@ public final class LanczosScaleTest {
         }
         assertEquals("unbalanced () in " + shader, 0, parens);
         assertEquals("unbalanced {} in " + shader, 0, braces);
+    }
+
+    @Test public void resampleShadersDeclareExactUniformContractExpectedByCnnPipeline() {
+        for (LanczosScale.ResampleKernel kernel : LanczosScale.ResampleKernel.values()) {
+            String glsl = LanczosScale.resampleFragmentShader(kernel, 0.33, 0.33, 0.5);
+            assertTrue(glsl.contains("uniform sampler2D " + LanczosScale.UNIFORM_SOURCE + ";"));
+            assertTrue(glsl.contains("uniform ivec2 " + LanczosScale.UNIFORM_SOURCE_SIZE + ";"));
+            assertTrue(glsl.contains("uniform int " + LanczosScale.UNIFORM_AXIS + ";"));
+            assertTrue(glsl.contains("uniform ivec2 " + LanczosScale.UNIFORM_OUTPUT_SIZE + ";"));
+        }
     }
 }

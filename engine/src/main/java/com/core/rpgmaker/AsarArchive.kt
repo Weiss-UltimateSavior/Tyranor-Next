@@ -85,6 +85,15 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
         return e != null && e.directory
     }
 
+    /** True for explicit directories and implicit parent prefixes, without building the global tree. */
+    internal fun isDirectoryOrImplicit(path: String): Boolean {
+        val key = normalize(path).trimEnd('/')
+        if (key.isEmpty()) return true
+        if (entries[key]?.directory == true) return true
+        val prefix = "$key/"
+        return entries.keys.any { it.startsWith(prefix) }
+    }
+
     /**
      * 条目大小（字节）；非文件条目或不存在返回 null。
      *
