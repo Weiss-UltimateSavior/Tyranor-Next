@@ -1,5 +1,8 @@
 package com.tyranor.next.ui.game
 
+import android.content.Context
+import android.content.res.Configuration
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -16,16 +19,31 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
@@ -43,7 +61,12 @@ import com.tyranor.next.ui.common.OverlayDropdownPreference
 import com.tyranor.next.ui.common.Slider
 import com.tyranor.next.ui.common.SliderValueHeader
 import com.tyranor.next.ui.common.SlidingTabRow
+import com.tyranor.next.ui.common.collectSettingAsState
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.ExpandVisibility
+import com.tyranor.next.ui.common.motion.rememberLastNonNull
 import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.StateFlow
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.SliderDefaults
@@ -56,16 +79,13 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * 排序和游玩状态使用 Miuix 的窗口下拉选择项（抽屉是独立窗口）。
  *
  * 「重置」恢复字母序、全部引擎和全部状态。短窗中跟随内容滚动，其余时候固定在底部。
+ * 网格与瀑布的当前方向列数独立设置，重置时保留。
  *
  * @param sortMode 当前排序模式（`AppSettingsStore.GAME_SORT_*`）
  * @param engineFilter 引擎过滤（`EngineType.name`；[AppSettingsStore.GAME_FILTER_ENGINE_ALL] = 全部）
  * @param playedFilter 游玩状态过滤（`AppSettingsStore.GAME_FILTER_PLAYED_*`）
  * @param availableEngines 库中实际存在的引擎（调用方去重并按枚举顺序排好）
  * @param searchQuery 当前搜索词：非空时提示「重置不清搜索词」
- * @param cardStyle 当前游戏页卡片风格；只有网格和瀑布显示列数滑条
- * @param cardColumns 当前屏宽的列数
- * @param columnRange 当前屏宽可选的连续整数列数区间
- * @param onColumnsChange 滑条切换到新列数时的回调
  */
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,13 +95,9 @@ internal fun GameFilterSheet(
     playedFilter: String,
     availableEngines: List<EngineType>,
     searchQuery: String,
-    cardStyle: String,
-    cardColumns: Int,
-    columnRange: IntRange,
     onSortChange: (String) -> Unit,
     onEngineChange: (String) -> Unit,
     onPlayedChange: (String) -> Unit,
-    onColumnsChange: (Int) -> Unit,
     onReset: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -188,40 +204,7 @@ internal fun GameFilterSheet(
                                             onSelectedIndexChange = { playedOptions.getOrNull(it)?.first?.let(onPlayedChange) },
                                         )
                                     }
-                                    if (cardStyle == AppSettingsStore.GAME_CARD_STYLE_GRID ||
-                                        cardStyle == AppSettingsStore.GAME_CARD_STYLE_WATERFALL
-                                    ) {
-                                        MiuixCard(
-                                            modifier = Modifier.fillMaxWidth().glassBorder(),
-                                            cornerRadius = AppComponentCornerRadius,
-                                            colors = CardDefaults.defaultColors(color = cardColor),
-                                        ) {
-                                            val title = stringResource(R.string.game_filter_card_columns)
-                                            val value = stringResource(R.string.game_filter_card_columns_value, cardColumns)
-                                            SliderValueHeader(
-                                                title = title,
-                                                value = value,
-                                                modifier = Modifier.fillMaxWidth()
-                                                    .padding(horizontal = FilterSheetInset)
-                                                    .padding(top = 10.dp)
-                                                    .clearAndSetSemantics {},
-                                            )
-                                            Slider(
-                                                value = cardColumns.toFloat(),
-                                                onValueChange = { onColumnsChange(it.roundToInt()) },
-                                                valueRange = columnRange.first.toFloat()..columnRange.last.toFloat(),
-                                                steps = columnRange.count() - 2,
-                                                showKeyPoints = true,
-                                                hapticEffect = SliderDefaults.SliderHapticEffect.Step,
-                                                modifier = Modifier.fillMaxWidth()
-                                                    .padding(horizontal = FilterSheetInset, vertical = 4.dp)
-                                                    .semantics {
-                                                        contentDescription = title
-                                                        stateDescription = value
-                                                    },
-                                            )
-                                        }
-                                    }
+                                    GameCardColumnsControl(cardColor)
                                 }
                             }
                         }
@@ -245,6 +228,171 @@ internal fun GameFilterSheet(
 private val FilterSheetInset = 16.dp
 // SlidingTabRow 自带 12dp 内容留白，首尾标签和抽屉条目共用 16dp 对齐线。
 private val FilterScrollableInset = 4.dp
+
+/**
+ * 列数滑条控制的四组设置：网格 / 瀑布 × 竖屏 / 横屏，由当前卡片风格与屏幕方向选出当前一组。
+ * 标题与读数对四组通用（「每行卡片数」「%1$d 列」），切换方向或风格时只换绑定，不换文案。
+ */
+private enum class GameCardColumnsSetting(
+    val columns: StateFlow<Int>,
+    val write: (Context, Int) -> Unit,
+) {
+    GRID_PORTRAIT(
+        AppSettingsStore.gameGridPortraitColumnsState,
+        AppSettingsStore::setGameGridPortraitColumns,
+    ),
+    GRID_LANDSCAPE(
+        AppSettingsStore.gameGridLandscapeColumnsState,
+        AppSettingsStore::setGameGridLandscapeColumns,
+    ),
+    WATERFALL_PORTRAIT(
+        AppSettingsStore.gameWaterfallPortraitColumnsState,
+        AppSettingsStore::setGameWaterfallPortraitColumns,
+    ),
+    WATERFALL_LANDSCAPE(
+        AppSettingsStore.gameWaterfallLandscapeColumnsState,
+        AppSettingsStore::setGameWaterfallLandscapeColumns,
+    ),
+}
+
+private data class GameCardColumnsSnapshot(val setting: GameCardColumnsSetting, val columns: Int)
+
+@Composable
+private fun GameCardColumnsControl(cardColor: Color) {
+    val context = LocalContext.current
+    val cardStyle by AppSettingsStore.gameCardStyleState.collectSettingAsState()
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val setting = when (cardStyle) {
+        AppSettingsStore.GAME_CARD_STYLE_GRID ->
+            if (landscape) GameCardColumnsSetting.GRID_LANDSCAPE else GameCardColumnsSetting.GRID_PORTRAIT
+        AppSettingsStore.GAME_CARD_STYLE_WATERFALL ->
+            if (landscape) GameCardColumnsSetting.WATERFALL_LANDSCAPE else GameCardColumnsSetting.WATERFALL_PORTRAIT
+        else -> null
+    }
+    // 只订阅当前生效的那一组：四组全订阅会让另外三组的变化也重组本条控件。
+    // 切换组时 collectAsState 的初值直接取 StateFlow.value，不存在空帧。
+    val snapshot = setting?.let { GameCardColumnsSnapshot(it, it.columns.collectSettingAsState().value) }
+    val lastSnapshot = rememberLastNonNull(snapshot)
+    val activeSetting by rememberUpdatedState(setting)
+    ExpandVisibility(visible = snapshot != null) {
+        if (lastSnapshot != null) {
+            BlurCrossfade(targetState = lastSnapshot, contentKey = { it.setting }) { shown ->
+                val enabled = shown.setting == activeSetting
+                GameCardColumnsCard(
+                    snapshot = shown,
+                    enabled = enabled,
+                    cardColor = cardColor,
+                    onColumnsChange = { columns ->
+                        if (shown.setting == activeSetting && columns != shown.setting.columns.value) {
+                            shown.setting.write(context, columns)
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun columnsValue(columns: Int): String = stringResource(R.string.game_filter_card_columns_value, columns)
+
+@Composable
+private fun GameCardColumnsCard(
+    snapshot: GameCardColumnsSnapshot,
+    enabled: Boolean,
+    cardColor: Color,
+    onColumnsChange: (Int) -> Unit,
+) {
+    val title = stringResource(R.string.game_filter_card_columns)
+    // 设置项、外部值或可用状态变化时，丢弃尚未提交的草稿。
+    var draftColumns by remember(snapshot.setting, snapshot.columns, enabled) { mutableIntStateOf(snapshot.columns) }
+    // 两档滑条都不自带列数读数：拖动过程中要让无障碍读到草稿值，而不是已提交值。
+    val columnsText = columnsValue(draftColumns)
+    // 键盘调节的配对状态：按下的键由本控件接管后才在对应抬键时提交。
+    // 只靠抬键那一刻是否还按着修饰键判断会漏提交——用户常在松开方向键前先松开 Ctrl。
+    // 与草稿同键重建：设置项、外部值或可用状态一变，草稿已被丢弃，旧的配对记录也必须作废，
+    // 否则之后那次抬键会把一个与当前草稿无关的值提交出去。
+    var ownedKey by remember(snapshot.setting, snapshot.columns, enabled) { mutableStateOf<Key?>(null) }
+    val finishChange: () -> Unit = {
+        if (enabled) onColumnsChange(draftColumns)
+    }
+    MiuixCard(
+        modifier = Modifier.fillMaxWidth().glassBorder().then(
+            if (enabled) Modifier else Modifier.clearAndSetSemantics { hideFromAccessibility() },
+        ),
+        cornerRadius = AppComponentCornerRadius,
+        colors = CardDefaults.defaultColors(color = cardColor),
+    ) {
+        Column(Modifier.padding(horizontal = FilterSheetInset)) {
+            SliderValueHeader(
+                title = title,
+                value = columnsText,
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+            )
+            val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+            Slider(
+                value = draftColumns.toFloat(),
+                onValueChange = { raw ->
+                    if (enabled && raw.isFinite()) {
+                        draftColumns = AppSettingsStore.normalizeGameCardColumns(raw.roundToInt())
+                    }
+                },
+                onValueChangeFinished = finishChange,
+                onValueChangeCancelled = { draftColumns = snapshot.columns },
+                modifier = Modifier.padding(vertical = 4.dp)
+                    .semantics {
+                        contentDescription = title
+                        stateDescription = columnsText
+                    }
+                    // 失焦兜底：拖动与键盘两条来源共用同一个判据——只要草稿还没落盘就丢弃。
+                    // 拖动时 ownedKey 为 null，之前只判 ownedKey 会漏掉「取消回调没送达」的情形。
+                    .onFocusChanged { focusState ->
+                        if (!focusState.isFocused && (ownedKey != null || draftColumns != snapshot.columns)) {
+                            ownedKey = null
+                            draftColumns = snapshot.columns
+                        }
+                    }
+                    // 用 onKeyEvent（非 preview）并把纵向键交还焦点系统：焦点在这一格时，
+                    // D-Pad 上下要能移到相邻条目，只有带修饰键的上下键才当作调列数。
+                    .onKeyEvent { event ->
+                        if (!enabled) return@onKeyEvent false
+                        when (event.type) {
+                            KeyEventType.KeyDown -> {
+                                val adjustVertically = event.isCtrlPressed || event.isShiftPressed
+                                val next = when (event.key) {
+                                    Key.DirectionRight -> draftColumns + if (rtl) -1 else 1
+                                    Key.DirectionLeft -> draftColumns + if (rtl) 1 else -1
+                                    Key.DirectionUp -> if (adjustVertically) draftColumns + 1 else return@onKeyEvent false
+                                    Key.DirectionDown -> if (adjustVertically) draftColumns - 1 else return@onKeyEvent false
+                                    Key.MoveHome -> AppSettingsStore.MIN_GAME_CARD_COLUMNS
+                                    Key.MoveEnd -> AppSettingsStore.MAX_GAME_CARD_COLUMNS
+                                    else -> return@onKeyEvent false
+                                }
+                                ownedKey = event.key
+                                draftColumns = AppSettingsStore.normalizeGameCardColumns(next)
+                                true
+                            }
+                            // 抬键只认按下的同一个键：修饰键此时可能已经松开，
+                            // 再按 adjustVertically 判断会让草稿既不提交也不回滚。
+                            KeyEventType.KeyUp -> {
+                                if (ownedKey != event.key) return@onKeyEvent false
+                                ownedKey = null
+                                if (draftColumns != snapshot.columns) finishChange()
+                                true
+                            }
+                            else -> false
+                        }
+                    }
+                    .focusable(enabled),
+                enabled = enabled,
+                valueRange = AppSettingsStore.MIN_GAME_CARD_COLUMNS.toFloat()..AppSettingsStore.MAX_GAME_CARD_COLUMNS.toFloat(),
+                steps = AppSettingsStore.MAX_GAME_CARD_COLUMNS - AppSettingsStore.MIN_GAME_CARD_COLUMNS - 1,
+                showKeyPoints = true,
+                hapticEffect = SliderDefaults.SliderHapticEffect.Step,
+            )
+        }
+    }
+}
 
 @Composable
 private fun FilterResetButton(onReset: () -> Unit) {

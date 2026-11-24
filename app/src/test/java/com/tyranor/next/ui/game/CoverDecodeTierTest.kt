@@ -1,5 +1,6 @@
 package com.tyranor.next.ui.game
 
+import androidx.compose.ui.unit.Density
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
@@ -25,22 +26,76 @@ class CoverDecodeTierTest {
     }
 
     @Test
-    fun `实际网格宽度扣除边距和列间距后按最大列宽选档`() {
-        val twoColumns = gameGridCoverWidthPx(1080, columns = 2, horizontalPaddingPx = 72, columnGapPx = 30)
-        val threeColumns = gameGridCoverWidthPx(1080, columns = 3, horizontalPaddingPx = 72, columnGapPx = 30)
-        assertEquals(489, twoColumns)
-        assertEquals(316, threeColumns)
-        assertEquals(490, gameGridCoverWidthPx(1081, columns = 2, horizontalPaddingPx = 72, columnGapPx = 30))
-        assertEquals(CoverDecodeTier.GRID, CoverDecodeTier.forWidth(threeColumns))
-        assertEquals(CoverDecodeTier.CARD, CoverDecodeTier.forWidth(twoColumns))
-        assertEquals(CoverDecodeTier.FLOW, CoverDecodeTier.forCoverBox(twoColumns, 0.60f))
-        assertEquals(CoverDecodeTier.FLOW_LARGE, CoverDecodeTier.forCoverBox(1246, 0.60f))
+    fun `显示盒按量化后的目标尺寸选档`() {
+        val tier = CoverDecodeTier.forDisplay(456, 0.67f)
+        assertEquals(444 to 683, coverTargetSize(CoverDecodeTier.CARD, 0.67f))
+        assertEquals(CoverDecodeTier.FLOW, tier)
+        assertEquals(666 to 1024, coverTargetSize(tier, 0.67f))
+
+        assertEquals(CoverDecodeTier.FLOW, CoverDecodeTier.forDisplay(493, 0.60f))
     }
 
     @Test
-    fun `瀑布流档位同时覆盖分桶前的卡片高度`() {
-        assertEquals(CoverDecodeTier.GRID, CoverDecodeTier.forCoverBox(322, 0.63f))
-        assertEquals(CoverDecodeTier.CARD, CoverDecodeTier.forCoverBox(333, 0.63f))
+    fun `瀑布布局的每个比例都在实际尺寸边界升档`() {
+        // 各显示比例下，GRID / CARD / FLOW 最多能覆盖的显示宽度（px）。
+        val maxWidths = listOf(
+            listOf(307, 410, 614), // 0.60
+            listOf(307, 410, 614), // 0.61
+            listOf(307, 410, 614), // 0.62
+            listOf(322, 430, 645), // 0.63
+            listOf(328, 437, 655), // 0.64
+            listOf(333, 444, 665), // 0.65
+            listOf(333, 444, 666), // 0.66
+            listOf(333, 444, 666), // 0.67
+            listOf(348, 464, 696), // 0.68
+            listOf(353, 471, 706), // 0.69
+            listOf(358, 478, 717), // 0.70
+            listOf(358, 478, 717), // 0.71
+            listOf(358, 478, 717), // 0.72
+            listOf(374, 498, 747), // 0.73
+            listOf(379, 505, 758), // 0.74
+            listOf(384, 512, 768), // 0.75
+            listOf(384, 512, 768), // 0.76
+            listOf(384, 512, 768), // 0.77
+            listOf(374, 499, 749), // 0.78
+            listOf(379, 505, 758), // 0.79
+            listOf(384, 512, 768), // 0.80
+        )
+        val tiers = listOf(CoverDecodeTier.GRID, CoverDecodeTier.CARD, CoverDecodeTier.FLOW, CoverDecodeTier.FLOW_LARGE)
+        maxWidths.forEachIndexed { index, widths ->
+            val aspect = 0.60f + index / 100f
+            widths.forEachIndexed { tierIndex, width ->
+                assertEquals("$width px / $aspect", tiers[tierIndex], CoverDecodeTier.forDisplay(width, aspect))
+                assertEquals("${width + 1} px / $aspect", tiers[tierIndex + 1], CoverDecodeTier.forDisplay(width + 1, aspect))
+            }
+        }
+    }
+
+    @Test
+    fun `显示盒超出最大目标尺寸时用最大档`() {
+        assertEquals(819 to 1365, coverTargetSize(CoverDecodeTier.FLOW_LARGE, 0.60f))
+        assertEquals(CoverDecodeTier.FLOW_LARGE, CoverDecodeTier.forDisplay(820, 0.60f))
+        assertEquals(CoverDecodeTier.FLOW_LARGE, CoverDecodeTier.forDisplay(1025, 0.75f))
+    }
+
+    @Test
+    fun `卡宽扣除两侧留白与列间距后按最大列向上取整`() {
+        // 与生产包装共用同一组 dp 常量：只改常量而不同步这里时先在这里失败，
+        // 不会出现「生产留白变了、测试仍按旧像素通过」导致选档静默变小档。
+        assertEquals(12f, GameGridHorizontalPadding.value)
+        assertEquals(10f, GameGridColumnSpacing.value)
+        val density = Density(3f)
+        val horizontalPaddingPx = with(density) { GameGridHorizontalPadding.roundToPx() }
+        val columnGapPx = with(density) { GameGridColumnSpacing.roundToPx() }
+        // horizontalPaddingPx 是单侧留白，列间距只出现在相邻列之间
+        val twoColumns = gameCardColumnWidthPx(1080, columns = 2, horizontalPaddingPx = horizontalPaddingPx, columnGapPx = columnGapPx)
+        val threeColumns = gameCardColumnWidthPx(1080, columns = 3, horizontalPaddingPx = horizontalPaddingPx, columnGapPx = columnGapPx)
+        assertEquals(489, twoColumns)
+        assertEquals(316, threeColumns)
+        assertEquals(490, gameCardColumnWidthPx(1081, columns = 2, horizontalPaddingPx = horizontalPaddingPx, columnGapPx = columnGapPx))
+        // 窄于留白与列间距之和时不返回负数，避免后续按 0 宽选档
+        assertEquals(0, gameCardColumnWidthPx(40, columns = 4, horizontalPaddingPx = horizontalPaddingPx, columnGapPx = columnGapPx))
+        assertEquals(0, gameCardColumnWidthPx(1080, columns = 0, horizontalPaddingPx = horizontalPaddingPx, columnGapPx = columnGapPx))
     }
 
     @Test

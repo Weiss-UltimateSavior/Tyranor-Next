@@ -13,7 +13,12 @@ LIST_OWNER = "ui/common/motion/ListItemMotion.kt"
 MOTION = "com.tyranor.next.ui.common.motion."
 
 # Reviewed implementation files, not naming conventions. A new FooMotion.kt is
-# still checked until it is explicitly registered. These do NOT bypass list rules.
+# still checked until it is explicitly registered. These do NOT bypass list rules,
+# except LIST_OWNER, which owns the item-animation implementation itself.
+# Registration is for files that DO hold animation primitives (or raw frame/draw
+# layers). Pure state or facade files stay off the list so that a later primitive
+# added to them is still reported: MotionMode (mode flag), MotionHaptics (haptic
+# gate), MotionIntent (intent enum) deliberately do not appear below.
 OWNERS = set("""
 ui/archive/ArchiveMotion.kt
 ui/engine/EngineStorageMotion.kt
@@ -32,10 +37,12 @@ NoPressFeedbackButtons OverlayDropdownPreference SlidingTabRow TabPagerState
 TopBarIcon notice/NoticeHost
 """.split())
 OWNERS.update("ui/common/motion/" + f + ".kt" for f in """
-BlurText ContentMotion DeleteEffect Entrance ExpandSectionVisibility FeedbackMotion GameCoverMotion
-ListItemMotion MotionMode MotionSprings MotionTokens PagerMotion PageTransitions
-ParallaxCardPager PressSquish ReorderPlacementMotion ReplayEntranceSprings
-ScrollMotion SheetMotion TabPageMotion
+BlurText ContentMotion DeleteEffect DialogWindowMotion DrawPhaseLayers
+Entrance ExpandSectionVisibility FeedbackMotion GameCoverMotion
+ListItemMotion MotionSprings MotionTokens
+PageTransitions PagerMotion ParallaxCardPager PressSquish
+ReorderPlacementMotion ReplayEntranceSprings ScrollMotion SheetMotion
+TabPageMotion ThemeReveal WaterfallReflowState
 """.split())
 
 # The existing navigation implementations are outside this refactor. New

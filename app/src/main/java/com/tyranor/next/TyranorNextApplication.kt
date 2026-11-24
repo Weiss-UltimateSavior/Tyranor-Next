@@ -125,7 +125,6 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         if (libraryInitialized) return
         libraryInitialized = true
         AppSettingsStore.initGameConditions(this)
-        AppSettingsStore.initGameCardColumns(this)
         GameLibraryRepository.init(this)
     }
 

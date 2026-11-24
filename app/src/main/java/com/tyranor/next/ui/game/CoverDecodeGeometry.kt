@@ -10,6 +10,12 @@ import kotlin.math.roundToInt
 internal const val CoverDecodeBudgetBytes = 32L * 1024 * 1024
 
 /**
+ * 游戏封面卡的标准宽高比（3:4）。网格、瀑布流、封面流、操作抽屉头部与搜索候选预览共用同一个值：
+ * 布局的 `aspectRatio` 与封面选档必须成对改，否则显示盒比例与解码目标比例会悄悄错开。
+ */
+internal const val GameCoverAspect = 3f / 4f
+
+/**
  * 封面解码档位：按消费方的最大显示宽度分档。
  *
  * `BitmapFactory.inSampleSize` 只能取 2 的幂，单靠采样无法精确命中目标尺寸（例如 1000×1333
@@ -21,7 +27,7 @@ internal const val CoverDecodeBudgetBytes = 32L * 1024 * 1024
  * 首页最近打开与封面流可能以不同清晰度 / 形状驻留，LruCache 仍按真实字节数统一计费与逐出。
  */
 internal enum class CoverDecodeTier(val maxWidthPx: Int, val maxHeightPx: Int) {
-    /** 窄卡片、封面搜索预览与首页快捷启动卡的模糊底图。 */
+    /** 多列网格（每行 2–8 列）、封面搜索预览与首页快捷启动卡的模糊底图（卡片最大边约 180–384px）。 */
     GRID(384, 512),
 
     /** 首页最近打开（手机约 500px 宽）等中等卡片。 */
@@ -35,7 +41,7 @@ internal enum class CoverDecodeTier(val maxWidthPx: Int, val maxHeightPx: Int) {
     ;
 
     /** 档位自身的目标宽高比（3:4）；未指定消费方比例时使用。 */
-    val defaultAspect: Float get() = maxWidthPx.toFloat() / maxHeightPx
+    val defaultAspect: Float get() = GameCoverAspect
 
     /** 缓存 key：档位 + 0.05 分桶的宽高比 + 原 uri。 */
     fun cacheKey(uri: String, targetAspect: Float? = null): String {
@@ -44,7 +50,10 @@ internal enum class CoverDecodeTier(val maxWidthPx: Int, val maxHeightPx: Int) {
     }
 
     companion object {
-        /** 按卡片宽度取档位：档位数量有限，缓存 key 不会随窗口宽度无限膨胀。 */
+        /**
+         * 按卡片宽度取档位：档位数量有限，缓存 key 不会随窗口宽度无限膨胀。
+         * 仅用于固定 3:4 的封面流，等价于 [forDisplay] 传 3:4；其它比例请用 [forDisplay]。
+         */
         fun forWidth(widthPx: Int): CoverDecodeTier = when {
             widthPx <= GRID.maxWidthPx -> GRID
             widthPx <= CARD.maxWidthPx -> CARD
@@ -52,19 +61,23 @@ internal enum class CoverDecodeTier(val maxWidthPx: Int, val maxHeightPx: Int) {
             else -> FLOW_LARGE
         }
 
-        fun forCoverBox(widthPx: Int, targetAspect: Float): CoverDecodeTier {
-            val heightPx = (widthPx / targetAspect).roundToInt()
+        /**
+         * 取解码目标能覆盖显示盒的最小档，超出上限时使用最大档。
+         *
+         * 需求高度按原始比例算、目标尺寸按量化比例算，这个不对称是刻意的：显示盒
+         * 本身就是原始比例（`GameScreen` 的 `aspectRatio(coverAspect)`），所以「需要多高」
+         * 必须按原始比例求；而解码目标的宽高比只能取量化值，否则缓存 key 会随浮点尾数分裂。
+         * 两者混用时需求端会低估高度，反而选出覆盖不住显示盒的档。
+         */
+        fun forDisplay(widthPx: Int, aspect: Float): CoverDecodeTier {
+            val displayAspect = if (aspect.isFinite() && aspect > 0f) aspect else GRID.defaultAspect
+            val heightPx = (widthPx / displayAspect).roundToInt()
             return entries.firstOrNull { tier ->
-                val (decodedWidth, decodedHeight) = coverTargetSize(tier, targetAspect)
-                decodedWidth >= widthPx && decodedHeight >= heightPx
+                val (targetWidth, targetHeight) = coverTargetSize(tier, displayAspect)
+                targetWidth >= widthPx && targetHeight >= heightPx
             } ?: FLOW_LARGE
         }
     }
-}
-
-internal fun gameGridCoverWidthPx(gridWidthPx: Int, columns: Int, horizontalPaddingPx: Int, columnGapPx: Int): Int {
-    val available = (gridWidthPx - horizontalPaddingPx - columnGapPx * (columns - 1)).coerceAtLeast(0)
-    return available / columns + if (available % columns == 0) 0 else 1
 }
 
 /**

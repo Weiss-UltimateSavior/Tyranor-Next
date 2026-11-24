@@ -76,6 +76,8 @@ class MainActivity : FragmentActivity() {
     // 「显示首页」决定主导航条目与可见页集合，必须在首帧组合前同步加载：
     // 留到 MainScreen 的异步 init 会让冷启动先按默认值（开）绘制、随后再纠正，产生闪动。
     AppSettingsStore.initHomePageEnabled(this)
+    // 卡片风格与各方向列数影响游戏页首帧布局，必须在组合前同步读取已保存值。
+    AppSettingsStore.initGameCardStyle(this)
     // 首页样式同样在首帧前加载：应用锁的「跳过绘制」判定要知道当前是否 Web 首页
     // （WebView 靠原生绘制回调输出，不能被 skipDrawWhenHidden 罩住）
     AppSettingsStore.initHomeStyle(this)

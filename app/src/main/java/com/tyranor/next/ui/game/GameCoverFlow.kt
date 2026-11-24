@@ -102,7 +102,7 @@ internal fun GameCoverFlow(
                 contentAlignment = Alignment.Center,
             ) {
                 // 宽度取「容器宽度的 60%」与「可用高度换算宽度（预留 24dp 上下呼吸位）」的较小值
-                val cardWidth = minOf(maxWidth * 0.60f, (maxHeight - 24.dp) * 3f / 4f)
+                val cardWidth = minOf(maxWidth * 0.60f, (maxHeight - 24.dp) * GameCoverAspect)
                     .coerceAtLeast(96.dp)
                     .coerceAtMost(maxWidth)
                 val horizontalPadding = ((maxWidth - cardWidth) / 2).coerceAtLeast(0.dp)
@@ -142,7 +142,7 @@ internal fun GameCoverFlow(
                             onLongClick = { onGameLongClick(game) },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .aspectRatio(3f / 4f)
+                                .aspectRatio(GameCoverAspect)
                                 .coverFlowPage(pagerState, page, pagerVelocity),
                         )
                     }
