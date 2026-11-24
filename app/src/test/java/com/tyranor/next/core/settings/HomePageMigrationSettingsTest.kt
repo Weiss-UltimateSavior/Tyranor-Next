@@ -12,19 +12,25 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.Rule
+import org.junit.rules.TemporaryFolder
 
 /** 验证「显示首页」默认关闭仅作用于全新安装，老用户升级与显式开关保持原有状态。 */
 class HomePageMigrationSettingsTest {
+    @get:Rule
+    val temp = TemporaryFolder()
 
     @Before
     fun resetCachesBefore() {
         AppSettingsStore.resetOnboardingForTests()
+        AppSettingsStore.resetHomePageMigrationForTests()
         AppSettingsStore.homePageEnabledState.value = AppSettingsStore.DEFAULT_HOME_PAGE_ENABLED
     }
 
     @After
     fun resetCachesAfter() {
         AppSettingsStore.resetOnboardingForTests()
+        AppSettingsStore.resetHomePageMigrationForTests()
         AppSettingsStore.homePageEnabledState.value = AppSettingsStore.DEFAULT_HOME_PAGE_ENABLED
     }
 
@@ -39,54 +45,33 @@ class HomePageMigrationSettingsTest {
     @Test
     fun hasExistingInstallIgnoresOnboardingAndHomeKeysAlone() {
         assertFalse(
-            AppSettingsStore.hasExistingInstallForHomePageMigration(
+            AppSettingsStore.hasAppSettingsForHomePageMigration(
                 onboardingCompleted = false,
                 appSettingsKeys = setOf(AppSettingsStore.KEY_ONBOARDING_COMPLETED, AppSettingsStore.KEY_HOME_PAGE_ENABLED),
-                legacyPreferencesHaveData = false,
-                gameLibraryExists = false,
             ),
         )
         assertTrue(
-            AppSettingsStore.hasExistingInstallForHomePageMigration(
+            AppSettingsStore.hasAppSettingsForHomePageMigration(
                 onboardingCompleted = true,
                 appSettingsKeys = setOf(AppSettingsStore.KEY_ONBOARDING_COMPLETED),
-                legacyPreferencesHaveData = false,
-                gameLibraryExists = false,
             ),
         )
         assertTrue(
-            AppSettingsStore.hasExistingInstallForHomePageMigration(
+            AppSettingsStore.hasAppSettingsForHomePageMigration(
                 onboardingCompleted = false,
                 appSettingsKeys = setOf(AppSettingsStore.KEY_ONBOARDING_COMPLETED, AppSettingsStore.KEY_HOME_STYLE),
-                legacyPreferencesHaveData = false,
-                gameLibraryExists = false,
-            ),
-        )
-        assertTrue(
-            AppSettingsStore.hasExistingInstallForHomePageMigration(
-                onboardingCompleted = false,
-                appSettingsKeys = emptySet(),
-                legacyPreferencesHaveData = true,
-                gameLibraryExists = false,
-            ),
-        )
-        assertTrue(
-            AppSettingsStore.hasExistingInstallForHomePageMigration(
-                onboardingCompleted = false,
-                appSettingsKeys = emptySet(),
-                legacyPreferencesHaveData = false,
-                gameLibraryExists = true,
             ),
         )
     }
 
     @Test
     fun freshInstallPersistsFalseEvenAfterSubsequentSettingsWrites() {
-        val appSettings = MemoryPreferences()
+        val appSettings = MemoryPreferences(dropAsyncWrites = true)
         val context = MigrationContext(
             appSettings = appSettings.preferences,
             stores = emptyMap(),
             gameLibrary = File("missing-game-library.db"),
+            files = temp.root,
         )
         AppSettingsStore.initializeOnboarding(context)
         AppSettingsStore.initHomePageEnabled(context)
@@ -97,9 +82,27 @@ class HomePageMigrationSettingsTest {
 
         // 后续用户调整其它设置或完成引导后再重启，不应将新安装误判为老用户升级
         appSettings.preferences.edit().putBoolean(AppSettingsStore.KEY_HOME_STYLE, true).apply()
-        AppSettingsStore.initHomePageEnabled(context)
+        val afterRestart = MemoryPreferences(appSettings.disk)
+        val restarted = MigrationContext(afterRestart.preferences, emptyMap(), temp.newFile(), temp.root)
+        AppSettingsStore.initHomePageEnabled(restarted)
         assertFalse(AppSettingsStore.homePageEnabledState.value)
-        assertFalse(AppSettingsStore.isHomePageEnabled(context))
+        assertFalse(AppSettingsStore.isHomePageEnabled(restarted))
+    }
+
+    @Test
+    fun failedFirstCommitRetainsFreshInstallDecisionAfterLibraryAppearsAndProcessRestarts() {
+        val beforeDisk = MemoryPreferences(failedCommits = 1)
+        val library = File(temp.root, AppStorageNames.GAME_LIBRARY_DATABASE)
+        AppSettingsStore.initHomePageEnabled(MigrationContext(beforeDisk.preferences, emptyMap(), library, temp.root))
+        assertFalse(AppSettingsStore.homePageEnabledState.value)
+        assertFalse(beforeDisk.disk.containsKey(AppSettingsStore.KEY_HOME_PAGE_ENABLED))
+
+        assertTrue(library.createNewFile())
+        AppSettingsStore.resetHomePageMigrationForTests()
+        val afterDisk = MemoryPreferences(beforeDisk.disk)
+        AppSettingsStore.initHomePageEnabled(MigrationContext(afterDisk.preferences, emptyMap(), library, temp.root))
+        assertFalse(AppSettingsStore.homePageEnabledState.value)
+        assertEquals(false, afterDisk.disk[AppSettingsStore.KEY_HOME_PAGE_ENABLED])
     }
 
     @Test
@@ -152,7 +155,11 @@ class HomePageMigrationSettingsTest {
         assertFalse(AppSettingsStore.isHomePageEnabled(ctx))
     }
 
-    private class MemoryPreferences(initial: Map<String, Boolean> = emptyMap()) {
+    private class MemoryPreferences(
+        initial: Map<String, Boolean> = emptyMap(),
+        private val dropAsyncWrites: Boolean = false,
+        private var failedCommits: Int = 0,
+    ) {
         val disk = initial.toMutableMap()
         private val memory = initial.toMutableMap()
         val preferences: SharedPreferences = proxy { method, args ->
@@ -176,6 +183,11 @@ class HomePageMigrationSettingsTest {
                         for ((key, value) in changes) {
                             if (value == null) memory.remove(key) else memory[key] = value
                         }
+                        if (method == "commit" && failedCommits > 0) {
+                            failedCommits--
+                            return@proxy false
+                        }
+                        if (method == "apply" && dropAsyncWrites) return@proxy null
                         disk.clear()
                         disk.putAll(memory)
                         if (method == "commit") true else null
@@ -191,15 +203,16 @@ class HomePageMigrationSettingsTest {
         private val appSettings: SharedPreferences,
         private val stores: Map<String, SharedPreferences>,
         private val gameLibrary: File,
+        private val files: File = gameLibrary.absoluteFile.parentFile,
     ) : ContextWrapper(null) {
         override fun getApplicationContext(): Context = this
 
         override fun getSharedPreferences(name: String, mode: Int): SharedPreferences =
-            if (name == "app_settings") appSettings else stores[name] ?: MemoryPreferences().preferences
+            if (name == AppStorageNames.APP_SETTINGS_PREFS) appSettings else stores[name] ?: MemoryPreferences().preferences
 
         override fun getDatabasePath(name: String): File = gameLibrary
 
-        override fun getFilesDir(): File = File("build/tmp/home-migration-settings-test")
+        override fun getFilesDir(): File = files
     }
 
     companion object {

@@ -15,6 +15,7 @@ import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.foundation.OverscrollEffect
 import androidx.compose.foundation.gestures.ScrollScope
 import androidx.compose.foundation.gestures.TargetedFlingBehavior
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.rememberOverscrollEffect
 import androidx.compose.foundation.shape.AbsoluteCutCornerShape
@@ -26,6 +27,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -95,6 +97,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /*
@@ -131,7 +134,7 @@ internal class ShelfGeometry(
     /** 书脊朝外时一只盒子占的可见宽度：书脊 + 一条斜着的封面边。 */
     val spineVisible: Float = visibleWidth(maxTurn)
 
-    /** 远处书脊的排布间距，也是翻页的「一页」宽度：手指拖过一本书脊就翻过一本。 */
+    /** 远处书脊的排布间距。 */
     val pitch: Float = spineVisible + gap
 
     /** 停稳时正中那一盒与第一本书脊的中心距：书脊缝 + 呼吸位，与转动过程无关。 */
@@ -206,6 +209,9 @@ internal class ShelfGeometry(
         }
         return if (offset < 0f) -x else x
     }
+
+    /** 拖过一页的距离按正中到相邻盒的实际中心距（含呼吸位），且不小于远处书脊的间距。 */
+    val dragPitch: Float get() = maxOf(pitch, centerX(1f))
 }
 
 private fun smoothstep(x: Float): Float {
@@ -1596,10 +1602,9 @@ internal class ShelfKnobSeek {
 }
 
 internal enum class ShelfInfoUpdateMode {
-    /** 立刻切换（点按进度轨道跳转目标、手指拖动、或已停稳）。 */
-    Immediate,
-    /** 惯性滑行中：等待短暂稳定时间再切换，高速掠过中间页自动跳过。 */
-    WaitFlingSettle,
+    Seek,
+    Dragging,
+    Settled,
 }
 
 internal data class ShelfInfoResolution(
@@ -1608,10 +1613,7 @@ internal data class ShelfInfoResolution(
 )
 
 /**
- * 信息行（ADV 卡片）应显示哪一本及其更新时机：
- * - 点击底部控制条跳转（[seekTarget] 非空）期间：立刻锁向 [seekTarget]，忽略书架先瞬移再滑过最后几本
- *   途中经过的所有中间页，使卡片文字只从当前游戏一次变为跳转目标游戏；
- * - 非跳转时：手指拖动或已停稳立即跟随 [currentPage]，松手惯性滑行期间等待短暂稳定时间。
+ * 信息行（ADV）的候选页：点轨道预览目标页；手指拖动或停稳时考虑当前页；惯性和 Q 弹途中没有候选页。
  */
 internal fun resolveShelfInfoPage(
     currentPage: Int,
@@ -1619,21 +1621,63 @@ internal fun resolveShelfInfoPage(
     pageCount: Int,
     isScrollInProgress: Boolean,
     isDragged: Boolean,
-): ShelfInfoResolution {
+): ShelfInfoResolution? {
     val last = (pageCount - 1).coerceAtLeast(0)
-    if (seekTarget != null) {
-        return ShelfInfoResolution(
-            page = seekTarget.coerceIn(0, last),
-            mode = ShelfInfoUpdateMode.Immediate,
-        )
+    return when {
+        seekTarget != null -> ShelfInfoResolution(seekTarget.coerceIn(0, last), ShelfInfoUpdateMode.Seek)
+        isDragged -> ShelfInfoResolution(currentPage.coerceIn(0, last), ShelfInfoUpdateMode.Dragging)
+        isScrollInProgress -> null
+        else -> ShelfInfoResolution(currentPage.coerceIn(0, last), ShelfInfoUpdateMode.Settled)
     }
-    val clamped = currentPage.coerceIn(0, last)
-    val mode = if (isScrollInProgress && !isDragged) {
-        ShelfInfoUpdateMode.WaitFlingSettle
-    } else {
-        ShelfInfoUpdateMode.Immediate
+}
+
+private const val INFO_DRAG_DWELL_MILLIS = 150L
+private const val INFO_MIN_UPDATE_INTERVAL_MILLIS = 120L
+
+/** 只在候选页或阶段变化时重置等待；停稳与拖动共用最短间隔，显式跳转可立即预览。 */
+internal class ShelfInfoPage(initialPage: Int) {
+    var shown by mutableIntStateOf(initialPage)
+        private set
+
+    suspend fun follow(
+        nowMillis: () -> Long = SystemClock::uptimeMillis,
+        candidate: () -> ShelfInfoResolution?,
+    ) {
+        var lastUpdateAt: Long? = null
+        snapshotFlow(candidate).collectLatest { next ->
+            if (next == null || next.page == shown) return@collectLatest
+            if (next.mode != ShelfInfoUpdateMode.Seek) {
+                val dwell = if (next.mode == ShelfInfoUpdateMode.Dragging) INFO_DRAG_DWELL_MILLIS else 0L
+                val remaining = lastUpdateAt?.let { INFO_MIN_UPDATE_INTERVAL_MILLIS - (nowMillis() - it) } ?: 0L
+                delay(maxOf(dwell, remaining))
+            }
+            if (candidate() != next) return@collectLatest
+            shown = next.page
+            lastUpdateAt = nowMillis()
+        }
     }
-    return ShelfInfoResolution(page = clamped, mode = mode)
+}
+
+@Composable
+internal fun rememberShelfInfoPage(pagerState: PagerState, knobSeek: ShelfKnobSeek, scrubbing: State<Boolean>): Int {
+    val info = remember(pagerState) { ShelfInfoPage(pagerState.currentPage) }
+    val dragged = pagerState.interactionSource.collectIsDraggedAsState()
+    LaunchedEffect(dragged, knobSeek) {
+        snapshotFlow { dragged.value }.collect { if (it && knobSeek.active) knobSeek.cancel() }
+    }
+    LaunchedEffect(pagerState, knobSeek, dragged, scrubbing) {
+        info.follow {
+            resolveShelfInfoPage(
+                currentPage = pagerState.currentPage,
+                seekTarget = knobSeek.targetPage,
+                pageCount = pagerState.pageCount,
+                isScrollInProgress = pagerState.isScrollInProgress,
+                isDragged = dragged.value || scrubbing.value,
+            )
+        }
+    }
+    val last = (pagerState.pageCount - 1).coerceAtLeast(0)
+    return (knobSeek.targetPage ?: info.shown).coerceIn(0, last)
 }
 
 @Composable

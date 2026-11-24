@@ -237,8 +237,10 @@ internal class ShelfBookMotion(
     private val stage: ShelfBookStage,
     internal val uri: String,
     fromShelf: Boolean,
+    private val animatorsEnabled: () -> Boolean = ValueAnimator::areAnimatorsEnabled,
 ) {
-    private val flies = enhanced && fromShelf
+    private fun canAnimate() = enhanced && animatorsEnabled()
+    private val flies = fromShelf && canAnimate()
     val flight = Animatable(if (flies) 0f else 1f)
     val cover = Animatable(if (flies) 0f else 1f)
 
@@ -342,6 +344,12 @@ internal class ShelfBookMotion(
         withFrameNanos { }
         withFrameNanos { }
         if (closing) return
+        if (!canAnimate()) {
+            flight.snapTo(1f)
+            cover.snapTo(1f)
+            origin = null
+            return
+        }
         stage.lentAlpha = 0f
         stage.lentShadowAlpha = 1f
         stage.lentUri = uri
@@ -382,7 +390,7 @@ internal class ShelfBookMotion(
         val generation = ++closeGeneration
         openJob?.cancel()
         openJob = null
-        if (!enhanced) {
+        if (!canAnimate()) {
             deliver()
             return
         }
@@ -435,6 +443,16 @@ internal class ShelfBookMotion(
         closing = false
         window.restoreTouches()
         stage.closingMotion = null
+        if (!canAnimate()) {
+            release()
+            origin = null
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                presence.snapTo(1f)
+                flight.snapTo(1f)
+                cover.snapTo(1f)
+            }
+            return true
+        }
         // 书重新抬起：书架上那一盒再藏起来（落回末段已经放出来的部分不要，书会盖在它上面飞起来）
         origin = stage.origin(uri) ?: origin
         if (origin != null) {
@@ -465,6 +483,10 @@ internal class ShelfBookMotion(
         openJob = null
         closeJob?.cancel()
         closeJob = null
+        if (!canAnimate()) {
+            deliver()
+            return
+        }
         scope.launch {
             try {
                 launch {
@@ -497,7 +519,7 @@ internal class ShelfBookMotion(
      * 等待跳转与回来与操作抽屉共用 [awaitHostLeft] / [awaitHostBack]。
      */
     fun stayDuringNavigation(owner: LifecycleOwner, onBack: () -> Unit = {}) {
-        if (!enhanced || closing || navigating) {
+        if (!canAnimate() || closing || navigating) {
             onBack()
             return
         }
@@ -528,7 +550,7 @@ internal class ShelfBookMotion(
 
     /** 游戏启动成功：等游戏界面盖上来、转场放完再悄悄收起（不再飞回）；没跳走则照常合上。 */
     fun navigateAway(owner: LifecycleOwner) {
-        if (!enhanced) {
+        if (!canAnimate()) {
             closing = true
             deliver()
             return
@@ -554,7 +576,7 @@ internal class ShelfBookMotion(
 
     /** 手指往右拖了 [delta] 像素：封面跟着合回来，拖过 [span] 像素合到底。 */
     fun dragBy(delta: Float, span: Float) {
-        if (!enhanced || closing || span <= 0f) return
+        if (!canAnimate() || closing || span <= 0f) return
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             cover.snapTo((cover.value - delta / span).coerceIn(0f, 1f))
         }
@@ -562,7 +584,11 @@ internal class ShelfBookMotion(
 
     /** 松手：封面合过一大半或往右甩得够快就合上，否则弹回摊平。 */
     fun dragEnd(velocity: Float, span: Float) {
-        if (!enhanced || closing || span <= 0f) return
+        if (closing || span <= 0f) return
+        if (!canAnimate()) {
+            dragCancel()
+            return
+        }
         val coverVelocity = -velocity / span
         if (cover.value < BOOK_DRAG_CLOSE_AT || coverVelocity < -BOOK_DRAG_CLOSE_SPEED) {
             close(coverVelocity)
@@ -573,7 +599,9 @@ internal class ShelfBookMotion(
 
     fun dragCancel() {
         if (!enhanced || closing) return
-        scope.launch { cover.animateTo(1f, BOOK_COVER_OPEN) }
+        scope.launch {
+            if (canAnimate()) cover.animateTo(1f, BOOK_COVER_OPEN) else cover.snapTo(1f)
+        }
     }
 
     internal fun deliverIfLeaving(event: Lifecycle.Event) {
@@ -679,6 +707,7 @@ internal class ShelfBookDeparture(val leaf: ShelfBookLeaf, val above: ShelfBookL
 internal class ShelfBookPages(
     private val scope: CoroutineScope,
     val enhanced: Boolean,
+    private val animatorsEnabled: () -> Boolean = ValueAnimator::areAnimatorsEnabled,
 ) : AppDialogHost {
     /** 目录页被翻过去的程度。 */
     val toc = Animatable(0f)
@@ -686,6 +715,8 @@ internal class ShelfBookPages(
 
     /** 宿主是否在前台（由 [rememberShelfBookPages] 接上）：不在前台时不播翻页，直接交付。 */
     internal var resumed: () -> Boolean = { true }
+
+    private fun canAnimate() = enhanced && animatorsEnabled() && resumed()
 
     /** 被调用方直接撤掉、正在被翻回来的那一页盖住的页（只剩最后的样子）。 */
     var ghost by mutableStateOf<ShelfBookLeaf?>(null)
@@ -723,8 +754,9 @@ internal class ShelfBookPages(
     /** 有没有翻到目录以外的页。 */
     val turned: Boolean get() = leaves.isNotEmpty()
 
-    /** 书内所有已翻开的页是否均允许关闭（若有不可取消的进行中弹窗则拒绝整本合上）。 */
-    fun canDismissAll(): Boolean = leaves.all { it.spec?.dismissEnabled != false }
+    fun dismissOrClose(closeBook: () -> Unit) {
+        if (turned) dismissTop() else closeBook()
+    }
 
     /** 第 [level] 页（0 = 目录）被翻过去的程度。 */
     fun turnOf(level: Int): Animatable<Float, AnimationVector1D> = if (level <= 0) toc else leaves[level - 1].turn
@@ -759,6 +791,10 @@ internal class ShelfBookPages(
             return
         }
         leaves.add(leaf)
+        if (!canAnimate()) {
+            openPage(turn)
+            return
+        }
         justPushed = leaf
         scope.launch {
             withFrameNanos { }
@@ -768,13 +804,18 @@ internal class ShelfBookPages(
     }
 
     private fun openPage(turn: Animatable<Float, AnimationVector1D>, velocity: Float = 0f) {
-        scope.launch {
-            if (enhanced && resumed()) turn.animateTo(1f, BOOK_PAGE_TURN, initialVelocity = velocity) else turn.snapTo(1f)
+        val start = if (canAnimate()) CoroutineStart.DEFAULT else CoroutineStart.UNDISPATCHED
+        scope.launch(start = start) {
+            if (canAnimate()) turn.animateTo(1f, BOOK_PAGE_TURN, initialVelocity = velocity) else turn.snapTo(1f)
         }
     }
 
     /** 撤掉的 [leaf] 用最后的样子从当前位置往前翻过去，翻完撤走（换页，见 [departure]）。 */
     private fun depart(leaf: ShelfBookLeaf, above: ShelfBookLeaf) {
+        if (!canAnimate()) {
+            leaf.release()
+            return
+        }
         departure?.leaf?.release()
         val departing = ShelfBookDeparture(leaf, above)
         departure = departing
@@ -806,14 +847,14 @@ internal class ShelfBookPages(
         val top = index == leaves.lastIndex
         // 换页的另一种先后：新的一页已经翻开、这一页正被翻过去时它才被撤掉，就让它照常翻完再撤
         val above = leaves.getOrNull(index + 1)
-        val turningAway = enhanced && !leaf.leaving && index == leaves.lastIndex - 1 && above != null && above === justPushed
+        val turningAway = canAnimate() && !leaf.leaving && index == leaves.lastIndex - 1 && above != null && above === justPushed
         leaves.removeAt(index)
         if (turningAway && above != null) {
             depart(leaf, above)
             return
         }
         val below = turnOf(index)
-        if (!top || !enhanced || leaf.leaving || below.value <= 0.001f || !resumed()) {
+        if (!top || !canAnimate() || leaf.leaving || below.value <= 0.001f) {
             if (top) scope.launch { below.snapTo(0f) }
             leaf.release()
             return
@@ -855,8 +896,8 @@ internal class ShelfBookPages(
         val below = turnOf(leaves.size - 1)
         val pending = PendingClose(leaf, below, action)
         pendingClose = pending
-        if (!enhanced || !resumed()) {
-            scope.launch { below.snapTo(0f) }
+        if (!canAnimate()) {
+            scope.launch(start = CoroutineStart.UNDISPATCHED) { below.snapTo(0f) }
             finishClose(pending)
             return
         }
@@ -881,7 +922,7 @@ internal class ShelfBookPages(
             withTimeoutOrNull(BOOK_CLOSE_GRACE_MILLIS) { snapshotFlow { leaf in leaves }.first { !it } }
             if (leaf in leaves) {
                 leaf.leaving = false
-                if (enhanced && resumed()) pending.below.animateTo(1f, BOOK_PAGE_TURN) else pending.below.snapTo(1f)
+                if (canAnimate()) pending.below.animateTo(1f, BOOK_PAGE_TURN) else pending.below.snapTo(1f)
             }
         }
     }
@@ -908,7 +949,7 @@ internal class ShelfBookPages(
     }
 
     fun dragStart() {
-        if (!enhanced) return
+        if (!canAnimate()) return
         val leaf = leaves.lastOrNull() ?: return
         if (!leaf.leaving) drag = PageDrag(leaf, turnOf(leaves.lastIndex))
     }
@@ -916,6 +957,10 @@ internal class ShelfBookPages(
     /** 往右拖：最上面那一页下面的那一页跟着手指翻回来，拖过 [span] 像素翻到底。 */
     fun dragBy(delta: Float, span: Float) {
         val current = drag ?: return
+        if (!canAnimate()) {
+            dragCancel()
+            return
+        }
         if (span <= 0f || !ownsTop(current)) return
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             current.below.snapTo((current.below.value - delta / span).coerceIn(0f, 1f))
@@ -927,7 +972,7 @@ internal class ShelfBookPages(
         val current = drag ?: return
         drag = null
         if (!ownsTop(current)) return
-        if (span <= 0f) {
+        if (span <= 0f || !canAnimate()) {
             openPage(current.below)
             return
         }

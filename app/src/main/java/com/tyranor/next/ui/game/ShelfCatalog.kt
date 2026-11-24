@@ -82,6 +82,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -150,7 +151,6 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.key
 import com.tyranor.next.ui.common.motion.MotionSprings
 import com.tyranor.next.ui.common.motion.MotionMode
-import com.tyranor.next.ui.common.SlidingTabHeight
 import com.tyranor.next.ui.common.SlidingTabRow
 import com.tyranor.next.ui.common.motion.ListItemPlacement
 import com.tyranor.next.ui.common.motion.MotionHaptics
@@ -201,8 +201,12 @@ internal fun ShelfCatalogOverlay(
         initialLayoutMode = layoutMode,
         onDismiss = onDismiss,
     )
-    LaunchedEffect(layoutMode) {
-        if (motion.layoutMode != layoutMode) motion.layoutMode = layoutMode
+    val conditionBatch = remember(motion, conditions) { Any() }
+    val openingBatch = remember(motion) { conditionBatch }
+    val openingUri = (anchorGame?.uri ?: currentFocusGame?.uri).takeIf { conditionBatch === openingBatch }
+    val initialAnchorUri = remember(filteredGames, openingUri) { shelfCatalogFocusUri(filteredGames, openingUri) }
+    LaunchedEffect(motion, motion.layoutMode) {
+        if (layoutMode != motion.layoutMode) onLayoutModeChange(motion.layoutMode)
     }
     motion.currentFocusUri = selectedGame?.uri
     motion.syncCatalogGames(filteredGames, allGames)
@@ -243,11 +247,7 @@ internal fun ShelfCatalogOverlay(
                         query = query,
                         conditions = conditions,
                         onLayoutSelect = { target ->
-                            if (motion.layoutMode != target) {
-                                MotionHaptics.perform(MotionHaptics.Kind.Tick)
-                                motion.switchLayout(target)
-                                onLayoutModeChange(target)
-                            }
+                            if (motion.switchLayout(target)) MotionHaptics.perform(MotionHaptics.Kind.Tick)
                         },
                         onQueryChange = onQueryChange,
                         onOpenFilter = onOpenFilter,
@@ -276,7 +276,7 @@ internal fun ShelfCatalogOverlay(
                     } else {
                         ShelfCatalogModeSwitcher(
                             mode = motion.layoutMode,
-                            morphing = motion.morphing,
+                            leavingMode = motion.activeMorph.firstOrNull()?.fromMode,
                             progress = { motion.morphProgress.value },
                             blockTouches = motion.morphing,
                             modifier = Modifier.fillMaxSize(),
@@ -284,9 +284,10 @@ internal fun ShelfCatalogOverlay(
                             ShelfCatalogWall(
                                 layoutMode = mode,
                                 games = filteredGames,
-                                anchorUri = motion.layoutAnchorUri ?: anchorGame?.uri ?: currentFocusGame?.uri,
+                                initialAnchorUri = initialAnchorUri,
                                 currentFocusUri = selectedGame?.uri,
-                                groupByEngine = conditions.sortMode == AppSettingsStore.GAME_SORT_ENGINE,
+                                conditions = conditions,
+                                conditionBatch = conditionBatch,
                                 hideTitleTag = hideTitleTag,
                                 motion = motion,
                                 onPickGame = { picked ->
@@ -579,7 +580,7 @@ private fun ShelfCatalogControlDeck(
             GameFilterTabTrack(Modifier.width(DECK_LAYOUT_TABS_WIDTH)) {
                 SlidingTabRow(
                     tabs = layoutLabels,
-                    selectedIndex = if (motion.layoutMode == ShelfCatalogLayoutMode.SPINES) 0 else 1,
+                    selectedIndex = if (motion.requestedLayout == ShelfCatalogLayoutMode.SPINES) 0 else 1,
                     onTabSelected = { index ->
                         onLayoutSelect(if (index == 0) ShelfCatalogLayoutMode.SPINES else ShelfCatalogLayoutMode.COVERS)
                     },
@@ -737,13 +738,18 @@ private fun ShelfCatalogEmptyState(
 private fun ShelfCatalogWall(
     layoutMode: ShelfCatalogLayoutMode,
     games: List<ScanGame>,
-    anchorUri: String?,
+    initialAnchorUri: String?,
     currentFocusUri: String?,
-    groupByEngine: Boolean,
+    conditions: GameLibraryConditions,
+    conditionBatch: Any,
     hideTitleTag: Boolean,
     motion: ShelfCatalogMotion,
     onPickGame: (ScanGame) -> Unit,
 ) {
+    val canAlign = remember { conditionBatch } === conditionBatch
+    val anchorY = motion.layoutAnchorY.takeIf { canAlign && motion.layoutMode == layoutMode }
+    val anchorUri = if (anchorY != null) motion.layoutAnchorUri ?: initialAnchorUri else initialAnchorUri
+    val groupByEngine = conditions.sortMode == AppSettingsStore.GAME_SORT_ENGINE
     val accent = MaterialTheme.colorScheme.primary
     val highlightStroke = shelfCatalogSelectedChipBorder(accent)
     val sharedVerticalSpineShape = remember {
@@ -753,19 +759,20 @@ private fun ShelfCatalogWall(
     // 搜索 / 筛选换了一批书：新出现的书依次「立」起来，不是一下子冒出来（首次组合不算换批）
     val batchChangedAt = rememberCoverBatchChange(games)
     BoxWithConstraints(modifier = Modifier.fillMaxSize().shelfCatalogWallViewport(motion)) {
-        val cabinetOuterInset = if (maxWidth < 460.dp) 10.dp else 14.dp
-        val cabinetWidth = (maxWidth - cabinetOuterInset * 2f).coerceAtLeast(200.dp)
+        val wallDensity = LocalDensity.current
+        val cells = with(wallDensity) { shelfCatalogGridCells(maxWidth, layoutMode) }
+        val cabinetOuterInset = cells.cabinetInset
         val stileWidth = CABINET_STILE_WIDTH
-        val interiorInset = 10.dp
-        val innerContentWidth = (cabinetWidth - stileWidth * 2f - interiorInset * 2f).coerceAtLeast(160.dp)
+        val interiorInset = CABINET_INTERIOR_INSET
+        val columns = cells.columns
+        if (cells.cellWidth <= 0.dp) return@BoxWithConstraints
 
         if (layoutMode == ShelfCatalogLayoutMode.SPINES) {
-            val columns = shelfCatalogVerticalColumns(cabinetWidth)
             val rows = remember(games, columns, groupByEngine) {
                 buildShelfCatalogVerticalRows(games, columns, groupByEngine)
             }
-            val spineGap = VERTICAL_SPINE_GAP
-            val spineWidth = ((innerContentWidth - spineGap * (columns - 1)) / columns).coerceIn(30.dp, 48.dp)
+            val spineGap = cells.gap
+            val spineWidth = cells.cellWidth
             val spineHeight = (spineWidth * 4.25f).coerceIn(156.dp, 192.dp)
             val tierEstimate = VERTICAL_TIER_TOP_ROOM + spineHeight + TIER_LEDGE_DEPTH +
                 TIER_BOARD_EDGE + TIER_UNDER_SHADOW + VERTICAL_TIER_PLAQUE_EXTRA
@@ -774,20 +781,18 @@ private fun ShelfCatalogWall(
                 shelfCatalogInitialRow(rows, anchorUri, visibleTiersHint)
             }
             // 网格几何报给变形：看不见的书按它外推位置
-            val wallDensity = LocalDensity.current
             SideEffect {
                 motion.reportGrid(
                     ShelfCatalogLayoutMode.SPINES,
                     ShelfCatalogGridMetrics(
                         columns = columns,
-                        pitchX = with(wallDensity) { (spineWidth + spineGap).toPx() },
+                        pitchX = cells.pitchPx.toFloat(),
                         pitchY = with(wallDensity) { tierEstimate.toPx() },
                         grouped = groupByEngine,
                     ),
                 )
             }
             // 从另一种陈列切过来：让锚点书落在旧陈列里的同一高度（能落的话），不整排上蹿下跳
-            val anchorY = motion.layoutAnchorY
             val aligned = remember(rows, anchorUri, anchorY, tierEstimate, spineHeight, wallDensity) {
                 val factor = anchorUri?.let { shelfCatalogSpineHeightFactor(it) } ?: 1f
                 with(wallDensity) {
@@ -800,10 +805,12 @@ private fun ShelfCatalogWall(
                     )
                 }
             }
-            val listState = rememberLazyListState(
-                initialFirstVisibleItemIndex = aligned?.first ?: initialRow,
-                initialFirstVisibleItemScrollOffset = aligned?.second ?: 0,
-            )
+            val listState = key(conditions) {
+                rememberLazyListState(
+                    initialFirstVisibleItemIndex = aligned?.first ?: initialRow,
+                    initialFirstVisibleItemScrollOffset = aligned?.second ?: 0,
+                )
+            }
             val keepAnchor = rememberCatalogAnchorOnReflow(listState, rows, columns, visibleTiersHint)
             val jelly = rememberScrollJellyState()
 
@@ -869,12 +876,11 @@ private fun ShelfCatalogWall(
                 }
             }
         } else {
-            val columns = shelfCatalogCoverColumns(cabinetWidth)
             val rows = remember(games, columns, groupByEngine) {
                 buildShelfCatalogCoverRows(games, columns, groupByEngine)
             }
-            val coverGap = if (maxWidth < 460.dp) COVER_TIER_GAP_COMPACT else COVER_TIER_GAP_WIDE
-            val coverWidth = ((innerContentWidth - coverGap * (columns - 1)) / columns).coerceIn(74.dp, 146.dp)
+            val coverGap = cells.gap
+            val coverWidth = cells.cellWidth
             val coverHeight = (coverWidth / COVER_ASPECT_RATIO).coerceIn(100.dp, 196.dp)
             val sharedCoverChamfer = remember(coverWidth) { shelfChamfer(coverWidth) }
             val sharedCoverBoxShape = remember(sharedCoverChamfer) {
@@ -886,19 +892,17 @@ private fun ShelfCatalogWall(
             val initialRow = remember(rows, anchorUri, visibleTiersHint) {
                 shelfCatalogInitialRow(rows, anchorUri, visibleTiersHint)
             }
-            val wallDensity = LocalDensity.current
             SideEffect {
                 motion.reportGrid(
                     ShelfCatalogLayoutMode.COVERS,
                     ShelfCatalogGridMetrics(
                         columns = columns,
-                        pitchX = with(wallDensity) { (coverWidth + coverGap).toPx() },
+                        pitchX = cells.pitchPx.toFloat(),
                         pitchY = with(wallDensity) { tierEstimate.toPx() },
                         grouped = groupByEngine,
                     ),
                 )
             }
-            val anchorY = motion.layoutAnchorY
             val aligned = remember(rows, anchorUri, anchorY, tierEstimate, coverHeight, wallDensity) {
                 with(wallDensity) {
                     shelfCatalogAlignedScroll(
@@ -910,10 +914,12 @@ private fun ShelfCatalogWall(
                     )
                 }
             }
-            val listState = rememberLazyListState(
-                initialFirstVisibleItemIndex = aligned?.first ?: initialRow,
-                initialFirstVisibleItemScrollOffset = aligned?.second ?: 0,
-            )
+            val listState = key(conditions) {
+                rememberLazyListState(
+                    initialFirstVisibleItemIndex = aligned?.first ?: initialRow,
+                    initialFirstVisibleItemScrollOffset = aligned?.second ?: 0,
+                )
+            }
             val keepAnchor = rememberCatalogAnchorOnReflow(listState, rows, columns, visibleTiersHint)
             val jelly = rememberScrollJellyState()
 
@@ -2191,6 +2197,7 @@ private val DECK_INNER_V_PAD = 8.dp
 private val SEARCH_FIELD_SIDE_INSET = 12.dp
 private val DECK_LAYOUT_TABS_WIDTH = 138.dp
 private val CABINET_STILE_WIDTH = 3.dp
+private val CABINET_INTERIOR_INSET = 10.dp
 private val VERTICAL_SPINE_GAP = 2.5.dp
 private val VERTICAL_TIER_TOP_ROOM = 10.dp
 private val VERTICAL_TIER_PLAQUE_EXTRA = 12.dp
@@ -2202,3 +2209,30 @@ private const val COVER_ASPECT_RATIO = 0.75f
 private val TIER_LEDGE_DEPTH = 6.dp
 private val TIER_BOARD_EDGE = 3.dp
 private val TIER_UNDER_SHADOW = 10.dp
+
+internal data class ShelfCatalogGridCells(
+    val columns: Int,
+    val cabinetInset: Dp,
+    val cellWidth: Dp,
+    val gap: Dp,
+    val pitchPx: Int,
+)
+
+internal fun Density.shelfCatalogGridCells(width: Dp, mode: ShelfCatalogLayoutMode): ShelfCatalogGridCells {
+    val compact = width < 460.dp
+    val cabinetInset = if (compact) 10.dp else 14.dp
+    val cabinetWidth = (width.roundToPx() - 2 * cabinetInset.roundToPx()).coerceAtLeast(0)
+    val innerWidth = (cabinetWidth - 2 * (CABINET_STILE_WIDTH + CABINET_INTERIOR_INSET).roundToPx())
+        .coerceAtLeast(0)
+    val spines = mode == ShelfCatalogLayoutMode.SPINES
+    val gap = if (spines) VERTICAL_SPINE_GAP else if (compact) COVER_TIER_GAP_COMPACT else COVER_TIER_GAP_WIDE
+    val gapPx = gap.roundToPx()
+    val minWidth = if (spines) 30.dp else 74.dp
+    val maxWidth = if (spines) 48.dp else 146.dp
+    val preferredColumns = if (spines) shelfCatalogVerticalColumns(cabinetWidth.toDp())
+        else shelfCatalogCoverColumns(cabinetWidth.toDp())
+    val columns = ((innerWidth + gapPx) / (minWidth.roundToPx().coerceAtLeast(1) + gapPx))
+        .coerceIn(1, preferredColumns)
+    val cellWidth = ((innerWidth - gapPx * (columns - 1)) / columns).toDp().coerceAtMost(maxWidth)
+    return ShelfCatalogGridCells(columns, cabinetInset, cellWidth, gap, cellWidth.roundToPx() + gapPx)
+}

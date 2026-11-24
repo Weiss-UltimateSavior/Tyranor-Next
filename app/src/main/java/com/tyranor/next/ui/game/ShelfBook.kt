@@ -194,7 +194,6 @@ import com.tyranor.next.ui.common.isTabletScreen
 import com.tyranor.next.ui.common.motion.SuppressPageDepth
 import com.tyranor.next.ui.common.motion.BlurCrossfade
 import com.tyranor.next.ui.common.motion.ExpandVisibility
-import com.tyranor.next.ui.common.motion.MotionHaptics
 import com.tyranor.next.ui.common.motion.ProvideEntrance
 import com.tyranor.next.ui.common.motion.nestedPanelContentDim
 import com.tyranor.next.ui.common.motion.pressSquish
@@ -276,7 +275,7 @@ internal fun ShelfOpenBook(
         ) { ui ->
             Dialog(
                 // 返回：翻到了后面的页先翻回来，在主书页时合上书
-                onDismissRequest = { if (pages.turned) pages.dismissTop() else motion.close() },
+                onDismissRequest = { pages.dismissOrClose { motion.close() } },
                 properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
             ) {
                 motion.BindWindow(scrimAlpha)
@@ -534,14 +533,10 @@ private fun ShelfBookScene(
                         }
                     }
                 }
-                // 点书外的空白：直接合上整本书（若当前有不可取消的弹窗页则拒绝）
+                // 点书外的空白与返回键一致：先翻回最上面一页，才合整本书。
                 .pointerInput(motion, pages) {
                     detectTapGestures {
-                        if (pages.canDismissAll()) {
-                            motion.close()
-                        } else {
-                            MotionHaptics.perform(MotionHaptics.Kind.Reject)
-                        }
+                        pages.dismissOrClose { motion.close() }
                     }
                 }
                 // 书上任何地方往右拖：翻到了后面的页时那一页跟着手指翻回来，在目录页时封面跟着手指合回来
@@ -1391,10 +1386,13 @@ private fun ShelfBookLeafPage(
                     val chapterTypography = remember(typography, chapterFont) {
                         typography.copy(titleMedium = typography.titleMedium.copy(fontFamily = chapterFont))
                     }
-                    Box(Modifier.fillMaxWidth().padding(top = 10.dp), contentAlignment = Alignment.CenterStart) {
-                        MaterialTheme(colorScheme = MaterialTheme.colorScheme, typography = chapterTypography, shapes = MaterialTheme.shapes) {
-                            spec.title()
+                    Box(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                        Box(Modifier.fillMaxWidth().padding(top = spec.topOverhangHeight)) {
+                            MaterialTheme(colorScheme = MaterialTheme.colorScheme, typography = chapterTypography, shapes = MaterialTheme.shapes) {
+                                spec.title()
+                            }
                         }
+                        spec.topOverhang?.invoke()
                     }
                     ShelfBookDoubleRule(Modifier.padding(top = 8.dp))
                     Box(
@@ -1746,11 +1744,7 @@ private fun ShelfBookCover(
                         .pointerInput(motion, morph, pages) {
                             detectTapGestures {
                                 if (!motion.isCoverInsideVisible(morph)) return@detectTapGestures
-                                if (pages.canDismissAll()) {
-                                    motion.close()
-                                } else {
-                                    MotionHaptics.perform(MotionHaptics.Kind.Reject)
-                                }
+                                pages.dismissOrClose { motion.close() }
                             }
                         },
                 )
@@ -3286,7 +3280,7 @@ internal class ShelfBookTocRow(val item: GameActionItem, val number: Int, val pr
 internal class ShelfBookToc {
     private var initial: Set<String>? = null
     private var last: List<GameActionItem> = emptyList()
-    private val leaving = LinkedHashMap<String, Pair<Int, ShelfBookTocRow>>()
+    private val leaving = LinkedHashMap<String, Pair<Int, GameActionItem>>()
 
     /** 收起完的章数（每收完一章加一）：读它的地方在章被移除后重新排列。 */
     var settled by mutableIntStateOf(0)
@@ -3295,18 +3289,24 @@ internal class ShelfBookToc {
     fun rows(entries: List<GameActionItem>): List<ShelfBookTocRow> {
         val keys = entries.mapTo(HashSet()) { it.key }
         val first = initial ?: keys.also { initial = it }
-        last.forEachIndexed { index, item ->
+        val previous = last.toMutableList()
+        leaving.values.sortedBy { it.first }.forEach { (index, item) ->
+            previous.add(index.coerceAtMost(previous.size), item)
+        }
+        previous.forEachIndexed { index, item ->
             if (item.key !in keys && item.key !in leaving) {
-                leaving[item.key] = index to ShelfBookTocRow(item, index + 1, present = false, fresh = false)
+                leaving[item.key] = index to item
             }
         }
         keys.forEach { leaving.remove(it) }
         last = entries
-        val rows = entries.mapIndexedTo(ArrayList(entries.size + leaving.size)) { index, item ->
-            ShelfBookTocRow(item, index + 1, present = true, fresh = item.key !in first)
+        val rows = entries.toMutableList()
+        leaving.values.sortedBy { it.first }.forEach { (index, item) ->
+            rows.add(index.coerceAtMost(rows.size), item)
         }
-        leaving.values.forEach { (index, row) -> rows.add(index.coerceAtMost(rows.size), row) }
-        return rows
+        return rows.mapIndexed { index, item ->
+            ShelfBookTocRow(item, index + 1, present = item.key in keys, fresh = item.key in keys && item.key !in first)
+        }
     }
 
     fun gone(key: String) {

@@ -1,6 +1,7 @@
 package com.tyranor.next.core.settings
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.os.Build
 import androidx.annotation.VisibleForTesting
@@ -40,6 +41,7 @@ object AppSettingsStore {
     const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
 
     private const val ONBOARDING_PENDING_INITIAL_STATE_FILE = "onboarding_initial_state"
+    private const val HOME_PAGE_PENDING_INITIAL_STATE_FILE = "home_page_initial_state"
 
     private var onboardingPreferences: OnboardingPreferences? = null
 
@@ -54,19 +56,20 @@ object AppSettingsStore {
     fun initializeOnboarding(context: Context): OnboardingWriteResult {
         val settings = prefs(context)
         return onboarding(context).initialize {
-            hasExistingOnboardingData(
-                appSettingsHasData = settings.all.isNotEmpty(),
-                legacyPreferencesHaveData = listOf(
-                    AppStorageNames.ENGINE_PREFS,
-                    AppStorageNames.LEGACY_ENGINE_PREFS,
-                    AppStorageNames.GAME_SCANNER_PREFS,
-                ).any { name ->
-                    context.getSharedPreferences(name, Context.MODE_PRIVATE).all.isNotEmpty()
-                },
-                gameLibraryExists = context.getDatabasePath(AppStorageNames.GAME_LIBRARY_DATABASE).exists(),
-            )
+            hasExistingInstallData(context, appSettingsHasData = settings.all.isNotEmpty())
         }
     }
+
+    private fun hasExistingInstallData(context: Context, appSettingsHasData: Boolean): Boolean =
+        hasExistingOnboardingData(
+            appSettingsHasData = appSettingsHasData,
+            legacyPreferencesHaveData = listOf(
+                AppStorageNames.ENGINE_PREFS,
+                AppStorageNames.LEGACY_ENGINE_PREFS,
+                AppStorageNames.GAME_SCANNER_PREFS,
+            ).any { name -> context.getSharedPreferences(name, Context.MODE_PRIVATE).all.isNotEmpty() },
+            gameLibraryExists = context.getDatabasePath(AppStorageNames.GAME_LIBRARY_DATABASE).exists(),
+        )
 
     /**
      * Centralizes the legacy-install evidence used by [initializeOnboarding]. Keeping this
@@ -809,37 +812,50 @@ object AppSettingsStore {
      * 判定升级迁移前的历史安装痕迹：忽略首次引导初始化写入的 `KEY_ONBOARDING_COMPLETED=false` 及本键自身，
      * 仅当已完成过引导、存在其它应用设置项、旧版偏好非空或游戏库文件已存在时视为老用户。
      */
-    internal fun hasExistingInstallForHomePageMigration(
+    internal fun hasAppSettingsForHomePageMigration(
         onboardingCompleted: Boolean,
         appSettingsKeys: Set<String>,
-        legacyPreferencesHaveData: Boolean,
-        gameLibraryExists: Boolean,
-    ): Boolean {
-        val hasOtherAppSettings = appSettingsKeys.any {
-            it != KEY_ONBOARDING_COMPLETED && it != KEY_HOME_PAGE_ENABLED
-        }
-        return onboardingCompleted || hasOtherAppSettings || legacyPreferencesHaveData || gameLibraryExists
+    ): Boolean = onboardingCompleted || appSettingsKeys.any {
+        it != KEY_ONBOARDING_COMPLETED && it != KEY_HOME_PAGE_ENABLED
     }
+
+    private var homePagePending: Boolean? = null
+
+    private fun homePagePendingFile(c: Context) =
+        InitialBooleanStateFile(File(c.applicationContext.filesDir, HOME_PAGE_PENDING_INITIAL_STATE_FILE))
+
+    private fun persistHomePageMigration(settings: SharedPreferences, pendingFile: InitialBooleanStateFile, enabled: Boolean) {
+        if (settings.edit().putBoolean(KEY_HOME_PAGE_ENABLED, enabled).commit()) {
+            homePagePending = null
+            pendingFile.clear()
+        } else {
+            homePagePending = enabled
+            pendingFile.write(enabled)
+        }
+    }
+
+    @VisibleForTesting
+    internal fun resetHomePageMigrationForTests() = synchronized(homePageLock) { homePagePending = null }
 
     private fun resolveAndPersistHomePageEnabledLocked(c: Context): Boolean {
         val settings = prefs(c)
-        if (settings.contains(KEY_HOME_PAGE_ENABLED)) {
+        // commit 失败也可能改写 SharedPreferences 内存；有 pending 时必须使用首次判定重试。
+        val pendingFile = homePagePendingFile(c)
+        if (homePagePending == null && settings.contains(KEY_HOME_PAGE_ENABLED)) {
             return settings.getBoolean(KEY_HOME_PAGE_ENABLED, DEFAULT_HOME_PAGE_ENABLED)
         }
-        val existingInstall = hasExistingInstallForHomePageMigration(
-            onboardingCompleted = settings.getBoolean(KEY_ONBOARDING_COMPLETED, false),
-            appSettingsKeys = settings.all.keys,
-            legacyPreferencesHaveData = listOf(
-                AppStorageNames.ENGINE_PREFS,
-                AppStorageNames.LEGACY_ENGINE_PREFS,
-                AppStorageNames.GAME_SCANNER_PREFS,
-            ).any { name ->
-                c.getSharedPreferences(name, Context.MODE_PRIVATE).all.isNotEmpty()
-            },
-            gameLibraryExists = c.getDatabasePath(AppStorageNames.GAME_LIBRARY_DATABASE).exists(),
+        val pending = homePagePending ?: pendingFile.read()
+        val resolved = pending ?: resolveInitialHomePageEnabled(
+            storedValue = null,
+            existingInstallDetected = hasExistingInstallData(
+                c,
+                appSettingsHasData = hasAppSettingsForHomePageMigration(
+                    onboardingCompleted = settings.getBoolean(KEY_ONBOARDING_COMPLETED, false),
+                    appSettingsKeys = settings.all.keys,
+                ),
+            ),
         )
-        val resolved = resolveInitialHomePageEnabled(storedValue = null, existingInstallDetected = existingInstall)
-        settings.edit { putBoolean(KEY_HOME_PAGE_ENABLED, resolved) }
+        persistHomePageMigration(settings, pendingFile, resolved)
         return resolved
     }
 
@@ -883,7 +899,13 @@ object AppSettingsStore {
 
     fun setHomePageEnabled(c: Context, enabled: Boolean) {
         synchronized(homePageLock) {
-            prefs(c).edit { putBoolean(KEY_HOME_PAGE_ENABLED, enabled) }
+            val pendingFile = homePagePendingFile(c)
+            val settings = prefs(c)
+            if (homePagePending != null || !settings.contains(KEY_HOME_PAGE_ENABLED)) {
+                persistHomePageMigration(settings, pendingFile, enabled)
+            } else {
+                settings.edit { putBoolean(KEY_HOME_PAGE_ENABLED, enabled) }
+            }
             homePageEnabledState.value = enabled
         }
     }

@@ -1,5 +1,6 @@
 package com.tyranor.next.ui.common
 
+import android.animation.ValueAnimator
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.LinearEasing
@@ -26,6 +27,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -85,7 +87,7 @@ import androidx.compose.animation.animateColorAsState
 import kotlinx.coroutines.launch
 
 /** 标签高度（两形态统一）。 */
-internal val SlidingTabHeight = 42.dp
+private val SlidingTabHeight = 42.dp
 private val TabLabelHorizontalPadding = 16.dp
 
 /** 等分宽度形态的标签间距。 */
@@ -549,12 +551,15 @@ private fun TabLabel(
             // 不会随手指落点滑到选框的上下半边
             .pressSquish(scale = 0.92f, follow = 0.dp)
             .clip(AppComponentShape)
-            // 不画系统的按压高亮（涟漪 / 胶囊状按下态）：选中块本身就是那枚胶囊，按下时目标标签再浮出一枚、
-            // 与从旁边滑过来的指示器叠在一起会出现两枚胶囊重叠；按压反馈只留上面的形变
+            // 藏书阁增强档只留形变，避免按下态与滑过来的选中胶囊重叠；普通档仍须有反馈。
             .selectable(
                 selected = selected,
                 interactionSource = null,
-                indication = null,
+                indication = if (LocalSlidingTabLightPanel.current && MotionMode.enhanced && ValueAnimator.areAnimatorsEnabled()) {
+                    null
+                } else {
+                    ripple()
+                },
                 role = Role.Tab,
                 onClick = onClick,
             )

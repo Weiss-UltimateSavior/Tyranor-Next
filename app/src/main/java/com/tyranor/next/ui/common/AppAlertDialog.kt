@@ -120,6 +120,8 @@ internal class AppDialogSpec(
     dismissEnabled: Boolean,
     val showButtonRow: Boolean,
     private val dismissEnabledNow: (() -> Boolean)? = null,
+    val topOverhang: (@Composable () -> Unit)? = null,
+    val topOverhangHeight: Dp = 0.dp,
 ) {
     private val fallbackDismissEnabled = dismissEnabled
     val dismissEnabled: Boolean get() = dismissEnabledNow?.invoke() ?: fallbackDismissEnabled
@@ -206,6 +208,8 @@ internal fun AppAlertDialog(
                 dismissEnabled = dismissEnabled,
                 showButtonRow = showButtonRow,
                 dismissEnabledNow = dismissEnabledNow,
+                topOverhang = topOverhang,
+                topOverhangHeight = topOverhangHeight,
             ),
         )
         return

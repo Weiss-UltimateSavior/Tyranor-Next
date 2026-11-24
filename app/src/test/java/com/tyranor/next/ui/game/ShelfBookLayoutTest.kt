@@ -45,7 +45,7 @@ class ShelfBookLayoutTest {
 
     @Test
     fun cancellingCoverDragPastCloseThresholdReopensWithoutDismissing() = runTest {
-        val motion = ShelfBookMotion(withBookFrameClock(), true, ShelfBookStage(), "book", false)
+        val motion = ShelfBookMotion(withBookFrameClock(), true, ShelfBookStage(), "book", false) { true }
         var dismissals = 0
         motion.dismissAction = { dismissals++ }
         motion.dragBy(50f, 100f)
@@ -61,7 +61,7 @@ class ShelfBookLayoutTest {
 
     @Test
     fun cancellingLeafDragRestoresTheTurnWithoutClosingTheLeaf() = runTest {
-        val pages = ShelfBookPages(withBookFrameClock(), enhanced = true)
+        val pages = ShelfBookPages(withBookFrameClock(), enhanced = true) { true }
         val leaf = ShelfBookLeaf(null)
         pages.push(leaf)
         advanceUntilIdle()
@@ -78,7 +78,7 @@ class ShelfBookLayoutTest {
 
     @Test
     fun removingTheDraggedLeafDoesNotRetargetTheRemainingDragToItsParent() = runTest {
-        val pages = ShelfBookPages(withBookFrameClock(), enhanced = true)
+        val pages = ShelfBookPages(withBookFrameClock(), enhanced = true) { true }
         val parent = ShelfBookLeaf(null)
         val child = ShelfBookLeaf(null)
         pages.push(parent)
@@ -100,7 +100,7 @@ class ShelfBookLayoutTest {
 
     @Test
     fun previousCloseCannotDeliverAfterReopenAndSecondClose() = runTest {
-        val motion = ShelfBookMotion(withBookFrameClock(), true, ShelfBookStage(), "book", false)
+        val motion = ShelfBookMotion(withBookFrameClock(), true, ShelfBookStage(), "book", false) { true }
         var dismissals = 0
         motion.dismissAction = { dismissals++ }
         motion.close()
@@ -120,6 +120,44 @@ class ShelfBookLayoutTest {
         assertEquals(0.5f, shelfBookPaperScale(finalSize, IntSize(360, 900)), 0.0001f)
         assertEquals(0.75f, shelfBookPaperScale(finalSize, IntSize(650, 810)), 0.0001f)
         assertEquals(1f, shelfBookPaperScale(finalSize, finalSize), 0f)
+    }
+
+    @Test
+    fun disabledSystemAnimationSkipsFlightAndClosesImmediately() = runTest {
+        val stage = ShelfBookStage()
+        val motion = ShelfBookMotion(this, true, stage, "book", true) { false }
+        var dismissals = 0
+        motion.dismissAction = { dismissals++ }
+
+        assertEquals(1f, motion.flight.value, 0f)
+        assertEquals(1f, motion.cover.value, 0f)
+        motion.dragBy(90f, 100f)
+        assertEquals(1f, motion.cover.value, 0f)
+        motion.close()
+        assertEquals(1, dismissals)
+        assertEquals(null, stage.closingMotion)
+    }
+
+    @Test
+    fun dismissOrClosePopsExactlyOneLeafBeforeClosingTheBook() = runTest {
+        val pages = ShelfBookPages(this, enhanced = true) { false }
+        val parent = ShelfBookLeaf(null)
+        val child = ShelfBookLeaf(null)
+        pages.push(parent)
+        pages.push(child)
+        assertEquals(1f, parent.turn.value, 0f)
+        assertEquals(null, pages.departure)
+
+        var closed = 0
+        pages.dismissOrClose { closed++ }
+        assertEquals(listOf(parent), pages.leaves)
+        assertEquals(0f, parent.turn.value, 0f)
+        assertEquals(0, closed)
+        pages.dismissOrClose { closed++ }
+        assertTrue(pages.leaves.isEmpty())
+        assertEquals(0, closed)
+        pages.dismissOrClose { closed++ }
+        assertEquals(1, closed)
     }
 
     private fun assertFits(frame: ShelfBookFrame, width: Dp, height: Dp, top: Dp, bottom: Dp) {
@@ -447,12 +485,14 @@ class ShelfBookLayoutTest {
         val b = shrinking[1]
         assertFalse(b.present)
         assertEquals("the collapsing chapter keeps its last number", 2, b.number)
-        assertEquals(2, shrinking[2].number)
+        assertEquals(3, shrinking[2].number)
 
         val before = toc.settled
         toc.gone("b")
         assertEquals(before + 1, toc.settled)
-        assertEquals(listOf("a", "c"), toc.rows(listOf(all[0], all[2])).keys())
+        val settled = toc.rows(listOf(all[0], all[2]))
+        assertEquals(listOf("a", "c"), settled.keys())
+        assertEquals(listOf(1, 2), settled.map { it.number })
         // 重复交付不会再触发重排
         toc.gone("b")
         assertEquals(before + 1, toc.settled)

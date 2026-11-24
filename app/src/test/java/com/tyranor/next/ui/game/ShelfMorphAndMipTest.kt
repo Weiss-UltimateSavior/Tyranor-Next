@@ -20,7 +20,7 @@ class ShelfMorphAndMipTest {
             .map { shelfCoverMipLevel(Math.toRadians(it.toDouble()).toFloat()) }
         assertEquals(0, levels.first())
         for (i in 1 until levels.size) assertTrue(levels[i] >= levels[i - 1])
-        assertEquals(SHELF_COVER_MIPS_FOR_TEST, levels.last())
+        assertEquals(SHELF_COVER_MIPS, levels.last())
         // 左右转向一样
         assertEquals(
             shelfCoverMipLevel(Math.toRadians(70.0).toFloat()),
@@ -97,8 +97,4 @@ class ShelfMorphAndMipTest {
         assertNull(shelfCatalogAlignedScroll(tiers(8, 4), "content://games/4", null, 100f, 60f))
     }
 
-    private companion object {
-        /** 与 GameShelf.kt 的预缩链长度一致（3 档）。 */
-        const val SHELF_COVER_MIPS_FOR_TEST = 3
-    }
 }

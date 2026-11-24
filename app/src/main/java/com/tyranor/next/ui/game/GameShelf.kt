@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.PagerState
@@ -48,7 +47,6 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -58,6 +56,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -187,11 +186,8 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.platform.LocalLocale
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * 游戏页「书架」卡片风格：游戏像一盒盒立在玻璃搁板上的游戏盒，整体气质照 galgame 标题画面来做。
@@ -285,6 +281,7 @@ internal fun GameShelf(
     val listChangedAt = rememberCoverBatchChange(games)
     // 点按进度轨道跳转时旋钮自己飞过去；跳转途中翻页触觉静音（只在点按那一下震）
     val knobSeek = rememberShelfKnobSeek()
+    val scrubbing = remember(pagerState) { mutableStateOf(false) }
     // 手指翻过一本书脊轻点一下（程序化滚动、刻度尺定位不重复震）
     PagerTickHaptics(pagerState, muted = { knobSeek.active })
     // 每本封面的主色（背景色晕解出来时顺手算一次）：正中那一盒脚下与身后的光用它
@@ -336,6 +333,7 @@ internal fun GameShelf(
             ShelfInfoRow(
                 pagerState = pagerState,
                 knobSeek = knobSeek,
+                scrubbing = scrubbing,
                 games = games,
                 hideTitleTag = hideTitleTag,
                 onContinue = centerGame,
@@ -349,6 +347,7 @@ internal fun GameShelf(
                 ShelfScrubber(
                     pagerState = pagerState,
                     knobSeek = knobSeek,
+                    scrubbingState = scrubbing,
                     games = games,
                     hideTitleTag = hideTitleTag,
                     isInteractive = isInteractive,
@@ -445,7 +444,7 @@ private fun ShelfStage(
         }
         // 手指拖过「一本」的距离 = 正中那一盒移到相邻位置走过的距离：盒子与手指同速移动（跟手、不飘），
         // 也远大于书脊间距，轻碰不会滑到下一个游戏
-        val dragPitch = maxOf(geometry.pitch, geometry.centerX(1f), geometry.coverWidth * DRAG_PITCH_RATIO)
+        val dragPitch = geometry.dragPitch
         val dragPitchDp = with(density) { dragPitch.toDp() }
         val sidePadding = ((maxWidth - dragPitchDp) / 2).coerceAtLeast(0.dp)
         // 书架投影：已放平（不再倾斜），投影为恒等，当前那盒停在正中；接口保留，各处照常调用
@@ -1079,7 +1078,7 @@ internal fun shelfCoverMipLevel(yaw: Float): Int {
     return kotlin.math.floor(kotlin.math.log2(1f / squeeze)).toInt().coerceIn(0, SHELF_COVER_MIPS)
 }
 
-private const val SHELF_COVER_MIPS = 3
+internal const val SHELF_COVER_MIPS = 3
 private const val SHELF_COVER_MIP_CACHE_SIZE = 48
 private const val SPINE_WASH_CACHE_SIZE = 160
 private const val BACKDROP_WASH_CACHE_SIZE = 64
@@ -2142,51 +2141,14 @@ internal fun shelfCoverTint(wash: ImageBitmap): Color {
 }
 
 /**
- * 信息行显示的那一本。点击底部进度轨道跳转（[ShelfKnobSeek]）期间直接锁向目标页，忽略书架先瞬移再滑过最后几本
- * 途中经过的中间页，让卡片文字只从当前游戏一次变为目标游戏；
- * 手指按住拖动或静止时立即跟随 [PagerState.currentPage]；松手后的惯性滑行中等待极短的 [INFO_FLING_SETTLE_MILLIS]
- * （高速掠过中间页时由 collectLatest 自动取消，一旦减速进入目标本或停稳立刻换上），消除翻页后的文字滞后感。
- */
-@Composable
-private fun rememberShelfInfoPage(
-    pagerState: PagerState,
-    knobSeek: ShelfKnobSeek,
-): Int {
-    var shown by remember(pagerState) { mutableIntStateOf(pagerState.currentPage) }
-    val dragged = pagerState.interactionSource.collectIsDraggedAsState()
-    // 若用户在点按跳转尚未收尾（例如旋钮仍在飞行）时直接拖动书架，立刻中止跳转并交回跟手
-    LaunchedEffect(dragged.value, knobSeek) {
-        if (dragged.value && knobSeek.active) knobSeek.cancel()
-    }
-    LaunchedEffect(pagerState, knobSeek) {
-        snapshotFlow { knobSeek.targetPage to pagerState.currentPage }.collectLatest { (seekTarget, page) ->
-            val resolution = resolveShelfInfoPage(
-                currentPage = page,
-                seekTarget = seekTarget,
-                pageCount = pagerState.pageCount,
-                isScrollInProgress = pagerState.isScrollInProgress,
-                isDragged = dragged.value,
-            )
-            if (resolution.mode == ShelfInfoUpdateMode.WaitFlingSettle) {
-                withTimeoutOrNull(INFO_FLING_SETTLE_MILLIS) {
-                    snapshotFlow { pagerState.isScrollInProgress && !dragged.value }.first { !it }
-                }
-            }
-            shown = resolution.page
-        }
-    }
-    val last = (pagerState.pageCount - 1).coerceAtLeast(0)
-    return (knobSeek.targetPage ?: shown).coerceIn(0, last)
-}
-
-/**
  * 书架下方的信息行：ADV 对话框，宽屏（≥ [WIDE_INFO_MIN_WIDTH]）时左边再放一张「我的书架」卡填上两侧空白。
- * 当前页只在这里读取——甩动时每翻过一本只有这一行重组，书架里的盒子不跟着重组。
+ * 这一行只订阅允许显示的页，不直接跟随滚动途中的每一页。
  */
 @Composable
 private fun ShelfInfoRow(
     pagerState: PagerState,
     knobSeek: ShelfKnobSeek,
+    scrubbing: State<Boolean>,
     games: List<ScanGame>,
     hideTitleTag: Boolean,
     onContinue: (Int) -> Unit,
@@ -2194,9 +2156,10 @@ private fun ShelfInfoRow(
 ) {
     BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
         val wide = maxWidth >= WIDE_INFO_MIN_WIDTH
-        val reveal by rememberShelfSummaryReveal(wide)
-        ShelfInfoLayout(reveal = { reveal }) {
-            if (reveal > 0.001f) {
+        val reveal = rememberShelfSummaryReveal(wide)
+        val showSummary by remember(reveal) { derivedStateOf(structuralEqualityPolicy()) { reveal.value > 0.001f } }
+        ShelfInfoLayout(reveal = { reveal.value }) {
+            if (showSummary) {
                 ShelfSummaryCard(
                     games = games,
                     hideTitleTag = hideTitleTag,
@@ -2204,7 +2167,7 @@ private fun ShelfInfoRow(
                     modifier = Modifier.layoutId(ShelfInfoSlot.Summary),
                 )
             }
-            val index = rememberShelfInfoPage(pagerState, knobSeek)
+            val index = rememberShelfInfoPage(pagerState, knobSeek, scrubbing)
             ShelfAdvWindow(
                 game = games.getOrNull(index),
                 index = index,
@@ -2326,7 +2289,7 @@ private fun ShelfAdvWindow(
                 .padding(start = 18.dp, end = 16.dp, top = 20.dp, bottom = 12.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                BlurCrossfade(title, modifier = Modifier.weight(1f), blur = 0.dp) { text ->
+                BlurCrossfade(title, modifier = Modifier.weight(1f)) { text ->
                     Text(
                         text,
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
@@ -2354,7 +2317,7 @@ private fun ShelfAdvWindow(
                 }
             }
             ShelfLine(game, stats, Modifier.padding(top = 6.dp).fillMaxWidth())
-            ShelfStatsStrip(game, stats, Modifier.padding(top = 10.dp), blur = 0.dp)
+            ShelfStatsStrip(game, stats, Modifier.padding(top = 10.dp))
         }
         // 名牌：像 ADV 里说话人的名字框，压在对话框左上沿
         BlurCrossfade(
@@ -2384,15 +2347,14 @@ private fun ShelfLine(game: ScanGame, stats: GamePlaytimeStats?, modifier: Modif
         game.openTime > 0L -> stringResource(R.string.game_shelf_continue)
         else -> stringResource(R.string.game_shelf_unplayed)
     }
-    val shown = rememberTypewriterLength(line)
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+    BlurCrossfade(line, modifier = modifier.clearAndSetSemantics { contentDescription = line }) { text ->
+        val shown = rememberTypewriterLength(text)
         Text(
-            text = line.take(shown),
+            text = text.take(shown),
             style = MaterialTheme.typography.bodyMedium,
             color = SecondaryTextColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f).semantics { contentDescription = line },
         )
     }
 }
@@ -2515,6 +2477,7 @@ private suspend fun AwaitPointerEventScope.awaitShelfTrackTapOrDrag(down: Pointe
 private fun ShelfScrubber(
     pagerState: PagerState,
     knobSeek: ShelfKnobSeek,
+    scrubbingState: androidx.compose.runtime.MutableState<Boolean>,
     games: List<ScanGame>,
     hideTitleTag: Boolean,
     isInteractive: () -> Boolean,
@@ -2522,7 +2485,7 @@ private fun ShelfScrubber(
 ) {
     val count = games.size
     val scope = rememberCoroutineScope()
-    var scrubbing by remember { mutableStateOf(false) }
+    var scrubbing by scrubbingState
     var scrubSpeed by remember { mutableFloatStateOf(1f) }
     val knobLift = rememberTrackKnobLift(scrubbing)
     val scrubberMotion = rememberShelfScrubberMotion()
@@ -2745,7 +2708,7 @@ private fun ShelfScrubber(
 
 /**
  * 进度轨道的旋钮：当前那一盒的封面小头像，套一圈半透明玻璃环；书架静止时略淡，按住 / 拖动 / 点按时带有
- * Q 弹果冻形变并亮起中性柔光。翻到另一盒时头像淡入替换（不加模糊：拖动时每越过一本都会换一次）。
+ * 随轨道上下浮动，按住时等比例放大并亮起中性柔光。翻到另一盒时头像淡入替换（不加模糊：拖动时每越过一本都会换一次）。
  */
 @Composable
 private fun ShelfTrackKnob(
@@ -2798,10 +2761,10 @@ private fun ShelfTrackKnob(
                 alpha = trackKnobAlpha(presence.value)
             }
             // 玻璃环：半透明白面 + 一圈发丝轮廓，透出底下的画面
-            .background(ring, AppComponentShape)
-            .glassEdgeStroke(AppComponentShape, width = 1.dp, color = outline)
+            .background(ring, CircleShape)
+            .glassEdgeStroke(CircleShape, width = 1.dp, color = outline)
             .padding(KNOB_RING)
-            .clip(AppComponentShape)
+            .clip(CircleShape)
             .background(game.engine.coverColor())
             .clearAndSetSemantics { },
     ) {
@@ -2928,9 +2891,6 @@ private const val FLOOR_RATIO = 0.14f
 /** 居中盒子脚下与身后那团光（封面主色）的透明度。 */
 private const val LEDGE_GLOW_ALPHA = 0.42f
 
-/** 手指拖过一本的距离占封面宽的比例。 */
-private const val DRAG_PITCH_RATIO = 0.45f
-
 /** 整排平移时额外组合的本数上限、两端书立外侧的边距。 */
 private const val MAX_BEYOND_BOOKS = 24
 private val ROW_END_MARGIN = 12.dp
@@ -2986,9 +2946,6 @@ private const val RIBBON_ALPHA = 0.94f
 
 /** 对话框：最大宽度（平板 / 横屏不拉满）、名牌压在对话框上沿的高度。 */
 private val ADV_MAX_WIDTH = 560.dp
-
-/** 惯性甩动途中正中那一本至少停留这么久，信息行才换成它（高速掠过中间页自动跳过，减速落定后立刻切换）。 */
-private const val INFO_FLING_SETTLE_MILLIS = 55L
 
 /** 显示「我的书架」卡所需的最小宽度，以及卡片宽度。 */
 private val WIDE_INFO_MIN_WIDTH = 760.dp

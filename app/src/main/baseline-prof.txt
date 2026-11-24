@@ -9067,6 +9067,12 @@ HSPLcom/tyranor/next/ui/game/GameScreenKt$WhenMappings;->**(**)**
 HSPLcom/tyranor/next/ui/game/GameScreenKt$rememberCoverBitmap$1$1;->**(**)**
 HSPLcom/tyranor/next/ui/game/GameScreenKt$sortGames$$inlined$sortedBy$1;->**(**)**
 HSPLcom/tyranor/next/ui/game/GameScreenKt;->**(**)**
+SPLcom/tyranor/next/ui/game/GameShelfKt;->**(**)**
+SPLcom/tyranor/next/ui/game/GameShelfMotionKt;->**(**)**
+PLcom/tyranor/next/ui/game/ShelfBookKt;->**(**)**
+PLcom/tyranor/next/ui/game/ShelfBookMotionKt;->**(**)**
+PLcom/tyranor/next/ui/game/ShelfCatalogKt;->**(**)**
+PLcom/tyranor/next/ui/game/ShelfCatalogMotionKt;->**(**)**
 HSPLcom/tyranor/next/ui/game/LibraryPane;->**(**)**
 HSPLcom/tyranor/next/ui/home/HomeScreenKt$$ExternalSyntheticLambda0;->**(**)**
 HSPLcom/tyranor/next/ui/home/HomeScreenKt$$ExternalSyntheticLambda18;->**(**)**

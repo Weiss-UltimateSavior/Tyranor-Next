@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import androidx.compose.runtime.BroadcastFrameClock
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.unit.Velocity
@@ -13,6 +15,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.plus
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -65,6 +68,16 @@ class GameShelfGeometryTest {
         // 更远处按书脊间距等距排布
         for (d in 1..5) {
             assertEquals(g.pitch, g.centerX(d + 1f) - g.centerX(d.toFloat()), 1e-2f)
+        }
+    }
+
+    @Test
+    fun dragPitchKeepsTheActualCenterToNeighbourDistanceAcrossShelfTurns() {
+        for (turn in listOf(Math.toRadians(58.0).toFloat(), SHELF_SPINE_TURN)) {
+            val geometry = geometry(maxTurn = turn)
+            val neighbourDistance = geometry.centerX(1f) - geometry.centerX(0f)
+            assertEquals(neighbourDistance, geometry.dragPitch, 1e-3f)
+            assertTrue(geometry.dragPitch >= geometry.pitch)
         }
     }
 
@@ -422,7 +435,7 @@ class GameShelfGeometryTest {
 
     @Test
     fun infoPageStaysLockedToSeekTargetAcrossIntermediatePages() {
-        // 从第 8 页点击底部控制条跳转到第 1 页：历经瞬移第 3 页、滑过第 2 页、停稳第 1 页、最后交回实时跟随，
+        // 从第 8 页点击底部控制条跳转到第 1 页：滑过中间页、停稳第 1 页、最后交回实时跟随，
         // 卡片显示的页码序列严格只从 8 变为 1，不冒出任何中间页
         val steps = listOf(
             // (currentPage, seekTarget, isScrollInProgress)
@@ -437,18 +450,18 @@ class GameShelfGeometryTest {
         val distinctShown = mutableListOf<Int>()
         for ((index, step) in steps.withIndex()) {
             val (currentPage, seekTarget, scrolling) = step
-            val resolved = resolveShelfInfoPage(
+            val resolved = requireNotNull(resolveShelfInfoPage(
                 currentPage = currentPage,
                 seekTarget = seekTarget,
                 pageCount = 10,
                 isScrollInProgress = scrolling,
                 isDragged = false,
-            )
+            ))
             if (index == 0) {
                 assertEquals(8, resolved.page)
             } else {
                 assertEquals("step $index ($step) must lock onto target page 1", 1, resolved.page)
-                assertEquals(ShelfInfoUpdateMode.Immediate, resolved.mode)
+                assertEquals(if (seekTarget != null) ShelfInfoUpdateMode.Seek else ShelfInfoUpdateMode.Settled, resolved.mode)
             }
             if (distinctShown.lastOrNull() != resolved.page) {
                 distinctShown += resolved.page
@@ -474,13 +487,13 @@ class GameShelfGeometryTest {
         val distinctShown = mutableListOf<Int>()
         for ((index, step) in steps.withIndex()) {
             val (currentPage, seekTarget, scrolling) = step
-            val resolved = resolveShelfInfoPage(
+            val resolved = requireNotNull(resolveShelfInfoPage(
                 currentPage = currentPage,
                 seekTarget = seekTarget,
                 pageCount = 10,
                 isScrollInProgress = scrolling,
                 isDragged = false,
-            )
+            ))
             if (index in 1..2) assertEquals(1, resolved.page)
             if (index >= 3) assertEquals(6, resolved.page)
             if (distinctShown.lastOrNull() != resolved.page) {
@@ -491,33 +504,102 @@ class GameShelfGeometryTest {
     }
 
     @Test
-    fun infoPageUsesImmediateWhenIdleOrDraggedAndWaitsDuringFling() {
-        // 静止或手指拖动时立即更新；惯性滑行等待稳定窗口；越界及空列表安全夹紧
+    fun infoPageDistinguishesDraggingSettledAndFling() {
         assertEquals(
-            ShelfInfoResolution(4, ShelfInfoUpdateMode.Immediate),
+            ShelfInfoResolution(4, ShelfInfoUpdateMode.Settled),
             resolveShelfInfoPage(currentPage = 4, seekTarget = null, pageCount = 10, isScrollInProgress = false, isDragged = false),
         )
         assertEquals(
-            ShelfInfoResolution(4, ShelfInfoUpdateMode.Immediate),
+            ShelfInfoResolution(4, ShelfInfoUpdateMode.Dragging),
             resolveShelfInfoPage(currentPage = 4, seekTarget = null, pageCount = 10, isScrollInProgress = true, isDragged = true),
         )
         assertEquals(
-            ShelfInfoResolution(4, ShelfInfoUpdateMode.WaitFlingSettle),
+            null,
             resolveShelfInfoPage(currentPage = 4, seekTarget = null, pageCount = 10, isScrollInProgress = true, isDragged = false),
         )
         // 越界夹紧
         assertEquals(
-            ShelfInfoResolution(9, ShelfInfoUpdateMode.Immediate),
+            ShelfInfoResolution(9, ShelfInfoUpdateMode.Seek),
             resolveShelfInfoPage(currentPage = 3, seekTarget = 99, pageCount = 10, isScrollInProgress = false, isDragged = false),
         )
         assertEquals(
-            ShelfInfoResolution(0, ShelfInfoUpdateMode.Immediate),
+            ShelfInfoResolution(0, ShelfInfoUpdateMode.Settled),
             resolveShelfInfoPage(currentPage = -2, seekTarget = null, pageCount = 10, isScrollInProgress = false, isDragged = false),
         )
         assertEquals(
-            ShelfInfoResolution(0, ShelfInfoUpdateMode.Immediate),
+            ShelfInfoResolution(0, ShelfInfoUpdateMode.Seek),
             resolveShelfInfoPage(currentPage = 3, seekTarget = 5, pageCount = 0, isScrollInProgress = true, isDragged = false),
         )
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun infoPageRequiresContinuousDragDwellAndFreezesThroughFlingAndBounce() = runTest {
+        val candidate = mutableStateOf<ShelfInfoResolution?>(null)
+        val info = ShelfInfoPage(initialPage = 0)
+        backgroundScope.launch { info.follow({ testScheduler.currentTime }) { candidate.value } }
+        fun update(page: Int, dragging: Boolean, scrolling: Boolean = true) {
+            candidate.value = resolveShelfInfoPage(page, null, 10, scrolling, dragging)
+            Snapshot.sendApplyNotifications()
+            runCurrent()
+        }
+
+        update(page = 1, dragging = true)
+        advanceTimeBy(149L)
+        assertEquals(0, info.shown)
+        update(page = 2, dragging = true)
+        advanceTimeBy(149L)
+        runCurrent()
+        assertEquals(0, info.shown)
+        advanceTimeBy(1L)
+        runCurrent()
+        assertEquals(2, info.shown)
+
+        update(page = 3, dragging = true)
+        advanceTimeBy(149L)
+        update(page = 3, dragging = false)
+        advanceTimeBy(500L)
+        runCurrent()
+        assertEquals(2, info.shown)
+        update(page = 6, dragging = false)
+        advanceTimeBy(500L)
+        runCurrent()
+        assertEquals(2, info.shown)
+        update(page = 6, dragging = false, scrolling = false)
+        assertEquals(6, info.shown)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun infoPageThrottlesSettledUpdatesButPreviewsExplicitSeeksImmediately() = runTest {
+        val candidate = mutableStateOf<ShelfInfoResolution?>(null)
+        val info = ShelfInfoPage(initialPage = 0)
+        backgroundScope.launch { info.follow({ testScheduler.currentTime }) { candidate.value } }
+        fun update(page: Int, seekTarget: Int? = null, scrolling: Boolean = false) {
+            candidate.value = resolveShelfInfoPage(page, seekTarget, 10, scrolling, isDragged = false)
+            Snapshot.sendApplyNotifications()
+            runCurrent()
+        }
+
+        update(page = 1)
+        assertEquals(1, info.shown)
+        update(page = 2)
+        advanceTimeBy(119L)
+        runCurrent()
+        assertEquals(1, info.shown)
+        advanceTimeBy(1L)
+        runCurrent()
+        assertEquals(2, info.shown)
+
+        update(page = 3)
+        update(page = 3, seekTarget = 7)
+        assertEquals(7, info.shown)
+        update(page = 4, seekTarget = 8, scrolling = true)
+        assertEquals(8, info.shown)
+        update(page = 8)
+        advanceTimeBy(120L)
+        runCurrent()
+        assertEquals(8, info.shown)
     }
 
     @Test

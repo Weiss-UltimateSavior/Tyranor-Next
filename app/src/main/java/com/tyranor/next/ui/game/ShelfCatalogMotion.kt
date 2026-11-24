@@ -222,6 +222,13 @@ internal fun buildShelfCatalogCoverRows(
     ShelfCatalogRowItem.CoverTier(key, tierIndex, slice, startIndex, rowGridIndex)
 }
 
+/**
+ * 藏书阁首屏 / 换批后要对准的那一本：[uri] 仍在结果里就用它，否则取最近玩过的一本，再否则第一本
+ * （与书架的 [shelfFocusPage] 同一口径）。结果为空返回 null。
+ */
+internal fun shelfCatalogFocusUri(games: List<ScanGame>, uri: String?): String? =
+    games.getOrNull(shelfFocusPage(games, uri))?.uri
+
 /** 定位包含 [uri] 的搁板行下标（若无匹配则返回 -1）。 */
 internal fun findShelfCatalogAnchorRow(rows: List<ShelfCatalogRowItem>, uri: String?): Int {
     if (uri.isNullOrBlank()) return -1
@@ -1208,7 +1215,14 @@ internal class ShelfCatalogMotion(
 
     private var morphGeneration = 0
 
+    /** 变形途中又点了另一边：先记下最后选的这一边，等当前这一轮落位后再开新的一轮。 */
+    private var pendingLayout by mutableStateOf<ShelfCatalogLayoutMode?>(null)
+
+    /** 分栏上选中的形态：途中点了另一边时立刻跟着手走，不等这一轮放完。 */
+    val requestedLayout: ShelfCatalogLayoutMode get() = pendingLayout ?: layoutMode
+
     private fun finishMorphNow() {
+        pendingLayout = null
         morphGeneration++
         activeMorph = emptyList()
         hiddenSlotUris = emptySet()
@@ -1258,11 +1272,19 @@ internal class ShelfCatalogMotion(
      * - 搁板、立柱这些「书柜本体」不参与变形：旧的一面在变形一开始就快速淡去，新的一面在书快落位时才浮现，
      *   中间只有书在空中变形，不会书还没到、搁板先摆好了。
      *
-     * 切换途中再点另一边：先让当前这一轮直接落位，再开新的一轮。藏书阁还没入场完时先收敛入场态直接切换到目标形态；正在退场或「普通」档时直接换。
+     * 切换途中再点另一边：当前这一轮照常飞完落位，再接着开最后选的那一边（卡片不会从半空消失）。藏书阁还没入场完时先收敛入场态直接切换到目标形态；正在退场或「普通」档时直接换。
      */
-    fun switchLayout(target: ShelfCatalogLayoutMode) {
-        if (target == layoutMode) return
-        if (morphing) finishMorphNow()
+    fun switchLayout(target: ShelfCatalogLayoutMode): Boolean {
+        if (target == requestedLayout) return false
+        if (morphing) {
+            pendingLayout = target.takeIf { it != layoutMode }
+            return true
+        }
+        beginSwitch(target)
+        return true
+    }
+
+    private fun beginSwitch(target: ShelfCatalogLayoutMode) {
         if (!enhanced || !hasEntered || closing || !ValueAnimator.areAnimatorsEnabled()) {
             if (!closing && !hasEntered) {
                 transitionJob?.cancel()
@@ -1335,6 +1357,7 @@ internal class ShelfCatalogMotion(
         morphing = true
         layoutMode = target
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            var landed = false
             try {
                 morphProgress.snapTo(0f)
                 // 等新陈列把可见的书摆好（最多约 12 帧），再多等两帧让位置稳住
@@ -1386,6 +1409,7 @@ internal class ShelfCatalogMotion(
                 repeat(MORPH_WARMUP_FRAMES) { withFrameNanos { } }
                 if (generation != morphGeneration) return@launch
                 morphProgress.animateTo(1f, MORPH_SPRING)
+                landed = true
             } finally {
                 withContext(NonCancellable) {
                     if (generation == morphGeneration) {
@@ -1393,6 +1417,9 @@ internal class ShelfCatalogMotion(
                         hiddenSlotUris = emptySet()
                         morphing = false
                         layoutAnchorY = null
+                        val next = pendingLayout
+                        pendingLayout = null
+                        if (landed && next != null && next != layoutMode && !closing) beginSwitch(next)
                     }
                 }
             }
@@ -2422,29 +2449,21 @@ internal fun Modifier.noHitWhile(disabled: Boolean): Modifier = if (!disabled) t
  * 旧书柜的「底」（搁板 / 立柱 / 铭牌）与新书柜交叠着慢慢换（一边淡去一边浮现，底色不断档；以前旧的先整块没了、新的再整块冒出来，
  * 中间露出光秃秃的页面底色，像背景闪了一下），跟着书走的板下书名则在变形一开始就淡去（见 [shelfCatalogLeavingText]）。
  *
- * [morphing] 为真期间新旧两面叠着、旧面不接触摸；变形结束（或根本没有变形：「普通」档、藏书阁还没入场完）就只剩新的一面。
+ * [leavingMode] 非空期间新旧两面叠着、旧面不接触摸；变形结束（或根本没有变形：「普通」档、藏书阁还没入场完）就只剩新的一面。
  * 单一形态时没有任何额外开销。
  */
 @Composable
 internal fun ShelfCatalogModeSwitcher(
     mode: ShelfCatalogLayoutMode,
-    morphing: Boolean,
+    /** 变形途中正在退场的旧形态；不在变形中为 null（直接换：只留新的一面）。 */
+    leavingMode: ShelfCatalogLayoutMode?,
     progress: () -> Float,
     blockTouches: Boolean,
     modifier: Modifier = Modifier,
     content: @Composable (ShelfCatalogLayoutMode) -> Unit,
 ) {
-    var current by remember { mutableStateOf(mode) }
-    var leaving by remember { mutableStateOf<ShelfCatalogLayoutMode?>(null) }
-    LaunchedEffect(mode) {
-        if (mode == current) return@LaunchedEffect
-        // 没有变形（直接换）：只留新的一面；有变形：旧面留着垫在下面直到变形放完。切换途中又换一次：正在退场的旧面让位，当前面变成退场面
-        leaving = if (morphing) current else null
-        current = mode
-    }
-    LaunchedEffect(morphing) {
-        if (!morphing) leaving = null
-    }
+    val leaving = leavingMode?.takeIf { it != mode }
+    val current = mode
     Box(modifier) {
         leaving?.let { old ->
             key(old) {

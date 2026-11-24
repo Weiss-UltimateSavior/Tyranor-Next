@@ -4,12 +4,14 @@ import android.animation.ValueAnimator
 import android.app.Activity
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
 import android.os.SystemClock
 import android.view.PixelCopy
 import android.view.animation.PathInterpolator
+import androidx.compose.animation.core.FloatSpringSpec
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -18,7 +20,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -27,6 +29,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
@@ -36,6 +39,7 @@ import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.node.DrawModifierNode
 import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.node.invalidateDraw
@@ -44,6 +48,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -51,6 +56,7 @@ import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.PageGrey
 import kotlinx.coroutines.flow.collectLatest
 import java.lang.ref.WeakReference
+import java.util.WeakHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -70,7 +76,8 @@ import kotlin.math.roundToInt
  *   结束时与正常布局完全一致，不会有换版的一跳；
  * - 旋转的那一刻 Activity 先截下旧画面（[ScreenRotationSync]，`PixelCopy` 半分辨率位图，在专门的线程上跑，主线程最多等
  *   [CAPTURE_LIMIT_MILLIS]）：第一帧（新方向正常排版、整页重新布局，上百毫秒）整个被它盖住（起步矩形里是旧版式站直的样子），
- *   之后它被拉伸到虚拟窗口的矩形里、随进度淡出，露出下面正在长大的新版式。截屏失败就不带这层（第一帧只有底色）。
+ *   之后它被拉伸到虚拟窗口的矩形里、随进度淡出。截屏失败就直接画实时虚拟窗口，不用底色盖住页面。
+ * - 中途再转时，从上一帧已绘制的虚拟尺寸接力，改用页面弹簧；截取上一帧的 viewport，不把留白带进新的 viewport。
  *
  * 只在「增强」档、平板（最小宽度 ≥ 600dp）、系统动画开启时生效；折叠屏展开、分屏拖动、输入法顶起窗口不触发
  * （要求 Activity 收到了方向翻转的配置变化）。过渡期间触摸暂时不接收（控件还在动）。进度时钟每帧最多推进 [MAX_STEP_NANOS]：
@@ -79,96 +86,106 @@ import kotlin.math.roundToInt
  */
 @Stable
 internal class ScreenRotationState {
-    /** 上一次稳定的窗口大小（过渡期间也在更新，用来识别下一次变化）。 */
-    var lastSize = IntSize.Zero
+    private var lastSize = IntSize.Zero
+    private var snapshot: RotationSnapshot? = null
+    private var leg: RotationLeg? = null
+    val frozen: Boolean get() = leg != null
+    val freezesBlocks: Boolean get() = leg != null && hasTargetLayout
 
-    /** 旋转前的窗口大小与那一刻的画面（半分辨率，拉伸画进虚拟窗口的矩形）。 */
-    var oldSize = IntSize.Zero
-    var snapshot: ImageBitmap? = null
-
-    /**
-     * 是否在过渡中。普通变量：布局阶段置位，**同一帧**的布局与绘制立刻看得到（状态变量的写入要到下一帧才通知观察者，
-     * 旋转后的第一帧就会直接排出新版式）。
-     */
-    var frozen = false
-
-    /** 过渡的第一帧：新方向按最终尺寸正常排版（重的内容块记下最终约束），整个被旧画面盖住；排完即清。 */
+    /** 只有完整的新截图才能盖住按目标窗口预排版的那一帧。 */
     var firstFrame = false
-
-    /** 第一帧的绘制：新排版画在底下，再整个盖上底色与旧画面（之后的帧是底色在下、虚拟窗口在上）。 */
     var coverNextDraw = false
+    var viewport: RotationViewport? = null
+    var windowOrigin = IntOffset.Zero
+    private var hasTargetLayout = false
+    private var drawnWindow = IntSize.Zero
+    private var drawnViewport: RotationViewport? = null
+    private var drawnBoundsInWindow: IntRect? = null
+    private var drawnSnapshotAlpha = 0f
+    private var drawnSnapshotHasNotice = false
 
-    /** 这一帧虚拟窗口在真实窗口里的矩形（布局阶段算出，绘制阶段用）。 */
-    var rectLeft = 0
-    var rectTop = 0
-    var rectWidth = 0
-    var rectHeight = 0
+    private var progress by mutableFloatStateOf(0f)
 
-    /** 过渡进度 0..1：每帧由时钟写入，布局与绘制阶段读取。 */
-    var progress by mutableFloatStateOf(0f)
-
-    /** 起止各加一：驱动时钟协程与绘制。 */
-    var epoch by mutableIntStateOf(0)
+    /** 布局同步更新 [leg]，稍后提交起止通知；时钟、布局和两处绘制均订阅。 */
+    var publishedLeg by mutableStateOf<RotationLeg?>(null)
+        private set
 
     var noticeDrawNode: RotationNoticeDrawNode? = null
-
-    private var transitionGeneration = 0
-    private var committedGeneration = 0
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val commitRunnable = Runnable { commitSnapshotState() }
+    private val commitRunnable = Runnable { publishLeg() }
 
-    /** 布局阶段仅读取纯变量或延后提交的状态，不在布局期写 Compose 状态。 */
-    fun activeProgress(): Float =
-        if (firstFrame || transitionGeneration != committedGeneration) 0f else progress
-
-    /** 绘制阶段读取与 [coverNextDraw] 匹配的进度，确保第 0 帧在提交前也从 0 开始淡出。 */
-    fun drawProgress(coverThisFrame: Boolean): Float =
-        if (coverThisFrame || transitionGeneration != committedGeneration) 0f else progress
-
-    fun snapshotAlpha(): Float {
-        if (epoch < 0 || !frozen || snapshot == null || rectWidth <= 0 || rectHeight <= 0) return 0f
-        return 1f - smoothStepRotation(drawProgress(coverNextDraw) / SNAPSHOT_FADE_SPAN)
+    fun frameProgress(): Float {
+        val published = publishedLeg
+        return if (published != null && published === leg) progress else 0f
     }
 
-    fun showsSnapshot(): Boolean = snapshotAlpha() > SNAPSHOT_VISIBLE_ALPHA
+    fun virtualSize(window: IntSize, timeFraction: Float): IntSize = leg?.virtualSize(window, timeFraction) ?: window
+
+    fun snapshotAlpha(progress: Float): Float = rotationSnapshotAlpha(snapshot?.startAlpha ?: 0f, progress)
+
+    fun snapshotImage(): ImageBitmap? = snapshot?.image
+
+    fun showsSnapshotNotice(): Boolean {
+        val progress = frameProgress()
+        return rotationSnapshotOwnsNotice(snapshot?.hasNotice == true, snapshotAlpha(progress))
+    }
+
+    fun recordDraw(window: IntSize, viewport: RotationViewport?, snapshotAlpha: Float) {
+        drawnWindow = window
+        drawnViewport = viewport
+        drawnBoundsInWindow = viewport?.bounds?.translate(windowOrigin)
+        drawnSnapshotAlpha = snapshotAlpha
+        drawnSnapshotHasNotice = snapshotAlpha > SNAPSHOT_VISIBLE_ALPHA && snapshot?.hasNotice == true
+    }
+
+    fun capturePlan(window: IntSize): RotationCapturePlan? = rotationCapturePlan(
+        window = window,
+        previousWindow = drawnWindow,
+        viewport = drawnBoundsInWindow,
+        liveNotice = noticeDrawNode?.drewContent == true,
+        snapshotNotice = drawnSnapshotHasNotice,
+    )
 
     /** 布局阶段调用：窗口大小有变化时，判断是否开始过渡（要有 [activity] 刚收到的方向翻转配置变化）。 */
     fun onMeasured(activity: Activity?, size: IntSize, enabled: Boolean) {
         val previous = lastSize
         lastSize = size
-        if (!enabled) {
-            if (frozen) finishFromLayout()
+        if (!enabled || activity == null || previous.isEmptyForRotation() || size.isEmptyForRotation()) {
+            if (frozen) {
+                clearLeg()
+                scheduleCommit()
+            }
             if (activity != null) ScreenRotationController.discard(activity)
             return
         }
-        if (activity == null || previous.isEmptyForRotation() || size.isEmptyForRotation()) return
-        // 方向翻转（竖 ↔ 横）才播
-        if ((previous.width > previous.height) == (size.width > size.height)) return
-        // 上一段还没放完又转了一次：不叠着播，直接放掉，按新方向正常画
-        if (frozen) {
-            finishFromLayout()
+        if (size == previous) return
+        if (previous.isLandscapeForRotation() == size.isLandscapeForRotation()) {
             ScreenRotationController.discard(activity)
             return
         }
-        val taken = ScreenRotationController.take(activity) ?: return
-        snapshot = taken.bitmap?.asImageBitmap()
-        oldSize = previous
-        frozen = true
-        firstFrame = true
-        coverNextDraw = true
-        transitionGeneration++
+        val taken = ScreenRotationController.take(activity, size) ?: return
+        val nextLeg = rotationRetarget(previous, leg, drawnViewport)
+        val nextSnapshot = taken.bitmap?.let { RotationSnapshot(it.asImageBitmap(), taken.hasNotice, 1f) }
+        snapshot = nextSnapshot ?: snapshot?.let { old ->
+            rotationFallbackAlpha(drawnSnapshotAlpha)?.let { old.copy(startAlpha = it) }
+        }
+        drawnSnapshotAlpha = 0f
+        leg = nextLeg
+        hasTargetLayout = nextSnapshot != null
+        firstFrame = hasTargetLayout
+        coverNextDraw = false
         noticeDrawNode?.invalidateDraw()
         scheduleCommit()
     }
 
-    private fun finishFromLayout() {
-        frozen = false
+    private fun clearLeg() {
+        leg = null
         firstFrame = false
         coverNextDraw = false
+        hasTargetLayout = false
         snapshot = null
-        transitionGeneration++
+        viewport = null
         noticeDrawNode?.invalidateDraw()
-        scheduleCommit()
     }
 
     private fun scheduleCommit() {
@@ -176,31 +193,56 @@ internal class ScreenRotationState {
         mainHandler.post(commitRunnable)
     }
 
-    private fun commitSnapshotState() {
-        committedGeneration = transitionGeneration
+    private fun publishLeg() {
         progress = if (frozen) 0f else 1f
-        epoch++
+        publishedLeg = leg
     }
 
-    fun finish() {
+    fun advance(expected: RotationLeg, fraction: Float): Boolean {
+        if (leg !== expected) return false
+        progress = fraction
+        return true
+    }
+
+    fun finish(expected: RotationLeg) {
+        if (leg !== expected) return
         mainHandler.removeCallbacks(commitRunnable)
-        frozen = false
-        firstFrame = false
-        coverNextDraw = false
-        progress = 1f
-        snapshot = null
-        committedGeneration = transitionGeneration
-        epoch++
+        clearLeg()
+        publishLeg()
     }
 
     fun dispose() {
         mainHandler.removeCallbacks(commitRunnable)
-        frozen = false
-        firstFrame = false
-        coverNextDraw = false
-        snapshot = null
+        clearLeg()
+        publishLeg()
+        recordDraw(IntSize.Zero, null, 0f)
     }
 }
+
+internal class RotationLeg(val from: IntSize, val redirected: Boolean) {
+    private val spring = if (redirected) MotionTokens.page(0.001f).let {
+        FloatSpringSpec(it.dampingRatio, it.stiffness, visibilityThreshold = 0.001f)
+    } else null
+    val durationNanos: Long = spring?.getDurationNanos(0f, 1f, 0f) ?: ROTATION_MILLIS * 1_000_000L
+
+    fun sizeProgress(timeFraction: Float): Float = if (spring == null) {
+        ROTATION_INTERPOLATOR.getInterpolation(timeFraction)
+    } else {
+        spring.getValueFromNanos((timeFraction.toDouble() * durationNanos).toLong(), 0f, 1f, 0f).coerceIn(0f, 1f)
+    }
+
+    fun virtualSize(window: IntSize, timeFraction: Float): IntSize {
+        if (timeFraction <= 0f) return from
+        if (timeFraction >= 1f) return window
+        val fraction = sizeProgress(timeFraction)
+        return IntSize(
+            lerpInt(from.width, window.width, fraction).coerceAtLeast(1),
+            lerpInt(from.height, window.height, fraction).coerceAtLeast(1),
+        )
+    }
+}
+
+private data class RotationSnapshot(val image: ImageBitmap, val hasNotice: Boolean, val startAlpha: Float)
 
 internal fun Modifier.handoffRotationNotice(state: ScreenRotationState): Modifier =
     this.then(RotationNoticeDrawElement(state))
@@ -221,6 +263,9 @@ private data class RotationNoticeDrawElement(val state: ScreenRotationState) : M
 }
 
 internal class RotationNoticeDrawNode(private var state: ScreenRotationState) : Modifier.Node(), DrawModifierNode {
+    var drewContent = false
+        private set
+
     override fun onAttach() { state.noticeDrawNode = this }
 
     override fun onDetach() {
@@ -231,11 +276,13 @@ internal class RotationNoticeDrawNode(private var state: ScreenRotationState) : 
         if (next === state) return
         if (isAttached) onDetach()
         state = next
+        drewContent = false
         if (isAttached) onAttach()
     }
 
     override fun ContentDrawScope.draw() {
-        if (!state.showsSnapshot()) drawContent()
+        drewContent = !state.showsSnapshotNotice()
+        if (drewContent) drawContent()
     }
 }
 
@@ -247,11 +294,17 @@ internal val LocalScreenRotationMorph = staticCompositionLocalOf<ScreenRotationS
  * 位图只丢引用不手动回收：最后一帧的绘制可能还在用它。截屏失败时仍登记「刚旋转过」，只是没有位图。
  */
 internal object ScreenRotationController {
-    class Taken(val bitmap: Bitmap?)
+    class Taken(val bitmap: Bitmap?, val hasNotice: Boolean)
 
-    private var owner: WeakReference<Activity>? = null
-    private var bitmap: Bitmap? = null
-    private var capturedAt = 0L
+    private class Pending(activity: Activity, val orientation: Int, val expiresAt: Long) {
+        val owner = WeakReference(activity)
+        var result = Taken(null, false)
+    }
+
+    private val hosts = WeakHashMap<Activity, WeakReference<ScreenRotationState>>()
+    private var pending: Pending? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val expireCapture = Runnable { pending = null }
     private val copyExecutor = Executors.newSingleThreadExecutor { work -> Thread(work, "screen-rotation-copy") }
     private val callbackHandler by lazy {
         val thread = HandlerThread("screen-rotation-copy-result").apply { start() }
@@ -259,19 +312,34 @@ internal object ScreenRotationController {
     }
     private val copyInFlight = AtomicBoolean(false)
 
+    fun bind(activity: Activity, state: ScreenRotationState) {
+        hosts[activity] = WeakReference(state)
+    }
+
+    fun unbind(activity: Activity, state: ScreenRotationState) {
+        if (hosts[activity]?.get() !== state) return
+        hosts.remove(activity)
+        discard(activity)
+    }
+
     /** 记下 [activity] 刚旋转过，并尽力截下窗口此刻的画面（旧画面）。在主线程调用，截屏最多阻塞 [CAPTURE_LIMIT_MILLIS]。 */
-    fun capture(activity: Activity) {
+    fun capture(activity: Activity, orientation: Int) {
         val start = SystemClock.uptimeMillis()
-        synchronized(this) {
-            owner = WeakReference(activity)
-            capturedAt = start
-            bitmap = null
-        }
+        val capture = Pending(activity, orientation, start + SNAPSHOT_TTL_MILLIS)
+        clearPending()
+        pending = capture
+        mainHandler.postAtTime(expireCapture, capture.expiresAt)
         val window = activity.window ?: return
         val decor = window.peekDecorView() ?: return
-        val width = decor.width
-        val height = decor.height
-        if (width <= 0 || height <= 0 || !copyInFlight.compareAndSet(false, true)) return
+        val size = IntSize(decor.width, decor.height)
+        if (size.isEmptyForRotation()) return
+        val host = hosts[activity]?.get()
+        val plan = if (host != null) host.capturePlan(size) ?: return else RotationCapturePlan(null, false)
+        if (!copyInFlight.compareAndSet(false, true)) return
+        val crop = plan.crop
+        val source = crop?.let { Rect(it.left, it.top, it.right, it.bottom) }
+        val width = crop?.width ?: size.width
+        val height = crop?.height ?: size.height
         val deadline = start + CAPTURE_LIMIT_MILLIS
         val latch = CountDownLatch(1)
         var resultBitmap: Bitmap? = null
@@ -296,7 +364,7 @@ internal object ScreenRotationController {
                     complete()
                     return@execute
                 }
-                PixelCopy.request(window, target, { result ->
+                PixelCopy.request(window, source, target, { result ->
                     complete(target.takeIf { result == PixelCopy.SUCCESS })
                 }, handler)
             } catch (_: Exception) {
@@ -312,28 +380,25 @@ internal object ScreenRotationController {
             false
         }
         if (finished && SystemClock.uptimeMillis() <= deadline) {
-            synchronized(this) {
-                if (owner?.get() === activity) bitmap = resultBitmap
-            }
+            capture.result = Taken(resultBitmap, resultBitmap != null && plan.mayContainNotice)
         }
     }
 
-    @Synchronized
-    fun take(activity: Activity): Taken? {
-        if (owner?.get() !== activity) return null
-        val fresh = SystemClock.uptimeMillis() - capturedAt <= SNAPSHOT_TTL_MILLIS
-        val b = bitmap
-        bitmap = null
-        owner = null
-        return if (fresh) Taken(b) else null
+    fun take(activity: Activity, size: IntSize): Taken? {
+        val capture = pending ?: return null
+        if (capture.owner.get() !== activity) return null
+        clearPending()
+        val orientation = if (size.isLandscapeForRotation()) Configuration.ORIENTATION_LANDSCAPE else Configuration.ORIENTATION_PORTRAIT
+        return capture.result.takeIf { capture.orientation == orientation && SystemClock.uptimeMillis() < capture.expiresAt }
     }
 
-    @Synchronized
     fun discard(activity: Activity) {
-        if (owner?.get() === activity) {
-            owner = null
-            bitmap = null
-        }
+        if (pending?.owner?.get() === activity) clearPending()
+    }
+
+    private fun clearPending() {
+        mainHandler.removeCallbacks(expireCapture)
+        pending = null
     }
 }
 
@@ -356,7 +421,7 @@ class ScreenRotationSync(private val activity: Activity) {
         if (!ValueAnimator.areAnimatorsEnabled()) return
         val resumed = (activity as? LifecycleOwner)?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) == true
         if (!resumed) return
-        ScreenRotationController.capture(activity)
+        ScreenRotationController.capture(activity, orientation)
     }
 }
 
@@ -373,89 +438,97 @@ internal fun ScreenRotationHost(state: ScreenRotationState, content: @Composable
     val fill = rotationFill()
 
     DisposableEffect(state, activity) {
+        if (activity != null) ScreenRotationController.bind(activity, state)
         onDispose {
             state.dispose()
-            if (activity != null) ScreenRotationController.discard(activity)
+            if (activity != null) ScreenRotationController.unbind(activity, state)
         }
     }
 
     LaunchedEffect(state) {
-        snapshotFlow { state.epoch }.collectLatest {
-            if (!state.frozen) return@collectLatest
-            val totalNanos = ROTATION_MILLIS * 1_000_000L
-            var elapsed = 0L
-            var last = 0L
-            while (elapsed < totalNanos) {
-                val now = withFrameNanos { it }
-                if (last != 0L) elapsed += min(now - last, MAX_STEP_NANOS)
-                last = now
-                state.progress = (elapsed.toFloat() / totalNanos).coerceIn(0f, 1f)
+        snapshotFlow { state.publishedLeg }.collectLatest { leg ->
+            if (leg == null) return@collectLatest
+            var elapsedNanos = 0L
+            var lastFrameNanos = withFrameNanos { it }
+            while (elapsedNanos < leg.durationNanos) {
+                val frameNanos = withFrameNanos { it }
+                elapsedNanos = advanceRotationTime(elapsedNanos, lastFrameNanos, frameNanos, leg.durationNanos)
+                lastFrameNanos = frameNanos
+                if (!state.advance(leg, elapsedNanos.toFloat() / leg.durationNanos)) return@collectLatest
             }
-            state.finish()
+            state.finish(leg)
         }
     }
 
     Box(
         Modifier
+            .onPlaced { coordinates ->
+                val origin = coordinates.localToWindow(Offset.Zero)
+                if (origin.x.isFinite() && origin.y.isFinite()) {
+                    state.windowOrigin = IntOffset(origin.x.roundToInt(), origin.y.roundToInt())
+                }
+            }
             // 外层（真实窗口坐标）：底色、过渡期间盖在上面渐隐的旧画面
             .drawWithContent {
-                if (state.epoch < 0 || !state.frozen) {
+                val progress = state.frameProgress()
+                val window = IntSize(size.width.roundToInt(), size.height.roundToInt())
+                val viewport = state.viewport
+                if (viewport == null) {
                     drawContent()
+                    state.recordDraw(window, null, 0f)
                     return@drawWithContent
                 }
-                val coverThisFrame = state.coverNextDraw
-                val alpha = state.snapshotAlpha()
+                val alpha = state.snapshotAlpha(progress)
+                val snapshot = state.snapshotImage()
+                val drawsSnapshot = snapshot != null && alpha > SNAPSHOT_VISIBLE_ALPHA
+                val coverThisFrame = state.coverNextDraw && drawsSnapshot
+                state.coverNextDraw = false
                 if (coverThisFrame) {
                     // 第一帧：新方向的正常排版画在底下，整个盖上底色（旧画面在上面画）
-                    state.coverNextDraw = false
                     drawContent()
                     drawRect(fill)
                 } else {
                     drawRect(fill)
                     drawContent()
                 }
-                val snapshot = state.snapshot
                 if (snapshot != null && alpha > SNAPSHOT_VISIBLE_ALPHA) {
                     drawImage(
                         snapshot,
-                        dstOffset = IntOffset(state.rectLeft, state.rectTop),
-                        dstSize = IntSize(state.rectWidth, state.rectHeight),
+                        dstOffset = viewport.bounds.topLeft,
+                        dstSize = viewport.bounds.size,
                         alpha = alpha,
                         filterQuality = FilterQuality.Medium,
                     )
                 }
+                state.recordDraw(window, viewport, if (drawsSnapshot) alpha else 0f)
             }
             .layout { measurable, constraints ->
                 val windowW = constraints.maxWidth
                 val windowH = constraints.maxHeight
-                state.onMeasured(activity, IntSize(windowW, windowH), enabledNow.value)
-                if (!state.frozen || windowW <= 0 || windowH <= 0) {
+                val window = IntSize(windowW, windowH)
+                state.onMeasured(activity, window, enabledNow.value && constraints.hasBoundedWidth && constraints.hasBoundedHeight)
+                val progress = state.frameProgress()
+                if (!state.frozen) {
                     val placeable = measurable.measure(constraints)
                     layout(placeable.width, placeable.height) { placeable.place(0, 0) }
                 } else {
                     // 虚拟窗口：宽高从旧窗口过渡到新窗口，再等比缩放贴进真实窗口
-                    val e = ROTATION_INTERPOLATOR.getInterpolation(state.activeProgress().coerceIn(0f, 1f))
-                    val virtualW = lerpInt(state.oldSize.width, windowW, e).coerceAtLeast(1)
-                    val virtualH = lerpInt(state.oldSize.height, windowH, e).coerceAtLeast(1)
-                    val scale = min(windowW.toFloat() / virtualW, windowH.toFloat() / virtualH)
-                    val left = ((windowW - virtualW * scale) / 2f)
-                    val top = ((windowH - virtualH * scale) / 2f)
-                    state.rectLeft = left.roundToInt()
-                    state.rectTop = top.roundToInt()
-                    state.rectWidth = (virtualW * scale).roundToInt()
-                    state.rectHeight = (virtualH * scale).roundToInt()
+                    val virtual = state.virtualSize(window, progress)
+                    val viewport = rotationViewport(window, virtual)
+                    state.viewport = viewport
                     if (state.firstFrame) {
                         // 第一帧：新方向按最终尺寸正常排版（重的内容块借此记下最终约束），盖在旧画面下面
                         val placeable = measurable.measure(constraints)
                         state.firstFrame = false
+                        state.coverNextDraw = true
                         layout(placeable.width, placeable.height) { placeable.place(0, 0) }
                     } else {
-                        val placeable = measurable.measure(Constraints.fixed(virtualW, virtualH))
+                        val placeable = measurable.measure(Constraints.fixed(virtual.width, virtual.height))
                         layout(windowW, windowH) {
-                            placeable.placeWithLayer(left.roundToInt(), top.roundToInt()) {
+                            placeable.placeWithLayer(viewport.bounds.left, viewport.bounds.top) {
                                 transformOrigin = TransformOrigin(0f, 0f)
-                                scaleX = scale
-                                scaleY = scale
+                                scaleX = viewport.scale
+                                scaleY = viewport.scale
                             }
                         }
                     }
@@ -470,6 +543,42 @@ internal fun ScreenRotationHost(state: ScreenRotationState, content: @Composable
 }
 
 private fun IntSize.isEmptyForRotation(): Boolean = width <= 0 || height <= 0
+private fun IntSize.isLandscapeForRotation(): Boolean = width > height
+
+internal class RotationViewport(val virtualSize: IntSize, val bounds: IntRect, val scale: Float)
+
+internal fun rotationViewport(window: IntSize, virtual: IntSize): RotationViewport {
+    val scale = min(window.width.toFloat() / virtual.width, window.height.toFloat() / virtual.height)
+    val width = virtual.width * scale
+    val height = virtual.height * scale
+    val left = ((window.width - width) / 2f).roundToInt()
+    val top = ((window.height - height) / 2f).roundToInt()
+    val right = (left + width.roundToInt().coerceAtLeast(1)).coerceAtMost(window.width)
+    val bottom = (top + height.roundToInt().coerceAtLeast(1)).coerceAtMost(window.height)
+    return RotationViewport(virtual, IntRect(left, top, right, bottom), scale)
+}
+
+internal fun rotationRetarget(previous: IntSize, active: RotationLeg?, drawn: RotationViewport?): RotationLeg =
+    RotationLeg(drawn?.virtualSize ?: active?.from ?: previous, redirected = drawn != null || active != null)
+
+internal data class RotationCapturePlan(val crop: IntRect?, val mayContainNotice: Boolean)
+
+internal fun rotationCapturePlan(
+    window: IntSize,
+    previousWindow: IntSize,
+    viewport: IntRect?,
+    liveNotice: Boolean,
+    snapshotNotice: Boolean,
+): RotationCapturePlan? {
+    if (window.isEmptyForRotation() || (!previousWindow.isEmptyForRotation() && previousWindow != window)) return null
+    if (viewport != null && (viewport.width <= 0 || viewport.height <= 0 || viewport.left < 0 || viewport.top < 0 ||
+            viewport.right > window.width || viewport.bottom > window.height)
+    ) return null
+    return RotationCapturePlan(viewport, liveNotice || snapshotNotice)
+}
+
+internal fun advanceRotationTime(elapsed: Long, previousFrame: Long, frame: Long, duration: Long): Long =
+    (elapsed + (frame - previousFrame).coerceIn(0L, MAX_STEP_NANOS)).coerceAtMost(duration)
 
 /**
  * 重的内容块（书架的书、藏书阁的书柜、后台的其它标签页）：旋转过渡里不跟着虚拟窗口逐帧重排——
@@ -484,11 +593,12 @@ internal fun Modifier.rotationMorphBlock(freeze: Boolean = true): Modifier {
     val morph = LocalScreenRotationMorph.current ?: return this
     val cache = remember { RotationBlockCache() }
     return this.layout { measurable, constraints ->
-        if (!morph.frozen || !freeze) {
+        if (!morph.freezesBlocks || !freeze) {
             cache.final = null
             val placeable = measurable.measure(constraints)
             return@layout layout(placeable.width, placeable.height) { placeable.place(0, 0) }
         }
+        if (morph.firstFrame) cache.final = constraints
         val final = cache.final ?: constraints.also { cache.final = it }
         val placeable = measurable.measure(final)
         if (morph.firstFrame) {
@@ -526,10 +636,15 @@ private fun rotationFill(): Color {
 
 private fun lerpInt(from: Int, to: Int, t: Float): Int = (from + (to - from) * t).roundToInt()
 
-private fun smoothStepRotation(x: Float): Float {
-    val c = x.coerceIn(0f, 1f)
-    return c * c * (3f - 2f * c)
+internal fun rotationSnapshotAlpha(startAlpha: Float, progress: Float): Float {
+    val fraction = (progress / SNAPSHOT_FADE_SPAN).coerceIn(0f, 1f)
+    return startAlpha * (1f - fraction * fraction * (3f - 2f * fraction))
 }
+
+internal fun rotationFallbackAlpha(drawnAlpha: Float): Float? = drawnAlpha.takeIf { it > SNAPSHOT_VISIBLE_ALPHA }
+
+internal fun rotationSnapshotOwnsNotice(hasNotice: Boolean, alpha: Float): Boolean =
+    hasNotice && alpha > SNAPSHOT_VISIBLE_ALPHA
 
 private const val TABLET_MIN_SMALLEST_WIDTH_DP = 600
 private const val ROTATION_MILLIS = 520L
@@ -543,4 +658,4 @@ private const val SNAPSHOT_TTL_MILLIS = 2000L
 private const val CAPTURE_LIMIT_MILLIS = 80L
 
 /** 标准的先慢后快再慢（Material 强调曲线）：整套布局的位移 / 缩放没有生硬的起步和急停。 */
-private val ROTATION_INTERPOLATOR = PathInterpolator(0.4f, 0f, 0.2f, 1f)
+private val ROTATION_INTERPOLATOR by lazy { PathInterpolator(0.4f, 0f, 0.2f, 1f) }

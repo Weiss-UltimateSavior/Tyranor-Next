@@ -576,7 +576,7 @@ class SheetBackdrop internal constructor(private val scope: CoroutineScope) {
     /**
      * 登记「这一页现在不要景深」的个数：> 0 时 [depthFoldStack] 对这一页不做下沉 / 翻折 / 褪色（压暗不受影响）。
      * 景深是给「页面被浮层 / 新页盖住」的后退感用的；页面自己已经被一层整屏的东西占满（如书架翻开的书）时，
-     * 背后的页面根本看不见，这些效果只剩一次整页离屏渲染的开销。由页面状态在**宿主层**统一决定（见 [SuppressDepth]），
+     * 背后的页面根本看不见，这些效果只剩一次整页离屏渲染的开销。由页面状态在**宿主层**统一决定（见 [SuppressPageDepth]），
      * 书里以后新增的任何弹窗 / 抽屉 / 二级页都自动沿用，不需要各个控件分别处理。
      */
     private var depthSuppressors by mutableIntStateOf(0)
