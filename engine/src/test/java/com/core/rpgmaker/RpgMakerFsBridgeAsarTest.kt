@@ -336,4 +336,24 @@ class RpgMakerFsBridgeAsarTest {
         assertTrue(stat.getBoolean("file"))
         assertFalse(stat.getBoolean("dir"))
     }
+
+    @Test
+    fun readdirFallsBackToDirectChildrenWhenGlobalArchiveExceedsNodeBudget() {
+        val gameRoot = java.nio.file.Files.createTempDirectory("asar-readdir-budget").toFile()
+        val contentRoot = File(gameRoot, "www").apply { mkdirs() }
+        val asarFile = File(gameRoot, "app.asar")
+        writeTestAsar(
+            asarFile,
+            packed = mapOf(
+                "www/index.html" to "<html></html>",
+                "www/img/" + "d/".repeat(250_001) + "leaf.png" to "",
+                "www/locales/en.json" to "{}",
+            ),
+            emptyDirectories = setOf("www/locales"),
+        )
+        AsarArchive(asarFile).use { archive ->
+            val bridge = RpgMakerFsBridge(gameRoot, contentRoot, archive)
+            assertEquals("[\"en.json\"]", bridge.readdir("locales"))
+        }
+    }
 }
