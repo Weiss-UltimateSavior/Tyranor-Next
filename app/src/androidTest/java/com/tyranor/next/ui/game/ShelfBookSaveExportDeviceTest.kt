@@ -131,11 +131,12 @@ class ShelfBookSaveExportDeviceTest {
     }
 
     private fun createGame(root: File, title: String): ScanGame {
-        val directory = File(root, title).apply { mkdirs() }
+        val directory = Files.createDirectory(root.toPath().resolve(root.name)).toFile()
         val game = ScanGame(title, Uri.fromFile(directory).toString(), EngineType.RPG_MV, "index.html")
         val saves = checkNotNull(GameSaveManager(context).resolveSaveLocation(game).directory)
+        Files.createDirectories(checkNotNull(saves.toPath().parent))
+        Files.createDirectory(saves.toPath())
         if (!saves.toPath().startsWith(root.toPath())) cleanup.add(saves)
-        saves.mkdirs()
         File(saves, "RPG File1.bin").writeText(title)
         return game
     }
