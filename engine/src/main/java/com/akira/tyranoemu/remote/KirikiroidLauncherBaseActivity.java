@@ -105,9 +105,6 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         super.onCreate(bundle);
         app = this;
         graphicsOverlay = new com.core.gl.ArtemisPerformanceOverlay(this, com.core.gl.Anime4kRuntime.source());
-        // KR2 宿主不是 SDLActivity（SDL.setContext 从未被调用），须显式注册耳机
-        // 热插拔监听，否则游戏中插拔耳机后静态 AudioTrack 失联、永久静音。
-        org.libsdl.app.AudioRouteWatcher.ensureRegistered(this);
         if (getIntent().getBooleanExtra(LaunchContract.ORIGIN_MODE, false)) {
             return;
         }
@@ -661,6 +658,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     @Override
     public void onLoadNativeLibraries() {
         String gameLibrary = gameLibraryForBridge();
+        nativeInstallAudioControl(gameLibrary);
         boolean initialized = NativeBridge.initialize(gameLibrary);
         nativeBridgeInitialized = initialized;
         if (initialized) com.core.gl.KirikiroidRawFrameBridge.configureLibrary(gameLibrary);
@@ -943,14 +941,6 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
         doSetSystemUiVisibility();
-    }
-
-    @Override
-    public void onWindowFocusChanged(boolean hasFocus) {
-        String focus = getIntent().getStringExtra(LaunchContract.FOCUS);
-        boolean forceFocus = focus != null && Boolean.parseBoolean(focus);
-        super.onWindowFocusChanged(hasFocus || forceFocus);
-        if (hasFocus || forceFocus) doSetSystemUiVisibility();
     }
 
     @Override

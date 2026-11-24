@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(tyranor_native)
 
-add_library(krkr_bridge_v2 SHARED krkr_bridge.cpp krkr_raw_frame_bridge.cpp)
+add_library(krkr_bridge_v2 SHARED krkr_bridge.cpp krkr_raw_frame_bridge.cpp krkr_audio_bridge.cpp)
 add_library(krkrsdl3_graphics_bridge SHARED krkrsdl3_graphics.cpp)
 add_library(artemis_audio_bridge SHARED artemis_audio_bridge.cpp)
 add_library(artemis_loader SHARED artemis_loader.cpp artemis_host_class.cpp artemis_official_graphics.cpp)

@@ -121,6 +121,7 @@ RPG Maker v2 的插件 `localStorage` 由兼容层调用 [RpgMakerFsBridge](engi
 以 [engine Manifest](engine/src/main/AndroidManifest.xml) 为准，内置宿主均为 `exported=false`，主要分为 `:kirikiri2`、`:krkrsdl3`、`:ons`、多档 `:artemis*`、`:siglus`、`:fbgames`、`:fvp`、`:ethornell`、`:cmvs`、`:systemnnn`、`:xsys35`、`:xsys4`、`:tyrano`、`:rpgmaker`。进程隔离用于控制原生库、全局状态与符号冲突；不提供通用跨引擎热切换保证。第三方 APK 运行时模块运行在用户安装的独立 APK 进程中，不属于上述宿主，也不由 App 建立 JNI 会话。
 
 - FVP、Framebuffer 及 Siglus 关闭滤镜的路径仍由主线程 `Choreographer` 同步驱动原生调用。
+- Kirikiroid2 由 [KR2Activity](engine/src/main/java/org/tvp/kirikiri2/KR2Activity.java) 根据 Activity、真实窗口焦点和锁屏状态控制 [原生音频桥](engine/src/main/cpp/krkr_audio_bridge.cpp)。桥接层按随包库的 Build ID 核对内存入口。1.3.9 的 Oboe 回调在暂停时输出静音并保留游戏 PCM，两个内核的 OpenAL 路径通过设备暂停和恢复控制输出，后台新建的 OpenAL 设备也受控制。Cocos 渲染的焦点兼容逻辑另受 Activity 恢复状态约束。
 - Siglus 有效滤镜链才启用专用 engine owner 与 GLES consumer；关闭、空链或无效链沿用 SurfaceView 原路径。两种路径共享原生实例准入，不能同时启动第二个 owner。
 - Ethornell 由专用 owner 线程管理 JNI 会话，Surface 世代、会话 token、退出 ACK 与存档操作门禁独立约束。宿主使用 ABI v1 接口面：15 个导出（含 `request_payload`）、Event kind 5 输入对话框与 JSON 回答；kind 5 的 payload 只在 owner 线程两段式读取，UI 线程只持有已解析字符串。随包库的来源与本地补丁清单以 provenance 为准（收敛启动期双重 `bgi-resource` 前缀，并放行顶层 `BGI.gdb` / `BGI####.cad` 到 user-root；provenance `dirty=true`）；`--local-static` 通过，严格来源审计要求 clean/已发布源码，见 §6。`EthornellPauseDeviceTest` 已重写为多 stage/step 模型并 3/3 通过；暂停/恢复与 Surface 通过，但精确 guest tick/held 序列不在该夹具覆盖范围。
 - Ethornell 上游实现虚拟根和用户存档读取映射；本地补丁 0001–0003 维护游戏目录存档策略和公共存储写锁，0005 限定 Amachoco ABI 恢复旧版 Graph91:00 空操作兼容行为。Sys80 与 Sys81 设备夹具覆盖读取路径，真实游戏兼容性仍需单独验收。

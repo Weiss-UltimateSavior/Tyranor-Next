@@ -3,7 +3,11 @@ package org.tvp.kirikiri2;
 import android.annotation.SuppressLint;
 import android.app.ActivityManager;
 import android.app.Dialog;
+import android.app.KeyguardManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
@@ -12,16 +16,16 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.os.PowerManager;
 import android.os.SystemClock;
 import android.preference.PreferenceManager;
-import android.media.AudioTrack;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
-import java.lang.reflect.Field;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import androidx.core.content.ContextCompat;
 import bridge.NativeBridge;
 import bridge.KrPathUtils;
 import com.core.engine.DoubleBackExit;
@@ -45,10 +49,19 @@ public class KR2Activity extends Cocos2dxActivity {
     private static volatile boolean skipStartupDialogs;
     private static volatile long launchStartElapsedMs = -1L;
     SharedPreferences Sp;
-    /** True only when this Activity paused SDL playback, so a user/game pause is never undone. */
-    private boolean sdlAudioPausedForBackground;
-    /** Fallback for devices on which AudioTrack.pause() rejects the current stream state. */
-    private boolean sdlAudioMutedForBackground;
+    private boolean audioHostResumed;
+    private boolean audioWindowFocused;
+    private boolean audioAllowed;
+    private boolean screenOff;
+    private PowerManager powerManager;
+    private KeyguardManager keyguardManager;
+    private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            screenOff = Intent.ACTION_SCREEN_OFF.equals(intent.getAction());
+            syncNativeAudio();
+            if (!screenOff) resumeIfHasFocus();
+        }
+    };
 
     public static KR2Activity GetInstance() { return sInstance; }
     public static KR2Activity getInstance() { return sInstance; }
@@ -309,6 +322,8 @@ public class KR2Activity extends Cocos2dxActivity {
     }
 
     private static native void initDump(String path);
+    protected static native void nativeInstallAudioControl(String gameLibrary);
+    private static native void nativeSetAudioPaused(boolean paused);
     private static native void nativeOnLowMemory();
     private static native boolean nativeGetHideSystemButton();
     public static native void nativeCharInput(int ch);
@@ -327,10 +342,12 @@ public class KR2Activity extends Cocos2dxActivity {
     public static native void onMessageBoxText(String text);
 
     @Override public void onLoadNativeLibraries() {
-        if (NativeLibraryLoader.loadKirikiroid139(this) == null) {
+        String gameLibrary = NativeLibraryLoader.loadKirikiroid139(this);
+        if (gameLibrary == null) {
             throw new UnsatisfiedLinkError("Kirikiroid2 native plugin is missing or invalid");
         }
         System.loadLibrary("krkr_bridge_v2");
+        nativeInstallAudioControl(gameLibrary);
     }
     @Override public void onCreate(Bundle savedInstanceState) {
         Intent launchIntent = getIntent();
@@ -340,6 +357,8 @@ public class KR2Activity extends Cocos2dxActivity {
         sInstance = this;
         msgHandler = new Handler(Looper.getMainLooper()) { @Override public void handleMessage(Message msg) { KR2Activity.this.handleMessage(msg); } };
         Sp = PreferenceManager.getDefaultSharedPreferences(this);
+        powerManager = getSystemService(PowerManager.class);
+        keyguardManager = getSystemService(KeyguardManager.class);
         super.onCreate(savedInstanceState);
         // initDump 由当前加载的 libgame/libgame134 提供；插件缺符号（安装不完整或
         // 版本不匹配）时以 try-catch 兜底，避免宿主直接崩溃。
@@ -367,65 +386,52 @@ public class KR2Activity extends Cocos2dxActivity {
         return gl;
     }
 
+    @Override protected void onStart() {
+        super.onStart();
+        screenOff = powerManager != null && !powerManager.isInteractive();
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_SCREEN_OFF);
+        filter.addAction(Intent.ACTION_SCREEN_ON);
+        filter.addAction(Intent.ACTION_USER_PRESENT);
+        ContextCompat.registerReceiver(this, screenReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
+    }
+
     @Override public void onPause() {
-        // KRKR's native player writes through SDL's static AudioTrack. Cocos pauses the GL/native
-        // thread in super.onPause(), but that does not reliably stop already-buffered audio.
-        pauseSdlAudioForBackground();
+        audioHostResumed = false;
+        syncNativeAudio();
         super.onPause();
     }
 
+    @Override protected void onStop() {
+        audioHostResumed = false;
+        audioWindowFocused = false;
+        syncNativeAudio();
+        unregisterReceiver(screenReceiver);
+        super.onStop();
+    }
+
     @Override public void onResume() {
+        audioHostResumed = true;
+        audioWindowFocused = hasWindowFocus();
+        syncNativeAudio();
         super.onResume();
-        resumeSdlAudioAfterBackground();
         doSetSystemUiVisibility();
     }
 
-    private AudioTrack getSdlAudioTrack() {
-        try {
-            Field field = Class.forName("org.libsdl.app.SDLAudioManager").getDeclaredField("mAudioTrack");
-            field.setAccessible(true);
-            Object value = field.get(null);
-            return value instanceof AudioTrack ? (AudioTrack) value : null;
-        } catch (Throwable error) {
-            android.util.Log.w("KR2Activity", "Unable to access SDL AudioTrack", error);
-            return null;
+    @Override protected boolean canResumeCocos() {
+        return !screenOff && (powerManager == null || powerManager.isInteractive())
+                && (keyguardManager == null || !keyguardManager.isKeyguardLocked());
+    }
+
+    private void syncNativeAudio() {
+        if (sInstance != this) return;
+        boolean allowed = audioHostResumed && audioWindowFocused && canResumeCocos();
+        if (audioAllowed != allowed) {
+            nativeSetAudioPaused(!allowed);
+            audioAllowed = allowed;
         }
     }
 
-    private void pauseSdlAudioForBackground() {
-        sdlAudioPausedForBackground = false;
-        sdlAudioMutedForBackground = false;
-        AudioTrack track = getSdlAudioTrack();
-        if (track == null || track.getPlayState() != AudioTrack.PLAYSTATE_PLAYING) return;
-        try {
-            track.pause();
-            sdlAudioPausedForBackground = true;
-        } catch (Throwable pauseError) {
-            // Keep a silent fallback for vendor AudioTrack implementations that reject pause().
-            try {
-                track.setVolume(0.0f);
-                sdlAudioMutedForBackground = true;
-            } catch (Throwable volumeError) {
-                android.util.Log.w("KR2Activity", "Unable to pause SDL audio for background", volumeError);
-            }
-        }
-    }
-
-    private void resumeSdlAudioAfterBackground() {
-        if (!sdlAudioPausedForBackground && !sdlAudioMutedForBackground) return;
-        AudioTrack track = getSdlAudioTrack();
-        try {
-            if (track != null) {
-                if (sdlAudioPausedForBackground) track.play();
-                if (sdlAudioMutedForBackground) track.setVolume(1.0f);
-            }
-        } catch (Throwable error) {
-            android.util.Log.w("KR2Activity", "Unable to resume SDL audio after background", error);
-        } finally {
-            sdlAudioPausedForBackground = false;
-            sdlAudioMutedForBackground = false;
-        }
-    }
     @Override public void onDestroy() {
         try {
             android.util.Log.i("KR2Activity", "destroy KR2Activity");
@@ -483,14 +489,18 @@ public class KR2Activity extends Cocos2dxActivity {
     }
 
     @Override public void onWindowFocusChanged(boolean hasFocus) {
+        audioWindowFocused = hasFocus;
+        syncNativeAudio();
+        // 保留启动兼容用的 Cocos 焦点覆盖。音频依据真实窗口焦点。
+        boolean cocosFocus = hasFocus || Boolean.parseBoolean(getIntent().getStringExtra(LaunchContract.FOCUS));
         // 弹窗显示期间，阻止 Cocos2dx 恢复 GL 线程（super 会调用 resumeIfHasFocus），
         // 防止引擎在弹窗未确认时自动继续执行。
-        if (hasFocus && mCurrentDialog != null && mCurrentDialog.isShowing()) {
+        if (cocosFocus && mCurrentDialog != null && mCurrentDialog.isShowing()) {
             doSetSystemUiVisibility();
             return;
         }
-        super.onWindowFocusChanged(hasFocus);
-        if (hasFocus) doSetSystemUiVisibility();
+        super.onWindowFocusChanged(cocosFocus);
+        if (cocosFocus) doSetSystemUiVisibility();
     }
     public String[] getStoragePath() {
         // The native engine uses this array for both its writable data root and
