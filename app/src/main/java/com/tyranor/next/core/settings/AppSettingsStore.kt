@@ -396,8 +396,10 @@ object AppSettingsStore {
     val backgroundImageBlurState: MutableStateFlow<Int> =
         MutableStateFlow(DEFAULT_BACKGROUND_IMAGE_BLUR)
 
+    internal data class GameConditionSelection(val conditions: GameLibraryConditions, val revision: Long = 0)
+
     private val gameConditionsLock = Any()
-    private val mutableGameConditions = MutableStateFlow(GameLibraryConditions())
+    private val mutableGameConditions = MutableStateFlow(GameConditionSelection(GameLibraryConditions()))
 
     /** 游戏页抽屉与设置页共用的排序和筛选快照，重置时一次发布。 */
     internal val gameConditions = mutableGameConditions.asStateFlow()
@@ -517,7 +519,7 @@ object AppSettingsStore {
     /** 主进程在 Application 启动阶段调用，恢复条件后页面才会创建。 */
     internal fun initGameConditions(c: Context) {
         synchronized(gameConditionsLock) {
-            mutableGameConditions.value = decodeGameConditions(prefs(c).all)
+            mutableGameConditions.value = GameConditionSelection(decodeGameConditions(prefs(c).all))
         }
     }
 
@@ -999,10 +1001,13 @@ object AppSettingsStore {
     fun gameShelfFocusUri(c: Context): String? =
         prefs(c).getString(KEY_GAME_SHELF_FOCUS_URI, null)?.takeIf { it.isNotEmpty() }
 
-    fun setGameShelfFocusUri(c: Context, uri: String) {
-        val p = prefs(c)
-        if (p.getString(KEY_GAME_SHELF_FOCUS_URI, null) != uri) {
-            p.edit().putString(KEY_GAME_SHELF_FOCUS_URI, uri).apply()
+    internal fun setGameShelfFocusUri(c: Context, uri: String, selection: GameConditionSelection) {
+        synchronized(gameConditionsLock) {
+            if (selection != mutableGameConditions.value) return
+            val p = prefs(c)
+            if (p.getString(KEY_GAME_SHELF_FOCUS_URI, null) != uri) {
+                p.edit().putString(KEY_GAME_SHELF_FOCUS_URI, uri).apply()
+            }
         }
     }
 
@@ -1012,13 +1017,16 @@ object AppSettingsStore {
 
     private fun updateGameConditions(c: Context, transform: (GameLibraryConditions) -> GameLibraryConditions) {
         synchronized(gameConditionsLock) {
-            val next = transform(mutableGameConditions.value)
+            val previous = mutableGameConditions.value
+            val next = transform(previous.conditions)
+            val changed = next != previous.conditions
             prefs(c).edit()
                 .putString(KEY_GAME_SORT, next.sortMode)
                 .putString(KEY_GAME_FILTER_ENGINE, next.engineFilter)
                 .putString(KEY_GAME_FILTER_PLAYED, next.playedFilter)
+                .apply { if (changed) remove(KEY_GAME_SHELF_FOCUS_URI) }
                 .apply()
-            mutableGameConditions.value = next
+            if (changed) mutableGameConditions.value = GameConditionSelection(next, previous.revision + 1)
         }
     }
 

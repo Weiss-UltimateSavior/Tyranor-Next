@@ -53,6 +53,7 @@ import com.tyranor.next.core.game.save.sync.requiresExternalSaveExitConfirmation
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.ScanGameIntents
+import com.tyranor.next.core.privacy.AppLockController
 import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.SecondaryTextColor
@@ -90,6 +91,7 @@ import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import com.tyranor.next.ui.common.notice.AppNotice
+import java.io.Serializable
 
 class SaveManagementActivity : AppScreenActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -114,19 +116,60 @@ class SaveManagementActivity : AppScreenActivity() {
     }
 }
 
+private data class BookSaveExportRequest(
+    val gameUri: String,
+    val format: GameSaveManager.ExportFormat,
+    val destination: String? = null,
+) : Serializable
+
+private fun bookSaveExportAllowed(): Boolean =
+    !AppLockController.lockedState.value && !AppLockController.willRequireUnlockOnEntering()
+
 /**
  * 「游戏盒」翻开的书里的存档管理：不另开二级页面，存档页翻在书的下一页上（章名「存档管理」，正文是存档位置、
  * 导入 / 导出 / 删除与存档版本，页脚「关闭」先翻回再关；其中的确认弹窗继续往后翻）。内容与二级页面是同一份（[SaveManagementContent]）。
+ * 导出请求和选择器注册属于此宿主，不依赖 [AppAlertDialog] 每次呈现时新建的书页对象。
  */
 @Composable
 internal fun SaveManagementDialog(game: ScanGame, onDismiss: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     val canDismiss = { !busy }
+    var exportRequest by rememberSaveable(game.uri) { mutableStateOf<BookSaveExportRequest?>(null) }
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip"),
+    ) { uri ->
+        val request = exportRequest
+        if (request != null && request.destination == null) {
+            exportRequest = if (uri != null && request.gameUri == game.uri && bookSaveExportAllowed()) {
+                request.copy(destination = uri.toString())
+            } else null
+        }
+    }
     AppAlertDialog(
         onDismissRequest = onDismiss,
         dismissEnabledNow = canDismiss,
         title = { Text(stringResource(R.string.save_management_title), style = MaterialTheme.typography.titleMedium) },
-        text = { SaveManagementContent(game = game, inBook = true, onBusyChange = { busy = it }) },
+        text = {
+            SaveManagementContent(
+                game = game,
+                inBook = true,
+                onBusyChange = { busy = it },
+                onBookExport = { format ->
+                    if (exportRequest == null && bookSaveExportAllowed()) {
+                        exportRequest = BookSaveExportRequest(game.uri, format)
+                        exportLauncher.launch(defaultArchiveName(game))
+                    }
+                },
+                bookExportResult = exportRequest?.takeIf { it.destination != null },
+                consumeBookExportResult = { request ->
+                    if (exportRequest !== request) false
+                    else {
+                        exportRequest = null
+                        request.gameUri == game.uri && bookSaveExportAllowed()
+                    }
+                },
+            )
+        },
         confirmButton = {
             val exit = LocalDialogExit.current
             CompositionLocalProvider(LocalDialogExit provides null) {
@@ -149,6 +192,9 @@ private fun SaveManagementContent(
     game: ScanGame,
     inBook: Boolean,
     onBusyChange: (Boolean) -> Unit = {},
+    onBookExport: ((GameSaveManager.ExportFormat) -> Unit)? = null,
+    bookExportResult: BookSaveExportRequest? = null,
+    consumeBookExportResult: (BookSaveExportRequest) -> Boolean = { false },
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -177,8 +223,6 @@ private fun SaveManagementContent(
     var hasImportedResources by remember { mutableStateOf(false) }
     var showClearImportedResources by remember { mutableStateOf(false) }
     var showExportFormatPicker by remember { mutableStateOf(false) }
-    // CreateDocument 系统页期间进程重建后仍按用户所选格式导出。
-    var exportFormat by rememberSaveable { mutableStateOf(GameSaveManager.ExportFormat.TYRANOR) }
     val rpgWebGame = RpgSaveFormat.isRpgWebEngine(game.engine)
     // 存档互通生效值（单游戏覆盖 > 全局）：L7——关闭时隐藏「立即同步」，
     // 避免用户在功能未开启时触发出人意料的删除归置语义
@@ -289,13 +333,21 @@ private fun SaveManagementContent(
         }
     }
 
-    val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/zip"),
-    ) { uri: Uri? ->
-        if (uri != null) {
-            runSaveTask {
-                val count = manager.withManualSaveAccess(game) { manager.exportToZip(game, uri, exportFormat) }
-                saveExportedCountFormat.format(count)
+    fun exportTo(uri: Uri, format: GameSaveManager.ExportFormat) {
+        runSaveTask {
+            if (inBook && !bookSaveExportAllowed()) return@runSaveTask null
+            val count = manager.withManualSaveAccess(game) { manager.exportToZip(game, uri, format) }
+            saveExportedCountFormat.format(count)
+        }
+    }
+
+    val pickExportDestination = onBookExport ?: rememberStandaloneSaveExportLauncher(game, ::exportTo)
+
+    if (bookExportResult != null) {
+        LaunchedEffect(bookExportResult, taskRunning) {
+            val destination = bookExportResult.destination ?: return@LaunchedEffect
+            if (!taskRunning && consumeBookExportResult(bookExportResult)) {
+                exportTo(Uri.parse(destination), bookExportResult.format)
             }
         }
     }
@@ -450,8 +502,7 @@ private fun SaveManagementContent(
                                     if (rpgWebGame) {
                                         showExportFormatPicker = true
                                     } else {
-                                        exportFormat = GameSaveManager.ExportFormat.TYRANOR
-                                        exportLauncher.launch(defaultArchiveName(game))
+                                        pickExportDestination(GameSaveManager.ExportFormat.TYRANOR)
                                     }
                                 }),
                             )
@@ -639,8 +690,7 @@ private fun SaveManagementContent(
                         indication = null,
                         onClick = {
                             showExportFormatPicker = false
-                            exportFormat = GameSaveManager.ExportFormat.STANDARD
-                            exportLauncher.launch(defaultArchiveName(game))
+                            pickExportDestination(GameSaveManager.ExportFormat.STANDARD)
                         },
                     )
                     AppNavItem(
@@ -653,8 +703,7 @@ private fun SaveManagementContent(
                         indication = null,
                         onClick = {
                             showExportFormatPicker = false
-                            exportFormat = GameSaveManager.ExportFormat.TYRANOR
-                            exportLauncher.launch(defaultArchiveName(game))
+                            pickExportDestination(GameSaveManager.ExportFormat.TYRANOR)
                         },
                     )
                 }
@@ -709,6 +758,21 @@ private fun SaveManagementContent(
                 DialogTextButton(text = stringResource(R.string.common_cancel), onClick = { showDeleteConfirm = false })
             },
         )
+    }
+}
+
+@Composable
+private fun rememberStandaloneSaveExportLauncher(
+    game: ScanGame,
+    onDestination: (Uri, GameSaveManager.ExportFormat) -> Unit,
+): (GameSaveManager.ExportFormat) -> Unit {
+    var exportFormat by rememberSaveable { mutableStateOf(GameSaveManager.ExportFormat.TYRANOR) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) onDestination(uri, exportFormat)
+    }
+    return { format ->
+        exportFormat = format
+        launcher.launch(defaultArchiveName(game))
     }
 }
 

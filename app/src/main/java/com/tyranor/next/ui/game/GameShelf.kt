@@ -34,7 +34,6 @@ import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.PagerState
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.AbsoluteCutCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -54,6 +53,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -220,22 +220,37 @@ internal fun GameShelf(
     onCurrentGameChanged: ((ScanGame) -> Unit)? = null,
 ) {
     val hideTitleTag by AppSettingsStore.gameCardTitleTagState.collectSettingAsState()
-    val initialPage = remember { shelfFocusPage(games, initialUri) }
-    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { games.size })
+    val latestGames by rememberUpdatedState(games)
+    val pagerState = remember { PagerState(currentPage = shelfFocusPage(games, initialUri), pageCount = { latestGames.size }) }
     val scope = rememberCoroutineScope()
 
-    var focusedUri by remember { mutableStateOf(games.getOrNull(initialPage)?.uri) }
     val notifyCurrentGame by rememberUpdatedState(onCurrentGameChanged)
-    val latestGames by rememberUpdatedState(games)
+    val latestInteractive by rememberUpdatedState(isInteractive)
     val pendingUri = catalog?.pendingFocusUri
     val focusToken = catalog?.focusRequestToken
     val interactive = isInteractive()
+    val adjustment = remember(pagerState, games) {
+        Snapshot.withoutReadObservation {
+            val uri = pagerState.currentShelfPageKey() ?: return@withoutReadObservation null
+            val page = shelfPageAdjustment(games, pagerState.currentPage, uri) ?: return@withoutReadObservation null
+            page to if (games[page].uri == uri) pagerState.currentPageOffsetFraction else 0f
+        }
+    }
+    LaunchedEffect(pagerState, games) {
+        if (adjustment != null && latestInteractive() && catalog?.pendingFocusUri == null) {
+            pagerState.requestScrollToPage(adjustment.first, adjustment.second)
+        }
+    }
     LaunchedEffect(pagerState, games, catalog, focusToken, pendingUri, interactive) {
-        if (!isInteractive() || games.isEmpty()) return@LaunchedEffect
-        val requestPage = pendingUri?.let { uri -> games.indexOfFirst { it.uri == uri } } ?: -1
-        if (catalog != null && focusToken != null && pendingUri != null && requestPage >= 0) {
+        if (!latestInteractive() || games.isEmpty()) return@LaunchedEffect
+        if (catalog != null && focusToken != null && pendingUri != null) {
+            val requestPage = games.indexOfFirst { it.uri == pendingUri }
+            if (requestPage < 0) {
+                if (latestGames.none { it.uri == pendingUri }) catalog.clearPendingFocus(focusToken)
+                return@LaunchedEffect
+            }
             fun requestIsPending() = catalog.focusRequestToken == focusToken && catalog.pendingFocusUri == pendingUri &&
-                latestGames.getOrNull(requestPage)?.uri == pendingUri && isInteractive()
+                latestGames.getOrNull(requestPage)?.uri == pendingUri && latestInteractive()
             if (!requestIsPending()) return@LaunchedEffect
             if (!pagerState.isShelfPageCentered(requestPage, pendingUri)) {
                 with(pagerState) {
@@ -245,23 +260,19 @@ internal fun GameShelf(
                 }
             }
             snapshotFlow { !requestIsPending() || pagerState.isShelfPageCentered(requestPage, pendingUri) }.first { it }
-            if (!requestIsPending() || !pagerState.isShelfPageCentered(requestPage, pendingUri) ||
-                !catalog.markFocusAligned(focusToken, pendingUri)
-            ) return@LaunchedEffect
-            focusedUri = pendingUri
-        } else {
-            val page = shelfFocusPage(games, focusedUri)
-            if (page != pagerState.currentPage || games[page].uri != focusedUri) {
-                pagerState.requestScrollToPage(page)
+            if (requestIsPending() && pagerState.isShelfPageCentered(requestPage, pendingUri)) {
+                catalog.markFocusAligned(focusToken, pendingUri)
             }
         }
+    }
+    LaunchedEffect(pagerState, catalog) {
         snapshotFlow {
             val page = pagerState.currentPage
-            games.getOrNull(page)?.takeIf { pagerState.hasShelfPageKey(page, it.uri) }
-        }.collect { current ->
-            if (current != null && isInteractive()) {
-                focusedUri = current.uri
-                notifyCurrentGame?.invoke(current)
+            val uri = latestGames.getOrNull(page)?.uri
+            uri?.takeIf { latestInteractive() && catalog?.pendingFocusUri == null && pagerState.currentShelfPageKey() == it }
+        }.collect { uri ->
+            if (uri != null && latestInteractive()) {
+                latestGames.getOrNull(pagerState.currentPage)?.takeIf { it.uri == uri }?.let { notifyCurrentGame?.invoke(it) }
             }
         }
     }
@@ -359,8 +370,11 @@ internal fun shelfFocusPage(games: List<ScanGame>, uri: String?): Int =
         ?: games.indices.maxByOrNull { games[it].openTime }?.takeIf { games[it].openTime > 0L }
         ?: 0
 
-private fun PagerState.hasShelfPageKey(page: Int, uri: String): Boolean =
-    layoutInfo.visiblePagesInfo.any { it.index == page && it.key == uri }
+internal fun shelfPageAdjustment(games: List<ScanGame>, page: Int, measuredUri: String): Int? =
+    if (games.isEmpty() || games.getOrNull(page)?.uri == measuredUri) null else shelfFocusPage(games, measuredUri)
+
+private fun PagerState.currentShelfPageKey(): String? =
+    layoutInfo.visiblePagesInfo.firstOrNull { it.index == currentPage }?.key as? String
 
 private fun PagerState.isShelfPageCentered(page: Int, uri: String): Boolean =
     currentPage == page && currentPageOffsetFraction == 0f && !isScrollInProgress &&
@@ -2472,8 +2486,9 @@ private suspend fun AwaitPointerEventScope.awaitShelfTrackTapOrDrag(down: Pointe
         val event = awaitPointerEvent()
         val change = event.changes.singleOrNull() ?: return null
         if (change.id != down.id || change.isConsumed) return null
+        if (change.isOutOfBounds(size, extendedTouchPadding)) return null
         val travel = change.position - down.position
-        withinTapSlop = withinTapSlop && travel.getDistance() < slop && !change.isOutOfBounds(size, extendedTouchPadding)
+        withinTapSlop = withinTapSlop && travel.getDistance() < slop
         if (change.changedToUp()) {
             if (!withinTapSlop || change.uptimeMillis - down.uptimeMillis >= viewConfiguration.longPressTimeoutMillis) {
                 return null

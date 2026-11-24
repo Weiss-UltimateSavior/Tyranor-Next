@@ -1674,7 +1674,7 @@ internal class ShelfScrubberMotion(private val scope: CoroutineScope) {
      * 与旧 `Animatable(RAIL_SPRING)` + `delay(70ms)` 回零行为数值同源。
      */
     suspend fun trackKnob(pagerState: PagerState, knobSeek: ShelfKnobSeek, count: Int) {
-        if (!MotionMode.enhanced) {
+        if (!MotionMode.enhanced || !ValueAnimator.areAnimatorsEnabled()) {
             railBounceState.floatValue = 0f
             return
         }

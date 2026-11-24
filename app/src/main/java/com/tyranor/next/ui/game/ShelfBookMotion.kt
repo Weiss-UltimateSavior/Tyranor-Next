@@ -1730,8 +1730,8 @@ internal fun Modifier.shelfBookTabPageWash(motion: ShelfBookTabMotion, tint: Col
 /**
  * 书页逐字晕墨显影文字：
  * - 静止期与退场期直接渲染单个普通 `Text`（零额外图层与排版开销）；
- * - 增强档新页进场期间按字符/短段逐个从高斯墨晕中浮现清晰（单行通过定制 `Layout` 保留 [FirstBaseline] 与紧致宽度，
- *   多行保留原生 Text 的折行与省略，对整段做显影）。
+ * - 增强档新页进场期间，放得下的单行按字符/短段显影，并保留 [FirstBaseline] 与紧致宽度；
+ *   放不下的单行与多行沿用原生 `Text` 排版，对整段做显影。
  */
 @Composable
 internal fun ShelfBookInkText(
@@ -1747,24 +1747,30 @@ internal fun ShelfBookInkText(
     overflow: TextOverflow = TextOverflow.Ellipsis,
     textAlign: TextAlign? = null,
 ) {
-    if (maxLines != 1 || !tabMotion.enhanced || !tabMotion.isTransitioning || tabRole == ShelfBookTabRole.Exiting || text.isEmpty()) {
+    val plainText: @Composable (Modifier) -> Unit = { textModifier ->
         Text(
             text = text,
-            modifier = if (maxLines != 1 && tabRole == ShelfBookTabRole.Entering) {
-                modifier.shelfBookTabItem(tabMotion, tabRole, order, subDelay)
-            } else {
-                modifier
-            },
+            modifier = textModifier,
             style = style,
             color = color,
             maxLines = maxLines,
             overflow = overflow,
             textAlign = textAlign,
         )
+    }
+    if (maxLines != 1 || !tabMotion.enhanced || !tabMotion.isTransitioning || tabRole == ShelfBookTabRole.Exiting || text.isEmpty()) {
+        plainText(
+            if (maxLines != 1 && tabRole == ShelfBookTabRole.Entering) {
+                modifier.shelfBookTabItem(tabMotion, tabRole, order, subDelay)
+            } else {
+                modifier
+            },
+        )
         return
     }
     val segments = remember(text) { splitInkSegments(text) }
     val content: @Composable () -> Unit = {
+        plainText(Modifier.shelfBookTabItem(tabMotion, tabRole, order, subDelay))
         segments.forEachIndexed { idx, segment ->
             Text(
                 text = segment,
@@ -1790,10 +1796,18 @@ internal fun ShelfBookInkText(
             )
         }
     }
-    Layout(content = content, modifier = modifier.clipToBounds()) { measurables, constraints ->
+    val layoutModifier = if (overflow == TextOverflow.Visible) modifier else modifier.clipToBounds()
+    Layout(content = content, modifier = layoutModifier) { measurables, constraints ->
+        val wholeLine = measurables.first()
+        val wholeLineFits = !constraints.hasBoundedWidth ||
+            wholeLine.maxIntrinsicWidth(constraints.maxHeight) <= constraints.maxWidth
         val loose = Constraints(maxWidth = Constraints.Infinity, maxHeight = constraints.maxHeight)
-        val placeables = measurables.map { it.measure(loose) }
+        val placeables = if (wholeLineFits) measurables.drop(1).map { it.measure(loose) } else emptyList()
         val totalWidth = placeables.sumOf { it.width }
+        if (!wholeLineFits || totalWidth > constraints.maxWidth) {
+            val line = wholeLine.measure(constraints)
+            return@Layout layout(line.width, line.height) { line.placeRelative(0, 0) }
+        }
         val height = placeables.maxOfOrNull { it.height } ?: constraints.minHeight
         val layoutWidth = totalWidth.coerceIn(constraints.minWidth, constraints.maxWidth)
         val firstPlaceable = placeables.firstOrNull()

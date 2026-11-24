@@ -279,6 +279,17 @@ class GameShelfGeometryTest {
     }
 
     @Test
+    fun shelfListRefreshOnlyAdjustsWhenTheMeasuredBookMovesOrIsRemoved() {
+        val recent = ScanGame("A", "a", EngineType.UNKNOWN, "", openTime = 10L)
+        val current = recent.copy(title = "B", uri = "b", openTime = 0L)
+        val other = current.copy(title = "C", uri = "c")
+        assertEquals(null, shelfPageAdjustment(listOf(recent, current.copy(title = "New title"), other), 1, current.uri))
+        assertEquals(202, shelfPageAdjustment(listOf(recent, other) + List(200) { other.copy(uri = "other-$it") } + current, 1, current.uri))
+        assertEquals(0, shelfPageAdjustment(listOf(recent, other), 1, current.uri))
+        assertEquals(null, shelfPageAdjustment(emptyList(), 1, current.uri))
+    }
+
+    @Test
     fun titlesAreLimitedByCharacterCount() {
         assertEquals("樱花季节", limitShelfTitle("樱花季节", 8))
         assertEquals("哥哥，早上起床…", limitShelfTitle("哥哥，早上起床之前都要抱紧我哦！FD", 8))

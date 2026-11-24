@@ -454,13 +454,12 @@ private fun GameLibraryContent(
     var showShelfCatalog by rememberSaveable { mutableStateOf(false) }
     var catalogAnchorUri by rememberSaveable { mutableStateOf<String?>(null) }
     var catalogLayoutMode by rememberSaveable { mutableStateOf(ShelfCatalogLayoutMode.SPINES) }
-    // 书架停留的那一本：先取上次记下的（退出 / 清后台后重进还在这本上），之后随翻动更新
-    var shelfCurrentUri by rememberSaveable { mutableStateOf(AppSettingsStore.gameShelfFocusUri(context)) }
     // 进入藏书阁前书架上显示的那一本：只有它带「选定」效果（之后书架因筛选换了页也不改）
     var catalogSelectedUri by rememberSaveable { mutableStateOf<String?>(null) }
     val focusManager = LocalFocusManager.current
-    val conditions by AppSettingsStore.gameConditions.collectSettingAsState()
-    var shelfFocusConditions by remember { mutableStateOf(conditions) }
+    val conditionSelection = AppSettingsStore.gameConditions.collectSettingAsState().value
+    val conditions = conditionSelection.conditions
+    var shelfCurrentUri by remember(conditionSelection) { mutableStateOf(AppSettingsStore.gameShelfFocusUri(context)) }
     // 条件变化时重新创建滚动状态，避免 Lazy 布局按旧首卡键锚定到排序后的其它位置。
     val gridState = key(conditions) { rememberLazyStaggeredGridState() }
     val uniformGridState = key(conditions) { rememberLazyGridState() }
@@ -480,12 +479,19 @@ private fun GameLibraryContent(
     val filteredGames = remember(searchedGames, conditions) {
         filterGames(searchedGames, conditions.engineFilter, conditions.playedFilter)
     }
+    val pendingShelfUri = shelfCatalog.pendingFocusUri
+    val pendingShelfToken = shelfCatalog.focusRequestToken
+    LaunchedEffect(loaded, filteredGames, pendingShelfUri, pendingShelfToken) {
+        if (loaded && pendingShelfUri != null && filteredGames.none { it.uri == pendingShelfUri }) {
+            shelfCatalog.clearPendingFocus(pendingShelfToken)
+        }
+    }
     val availableEngines = remember(games) { games.map { it.engine }.distinct().sortedBy { it.ordinal } }
     val selectedEngine = conditions.engineFilter
     LaunchedEffect(loaded, scanning, confirmedEngineTypes, availableEngines, selectedEngine) {
         if (loaded && !scanning &&
             conditions.isEngineFilterMissing(availableEngines, confirmedEngineTypes) &&
-            AppSettingsStore.gameConditions.value.engineFilter == selectedEngine
+            AppSettingsStore.gameConditions.value.conditions.engineFilter == selectedEngine
         ) {
             AppSettingsStore.setGameFilterEngine(context, AppSettingsStore.GAME_FILTER_ENGINE_ALL)
         }
@@ -682,7 +688,7 @@ private fun GameLibraryContent(
                                 )
                             }
                             // 「书架」风格：游戏盒立在搁板上，居中正面、两侧露书脊；长按进入藏书阁全景检索筛选
-                            AppSettingsStore.GAME_CARD_STYLE_SHELF -> key(conditions) {
+                            AppSettingsStore.GAME_CARD_STYLE_SHELF -> key(conditionSelection) {
                                 GameShelf(
                                     games = filteredGames,
                                     isInteractive = { contentInteractive && cardStyle == AppSettingsStore.GAME_CARD_STYLE_SHELF },
@@ -697,11 +703,10 @@ private fun GameLibraryContent(
                                     },
                                     book = shelfBook,
                                     catalog = shelfCatalog,
-                                    initialUri = shelfCurrentUri.takeIf { shelfFocusConditions == conditions },
+                                    initialUri = shelfCurrentUri,
                                     onCurrentGameChanged = { current ->
-                                        shelfFocusConditions = conditions
                                         shelfCurrentUri = current.uri
-                                        AppSettingsStore.setGameShelfFocusUri(context, current.uri)
+                                        AppSettingsStore.setGameShelfFocusUri(context, current.uri, conditionSelection)
                                     },
                                 )
                             }
@@ -803,8 +808,8 @@ private fun GameLibraryContent(
                 when {
                     filteredGames.none { it.uri == picked.uri } -> 0
                     scanning || !loaded -> {
-                        shelfFocusConditions = conditions
                         shelfCurrentUri = picked.uri
+                        AppSettingsStore.setGameShelfFocusUri(context, picked.uri, conditionSelection)
                         0
                     }
                     else -> shelfCatalog.requestFocus(picked.uri)

@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material3.Card
@@ -30,6 +31,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -427,19 +429,32 @@ private fun PatchEntryCard(
             ) {
                 entry.patches.forEach { url ->
                     val name = url.substringAfterLast('/')
+                    val isChecked = checked[url] == true
                     val rowInteraction = remember { MutableInteractionSource() }
+                    val rowToggle = if (inBook) {
+                        Modifier.toggleable(
+                            value = isChecked,
+                            interactionSource = rowInteraction,
+                            indication = null,
+                            role = Role.Checkbox,
+                            onValueChange = { checked[url] = it },
+                        )
+                    } else {
+                        Modifier.clickable(interactionSource = rowInteraction, indication = null) {
+                            checked[url] = checked[url] != true
+                        }
+                    }
                     Row(
                         modifier = Modifier
                             .pressSquish(scale = PressSquishDefaults.RowScale)
                             .fillMaxWidth()
-                            .clickable(interactionSource = rowInteraction, indication = null) {
-                                checked[url] = checked[url] != true
-                            },
+                            .then(rowToggle),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Checkbox(
-                            checked = checked[url] == true,
-                            onCheckedChange = { checked[url] = it },
+                            checked = isChecked,
+                            onCheckedChange = if (inBook) null else { value -> checked[url] = value },
+                            modifier = if (inBook) Modifier.minimumInteractiveComponentSize() else Modifier,
                         )
                         Text(
                             name,
