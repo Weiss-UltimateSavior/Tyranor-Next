@@ -747,7 +747,9 @@ private fun ShelfCatalogWall(
     onPickGame: (ScanGame) -> Unit,
 ) {
     val canAlign = remember { conditionBatch } === conditionBatch
-    val anchorY = motion.layoutAnchorY.takeIf { canAlign && motion.layoutMode == layoutMode }
+    // 切换陈列时旧书柜会作为「退场面」重新组合：它和新书柜都要对齐到同一个锚点高度，
+    // 否则旧柜退回进入时的焦点行，没被变形卡片接管的书会从卡片后面冒出来。
+    val anchorY = motion.layoutAnchorY.takeIf { canAlign }
     val anchorUri = if (anchorY != null) motion.layoutAnchorUri ?: initialAnchorUri else initialAnchorUri
     val groupByEngine = conditions.sortMode == AppSettingsStore.GAME_SORT_ENGINE
     val accent = MaterialTheme.colorScheme.primary
