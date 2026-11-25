@@ -234,6 +234,9 @@ fun <S> BlurCrossfade(
     blur: Dp = ContentBlurRadius,
     initialScale: Float = 0.92f,
     label: String = "BlurCrossfade",
+    /** 新内容淡入 / 旧内容淡出的时长（毫秒）；默认是通用节奏，只有换得很频繁的小块内容才缩短。 */
+    swapInMillis: Int = BLUR_SWAP_IN_MILLIS,
+    swapOutMillis: Int = BLUR_SWAP_OUT_MILLIS,
     contentKey: (S) -> Any? = { it },
     /** 语言变化造成的整屏文字替换默认不动画；只有被点选的控件自己的值（如语言下拉的当前值）才传 true。 */
     animateOnLocaleChange: Boolean = false,
@@ -250,10 +253,10 @@ fun <S> BlurCrossfade(
                 ContentTransform(EnterTransition.None, ExitTransition.None, sizeTransform = null)
             } else {
                 (
-                    fadeIn(MotionSprings.effects(BLUR_SWAP_IN_MILLIS)) +
+                    fadeIn(MotionSprings.effects(swapInMillis)) +
                         scaleIn(MotionTokens.content(), initialScale = initialScale)
                     ) togetherWith (
-                    fadeOut(MotionSprings.effects(BLUR_SWAP_OUT_MILLIS)) +
+                    fadeOut(MotionSprings.effects(swapOutMillis)) +
                         scaleOut(MotionTokens.contentExit(), targetScale = initialScale)
                     ) using SizeTransform(clip = false) { _, _ ->
                     MotionTokens.content(IntSize(1, 1))

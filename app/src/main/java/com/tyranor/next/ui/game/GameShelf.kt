@@ -2335,7 +2335,12 @@ private fun ShelfAdvWindow(
                 .padding(start = 18.dp, end = 16.dp, top = 20.dp, bottom = 12.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                BlurCrossfade(title, modifier = Modifier.weight(1f)) { text ->
+                BlurCrossfade(
+                    title,
+                    modifier = Modifier.weight(1f),
+                    swapInMillis = SHELF_INFO_SWAP_IN_MILLIS,
+                    swapOutMillis = SHELF_INFO_SWAP_OUT_MILLIS,
+                ) { text ->
                     Text(
                         text,
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
@@ -2393,7 +2398,12 @@ private fun ShelfLine(game: ScanGame, stats: GamePlaytimeStats?, modifier: Modif
         game.openTime > 0L -> stringResource(R.string.game_shelf_continue)
         else -> stringResource(R.string.game_shelf_unplayed)
     }
-    BlurCrossfade(line, modifier = modifier.clearAndSetSemantics { contentDescription = line }) { text ->
+    BlurCrossfade(
+        line,
+        modifier = modifier.clearAndSetSemantics { contentDescription = line },
+        swapInMillis = SHELF_INFO_SWAP_IN_MILLIS,
+        swapOutMillis = SHELF_INFO_SWAP_OUT_MILLIS,
+    ) { text ->
         val shown = rememberTypewriterLength(text)
         Text(
             text = text.take(shown),
