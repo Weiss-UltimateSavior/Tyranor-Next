@@ -109,6 +109,11 @@ internal fun DialogWindowScrim(
                                     targetPosition = change?.position,
                                     targetPressed = change?.pressed == true,
                                     eventUptimeMillis = change?.uptimeMillis ?: down.uptimeMillis,
+                                    // 窗口退场末段改成不拦触摸 / 被移除时，系统给这个手势发 ACTION_CANCEL，Compose 把它合成为一个
+                                    // 「pressed = false」的普通事件，这种合成事件没有对应的 MotionEvent；真实抬手一定带着 ACTION_UP。
+                                    genuineRelease = event.motionEvent?.actionMasked.let {
+                                        it == MotionEvent.ACTION_UP || it == MotionEvent.ACTION_POINTER_UP
+                                    },
                                 )
                                 if (!keepGoing) break
                             }
@@ -128,7 +133,7 @@ internal fun DialogWindowScrim(
 }
 
 /**
- * 弹窗退场期间遮罩手势判定器：只有「单指、位移未超容差、未超时长按且真实抬手」才视为可补发的单击。
+ * 弹窗退场期间遮罩手势判定器：只有「单指、位移未超容差、未超时长按且真实抬手（ACTION_UP）」才视为可补发的单击。
  * 手指尚按住时窗口移除（手势被取消）不得补发单击，防止把退场尾段或收起刚结束时的再次长按误判为单击。
  */
 internal class ExitScrimTapTracker(
@@ -145,6 +150,8 @@ internal class ExitScrimTapTracker(
         targetPosition: Offset?,
         targetPressed: Boolean,
         eventUptimeMillis: Long,
+        /** 这次「没有按下」是真实的手指抬起（ACTION_UP）；false 表示是系统取消手势后合成出来的，不能当成抬手。 */
+        genuineRelease: Boolean,
     ): Boolean {
         if (targetPosition == null) {
             possibleTap = false
@@ -154,7 +161,7 @@ internal class ExitScrimTapTracker(
         if ((targetPosition - downPosition).getDistance() > tapSlopPx) possibleTap = false
         if (eventUptimeMillis - downUptimeMillis > longPressMillis) possibleTap = false
         if (!targetPressed) {
-            lifted = true
+            if (genuineRelease) lifted = true else possibleTap = false
             return false
         }
         return true
