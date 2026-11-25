@@ -1735,6 +1735,7 @@ internal class ShelfCatalogMotion(
                     if (uri !in landingUris) troupe += takeoff.fadeFrom(takeoffProgress)
                 }
                 troupe.sortBy { it.zPriority }
+                val handoffStart = shelfCatalogHandoffStart(troupe, stage.stageDensity)
 
                 if (troupe.isNotEmpty()) {
                     troupePresence.snapTo(1f)
@@ -1763,7 +1764,7 @@ internal class ShelfCatalogMotion(
                         launch {
                             // 书落位的最后一小段里，书架上真正的书（连同投影、倒影、书脊上的烫线与菱饰）就开始浮现，
                             // 与飞行的书交叠着交接，不是飞完了才一下子冒出来
-                            returnFlight.animateTo(1f, CATALOG_PICK_SPRING) { stage.lentAlpha = shelfCatalogHandoffAlpha(value) }
+                            returnFlight.animateTo(1f, CATALOG_PICK_SPRING) { stage.lentAlpha = shelfCatalogHandoffAlpha(value, handoffStart) }
                         }
                     }
                 }
@@ -1854,6 +1855,7 @@ internal class ShelfCatalogMotion(
             }
         }
         troupe.sortBy { it.zPriority }
+        val handoffStart = shelfCatalogHandoffStart(troupe, stage.stageDensity)
 
         transitionJob?.cancel()
         transitionJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -1885,10 +1887,10 @@ internal class ShelfCatalogMotion(
                             if (reversingEntry) {
                                 troupeFlight.animateTo(0f, CATALOG_EXIT_SPRING) {
                                     val handoff = if (reverseFrom > 0f) 1f - value / reverseFrom else 1f
-                                    stage.lentAlpha = shelfCatalogHandoffAlpha(handoff)
+                                    stage.lentAlpha = shelfCatalogHandoffAlpha(handoff, handoffStart)
                                 }
                             } else {
-                                returnFlight.animateTo(1f, CATALOG_EXIT_SPRING) { stage.lentAlpha = shelfCatalogHandoffAlpha(value) }
+                                returnFlight.animateTo(1f, CATALOG_EXIT_SPRING) { stage.lentAlpha = shelfCatalogHandoffAlpha(value, handoffStart) }
                             }
                         }
                     }
@@ -2432,9 +2434,39 @@ internal fun Modifier.shelfCatalogTroupeFront(
 }
 
 /** 退场飞行走到 [flight]（0..1，弹簧可能略超过 1）时，书架上真正的书该有多显现。 */
-internal fun shelfCatalogHandoffAlpha(flight: Float): Float {
-    val x = ((flight - CATALOG_HANDOFF_START) / (1f - CATALOG_HANDOFF_START)).coerceIn(0f, 1f)
+internal fun shelfCatalogHandoffAlpha(flight: Float, start: Float = CATALOG_HANDOFF_START): Float {
+    val x = ((flight - start) / (1f - start).coerceAtLeast(0.001f)).coerceIn(0f, 1f)
     return x * x * (3f - 2f * x)
+}
+
+/**
+ * 书架上真正的书开始浮现的飞行进度。固定从 92% 起浮现时，飞得远 / 形变大的书（书脊变封面，宽度要长几百 px）此刻离落点还差一截，
+ * 浮现的真书与还在飞的那张封面是两张错开的图，叠出重影，要等弹簧收完才重合。改成按「飞行还剩的像素」定：
+ * 剩余距离降到 [residualPx] 以内才开始浮现，最早仍是 92%（近距离的书不变），最晚留 [HANDOFF_MIN_REMAINING] 的行程。
+ */
+internal fun shelfCatalogHandoffStartFor(travelPx: Float, residualPx: Float): Float {
+    if (!(travelPx > 0f)) return CATALOG_HANDOFF_START
+    val remaining = (residualPx / travelPx).coerceIn(HANDOFF_MIN_REMAINING, 1f - CATALOG_HANDOFF_START)
+    return 1f - remaining
+}
+
+/** 这一队飞行里最「远」的一本（位置、高、封面宽的最大变化量，含错峰延迟拉长的部分）决定交接的起点。 */
+internal fun shelfCatalogHandoffStart(troupe: List<ShelfCatalogBookFlight>, density: Float): Float {
+    var worst = 0f
+    for (flight in troupe) {
+        if (flight.fadeInPlace) continue
+        val from = shelfCatalogBookPose(0f, flight)
+        val to = shelfCatalogBookPose(1f, flight)
+        val travel = maxOf(
+            abs(from.spineCenterX - to.spineCenterX),
+            abs(from.spineCenterY - to.spineCenterY),
+            abs(from.spineHeight - to.spineHeight),
+            abs(from.coverWidth - to.coverWidth),
+        )
+        val span = (1f - flight.delayFraction.coerceIn(0f, 0.4f)).coerceAtLeast(0.1f)
+        worst = maxOf(worst, travel / span)
+    }
+    return shelfCatalogHandoffStartFor(worst, HANDOFF_RESIDUAL_DP * density)
 }
 
 private fun stageRecedeScale(progress: Float): Float = 1f - STAGE_RECEDE_SCALE_DROP * progress
@@ -2459,6 +2491,9 @@ private const val EXIT_WAIT_ORIGIN_MS = 120L
 /** 飞行的书走到全程的这一比例之后，书架上真正的书开始浮现（到 1 时完全显现）。 */
 private const val CATALOG_HANDOFF_START = 0.92f
 private const val CATALOG_HANDOFF_MS = 80
+/** 真书浮现时飞行的书离落点最多还差多少（dp），再多就是两张错开的图叠在一起。 */
+private const val HANDOFF_RESIDUAL_DP = 1.5f
+private const val HANDOFF_MIN_REMAINING = 0.003f
 private const val CATALOG_EXIT_FADE_MS = 140
 
 private val CATALOG_ENTER_SPRING = MotionSprings.response<Float>(0.68f, 0.88f, 0.0005f)

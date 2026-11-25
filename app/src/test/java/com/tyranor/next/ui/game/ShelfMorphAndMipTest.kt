@@ -67,6 +67,34 @@ class ShelfMorphAndMipTest {
         assertEquals(0.37f, shelfCatalogMorphProgressSeen(seenKey = 3, currentKey = 3, progress = 0.37f), 0f)
     }
 
+    @Test
+    fun handoffWaitsUntilTheFlyingBookIsWithinAFewPixelsOfItsLanding() {
+        // 近距离的书（行程不长）仍从 92% 起浮现，与原来一致
+        assertEquals(0.92f, shelfCatalogHandoffStartFor(travelPx = 40f, residualPx = 4.3f), 1e-4f)
+        // 远距离 / 形变大的书（书脊长成封面，几百 px）等到剩余距离降到 residualPx 以内才开始浮现，不再带着重影
+        val far = shelfCatalogHandoffStartFor(travelPx = 650f, residualPx = 4.3f)
+        assertTrue(far > 0.99f)
+        assertEquals(1f - 4.3f / 650f, far, 1e-4f)
+        // 行程再大也至少留一点交接的行程，不会等到 1 才一下子冒出来
+        assertEquals(0.997f, shelfCatalogHandoffStartFor(travelPx = 100000f, residualPx = 4.3f), 1e-4f)
+        // 没有有效行程（异常输入）退回默认起点
+        assertEquals(0.92f, shelfCatalogHandoffStartFor(travelPx = 0f, residualPx = 4.3f), 1e-4f)
+        assertEquals(0.92f, shelfCatalogHandoffStartFor(travelPx = Float.NaN, residualPx = 4.3f), 1e-4f)
+    }
+
+    @Test
+    fun handoffAlphaRampsFromTheGivenStartAndKeepsTheDefaultBehaviour() {
+        val start = 0.99f
+        assertEquals(0f, shelfCatalogHandoffAlpha(0.95f, start), 0f)
+        assertEquals(0f, shelfCatalogHandoffAlpha(start, start), 0f)
+        assertEquals(0.5f, shelfCatalogHandoffAlpha(0.995f, start), 1e-4f)
+        assertEquals(1f, shelfCatalogHandoffAlpha(1f, start), 1e-4f)
+        // 弹簧略冲过 1 时仍是 1
+        assertEquals(1f, shelfCatalogHandoffAlpha(1.02f, start), 0f)
+        // 不传起点就是原来的 92%
+        assertEquals(shelfCatalogHandoffAlpha(0.96f, 0.92f), shelfCatalogHandoffAlpha(0.96f), 0f)
+    }
+
     private fun game(i: Int) = ScanGame(
         title = "Game $i",
         uri = "content://games/$i",
