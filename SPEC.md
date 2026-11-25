@@ -124,7 +124,7 @@ Ren’Py 单游戏引擎设置一次保存版本及全部开关。从单游戏�
 
 外置模拟器跳转使用显式组件启动目标应用：YU-RIS / CatSystem2 / PC 通过 Winlator 的 `dir_path` 与 `exe_path` 传递游戏目录和主程序；PSP / Nintendo Switch 则传递 ROM URI 及读取授权。具体协议见 [外置模拟器接入说明](docs/外置主机模拟器跳转接入方案.md)。
 
-MV/MZ 的 Tyranor-2.3.4 与 TynMV/TynMZ 宿主为 DKTools 的 `MODE_NWJS_STAMP` 浏览器模式提供缺失文件索引兼容。游戏已有 `data/Stamp.json` 时继续交给原插件读取；缺失时使用会话内只读目录索引，支持磁盘及 ASAR 资源，不写回游戏文件。其他模式保留原行为，其他网页游戏不启用该兼容端点。
+MV/MZ 的 Tyranor-2.3.4 与 TynMV/TynMZ 宿主为 DKTools 的 `MODE_NWJS_STAMP` 浏览器模式提供缺失文件索引兼容。游戏已有 `data/Stamp.json` 时继续交给原插件读取；缺失时使用会话内只读目录索引，支持磁盘及 ASAR 资源，不写回游戏文件。其他 DKTools 模式与未加载 DKTools 的会话不预建或替换 Stamp；但所有 RPG Maker MV/MZ 会话（`RpgMakerActivity` 全量会话及 `TyranoActivity` 的 MV/MZ 会话）均启用 `js/plugins/dktools.js` 追加与统一的严格资源解析（精确优先 + 唯一大小写/空白匹配，停用旧版 ASAR 小写回退与 `resolveByName` 歧义匹配，仅保留 `index.html`/`index.htm` 候选回退）。Tyrano 原生及其他网页游戏不启用该兼容端点，保留原有资源解析行为。
 
 - 自行生成的索引重复加载时保留同一索引；游戏重置或替换索引后重新判定。仅生成的索引采用逐层资源名匹配：精确优先，其次唯一的大小写、空白类别、扩展名前尾随空白匹配（HTTP 侧单目录超过 4,096 个候选条目时跳过空白类别与尾随空白匹配，仅保留精确与唯一大小写不敏感匹配），歧义时不选取任意文件；保留真实名称供目录枚举，HTTP 资源解析采用相同规则。
 - 两套 ASAR 读取器支持 packed/unpacked 资源、隐式目录和磁盘优先覆盖；unpacked 文件从同名 `.asar.unpacked` 目录安全读取，使用实际文件长度，外部文件缺失时不伪装为存在。目录树首次列目录时构建，最多 250,000 个节点；不可变归档的节点超限结果在会话内缓存，中断可重试。精确 ASAR 文件读取与 HTTP 资源的直接子项回退列举不依赖这棵全局目录树。扫描不重复列出当前 ASAR 容器及其 unpacked 镜像目录。子目录不可读或消失时隔离该目录，磁盘根不可读但归档可读时仍可提供归档索引；存在 `asarPrefix` 时索引合并归档根回退资源并保持「磁盘 > 网页根前缀 > 归档根」覆盖顺序。
