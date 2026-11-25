@@ -279,11 +279,12 @@ internal fun ShelfCatalogOverlay(
                             },
                         )
                     } else {
+                        val revision = motion.layoutRevision
                         ShelfCatalogModeSwitcher(
                             mode = motion.layoutMode,
-                            revision = motion.layoutRevision,
+                            revision = revision,
                             leavingMode = motion.activeMorph.firstOrNull()?.fromMode,
-                            progress = { motion.morphProgress.value },
+                            progress = { motion.morphProgressSeenBy(revision) },
                             blockTouches = motion.morphing,
                             modifier = Modifier.fillMaxSize(),
                         ) { mode ->

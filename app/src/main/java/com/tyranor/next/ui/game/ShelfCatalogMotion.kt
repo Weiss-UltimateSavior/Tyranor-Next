@@ -1234,6 +1234,15 @@ internal class ShelfCatalogMotion(
 
     private var morphGeneration = 0
 
+    /**
+     * 组合在 [revision]（陈列的第几次切换）时看到的变形总进度。接力切换（变形途中点了另一边、上一轮放完后接着开下一轮）时，
+     * [morphProgress] 在 [beginSwitch] 里同步归零，而界面要下一帧才重组成新一轮：那一帧里还在画的旧组合带着「退场的旧书柜」，
+     * 按进度 0 画就是旧面不透明、新面透明——上一轮刚被换下去的封面书柜整块闪出来。陈列已换到更新的一轮时，旧组合就按「已放完」(1) 画，
+     * 与它上一帧的样子一致；新组合（revision 相同）读真实进度。
+     */
+    internal fun morphProgressSeenBy(revision: Int): Float =
+        shelfCatalogMorphProgressSeen(revision, layoutRevision, morphProgress.value)
+
     /** 变形途中又点了另一边：先记下最后选的这一边，等当前这一轮落位后再开新的一轮。 */
     private var pendingLayout by mutableStateOf<ShelfCatalogLayoutMode?>(null)
 
@@ -1353,11 +1362,13 @@ internal class ShelfCatalogMotion(
             changeLayout(target)
             return
         }
+        val generation = ++morphGeneration
         val byUri = games.associateBy { it.uri }
         val flights = ArrayList<ShelfCatalogMorphFlight>(sources.size)
         sources.entries.sortedBy { (_, rect) -> distanceToCenter(rect) }.forEachIndexed { rank, (uri, rect) ->
             val game = byUri[uri] ?: return@forEachIndexed
             flights += ShelfCatalogMorphFlight(
+                generation = generation,
                 game = game,
                 spineIndex = indexByUri[uri] ?: spineIndexOf(uri),
                 fromRect = rect,
@@ -1367,7 +1378,6 @@ internal class ShelfCatalogMotion(
                 delay = (rank * MORPH_STAGGER).coerceAtMost(MORPH_MAX_DELAY),
             )
         }
-        val generation = ++morphGeneration
         // 同一帧里：新陈列上场、旧书从原位换成变形卡片（卡片此刻与旧书完全重合），真正的书槽藏起来
         activeMorph = flights
         hiddenSlotUris = flights.mapTo(HashSet()) { it.game.uri }
@@ -1409,6 +1419,7 @@ internal class ShelfCatalogMotion(
                     val game = byUri[uri] ?: return@forEachIndexed
                     val src = extrapolateRect(from, fromMode, indexByUri[uri] ?: -1, indexByUri)
                     arrivals += ShelfCatalogMorphFlight(
+                        generation = generation,
                         game = game,
                         spineIndex = indexByUri[uri] ?: spineIndexOf(uri),
                         fromRect = src ?: dst,
@@ -1452,7 +1463,9 @@ internal class ShelfCatalogMotion(
 
     /** 某一本变形卡片此刻的位置、大小与自己的进度 t（相对覆盖层左上角；终点还没摆好时停在起点）。 */
     internal fun morphPoseOf(flight: ShelfCatalogMorphFlight): ShelfCatalogMorphPose {
-        val progress = morphProgress.value
+        // 接力切换时 morphProgress 在新一轮开头同步归零，但组合要下一帧才跟上：这一帧里上一轮的卡片还在画，
+        // 此时不能按「进度 0」回到上一轮的起点（封面卡片闪一下），它们仍是放完时的样子
+        val progress = shelfCatalogMorphProgressSeen(flight.generation, morphGeneration, morphProgress.value)
         val origin = overlayOrigin
         val hasTarget = flight.toRect != null
         val cached = flight.cachedPose
@@ -2553,9 +2566,18 @@ internal fun Modifier.shelfCatalogLeavingText(motion: ShelfCatalogMotion): Modif
     return graphicsLayer { alpha = (1f - motion.morphProgress.value / MODE_TEXT_FADE_OUT).coerceIn(0f, 1f) }
 }
 
+/**
+ * 旧组合读到的变形进度：[seenKey] 是这份组合（或这张卡片）所属的那一轮变形，[currentKey] 是当前最新一轮。
+ * 两者不同说明新一轮已经开始、进度已被归零，而这份组合还没被重组掉——它仍按上一轮「已放完」(1) 画，而不是跳回上一轮的起点。
+ */
+internal fun shelfCatalogMorphProgressSeen(seenKey: Int, currentKey: Int, progress: Float): Float =
+    if (seenKey != currentKey) 1f else progress
+
 /** 书脊 ↔ 封面变形里的一本书：旧陈列里的屏幕矩形、新陈列里的屏幕矩形（摆好后补上；新陈列里看不见的 [vanish] 淡出）与错峰延迟。 */
 @Stable
 internal class ShelfCatalogMorphFlight(
+    /** 所属的那一轮变形（[ShelfCatalogMotion] 的 morphGeneration）：新一轮开始后，上一轮的卡片只会在「还没被重组掉」的那一帧里出现。 */
+    val generation: Int,
     val game: ScanGame,
     val spineIndex: Int,
     val fromRect: Rect,

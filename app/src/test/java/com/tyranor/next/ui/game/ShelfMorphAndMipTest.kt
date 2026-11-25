@@ -57,6 +57,16 @@ class ShelfMorphAndMipTest {
         assertEquals(-40f, tall.top, 0.01f)
     }
 
+    @Test
+    fun staleCompositionSeesTheFinishedMorphInsteadOfTheResetProgress() {
+        // 接力切换：新一轮把进度归零（0f），但还没重组的旧组合 / 上一轮的卡片必须按「已放完」画，否则封面书柜会闪一帧
+        assertEquals(1f, shelfCatalogMorphProgressSeen(seenKey = 2, currentKey = 3, progress = 0f), 0f)
+        assertEquals(1f, shelfCatalogMorphProgressSeen(seenKey = 1, currentKey = 3, progress = 0.4f), 0f)
+        // 同一轮（新组合、本轮的卡片）读真实进度
+        assertEquals(0f, shelfCatalogMorphProgressSeen(seenKey = 3, currentKey = 3, progress = 0f), 0f)
+        assertEquals(0.37f, shelfCatalogMorphProgressSeen(seenKey = 3, currentKey = 3, progress = 0.37f), 0f)
+    }
+
     private fun game(i: Int) = ScanGame(
         title = "Game $i",
         uri = "content://games/$i",
