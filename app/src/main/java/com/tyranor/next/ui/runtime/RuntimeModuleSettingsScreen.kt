@@ -56,6 +56,7 @@ import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.motion.BlurCrossfade
 import com.tyranor.next.ui.common.motion.ExpandVisibility
 import com.tyranor.next.ui.common.motion.listItemMotion
+import com.tyranor.next.ui.common.motion.pressSquishGroup
 import com.tyranor.next.ui.common.motion.ProvideEntrance
 import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import com.tyranor.next.ui.common.notice.AppNotice
@@ -360,7 +361,7 @@ fun RuntimeModuleSettingsScreen(game: ScanGame) {
                             val enabled = pickFiles != null && !loading && !saveRunning
                             MiuixCard(
                                 cornerRadius = AppComponentCornerRadius,
-                                modifier = Modifier.then(listItemMotion()).fillMaxWidth().glassBorder(),
+                                modifier = Modifier.pressSquishGroup().then(listItemMotion()).fillMaxWidth().glassBorder(),
                             ) {
                                 com.tyranor.next.ui.common.AppNavItem(
                                     title = item.title,
@@ -438,7 +439,7 @@ private fun RuntimeSettingRow(
     onEdit: () -> Unit,
     onRestore: () -> Unit,
 ) {
-    MiuixCard(cornerRadius = AppComponentCornerRadius, modifier = modifier.fillMaxWidth().glassBorder()) {
+    MiuixCard(cornerRadius = AppComponentCornerRadius, modifier = modifier.pressSquishGroup().fillMaxWidth().glassBorder()) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
             when (item.type) {
                 RuntimeModuleSettingItemSpec.Type.BOOLEAN -> SwitchPreference(

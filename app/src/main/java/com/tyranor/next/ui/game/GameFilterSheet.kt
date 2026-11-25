@@ -36,6 +36,7 @@ import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.SheetSecondaryTextColor
+import com.tyranor.next.theme.TyranorMiuixTextStyles
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.AppBottomSheet
 import com.tyranor.next.ui.common.NoRippleButton
@@ -43,11 +44,11 @@ import com.tyranor.next.ui.common.OverlayDropdownPreference
 import com.tyranor.next.ui.common.Slider
 import com.tyranor.next.ui.common.SliderValueHeader
 import com.tyranor.next.ui.common.SlidingTabRow
+import com.tyranor.next.ui.common.motion.pressSquishGroup
 import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.SliderDefaults
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
  * 游戏页「筛选与排序」抽屉。
@@ -153,74 +154,75 @@ internal fun GameFilterSheet(
                             scrollable = true,
                             scrollResetKey = scrollResetKey,
                         )
-                        MiuixSettingsTheme {
-                            // Miuix 下拉选项默认 body1=16sp；本抽屉按页面两档制收为 15sp。
-                            MiuixTheme(textStyles = MiuixTheme.textStyles.copy(
+                        // Miuix 下拉选项默认 body1=16sp；本抽屉按页面两档制收为 15sp。
+                        // 必须经 MiuixSettingsTheme 传入，不能在内层直接再套 MiuixTheme（会重置 LocalIndication）。
+                        MiuixSettingsTheme(
+                            textStyles = TyranorMiuixTextStyles.copy(
                                 body1 = TextStyle(fontSize = MaterialTheme.typography.titleMedium.fontSize),
-                            )) {
-                                Column(
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = FilterSheetInset),
-                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ),
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = FilterSheetInset),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                MiuixCard(
+                                    modifier = Modifier.pressSquishGroup().fillMaxWidth().glassBorder(),
+                                    cornerRadius = AppComponentCornerRadius,
+                                    colors = CardDefaults.defaultColors(color = cardColor),
+                                ) {
+                                    OverlayDropdownPreference(
+                                        title = stringResource(R.string.game_filter_sort_section),
+                                        items = sortModes.map { it.second },
+                                        selectedIndex = sortIndex,
+                                        onExpandedChange = { dropdownExpanded = it },
+                                        onSelectedIndexChange = { sortModes.getOrNull(it)?.first?.let(onSortChange) },
+                                    )
+                                }
+                                MiuixCard(
+                                    modifier = Modifier.pressSquishGroup().fillMaxWidth().glassBorder(),
+                                    cornerRadius = AppComponentCornerRadius,
+                                    colors = CardDefaults.defaultColors(color = cardColor),
+                                ) {
+                                    OverlayDropdownPreference(
+                                        title = stringResource(R.string.game_filter_played_section),
+                                        items = playedOptions.map { it.second },
+                                        selectedIndex = playedIndex,
+                                        onExpandedChange = { dropdownExpanded = it },
+                                        onSelectedIndexChange = { playedOptions.getOrNull(it)?.first?.let(onPlayedChange) },
+                                    )
+                                }
+                                if (cardStyle == AppSettingsStore.GAME_CARD_STYLE_GRID ||
+                                    cardStyle == AppSettingsStore.GAME_CARD_STYLE_WATERFALL
                                 ) {
                                     MiuixCard(
                                         modifier = Modifier.fillMaxWidth().glassBorder(),
                                         cornerRadius = AppComponentCornerRadius,
                                         colors = CardDefaults.defaultColors(color = cardColor),
                                     ) {
-                                        OverlayDropdownPreference(
-                                            title = stringResource(R.string.game_filter_sort_section),
-                                            items = sortModes.map { it.second },
-                                            selectedIndex = sortIndex,
-                                            onExpandedChange = { dropdownExpanded = it },
-                                            onSelectedIndexChange = { sortModes.getOrNull(it)?.first?.let(onSortChange) },
+                                        val title = stringResource(R.string.game_filter_card_columns)
+                                        val value = stringResource(R.string.game_filter_card_columns_value, cardColumns)
+                                        SliderValueHeader(
+                                            title = title,
+                                            value = value,
+                                            modifier = Modifier.fillMaxWidth()
+                                                .padding(horizontal = FilterSheetInset)
+                                                .padding(top = 10.dp)
+                                                .clearAndSetSemantics {},
                                         )
-                                    }
-                                    MiuixCard(
-                                        modifier = Modifier.fillMaxWidth().glassBorder(),
-                                        cornerRadius = AppComponentCornerRadius,
-                                        colors = CardDefaults.defaultColors(color = cardColor),
-                                    ) {
-                                        OverlayDropdownPreference(
-                                            title = stringResource(R.string.game_filter_played_section),
-                                            items = playedOptions.map { it.second },
-                                            selectedIndex = playedIndex,
-                                            onExpandedChange = { dropdownExpanded = it },
-                                            onSelectedIndexChange = { playedOptions.getOrNull(it)?.first?.let(onPlayedChange) },
+                                        Slider(
+                                            value = cardColumns.toFloat(),
+                                            onValueChange = { onColumnsChange(it.roundToInt()) },
+                                            valueRange = columnRange.first.toFloat()..columnRange.last.toFloat(),
+                                            steps = columnRange.count() - 2,
+                                            showKeyPoints = true,
+                                            hapticEffect = SliderDefaults.SliderHapticEffect.Step,
+                                            modifier = Modifier.fillMaxWidth()
+                                                .padding(horizontal = FilterSheetInset, vertical = 4.dp)
+                                                .semantics {
+                                                    contentDescription = title
+                                                    stateDescription = value
+                                                },
                                         )
-                                    }
-                                    if (cardStyle == AppSettingsStore.GAME_CARD_STYLE_GRID ||
-                                        cardStyle == AppSettingsStore.GAME_CARD_STYLE_WATERFALL
-                                    ) {
-                                        MiuixCard(
-                                            modifier = Modifier.fillMaxWidth().glassBorder(),
-                                            cornerRadius = AppComponentCornerRadius,
-                                            colors = CardDefaults.defaultColors(color = cardColor),
-                                        ) {
-                                            val title = stringResource(R.string.game_filter_card_columns)
-                                            val value = stringResource(R.string.game_filter_card_columns_value, cardColumns)
-                                            SliderValueHeader(
-                                                title = title,
-                                                value = value,
-                                                modifier = Modifier.fillMaxWidth()
-                                                    .padding(horizontal = FilterSheetInset)
-                                                    .padding(top = 10.dp)
-                                                    .clearAndSetSemantics {},
-                                            )
-                                            Slider(
-                                                value = cardColumns.toFloat(),
-                                                onValueChange = { onColumnsChange(it.roundToInt()) },
-                                                valueRange = columnRange.first.toFloat()..columnRange.last.toFloat(),
-                                                steps = columnRange.count() - 2,
-                                                showKeyPoints = true,
-                                                hapticEffect = SliderDefaults.SliderHapticEffect.Step,
-                                                modifier = Modifier.fillMaxWidth()
-                                                    .padding(horizontal = FilterSheetInset, vertical = 4.dp)
-                                                    .semantics {
-                                                        contentDescription = title
-                                                        stateDescription = value
-                                                    },
-                                            )
-                                        }
                                     }
                                 }
                             }
