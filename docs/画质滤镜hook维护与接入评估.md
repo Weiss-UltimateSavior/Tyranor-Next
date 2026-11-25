@@ -170,11 +170,13 @@ llvm-readelf.exe -n libgame134.so   # 1.3.4
 ##### 2.2 符号与 vtable 核验
 
 ```sh
-llvm-readelf.exe -s libgame.so | findstr "UpdateDrawBuffer thunk _ZTV"
-llvm-readelf.exe -s libgame134.so | findstr "UpdateDrawBuffer thunk _ZTV"
+# 导出完整符号表（不要只按 UpdateDrawBuffer / thunk / _ZTV 粗筛，否则会漏掉普通 Texture2D 与 Sprite 方法，
+# 且未解码的 thunk 名可能不含 "thunk" 字样）；如需对照可读签名前缀追加 --demangle。
+llvm-readelf.exe --dyn-syms --demangle libgame.so > libgame.syms.txt
+llvm-readelf.exe --dyn-syms --demangle libgame134.so > libgame134.syms.txt
 ```
 
-核对：`UpdateDrawBuffer` 的 mangled 参数类型（`P13iTVPTexture2D`）未变；thunk 符号存在且偏移仍是 720 / 1040；`_ZTV14TVPWindowLayer` 的 `st_size` 仍 ≥ 扫描窗（2360）；`_ZTVN7cocos2d6SpriteE` `st_size` ≥ 1632。符号清单有任何增删 → 同步 `krkr_raw_frame_bridge.cpp:244-286`。
+在完整符号表（配合不带 `--demangle` 的原始 mangled 名）中逐项核对 `krkr_raw_frame_bridge.cpp:244-286` 所需的全部 16 个 `resolve()` 符号及 `_ZTV14TVPWindowLayer`：`TrianglesCommand::init`、`UpdateDrawBuffer`（确认参数类型 `P13iTVPTexture2D` 未变）、`_ZThn*` thunk（偏移仍是 720 / 1040）、`Sprite` vtable/析构组、`Texture2D` 与 `GL` 缓存同步符号，并确认 `_ZTV14TVPWindowLayer` `st_size` ≥ 扫描窗（2360）、`_ZTVN7cocos2d6SpriteE` `st_size` ≥ 1632。符号清单有任何增删 → 同步 `krkr_raw_frame_bridge.cpp:244-286`。
 
 ##### 2.3 源码/反编译对照
 
@@ -269,7 +271,7 @@ certutil -hashfile libartemis-<ver>.so SHA256     # 若命中 Vorbis 修复范�
 
 ##### 2.2 反编译核验（Ghidra/IDA，最高危项）
 
-1. **`CStage::Display`**：确认舞台宽高仍在对象 `+0x100`/`+0x104`（int）；若布局变 → 更新 `artemis_official_graphics.cpp:2993-2994` 偏移常量并**实测**（8192/256MB 钳制只挡离谱值，不挡"合理但错误"的宽高）。确认 `SetupScale` 的 `SCVTF` 转换仍消费这两个 int。
+1. **`CStage::Display`**：确认舞台宽高仍在对象 `+0x100`/`+0x104`（int）；若新库版本布局发生变化，**不得直接覆写共用常量**（否则所有通过 Build ID 校验的现有库 `libartemis.so` / `libartemis-v6.so` 也会读到新偏移），必须按库版本 / Build ID 分派对应偏移，使每个库仅读取自身布局对应的偏移，**并对现有受支持库执行回归测试确认画面尺寸保持不变**（8192/256MB 钳制只挡离谱值，不挡"合理但错误"的宽高）。确认 `SetupScale` 的 `SCVTF` 转换仍消费这两个 int。
 2. **EndRender/swap 路径**：确认 `eglSwapBuffers` 时 FBO 绑定为 0、viewport 为全屏、帧尺寸等于舞台逻辑宽高（`original` 判定的四个条件）。
 3. **eglCreateWindowSurface 调用序**：确认引擎每帧/每会话的调用模式未变（代理 Surface 的注入点）。
 4. **`CSoundTrack::Read`**（音频守卫）：确认 vtable 槽 16 语义未变（`artemis_loader.cpp:148`）。
@@ -279,7 +281,7 @@ certutil -hashfile libartemis-<ver>.so SHA256     # 若命中 Vorbis 修复范�
 1. so 放入 `engine/src/main/nativeplugins/artemis/arm64-v8a/`。
 2. Vorbis 修复范围命中 → `ArtemisVorbisRepair.kt` 登记三组值；未命中 → 原样直通（确认音频 bug 状态）。
 3. `ArtemisLibraryIdentity.java` 登记 Build ID。
-4. `artemis_official_graphics.cpp:2993-2994` 复核 `CStage` 偏移（`dladdr`+`dlsym` 实测）。
+4. `artemis_official_graphics.cpp:2993-2994` 复核 `CStage` 偏移（`dladdr`+`dlsym` 实测；若新增库布局与 `+0x100`/`+0x104` 不同，须按库版本 / Build ID 分派偏移并对已有 `libartemis.so` / `libartemis-v6.so` 做尺寸回归）。
 5. `app/src/main/nativeplugins/artemis/manifest.json` 的 `pluginVersion` **递增**（当前 `33`）。
 6. 白名单同步（`artemis_loader.cpp:121-126` ↔ `NativePluginConstants.ARTEMIS_REQUIRED_LIBS` ↔ manifest `libs` 当前维护 4 库名，含 `libartemis-clean.so`；`ArtemisVersion` 维护 3 个官方内核枚举 `V1` / `V2` / `V6`，clean 走独立 `ArtemisActivityClean`）。
 7. 回归 `ArtemisLibraryIdentityTest` / `ArtemisVorbisRepairTest` / `ArtemisVersionTest`。

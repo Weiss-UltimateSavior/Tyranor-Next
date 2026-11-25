@@ -216,7 +216,7 @@ MAGES. 引擎（经开源重新实现项目 impacto）由外置 Impacto 宿主 A
 - Web 宿主支持统一虚拟按键与手柄映射、按键方案导入/导出与全屏编辑；方案按归一化视口保存。默认虚拟按键 MV/MZ 开、Tyrano/VN/WebOther 关；Web 手柄映射默认开。
 - Tyrano Web 宿主在 `ScreenRatio=fix` 时于运行时把游戏的 `ScreenCentering` 收敛为 true，按引擎自带的居中路径（4.x `fitBaseSize` / 5.x `_fitBaseSize`）处理；`vchat` 与 `useCamera` 模式保留引擎的关闭决定。桌面导出可能写入的 `false` 不再导致宽屏手机左对齐、右侧单边黑边。
 - 共用画质滤镜链最多 **8** 节点，支持添加、移除、排序与参数配置；单游戏切换跟随全局后保留自定义链。滤镜预设含纯重采样的 Bilinear / Bicubic 与带抗振铃强度（缺省 0.5）的 Lanczos，按性能开销排序；参数细节见 [共用画质滤镜链](docs/graphics-filters.md)。
-- 图形能力按内核、库身份及渲染器判断：Kirikiroid2（auto/1.3.9/1.3.4）、krkrsdl3 OpenGL、受支持的官方 Artemis、Siglus 与 ONScripter（经 vendored SDL2 胶水代理接入）走各自接入；RealLive / AVG32 / UK2 与 Siglus 共用同一 `libsiglus.so` 运行库并走 CPU 帧缓冲 ABI，滤镜设置与单游戏覆盖沿用 Siglus，宿主内上传 CPU 帧执行滤镜链；krkrsdl3 软件渲染与自研 Artemis 当前不提供同等滤镜入口。RealLive / AVG32 / UK2 的滤镜路径任何 GLES 初始化或运行失败自动回退经典 Bitmap 呈现；ONScripter 经胶水代理将游戏输出导向代理 Surface，经共享 GLES 滤镜链后在 TextureView 呈现，与引擎内置锐化（--sharpness）互斥，具备经典路径自动回退。
+- 图形能力按内核、库身份及渲染器判断：Kirikiroid2（auto/1.3.9/1.3.4）、krkrsdl3 OpenGL、受支持的官方 Artemis、Siglus 与 ONScripter（经 vendored SDL2 胶水代理接入）走各自接入；RealLive / AVG32 / UK2 与 Siglus 共用同一 `libsiglus.so` 运行库并走 CPU 帧缓冲 ABI，滤镜设置与单游戏覆盖沿用 Siglus，宿主内上传 CPU 帧执行滤镜链；krkrsdl3 软件渲染与自研 Artemis 当前不提供同等滤镜入口。RealLive / AVG32 / UK2 的滤镜路径任何 GLES 初始化或运行失败自动回退经典 Bitmap 呈现；ONScripter 经胶水代理将游戏输出导向代理 Surface，经共享 GLES 滤镜链后在 TextureView 呈现，与引擎内置锐化（`--sharpness`）在全局及单游戏设置页提供双向可见互斥联动（并保留启动期抑制兜底），具备经典直出路径自动回退。
 - 滤镜处理已合成画面（可能含文本和 UI），不承诺文本排除。性能分析器仅在支持且滤镜生效时可用；GPU 时间缺失时不得显示 CPU 时间充数。在无新 GPU 样本且上下文与计时状态正常的刷新区间内保持上次有效 GPU 计时统计值，仅在输入/输出尺寸或节点拓扑改变、状态失败、尺寸失效、计时查询异常或管线重置时清除并显示缺失值。
 
 具体范围与验证记录见 [共用画质滤镜链](docs/graphics-filters.md)；它不代表所有游戏与第三方插件都已认证。
