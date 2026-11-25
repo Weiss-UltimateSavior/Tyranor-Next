@@ -109,6 +109,11 @@ class MotionBoundariesTest(unittest.TestCase):
             self.assertTrue(gate.check_source(path, source), path)
         self.assertFalse(gate.check_source("ui/engine/EngineStorageMotion.kt", source))
 
+    def test_host_navigation_is_checked(self):
+        source = "import androidx.compose.animation.core.Animatable\nval progress = Animatable(0f)"
+        path = "ui/common/motion/HostNavigation.kt"
+        self.assertEqual([line for line, _ in gate.check_source(path, source)], [2])
+
     def test_protected_scope_ends_at_closing_brace(self):
         source = '''
         import androidx.compose.animation.core.tween

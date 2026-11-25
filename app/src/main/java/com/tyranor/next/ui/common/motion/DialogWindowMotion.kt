@@ -202,6 +202,12 @@ fun syncDialogWindow(
     baseDimOverride: Float? = null,
     /** 本窗口自绘遮罩的完整暗度；共享协调器只让它补足下层缺少的部分，避免叠层加深。 */
     scrimAlpha: Float = 0f,
+    /**
+     * 整个遮罩都由窗口自己画，不用系统的窗口 dim：窗口自带的暗度（或 [baseDimOverride]）并入 [scrimAlpha] 一起画出来，总暗度不变。
+     * 系统的 dim 是系统层的一块「暗层」，窗口退场期间它还在，系统会按「被别的来源的半透明层盖住」把落在下面页面上的触摸整次丢掉；
+     * 需要在退场期间让下面的页面马上接得住手指的窗口（翻开的书）用它。
+     */
+    drawnOnly: Boolean = false,
     dimProgress: () -> Float,
 ): Window? {
     val view = LocalView.current
@@ -213,29 +219,48 @@ fun syncDialogWindow(
     val originalAnimations = remember(window) { window?.attributes?.windowAnimations ?: 0 }
     val themeDim = remember(window) { window?.attributes?.dimAmount ?: 0f }
     val hasThemeDim = remember(window) { (window?.attributes?.flags ?: 0) and WindowManager.LayoutParams.FLAG_DIM_BEHIND != 0 }
-    val baseDim = baseDimOverride ?: themeDim
     val progress = rememberUpdatedState(dimProgress)
-    val dimEnabled = hasThemeDim || baseDimOverride != null
+    val nativeEnabled = hasThemeDim || baseDimOverride != null
+    val nativeBase = baseDimOverride ?: themeDim
+    // drawnOnly：原生 dim 并入自绘遮罩（两层叠加的合成暗度），原生这一层关掉
+    val baseDim = if (drawnOnly) 0f else nativeBase
+    val dimEnabled = nativeEnabled && !drawnOnly
+    val foldedNative = if (drawnOnly && nativeEnabled) nativeBase else 0f
+    val drawnScrim = drawnDialogScrim(foldedNative, scrimAlpha, 1f)
+    fun dimAt(amount: Float) = quantizedDim(baseDim, amount)
+    fun scrimAt(amount: Float) = drawnDialogScrim(foldedNative, scrimAlpha, amount)
     val animations = if (preserveWindowAnimations) originalAnimations else 0
     DisposableEffect(window, owner) {
         val binding = if (window != null && owner != null) {
-            DialogWindowDims.bind(owner, window, quantizedDim(baseDim, progress.value()), dimEnabled, animations,
-                baseDim, quantizedDim(scrimAlpha, progress.value()), scrimAlpha)
+            val amount = progress.value()
+            DialogWindowDims.bind(owner, window, dimAt(amount), dimEnabled, animations, baseDim, scrimAt(amount), drawnScrim)
         } else null
         onDispose { binding?.dispose() }
     }
     SideEffect {
-        if (window != null) DialogWindowDims.update(window, quantizedDim(baseDim, progress.value()), dimEnabled, animations,
-            baseDim, quantizedDim(scrimAlpha, progress.value()), scrimAlpha)
+        if (window != null) {
+            val amount = progress.value()
+            DialogWindowDims.update(window, dimAt(amount), dimEnabled, animations, baseDim, scrimAt(amount), drawnScrim)
+        }
     }
-    LaunchedEffect(window, baseDim, dimEnabled, animations, scrimAlpha) {
+    LaunchedEffect(window, baseDim, dimEnabled, animations, foldedNative, scrimAlpha) {
         if (window == null) return@LaunchedEffect
         // 暗度只有 8 位精度：弹簧尾段肉眼不可辨的微小变化不再触发一次窗口布局与 WMS 调用；两端仍精确落到 0 与 baseDim
-        snapshotFlow { quantizedDim(baseDim, progress.value()) to quantizedDim(scrimAlpha, progress.value()) }.collect { (dim, scrim) ->
-            DialogWindowDims.update(window, dim, dimEnabled, animations, baseDim, scrim, scrimAlpha)
+        snapshotFlow {
+            val amount = progress.value()
+            dimAt(amount) to scrimAt(amount)
+        }.collect { (dim, scrim) ->
+            DialogWindowDims.update(window, dim, dimEnabled, animations, baseDim, scrim, drawnScrim)
         }
     }
     return window
+}
+
+internal fun drawnDialogScrim(nativeBase: Float, scrimBase: Float, progress: Float): Float {
+    if (nativeBase == 0f) return quantizedDim(scrimBase, progress)
+    val native = quantizedDim(nativeBase.coerceIn(0f, 1f), progress)
+    val drawn = quantizedDim(scrimBase.coerceIn(0f, 1f), progress)
+    return 1f - (1f - native) * (1f - drawn)
 }
 
 private fun quantizedDim(baseDim: Float, progress: Float): Float {
@@ -456,6 +481,19 @@ fun Window?.passThroughTouches() {
     if (this == null) return
     addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
     beginDialogDimExit()
+}
+
+/**
+ * 只让触摸穿过去（不动遮罩、不交焦点）：窗口还在放退场动画、要继续画着，但下层页面此刻就该接得住手指。
+ * 想反悔（退场途中又要重新打开）时用 [restoreTouches] 收回。
+ */
+fun Window?.passTouchesThrough() {
+    this?.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+}
+
+/** 收回 [passTouchesThrough]：窗口重新接手触摸。 */
+fun Window?.restoreTouches() {
+    this?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
 }
 
 /**

@@ -13,6 +13,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -39,6 +40,7 @@ import com.tyranor.next.ui.common.motion.skipDrawWhenHidden
 import com.tyranor.next.ui.common.collectSettingAsState
 import com.tyranor.next.ui.common.motion.LocalPageDepth
 import com.tyranor.next.ui.common.motion.ProvideMotionEnvironment
+import com.tyranor.next.ui.common.motion.ScreenRotationSync
 import com.tyranor.next.ui.common.motion.SystemThemeSync
 import com.tyranor.next.ui.common.motion.rememberPageDepth
 import com.tyranor.next.theme.TyranorNextTheme
@@ -61,10 +63,12 @@ class MainActivity : FragmentActivity() {
     registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
   private lateinit var systemThemeSync: SystemThemeSync
+  private lateinit var screenRotationSync: ScreenRotationSync
 
   override fun onConfigurationChanged(newConfig: Configuration) {
-    // 先截下旧主题，再让 Compose 接收新配置。
+    // 先截下旧主题 / 旧画面（平板横竖屏转动过渡），再让 Compose 接收新配置。
     systemThemeSync.onConfigurationChanged(newConfig)
+    screenRotationSync.onConfigurationChanged(newConfig)
     super.onConfigurationChanged(newConfig)
   }
 
@@ -72,10 +76,8 @@ class MainActivity : FragmentActivity() {
     super.onCreate(savedInstanceState)
     observeSaveSyncFeedback()
     systemThemeSync = SystemThemeSync(this)
+    screenRotationSync = ScreenRotationSync(this)
 
-    // 「显示首页」决定主导航条目与可见页集合，必须在首帧组合前同步加载：
-    // 留到 MainScreen 的异步 init 会让冷启动先按默认值（开）绘制、随后再纠正，产生闪动。
-    AppSettingsStore.initHomePageEnabled(this)
     // 首页样式同样在首帧前加载：应用锁的「跳过绘制」判定要知道当前是否 Web 首页
     // （WebView 靠原生绘制回调输出，不能被 skipDrawWhenHidden 罩住）
     AppSettingsStore.initHomeStyle(this)
@@ -159,13 +161,17 @@ class MainActivity : FragmentActivity() {
       }.apply { isDaemon = true }.start()
     }
     var completed by remember { mutableStateOf(AppSettingsStore.isOnboardingCompleted(this)) }
-    var coachStep by rememberSaveable { mutableStateOf(0) }
+    var coachStep by rememberSaveable { mutableIntStateOf(0) }
     val homeStyle by AppSettingsStore.homeStyleState.collectSettingAsState()
+    val homePageEnabled by AppSettingsStore.homePageEnabledState.collectSettingAsState()
     var saving by remember { mutableStateOf(false) }
     var saveFailed by rememberSaveable { mutableStateOf(false) }
-    var saveRequest by rememberSaveable { mutableStateOf(0) }
+    var saveRequest by rememberSaveable { mutableIntStateOf(0) }
     var coachAnchors by remember { mutableStateOf<Map<Int, Rect>>(emptyMap()) }
-    val safeCoachStep = coachStep.coerceIn(CoachAnchor.HOME, CoachAnchor.SETTINGS)
+    val safeCoachStep = coachStep.coerceIn(
+      if (homePageEnabled) CoachAnchor.HOME else CoachAnchor.GAME_FOLDER,
+      CoachAnchor.SETTINGS,
+    )
     val coachPage = coachPageOf(safeCoachStep)
     LaunchedEffect(saveRequest) {
       if (saveRequest == 0) return@LaunchedEffect

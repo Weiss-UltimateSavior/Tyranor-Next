@@ -8986,7 +8986,6 @@ HSPLcom/tyranor/next/ui/game/CoverThumbnailLoader$$ExternalSyntheticLambda0;->**
 HSPLcom/tyranor/next/ui/game/CoverThumbnailLoader$load$3$1;->**(**)**
 HSPLcom/tyranor/next/ui/game/CoverThumbnailLoader$load$3;->**(**)**
 HSPLcom/tyranor/next/ui/game/CoverThumbnailLoader;->**(**)**
-HSPLcom/tyranor/next/ui/game/DrawerAction;->**(**)**
 HSPLcom/tyranor/next/ui/game/GameScreenKt$$ExternalSyntheticLambda101;->**(**)**
 HSPLcom/tyranor/next/ui/game/GameScreenKt$$ExternalSyntheticLambda103;->**(**)**
 HSPLcom/tyranor/next/ui/game/GameScreenKt$$ExternalSyntheticLambda108;->**(**)**
@@ -9068,6 +9067,12 @@ HSPLcom/tyranor/next/ui/game/GameScreenKt$WhenMappings;->**(**)**
 HSPLcom/tyranor/next/ui/game/GameScreenKt$rememberCoverBitmap$1$1;->**(**)**
 HSPLcom/tyranor/next/ui/game/GameScreenKt$sortGames$$inlined$sortedBy$1;->**(**)**
 HSPLcom/tyranor/next/ui/game/GameScreenKt;->**(**)**
+SPLcom/tyranor/next/ui/game/GameShelfKt;->**(**)**
+SPLcom/tyranor/next/ui/game/GameShelfMotionKt;->**(**)**
+PLcom/tyranor/next/ui/game/ShelfBookKt;->**(**)**
+PLcom/tyranor/next/ui/game/ShelfBookMotionKt;->**(**)**
+PLcom/tyranor/next/ui/game/ShelfCatalogKt;->**(**)**
+PLcom/tyranor/next/ui/game/ShelfCatalogMotionKt;->**(**)**
 HSPLcom/tyranor/next/ui/game/LibraryPane;->**(**)**
 HSPLcom/tyranor/next/ui/home/HomeScreenKt$$ExternalSyntheticLambda0;->**(**)**
 HSPLcom/tyranor/next/ui/home/HomeScreenKt$$ExternalSyntheticLambda18;->**(**)**
@@ -9198,9 +9203,6 @@ HSPLcom/tyranor/next/ui/save/SaveManagementActivityKt$$ExternalSyntheticLambda2;
 HSPLcom/tyranor/next/ui/save/SaveManagementActivityKt$$ExternalSyntheticLambda30;->**(**)**
 HSPLcom/tyranor/next/ui/save/SaveManagementActivityKt$$ExternalSyntheticLambda35;->**(**)**
 HSPLcom/tyranor/next/ui/save/SaveManagementActivityKt$$ExternalSyntheticLambda36;->**(**)**
-HSPLcom/tyranor/next/ui/save/SaveManagementActivityKt$SaveManagementScreen$1$1;->**(**)**
-HSPLcom/tyranor/next/ui/save/SaveManagementActivityKt$SaveManagementScreen$refresh$1;->**(**)**
-HSPLcom/tyranor/next/ui/save/SaveManagementActivityKt$SaveManagementScreen$refresh$snapshot$1;->**(**)**
 HSPLcom/tyranor/next/ui/save/SaveManagementActivityKt;->**(**)**
 HSPLcom/tyranor/next/ui/save/SaveVersionsPanelKt$$ExternalSyntheticLambda15;->**(**)**
 HSPLcom/tyranor/next/ui/save/SaveVersionsPanelKt$$ExternalSyntheticLambda1;->**(**)**

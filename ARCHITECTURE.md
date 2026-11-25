@@ -76,6 +76,8 @@ Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并�
 
 下次获得设备验证授权后，重新采集应同时保存 Git SHA、APK SHA-256、`adb shell getprop ro.build.fingerprint`、系统版本、包名与实际操作路线。运行目标路线后，可用 Android 的 `adb shell cmd package dump-profiles --dump-classes-and-methods <隔离包名>` 导出方法列表（设备须支持此命令并允许读取输出的 `/data/misc/profman/` 文件）；保留原件，再将类描述符去重、排序并生成类级规则，分别记录两份文件的哈希。不得在尚未执行采集时写成已经生成。
 
+书架路径补充了手工指定的类级规则：单排书架入口纳入启动预编译，翻开的书和藏书阁作为启动后的交互路径。规则不是设备采集的结果，不代表已测得首帧或滚动性能收益。
+
 修改或删除类时同步清理失效规则。本轮移除了已删除 `MiuixPopupMotion` 的规则，并在 Android CI 增加 `:app:compileReleaseArtProfile`，让 AGP 结合 release/R8 的实际产物扩展和编译规则。此检查验证构建可用性，不替代真实操作覆盖和性能对照。
 
 ## 4. 扫描与启动编排

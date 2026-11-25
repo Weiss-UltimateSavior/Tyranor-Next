@@ -108,6 +108,7 @@
     <string name="settings_game_card_style_waterfall">ウォーターフォール</string>
     <string name="settings_game_card_style_grid">グリッド</string>
     <string name="settings_game_card_style_cover_flow">リスト</string>
+    <string name="settings_game_card_style_shelf">本棚</string>
     <string name="settings_game_card_badge">カードのエンジンバッジ</string>
     <string name="settings_game_card_hide_title_tag">カードの名前タグを非表示</string>
     <string name="settings_engine_settings">エンジン設定</string>
@@ -190,7 +191,7 @@
     <string name="launch_yuris_exe_missing">起動可能な .exe が見つかりません。ゲーム詳細の「起動ファイル」で指定してください</string>
     <string name="launch_android_app_missing">アプリが見つかりません。アンインストールされた可能性があります</string>
     <string name="launch_engine_unknown">ゲームエンジンが不明、またはランタイムモジュールを利用できません。再スキャンしてください</string>
-    <string name="launch_emulator_unsupported">%1$s のバージョンが古く、外部起動に対応していません。外置起動対応の winlator-cn に更新してください</string>
+    <string name="launch_emulator_unsupported">%1$s のバージョンが古く、外部起動に対応していません。外部起動対応の winlator-cn に更新してください</string>
     <string name="engine_name_unknown">不明なエンジン</string>
     <string name="engine_name_switch">Switch</string>
     <string name="engine_name_runtime_module">Plugin</string>
@@ -1052,6 +1053,31 @@
     <string name="game_shelf_yesterday">昨日</string>
     <string name="game_shelf_days_ago">%1$d 日前</string>
     <string name="game_shelf_minutes">%1$d 分</string>
+    <string name="game_shelf_playtime">一緒に過ごした時間は %1$s</string>
+    <string name="game_shelf_unplayed">はじめまして、よろしくね</string>
+    <string name="game_shelf_continue">物語は、まだ続いている</string>
+    <string name="game_shelf_position">%2$d 本中 %1$d 本目</string>
+    <string name="game_shelf_scrubber_description">ゲーム本棚の目盛り。左右にドラッグして素早く探す</string>
+    <string name="game_shelf_scrub_slow">上にずらすとゆっくり</string>
+    <string name="game_shelf_scrub_speed">速度 %1$s</string>
+    <string name="game_shelf_summary_title">マイ本棚</string>
+    <string name="game_shelf_summary_count">収録</string>
+    <string name="game_shelf_summary_opened">開いた</string>
+    <string name="game_shelf_summary_continue">続きから：%1$s</string>
+    <string name="game_shelf_summary_fresh">どの物語から始める？</string>
+    <string name="game_shelf_catalog_title">本棚</string>
+    <string name="game_shelf_catalog_close">本棚を閉じる</string>
+    <string name="game_shelf_catalog_count_total">全 %1$d 本</string>
+    <string name="game_shelf_catalog_count_filtered">%1$d / %2$d 本</string>
+    <string name="game_shelf_catalog_section_count">%1$d 本</string>
+    <string name="game_shelf_catalog_empty_title">条件に合うゲームがありません</string>
+    <string name="game_shelf_catalog_empty_action">すべて表示</string>
+    <string name="game_shelf_catalog_current_badge">表示中</string>
+    <string name="game_shelf_catalog_layout_spines">背表紙</string>
+    <string name="game_shelf_catalog_layout_covers">表紙</string>
+    <string name="game_book_contents">目次</string>
+    <string name="game_book_tab_manage">管理</string>
+    <string name="game_book_cover_hint">タップしてカスタムカバーを選択</string>
 
     <!-- Shared ordered graphics-chain settings -->
     <string name="graphics_settings_title">超解像</string>

@@ -26,11 +26,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -67,6 +69,7 @@ import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
+import com.tyranor.next.ui.common.motion.MotionHaptics
 import com.tyranor.next.ui.common.motion.PressSquishDefaults
 import com.tyranor.next.ui.common.motion.ProvideEntrance
 import com.tyranor.next.ui.common.motion.pressSquish
@@ -93,28 +96,55 @@ private val QuickActionHeaderHeight =
     QuickActionCoverHeight - QuickActionCoverOverhang - AppDialogContentVerticalPadding
 
 /**
- * 游戏卡片长按操作弹窗：游戏页瀑布流 / 封面流与首页快捷启动卡共用。
- *
- * 布局：顶部为超出面板上沿的游戏封面 + 游戏标题，封面右下角为更换封面入口（点击封面触发）；
- * 中部为动作项（首页快捷启动、桌面快捷方式、名称修改），每项独占一行，底部为整行删除长按钮。
- * 条目为「直接执行的动作」，点击后关闭弹窗或让位给二级确认弹窗：
- * 快捷启动（满 3 个时提示）、添加桌面（裁切图标后请求固定快捷方式）、
- * 名称修改、修改封面（点击封面）、删除游戏（二次确认）。
- *
- * 与「游戏操作抽屉」的分工：抽屉（点按卡片打开）只保留启动相关动作与设置/存档/补丁入口；
- * 卡片管理动作统一收口到本弹窗（SPEC.md「游戏库」）。
+ * 卡片管理动作（修改封面 / 首页快捷启动 / 桌面快捷方式 / 名称修改 / 删除游戏）的共享控制器：
+ * 长按弹窗（[GameQuickActionsDialog]）与游戏盒翻开的书内「管理」分栏共用同一份状态机与业务流程。
+ */
+@Stable
+internal class GameQuickActionsController(
+    val feedback: QuickActionFeedback,
+    private val quickLaunchShown: () -> Boolean,
+    private val shortcutPending: () -> Boolean,
+    private val deleteConfirmShown: () -> Boolean,
+    private val pickCoverAction: () -> Unit,
+    private val toggleQuickLaunchAction: () -> Unit,
+    private val addDesktopShortcutAction: () -> Unit,
+    private val openRenameAction: () -> Unit,
+    private val openDeleteAction: () -> Unit,
+    private val hostDialogs: @Composable () -> Unit,
+) {
+    val shownQuickLaunched: Boolean get() = quickLaunchShown()
+    val shortcutRequestInFlight: Boolean get() = shortcutPending()
+    val showDeleteConfirm: Boolean get() = deleteConfirmShown()
+
+    fun pickCover() = pickCoverAction()
+    fun toggleQuickLaunch() = toggleQuickLaunchAction()
+    fun addDesktopShortcut() = addDesktopShortcutAction()
+    fun openRename() = openRenameAction()
+    fun openDelete() = openDeleteAction()
+
+    @Composable
+    fun HostDialogs() = hostDialogs()
+}
+
+/**
+ * 构建卡片管理共享控制器；[closeOnQuickAction] 为 true 时沿用长按弹窗行为（快捷启动 / 改封面 / 添加桌面后收起弹窗），
+ * 为 false 时留在当前宿主（如翻开的书内）就地更新状态。
  */
 @Composable
-internal fun GameQuickActionsDialog(
+internal fun rememberGameQuickActionsController(
     game: ScanGame,
     quickLaunched: Boolean,
+    closeOnQuickAction: Boolean,
     onDismiss: () -> Unit,
     onGameUpdated: (ScanGame) -> Unit,
     onGameCoverUpdated: (ScanGame) -> Unit = onGameUpdated,
     onGameRenamed: ((String, String) -> Unit)? = null,
     onDeleteGame: () -> Unit,
     onQuickLaunchToggle: () -> Boolean,
-) {
+    exitHandle: GameDialogExitHandle? = null,
+    canInteract: () -> Boolean = { true },
+    onShortcutCropOpened: () -> Unit = {},
+): GameQuickActionsController {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showRenameDialog by rememberSaveable(game.uri) { mutableStateOf(false) }
@@ -123,16 +153,29 @@ internal fun GameQuickActionsDialog(
     var shortcutCropUriText by rememberSaveable(game.uri) { mutableStateOf<String?>(null) }
     var shortcutPickerForNoCover by rememberSaveable(game.uri) { mutableStateOf(false) }
     val feedback = remember(game.uri) { QuickActionFeedback() }
-    val exitHandle = rememberGameDialogExitHandle()
-    val shownQuickLaunched = feedback.shownQuickLaunch(quickLaunched)
+    val latestGame by rememberUpdatedState(game)
+    val latestQuickLaunched by rememberUpdatedState(quickLaunched)
+    val latestOnDismiss by rememberUpdatedState(onDismiss)
+    val latestOnGameUpdated by rememberUpdatedState(onGameUpdated)
+    val latestOnGameCoverUpdated by rememberUpdatedState(onGameCoverUpdated)
+    val latestOnGameRenamed by rememberUpdatedState(onGameRenamed)
+    val latestOnDeleteGame by rememberUpdatedState(onDeleteGame)
+    val latestOnQuickLaunchToggle by rememberUpdatedState(onQuickLaunchToggle)
+    val latestCanInteract by rememberUpdatedState(canInteract)
+    val latestOnShortcutCropOpened by rememberUpdatedState(onShortcutCropOpened)
 
-    val batchScrapeRunningMessage = stringResource(R.string.game_batch_scraping_running)
+    val batchScrapeRunningMessage by rememberUpdatedState(stringResource(R.string.game_batch_scraping_running))
     val coverSetFailedMessage = stringResource(R.string.game_cover_set_failed)
-    val quickLaunchFullMessage = stringResource(R.string.game_quick_launch_full)
-    val shortcutRequestedMessage = stringResource(R.string.game_desktop_shortcut_requested)
-    val shortcutUpdatedMessage = stringResource(R.string.game_desktop_shortcut_updated)
-    val shortcutUnsupportedMessage = stringResource(R.string.game_desktop_shortcut_unsupported)
-    val shortcutFailedMessage = stringResource(R.string.game_desktop_shortcut_failed)
+    val quickLaunchFullMessage by rememberUpdatedState(stringResource(R.string.game_quick_launch_full))
+    val shortcutRequestedMessage by rememberUpdatedState(stringResource(R.string.game_desktop_shortcut_requested))
+    val shortcutUpdatedMessage by rememberUpdatedState(stringResource(R.string.game_desktop_shortcut_updated))
+    val shortcutUnsupportedMessage by rememberUpdatedState(stringResource(R.string.game_desktop_shortcut_unsupported))
+    val shortcutFailedMessage by rememberUpdatedState(stringResource(R.string.game_desktop_shortcut_failed))
+
+    fun finishQuickAction() {
+        if (!closeOnQuickAction) return
+        if (exitHandle != null) exitHandle.closeThen(latestOnDismiss) else latestOnDismiss()
+    }
 
     /** Blocks destructive cover/shortcut actions while a batch scrape is running. */
     fun isBatchScrapingActive(): Boolean {
@@ -145,6 +188,7 @@ internal fun GameQuickActionsDialog(
 
     /** Requests a new shortcut or updates the existing shortcut for this game. */
     fun requestDesktopShortcut(customIconUri: Uri? = null) {
+        val targetGame = latestGame
         val appContext = context.applicationContext
         if (shortcutRequestInFlight) {
             if (customIconUri != null) {
@@ -159,8 +203,8 @@ internal fun GameQuickActionsDialog(
             val result = try {
                 GameShortcutManager.requestPinShortcut(
                     context = context,
-                    game = game,
-                    launchIntent = GameShortcutActivity.createIntent(context, game.uri),
+                    game = targetGame,
+                    launchIntent = GameShortcutActivity.createIntent(context, targetGame.uri),
                     customIconUri = customIconUri,
                     pinResultIntent = GameShortcutResultReceiver.createIntent(context),
                 )
@@ -192,7 +236,7 @@ internal fun GameQuickActionsDialog(
                 kind,
             ).show()
             if (kind != AppNotice.Kind.Failure) {
-                exitHandle.closeThen(onDismiss)
+                finishQuickAction()
             } else {
                 feedback.rejectShortcut()
             }
@@ -202,6 +246,7 @@ internal fun GameQuickActionsDialog(
     val shortcutIconPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             shortcutPickerForNoCover = false
+            latestOnShortcutCropOpened()
             shortcutCropUriText = uri.toString()
         } else if (shortcutPickerForNoCover) {
             shortcutPickerForNoCover = false
@@ -211,7 +256,8 @@ internal fun GameQuickActionsDialog(
 
     /** Opens cover cropping, falling back to custom-image selection when no cover exists. */
     fun openShortcutCrop() {
-        val coverUri = game.coverUri?.takeIf { it.isNotBlank() }
+        latestOnShortcutCropOpened()
+        val coverUri = latestGame.coverUri?.takeIf { it.isNotBlank() }
         if (coverUri != null) {
             shortcutCropUriText = coverUri
         } else {
@@ -224,11 +270,12 @@ internal fun GameQuickActionsDialog(
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         if (isBatchScrapingActive()) return@rememberLauncherForActivityResult
+        val targetGame = latestGame
         scope.launch {
             val appContext = context.applicationContext
             val updated = withContext(Dispatchers.IO) {
                 try {
-                    VndbCoverService.saveCustomCover(appContext, game, uri)
+                    VndbCoverService.saveCustomCover(appContext, targetGame, uri)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (e: Throwable) {
@@ -238,8 +285,12 @@ internal fun GameQuickActionsDialog(
                 }
             }
             if (updated != null) {
-                onGameCoverUpdated(updated)
-                exitHandle.closeThen(onDismiss)
+                latestOnGameCoverUpdated(updated)
+                if (closeOnQuickAction) {
+                    finishQuickAction()
+                } else {
+                    MotionHaptics.perform(MotionHaptics.Kind.Confirm, requireTouch = false)
+                }
             } else {
                 AppNotice.makeText(context, coverSetFailedMessage, Toast.LENGTH_SHORT, AppNotice.Kind.Failure)
                     .show()
@@ -248,9 +299,178 @@ internal fun GameQuickActionsDialog(
         }
     }
 
+    fun pickCover() {
+        if (latestCanInteract() && !isBatchScrapingActive()) imagePicker.launch("image/*")
+    }
+    fun toggleQuickLaunch() {
+        if (latestCanInteract()) {
+            if (closeOnQuickAction) {
+                feedback.toggle(latestOnQuickLaunchToggle, close = ::finishQuickAction) {
+                    AppNotice.makeText(context, quickLaunchFullMessage, Toast.LENGTH_SHORT, AppNotice.Kind.Limit)
+                        .show()
+                }
+            } else {
+                feedback.toggleInPlace(
+                    change = latestOnQuickLaunchToggle,
+                    confirmed = { MotionHaptics.perform(MotionHaptics.Kind.Confirm) },
+                    rejected = {
+                        AppNotice.makeText(context, quickLaunchFullMessage, Toast.LENGTH_SHORT, AppNotice.Kind.Limit)
+                            .show()
+                    },
+                )
+            }
+        }
+    }
+    fun addDesktopShortcut() {
+        if (latestCanInteract()) {
+            if (!shortcutRequestInFlight) openShortcutCrop() else feedback.rejectShortcut()
+        }
+    }
+    fun openRename() {
+        if (latestCanInteract()) showRenameDialog = true
+    }
+    fun openDelete() {
+        if (latestCanInteract()) showDeleteConfirm = true
+    }
+    val dialogs: @Composable () -> Unit = {
+        shortcutCropUriText?.let { uriText ->
+            GameShortcutCropDialog(
+                imageUri = Uri.parse(uriText),
+                onDismiss = { shortcutCropUriText = null },
+                onPickImage = {
+                    if (!shortcutRequestInFlight) {
+                        shortcutPickerForNoCover = false
+                        shortcutIconPicker.launch("image/*")
+                    }
+                },
+                onConfirm = { croppedUri ->
+                    shortcutCropUriText = null
+                    requestDesktopShortcut(croppedUri)
+                },
+            )
+        }
+
+        if (showRenameDialog) {
+            val targetGame = latestGame
+            RenameGameDialog(
+                game = targetGame,
+                onDismiss = { showRenameDialog = false },
+                onConfirm = { title ->
+                    showRenameDialog = false
+                    val renamer = latestOnGameRenamed
+                    if (renamer != null) renamer(targetGame.uri, title) else latestOnGameUpdated(targetGame.copy(title = title))
+                },
+            )
+        }
+
+        if (showDeleteConfirm) {
+            val targetGame = latestGame
+            // 确认删除：确认弹窗（或书内确认页）先退场/翻回，再由外层收起后删除
+            val deleteExitHandle = rememberGameDialogExitHandle()
+            AppAlertDialog(
+                onDismissRequest = { showDeleteConfirm = false },
+                title = {
+                    Text(
+                        stringResource(R.string.game_delete_title),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                },
+                text = {
+                    Text(
+                        stringResource(R.string.game_delete_message, targetGame.title),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                },
+                confirmButton = {
+                    DialogTextButton(
+                        text = stringResource(R.string.common_delete),
+                        contentColor = MaterialTheme.colorScheme.error,
+                        onClick = {
+                            deleteExitHandle.closeThen {
+                                showDeleteConfirm = false
+                                if (closeOnQuickAction) {
+                                    val complete = {
+                                        PlayStatusSummaryCache.invalidate(targetGame.uri)
+                                        latestOnDeleteGame()
+                                        latestOnDismiss()
+                                    }
+                                    if (exitHandle != null) exitHandle.closeThen(complete) else complete()
+                                } else {
+                                    PlayStatusSummaryCache.invalidate(targetGame.uri)
+                                    latestOnDeleteGame()
+                                }
+                            }
+                        },
+                    )
+                },
+                dismissButton = {
+                    deleteExitHandle.capture()
+                    DialogTextButton(
+                        text = stringResource(R.string.common_cancel),
+                        onClick = { showDeleteConfirm = false },
+                    )
+                },
+            )
+        }
+    }
+    return remember(game.uri, feedback, context, scope, closeOnQuickAction, exitHandle, imagePicker, shortcutIconPicker) {
+        GameQuickActionsController(
+            feedback = feedback,
+            quickLaunchShown = {
+                if (closeOnQuickAction) feedback.shownQuickLaunch(latestQuickLaunched) else latestQuickLaunched
+            },
+            shortcutPending = { shortcutRequestInFlight },
+            deleteConfirmShown = { showDeleteConfirm },
+            pickCoverAction = ::pickCover,
+            toggleQuickLaunchAction = ::toggleQuickLaunch,
+            addDesktopShortcutAction = ::addDesktopShortcut,
+            openRenameAction = ::openRename,
+            openDeleteAction = ::openDelete,
+            hostDialogs = dialogs,
+        )
+    }
+}
+
+/**
+ * 游戏卡片长按操作弹窗：游戏页瀑布流 / 封面流与首页快捷启动卡共用。
+ *
+ * 布局：顶部为超出面板上沿的游戏封面 + 游戏标题，封面右下角为更换封面入口（点击封面触发）；
+ * 中部为动作项（首页快捷启动、桌面快捷方式、名称修改），每项独占一行，底部为整行删除长按钮。
+ * 条目为「直接执行的动作」，点击后关闭弹窗或让位给二级确认弹窗：
+ * 快捷启动（满 3 个时提示）、添加桌面（裁切图标后请求固定快捷方式）、
+ * 名称修改、修改封面（点击封面）、删除游戏（二次确认）。
+ *
+ * 与「游戏操作抽屉」的分工：抽屉（点按卡片打开）只保留启动相关动作与设置/存档/补丁入口；
+ * 卡片管理动作统一收口到本弹窗（SPEC.md「游戏库」）。
+ */
+@Composable
+internal fun GameQuickActionsDialog(
+    game: ScanGame,
+    quickLaunched: Boolean,
+    onDismiss: () -> Unit,
+    onGameUpdated: (ScanGame) -> Unit,
+    onGameCoverUpdated: (ScanGame) -> Unit = onGameUpdated,
+    onGameRenamed: ((String, String) -> Unit)? = null,
+    onDeleteGame: () -> Unit,
+    onQuickLaunchToggle: () -> Boolean,
+) {
+    val exitHandle = rememberGameDialogExitHandle()
+    val controller = rememberGameQuickActionsController(
+        game = game,
+        quickLaunched = quickLaunched,
+        closeOnQuickAction = true,
+        onDismiss = onDismiss,
+        onGameUpdated = onGameUpdated,
+        onGameCoverUpdated = onGameCoverUpdated,
+        onGameRenamed = onGameRenamed,
+        onDeleteGame = onDeleteGame,
+        onQuickLaunchToggle = onQuickLaunchToggle,
+        exitHandle = exitHandle,
+    )
+
     AppAlertDialog(
         onDismissRequest = onDismiss,
-        dismissEnabled = !showDeleteConfirm,
+        dismissEnabled = !controller.showDeleteConfirm,
         // 顶部：超出卡片上沿的封面 + 封面右侧空白区内的游戏标题
         title = {
             Row(
@@ -283,33 +503,28 @@ internal fun GameQuickActionsDialog(
                     verticalArrangement = Arrangement.spacedBy(QuickActionItemSpacing),
                 ) {
                     QuickActionItem(
-                        modifier = feedback.toggleRow(),
-                        title = if (shownQuickLaunched) {
+                        modifier = controller.feedback.toggleRow(),
+                        title = if (controller.shownQuickLaunched) {
                             stringResource(R.string.game_remove_quick_launch)
                         } else {
                             stringResource(R.string.game_add_quick_launch)
                         },
                         leadingIcon = R.drawable.ic_home,
-                        onClick = {
-                            feedback.toggle(onQuickLaunchToggle, close = { exitHandle.closeThen(onDismiss) }) {
-                                AppNotice.makeText(context, quickLaunchFullMessage, Toast.LENGTH_SHORT, AppNotice.Kind.Limit)
-                                    .show()
-                            }
-                        },
+                        onClick = controller::toggleQuickLaunch,
                     )
                     QuickActionItem(
-                        modifier = feedback.shortcutRow(shortcutRequestInFlight),
+                        modifier = controller.feedback.shortcutRow(controller.shortcutRequestInFlight),
                         title = stringResource(R.string.game_add_desktop_shortcut),
                         leadingIcon = R.drawable.ic_sheet_desktop_shortcut,
-                        onClick = { if (!shortcutRequestInFlight) openShortcutCrop() else feedback.rejectShortcut() },
+                        onClick = controller::addDesktopShortcut,
                     )
                     QuickActionItem(
                         modifier = Modifier.staggeredEntrance(2),
                         title = stringResource(R.string.game_rename),
                         leadingIcon = R.drawable.ic_sheet_rename,
-                        onClick = { showRenameDialog = true },
+                        onClick = controller::openRename,
                     )
-                    QuickActionDeleteButton(modifier = Modifier.staggeredEntrance(3), onClick = { showDeleteConfirm = true })
+                    QuickActionDeleteButton(modifier = Modifier.staggeredEntrance(3), onClick = controller::openDelete)
                 }
             }
         },
@@ -319,86 +534,15 @@ internal fun GameQuickActionsDialog(
         topOverhang = {
             QuickActionCover(
                 game = game,
-                modifier = feedback.coverEntry(),
+                modifier = controller.feedback.coverEntry(),
                 // 点击封面与原先的「修改封面」条目一致：相册选图后走统一封面保存流程
-                onClick = { if (!isBatchScrapingActive()) imagePicker.launch("image/*") },
+                onClick = controller::pickCover,
             )
         },
         topOverhangHeight = QuickActionCoverOverhang,
     )
 
-    shortcutCropUriText?.let { uriText ->
-        GameShortcutCropDialog(
-            imageUri = Uri.parse(uriText),
-            onDismiss = { shortcutCropUriText = null },
-            onPickImage = {
-                if (!shortcutRequestInFlight) {
-                    shortcutPickerForNoCover = false
-                    shortcutIconPicker.launch("image/*")
-                }
-            },
-            onConfirm = { croppedUri ->
-                shortcutCropUriText = null
-                requestDesktopShortcut(croppedUri)
-            },
-        )
-    }
-
-    if (showRenameDialog) {
-        RenameGameDialog(
-            game = game,
-            onDismiss = { showRenameDialog = false },
-            onConfirm = { title ->
-                showRenameDialog = false
-                val renamer = onGameRenamed
-                if (renamer != null) renamer(game.uri, title) else onGameUpdated(game.copy(title = title))
-            },
-        )
-    }
-
-    if (showDeleteConfirm) {
-        // 确认删除：确认弹窗先沉下，再由长按弹窗沉下，最后才删除并关闭（原路逐层退回，而不是两层一起瞬间消失）
-        val deleteExitHandle = rememberGameDialogExitHandle()
-        AppAlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = {
-                Text(
-                    stringResource(R.string.game_delete_title),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-            },
-            text = {
-                Text(
-                    stringResource(R.string.game_delete_message, game.title),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            },
-            confirmButton = {
-                DialogTextButton(
-                    text = stringResource(R.string.common_delete),
-                    contentColor = MaterialTheme.colorScheme.error,
-                    onClick = {
-                        deleteExitHandle.closeThen {
-                            showDeleteConfirm = false
-                            exitHandle.closeThen {
-                                PlayStatusSummaryCache.invalidate(game.uri)
-                                onDeleteGame()
-                                onDismiss()
-                            }
-                        }
-                    },
-                )
-            },
-            dismissButton = {
-                deleteExitHandle.capture()
-                DialogTextButton(
-                    text = stringResource(R.string.common_cancel),
-                    onClick = { showDeleteConfirm = false },
-                )
-            },
-        )
-    }
-
+    controller.HostDialogs()
 }
 
 /**
