@@ -130,6 +130,7 @@ import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.game.CoverDecodeTier
 import com.tyranor.next.ui.game.GameActionsSheet
 import com.tyranor.next.ui.game.GameQuickActionsDialog
+import com.tyranor.next.ui.game.rememberQuickActionsDialogHostState
 import com.tyranor.next.ui.game.coverColor
 import com.tyranor.next.ui.game.rememberCoverBitmap
 import com.tyranor.next.ui.main.MainLibraryUiState
@@ -187,20 +188,18 @@ fun HomeScreen(
     val selectedGame = remember(libraryState.games, selectedGameUri) {
         selectedGameUri?.let { uri -> libraryState.games.firstOrNull { it.uri == uri } }
     }
-    // 卡片长按的操作弹窗目标：只存 uri，每次从最新列表解析（改名/封面更新后仍是新对象）
-    var quickActionsGameUri by rememberSaveable { mutableStateOf<String?>(null) }
-    val quickActionsGame = remember(libraryState.games, quickActionsGameUri) {
-        quickActionsGameUri?.let { uri -> libraryState.games.firstOrNull { it.uri == uri } }
+    // 卡片长按的操作弹窗目标：只存 uri 与打开序号，每次从最新列表解析（改名/封面更新后仍是新对象）
+    val quickActions = rememberQuickActionsDialogHostState()
+    val quickActionsGame = remember(libraryState.games, quickActions.targetUri) {
+        quickActions.targetUri?.let { uri -> libraryState.games.firstOrNull { it.uri == uri } }
     }
 
-    LaunchedEffect(libraryState.loaded, libraryState.games, selectedGameUri, quickActionsGameUri) {
+    LaunchedEffect(libraryState.loaded, libraryState.games, selectedGameUri, quickActions.targetUri) {
         if (!libraryState.loaded) return@LaunchedEffect
         selectedGameUri?.let { uri ->
             if (libraryState.games.none { it.uri == uri }) selectedGameUri = null
         }
-        quickActionsGameUri?.let { uri ->
-            if (libraryState.games.none { it.uri == uri }) quickActionsGameUri = null
-        }
+        quickActions.clearIfMissing { uri -> libraryState.games.any { it.uri == uri } }
     }
 
     fun replaceGame(updated: ScanGame) {
@@ -241,7 +240,7 @@ fun HomeScreen(
         libraryState = libraryState,
         onGameClick = { selectedGameUri = it.uri },
         // 长按不再直接启动：打开统一操作弹窗（快捷启动 / 桌面快捷方式 / 改名 / 改封面 / 删除）
-        onGameLongClick = { quickActionsGameUri = it.uri },
+        onGameLongClick = { quickActions.open(it.uri) },
         onRecentRemoved = onRecentRemoved,
         onCoachAnchorChanged = onCoachAnchorChanged,
         isActive = isActive,
@@ -269,17 +268,20 @@ fun HomeScreen(
 
     // ===== 长按卡片：统一操作弹窗（快捷启动 / 桌面快捷方式 / 改名 / 修改封面 / 删除） =====
     quickActionsGame?.let { game ->
-        GameQuickActionsDialog(
-            game = game,
-            quickLaunched = quickLaunch.any { it.uri == game.uri },
-            onDismiss = { quickActionsGameUri = null },
-            onGameUpdated = { replaceGame(it) },
-            onGameCoverUpdated = { updated -> onGameCoverUpdated(null, updated) },
-            onGameRenamed = onGameRenamed,
-            // 与游戏页同一入口：增强档先播放消散再删库，补位的卡片随后才顶上来
-            onDeleteGame = { deleteScope.removeLibraryGame(game.uri) { onGameDeleted(game) } },
-            onQuickLaunchToggle = { onQuickLaunchToggle(game) },
-        )
+        val openSeq = quickActions.openSequence
+        key(openSeq) {
+            GameQuickActionsDialog(
+                game = game,
+                quickLaunched = quickLaunch.any { it.uri == game.uri },
+                onDismiss = { quickActions.dismissIfCurrent(openSeq) },
+                onGameUpdated = { replaceGame(it) },
+                onGameCoverUpdated = { updated -> onGameCoverUpdated(null, updated) },
+                onGameRenamed = onGameRenamed,
+                // 与游戏页同一入口：增强档先播放消散再删库，补位的卡片随后才顶上来
+                onDeleteGame = { deleteScope.removeLibraryGame(game.uri) { onGameDeleted(game) } },
+                onQuickLaunchToggle = { onQuickLaunchToggle(game) },
+            )
+        }
     }
 }
 

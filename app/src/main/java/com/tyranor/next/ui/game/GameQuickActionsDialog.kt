@@ -29,10 +29,12 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -94,6 +96,99 @@ private val QuickActionItemSpacing = 10.dp
 // 封面在卡片内的可见高度去掉正文顶部内边距，即标题行最小高度（默认与封面底边对齐）。
 private val QuickActionHeaderHeight =
     QuickActionCoverHeight - QuickActionCoverOverhang - AppDialogContentVerticalPadding
+
+/**
+ * 长按操作弹窗的纯逻辑状态机（含单调递增的打开序号 [openSequence]）。
+ *
+ * 退场期间窗口直接放行触摸时，用户可能在旧退场尚未结束前再次长按同一张或另一张卡片：
+ * - 宿主层用 [openSequence] 作为 `key(...)`，每次重开立刻销毁旧弹窗实例并挂载新实例；
+ * - 旧实例在退出/销毁收尾时触发的关闭回调携带旧序号，只有 `sequence == openSequence` 时才清空 [targetUri]，
+ *   过期的关闭回调直接忽略，防止把刚重开的新弹窗误关。
+ */
+internal class QuickActionsDialogSession(
+    initialTargetUri: String? = null,
+    initialSequence: Long = if (initialTargetUri != null) 1L else 0L,
+) {
+    var targetUri: String? = initialTargetUri
+        private set
+    var openSequence: Long = initialSequence
+        private set
+
+    fun open(uri: String): Long {
+        targetUri = uri
+        openSequence += 1L
+        return openSequence
+    }
+
+    fun dismissIfCurrent(sequence: Long): Boolean {
+        if (targetUri == null || sequence != openSequence) return false
+        targetUri = null
+        return true
+    }
+
+    fun clearIfTarget(uri: String): Boolean {
+        if (targetUri != uri) return false
+        targetUri = null
+        return true
+    }
+
+    fun clearIfMissing(containsUri: (String) -> Boolean): Boolean {
+        val current = targetUri ?: return false
+        if (containsUri(current)) return false
+        targetUri = null
+        return true
+    }
+}
+
+@Stable
+internal class QuickActionsDialogHostState(
+    initialTargetUri: String? = null,
+    initialSequence: Long = if (initialTargetUri != null) 1L else 0L,
+) {
+    private val session = QuickActionsDialogSession(initialTargetUri, initialSequence)
+    var targetUri by mutableStateOf(session.targetUri)
+        private set
+    var openSequence by mutableLongStateOf(session.openSequence)
+        private set
+
+    private fun sync() {
+        targetUri = session.targetUri
+        openSequence = session.openSequence
+    }
+
+    fun open(uri: String) {
+        session.open(uri)
+        sync()
+    }
+
+    fun dismissIfCurrent(sequence: Long) {
+        if (session.dismissIfCurrent(sequence)) sync()
+    }
+
+    fun clearIfTarget(uri: String) {
+        if (session.clearIfTarget(uri)) sync()
+    }
+
+    fun clearIfMissing(containsUri: (String) -> Boolean) {
+        if (session.clearIfMissing(containsUri)) sync()
+    }
+
+    companion object {
+        val Saver = listSaver<QuickActionsDialogHostState, Any?>(
+            save = { listOf(it.targetUri, it.openSequence) },
+            restore = { saved ->
+                QuickActionsDialogHostState(
+                    initialTargetUri = saved.getOrNull(0) as String?,
+                    initialSequence = (saved.getOrNull(1) as? Number)?.toLong() ?: 0L,
+                )
+            },
+        )
+    }
+}
+
+@Composable
+internal fun rememberQuickActionsDialogHostState(): QuickActionsDialogHostState =
+    rememberSaveable(saver = QuickActionsDialogHostState.Saver) { QuickActionsDialogHostState() }
 
 /**
  * 卡片管理动作（修改封面 / 首页快捷启动 / 桌面快捷方式 / 名称修改 / 删除游戏）的共享控制器：
@@ -471,6 +566,7 @@ internal fun GameQuickActionsDialog(
     AppAlertDialog(
         onDismissRequest = onDismiss,
         dismissEnabled = !controller.showDeleteConfirm,
+        passTouchesDuringExit = true,
         // 顶部：超出卡片上沿的封面 + 封面右侧空白区内的游戏标题
         title = {
             Row(

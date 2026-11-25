@@ -61,11 +61,14 @@ internal fun DialogWindowScrim(
     dismissEnabled: Boolean = true,
     /** 手指在弹窗窗口任意位置完成一次点击（未移动、未长按、单指）时的按下位置（弹窗根坐标）；不消费事件。退场期间据此把这次点击转交给下层页面。 */
     onScrimTap: ((Offset) -> Unit)? = null,
+    /** 为 true 时整个遮罩由窗口自己绘制，不启用平台 `FLAG_DIM_BEHIND`（供退场即放行触摸的弹窗使用）。 */
+    drawnOnly: Boolean = false,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val window = syncDialogWindow(
         baseDimOverride = if (enhanced) DIALOG_SCRIM_ALPHA else null,
         scrimAlpha = if (enhanced) 0f else DIALOG_SCRIM_ALPHA,
+        drawnOnly = drawnOnly,
         dimProgress = progress,
     )
     SideEffect { onWindow(window) }
@@ -367,6 +370,8 @@ private object DialogWindowDims {
 
     fun beginExit(window: Window) { bindings[window]?.beginExit() }
 
+    fun markExiting(window: Window) { bindings[window]?.markExiting() }
+
     fun restore(window: Window) { bindings[window]?.restore() }
 
     fun scrimAlpha(window: Window?): Float = bindings[window]?.appliedScrim ?: 0f
@@ -389,6 +394,7 @@ private object DialogWindowDims {
         }
         private var disposed = false
         private var released = false
+        private var exiting = false
         var registered = false
             private set
         var appliedScrim by mutableFloatStateOf(0f)
@@ -413,10 +419,16 @@ private object DialogWindowDims {
             registered = true
             // Commit the inherited floor before this Window can replace the parent's dim in WMS.
             stack.register(owner, window, dim, enabled, baseDim, scrim, baseScrim, released)
+            if (exiting && !released) stack.markExiting(window)
         }
 
         fun beginExit() {
             if (registered && stack.beginExit(window)) released = true
+        }
+
+        fun markExiting() {
+            exiting = true
+            if (registered) stack.markExiting(window)
         }
 
         fun release() {
@@ -426,6 +438,7 @@ private object DialogWindowDims {
 
         fun restore() {
             released = false
+            exiting = false
             if (registered) stack.restore(window)
         }
 
@@ -487,6 +500,11 @@ fun Window?.releaseDialogDim() {
 /** An accepted nested close yields the mask while allowing the surface to finish moving. */
 internal fun Window?.beginDialogDimExit() {
     if (this != null) DialogWindowDims.beginExit(this)
+}
+
+/** 退场一开始即放行触摸的弹窗：交出叠层/底色资格，单窗口时自身遮罩仍随退场渐隐。 */
+internal fun Window?.markDialogDimExiting() {
+    if (this != null) DialogWindowDims.markExiting(this)
 }
 
 /** Explicit reopening only; resource cleanup must leave a closing window released. */

@@ -272,10 +272,10 @@ fun GameScreen(
     val selectedGame = remember(games, selectedGameUri) {
         selectedGameUri?.let { uri -> games.firstOrNull { it.uri == uri } }
     }
-    // 卡片长按的操作弹窗目标：只存 uri，每次从最新列表解析（改名/封面/启动文件更新后仍是新对象）
-    var quickActionsGameUri by rememberSaveable { mutableStateOf<String?>(null) }
-    val quickActionsGame = remember(games, quickActionsGameUri) {
-        quickActionsGameUri?.let { uri -> games.firstOrNull { it.uri == uri } }
+    // 卡片长按的操作弹窗目标：只存 uri 与打开序号，每次从最新列表解析（改名/封面/启动文件更新后仍是新对象）
+    val quickActions = rememberQuickActionsDialogHostState()
+    val quickActionsGame = remember(games, quickActions.targetUri) {
+        quickActions.targetUri?.let { uri -> games.firstOrNull { it.uri == uri } }
     }
 
     val scrapeTaskState by CoverScrapeTaskManager.state.collectAsStateWithLifecycle()
@@ -283,10 +283,10 @@ fun GameScreen(
     val cardStyle by AppSettingsStore.gameCardStyleState.collectSettingAsState()
     val shelfBook = remember { ShelfBookStage() }
 
-    LaunchedEffect(libraryState.loaded, games, selectedGameUri, quickActionsGameUri) {
+    LaunchedEffect(libraryState.loaded, games, selectedGameUri, quickActions.targetUri) {
         if (!libraryState.loaded) return@LaunchedEffect
         selectedGameUri?.let { uri -> if (games.none { it.uri == uri }) selectedGameUri = null }
-        quickActionsGameUri?.let { uri -> if (games.none { it.uri == uri }) quickActionsGameUri = null }
+        quickActions.clearIfMissing { uri -> games.any { it.uri == uri } }
     }
 
     LaunchedEffect(libraryState.scrapeEventId, libraryState.scrapeMessage) {
@@ -301,7 +301,7 @@ fun GameScreen(
 
     fun deleteGame(target: ScanGame) {
         if (selectedGameUri == target.uri) selectedGameUri = null
-        if (quickActionsGameUri == target.uri) quickActionsGameUri = null
+        quickActions.clearIfTarget(target.uri)
         PlayStatusSummaryCache.invalidate(target.uri)
         scope.removeLibraryGame(target.uri) { onGameDeleted(target) }
     }
@@ -352,7 +352,7 @@ fun GameScreen(
             refreshGames = { scanLibrary() },
             onGameClick = { selectedGameUri = it.uri },
             // 长按不再直接启动：打开统一操作弹窗（快捷启动 / 桌面快捷方式 / 改名 / 改封面 / 删除）
-            onGameLongClick = { game -> quickActionsGameUri = game.uri },
+            onGameLongClick = { game -> quickActions.open(game.uri) },
             dbSearchQuery = libraryState.searchQuery,
             dbSearchHitUris = libraryState.searchHitUris,
             confirmedEngineTypes = libraryState.confirmedEngineTypes,
@@ -401,16 +401,19 @@ fun GameScreen(
 
         // ===== 长按游戏卡片：统一操作弹窗（快捷启动 / 桌面快捷方式 / 改名 / 修改封面 / 删除） =====
         quickActionsGame?.let { game ->
-            GameQuickActionsDialog(
-                game = game,
-                quickLaunched = libraryState.quickLaunch.any { it.uri == game.uri },
-                onDismiss = { quickActionsGameUri = null },
-                onGameUpdated = { replaceGame(it) },
-                onGameCoverUpdated = { updated -> onGameCoverUpdated(null, updated) },
-                onGameRenamed = onGameRenamed,
-                onDeleteGame = { deleteGame(game) },
-                onQuickLaunchToggle = { onQuickLaunchToggle(game) },
-            )
+            val openSeq = quickActions.openSequence
+            key(openSeq) {
+                GameQuickActionsDialog(
+                    game = game,
+                    quickLaunched = libraryState.quickLaunch.any { it.uri == game.uri },
+                    onDismiss = { quickActions.dismissIfCurrent(openSeq) },
+                    onGameUpdated = { replaceGame(it) },
+                    onGameCoverUpdated = { updated -> onGameCoverUpdated(null, updated) },
+                    onGameRenamed = onGameRenamed,
+                    onDeleteGame = { deleteGame(game) },
+                    onQuickLaunchToggle = { onQuickLaunchToggle(game) },
+                )
+            }
         }
     }
 }
