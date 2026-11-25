@@ -269,15 +269,13 @@ internal fun AppAlertDialog(
         val job = launch {
             val dim = launch { dimAlpha.animateTo(0f, dimSpec) }
             val slide = launch { slideFraction.animateTo(1f, slideSpec) }
-            if (enhanced) {
-                // 增强档弹簧尾段在卡片已离屏、遮罩肉眼不可见后仍会延续百余毫秒；视觉退场到位即收尾，
-                // 避免不可见的弹窗窗口继续拦住下层卡片的长按与滑动。
-                snapshotFlow {
-                    dimAlpha.value <= EXIT_DIM_SETTLED && slideFraction.value >= EXIT_SLIDE_SETTLED
-                }.first { it }
-                dim.cancel()
-                slide.cancel()
-            }
+            // 弹簧尾段在卡片已离屏、遮罩肉眼不可见后仍会延续百余毫秒；视觉退场到位即收尾，
+            // 避免不可见的弹窗窗口继续拦住下层卡片的长按与滑动。
+            snapshotFlow {
+                dimAlpha.value <= EXIT_DIM_SETTLED && slideFraction.value >= EXIT_SLIDE_SETTLED
+            }.first { it }
+            dim.cancel()
+            slide.cancel()
         }
         exitAnimation[0] = job
         job.join()
@@ -710,7 +708,7 @@ private const val PendingExitTapMaxAgeMillis = 600L
 /** 关闭回调交付后，窗口还可能多留一两帧：这段时间内的按下仍按「退场中」转交给下层页面。 */
 private const val ExitTailMillis = 250L
 
-/** 增强档退场动画视觉到位阈值：遮罩透明度低于 0.01 且面板滑出超过 92% 时已不可见，立即结束等待。 */
+/** 退场动画视觉到位阈值：遮罩透明度低于 0.01 且面板滑出超过 92% 时已不可见，立即结束等待。 */
 private const val EXIT_DIM_SETTLED = 0.01f
 private const val EXIT_SLIDE_SETTLED = 0.92f
 
