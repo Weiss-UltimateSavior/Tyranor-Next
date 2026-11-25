@@ -466,11 +466,14 @@ private fun ShelfCatalogBackground(
     val backdrop = ShelfCatalogBackdrop
     val closing = motion.closing
     Box(
-        modifier
+        // noHitWhile 必须在 modifier（fillMaxSize）之前：它把布局大小报成 0，放在铺满的紧约束里面，
+        // 约束会把 0 抬回满尺寸、内容反被居中偏移半个屏幕——退场第一帧背景整块挪到屏幕正中，只剩右下 1/4 盖着淡蓝底色，其余露出主界面
+        (if (closing) Modifier.noHitWhile(true) else Modifier)
+            .then(modifier)
             .shelfCatalogBackdropAlpha(motion)
             .then(
                 if (closing) {
-                    Modifier.noHitWhile(true)
+                    Modifier
                 } else {
                     Modifier.pointerInput(Unit) {
                         awaitPointerEventScope {
