@@ -234,16 +234,21 @@ internal fun GameShelf(
     val pendingUri = catalog?.pendingFocusUri
     val focusToken = catalog?.focusRequestToken
     val interactive = isInteractive()
-    val adjustment = remember(pagerState, games) {
-        Snapshot.withoutReadObservation {
+    val adjustmentGuard = remember(pagerState, games) {
+        val adjustment = Snapshot.withoutReadObservation {
             val uri = pagerState.currentShelfPageKey()
             val page = shelfPageAdjustment(games, pagerState.currentPage, uri) ?: return@withoutReadObservation null
             page to if (uri != null && games.getOrNull(page)?.uri == uri) pagerState.currentPageOffsetFraction else 0f
         }
+        ShelfPageAdjustmentGuard(adjustment)
     }
     LaunchedEffect(pagerState, games, interactive) {
-        if (adjustment != null && latestInteractive() && catalog?.pendingFocusUri == null) {
-            pagerState.requestScrollToPage(adjustment.first, adjustment.second)
+        val target = adjustmentGuard.consumeIfReady(
+            interactive = latestInteractive(),
+            hasPendingFocus = catalog?.pendingFocusUri != null,
+        )
+        if (target != null) {
+            pagerState.requestScrollToPage(target.first, target.second)
         }
     }
     LaunchedEffect(pagerState, games, catalog, focusToken, pendingUri, interactive) {
@@ -420,6 +425,28 @@ internal fun shelfPageAdjustment(games: List<ScanGame>, page: Int, measuredUri: 
         return if (games.getOrNull(page)?.uri == measuredUri) null else shelfFocusPage(games, measuredUri)
     }
     return if (page in games.indices) null else page.coerceIn(0, games.lastIndex)
+}
+
+/**
+ * 单份 `games` 列表对应的书架页调整一次性守卫：
+ * 在 `games` 变化的那次组合中基于当时的测量键算好目标页与偏移，仅允许应用一次；
+ * 不可交互或存在藏书阁聚焦请求时暂不消耗，恢复后补应用一次；已应用后即使再次经历
+ * `interactive` 的 `false -> true` 也不会重放，避免覆盖用户之后的翻页。
+ */
+internal class ShelfPageAdjustmentGuard(
+    val adjustment: Pair<Int, Float>?,
+) {
+    var applied: Boolean = false
+        private set
+
+    fun consumeIfReady(
+        interactive: Boolean,
+        hasPendingFocus: Boolean,
+    ): Pair<Int, Float>? {
+        if (applied || adjustment == null || !interactive || hasPendingFocus) return null
+        applied = true
+        return adjustment
+    }
 }
 
 private fun PagerState.currentShelfPageKey(): String? =
