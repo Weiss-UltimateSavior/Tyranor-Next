@@ -53,6 +53,7 @@ import com.tyranor.next.ui.common.motion.MotionTokens
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -2457,9 +2458,13 @@ internal fun shelfCatalogHandoffStart(troupe: List<ShelfCatalogBookFlight>, dens
         if (flight.fadeInPlace) continue
         val from = shelfCatalogBookPose(0f, flight)
         val to = shelfCatalogBookPose(1f, flight)
+        // 位置：端点间的直线距离，再加上飞行弧线在终点附近的残余——弧线是 arcLift * sin(π t)，t 接近 1 时约为 arcLift * π * (1 - t)，
+        // 与直线剩余同比例收敛，端点很近但弧线较高的飞行（普通关闭的 arcLiftPx）不能当成短行程
         val travel = maxOf(
-            abs(from.spineCenterX - to.spineCenterX),
-            abs(from.spineCenterY - to.spineCenterY),
+            hypot(
+                from.spineCenterX - to.spineCenterX,
+                abs(from.spineCenterY - to.spineCenterY) + PI.toFloat() * flight.arcLiftPx,
+            ),
             abs(from.spineHeight - to.spineHeight),
             abs(from.coverWidth - to.coverWidth),
         )

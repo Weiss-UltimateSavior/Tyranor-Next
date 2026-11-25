@@ -1,6 +1,8 @@
 package com.tyranor.next.ui.game
 
 import com.tyranor.next.core.engine.EngineType
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import com.tyranor.next.core.game.model.ScanGame
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -80,6 +82,46 @@ class ShelfMorphAndMipTest {
         // 没有有效行程（异常输入）退回默认起点
         assertEquals(0.92f, shelfCatalogHandoffStartFor(travelPx = 0f, residualPx = 4.3f), 1e-4f)
         assertEquals(0.92f, shelfCatalogHandoffStartFor(travelPx = Float.NaN, residualPx = 4.3f), 1e-4f)
+    }
+
+    @Test
+    fun handoffDistanceCountsTheFlightArcNotJustTheEndpoints() {
+        // 审查给的例子：density 3、中心横向差 40px、纵向与尺寸都相同、书高 1200px、无错峰
+        fun flight(arcLiftPx: Float): ShelfCatalogBookFlight {
+            val origin = ShelfCatalogBookOrigin(
+                uri = "u",
+                pageIndex = 0,
+                frontRect = Rect(0f, 0f, 800f, 1200f),
+                spineRect = Rect(500f, 100f, 560f, 1300f),
+                spineThicknessPx = 60f,
+                boxHeightPx = 1200f,
+                coverWidthPx = 800f,
+                yawDegrees = 0f,
+                tiltDegrees = 0f,
+                tint = Color.Gray,
+                isHero = false,
+            )
+            return ShelfCatalogBookFlight(
+                game = game(0),
+                spineIndex = 0,
+                shelfOrigin = origin,
+                // 与 spineRect 同高（1200）、中心横向差 40px，纵向中心相同
+                catalogRect = Rect(540f, 100f, 600f, 1300f),
+                catalogMode = ShelfCatalogLayoutMode.SPINES,
+                delayFraction = 0f,
+                arcLiftPx = arcLiftPx,
+                returningToShelf = true,
+                isCurrentInCatalog = false,
+                zPriority = 0f,
+            )
+        }
+        // 没有弧线的短行程保持原有的 92%
+        assertEquals(0.92f, shelfCatalogHandoffStart(listOf(flight(0f)), density = 3f), 1e-4f)
+        // 弧线 60px：末段残余 60·π·(1-t) 远大于 4.5px 的阈值，必须晚得多才交接（进度 0.96 时残余约 7.5px，仍超阈值）
+        val withArc = shelfCatalogHandoffStart(listOf(flight(60f)), density = 3f)
+        assertTrue(withArc > 0.96f)
+        val residualAtStart = (1f - withArc) * kotlin.math.hypot(40f, (Math.PI * 60.0).toFloat())
+        assertEquals(4.5f, residualAtStart, 0.05f)
     }
 
     @Test
