@@ -7,6 +7,7 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.widget.Toast
+import com.tyranor.next.core.settings.OnsGraphicsSharpnessPolicy
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
@@ -931,7 +932,15 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var krVCursorScale by remember { mutableStateOf(EngineSettingsStore.getKrVCursorScale(ctx)) }
     var krMenuOpa by remember { mutableStateOf(EngineSettingsStore.getKrMenuHandlerOpa(ctx)) }
 
-    var ons by remember { mutableStateOf(EngineSettingsStore.loadOns(ctx)) }
+    var ons by remember(kind) {
+        val loaded = EngineSettingsStore.loadOns(ctx)
+        val initial = if (kind == EngineSettingsKind.ONS) {
+            loaded.copy(sharpness = OnsGraphicsSharpnessPolicy.normalizeGlobal(loaded.sharpness, graphics))
+        } else {
+            loaded
+        }
+        mutableStateOf(initial)
+    }
 
     var artKernel by remember { mutableStateOf(EngineSettingsStore.getArtKernel(ctx)) }
     var artVersion by remember { mutableStateOf(EngineSettingsStore.getArtEngineVersion(ctx)) }
@@ -1164,7 +1173,29 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                         GlobalGraphicsSettings(
                             settings = graphics,
                             capability = GraphicsCapabilities.forSettings(family, if (family == GraphicsFamily.KR) krKernel else artKernel, if (family == GraphicsFamily.KR) krVersion else artVersion, krRenderer),
-                        ) { graphics = it }
+                            enabledSummary = if (family == GraphicsFamily.ONS) {
+                                stringResource(R.string.graphics_settings_ons_filter_mutex_summary)
+                            } else {
+                                null
+                            },
+                        ) { next ->
+                            if (family == GraphicsFamily.ONS) {
+                                val resolved = OnsGraphicsSharpnessPolicy.onGlobalGraphicsChange(next, ons.sharpness)
+                                graphics = resolved.graphics
+                                if (resolved.sharpness != ons.sharpness) {
+                                    ons = ons.copy(sharpness = resolved.sharpness)
+                                }
+                                if (resolved.autoDisabled == OnsGraphicsSharpnessPolicy.AutoDisabledTarget.ENGINE_SHARPNESS) {
+                                    AppNotice.makeText(
+                                        ctx,
+                                        R.string.engine_settings_ons_disabled_sharpness_notice,
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                            } else {
+                                graphics = next
+                            }
+                        }
                     }
                 },
                 onKrVersion = { krVersion = it },
@@ -1184,7 +1215,22 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onKrVCursorScale = { krVCursorScale = it },
                 onKrMenuOpa = { krMenuOpa = it },
                 onResetKrFont = { krFont = "" },
-                onOns = { ons = it },
+                onOns = { next ->
+                    if (kind == EngineSettingsKind.ONS && next.sharpness != ons.sharpness) {
+                        val resolved = OnsGraphicsSharpnessPolicy.onGlobalSharpnessChange(next.sharpness, graphics)
+                        ons = next.copy(sharpness = resolved.sharpness)
+                        graphics = resolved.graphics
+                        if (resolved.autoDisabled == OnsGraphicsSharpnessPolicy.AutoDisabledTarget.GRAPHICS_FILTER) {
+                            AppNotice.makeText(
+                                ctx,
+                                R.string.engine_settings_ons_disabled_filter_notice,
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    } else {
+                        ons = next
+                    }
+                },
                 onArtKernel = { artKernel = it },
                 onArtVersion = { artVersion = it },
                 onArtPatch = { artPatch = it },
@@ -1439,7 +1485,12 @@ private fun LazyListPlaceholder(
                 SwitchPreference(title = stringResource(R.string.engine_settings_fullscreen_stretch), checked = ons.stretchFull, onCheckedChange = { b -> onOns(ons.copy(stretchFull = b)) })
                 SwitchPreference(title = stringResource(R.string.engine_settings_ignore_cutout), checked = ons.ignoreCutout, onCheckedChange = { b -> onOns(ons.copy(ignoreCutout = b)) })
                 SwitchPreference(title = stringResource(R.string.engine_settings_disable_video), checked = ons.disableVideo, onCheckedChange = { b -> onOns(ons.copy(disableVideo = b)) })
-                SwitchPreference(title = stringResource(R.string.engine_settings_sharpness), checked = ons.sharpness, onCheckedChange = { b -> onOns(ons.copy(sharpness = b)) })
+                SwitchPreference(
+                    title = stringResource(R.string.engine_settings_sharpness),
+                    summary = stringResource(R.string.engine_settings_ons_sharpness_mutex_summary),
+                    checked = ons.sharpness,
+                    onCheckedChange = { b -> onOns(ons.copy(sharpness = b)) },
+                )
                 ExpandVisibility(visible = ons.sharpness) {
                     SliderRow(stringResource(R.string.engine_settings_sharpness_strength), onsSharpnessMap, ons.sharpnessValue) {
                         onOns(ons.copy(sharpnessValue = it))

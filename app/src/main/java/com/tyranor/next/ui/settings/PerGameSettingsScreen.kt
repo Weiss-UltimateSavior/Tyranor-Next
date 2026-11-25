@@ -63,6 +63,7 @@ import com.tyranor.next.core.settings.GraphicsFamily
 import com.tyranor.next.core.settings.GraphicsOverride
 import com.tyranor.next.core.input.InputRemapRepository
 import com.tyranor.next.core.settings.EngineSettingsStore
+import com.tyranor.next.core.settings.OnsGraphicsSharpnessPolicy
 import com.tyranor.next.core.settings.EffectiveEngineSettings
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.core.game.scan.ImpactoGameCatalog
@@ -136,6 +137,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var graphicsOverride by remember(gid, graphicsFamily) {
         mutableStateOf(graphicsFamily?.let { PerGameSettingsStore.getGraphicsOverride(ctx, gid, it) } ?: GraphicsOverride())
     }
+    val globalOns = remember { EngineSettingsStore.loadOns(ctx) }
 
     // 覆盖值（null=跟随全局）
     var krVersion by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ENGINE_VERSION)) }
@@ -232,7 +234,20 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var onsStretch by remember { mutableStateOf(onsBool(onsOverride.value, "strechfull")) }
     var onsCutout by remember { mutableStateOf(onsBool(onsOverride.value, "ignorecutout")) }
     var onsNoVideo by remember { mutableStateOf(onsBool(onsOverride.value, "disablevideo")) }
-    var onsSharp by remember { mutableStateOf(onsBool(onsOverride.value, "sharpness")) }
+    var onsSharp by remember {
+        val loadedSharp = onsBool(onsOverride.value, "sharpness")
+        val initial = if (game.engine == EngineType.ONS && globalGraphics != null) {
+            OnsGraphicsSharpnessPolicy.normalizePerGame(
+                globalSharpness = globalOns.sharpness,
+                globalGraphics = globalGraphics,
+                sharpnessOverride = loadedSharp,
+                graphicsOverride = graphicsOverride,
+            )
+        } else {
+            loadedSharp
+        }
+        mutableStateOf(initial)
+    }
     var onsSharpVal by remember { mutableStateOf(onsStr(onsOverride.value, "sharpness_value", "2")) }
     var onsEnc by remember { mutableStateOf(onsStr(onsOverride.value, "encoding", "gbk")) }
 
@@ -445,7 +460,6 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalKrFont = EngineSettingsStore.getKrDefaultFont(ctx)
     val globalForce = EngineSettingsStore.isKrForceDefaultFont(ctx)
     val configuredGlobalRenderer = EngineSettingsStore.getKrRenderer(ctx)
-    val globalOns = remember { EngineSettingsStore.loadOns(ctx) }
     val globalArtKernel = EngineSettingsStore.getArtKernel(ctx)
     val globalArtVersion = EngineSettingsStore.getArtEngineVersion(ctx)
     val globalArtPatch = EngineSettingsStore.getArtAutoPatch(ctx)
@@ -1024,7 +1038,32 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             OverrideSwitch(stringResource(R.string.engine_settings_fullscreen_stretch), globalOns.stretchFull, onsStretch) { onsStretch = it }
                             OverrideSwitch(stringResource(R.string.engine_settings_ignore_cutout), globalOns.ignoreCutout, onsCutout) { onsCutout = it }
                             OverrideSwitch(stringResource(R.string.engine_settings_disable_video), globalOns.disableVideo, onsNoVideo) { onsNoVideo = it }
-                            OverrideSwitch(stringResource(R.string.engine_settings_sharpness), globalOns.sharpness, onsSharp) { onsSharp = it }
+                            OverrideSwitch(
+                                label = stringResource(R.string.engine_settings_sharpness),
+                                global = globalOns.sharpness,
+                                override = onsSharp,
+                                summary = stringResource(R.string.engine_settings_ons_sharpness_mutex_summary),
+                            ) { nextSharp ->
+                                if (globalGraphics != null) {
+                                    val resolved = OnsGraphicsSharpnessPolicy.onPerGameSharpnessChange(
+                                        globalSharpness = globalOns.sharpness,
+                                        globalGraphics = globalGraphics,
+                                        newSharpnessOverride = nextSharp,
+                                        currentGraphicsOverride = graphicsOverride,
+                                    )
+                                    onsSharp = resolved.sharpnessOverride
+                                    graphicsOverride = resolved.graphicsOverride
+                                    if (resolved.autoDisabled == OnsGraphicsSharpnessPolicy.AutoDisabledTarget.GRAPHICS_FILTER) {
+                                        AppNotice.makeText(
+                                            ctx,
+                                            R.string.engine_settings_ons_disabled_filter_notice,
+                                            android.widget.Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                } else {
+                                    onsSharp = nextSharp
+                                }
+                            }
                             OverrideChoice(stringResource(R.string.engine_settings_text_encoding), onsEncodingMap, globalOns.encoding.decode(), onsEnc) { onsEnc = it }
                         }
                     }
@@ -1769,7 +1808,34 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             else EffectiveEngineSettings.resolveArtVersion(artVersion, globalArtVersion),
                             effRenderer,
                         ),
-                    ) { graphicsOverride = it }
+                        enabledSummary = if (graphicsFamily == GraphicsFamily.ONS) {
+                            stringResource(R.string.graphics_settings_ons_filter_mutex_summary)
+                        } else {
+                            null
+                        },
+                    ) { nextOverride ->
+                        if (graphicsFamily == GraphicsFamily.ONS) {
+                            val resolved = OnsGraphicsSharpnessPolicy.onPerGameGraphicsChange(
+                                globalSharpness = globalOns.sharpness,
+                                globalGraphics = globalGraphics,
+                                currentSharpnessOverride = onsSharp,
+                                newGraphicsOverride = nextOverride,
+                            )
+                            graphicsOverride = resolved.graphicsOverride
+                            if (resolved.sharpnessOverride != onsSharp) {
+                                onsSharp = resolved.sharpnessOverride
+                            }
+                            if (resolved.autoDisabled == OnsGraphicsSharpnessPolicy.AutoDisabledTarget.ENGINE_SHARPNESS) {
+                                AppNotice.makeText(
+                                    ctx,
+                                    R.string.engine_settings_ons_disabled_sharpness_notice,
+                                    android.widget.Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        } else {
+                            graphicsOverride = nextOverride
+                        }
+                    }
                     }
                 }
 
@@ -2093,6 +2159,7 @@ internal fun OverrideSwitch(
     label: String,
     global: Boolean,
     override: Boolean?,
+    summary: String? = null,
     enabled: Boolean = true,
     onSet: (Boolean?) -> Unit,
 ) {
@@ -2105,6 +2172,7 @@ internal fun OverrideSwitch(
             // 三态（跟随全局 / 开 / 关）落定时整行轻轻弹一下，见 OverrideChoice
             .bounceOnChange(index, depth = ROW_SETTLE_DEPTH),
         title = label,
+        summary = summary,
         items = labels,
         selectedIndex = index,
         enabled = enabled,
