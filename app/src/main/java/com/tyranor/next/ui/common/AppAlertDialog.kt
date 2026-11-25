@@ -65,6 +65,7 @@ import com.tyranor.next.theme.MilkGlassPanelBackground
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.LocalAppDialogContent
+import com.tyranor.next.theme.WithoutPressIndication
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.core.privacy.AppLockController
@@ -519,6 +520,7 @@ internal fun AppAlertDialog(
                         // 仅为弹窗子组件提供取色上下文，使输入框与标签指示器和面板形成反差；
                         // 不把弹窗条目色扩展到页内组件，也不由页面调用方覆盖公共组件颜色。
                         CompositionLocalProvider(LocalAppDialogContent provides true) {
+                            WithoutPressIndication {
                             ProvideEntrance(entrance) {
                                 Column(
                                     Modifier
@@ -596,6 +598,7 @@ internal fun AppAlertDialog(
                                         }
                                     }
                                 }
+                            }
                             }
                         }
                     }

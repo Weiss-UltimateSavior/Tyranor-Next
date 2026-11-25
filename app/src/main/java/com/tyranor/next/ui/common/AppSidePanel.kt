@@ -62,6 +62,7 @@ import com.tyranor.next.theme.MilkGlassPanelBackground
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.ui.common.privacy.DismissOnAppLockEffect
 import com.tyranor.next.theme.TextColor
+import com.tyranor.next.theme.WithoutPressIndication
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.motion.MotionHaptics
 import com.tyranor.next.ui.common.motion.MotionIntent
@@ -236,6 +237,7 @@ private fun SidePanelWindow(
                         }
                         // 顶部标题（水平居中）+ 功能条目区（条目之间统一间距）
                         // 每次打开时标题与条目区依次弹入
+                        WithoutPressIndication {
                         ProvideEntrance(rememberEntranceState()) {
                             Column(modifier = Modifier.fillMaxWidth().skipEntranceOnDrag().padding(horizontal = 12.dp)) {
                                 Text(
@@ -271,6 +273,7 @@ private fun SidePanelWindow(
                                     }
                                 }
                             }
+                        }
                         }
                     }
                 }

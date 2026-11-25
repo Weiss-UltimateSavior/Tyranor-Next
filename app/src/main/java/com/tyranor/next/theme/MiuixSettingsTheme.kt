@@ -10,6 +10,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.sp
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.theme.TextStyles
 import top.yukonga.miuix.kmp.theme.darkColorScheme
 import top.yukonga.miuix.kmp.theme.defaultTextStyles
 import top.yukonga.miuix.kmp.theme.lightColorScheme
@@ -22,7 +23,7 @@ internal val LocalAppDialogContent = staticCompositionLocalOf { false }
  * Miuix preference 的标题默认用 headline1(17sp)，这里覆盖为 15sp，
  * 使其严格落入两档内，与 Material titleMedium 一致。
  */
-private val TyranorMiuixTextStyles = defaultTextStyles(
+internal val TyranorMiuixTextStyles = defaultTextStyles(
     headline1 = TextStyle(fontSize = 15.sp),
 )
 
@@ -35,6 +36,7 @@ private val TyranorMiuixTextStyles = defaultTextStyles(
 @NonSkippableComposable
 fun MiuixSettingsTheme(
     primaryColor: Color? = null,
+    textStyles: TextStyles = TyranorMiuixTextStyles,
     content: @Composable () -> Unit,
 ) {
     AppThemeColors.ensureLoaded(LocalContext.current)
@@ -126,7 +128,7 @@ fun MiuixSettingsTheme(
     }
     MiuixTheme(
         colors = dialogColors,
-        textStyles = TyranorMiuixTextStyles,
+        textStyles = textStyles,
     ) {
         // Miuix 的 Card 只提供 Miuix 自己的 LocalContentColor；页面里混用的 Material Text
         // 读的是 material3.LocalContentColor，若不覆盖会继续取根部 onBackground（白雾玻璃下
