@@ -30,7 +30,7 @@
 
 ### krkrsdl3（OpenGL）
 
-只支持当前固定 OpenGL 库；软件渲染和未知库身份保留原路径。适配器不替换 Live2D 使用的呈现 Hook，也不读取渲染后端的私有纹理句柄；在完整舞台合成期间，将默认帧缓冲重定向到按游戏逻辑像素尺度建立的画布。
+只支持当前固定 OpenGL 库；软件渲染和未知库身份保留原路径。OpenGL 模式下适配器不替换 Live2D 使用的呈现 Hook，也不读取渲染后端的私有纹理句柄；在完整舞台合成期间，将默认帧缓冲重定向到按游戏逻辑像素尺度建立的画布。
 
 画布保留物理窗口中可能出现的全部叠加内容，包括帧内新增或改变显隐的叠加层。内容均位于主舞台内时，滤镜输入通过整数裁剪恢复为主舞台尺寸；叠加内容延伸到主舞台外时，处理完整逻辑画布，分析器显示实际画布尺寸。两种路径均保留引擎原有的物理输入映射。
 
@@ -94,6 +94,33 @@ owner 确认断开显示，再由 engine owner 确认替换私有 producer，最
 
 自研 Artemis 的画质增强接入等待 [artemis-compat PR #11](https://github.com/Weiss-UltimateSavior/artemis-compat/pull/11) 合并。
 
+### RealLive / AVG32 / UK2（CPU 帧缓冲模式）
+
+这三个引擎不是独立引擎族：它们与 Siglus 共用同一 `libsiglus.so`（`game_launcher` 运行库），只是前端 API 不同——Siglus 走 wgpu 舞台，它们走 `game_fb_*` C ABI 逐帧输出 CPU RGBA8 帧。因此**滤镜设置与单游戏覆盖沿用 Siglus 的 `GraphicsFamily.SIGLUS`**，不另立偏好键。
+
+滤镜模式下宿主把 CPU 帧拷进复用的直接缓冲（3 槽轮转，latest-wins），交给 `FramebufferGraphicsProxy` 在独立 GLES 线程执行共用滤镜链，`TextureView` 承接呈现。与 Siglus 舞台路线的差异由数据流决定：
+
+- **无 producer Surface**：引擎不持有任何显示窗口，输入纹理用 `glTexImage2D` 直接上传。引擎帧自顶向下，上传后是顶左行序纹理，滤镜链经 `renderCroppedTexture(..., topLeft=true)` 保持物理行序，呈现着色器做一次 V 翻转；方向约定同[公共方向接口](graphics-filter-coordinates.md)。
+- **启动期一次决定**：与 Siglus 宿主策略一致，严格解析 wire 协议，禁用、空链、无活跃节点或解析失败都保留经典 Bitmap 路径；链配置在启动后不迁移。
+- **失败回退而非暂停**：Siglus 滤镜路径失败时保持私有 producer 暂停呈现；这三者的经典 Bitmap 路径不依赖任何外部资源，因此终端失败（EGL/GLES3 初始化、上下文丢失、交换失败、开始产帧后仍无任何帧呈现的看门狗超时）回退经典 Bitmap 呈现并释放滤镜资源；attach 良性失败（窗口销毁竞态）由宿主按 1Hz 重挂自愈，不升级为回退。看门狗判据是「最近一次成功 `eglSwapBuffers` 的时间戳」而不是「输出面还在」：接上了却一帧不出（帧被池门拒绝、同尺寸 OOM 闩锁、引擎停摆）同样会超时回退。另有 60s 启动最终期限兜底「引擎始终不产帧」；看门狗在首帧提交时武装、暂停期间撤销。滤镜节点级失败沿用共享执行器语义：按预算/分块降级为未滤镜呈现并在分析器如实上报（`SIZE_UNAVAILABLE`），不整体回退。
+- **视口为纯等比 fit**：经典路径的「接近整数倍取整」不进入滤镜路径；呈现视口与触摸映射共用同一 `FramebufferViewport`，口径单一。
+- **不改动运行库**：`libsiglus.so`、`games_bridge.cpp`、`NativeGames.java` 均保持原样；不涉及 PLT/vtable hook 与内核身份校验。
+- 能力在设置与启动侧恒可配置（与 Siglus 共用 `GraphicsFamily.SIGLUS`）；GLES 3.0 不可用不是独立预判，而是 EGL/GLES3 上下文创建失败在宿主侧涌现为经典路径回退。EGL 清理共享 `EglTeardown` 不变式，重试按有界指数退避执行共 5 次尝试（4 次退避间隔：1s / 2s / 4s / 8s）；重试耗尽时按 `GraphicsProxyResourceSlots` 契约一律保留驱动句柄与资源名额至进程退出（绝不跨线程析构仍在被驱动引用的 `ANativeWindow`，也不提前归还名额）。进程容量为 2，即同进程最多两次永久清理失败耗尽名额，满额后后续会话直接降级直出，保留表天然以进程容量为上界、不会无界增长；`FramebufferGraphicsProxy` / `OnsGraphicsProxy` / `SiglusGraphicsProxy` 三份代理与 `ArtemisOfficialSurfaceProxy` 保持同一口径。
+
+验证边界：本轮完成 JVM 回归（app 侧滤镜策略/能力/编解码 + engine 侧宿主策略/视口/帧槽池/代理租约用例）、Debug 应用编译、Android Lint（改动文件 0 errors / 0 新增 warnings）与多轮静态审查；**未执行 Release 构建**；用户已在连接设备（`Samsung SM-X710`，Android 15 / API 35，Qualcomm Adreno 740 / OpenGL ES 3.2 V@0676.71）上完成相关改动测试（运行库 `libsiglus.so` 与 `games_bridge.cpp` 未改动，不替代全量 RealLive / AVG32 / UK2 样本兼容性、GPU 耗时/帧率或各分支回退路径的独立专项覆盖）。TextureView 销毁回调时序已按 AOSP 源码裁决（`ViewGroup.removeViewInternal` 对子 View 同步派发 detach；`TextureView.onDetachedFromWindowInternal → releaseSurfaceTexture` 同步回调 listener，返回 `false` 时框架不释放 SurfaceTexture，所有权移交客户端，与显示租约契约一致；本地快照位于工作区外的主仓 `D:/Tyranor-Next/local-notes/aosp-src/`（未随仓库分发，`ViewGroup-main.java:4323`、`TextureView-main.java:494`），经系统代理拉取的 AOSP main 分支），不再依赖实机碰撞。
+
+### ONScripter
+
+采用**方案 B（vendored SDL2 胶水代理路线）**接入共用画质滤镜链：
+
+- **无 native hook 与重编**：不改动 `libonsyuri.so`、`libSDL2.so` 及其它依赖库；借助仓库内 vendored SDL2 Java 胶水层（`org.libsdl.app`），通过重写 `ONScripter.createSDLSurface()` 返回扩展类 `OnsSurface`。
+- **1:1 舞台缓冲供给**：SDL2 在 `initSDL()` 读取脚本后调用 `SDL_CreateWindow()`，底层经 JNI `Android_JNI_GetNativeWindow()` 触发 `SDLActivity.getNativeSurface()` → `OnsSurface.getNativeSurface()` → `ONScripter.provideProxySurface()`，由 `ONScripter` 调用 `nativeGetWidth()` / `nativeGetHeight()`（未就绪时回退 `getLogicalWidth()` / `getLogicalHeight()`）取得脚本实际逻辑尺寸（例如 640×480 或 800×600）；`OnsSurface` 仅通过 `SurfaceProvider` 接口回调宿主，本身不调用 native 方法。代理 `SurfaceTexture` 以该尺寸为默认缓冲大小，SDL2 内部 render rect 完全充满缓冲（`x=0, y=0, w=width, h=height`），实现 1:1 无黑边渲染。
+- **消费与滤镜管线**：`OnsGraphicsProxy` 在专用 GLES 线程（`ONS-GLES`）监听 `SurfaceTexture` 帧可用信号，将 OES 外部纹理标准化采样到 2D 纹理，执行共用画质滤镜链（`GraphicsFilterPipeline`），并通过 `TextureView`（`TextureDisplayWindow`）完成等比 fit 呈现。
+- **触点映射**：`TextureView` 拦截触控事件，通过 `OnsViewport` 将物理触点精确换算为 `[0.0, 1.0]` 归一化舞台坐标，再派发给 `SDLActivity.onNativeTouch()`，保证在任意屏幕比例与黑边填充下触控点与画面元素像素级对齐。
+- **参数互斥与回退**：共用滤镜链经 `GraphicsSettingsCodec.effectiveEnabled()` 判定生效时抑制传递 `--sharpness` 参数，避免与 ONS 内部 shader 双重锐化冲突；任何 GLES 故障或资源配额耗尽时，代理通知宿主回退至经典 Surface 直出路径：先摘除 `TextureView`（同步销毁回调归还 UI 引用、由显示租约释放纹理，避免二次 `release()`），再按 `SDLSurface.surfaceChanged()` 同序执行 `onNativeSurfaceDestroyed()` → `OnsSurface.restoreDirectGeometry()`（将触点归一化分母与 SDL 逻辑分辨率一起写回**物理窗口尺寸**，取自 `surfaceChanged` 记录的物理值；回退后不再走 `SDLSurface.surfaceChanged`，不写回则触点整体偏移且无法自愈）→ `onNativeSurfaceChanged()`。回退本身也是加载层的揭层点：滤镜失败、输出超时、或滤镜模式 60s 内始终没有首帧（OP 视频播放期间顺延并在播片结束后重置完整 60s 窗口），都先回退再 `reveal()`；不会停在永久加载层，也不会弹出不可关闭的「启动失败」面板（`fail()` 只留给滤镜与直出都救不回的终端失败）。ONS 看门狗分两阶段：stage 未配好或 OP 视频播放期间不计时；stage 就绪后、首帧呈现前按 10s 期限判活；首帧呈现后改判「输出面还在」，稳态下的瞬时断连从断连那刻重新起表（1Hz 重挂）。触点、鼠标与滚轮增量均对非有限值（NaN / 无穷）归零，触摸压力非有限时回退 `1.0f`，拖拽中途失视口补发抬起以防粘滞。恢复对是否足以触发 SDL 重取 native surface 属 native 层最后一公里，**待设备验证**。
+
+验证边界：完成 JVM 单元测试回归（宿主策略、视口 letterbox 计算与触控/滚轮映射、窗口引用计数生命周期、App 侧能力/编解码/覆盖分区/启动参数）、Debug 构建与代码静态审查；用户已在连接设备（`Samsung SM-X710`，Android 15 / API 35，Qualcomm Adreno 740 / OpenGL ES 3.2 V@0676.71）上完成相关改动测试（`libonsyuri.so` / `libSDL2.so` 未改动；其它机型 GPU 驱动兼容性、帧率与 GPU 耗时未系统测量）。
+
 ## 独立滤镜贡献
 
 `engine/src/main/graphicsfilters/*.json` 是各贡献的注册来源。构建生成纯 Java 目录，供协议、尺寸规划、GPU 执行、设置适配和性能色条读取。每个可选贡献独立携带稳定 ID、三语言菜单、简称/颜色、参数能力、原生倍率、内部输出限制、分块能力及旧配置迁移，移除该贡献不需要编辑共享枚举或名称映射（例外：VN-SR 的多 Pass 卷积终局重建识别与代码生成优化在 `MpvHookShader` 与 `GraphicsShaderTransforms` 中保留了 `VN-SR` / `vnsr_*` 前缀分支，详见 [VN-SR 说明](vnsr-filters.md)）。
@@ -140,13 +167,15 @@ python tools/generate-cas-filters.py --sources build/filter-sources/cas --check
 
 ## 验证边界
 
-既有滤镜设置、官方 Artemis、Kirikiroid2 和 krkrsdl3 接入由提交者运行多个样本验收；
+既有滤镜设置、官方 Artemis、Kirikiroid2 和 krkrsdl3 OpenGL 接入由提交者运行多个样本验收；
 官方 Artemis 开启画质处理实际游玩两小时未见问题。上述记录属于原候选功能的历史验收。
 Siglus 原库、配置解析和专用 owner 线程路线候选在 2026-10-18 获提交者测试通过；该结论不覆盖后续 TextureView 窗口所有权修复，也不套用旧重编库结果。
-2026-11-18（`Adreno 840`）与 2026-11-21（`Adreno 740`）两次实机样本均采集于 2026-11-22 审查修复之前，仅作历史实机参考（详见 [VN-SR 说明](vnsr-filters.md) 与 [方向接口](graphics-filter-coordinates.md)）。当前 HEAD 修订通过 JVM 专项回归、Debug 原生构建、应用编译、`buildSrc` 资源回归、ELF 导入面扫描与离线 Python 脚本校验，尚未在真机重跑。
+2026-11-18（`Adreno 840`）与 2026-11-21（`Adreno 740`）两次实机样本均采集于 2026-11-22 审查修复之前，仅作历史实机参考（详见 [VN-SR 说明](vnsr-filters.md) 与 [方向接口](graphics-filter-coordinates.md)）。本分支在重整到上游主线后通过 JVM 专项回归、Debug 应用编译、`buildSrc` 资源回归、Android Lint（改动文件 0 errors）与离线 Python 脚本校验，且用户已在连接设备（`Samsung SM-X710`，Android 15 / API 35，Qualcomm Adreno 740 / OpenGL ES 3.2 V@0676.71）上完成相关改动测试（未执行 Release 构建与全量非聚焦测试，不宣称未验证游戏或其它品牌 GPU 兼容）。
 
 ## VN-SR
 
 独立贡献提供 C08/C12/C16 三种原生2X滤镜，采用MIT许可，公开来源与固定revision见清单；名称、倍率和颜色随描述符提供，保留来源及许可证按localPath校验，详见[来源与适配](vnsr-filters.md)。
 
 纹理方向、KR2宿主识别和每贡献的逻辑坐标约定见[方向接口](graphics-filter-coordinates.md)。
+
+尚未接入的引擎（FVP、Ethornell 等）的接入路线评估（方案 B/C 优先排序、稳定 `.so` 的 hook 备选与实施顺序）见[画质滤镜hook维护与接入评估](画质滤镜hook维护与接入评估.md)；各原生引擎 Hook 维护规范（KR2 / Artemis / krkrsdl3-SW 归档）亦见同文件。

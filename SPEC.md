@@ -31,8 +31,8 @@
 - 内置游戏宿主共用黑底原生加载界面。上方的装饰频谱使用启动时的应用主题色，下方左侧显示游戏库封面，右侧显示启动语录与游戏名称，每次创建加载页时随机抽取一句。应用传入名称与封面 URI，宿主异步解码本地封面，缺失或读取失败时显示应用设置选中的应用图标。文案跟随应用语言。
 - 频谱从首次绘制起每三秒循环一次。提前就绪时播完第一轮再退场，三秒后仍在加载时继续循环，直到游戏就绪或报错。增强档的加载页绕左边缘翻开，露出游戏画面。普通档使用 150ms 淡出，关闭系统动画时静态显示并在游戏就绪后直接退场。失败立即切换到错误提示。
 - 加载遮罩消费触摸，系统返回仍由各宿主原有退出协议处理；Android 启动对话框、授权与错误确认必须可交互。关闭后迟到的异步回调不能重新挂载遮罩，暂停、视频返回及 Surface 重建不重新显示首次加载。
-- 游戏就绪信号按宿主区分：krkr 保留场景过渡通知、弹窗等待与 20 秒兼容揭层兜底；Siglus 滤镜代理沿用当前输出代际的 swap 通知；Framebuffer 在有效 Bitmap 实际进入 onDraw 后退出。其他 Surface 宿主通过 PixelCopy 检测当前代际的可复制缓冲区；不读取颜色，黑帧有效，不声称游戏逻辑就绪或物理屏幕已显示。
-- Surface 探针最多等待 120 秒有效前台时间，暂停与失焦期间停止计时；无缓冲区继续等待，超时或不可恢复的读取错误转失败态，不因超时宣告成功。NativeActivity 使用宿主 token 的应用内子窗口承载加载界面，保留原生渲染 Surface 与窗口焦点，不要求跨应用悬浮权限。
+- 游戏就绪信号按宿主区分：krkr 保留场景过渡通知、弹窗等待与 20 秒兼容揭层兜底；Siglus 滤镜代理沿用当前输出代际的 swap 通知；Framebuffer 经典路径在有效 Bitmap 实际进入 onDraw 后退出，滤镜路径改由代理首帧呈现（`FilterProxyListener.onFirstFrame`）揭层，`fbView` 在滤镜模式下为 GONE、其 onDraw 回调不会触发；ONScripter 滤镜模式同样以代理首帧为揭层信号，并在回退直出、输出超时或 60 秒启动期限到达时揭开加载层。其他 Surface 宿主通过 PixelCopy 检测当前代际的可复制缓冲区；不读取颜色，黑帧有效，不声称游戏逻辑就绪或物理屏幕已显示。
+- Surface 探针最多等待 120 秒有效前台时间，暂停与失焦期间停止计时；无缓冲区继续等待，超时或不可恢复的读取错误转失败态，不因超时宣告成功。NativeActivity 使用宿主 token 的应用内子窗口承载加载界面，保留原生渲染 Surface 与窗口焦点，不要求跨应用悬浮权限。Framebuffer 从未使用 SurfaceView / Surface 探针（经典路径按有效 Bitmap 进入 `onDraw` 揭层，滤镜路径改由代理首帧揭层）；ONScripter 经典直出路径仍挂该探针，滤镜模式因真实 `SurfaceView` 已无 producer 而摘除该探针，改由代理首帧揭层。Framebuffer 与 ONScripter 两条滤镜宿主各自有 60 秒独立启动期限兜底（超时先回退直出再揭开加载层，ONS 在 OP 视频播放期间顺延并在播片结束后重置完整窗口）；Siglus 滤镜路径没有该期限；其他 Surface 宿主（含已接入滤镜的 krkrsdl3 / Artemis 及未接入滤镜的 CMVS / System35 / System4 等）仍挂该探针。看门狗判据按宿主区分：Framebuffer 逐帧提交，按「最近一次成功 `eglSwapBuffers` 时间戳」判活；ONScripter 事件驱动、静止画面不换帧，只用「已呈现过」作首帧期限判据（OP 视频播放期间暂停计时），之后退回「输出面还在」。
 - Web 在初次主框架提交可见，或视觉状态回调确认当前 DOM 可绘制后退出；初次主框架网络 / HTTP 错误转失败，子资源错误与游戏后导航不重新启动首次遮罩。首次主框架导航被宿主消费而无法继续时转为可返回的失败态，不等待可能永远缺席的帧回调；renderer 退出会移除并销毁失效 WebView，再提供可退出失败态。SystemNNN 的授权 / 目录选择 / 前置错误不被遮挡，游戏自有 logo、opening、title 或有效 frame 开始呈现时退出；重试按启动代际隔离迟到回调。
 - 覆盖从宿主可绘制后开始；不覆盖 App 侧存档同步、补丁、SAF 准备、运行库解压，以及父类同步 native 初始化之前的不可绘制空窗。外置模块 / 模拟器 / 安卓游戏的对方窗口不在控制范围。实现及设备验收名单分别记录，不以合成夹具代替所有真实游戏兼容性结论。
 
@@ -99,7 +99,7 @@
 | ONScripter | `nscript.dat`、`.nsa` 等 | 内置 ONS |
 | Artemis | `system.ini`、`.pfs` 等组合 | 内置多版本宿主与补丁策略 |
 | Siglus | `Gameexe.dat/ini`、`Scene.pck` | 内置 Siglus |
-| RealLive / AVG32 / UK2 | RealLive 的 `SEEN.TXT` 完整目录表及有效场景头，或 `Gameexe.ini` 与非空 `SEEN####.TXT`。AVG32 的 `PACL` 场景档或三位数散装场景。UK2 的 `UK2.CFG` 与 `.MES` 等 | 内置 game_launcher + Framebuffer 宿主 |
+| RealLive / AVG32 / UK2 | RealLive 的 `SEEN.TXT` 完整目录表及有效场景头，或 `Gameexe.ini` 与非空 `SEEN####.TXT`。AVG32 的 `PACL` 场景档或三位数散装场景。UK2 的 `UK2.CFG` 与 `.MES` 等 | 内置 game_launcher + siglus 运行库（CPU 帧缓冲） |
 | FVP | `.hcb/.bch` 脚本与资源包 | 内置 rfvp |
 | CMVS | `data/pack/script.cpz` + 唯一 `start.ps3/ps2/pss`；单游戏引擎设置可选择全部登记作品，直接按所选配置启动并跳过识别哈希 | 内置 cmvs-rs（NativeActivity + loader），需 Vulkan，支持游戏内存档备注输入 |
 | System35 / System4 | ALD、System39 特征 / `System40.ini`、`AliceStart.ini` | 内置 xsystem35 / xsystem4，两类独立识别 |
@@ -216,7 +216,7 @@ MAGES. 引擎（经开源重新实现项目 impacto）由外置 Impacto 宿主 A
 - Web 宿主支持统一虚拟按键与手柄映射、按键方案导入/导出与全屏编辑；方案按归一化视口保存。默认虚拟按键 MV/MZ 开、Tyrano/VN/WebOther 关；Web 手柄映射默认开。
 - Tyrano Web 宿主在 `ScreenRatio=fix` 时于运行时把游戏的 `ScreenCentering` 收敛为 true，按引擎自带的居中路径（4.x `fitBaseSize` / 5.x `_fitBaseSize`）处理；`vchat` 与 `useCamera` 模式保留引擎的关闭决定。桌面导出可能写入的 `false` 不再导致宽屏手机左对齐、右侧单边黑边。
 - 共用画质滤镜链最多 **8** 节点，支持添加、移除、排序与参数配置；单游戏切换跟随全局后保留自定义链。滤镜预设含纯重采样的 Bilinear / Bicubic 与带抗振铃强度（缺省 0.5）的 Lanczos，按性能开销排序；参数细节见 [共用画质滤镜链](docs/graphics-filters.md)。
-- 图形能力按内核、库身份及渲染器判断：Kirikiroid2（auto/1.3.9/1.3.4）、krkrsdl3 OpenGL、受支持的官方 Artemis 与 Siglus 走各自接入；krkrsdl3 软件渲染与自研 Artemis 当前不提供同等滤镜入口。
+- 图形能力按内核、库身份及渲染器判断：Kirikiroid2（auto/1.3.9/1.3.4）、krkrsdl3 OpenGL、受支持的官方 Artemis、Siglus 与 ONScripter（经 vendored SDL2 胶水代理接入）走各自接入；RealLive / AVG32 / UK2 与 Siglus 共用同一 `libsiglus.so` 运行库并走 CPU 帧缓冲 ABI，滤镜设置与单游戏覆盖沿用 Siglus，宿主内上传 CPU 帧执行滤镜链；krkrsdl3 软件渲染与自研 Artemis 当前不提供同等滤镜入口。RealLive / AVG32 / UK2 的滤镜路径任何 GLES 初始化或运行失败自动回退经典 Bitmap 呈现；ONScripter 经胶水代理将游戏输出导向代理 Surface，经共享 GLES 滤镜链后在 TextureView 呈现，与引擎内置锐化（--sharpness）互斥，具备经典路径自动回退。
 - 滤镜处理已合成画面（可能含文本和 UI），不承诺文本排除。性能分析器仅在支持且滤镜生效时可用；GPU 时间缺失时不得显示 CPU 时间充数。在无新 GPU 样本且上下文与计时状态正常的刷新区间内保持上次有效 GPU 计时统计值，仅在输入/输出尺寸或节点拓扑改变、状态失败、尺寸失效、计时查询异常或管线重置时清除并显示缺失值。
 
 具体范围与验证记录见 [共用画质滤镜链](docs/graphics-filters.md)；它不代表所有游戏与第三方插件都已认证。

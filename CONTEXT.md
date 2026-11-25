@@ -35,8 +35,8 @@ _Avoid_: System3/4、AliceSoft 引擎
 _Avoid_: Emberfall 独立播放器、第三方运行时模块
 
 **视觉小说引擎组（Framebuffer 引擎）**:
-Siglus 之外由 game_launcher 运行库承载的三个软件渲染引擎（RealLive、AVG32、UK2）的统称：引擎逐帧输出 RGBA 帧缓冲，宿主 `FramebufferGameActivity` 拷进 Bitmap 呈现并转发指针/键盘/文本输入；文本编码（NLS）按全局/单游戏设置。
-_Avoid_: 软渲染引擎、game_fb 引擎
+Siglus 之外由 game_launcher 运行库承载的三个软件渲染引擎（RealLive、AVG32、UK2）的统称。三者与 Siglus 共用同一 `libsiglus.so`，但走 `game_fb_*` CPU 帧缓冲 ABI：引擎逐帧输出 RGBA 帧缓冲，宿主 `FramebufferGameActivity` 经经典 Bitmap 路径或共用滤镜链（独立 GLES 线程 + TextureView，失败回退经典路径）呈现并转发指针/键盘/文本输入；滤镜设置与单游戏覆盖沿用 Siglus 的 `GraphicsFamily.SIGLUS`，不另立偏好键；文本编码（NLS）按全局/单游戏设置。
+_Avoid_: 软渲染引擎、game_fb 引擎、siglus 族、siglus 引擎
 
 **外置 APK 引擎模块（External Engine Module）**:
 以独立 Android 应用形式分发、由用户另行安装的引擎运行时，用于承载 Ren'Py、RPG Maker RGSS、Ruffle（SWF / Flash）与 MAGES. 等游戏，由固定包名与静态注册表管理，与动态发现的「第三方 APK 运行时模块」是两套体系。游戏由模块运行，主 App 管理扫描、安装状态、启动协议及 Android 11 及以上 Ren’Py 的游戏目录存档；Ren’Py 8.5.0 与 8.5.3 为分别可选的同包名版本，设备上一次只能安装其中一版。
@@ -168,6 +168,10 @@ _Avoid_: CNN 超分、素材替换
 **Siglus 画质增强**:
 在 Siglus 已合成、尚未按屏幕缩放的完整舞台帧上执行共用画质滤镜链的能力；输入包含文本和界面，舞台尺寸与素材分辨率分别理解。
 _Avoid_: 素材超分、引擎替换
+
+**ONScripter 画质增强**:
+在 ONScripter 脚本逻辑尺寸（如 640×480）的 1:1 无黑边舞台上执行共用画质滤镜链的能力：经 vendored SDL2 胶水层把 SDL 的 native surface 重定向到代理 Surface，再由独立 GLES 线程消费并按视口等比呈现；触点经视口换算后回派引擎。与引擎内置 `--sharpness` 互斥。
+_Avoid_: 素材超分、引擎替换、ONS 分辨率猜测
 
 **画质性能监测**:
 显示滤镜输入、实际处理输出和显示区域尺寸，以及显示帧率和可用的处理耗时；仅在当前内核支持且滤镜链启用时可选。
