@@ -117,11 +117,18 @@ class ShelfMorphAndMipTest {
         }
         // 没有弧线的短行程保持原有的 92%
         assertEquals(0.92f, shelfCatalogHandoffStart(listOf(flight(0f)), density = 3f), 1e-4f)
-        // 弧线 60px：末段残余 60·π·(1-t) 远大于 4.5px 的阈值，必须晚得多才交接（进度 0.96 时残余约 7.5px，仍超阈值）
-        val withArc = shelfCatalogHandoffStart(listOf(flight(60f)), density = 3f)
-        assertTrue(withArc > 0.96f)
-        val residualAtStart = (1f - withArc) * kotlin.math.hypot(40f, (Math.PI * 60.0).toFloat())
-        assertEquals(4.5f, residualAtStart, 0.05f)
+        // 弧线 60px：用实际飞行姿态量——交接起点处飞行的书离落点不超过阈值（4.5px），而原来固定的 92% 处还差得很远
+        val withArcFlight = flight(60f)
+        val withArc = shelfCatalogHandoffStart(listOf(withArcFlight), density = 3f)
+        val landing = shelfCatalogBookPose(1f, withArcFlight)
+        fun distanceAt(progress: Float): Float {
+            val pose = shelfCatalogBookPose(progress, withArcFlight)
+            return kotlin.math.hypot(pose.spineCenterX - landing.spineCenterX, pose.spineCenterY - landing.spineCenterY)
+        }
+        assertTrue("交接起点处残余 ${distanceAt(withArc)}px 超过阈值", distanceAt(withArc) <= 4.5f + 0.05f)
+        assertTrue("固定 92% 时残余 ${distanceAt(0.92f)}px 本应远超阈值（回归保护）", distanceAt(0.92f) > 4.5f * 2)
+        // 也不能晚到几乎落位才开始交接
+        assertTrue(withArc < 0.999f)
     }
 
     @Test
