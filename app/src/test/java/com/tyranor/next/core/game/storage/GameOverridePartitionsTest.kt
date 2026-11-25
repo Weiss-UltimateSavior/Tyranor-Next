@@ -560,6 +560,7 @@ class GameOverridePartitionsTest {
         assertTrue(JSONObject(row.krJson!!).has(GraphicsFamily.KR.overrideKey))
         assertTrue(JSONObject(row.artemisJson!!).has(GraphicsFamily.ARTEMIS.overrideKey))
         assertTrue(JSONObject(row.tyranoJson!!).has(GraphicsFamily.SIGLUS.overrideKey))
+        assertTrue(JSONObject(row.onsJson!!).has(GraphicsFamily.ONS.overrideKey))
         val restored = GameOverridePartitions.assemble(row)
         assertEquals("soft_l", restored.getString("anime4k_mode"))
         assertTrue(restored.getBoolean("art_graphics_monitor"))
@@ -574,6 +575,10 @@ class GameOverridePartitionsTest {
         assertEquals(GraphicsFamily.KR.overrideKey, GameOverridePartitions.KEY_KR_GRAPHICS)
         assertEquals(GraphicsFamily.ARTEMIS.overrideKey, GameOverridePartitions.KEY_ART_GRAPHICS)
         assertEquals(GraphicsFamily.SIGLUS.overrideKey, GameOverridePartitions.KEY_SIGLUS_GRAPHICS)
+        assertEquals(GraphicsFamily.ONS.overrideKey, GameOverridePartitions.KEY_ONS_GRAPHICS)
+        // RealLive / AVG32 / UK2 与 Siglus 共用 tyrano 分区里的同一覆盖键，不新增分区。
+        assertTrue(GameOverridePartitions.KEY_SIGLUS_GRAPHICS in GameOverridePartitions.TYRANO_KEYS)
+        assertTrue(GameOverridePartitions.KEY_ONS_GRAPHICS in GameOverridePartitions.ONS_KEYS)
     }
 
     @Test fun legacyKrModeHasAnOwnedPartitionAndFamilyMarkerFreezesInheritance() {

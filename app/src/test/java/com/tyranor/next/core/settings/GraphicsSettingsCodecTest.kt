@@ -19,6 +19,36 @@ class GraphicsSettingsCodecTest {
         assertFalse(codec.legacyGlobal(GraphicsFamily.SIGLUS).enabled)
     }
 
+    @Test fun siglusFamilyIsSharedByRealLiveAvg32AndUk2() {
+        // RealLive / AVG32 / UK2 与 Siglus 本体共用同一设置：SIGLUS 标记同时约束它们，
+        // 不另设独立偏好键与覆盖键。
+        val marker = JSONObject().put(GraphicsFamily.SIGLUS.overrideKey,
+            codec.encode(GraphicsOverride(enabled = true, chain = listOf(GraphicsNode("m")))))
+        val decoded = codec.readOverride(marker, GraphicsFamily.SIGLUS)
+        assertEquals(true, decoded.enabled)
+        assertEquals(listOf(GraphicsNode("m")), decoded.chain)
+        // KR 旧键不迁移进 Siglus 的滤镜设置；marker 冻结后旧键不再生效。
+        val stale = JSONObject().put("anime4k_mode", "l").put(GraphicsFamily.SIGLUS.overrideKey,
+            codec.encode(GraphicsOverride()))
+        assertEquals(GraphicsOverride(), codec.readOverride(stale, GraphicsFamily.SIGLUS))
+        assertEquals("l", stale.getString("anime4k_mode"))
+        assertEquals(GraphicsOverride(), codec.legacyOverride(JSONObject(), GraphicsFamily.SIGLUS))
+    }
+
+    @Test fun onsFamilyStartsWithDefaultsAndHonorsTheSharedOverrideMarker() {
+        assertEquals(GraphicsSettings.defaults(GraphicsFamily.ONS), codec.legacyGlobal(GraphicsFamily.ONS))
+        assertEquals(GraphicsOverride(), codec.legacyOverride(JSONObject(), GraphicsFamily.ONS))
+        val marker = JSONObject().put(GraphicsFamily.ONS.overrideKey,
+            codec.encode(GraphicsOverride(enabled = true, chain = listOf(GraphicsNode("m")))))
+        val decoded = codec.readOverride(marker, GraphicsFamily.ONS)
+        assertEquals(true, decoded.enabled)
+        assertEquals(listOf(GraphicsNode("m")), decoded.chain)
+        val stale = JSONObject().put("anime4k_mode", "l").put(GraphicsFamily.ONS.overrideKey,
+            codec.encode(GraphicsOverride()))
+        assertEquals(GraphicsOverride(), codec.readOverride(stale, GraphicsFamily.ONS))
+        assertEquals("l", stale.getString("anime4k_mode"))
+    }
+
     @Test fun legacyLanczosSharpnessJsonDoesNotBecomeAntiRinging() {
         // Historically, inert 0.4 was written for lanczos before dedicated parameters, and in
         // fac66a78..fbc6f0c7 the lanczos sharpness temporarily exposed the AR slider; to avoid

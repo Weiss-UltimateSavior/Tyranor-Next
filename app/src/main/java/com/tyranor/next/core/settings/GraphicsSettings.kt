@@ -13,7 +13,10 @@ import org.json.JSONObject
 enum class GraphicsFamily(val preferenceKey: String, val overrideKey: String) {
     KR("kr_graphics_v1", "kr_graphics_v1"),
     ARTEMIS("artemis_graphics_v1", "artemis_graphics_v1"),
+    // Siglus 本体（wgpu）与 RealLive / AVG32 / UK2（同一 libsiglus.so 运行库的 game_fb_* CPU 帧缓冲模式）
+    // 共用同一套滤镜设置与单游戏覆盖键。
     SIGLUS("siglus_graphics_v1", "siglus_graphics_v1"),
+    ONS("ons_graphics_v1", "ons_graphics_v1"),
 }
 
 enum class GraphicsAnalyzerPosition(val wire: String) {
@@ -143,7 +146,12 @@ data class GraphicsCapabilities(val supported: Boolean, val runtimeDependent: Bo
                     kernel == EngineSettingsStore.ART_KERNEL_OFFICIAL &&
                         ArtemisLibraryIdentity.supports(ArtemisVersion.requested(version)?.libraryFilename)
                 }
+                // 恒可配置：Siglus 走 engine owner + GLES consumer，
+                // RealLive / AVG32 / UK2 经应用自有 GLES 线程上传 CPU 帧；GLES3 不可用时后三者回退经典路径。
                 GraphicsFamily.SIGLUS -> true
+                // ONScripter 经 vendored SDL2 胶水代理接入，恒可配置；
+                // 运行时动态获取脚本逻辑尺寸，SDL 将输出完整画入代理窗口。
+                GraphicsFamily.ONS -> true
             }
             return GraphicsCapabilities(supported)
         }
@@ -217,6 +225,7 @@ object GraphicsSettingsCodec {
                 artEnabled = snapshot[EngineSettingsStore.KEY_ARTEMIS_ANIME4K_ENABLED] as? Boolean ?: false,
                 artMode = EngineSettingsStore.normalizeArtAnime4kMode(snapshot[EngineSettingsStore.KEY_ARTEMIS_ANIME4K_MODE] as? String))
             GraphicsFamily.SIGLUS -> GraphicsSettings.defaults(family)
+            GraphicsFamily.ONS -> GraphicsSettings.defaults(family)
         }
     }
 
@@ -264,6 +273,7 @@ object GraphicsSettingsCodec {
             chain = listOf(GraphicsNode(artMode.takeIf { it in IDS && it != "lanczos" } ?: "s"), GraphicsNode("lanczos")),
         )
         GraphicsFamily.SIGLUS -> GraphicsSettings.defaults(family)
+        GraphicsFamily.ONS -> GraphicsSettings.defaults(family)
     }
 
     fun legacyOverride(json: JSONObject, family: GraphicsFamily): GraphicsOverride = when (family) {
@@ -283,6 +293,7 @@ object GraphicsSettingsCodec {
             )
         }
         GraphicsFamily.SIGLUS -> GraphicsOverride()
+        GraphicsFamily.ONS -> GraphicsOverride()
     }
 
     private fun decodeRefresh(value: Any?): Int? {

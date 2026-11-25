@@ -1360,7 +1360,14 @@ object EngineLauncher {
                 args.add("--save-dir")
                 args.add(saveDir.absolutePath)
                 Log.i(TAG, "ONS launch scopedSaveDir=${ons.scopedSaveDir} saveDir=${saveDir.absolutePath} ready=$saveDirReady")
-                if (ons.sharpness) {
+                val onsGraphics = settings.onsGraphics
+                // 与 Intent 协议共享同一判定结果：链路有效性 / 能力判定不过时保留 --sharpness。
+                val onsGraphicsExtras = GraphicsLaunchPolicy.extras(
+                    onsGraphics,
+                    GraphicsCapabilities.forRuntime(GraphicsFamily.ONS),
+                )
+                val onsGraphicsActive = onsGraphicsExtras[LaunchContract.GRAPHICS_FILTER_ENABLED] == true
+                if (ons.sharpness && !onsGraphicsActive) {
                     args.add("--sharpness")
                     args.add(safeSharpnessValue(ons.sharpnessValue))
                 }
@@ -1373,6 +1380,7 @@ object EngineLauncher {
                     putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
                     putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_ONS)
                     putExtra(LaunchContract.IGNORE_CUTOUT, ons.ignoreCutout)
+                    putGraphicsExtras(onsGraphicsExtras)
                 }
             }
 
@@ -1578,6 +1586,9 @@ object EngineLauncher {
         game: ScanGame,
         settings: ResolvedEngineSettings,
     ): Intent = Intent(context, FramebufferGameActivity::class.java).apply {
+        // RealLive / AVG32 / UK2 与 Siglus 共用同一 libsiglus.so 运行库并走 CPU 帧缓冲 ABI，
+        // 滤镜设置与单游戏覆盖键沿用 Siglus，不另立偏好键。
+        putGraphicsSettings(settings.siglusGraphics, GraphicsCapabilities.forRuntime(GraphicsFamily.SIGLUS))
         putExtra(LaunchContract.PATH, path)
         putExtra(LaunchContract.GAME_PATH, path)
         putExtra(LaunchContract.PROJECT_ROOT, path)

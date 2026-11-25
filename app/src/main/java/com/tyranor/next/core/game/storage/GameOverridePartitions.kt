@@ -144,6 +144,9 @@ internal object GameOverridePartitions {
     const val KEY_KR_GRAPHICS = "kr_graphics_v1"
     const val KEY_ART_GRAPHICS = "artemis_graphics_v1"
     const val KEY_SIGLUS_GRAPHICS = "siglus_graphics_v1"
+    const val KEY_ONS_GRAPHICS = "ons_graphics_v1"
+
+    val ONS_KEYS: Set<String> = setOf(ONS_OBJECT_KEY, KEY_ONS_GRAPHICS)
 
     val KR_KEYS: Set<String> = setOf(
         KEY_KR_GRAPHICS, KEY_KR_LEGACY_ANIME4K_MODE,
@@ -213,7 +216,7 @@ internal object GameOverridePartitions {
         for (key in blob.keys()) {
             val value = blob.opt(key) ?: continue
             when {
-                key == ONS_OBJECT_KEY -> ons.put(key, value)
+                key in ONS_KEYS -> ons.put(key, value)
                 key in TOUCHPAD_KEYS -> touchpad.put(key, value)
                 key in KR_KEYS -> kr.put(key, value)
                 key in ARTEMIS_KEYS -> artemis.put(key, value)

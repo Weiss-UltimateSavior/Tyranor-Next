@@ -57,4 +57,22 @@ class GraphicsCapabilitiesTest {
         }
         assertEquals(GraphicsCapabilities(true), GraphicsCapabilities.forSettings(GraphicsFamily.SIGLUS))
     }
+
+    @Test fun siglusFamilyCoversTheSharedRuntimeModesWithoutRuntimeGating() {
+        // RealLive / AVG32 / UK2 与 Siglus 共用 libsiglus.so：同一族标识、同一覆盖键，
+        // 能力恒可配置（GLES3 不可用时由宿主回退经典路径）。
+        for (kernel in listOf("", "reallive", "avg32", "uk2", "unknown")) {
+            assertEquals(GraphicsCapabilities(true),
+                GraphicsCapabilities.forRuntime(GraphicsFamily.SIGLUS, kernel))
+            assertEquals(GraphicsCapabilities.forRuntime(GraphicsFamily.SIGLUS, kernel),
+                GraphicsCapabilities.forSettings(GraphicsFamily.SIGLUS, kernel))
+        }
+        assertFalse(GraphicsCapabilities.forRuntime(GraphicsFamily.SIGLUS).runtimeDependent)
+    }
+
+    @Test fun onsCapabilityIsRuntimeIndependent() {
+        assertEquals(GraphicsCapabilities(true), GraphicsCapabilities.forSettings(GraphicsFamily.ONS))
+        assertEquals(GraphicsCapabilities(true), GraphicsCapabilities.forRuntime(GraphicsFamily.ONS))
+        assertFalse(GraphicsCapabilities.forRuntime(GraphicsFamily.ONS).runtimeDependent)
+    }
 }
