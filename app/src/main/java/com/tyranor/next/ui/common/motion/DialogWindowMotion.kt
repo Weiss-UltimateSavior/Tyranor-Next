@@ -93,34 +93,74 @@ internal fun DialogWindowScrim(
                 if (!hasScrimTap) Modifier else Modifier.pointerInput(Unit) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                        // 只有一次真正的点击才转交：移动超过触摸容差、按住超过长按时长、多指都说明用户在滑动 / 长按，
-                        // 若无条件回放一次「按下 + 抬起」，下层的行会被当成点击打开，而不是滚动。
-                        var isTap = true
+                        val tracker = ExitScrimTapTracker(
+                            downPosition = down.position,
+                            downUptimeMillis = down.uptimeMillis,
+                            tapSlopPx = tapSlop,
+                            longPressMillis = longPressMillis,
+                        )
+                        var cancelled = false
                         try {
                             while (true) {
                                 val event = awaitPointerEvent(PointerEventPass.Initial)
                                 val change = event.changes.firstOrNull { it.id == down.id }
-                                if (change == null) {
-                                    isTap = false
-                                    break
-                                }
-                                if (event.changes.size > 1) isTap = false
-                                if ((change.position - down.position).getDistance() > tapSlop) isTap = false
-                                if (change.uptimeMillis - down.uptimeMillis > longPressMillis) isTap = false
-                                if (!change.pressed) break
+                                val keepGoing = tracker.onPointerEvent(
+                                    pointerCount = event.changes.size,
+                                    targetPosition = change?.position,
+                                    targetPressed = change?.pressed == true,
+                                    eventUptimeMillis = change?.uptimeMillis ?: down.uptimeMillis,
+                                )
+                                if (!keepGoing) break
                             }
-                        } catch (cancelled: CancellationException) {
-                            // 手势进行中弹窗窗口被移除（按下落在窗口消失前的最后几帧）：抬起事件到不了任何窗口，这次点击会整个丢掉。
-                            // 到目前为止仍是一次可能的点击，就按点击处理（弹窗已不在，补发给下层页面）。
-                            if (isTap) latestScrimTap?.invoke(down.position)
-                            throw cancelled
+                        } catch (error: CancellationException) {
+                            cancelled = true
+                            throw error
+                        } finally {
+                            if (tracker.shouldReplayTap(cancelled = cancelled)) {
+                                latestScrimTap?.invoke(down.position)
+                            }
                         }
-                        if (isTap) latestScrimTap?.invoke(down.position)
                     }
                 },
             ),
         content = content,
     )
+}
+
+/**
+ * 弹窗退场期间遮罩手势判定器：只有「单指、位移未超容差、未超时长按且真实抬手」才视为可补发的单击。
+ * 手指尚按住时窗口移除（手势被取消）不得补发单击，防止把退场尾段或收起刚结束时的再次长按误判为单击。
+ */
+internal class ExitScrimTapTracker(
+    private val downPosition: Offset,
+    private val downUptimeMillis: Long,
+    private val tapSlopPx: Float,
+    private val longPressMillis: Long,
+) {
+    private var possibleTap = true
+    private var lifted = false
+
+    fun onPointerEvent(
+        pointerCount: Int,
+        targetPosition: Offset?,
+        targetPressed: Boolean,
+        eventUptimeMillis: Long,
+    ): Boolean {
+        if (targetPosition == null) {
+            possibleTap = false
+            return false
+        }
+        if (pointerCount > 1) possibleTap = false
+        if ((targetPosition - downPosition).getDistance() > tapSlopPx) possibleTap = false
+        if (eventUptimeMillis - downUptimeMillis > longPressMillis) possibleTap = false
+        if (!targetPressed) {
+            lifted = true
+            return false
+        }
+        return true
+    }
+
+    fun shouldReplayTap(cancelled: Boolean): Boolean = !cancelled && lifted && possibleTap
 }
 
 /**

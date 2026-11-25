@@ -39,6 +39,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.tyranor.next.ui.common.motion.nestedPanelContentDim
@@ -77,6 +78,7 @@ import com.tyranor.next.ui.common.motion.MotionSprings
 import com.tyranor.next.ui.common.motion.ExitTapReplay
 import com.tyranor.next.ui.common.motion.PageTransitions
 import com.tyranor.next.ui.common.motion.beginDialogDimExit
+import com.tyranor.next.ui.common.motion.passTouchesThrough
 import com.tyranor.next.ui.common.motion.restoreInteraction
 import com.tyranor.next.ui.common.motion.DialogWindowScrim
 import com.tyranor.next.ui.common.motion.nestedPanelDim
@@ -90,6 +92,7 @@ import com.tyranor.next.ui.common.motion.animateContentSizeSpring
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -257,8 +260,17 @@ internal fun AppAlertDialog(
     /** 退场动画：遮罩淡出与面板下沉；返回时动画已结束或被 [scrimTapDuringExit] 中止（中止不是协程取消，不会抛出）。 */
     suspend fun playExit(dimSpec: AnimationSpec<Float>, slideSpec: AnimationSpec<Float>) = coroutineScope {
         val job = launch {
-            launch { dimAlpha.animateTo(0f, dimSpec) }
-            slideFraction.animateTo(1f, slideSpec)
+            val dim = launch { dimAlpha.animateTo(0f, dimSpec) }
+            val slide = launch { slideFraction.animateTo(1f, slideSpec) }
+            if (enhanced) {
+                // 增强档弹簧尾段在卡片已离屏、遮罩肉眼不可见后仍会延续百余毫秒；视觉退场到位即收尾，
+                // 避免不可见的弹窗窗口继续拦住下层卡片的长按与滑动。
+                snapshotFlow {
+                    dimAlpha.value <= EXIT_DIM_SETTLED && slideFraction.value >= EXIT_SLIDE_SETTLED
+                }.first { it }
+                dim.cancel()
+                slide.cancel()
+            }
         }
         exitAnimation[0] = job
         job.join()
@@ -399,7 +411,11 @@ internal fun AppAlertDialog(
                     onFailure = { actionFailed(it) },
                     cleanup = {
                         try {
-                            dialogWindow[0]?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                            if (restored) {
+                                dialogWindow[0]?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                            } else if (pendingExitDelivered.value) {
+                                dialogWindow[0].passTouchesThrough()
+                            }
                         } finally {
                             pendingExitAction.value = null
                             // 只有真正交付了关闭才进入「退场尾段」；动作没关弹窗、已恢复显示的，不能再按尾段处理遮罩按下与关闭请求
@@ -435,7 +451,11 @@ internal fun AppAlertDialog(
                 onFailure = { Log.e("AppAlertDialog", "Dialog dismissal failed", it) },
                 cleanup = {
                     try {
-                        dialogWindow[0]?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                        if (pendingExitDelivered.value) {
+                            dialogWindow[0].passTouchesThrough()
+                        } else {
+                            dialogWindow[0]?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                        }
                     } finally {
                         pendingExitAction.value = null
                         deliveredAt[0] = android.os.SystemClock.uptimeMillis()
@@ -655,6 +675,10 @@ private const val PendingExitTapMaxAgeMillis = 600L
 
 /** 关闭回调交付后，窗口还可能多留一两帧：这段时间内的按下仍按「退场中」转交给下层页面。 */
 private const val ExitTailMillis = 250L
+
+/** 增强档退场动画视觉到位阈值：遮罩透明度低于 0.01 且面板滑出超过 92% 时已不可见，立即结束等待。 */
+private const val EXIT_DIM_SETTLED = 0.01f
+private const val EXIT_SLIDE_SETTLED = 0.92f
 
 /** 弹窗入场时从底边略微放大的幅度（停稳时缩放为 1）。 */
 private const val DialogEnterScaleDelta = 0.06f
