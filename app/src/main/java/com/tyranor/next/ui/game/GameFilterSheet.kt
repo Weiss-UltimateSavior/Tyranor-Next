@@ -102,12 +102,7 @@ internal fun GameFilterSheet(
     val playedIndex = playedOptions.indexOfFirst { it.first == playedFilter }.coerceAtLeast(0)
     // 引擎名与卡片角标/首页分类同一套口径：UNKNOWN 与 RUNTIME_MODULE 走本地化文案，其余用品牌名。
     // 删除尚未确认时库列表可能暂时缺少当前引擎，抽屉仍需显示真实选中项。
-    val activeEngine = EngineType.entries.firstOrNull { it.name == engineFilter }
-    val engineChoices = if (activeEngine != null && activeEngine !in availableEngines) {
-        (availableEngines + activeEngine).sortedBy { it.ordinal }
-    } else {
-        availableEngines
-    }
+    val engineChoices = resolveFilterEngineChoices(availableEngines, engineFilter)
     val unknownEngineLabel = stringResource(R.string.engine_name_unknown)
     val runtimeModuleLabel = stringResource(R.string.engine_name_runtime_module)
     val engineKeys = listOf(AppSettingsStore.GAME_FILTER_ENGINE_ALL) + engineChoices.map { it.name }
@@ -118,7 +113,7 @@ internal fun GameFilterSheet(
             else -> engine.displayName
         }
     }
-    val engineIndex = engineKeys.indexOfFirst { it == engineFilter }.coerceAtLeast(0)
+    val engineIndex = resolveFilterSelectionIndex(engineKeys, engineFilter)
     var scrollResetKey by remember { mutableIntStateOf(0) }
     var dropdownExpanded by remember { mutableStateOf(false) }
     val reset: () -> Unit = {
@@ -149,7 +144,7 @@ internal fun GameFilterSheet(
                         SlidingTabRow(
                             tabs = engineLabels,
                             selectedIndex = engineIndex,
-                            onTabSelected = { onEngineChange(engineKeys[it]) },
+                            onTabSelected = { engineKeys.getOrNull(it)?.let(onEngineChange) },
                             modifier = Modifier.padding(horizontal = FilterScrollableInset),
                             scrollable = true,
                             scrollResetKey = scrollResetKey,
@@ -256,4 +251,21 @@ private fun FilterResetButton(onReset: () -> Unit) {
         modifier = Modifier.fillMaxWidth()
             .padding(start = FilterSheetInset, top = 18.dp, end = FilterSheetInset, bottom = 22.dp),
     )
+}
+
+internal fun resolveFilterEngineChoices(
+    availableEngines: List<EngineType>,
+    engineFilter: String,
+): List<EngineType> {
+    val activeEngine = EngineType.entries.firstOrNull { it.name == engineFilter }
+    return if (activeEngine != null && activeEngine !in availableEngines) {
+        (availableEngines + activeEngine).sortedBy { it.ordinal }
+    } else {
+        availableEngines
+    }
+}
+
+internal fun resolveFilterSelectionIndex(keys: List<String>, selectedKey: String): Int {
+    if (keys.isEmpty()) return 0
+    return keys.indexOfFirst { it == selectedKey }.coerceIn(0, keys.lastIndex)
 }

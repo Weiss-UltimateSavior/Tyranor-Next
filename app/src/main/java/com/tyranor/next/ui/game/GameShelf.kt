@@ -221,7 +221,8 @@ internal fun GameShelf(
     onSettledGameChanged: ((String) -> Unit)? = null,
 ) {
     val hideTitleTag by AppSettingsStore.gameCardTitleTagState.collectSettingAsState()
-    val latestGames by rememberUpdatedState(games)
+    val latestGamesState = rememberUpdatedState(games)
+    val latestGames by latestGamesState
     val pagerState = remember { PagerState(currentPage = shelfFocusPage(games, initialUri()), pageCount = { latestGames.size }) }
     val scope = rememberCoroutineScope()
     val knobSeek = rememberShelfKnobSeek()
@@ -235,12 +236,12 @@ internal fun GameShelf(
     val interactive = isInteractive()
     val adjustment = remember(pagerState, games) {
         Snapshot.withoutReadObservation {
-            val uri = pagerState.currentShelfPageKey() ?: return@withoutReadObservation null
+            val uri = pagerState.currentShelfPageKey()
             val page = shelfPageAdjustment(games, pagerState.currentPage, uri) ?: return@withoutReadObservation null
-            page to if (games[page].uri == uri) pagerState.currentPageOffsetFraction else 0f
+            page to if (uri != null && games.getOrNull(page)?.uri == uri) pagerState.currentPageOffsetFraction else 0f
         }
     }
-    LaunchedEffect(pagerState, games) {
+    LaunchedEffect(pagerState, games, interactive) {
         if (adjustment != null && latestInteractive() && catalog?.pendingFocusUri == null) {
             pagerState.requestScrollToPage(adjustment.first, adjustment.second)
         }
@@ -335,6 +336,7 @@ internal fun GameShelf(
             Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
                 ShelfStage(
                     games = games,
+                    latestGamesState = latestGamesState,
                     pagerState = pagerState,
                     hideTitleTag = hideTitleTag,
                     batchChangedAt = listChangedAt,
@@ -409,8 +411,16 @@ internal fun shelfFocusPage(games: List<ScanGame>, uri: String?): Int =
         ?: games.indices.maxByOrNull { games[it].openTime }?.takeIf { games[it].openTime > 0L }
         ?: 0
 
-internal fun shelfPageAdjustment(games: List<ScanGame>, page: Int, measuredUri: String): Int? =
-    if (games.isEmpty() || games.getOrNull(page)?.uri == measuredUri) null else shelfFocusPage(games, measuredUri)
+internal fun shelfPageKey(games: List<ScanGame>, page: Int): Any =
+    games.getOrNull(page)?.uri ?: page
+
+internal fun shelfPageAdjustment(games: List<ScanGame>, page: Int, measuredUri: String?): Int? {
+    if (games.isEmpty()) return null
+    if (measuredUri != null) {
+        return if (games.getOrNull(page)?.uri == measuredUri) null else shelfFocusPage(games, measuredUri)
+    }
+    return if (page in games.indices) null else page.coerceIn(0, games.lastIndex)
+}
 
 private fun PagerState.currentShelfPageKey(): String? =
     layoutInfo.visiblePagesInfo.firstOrNull { it.index == currentPage }?.key as? String
@@ -423,6 +433,7 @@ private fun PagerState.isShelfPageCentered(page: Int, uri: String): Boolean =
 @Composable
 private fun ShelfStage(
     games: List<ScanGame>,
+    latestGamesState: State<List<ScanGame>>,
     pagerState: PagerState,
     hideTitleTag: Boolean,
     batchChangedAt: Long,
@@ -600,11 +611,15 @@ private fun ShelfStage(
         // 正中那一盒脚下与身后的光：封面的主色（还没解出来时用引擎色），翻页途中在相邻两本之间实时过渡
         val glowAt: (Float) -> Color = remember(games, coverTints) {
             { position ->
-                val base = kotlin.math.floor(position).toInt().coerceIn(0, games.lastIndex)
-                val next = (base + 1).coerceAtMost(games.lastIndex)
-                val fraction = (position - base).coerceIn(0f, 1f)
-                fun tintOf(page: Int): Color = games[page].let { coverTints[it.coverUri] ?: it.engine.coverColor() }
-                androidx.compose.ui.graphics.lerp(tintOf(base), tintOf(next), fraction).copy(alpha = LEDGE_GLOW_ALPHA)
+                if (games.isEmpty()) {
+                    caseColors.glow
+                } else {
+                    val base = kotlin.math.floor(position).toInt().coerceIn(0, games.lastIndex)
+                    val next = (base + 1).coerceAtMost(games.lastIndex)
+                    val fraction = (position - base).coerceIn(0f, 1f)
+                    fun tintOf(page: Int): Color = games[page].let { coverTints[it.coverUri] ?: it.engine.coverColor() }
+                    androidx.compose.ui.graphics.lerp(tintOf(base), tintOf(next), fraction).copy(alpha = LEDGE_GLOW_ALPHA)
+                }
             }
         }
         val floorYPx = with(density) { (topRoom + coverHeight).toPx() }
@@ -638,7 +653,7 @@ private fun ShelfStage(
             )
             HorizontalPager(
                 state = pagerState,
-                key = { games[it].uri },
+                key = { shelfPageKey(latestGamesState.value, it) },
                 userScrollEnabled = isInteractive(),
                 modifier = Modifier.fillMaxSize(),
                 pageSize = PageSize.Fixed(dragPitchDp),
