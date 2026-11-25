@@ -144,10 +144,18 @@ public final class FramebufferGameActivity extends AppCompatActivity
             if (!filterActive) {
                 leftPressed = true;
                 NativeGames.fbPointerButton(handle, NativeGames.BUTTON_LEFT, true);
-            } else if (viewportReadyForTouch()) {
-                // 滤镜路径必须先有视口，否则这次按下会落到引擎上一次的指针位置。
-                leftPressed = true;
-                NativeGames.fbPointerButton(handle, NativeGames.BUTTON_LEFT, true);
+            } else {
+                // 单次视口快照：有视口时先把本次触点同步给引擎再发按下，避免落到上一次指针位置。
+                FramebufferViewport viewport = graphicsProxy != null ? graphicsProxy.viewport() : null;
+                if (viewport != null) {
+                    if (pendingTouch) {
+                        pendingTouch = false;
+                        int[] point = viewport.toSource(pendingTouchX, pendingTouchY);
+                        NativeGames.fbPointerMove(handle, point[0], point[1]);
+                    }
+                    leftPressed = true;
+                    NativeGames.fbPointerButton(handle, NativeGames.BUTTON_LEFT, true);
+                }
             }
             // 视口尚未就绪：丢弃这次按下（位置已在 ACTION_DOWN 时按需缓存）。
         }
@@ -449,7 +457,10 @@ public final class FramebufferGameActivity extends AppCompatActivity
         handler.removeCallbacks(startupDeadline);
         hideIme();
         if (filterMode) {
-            if (graphicsOverlay != null) graphicsOverlay.hide();
+            if (graphicsOverlay != null) {
+                graphicsOverlay.hide();
+                graphicsOverlay = null;
+            }
             detachFilterView();
         }
         closeGame(); // 引擎先于消费方停止产帧。
@@ -634,7 +645,10 @@ public final class FramebufferGameActivity extends AppCompatActivity
         handler.removeCallbacks(startupDeadline);
         // 看门狗与新路径无关；不撤销会让它在回退后仍按旧判据再次触发回退（幂等但白跑）。
         handler.removeCallbacks(graphicsWatchdog);
-        if (graphicsOverlay != null) graphicsOverlay.hide();
+        if (graphicsOverlay != null) {
+            graphicsOverlay.hide();
+            graphicsOverlay = null;
+        }
         if (graphicsProxy != null) {
             graphicsProxy.release();
             graphicsProxy = null;
@@ -671,20 +685,30 @@ public final class FramebufferGameActivity extends AppCompatActivity
         if (frameAllocFailed && size[0] == frameW && size[1] == frameH) {
             return;
         }
-        if (bitmap == null || size[0] != frameW || size[1] != frameH) {
-            frameW = size[0];
-            frameH = size[1];
-            bitmap = null;
-            buffer = null;
+        if (bitmap == null || buffer == null || size[0] != frameW || size[1] != frameH) {
+            Bitmap nextBitmap = null;
+            ByteBuffer nextBuffer = null;
             try {
-                bitmap = Bitmap.createBitmap(frameW, frameH, Bitmap.Config.ARGB_8888);
-                buffer = ByteBuffer.allocateDirect(frameW * frameH * 4).order(ByteOrder.nativeOrder());
-                frameAllocFailed = false;
-            } catch (OutOfMemoryError | IllegalArgumentException failure) {
+                int bytes = Math.multiplyExact(Math.multiplyExact(size[0], size[1]), 4);
+                nextBitmap = Bitmap.createBitmap(size[0], size[1], Bitmap.Config.ARGB_8888);
+                nextBuffer = ByteBuffer.allocateDirect(bytes).order(ByteOrder.nativeOrder());
+            } catch (OutOfMemoryError | IllegalArgumentException | ArithmeticException failure) {
+                if (nextBitmap != null) {
+                    nextBitmap.recycle();
+                }
+                bitmap = null;
+                buffer = null;
+                frameW = size[0];
+                frameH = size[1];
                 Log.w(TAG, "Classic frame buffer allocation failed; waiting for a size change", failure);
                 frameAllocFailed = true;
                 return;
             }
+            bitmap = nextBitmap;
+            buffer = nextBuffer;
+            frameW = size[0];
+            frameH = size[1];
+            frameAllocFailed = false;
         }
         if (buffer == null) {
             return;
@@ -879,10 +903,9 @@ public final class FramebufferGameActivity extends AppCompatActivity
                         rightClick();
                     }
                 } else {
-                    movePointer(event.getX(), event.getY());
-                    // 轻点（< LEFT_PRESS_DELAY_MS）走这条直发路径，同样必须先有视口，
-                    // 否则 down/up 会落到引擎上一次的指针位置（与 sendLeftPress 同门禁）。
-                    if (!filterActive || viewportReadyForTouch()) {
+                    // 轻点（< LEFT_PRESS_DELAY_MS）必须与坐标移动共用同一次视口读取，
+                    // 否则移动读到空而点击判断读到非空时 down/up 会落到旧指针位置。
+                    if (movePointer(event.getX(), event.getY())) {
                         if (leftPressPending) {
                             handler.removeCallbacks(sendLeftPress);
                             leftPressPending = false;
@@ -893,7 +916,7 @@ public final class FramebufferGameActivity extends AppCompatActivity
                             NativeGames.fbPointerButton(handle, NativeGames.BUTTON_LEFT, false);
                         }
                     } else {
-                        // 视口未就绪：丢弃这次点击，位置已在 ACTION_DOWN 时缓存待补发。
+                        // 视口未就绪：丢弃这次点击，位置已由 movePointer 缓存待补发。
                         handler.removeCallbacks(sendLeftPress);
                         leftPressPending = false;
                         // 之前已发出按下（拖拽中视口被清空）也必须补发松开，否则左键粘滞；
@@ -931,7 +954,7 @@ public final class FramebufferGameActivity extends AppCompatActivity
         return sum / Math.max(1, event.getPointerCount());
     }
 
-    private void movePointer(float x, float y) {
+    private boolean movePointer(float x, float y) {
         if (filterActive && graphicsProxy != null) {
             // 视口未就绪（首帧前/重建窗口）时无有效映射，不移动引擎指针；
             // 缓存本点，视口就绪后补发，避免这次点击落到上一次的指针位置。
@@ -940,15 +963,16 @@ public final class FramebufferGameActivity extends AppCompatActivity
                 pendingTouchX = x;
                 pendingTouchY = y;
                 pendingTouch = true;
-                return;
+                return false;
             }
             pendingTouch = false;
             int[] point = viewport.toSource(x, y);
             NativeGames.fbPointerMove(handle, point[0], point[1]);
-            return;
+            return true;
         }
         int[] point = fbView.toFrame(x, y);
         NativeGames.fbPointerMove(handle, point[0], point[1]);
+        return true;
     }
 
     /** 视口就绪时补发被缓存的按下位置；仅滤镜路径使用。 */
@@ -959,10 +983,6 @@ public final class FramebufferGameActivity extends AppCompatActivity
         pendingTouch = false;
         int[] point = viewport.toSource(pendingTouchX, pendingTouchY);
         NativeGames.fbPointerMove(handle, point[0], point[1]);
-    }
-
-    private boolean viewportReadyForTouch() {
-        return graphicsProxy != null && graphicsProxy.viewport() != null;
     }
 
     private void rightClick() {

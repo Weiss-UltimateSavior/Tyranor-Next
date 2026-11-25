@@ -69,6 +69,32 @@ public final class FramebufferFrameSlotPoolTest {
         assertEquals(3, allocations.get());
     }
 
+    /** A → B → A 尺寸切换期间观察到有效尺寸变化，即使未调用 resetOomLatch 也应清除旧 A 的 OOM 闩锁。 */
+    @Test
+    public void validSizeChangeClearsPreviousOomLatchAcrossABASequenceWithoutReset() {
+        AtomicInteger allocations = new AtomicInteger();
+        FramebufferGraphicsProxy.FrameSlotPool pool = new FramebufferGraphicsProxy.FrameSlotPool(size -> {
+            int call = allocations.incrementAndGet();
+            if (call == 1) throw new OutOfMemoryError("simulated OOM on A");
+            return ByteBuffer.allocateDirect(size);
+        });
+
+        assertNull(pool.acquire(640, 480));
+        assertEquals(1, allocations.get());
+        assertNull(pool.acquire(640, 480));
+        assertEquals(1, allocations.get());
+
+        FramebufferGraphicsProxy.Slot slotB = pool.acquire(800, 600);
+        assertNotNull(slotB);
+        assertEquals(2, allocations.get());
+        pool.recycle(0);
+
+        // 切回 640x480 时不调用 resetOomLatch()，也应重新尝试分配。
+        FramebufferGraphicsProxy.Slot slotA = pool.acquire(640, 480);
+        assertNotNull(slotA);
+        assertEquals(3, allocations.get());
+    }
+
     @Test
     public void invalidOrOverBudgetSizesAreRejectedWithoutAllocating() {
         AtomicInteger allocations = new AtomicInteger();

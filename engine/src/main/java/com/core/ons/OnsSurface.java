@@ -135,6 +135,12 @@ public class OnsSurface extends SDLSurface {
 
     @Override
     public void surfaceChanged(SurfaceHolder surfaceHolder, int format, int width, int height) {
+        // 先于滤镜/直出分支记录最新有效物理尺寸：若代理刚报失败、`isFilterMode()` 先于 UI
+        // 回退变为 false，父类直出分支会跳过后续记录，导致 restoreDirectGeometry 用到旧尺寸。
+        if (width > 0 && height > 0) {
+            lastPhysicalWidth = width;
+            lastPhysicalHeight = height;
+        }
         if (provider == null || !provider.isFilterMode()) {
             super.surfaceChanged(surfaceHolder, format, width, height);
             return;
@@ -144,10 +150,6 @@ public class OnsSurface extends SDLSurface {
         if (SDLActivity.getContext() == null) {
             return;
         }
-
-        // 记录物理窗口尺寸供回退恢复使用；逻辑舞台尺寸与设备尺寸分离上报给 SDL。
-        lastPhysicalWidth = Math.max(1, width);
-        lastPhysicalHeight = Math.max(1, height);
 
         int logicW = provider.getLogicalWidth();
         int logicH = provider.getLogicalHeight();

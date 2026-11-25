@@ -19,7 +19,7 @@ public final class GraphicsFilterPipeline {
     static final int MAX_CONSECUTIVE_STATIC_REUSES = 60;
 
     private final GraphicsFilterChain chain;
-    private final long reservedBytes;
+    private long reservedBytes;
     private final CnnPipeline[] nodes;
     private final CnnPipeline surfaceAdapter;
     private final GraphicsTargetRetry targetRetry = new GraphicsTargetRetry();
@@ -84,6 +84,14 @@ public final class GraphicsFilterPipeline {
             nodes[i] = CnnPipeline.forFilter(context, step);
         }
         surfaceAdapter = CnnPipeline.forLanczos(context);
+    }
+
+    /** Updates adapter-owned GL byte storage when input dimensions change and schedules re-planning. */
+    public void setReservedBytes(long reservedBytes) {
+        if (reservedBytes < 0) throw new IllegalArgumentException("invalid reserved bytes");
+        if (this.reservedBytes == reservedBytes) return;
+        this.reservedBytes = reservedBytes;
+        geometryKnown = false;
     }
 
     public int renderTexture(int texture, int sw, int sh, int screenWidth, int screenHeight) {

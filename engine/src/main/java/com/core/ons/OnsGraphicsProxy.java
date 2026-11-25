@@ -312,6 +312,9 @@ public final class OnsGraphicsProxy implements ArtemisPerformanceOverlay.Source 
         validateFrameSize(width, height);
         long reserve = Math.multiplyExact(Math.multiplyExact((long) width, height), 16L);
 
+        // 重配舞台会删除并重建输入纹理；必须在替换资源前清掉旧舞台的帧可用标记，
+        // 避免新舞台首帧到达前 attach() 绘制未填充的新纹理并提前触发揭层。
+        hasImage = false;
         texture.setDefaultBufferSize(width, height);
 
         if (inputTexture != 0) {

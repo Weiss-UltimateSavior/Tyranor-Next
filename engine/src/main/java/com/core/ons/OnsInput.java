@@ -60,6 +60,17 @@ public final class OnsInput {
     }
 
     /**
+     * 解析滤镜鼠标事件的按钮掩码：释放/取消保留真实状态（含 0）以便 SDL 观察到按键抬起，
+     * 其余事件在驱动未上报掩码时默认补主键。
+     */
+    public static int resolveMouseButtonState(int actionMasked, int rawButtonState) {
+        if (actionMasked == MotionEvent.ACTION_UP || actionMasked == MotionEvent.ACTION_CANCEL) {
+            return rawButtonState;
+        }
+        return rawButtonState != 0 ? rawButtonState : MotionEvent.BUTTON_PRIMARY;
+    }
+
+    /**
      * 该事件是否属于「从黑边起手」的手势。只吞 ACTION_DOWN 时，同一手势的
      * MOVE/UP 仍会带钳制坐标派发，引擎会收到「没有 DOWN 的 MOVE/UP」。
      */

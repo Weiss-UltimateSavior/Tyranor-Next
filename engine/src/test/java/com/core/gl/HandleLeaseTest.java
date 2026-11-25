@@ -128,6 +128,49 @@ public final class HandleLeaseTest {
         }
     }
 
+    /**
+     * 主线程持有初始引用期间，工作线程配对执行 retain/release 不得提前触发清理；
+     * 待全部工作线程结束后，主线程释放初始引用时恰好执行一次清理。
+     */
+    @Test
+    public void pairedConcurrentRetainAndReleaseKeepsLeaseAliveUntilInitialRelease() throws Exception {
+        for (int round = 0; round < 20; round++) {
+            AtomicInteger released = new AtomicInteger();
+            HandleLease lease = new HandleLease(released::incrementAndGet);
+            int threads = 8;
+            int iterationsPerThread = 200;
+            CountDownLatch start = new CountDownLatch(1);
+            CountDownLatch done = new CountDownLatch(threads);
+            for (int i = 0; i < threads; i++) {
+                Thread worker = new Thread(() -> {
+                    try {
+                        start.await();
+                        for (int j = 0; j < iterationsPerThread; j++) {
+                            if (lease.retain()) {
+                                lease.release();
+                            }
+                        }
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                    } finally {
+                        done.countDown();
+                    }
+                });
+                worker.start();
+            }
+            start.countDown();
+            assertTrue(done.await(5, TimeUnit.SECONDS));
+            assertEquals(0, released.get());
+            assertFalse(lease.isReleased());
+            assertEquals(1, lease.references());
+
+            lease.release();
+            assertEquals(1, released.get());
+            assertTrue(lease.isReleased());
+            assertEquals(0, lease.references());
+        }
+    }
+
     @Test
     public void cleanupRunsOutsideTheMonitor() throws Exception {
         // 清理动作在锁外执行：清理里再读 references() 不会死锁（synchronized 可重入，

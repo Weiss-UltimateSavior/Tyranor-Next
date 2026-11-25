@@ -172,6 +172,11 @@ final class FramebufferGraphicsProxy implements ArtemisPerformanceOverlay.Source
                 }
                 return null;
             }
+            if ((oomFailedWidth != 0 || oomFailedHeight != 0)
+                    && (width != oomFailedWidth || height != oomFailedHeight)) {
+                oomFailedWidth = 0;
+                oomFailedHeight = 0;
+            }
             // 先复用已按同尺寸分配好的空闲槽位——暂态 OOM 闩锁只该拦住「需要重新分配」
             // 的槽位，不能把整池封死（曾因槽位 1 的一次 OOM 让槽位 0 也永久不可用）。
             for (int i = 0; i < FRAME_SLOT_COUNT; i++) {
@@ -381,12 +386,15 @@ final class FramebufferGraphicsProxy implements ArtemisPerformanceOverlay.Source
         Log.i(TAG, "Framebuffer filter consumer ready | " + GLES30.glGetString(GLES30.GL_RENDERER));
     }
 
+    private static long reservedInputBytes(int width, int height) {
+        return Math.multiplyExact(Math.multiplyExact((long) width, height), 16L);
+    }
+
     private void allocateInput(int width, int height) {
         validateFrameSize(width, height);
         int[] scratch = new int[1];
-        // Reserve the RGBA8 upload plus chain headroom; the pipeline re-plans on
-        // later size changes and only this reservation stays fixed.
-        long reserved = Math.multiplyExact(Math.multiplyExact((long) width, height), 16L);
+        // Reserve the RGBA8 upload plus chain headroom; updated when input resizes.
+        long reserved = reservedInputBytes(width, height);
         GLES30.glGenTextures(1, scratch, 0); inputTexture = scratch[0];
         GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, inputTexture);
         textureParameters(GLES30.GL_TEXTURE_2D);
@@ -415,12 +423,14 @@ final class FramebufferGraphicsProxy implements ArtemisPerformanceOverlay.Source
             // pool admission already rejects over-budget frames, so the budget half
             // of validateFrameSize is defense in depth; GL_MAX is the live check here.
             validateFrameSize(frame.width, frame.height);
+            long reserved = reservedInputBytes(frame.width, frame.height);
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, inputTexture);
             GLES30.glBindBuffer(GLES30.GL_PIXEL_UNPACK_BUFFER, 0);
             GLES30.glTexImage2D(GLES30.GL_TEXTURE_2D, 0, GLES30.GL_RGBA8, frame.width, frame.height,
                     0, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, null);
             textureWidth = frame.width; textureHeight = frame.height;
             checkGl("input resize");
+            if (pipeline != null) pipeline.setReservedBytes(reserved);
         }
         frame.data.rewind();
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0);
@@ -432,8 +442,10 @@ final class FramebufferGraphicsProxy implements ArtemisPerformanceOverlay.Source
         framePool.recycle(frame.slot);
 
         FramebufferViewport v = FramebufferViewport.fit(frame.width, frame.height, outputWidth, outputHeight);
-        if (v == null) return;
-        viewport = v;
+        if (v == null) {
+            viewport = null;
+            return;
+        }
         int result = pipeline.renderCroppedTexture(inputTexture, frame.width, frame.height,
                 0f, 0f, 1f, 1f, v.surfaceWidth, v.surfaceHeight, true);
         // Do not clear errors produced by the chain/state restoration before presenting.
@@ -455,6 +467,7 @@ final class FramebufferGraphicsProxy implements ArtemisPerformanceOverlay.Source
         GLES30.glDrawArrays(GLES30.GL_TRIANGLES, 0, 3);
         checkGl("presentation");
         if (!EGL14.eglSwapBuffers(display, output)) throw new IllegalStateException("Display swap failed");
+        viewport = v;
         boolean firstFrame = !firstPresented;
         firstPresented = true;
         lastPresentedAtMs = SystemClock.elapsedRealtime();
@@ -609,6 +622,7 @@ final class FramebufferGraphicsProxy implements ArtemisPerformanceOverlay.Source
     }
 
     private void fail(RuntimeException failure) {
+        viewport = null;
         if (closed || terminalFailure) return;
         terminalFailure = true; status = GraphicsStatus.NATIVE_FAILED;
         Log.e(TAG, "Proxy failed; the host falls back to the classic bitmap presentation", failure);

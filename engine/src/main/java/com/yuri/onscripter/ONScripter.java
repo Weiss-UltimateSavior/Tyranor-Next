@@ -49,12 +49,14 @@ import com.core.gl.ArtemisPerformanceOverlay;
 import com.core.gl.GraphicsFilterChain;
 import com.core.gl.GraphicsFilterGate;
 import com.core.gl.TextureDisplayWindow;
+import com.core.ons.OnsDirectFallback;
 import com.core.ons.OnsGraphicsProxy;
 import com.core.ons.OnsInput;
 import com.core.ons.OnsLibLoader;
 import com.core.ons.OnsScriptResolution;
 import com.core.ons.OnsSettings;
 import com.core.ons.OnsSurface;
+import com.core.ons.OnsTouchTracker;
 import com.core.ons.OnsVideoOverlay;
 import com.core.ons.OnsViewport;
 
@@ -99,13 +101,10 @@ public class ONScripter extends SDLActivity implements OnsSurface.SurfaceProvide
     private volatile OnsSurface onsSurface;
     /** 从黑边起手的手势整段吞掉，直到该手势结束。 */
     private boolean filterTouchOutsideStage;
-    private boolean filterTouchActive;
+    private final OnsTouchTracker filterTouchTracker = new OnsTouchTracker();
     private boolean filterMouseActive;
-    private float lastFilterTouchNormX = 0.5f;
-    private float lastFilterTouchNormY = 0.5f;
     private float lastFilterMouseX;
     private float lastFilterMouseY;
-    private int lastFilterMouseButton = 1;
     private ArtemisPerformanceOverlay graphicsOverlay;
     private volatile int detectedStageWidth = OnsScriptResolution.DEFAULT_WIDTH;
     private volatile int detectedStageHeight = OnsScriptResolution.DEFAULT_HEIGHT;
@@ -1174,10 +1173,11 @@ public class ONScripter extends SDLActivity implements OnsSurface.SurfaceProvide
                 graphicsOverlay.hide();
                 graphicsOverlay = null;
             }
-            // 先让 SDL 停止使用代理 producer，再释放代理 —— 否则 SDL 线程仍绑在
-            // 即将销毁的 ANativeWindow 上，下一次 eglSwapBuffers 会命中已回收的 BufferQueue。
-            // 顺序：摘除视图（同步触发销毁回调归还 UI 引用并释放租约）→ 通知 SDL 重新
-            // 取 native surface → 最后释放代理与剩余租约。
+            // 先让 SDL 停止使用代理 producer，再经 onNativeSurfaceCreated 重取直出 Surface，
+            // 随后恢复物理几何与 onNativeSurfaceChanged，最后释放代理。
+            // 注意：onNativeSurfaceDestroyed() 会把 native_window 置空，onNativeSurfaceChanged()
+            // 仅在已有 native_window 上重建 EGLSurface 而不会重取窗口；必须在两步之间先调
+            // onNativeSurfaceCreated() 让 SDL 经此时已恢复直出的 getNativeSurface() 重绑窗口。
             if (filterView != null) {
                 // 与 Framebuffer switchToClassicPresentation 同口径：先 removeView 走正常
                 // 销毁回调（displayWindow 由租约释放、回调返回 false 不交系统二次释放），
@@ -1188,34 +1188,61 @@ public class ONScripter extends SDLActivity implements OnsSurface.SurfaceProvide
                 filterView.setSurfaceTextureListener(null);
                 filterView = null;
             }
-            filterTouchActive = false;
+            filterTouchTracker.clear();
             filterMouseActive = false;
             filterTouchOutsideStage = false;
-            try {
-                SDLActivity.onNativeSurfaceDestroyed();
-            } catch (RuntimeException | LinkageError | OutOfMemoryError t) {
-                Log.w(TAG, "Failed to notify SDL of direct surface fallback", t);
-            }
-            // 严格对齐 SDLSurface.surfaceChanged() 时序：mWidth/mHeight →
-            // nativeSetScreenResolution → onNativeResize → onNativeSurfaceChanged。
-            // 滤镜路径把 mWidth/mHeight 与 native 逻辑分辨率都设成脚本尺寸，而回退不会再走
-            // SDLSurface.surfaceChanged（父类唯一写物理值处），必须在这两次通知之间写回
-            // 物理窗口尺寸，否则 SDL 重取 native surface 时拿到的还是脚本尺寸。
-            restoreDirectGeometry();
-            try {
-                SDLActivity.onNativeSurfaceChanged();
-            } catch (RuntimeException | LinkageError | OutOfMemoryError t) {
-                Log.w(TAG, "Failed to notify SDL of direct surface fallback", t);
-            }
-            if (graphicsProxy != null) {
-                graphicsProxy.release();
-                graphicsProxy = null;
-            }
-            if (displayWindow != null) {
-                displayWindow.release();
-                displayWindow = null;
-            }
-            displayTexture = null;
+            OnsDirectFallback.execute(new OnsDirectFallback.Actions() {
+                @Override
+                public void onNativeSurfaceDestroyed() {
+                    try {
+                        SDLActivity.onNativeSurfaceDestroyed();
+                    } catch (RuntimeException | LinkageError | OutOfMemoryError t) {
+                        Log.w(TAG, "Failed to notify SDL of proxy surface teardown", t);
+                    }
+                }
+
+                @Override
+                public boolean hasValidDirectSurface() {
+                    Surface direct = SDLActivity.getNativeSurface();
+                    return direct != null && direct.isValid();
+                }
+
+                @Override
+                public void onNativeSurfaceCreated() {
+                    try {
+                        SDLActivity.onNativeSurfaceCreated();
+                    } catch (RuntimeException | LinkageError | OutOfMemoryError t) {
+                        Log.w(TAG, "Failed to acquire direct native surface", t);
+                    }
+                }
+
+                @Override
+                public void restoreDirectGeometry() {
+                    ONScripter.this.restoreDirectGeometry();
+                }
+
+                @Override
+                public void onNativeSurfaceChanged() {
+                    try {
+                        SDLActivity.onNativeSurfaceChanged();
+                    } catch (RuntimeException | LinkageError | OutOfMemoryError t) {
+                        Log.w(TAG, "Failed to notify SDL of direct surface fallback", t);
+                    }
+                }
+
+                @Override
+                public void releaseProxy() {
+                    if (graphicsProxy != null) {
+                        graphicsProxy.release();
+                        graphicsProxy = null;
+                    }
+                    if (displayWindow != null) {
+                        displayWindow.release();
+                        displayWindow = null;
+                    }
+                    displayTexture = null;
+                }
+            });
             // 回退后加载层必须揭开——经典直出已经有画面（或至少要给用户可操作的
             // 界面），不能停在永久 LOADING，更不能钉死不可关闭的「启动失败」面板。
             revealStartupOverlay();
@@ -1264,27 +1291,41 @@ public class ONScripter extends SDLActivity implements OnsSurface.SurfaceProvide
         if (vp == null || vp.width <= 0 || vp.height <= 0) {
             // 视口未就绪（首帧前 / 重建窗口）时不能把整段手势静默放过：
             // ① 新 DOWN 记为黑边起手，避免中途视口就绪后收到无 DOWN 的 MOVE/UP；
-            // ② 若之前已在视口内按下（拖拽中途窗口重挂导致视口短暂为空），收到 UP/CANCEL
-            //    必须向 SDL 补发抬起，避免按键或触点永久粘滞。
+            // ② 若之前已有已登记触点/鼠标按下（拖拽中途窗口重挂导致视口短暂为空），收到
+            //    UP/CANCEL 必须按各自最后坐标向 SDL 补发抬起，避免按键或触点永久粘滞。
             if (actionMasked == MotionEvent.ACTION_DOWN) {
                 filterTouchOutsideStage = true;
-                filterTouchActive = false;
+                filterTouchTracker.clear();
                 filterMouseActive = false;
             } else if (filterMouseActive
                     && (actionMasked == MotionEvent.ACTION_UP || actionMasked == MotionEvent.ACTION_CANCEL)) {
                 filterMouseActive = false;
                 filterTouchOutsideStage = false;
-                sendFilteredMouse(lastFilterMouseButton, MotionEvent.ACTION_UP, lastFilterMouseX, lastFilterMouseY);
-            } else if (filterTouchActive) {
+                sendFilteredMouse(0, MotionEvent.ACTION_UP, lastFilterMouseX, lastFilterMouseY);
+            } else if (filterTouchTracker.hasActivePointers()) {
                 if (actionMasked == MotionEvent.ACTION_UP || actionMasked == MotionEvent.ACTION_CANCEL) {
-                    filterTouchActive = false;
                     filterTouchOutsideStage = false;
                     for (int i = 0; i < pointerCount; i++) {
-                        sendSyntheticTouchUp(deviceId, motionEvent, i, MotionEvent.ACTION_UP);
+                        int pointerId = motionEvent.getPointerId(i);
+                        OnsTouchTracker.PointerState state = filterTouchTracker.onUp(deviceId, pointerId);
+                        if (state != null) {
+                            sendSyntheticTouchUp(deviceId, pointerId, MotionEvent.ACTION_UP, state.normX, state.normY);
+                        }
+                    }
+                    for (OnsTouchTracker.PointerState remaining : filterTouchTracker.drainAll()) {
+                        sendSyntheticTouchUp(remaining.deviceId, remaining.pointerId,
+                                MotionEvent.ACTION_UP, remaining.normX, remaining.normY);
                     }
                 } else if (actionMasked == MotionEvent.ACTION_POINTER_UP) {
                     int pointerIndex = motionEvent.getActionIndex();
-                    sendSyntheticTouchUp(deviceId, motionEvent, pointerIndex, MotionEvent.ACTION_POINTER_UP);
+                    if (pointerIndex >= 0 && pointerIndex < pointerCount) {
+                        int pointerId = motionEvent.getPointerId(pointerIndex);
+                        OnsTouchTracker.PointerState state = filterTouchTracker.onUp(deviceId, pointerId);
+                        if (state != null) {
+                            sendSyntheticTouchUp(deviceId, pointerId,
+                                    MotionEvent.ACTION_POINTER_UP, state.normX, state.normY);
+                        }
+                    }
                 }
             } else if (actionMasked == MotionEvent.ACTION_UP || actionMasked == MotionEvent.ACTION_CANCEL) {
                 filterTouchOutsideStage = false;
@@ -1309,16 +1350,14 @@ public class ONScripter extends SDLActivity implements OnsSurface.SurfaceProvide
             if (pointerCount <= 0) return true;
             float rawX = motionEvent.getX();
             float rawY = motionEvent.getY();
-            int buttonState = 1;
+            int buttonState = OnsInput.resolveMouseButtonState(actionMasked, 0);
             try {
-                int b = motionEvent.getButtonState();
-                if (b != 0) buttonState = b;
+                buttonState = OnsInput.resolveMouseButtonState(actionMasked, motionEvent.getButtonState());
             } catch (RuntimeException ignored) {}
             float stageX = (float) vp.sourceX(rawX);
             float stageY = (float) vp.sourceY(rawY);
             lastFilterMouseX = stageX;
             lastFilterMouseY = stageY;
-            lastFilterMouseButton = buttonState;
             if (actionMasked == MotionEvent.ACTION_DOWN) {
                 filterMouseActive = true;
             } else if (actionMasked == MotionEvent.ACTION_UP || actionMasked == MotionEvent.ACTION_CANCEL) {
@@ -1329,24 +1368,33 @@ public class ONScripter extends SDLActivity implements OnsSurface.SurfaceProvide
             return true;
         }
 
-        // 触控处理：将物理视图坐标归一化到等比视口 [0.0, 1.0] 并无状态派发给 SDL
-        if (actionMasked == MotionEvent.ACTION_DOWN) {
-            filterTouchActive = true;
-        } else if (actionMasked == MotionEvent.ACTION_UP || actionMasked == MotionEvent.ACTION_CANCEL) {
-            filterTouchActive = false;
-        }
-        if (actionMasked == MotionEvent.ACTION_DOWN || actionMasked == MotionEvent.ACTION_UP
-                || actionMasked == MotionEvent.ACTION_POINTER_DOWN || actionMasked == MotionEvent.ACTION_POINTER_UP) {
+        // 触控处理：仅对已实际派发 DOWN 的触点发送 MOVE/UP，并维护各触点各自最后坐标。
+        if (actionMasked == MotionEvent.ACTION_DOWN || actionMasked == MotionEvent.ACTION_POINTER_DOWN) {
             int pointerIndex = motionEvent.getActionIndex();
             if (pointerIndex < 0 || pointerIndex >= pointerCount) return true;
-            sendFilteredTouch(deviceId, motionEvent, pointerIndex, actionMasked, vp);
+            dispatchTrackedDown(deviceId, motionEvent, pointerIndex, actionMasked, vp);
+        } else if (actionMasked == MotionEvent.ACTION_UP || actionMasked == MotionEvent.ACTION_POINTER_UP) {
+            int pointerIndex = motionEvent.getActionIndex();
+            if (pointerIndex >= 0 && pointerIndex < pointerCount) {
+                dispatchTrackedUp(deviceId, motionEvent, pointerIndex, actionMasked, vp);
+            }
+            if (actionMasked == MotionEvent.ACTION_UP) {
+                for (OnsTouchTracker.PointerState remaining : filterTouchTracker.drainAll()) {
+                    sendSyntheticTouchUp(remaining.deviceId, remaining.pointerId,
+                            MotionEvent.ACTION_UP, remaining.normX, remaining.normY);
+                }
+            }
         } else if (actionMasked == MotionEvent.ACTION_MOVE) {
             for (int i = 0; i < pointerCount; i++) {
-                sendFilteredTouch(deviceId, motionEvent, i, actionMasked, vp);
+                dispatchTrackedMove(deviceId, motionEvent, i, vp);
             }
         } else if (actionMasked == MotionEvent.ACTION_CANCEL) {
             for (int i = 0; i < pointerCount; i++) {
-                sendFilteredTouch(deviceId, motionEvent, i, MotionEvent.ACTION_UP, vp);
+                dispatchTrackedUp(deviceId, motionEvent, i, MotionEvent.ACTION_UP, vp);
+            }
+            for (OnsTouchTracker.PointerState remaining : filterTouchTracker.drainAll()) {
+                sendSyntheticTouchUp(remaining.deviceId, remaining.pointerId,
+                        MotionEvent.ACTION_UP, remaining.normX, remaining.normY);
             }
         }
         return true;
@@ -1384,46 +1432,64 @@ public class ONScripter extends SDLActivity implements OnsSurface.SurfaceProvide
         }
     }
 
-    private void sendSyntheticTouchUp(int deviceId, MotionEvent event, int pointerIndex, int action) {
+    private void sendSyntheticTouchUp(int deviceId, int pointerId, int action, float normX, float normY) {
         try {
-            if (event == null || pointerIndex < 0 || pointerIndex >= event.getPointerCount()) return;
-            SDLActivity.onNativeTouch(
-                    deviceId,
-                    event.getPointerId(pointerIndex),
-                    action,
-                    lastFilterTouchNormX,
-                    lastFilterTouchNormY,
-                    0.0f
-            );
+            SDLActivity.onNativeTouch(deviceId, pointerId, action, normX, normY, 0.0f);
         } catch (RuntimeException | LinkageError | OutOfMemoryError t) {
             Log.w(TAG, "drop invalid synthetic touch up", t);
         }
     }
 
-    private void sendFilteredTouch(int deviceId, MotionEvent event, int pointerIndex, int action, OnsViewport vp) {
+    private void dispatchTrackedDown(int deviceId, MotionEvent event, int pointerIndex, int action, OnsViewport vp) {
         try {
             if (event == null || pointerIndex < 0 || pointerIndex >= event.getPointerCount()) return;
-            float rawX = event.getX(pointerIndex);
-            float rawY = event.getY(pointerIndex);
-            float normX = OnsInput.normalizeX(vp, rawX);
-            float normY = OnsInput.normalizeY(vp, rawY);
-            lastFilterTouchNormX = normX;
-            lastFilterTouchNormY = normY;
-            float pressure = event.getPressure(pointerIndex);
-            if (!Float.isFinite(pressure)) pressure = 1.0f;
-            if (pressure > 1.0f) pressure = 1.0f;
-            if (pressure < 0.0f) pressure = 0.0f;
-            SDLActivity.onNativeTouch(
-                    deviceId,
-                    event.getPointerId(pointerIndex),
-                    action,
-                    normX,
-                    normY,
-                    pressure
-            );
+            int pointerId = event.getPointerId(pointerIndex);
+            float normX = OnsInput.normalizeX(vp, event.getX(pointerIndex));
+            float normY = OnsInput.normalizeY(vp, event.getY(pointerIndex));
+            filterTouchTracker.onDown(deviceId, pointerId, normX, normY);
+            sendFilteredTouch(deviceId, pointerId, action, normX, normY, clampPressure(event.getPressure(pointerIndex)));
         } catch (RuntimeException | LinkageError | OutOfMemoryError t) {
-            Log.w(TAG, "drop invalid filtered touch event", t);
+            Log.w(TAG, "drop invalid filtered touch down", t);
         }
+    }
+
+    private void dispatchTrackedMove(int deviceId, MotionEvent event, int pointerIndex, OnsViewport vp) {
+        try {
+            if (event == null || pointerIndex < 0 || pointerIndex >= event.getPointerCount()) return;
+            int pointerId = event.getPointerId(pointerIndex);
+            float normX = OnsInput.normalizeX(vp, event.getX(pointerIndex));
+            float normY = OnsInput.normalizeY(vp, event.getY(pointerIndex));
+            if (!filterTouchTracker.onMove(deviceId, pointerId, normX, normY)) return;
+            sendFilteredTouch(deviceId, pointerId, MotionEvent.ACTION_MOVE, normX, normY,
+                    clampPressure(event.getPressure(pointerIndex)));
+        } catch (RuntimeException | LinkageError | OutOfMemoryError t) {
+            Log.w(TAG, "drop invalid filtered touch move", t);
+        }
+    }
+
+    private void dispatchTrackedUp(int deviceId, MotionEvent event, int pointerIndex, int action, OnsViewport vp) {
+        try {
+            if (event == null || pointerIndex < 0 || pointerIndex >= event.getPointerCount()) return;
+            int pointerId = event.getPointerId(pointerIndex);
+            float normX = OnsInput.normalizeX(vp, event.getX(pointerIndex));
+            float normY = OnsInput.normalizeY(vp, event.getY(pointerIndex));
+            if (filterTouchTracker.onUp(deviceId, pointerId, normX, normY) == null) return;
+            sendFilteredTouch(deviceId, pointerId, action, normX, normY,
+                    clampPressure(event.getPressure(pointerIndex)));
+        } catch (RuntimeException | LinkageError | OutOfMemoryError t) {
+            Log.w(TAG, "drop invalid filtered touch up", t);
+        }
+    }
+
+    private static float clampPressure(float pressure) {
+        if (!Float.isFinite(pressure)) return 1.0f;
+        if (pressure > 1.0f) return 1.0f;
+        if (pressure < 0.0f) return 0.0f;
+        return pressure;
+    }
+
+    private void sendFilteredTouch(int deviceId, int pointerId, int action, float normX, float normY, float pressure) {
+        SDLActivity.onNativeTouch(deviceId, pointerId, action, normX, normY, pressure);
     }
 
     /**

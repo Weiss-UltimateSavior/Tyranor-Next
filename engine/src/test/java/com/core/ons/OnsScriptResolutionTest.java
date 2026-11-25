@@ -59,6 +59,25 @@ public final class OnsScriptResolutionTest {
         assertNull(resDefault);
     }
 
+    /** 仅首行脚本头 `;mode` 有效，正文里的 `;mode1920` 不得覆盖首行 `;mode800`，也不得触发误匹配。 */
+    @Test
+    public void testHeaderOnlyModeParsingIgnoresBodyAndPartialTokens() {
+        OnsScriptResolution headFirst = OnsScriptResolution.parseFromText(";mode800\n*define\n\";mode1920\"");
+        assertNotNull(headFirst);
+        assertEquals(800, headFirst.width);
+        assertEquals(600, headFirst.height);
+
+        OnsScriptResolution bodyOnly = OnsScriptResolution.parseFromText("*define\n\";mode1920\"");
+        assertNull(bodyOnly);
+
+        OnsScriptResolution combined = OnsScriptResolution.parseFromText("\ufeff;value2000,mode1024\r\n*define");
+        assertNotNull(combined);
+        assertEquals(1024, combined.width);
+        assertEquals(768, combined.height);
+
+        assertNull(OnsScriptResolution.parseFromText(";mode8000\n*define"));
+    }
+
     @Test
     public void testDetectFromPlainTextFile() throws Exception {
         File dir = tempFolder.newFolder("plain_game");

@@ -82,20 +82,47 @@ public final class OnsScriptResolution {
     static OnsScriptResolution parseFromText(String content) {
         if (content == null || content.isEmpty()) return null;
 
-        // ONScripter 的 `;mode###` 系列：数字即横向像素，纵向一般按 4:3 推出
-        //（`;mode1280` → 1280×960，`;mode960` → 960×720，`;mode640` → 640×480）。
-        // 例外是 `;mode1920`：ONS 脚本里对应 1920×1080（16:9），不套 4:3。
-        // 这里只是「native 尺寸尚未可取时」的兜底猜测（`provideProxySurface` 优先用
-        // `nativeGetWidth/Height`）；仓内没有 `;mode1280` 分辨率变化的设备或样本锚点，
-        // 若未来发现某脚本族另有约定，应以 native 回报为准并在此补充证据。
-        if (content.contains(";mode1920")) return new OnsScriptResolution(1920, 1080);
-        if (content.contains(";mode1280")) return new OnsScriptResolution(1280, 960);
-        if (content.contains(";mode1024")) return new OnsScriptResolution(1024, 768);
-        if (content.contains(";mode960")) return new OnsScriptResolution(960, 720);
-        if (content.contains(";mode800")) return new OnsScriptResolution(800, 600);
-        if (content.contains(";mode640")) return new OnsScriptResolution(640, 480);
-        if (content.contains(";mode400")) return new OnsScriptResolution(400, 300);
-
+        // ONScripter 只从脚本头首行的 `;mode###` 注释指令读取分辨率声明；
+        // 仅检查首行完整 token，避免正文字符串包含 `;mode1920` 等文本覆盖首行模式。
+        int start = 0;
+        if (content.startsWith("\ufeff")) {
+            start = 1;
+        } else if (content.startsWith("\u00ef\u00bb\u00bf")) {
+            start = 3;
+        }
+        int lineEnd = content.length();
+        for (int i = start; i < content.length(); i++) {
+            char ch = content.charAt(i);
+            if (ch == '\r' || ch == '\n') {
+                lineEnd = i;
+                break;
+            }
+        }
+        String firstLine = content.substring(start, lineEnd).trim().toLowerCase(Locale.ROOT);
+        if (!firstLine.startsWith(";")) {
+            return null;
+        }
+        String[] tokens = firstLine.substring(1).split("[,;\\s]+");
+        for (String rawToken : tokens) {
+            switch (rawToken) {
+                case "mode1920":
+                    return new OnsScriptResolution(1920, 1080);
+                case "mode1280":
+                    return new OnsScriptResolution(1280, 960);
+                case "mode1024":
+                    return new OnsScriptResolution(1024, 768);
+                case "mode960":
+                    return new OnsScriptResolution(960, 720);
+                case "mode800":
+                    return new OnsScriptResolution(800, 600);
+                case "mode640":
+                    return new OnsScriptResolution(640, 480);
+                case "mode400":
+                    return new OnsScriptResolution(400, 300);
+                default:
+                    break;
+            }
+        }
         return null;
     }
 }
