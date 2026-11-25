@@ -1838,6 +1838,49 @@ private fun rememberBackdropWashResult(
     return valid
 }
 
+private const val BACKDROP_STATIC_THRESHOLD = 0.002f
+
+internal enum class ShelfBackdropDrawMode {
+    BaseStatic,
+    NextStatic,
+    Blend,
+}
+
+internal data class ShelfBackdropBlendSample(
+    val mode: ShelfBackdropDrawMode,
+    val fraction: Float,
+)
+
+/** 计算背景色晕基准页索引，钳制在有效书籍范围内，避免负偏移落到 -1。 */
+internal fun shelfBackdropBaseIndex(position: Float, gameCount: Int): Int {
+    if (gameCount <= 0 || !position.isFinite()) return 0
+    return kotlin.math.floor(position).toInt().coerceIn(0, gameCount - 1)
+}
+
+/** 根据「与本轮已解析色晕绑定的基准页 [composedBase]」计算混合比例，避免跨整页瞬间读写脱节。 */
+internal fun shelfBackdropFraction(
+    position: Float,
+    composedBase: Int,
+    hasNext: Boolean,
+): Float {
+    if (!hasNext || !position.isFinite()) return 0f
+    return (position - composedBase).coerceIn(0f, 1f)
+}
+
+internal fun shelfBackdropBlendSample(
+    position: Float,
+    composedBase: Int,
+    hasNext: Boolean,
+): ShelfBackdropBlendSample {
+    val fraction = shelfBackdropFraction(position, composedBase, hasNext)
+    val mode = when {
+        !hasNext || fraction <= BACKDROP_STATIC_THRESHOLD -> ShelfBackdropDrawMode.BaseStatic
+        fraction >= 1f - BACKDROP_STATIC_THRESHOLD -> ShelfBackdropDrawMode.NextStatic
+        else -> ShelfBackdropDrawMode.Blend
+    }
+    return ShelfBackdropBlendSample(mode = mode, fraction = fraction)
+}
+
 /**
  * 背景色晕：当前游戏封面的柔焦大图铺满书架区，上下淡出到页面背景。
  *
@@ -1853,29 +1896,36 @@ private fun ShelfBackdrop(
     modifier: Modifier = Modifier,
 ) {
     val alpha = ShelfBackdropAlpha
+    val gameCount = games.size
     // 只在跨过整本时重组（换一对相邻的色晕）；混合比例在绘制/图层阶段读取，滑动途中不重组
-    val base by remember(pagerState) { derivedStateOf { kotlin.math.floor(pagerState.pagePosition()).toInt() } }
+    val baseState = remember(pagerState, gameCount) {
+        derivedStateOf { shelfBackdropBaseIndex(pagerState.pagePosition(), gameCount) }
+    }
+    // 必须按值快照到本次组合的 Int，不能把 State 委托直接捕获进 draw/layer 闭包：
+    // 否则布局阶段跨过整页但尚未重组的那一帧，base 会先跳 +1 而 baseBmp/nextBmp 还是旧一对，
+    // 算出的 fraction 骤降到 0，从而单帧闪回上一本封面色晕。
+    val base = baseState.value
     val baseGame = games.getOrNull(base)
     val nextGame = games.getOrNull(base + 1)
     val baseResolved = rememberBackdropWashResult(baseGame, tints)
     val nextResolved = rememberBackdropWashResult(nextGame, tints)
     val baseWash = baseResolved?.wash
     val nextWash = nextResolved?.wash
+    val ring = remember { BackdropRingBuffer(BACKDROP_WASH_WIDTH, BACKDROP_MASK_HEIGHT) }
+    val maskAlpha = remember {
+        IntArray(BACKDROP_MASK_HEIGHT) { y ->
+            val t = (y + 0.5f) / BACKDROP_MASK_HEIGHT
+            val a = when {
+                t <= 0.22f -> t / 0.22f
+                t <= 0.62f -> 1f
+                else -> (1f - t) / (1f - 0.62f)
+            }
+            (a.coerceIn(0f, 1f) * 255f).roundToInt()
+        }
+    }
     if (baseWash != null && (nextGame == null || nextWash != null)) {
         val baseBmp = baseWash.asAndroidBitmap()
         val nextBmp = nextWash?.asAndroidBitmap()
-        val ring = remember { BackdropRingBuffer(BACKDROP_WASH_WIDTH, BACKDROP_MASK_HEIGHT) }
-        val maskAlpha = remember {
-            IntArray(BACKDROP_MASK_HEIGHT) { y ->
-                val t = (y + 0.5f) / BACKDROP_MASK_HEIGHT
-                val a = when {
-                    t <= 0.22f -> t / 0.22f
-                    t <= 0.62f -> 1f
-                    else -> (1f - t) / (1f - 0.62f)
-                }
-                (a.coerceIn(0f, 1f) * 255f).roundToInt()
-            }
-        }
         Spacer(
             modifier
                 .sinkBleedX()
@@ -1893,17 +1943,16 @@ private fun ShelfBackdrop(
                     }
                     onDrawBehind {
                         if (baseBmp.isRecycled) return@onDrawBehind
-                        val position = pagerState.pagePosition()
-                        val fraction = if (nextBmp != null && !nextBmp.isRecycled) {
-                            (position - base).coerceIn(0f, 1f)
-                        } else {
-                            0f
-                        }
-                        val drawBmp = if (fraction <= 0.002f || nextBmp == null || nextBmp.isRecycled || fraction >= 0.998f) {
-                            val activeBmp = if (fraction >= 0.998f && nextBmp != null && !nextBmp.isRecycled) nextBmp else baseBmp
-                            ring.staticBitmap(activeBmp, maskAlpha, width, height)
-                        } else {
-                            ring.blendedBitmap(baseBmp, nextBmp, fraction, maskAlpha, width, height)
+                        val validNext = nextBmp?.takeUnless { it.isRecycled }
+                        val sample = shelfBackdropBlendSample(
+                            position = pagerState.pagePosition(),
+                            composedBase = base,
+                            hasNext = validNext != null,
+                        )
+                        val drawBmp = when (sample.mode) {
+                            ShelfBackdropDrawMode.BaseStatic -> ring.staticBitmap(baseBmp, maskAlpha, width, height)
+                            ShelfBackdropDrawMode.NextStatic -> ring.staticBitmap(validNext ?: baseBmp, maskAlpha, width, height)
+                            ShelfBackdropDrawMode.Blend -> ring.blendedBitmap(baseBmp, validNext ?: baseBmp, sample.fraction, maskAlpha, width, height)
                         }
                         drawContext.canvas.nativeCanvas.drawBitmap(drawBmp, null, dstRect, paint)
                     }
@@ -1950,8 +1999,11 @@ private fun ShelfBackdrop(
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            val position = pagerState.pagePosition()
-                            this.alpha = (1f - ((base + 1) - position)).coerceIn(0f, 1f)
+                            this.alpha = shelfBackdropFraction(
+                                position = pagerState.pagePosition(),
+                                composedBase = base,
+                                hasNext = true,
+                            )
                         },
                 )
             }
