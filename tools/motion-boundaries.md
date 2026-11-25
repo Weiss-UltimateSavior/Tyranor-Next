@@ -16,7 +16,7 @@ python3 -B tools/check-motion-boundaries.py
 
 列表规则覆盖 `app/src/main/{java,kotlin}/**/*.kt`，包括已登记的效果实现；由 `ui/common/motion/ListItemMotion.kt` 独占原始条目动画和变体配置。业务页面规则覆盖这两个源码根中 `com/tyranor/next/ui/` 下的 Kotlin 文件及 `MainActivity.kt`。动效实现文件在脚本的 `OWNERS` 中按完整相对路径登记；放进 `common/motion`、文件起名叫 `*Motion.kt` 都不会自动放行。
 
-维护时先找已有 owner。例如归档普通档沿用的 220ms 淡入淡出归 `archivePaneTransition`，引擎的存储环归 `rememberStorageSweep`。若确实需要独立实现，登记实现文件，不登记调用它的业务页面。仍留在宿主的调用由 `EXISTING` 按**文件、函数、底层符号、最多次数**放行：目前只有 `MainScreen` 内一次 `updateTransition`，给增强档和普通档共享切页时钟。迁走时应删除该条目；引导退场已由 `CoachOverlayVisibility` 接管，因此 `MainActivity` 没有豁免。
+维护时先找已有 owner。例如归档沿用的 220ms 淡入淡出归 `archivePaneTransition`，引擎的存储环归 `rememberStorageSweep`。若确实需要独立实现，登记实现文件，不登记调用它的业务页面。仍留在宿主的调用由 `EXISTING` 按**文件、函数、底层符号、最多次数**放行：目前只有 `MainScreen` 内一次 `updateTransition`，给增强档和普通档共享切页时钟。迁走时应删除该条目；引导退场已由 `CoachOverlayVisibility` 接管，因此 `MainActivity` 没有豁免。
 
 保护的导航实现按文件完整路径排除。`MainScreen.kt` 中仅 `DefaultBottomNavigationBar` 的函数体排除，同文件后面的新增函数仍受检。这个门禁并不验证保护区内容是否被修改。
 

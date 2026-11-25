@@ -61,43 +61,4 @@ class MotionDialogDeviceTest {
         compose.mainClock.autoAdvance = true
     }
 
-    /** Checks platform animation restoration and explicit dim/touch cleanup on the real dialog window. */
-    @Test
-    fun ordinaryWindowAnimationCanBePreservedWithoutRetainingExitDimOrTouch() {
-        MotionDeviceAcceptance.require()
-        var preserve by mutableStateOf(true)
-        var window: Window? = null
-        compose.setContent {
-            Dialog(onDismissRequest = {}) {
-                val platformWindow = (LocalView.current.parent as DialogWindowProvider).window
-                remember(platformWindow) {
-                    // A real platform dialog animation style, independent of the device theme default.
-                    platformWindow.setWindowAnimations(android.R.style.Animation_Dialog)
-                    platformWindow.setDimAmount(0.32f)
-                    true
-                }
-                val synced = syncDialogWindow(preserveWindowAnimations = preserve) { 1f }
-                SideEffect { window = synced }
-                Text("Dialog")
-            }
-        }
-        compose.runOnIdle {
-            assertEquals(android.R.style.Animation_Dialog, window!!.attributes.windowAnimations)
-            assertEquals(0.32f, window!!.attributes.dimAmount, 0.001f)
-            preserve = false
-        }
-        compose.runOnIdle {
-            assertEquals(0, window!!.attributes.windowAnimations)
-            preserve = true
-        }
-        compose.runOnIdle {
-            assertEquals(android.R.style.Animation_Dialog, window!!.attributes.windowAnimations)
-            assertEquals("Mode changes must retain the original full dim", 0.32f, window!!.attributes.dimAmount, 0.001f)
-            window.passThroughTouches()
-            window!!.setDimAmount(0f)
-            assertTrue(window!!.attributes.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE != 0)
-            assertEquals(0f, window!!.attributes.dimAmount)
-        }
-    }
-
 }

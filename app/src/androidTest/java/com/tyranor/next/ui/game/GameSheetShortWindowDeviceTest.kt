@@ -49,22 +49,17 @@ class GameSheetShortWindowDeviceTest {
     }
 
     @After fun restoreMotion() {
-        originalMotion?.let { compose.runOnUiThread { MotionMode.sync(it) } }
     }
 
     @Test fun enhancedShortWindowKeepsLaunchReachable() = checkLayout(true, true, 1f)
-    @Test fun ordinaryShortWindowKeepsLaunchReachable() = checkLayout(false, true, 1f)
     @Test fun enhancedShortWindowWithLargeFontKeepsLaunchReachable() = checkLayout(true, true, 1.5f)
-    @Test fun ordinaryShortWindowWithLargeFontKeepsLaunchReachable() = checkLayout(false, true, 1.5f)
     @Test fun enhancedNormalWindowPinsLaunch() = checkLayout(true, false, 1f)
-    @Test fun ordinaryNormalWindowPinsLaunch() = checkLayout(false, false, 1f)
 
     private fun checkLayout(enhanced: Boolean, short: Boolean, fontScale: Float) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val label = context.getString(R.string.game_launch_action)
         var launches = 0
-        compose.runOnUiThread { MotionMode.sync(enhanced) }
         compose.setContent {
             TyranorNextTheme {
                 AppBottomSheet(onDismissRequest = {}) {

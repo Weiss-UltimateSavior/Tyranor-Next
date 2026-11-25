@@ -574,27 +574,15 @@ private fun LayerParams.depthFold(p: Float, axis: FoldAxis, density: Float) {
  */
 @Composable
 fun ProvideMotionEnvironment(content: @Composable () -> Unit) {
-    val context = LocalContext.current
-    // 首帧前同步读取动效档位，避免「普通」档用户启动时先闪一帧增强动效
-    val motionState = remember(context) {
-        AppSettingsStore.initMotionEnhanced(context)
-        AppSettingsStore.motionEnhancedState
-    }
-    val enhanced by motionState.collectAsState()
-    MotionMode.sync(enhanced)
-    if (enhanced) {
-        // 翻折景深的褪色效果表提前建好，不落在第一次抽屉 / 弹窗升起的那一帧里
-        LaunchedEffect(Unit) { prewarmDepthEffects() }
-    }
+    // 翻折景深的褪色效果表提前建好，不落在第一次抽屉 / 弹窗升起的那一帧里
+    LaunchedEffect(Unit) { prewarmDepthEffects() }
     // 触觉门面绑定到本页的触觉宿主（见 MotionHaptics）
     val haptic = LocalHapticFeedback.current
     DisposableEffect(haptic) {
         MotionHaptics.bind(haptic)
         onDispose { MotionHaptics.unbind(haptic) }
     }
-    // 「普通」档保持系统默认的越界效果；始终保留同一个 Provider，切换档位不重建页面
-    val overscroll = if (enhanced) MiuixOverscrollFactory else LocalOverscrollFactory.current
-    CompositionLocalProvider(LocalOverscrollFactory provides overscroll) {
+    CompositionLocalProvider(LocalOverscrollFactory provides MiuixOverscrollFactory) {
         // 主题揭开宿主：切换深浅色 / 外观主题时的整屏过渡（见 ThemeReveal.kt）；不改布局
         // 提示条槽位（页面根）：与主题揭开宿主叠放，提示条只在自己的矩形内拦截触摸
         val rotation = remember { ScreenRotationState() }

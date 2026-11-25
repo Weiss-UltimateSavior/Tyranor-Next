@@ -191,8 +191,6 @@ abstract class AppScreenActivity : FragmentActivity() {
         systemThemeSync = SystemThemeSync(this)
         screenRotationSync = ScreenRotationSync(this)
         // 子类可能因参数无效而在 setContent 前 finish；返回动画同样必须使用持久化档位。
-        AppSettingsStore.initMotionEnhanced(this)
-        MotionMode.sync(AppSettingsStore.motionEnhancedState.value)
         syncCloseTransition(MotionMode.enhanced)
         PageTransitions.bindPushOwner(this)
         // 先于子类添加：子类里后加的返回处理（弹窗、未保存确认等）优先级更高，不受影响

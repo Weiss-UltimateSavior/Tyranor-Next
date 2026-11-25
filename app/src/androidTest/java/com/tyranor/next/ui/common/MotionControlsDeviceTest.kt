@@ -69,7 +69,6 @@ class MotionControlsDeviceTest {
             assertEquals(1, completions)
         }
         compose.runOnIdle {
-            MotionMode.sync(false)
             value = 2f
             saved = 2f
             completions = 0
@@ -101,30 +100,6 @@ class MotionControlsDeviceTest {
         compose.mainClock.autoAdvance = false
         compose.runOnIdle { progress = 0.85f }
         // 每个 16ms 动画帧都比对新旧实现，覆盖起步、运动、尾段和停稳，不只比较最终状态。
-        repeat(64) {
-            compose.mainClock.advanceTimeByFrame()
-            assertSamePixels("motionProgress", "libraryProgress")
-        }
-        compose.mainClock.autoAdvance = true
-    }
-
-    /** Compares ordinary progress frames with the original unanimated Miuix indicator. */
-    @Test
-    fun ordinaryProgressFramesMatchUnanimatedMiuixRendering() {
-        MotionDeviceAcceptance.require()
-        InstrumentationRegistry.getInstrumentation().runOnMainSync { MotionMode.sync(false) }
-        var progress by mutableFloatStateOf(0.35f)
-        compose.setContent {
-            MiuixSettingsTheme {
-                Column(Modifier.width(240.dp).testTag("progressComparison")) {
-                    MotionLinearProgressIndicator(progress, Modifier.testTag("motionProgress"))
-                    LinearProgressIndicator(progress = progress, modifier = Modifier.testTag("libraryProgress"))
-                }
-            }
-        }
-        assertSamePixels("motionProgress", "libraryProgress")
-        compose.mainClock.autoAdvance = false
-        compose.runOnIdle { progress = 0.85f }
         repeat(64) {
             compose.mainClock.advanceTimeByFrame()
             assertSamePixels("motionProgress", "libraryProgress")

@@ -22,7 +22,6 @@ object LaunchContract {
     const val GAMES_TITLE = "games_title"
     const val GAME_COVER_URI = "gameCoverUri"
     const val STARTUP_APP_ICON = "startupAppIcon"
-    const val STARTUP_ENHANCED_MOTION = "startupEnhancedMotion"
     /** Stable identifier shared by activities belonging to one game launch for playtime attribution. */
     const val PLAYTIME_SESSION_ID = "playtimeSessionId"
     /** Monotonic launch ordering timestamp shared by activities in a playtime session. */

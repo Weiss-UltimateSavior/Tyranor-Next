@@ -50,12 +50,10 @@ class NoticeMotionDeviceTest {
         MotionDeviceAcceptance.require(enhanced = null)
         compose.runOnUiThread {
             previousMode = MotionMode.enhanced
-            MotionMode.sync(true)
         }
     }
 
     @After fun restoreMode() {
-        previousMode?.let { compose.runOnUiThread { MotionMode.sync(it) } }
     }
 
     @Test fun releasingPointerHeldOnADoesNotDismissBButFreshTapDoes() {
