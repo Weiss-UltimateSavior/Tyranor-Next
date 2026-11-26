@@ -183,7 +183,11 @@ private fun RuntimeSettingContent(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(item.title, modifier = Modifier.weight(1f), style = titleTextStyle, color = TextColor)
-                    Text(formatSliderValue(current), style = valueTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        formatRuntimeModuleSliderValue(item, current),
+                        style = valueTextStyle,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 MotionSlider(
                     value = if (intervalCount == null) current.toFloat() else runtimeModuleSliderIndex(item, current).toFloat(),
@@ -241,8 +245,21 @@ internal fun runtimeModuleSliderValueAtIndex(item: RuntimeModuleSettingItemSpec,
     val max = checkNotNull(item.sliderMax)
     val step = checkNotNull(item.sliderStep)
     val intervalCount = checkNotNull(runtimeModuleSliderIntervalCount(item))
-    val value = min + index.coerceIn(0, intervalCount).toDouble() * step
-    return BigDecimal.valueOf(value.coerceIn(min, max)).stripTrailingZeros().toDouble()
+    val minDecimal = BigDecimal.valueOf(min)
+    val maxDecimal = BigDecimal.valueOf(max)
+    val value = minDecimal.add(
+        BigDecimal.valueOf(step).multiply(BigDecimal.valueOf(index.coerceIn(0, intervalCount).toLong())),
+    )
+    return value.max(minDecimal).min(maxDecimal).stripTrailingZeros().toDouble()
+}
+
+internal fun formatRuntimeModuleSliderValue(item: RuntimeModuleSettingItemSpec, value: Double): String {
+    val displayValue = if (item.sliderStep != null) {
+        runtimeModuleSliderValueAtIndex(item, runtimeModuleSliderIndex(item, value))
+    } else {
+        value
+    }
+    return BigDecimal.valueOf(displayValue).stripTrailingZeros().toPlainString()
 }
 
 private fun normalizeSliderValue(item: RuntimeModuleSettingItemSpec, raw: Double): Double {
@@ -250,8 +267,7 @@ private fun normalizeSliderValue(item: RuntimeModuleSettingItemSpec, raw: Double
     val max = checkNotNull(item.sliderMax)
     val constrained = raw.coerceIn(min, max)
     val step = item.sliderStep ?: return BigDecimal.valueOf(constrained).stripTrailingZeros().toDouble()
-    val quantized = min + round((constrained - min) / step) * step
-    return BigDecimal.valueOf(quantized.coerceIn(min, max)).stripTrailingZeros().toDouble()
+    val intervalCount = checkNotNull(runtimeModuleSliderIntervalCount(item))
+    val index = round((constrained - min) / step).toInt().coerceIn(0, intervalCount)
+    return runtimeModuleSliderValueAtIndex(item, index)
 }
-
-private fun formatSliderValue(value: Double): String = BigDecimal.valueOf(value).stripTrailingZeros().toPlainString()
