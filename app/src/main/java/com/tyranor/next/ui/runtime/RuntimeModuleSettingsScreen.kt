@@ -425,21 +425,6 @@ private fun RuntimeModuleSettingsView(
                 }
             }
             if (settings != null && !descriptionConflict) {
-                if (settings.items.isNotEmpty()) item(key = "runtime_settings_restore_all_defaults") {
-                    val restoreEnabled = bindingValid && descriptorConfirmed && !loadError
-                    AppSectionCard(
-                        modifier = Modifier.then(listItemMotion()).pressSquishGroup(),
-                    ) {
-                        AppNavItem(
-                            title = stringResource(R.string.runtime_settings_restore_all_title),
-                            titleTextStyle = MaterialTheme.typography.titleMedium,
-                            drawSurface = false,
-                            showLeadingIcon = false,
-                            showArrow = true,
-                            onClick = if (restoreEnabled) ({ showRestoreDefaultsDialog = true }) else null,
-                        )
-                    }
-                }
                 if (settings.items.isNotEmpty() && effectiveSettings?.invalidOverrideKeys?.isNotEmpty() == true) item {
                     Column(Modifier.then(listItemMotion())) {
                         StatusCard(stringResource(R.string.runtime_settings_invalid_overrides))
@@ -494,6 +479,23 @@ private fun RuntimeModuleSettingsView(
                             showLeadingIcon = false,
                             showArrow = false,
                             onClick = if (enabled) ({ pickFiles(item) }) else null,
+                        )
+                    }
+                }
+            }
+            if (settings?.items?.isNotEmpty() == true && !descriptionConflict) {
+                item(key = "runtime_settings_restore_all_defaults") {
+                    val restoreEnabled = bindingValid && descriptorConfirmed && !loadError
+                    AppSectionCard(
+                        modifier = Modifier.then(listItemMotion()).pressSquishGroup(),
+                    ) {
+                        AppNavItem(
+                            title = stringResource(R.string.runtime_settings_restore_all_title),
+                            titleTextStyle = MaterialTheme.typography.titleMedium,
+                            drawSurface = false,
+                            showLeadingIcon = false,
+                            showArrow = true,
+                            onClick = if (restoreEnabled) ({ showRestoreDefaultsDialog = true }) else null,
                         )
                     }
                 }
