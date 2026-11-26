@@ -426,6 +426,10 @@ object GameLibraryRepository {
         writeMutex.withLock { }
     }
 
+    /** Queue a deterministic checkpoint behind work already dispatched to the serial writer. */
+    @androidx.annotation.VisibleForTesting
+    internal suspend fun awaitWriteDispatcherTurnForTest() = withContext(writeDispatcher) { }
+
     /** 持久化写失败回调：缓存先行更新后落库失败会让内存缓存与 DB（事实源）分叉，
      *  注册方（GameLibraryFacade）借此丢弃内存缓存，下次读取回源 DB 自愈。 */
     @Volatile

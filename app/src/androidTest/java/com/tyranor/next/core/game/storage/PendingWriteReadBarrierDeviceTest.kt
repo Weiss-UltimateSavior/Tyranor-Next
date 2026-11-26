@@ -10,9 +10,8 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -41,9 +40,10 @@ class PendingWriteReadBarrierDeviceTest {
                 GameLibraryRepository.awaitPendingWrites()
                 persistedValue.get()
             }
-            assertNull(
+            GameLibraryRepository.awaitWriteDispatcherTurnForTest()
+            assertFalse(
                 "read passed the pending write before its commit finished",
-                withTimeoutOrNull(100) { read.await() },
+                read.isCompleted,
             )
 
             releaseCommit.complete(Unit)
