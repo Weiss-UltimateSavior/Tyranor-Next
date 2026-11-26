@@ -1280,7 +1280,12 @@ internal fun Modifier.shelfBookSpineFace(motion: ShelfBookMotion): Modifier = gr
  * 覆盖层自身底色为压暗色，进度只写进透明度。
  */
 internal fun Modifier.shelfBookFrontShade(motion: ShelfBookMotion, shade: Float): Modifier = graphicsLayer {
-    alpha = if (!motion.enhanced || motion.origin == null) 0f else (shade * motion.yaw() / HERO_YAW_DEGREES).coerceIn(0f, 1f)
+    // 正中那盒正对（HERO_YAW = 0）时起飞没有背光压暗；不能按 0 去除，否则 0/0 = NaN，压暗层会画成不透明纯黑
+    alpha = if (!motion.enhanced || motion.origin == null || abs(HERO_YAW_DEGREES) < 1e-3f) {
+        0f
+    } else {
+        (shade * motion.yaw() / HERO_YAW_DEGREES).coerceIn(0f, 1f)
+    }
 }
 
 /** 封面的两面：合成转角过 `-90°` 之前看到封面内侧，之后看到正面封面。 */

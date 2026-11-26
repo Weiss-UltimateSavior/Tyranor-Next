@@ -657,13 +657,13 @@ class ShelfCatalogLayoutTest {
         val sideScale = shelfPoseScale(2f) * sideTrait.sizeScale
         val rightBoxCenter = pagerZeroCenterX + rail.screenX(geometry.centerX(2f) + rowShiftPx)
         val leftBoxCenter = pagerZeroCenterX + rail.screenX(geometry.centerX(-2f) + rowShiftPx)
-        val expectedHalfVis = 0.5f * geometry.visibleWidth(Math.toRadians(86.0).toFloat()) * sideScale
+        val expectedHalfVis = 0.5f * geometry.visibleWidth(geometry.maxTurn) * sideScale
 
-        // 右侧书书脊在左（left = boxCenter - halfVis）、左侧书书脊在右（right = boxCenter + halfVis）
-        assertEquals(rightBoxCenter - expectedHalfVis, rightOrigin.spineRect.left, 0.5f)
-        assertEquals(leftBoxCenter + expectedHalfVis, leftOrigin.spineRect.right, 0.5f)
-        assertTrue(rightOrigin.yawDegrees > 80f)
-        assertTrue(leftOrigin.yawDegrees < -80f)
+        // 右侧书书脊在右（right = boxCenter + halfVis）、左侧书书脊在左（left = boxCenter - halfVis），内侧面向中心收拢
+        assertEquals(rightBoxCenter + expectedHalfVis, rightOrigin.spineRect.right, 0.5f)
+        assertEquals(leftBoxCenter - expectedHalfVis, leftOrigin.spineRect.left, 0.5f)
+        assertTrue(rightOrigin.yawDegrees < -80f)
+        assertTrue(leftOrigin.yawDegrees > 80f)
         assertEquals(floorY, rightOrigin.spineRect.bottom, 1e-2f)
         assertEquals(-1.3f, rightOrigin.leanDegrees, 1e-3f)
         assertEquals(geometry.faceShade(2f, spine = false), rightOrigin.frontShade, 1e-3f)
