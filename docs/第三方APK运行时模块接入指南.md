@@ -427,9 +427,19 @@ Intent("com.tyranor.runtime.action.LAUNCH").apply {
   "settings": {
     "version": 1,
     "items": [
-      { "key": "vsync", "type": "boolean", "title": "VSync", "default": true },
+      {
+        "key": "display", "type": "card", "title": "Display",
+        "description": "Rendering options",
+        "items": [
+          { "key": "vsync", "type": "boolean", "title": "VSync", "default": true },
+          { "key": "render_scale", "type": "slider", "title": "Render scale",
+            "default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1 }
+        ]
+      },
       { "key": "renderer", "type": "enum", "title": "Renderer", "default": "auto",
         "options": [{ "value": "auto", "title": "Auto" }, { "value": "software", "title": "Software" }] },
+      { "key": "config_file", "type": "file", "title": "Configuration file", "default": "" },
+      { "key": "data_folder", "type": "folder", "title": "Data folder", "default": "" },
       { "key": "player_name", "type": "text", "title": "Player name", "default": "", "maxLength": 64 },
       { "key": "fps_limit", "type": "integer", "title": "FPS limit", "default": 60, "min": 30, "max": 120 }
     ]
@@ -437,23 +447,41 @@ Intent("com.tyranor.runtime.action.LAUNCH").apply {
 }
 ```
 
-主 App 在游戏抽屉显示「引擎设置」，按游戏 URI + 模块包名保存覆盖值。优先级为合法覆盖 → 模块默认值，没有模块全局配置。恢复默认先修改草稿，再保存；模块升级导致声明变化时保留未保存草稿供用户核对。
+主 App 在游戏抽屉显示「引擎设置」，按游戏 URI + 模块包名保存覆盖值。优先级为合法覆盖 → 模块默认值，没有模块全局配置。列表末尾由主 App 提供「恢复默认设置」行，确认后清除当前游戏的覆盖草稿，保存后生效；模块无需声明恢复按钮。模块升级导致声明变化时保留未保存草稿供用户核对。
 
 声明约束：
 
 - `version` 必须为整数 1；最多 32 项，key 为 `[A-Za-z][A-Za-z0-9_]{0,63}`，同名采用第一个合法项。
-- 每项必需 `title`（1–128）和合法的 `default`，可选 `description`（最多 512）。未知类型或非法默认值丢弃该项。
-- 布尔必须是 JSON 布尔；枚举最多 32 个选项，value 长度 1–64 且唯一，default 须在选项中。
+- 顶层 `items` 可混合设置项与 `type: "card"` 容器；卡片使用 `key`、`title`、可选 `description` 和子 `items`。卡片不嵌套，最多 16 张；设置项总数（含卡片内子项）最多 32。旧版平铺 `items` 仍可用。
+- 每个设置项必需 `title`（1–128）和合法的 `default`，可选 `description`（最多 512）。TYN 自动统一设置项与卡片标题（15sp）、说明与值（14sp）的排版，模块声明不包含字体或字号字段。
+- 布尔必须是 JSON 布尔，`default: false` 表示开关默认关闭；枚举最多 32 个选项，value 长度 1–64 且唯一，default 须在选项中。
 - 整数须声明 Int 范围内的 min/max/default；不接受字符串或小数作整数。
+- `slider` 的 min/max/default 是有限数字，min 必须小于 max；可选 step 必须大于 0，且能整除范围，default 也须落在 step 上。范围必须适配 TYN 的 Float 滑条；声明 step 时，各刻度须能被滑条区分，default 须映射到对应刻度，否则该项会被丢弃。配置值仍以 JSON 数字传递。
+- `file` / `folder` 的 default 是空字符串或绝对文件路径；选择器只接受 TYN 能映射为本地路径的 SAF 文件/目录，最大路径长度默认 1024，可用 `maxLength` 调整到 1–4096。主 App 不传 SAF URI 授权，模块仍须自行具备访问该路径的存储权限；不能映射为本地路径的云盘等 provider 不可用。
 - 文本为单行合法 Unicode，maxLength 为 1–1024，缺省 256；保留首尾空格，拒绝 C0/C1、U+2028/U+2029 和孤立代理项。长度以 UTF-16 code unit 计算。
 - 配置 JSON 上限 48 KiB；解析时按各项允许值的序列化上界累计预算，超限关闭设置能力，不影响合法 scan/saves。描述文件整体仍受 64 KiB 限制。
-- 设置文案直接使用模块声明字符串，主 App 的固定操作文案提供三语言。
+- 设置文案直接使用模块声明字符串，主 App 的固定操作文案提供三语言。字体排版由 TYN 负责，不进入模块协议或启动载荷。
 
-收到的 extra 是完整生效配置，保持原始 JSON 值类型，例如：
+收到的 extra 是完整生效配置。`values` 中的值按声明类型编码：`boolean` 为 JSON 布尔值，`enum` / `text` / `file` / `folder` 为 JSON 字符串，`integer` 为整数，`slider` 为 JSON 数字（可为整数或小数）；TYN 不会把它们统一转成字符串。例如：
 
 ```json
-{ "version": 1, "values": { "vsync": false, "renderer": "auto", "player_name": "", "fps_limit": 90 } }
+{
+  "version": 1,
+  "values": {
+    "vsync": false,
+    "render_scale": 1.0,
+    "renderer": "auto",
+    "config_file": "",
+    "data_folder": "",
+    "player_name": "",
+    "fps_limit": 90
+  }
+}
 ```
+
+卡片标题和说明只用于 TYN 设置页，不会出现在启动载荷中；卡片内的字段仍按 key 平铺。`file` / `folder` 的值是绝对路径字符串，`slider` 的值是数字。
+
+模块读取新值时仍从同一个 `values` 对象按原始 JSON 类型取值，例如 `optDouble("render_scale", 1.0)`、`optString("config_file", "")`。路径选择只保存路径，不会把 SAF URI 授权转交给模块。
 
 接收示意：
 
@@ -485,7 +513,7 @@ val vsync = values?.opt("vsync") as? Boolean ?: true
 - 云端引擎命名空间按模块包名隔离，同名游戏仍沿用现有云端标识冲突处理。存档目录声明变化不自动迁移，不直接把旧版本还原到新位置。
 - scan/settings/saves 各自容错；非法 saves 只关闭存档能力，整个 JSON 无效才同时失效。未声明有效 saves 的旧模块保持原行为。
 
-可运行的四类设置与存档示例见 [tools/runtime-module-example](../tools/runtime-module-example/README.md)，不加入主 App 构建。真实模块需自行验收参数效果和存档格式兼容性。
+可运行的基础设置与存档示例见 [tools/runtime-module-example](../tools/runtime-module-example/README.md)，不加入主 App 构建。真实模块需自行验收参数效果和存档格式兼容性。
 
 ## 12. 游戏目录内文件导入（可选）
 

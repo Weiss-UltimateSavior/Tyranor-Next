@@ -27,6 +27,87 @@ class RuntimeModuleCapabilitiesTest {
     }
 
     @Test
+    fun cardsAndNewSettingTypesEncodeAsFlatV1Values() {
+        val spec = requireNotNull(RuntimeModuleManifestParser.parse(
+            """{"settings":{"version":1,"items":[
+                {"key":"display","type":"card","title":"Display","description":"Rendering","items":[
+                  {"key":"scale","type":"slider","title":"Scale","default":1.0,"min":0.5,"max":2.0,"step":0.1},
+                  {"key":"config","type":"file","title":"Config","default":""},
+                  {"key":"assets","type":"folder","title":"Assets","default":""}
+                ]},
+                {"key":"fps","type":"integer","title":"FPS","default":60,"min":30,"max":120}
+            ]}}""",
+        )?.settings)
+
+        assertEquals(4, spec.items.size)
+        assertEquals(2, spec.entries.size)
+        assertTrue(spec.entries.first() is RuntimeModuleSettingsEntry.Card)
+        assertEquals(
+            listOf(
+                RuntimeModuleSettingItemSpec.Type.SLIDER,
+                RuntimeModuleSettingItemSpec.Type.FILE,
+                RuntimeModuleSettingItemSpec.Type.FOLDER,
+                RuntimeModuleSettingItemSpec.Type.INTEGER,
+            ),
+            spec.items.map { it.type },
+        )
+
+        val effective = spec.resolve(
+            JSONObject()
+                .put("scale", 1.5)
+                .put("config", "/storage/emulated/0/game/config.ini")
+                .put("assets", "/storage/emulated/0/game/assets")
+                .put("fps", 90),
+        )
+        val payload = JSONObject(requireNotNull(spec.encode(effective)))
+        val values = payload.getJSONObject("values")
+
+        assertEquals(1, payload.getInt("version"))
+        assertEquals(4, values.length())
+        assertEquals(1.5, values.getDouble("scale"), 0.000001)
+        assertEquals("/storage/emulated/0/game/config.ini", values.getString("config"))
+        assertEquals("/storage/emulated/0/game/assets", values.getString("assets"))
+        assertEquals(90, values.getInt("fps"))
+        assertFalse(values.has("display"))
+    }
+
+    @Test
+    fun sliderAndPathValuesEnforceDeclaredConstraints() {
+        val spec = requireNotNull(RuntimeModuleManifestParser.parse(
+            """{"settings":{"version":1,"items":[
+                {"key":"scale","type":"slider","title":"Scale","default":1.0,"min":0.5,"max":2.0,"step":0.1},
+                {"key":"config","type":"file","title":"Config","default":""},
+                {"key":"assets","type":"folder","title":"Assets","default":""}
+            ]}}""",
+        )?.settings)
+        val scale = spec.items.first { it.key == "scale" }
+        val file = spec.items.first { it.key == "config" }
+        val folder = spec.items.first { it.key == "assets" }
+
+        assertTrue(RuntimeModuleSettingsParser.isValidValue(scale, 1.5))
+        assertFalse(RuntimeModuleSettingsParser.isValidValue(scale, 1.55))
+        assertFalse(RuntimeModuleSettingsParser.isValidValue(scale, 2.1))
+        assertTrue(RuntimeModuleSettingsParser.isValidValue(file, "/storage/emulated/0/game.ini"))
+        assertFalse(RuntimeModuleSettingsParser.isValidValue(file, "content://provider/document/1"))
+        assertFalse(RuntimeModuleSettingsParser.isValidValue(file, "/storage/emulated/0/../private.ini"))
+        assertTrue(RuntimeModuleSettingsParser.isValidValue(folder, "/storage/emulated/0/assets"))
+        assertFalse(RuntimeModuleSettingsParser.isValidValue(folder, "relative/assets"))
+    }
+
+    @Test
+    fun invalidSliderAndPathDeclarationsAreRejected() {
+        assertNull(RuntimeModuleSettingsParser.parseItem(JSONObject(
+            """{"key":"scale","type":"slider","title":"Scale","default":1.05,"min":0.5,"max":2.0,"step":0.1}""",
+        )))
+        assertNull(RuntimeModuleSettingsParser.parseItem(JSONObject(
+            """{"key":"config","type":"file","title":"Config","default":"content://provider/document/1"}""",
+        )))
+        assertNull(RuntimeModuleSettingsParser.parseItem(JSONObject(
+            """{"key":"assets","type":"folder","title":"Assets","default":"/storage/emulated/0/../private"}""",
+        )))
+    }
+
+    @Test
     fun invalidCapabilitiesFailIndependently() {
         val manifest = requireNotNull(RuntimeModuleManifestParser.parse(
             """{"scan":{"markers":["game.dat"]},"settings":{"version":7,"items":[]},
@@ -87,6 +168,7 @@ class RuntimeModuleCapabilitiesTest {
         fun spec(default: Boolean) = RuntimeModuleManifestParser.parse(
             """{"settings":{"version":1,"items":[{"key":"flag","type":"boolean","title":"Flag","default":$default}]}}""",
         )!!.settings!!
+        assertEquals("aa606c11cacc0ea7522e29fdd4b43a4a19ea37306e2359d3db4e2e2195d58c10", spec(false).fingerprint)
         assertEquals(spec(false).fingerprint, spec(false).fingerprint)
         assertTrue(spec(false).fingerprint != spec(true).fingerprint)
     }

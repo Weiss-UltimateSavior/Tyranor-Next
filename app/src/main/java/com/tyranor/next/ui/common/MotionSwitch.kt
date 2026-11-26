@@ -49,6 +49,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.theme.BookSerif
 import com.tyranor.next.theme.BookSerifBold
@@ -114,6 +115,7 @@ fun SwitchPreference(
     insideMargin: PaddingValues = BasicComponentDefaults.InsideMargin,
     holdDownState: Boolean = false,
     enabled: Boolean = true,
+    titleTextStyle: TextStyle? = null,
     onLongClickLabel: String? = null,
     onLongClick: (() -> Unit)? = null,
 ) {
@@ -195,7 +197,7 @@ fun SwitchPreference(
         }
         return
     }
-    if (!MotionMode.enhanced && onLongClick == null) {
+    if (titleTextStyle == null && !MotionMode.enhanced && onLongClick == null) {
         MiuixSwitchPreference(
             checked = checked,
             onCheckedChange = onCheckedChange,
@@ -213,6 +215,7 @@ fun SwitchPreference(
         )
         return
     }
+
     val currentOnCheckedChange by rememberUpdatedState(onCheckedChange)
     val toggle = { currentOnCheckedChange(!checked) }
     // 行点击和长按由同一个手势入口裁决，长按成立后松手不会切换开关。
@@ -228,6 +231,58 @@ fun SwitchPreference(
             onLongClick = onLongClick,
         )
     }
+
+    if (titleTextStyle != null) {
+        BasicComponent(
+            modifier = rowClickModifier,
+            insideMargin = insideMargin,
+            startAction = startAction,
+            endActions = {
+                Row(
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .align(Alignment.CenterVertically)
+                        .weight(1f, fill = false),
+                ) {
+                    endActions()
+                }
+                if (onLongClick == null) {
+                    Switch(
+                        checked = checked,
+                        onCheckedChange = currentOnCheckedChange,
+                        enabled = enabled,
+                    )
+                } else {
+                    JellySwitch(
+                        checked = checked,
+                        onCheckedChange = currentOnCheckedChange,
+                        enabled = enabled,
+                        consumeDown = true,
+                    )
+                }
+            },
+            bottomAction = bottomAction,
+            onClick = toggle.takeIf { enabled && onLongClick == null },
+            role = Role.Switch,
+            holdDownState = holdDownState,
+            enabled = enabled,
+        ) {
+            Text(
+                text = title,
+                style = titleTextStyle,
+                color = if (enabled) titleColor.color else titleColor.disabledColor,
+            )
+            summary?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (enabled) summaryColor.color else summaryColor.disabledColor,
+                )
+            }
+        }
+        return
+    }
+
     BasicComponent(
         // 行级按压反馈内置在组件里（调用处不用再写）：单控件卡片整卡反馈、多控件卡片只有被按的这一行形变
         modifier = rowClickModifier,

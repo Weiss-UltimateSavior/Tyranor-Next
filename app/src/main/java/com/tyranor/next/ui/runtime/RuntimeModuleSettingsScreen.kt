@@ -37,6 +37,7 @@ import com.tyranor.next.core.engine.runtime.RuntimeModuleDescriptor
 import com.tyranor.next.core.engine.runtime.RuntimeModuleDiscoveryResult
 import com.tyranor.next.core.engine.runtime.RuntimeModuleRegistry
 import com.tyranor.next.core.engine.runtime.RuntimeModuleSettingItemSpec
+import com.tyranor.next.core.engine.runtime.RuntimeModuleSettingsEntry
 import com.tyranor.next.core.engine.runtime.RuntimeModuleSettingsParser
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.storage.GameLibraryFacade
@@ -49,6 +50,7 @@ import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.DialogTextButton
@@ -117,6 +119,7 @@ private fun RuntimeModuleSettingsView(
     var saveError by remember { mutableStateOf(false) }
     var saveDescriptorChanged by remember { mutableStateOf(false) }
     var showUnsavedDialog by remember { mutableStateOf(false) }
+    var showRestoreDefaultsDialog by remember { mutableStateOf(false) }
     var editItem by remember { mutableStateOf<RuntimeModuleSettingItemSpec?>(null) }
     var editText by remember { mutableStateOf("") }
     var inputError by remember { mutableStateOf(false) }
@@ -126,6 +129,7 @@ private fun RuntimeModuleSettingsView(
     val pickFiles = rememberRuntimeModuleFileImport(game)
     val settings = module?.settings
     val draft = remember(draftJson) { parseObject(draftJson) }
+    val effectiveSettings = remember(settings, draftJson) { settings?.resolve(draft) }
     val dirty = baselineJson != null && draftJson != baselineJson
     val descriptionConflict = settings != null && draftFingerprint != null &&
         draftFingerprint != settings.fingerprint && dirty
@@ -203,6 +207,16 @@ private fun RuntimeModuleSettingsView(
         draftFingerprint = settings?.fingerprint
         saveDescriptorChanged = false
         saveError = false
+    }
+
+    val pickSettingPath = rememberRuntimeModuleSettingPathPicker(game.uri, packageName) { key, path ->
+        val item = settings?.items?.firstOrNull { it.key == key }
+        if (item == null || !RuntimeModuleSettingsParser.isValidValue(item, path)) {
+            false
+        } else {
+            changeOverride(item, path)
+            true
+        }
     }
 
     fun restoreAllDefaults() {
@@ -341,35 +355,61 @@ private fun RuntimeModuleSettingsView(
                 }
             }
             if (settings != null && !descriptionConflict) {
-                if (settings.items.isNotEmpty()) item {
-                    Column(Modifier.then(listItemMotion())) {
-                        NoRippleTextButton(
-                            text = stringResource(R.string.runtime_settings_restore_all_defaults),
-                            enabled = !saveRunning && bindingValid && descriptorConfirmed,
-                            onClick = ::restoreAllDefaults,
+                if (settings.items.isNotEmpty()) item(key = "runtime_settings_restore_all_defaults") {
+                    val restoreEnabled = bindingValid && descriptorConfirmed && !loadError
+                    MiuixCard(
+                        cornerRadius = AppComponentCornerRadius,
+                        modifier = Modifier.then(listItemMotion()).pressSquishGroup().fillMaxWidth().glassBorder(),
+                    ) {
+                        AppNavItem(
+                            title = stringResource(R.string.runtime_settings_restore_all_title),
+                            titleTextStyle = MaterialTheme.typography.titleMedium,
+                            drawSurface = false,
+                            showLeadingIcon = false,
+                            showArrow = true,
+                            onClick = if (restoreEnabled) ({ showRestoreDefaultsDialog = true }) else null,
                         )
                     }
                 }
-                if (settings.items.isNotEmpty() && settings.resolve(draft).invalidOverrideKeys.isNotEmpty()) item {
+                if (settings.items.isNotEmpty() && effectiveSettings?.invalidOverrideKeys?.isNotEmpty() == true) item {
                     Column(Modifier.then(listItemMotion())) {
                         StatusCard(stringResource(R.string.runtime_settings_invalid_overrides))
                     }
                 }
-                items(settings.items, key = { it.key }) { item ->
-                    RuntimeSettingRow(
-                        modifier = Modifier.then(listItemMotion()),
-                        item = item,
-                        value = settings.resolve(draft).values[item.key] ?: item.defaultValue,
-                        overridden = draft.has(item.key),
-                        enabled = !saveRunning && bindingValid && descriptorConfirmed,
-                        onChange = { value -> changeOverride(item, value) },
-                        onEdit = {
-                            editItem = item
-                            editText = settings.resolve(draft).values[item.key].toString()
-                            inputError = false
-                        },
-                        onRestore = { changeOverride(item, null) },
-                    )
+                items(settings.entries, key = { it.key }) { entry ->
+                    val enabled = bindingValid && descriptorConfirmed
+                    when (entry) {
+                        is RuntimeModuleSettingsEntry.Item -> {
+                            val item = entry.spec
+                            val value = effectiveSettings?.values?.get(item.key) ?: item.defaultValue
+                            RuntimeSettingItemCard(
+                                modifier = Modifier.then(listItemMotion()),
+                                item = item,
+                                value = value,
+                                enabled = enabled,
+                                onChange = { next -> changeOverride(item, next) },
+                                onEdit = {
+                                    editItem = item
+                                    editText = value.toString()
+                                    inputError = false
+                                },
+                                onPickPath = { pickSettingPath(item) },
+                            )
+                        }
+                        is RuntimeModuleSettingsEntry.Card -> RuntimeSettingsGroupCard(
+                            modifier = Modifier.then(listItemMotion()),
+                            spec = entry.spec,
+                            effectiveValues = effectiveSettings?.values.orEmpty(),
+                            enabled = enabled,
+                            onChange = ::changeOverride,
+                            onEdit = { item ->
+                                editItem = item
+                                editText = effectiveSettings?.values?.get(item.key)?.toString() ?: item.defaultValue.toString()
+                                inputError = false
+                            },
+                            onPickPath = pickSettingPath,
+                        )
+                    }
                 }
             }
             if (bindingValid && descriptorConfirmed && !loadError) {
@@ -500,6 +540,34 @@ private fun RuntimeModuleSettingsView(
         )
     }
 
+    if (showRestoreDefaultsDialog) {
+        AppAlertDialog(
+            onDismissRequest = { showRestoreDefaultsDialog = false },
+            title = { Text(stringResource(R.string.runtime_settings_restore_all_title), style = MaterialTheme.typography.titleMedium) },
+            text = {
+                Text(
+                    stringResource(R.string.runtime_settings_restore_all_message),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = {
+                DialogTextButton(
+                    text = stringResource(R.string.common_confirm),
+                    enabled = !saveRunning && bindingValid && descriptorConfirmed,
+                    onClick = {
+                        restoreAllDefaults()
+                        showRestoreDefaultsDialog = false
+                    },
+                )
+            },
+            dismissButton = {
+                DialogTextButton(
+                    text = stringResource(R.string.common_cancel),
+                    onClick = { showRestoreDefaultsDialog = false },
+                )
+            },
+        )
+    }
     if (showUnsavedDialog) {
         val unsavedExitHandle = rememberGameDialogExitHandle()
         AppAlertDialog(
@@ -613,5 +681,8 @@ internal fun parseRuntimeSettingInput(item: RuntimeModuleSettingItemSpec, raw: S
     RuntimeModuleSettingItemSpec.Type.TEXT -> raw.takeIf { RuntimeModuleSettingsParser.isValidValue(item, it) }
     RuntimeModuleSettingItemSpec.Type.INTEGER -> raw.toIntOrNull()?.takeIf { RuntimeModuleSettingsParser.isValidValue(item, it) }
     RuntimeModuleSettingItemSpec.Type.BOOLEAN,
-    RuntimeModuleSettingItemSpec.Type.ENUM -> null
+    RuntimeModuleSettingItemSpec.Type.ENUM,
+    RuntimeModuleSettingItemSpec.Type.SLIDER,
+    RuntimeModuleSettingItemSpec.Type.FILE,
+    RuntimeModuleSettingItemSpec.Type.FOLDER -> null
 }

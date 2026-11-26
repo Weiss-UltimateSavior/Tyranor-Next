@@ -15,16 +15,40 @@ data class RuntimeModuleSettingItemSpec(
     val min: Int? = null,
     val max: Int? = null,
     val maxLength: Int? = null,
+    val sliderMin: Double? = null,
+    val sliderMax: Double? = null,
+    val sliderStep: Double? = null,
 ) {
-    enum class Type { BOOLEAN, ENUM, TEXT, INTEGER }
+    enum class Type { BOOLEAN, ENUM, TEXT, INTEGER, SLIDER, FILE, FOLDER }
 }
 
 data class RuntimeModuleSettingOption(val value: String, val title: String)
+
+data class RuntimeModuleSettingCardSpec(
+    val key: String,
+    val title: String,
+    val description: String?,
+    val items: List<RuntimeModuleSettingItemSpec>,
+)
+
+sealed interface RuntimeModuleSettingsEntry {
+    val key: String
+
+    data class Item(val spec: RuntimeModuleSettingItemSpec) : RuntimeModuleSettingsEntry {
+        // Keep the original stable key for flat v1 settings entries.
+        override val key: String get() = spec.key
+    }
+
+    data class Card(val spec: RuntimeModuleSettingCardSpec) : RuntimeModuleSettingsEntry {
+        override val key: String get() = "card:${spec.key}"
+    }
+}
 
 /** A validated v1 settings declaration; its fingerprint is stable across JSON key ordering. */
 data class RuntimeModuleSettingsSpec(
     val version: Int,
     val items: List<RuntimeModuleSettingItemSpec>,
+    val entries: List<RuntimeModuleSettingsEntry>,
     val fingerprint: String,
 ) {
     /** Resolve only currently declared keys; malformed/stale overrides use the declared default. */
@@ -78,6 +102,8 @@ internal object RuntimeModuleSettingsParser {
     const val MAX_ITEMS = 32
     const val MAX_OPTIONS = 32
     const val MAX_PAYLOAD_BYTES = 48 * 1024
+    private const val MAX_CARDS = 16
+    private const val MAX_SLIDER_INTERVALS = 10_000
 
     private val KEY = Regex("^[A-Za-z][A-Za-z0-9_]{0,63}$")
 
@@ -87,34 +113,87 @@ internal object RuntimeModuleSettingsParser {
         if (strictInt(root.opt("version")) != 1) return null to "unsupported settings version"
         val array = root.opt("items") as? JSONArray ?: return null to "settings items must be an array"
         val items = ArrayList<RuntimeModuleSettingItemSpec>()
+        val entries = ArrayList<RuntimeModuleSettingsEntry>()
         val keys = HashSet<String>()
+        val cardKeys = HashSet<String>()
         for (index in 0 until array.length()) {
             if (items.size >= MAX_ITEMS) break
-            val item = parseItem(array.opt(index)) ?: continue
-            if (keys.add(item.key)) items += item
+            val obj = array.opt(index) as? JSONObject ?: continue
+            if (obj.opt("type") == "card") {
+                if (entries.count { it is RuntimeModuleSettingsEntry.Card } >= MAX_CARDS) continue
+                val card = parseCard(obj, items.size, keys, cardKeys) ?: continue
+                items += card.items
+                entries += RuntimeModuleSettingsEntry.Card(card)
+            } else {
+                val item = parseItem(obj) ?: continue
+                if (keys.add(item.key)) {
+                    items += item
+                    entries += RuntimeModuleSettingsEntry.Item(item)
+                }
+            }
         }
         if (items.isEmpty()) return null to "settings has no valid items"
         val budget = payloadUpperBound(items)
         if (budget > MAX_PAYLOAD_BYTES) return null to "settings payload upper bound exceeds 48 KiB"
         val canonical = JSONArray()
-        items.forEach { item ->
-            val obj = JSONObject()
-                .put("key", item.key).put("type", item.type.name.lowercase())
-                .put("title", item.title).put("default", item.defaultValue)
+        entries.forEach { entry ->
+            when (entry) {
+                is RuntimeModuleSettingsEntry.Item -> canonical.put(canonicalItem(entry.spec))
+                is RuntimeModuleSettingsEntry.Card -> {
+                    val card = entry.spec
+                    val obj = JSONObject().put("key", card.key).put("type", "card").put("title", card.title)
+                    card.description?.let { obj.put("description", it) }
+                    obj.put("items", JSONArray().also { children ->
+                        card.items.forEach { children.put(canonicalItem(it)) }
+                    })
+                    canonical.put(obj)
+                }
+            }
+        }
+        val spec = RuntimeModuleSettingsSpec(1, items, entries, fingerprint("settings", "1", canonical.toString()))
+        return spec to null
+    }
+
+    private fun parseCard(
+        obj: JSONObject,
+        existingItemCount: Int,
+        itemKeys: MutableSet<String>,
+        cardKeys: MutableSet<String>,
+    ): RuntimeModuleSettingCardSpec? {
+        val key = (obj.opt("key") as? String)?.takeIf(KEY::matches) ?: return null
+        if (key in cardKeys) return null
+        val title = (obj.opt("title") as? String)?.takeIf { it.isNotBlank() && it.length <= 128 && validUnicode(it) } ?: return null
+        val description = if (obj.has("description")) {
+            (obj.opt("description") as? String)?.takeIf { it.length <= 512 && validUnicode(it) } ?: return null
+        } else null
+        val children = obj.opt("items") as? JSONArray ?: return null
+        val items = ArrayList<RuntimeModuleSettingItemSpec>()
+        for (index in 0 until children.length()) {
+            if (existingItemCount + items.size >= MAX_ITEMS) break
+            val item = parseItem(children.opt(index)) ?: continue
+            if (itemKeys.add(item.key)) items += item
+        }
+        if (items.isEmpty()) return null
+        cardKeys += key
+        return RuntimeModuleSettingCardSpec(key, title, description, items)
+    }
+
+    private fun canonicalItem(item: RuntimeModuleSettingItemSpec): JSONObject = JSONObject()
+        .put("key", item.key).put("type", item.type.name.lowercase())
+        .put("title", item.title).put("default", item.defaultValue).also { obj ->
             item.description?.let { obj.put("description", it) }
             item.min?.let { obj.put("min", it) }
             item.max?.let { obj.put("max", it) }
             item.maxLength?.let { obj.put("maxLength", it) }
+            item.sliderMin?.let { obj.put("min", it) }
+            item.sliderMax?.let { obj.put("max", it) }
+            item.sliderStep?.let { obj.put("step", it) }
             if (item.options.isNotEmpty()) {
                 obj.put("options", JSONArray().also { options ->
                     item.options.forEach { options.put(JSONObject().put("value", it.value).put("title", it.title)) }
                 })
             }
-            canonical.put(obj)
         }
-        val spec = RuntimeModuleSettingsSpec(1, items, fingerprint("settings", "1", canonical.toString()))
-        return spec to null
-    }
 
     fun parseItem(value: Any?): RuntimeModuleSettingItemSpec? {
         val obj = value as? JSONObject ?: return null
@@ -124,6 +203,9 @@ internal object RuntimeModuleSettingsParser {
             "enum" -> RuntimeModuleSettingItemSpec.Type.ENUM
             "text" -> RuntimeModuleSettingItemSpec.Type.TEXT
             "integer" -> RuntimeModuleSettingItemSpec.Type.INTEGER
+            "slider" -> RuntimeModuleSettingItemSpec.Type.SLIDER
+            "file" -> RuntimeModuleSettingItemSpec.Type.FILE
+            "folder" -> RuntimeModuleSettingItemSpec.Type.FOLDER
             else -> return null
         }
         val title = (obj.opt("title") as? String)?.takeIf { it.isNotBlank() && it.length <= 128 && validUnicode(it) } ?: return null
@@ -147,23 +229,29 @@ internal object RuntimeModuleSettingsParser {
         val min: Int?
         val max: Int?
         val maxLength: Int?
+        val sliderMin: Double?
+        val sliderMax: Double?
+        val sliderStep: Double?
         val normalizedDefault: Any
         when (type) {
             RuntimeModuleSettingItemSpec.Type.BOOLEAN -> {
                 if (default !is Boolean) return null
                 normalizedDefault = default
                 min = null; max = null; maxLength = null
+                sliderMin = null; sliderMax = null; sliderStep = null
             }
             RuntimeModuleSettingItemSpec.Type.ENUM -> {
                 if (default !is String || options.none { it.value == default }) return null
                 normalizedDefault = default
                 min = null; max = null; maxLength = null
+                sliderMin = null; sliderMax = null; sliderStep = null
             }
             RuntimeModuleSettingItemSpec.Type.TEXT -> {
                 maxLength = if (obj.has("maxLength")) strictInt(obj.opt("maxLength")) else 256
                 if (maxLength == null || maxLength !in 1..1024 || default !is String || !validText(default, maxLength)) return null
                 normalizedDefault = default
                 min = null; max = null
+                sliderMin = null; sliderMax = null; sliderStep = null
             }
             RuntimeModuleSettingItemSpec.Type.INTEGER -> {
                 val parsedMin = strictInt(obj.opt("min")) ?: return null
@@ -174,9 +262,34 @@ internal object RuntimeModuleSettingsParser {
                 if (parsedMin > parsedMax || parsedDefault !in parsedMin..parsedMax) return null
                 normalizedDefault = parsedDefault
                 maxLength = null
+                sliderMin = null; sliderMax = null; sliderStep = null
+            }
+            RuntimeModuleSettingItemSpec.Type.SLIDER -> {
+                val parsedMin = strictDouble(obj.opt("min")) ?: return null
+                val parsedMax = strictDouble(obj.opt("max")) ?: return null
+                val parsedDefault = strictDouble(default) ?: return null
+                val parsedStep = if (obj.has("step")) strictDouble(obj.opt("step")) ?: return null else null
+                if (parsedMin >= parsedMax || parsedDefault !in parsedMin..parsedMax || parsedStep?.let { it <= 0.0 } == true) return null
+                if (!parsedMin.toFloat().isFinite() || !parsedMax.toFloat().isFinite() || parsedMin.toFloat() >= parsedMax.toFloat()) return null
+                if (parsedStep != null && !validSliderStep(parsedDefault, parsedMin, parsedMax, parsedStep)) return null
+                if (!isSliderRangeSupportedByFloatUi(parsedMin, parsedMax, parsedDefault, parsedStep)) return null
+                min = null; max = null; maxLength = null
+                sliderMin = parsedMin; sliderMax = parsedMax; sliderStep = parsedStep
+                normalizedDefault = parsedDefault
+            }
+            RuntimeModuleSettingItemSpec.Type.FILE,
+            RuntimeModuleSettingItemSpec.Type.FOLDER -> {
+                val pathLength = if (obj.has("maxLength")) strictInt(obj.opt("maxLength")) else 1024
+                if (pathLength == null || pathLength !in 1..4096 || default !is String || !validPath(default, pathLength)) return null
+                normalizedDefault = default
+                min = null; max = null; maxLength = pathLength
+                sliderMin = null; sliderMax = null; sliderStep = null
             }
         }
-        return RuntimeModuleSettingItemSpec(key, type, title, description, normalizedDefault, options, min, max, maxLength)
+        return RuntimeModuleSettingItemSpec(
+            key, type, title, description, normalizedDefault, options, min, max, maxLength,
+            sliderMin, sliderMax, sliderStep,
+        )
     }
 
     fun isValidValue(item: RuntimeModuleSettingItemSpec, value: Any): Boolean = when (item.type) {
@@ -186,6 +299,13 @@ internal object RuntimeModuleSettingsParser {
         RuntimeModuleSettingItemSpec.Type.INTEGER -> strictInt(value)?.let { intValue ->
             intValue >= (item.min ?: Int.MIN_VALUE) && intValue <= (item.max ?: Int.MAX_VALUE)
         } == true
+        RuntimeModuleSettingItemSpec.Type.SLIDER -> strictDouble(value)?.let { sliderValue ->
+            val min = item.sliderMin ?: return false
+            val max = item.sliderMax ?: return false
+            sliderValue in min..max && (item.sliderStep?.let { validSliderStep(sliderValue, min, max, it) } ?: true)
+        } == true
+        RuntimeModuleSettingItemSpec.Type.FILE,
+        RuntimeModuleSettingItemSpec.Type.FOLDER -> value is String && validPath(value, item.maxLength ?: 1024)
     }
 
     private fun payloadUpperBound(items: List<RuntimeModuleSettingItemSpec>): Int {
@@ -198,9 +318,65 @@ internal object RuntimeModuleSettingsParser {
                 RuntimeModuleSettingItemSpec.Type.ENUM -> item.options.maxOf { JSONObject.quote(it.value).toByteArray(Charsets.UTF_8).size }
                 RuntimeModuleSettingItemSpec.Type.TEXT -> (item.maxLength ?: 256) * 6 + 2
                 RuntimeModuleSettingItemSpec.Type.INTEGER -> maxOf(item.min!!.toString().length, item.max!!.toString().length)
+                RuntimeModuleSettingItemSpec.Type.SLIDER -> 32
+                RuntimeModuleSettingItemSpec.Type.FILE,
+                RuntimeModuleSettingItemSpec.Type.FOLDER -> (item.maxLength ?: 1024) * 6 + 2
             }
         }
         return total
+    }
+
+    private fun validSliderStep(value: Double, min: Double, max: Double, step: Double): Boolean {
+        if (!step.isFinite() || step <= 0.0) return false
+        val intervals = (max - min) / step
+        if (!intervals.isFinite() || intervals < 1.0 || intervals > MAX_SLIDER_INTERVALS) return false
+        val roundedIntervals = kotlin.math.round(intervals)
+        if (kotlin.math.abs(intervals - roundedIntervals) > 1e-6 * maxOf(1.0, kotlin.math.abs(intervals))) return false
+        val position = (value - min) / step
+        return kotlin.math.abs(position - kotlin.math.round(position)) <= 1e-6 * maxOf(1.0, kotlin.math.abs(position))
+    }
+
+    private fun isSliderRangeSupportedByFloatUi(min: Double, max: Double, default: Double, step: Double?): Boolean {
+        val floatMin = min.toFloat()
+        val floatMax = max.toFloat()
+        val floatSpan = floatMax - floatMin
+        if (!floatSpan.isFinite() || floatSpan <= 0f) return false
+        if (step == null) return true
+
+        val intervalCount = kotlin.math.round((max - min) / step).toInt()
+        val defaultIndex = kotlin.math.round((default - min) / step).toInt()
+        val defaultFloat = default.toFloat()
+        var closestIndex = 0
+        var closestDistance = kotlin.math.abs(defaultFloat - floatMin)
+        var previousTick = floatMin
+        for (index in 1..intervalCount) {
+            val tick = if (index == intervalCount) {
+                floatMax
+            } else {
+                // Match the Float interpolation used by MotionSlider's discrete tick positions.
+                floatMin + floatSpan * index / intervalCount
+            }
+            if (!tick.isFinite() || tick <= previousTick) return false
+            val distance = kotlin.math.abs(defaultFloat - tick)
+            if (distance < closestDistance) {
+                closestDistance = distance
+                closestIndex = index
+            }
+            previousTick = tick
+        }
+        return closestIndex == defaultIndex
+    }
+
+    private fun strictDouble(value: Any?): Double? = (value as? Number)?.toDouble()?.takeIf { it.isFinite() }
+
+    private fun validPath(value: String, maxLength: Int): Boolean {
+        if (value.isEmpty()) return true
+        if (value.length > maxLength || !value.startsWith('/') || !validUnicode(value)) return false
+        if (value.any { it == '\\' || it.code < 0x20 || it.code in 0x7f..0x9f }) return false
+        if (value.contains("://")) return false
+        if (value == "/") return true
+        val segments = value.removePrefix("/").split('/')
+        return segments.all { it.isNotEmpty() && it != "." && it != ".." }
     }
 
     private fun validText(value: String, maxLength: Int): Boolean =

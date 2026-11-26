@@ -4,7 +4,15 @@
   "settings": {
     "version": 1,
     "items": [
-      { "key": "vsync", "type": "boolean", "title": "VSync", "default": true },
+      {
+        "key": "display", "type": "card", "title": "Display",
+        "description": "Rendering options",
+        "items": [
+          { "key": "vsync", "type": "boolean", "title": "VSync", "default": true },
+          { "key": "render_scale", "type": "slider", "title": "Render scale",
+            "default": 1.0, "min": 0.5, "max": 2.0, "step": 0.1 }
+        ]
+      },
       {
         "key": "renderer", "type": "enum", "title": "Renderer", "default": "auto",
         "options": [
@@ -12,6 +20,8 @@
           { "value": "software", "title": "Software" }
         ]
       },
+      { "key": "config_file", "type": "file", "title": "Configuration file", "default": "" },
+      { "key": "data_folder", "type": "folder", "title": "Data folder", "default": "" },
       { "key": "player_name", "type": "text", "title": "Player name", "default": "", "maxLength": 64 },
       { "key": "fps_limit", "type": "integer", "title": "FPS limit", "default": 60, "min": 30, "max": 120 }
     ]

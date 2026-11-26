@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text as MaterialText
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -50,6 +52,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -104,6 +107,8 @@ fun OverlayDropdownPreference(
     enabled: Boolean = true,
     showValue: Boolean = true,
     renderInRootScaffold: Boolean = true,
+    titleTextStyle: TextStyle? = null,
+    valueTextStyle: TextStyle? = null,
     onExpandedChange: ((Boolean) -> Unit)? = null,
     onSelectedIndexChange: ((Int) -> Unit)? = null,
     /** 应用锁生效时的强制清理路径；默认走内部收起回调。带业务守卫的调用方可传真正清状态的路径。 */
@@ -135,6 +140,8 @@ fun OverlayDropdownPreference(
         enabled = enabled,
         showValue = showValue,
         renderInRootScaffold = renderInRootScaffold,
+        titleTextStyle = titleTextStyle,
+        valueTextStyle = valueTextStyle,
         collapseOnSelection = true,
         onExpandedChange = onExpandedChange,
         onLockDismiss = onLockDismiss,
@@ -158,6 +165,8 @@ fun OverlayDropdownPreference(
     enabled: Boolean = true,
     showValue: Boolean = true,
     renderInRootScaffold: Boolean = true,
+    titleTextStyle: TextStyle? = null,
+    valueTextStyle: TextStyle? = null,
     collapseOnSelection: Boolean = true,
     onExpandedChange: ((Boolean) -> Unit)? = null,
     /** 应用锁生效时的强制清理路径；默认走内部收起回调。带业务守卫的调用方可传真正清状态的路径。 */
@@ -350,55 +359,99 @@ fun OverlayDropdownPreference(
         return
     }
 
-    BasicComponent(
-        modifier = rowGestureModifier,
-        interactionSource = interactionSource,
-        insideMargin = insideMargin,
-        title = title,
-        titleColor = titleColor,
-        summary = summary,
-        summaryColor = summaryColor,
-        startAction = startAction,
-        bottomAction = bottomAction,
-        onClick = { if (currentEnabled) setExpanded(!expanded.value) },
-        role = Role.DropdownList,
-        holdDownState = holdDown.value,
-        enabled = actualEnabled,
-        endActions = {
-            if (showValue && entry.items.isNotEmpty()) {
-                val text = entry.items.firstOrNull { it.selected }?.text
-                if (!text.isNullOrEmpty()) {
-                    BlurTextWith(
-                        text = text,
-                        modifier = Modifier.padding(end = 8.dp).align(Alignment.CenterVertically).weight(1f, fill = false),
-                        animateOnLocaleChange = true,
-                        partial = false,
-                    ) { value, valueModifier ->
-                        Text(value, modifier = valueModifier, fontSize = MiuixTheme.textStyles.body2.fontSize,
-                            color = actionColor, textAlign = TextAlign.End)
+    val rowEndActions: @Composable RowScope.() -> Unit = {
+        if (showValue && entry.items.isNotEmpty()) {
+            val text = entry.items.firstOrNull { it.selected }?.text
+            if (!text.isNullOrEmpty()) {
+                BlurTextWith(
+                    text = text,
+                    modifier = Modifier.padding(end = 8.dp).align(Alignment.CenterVertically).weight(1f, fill = false),
+                    animateOnLocaleChange = true,
+                    partial = false,
+                ) { value, valueModifier ->
+                    if (valueTextStyle == null) {
+                        Text(
+                            value,
+                            modifier = valueModifier,
+                            fontSize = MiuixTheme.textStyles.body2.fontSize,
+                            color = actionColor,
+                            textAlign = TextAlign.End,
+                        )
+                    } else {
+                        MaterialText(
+                            value,
+                            modifier = valueModifier,
+                            style = valueTextStyle,
+                            color = actionColor,
+                            textAlign = TextAlign.End,
+                        )
                     }
                 }
             }
-            DropdownArrowEndAction(actionColor = actionColor)
-            if (entry.items.isNotEmpty()) key(slide) {
-                HoldSelectDropdownPopup(
-                    entry = entry,
-                    enabled = actualEnabled,
-                    show = expanded.value,
-                    slide = slide,
-                    onPreview = preview,
-                    onHit = hit,
-                    onPick = pick,
-                    onDismiss = { slide.resetGesture(); setExpanded(false) },
-                    onDismissFinished = { holdDown.value = false; slide.reset() },
-                    maxHeight = maxHeight,
-                    dropdownColors = dropdownColors,
-                    renderInRootScaffold = renderInRootScaffold,
-                    onLockDismiss = onLockDismiss,
+        }
+        DropdownArrowEndAction(actionColor = actionColor)
+        if (entry.items.isNotEmpty()) key(slide) {
+            HoldSelectDropdownPopup(
+                entry = entry,
+                enabled = actualEnabled,
+                show = expanded.value,
+                slide = slide,
+                onPreview = preview,
+                onHit = hit,
+                onPick = pick,
+                onDismiss = { slide.resetGesture(); setExpanded(false) },
+                onDismissFinished = { holdDown.value = false; slide.reset() },
+                maxHeight = maxHeight,
+                dropdownColors = dropdownColors,
+                renderInRootScaffold = renderInRootScaffold,
+                onLockDismiss = onLockDismiss,
+            )
+        }
+    }
+    if (titleTextStyle == null) {
+        BasicComponent(
+            modifier = rowGestureModifier,
+            interactionSource = interactionSource,
+            insideMargin = insideMargin,
+            title = title,
+            titleColor = titleColor,
+            summary = summary,
+            summaryColor = summaryColor,
+            startAction = startAction,
+            bottomAction = bottomAction,
+            onClick = { if (currentEnabled) setExpanded(!expanded.value) },
+            role = Role.DropdownList,
+            holdDownState = holdDown.value,
+            enabled = actualEnabled,
+            endActions = rowEndActions,
+        )
+    } else {
+        BasicComponent(
+            modifier = rowGestureModifier,
+            interactionSource = interactionSource,
+            insideMargin = insideMargin,
+            startAction = startAction,
+            bottomAction = bottomAction,
+            onClick = { if (currentEnabled) setExpanded(!expanded.value) },
+            role = Role.DropdownList,
+            holdDownState = holdDown.value,
+            enabled = actualEnabled,
+            endActions = rowEndActions,
+        ) {
+            MaterialText(
+                text = title,
+                style = titleTextStyle,
+                color = if (actualEnabled) titleColor.color else titleColor.disabledColor,
+            )
+            summary?.let {
+                MaterialText(
+                    text = it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (actualEnabled) summaryColor.color else summaryColor.disabledColor,
                 )
             }
-        },
-    )
+        }
+    }
 }
 
 /** Keep the original popup host, including the independent Window used by a sheet or dialog/book. */

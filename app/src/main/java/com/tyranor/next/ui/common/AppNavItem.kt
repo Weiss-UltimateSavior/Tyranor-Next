@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -102,6 +103,8 @@ fun AppNavItem(
     summaryMaxLines: Int = 2,
     indication: Indication? = if (LocalAppDialogContent.current) null else LocalIndication.current,
     drawSurface: Boolean = true,
+    titleTextStyle: TextStyle? = null,
+    summaryTextStyle: TextStyle? = null,
     onClick: (() -> Unit)? = null,
 ) {
     val inBook = LocalShelfBookLeaf.current
@@ -192,7 +195,7 @@ fun AppNavItem(
         ) {
             Text(
                 title,
-                style = if (inBook) {
+                style = titleTextStyle ?: if (inBook) {
                     MaterialTheme.typography.bodyMedium.copy(fontFamily = BookSerif, fontWeight = FontWeight.Medium)
                 } else {
                     MaterialTheme.typography.bodyMedium
@@ -206,7 +209,7 @@ fun AppNavItem(
                 BlurCrossfade(targetState = shownSummary.orEmpty(), label = "navItemSummaryText") { text ->
                     Text(
                         text,
-                        style = if (inBook) {
+                        style = summaryTextStyle ?: if (inBook) {
                             MaterialTheme.typography.bodySmall.copy(fontFamily = BookSerif)
                         } else {
                             MaterialTheme.typography.bodySmall
