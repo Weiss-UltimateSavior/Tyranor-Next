@@ -12,6 +12,7 @@ import com.tyranor.next.BuildConfig
 import com.tyranor.next.core.net.httpJsonResult
 import com.tyranor.next.core.net.optNonBlankString
 import com.tyranor.next.core.net.urlEncode
+import com.tyranor.next.core.privacy.AppLockController
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -343,6 +344,18 @@ object NextMoeAuthService {
     ) {
         try {
             val callback = awaitLoopbackCallback(serverSocket, expectedState, pageText) ?: return
+            // 应用锁生效时环回回调到达可能早于 ProcessLifecycleOwner 的 ON_START：
+            // 用「进入时将会上锁」的只读判定，锁定时不交换授权码、不落盘凭据。
+            // 回调可由用户重新发起，state/PKCE 保证回调无法凭空伪造。
+            if (AppLockController.willRequireUnlockOnEntering()) {
+                synchronized(loopbackLock) {
+                    if (activeFlowId == flowId) {
+                        NextMoeAuthStore.setAuthInProgress(appContext, 0L)
+                        emitAuthEvent(success = false, error = NextMoeAuthError.CANCELLED)
+                    }
+                }
+                return
+            }
             synchronized(loopbackLock) {
                 if (activeFlowId != flowId) return
                 NextMoeAuthStore.setAuthInProgress(appContext, 0L)

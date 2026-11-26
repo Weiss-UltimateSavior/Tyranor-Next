@@ -43,6 +43,7 @@ import com.tyranor.next.core.game.manual.AndroidAppGames
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.DialogItemSurface
+import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.DialogTextButton
@@ -60,7 +61,6 @@ import com.tyranor.next.ui.common.motion.staggeredEntrance
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.RadioButton
-import top.yukonga.miuix.kmp.theme.MiuixTheme as MiuixPreferenceTheme
 import com.tyranor.next.ui.common.motion.DelayedProgress
 
 /**
@@ -204,7 +204,7 @@ internal fun AndroidGameAddDialog(
                     )
 
                     // 列表到达：应用自上而下依次弹入（列表出现 / 从「无匹配」回来时的一小段窗口内；之后滚入的直接显示）
-                    else -> ProvideEntrance { MiuixPreferenceTheme {
+                    else -> ProvideEntrance { MiuixSettingsTheme {
                         LazyColumn(
                             state = listState,
                             modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp).skipEntranceOnDrag(),

@@ -1,10 +1,12 @@
 package com.tyranor.next.core.settings
 
 import android.content.Context
+import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.runtime.systemnnn.SystemNnnHost
+import org.json.JSONObject
 
 /**
  * 三级设置解析器（P0-3）：读取应用级全局值与单游戏覆盖，交给 [EffectiveEngineSettings]
@@ -52,10 +54,12 @@ object EngineSettingsResolver {
         val app = context.applicationContext
         val override = PerGameSettingsStore.load(app, game.uri)
 
-        fun str(key: String): String? = if (override.has(key)) override.optString(key) else null
-        fun bool(key: String): Boolean? = if (override.has(key)) override.optBoolean(key) else null
+        fun str(key: String): String? = overrideStr(override, key)
+        fun bool(key: String): Boolean? = overrideBool(override, key)
 
         val removableStorage = gameDir?.let { GamePathUtils.isRemovableStoragePath(it) } == true
+        val krFontOverride = str(PerGameSettingsStore.F_DEFAULT_FONT)
+        val krForceFontOverride = bool(PerGameSettingsStore.F_FORCE_DEFAULT_FONT)
         val onsGlobal = EngineSettingsStore.loadOns(app)
         val onsOverride = PerGameSettingsStore.toOnsOverride(override.optJSONObject(PerGameSettingsStore.ONS_KEY))
         val systemNnn = game.engine == EngineType.SYSTEMNNN
@@ -88,13 +92,19 @@ object EngineSettingsResolver {
                 EngineSettingsStore.isKrScopedSaveDir(app),
             ),
             krDefaultFont = EffectiveEngineSettings.resolve(
-                str(PerGameSettingsStore.F_DEFAULT_FONT),
+                krFontOverride,
                 EngineSettingsStore.getKrDefaultFont(app),
             ),
             krForceDefaultFont = EffectiveEngineSettings.resolveBool(
-                bool(PerGameSettingsStore.F_FORCE_DEFAULT_FONT),
+                krForceFontOverride,
                 EngineSettingsStore.isKrForceDefaultFont(app),
             ),
+            krDefaultFontGameScope = krFontOverride != null,
+            krForceFontGameScope = krForceFontOverride != null,
+            // 全局基线（非合并结果）：恒下发为字体参照 extra，供引擎在 game scope 写入后
+            // 回收与参照不一致的全局陈旧带标记注入项（见 LaunchContract.FONT_GLOBAL_*）
+            krGlobalDefaultFont = EngineSettingsStore.getKrDefaultFont(app),
+            krGlobalForceFont = EngineSettingsStore.isKrForceDefaultFont(app),
             krPatchOverlayMode = EngineSettingsStore.normalizeKrPatchOverlayMode(
                 EffectiveEngineSettings.resolve(
                     str(PerGameSettingsStore.F_PATCH_OVERLAY_MODE),
@@ -160,6 +170,10 @@ object EngineSettingsResolver {
             webShellPort = EffectiveEngineSettings.resolveWebShellPort(
                 str(PerGameSettingsStore.F_WEB_SHELL_PORT),
                 EngineSettingsStore.getWebShellPort(app),
+            ),
+            webExternalNetwork = EffectiveEngineSettings.resolveBool(
+                bool(PerGameSettingsStore.F_TY_EXTERNAL),
+                EngineSettingsStore.isTyranoExternalNetwork(app),
             ),
             webScopedSaveDir = EffectiveEngineSettings.resolveBool(
                 bool(PerGameSettingsStore.F_TY_SCOPED),
@@ -231,6 +245,9 @@ object EngineSettingsResolver {
                 EngineSettingsStore.getCmvsFont(app),
             ),
             cmvsFontFace = EngineSettingsStore.getCmvsFontFace(app),
+            cmvsProfile = str(PerGameSettingsStore.F_CMVS_PROFILE)?.takeIf {
+                game.engine == EngineType.CMVS && it in app.resources.getStringArray(R.array.cmvs_profile_ids)
+            },
             systemNnnFullscreen = if (systemNnn) {
                 (override.opt(PerGameSettingsStore.F_SYSTEMNNN_FULLSCREEN) as? Boolean)
                     ?: EngineSettingsStore.isSystemNnnFullscreen(app)
@@ -322,6 +339,10 @@ object EngineSettingsResolver {
                 EngineSettingsStore.loadImpacto(app),
                 PerGameSettingsStore.toImpactoOverride(override),
             ),
+            easyRpg = EffectiveEngineSettings.mergeEasyRpg(
+                EngineSettingsStore.loadEasyRpg(app),
+                PerGameSettingsStore.toEasyRpgOverride(override),
+            ),
             winlator = run {
                 val global = EngineSettingsStore.loadWinlator(app)
                 // 模式推断复用本函数已加载的覆盖 JSON，避免 getWinlatorMode 再走一次阻塞读。
@@ -353,6 +374,12 @@ data class ResolvedEngineSettings(
     val krScopedSaveDir: Boolean,
     val krDefaultFont: String,
     val krForceDefaultFont: Boolean,
+    /** 单游戏字体覆盖是否存在：true=落盘游戏目录 XML；false=跟随全局写全局 XML。 */
+    val krDefaultFontGameScope: Boolean,
+    val krForceFontGameScope: Boolean,
+    /** 全局字体基线（未合并）：恒下发为 FONT_GLOBAL_DEFAULT 参照 extra，供引擎回收全局陈旧带标记注入项。 */
+    val krGlobalDefaultFont: String,
+    val krGlobalForceFont: Boolean,
     val krPatchOverlayMode: String,
     val krSkipStartupDialogs: Boolean,
     val krRenderer: String,
@@ -370,6 +397,7 @@ data class ResolvedEngineSettings(
     /** Web 壳（Tyrano / WebOther / VN）本地 HTTP 服务端口（固定端口保证 WebView 存档域稳定）。 */
     val webShellPort: Int,
     val webScopedSaveDir: Boolean,
+    val webExternalNetwork: Boolean,
     val rpgMakerModEnabled: Boolean,
     val rpgLegacyRenderer: Boolean,
     /** MV/MZ 存档互通生效值（单游戏覆盖 > 全局）。合并值不区分引擎，消费方须以引擎类型门控。 */
@@ -393,6 +421,8 @@ data class ResolvedEngineSettings(
     val cmvsFont: String,
     /** CMVS 字体集合索引。 */
     val cmvsFontFace: Int,
+    /** 已登记作品标识。空值沿用运行库的识别流程。 */
+    val cmvsProfile: String?,
     /** FVP 生效系统字体回退开关。 */
     val fvpSystemFont: Boolean,
     /** FVP 生效文本高分辨率渲染开关。 */
@@ -427,6 +457,8 @@ data class ResolvedEngineSettings(
     val ruffle: EngineSettingsStore.Ruffle,
     /** MAGES.（impacto）宿主生效配置（三级合并结果，启动时经 settings extra 下发）。 */
     val impacto: EngineSettingsStore.Impacto,
+    /** EasyRPG 外置宿主生效配置（三级合并结果，启动时经 settings extra 下发）。 */
+    val easyRpg: EngineSettingsStore.EasyRpg = EngineSettingsStore.EasyRpg(),
     /** Winlator 外置启动下发参数（三级合并结果；跳转 YU-RIS / CatSystem2 / PC 时消费）。 */
     val winlator: EngineSettingsStore.Winlator,
     val systemNnnFullscreen: Boolean = SystemNnnHost.DEFAULT_FULLSCREEN,
@@ -434,3 +466,15 @@ data class ResolvedEngineSettings(
     val systemNnnExeAnalysis: Boolean = SystemNnnHost.DEFAULT_EXE_ANALYSIS,
     val systemNnnDebugMode: Boolean = SystemNnnHost.DEFAULT_DEBUG_MODE,
 )
+
+/**
+ * 单游戏覆盖 JSON 的键读取（顶层纯函数，JVM 可直测）：JSON null 与缺键同义（=跟随全局）。
+ * 不得把 optString 对 [JSONObject.NULL] 产出的字符串 "null" 当作覆盖值，也不得把
+ * optBoolean 对 NULL 产出的 false 当作覆盖值——两者都会把「未设置」误判成「有覆盖」，
+ * 进而把字体/开关以错误的值按 game scope 落盘。
+ */
+internal fun overrideStr(override: JSONObject, key: String): String? =
+    if (override.has(key) && !override.isNull(key)) override.optString(key) else null
+
+internal fun overrideBool(override: JSONObject, key: String): Boolean? =
+    if (override.has(key) && !override.isNull(key)) override.optBoolean(key) else null

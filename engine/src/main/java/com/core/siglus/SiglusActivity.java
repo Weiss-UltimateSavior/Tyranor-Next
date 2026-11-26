@@ -1,9 +1,8 @@
 package com.core.siglus;
 
-import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.os.Build;
@@ -37,6 +36,7 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
+import com.core.engine.EnginePlayerOrientation;
 import com.core.engine.EnginePrefs;
 import com.core.engine.EngineStartupOverlay;
 import com.core.engine.EngineSurfaceReadyProbe;
@@ -50,6 +50,7 @@ import java.io.File;
 import java.lang.ref.WeakReference;
 import java.util.HashSet;
 import java.util.Set;
+import org.tvp.kirikiri2.KrDialogStyle;
 
 /**
  * SiglusEngine（siglus_rs）宿主 Activity。
@@ -70,7 +71,7 @@ public final class SiglusActivity extends AppCompatActivity implements
 
     @Override
     public void setRequestedOrientation(int requestedOrientation) {
-        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        EnginePlayerOrientation.applyWithSuper(this, super::setRequestedOrientation);
     }
 
     private static final String TAG = "SiglusActivity";
@@ -129,6 +130,7 @@ public final class SiglusActivity extends AppCompatActivity implements
     private int stageSizeRequest;
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
+        EnginePlayerOrientation.lockOnCreate(this, savedInstanceState);
         super.onCreate(savedInstanceState);
 
         requestedChain = SiglusHostPolicy.requestedChain(
@@ -297,6 +299,7 @@ public final class SiglusActivity extends AppCompatActivity implements
     @Override
     protected void onResume() {
         super.onResume();
+        EnginePlayerOrientation.applyLocked(this);
         resumed = true;
         applyImmersive();
         startDirectStartupProbe();
@@ -980,61 +983,43 @@ public final class SiglusActivity extends AppCompatActivity implements
 
     private void showMessagebox(long engineHandle, long requestId, int kind, String title, String message) {
         if (engine == null || !engine.matchesHandle(engineHandle) || destroying) return;
+        if (!messageboxRequests.add(requestId)) return;
         if (isFinishing() || isDestroyed()) {
             submitMessagebox(engineHandle, requestId, fallbackMessageboxValue(kind));
             return;
         }
-        if (!messageboxRequests.add(requestId)) return;
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle(EngineUiText.localizeCommonDialogText(this, title));
-        builder.setMessage(message == null ? "" : message);
-        builder.setCancelable(true);
+        String[] labels;
         switch (kind) {
-            case 1: // OK / CANCEL
-                builder.setPositiveButton(uiString(R.string.engine_ok),
-                        (dialog, which) -> submitMessagebox(engineHandle, requestId, 0));
-                builder.setNegativeButton(uiString(R.string.engine_cancel),
-                        (dialog, which) -> submitMessagebox(engineHandle, requestId, 1));
-                builder.setOnCancelListener(dialog ->
-                        submitMessagebox(engineHandle, requestId, 1));
+            case 1:
+                labels = new String[]{uiString(R.string.engine_ok), uiString(R.string.engine_cancel)};
                 break;
-            case 2: // YES / NO
-                builder.setPositiveButton(uiString(R.string.engine_yes),
-                        (dialog, which) -> submitMessagebox(engineHandle, requestId, 0));
-                builder.setNegativeButton(uiString(R.string.engine_no),
-                        (dialog, which) -> submitMessagebox(engineHandle, requestId, 1));
-                builder.setOnCancelListener(dialog ->
-                        submitMessagebox(engineHandle, requestId, 1));
+            case 2:
+                labels = new String[]{uiString(R.string.engine_yes), uiString(R.string.engine_no)};
                 break;
-            case 3: // YES / NO / CANCEL
-                builder.setPositiveButton(uiString(R.string.engine_yes),
-                        (dialog, which) -> submitMessagebox(engineHandle, requestId, 0));
-                builder.setNegativeButton(uiString(R.string.engine_no),
-                        (dialog, which) -> submitMessagebox(engineHandle, requestId, 1));
-                builder.setNeutralButton(uiString(R.string.engine_cancel),
-                        (dialog, which) -> submitMessagebox(engineHandle, requestId, 2));
-                builder.setOnCancelListener(dialog ->
-                        submitMessagebox(engineHandle, requestId, 2));
+            case 3:
+                labels = new String[]{uiString(R.string.engine_yes), uiString(R.string.engine_no),
+                        uiString(R.string.engine_cancel)};
                 break;
-            case 0: // OK
             default:
-                builder.setPositiveButton(uiString(R.string.engine_ok),
-                        (dialog, which) -> submitMessagebox(engineHandle, requestId, 0));
-                builder.setOnCancelListener(dialog ->
-                        submitMessagebox(engineHandle, requestId, 0));
+                labels = new String[]{uiString(R.string.engine_ok)};
                 break;
         }
-        try { builder.show(); }
-        catch (RuntimeException failure) {
+        try {
+            Dialog dialog = KrDialogStyle.createDialog(this, title, message, null, labels,
+                    true, true, (d, index) -> submitMessagebox(engineHandle, requestId, index));
+            dialog.setOnDismissListener(d ->
+                    submitMessagebox(engineHandle, requestId, fallbackMessageboxValue(kind)));
+            dialog.show();
+        } catch (RuntimeException failure) {
             Log.w(TAG, "Native message box unavailable", failure);
             submitMessagebox(engineHandle, requestId, fallbackMessageboxValue(kind));
         }
     }
 
     private void submitMessagebox(long engineHandle, long requestId, long value) {
-        if (!destroying && engine != null && engine.matchesHandle(engineHandle)) {
+        if (!destroying && engine != null && engine.matchesHandle(engineHandle)
+                && messageboxRequests.remove(requestId)) {
             engine.submitMessagebox(engineHandle, requestId, value);
-            messageboxRequests.remove(requestId);
         }
     }
 

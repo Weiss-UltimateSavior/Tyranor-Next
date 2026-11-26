@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -65,6 +66,7 @@ import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.EffectiveEngineSettings
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.core.game.scan.ImpactoGameCatalog
+import com.tyranor.next.core.settings.EasyRpgOverride
 import com.tyranor.next.core.settings.ImpactoOverride
 import com.tyranor.next.core.settings.RenPyOverride
 import com.tyranor.next.core.settings.RpgMakerOverride
@@ -169,6 +171,9 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var ethornellNls by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ETHORNELL_NLS)) }
     var ethornellFont by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ETHORNELL_FONT)) }
     var cmvsFont by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_CMVS_FONT)) }
+    var cmvsProfile by remember(gid) {
+        mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_CMVS_PROFILE))
+    }
     var fvpSystemFont by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FVP_SYSTEM_FONT)) }
     var fvpTextHidpi by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FVP_TEXT_HIDPI)) }
     var ppssppVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_PPSSPP_VERSION)) }
@@ -222,6 +227,16 @@ fun PerGameSettingsScreen(game: ScanGame) {
         )
     }
     val impacto = impactoOverride ?: ImpactoOverride()
+    var easyRpgOverride by remember(gid) {
+        mutableStateOf(
+            if (game.engine == EngineType.EASYRPG) {
+                PerGameSettingsStore.toEasyRpgOverride(PerGameSettingsStore.load(ctx, gid))
+            } else {
+                null
+            },
+        )
+    }
+    val easyRpg = easyRpgOverride ?: EasyRpgOverride()
 
     val onsOverride = remember { mutableStateOf(PerGameSettingsStore.loadOnsOverride(ctx, gid) ?: JSONObject()) }
     var onsScoped by remember { mutableStateOf(onsBool(onsOverride.value, "scopedsavedir")) }
@@ -232,7 +247,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var onsSharpVal by remember { mutableStateOf(onsStr(onsOverride.value, "sharpness_value", "2")) }
     var onsEnc by remember { mutableStateOf(onsStr(onsOverride.value, "encoding", "gbk")) }
 
-    var tyExternal by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, "ty_external")) }
+    var tyExternal by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_TY_EXTERNAL)) }
     var tyScoped by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, "ty_scoped")) }
     var rpgMakerMod by remember {
         mutableStateOf(
@@ -514,6 +529,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalRenpy = remember { EngineSettingsStore.loadRenPy(ctx) }
     val globalRuffle = remember { EngineSettingsStore.loadRuffle(ctx) }
     val globalImpacto = remember { EngineSettingsStore.loadImpacto(ctx) }
+    val globalEasyRpg = remember { EngineSettingsStore.loadEasyRpg(ctx) }
     val globalRpg = remember { EngineSettingsStore.loadRpgMaker(ctx) }
     val rpgWindowMap = rpgWindowSizeOptionsMap()
     val rpgSpeedUpMap = rpgSpeedUpOptionsMap()
@@ -552,6 +568,11 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val ruffleScreenTimeoutMap = ruffleScreenTimeoutOptionsMap()
     val impactoLogLevelMap = impactoLogLevelOptionsMap()
     val impactoSubtitlesMap = impactoSubtitlesOptionsMap()
+    val easyRpgEncodingMap = easyRpgEncodingOptionsMap()
+    val easyRpgScalingMap = easyRpgScalingOptionsMap()
+    val easyRpgResolutionMap = easyRpgGameResolutionOptionsMap()
+    val easyRpgPatchModeMap = easyRpgPatchModeOptionsMap()
+    val easyRpgUnlimitedLabel = stringResource(R.string.engine_settings_easyrpg_fps_unlimited)
     val engineDefault = stringResource(R.string.engine_option_engine_default)
     val builtinFont = stringResource(R.string.engine_settings_builtin_font)
     val auto = stringResource(R.string.common_auto)
@@ -624,6 +645,9 @@ fun PerGameSettingsScreen(game: ScanGame) {
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ETHORNELL_NLS, ethornellNls)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ETHORNELL_FONT, ethornellFont)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_CMVS_FONT, cmvsFont)
+        if (game.engine == EngineType.CMVS) {
+            PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_CMVS_PROFILE, cmvsProfile)
+        }
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FVP_SYSTEM_FONT, fvpSystemFont)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FVP_TEXT_HIDPI, fvpTextHidpi)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_PPSSPP_VERSION, ppssppVersion)
@@ -682,7 +706,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
         putIfNotNull(onsObj, "sharpness_value", onsSharpVal)
         putIfNotNull(onsObj, "encoding", onsEnc)
         PerGameSettingsStore.setOnsOverride(ctx, gid, onsObj)
-        PerGameSettingsStore.setBool(ctx, gid, "ty_external", tyExternal)
+        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_TY_EXTERNAL, tyExternal)
         PerGameSettingsStore.setBool(ctx, gid, "ty_scoped", tyScoped)
         PerGameSettingsStore.setBool(
             ctx,
@@ -783,12 +807,67 @@ fun PerGameSettingsScreen(game: ScanGame) {
             )
             PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_IMPACTO_CLOSE_BACKLOG_AT_END, impacto.closeBacklogAtEnd)
             PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_IMPACTO_DELUSION_MOUSE, impacto.delusionMouse)
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_IMPACTO_DEBUG_MODE, impacto.debugMode)
             PerGameSettingsStore.setStr(
                 ctx,
                 gid,
                 PerGameSettingsStore.F_IMPACTO_LOG_LEVEL,
                 impacto.logLevel?.takeIf { it in EngineSettingsStore.IMPACTO_LOG_LEVELS },
             )
+        }
+        // EasyRPG 覆盖只写 EasyRPG 游戏，避免 easyrpg_* 键进入其它游戏的覆盖 blob。
+        if (game.engine == EngineType.EASYRPG) {
+            PerGameSettingsStore.setStr(
+                ctx,
+                gid,
+                PerGameSettingsStore.F_EASYRPG_ENCODING,
+                easyRpg.encoding?.takeIf { it in EngineSettingsStore.EASYRPG_ENCODINGS },
+            )
+            PerGameSettingsStore.setStr(
+                ctx,
+                gid,
+                PerGameSettingsStore.F_EASYRPG_SCALING,
+                easyRpg.scaling?.takeIf { it in EngineSettingsStore.EASYRPG_SCALINGS },
+            )
+            PerGameSettingsStore.setStr(
+                ctx,
+                gid,
+                PerGameSettingsStore.F_EASYRPG_GAME_RESOLUTION,
+                easyRpg.gameResolution?.takeIf { it in EngineSettingsStore.EASYRPG_RESOLUTIONS },
+            )
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_EASYRPG_STRETCH, easyRpg.stretch)
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_EASYRPG_VSYNC, easyRpg.vsync)
+            PerGameSettingsStore.setStr(
+                ctx,
+                gid,
+                PerGameSettingsStore.F_EASYRPG_FPS_LIMIT,
+                easyRpg.fpsLimit?.trim()?.toIntOrNull()
+                    ?.takeIf { it in EngineSettingsStore.EASYRPG_FPS_LIMIT_RANGE }?.toString(),
+            )
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_EASYRPG_SHOW_FPS, easyRpg.showFps)
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_EASYRPG_DISABLE_AUDIO, easyRpg.disableAudio)
+            PerGameSettingsStore.setStr(
+                ctx,
+                gid,
+                PerGameSettingsStore.F_EASYRPG_MUSIC_VOLUME,
+                easyRpg.musicVolume?.trim()?.toIntOrNull()
+                    ?.takeIf { it in EngineSettingsStore.EASYRPG_VOLUME_RANGE }?.toString(),
+            )
+            PerGameSettingsStore.setStr(
+                ctx,
+                gid,
+                PerGameSettingsStore.F_EASYRPG_SOUND_VOLUME,
+                easyRpg.soundVolume?.trim()?.toIntOrNull()
+                    ?.takeIf { it in EngineSettingsStore.EASYRPG_VOLUME_RANGE }?.toString(),
+            )
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_EASYRPG_NO_RTP, easyRpg.noRtp)
+            PerGameSettingsStore.setStr(
+                ctx,
+                gid,
+                PerGameSettingsStore.F_EASYRPG_PATCH_MODE,
+                easyRpg.patchMode?.takeIf { it in EngineSettingsStore.EASYRPG_PATCH_MODES },
+            )
+            PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_EASYRPG_TEST_PLAY, easyRpg.testPlay)
         }
     }
 
@@ -985,20 +1064,22 @@ fun PerGameSettingsScreen(game: ScanGame) {
                         if (!isSdl3) {
                             item(key = if (motionEnhanced) "krFont" else null) {
                                 SectionCard(stringResource(R.string.engine_settings_font), modifier = listItemMotion(enabled = motionEnhanced)) {
-                                    // 「跟随全局」必须删除覆盖键（null），存 "" 会被引擎当作
-                                    // 显式内置字体覆盖，导致全局字体设置对该游戏永久失效
+                                    // 三态语义：「跟随全局」必须删除覆盖键（null）；「内置字体」
+                                    // 存空串（game scope 空 Item，仅该游戏回落内置）；「选择文件」
+                                    // 存导入后的真实路径
                                     val krFontValue = krFont?.ifEmpty { stringResource(R.string.engine_settings_builtin_font) }
                                         ?: stringResource(
                                             R.string.engine_settings_follow_global_font,
                                             globalKrFont.ifEmpty { stringResource(R.string.engine_settings_builtin_font) },
                                         )
-                                    // 值落定（跟随全局 ↔ 选中字体）时整行轻轻弹一下；Box 贴合行尺寸
+                                    // 值落定（跟随全局 ↔ 内置字体 ↔ 选中字体）时整行轻轻弹一下；Box 贴合行尺寸
                                     Box(Modifier.bounceOnChange(krFontValue, depth = ROW_SETTLE_DEPTH)) {
                                     FontPreference(
                                         label = stringResource(R.string.engine_settings_default_font),
                                         value = krFontValue,
                                         followLabel = stringResource(R.string.engine_settings_follow_global),
                                         onFollow = { krFont = null },
+                                        onBuiltIn = { krFont = "" },
                                         onPick = { fontLauncher.launch("*/*") },
                                         valueInSummary = true,
                                     )
@@ -1239,6 +1320,17 @@ fun PerGameSettingsScreen(game: ScanGame) {
                     }
                     EngineType.CMVS -> item {
                         SectionCard("CMVS") {
+                            val profileIds = stringArrayResource(R.array.cmvs_profile_ids)
+                            val profileTitles = stringArrayResource(R.array.cmvs_profile_titles)
+                            val profileLabels = profileTitles.zip(profileIds) { title, id -> "$title ($id)" }
+                            OverlayDropdownPreference(
+                                title = stringResource(R.string.cmvs_profile_title),
+                                summary = stringResource(R.string.cmvs_profile_summary),
+                                items = listOf(stringResource(R.string.cmvs_profile_auto)) + profileLabels,
+                                selectedIndex = profileIds.indexOf(cmvsProfile) + 1,
+                                maxHeight = 360.dp,
+                                onSelectedIndexChange = { cmvsProfile = profileIds.getOrNull(it - 1) },
+                            )
                             OverrideFontPreference(
                                 label = stringResource(R.string.cmvs_font_title),
                                 globalValue = EngineSettingsStore.getCmvsFont(ctx),
@@ -1690,8 +1782,129 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                 globalImpacto.logLevel,
                                 impacto.logLevel,
                             ) { impactoOverride = impacto.copy(logLevel = it) }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_impacto_debug_mode),
+                                globalImpacto.debugMode,
+                                impacto.debugMode,
+                            ) { impactoOverride = impacto.copy(debugMode = it) }
                             Text(
                                 stringResource(R.string.engine_settings_impacto_module_description),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
+                    EngineType.EASYRPG -> item {
+                        SectionCard(game.engine.displayName) {
+                            OverrideChoice(
+                                stringResource(R.string.engine_settings_easyrpg_scaling),
+                                easyRpgScalingMap,
+                                globalEasyRpg.scaling,
+                                easyRpg.scaling,
+                            ) { easyRpgOverride = easyRpg.copy(scaling = it) }
+                            OverrideChoice(
+                                stringResource(R.string.engine_settings_easyrpg_resolution),
+                                easyRpgResolutionMap,
+                                globalEasyRpg.gameResolution,
+                                easyRpg.gameResolution,
+                            ) { easyRpgOverride = easyRpg.copy(gameResolution = it) }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_easyrpg_stretch),
+                                globalEasyRpg.stretch,
+                                easyRpg.stretch,
+                            ) { easyRpgOverride = easyRpg.copy(stretch = it) }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_easyrpg_vsync),
+                                globalEasyRpg.vsync,
+                                easyRpg.vsync,
+                            ) { easyRpgOverride = easyRpg.copy(vsync = it) }
+                            OverrideText(
+                                label = stringResource(R.string.engine_settings_easyrpg_fps_limit),
+                                globalValue = if (globalEasyRpg.fpsLimit == 0) {
+                                    easyRpgUnlimitedLabel
+                                } else {
+                                    stringResource(R.string.engine_settings_easyrpg_fps_value, globalEasyRpg.fpsLimit)
+                                },
+                                override = easyRpg.fpsLimit,
+                                hint = stringResource(R.string.engine_settings_easyrpg_fps_limit_hint),
+                                sanitize = { it.filter(Char::isDigit).take(3) },
+                                allowEmpty = false,
+                                validate = {
+                                    it.toIntOrNull()?.let { value ->
+                                        value in EngineSettingsStore.EASYRPG_FPS_LIMIT_RANGE
+                                    } == true
+                                },
+                                keyboardType = KeyboardType.Number,
+                                summaryOverride = easyRpg.fpsLimit?.toIntOrNull()?.let { value ->
+                                    if (value == 0) easyRpgUnlimitedLabel
+                                    else stringResource(R.string.engine_settings_easyrpg_fps_value, value)
+                                },
+                            ) { easyRpgOverride = easyRpg.copy(fpsLimit = it) }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_easyrpg_show_fps),
+                                globalEasyRpg.showFps,
+                                easyRpg.showFps,
+                            ) { easyRpgOverride = easyRpg.copy(showFps = it) }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_easyrpg_disable_audio),
+                                globalEasyRpg.disableAudio,
+                                easyRpg.disableAudio,
+                            ) { easyRpgOverride = easyRpg.copy(disableAudio = it) }
+                            OverrideText(
+                                label = stringResource(R.string.engine_settings_easyrpg_music_volume),
+                                globalValue = "${globalEasyRpg.musicVolume}%",
+                                override = easyRpg.musicVolume,
+                                hint = stringResource(R.string.engine_settings_easyrpg_volume_hint),
+                                sanitize = { it.filter(Char::isDigit).take(3) },
+                                allowEmpty = false,
+                                validate = {
+                                    it.toIntOrNull()?.let { value ->
+                                        value in EngineSettingsStore.EASYRPG_VOLUME_RANGE
+                                    } == true
+                                },
+                                keyboardType = KeyboardType.Number,
+                                summaryOverride = easyRpg.musicVolume?.let { "$it%" },
+                            ) { easyRpgOverride = easyRpg.copy(musicVolume = it) }
+                            OverrideText(
+                                label = stringResource(R.string.engine_settings_easyrpg_sound_volume),
+                                globalValue = "${globalEasyRpg.soundVolume}%",
+                                override = easyRpg.soundVolume,
+                                hint = stringResource(R.string.engine_settings_easyrpg_volume_hint),
+                                sanitize = { it.filter(Char::isDigit).take(3) },
+                                allowEmpty = false,
+                                validate = {
+                                    it.toIntOrNull()?.let { value ->
+                                        value in EngineSettingsStore.EASYRPG_VOLUME_RANGE
+                                    } == true
+                                },
+                                keyboardType = KeyboardType.Number,
+                                summaryOverride = easyRpg.soundVolume?.let { "$it%" },
+                            ) { easyRpgOverride = easyRpg.copy(soundVolume = it) }
+                            OverrideChoice(
+                                stringResource(R.string.engine_settings_easyrpg_encoding),
+                                easyRpgEncodingMap,
+                                globalEasyRpg.encoding,
+                                easyRpg.encoding,
+                            ) { easyRpgOverride = easyRpg.copy(encoding = it) }
+                            OverrideChoice(
+                                stringResource(R.string.engine_settings_easyrpg_patch_mode),
+                                easyRpgPatchModeMap,
+                                globalEasyRpg.patchMode,
+                                easyRpg.patchMode,
+                            ) { easyRpgOverride = easyRpg.copy(patchMode = it) }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_easyrpg_no_rtp),
+                                globalEasyRpg.noRtp,
+                                easyRpg.noRtp,
+                            ) { easyRpgOverride = easyRpg.copy(noRtp = it) }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_easyrpg_test_play),
+                                globalEasyRpg.testPlay,
+                                easyRpg.testPlay,
+                            ) { easyRpgOverride = easyRpg.copy(testPlay = it) }
+                            Text(
+                                stringResource(R.string.engine_settings_easyrpg_module_description),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),

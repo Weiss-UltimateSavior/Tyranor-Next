@@ -1,5 +1,6 @@
 package com.tyranor.next.ui.common
 
+import android.animation.ValueAnimator
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.LinearEasing
@@ -7,6 +8,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.VectorConverter
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -26,6 +28,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -33,6 +36,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Modifier
@@ -66,8 +70,10 @@ import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassSurfaceHigh
 import com.tyranor.next.theme.GlassText
 import com.tyranor.next.theme.GlassTextSecondary
+import com.tyranor.next.theme.MilkSurfaceStrong
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.PageSecondaryTextColor
+import com.tyranor.next.theme.SecondaryTextColor
 import com.tyranor.next.theme.SheetSecondaryTextColor
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.LocalAppDialogContent
@@ -546,7 +552,18 @@ private fun TabLabel(
             // 不会随手指落点滑到选框的上下半边
             .pressSquish(scale = 0.92f, follow = 0.dp)
             .clip(AppComponentShape)
-            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            // 既有标签继承主题反馈；藏书阁有形变时不叠高亮，否则用涟漪保留按压反馈。
+            .selectable(
+                selected = selected,
+                interactionSource = null,
+                indication = when {
+                    !LocalSlidingTabLightPanel.current -> LocalIndication.current
+                    MotionMode.enhanced && ValueAnimator.areAnimatorsEnabled() -> null
+                    else -> ripple()
+                },
+                role = Role.Tab,
+                onClick = onClick,
+            )
             .padding(horizontal = TabLabelHorizontalPadding),
         contentAlignment = Alignment.Center,
     ) {
@@ -583,11 +600,15 @@ private fun TabLabel(
     }
 }
 
+/** 藏书阁等浅底半透明面板内的取色标记：不触发弹窗/抽屉窗口语义，仅让白雾玻璃浅面托盘取亮指示器与深色次字。 */
+internal val LocalSlidingTabLightPanel = staticCompositionLocalOf { false }
+
 /** 弹窗上下文的局部取色适配：指示器复用反色条目，避免与弹窗面板同色。
- * 由公共弹窗提供上下文，调用方不传色值；页内标签栏保留既有取色分派，玻璃档各用自身动态常量。
+ * 由公共弹窗/浅底托盘提供上下文，调用方不传色值；页内标签栏保留既有取色分派，玻璃档各用自身动态常量。
  */
 @Composable
 private fun tabIndicatorContainer(): Color = when {
+    LocalSlidingTabLightPanel.current && AppThemeColors.isMilkGlass -> MilkSurfaceStrong
     LocalAppSheetContent.current && AppThemeColors.isMilkGlass -> DialogItemSurface
     LocalAppDialogContent.current -> DialogItemSurface
     AppThemeColors.isGlass -> GlassSurfaceHigh
@@ -600,6 +621,7 @@ private fun tabContentColor(selected: Boolean): Color = when {
     selected && AppThemeColors.isGlass -> GlassText
     selected -> TextColor
     AppThemeColors.isGlass -> GlassTextSecondary
+    LocalSlidingTabLightPanel.current && AppThemeColors.isMilkGlass -> SecondaryTextColor
     LocalAppSheetContent.current && AppThemeColors.isMilkGlass -> SheetSecondaryTextColor
     AppThemeColors.isMilkGlass -> PageSecondaryTextColor
     LocalAppDialogContent.current -> UnselectedGrey

@@ -7,12 +7,19 @@ import com.tyranor.next.R
 import com.tyranor.next.core.auth.BangumiAuthError
 import com.tyranor.next.core.auth.BangumiAuthService
 import com.tyranor.next.core.i18n.AppLocaleController
+import com.tyranor.next.core.privacy.AppLockController
 import com.tyranor.next.ui.common.notice.AppNotice
 
 class BangumiOAuthCallbackActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (savedInstanceState != null) {
+            finish()
+            return
+        }
+        // 与 Hikarinagi 回调一致：应用锁生效时丢弃浏览器回跳，不把令牌写进即将被锁门
+        // 覆盖的应用。回调可能早于 ON_START，必须用「进入时将会上锁」的只读判定。
+        if (AppLockController.willRequireUnlockOnEntering()) {
             finish()
             return
         }

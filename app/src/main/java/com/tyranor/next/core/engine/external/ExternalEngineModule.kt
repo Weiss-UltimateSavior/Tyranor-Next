@@ -16,9 +16,17 @@ interface ExternalEngineModule {
     val defaultAlias: String
     val supportedAliases: Set<String>
     val installUrl: String?
+    val updateSource: ExternalEngineReleaseSource? get() = null
 
     /** Minimum installed APK versionCode accepted by this module; zero means any version. */
     val minimumVersionCode: Long get() = 0L
+
+    /**
+     * 启动某个目标（游戏记录里的 `launchTarget`）要求的最低 APK versionCode，默认就是模块级的 [minimumVersionCode]。
+     * 个别目标依赖较新版本才有的能力时覆写（如 MAGES. 的 Windows／Steam 版 profile），
+     * 让更老的版本只对这些目标提示更新，其余目标不受影响。
+     */
+    fun minimumVersionCodeFor(launchTarget: String): Long = minimumVersionCode
 
     /** 允许的 APK versionCode 上限；用于区分共用包名的不同引擎版本。 */
     val maximumVersionCode: Long get() = Long.MAX_VALUE

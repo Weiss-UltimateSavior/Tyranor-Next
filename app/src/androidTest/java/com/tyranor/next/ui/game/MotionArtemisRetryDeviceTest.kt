@@ -35,10 +35,6 @@ import org.junit.Test
 class MotionArtemisRetryDeviceTest {
     @get:Rule val compose = createComposeRule()
 
-    /** Ordinary mode can retry launch preparation in the same drawer after cancelling its confirmation. */
-    @Test
-    fun ordinaryArtemisConfirmationCanBeCancelledAndReopened() = verifyRetry(enhanced = false)
-
     /** Enhanced mode releases preparation only through the actual animated dialog dismissal callback. */
     @Test
     fun enhancedArtemisConfirmationCanBeCancelledAndReopened() = verifyRetry(enhanced = true)
@@ -67,7 +63,6 @@ class MotionArtemisRetryDeviceTest {
         var sheetDismissRequests = 0
         var contentInstalled = false
         try {
-            instrumentation.runOnMainSync { MotionMode.sync(enhanced) }
             assertTrue(archive.createNewFile())
             assertTrue(
                 prefs.edit()
@@ -139,7 +134,6 @@ class MotionArtemisRetryDeviceTest {
                     if (hadPatch) restore.putString(patchKey, previousPatch) else restore.remove(patchKey)
                     assertTrue("The isolated installation's original Artemis preferences must be restored", restore.commit())
                 } finally {
-                    instrumentation.runOnMainSync { MotionMode.sync(previousMotion) }
                     assertTrue("Only the fixture archive is removed", !archive.exists() || archive.delete())
                     assertTrue("The fixture directory must be empty before removal", !directory.exists() || directory.delete())
                 }

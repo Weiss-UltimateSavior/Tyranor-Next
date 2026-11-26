@@ -93,6 +93,7 @@ internal object GameOverridePartitions {
     const val KEY_ETHORNELL_NLS = "ethornell_nls"
     const val KEY_ETHORNELL_FONT = "ethornell_font"
     const val KEY_CMVS_FONT = "cmvs_font"
+    const val KEY_CMVS_PROFILE = "cmvs_profile"
     const val KEY_FVP_SYSTEM_FONT = "fvp_system_font"
     const val KEY_FVP_TEXT_HIDPI = "fvp_text_hidpi"
     const val KEY_FVP_FONT = "fvp_font"
@@ -133,6 +134,21 @@ internal object GameOverridePartitions {
     const val KEY_IMPACTO_CLOSE_BACKLOG_AT_END = "impacto_close_backlog_at_end"
     const val KEY_IMPACTO_DELUSION_MOUSE = "impacto_delusion_mouse"
     const val KEY_IMPACTO_LOG_LEVEL = "impacto_log_level"
+    const val KEY_IMPACTO_DEBUG_MODE = "impacto_debug_mode"
+    // EasyRPG 外置宿主配置覆盖键（与 PerGameSettingsStore.F_EASYRPG_*、EngineSettingsStore.KEY_EASYRPG_* 字面量锚定）
+    const val KEY_EASYRPG_ENCODING = "easyrpg_encoding"
+    const val KEY_EASYRPG_SCALING = "easyrpg_scaling"
+    const val KEY_EASYRPG_GAME_RESOLUTION = "easyrpg_game_resolution"
+    const val KEY_EASYRPG_STRETCH = "easyrpg_stretch"
+    const val KEY_EASYRPG_VSYNC = "easyrpg_vsync"
+    const val KEY_EASYRPG_FPS_LIMIT = "easyrpg_fps_limit"
+    const val KEY_EASYRPG_SHOW_FPS = "easyrpg_show_fps"
+    const val KEY_EASYRPG_DISABLE_AUDIO = "easyrpg_disable_audio"
+    const val KEY_EASYRPG_MUSIC_VOLUME = "easyrpg_music_volume"
+    const val KEY_EASYRPG_SOUND_VOLUME = "easyrpg_sound_volume"
+    const val KEY_EASYRPG_NO_RTP = "easyrpg_no_rtp"
+    const val KEY_EASYRPG_PATCH_MODE = "easyrpg_patch_mode"
+    const val KEY_EASYRPG_TEST_PLAY = "easyrpg_test_play"
     const val ONS_OBJECT_KEY = "ons"
     const val KEY_RUNTIME_MODULE_SETTINGS = "runtime_module_settings"
 
@@ -177,7 +193,7 @@ internal object GameOverridePartitions {
         KEY_RPG_SPEED_UP, KEY_RPG_FONT_SCALE,
         KEY_SIGLUS_LANGUAGE, KEY_SIGLUS_GRAPHICS,
         KEY_FB_NLS,
-        KEY_ETHORNELL_NLS, KEY_ETHORNELL_FONT, KEY_CMVS_FONT,
+        KEY_ETHORNELL_NLS, KEY_ETHORNELL_FONT, KEY_CMVS_FONT, KEY_CMVS_PROFILE,
         KEY_FVP_NLS, KEY_FVP_SYSTEM_FONT, KEY_FVP_TEXT_HIDPI, KEY_FVP_FONT,
         KEY_XSYS35_SCOPED_SAVE_DIR, KEY_XSYS35_RENDERER,
         KEY_XSYS35_INTEGER_SCALE, KEY_XSYS35_MUTE_UNFOCUS,
@@ -189,6 +205,11 @@ internal object GameOverridePartitions {
         KEY_IMPACTO_SWAP_CONFIRM_CANCEL, KEY_IMPACTO_VSYNC, KEY_IMPACTO_VIDEO_PLAYBACK,
         KEY_IMPACTO_SUBTITLES,
         KEY_IMPACTO_CLOSE_BACKLOG_AT_END, KEY_IMPACTO_DELUSION_MOUSE, KEY_IMPACTO_LOG_LEVEL,
+        KEY_IMPACTO_DEBUG_MODE,
+        KEY_EASYRPG_ENCODING, KEY_EASYRPG_SCALING, KEY_EASYRPG_GAME_RESOLUTION,
+        KEY_EASYRPG_STRETCH, KEY_EASYRPG_VSYNC, KEY_EASYRPG_FPS_LIMIT, KEY_EASYRPG_SHOW_FPS,
+        KEY_EASYRPG_DISABLE_AUDIO, KEY_EASYRPG_MUSIC_VOLUME, KEY_EASYRPG_SOUND_VOLUME,
+        KEY_EASYRPG_NO_RTP, KEY_EASYRPG_PATCH_MODE, KEY_EASYRPG_TEST_PLAY,
     )
     // Ren'Py 分区：版本选择 + 外置模块配置，显式建模防止未来收紧分区时丢键
     val RENPY_KEYS: Set<String> = setOf(

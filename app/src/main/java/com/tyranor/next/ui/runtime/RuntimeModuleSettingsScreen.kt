@@ -56,6 +56,7 @@ import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.motion.BlurCrossfade
 import com.tyranor.next.ui.common.motion.ExpandVisibility
 import com.tyranor.next.ui.common.motion.listItemMotion
+import com.tyranor.next.ui.common.motion.pressSquishGroup
 import com.tyranor.next.ui.common.motion.ProvideEntrance
 import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import com.tyranor.next.ui.common.notice.AppNotice
@@ -103,7 +104,7 @@ fun RuntimeModuleSettingsScreen(game: ScanGame) {
     val screenState = when {
         loading -> RuntimeSettingsScreenState.Loading
         loadError -> RuntimeSettingsScreenState.Error
-        module?.settings == null -> RuntimeSettingsScreenState.Empty
+        settings == null && module?.fileImports.isNullOrEmpty() -> RuntimeSettingsScreenState.Empty
         descriptionConflict -> RuntimeSettingsScreenState.Conflict
         else -> RuntimeSettingsScreenState.Content
     }
@@ -258,6 +259,7 @@ fun RuntimeModuleSettingsScreen(game: ScanGame) {
     }
 
     MiuixSettingsTheme {
+        val pickFiles = rememberRuntimeModuleFileImport(game)
         ProvideEntrance {
             MiuixScaffold(
                 modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
@@ -354,6 +356,24 @@ fun RuntimeModuleSettingsScreen(game: ScanGame) {
                             )
                         }
                     }
+                    if (bindingValid && descriptorConfirmed && !loadError) {
+                        items(module?.fileImports.orEmpty(), key = { "runtime_file_import:${it.key}" }) { item ->
+                            val enabled = pickFiles != null && !loading && !saveRunning
+                            MiuixCard(
+                                cornerRadius = AppComponentCornerRadius,
+                                modifier = Modifier.pressSquishGroup().then(listItemMotion()).fillMaxWidth().glassBorder(),
+                            ) {
+                                com.tyranor.next.ui.common.AppNavItem(
+                                    title = item.title,
+                                    summary = stringResource(R.string.runtime_file_import_destination, item.displayPath),
+                                    drawSurface = false,
+                                    showLeadingIcon = false,
+                                    showArrow = false,
+                                    onClick = if (enabled) ({ pickFiles(item) }) else null,
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -419,7 +439,7 @@ private fun RuntimeSettingRow(
     onEdit: () -> Unit,
     onRestore: () -> Unit,
 ) {
-    MiuixCard(cornerRadius = AppComponentCornerRadius, modifier = modifier.fillMaxWidth().glassBorder()) {
+    MiuixCard(cornerRadius = AppComponentCornerRadius, modifier = modifier.pressSquishGroup().fillMaxWidth().glassBorder()) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
             when (item.type) {
                 RuntimeModuleSettingItemSpec.Type.BOOLEAN -> SwitchPreference(

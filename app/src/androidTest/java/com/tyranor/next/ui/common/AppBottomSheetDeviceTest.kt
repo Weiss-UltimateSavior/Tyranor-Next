@@ -1,5 +1,10 @@
 package com.tyranor.next.ui.common
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SheetValue
@@ -8,16 +13,24 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import androidx.test.espresso.Espresso.pressBack
@@ -28,6 +41,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.core.settings.GameCardColumnSettings
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.MotionSheetController
@@ -53,16 +67,60 @@ class AppBottomSheetDeviceTest {
     }
 
     @After fun restoreMotion() {
-        originalMotion?.let { compose.runOnUiThread { MotionMode.sync(it) } }
     }
 
     @Test fun enhancedFilterDropdownConsumesBackBeforeSheet() = filterDropdownConsumesBack(true)
-    @Test fun ordinaryFilterDropdownConsumesBackBeforeSheet() = filterDropdownConsumesBack(false)
     @Test fun enhancedGuardBlocksBackAndScrimUntilReleased() = guardBlocksDismissal(true)
-    @Test fun ordinaryGuardBlocksBackAndScrimUntilReleased() = guardBlocksDismissal(false)
+    @Test fun enhancedGrowthDuringClosingThenReopenKeepsBottomActionVisibleAndClickable() =
+        growthDuringEnhancedCloseThenReopen()
+    @Test fun enhancedUnchangedHeightControlKeepsBottomActionAligned() =
+        unchangedHeightControl(enhanced = true)
+
+    @Test fun columnSliderAppearsOnlyForGridStylesAndReportsChanges() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val slider = compose.onNodeWithContentDescription(context.getString(R.string.game_filter_card_columns))
+        var cardStyle by mutableStateOf(AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW)
+        var columns by mutableStateOf(3)
+        var wideScreen by mutableStateOf(false)
+        compose.setContent {
+            TyranorNextTheme {
+                GameFilterSheet(
+                    sortMode = AppSettingsStore.GAME_SORT_ALPHA,
+                    engineFilter = AppSettingsStore.GAME_FILTER_ENGINE_ALL,
+                    playedFilter = AppSettingsStore.GAME_FILTER_PLAYED_ALL,
+                    availableEngines = listOf(EngineType.UNKNOWN),
+                    searchQuery = "",
+                    cardStyle = cardStyle,
+                    cardColumns = columns,
+                    columnRange = GameCardColumnSettings.range(wideScreen),
+                    onSortChange = {}, onEngineChange = {}, onPlayedChange = {},
+                    onColumnsChange = { columns = it },
+                    onReset = {}, onDismiss = {},
+                )
+            }
+        }
+        compose.onNodeWithText(context.getString(R.string.game_filter_title)).assertIsDisplayed()
+        slider.assertDoesNotExist()
+        compose.runOnIdle { cardStyle = AppSettingsStore.GAME_CARD_STYLE_WATERFALL }
+        slider.performScrollTo().assertIsDisplayed().performSemanticsAction(SemanticsActions.SetProgress) { it(8f) }
+        compose.runOnIdle {
+            assertEquals(6, columns)
+            cardStyle = AppSettingsStore.GAME_CARD_STYLE_GRID
+            wideScreen = true
+        }
+        slider.assertIsDisplayed().performSemanticsAction(SemanticsActions.SetProgress) { it(8f) }
+        slider.assert(SemanticsMatcher.expectValue(
+            SemanticsProperties.StateDescription,
+            context.getString(R.string.game_filter_card_columns_value, 8),
+        ))
+        compose.runOnIdle {
+            assertEquals(8, columns)
+            cardStyle = AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW
+        }
+        slider.assertDoesNotExist()
+    }
 
     private fun filterDropdownConsumesBack(enhanced: Boolean) {
-        compose.runOnUiThread { MotionMode.sync(enhanced) }
         // The enhanced popup intentionally samples its follow spring every frame while open.
         // Drive a finite interval instead of asking autoAdvance to drain that live frame loop.
         // Semantics queries still wait for recomposition/layout with the clock paused, so a
@@ -80,7 +138,11 @@ class AppBottomSheetDeviceTest {
                             playedFilter = AppSettingsStore.GAME_FILTER_PLAYED_ALL,
                             availableEngines = listOf(EngineType.UNKNOWN),
                             searchQuery = "",
+                            cardStyle = AppSettingsStore.GAME_CARD_STYLE_WATERFALL,
+                            cardColumns = 3,
+                            columnRange = 2..6,
                             onSortChange = {}, onEngineChange = {}, onPlayedChange = {}, onReset = {},
+                            onColumnsChange = {},
                             onDismiss = { dismissals++; visible = false },
                         )
                     }
@@ -164,7 +226,6 @@ class AppBottomSheetDeviceTest {
     }
 
     private fun guardBlocksDismissal(enhanced: Boolean) {
-        compose.runOnUiThread { MotionMode.sync(enhanced) }
         var visible by mutableStateOf(true)
         var allowed by mutableStateOf(false)
         var latestCallback by mutableStateOf(false)
@@ -219,5 +280,164 @@ class AppBottomSheetDeviceTest {
             assertEquals("The modal window must be removed exactly once", 1, dismissals)
         }
         assertTrue(compose.onAllNodes(isDialog()).fetchSemanticsNodes().isEmpty())
+    }
+
+    private fun growthDuringOrdinaryOpening() {
+        compose.mainClock.autoAdvance = false
+        var extraRow by mutableStateOf(false)
+        var clicks = 0
+        var controller: MotionSheetController? = null
+        try {
+            compose.setContent {
+                TyranorNextTheme {
+                    val sheet = rememberMotionSheetController()
+                    SideEffect { controller = sheet }
+                    AppBottomSheet(onDismissRequest = {}, controller = sheet) {
+                        ResizableSheetFixture(extraRow = extraRow, onBottomClick = { clicks++ })
+                    }
+                }
+            }
+            // Wait until the sheet dialog has measured once and ordinary show() is actively opening
+            // (currentValue != Expanded while targetValue == Expanded), then grow the content mid-open.
+            compose.waitUntil(5_000) {
+                compose.mainClock.advanceTimeByFrame()
+                val state = controller?.sheetState
+                val hasBottom = compose.onAllNodesWithText(BOTTOM_ACTION_LABEL).fetchSemanticsNodes().isNotEmpty()
+                hasBottom && state != null &&
+                    state.targetValue == SheetValue.Expanded &&
+                    state.currentValue != SheetValue.Expanded
+            }
+            compose.runOnUiThread { extraRow = true }
+            compose.mainClock.advanceTimeBy(1_500)
+            compose.mainClock.autoAdvance = true
+            compose.waitForIdle()
+            compose.waitUntil(5_000) {
+                controller?.sheetState?.currentValue == SheetValue.Expanded
+            }
+            compose.onNodeWithText(EXTRA_ROW_LABEL).assertIsDisplayed()
+            assertBottomActionFullyVisibleAndClickable(expectedClicks = { clicks })
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
+    private fun growthDuringEnhancedCloseThenReopen() {
+        compose.mainClock.autoAdvance = false
+        var extraRow by mutableStateOf(false)
+        var clicks = 0
+        var controller: MotionSheetController? = null
+        try {
+            compose.setContent {
+                TyranorNextTheme {
+                    val sheet = rememberMotionSheetController()
+                    SideEffect { controller = sheet }
+                    AppBottomSheet(onDismissRequest = {}, controller = sheet) {
+                        ResizableSheetFixture(extraRow = extraRow, onBottomClick = { clicks++ })
+                    }
+                }
+            }
+            compose.waitUntil(5_000) {
+                compose.mainClock.advanceTimeBy(100)
+                val sheet = controller
+                sheet != null && sheet.height > 0f && kotlin.math.abs(sheet.offset.value) < 1f
+            }
+            compose.onNodeWithText(BOTTOM_ACTION_LABEL).assertIsDisplayed()
+
+            // Start closing, let the exit animation progress partway without committing offscreen,
+            // grow the sheet while closing is true, then reopen and verify bottom alignment.
+            compose.runOnUiThread { controller!!.close() }
+            compose.mainClock.advanceTimeBy(48)
+            compose.runOnIdle {
+                assertTrue("Sheet should be actively closing before growth", controller!!.closing)
+                assertFalse("Sheet must not be committed closed before reopen", controller!!.closeCommitted)
+            }
+            compose.runOnUiThread { extraRow = true }
+            compose.mainClock.advanceTimeBy(32)
+            compose.runOnUiThread {
+                assertTrue("Sheet should reopen mid-close", controller!!.reopen())
+            }
+            compose.mainClock.advanceTimeBy(2_000)
+            compose.mainClock.autoAdvance = true
+            compose.waitForIdle()
+            compose.runOnIdle {
+                assertFalse("Sheet must no longer be closing after reopen", controller!!.closing)
+                assertEquals(SheetValue.Expanded, controller!!.sheetState?.currentValue)
+            }
+            compose.onNodeWithText(EXTRA_ROW_LABEL).assertIsDisplayed()
+            assertBottomActionFullyVisibleAndClickable(expectedClicks = { clicks })
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
+    private fun unchangedHeightControl(enhanced: Boolean) {
+        var clicks = 0
+        var controller: MotionSheetController? = null
+        compose.setContent {
+            TyranorNextTheme {
+                val sheet = rememberMotionSheetController()
+                SideEffect { controller = sheet }
+                AppBottomSheet(onDismissRequest = {}, controller = sheet) {
+                    ResizableSheetFixture(extraRow = false, onBottomClick = { clicks++ })
+                }
+            }
+        }
+        compose.waitForIdle()
+        compose.waitUntil(5_000) {
+            val sheet = controller
+            sheet != null &&
+                sheet.sheetState?.currentValue == SheetValue.Expanded &&
+                (!enhanced || (sheet.height > 0f && kotlin.math.abs(sheet.offset.value) < 1f))
+        }
+        val initialBounds = compose.onNodeWithText(BOTTOM_ACTION_LABEL).fetchSemanticsNode().boundsInRoot
+        compose.waitForIdle()
+        assertEquals(initialBounds, compose.onNodeWithText(BOTTOM_ACTION_LABEL).fetchSemanticsNode().boundsInRoot)
+        assertBottomActionFullyVisibleAndClickable(expectedClicks = { clicks })
+    }
+
+    private fun assertBottomActionFullyVisibleAndClickable(expectedClicks: () -> Int) {
+        val dialogBounds = compose.onNode(isDialog()).fetchSemanticsNode().boundsInRoot
+        val actionNode = compose.onNodeWithText(BOTTOM_ACTION_LABEL).assertIsDisplayed()
+        val semantics = actionNode.fetchSemanticsNode()
+        val bounds = semantics.boundsInRoot
+        assertTrue(
+            "Bottom action must stay within the visible dialog window (action=$bounds, dialog=$dialogBounds)",
+            bounds.top >= dialogBounds.top - 1f && bounds.bottom <= dialogBounds.bottom + 1f,
+        )
+        assertTrue(
+            "Bottom action must retain its full unclipped height (bounds=$bounds, size=${semantics.size})",
+            bounds.height >= semantics.size.height - 1f,
+        )
+        actionNode.performTouchInput { click() }
+        compose.runOnIdle { assertEquals(1, expectedClicks()) }
+    }
+
+    @androidx.compose.runtime.Composable
+    private fun ResizableSheetFixture(extraRow: Boolean, onBottomClick: () -> Unit) {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Text("Resizable sheet fixture", Modifier.padding(bottom = 12.dp))
+            if (extraRow) {
+                Box(
+                    Modifier.fillMaxWidth().height(120.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    Text(EXTRA_ROW_LABEL)
+                }
+            }
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .clickable(onClick = onBottomClick),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(BOTTOM_ACTION_LABEL)
+            }
+        }
+    }
+
+    private companion object {
+        const val EXTRA_ROW_LABEL = "Async extra row"
+        const val BOTTOM_ACTION_LABEL = "Bottom action"
     }
 }

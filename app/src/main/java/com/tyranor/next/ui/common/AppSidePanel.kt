@@ -54,12 +54,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.tyranor.next.R
+import com.tyranor.next.core.privacy.AppLockController
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassPanel
 import com.tyranor.next.theme.MilkGlassPanelBackground
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.ui.common.privacy.DismissOnAppLockEffect
 import com.tyranor.next.theme.TextColor
+import com.tyranor.next.theme.WithoutPressIndication
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.motion.MotionHaptics
 import com.tyranor.next.ui.common.motion.MotionIntent
@@ -132,7 +135,12 @@ internal fun AppSidePanel(
     // 而不是整窗瞬间消失；「普通」档保持原版立即移除
     var mounted by remember { mutableStateOf(open) }
     LaunchedEffect(open) { if (open) mounted = true }
-    val show = open || (mounted && MotionMode.enhanced)
+    // 侧栏是独立窗口，层级在解锁门之上：应用锁生效时**立即**移除，不做滑出动画——
+    // 增强档的 mounted 会让它在退场期间继续悬在锁门上方（可操作），锁定时首要不可操作
+    val locked by AppLockController.lockedState.collectSettingAsState()
+    LaunchedEffect(locked) { if (locked) mounted = false }
+    DismissOnAppLockEffect(onDismiss)
+    val show = !locked && (open || (mounted && MotionMode.enhanced))
     if (!show) {
         if (mounted) mounted = false
         return
@@ -229,6 +237,7 @@ private fun SidePanelWindow(
                         }
                         // 顶部标题（水平居中）+ 功能条目区（条目之间统一间距）
                         // 每次打开时标题与条目区依次弹入
+                        WithoutPressIndication {
                         ProvideEntrance(rememberEntranceState()) {
                             Column(modifier = Modifier.fillMaxWidth().skipEntranceOnDrag().padding(horizontal = 12.dp)) {
                                 Text(
@@ -264,6 +273,7 @@ private fun SidePanelWindow(
                                     }
                                 }
                             }
+                        }
                         }
                     }
                 }

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(tyranor_native)
 
-add_library(krkr_bridge_v2 SHARED krkr_bridge.cpp krkr_raw_frame_bridge.cpp)
+add_library(krkr_bridge_v2 SHARED krkr_bridge.cpp krkr_raw_frame_bridge.cpp krkr_audio_bridge.cpp)
 add_library(krkrsdl3_graphics_bridge SHARED krkrsdl3_graphics.cpp)
 add_library(artemis_audio_bridge SHARED artemis_audio_bridge.cpp)
 add_library(artemis_loader SHARED artemis_loader.cpp artemis_host_class.cpp artemis_official_graphics.cpp)
@@ -23,7 +23,7 @@ target_link_libraries(krkrsdl3_graphics_bridge ${log-lib} ${dl-lib} ${egl-lib} $
 target_compile_features(krkrsdl3_graphics_bridge PRIVATE cxx_std_17)
 target_compile_features(krkr_bridge_v2 PRIVATE cxx_std_17)
 target_link_libraries(artemis_audio_bridge ${log-lib} ${dl-lib})
-target_link_libraries(artemis_loader ${log-lib} ${dl-lib} ${android-lib} ${egl-lib} ${gles-lib})
+target_link_libraries(artemis_loader ${log-lib} ${dl-lib} ${android-lib} ${egl-lib} ${gles3-lib})
 target_link_libraries(siglus_bridge ${log-lib} ${dl-lib} ${android-lib})
 target_link_libraries(rfvp_bridge ${log-lib} ${dl-lib} ${android-lib})
 target_link_libraries(games_bridge ${log-lib} ${dl-lib} ${android-lib})

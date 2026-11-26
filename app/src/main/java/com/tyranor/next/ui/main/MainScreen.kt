@@ -31,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -72,9 +73,12 @@ import com.tyranor.next.theme.UnselectedGrey
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.glassPageBackground
 import com.tyranor.next.ui.common.LiquidGlassNavItem
+import com.tyranor.next.ui.common.LocalMainOverlayHost
+import com.tyranor.next.ui.common.MainOverlayHost
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavigationRail
 import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.motion.rotationMorphBlock
 import com.tyranor.next.ui.common.motion.LocalPageDepth
 import com.tyranor.next.ui.common.motion.depthFoldStack
 import com.tyranor.next.ui.common.motion.LocalSheetBackdrop
@@ -108,10 +112,14 @@ import com.tyranor.next.ui.settings.SettingsScreen
 import com.tyranor.next.ui.common.CoachAnchor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import com.tyranor.next.ui.common.privacy.blockAppInteractionKeys
 import com.tyranor.next.ui.common.motion.rememberEntranceState
 import com.tyranor.next.ui.common.motion.ProvideEntrance
 import android.os.SystemClock
@@ -157,15 +165,12 @@ fun MainScreen(
       LaunchFailureBus.clear()
     }
   }
-  // 「显示首页」开关（应用设置，默认开）：关闭后首页不参与导航，游戏页作为第一页
+  // 「显示首页」开关（应用设置，默认关；老用户升级自动保留开）：关闭后首页不参与导航，游戏页作为第一页
   // 随生命周期订阅：设置页盖在上面、主界面不可见时不在后台增删首页（组合 / 销毁首页会占满主线程，让设置页开关卡顿）
-  // 先从 prefs 初始化要订阅的流；首帧页数和默认选中项使用同一个值，关闭首页时不会先闪出全部导航图标。
-  val homePageEnabled by remember(context) {
-    AppSettingsStore.initHomePageEnabled(context)
-    AppSettingsStore.homePageEnabledState
-  }.collectSettingAsState()
+  // Application 已在首帧前准备好设置；页数和默认选中项使用同一个值。
+  val homePageEnabled by AppSettingsStore.homePageEnabledState.collectSettingAsState()
   var selectedIndex by rememberSaveable {
-    mutableStateOf(if (homePageEnabled) 0 else 1)
+    mutableIntStateOf(if (homePageEnabled) 0 else 1)
   }
   // 关闭首页时，若当前停在其上则收敛到游戏页（引导页索引同样收敛，避免空白页）
   LaunchedEffect(homePageEnabled) {
@@ -178,16 +183,17 @@ fun MainScreen(
   val libraryViewModel: MainLibraryViewModel = viewModel()
   val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
   val interactScope = rememberCoroutineScope()
+  var pendingSaveSync by remember { mutableStateOf<Job?>(null) }
+  var pendingModuleReconcile by remember { mutableStateOf<Job?>(null) }
+  val moduleReconcileMutex = remember { Mutex() }
   val unselectedColor = UnselectedGrey
-  // 导航栏样式：应用设置 → 默认 / 液态玻璃 · 经典 / 液态玻璃 · 透镜（内存态，设置页切换即时生效）
   LaunchedEffect(Unit) {
-    withContext(Dispatchers.IO) { AppSettingsStore.initNavStyle(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initEngineTabs(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initEngineCardIcon(context) }
-    withContext(Dispatchers.IO) { AppSettingsStore.initSideRail(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardHideTitleTag(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardBadge(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardStyle(context) }
+    withContext(Dispatchers.IO) { AppSettingsStore.initGameCardCorners(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initHomeStyle(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initFloatingNavPosition(context) }
   }
@@ -196,10 +202,11 @@ fun MainScreen(
     libraryViewModel.onForeground()
     // 存档互通前台兜底：对已退出会话的待回写游戏补一次 Tyranor→标准同步
     // （引擎退出后 500ms 强杀、无回调，故在应用回到前台时补齐）。
-    interactScope.launch {
+    pendingSaveSync?.cancel()
+    pendingSaveSync = interactScope.launch {
       // runCatching 会把协程取消也当作失败吞掉，故显式区分：取消原样传播，其余仅记日志
       try {
-        EngineLauncher.flushPendingSaveSync(context)
+        withContext(Dispatchers.IO) { EngineLauncher.flushPendingSaveSync(context) }
       } catch (ce: CancellationException) {
         throw ce
       } catch (t: Throwable) {
@@ -207,19 +214,26 @@ fun MainScreen(
       }
     }
     // 第三方运行时模块：卸载/禁用后把绑定游戏降级为 UNKNOWN；同时刷新模块 label 缓存。
-    interactScope.launch {
+    pendingModuleReconcile?.cancel()
+    pendingModuleReconcile = interactScope.launch {
       try {
         // 给安装器/包替换留出稳定窗口，避免模块更新瞬间把全部绑定误降级。
         delay(1500)
-        val degraded = RuntimeModuleBindings.reconcile(context)
-        RuntimeModuleRegistry.refresh(context)
-        libraryViewModel.refreshFromStorage()
-        if (degraded > 0) {
-          AppNotice.makeText(
-            context,
-            R.string.engine_module_management_degraded_toast,
-            android.widget.Toast.LENGTH_SHORT,
-          ).show()
+        moduleReconcileMutex.withLock {
+          pendingModuleReconcile = null
+          val degraded = withContext(Dispatchers.IO) {
+            val count = RuntimeModuleBindings.reconcile(context)
+            RuntimeModuleRegistry.refresh(context)
+            count
+          }
+          libraryViewModel.refreshFromStorage()
+          if (degraded > 0) {
+            AppNotice.makeText(
+              context,
+              R.string.engine_module_management_degraded_toast,
+              android.widget.Toast.LENGTH_SHORT,
+            ).show()
+          }
         }
       } catch (ce: CancellationException) {
         throw ce
@@ -346,6 +360,8 @@ fun MainScreen(
   // 透明、零 inset 的最外层 Miuix Scaffold 只用来托管浮层：各标签页里的下拉菜单等 Miuix 浮层默认渲染到最外层 Scaffold，
   // 放在这里后浮层与其背景变暗盖住整个屏幕（含底部导航栏），而不是夹在页面与底栏之间、让底栏单独亮着。
   // 浮层内容在这里组合，故宿主套同一个 MiuixSettingsTheme，配色与原先在设置页内渲染时一致。
+  val mainOverlayHost = remember { MainOverlayHost() }
+  CompositionLocalProvider(LocalMainOverlayHost provides mainOverlayHost) {
   MiuixScaffold(
     modifier = Modifier.fillMaxSize(),
     popupHost = { MiuixSettingsTheme { MiuixPopupUtils.MiuixPopupHost() } },
@@ -434,14 +450,20 @@ fun MainScreen(
           Modifier
         },
       )
+    Box(
+      Modifier.fillMaxSize()
+        .then(if (mainOverlayHost.active) Modifier.clearAndSetSemantics { } else Modifier)
+        .then(Modifier.blockAppInteractionKeys(mainOverlayHost.active)),
+    ) {
     if (railLayout) {
       // 平板/大窗口：主导航移到侧边，按外观风格取该主题「默认导航栏」形态
+      val gameCardStyle by AppSettingsStore.gameCardStyleState.collectSettingAsState()
       Row(Modifier.fillMaxSize()) {
         AppNavigationRail(
           selectedIndex = selectedNavIndex,
           items = liquidGlassTabItems,
           onItemClick = onSelectNavPage,
-          modifier = Modifier.fillMaxHeight(),
+          flushWithContent = activeIndex == 1 && gameCardStyle == AppSettingsStore.GAME_CARD_STYLE_SHELF,
         )
         Column(Modifier.weight(1f).fillMaxHeight().then(contentLayerModifier)) {
           MainTabPages(
@@ -454,7 +476,7 @@ fun MainScreen(
             libraryViewModel = libraryViewModel,
             onCoachAnchorChanged = onCoachAnchorChanged,
             overlay = overlayBackdrop,
-            foldDesaturate = homeStyle != AppSettingsStore.HOME_STYLE_WEB,
+            foldDesaturate = !homePageEnabled || homeStyle != AppSettingsStore.HOME_STYLE_WEB,
             onboarding = coachPage != null,
           )
         }
@@ -471,7 +493,7 @@ fun MainScreen(
           libraryViewModel = libraryViewModel,
           onCoachAnchorChanged = onCoachAnchorChanged,
           overlay = overlayBackdrop,
-          foldDesaturate = homeStyle != AppSettingsStore.HOME_STYLE_WEB,
+          foldDesaturate = !homePageEnabled || homeStyle != AppSettingsStore.HOME_STYLE_WEB,
           onboarding = coachPage != null,
         )
         if (!liquidGlass && !floatingDefaultNav && !floatingButtonActive) {
@@ -480,7 +502,6 @@ fun MainScreen(
             items = liquidGlassTabItems,
             unselectedColor = unselectedColor,
             onSelectPage = onSelectNavPage,
-            modifier = Modifier,
           )
         }
       }
@@ -560,7 +581,19 @@ fun MainScreen(
         outsideTapBridge = floatingNavOutsideTapBridge,
       )
     }
+    }
 
+    if (mainOverlayHost.active) {
+      mainOverlayHost.stack.forEach { entry ->
+        key(entry.id) {
+          Box(Modifier.fillMaxSize().zIndex(10f)) {
+            entry.Content()
+          }
+        }
+      }
+    }
+
+  }
   }
   }
 
@@ -615,9 +648,10 @@ private fun ColumnScope.MainTabPages(
         // 未变化页面的组合槽位与 pageOffset/pageAlpha 动画状态不会被错位复用而闪现。
         visiblePages.forEach { page ->
           key(page) {
+            val selected = page == selectedIndex
             MainTabPageHost(
               page = page,
-              selected = page == selectedIndex,
+              selected = selected,
               pageTransition = pageTransition,
               motion = tabMotion[page],
               entrance = tabEntrances[page],
@@ -660,7 +694,8 @@ private fun ColumnScope.MainTabPages(
                 2 -> EngineScreen(
                   Modifier.fillMaxSize(),
                   onCoachAnchorChanged = { onCoachAnchorChanged(CoachAnchor.ENGINE, it) },
-                  isActive = pageActive,
+                  reportCoachAnchor = pageActive,
+                  isSelected = selected,
                   gameCount = libraryState.games.size,
                 )
                 3 -> ToolsScreen(Modifier.fillMaxSize())
@@ -715,6 +750,8 @@ internal fun MainTabPageHost(
   Box(
     Modifier
       .fillMaxSize()
+      // 旋转过渡：后台常驻页不跟着虚拟窗口逐帧重排（见 ScreenRotation.kt 的 rotationMorphBlock）；当前页是轻的内容照常重排
+      .rotationMorphBlock(freeze = !selected)
       .skipEntranceOnDrag(entrance)
       .zIndex(if (selected) 1f else 0f)
       // 整宽水平位移 + 淡入淡出 + 景深缩放（滑动途中两页略微缩小，停稳时为 1，外观不变）；增强档的位移 / 缩放在绘制阶段图层里（见 tabPageTransform）

@@ -12,7 +12,7 @@ import org.junit.runner.RunWith
 import java.io.File
 import java.util.UUID
 
-/** Confirms the generated third-party launch requests use Android's fixed landscape value. */
+/** Confirms the generated external engine module launch requests forward the resolved landscape orientation. */
 @RunWith(AndroidJUnit4::class)
 class ExternalEngineOrientationDeviceTest {
     private companion object {
@@ -20,7 +20,7 @@ class ExternalEngineOrientationDeviceTest {
     }
 
     @Test
-    fun ruffleRpgMakerAndRenPyRequestsUseFixedLandscape() {
+    fun ruffleRpgMakerAndRenPyRequestsRespectRequestedLandscape() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         assumeTrue("Dedicated startup acceptance package required", context.packageName == TEST_APPLICATION_ID)
@@ -31,7 +31,7 @@ class ExternalEngineOrientationDeviceTest {
             resolve("game.swf").writeText("fixture")
         }
         try {
-            val cases = listOf(
+            val defaultCases = listOf(
                 RuffleExternalEngineModule.buildLaunchIntent(
                     request(EngineType.RUFFLE, fixture, "game.swf", "external.flash"),
                 ),
@@ -43,9 +43,46 @@ class ExternalEngineOrientationDeviceTest {
                 ),
             )
 
-            cases.forEach { intent ->
+            defaultCases.forEach { intent ->
                 assertEquals(
                     ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+                    intent.getIntExtra(ExternalEngineContract.ORIENTATION, Int.MIN_VALUE),
+                )
+            }
+
+            val reverseCases = listOf(
+                RuffleExternalEngineModule.buildLaunchIntent(
+                    request(
+                        EngineType.RUFFLE,
+                        fixture,
+                        "game.swf",
+                        "external.flash",
+                        ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE,
+                    ),
+                ),
+                RpgMakerExternalEngineModule.buildLaunchIntent(
+                    request(
+                        EngineType.RPGMAKER,
+                        fixture,
+                        "[游戏目录]",
+                        "internal.rpgmvxace",
+                        ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE,
+                    ),
+                ),
+                RenPyExternalEngineModule.buildLaunchIntent(
+                    request(
+                        EngineType.RENPY,
+                        fixture,
+                        "[游戏目录]",
+                        "internal.renpy",
+                        ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE,
+                    ),
+                ),
+            )
+
+            reverseCases.forEach { intent ->
+                assertEquals(
+                    ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE,
                     intent.getIntExtra(ExternalEngineContract.ORIENTATION, Int.MIN_VALUE),
                 )
             }
@@ -59,6 +96,7 @@ class ExternalEngineOrientationDeviceTest {
         folder: File,
         launchTarget: String,
         alias: String,
+        orientation: Int = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
     ) = ExternalEngineLaunchRequest(
         game = ScanGame(
             title = "Orientation fixture",
@@ -69,5 +107,6 @@ class ExternalEngineOrientationDeviceTest {
         ),
         gameDirectoryPath = folder.absolutePath,
         launchTarget = launchTarget,
+        orientation = orientation,
     )
 }

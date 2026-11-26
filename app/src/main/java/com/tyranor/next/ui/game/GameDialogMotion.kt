@@ -79,13 +79,32 @@ internal class QuickActionFeedback {
         }
     }
 
+    /** 书页内就地切换状态（不关闭宿主）：成功回调 [confirmed]，失败仍播放拒绝抖动并走 [rejected]。 */
+    fun toggleInPlace(change: () -> Boolean, confirmed: () -> Unit, rejected: () -> Unit) {
+        if (change()) {
+            confirmed()
+        } else {
+            toggleRejects++
+            rejected()
+        }
+    }
+
     fun rejectShortcut() { shortcutRejects++ }
     fun rejectCover() { coverRejects++ }
 
     fun toggleRow(): Modifier = Modifier.staggeredEntrance(0).shakeOnTrigger(toggleRejects)
 
+    /** 书页内开关行的拒绝抖动（不叠入场，由书页自身控制）。 */
+    fun toggleShake(): Modifier = Modifier.shakeOnTrigger(toggleRejects)
+
     @Composable
     fun shortcutRow(requestInFlight: Boolean): Modifier = Modifier.staggeredEntrance(1)
+        .shakeOnTrigger(shortcutRejects)
+        .breathing(active = requestInFlight, minAlpha = 0.6f)
+
+    /** 书页内桌面快捷方式行的拒绝抖动与等待呼吸态。 */
+    @Composable
+    fun shortcutStatus(requestInFlight: Boolean): Modifier = Modifier
         .shakeOnTrigger(shortcutRejects)
         .breathing(active = requestInFlight, minAlpha = 0.6f)
 

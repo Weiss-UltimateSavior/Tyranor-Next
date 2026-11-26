@@ -32,7 +32,7 @@ class ImpactoExternalEngineModuleTest {
         ).forEach { assertTrue(it, it.startsWith(ImpactoHostContract.PACKAGE + ".")) }
         // Always the latest published host APK (fixed asset name), so new host releases need no app change.
         assertEquals(
-            "https://github.com/yuukana1/Tyranor-Next-Impacto/releases/latest/download/impacto-host.apk",
+            "https://github.com/SIRENA-Core/Tyranor-Next-MAGES/releases/latest/download/Tyranor-Next-MAGES.apk",
             ImpactoExternalEngineModule.installUrl,
         )
         assertEquals(ImpactoHostContract.VERSION_CODE.toLong(), ImpactoExternalEngineModule.minimumVersionCode)
@@ -53,7 +53,7 @@ class ImpactoExternalEngineModuleTest {
         assertEquals(
             setOf(
                 "swapConfirmCancel", "vsync", "videoPlayback", "subtitles",
-                "closeBacklogAtEnd", "delusionMouse", "logLevel",
+                "closeBacklogAtEnd", "delusionMouse", "logLevel", "debugMode",
             ),
             json.keys().asSequence().toSet(),
         )
@@ -64,6 +64,8 @@ class ImpactoExternalEngineModuleTest {
         assertTrue(json.getBoolean("closeBacklogAtEnd"))
         assertTrue(json.getBoolean("delusionMouse"))
         assertEquals("warning", json.getString("logLevel"))
+        // 调试模式默认关闭：显式下发 false，宿主会把之前打开过的 DebugMode 关掉
+        assertFalse(json.getBoolean("debugMode"))
     }
 
     @Test
@@ -78,6 +80,7 @@ class ImpactoExternalEngineModuleTest {
                     closeBacklogAtEnd = false,
                     delusionMouse = false,
                     logLevel = " DEBUG ",
+                    debugMode = true,
                 ),
             ),
         )
@@ -88,6 +91,7 @@ class ImpactoExternalEngineModuleTest {
         assertFalse(json.getBoolean("closeBacklogAtEnd"))
         assertFalse(json.getBoolean("delusionMouse"))
         assertEquals("debug", json.getString("logLevel"))
+        assertTrue(json.getBoolean("debugMode"))
         // 非法日志等级不会原样下发给宿主
         val bad = JSONObject(
             ImpactoExternalEngineModule.buildSettingsJson(EngineSettingsStore.Impacto(logLevel = "loud")),
@@ -103,6 +107,28 @@ class ImpactoExternalEngineModuleTest {
             "853382f8b09761cd5c6e475c",
             ImpactoExternalEngineModule.gameKeyFor("/storage/emulated/0/Games/mo6tw", "mo6tw"),
         )
+    }
+
+    @Test
+    fun gameKeyOfTheWindowsProfilesMatchesAnIndependentDerivation() {
+        // sha256(profile + NUL + folder)[:12] as hex, computed outside Kotlin (hashlib). The host recomputes it from the
+        // same two inputs and refuses a mismatch, so a different key per language variant is also what isolates saves.
+        val folder = "/storage/emulated/0/Games/memo06-pc"
+        assertEquals("cebb69567b666d5dc1b5ba49", ImpactoExternalEngineModule.gameKeyFor(folder, "mo6tw-pc-zhs"))
+        assertEquals("0bcdcec1737da1f1a978e1ff", ImpactoExternalEngineModule.gameKeyFor(folder, "mo6tw-pc"))
+    }
+
+    @Test
+    fun onlyTheWindowsProfilesNeedAHostThatKnowsThem() {
+        // Host 0.1.2 (versionCode 3) understands the request protocol but refuses the mo6tw-pc* profiles.
+        // 4 = 0.2.0, the first release carrying the patch series that defines them.
+        listOf("mo6tw-pc", "mo6tw-pc-zhs", "mo6tw-pc-zht").forEach {
+            assertEquals(it, 4L, ImpactoExternalEngineModule.minimumVersionCodeFor(it))
+        }
+        // Everything else keeps the module-wide minimum, including a target the catalog does not know.
+        listOf("mo6tw", "chlcc", "cclcc", "darling", "not-a-profile", "DIR", "").forEach {
+            assertEquals(it, 3L, ImpactoExternalEngineModule.minimumVersionCodeFor(it))
+        }
     }
 
     @Test

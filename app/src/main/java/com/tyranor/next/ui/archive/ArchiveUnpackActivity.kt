@@ -676,6 +676,12 @@ private fun StatusBar(vm: ArchiveViewModel) {
 private fun ArchiveProgressDialog(vm: ArchiveViewModel, onDismissRequest: () -> Unit) {
     AppAlertDialog(
         onDismissRequest = onDismissRequest,
+        // 锁定时不能走上面的「运行中只重建」守卫：取消当前操作并真正移除独立窗口，
+        // 否则进度弹窗会留在锁门之上继续显示文件名与进度
+        onLockDismiss = {
+            vm.cancel()
+            vm.dismissDialog()
+        },
         title = { Text(stringResource(R.string.archive_title), style = MaterialTheme.typography.titleMedium) },
         text = {
             val totalProgress = archiveProgress({ vm.progress }, label = "archiveProgress")

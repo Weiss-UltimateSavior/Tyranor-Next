@@ -1,3 +1,9 @@
+// 游戏自带 corescript 的原始实现（v1 会话由我们用覆盖核心替换，v2 会话归还给它）。
+// 只在尚未捕获过时赋值：同一 realm 内脚本被求值两次时，第二次不能把我们的包装当成
+// 「原实现」，否则 v2 分支会无限递归（栈溢出后被 _createRenderer 的 catch 吞掉 → 黑屏）。
+var ___tyranorCoreCreateRenderer =
+    typeof ___tyranorCoreCreateRenderer === "function" ? ___tyranorCoreCreateRenderer : Graphics._createRenderer;
+
 Graphics._createRenderer = function() {
     PIXI.dontSayHello = true;
     var width = this._width;
@@ -35,6 +41,16 @@ Graphics._createRenderer = function() {
 
     try {
 
+    // v2 会话用的是游戏自带 corescript：非 legacy 路径交还给原实现，让 core 自己的
+    // 渲染器选择与纹理回收策略（如 MV 官方 core 的 textureGC.maxIdle = 1）继续生效。
+    // v1 由我们覆盖核心，仍走下面的实现（不设 maxIdle，即 PIXI 默认 3600 帧）。
+    var session = window.__tyranorRpg || {};
+    if (session.version === "v2" && !("android-legacy" in param) &&
+        typeof ___tyranorCoreCreateRenderer === "function") {
+        ___tyranorCoreCreateRenderer.call(this);
+        return;
+    }
+
     switch (this._rendererType) {
         case 'canvas':
             this._renderer = new PIXI.CanvasRenderer(width, height, options);
@@ -47,8 +63,12 @@ Graphics._createRenderer = function() {
             break;
         }
 
-        if(this._renderer && this._renderer.textureGC)
-            this._renderer.textureGC.maxIdle = 1;
+        // 曾把 textureGC.maxIdle 压到 1（纹理空闲一帧即销毁），本意是压低显存，
+        // 实际代价是切场景/连续播放动画时反复重建并重传纹理：MV 的窗皮肤、行走图、
+        // 图块集会在后台场景里闲置两帧就被回收，回到前台再整体上传，表现为规律性掉帧。
+        // 恢复 PIXI 默认回收策略（maxIdle 3600 帧 / 每 600 帧扫描），显存仍由引擎自管。
+        // 若后续确需压显存，应按「设备内存等级」选值，不能固定 1。
+        // v2 会话不走这里（见上面的原实现回转），游戏 core 想设 1 就设 1。
 
         console.log(typeof this._renderer);
 
@@ -238,3 +258,30 @@ StorageManager.cleanWebStorageBackup = function(savefileId) {
 SceneManager.shouldUseCanvasRenderer = function() { return window.__tyranorUseLegacyCanvas === true; };
 Graphics._defaultStretchMode = function() {return true;};
 if (document.documentElement) document.documentElement.style.overflow = "hidden";
+// Web save directories are isolated per game; ignore $dataSystem.gameTitle mismatches while keeping globalId check and local-mode delegation.
+(function() {
+    function patchIsThisGameFile() {
+        try {
+            if (!window.DataManager || typeof window.DataManager.isThisGameFile !== "function") return;
+            if (window.DataManager.isThisGameFile.__tyranorTitlePatched) return;
+            var original = window.DataManager.isThisGameFile;
+            var wrapped = function(savefileId) {
+                if (window.StorageManager && typeof window.StorageManager.isLocalMode === "function" && window.StorageManager.isLocalMode()) {
+                    return original.call(this, savefileId);
+                }
+                var dm = (this && typeof this.loadGlobalInfo === "function") ? this : window.DataManager;
+                var globalInfo = dm && typeof dm.loadGlobalInfo === "function" ? dm.loadGlobalInfo() : null;
+                var slot = globalInfo && globalInfo[savefileId];
+                return !!(slot && typeof slot === "object" &&
+                    typeof slot.globalId === "string" &&
+                    slot.globalId === dm._globalId);
+            };
+            wrapped.__tyranorTitlePatched = true;
+            window.DataManager.isThisGameFile = wrapped;
+        } catch (e) {}
+    }
+    patchIsThisGameFile();
+    if (typeof window.addEventListener === "function") {
+        window.addEventListener("load", patchIsThisGameFile);
+    }
+})();

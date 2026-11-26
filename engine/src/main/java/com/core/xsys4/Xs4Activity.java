@@ -3,7 +3,6 @@ package com.core.xsys4;
 import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.ActivityInfo;
 import android.content.pm.ConfigurationInfo;
 import android.os.Bundle;
 import android.util.Log;
@@ -11,9 +10,9 @@ import android.view.ViewGroup;
 import android.widget.Toast;
 
 import org.libsdl.app32.SDLActivity;
-import org.tvp.kirikiri2.KrDialogStyle;
 
 import com.core.engine.DoubleBackExit;
+import com.core.engine.EnginePlayerOrientation;
 import com.core.engine.EngineSurfaceStartupController;
 import com.core.engine.EngineUiText;
 import com.core.engine.LaunchContract;
@@ -120,6 +119,7 @@ public final class Xs4Activity extends SDLActivity {
         // 无条件赋值（含 null）：静态字段跨 Activity 实例保留，必须清掉上一次的旧路径。
         sSdlLibraryPath = sdl;
         sEngineLibraryPath = engine;
+        EnginePlayerOrientation.lockOnCreate(this, savedInstanceState);
         super.onCreate(savedInstanceState);
         sdlReady = !SDLActivity.mBrokenLibraries;
         if (SDLActivity.mBrokenLibraries) {
@@ -205,18 +205,19 @@ public final class Xs4Activity extends SDLActivity {
 
     /**
      * xsystem4 以可缩放窗口创建 SDL 窗口且未设置 SDL_HINT_ORIENTATIONS，上游 SDL 会请求
-     * SCREEN_ORIENTATION_FULL_USER，设备锁定竖屏时游戏被信箱化。System4 只支持横屏，故始终请求
-     * 标准横屏。
+     * SCREEN_ORIENTATION_FULL_USER，设备锁定竖屏时游戏被信箱化。System4 只支持横屏，故始终锁定
+     * 启动时判定的具体横屏方向。
      */
     @Override
     public void setOrientationBis(int w, int h, boolean resizable, String hint) {
-        Log.v(TAG, "force landscape (w=" + w + ", h=" + h + ", resizable=" + resizable + ", hint=" + hint + ")");
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        // applyLocked 内部即返回锁定值，不再重复 resolve（P3-14）。
+        int orientation = EnginePlayerOrientation.applyLocked(this);
+        Log.v(TAG, "force locked landscape=" + orientation + " (w=" + w + ", h=" + h + ", resizable=" + resizable + ", hint=" + hint + ")");
     }
 
     @Override
     public void setRequestedOrientation(int requestedOrientation) {
-        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        EnginePlayerOrientation.applyWithSuper(this, super::setRequestedOrientation);
     }
 
     // ---------- SDL 主循环参数 ----------
@@ -326,81 +327,12 @@ public final class Xs4Activity extends SDLActivity {
             // 需真机验证返回键行为。
             Intent intent = new Intent(this, Xs4ManualActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            EnginePlayerOrientation.forwardToIntent(this, intent);
             intent.putExtra(Xs4ManualActivity.EXTRA_MANUAL_DIR, root.getPath());
             intent.putExtra(Xs4ManualActivity.EXTRA_INDEX_PATH, page.getPath());
             startActivity(intent);
         } catch (IOException e) {
             Log.w(TAG, "xsys4 manual path resolution failed", e);
-        }
-    }
-
-    // ---------- SDL 系统消息框（引擎 sys_show_message_box） ----------
-
-    /**
-     * 覆盖 vendored SDL 的原生 AlertDialog 实现，统一到引擎层弹窗样式（{@link KrDialogStyle}）。
-     * 引擎致命错误（ERROR / usage_error）与字体加载失败走此处呈现，是唯一可见的错误出口。
-     *
-     * <p>调用前提与上游一致：本方法由 {@code messageboxShowMessageBox} 经 {@code runOnUiThread} 投递，
-     * native 线程阻塞在 {@code messageboxSelection.wait()}，因此必须在任何失败路径写入结果并唤醒。
-     */
-    @Override
-    protected void messageboxCreateAndShow(Bundle args) {
-        String title = args != null ? args.getString("title") : null;
-        String message = args != null ? args.getString("message") : null;
-        String[] buttonTexts = args != null ? args.getStringArray("buttonTexts") : null;
-        int[] ids = args != null ? args.getIntArray("buttonIds") : null;
-        // SDL 默认按钮为英文系统标签，映射到引擎侧公共字符串；自定义文案保持不变。
-        if (buttonTexts != null) {
-            for (int i = 0; i < buttonTexts.length; i++) {
-                int resId = commonButtonTextResId(buttonTexts[i]);
-                if (resId != 0) {
-                    buttonTexts[i] = uiString(resId);
-                }
-            }
-        }
-        // 引擎未给按钮文案时兜底单个确定按钮（buttonIds 与 buttonTexts 按下标一一对应）。
-        if (buttonTexts == null || buttonTexts.length == 0) {
-            buttonTexts = new String[] { uiString(R.string.engine_ok) };
-            ids = new int[] { 0 };
-        }
-        final int[] buttonIds = ids;
-        try {
-            KrDialogStyle.showMessageBox(this, title, message, buttonTexts, (which, text) -> {
-                int id = (buttonIds != null && which >= 0 && which < buttonIds.length) ? buttonIds[which] : 0;
-                synchronized (messageboxSelection) {
-                    messageboxSelection[0] = id;
-                    messageboxSelection.notifyAll();
-                }
-            });
-        } catch (Throwable t) {
-            // 弹窗构造失败也必须写入结果并唤醒，否则 native 线程永久阻塞在 messageboxSelection.wait()
-            Log.e(TAG, "messageboxCreateAndShow failed", t);
-            synchronized (messageboxSelection) {
-                messageboxSelection[0] = 0;
-                messageboxSelection.notifyAll();
-            }
-        }
-    }
-
-    /**
-     * SDL 消息框默认按钮的系统英文标签（trim 后忽略大小写精确匹配）→ engine 公共字符串资源；
-     * 无匹配（游戏自定义文案）返回 0，由调用方保留原文。
-     */
-    private static int commonButtonTextResId(String text) {
-        if (text == null) {
-            return 0;
-        }
-        switch (text.trim().toLowerCase(Locale.ROOT)) {
-            case "ok":
-                return R.string.engine_ok;
-            case "cancel":
-                return R.string.engine_cancel;
-            case "yes":
-                return R.string.engine_yes;
-            case "no":
-                return R.string.engine_no;
-            default:
-                return 0;
         }
     }
 

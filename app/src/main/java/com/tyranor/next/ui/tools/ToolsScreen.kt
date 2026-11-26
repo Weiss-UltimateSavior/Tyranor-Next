@@ -34,6 +34,7 @@ import com.tyranor.next.ui.common.toErrorState
 import com.tyranor.next.ui.runtime.EngineModuleManagementActivity
 import com.tyranor.next.ui.save.WebDavSettingsActivity
 import com.tyranor.next.ui.settings.InputSettingsActivity
+import com.tyranor.next.ui.settings.PrivacySettingsActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -77,6 +78,9 @@ fun ToolsScreen(modifier: Modifier = Modifier) {
         },
         ToolEntry(R.string.side_panel_engine_module_title, R.drawable.ic_engine_manage) {
             startActivityWithPageTransition(context, EngineModuleManagementActivity.createIntent(context))
+        },
+        ToolEntry(R.string.privacy_settings_title, R.drawable.ic_settings_privacy) {
+            startActivityWithPageTransition(context, PrivacySettingsActivity.createIntent(context))
         },
     )
     MiuixSettingsTheme {

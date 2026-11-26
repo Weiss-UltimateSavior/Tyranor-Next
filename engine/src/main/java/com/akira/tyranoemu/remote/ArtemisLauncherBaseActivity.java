@@ -4,12 +4,12 @@ import android.os.Bundle;
 import android.os.SystemClock;
 import android.util.Log;
 import android.content.Intent;
-import android.content.pm.ActivityInfo;
 import android.view.KeyEvent;
 import android.view.SurfaceHolder;
 
 import com.core.engine.ArtemisVersion;
 import com.core.engine.DoubleBackExit;
+import com.core.engine.EnginePlayerOrientation;
 import com.core.engine.EngineSurfaceStartupController;
 import com.core.engine.EnginePrefs;
 import com.core.engine.LaunchContract;
@@ -75,6 +75,7 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
 
     @Override
     public final void onCreate(Bundle bundle) {
+        EnginePlayerOrientation.lockOnCreate(this, bundle);
         Log.i("YukiArtemis", "onCreate enter pid=" + android.os.Process.myPid());
         Intent intent = getIntent();
         officialGraphics = intent != null && !"artemis-clean".equals(intent.getStringExtra(LaunchContract.ENGINE_LIB_NAME));
@@ -96,7 +97,7 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
     @Override
     public final void onResume() {
         super.onResume();
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        EnginePlayerOrientation.applyLocked(this);
         nativeResumeAllSound();
         if (startupController != null) startupController.onResume();
         if (graphicsOverlay != null && (startupController == null || !startupController.isLoading())) {
@@ -106,7 +107,7 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
 
     @Override
     public void setRequestedOrientation(int requestedOrientation) {
-        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        EnginePlayerOrientation.applyWithSuper(this, super::setRequestedOrientation);
     }
 
     @Override
@@ -217,6 +218,7 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
 
         Intent retry = new Intent(this, next.activityClass);
         retry.putExtras(source);
+        EnginePlayerOrientation.forwardToIntent(this, retry);
         retry.putExtra(LaunchContract.ARTEMIS_FALLBACK_STAGE, next.fallbackStage());
         retry.putExtra(LaunchContract.ENGINE_LIB_NAME, next.engineLibraryName);
         retry.putExtra(LaunchContract.ARTEMIS_CURRENT_VERSION, next.id);
@@ -252,6 +254,7 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
 
         Intent retry = new Intent(this, next.activityClass);
         retry.putExtras(source);
+        EnginePlayerOrientation.forwardToIntent(this, retry);
         retry.putExtra(LaunchContract.ARTEMIS_FALLBACK_INDEX, nextIndex);
         retry.putExtra(LaunchContract.ARTEMIS_CURRENT_VERSION, next.id);
         retry.putExtra(LaunchContract.ENGINE_LIB_NAME, next.engineLibraryName);

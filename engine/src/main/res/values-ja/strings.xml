@@ -15,9 +15,14 @@
     <string name="engine_ethornell_dialog_month">月</string>
     <string name="engine_ethornell_dialog_day">日</string>
     <string name="engine_ethornell_dialog_empty_option">（空）</string>
-    <string name="engine_game_loading">ゲームを読み込み中</string>
-    <string name="engine_starting_game">ゲームを起動しています</string>
-    <string name="engine_preparing_game">ゲームデータを準備しています。しばらくお待ちください</string>
+    <string-array name="engine_startup_quotes">
+        <item>甘いひとときを始めよう…</item>
+        <item>妹は僕のすべてかもしれない！</item>
+        <item>原X、起動！</item>
+        <item>君は光を信じるか？</item>
+        <item>どうしてそんなに慣れてるんだよ！</item>
+        <item>宇宙が私に歌いかけてくる！</item>
+    </string-array>
     <string name="engine_krkr_initialization_failed">KRKR エンジンの初期化に失敗しました</string>
     <string name="engine_launch_failed">起動に失敗しました</string>
     <string name="engine_return_and_retry">戻ってからもう一度お試しください</string>
@@ -41,6 +46,7 @@
     <string name="engine_yes">はい</string>
     <string name="engine_no">いいえ</string>
     <string name="engine_prompt">お知らせ</string>
+    <string name="engine_sdl_start_failed_detail">SDL を起動できませんでした。再試行するか、アプリを再インストールしてください。\n\n%1$s</string>
     <string name="engine_error">エラー</string>
     <string name="engine_exit_game">ゲームを終了</string>
     <string name="engine_exit_game_message">現在のゲームを終了しますか？</string>
@@ -152,5 +158,6 @@
     <string name="engine_cmvs_audio_failed">CMVS オーディオの初期化に失敗しました</string>
     <string name="engine_cmvs_font_index_title">フォントコレクションのインデックス</string>
     <string name="engine_cmvs_font_index_message">通常のフォントは 0 を入力してください</string>
+    <string name="engine_cmvs_save_comment">セーブコメント</string>
     <string name="engine_systemnnn_host_ext_unresolved">このゲームに必要な EXT セーブ開始番号を確定できないため、起動を停止しました。ゲーム別エンジン設定で設定の解析・生成を実行してください。解析失敗のままの場合、この EXE の書き込み形式はまだ認識できません。</string>
 </resources>

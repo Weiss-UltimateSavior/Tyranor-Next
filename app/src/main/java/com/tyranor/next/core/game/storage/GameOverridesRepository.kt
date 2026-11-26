@@ -33,8 +33,10 @@ object GameOverridesRepository {
     /** 每游戏一行；value=null 表示已加载确认无覆盖，避免重复阻塞读。 */
     private val rowCache = HashMap<String, GameOverrideEntity?>()
 
-    /** 每个游戏最近一次待落库的普通覆盖快照。 */
+    /** 每个游戏最近一次待落库的普通覆盖写入。 */
     private val pendingRecords = HashMap<String, GameOverrideEntity>()
+    /** 清除后重新编辑时，较早的模块事务仍须保留清除边界。 */
+    private val pendingClears = HashMap<String, Any>()
 
     /** 缓存代数：失效时自增；读取期间的旧查询结果回填前必须核对代数，防止过期值写回。 */
     private var cacheGeneration = 0L
@@ -100,6 +102,7 @@ object GameOverridesRepository {
             cacheGeneration++
             rowCache.clear()
             pendingRecords.clear()
+            pendingClears.clear()
         }
         if (imported > 0 || orphans.isNotEmpty()) {
             Log.i(TAG, "Game overrides synced from prefs: imported=$imported pruned=${orphans.size}")
@@ -124,6 +127,10 @@ object GameOverridesRepository {
             ensureSynced(context)
             withContext(Dispatchers.IO) { loadRowCached(context, gameId) }
         }
+
+    internal fun ensureSyncedBlocking(context: Context) {
+        if (!syncDone) runBlocking { ensureSynced(context) }
+    }
 
     private suspend fun loadRowCached(context: Context, gameId: String): GameOverrideEntity? {
         while (true) {
@@ -206,14 +213,17 @@ object GameOverridesRepository {
             cacheGeneration++
             rowCache.clear()
             pendingRecords.clear()
+            pendingClears.clear()
             syncDone = false
         }
     }
 
     internal fun clearRow(context: Context, gameId: String) {
+        val clearRecord = Any()
         synchronized(cacheLock) {
             cacheGeneration++
             pendingRecords.remove(gameId)
+            pendingClears[gameId] = clearRecord
             // 保留 null tombstone 直到 DB 删除完成，防止并发 loadRowCached 在删除提交前
             // 读回旧行并以新代数重新写入缓存；失败时由 post 的 onPersistFailure 触发
             // invalidateRowCache 清空 tombstone 并重置同步，保留一致性
@@ -221,6 +231,9 @@ object GameOverridesRepository {
         }
         GameLibraryRepository.post(context) {
             GameLibraryDatabase.get(it).gameLibraryDao().deleteOverrideRow(gameId)
+            synchronized(cacheLock) {
+                if (pendingClears[gameId] === clearRecord) pendingClears.remove(gameId)
+            }
         }
     }
 
@@ -287,7 +300,14 @@ object GameOverridesRepository {
                             // A queued caller cancellation is checked before the first durable write.
                             writeControl.beginCommit()
                             val previousMirror = prefs.all[gameUri] as? String
-                            val committed = prefs.edit().putString(gameUri, record.toString()).commit()
+                            // A later ordinary clear owns the absent mirror. Its queued DB deletion
+                            // will run after this transaction.
+                            val pendingClear = synchronized(cacheLock) { gameUri in pendingClears }
+                            if (pendingClear) return@synchronized true
+                            val mirror = previousMirror?.let { runCatching { JSONObject(it) }.getOrNull() }
+                                ?: JSONObject(record.toString())
+                            preserveRuntimeModuleSettings(record, mirror)
+                            val committed = prefs.edit().putString(gameUri, mirror.toString()).commit()
                             if (!committed) {
                                 // SharedPreferences commits memory before disk IO. Restore that memory
                                 // snapshot immediately so ensureSynced cannot import a failed value.
@@ -309,7 +329,17 @@ object GameOverridesRepository {
                     if (writeResult == RuntimeSettingsWriteResult.Saved) {
                         synchronized(cacheLock) {
                             cacheGeneration++
-                            rowCache[gameUri] = savedRow
+                            if (gameUri !in pendingClears) {
+                                val pending = pendingRecords[gameUri]
+                                rowCache[gameUri] = if (pending == null) {
+                                    savedRow
+                                } else {
+                                    val pendingRecord = GameOverridePartitions.assemble(pending)
+                                    val committedRecord = GameOverridePartitions.assemble(checkNotNull(savedRow))
+                                    preserveRuntimeModuleSettings(committedRecord, pendingRecord)
+                                    GameOverridePartitions.split(gameUri, pendingRecord, pending.updatedAt)
+                                }
+                            }
                         }
                     }
                     writeResult

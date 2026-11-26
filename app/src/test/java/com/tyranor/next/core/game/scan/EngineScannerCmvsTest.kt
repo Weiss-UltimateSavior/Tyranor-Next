@@ -45,6 +45,18 @@ class EngineScannerCmvsTest {
     }
 
     @Test
+    fun detectsCvnsFromPss0StartupScript() {
+        val root = game("CVNS")
+        root.resolve("data/pack/start.pss").writeText("PSS0")
+
+        val detection = EngineScanner.detectEngine(root)
+
+        assertEquals(EngineType.CMVS, detection.engine)
+        assertEquals(96, detection.confidence)
+        assertEquals(EngineScanner.LAUNCH_TARGET_GAME_DIR, detection.launchTarget)
+    }
+
+    @Test
     fun detectsWeakCmvsFromRootExecutable() {
         val root = temporaryFolder.newFolder("CMVS exe only")
         root.resolve("cmvs64.exe").writeText("fake")
@@ -59,7 +71,7 @@ class EngineScannerCmvsTest {
     fun doesNotDetectCmvsWithoutUniqueStart() {
         val root = game("CMVS broken")
         root.resolve("data/pack/start.ps3").writeBytes(byteArrayOf(0x50, 0x53, 0x32, 0x41))
-        root.resolve("data/pack/start.ps2").writeBytes(byteArrayOf(0x50, 0x53, 0x32, 0x41))
+        root.resolve("data/pack/start.pss").writeText("PSS0")
 
         assertNotEquals(EngineType.CMVS, EngineScanner.detectEngine(root).engine)
     }

@@ -31,14 +31,12 @@ class EnginePageInteractionDeviceTest {
     private var originalMode: Boolean? = null
 
     @After fun restoreMode() {
-        originalMode?.let { mode -> compose.runOnIdle { MotionMode.sync(mode) } }
         compose.mainClock.autoAdvance = true
     }
 
     @Test fun movingPageBlocksRealTouchAndAccessibilityUntilItSettles() {
         MotionDeviceAcceptance.require(enhanced = null)
         originalMode = MotionMode.enhanced
-        compose.runOnIdle { MotionMode.sync(true) }
         val selected = mutableIntStateOf(0)
         val clicks = IntArray(2)
         compose.setContent {

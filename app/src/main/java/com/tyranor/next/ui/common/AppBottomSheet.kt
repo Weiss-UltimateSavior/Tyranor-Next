@@ -19,14 +19,25 @@ import androidx.compose.material3.SheetValue
 import androidx.compose.material3.ModalBottomSheetProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.tyranor.next.core.privacy.AppLockController
 import com.tyranor.next.theme.AppSheetTopShape
+import com.tyranor.next.ui.common.privacy.DismissOnAppLockEffect
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassPanelSolid
 import com.tyranor.next.theme.MilkGlassPanelBackground
@@ -45,6 +56,10 @@ import com.tyranor.next.ui.common.motion.nativeScrim
 import com.tyranor.next.ui.common.motion.rememberMotionSheetController
 import com.tyranor.next.ui.common.motion.rememberMotionSheetState
 import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 
 internal val LocalAppSheetContent = staticCompositionLocalOf { false }
 
@@ -71,8 +86,20 @@ internal fun AppBottomSheet(
     onDismissRequest: () -> Unit,
     confirmValueChange: (SheetValue) -> Boolean = { true },
     controller: MotionSheetController = rememberMotionSheetController(),
+    /**
+     * 应用锁生效时的强制清理路径；默认走 [onDismissRequest]。
+     * 调用方若在 onDismissRequest 里有「运行中只能重建」之类的守卫，必须传入真正清状态的路径，
+     * 否则窗口虽然被移除，解锁后调用方状态仍会让抽屉原地复活。
+     */
+    onLockDismiss: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    // 抽屉是独立窗口，层级在解锁门之上：应用锁生效时立即把窗口从组合里移除（不播退场动画），
+    // 只让 effect 通知调用方清理业务状态——只调 onDismissRequest 时调用方的退场动画仍可能
+    // 把窗口留在锁门上方数百毫秒。
+    val locked by AppLockController.lockedState.collectSettingAsState()
+    DismissOnAppLockEffect(onLockDismiss ?: onDismissRequest)
+    if (locked) return
     val sheetState = rememberMotionSheetState(controller, confirmValueChange)
     LocalSheetBackdrop.current?.let { controller.BindBackdrop(it) }
     ModalBottomSheet(
@@ -108,8 +135,42 @@ internal fun AppBottomSheet(
             isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
         )
         MotionSheetEffects(controller, onDismissRequest)
+        // Material3 只在没有动画持有拖动锁时才把面板吸到新的展开位：内容在展开途中变高 / 变矮（例如游戏抽屉里
+        // 异步多出「确认已退出外部游戏」一行）、旋转改变窗口高度或关闭中途接回时，面板可能停在旧展开位，
+        // 变高的那一截连同底部固定的启动按钮被推到屏幕外。尺寸或展开恢复变更后（首次测量之后）重新对齐到展开位。
+        var contentHeight by remember { mutableIntStateOf(0) }
+        val screenHeightDp by rememberUpdatedState(configuration.screenHeightDp)
+        LaunchedEffect(sheetState, controller) {
+            snapshotFlow { Triple(contentHeight, screenHeightDp, controller.closing) }
+                .filter { (height, _, _) -> height > 0 }
+                .drop(1)
+                .collectLatest { (_, _, closing) ->
+                    if (closing || sheetState.targetValue != SheetValue.Expanded) return@collectLatest
+                    // 普通动效档下初次展开动画期间 currentValue 仍为 Hidden：等落到 Expanded 后再补齐对齐
+                    if (sheetState.currentValue != SheetValue.Expanded) {
+                        val settled = snapshotFlow { sheetState.currentValue to sheetState.targetValue }
+                            .first { (cur, target) -> cur == SheetValue.Expanded || target != SheetValue.Expanded }
+                        if (settled.first != SheetValue.Expanded || controller.closing) return@collectLatest
+                    }
+                    // 等一帧合并同一帧或逐帧高度动画中的连续回调，停稳后再对齐，避免反复取消重启 expand()
+                    withFrameNanos { }
+                    if (!controller.closing &&
+                        sheetState.currentValue == SheetValue.Expanded &&
+                        sheetState.targetValue == SheetValue.Expanded
+                    ) {
+                        sheetState.expand()
+                    }
+                }
+        }
         ProvideEntrance {
-            Box(Modifier.fillMaxWidth().skipEntranceOnDrag().motionSheetDrag(controller).clip(AppSheetTopShape)) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .onSizeChanged { contentHeight = it.height }
+                    .skipEntranceOnDrag()
+                    .motionSheetDrag(controller)
+                    .clip(AppSheetTopShape),
+            ) {
                 if (AppThemeColors.isMilkGlass) {
                     MilkGlassPanelBackground(Modifier.matchParentSize())
                 }

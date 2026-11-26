@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed hash/size check for the vendored CMVS runtime library."""
+"""Verify the vendored CMVS runtime library and its build-time patch."""
 import hashlib
 import json
 import pathlib
@@ -19,6 +19,16 @@ def main() -> int:
         errors.append(f"size mismatch: {len(raw)} != {data.get('size')}")
     if data.get("dirty") is not True:
         errors.append("expected dirty=true for the local build-time patch")
+    patch = root / "tools/cmvs/patches/0001-absolute-launch-paths.patch"
+    expected_patches = [{
+        "path": patch.relative_to(root).as_posix(),
+        "sha256": hashlib.sha256(patch.read_bytes()).hexdigest(),
+    }]
+    if data.get("patches") != expected_patches:
+        errors.append("build-time patch provenance mismatch")
+    profiles = root / "app/src/main/res/values/cmvs_profiles.xml"
+    if hashlib.sha256(profiles.read_bytes()).hexdigest() != data.get("profiles_sha256"):
+        errors.append("CMVS profile menu provenance mismatch")
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1

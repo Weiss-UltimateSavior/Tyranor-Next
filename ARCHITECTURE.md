@@ -9,7 +9,7 @@ Tyranor Next 是 Android 多引擎视觉小说聚合启动器。它管理游戏�
 | 位置 | 职责与依赖边界 |
 | --- | --- |
 | `app/src/main/java/com/tyranor/next/ui/` | Compose 页面、输入交互、导航、状态展示与错误文案；经 core 调用引擎能力 |
-| `app/src/main/java/com/tyranor/next/core/` | 扫描、游戏库、启动、设置、封面、存档、补丁、拆封包、授权、更新与第三方 APK 运行时模块发现/启用/交棒；可依赖 engine，禁止 Compose/UI 依赖 |
+| `app/src/main/java/com/tyranor/next/core/` | 扫描、游戏库、启动、设置、封面、存档、补丁、拆封包、授权、更新、隐私（应用锁 / 安全屏幕 / 背景图设置读取）与第三方 APK 运行时模块发现/启用/交棒；可依赖 engine，禁止 Compose/UI 依赖 |
 | `app/src/main/java/com/tyranor/next/theme/` | Material/Miuix 主题与视觉状态，属于表现层 |
 | `engine/` | 引擎宿主、Java/Kotlin 桥、Web 脚本、JNI、预编译运行库与输入/图形基础能力；不依赖 App 页面 |
 | `buildSrc/` | 图形贡献目录生成、资源归属及来源校验；独立构建逻辑，不是第三个业务模块 |
@@ -40,13 +40,13 @@ flowchart TD
 
 ### 界面动效与窗口交接
 
-页面提供状态、稳定身份和业务动作。共享效果由 `ui/common/motion/` 或公共控件实现；只有单一领域理解的效果由该领域持有，例如引擎容量环和归档步骤。动效档位持久化于 `AppSettingsStore`，Activity 根部通过 `ProvideMotionEnvironment` 同步 `MotionMode`。普通档回退由每个效果决定，不另建普通版页面。
+页面提供状态、稳定身份和业务动作。共享效果由 `ui/common/motion/` 或公共控件实现；只有单一领域理解的效果由该领域持有，例如引擎容量环和归档步骤。动效只有一套，没有档位设置；Activity 根部通过 `ProvideMotionEnvironment` 提供越界回弹、触觉与提示条宿主。系统关闭动画时由每个效果自己瞬间完成，不另建简化版页面。
 
 - 常驻主标签与引擎分类共享 `TabPageMotion` 规格和 `tabPageTransform`；各自保留交互时钟。整页位移、缩放和翻折在绘制阶段应用，显隐、命中测试与无障碍由页面宿主控制。独立 Activity 的窗口转场由 `PageTransitions` 和 `AppScreenActivity` 管理，Compose 只处理内容层的景深与遮罩。
 - `MotionSheetController` 管理抽屉的拖动、收起与重入；`SheetBackdrop` 汇总浮层进度，多个来源不在页面上反复叠加缩放。稳定 key 的懒列表、网格和瀑布流共享 `listItemMotion`，逐项入场、删除消散和滚动形变仍是独立效果。
 - `AppNotice` 是提示入口。`NoticeCenter` 持有身份、队列和驻留截止时间；各窗口的 `NoticeHost` 按生命周期登记，由当前绘制者更新动画进度。旧窗口的动画完成回调不能关掉或改写新提示；抽屉等没有可绘制宿主的场景保留 Toast 回退。
 
-具体入口、普通档例外和评审规则见 [AGENTS.md](AGENTS.md#动效与视觉反馈的实现边界强制)，离线检查的覆盖边界见[门禁说明](tools/motion-boundaries.md)。
+具体入口、例外和评审规则见 [AGENTS.md](AGENTS.md#动效与视觉反馈的实现边界强制)，离线检查的覆盖边界见[门禁说明](tools/motion-boundaries.md)。
 
 ## 3. 游戏库与持久化
 
@@ -66,6 +66,8 @@ flowchart TD
 
 旧 `game_scanner` prefs 仍作为幂等迁移来源和恢复镜像，不能删除为“无用缓存”。应用/引擎偏好及引擎进程读取的单游戏 blob 仍保留 prefs；Room 不是所有状态的唯一介质，也不能把普通 SharedPreferences 当成实时跨进程消息总线。
 
+`game_overrides` 的普通字段在单游戏设置镜像锁内读取、修改并发布，然后进入 Room 写队列。第三方模块事务持有同一镜像锁时合并模块命名空间，保留已排队的普通字段和清除操作。Web 外部网络策略在主进程解析全局与单游戏值，经启动 Intent 交给两个 Web 宿主。
+
 Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并从镜像修复；v2→v3（`games.runtime_module_package` 列及索引）、v3→v4（`games.bangumi_id`）、v4→v5（`games.hikarinagi_id`）、v5→v6（`games.nextmoe_id`）分别通过显式 `Migration(2,3)`、`Migration(3,4)`、`Migration(4,5)`、`Migration(5,6)` 升级，对应 `3.json`–`6.json` 已导出。后续版本必须显式注册 `Migration`，不能扩大全局破坏性回退。当前数据库、加密凭据、存档同步状态与备份边界统一见 [持久化数据清单](docs/应用持久化数据清单.md)；专题验收记录仍只对各自标注的版本有效。
 
 ### 类级预编译规则
@@ -74,17 +76,23 @@ Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并�
 
 下次获得设备验证授权后，重新采集应同时保存 Git SHA、APK SHA-256、`adb shell getprop ro.build.fingerprint`、系统版本、包名与实际操作路线。运行目标路线后，可用 Android 的 `adb shell cmd package dump-profiles --dump-classes-and-methods <隔离包名>` 导出方法列表（设备须支持此命令并允许读取输出的 `/data/misc/profman/` 文件）；保留原件，再将类描述符去重、排序并生成类级规则，分别记录两份文件的哈希。不得在尚未执行采集时写成已经生成。
 
+书架路径补充了手工指定的类级规则：单排书架入口纳入启动预编译，翻开的书和藏书阁作为启动后的交互路径。规则不是设备采集的结果，不代表已测得首帧或滚动性能收益。
+
 修改或删除类时同步清理失效规则。本轮移除了已删除 `MiuixPopupMotion` 的规则，并在 Android CI 增加 `:app:compileReleaseArtProfile`，让 AGP 结合 release/R8 的实际产物扩展和编译规则。此检查验证构建可用性，不替代真实操作覆盖和性能对照。
 
 ## 4. 扫描与启动编排
 
-1. [EngineScanner](app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt) 遍历已授权根目录，利用真实路径或 SAF 会话读取目录特征，按优先链识别引擎并产出 `ScanGame`；重扫合并保留手动添加记录。
+1. [EngineScanner](app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt) 遍历已授权根目录，利用真实路径或 SAF 会话读取目录特征，按优先链识别引擎并产出 `ScanGame`；重扫合并保留手动添加记录。MAGES.（impacto）排在优先链最后，识别规则由 `ImpactoGameCatalog` 提供：每次扫描开始前与每次启动前，`ImpactoHostProfiles` 经 `PackageManager.getResourcesForApplication` 只读已安装宿主 APK 的资产 `tyn/profiles.json`（不加载、不执行宿主代码；整份校验，不合格式即放弃），读到时替换内置目录表，宿主未安装或是旧版时用内置目录表，偶发读取失败保留上一次的规则；一次识别只用同一份规则快照。扫描层不依赖 `core/engine/external`，宿主包名在两处各持一份，由 JVM 测试核对。
 2. UI 处理 Artemis 补丁与 MV/MZ 存档转化等用户确认，调用 [EngineLauncher](app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt)。
 3. Android 应用、第三方 APK 运行时模块与外部跳转优先分流：安卓游戏按包名直接跳转；`RUNTIME_MODULE` 按 `runtimeModulePackage` 交给显式组件；Windows 游戏交 Winlator；PSP / Nintendo Switch 交外置模拟器；Ren'Py / RPG Maker RGSS / Ruffle（SWF / Flash）交 JoiPlay 外置 APK 模块。它们的权限、目录载荷与错误协议各有契约，不统一伪装成内置宿主。Ruffle 属文件型入口（`launchEntryIsFile`）：文件记录保存 SWF 文件 URI、包装目录记录保存目录 URI，启动前统一解析出 SWF 所在目录，再以 `game` 的 `folder` + `execFile` 交给模块；运行时与存档由插件自行承担，主 App 不接管。
 4. 内置启动解析真实目录及生效设置，检查权限、插件、存档位置和适用补丁；Kirikiri 的 SAF 镜像等特殊路径由 core 负责准备。SD 卡镜像（`KrSafMirror.prepare`，engine 内 `bridge/`）产出 0 字节占位树 + v2 索引 + 类型化 bootstrap/诊断载荷，经 Intent extras（`SAF_MIRROR_INDEX`/`SAF_MIRROR_ROOT`）传给 `:kirikiri2` 宿主；宿主 `NativeBridge.configureSafMirror` 装载会话快照，libc（open/fopen/freopen/stat/rename 等）GOT 钩子按「相对路径改基 → scoped 存档重定向 → 镜像路由（只读 SAF / 写 copy-up，`KrMirrorOpenRouter`）→ libc 原实现」分流，所有权标记与分片锁由 `KrMirrorLocalFiles` 维护，失败以哨兵（-2→EIO）或类型化阶段（`PrepareException`）回传 core/UI。
 5. App 与宿主使用 [LaunchContract.kt](engine/src/main/java/com/core/engine/LaunchContract.kt) 的常量传递 Intent extras。启动结果为 `LaunchResult`；`Success` 表示已发起启动，不代表游戏已显示首帧或能够通关。
 
+外置 APK 引擎模块可声明 `updateSource` 接入 [ExternalEngineUpdateChecker](app/src/main/java/com/tyranor/next/core/engine/external/ExternalEngineUpdateChecker.kt)，目前由 MAGES. 接入。检查器使用已安装 APK 的版本名和 GitHub 正式发布标签判断更新，按发布源在进程内共享结果并合并并发查询。游戏操作抽屉和引擎页消费同一个类型化结果，使用 `ExternalEngineLauncher.openInstallPage` 打开项目的 Releases 页面。
+
 大体积引擎运行库（`libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、`libcmvs_android.so`、IJK 三件套、System35/4 与 `libSDL2x.so`、`libsystemnnn.so`）不随 `lib/` 在安装期解压：构建期打成 `assets/engine-runtime/<pack>.zip.xz`，`EngineLauncher` 在拉起对应引擎前于 IO 线程调用 `NativeRuntimePack.ensure` 解压到 `files/engine_runtime/<pack>/`（以 APK `lastUpdateTime:versionName` 判定是否重新解压），宿主进程再按绝对路径 `dlopen`；除 IJK 仅服务视频覆盖层、解压失败只记日志继续启动外，其余分片失败返回 `LaunchResult.Failure.EngineLibraryPackFailed`。`libSDL3.so`、`libSDL2_mixer_xs35.so` 仍留在 `lib/` 作为依赖；CMVS 另在 `lib/` 保留 `libcmvs_loader.so`（NativeActivity `android.app.lib_name`），由 loader 从 `files/engine_runtime/cmvs/` dlopen 真实库并转发 `ANativeActivity_onCreate`。这与 native plugin（Kirikiroid2 / ONS / Artemis）的资产形态一致，但分片按引擎家族划分，为后续单独下载留出入口。
+
+CMVS 运行库通过 JNI 请求 `CmvsActivity` 打开、读取或关闭存档备注输入。宿主在 Android 主线程管理输入框，运行库按请求 ID 取回结果并负责文本编码与存档写入。单游戏选择的启动配置通过 `launch.cfg` 的 `profile=` 传给运行库，菜单由运行库构建脚本从同一上游版本的作品登记生成。[CMVS 运行库构建与验收记录](docs/CMVS-cmvs-rs引擎接入方案.md#10-运行库更新2026-11-23)
 
 - SystemNNN 在读取游戏文件前解析真实路径并完成共享存储授权。支持绝对路径、文件 URI 及系统外部存储文档 URI。私有 `:systemnnn` 宿主通过显式 Intent 启动，原 Emberfall 独立 APK 的绑定迁为内置类型。游戏资源和存档从生效目录原地读取，存档写回生效目录。原目录不可访问时返回类型化启动错误。App 的 `SystemNnnCopyStore` 负责识别与回收旧副本；宿主接收绝对路径及任务身份，运行中的任务记录随会话退出清理。应用持有副本状态和回收队列。
 
@@ -100,25 +108,33 @@ Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并�
 6. `RuntimeModuleBindings.reconcile` 在重扫前与应用回前台等时机核对绑定：模块未发现、未启用或包名为空 → `EngineType.UNKNOWN`（保留最后已知 `runtimeModulePackage` 供重扫合并），保留其它字段；发现查询失败时跳过第三方绑定的降级。旧 Emberfall 内置身份的迁移独立进行。
 7. 绑定经 `ScanGame` → `GameEntity.runtime_module_package`（Room v3）→ `GameRecordCodec` prefs 镜像传播；v2→v3 使用显式 `Migration(2,3)`。配置复用现有 JSON 分区，不增加 Room schema 版本。
 8. `saves` 声明固定的游戏内相对存档目录，`GameSaveManager` 统一验证当前绑定、目录范围与符号链接，复用文件事务；第三方目录的事务相邻项须有私有所有权记录。存档能力动态判定，云端引擎命名空间包含模块包名，未知或暂不可用状态保留身份占位。外置启动在 WebDAV 关闭时也经过目录门禁，持久化运行标记成功后才交棒；退出确认可在模块失效、游戏降级或移除后按旧会话身份进行。
+9. `fileImports` 独立声明文件导入目标；单游戏引擎设置页取得系统选取的文件 URI 并预览写入。确认后由 `RuntimeModuleFileImporter` 复核绑定、模块声明及目标，逐文件暂存后提交；不写入单游戏覆盖记录或启动 Intent。
 
 [EngineSettingsResolver](app/src/main/java/com/tyranor/next/core/settings/EngineSettingsResolver.kt) 统一读取引擎全局与单游戏覆盖，`EffectiveEngineSettings` 处理归一化与回退。启动和存档消费同一份生效规则，页面不得另写优先级逻辑。
 
 ## 5. 引擎进程与生命周期
+
+v1/v2 会话的 NW.js 兼容层由本地服务器以 `/__tyranor__/nwjs_polyfill*.js` 外链提供（base→v1→v2 按序、先于 `</head>` 之后的脚本，末尾哨兵校验完整性），首页只保留 `<script src>`；会话版本经 `window.__tyranorRpg` 下发，供渲染器补丁决定归属。
+
+RPG Maker v2 的插件 `localStorage` 由兼容层调用 [RpgMakerFsBridge](engine/src/main/java/com/core/rpgmaker/RpgMakerFsBridge.kt) 同步持久接收；[RpgMakerStoragePendingJournal](engine/src/main/java/com/core/rpgmaker/RpgMakerStoragePendingJournal.kt) 在游戏目录 `AppData/Local Storage` 保存恢复队列。JS 在接收成功后更新镜像，`.dat` 合并写只负责物化。存储目录锁覆盖接收、claim 重放和物化确认，锁序为目录 → 队列/路径；同目录由 `:rpgmaker` 单进程内多个文档共享。页面兼容层在游戏脚本之前完成恢复，失败保留队列并抛 Storage 未就绪错误；Activity 销毁回调与看门狗不再承担数据交接。该通路只处理插件 Storage，正常游戏存档仍走 `saveDataManager`。
 
 游戏时长由 App 的 `core/game/playtime` 独立采集：Application 在每个进程安装生命周期适配，只有携带 `ROOT_URI` 与 `PLAYTIME_SESSION_ID` 的内置宿主白名单参与；辅助视频继承身份，System4 手册和校验进程不参与。`PLAYTIME_SESSION_STARTED_AT` 是主进程持久化分配的递增会话排序键，系统时钟回拨时仍递增，辅助 Activity 继承原值；它不参与时长相减。子进程按单调时钟累计前台区间，将累计检查点以跨进程文件锁与 AtomicFile 写入 `noBackupFilesDir/game_playtime/`，主进程按记录 ID 取最大累计值，幂等导入独立 Room 库 `game_playtime.db`，子进程不开统计数据库。检查点每 15 秒及在暂停时保存，闭合记录入库后才删除，崩溃后不按当前时间补算；该能力与最近打开、存档同步会话互相独立。统计库使用 TRUNCATE 日志，拥有独立 schema 与迁移边界，不受游戏库的破坏性恢复影响；默认进入系统备份候选，实际恢复仍受系统配额和传输策略限制。
 
 以 [engine Manifest](engine/src/main/AndroidManifest.xml) 为准，内置宿主均为 `exported=false`，主要分为 `:kirikiri2`、`:krkrsdl3`、`:ons`、多档 `:artemis*`、`:siglus`、`:fbgames`、`:fvp`、`:ethornell`、`:cmvs`、`:systemnnn`、`:xsys35`、`:xsys4`、`:tyrano`、`:rpgmaker`。进程隔离用于控制原生库、全局状态与符号冲突；不提供通用跨引擎热切换保证。第三方 APK 运行时模块运行在用户安装的独立 APK 进程中，不属于上述宿主，也不由 App 建立 JNI 会话。
 
 - FVP、Framebuffer 及 Siglus 关闭滤镜的路径仍由主线程 `Choreographer` 同步驱动原生调用。
+- Kirikiroid2 由 [KR2Activity](engine/src/main/java/org/tvp/kirikiri2/KR2Activity.java) 根据 Activity、真实窗口焦点和锁屏状态控制 [原生音频桥](engine/src/main/cpp/krkr_audio_bridge.cpp)。桥接层按随包库的 Build ID 核对内存入口。1.3.9 的 Oboe 回调在暂停时输出静音并保留游戏 PCM，两个内核的 OpenAL 路径通过设备暂停和恢复控制输出，后台新建的 OpenAL 设备也受控制。Cocos 渲染的焦点兼容逻辑另受 Activity 恢复状态约束。
 - Siglus 有效滤镜链才启用专用 engine owner 与 GLES consumer；关闭、空链或无效链沿用 SurfaceView 原路径。两种路径共享原生实例准入，不能同时启动第二个 owner。
-- Ethornell 由专用 owner 线程管理 JNI 会话，Surface 世代、会话 token、退出 ACK 与存档操作门禁独立约束。宿主使用 ABI v1 接口面：15 个导出（含 `request_payload`）、Event kind 5 输入对话框与 JSON 回答；kind 5 的 payload 只在 owner 线程两段式读取，UI 线程只持有已解析字符串。随包库的来源与本地补丁清单以 provenance 为准（收敛启动期双重 `bgi-resource` 前缀，并放行顶层 `BGI.gdb` / `BGI####.cad` 到 user-root；provenance `dirty=true`）；`--local-static` 通过，严格来源审计要求 clean/已发布源码，见 §6。`EthornellPauseDeviceTest` 已重写为多 stage/step 模型并 3/3 通过；暂停/恢复与 Surface 通过，但精确 guest tick/held 序列不在该夹具覆盖范围。
-- Ethornell 上游实现虚拟根和用户存档读取映射；本地补丁 0001–0003 维护游戏目录存档策略和公共存储写锁，0005 限定 Amachoco ABI 恢复旧版 Graph91:00 空操作兼容行为。Sys80 与 Sys81 设备夹具覆盖读取路径，真实游戏兼容性仍需单独验收。
+- Ethornell 由专用 owner 线程管理 JNI 会话，Surface 世代、会话 token、退出 ACK 与存档操作门禁独立约束。ABI v1 提供 15 个导出（含 `request_payload`）。Kind 5 输入对话框的 JSON payload 由 owner 线程两段式读取，UI 线程只持有已解析字符串。宿主独立跟踪 Activity、窗口焦点、音频焦点和弹窗暂停，系统要求降低音量时也置位音频暂停。移动端音频路由恢复由运行库负责。
+- Ethornell 上游实现虚拟根、用户存档读取映射和 Amachoco ABI 使用的 Graph91:00 强制呈现。本地补丁 0001–0003 维护游戏目录存档策略和公共存储写锁。Sys80 与 Sys81 设备夹具覆盖读取路径，真实游戏兼容性仍需单独验收。
 - `Surface` 消失、Activity `finish()`、原生销毁完成与进程退出是不同事件。修改宿主必须维护线程归属、资源租约、回调世代和释放时序，不能用强杀结果冒充正常退出。
 - SystemNNN 的播放器在最终存档写入和目录锁释放后撤销任务记录。相同游戏快速重开时，工作线程有界等待上一会话释放存档。只读校验服务运行在单独的 `:systemnnn_validator`，不登记播放器会话。
 
-内置播放器方向策略归 engine 宿主管理：清单声明 `landscape`，各宿主覆盖 `setRequestedOrientation` 将引擎、SDL 和视频的请求统一收敛为 `SCREEN_ORIENTATION_LANDSCAPE`，不在揭开加载遮罩后恢复传感器方向。App 启动链发送相同方向；历史 Artemis 旋转字段仅保留数据兼容，不参与解析。20 个播放器相关 Activity 各自声明 `android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY=true`，在当前 targetSdk 36 下保留大屏固定方向限制，不影响应用页面的自适应布局。该兼容开关在 targetSdk 37 后不再有效，后续升级须重新验收大屏窗口策略，见 [Android 官方方向适配说明](https://developer.android.com/develop/adaptive-apps/guides/app-orientation-aspect-ratio-resizability)。
+内置播放器方向策略由主进程启动前判定与 engine 宿主锁定共同完成：主进程启动后由 `LaunchOrientationMonitor` 在前台跟踪设备方向（仅前台监听；回调路径复用显示状态缓存，由显示事件失效并带 1s TTL 兜底重算，避免每次传感器回调在主线程做完整显示查询），启动引擎前按当前显示方向及最近倾角解析出具体单向横屏（`SCREEN_ORIENTATION_LANDSCAPE` 或 `SCREEN_ORIENTATION_REVERSE_LANDSCAPE`）并写入 `LaunchContract.ORIENTATION`；engine 清单 20 个播放器相关 Activity 声明 `sensorLandscape` 以避免进入时先被强转再二次翻转（`Xs4ManualActivity` 同步补全 `configChanges`；Tyrano / RPG Maker 两个 WebView 宿主的 `configChanges` 追加 `keyboard|navigation`，软键盘弹出/收起与导航键可用性变化不再触发宿主重建，避免打断网页运行时状态与会话方向锁），各宿主在 `super.onCreate` 之前锁定该方向并通过 `setRequestedOrientation` 拦截后续引擎/SDL/视频请求（视频/手册/Artemis 回退重试透传同一方向），确保进入播放器后及运行期均不旋转、不触发重建。历史 Artemis 旋转字段仅保留数据兼容，不参与解析。20 个播放器相关 Activity 各自声明 `android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY=true`，在当前 targetSdk 36 下保留大屏固定方向限制，不影响应用页面的自适应布局。该兼容开关在 targetSdk 37 后不再有效，后续升级须重新验收大屏窗口策略，见 [Android 官方方向适配说明](https://developer.android.com/develop/adaptive-apps/guides/app-orientation-aspect-ratio-resizability)。
 
-宿主启动加载由 engine 的 `EngineStartupOverlay` 负责原生 View 视觉与终态清理；`EngineSurfaceReadyProbe` 在 API 26+ 直接对宿主 Surface 做单请求 PixelCopy，`EngineSurfaceReadyState` 管理请求代际、暂停与迟到结果。SDL / NativeActivity 复用 `EngineSurfaceStartupController`；NativeActivity 通过原有 SurfaceHolder.Callback2 转发源窗口，遮罩使用应用内 TYPE_APPLICATION_PANEL，不能拿包含遮罩的 Window 截图判断游戏内容。该机制不依赖滤镜，不修改预编译运行库，不改变 native 引擎线程归属。Web / SystemNNN / krkr 使用各自的内容或场景信号；组件清理不替代引擎原有销毁 ACK 与进程退出规则。主题 / 语言读取 LaunchContract Intent 快照，固定黑底的文字配色与 App 卡片色板分开。
+宿主启动加载由 engine 的 `EngineStartupOverlay` 负责原生 View 视觉与终态清理；`EngineSurfaceReadyProbe` 在 API 26+ 直接对宿主 Surface 做单请求 PixelCopy，`EngineSurfaceReadyState` 管理请求代际、暂停与迟到结果。SDL / NativeActivity 复用 `EngineSurfaceStartupController`；NativeActivity 通过原有 SurfaceHolder.Callback2 转发源窗口，遮罩使用应用内 TYPE_APPLICATION_PANEL，不能拿包含遮罩的 Window 截图判断游戏内容。该机制不依赖滤镜，不修改预编译运行库，不改变 native 引擎线程归属。Web / SystemNNN / krkr 使用各自的内容或场景信号；组件清理不替代引擎原有销毁 ACK 与进程退出规则。App 经 `LaunchContract` 传入主题、语言、游戏名称、封面 URI、应用图标与动效档位。遮罩在工作线程读取缩采样封面，由 `StartupSpectrumView` 在绘制阶段循环播放主题色频谱，每轮三秒。宿主各自提交就绪信号，遮罩协调退场时机并负责加载页翻转。窗口挂载使用支持逐像素透明的应用内子窗口，翻页时直接露出游戏 Surface。
+
+播放器宿主弹窗由 `KrDialogStyle` 绘制。App 的 `EngineLauncher` 经 `LaunchContract` 传入主题色快照，engine 统一通过 `EngineThemeColors` 读取。`SdlMessageBox` 将三套 SDL 宿主的消息回调映射为原始按钮 ID，并在 Activity 退出时解除 native 等待。`EngineWebChromeClient` 向 WebView 回传 JS 对话框结果，销毁 WebView 前取消未完成的请求。
 
 WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano` 保留历史默认目录，`:rpgmaker` 自设后缀。更改 profile 或本地 HTTP 端口会影响历史网页存储作用域，须同时评估存档兼容。
 
@@ -137,14 +153,14 @@ WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano
 
 - XP3 源码与固定依赖在 [engine/rust](engine/rust/Cargo.toml)；`build-archives.sh` 先运行宿主测试，再用 cargo-ndk 生成 `libarchive_xp3_core.so`。JNI panic 防护依赖 unwind，不改为 `panic=abort`。
 - System35/4 的固定来源构建脚本位于 `engine/xsystem35/scripts/`、`engine/xsystem4/scripts/`；共享 `libSDL2x.so` / `org.libsdl.app32`，与 ONS 的 `libSDL2.so` / `org.libsdl.app` 分开维护。
-- Siglus 保留已固定的原始运行库，来源与哈希见 [说明](engine/patches/siglus/README.md)；当前 CI 不重编其 Rust 源码。
+- Siglus 与 Framebuffer 宿主共用由 `siglus_rs` 的 `game_launcher` 构建的 `libsiglus.so`。Gradle 校验固定库哈希和运行库包暂存容器中的两组必需动态导出。来源、构建参数与许可见 [运行库说明](engine/patches/siglus/README.md)。普通构建与 CI 使用预编译库。
 - SystemNNN 从 `assets/engine-runtime/systemnnn.zip.xz` 解压运行库。播放器和校验进程各自核对当前 APK 标记，再按绝对路径调用 `System.load`。CI 核对固定来源、大小、SHA-256、JNI 导出及实际 APK 的分包。Emberfall 自行生成默认碎裂网格，自有代码按 GPL-2.0-only 分发。 [运行库来源](engine/src/main/assets/licenses/systemnnn/ffmpeg-source.txt) · [归属与许可](engine/src/main/assets/licenses/systemnnn/upstream-source.txt)
 - Emberfall `2150bab` 的分包曾在 Android 11（API 30）`sdk_gphone_x86_64` 模拟器通过 ARM64 转译运行《死终Ω神盾》简体版开场并进入标题。该版设备 ZIP 测试确认有效全局进度可导入，损坏包被拒绝且原存档字节保持一致，主进程没有加载 SystemNNN 原生库。
 - Emberfall `d017074` 的独立版与 TYN 测试包均在 Android 11 ARM64 转译模拟器安装成功。TYN 在设备解压后的运行库与 APK 分包一致。新默认网格的全屏转场与图层碎裂在 Host 上通过 800×600 和 1280×720 的渲染检查。
 - 旧版 APK 在 Android 11（API 30）`sdk_gphone_x86_64` 模拟器上通过 ARM64 转译运行《死终Ω神盾》简体版。TYN 从游戏库扫描并启动，读取独立版的自动档，推进一条台词、写入同目录的快存并返回标题。临时用普通文件占用 `sav` 路径时，TYN 在启动播放器前显示写入失败。
 - 同一模拟器验证了独立版的全局进度主备恢复。有效主档配损坏备份时隔离备份，损坏主档配有效备份时恢复进度并保留原文件。两次检查都保留扩展和剧情存档。用游戏原片头临时开启不可跳过，切后台暂停，回前台恢复音频焦点并在播放完成后进入标题。
 - Android 8、Android 10、ARM64 真机和真实 WebDAV 服务的设备验收待执行。存档替换与锁冲突另有 JVM 回归。
-- Ethornell `.so`、provenance JSON 与 ABI header 必须成套核对。运行库基线 revision、补丁及最终库哈希以 provenance 为准；补丁链包含虚拟用户路径别名、游戏目录内 `savedata` user-root、共享存储 OFD 写锁，以及 VM 虚拟根识别和受限运行时用户文件读/查/通用加载别名（`0004` 修改 `crates/ethornell-vm/src/resource_io.rs` 与 `crates/ethornell-app/src/lib.rs`）。`savedata` 仅作为固定直接子目录放行，并排除于普通资源读取和遍历。带本地补丁的 `dirty=true` 产物不能通过要求 clean/已发布源码的严格来源审计（`release_ready=false`）；本地静态校验也不等于游戏兼容性或可复现构建验收。
+- Ethornell `.so`、provenance JSON 与 ABI header 必须成套核对。运行库基线 revision、补丁及最终库哈希以 provenance 为准。当前补丁链收敛一层重复的 `bgi-resource`，将 `UserData/**`、`BGI.gdb` 和 `BGI####.cad` 路由至 user-root，并在共享存储上提供 OFD 写锁回退。`savedata` 仅作为固定直接子目录放行，并排除于普通资源读取和遍历。带本地补丁的产物标记为 `dirty=true` 和 `release_ready=false`。严格来源审计要求已发布的干净源码。
 
 预编译源码归属决策见 [ADR 0002](docs/adr/0002-prebuilt-engine-libs-source-in-fork.md)。所有生成目录禁止手工维护；共享字体保持不压缩，并兼顾 System35、System4 与 ONS。
 
@@ -174,6 +190,7 @@ WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano
 - 输入：UI → core 门面 → `engine/com.core.input`，按 canonical 键位注入每宿主的 `InputSink`；布局编辑器复用原生按键层。
 - 授权/更新：Hikarinagi / Bangumi OAuth 经 AppAuth、未萌 NextMoe OAuth 经 `127.0.0.1:0` 环回 PKCE S256 与 Keystore 保护的凭据存储（`hikarinagi_auth_secure` / `bangumi_auth_secure` / `vndb_auth_secure` / `nextmoe_auth_secure`）；后台更新由 WorkManager 单次任务驱动，下载后经 FileProvider 交系统安装器。
 
-## 8. 已知架构偏差
+## 8. 已知架构偏差、管线分层边界与引擎状态边界
 
-当前代码仍有与规范不完全一致的部分：在线补丁（`KrkrOnlinePatchService`）以及更新检查/下载（`core/updater` 下的 `GitHubUpdateChecker`、`UpdateApkDownloader`）的部分接口仍携带本地化文本；VNDB token 校验与权限解析（`PlayStatusService.verifyVndbToken` / `checkVndbPermissions` / `authInfo`）作为授权域能力落在 core/status（§7 有内联论证，迁移需连带封面刮削设置页与游玩状态弹窗两处调用点）；旧数据清单和专题验收说明也有历史快照。新增/改动接口须采用类型化错误，修复时连同调用链迁移。
+- 规范偏差：当前代码仍有与规范不完全一致的部分：在线补丁（`KrkrOnlinePatchService`）以及更新检查/下载（`core/updater` 下的 `GitHubUpdateChecker`、`UpdateApkDownloader`）的部分接口仍携带本地化文本；VNDB token 校验与权限解析（`PlayStatusService.verifyVndbToken` / `checkVndbPermissions` / `authInfo`）作为授权域能力落在 core/status（§7 有内联论证，迁移需连带封面刮削设置页与游玩状态弹窗两处调用点）；旧数据清单和专题验收说明也有历史快照。新增/改动接口须采用类型化错误，修复时连同调用链迁移。
+- CNN 执行管线分层与全局状态边界：`com.core.gl` 严格按单向无环分层解耦（Level 0：`GlRenderTarget` / `TargetUnavailableException` / `GlErrors`〔纯 Java，局部定义 `GL_NO_ERROR`/`GL_OUT_OF_MEMORY`/`GL_INVALID_FRAMEBUFFER_OPERATION`/`GL_CONTEXT_LOST_KHR` 常量，并向跨包代理 `SiglusGraphicsProxy` 暴露 `MAX_GL_ERRORS`、`GL_CONTEXT_LOST_KHR`、`beginGlOperations` 与 `ContextLostException`〕/ 纯 Java `LanczosScale` 与 `MpvHookShader`；Level 1：纯 Java `GraphicsShaderGeometry` 与 `GraphicsShaderTargets`，以及 `GlOps` GL 派发接口——接口本身纯 Java，其默认绑定 `GLES30_OPS` 覆盖经 `GlOps` 调度的 Pass 执行、自有目标 FBO/纹理分配与销毁、Program 生命周期及统一 GL 错误查询通道（`beginOwnedGlOperations`/`requireGlSuccess`/`requireTargetName`/`buildPrograms`/`runPasses`/`runTiledPasses`/`createTexFbo`/`deleteTexFbo`/`releaseTargets`/`releasePrograms`/`compileShader` 及状态探测错误的 `glGetError`），JVM 假件实现该接口以驱动上述路径（含 `OOM`/上下文丢失错误注入）；`CnnPipeline` 中 `GlState.capture/restore` 与 `DefaultIndexedDrawBufferOps` 扩展能力查询、`loadDeviceLimits`、`halfFloatRenderable`、`prepareDrawState`、`createQuad`、`release` 释放 VBO/VAO/Sampler/Resample/BorrowedReadFbo 句柄、`normalizeBorrowedTexture` 以及可分离重采样路径（`buildScaleProgram`/`drawScale`/`passThroughBlit`）仍直接调用 `android.opengl.GLES30`/`GLES31Ext`/`GLES32`，不在 `GlOps` 假件覆盖范围内；Level 2：纯 Java 无状态变换器 `GraphicsShaderTransforms`；Level 3：合并后的统一执行器 `CnnPipeline`；Level 4：整链编排器 `GraphicsFilterPipeline` 及宿主桥，Level 0–3 零反向引用 Level 4 与宿主桥；滤镜目录（`GraphicsFilterChain` / `GraphicsFilterDefinitions` / `GraphicsFilterPlan`）为位于 L1 与 L4 之间的纯 Java 目录层，L0–3 可单向引用其描述符数据（`CnnPipeline.forFilter` 在 L3 解析描述符并自建节点，与基线 `Anime4kPostProcessor.forFilter` 同构，不构成反向引用），且纯 Java 类零运行时依赖 `android.*`/`androidx.*`（仅允许编译期 `@VisibleForTesting` 注解；`GlOps` 默认绑定的 GLES30 调用除外，见上））；`MpvHookShader` 与 `CnnPipeline.forFilter` / `CnnPipeline.forLanczos` 均为包内可见静态工厂（供同包 `GraphicsFilterPipeline` 装配，跨包宿主统一通过公开 `GraphicsFilterPipeline` 接入；`@VisibleForTesting` 测试缝 `createForTesting` 与测试构造器仅包内可见，生产路径不经过），`CnnPipeline` 的对外静态面为两对受控逃生门 `is/setTieredPrecisionEnabled` 与 `is/setRuntimeMrtFusionEnabled`，外加旁路状态常量 `BYPASS_NONE` / `BYPASS_INVALID_SIZE` / `BYPASS_GL_LIMIT` / `BYPASS_PIPELINE_FAILED` / `BYPASS_TARGET_UNAVAILABLE` 与预算常量 `TARGET_MEMORY_BUDGET_BYTES`（被包内 `GraphicsFilterPipeline` 及跨包宿主 `Krkrsdl3Graphics` / `SiglusGraphicsProxy` / `ArtemisOfficialSurfaceProxy` / `Anime4kRuntime` / `ArtemisOfficialBridge` 用于状态映射与预算预检；除此之外无其它公开静态面，原 `Anime4kPostProcessor` 已统一合并至 `CnnPipeline`），由 `CnnPipeline.loadPasses()` 在加载/预算评估/编译前原子捕获不可变 `GraphicsShaderTransforms.Config` 快照；所有实例间渲染与帧状态严格隔离，严禁包内公共可变测试字段。生产基准保留 `2xFP16`（`GL_RGBA16F` 中间目标 + `mediump` ALU，VN-SR $\Delta\text{PSNR} = -0.0030 \sim -0.0052\text{ dB}$，且 CPU IEEE binary16 仿真模型下 Anime4K 六份 Restore_CNN 相对 FP64 达 $69.95 \sim 72.87\text{ dB}$、8-bit 最大误差 $\le 1\text{ LSB}$）、运行期 MRT Pass 融合（`Anime4K_Restore_CNN_L` 9→5 passes，若运行时双附件 MRT FBO 不完整、MRT 站点报非上下文丢失 GL 错误或能力受限可自动回退未融合单输出路径）、CReLU 3×3/1×1 抽头去重（-69.7% taps）以及 Artemis 单上下文 / Kirikiroid2 的 **宿主脏帧静态复用**（`frameDirty`）在 `GraphicsFilterPipeline` 处命中缓存且未达有界连续复用上限（60 帧）时跳过 CNN 与重采样绘制。着重区分离线与运行期边界：VN-SR 三份随包着色器直接引用上游 [AAAA1111-Lab/VN-SR](https://github.com/AAAA1111-Lab/VN-SR) 在 `shaders/gles-mrt/` 下发布的 GLES 3.0 MRT 融合导出（由 `tools/generate-vnsr-filters.py --check` 校验 `retained` 字节与哈希后直接随包，无需在下游重复做离线融合变换），其余 Pass 融合（Anime4K）与 fail-closed 代码生成优化（P3-B Pass 0 `mat3x4` 剪枝、同分辨率 9 抽头共享坐标预计算与 3 抽头突发预取）均于运行期由 `GraphicsShaderTransforms` 在内存中动态变换而保持磁盘 `.glsl` 资产不可变。

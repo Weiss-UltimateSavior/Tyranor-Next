@@ -1,19 +1,20 @@
 package com.core.cmvs
 
-import android.app.AlertDialog
+import android.app.Dialog
 import android.app.NativeActivity
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
 import android.os.Process
+import android.text.InputFilter
 import android.text.InputType
 import android.view.KeyEvent
 import android.view.SurfaceHolder
 import android.view.WindowManager
-import android.widget.EditText
+import android.view.inputmethod.EditorInfo
 import androidx.annotation.Keep
 import com.core.engine.DoubleBackExit
+import com.core.engine.EnginePlayerOrientation
 import com.core.engine.EngineSurfaceStartupController
 import com.core.engine.LaunchContract
 import com.core.engine.R
@@ -22,6 +23,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.nio.charset.StandardCharsets
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicReference
+import org.tvp.kirikiri2.KrDialogStyle
 
 /**
  * CMVS NativeActivity host.
@@ -33,13 +36,15 @@ import java.util.UUID
  */
 class CmvsActivity : NativeActivity() {
     override fun setRequestedOrientation(requestedOrientation: Int) {
-        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
+        EnginePlayerOrientation.applyWithSuper(this) { super.setRequestedOrientation(it) }
     }
 
     @Volatile private var startupAllowed = false
     @Volatile private var choosingFont = false
     private var startupController: EngineSurfaceStartupController? = null
     @Volatile private var startupSurfaceHolder: SurfaceHolder? = null
+    private var commentDialog: Dialog? = null
+    private val commentResult = AtomicReference<Pair<Int, String>?>()
 
     @Keep
     @Synchronized
@@ -50,6 +55,7 @@ class CmvsActivity : NativeActivity() {
     fun shouldStartCmvsNative(): Boolean = startupAllowed
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        EnginePlayerOrientation.lockOnCreate(this, savedInstanceState)
         val launchConfig = File(filesDir, "launch.cfg")
         val expectedToken = intent?.getStringExtra(LaunchContract.CMVS_LAUNCH_TOKEN).orEmpty()
         val actualToken = readLaunchToken()
@@ -74,6 +80,7 @@ class CmvsActivity : NativeActivity() {
 
     override fun onResume() {
         super.onResume()
+        EnginePlayerOrientation.applyLocked(this)
         startupController?.onResume()
     }
 
@@ -154,6 +161,53 @@ class CmvsActivity : NativeActivity() {
         ).show()
     }
 
+    /** Called by the native engine when a save slot requests a comment. */
+    @Keep
+    fun beginCommentInput(id: Int, initial: String, maxChars: Int) = runOnUiThread {
+        clearCommentInput()
+        fun answer(value: String) = commentResult.set(id to value)
+        if (isFinishing || isDestroyed) {
+            answer("")
+            return@runOnUiThread
+        }
+        val input = KrDialogStyle.createInput(this, initial, InputType.TYPE_CLASS_TEXT).apply {
+            filters = arrayOf(InputFilter.LengthFilter(maxChars))
+            setText(initial)
+            selectAll()
+        }
+        val dialog = KrDialogStyle.createDialog(
+            this, getString(R.string.engine_cmvs_save_comment), null, input,
+            arrayOf(getString(R.string.engine_ok), getString(R.string.engine_cancel)), true, true,
+        ) { _, which -> answer(if (which == 0) " ${input.text}" else "") }
+        dialog.setOnCancelListener { answer("") }
+        input.setOnEditorActionListener { _, action, _ ->
+            if (action != EditorInfo.IME_ACTION_DONE) return@setOnEditorActionListener false
+            answer(" ${input.text}")
+            dialog.dismiss()
+            true
+        }
+        KrDialogStyle.focusInput(dialog, input)
+        commentDialog = dialog
+        dialog.setOnDismissListener { if (commentDialog === dialog) commentDialog = null }
+        dialog.show()
+    }
+
+    /** JNI returns null while pending, an empty string on cancel, or a space-prefixed draft. */
+    @Keep
+    fun takeCommentInput(id: Int): String? {
+        val result = commentResult.get() ?: return null
+        if (result.first != id || !commentResult.compareAndSet(result, null)) return null
+        return result.second
+    }
+
+    @Keep
+    fun dismissCommentInput() = runOnUiThread { clearCommentInput() }
+
+    private fun clearCommentInput() {
+        commentDialog?.dismiss()
+        commentResult.set(null)
+    }
+
     /** Called by the engine on the Java main thread for the in-game 0x213d font dialog. */
     @Keep
     fun chooseFont() {
@@ -180,25 +234,19 @@ class CmvsActivity : NativeActivity() {
             answer("cancel\n")
             return
         }
-        val input = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_NUMBER
-            setText("0")
+        val input = KrDialogStyle.createInput(this, "0", InputType.TYPE_CLASS_NUMBER)
+        KrDialogStyle.createDialog(
+            this, getString(R.string.engine_cmvs_font_index_title),
+            getString(R.string.engine_cmvs_font_index_message), input,
+            arrayOf(getString(R.string.engine_ok), getString(R.string.engine_cancel)), true, true,
+        ) { _, which ->
+            val index = input.text.toString().toIntOrNull()
+            if (which == 0 && index != null && index in 0..1024) copyFontAsync(uri, index)
+            else answer("cancel\n")
+        }.apply {
+            setOnCancelListener { answer("cancel\n") }
+            show()
         }
-        AlertDialog.Builder(this)
-            .setTitle(R.string.engine_cmvs_font_index_title)
-            .setMessage(R.string.engine_cmvs_font_index_message)
-            .setView(input)
-            .setNegativeButton(android.R.string.cancel) { _, _ -> answer("cancel\n") }
-            .setOnCancelListener { answer("cancel\n") }
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                val index = input.text.toString().toIntOrNull()
-                if (index == null || index !in 0..1024) {
-                    answer("cancel\n")
-                } else {
-                    copyFontAsync(uri, index)
-                }
-            }
-            .show()
     }
 
     private fun copyFontAsync(uri: Uri, index: Int) {
@@ -276,6 +324,7 @@ class CmvsActivity : NativeActivity() {
     override fun onDestroy() {
         choosingFont = false
         try {
+            clearCommentInput()
             startupController?.dispose()
             startupController = null
             startupSurfaceHolder = null

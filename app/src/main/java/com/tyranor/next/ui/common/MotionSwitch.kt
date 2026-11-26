@@ -1,6 +1,7 @@
 package com.tyranor.next.ui.common
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.PaddingValues
@@ -97,8 +98,10 @@ fun SwitchPreference(
     insideMargin: PaddingValues = BasicComponentDefaults.InsideMargin,
     holdDownState: Boolean = false,
     enabled: Boolean = true,
+    onLongClickLabel: String? = null,
+    onLongClick: (() -> Unit)? = null,
 ) {
-    if (!MotionMode.enhanced) {
+    if (!MotionMode.enhanced && onLongClick == null) {
         MiuixSwitchPreference(
             checked = checked,
             onCheckedChange = onCheckedChange,
@@ -117,9 +120,23 @@ fun SwitchPreference(
         return
     }
     val currentOnCheckedChange by rememberUpdatedState(onCheckedChange)
+    val toggle = { currentOnCheckedChange(!checked) }
+    // 行点击和长按由同一个手势入口裁决，长按成立后松手不会切换开关。
+    val rowModifier = modifier.withRowPressSquish(enabled = enabled)
+    val rowClickModifier = if (onLongClick == null) {
+        rowModifier
+    } else {
+        rowModifier.combinedClickable(
+            enabled = enabled,
+            role = Role.Switch,
+            onClick = toggle,
+            onLongClickLabel = onLongClickLabel,
+            onLongClick = onLongClick,
+        )
+    }
     BasicComponent(
         // 行级按压反馈内置在组件里（调用处不用再写）：单控件卡片整卡反馈、多控件卡片只有被按的这一行形变
-        modifier = modifier.withRowPressSquish(enabled = enabled),
+        modifier = rowClickModifier,
         insideMargin = insideMargin,
         title = title,
         titleColor = titleColor,
@@ -139,12 +156,11 @@ fun SwitchPreference(
                 checked = checked,
                 onCheckedChange = currentOnCheckedChange,
                 enabled = enabled,
+                consumeDown = onLongClick != null,
             )
         },
         bottomAction = bottomAction,
-        onClick = {
-            currentOnCheckedChange.takeIf { enabled }?.invoke(!checked)
-        },
+        onClick = toggle.takeIf { enabled && onLongClick == null },
         role = Role.Switch,
         holdDownState = holdDownState,
         enabled = enabled,
@@ -169,6 +185,7 @@ private fun JellySwitch(
     onCheckedChange: ((Boolean) -> Unit)?,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    consumeDown: Boolean = false,
 ) {
     val colors = jellySwitchColors(enabled)
     // 可用 ↔ 不可用（如依赖的总开关被关掉）：两套取色按弹簧进度连续过渡，而不是瞬间变灰；
@@ -235,12 +252,14 @@ private fun JellySwitch(
                 }
             }
             .onGloballyPositioned { trackCoords[0] = it }
-            .pointerInput(interactive) {
+            .pointerInput(interactive, consumeDown) {
                 if (!interactive) return@pointerInput
                 val travel = (THUMB_ON_X - THUMB_OFF_X).dp.toPx()
                 val slop = viewConfiguration.touchSlop
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
+                    // 带行长按时，开关上的按压只交给开关识别，纵向移动仍可由列表接手。
+                    if (consumeDown) down.consume()
                     // 指针流被异常取消时释放代码跑不到：finally 兜底回到当前状态
                     var finished = false
                     try {

@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +24,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -40,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -67,6 +71,10 @@ import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.LocalAppDialogHost
+import com.tyranor.next.ui.common.LocalDialogExit
+import com.tyranor.next.ui.common.privacy.DismissOnAppLockEffect
 import com.tyranor.next.ui.common.SplitEndsActionRow
 import java.util.concurrent.atomic.AtomicReference
 import com.tyranor.next.ui.common.motion.BlurCrossfade
@@ -77,6 +85,7 @@ import com.tyranor.next.ui.common.motion.bounceOnChange
 import com.tyranor.next.ui.common.motion.breathing
 import com.tyranor.next.ui.common.motion.shakeOnTrigger
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -103,11 +112,6 @@ internal fun GameShortcutCropDialog(
     var cropFailed by remember(imageUri) { mutableStateOf(false) }
     // 导出失败计数：每失败一次错误提示抖一下
     var cropFailCount by remember(imageUri) { mutableIntStateOf(0) }
-    val overlay = rememberGameOverlayMotion(GameOverlay.ShortcutCrop)
-    fun dismiss() {
-        if (!confirming) overlay.dismiss(onDismiss)
-    }
-
     LaunchedEffect(imageUri) {
         loadState = CropImageLoadState.Loading
         loadState = withContext(Dispatchers.IO) {
@@ -129,10 +133,16 @@ internal fun GameShortcutCropDialog(
         CropTransform(framing.scale * metrics.minimumScale, framing.offsetX * viewportSize, framing.offsetY * viewportSize),
         metrics,
     )
+    val updateViewport: (androidx.compose.ui.unit.IntSize) -> Unit = { viewportSize = min(it.width, it.height).toFloat() }
+    val updateTransform: (CropTransform) -> Unit = {
+        if (metrics.isValid) framing = CropTransform(
+            it.scale / metrics.minimumScale, it.offsetX / viewportSize, it.offsetY / viewportSize,
+        )
+    }
     /** Exports the current bounded crop off the main thread and returns it to the caller. */
-    fun confirmCrop() {
+    fun confirmCrop(onCropped: suspend (Uri, markHandedOff: () -> Unit) -> Unit) {
         val currentBitmap = bitmap ?: return
-        if (!metrics.isValid || confirming || overlay.isClosing) return
+        if (!metrics.isValid || confirming) return
         confirming = true
         cropFailed = false
         val current = transform
@@ -148,9 +158,7 @@ internal fun GameShortcutCropDialog(
                     cropFailed = true
                     cropFailCount++
                 } else {
-                    overlay.finishCropExport()
-                    onConfirm(croppedUri)
-                    handedOff = true
+                    onCropped(croppedUri) { handedOff = true }
                 }
             } finally {
                 confirming = false
@@ -165,6 +173,67 @@ internal fun GameShortcutCropDialog(
         }
     }
 
+    if (LocalAppDialogHost.current != null) {
+        AppAlertDialog(
+            onDismissRequest = onDismiss,
+            dismissEnabledNow = { !confirming },
+            title = { Text(stringResource(R.string.game_desktop_shortcut_crop_title), style = MaterialTheme.typography.titleMedium) },
+            text = {
+                Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    CropDialogContent(
+                        loadState, metrics, transform, cropFailed, cropFailCount, updateViewport, updateTransform,
+                        Modifier.weight(1f, fill = false).align(Alignment.CenterHorizontally).aspectRatio(1f),
+                        inBook = true,
+                    )
+                }
+            },
+            confirmButton = {
+                val exit = LocalDialogExit.current
+                CompositionLocalProvider(LocalDialogExit provides null) {
+                    CropDialogActions(
+                        confirming = confirming,
+                        closing = false,
+                        canConfirm = loadState is CropImageLoadState.Ready && metrics.isValid,
+                        onPickImage = { if (!confirming) onPickImage() },
+                        onDismiss = {
+                            if (!confirming) {
+                                if (exit != null) exit.closeThen(onDismiss) else onDismiss()
+                            }
+                        },
+                        onConfirm = {
+                            confirmCrop { croppedUri, markHandedOff ->
+                                if (exit == null) {
+                                    onConfirm(croppedUri)
+                                    markHandedOff()
+                                } else {
+                                    val delivered = CompletableDeferred<Unit>()
+                                    exit.closeThen {
+                                        if (delivered.isActive) {
+                                            onConfirm(croppedUri)
+                                            markHandedOff()
+                                            delivered.complete(Unit)
+                                        }
+                                    }
+                                    try {
+                                        delivered.await()
+                                    } finally {
+                                        delivered.cancel()
+                                    }
+                                }
+                            }
+                        },
+                    )
+                }
+            },
+        )
+        return
+    }
+
+    val overlay = rememberGameOverlayMotion(GameOverlay.ShortcutCrop)
+    fun dismiss() {
+        if (!confirming) overlay.dismiss(onDismiss)
+    }
+
     Dialog(
         onDismissRequest = ::dismiss,
         properties = DialogProperties(
@@ -174,6 +243,8 @@ internal fun GameShortcutCropDialog(
         ),
     ) {
         overlay.BindWindow()
+        // 独立 Window 层级在锁门之上：锁定后立即强制收起，不等待裁剪 / 导出结束
+        DismissOnAppLockEffect { overlay.dismissImmediately(onDismiss) }
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center,
@@ -200,15 +271,17 @@ internal fun GameShortcutCropDialog(
                 closing = overlay.isClosing,
                 cropFailed = cropFailed,
                 cropFailCount = cropFailCount,
-                onViewportSizeChanged = { viewportSize = min(it.width, it.height).toFloat() },
-                onTransform = {
-                    if (metrics.isValid) framing = CropTransform(
-                        it.scale / metrics.minimumScale, it.offsetX / viewportSize, it.offsetY / viewportSize,
-                    )
-                },
+                onViewportSizeChanged = updateViewport,
+                onTransform = updateTransform,
                 onPickImage = { if (!confirming && !overlay.isClosing) onPickImage() },
                 onDismiss = ::dismiss,
-                onConfirm = ::confirmCrop,
+                onConfirm = {
+                    if (!overlay.isClosing) confirmCrop { croppedUri, markHandedOff ->
+                        overlay.finishCropExport()
+                        onConfirm(croppedUri)
+                        markHandedOff()
+                    }
+                },
             )
             NoticeHost(Modifier.matchParentSize())
         }
@@ -273,33 +346,20 @@ private fun CropDialogCard(
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.enterGamePanel(GameOverlay.ShortcutCrop, GamePanelPart.Title),
                 )
-                Text(
-                    text = stringResource(R.string.game_desktop_shortcut_crop_hint),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = SecondaryTextColor,
-                    modifier = Modifier.enterGamePanel(GameOverlay.ShortcutCrop, GamePanelPart.Input),
-                )
-                CropDialogImage(
+                CropDialogContent(
                     loadState = loadState,
                     metrics = metrics,
                     transform = transform,
+                    cropFailed = cropFailed,
+                    cropFailCount = cropFailCount,
                     onViewportSizeChanged = onViewportSizeChanged,
                     onTransform = onTransform,
                     // In a short tablet window measure the action row first. Give the square
                     // only the space left over; never crop its hit area or hide Confirm.
-                    modifier = (if (tablet) Modifier.weight(1f, fill = false)
-                        .align(Alignment.CenterHorizontally).aspectRatio(1f) else Modifier)
-                        .enterGamePanel(GameOverlay.ShortcutCrop, GamePanelPart.Content),
+                    imageModifier = if (tablet) Modifier.weight(1f, fill = false)
+                        .align(Alignment.CenterHorizontally).aspectRatio(1f) else Modifier,
+                    inBook = false,
                 )
-                // 导出失败提示：展开推开下方按钮、从模糊里清晰；再次失败时抖一下
-                // 抖动挂在显隐容器外层：展开过程的裁切不会切掉抖动中的文字边缘
-                ExpandVisibility(cropFailed, modifier = Modifier.shakeOnTrigger(cropFailCount)) {
-                    Text(
-                        text = stringResource(R.string.game_desktop_shortcut_crop_failed),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
                 CropDialogActions(
                     confirming = confirming,
                     closing = closing,
@@ -315,6 +375,42 @@ private fun CropDialogCard(
     }
 }
 
+@Composable
+private fun CropDialogContent(
+    loadState: CropImageLoadState,
+    metrics: CropImageMetrics,
+    transform: CropTransform,
+    cropFailed: Boolean,
+    cropFailCount: Int,
+    onViewportSizeChanged: (androidx.compose.ui.unit.IntSize) -> Unit,
+    onTransform: (CropTransform) -> Unit,
+    imageModifier: Modifier,
+    inBook: Boolean,
+) {
+    Text(
+        text = stringResource(R.string.game_desktop_shortcut_crop_hint),
+        style = MaterialTheme.typography.bodyMedium,
+        color = SecondaryTextColor,
+        modifier = if (inBook) Modifier else Modifier.enterGamePanel(GameOverlay.ShortcutCrop, GamePanelPart.Input),
+    )
+    CropDialogImage(
+        loadState = loadState,
+        metrics = metrics,
+        transform = transform,
+        onViewportSizeChanged = onViewportSizeChanged,
+        onTransform = onTransform,
+        modifier = if (inBook) imageModifier else imageModifier.enterGamePanel(GameOverlay.ShortcutCrop, GamePanelPart.Content),
+        inBook = inBook,
+    )
+    ExpandVisibility(cropFailed, modifier = Modifier.shakeOnTrigger(cropFailCount)) {
+        Text(
+            text = stringResource(R.string.game_desktop_shortcut_crop_failed),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+}
+
 /** Renders loading, failure, or interactive image content for the crop card. */
 @Composable
 private fun CropDialogImage(
@@ -324,6 +420,7 @@ private fun CropDialogImage(
     onViewportSizeChanged: (androidx.compose.ui.unit.IntSize) -> Unit,
     onTransform: (CropTransform) -> Unit,
     modifier: Modifier = Modifier,
+    inBook: Boolean,
 ) {
     // 加载中 / 失败 / 可编辑 之间模糊替换（按状态类别切换，换图重新加载时才触发）
     BlurCrossfade(loadState, modifier = modifier, contentKey = { it::class }) { state ->
@@ -352,6 +449,7 @@ private fun CropDialogImage(
             transform = transform,
             onViewportSizeChanged = onViewportSizeChanged,
             onTransform = onTransform,
+            inBook = inBook,
         )
     }
     }
@@ -420,6 +518,7 @@ private fun CropPreview(
     transform: CropTransform,
     onViewportSizeChanged: (androidx.compose.ui.unit.IntSize) -> Unit,
     onTransform: (CropTransform) -> Unit,
+    inBook: Boolean,
 ) {
     val imageBitmap = remember(bitmap) { bitmap.asImageBitmap() }
     val currentTransform by rememberUpdatedState(transform)
@@ -434,6 +533,7 @@ private fun CropPreview(
             .background(Color.Black)
             .onSizeChanged(onViewportSizeChanged)
             .then(guides.observe(Modifier))
+            .then(if (inBook) Modifier.reserveCropPreviewDrag() else Modifier)
             .pointerInput(bitmap, metrics) {
                 // MOVE events can arrive in a batch before the next composition. Accumulate
                 // each delta here; the last rendered transform may be several events behind.
@@ -469,5 +569,15 @@ private fun CropPreview(
             color = Color.White.copy(alpha = 0.92f),
             style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Square),
         )
+    }
+}
+
+private fun Modifier.reserveCropPreviewDrag(): Modifier = pointerInput(Unit) {
+    awaitEachGesture {
+        awaitFirstDown(requireUnconsumed = false)
+        do {
+            val event = awaitPointerEvent()
+            event.changes.forEach { change -> if (change.positionChanged()) change.consume() }
+        } while (event.changes.any { it.pressed })
     }
 }

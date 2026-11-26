@@ -54,6 +54,10 @@ class HomeWebUrlsTest {
     fun isPresetMatchesBuiltInPresets() {
         assertTrue(HomeWebUrls.isPreset(AppSettingsStore.HOME_WEB_URL_KUNGAL))
         assertTrue(HomeWebUrls.isPreset(AppSettingsStore.HOME_WEB_URL_LETMOE))
+        val takanashiUrl = "https://t-satoru.top"
+        assertEquals(takanashiUrl, AppSettingsStore.HOME_WEB_URL_TAKANASHI)
+        assertEquals(takanashiUrl, HomeWebUrls.normalize(takanashiUrl))
+        assertTrue(HomeWebUrls.isPreset(takanashiUrl))
         assertFalse(HomeWebUrls.isPreset("https://example.com"))
     }
 }

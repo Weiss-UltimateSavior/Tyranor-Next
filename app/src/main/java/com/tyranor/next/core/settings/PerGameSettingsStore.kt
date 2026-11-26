@@ -106,6 +106,7 @@ object PerGameSettingsStore {
 
     // Tyrano 与 RPG Maker Web 共用的存档目录开关（GameSaveManager 按此键读取）
     const val F_TY_SCOPED = "ty_scoped"
+    const val F_TY_EXTERNAL = "ty_external"
 
     // Ren'Py（外置模块版本选择）
     const val F_RENPY_VERSION = "renpy_engine_version"
@@ -127,6 +128,7 @@ object PerGameSettingsStore {
     const val F_ETHORNELL_NLS = "ethornell_nls"
     const val F_ETHORNELL_FONT = "ethornell_font"
     const val F_CMVS_FONT = "cmvs_font"
+    const val F_CMVS_PROFILE = "cmvs_profile"
     const val F_SYSTEMNNN_FULLSCREEN = "systemnnn_fullscreen"
     const val F_SYSTEMNNN_READING_SIZE = "systemnnn_reading_size"
     const val F_SYSTEMNNN_EXE_ANALYSIS = "systemnnn_exe_analysis"
@@ -190,6 +192,22 @@ object PerGameSettingsStore {
     const val F_IMPACTO_CLOSE_BACKLOG_AT_END = "impacto_close_backlog_at_end"
     const val F_IMPACTO_DELUSION_MOUSE = "impacto_delusion_mouse"
     const val F_IMPACTO_LOG_LEVEL = "impacto_log_level"
+    const val F_IMPACTO_DEBUG_MODE = "impacto_debug_mode"
+
+    // EasyRPG 外置宿主配置覆盖（与全局键同名；null=跟随全局）
+    const val F_EASYRPG_ENCODING = "easyrpg_encoding"
+    const val F_EASYRPG_SCALING = "easyrpg_scaling"
+    const val F_EASYRPG_GAME_RESOLUTION = "easyrpg_game_resolution"
+    const val F_EASYRPG_STRETCH = "easyrpg_stretch"
+    const val F_EASYRPG_VSYNC = "easyrpg_vsync"
+    const val F_EASYRPG_FPS_LIMIT = "easyrpg_fps_limit"
+    const val F_EASYRPG_SHOW_FPS = "easyrpg_show_fps"
+    const val F_EASYRPG_DISABLE_AUDIO = "easyrpg_disable_audio"
+    const val F_EASYRPG_MUSIC_VOLUME = "easyrpg_music_volume"
+    const val F_EASYRPG_SOUND_VOLUME = "easyrpg_sound_volume"
+    const val F_EASYRPG_NO_RTP = "easyrpg_no_rtp"
+    const val F_EASYRPG_PATCH_MODE = "easyrpg_patch_mode"
+    const val F_EASYRPG_TEST_PLAY = "easyrpg_test_play"
 
     // ONS 子对象键
     const val ONS_KEY = "ons"
@@ -263,38 +281,29 @@ object PerGameSettingsStore {
 
     /** Keeps the version marker even for full inheritance, and preserves every unrelated/legacy key. */
     fun setGraphicsOverride(context: Context, gameId: String, family: GraphicsFamily, value: GraphicsOverride) {
-        if (gameId.isBlank()) return
-        val json = load(context, gameId)
-        json.put(family.overrideKey, GraphicsSettingsCodec.encode(value))
-        persist(context, gameId, json)
+        update(context, gameId) { put(family.overrideKey, GraphicsSettingsCodec.encode(value)) }
     }
 
-    /** 字符串字段覆盖值；null=未覆盖（跟随全局），""=覆盖为空串（如内置字体）。 */
+    /** 字符串字段覆盖值；null=未覆盖（跟随全局），""=覆盖为空串（如内置字体）。JSON null 与缺键同义。 */
     fun getStr(context: Context, gameId: String, key: String): String? {
         val j = load(context, gameId)
-        return if (j.has(key)) j.optString(key) else null
+        return overrideStr(j, key)
     }
 
-    /** 布尔字段覆盖值；null=未覆盖（跟随全局）。 */
+    /** 布尔字段覆盖值；null=未覆盖（跟随全局）。JSON null 与缺键同义。 */
     fun getBool(context: Context, gameId: String, key: String): Boolean? {
         val j = load(context, gameId)
-        return if (j.has(key)) j.optBoolean(key) else null
+        return overrideBool(j, key)
     }
 
     /** 设置字符串覆盖；value=null 表示移除该覆盖（跟随全局）。 */
     fun setStr(context: Context, gameId: String, key: String, value: String?) {
-        if (gameId.isBlank()) return
-        val j = load(context, gameId)
-        if (value == null) j.remove(key) else j.put(key, value.trim())
-        persist(context, gameId, j)
+        update(context, gameId) { put(key, value?.trim()) }
     }
 
     /** 设置布尔覆盖；value=null 表示移除该覆盖（跟随全局）。 */
     fun setBool(context: Context, gameId: String, key: String, value: Boolean?) {
-        if (gameId.isBlank()) return
-        val j = load(context, gameId)
-        if (value == null) j.remove(key) else j.put(key, value)
-        persist(context, gameId, j)
+        update(context, gameId) { put(key, value) }
     }
 
     /** 读取 ONS 覆盖子对象（缺失字段=跟随全局）。 */
@@ -319,10 +328,7 @@ object PerGameSettingsStore {
 
     /** 保存 ONS 覆盖子对象。 */
     fun setOnsOverride(context: Context, gameId: String, ons: JSONObject) {
-        if (gameId.isBlank()) return
-        val j = load(context, gameId)
-        j.put(ONS_KEY, ons)
-        persist(context, gameId, j)
+        update(context, gameId) { put(ONS_KEY, ons) }
     }
 
     /**
@@ -358,19 +364,18 @@ object PerGameSettingsStore {
 
     /** 一次写入 Ren'Py 版本和全部开关，保留同一游戏的其他覆盖。 */
     fun setRenPyOverrides(context: Context, gameId: String, version: String?, override: RenPyOverride) {
-        if (gameId.isBlank()) return
-        val record = load(context, gameId)
-        record.put(F_RENPY_VERSION, version?.trim())
-        record.put(F_RENPY_CHEATS, override.cheats)
-        record.put(F_RENPY_HW_VIDEO, override.hwVideo)
-        record.put(F_RENPY_AUTOSAVE, override.autosave)
-        record.put(F_RENPY_PHONE_SMALL_VARIANT, override.phoneSmallVariant)
-        record.put(F_RENPY_VSYNC, override.vsync)
-        record.put(F_RENPY_LESS_MEMORY, override.lessMemory)
-        record.put(F_RENPY_LESS_UPDATES, override.lessUpdates)
-        record.put(F_RENPY_DONT_USE_GL2, override.dontUseGl2)
-        record.put(F_RENPY_RECOMPILE, override.recompile)
-        persist(context, gameId, record)
+        update(context, gameId) {
+            put(F_RENPY_VERSION, version?.trim())
+            put(F_RENPY_CHEATS, override.cheats)
+            put(F_RENPY_HW_VIDEO, override.hwVideo)
+            put(F_RENPY_AUTOSAVE, override.autosave)
+            put(F_RENPY_PHONE_SMALL_VARIANT, override.phoneSmallVariant)
+            put(F_RENPY_VSYNC, override.vsync)
+            put(F_RENPY_LESS_MEMORY, override.lessMemory)
+            put(F_RENPY_LESS_UPDATES, override.lessUpdates)
+            put(F_RENPY_DONT_USE_GL2, override.dontUseGl2)
+            put(F_RENPY_RECOMPILE, override.recompile)
+        }
     }
 
     /**
@@ -433,6 +438,7 @@ object PerGameSettingsStore {
             },
             closeBacklogAtEnd = boolOrNull(F_IMPACTO_CLOSE_BACKLOG_AT_END),
             delusionMouse = boolOrNull(F_IMPACTO_DELUSION_MOUSE),
+            debugMode = boolOrNull(F_IMPACTO_DEBUG_MODE),
             logLevel = if (json.has(F_IMPACTO_LOG_LEVEL)) {
                 json.optString(F_IMPACTO_LOG_LEVEL).trim().lowercase(Locale.ROOT)
             } else {
@@ -440,6 +446,36 @@ object PerGameSettingsStore {
             },
         )
         return override.takeIf { it != ImpactoOverride() }
+    }
+
+    /**
+     * EasyRPG 外置宿主覆盖快照 → 类型化模型（缺失字段=跟随全局，
+     * 供 [EffectiveEngineSettings.mergeEasyRpg] 使用）。
+     */
+    fun toEasyRpgOverride(json: JSONObject?): EasyRpgOverride? {
+        if (json == null) return null
+        fun hasValue(key: String): Boolean = json.has(key) && !json.isNull(key)
+        fun boolOrNull(key: String): Boolean? = if (hasValue(key)) json.optBoolean(key) else null
+        fun strLowerOrNull(key: String): String? =
+            if (hasValue(key)) json.optString(key).trim().lowercase(Locale.ROOT) else null
+        fun rawStrOrNull(key: String): String? =
+            if (hasValue(key)) json.optString(key).trim() else null
+        val override = EasyRpgOverride(
+            encoding = strLowerOrNull(F_EASYRPG_ENCODING),
+            scaling = strLowerOrNull(F_EASYRPG_SCALING),
+            gameResolution = strLowerOrNull(F_EASYRPG_GAME_RESOLUTION),
+            stretch = boolOrNull(F_EASYRPG_STRETCH),
+            vsync = boolOrNull(F_EASYRPG_VSYNC),
+            fpsLimit = rawStrOrNull(F_EASYRPG_FPS_LIMIT),
+            showFps = boolOrNull(F_EASYRPG_SHOW_FPS),
+            disableAudio = boolOrNull(F_EASYRPG_DISABLE_AUDIO),
+            musicVolume = rawStrOrNull(F_EASYRPG_MUSIC_VOLUME),
+            soundVolume = rawStrOrNull(F_EASYRPG_SOUND_VOLUME),
+            noRtp = boolOrNull(F_EASYRPG_NO_RTP),
+            patchMode = strLowerOrNull(F_EASYRPG_PATCH_MODE),
+            testPlay = boolOrNull(F_EASYRPG_TEST_PLAY),
+        )
+        return override.takeIf { it != EasyRpgOverride() }
     }
 
     /**
@@ -533,26 +569,25 @@ object PerGameSettingsStore {
     /** 清除某游戏全部覆盖，回退到全局默认。 */
     fun clear(context: Context, gameId: String) {
         if (gameId.isBlank()) return
-        GameOverridesRepository.clearRow(context, gameId)
-        prefs(context).edit().remove(gameId).apply()
+        GameOverridesRepository.ensureSyncedBlocking(context)
+        synchronized(GameOverridesRepository.runtimeModuleSettingsMirrorLock) {
+            GameOverridesRepository.clearRow(context, gameId)
+            prefs(context).edit().remove(gameId).apply()
+        }
     }
 
-    /**
-     * 双写持久化：DB 异步落库（失败仅记日志），prefs 同步镜像立即刷盘——
-     * 引擎子进程启动游戏时按契约整条读取镜像（方案阶段 4 过渡策略）。
-     *
-     * 写路径已全部收敛到 app 侧：引擎只读镜像，不再回写任何字段，因此不存在
-     * 「app 进程的 prefs 缓存与引擎写入互相覆盖」的问题（跨进程 prefs 缓存不共享，
-     * 但单向只读不受其影响）。镜像的权威来源仍是 DB，进程启动时由
-     * `GameOverridesRepository.syncFromPrefs` 回灌保证历史数据不丢。
-     */
-    private fun persist(context: Context, gameId: String, record: JSONObject) {
+    /** 在同一把锁内读取最新镜像、修改字段并发布。Room 通过写队列按顺序落库。 */
+    private fun update(context: Context, gameId: String, mutate: JSONObject.() -> Unit) {
+        if (gameId.isBlank()) return
+        GameOverridesRepository.ensureSyncedBlocking(context)
         synchronized(GameOverridesRepository.runtimeModuleSettingsMirrorLock) {
-            val mirror = prefs(context).getString(gameId, null)
+            val preferences = prefs(context)
+            val record = preferences.getString(gameId, null)
                 ?.let { runCatching { JSONObject(it) }.getOrNull() }
-            if (mirror != null) GameOverridesRepository.preserveRuntimeModuleSettings(mirror, record)
+                ?: JSONObject()
+            record.mutate()
             GameOverridesRepository.updateRecord(context, gameId, record)
-            prefs(context).edit().putString(gameId, record.toString()).apply()
+            preferences.edit().putString(gameId, record.toString()).apply()
         }
     }
 }

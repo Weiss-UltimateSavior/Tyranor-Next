@@ -1,19 +1,25 @@
 package com.tyranor.next.ui.game
 
 import android.content.Context
+import android.view.KeyEvent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.tyranor.next.R
@@ -25,6 +31,7 @@ import com.tyranor.next.core.auth.VndbAuthStore
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.storage.GameLibraryFacade
+import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.net.HttpJsonResult
 import com.tyranor.next.core.net.testHttpRoundTrip
 import com.tyranor.next.theme.TyranorNextTheme
@@ -49,7 +56,7 @@ import org.junit.runner.RunWith
  * `PlayStatusDialog` 与 `CredentialTokenDialog` 交互写流程真机 Compose UI 回归：
  * 1. 未绑定来源搜索候选并点击绑定；
  * 2. 已绑定来源回读失败展示内联报错 + 重试按钮，点击重试恢复「当前」状态标记；
- * 3. 状态写入期间按钮禁用（防关闭），完成后释放并关闭选择弹窗；
+ * 3. 状态写入期间禁用返回和解绑，完成后关闭选择弹窗；
  * 4. 解绑条目同步回调清空绑定 ID；
  * 5. `CredentialTokenDialog` 无效令牌服务端失败保留弹窗并内联展示错误。
  */
@@ -102,6 +109,8 @@ class PlayStatusDialogUiTest {
 
     @Test
     fun playStatusDialogCoversBindSearchRetryWriteLockAndUnbind() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+
         val baseGame = ScanGame(
             title = "Sakura",
             uri = "content://games/ui_flow_1",
@@ -156,7 +165,7 @@ class PlayStatusDialogUiTest {
                 }
                 url.contains("api.vndb.org/kana/ulist/v17") && method == "PATCH" -> {
                     writeStarted.countDown()
-                    allowWriteFinish.await(5, TimeUnit.SECONDS)
+                    allowWriteFinish.await(15, TimeUnit.SECONDS)
                     HttpJsonResult(204, null)
                 }
                 else -> HttpJsonResult(404, null)
@@ -174,6 +183,9 @@ class PlayStatusDialogUiTest {
                 }
             }
 
+            val cancelText = context.getString(R.string.common_cancel)
+            composeRule.onNodeWithText(cancelText).assertDoesNotExist()
+
             // 1) 未绑定 Bangumi：替换搜索词并绑定候选条目
             composeRule.onNodeWithText("Bangumi").performClick()
             composeRule.onNodeWithText(context.getString(R.string.game_bind_subject_title, "Bangumi")).assertIsDisplayed()
@@ -188,26 +200,43 @@ class PlayStatusDialogUiTest {
 
             // 2) 已绑定 VNDB：首次回读 500 展示内联报错 + 重试；点击重试后显示「当前」
             composeRule.onNodeWithText("VNDB").performClick()
+            val pickerTitle = context.getString(R.string.game_play_status_pick_title, "VNDB")
+            composeRule.onNodeWithText(pickerTitle).assertIsDisplayed()
+            composeRule.onNodeWithText(cancelText).assertDoesNotExist()
             val retryLabel = context.getString(R.string.common_retry)
+            val errorLabel = AppLocaleController.wrap(context).getString(R.string.play_error_vndb_network)
+            val unbindText = context.getString(R.string.game_play_status_unbind)
+            val statusList = composeRule.onNode(hasScrollToIndexAction())
             composeRule.waitUntil(5_000) {
-                composeRule.onAllNodes(hasText(retryLabel))
-                    .fetchSemanticsNodes().isNotEmpty()
+                composeRule.onAllNodes(hasText(errorLabel)).fetchSemanticsNodes().isNotEmpty()
             }
-            composeRule.onNodeWithText(context.getString(R.string.play_error_vndb_network)).assertIsDisplayed()
-            composeRule.onNodeWithText(retryLabel).performClick()
+            composeRule.onNodeWithText(errorLabel).assertIsDisplayed()
+            val retry = composeRule.onNodeWithText(retryLabel).assertIsDisplayed()
+            val unbind = composeRule.onNodeWithText(unbindText).assertIsDisplayed()
+            val retryBounds = retry.fetchSemanticsNode().boundsInRoot
+            val unbindBounds = unbind.fetchSemanticsNode().boundsInRoot
+            assertTrue(retryBounds.bottom < unbindBounds.top)
+            val vndbDropped = context.getString(R.string.play_status_vndb_dropped)
+            statusList.performScrollToNode(hasText(vndbDropped))
+            assertEquals(retryBounds, retry.fetchSemanticsNode().boundsInRoot)
+            assertEquals(unbindBounds, unbind.fetchSemanticsNode().boundsInRoot)
+            retry.performClick()
             val currentLabel = context.getString(R.string.game_play_status_current)
+            val vndbPlaying = context.getString(R.string.play_status_vndb_playing)
+            statusList.performScrollToNode(hasText(vndbPlaying))
             composeRule.waitUntil(5_000) {
                 composeRule.onAllNodes(hasText(currentLabel))
                     .fetchSemanticsNodes().isNotEmpty()
             }
 
-            // 3) 写入期间确认选择弹窗关闭钮禁用，放行后完成写入并退出选择弹窗
-            composeRule.onNodeWithText(context.getString(R.string.play_status_vndb_finished)).performClick()
+            // 3) 写入期间确认返回和解绑均被阻止，放行后完成写入并退出选择弹窗
+            val vndbFinished = context.getString(R.string.play_status_vndb_finished)
+            statusList.performScrollToNode(hasText(vndbFinished))
+            composeRule.onNodeWithText(vndbFinished).performClick()
             assertTrue(writeStarted.await(5, TimeUnit.SECONDS))
-            val cancelNodes = composeRule.onAllNodes(hasText(context.getString(R.string.common_cancel)))
-            val cancelCount = cancelNodes.fetchSemanticsNodes().size
-            assertTrue(cancelCount >= 2)
-            cancelNodes[cancelCount - 1].assertIsNotEnabled()
+            unbind.assertIsNotEnabled()
+            instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            composeRule.onNodeWithText(pickerTitle).assertIsDisplayed()
         } finally {
             allowWriteFinish.countDown()
         }
@@ -217,13 +246,15 @@ class PlayStatusDialogUiTest {
                 .fetchSemanticsNodes().isEmpty()
         }
 
-        // 4) 解绑 VNDB（先滚动确保可见）：回调清空 vndbId
+        // 4) 直接点击底部解绑 VNDB，回调清空 vndbId
         composeRule.onNodeWithText("VNDB").performClick()
         val unbindText = context.getString(R.string.game_play_status_unbind)
-        composeRule.onNodeWithText(unbindText).performScrollTo().performClick()
+        composeRule.onNodeWithText(unbindText).performClick()
         composeRule.waitUntil(5_000) { currentGame.vndbId == null }
         assertNull(currentGame.vndbId)
         assertEquals(0, dismissCount.get())
+        composeRule.onNode(isDialog()).performTouchInput { click(Offset(width * 0.1f, height * 0.1f)) }
+        composeRule.waitUntil(5_000) { dismissCount.get() == 1 }
     }
 
     @Test

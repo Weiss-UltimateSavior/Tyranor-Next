@@ -16,8 +16,8 @@ import java.nio.charset.StandardCharsets
  * `filesDir/launch.cfg`; the App is the sole writer and uses an atomic rename.
  */
 object CmvsLaunchFiles {
-    private const val MAX_KEY_CFG_BYTES = 65537
     private const val TOKEN_PREFIX = "token="
+    private val profileIdPattern = Regex("[a-z0-9_-]{1,128}")
 
     fun ensureFont(context: Context, configured: String?): String? =
         CmvsPaths.validatedFont(context.filesDir, configured.orEmpty())
@@ -28,9 +28,11 @@ object CmvsLaunchFiles {
         gameDirectory: File,
         fontPath: String,
         fontFace: Int,
+        profileId: String?,
         token: String,
     ): Boolean {
         if (token.isBlank() || token.any { it == '\n' || it == '\r' }) return false
+        if (profileId != null && !profileIdPattern.matches(profileId)) return false
         val filesDir = context.filesDir
         val font = File(fontPath).canonicalFile
         if (!font.startsWith(filesDir.canonicalFile)) {
@@ -56,6 +58,7 @@ object CmvsLaunchFiles {
             append("user=").append(user.absolutePath).append('\n')
             append("font=").append(relativeFont).append('\n')
             append("face=").append(fontFace).append('\n')
+            if (profileId != null) append("profile=").append(profileId).append('\n')
             append(TOKEN_PREFIX).append(token).append('\n')
         }
         val target = CmvsPaths.launchConfig(filesDir)
@@ -96,6 +99,8 @@ object CmvsLaunchFiles {
 
 /** Launch-time validation that does not require the native engine. */
 object CmvsPreflight {
+    private const val MAX_KEY_CFG_BYTES = 65537
+
     fun check(
         context: Context,
         game: ScanGame,
@@ -107,23 +112,11 @@ object CmvsPreflight {
         val pack = File(data, "pack")
         if (!data.isDirectory || !pack.isDirectory) return LaunchResult.Failure.CmvsGameLayoutInvalid
         if (!File(pack, "script.cpz").isFile) return LaunchResult.Failure.CmvsGameLayoutInvalid
-        val starts = listOf("start.ps3", "start.ps2").map { File(pack, it) }.filter { it.isFile }
-        if (starts.size != 1) return LaunchResult.Failure.CmvsGameLayoutInvalid
-        val keyConfig = File(gameDirectory, "key.cfg")
-        if (!keyConfig.isFile) return LaunchResult.Failure.CmvsGameLayoutInvalid
-        if (keyConfig.length() > 65537L) return LaunchResult.Failure.CmvsGameLayoutInvalid
-        val validUtf8 = try {
-            val bytes = keyConfig.readBytes()
-            if (bytes.size > 65537) return LaunchResult.Failure.CmvsGameLayoutInvalid
-            StandardCharsets.UTF_8.newDecoder()
-                .onMalformedInput(CodingErrorAction.REPORT)
-                .onUnmappableCharacter(CodingErrorAction.REPORT)
-                .decode(ByteBuffer.wrap(bytes))
-            true
-        } catch (_: Exception) {
-            false
+        val start = CmvsPaths.startScriptNames.filter { File(pack, it).isFile }.singleOrNull()
+            ?: return LaunchResult.Failure.CmvsGameLayoutInvalid
+        if (start != CmvsPaths.CVNS_START_SCRIPT && !hasValidKeyConfig(gameDirectory)) {
+            return LaunchResult.Failure.CmvsGameLayoutInvalid
         }
-        if (!validUtf8) return LaunchResult.Failure.CmvsGameLayoutInvalid
         if (fontPath.isNullOrBlank() || !File(fontPath).isFile) {
             return LaunchResult.Failure.CmvsFontUnavailable
         }
@@ -137,5 +130,21 @@ object CmvsPreflight {
         )
         if (!hasVulkan) return LaunchResult.Failure.CmvsVulkanUnavailable
         return null
+    }
+
+    private fun hasValidKeyConfig(gameDirectory: File): Boolean {
+        val keyConfig = File(gameDirectory, "key.cfg")
+        if (!keyConfig.isFile || keyConfig.length() > MAX_KEY_CFG_BYTES) return false
+        return try {
+            val bytes = keyConfig.readBytes()
+            if (bytes.size > MAX_KEY_CFG_BYTES) return false
+            StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes))
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 }

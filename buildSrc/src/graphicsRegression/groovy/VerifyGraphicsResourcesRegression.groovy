@@ -47,6 +47,15 @@ class VerifyGraphicsResourcesRegression {
                 fixture.descriptor('shaders/unregistered.glsl')
                 expectFailure('Unregistered graphics descriptor asset:') { fixture.verify() }
             },
+            'descriptor combining tiled halo with output-sized geometry is rejected': { Fixture fixture ->
+                fixture.imported('filters', 'registered.glsl')
+                fixture.descriptor([filters: [[asset: 'filters/registered.glsl', haloPerPass: 1, outputSized: true]]])
+                expectFailure('combines haloPerPass>0 with outputSized') { fixture.verify() }
+            },
+            'assetless descriptor combining tiled halo with output-sized geometry is rejected': { Fixture fixture ->
+                fixture.descriptor([filters: [[id: 'bad_resampler', asset: null, haloPerPass: 1, outputSized: true]]])
+                expectFailure('combines haloPerPass>0 with outputSized') { fixture.verify() }
+            },
             'missing descriptor assets are rejected': { Fixture fixture ->
                 fixture.descriptor('missing/absent.glsl')
                 expectFailure('missing or unsafe asset:') { fixture.verify() }
@@ -195,8 +204,11 @@ class VerifyGraphicsResourcesRegression {
         }
 
         void descriptor(String path) {
-            new File(descriptors, 'filters.json').setText(
-                    JsonOutput.toJson([filters: [[asset: path]]]), 'UTF-8')
+            descriptor([filters: [[asset: path]]])
+        }
+
+        void descriptor(Map data) {
+            new File(descriptors, 'filters.json').setText(JsonOutput.toJson(data), 'UTF-8')
         }
 
         void verify(Collection<File> omittedInputs = []) {

@@ -3,7 +3,6 @@ package com.akira.tyranoemu.remote;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
-import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.os.Build;
@@ -15,6 +14,7 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Toast;
 
+import com.core.engine.EnginePlayerOrientation;
 import com.core.engine.EngineStartupOverlay;
 import com.core.engine.LaunchContract;
 
@@ -70,7 +70,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
 
     @Override
     public void setRequestedOrientation(int requestedOrientation) {
-        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        EnginePlayerOrientation.applyWithSuper(this, super::setRequestedOrientation);
     }
     private String pendingGamePath;
     private boolean pendingMaps;
@@ -92,6 +92,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
 
     @Override
     public void onCreate(Bundle bundle) {
+        EnginePlayerOrientation.lockOnCreate(this, bundle);
         doSetSystemUiVisibility();
         NativeBridge.configureSafMirror(
                 getIntent().getStringExtra(LaunchContract.SAF_MIRROR_INDEX),
@@ -104,9 +105,6 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         super.onCreate(bundle);
         app = this;
         graphicsOverlay = new com.core.gl.ArtemisPerformanceOverlay(this, com.core.gl.Anime4kRuntime.source());
-        // KR2 宿主不是 SDLActivity（SDL.setContext 从未被调用），须显式注册耳机
-        // 热插拔监听，否则游戏中插拔耳机后静态 AudioTrack 失联、永久静音。
-        org.libsdl.app.AudioRouteWatcher.ensureRegistered(this);
         if (getIntent().getBooleanExtra(LaunchContract.ORIGIN_MODE, false)) {
             return;
         }
@@ -149,33 +147,70 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
      * Known limitation: keys written by pre-marker builds carry no marker and survive
      * the ownership-tracked clear; the legacy app-written font values are migrated
      * separately via clearLegacyAppPrivateFontItem (private fonts directory prefix).
+     * Since the round-2 review, a game-scope write also converges the global file's
+     * injected copy toward the app's current global value (the FONT_GLOBAL_* reference
+     * extras): a marked entry holding a different value is rewritten to the reference —
+     * deleted when the reference is empty — healing the pre-#183 global leak without
+     * waiting for a follow-global launch (see clearStaleGlobalFontItem).
      */
     private void applyFontPreferences() {
         Intent intent = getIntent();
         if (intent == null) return;
         File globalFile = globalPreferenceFile();
-        if (globalFile == null) {
-            Log.w(TAG, "font pref global file unavailable");
-            return;
-        }
         File gameFile = gamePreferenceFile();
+        // App-side global baselines (see LaunchContract.FONT_GLOBAL_*): the reference for what
+        // the global file SHOULD hold, used to recycle stale injected entries after game-scope
+        // writes. Compared only when the extra is actually present — absent (old app build)
+        // must not fall back to the get-default value, which would masquerade as a reference.
+        String globalFontRef = safeTrim(intent.getStringExtra(LaunchContract.FONT_GLOBAL_DEFAULT));
+        boolean globalForceRef = intent.getBooleanExtra(LaunchContract.FONT_GLOBAL_FORCE, false);
         // Keys fail independently: a read-only game directory must not block the other key.
         if (intent.hasExtra(LaunchContract.DEFAULT_FONT)) {
             try {
                 String font = safeTrim(intent.getStringExtra(LaunchContract.DEFAULT_FONT));
-                File target = fontTarget(intent, "font_scope_default", gameFile, globalFile);
-                boolean changed = applyPreferenceItem(
-                        target, "default_font", markerFor("default_font"), font.isEmpty() ? null : font);
-                Log.i(TAG, "font pref default_font='" + font + "' -> " + target
-                        + (changed ? "" : " (unchanged)"));
-                clearStalePreferenceItem(target, gameFile, "default_font", markerFor("default_font"));
-                // Pre-marker legacy builds wrote the app-imported font path (inside this
-                // app's private fonts directory) without a marker; ownership tracking
-                // keeps such unmarked entries, so migrate the recognized ones here.
-                // Kernel-UI-picked fonts (paths outside the private fonts directory)
-                // carry no such prefix and are kept.
-                clearLegacyAppPrivateFontItem(gameFile, "default_font", markerFor("default_font"),
-                        new File(getFilesDir(), "fonts").getPath());
+                boolean gameScope = LaunchContract.SCOPE_GAME.equals(
+                        intent.getStringExtra(LaunchContract.FONT_SCOPE_DEFAULT));
+                File target = fontWriteTarget(gameScope, gameFile, globalFile);
+                if (target == null) {
+                    // The XML file required by the requested scope is unavailable: skip instead of
+                    // silently degrading. A global-scope fallback would re-introduce the very leak
+                    // this path eliminates (or clear the global font for every game); a game-scope
+                    // write does not need the global file at all, so its unavailability must not
+                    // block it. The scope is read once above and drives both this decision and the
+                    // write below, so the two can never drift apart.
+                    Log.w(TAG, "font pref default_font skipped: " + (gameScope ? "game" : "global")
+                            + " file unavailable");
+                } else {
+                    // "" keeps its #74 cleanup semantics (ownership unset) only in the global scope;
+                    // in the game scope it writes an empty Item so just THIS game falls back to the
+                    // built-in font while other games keep the global font (an empty default_font
+                    // value is equivalent to the kernel default: the built-in font).
+                    int outcome = applyPreferenceItemDetailed(
+                            target, "default_font", markerFor("default_font"), fontItemValue(font, gameScope));
+                    Log.i(TAG, "font pref default_font='" + font + "' -> " + target
+                            + prefWriteOutcomeSuffix(outcome));
+                    clearStalePreferenceItem(target, gameFile, "default_font", markerFor("default_font"));
+                    if (gameScope && intent.hasExtra(LaunchContract.FONT_GLOBAL_DEFAULT)) {
+                        // Reference-driven global recycle: runs even when the game write above was
+                        // skipped (the global file's health is independent), and is gated on the
+                        // gameScope branch plus the reference extra's presence — never on the
+                        // game write outcome.
+                        int recycle = clearStaleGlobalFontItem(globalFile, "default_font",
+                                markerFor("default_font"), globalFontRef);
+                        if (recycle != FONT_RECYCLE_NONE) {
+                            Log.i(TAG, "font pref default_font global recycle" + prefWriteOutcomeSuffix(recycle));
+                        }
+                    }
+                    if (gameFile != null) {
+                        // Pre-marker legacy builds wrote the app-imported font path (inside this
+                        // app's private fonts directory) without a marker; ownership tracking
+                        // keeps such unmarked entries, so migrate the recognized ones here.
+                        // Kernel-UI-picked fonts (paths outside the private fonts directory)
+                        // carry no such prefix and are kept.
+                        clearLegacyAppPrivateFontItem(gameFile, "default_font", markerFor("default_font"),
+                                new File(getFilesDir(), "fonts").getPath());
+                    }
+                }
             } catch (Exception error) {
                 Log.w(TAG, "apply default_font failed", error);
             }
@@ -183,12 +218,26 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         if (intent.hasExtra(LaunchContract.FORCE_DEFAULT_FONT)) {
             try {
                 boolean force = intent.getBooleanExtra(LaunchContract.FORCE_DEFAULT_FONT, false);
-                File target = fontTarget(intent, "font_scope_force", gameFile, globalFile);
-                boolean changed = applyPreferenceItem(
-                        target, "force_default_font", markerFor("force_default_font"), force ? "1" : "0");
-                Log.i(TAG, "font pref force_default_font=" + force + " -> " + target
-                        + (changed ? "" : " (unchanged)"));
-                clearStalePreferenceItem(target, gameFile, "force_default_font", markerFor("force_default_font"));
+                boolean forceGameScope = LaunchContract.SCOPE_GAME.equals(
+                        intent.getStringExtra(LaunchContract.FONT_SCOPE_FORCE));
+                File target = fontWriteTarget(forceGameScope, gameFile, globalFile);
+                if (target == null) {
+                    Log.w(TAG, "font pref force_default_font skipped: "
+                            + (forceGameScope ? "game" : "global") + " file unavailable");
+                } else {
+                    int outcome = applyPreferenceItemDetailed(
+                            target, "force_default_font", markerFor("force_default_font"), force ? "1" : "0");
+                    Log.i(TAG, "font pref force_default_font=" + force + " -> " + target
+                            + prefWriteOutcomeSuffix(outcome));
+                    clearStalePreferenceItem(target, gameFile, "force_default_font", markerFor("force_default_font"));
+                    if (forceGameScope && intent.hasExtra(LaunchContract.FONT_GLOBAL_FORCE)) {
+                        int recycle = clearStaleGlobalFontItem(globalFile, "force_default_font",
+                                markerFor("force_default_font"), globalForceRef ? "1" : "0");
+                        if (recycle != FONT_RECYCLE_NONE) {
+                            Log.i(TAG, "font pref force_default_font global recycle" + prefWriteOutcomeSuffix(recycle));
+                        }
+                    }
+                }
             } catch (Exception error) {
                 Log.w(TAG, "apply force_default_font failed", error);
             }
@@ -210,10 +259,6 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         String enginePrefsJson = intent.getStringExtra(LaunchContract.KR_ENGINE_PREFS);
         if (enginePrefsJson == null || enginePrefsJson.isEmpty()) return;
         File globalFile = globalPreferenceFile();
-        if (globalFile == null) {
-            Log.w(TAG, "engine pref global file unavailable");
-            return;
-        }
         File gameFile = gamePreferenceFile();
         try {
             JSONObject json = new JSONObject(enginePrefsJson);
@@ -223,13 +268,22 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
                 try {
                     JSONObject pref = json.getJSONObject(key);
                     String value = safeTrim(pref.optString("v", ""));
-                    boolean gameScope = "game".equals(pref.optString("s", "global"));
+                    boolean gameScope = LaunchContract.SCOPE_GAME.equals(pref.optString("s", LaunchContract.SCOPE_GLOBAL));
                     File target = scopeTarget(gameScope, gameFile, globalFile);
-                    boolean changed = applyPreferenceItem(
+                    if (target == null) {
+                        // The game-scope fallback keeps the engine-prefs channel's own semantics
+                        // (a game-scope key with no game directory XML still lands in the global
+                        // file), but with no writable target at all the key is skipped on its own
+                        // instead of aborting the remaining keys: an unavailable global file must
+                        // not block game-scope keys that have a game directory to write.
+                        Log.w(TAG, "engine pref " + key + " skipped: target preference file unavailable");
+                        continue;
+                    }
+                    int outcome = applyPreferenceItemDetailed(
                             target, key, markerFor(key), value.isEmpty() ? null : value);
                     Log.i(TAG, "engine pref " + key + "='" + value + "' scope="
-                            + (gameScope ? "game" : "global") + " -> " + target
-                            + (changed ? "" : " (unchanged)"));
+                            + (gameScope ? LaunchContract.SCOPE_GAME : LaunchContract.SCOPE_GLOBAL) + " -> " + target
+                            + prefWriteOutcomeSuffix(outcome));
                     clearStalePreferenceItem(target, gameFile, key, markerFor(key));
                 } catch (Exception error) {
                     Log.w(TAG, "apply engine pref " + key + " failed", error);
@@ -259,9 +313,27 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         return new File(root, "Kirikiroid2Preference.xml");
     }
 
-    /** Resolves the target file for one key: the game directory when scoped to game, else global. */
-    private static File fontTarget(Intent intent, String scopeExtra, File gameFile, File globalFile) {
-        return scopeTarget("game".equals(intent.getStringExtra(scopeExtra)), gameFile, globalFile);
+    /**
+     * Decision for one font key write: returns the XML file the value lands in, or null when
+     * the write must be skipped because the file required by the requested scope is
+     * unavailable. Skipping must not silently degrade: a global-scope fallback would re-leak
+     * the override globally (or, for an empty value, clear the global font for every game),
+     * while a game-scope write does not need the global file at all — its unavailability must
+     * not block it. ({@link #scopeTarget} keeps its own game-scope fallback for the
+     * engine-prefs channel; font writes must not inherit it.)
+     */
+    static File fontWriteTarget(boolean requestedGameScope, File gameFile, File globalFile) {
+        return requestedGameScope ? gameFile : globalFile;
+    }
+
+    /**
+     * Resolves the Item value for one font key: an empty string is an ownership-tracked unset
+     * (cleanup) in the global scope (issue #74), while in the game scope it writes an empty Item
+     * so just this game falls back to the built-in font (an empty default_font value is
+     * equivalent to the kernel default: the built-in font).
+     */
+    static String fontItemValue(String font, boolean gameScope) {
+        return (font.isEmpty() && !gameScope) ? null : font;
     }
 
     /** Chooses the game directory XML for game scope (when available), otherwise the global XML. */
@@ -285,6 +357,49 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         applyPreferenceItem(gameFile, name, markerName, null, true);
     }
 
+    /**
+     * Converges the global file's copy of a font key toward the app's current global value
+     * after a game-scope write. The launcher is the global file's only writer, so its
+     * injected marker records what it last put there; a marker disagreeing with the
+     * reference is either this game's override leaked by pre-#183 builds or an outdated
+     * global font the app has since changed. When the entry still equals the marker it is
+     * <b>rewritten to the reference</b> (marker synced) rather than merely deleted, so the
+     * other games' font converges to the app's global value immediately instead of waiting
+     * for a follow-global launch; an empty reference deletes exactly like the ownership
+     * unset path did. An entry the engine UI has since rewritten (current != marker) is
+     * disowned (marker dropped, value kept) — a defensive path reachable only if the
+     * single-writer invariant is broken, not a supported flow. Entries without a marker
+     * carry no ownership signal and are never touched (pre-marker legacy values need the
+     * documented manual cleanup). The recycle is reference-driven: it runs even when the
+     * game-scope write itself was skipped (e.g. a corrupt game XML), and is gated only on
+     * the gameScope branch plus the presence of the reference extra. Old app builds send
+     * no reference extra; the caller then skips this entirely.
+     *
+     * @return a {@link #prefWriteOutcomeSuffix} outcome for the recycle write, or
+     *         {@link #FONT_RECYCLE_NONE} when no recycle was due (no global file, unparsable
+     *         file, no marker, or marker already equal to the reference).
+     */
+    static int clearStaleGlobalFontItem(File globalFile, String name, String markerName, String referenceValue)
+            throws Exception {
+        if (globalFile == null || !globalFile.isFile()) return FONT_RECYCLE_NONE;
+        LinkedHashMap<String, String> items = new LinkedHashMap<>();
+        List<String[]> customs = new ArrayList<>();
+        LinkedHashMap<Integer, Integer> keyMaps = new LinkedHashMap<>();
+        if (readPreferenceFile(globalFile, items, customs, keyMaps) != PREF_PARSE_COMPLETE) return FONT_RECYCLE_NONE;
+        String marker = items.get(markerName);
+        if (marker == null || marker.equals(referenceValue)) return FONT_RECYCLE_NONE;
+        String current = items.get(name);
+        if (current != null && !current.equals(marker)) {
+            // Defensive path (single-writer invariant broken): keep the rewritten value, drop
+            // our stale marker only — the ownership disown semantics.
+            return applyPreferenceItemDetailed(globalFile, name, markerName, null, true);
+        }
+        // Reference-driven convergence: rewrite the stale injected value to the app's current
+        // global value (an empty reference deletes, matching the ownership unset semantics).
+        return applyPreferenceItemDetailed(globalFile, name, markerName,
+                referenceValue.isEmpty() ? null : referenceValue, true);
+    }
+
     private String gameRootDir() {
         Intent intent = getIntent();
         if (intent == null) return "";
@@ -295,6 +410,35 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
 
     private static String safeTrim(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    /** Sentinel returned by {@link #clearStaleGlobalFontItem} when no recycle was due. */
+    static final int FONT_RECYCLE_NONE = -1;
+
+    /** Write outcomes reported by {@link #applyPreferenceItemDetailed} (see {@link #readPreferenceFile}). */
+    static final int PREF_WRITE_APPLIED = 0;
+    static final int PREF_WRITE_UNCHANGED = 1;
+    static final int PREF_WRITE_SKIPPED_PARSE_INCOMPLETE = 2;
+    static final int PREF_WRITE_SKIPPED_NOT_FILE = 3;
+
+    /**
+     * Log suffix distinguishing the three reasons a key may end up not written: no change,
+     * or a write that was requested but skipped because the file is truncated/corrupt (a
+     * partial snapshot must not be written back) or not a regular file (a directory standing
+     * at the path must not be replaced). Callers log it so a skipped write-back is not
+     * misread as "the value did not change" during troubleshooting.
+     */
+    static String prefWriteOutcomeSuffix(int outcome) {
+        switch (outcome) {
+            case PREF_WRITE_APPLIED:
+                return "";
+            case PREF_WRITE_UNCHANGED:
+                return " (unchanged)";
+            case PREF_WRITE_SKIPPED_PARSE_INCOMPLETE:
+                return " (skipped: preference xml parse incomplete)";
+            default:
+                return " (skipped: preference path is not a regular file)";
+        }
     }
 
     /**
@@ -313,7 +457,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
      */
     private static boolean applyPreferenceItem(
             File file, String name, String markerName, String value) throws Exception {
-        return applyPreferenceItem(file, name, markerName, value, true);
+        return applyPreferenceItemDetailed(file, name, markerName, value, true) == PREF_WRITE_APPLIED;
     }
 
     /** Preference XML parse outcomes (see {@link #readPreferenceFile}). */
@@ -400,6 +544,21 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     static boolean applyPreferenceItem(
             File file, String name, String markerName, String value, boolean trackOwnership)
             throws Exception {
+        return applyPreferenceItemDetailed(file, name, markerName, value, trackOwnership) == PREF_WRITE_APPLIED;
+    }
+
+    /**
+     * Same decision as {@link #applyPreferenceItem} but reporting <em>why</em> nothing was
+     * written (unchanged vs skipped), so callers can log the difference.
+     */
+    static int applyPreferenceItemDetailed(
+            File file, String name, String markerName, String value) throws Exception {
+        return applyPreferenceItemDetailed(file, name, markerName, value, true);
+    }
+
+    static int applyPreferenceItemDetailed(
+            File file, String name, String markerName, String value, boolean trackOwnership)
+            throws Exception {
         LinkedHashMap<String, String> items = new LinkedHashMap<>();
         List<String[]> customs = new ArrayList<>();
         LinkedHashMap<Integer, Integer> keyMaps = new LinkedHashMap<>();
@@ -431,9 +590,11 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         // 文件缺失（首次启动/新游戏目录）按空配置创建写入；不完整解析（截断/损坏）
         // 跳过写回——部分快照会永久丢失损坏点之后的条目；存在但非普通文件（目录等）
         // 同样禁止写回——替换重试会删除路径上的空目录。
-        if (!changed || (parse != PREF_PARSE_MISSING && parse != PREF_PARSE_COMPLETE)) return false;
+        if (!changed) return PREF_WRITE_UNCHANGED;
+        if (parse == PREF_PARSE_INCOMPLETE) return PREF_WRITE_SKIPPED_PARSE_INCOMPLETE;
+        if (parse == PREF_PARSE_NOT_FILE) return PREF_WRITE_SKIPPED_NOT_FILE;
         writePreferenceXml(file, items, customs, keyMaps);
-        return true;
+        return PREF_WRITE_APPLIED;
     }
 
     /**
@@ -497,6 +658,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     @Override
     public void onLoadNativeLibraries() {
         String gameLibrary = gameLibraryForBridge();
+        nativeInstallAudioControl(gameLibrary);
         boolean initialized = NativeBridge.initialize(gameLibrary);
         nativeBridgeInitialized = initialized;
         if (initialized) com.core.gl.KirikiroidRawFrameBridge.configureLibrary(gameLibrary);
@@ -771,6 +933,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     @Override
     public void onResume() {
         super.onResume();
+        EnginePlayerOrientation.applyLocked(this);
         if (graphicsOverlay != null) graphicsOverlay.show();
     }
 
@@ -778,14 +941,6 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
         doSetSystemUiVisibility();
-    }
-
-    @Override
-    public void onWindowFocusChanged(boolean hasFocus) {
-        String focus = getIntent().getStringExtra(LaunchContract.FOCUS);
-        boolean forceFocus = focus != null && Boolean.parseBoolean(focus);
-        super.onWindowFocusChanged(hasFocus || forceFocus);
-        if (hasFocus || forceFocus) doSetSystemUiVisibility();
     }
 
     @Override

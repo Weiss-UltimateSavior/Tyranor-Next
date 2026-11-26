@@ -57,11 +57,7 @@ class DropdownHoldSelectionDeviceTest {
 
     @Test fun enhancedRootPopupCommitsOnlyOnRelease() = checkSelection(enhanced = true, windowHost = false)
 
-    @Test fun ordinaryRootPopupCommitsOnlyOnRelease() = checkSelection(enhanced = false, windowHost = false)
-
     @Test fun enhancedWindowPopupCommitsOnlyOnRelease() = checkSelection(enhanced = true, windowHost = true)
-
-    @Test fun ordinaryWindowPopupCommitsOnlyOnRelease() = checkSelection(enhanced = false, windowHost = true)
 
     private fun checkSelection(enhanced: Boolean, windowHost: Boolean) {
         MotionDeviceAcceptance.require(enhanced = null)
@@ -218,7 +214,6 @@ class DropdownHoldSelectionDeviceTest {
 
         try {
             compose.mainClock.autoAdvance = false
-            compose.runOnIdle { MotionMode.sync(enhanced) }
             compose.setContent { Scene(fixture, windowHost) }
             settle(500)
 
@@ -373,7 +368,6 @@ class DropdownHoldSelectionDeviceTest {
                 try {
                     compose.runOnIdle { fixture.mounted = false }
                     settle()
-                    compose.runOnIdle { MotionMode.sync(originalMode) }
                 } finally {
                     compose.mainClock.autoAdvance = originalAutoAdvance
                 }

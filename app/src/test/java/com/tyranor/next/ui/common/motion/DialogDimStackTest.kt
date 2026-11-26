@@ -6,6 +6,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DialogDimStackTest {
+    @Test fun foldedDimMatchesIndependentLayersAtIntermediateProgress() {
+        val oneLayer = drawnDialogScrim(0f, 0.5f, 0.5f)
+        assertEquals(64f / 255f, oneLayer, 0.0001f)
+        assertEquals(1f - (1f - oneLayer) * (1f - oneLayer), drawnDialogScrim(0.5f, 0.5f, 0.5f), 0.0001f)
+        assertEquals(oneLayer, drawnDialogScrim(0.5f, 0f, 0.5f), 0.0001f)
+        assertEquals(0f, drawnDialogScrim(0.5f, 0.5f, 0f), 0f)
+        assertEquals(0.75f, drawnDialogScrim(0.5f, 0.5f, 1f), 0f)
+    }
+
     private class Window {
         var visible = true
         var applied = -1f
@@ -538,6 +547,43 @@ class DialogDimStackTest {
         val window = Window()
         legacy.register(Any(), window, 0.3f, true)
         assertEquals(0.3f, window.applied, 0f)
+    }
+
+    @Test fun passThroughExitingStandaloneDialogKeepsOwnFadeWithoutPollutingNewUpperSheet() {
+        val stack = stack()
+        val owner = Any()
+        val dialog = Window()
+        val sheet = Window()
+        stack.register(owner, dialog, 0f, false, scrim = 0.5f)
+
+        stack.markExiting(dialog)
+        stack.update(dialog, 0f, false, scrim = 0.25f, baseScrim = 0.5f)
+        assertEquals(0.25f, dialog.scrim, 0.0001f)
+
+        // 退场中用户在下层卡片打开了操作抽屉：已退场的弹窗不再把自己的 0.5 底色遗传给新抽屉，也不再被压暗
+        stack.register(owner, sheet, 0f, false, scrim = 0.32f)
+        assertEquals(0.32f, sheet.scrim, 0.0001f)
+        assertEquals(0.25f, dialog.scrim, 0.0001f)
+        assertEquals(0f, dialog.panelDim, 0f)
+
+        stack.remove(dialog)
+        assertEquals(0.32f, sheet.scrim, 0.0001f)
+    }
+
+    @Test fun markExitingYieldsNestedDimImmediatelyAndRestoreClearsExitingFlag() {
+        val stack = stack()
+        val owner = Any()
+        val parent = Window()
+        val child = Window()
+        stack.register(owner, parent, 0f, false, scrim = 0.5f)
+        stack.register(owner, child, 0f, false, scrim = 0.5f)
+
+        stack.markExiting(child)
+        assertEquals(0f, child.scrim, 0f)
+        assertEquals(0.5f, parent.scrim, 0f)
+
+        stack.restore(child)
+        assertEquals(0.5f, parent.panelDim, 0.0001f)
     }
 
     /** WMS uses the highest eligible native layer; panel-local drawing never changes the root. */

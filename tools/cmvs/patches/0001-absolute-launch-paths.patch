@@ -1,30 +1,141 @@
+diff --git a/crates/cmvs-host/src/session.rs b/crates/cmvs-host/src/session.rs
+index 5263700..c5e8eaf 100644
+--- a/crates/cmvs-host/src/session.rs
++++ b/crates/cmvs-host/src/session.rs
+@@ -208,6 +208,16 @@ impl GameBootstrap {
+         encoding_policy: EncodingPolicy,
+     ) -> Result<Self, Box<dyn Error + Send + Sync>> {
+         let game = Registry::builtin().identify_game_with_fs(&*fs, root, profile_id)?;
++        Self::from_game(fs, root, game, encoding_policy)
++    }
++
++    /// Loads the startup script and encoding for a game selected by the host.
++    pub fn from_game(
++        fs: Arc<dyn HostFs>,
++        root: &Path,
++        game: Game<'static>,
++        encoding_policy: EncodingPolicy,
++    ) -> Result<Self, Box<dyn Error + Send + Sync>> {
+         let script = load_start_with_fs(&*fs, root, &game.files)?;
+         let encoding = resolve_profile_encoding_with_fs(
+             &*fs,
 diff --git a/platforms/android/native/src/app.rs b/platforms/android/native/src/app.rs
-index 09e9396..4b118d9 100644
+index 9331258..4c4f180 100644
 --- a/platforms/android/native/src/app.rs
 +++ b/platforms/android/native/src/app.rs
-@@ -270,6 +270,17 @@ impl Player<'_> {
+@@ -6,9 +6,16 @@ use android_activity::{
+ };
+ use cmvs_audio::{HostAudioControl, NativeAudio};
+ use cmvs_core::{
+-    host::filesystem::resolve_under, host::input::KeyBindings, render::raster::ScaleFilter,
+-    runtime::FrameBudget, runtime::FrameDriver, runtime::FrameOutcome, runtime::Runtime,
+-    runtime::RuntimeEvent, runtime::SaveStorage,
++    host::filesystem::resolve_under,
++    host::input::KeyBindings,
++    profile::{Game, GameFiles, ProfileSelection, Registry, SelectionBasis},
++    render::raster::ScaleFilter,
++    runtime::FrameBudget,
++    runtime::FrameDriver,
++    runtime::FrameOutcome,
++    runtime::Runtime,
++    runtime::RuntimeEvent,
++    runtime::SaveStorage,
+ };
+ use cmvs_font::font::FontRenderer;
+ use cmvs_host::{
+@@ -23,6 +30,7 @@ use std::{
+     error::Error,
+     fs::File,
+     io::Read,
++    path::Path,
+     rc::Rc,
+     sync::Arc,
+     time::{Duration, Instant},
+@@ -286,6 +294,15 @@ impl Player {
          Ok(())
      }
      fn input_event(&mut self, event: &InputEvent<'_>) -> InputStatus {
-+        // TyranorNext build-time patch: the Java NativeActivity subclass never sees
-+        // hardware Back while the native input queue is attached, so map it here.
-+        if let InputEvent::KeyEvent(key) = event {
-+            if key.action() == android_activity::input::KeyAction::Down
-+                && key.key_code() == android_activity::input::Keycode::Back
-+            {
-+                let _ = self.persist();
-+                self.exit = true;
-+                return InputStatus::Handled;
-+            }
++        // NativeActivity forwards Back to the native input queue while it is attached.
++        if let InputEvent::KeyEvent(key) = event
++            && key.action() == android_activity::input::KeyAction::Down
++            && key.key_code() == android_activity::input::Keycode::Back
++        {
++            let _ = self.persist();
++            self.exit = true;
++            return InputStatus::Handled;
 +        }
          let InputEvent::MotionEvent(motion) = event else {
              return InputStatus::Unhandled;
          };
-@@ -326,16 +337,54 @@ pub(super) fn run(app: AndroidApp) -> Result<()> {
-     if text.len() > 4096 {
+@@ -330,6 +347,63 @@ impl Player {
+     }
+ }
+-
++
++fn read_profile_marker(root: &Path) -> Result<Option<String>> {
++    let marker = match File::open(root.join("cmvs.profile")) {
++        Ok(file) => file,
++        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
++        Err(error) => return Err(error.into()),
++    };
++    let mut selector = String::new();
++    marker.take(129).read_to_string(&mut selector)?;
++    if selector.len() > 128 {
++        return Err("cmvs.profile exceeds 128 bytes".into());
++    }
++    Ok(Some(selector))
++}
++
++fn bootstrap_game(root: &Path, selected_profile: Option<&str>) -> Result<GameBootstrap> {
++    let fs = Arc::new(AndroidHostFs);
++    let marker = if selected_profile.is_none() {
++        read_profile_marker(root)?
++    } else {
++        None
++    };
++    let Some(selector) = selected_profile.or(marker.as_deref()) else {
++        return GameBootstrap::load(fs, root, None, EncodingPolicy::AutoDefaultShiftJis);
++    };
++    let registry = Registry::builtin();
++    let record = registry
++        .games()
++        .iter()
++        .find(|game| game.game == selector.trim())
++        .ok_or_else(|| {
++            cmvs_core::profile::SelectionError::UnknownProfile(selector.trim().into())
++        })?;
++    let profile = registry
++        .profile(&record.profile)
++        .ok_or("unknown engine profile")?;
++    let files = GameFiles::discover_with_fs(&*fs, root)?;
++    let game = Game {
++        files,
++        selection: ProfileSelection {
++            profile,
++            record: Some(record),
++            basis: SelectionBasis::Explicit,
++            evidence: Vec::new(),
++        },
++    };
++    log::info!(
++        "Using {} for {} without game hash identification",
++        if selected_profile.is_some() {
++            "launch.cfg profile"
++        } else {
++            "cmvs.profile"
++        },
++        record.game
++    );
++    GameBootstrap::from_game(fs, root, game, EncodingPolicy::AutoDefaultShiftJis)
++}
++
+ pub(super) fn run(app: AndroidApp) -> Result<()> {
+     let directory = app
+         .internal_data_path()
+@@ -343,18 +417,55 @@ pub(super) fn run(app: AndroidApp) -> Result<()> {
          return Err("launch configuration too large".into());
      }
--    let mut config = text.lines();
+     let mut config = text.lines();
 -    let root = resolve_under(
 -        &directory,
 -        config.next().ok_or("no game selected")?.as_bytes(),
@@ -34,84 +145,89 @@ index 09e9396..4b118d9 100644
 -        config.next().ok_or("no font selected")?.as_bytes(),
 -    )?;
 -    let face = config.next().ok_or("no font collection index")?.parse()?;
-+    // TyranorNext build-time patch: accept absolute `game=`/`user=` entries while
-+    // keeping the original three-line format working.
-+    let mut entries = std::collections::HashMap::new();
-+    let mut legacy_lines = Vec::new();
-+    for line in text.lines() {
-+        let line = line.trim();
-+        if line.is_empty() {
-+            continue;
-+        }
-+        match line.split_once('=') {
-+            Some((key, value))
-+                if !key.is_empty()
-+                    && !key.contains('/')
-+                    && !key.contains('\\')
-+                    && !value.is_empty() =>
-+            {
-+                entries.insert(key.to_string(), value.to_string());
+-    let scale_filter = config.next().filter(|s| !s.is_empty());
+-    let fs = Arc::new(AndroidHostFs);
+-    let bootstrap = GameBootstrap::load(fs, &root, None, EncodingPolicy::AutoDefaultShiftJis)?;
++    let first = config.next().ok_or("no game selected")?;
++    // TyranorNext uses absolute game/user paths and a font relative to filesDir.
++    // The stand-alone launcher still writes three lines and an optional fourth filter.
++    let (root, font_path, face, user, scale_filter, selected_profile) =
++        if first.starts_with("game=") {
++            let entries: std::collections::HashMap<_, _> = text
++                .lines()
++                .filter_map(|line| line.split_once('='))
++                .collect();
++            let game = std::path::Path::new(*entries.get("game").ok_or("no game selected")?);
++            let user = std::path::Path::new(*entries.get("user").ok_or("no user directory")?);
++            if !game.is_absolute() || !user.is_absolute() {
++                return Err("game and user paths must be absolute".into());
 +            }
-+            _ => legacy_lines.push(line.to_string()),
-+        }
-+    }
-+    let root = match entries.get("game") {
-+        Some(value) if value.starts_with('/') => {
-+            let path = std::fs::canonicalize(value)?;
-+            if !path.is_dir() {
++            let root = game.canonicalize()?;
++            if !root.is_dir() {
 +                return Err("game path is not a directory".into());
 +            }
-+            path
-+        }
-+        _ => resolve_under(
-+            &directory,
-+            legacy_lines.first().ok_or("no game selected")?.as_bytes(),
-+        )?,
-+    };
-+    let font_path = match entries.get("font") {
-+        Some(value) => resolve_under(&directory, value.as_bytes())?,
-+        None => resolve_under(
-+            &directory,
-+            legacy_lines.get(1).ok_or("no font selected")?.as_bytes(),
-+        )?,
-+    };
-+    let face: u32 = match entries.get("face") {
-+        Some(value) => value.parse()?,
-+        None => legacy_lines
-+            .get(2)
-+            .ok_or("no font collection index")?
-+            .parse()?,
-+    };
-     let font = Rc::new(RefCell::new(FontRenderer::read(&font_path, face)?));
-     let game = Registry::builtin().identify_game(&root, None)?;
-     let record = game
-@@ -347,7 +396,10 @@ pub(super) fn run(app: AndroidApp) -> Result<()> {
-         record.game,
-         game.selection.profile.id
++            (
++                root,
++                resolve_under(
++                    &directory,
++                    entries.get("font").ok_or("no font selected")?.as_bytes(),
++                )?,
++                entries
++                    .get("face")
++                    .ok_or("no font collection index")?
++                    .parse()?,
++                Some(user.to_path_buf()),
++                entries
++                    .get("scale_filter")
++                    .copied()
++                    .filter(|value| !value.is_empty()),
++                entries.get("profile").copied(),
++            )
++        } else {
++            (
++                resolve_under(&directory, first.as_bytes())?,
++                resolve_under(
++                    &directory,
++                    config.next().ok_or("no font selected")?.as_bytes(),
++                )?,
++                config.next().ok_or("no font collection index")?.parse()?,
++                None,
++                config.next().filter(|value| !value.is_empty()),
++                None,
++            )
++        };
++    let bootstrap = bootstrap_game(&root, selected_profile)?;
+     let record = bootstrap
+         .game
+         .selection
+@@ -366,7 +477,7 @@ pub(super) fn run(app: AndroidApp) -> Result<()> {
+         bootstrap.game.selection.profile.id
      );
+     let encoding = bootstrap.encoding;
 -    let user = directory.join("users").join(&record.game);
-+    let user = match entries.get("user") {
-+        Some(value) if value.starts_with('/') => std::path::PathBuf::from(value),
-+        _ => directory.join("users").join(&record.game),
-+    };
-     let script = load_start(&root, &game.files)?;
-     let mut startup = Startup::new(&script, &root, &game, 0)?;
-     // Match the desktop host's existing command policy; identity and unsupported
++    let user = user.unwrap_or_else(|| directory.join("users").join(&record.game));
+     let font = Rc::new(RefCell::new(
+         FontRenderer::read(&font_path, face)?.with_text_encoding(encoding),
+     ));
 diff --git a/platforms/android/native/src/lib.rs b/platforms/android/native/src/lib.rs
-index f09ecb5..b46d017 100644
+index f09ecb5..2f7777e 100644
 --- a/platforms/android/native/src/lib.rs
 +++ b/platforms/android/native/src/lib.rs
-@@ -19,9 +19,29 @@ fn android_main(app: android_activity::AndroidApp) {
+@@ -19,9 +19,31 @@ fn android_main(app: android_activity::AndroidApp) {
      if let Err(error) = app::run(app) {
          log::error!("Android game failed: {error}");
          if let Some(directory) = directory {
-+            // TyranorNext build-time patch: classify the failure so the Android host
-+            // can show the specific message instead of a generic black screen.
++            use cmvs_core::profile::SelectionError;
++
 +            let text = error.to_string();
-+            let code = if text.contains("not a recorded executable")
-+                || text.contains("does not have a registered identity")
-+                || text.contains("UnknownGame")
-+                || text.contains("UnknownBinary")
++            let code = if matches!(
++                error.downcast_ref::<SelectionError>(),
++                Some(
++                    SelectionError::UnknownGame(_)
++                        | SelectionError::UnknownBinary { .. }
++                        | SelectionError::UnknownProfile(_)
++                )
++            ) || text.contains("does not have a registered identity")
 +            {
 +                "unregistered"
 +            } else if text.contains("font") {
@@ -126,9 +242,7 @@ index f09ecb5..b46d017 100644
              let _ = std::fs::write(
                  directory.join("launch-error.txt"),
 -                "游戏加载或运行失败。请确认游戏数据完整、字体有效且游戏版本受支持。",
-+                format!(
-+                    "code={code}\n游戏加载或运行失败。请确认游戏数据完整、字体有效且游戏版本受支持。\n{error}"
-+                ),
++                format!("code={code}\n{error}\n"),
              );
          }
      }

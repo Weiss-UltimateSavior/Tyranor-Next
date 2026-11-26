@@ -47,6 +47,7 @@ import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.DialogItemSurface
+import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.ui.common.motion.BlurCrossfade
 import com.tyranor.next.ui.common.motion.ExpandVisibility
 import com.tyranor.next.ui.common.motion.PressSquishDefaults
@@ -60,7 +61,6 @@ import com.tyranor.next.ui.common.motion.staggeredEntrance
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.RadioButton
-import top.yukonga.miuix.kmp.theme.MiuixTheme as MiuixPreferenceTheme
 import com.tyranor.next.ui.common.motion.DelayedProgress
 
 /**
@@ -174,7 +174,7 @@ internal fun PcGameAddDialog(
                         )
                         // 列表到达：候选 exe 自上而下依次弹入（列表出现时的一小段窗口内；之后滚入的直接显示）
                         ProvideEntrance {
-                        MiuixPreferenceTheme {
+                        MiuixSettingsTheme {
                             LazyColumn(
                                 modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp).skipEntranceOnDrag(),
                                 verticalArrangement = Arrangement.spacedBy(6.dp),

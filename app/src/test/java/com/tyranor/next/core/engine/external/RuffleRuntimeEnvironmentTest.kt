@@ -11,6 +11,9 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 
 class RuffleRuntimeEnvironmentTest {
+    private val ready = ExternalEngineSettingsFile.Result.READY
+    private val unavailable = ExternalEngineSettingsFile.Result.UNAVAILABLE
+
     @get:Rule
     val temporaryFolder = TemporaryFolder()
 
@@ -54,12 +57,13 @@ class RuffleRuntimeEnvironmentTest {
         val config = temporaryFolder.newFile("configuration.json")
         config.writeText("""{"backend":"vulkan","legacyKey":7}""")
 
-        val written = RuffleRuntimeEnvironment.syncConfigurationFile(
+        val result = RuffleRuntimeEnvironment.reconcileConfigurationFile(
             config,
             EngineSettingsStore.Ruffle(backend = "opengl", quality = "best", screenTimeout = 60),
+            writable = true,
         )
 
-        assertTrue(written)
+        assertEquals(ready, result)
         val json = JSONObject(config.readText())
         assertEquals("opengl", json.getString("backend"))
         assertEquals("best", json.getString("quality"))
@@ -71,7 +75,7 @@ class RuffleRuntimeEnvironmentTest {
     fun skipsMissingFileWithoutCreatingIt() {
         val missing = temporaryFolder.root.resolve("missing/configuration.json")
 
-        assertFalse(RuffleRuntimeEnvironment.syncConfigurationFile(missing, EngineSettingsStore.Ruffle()))
+        assertEquals(ready, RuffleRuntimeEnvironment.reconcileConfigurationFile(missing, EngineSettingsStore.Ruffle(), true))
         assertFalse(missing.exists())
         assertFalse(missing.parentFile?.exists() == true)
     }
@@ -81,7 +85,7 @@ class RuffleRuntimeEnvironmentTest {
         val config = temporaryFolder.newFile("invalid.json")
         config.writeText("{not-json")
 
-        assertFalse(RuffleRuntimeEnvironment.syncConfigurationFile(config, EngineSettingsStore.Ruffle()))
+        assertEquals(ready, RuffleRuntimeEnvironment.reconcileConfigurationFile(config, EngineSettingsStore.Ruffle(), true))
 
         assertEquals("{not-json", config.readText())
     }
@@ -91,10 +95,10 @@ class RuffleRuntimeEnvironmentTest {
         val config = temporaryFolder.newFile("configuration.json")
         config.writeText("""{"backend":"vulkan"}""")
 
-        assertTrue(RuffleRuntimeEnvironment.syncConfigurationFile(config, EngineSettingsStore.Ruffle(backend = "opengl")))
+        assertEquals(ready, RuffleRuntimeEnvironment.reconcileConfigurationFile(config, EngineSettingsStore.Ruffle(backend = "opengl"), true))
 
         assertEquals("opengl", JSONObject(config.readText()).getString("backend"))
-        assertFalse(File(config.parentFile, "${config.name}.tmp").exists())
+        assertEquals(listOf(config.name), config.parentFile?.list()?.toList())
     }
 
     @Test
@@ -104,7 +108,7 @@ class RuffleRuntimeEnvironmentTest {
         config.writeText("{\"backend\":\"vulkan\",\"pad\":\"" + "x".repeat(1024 * 1024) + "\"}")
         val before = config.readText()
 
-        assertFalse(RuffleRuntimeEnvironment.syncConfigurationFile(config, EngineSettingsStore.Ruffle(backend = "opengl")))
+        assertEquals(unavailable, RuffleRuntimeEnvironment.reconcileConfigurationFile(config, EngineSettingsStore.Ruffle(backend = "opengl"), true))
 
         assertEquals(before, config.readText())
     }
@@ -120,22 +124,22 @@ class RuffleRuntimeEnvironmentTest {
     }
 
     @Test
-    fun configFileUsesPerGamePathForStorageRootItself() {
+    fun configFileUsesSharedFileForStorageRootItself() {
         val root = File("/storage/emulated/0")
 
         assertEquals(
-            File(root, "JoiPlay/games/game-id/configuration.json"),
+            File(root, "configuration.json"),
             RuffleRuntimeEnvironment.configFileFor(root.absolutePath + "/", "game-id", root),
         )
     }
 
     @Test
-    fun configFileDoesNotTreatPrefixNeighborAsStorageRoot() {
+    fun configFileMatchesPluginPrefixCheck() {
         val root = File("/storage/emulated/0")
 
         // /storage/emulated/0abc 与根同前缀但不是根目录下的路径
         assertEquals(
-            File(root, "JoiPlay/games/game-id/configuration.json"),
+            File("/storage/emulated/0abc/configuration.json"),
             RuffleRuntimeEnvironment.configFileFor("/storage/emulated/0abc", "game-id", root),
         )
     }
@@ -151,20 +155,26 @@ class RuffleRuntimeEnvironmentTest {
     }
 
     @Test
-    fun syncSkipsSharedFoldersAndStorageRoot() {
-        val root = File("/storage/emulated/0")
-        val gameFolder = "/storage/emulated/0/Games/foo"
-
-        assertTrue(RuffleRuntimeEnvironment.shouldSyncConfigurationFile(gameFolder, swfFileCount = 1, externalRoot = root))
-        // 同一目录多个 SWF：目录级配置会串游戏，保留 intent settings
-        assertFalse(RuffleRuntimeEnvironment.shouldSyncConfigurationFile(gameFolder, swfFileCount = 2, externalRoot = root))
-        // 存储根本身同样不写目录级配置
-        assertFalse(
-            RuffleRuntimeEnvironment.shouldSyncConfigurationFile(
-                root.absolutePath,
-                swfFileCount = 1,
-                externalRoot = root,
-            ),
+    fun conflictingSharedConfigIsPreservedAndReported() {
+        val root = temporaryFolder.root
+        val gameFolder = temporaryFolder.newFolder("games")
+        val file = File(gameFolder, "configuration.json")
+        val original = """{"backend":"vulkan","legacyKey":7}"""
+        file.writeText(original)
+        File(gameFolder, "first.swf").createNewFile()
+        assertTrue(RuffleRuntimeEnvironment.shouldWriteConfigurationFile(file, gameFolder, root))
+        File(gameFolder, "second.swf").createNewFile()
+        val writable = RuffleRuntimeEnvironment.shouldWriteConfigurationFile(file, gameFolder, root)
+        assertFalse(writable)
+        assertFalse(RuffleRuntimeEnvironment.shouldWriteConfigurationFile(File(root, "configuration.json"), root, root))
+        assertEquals(
+            ExternalEngineSettingsFile.Result.CONFLICT,
+            RuffleRuntimeEnvironment.reconcileConfigurationFile(file, EngineSettingsStore.Ruffle(backend = "opengl"), writable),
         )
+        assertEquals(
+            ready,
+            RuffleRuntimeEnvironment.reconcileConfigurationFile(file, EngineSettingsStore.Ruffle(backend = "vulkan"), writable),
+        )
+        assertEquals(original, file.readText())
     }
 }

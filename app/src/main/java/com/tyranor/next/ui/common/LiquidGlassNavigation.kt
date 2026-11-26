@@ -86,11 +86,10 @@ fun LiquidGlassNavigationBar(
     val mutedColor = unselectedColor
     // 圆角纳入「应用圆角调整」统一控制
     val shape = AppComponentShape
-    // 宽度与「液态玻璃 · 透镜」共用同一套几何：手机取自然宽度（N×76dp + 8dp）并居中，
-    // 宽屏拉伸铺满可用宽度；内部每槽宽度随栏宽自适应。
+    // 与「液态玻璃 · 透镜」共用栏宽，导航项均分栏内空间。
     val spec = GlassBottomBarSpec.Default
     val windowWidthDp = with(density) { LocalWindowInfo.current.containerSize.width.toDp() }
-    val barWidth = spec.clampedBarWidth(items.size, windowWidthDp, stretch = isWideScreen())
+    val barWidth = spec.clampedBarWidth(items.size, windowWidthDp)
     // blur 依赖 RenderEffect（Android 12+ 才生效）；低版本使用轻量实色表面。
     val backdropSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     // 高版本表面半透明以透出模糊内容

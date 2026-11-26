@@ -516,6 +516,59 @@ internal fun impactoSubtitlesOptions(): List<Pair<String, String>> = listOf(
 @Composable
 internal fun impactoSubtitlesOptionsMap(): Map<String, String> = impactoSubtitlesOptions().toMap()
 
+// ───────────────────────── EasyRPG 外置宿主 ─────────────────────────
+
+/** 文本编码：自动或常见代码页（与宿主 EasyRpgSettingsMapper 白名单严格一致）。 */
+@Composable
+internal fun easyRpgEncodingOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.EASYRPG_ENCODING_AUTO to stringResource(R.string.engine_settings_easyrpg_encoding_auto),
+    "932" to stringResource(R.string.engine_settings_easyrpg_encoding_932),
+    "936" to stringResource(R.string.engine_settings_easyrpg_encoding_936),
+    "950" to stringResource(R.string.engine_settings_easyrpg_encoding_950),
+    "949" to stringResource(R.string.engine_settings_easyrpg_encoding_949),
+    "1252" to stringResource(R.string.engine_settings_easyrpg_encoding_1252),
+    "1251" to stringResource(R.string.engine_settings_easyrpg_encoding_1251),
+    "65001" to stringResource(R.string.engine_settings_easyrpg_encoding_65001),
+)
+
+@Composable
+internal fun easyRpgEncodingOptionsMap(): Map<String, String> = easyRpgEncodingOptions().toMap()
+
+/** 画面缩放模式：nearest / integer / bilinear。 */
+@Composable
+internal fun easyRpgScalingOptions(): List<Pair<String, String>> = listOf(
+    "nearest" to stringResource(R.string.engine_settings_easyrpg_scaling_nearest),
+    "integer" to stringResource(R.string.engine_settings_easyrpg_scaling_integer),
+    EngineSettingsStore.EASYRPG_SCALING_BILINEAR to stringResource(R.string.engine_settings_easyrpg_scaling_bilinear),
+)
+
+@Composable
+internal fun easyRpgScalingOptionsMap(): Map<String, String> = easyRpgScalingOptions().toMap()
+
+/** 游戏分辨率比例：original / widescreen / ultrawide。 */
+@Composable
+internal fun easyRpgGameResolutionOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.EASYRPG_RESOLUTION_ORIGINAL to stringResource(R.string.engine_settings_easyrpg_resolution_original),
+    "widescreen" to stringResource(R.string.engine_settings_easyrpg_resolution_widescreen),
+    "ultrawide" to stringResource(R.string.engine_settings_easyrpg_resolution_ultrawide),
+)
+
+@Composable
+internal fun easyRpgGameResolutionOptionsMap(): Map<String, String> = easyRpgGameResolutionOptions().toMap()
+
+/** 引擎补丁模式：auto / none / easyrpg / maniac / dynrpg。 */
+@Composable
+internal fun easyRpgPatchModeOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.EASYRPG_PATCH_MODE_AUTO to stringResource(R.string.engine_settings_easyrpg_patch_auto),
+    "none" to stringResource(R.string.engine_settings_easyrpg_patch_none),
+    "easyrpg" to stringResource(R.string.engine_settings_easyrpg_patch_easyrpg),
+    "maniac" to stringResource(R.string.engine_settings_easyrpg_patch_maniac),
+    "dynrpg" to stringResource(R.string.engine_settings_easyrpg_patch_dynrpg),
+)
+
+@Composable
+internal fun easyRpgPatchModeOptionsMap(): Map<String, String> = easyRpgPatchModeOptions().toMap()
+
 // ───────────────────────── RPG Maker RGSS 外置模块 ─────────────────────────
 
 /** 窗口尺寸全为尺寸字面量，无需本地化。 */

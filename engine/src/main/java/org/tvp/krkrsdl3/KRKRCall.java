@@ -1,29 +1,26 @@
 package org.tvp.krkrsdl3;
 
 import android.app.Activity;
-import android.content.Context;
+import android.app.Dialog;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.WindowManager;
-import android.view.inputmethod.InputMethodManager;
-import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
-import android.widget.ScrollView;
 import android.widget.TextView;
-
-import androidx.appcompat.app.AlertDialog;
 
 import com.core.engine.EngineThemeColors;
 
 import org.libsdl3.app.SDLActivity;
 
+import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
+import org.tvp.kirikiri2.KrDialogStyle;
 
 public class KRKRCall {
     /**
@@ -32,176 +29,43 @@ public class KRKRCall {
      * mInputResult/mInputResultCode 由 UI 线程写入、native 线程（WaitInputResult）读取，
      * 跨线程 happens-before 由 CountDownLatch.await/countDown 保证；加 volatile 双保险（ARM 弱内存模型）。
      */
-    private static AlertDialog mInputDialog = null;
+    private static Dialog mInputDialog = null;
     private static volatile String mInputResult = "";
     private static volatile int mInputResultCode = -1;
     private static volatile CountDownLatch mInputLatch = new CountDownLatch(1);
 
     public static void ShowInputBox(String title, String prompt, String text, String[] buttons) {
         final Activity act = SDLActivity.getContext();
-        if (act == null) return;
+        if (act == null) { cancelPendingInput(); return; }
 
-        // 同步重置状态：先于 runOnUiThread，确保 native 线程 WaitInputResult 等待的是新 latch
         mInputResult = "";
         mInputResultCode = -1;
         final CountDownLatch latch = new CountDownLatch(1);
         mInputLatch = latch;
 
-        act.runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                // 守卫：post 与执行之间 Activity 可能已被销毁（Home 键/系统回收），
-                // 避免 dialog.show() 在已销毁 Activity 上抛 WindowManager$BadTokenException 闪退
-                if (act.isFinishing() || act.isDestroyed()) return;
-                // 主题色从 Launcher 传入的 Intent extras 读取（跟随启动器主题与深浅色）
-                final EngineThemeColors.Palette colors = EngineThemeColors.fromIntent(act.getIntent());
-                final float density = act.getResources().getDisplayMetrics().density;
-
-                final AlertDialog dialog = new AlertDialog.Builder(act).create();
-                dialog.setCancelable(false);
-
-                // 根容器：圆角卡片背景 + 22dp padding，复刻 LauncherDialogFactory 视觉风格
-                LinearLayout root = new LinearLayout(act);
-                root.setOrientation(LinearLayout.VERTICAL);
-                root.setPadding(dp(22f, density), dp(22f, density), dp(22f, density), dp(22f, density));
-                root.setBackground(rounded(colors.getCard(), 20f, density));
-
-                // 标题：16sp bold 居中
-                if (title != null && title.length() != 0) {
-                    TextView titleView = new TextView(act);
-                    titleView.setText(title);
-                    titleView.setTextColor(colors.getText());
-                    titleView.setTextSize(16f);
-                    titleView.setTypeface(titleView.getTypeface(), android.graphics.Typeface.BOLD);
-                    titleView.setGravity(Gravity.CENTER);
-                    root.addView(titleView, new LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-                }
-
-                // 提示：13sp 居中；放进 ScrollView——超长提示文本不压缩时会把输入框/按钮顶出屏幕
-                ScrollView promptScroll = null;
-                if (prompt != null && prompt.length() != 0) {
-                    TextView promptView = new TextView(act);
-                    promptView.setText(prompt);
-                    promptView.setTextColor(colors.getTextMuted());
-                    promptView.setTextSize(13f);
-                    promptView.setGravity(Gravity.CENTER);
-                    promptScroll = new ScrollView(act);
-                    promptScroll.addView(promptView, new ViewGroup.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-                    LinearLayout.LayoutParams promptParams = new LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                    promptParams.topMargin = dp(14f, density);
-                    root.addView(promptScroll, promptParams);
-                }
-
-                // 输入框：主题文字色 + 圆角描边
-                final EditText editText = new EditText(act);
-                editText.setText(text);
-                editText.selectAll();
-                editText.setTextColor(colors.getText());
-                editText.setHintTextColor(colors.getTextMuted());
-                editText.setTextSize(14f);
-                editText.setBackground(roundedInputBackground(colors, density));
-                editText.setPadding(dp(12f, density), dp(8f, density), dp(12f, density), dp(8f, density));
-                LinearLayout.LayoutParams editParams = new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                editParams.topMargin = dp(14f, density);
-                root.addView(editText, editParams);
-
-                // 按钮行：topMargin 22dp，药丸形按钮
-                if (buttons.length >= 1) {
-                    LinearLayout buttonRow = new LinearLayout(act);
-                    buttonRow.setOrientation(LinearLayout.HORIZONTAL);
-                    buttonRow.setGravity(Gravity.CENTER_VERTICAL);
-                    LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                    rowParams.topMargin = dp(22f, density);
-                    root.addView(buttonRow, rowParams);
-
-                    // 取消按钮（buttons[1]，可选）：card 底色 + primary 文字，左侧
-                    if (buttons.length >= 2) {
-                        TextView cancelBtn = pillButton(act, buttons[1],
-                                colors.getCard(), colors.getPrimary(), 13f, density);
-                        LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(0, dp(36f, density));
-                        cancelParams.weight = 1f;
-                        cancelParams.rightMargin = dp(7f, density);
-                        buttonRow.addView(cancelBtn, cancelParams);
-                        cancelBtn.setOnClickListener(new View.OnClickListener() {
-                            @Override
-                            public void onClick(View v) {
-                                mInputResult = "";
-                                mInputResultCode = -1;
-                                mInputDialog = null;
-                                dialog.dismiss();
-                                latch.countDown();
-                            }
-                        });
-                    }
-
-                    // 确认按钮（buttons[0]）：primary 底色 + onPrimary 文字
-                    TextView okBtn = pillButton(act, buttons[0],
-                            colors.getPrimary(), colors.getOnPrimary(), 13f, density);
-                    LinearLayout.LayoutParams okParams = new LinearLayout.LayoutParams(
-                            buttons.length >= 2 ? 0 : ViewGroup.LayoutParams.MATCH_PARENT, dp(36f, density));
-                    if (buttons.length >= 2) {
-                        okParams.weight = 1f;
-                        okParams.leftMargin = dp(7f, density);
-                    }
-                    buttonRow.addView(okBtn, okParams);
-                    okBtn.setOnClickListener(new View.OnClickListener() {
-                        @Override
-                        public void onClick(View v) {
-                            mInputResult = editText.getText().toString();
-                            mInputResultCode = 0;
+        act.runOnUiThread(() -> {
+            if (mInputLatch != latch || latch.getCount() == 0) return;
+            if (act.isFinishing() || act.isDestroyed()) { latch.countDown(); return; }
+            if (mInputDialog != null) mInputDialog.dismiss();
+            String[] labels = buttons != null && buttons.length > 2
+                    ? Arrays.copyOf(buttons, 2) : buttons;
+            try {
+                Dialog shown = KrDialogStyle.showInputBox(act, title, prompt, text == null ? "" : text,
+                        labels, (which, value) -> {
+                            if (mInputLatch != latch) return;
+                            mInputResult = which == 0 ? value : "";
+                            mInputResultCode = which == 0 ? 0 : -1;
                             mInputDialog = null;
-                            dialog.dismiss();
                             latch.countDown();
-                        }
-                    });
-                }
-
-                mInputDialog = dialog;
-
-                // 窗口尺寸与屏幕上限：宽度与 setLayout 共用；高度先预测量再决定是否收缩提示区
-                final int width = Math.min(dp(252f, density),
-                        act.getResources().getDisplayMetrics().widthPixels - dp(48f, density));
-                final int maxRootHeight =
-                        act.getResources().getDisplayMetrics().heightPixels - dp(64f, density);
-                // 长文本保护：提示区压缩为可滚动高度，保证输入框与按钮始终在屏幕内可见可点
-                if (promptScroll != null) {
-                    root.measure(
-                            View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
-                            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-                    int rootHeight = root.getMeasuredHeight();
-                    if (rootHeight > maxRootHeight) {
-                        ViewGroup.LayoutParams scrollParams = promptScroll.getLayoutParams();
-                        scrollParams.height = Math.max(
-                                dp(72f, density),
-                                promptScroll.getMeasuredHeight() - (rootHeight - maxRootHeight));
-                        promptScroll.setLayoutParams(scrollParams);
-                    }
-                }
-
-                dialog.setView(root);
-                dialog.show();
-
-                // 窗口：透明背景 + 252dp 宽度（带屏幕兜底），与 LauncherDialogFactory 一致
-                dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-                dialog.getWindow().setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT);
-
-                // 布局完成后唤起软键盘，规避部分 ROM 上 SHOW_IMPLICIT 时序失灵
-                editText.requestFocus();
-                editText.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        editText.requestFocus();
-                        InputMethodManager imm = (InputMethodManager) act.getSystemService(Context.INPUT_METHOD_SERVICE);
-                        if (imm != null) {
-                            imm.showSoftInput(editText, 0);
-                        }
-                    }
+                        });
+                mInputDialog = shown;
+                shown.setOnDismissListener(d -> {
+                    if (mInputDialog == shown) mInputDialog = null;
+                    latch.countDown();
                 });
+            } catch (RuntimeException failure) {
+                Log.w("KRKRCall", "Cannot display input box", failure);
+                latch.countDown();
             }
         });
     }
@@ -216,7 +80,7 @@ public class KRKRCall {
     public static void cancelPendingInput() {
         mInputResult = "";
         mInputResultCode = -1;
-        final AlertDialog dialog = mInputDialog;
+        final Dialog dialog = mInputDialog;
         mInputDialog = null;
         if (dialog != null && dialog.isShowing()) {
             // dialog.dismiss() 必须在 UI 线程执行，非 UI 线程（未来扩展调用）调用会抛异常；
@@ -417,24 +281,4 @@ public class KRKRCall {
     }
 
     /** 输入框背景：透明填充 + 主题文字色 33% 透明度圆角描边。 */
-    private static GradientDrawable roundedInputBackground(EngineThemeColors.Palette colors, float density) {
-        GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(Color.TRANSPARENT);
-        drawable.setStroke(dp(1f, density), (colors.getTextMuted() & 0x00FFFFFF) | 0x55000000);
-        drawable.setCornerRadius(dp(10f, density));
-        return drawable;
-    }
-
-    /** 药丸形按钮。 */
-    private static TextView pillButton(Activity act, String label, int backgroundColor, int textColor,
-                                       float textSize, float density) {
-        TextView button = new TextView(act);
-        button.setText(label);
-        button.setTextColor(textColor);
-        button.setTextSize(textSize);
-        button.setTypeface(button.getTypeface(), android.graphics.Typeface.BOLD);
-        button.setGravity(Gravity.CENTER);
-        button.setBackground(rounded(backgroundColor, 999f, density));
-        return button;
-    }
 }

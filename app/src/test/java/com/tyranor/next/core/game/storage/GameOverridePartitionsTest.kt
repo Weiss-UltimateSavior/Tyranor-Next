@@ -181,9 +181,18 @@ class GameOverridePartitionsTest {
         assertEquals(blob.length(), GameOverridePartitions.assemble(row).length())
     }
 
-    fun cmvsFontKeysArePartitionedIntoTyrano() {
+    @Test
+    fun cmvsSettingsArePartitionedIntoTyrano() {
         assertEquals(PerGameSettingsStore.F_CMVS_FONT, GameOverridePartitions.KEY_CMVS_FONT)
         assertTrue(GameOverridePartitions.KEY_CMVS_FONT in GameOverridePartitions.TYRANO_KEYS)
+        assertEquals(PerGameSettingsStore.F_CMVS_PROFILE, GameOverridePartitions.KEY_CMVS_PROFILE)
+        assertTrue(GameOverridePartitions.KEY_CMVS_PROFILE in GameOverridePartitions.TYRANO_KEYS)
+
+        val key = PerGameSettingsStore.F_CMVS_PROFILE
+        val blob = JSONObject().put(key, "realive")
+        val row = GameOverridePartitions.split("/games/REALIVE", blob, 1L)
+        assertEquals("realive", JSONObject(row.tyranoJson!!).getString(key))
+        assertEquals("realive", GameOverridePartitions.assemble(row).getString(key))
     }
 
     @Test
@@ -499,6 +508,7 @@ class GameOverridePartitionsTest {
             GameOverridePartitions.KEY_IMPACTO_CLOSE_BACKLOG_AT_END to PerGameSettingsStore.F_IMPACTO_CLOSE_BACKLOG_AT_END,
             GameOverridePartitions.KEY_IMPACTO_DELUSION_MOUSE to PerGameSettingsStore.F_IMPACTO_DELUSION_MOUSE,
             GameOverridePartitions.KEY_IMPACTO_LOG_LEVEL to PerGameSettingsStore.F_IMPACTO_LOG_LEVEL,
+            GameOverridePartitions.KEY_IMPACTO_DEBUG_MODE to PerGameSettingsStore.F_IMPACTO_DEBUG_MODE,
         )
         pairs.forEach { (partitionKey, perGameKey) ->
             assertEquals(perGameKey, partitionKey)
@@ -513,6 +523,7 @@ class GameOverridePartitionsTest {
             .put(PerGameSettingsStore.F_IMPACTO_CLOSE_BACKLOG_AT_END, false)
             .put(PerGameSettingsStore.F_IMPACTO_DELUSION_MOUSE, false)
             .put(PerGameSettingsStore.F_IMPACTO_LOG_LEVEL, "debug")
+            .put(PerGameSettingsStore.F_IMPACTO_DEBUG_MODE, true)
 
         val row = GameOverridePartitions.split("/games/mo6tw", blob, 1L)
         val tyranoPartition = JSONObject(row.tyranoJson!!)
@@ -530,6 +541,7 @@ class GameOverridePartitionsTest {
                 closeBacklogAtEnd = false,
                 delusionMouse = false,
                 logLevel = "debug",
+                debugMode = true,
             ),
             PerGameSettingsStore.toImpactoOverride(GameOverridePartitions.assemble(row)),
         )
@@ -601,5 +613,60 @@ class GameOverridePartitionsTest {
             assertEquals(preset, restored.getString(PerGameSettingsStore.F_WINLATOR_DXWRAPPER))
             assertEquals(preset, PerGameSettingsStore.toWinlatorOverride(restored)?.dxwrapper)
         }
+    }
+
+    @Test
+    fun easyRpgOverridesUseOwnedTyranoPartitionAndSurviveRoundTrip() {
+        val easyRpgKeys = listOf(
+            PerGameSettingsStore.F_EASYRPG_ENCODING,
+            PerGameSettingsStore.F_EASYRPG_SCALING,
+            PerGameSettingsStore.F_EASYRPG_GAME_RESOLUTION,
+            PerGameSettingsStore.F_EASYRPG_STRETCH,
+            PerGameSettingsStore.F_EASYRPG_VSYNC,
+            PerGameSettingsStore.F_EASYRPG_FPS_LIMIT,
+            PerGameSettingsStore.F_EASYRPG_SHOW_FPS,
+            PerGameSettingsStore.F_EASYRPG_DISABLE_AUDIO,
+            PerGameSettingsStore.F_EASYRPG_MUSIC_VOLUME,
+            PerGameSettingsStore.F_EASYRPG_SOUND_VOLUME,
+            PerGameSettingsStore.F_EASYRPG_NO_RTP,
+            PerGameSettingsStore.F_EASYRPG_PATCH_MODE,
+            PerGameSettingsStore.F_EASYRPG_TEST_PLAY,
+        )
+        assertTrue(easyRpgKeys.all { it in GameOverridePartitions.TYRANO_KEYS })
+
+        val blob = JSONObject()
+            .put(PerGameSettingsStore.F_EASYRPG_ENCODING, "936")
+            .put(PerGameSettingsStore.F_EASYRPG_SCALING, "integer")
+            .put(PerGameSettingsStore.F_EASYRPG_GAME_RESOLUTION, "widescreen")
+            .put(PerGameSettingsStore.F_EASYRPG_STRETCH, true)
+            .put(PerGameSettingsStore.F_EASYRPG_VSYNC, false)
+            .put(PerGameSettingsStore.F_EASYRPG_FPS_LIMIT, "120")
+            .put(PerGameSettingsStore.F_EASYRPG_SHOW_FPS, true)
+            .put(PerGameSettingsStore.F_EASYRPG_DISABLE_AUDIO, true)
+            .put(PerGameSettingsStore.F_EASYRPG_MUSIC_VOLUME, "60")
+            .put(PerGameSettingsStore.F_EASYRPG_SOUND_VOLUME, "75")
+            .put(PerGameSettingsStore.F_EASYRPG_NO_RTP, true)
+            .put(PerGameSettingsStore.F_EASYRPG_PATCH_MODE, "maniac")
+            .put(PerGameSettingsStore.F_EASYRPG_TEST_PLAY, true)
+
+        val row = GameOverridePartitions.split("/games/easyrpg", blob, 1L)
+        val tyrano = JSONObject(row.tyranoJson!!)
+        easyRpgKeys.forEach { assertTrue(it, tyrano.has(it)) }
+
+        val restored = GameOverridePartitions.assemble(row)
+        val parsed = PerGameSettingsStore.toEasyRpgOverride(restored)
+        assertEquals("936", parsed?.encoding)
+        assertEquals("integer", parsed?.scaling)
+        assertEquals("widescreen", parsed?.gameResolution)
+        assertEquals(true, parsed?.stretch)
+        assertEquals(false, parsed?.vsync)
+        assertEquals("120", parsed?.fpsLimit)
+        assertEquals(true, parsed?.showFps)
+        assertEquals(true, parsed?.disableAudio)
+        assertEquals("60", parsed?.musicVolume)
+        assertEquals("75", parsed?.soundVolume)
+        assertEquals(true, parsed?.noRtp)
+        assertEquals("maniac", parsed?.patchMode)
+        assertEquals(true, parsed?.testPlay)
     }
 }

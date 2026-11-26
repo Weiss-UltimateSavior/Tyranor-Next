@@ -1,13 +1,13 @@
 package com.core.ethornell;
 
+import android.app.Dialog;
+import android.content.DialogInterface;
 import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.BroadcastReceiver;
 import android.content.IntentFilter;
-import android.content.pm.ActivityInfo;
 import android.graphics.Color;
-import android.graphics.drawable.GradientDrawable;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
@@ -24,18 +24,15 @@ import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
-import android.widget.TextView;
 import android.widget.Toast;
 import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.WindowCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
+import com.core.engine.EnginePlayerOrientation;
 import com.core.engine.EngineSessionRegistry;
 import com.core.engine.EngineStartupOverlay;
 import com.core.engine.EngineSurfaceReadyProbe;
@@ -51,12 +48,13 @@ import java.util.ArrayDeque;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import org.tvp.kirikiri2.KrDialogStyle;
 
 /** Fullscreen game host, not an application management page. VM/GPU/IO never run on UI. */
 public final class EthornellActivity extends AppCompatActivity implements SurfaceHolder.Callback, Choreographer.FrameCallback {
     @Override
     public void setRequestedOrientation(int requestedOrientation) {
-        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        EnginePlayerOrientation.applyWithSuper(this, super::setRequestedOrientation);
     }
 
     private static final AtomicLong TOKENS = new AtomicLong(1);
@@ -75,7 +73,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
     private final Set<Integer> mouseButtons = new HashSet<>();
     private AudioManager audio;
     private AudioFocusRequest focusRequest;
-    private AlertDialog dialog;
+    private Dialog dialog;
     private EthornellHostDialog inputDialog;
     private final ArrayDeque<EthornellSession.Event> requests = new ArrayDeque<>();
     private final Set<Long> uiPending = new HashSet<>();
@@ -122,6 +120,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
         }
     }
     @Override protected void onCreate(Bundle saved) {
+        EnginePlayerOrientation.lockOnCreate(this, saved);
         super.onCreate(saved);
         processVerified = isOwnEngineProcess();
         if (!processVerified) { finish(); return; }
@@ -206,6 +205,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
         AudioAttributes attributes = new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME)
                 .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build();
         focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).setAudioAttributes(attributes)
+                .setWillPauseWhenDucked(true)
                 .setOnAudioFocusChangeListener(change -> {
                     if (session != null && !destroyed) session.pause(EthornellSession.PAUSE_AUDIO, change != AudioManager.AUDIOFOCUS_GAIN);
                 }, ui).build();
@@ -279,6 +279,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
     }
     @Override protected void onResume() {
         super.onResume(); resumed = true;
+        EnginePlayerOrientation.applyLocked(this);
         if (session == null) return;
         if (remap != null) remap.onResume();
         session.pause(EthornellSession.PAUSE_ACTIVITY, false);
@@ -508,44 +509,29 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
                 new Runnable[]{() -> session.requestClose(), () -> {}}, () -> {});
     }
     private void showDialog(String title, String message, String[] labels, Runnable[] actions, Runnable cancel) {
-        session.pause(EthornellSession.PAUSE_DIALOG, true); releaseInput();
-        LinearLayout content = new LinearLayout(this); content.setOrientation(LinearLayout.VERTICAL);
-        int pad = (int) (24 * getResources().getDisplayMetrics().density);
-        content.setPadding(pad, pad, pad, pad);
-        GradientDrawable background = new GradientDrawable(); background.setColor(Color.WHITE);
-        background.setCornerRadius(8 * getResources().getDisplayMetrics().density); content.setBackground(background);
-        TextView heading = dialogText(title, 15); heading.setTypeface(null, android.graphics.Typeface.BOLD); content.addView(heading);
-        if (!message.isEmpty()) content.addView(dialogText(message, 14));
-        ScrollView scroll = new ScrollView(this); scroll.setFillViewport(false); scroll.addView(content);
-        AlertDialog shown = new AlertDialog.Builder(this).setView(scroll).create();
+        session.pause(EthornellSession.PAUSE_DIALOG, true);
+        releaseInput();
+        Dialog shown = KrDialogStyle.createDialog(this, title, message, null, labels,
+                true, true, (selected, which) -> resolveDialog(selected, actions[which]));
         dialog = shown;
-        for (int i = 0; i < labels.length; i++) {
-            TextView button = dialogText(labels[i], 14); button.setPadding(0, pad / 2, 0, pad / 2); button.setBackground(null);
-            button.setSoundEffectsEnabled(false); button.setHapticFeedbackEnabled(false);
-            final Runnable action = actions[i];
-            button.setOnClickListener(v -> {
-                if (dialog != shown) return;
-                // Clear pause before a menu action, but defer request queue promotion until action completed.
-                dialog = null; shown.setOnDismissListener(null); shown.dismiss();
-                session.pause(EthornellSession.PAUSE_DIALOG, false);
-                action.run(); if (dialog == null) showNextRequest();
-            }); content.addView(button);
-        }
-        shown.setOnCancelListener(d -> cancel.run());
-        shown.setOnDismissListener(d -> {
-            if (dialog == shown) { dialog = null; session.pause(EthornellSession.PAUSE_DIALOG, false); showNextRequest(); }
-        });
+        shown.setOnCancelListener(selected -> resolveDialog(selected, cancel));
+        shown.setOnDismissListener(selected -> resolveDialog(selected, null));
         shown.show();
-        if (shown.getWindow() != null) shown.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
     }
-    private TextView dialogText(String value, int sp) {
-        TextView view = new TextView(this); view.setText(value); view.setTextSize(sp); view.setTextColor(Color.BLACK); return view;
+
+    private void resolveDialog(DialogInterface selected, Runnable action) {
+        if (dialog != selected) return;
+        dialog = null;
+        session.pause(EthornellSession.PAUSE_DIALOG, false);
+        if (action != null) action.run();
+        if (dialog == null) showNextRequest();
     }
+
     private void dismissDialogs() {
         pendingFocusAction = null;
         uiPending.clear(); requests.clear();
         if (inputDialog != null) { EthornellHostDialog old = inputDialog; inputDialog = null; old.dismiss(); }
-        if (dialog != null) { AlertDialog old = dialog; dialog = null; old.setOnCancelListener(null); old.setOnDismissListener(null); old.dismiss(); }
+        if (dialog != null) { Dialog old = dialog; dialog = null; old.setOnCancelListener(null); old.setOnDismissListener(null); old.dismiss(); }
     }
     private void immersive() {
         WindowInsetsControllerCompat bars = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());

@@ -1,14 +1,10 @@
 package com.core.tyrano
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
-import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import bridge.PrimaryStorageRoot
 import android.view.Gravity
@@ -22,20 +18,19 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.JavascriptInterface
-import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.TextView
 import android.widget.Toast
 import com.core.engine.DoubleBackExit
+import com.core.engine.EnginePlayerOrientation
 import com.core.engine.EnginePrefs
 import com.core.engine.EngineSessionRegistry
 import com.core.engine.EngineStartupOverlay
+import com.core.engine.EngineWebChromeClient
 import com.core.engine.EngineThemeColors
 import com.core.engine.LaunchContract
 import com.core.engine.R
@@ -45,17 +40,18 @@ import java.io.File
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONObject
+import org.tvp.kirikiri2.KrDialogStyle
 
 /**
  * Tyrano WebView 宿主；资源服务与存档沙箱分别由独立组件负责。
  *
  * 本 Activity 隶属于 engine 模块，不依赖 app 层。用户偏好（UI 缩放、外网开关）
  * 直接读取共享的 tyranor_prefs（原 yukihub_prefs），与 OnsSettings 同模式；确认对话框通过 Intent extras
- * 传入的 Launcher 主题色在 engine 内复刻 LauncherDialogFactory 的视觉风格，保持统一。
+ * 宿主确认弹窗共用引擎层的 KRKR 样式和应用主题色。
  */
 class TyranoActivity : Activity() {
     override fun setRequestedOrientation(requestedOrientation: Int) {
-        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
+        EnginePlayerOrientation.applyWithSuper(this) { super.setRequestedOrientation(it) }
     }
 
     private var webView: WebView? = null
@@ -105,6 +101,7 @@ class TyranoActivity : Activity() {
                 intent.removeExtra(LaunchContract.PLAYTIME_SESSION_STARTED_AT)
             }
         }
+        EnginePlayerOrientation.syncOnNewIntent(this, intent, changed)
         setIntent(intent)
         if (changed && !isFinishing) {
             Log.i(TAG, "onNewIntent relaunch with changed intent; recreate")
@@ -112,22 +109,37 @@ class TyranoActivity : Activity() {
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        EnginePlayerOrientation.saveState(this, outState)
+        super.onSaveInstanceState(outState)
+    }
+
     /** 影响引擎行为的 Intent extras 摘要，用于判断单游戏重启是否需要重建。 */
     private fun behaviorSignature(intent: Intent): String = listOf(
         resolveGameDir(intent),
         intent.getBooleanExtra(LaunchContract.SCOPED_SAVE_DIR, false).toString(),
         intent.getStringExtra(LaunchContract.SCOPED_SAVE_ROOT),
+        if (intent.hasExtra(LaunchContract.WEB_EXTERNAL_NETWORK)) {
+            intent.getBooleanExtra(LaunchContract.WEB_EXTERNAL_NETWORK, false).toString()
+        } else {
+            null
+        },
         intent.getBooleanExtra(LaunchContract.RPG_MAKER_MOD_ENABLED, true).toString(),
         intent.getStringExtra(LaunchContract.RPG_MAKER_MOD_GAME_ID),
         intent.getIntExtra(LaunchContract.WEB_SHELL_PORT, 0).toString(),
     ).joinToString("\u0000")
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        EnginePlayerOrientation.lockOnCreate(this, savedInstanceState)
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enterFullscreen()
-        allowExternalNetwork = getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
-            .getBoolean(EnginePrefs.KEY_TYRANO_EXTERNAL_NETWORK, false)
+        allowExternalNetwork = if (intent.hasExtra(LaunchContract.WEB_EXTERNAL_NETWORK)) {
+            intent.getBooleanExtra(LaunchContract.WEB_EXTERNAL_NETWORK, false)
+        } else {
+            getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
+                .getBoolean(EnginePrefs.KEY_TYRANO_EXTERNAL_NETWORK, false)
+        }
 
         gameDir = resolveGameDir(intent)
         Log.i(TAG, "onCreate gameDir=$gameDir")
@@ -455,7 +467,7 @@ class TyranoActivity : Activity() {
                 return uri?.takeUnless(::isAllowedGameResource)?.let { blockedResponse() }
             }
         }
-        browser.webChromeClient = object : WebChromeClient() {
+        browser.webChromeClient = object : EngineWebChromeClient(this) {
             override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
                 if (consoleMessage != null) {
                     val level = Log.INFO
@@ -500,6 +512,7 @@ class TyranoActivity : Activity() {
     }
 
     private fun handleRendererGone(view: WebView): Boolean {
+        (view.webChromeClient as? EngineWebChromeClient)?.dismissDialogs()
         if (webView !== view) {
             (view.parent as? ViewGroup)?.removeView(view)
             runCatching { view.destroy() }
@@ -769,6 +782,7 @@ class TyranoActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        EnginePlayerOrientation.applyLocked(this)
         enterFullscreen()
         inputRemap?.onResume()
         if (firstResume) firstResume = false else {
@@ -778,6 +792,7 @@ class TyranoActivity : Activity() {
     }
 
     override fun onDestroy() {
+        (webView?.webChromeClient as? EngineWebChromeClient)?.dismissDialogs()
         EngineSessionRegistry.clear(this, EngineSessionRegistry.HOST_TYRANO)
         DoubleBackExit.clear(this)
         startupOverlay?.dispose()
@@ -832,129 +847,17 @@ class TyranoActivity : Activity() {
         return gameRoot?.let { File(it, "savedata") }
     }
 
-    /**
-     * 与 Launcher 统一风格的确认对话框。
-     *
-     * engine 模块不依赖 app 的 LauncherDialogFactory/LauncherTheme，但 Launcher 通过
-     * Intent extras 传入了主题色（primaryColor / themeColorCard / themeColorText 等，
-     * 见 LauncherUiBridge.appendEngineThemeExtrasSafely）。此处用这些颜色在 engine 内复刻
-     * LauncherDialogFactory.showConfirm 的视觉效果：圆角卡片背景 + 药丸形按钮，
-     * 与 app 内其他确认弹窗保持一致。
-     */
     private fun showEngineConfirm(
         title: String,
         message: String,
         confirmText: String,
         onConfirm: () -> Unit,
     ) {
-        // 守卫：JS 回调与执行之间 Activity 可能已销毁（Home 键/系统回收），
-        // 避免 dialog.show() 抛 WindowManager$BadTokenException（与 KRKRCall/Siglus 同款防御）
         if (isFinishing || isDestroyed) return
-        // 用框架 AlertDialog：TyranoActivity 未声明独立主题，继承的是应用框架主题
-        // （android:Theme.Material.*，非 AppCompat 主题），AppCompat AlertDialog 会在
-        // setContentView 抛 "You need to use a Theme.AppCompat theme..."；
-        // 与 SDLActivity 的同风格弹窗实现保持一致。
-        val dialog = AlertDialog.Builder(this).create()
-        dialog.setCancelable(true)
-        dialog.setCanceledOnTouchOutside(true)
-
-        val density = resources.displayMetrics.density
-        val dp = { value: Float -> (value * density + 0.5f).toInt() }
-        val colors = EngineThemeColors.fromIntent(intent)
-
-        // 根容器：圆角卡片，padding 22dp
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(22f), dp(22f), dp(22f), dp(22f))
-            background = GradientDrawable().apply {
-                setColor(colors.card)
-                cornerRadius = dp(20f).toFloat()
-            }
-        }
-
-        // 标题：16sp bold 居中
-        val titleView = TextView(this).apply {
-            text = title
-            setTextColor(colors.text)
-            textSize = 16f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(-1, -2)
-        }
-        root.addView(titleView)
-
-        // 消息：13sp 居中，topMargin 14dp
-        val messageView = TextView(this).apply {
-            text = message
-            setTextColor(colors.textMuted)
-            textSize = 13f
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(14f)
-            }
-        }
-        root.addView(messageView)
-
-        // 按钮行：topMargin 22dp
-        val buttonRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(22f)
-            }
-        }
-
-        // 取消按钮：药丸形（card 底色 + primary 文字）
-        val cancelBtn = TextView(this).apply {
-            text = getString(R.string.engine_cancel)
-            setTextColor(colors.primary)
-            textSize = 13f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            background = GradientDrawable().apply {
-                setColor(colors.card)
-                cornerRadius = dp(999f).toFloat()
-            }
-            layoutParams = LinearLayout.LayoutParams(0, dp(36f)).apply {
-                weight = 1f
-                marginEnd = dp(7f)
-            }
-        }
-        buttonRow.addView(cancelBtn)
-
-        // 确认按钮：药丸形（primary 底色 + onPrimary 文字）
-        val confirmBtn = TextView(this).apply {
-            text = confirmText
-            setTextColor(colors.onPrimary)
-            textSize = 13f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            background = GradientDrawable().apply {
-                setColor(colors.primary)
-                cornerRadius = dp(999f).toFloat()
-            }
-            layoutParams = LinearLayout.LayoutParams(0, dp(36f)).apply {
-                weight = 1f
-                marginStart = dp(7f)
-            }
-        }
-        buttonRow.addView(confirmBtn)
-        root.addView(buttonRow)
-
-        dialog.setView(root)
-        dialog.show()
-
-        // 窗口：透明背景 + 固定宽度 252dp，与 LauncherDialogFactory 一致
-        dialog.window?.apply {
-            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            setLayout(dp(252f), -2)
-        }
-
-        cancelBtn.setOnClickListener { dialog.dismiss() }
-        confirmBtn.setOnClickListener {
-            dialog.dismiss()
-            onConfirm()
-        }
+        KrDialogStyle.createDialog(
+            this, title, message, null,
+            arrayOf(confirmText, getString(R.string.engine_cancel)), true, true,
+        ) { _, which -> if (which == 0) onConfirm() }.show()
     }
 
     /**

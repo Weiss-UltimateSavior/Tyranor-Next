@@ -1,6 +1,16 @@
 # Ethornell 测试验收记录
 
-## 2026-11-02：0cfff1d + 本地 UserData/BGI 全局数据补丁验收（当前，043fef05）
+## 2026-11-26 · 2ccc6c7
+
+使用 NDK 28.0.13004108 和 Android API 26 构建 ARM64 运行库。ABI v1 头文件与上游逐字节一致，保留 15 个导出。运行库 SHA-256 为 `304874c12326f4b1a0cd1011c823a419355629d8f895c4cc456fe7eb420e8b60`（26,801,112 字节）。构建命令与四份补丁见 [provenance](../engine/src/main/jniLibs/arm64-v8a/libethornell.provenance.json)。
+
+《巧克甜恋》GBK 测试使用 Lenovo TB375FC、Android 16（API 36）、4 KiB 页与独立测试包。旧库显示语言选择。新版未应用 `0006` 时已创建会话并完成启动层退场，游戏画面仍是黑屏。增加补丁后的验证构建显示语言选择，最终入库的运行库实机复测捕获到厂商标志画面。该轮为启动冒烟，游戏标题、对白和槽位存读档待验证。
+
+独立库与 Debug / Release APK 通过 `--local-static`，两份 APK 内的库与入库文件逐字节一致，`zipalign -c -P 16 4` 通过。真机 Debug 解压库的 SHA-256 相同，Release R8 探针的 SJIS 和 GBK 各通过 3 项加载及 JNI 会话测试。Rust VM 353 项通过、1 项忽略，Ethornell JVM 专项 125 项及验证工具 80 项通过。全量 App JVM 无失败，engine JVM 的 `RpgMakerStorageCommitTest.twoBridgeReplaysShareTheStoreLock` 失败。
+
+独立测试包清理残留启动记录后，设备夹具 24 项通过、4 项失败、2 项可选真实样本用例跳过。用同一 APK 加载旧库 `6ca790d1`，GPU 重挂、启动层和两项 App 存档列表失败均复现。游戏目录存档、共享存储锁与 Sys80/Sys81 的原生读写夹具通过。
+
+## 2026-11-02：0cfff1d + 本地 UserData/BGI 全局数据补丁验收（历史，043fef05）
 
 本节只对应下列四元组；下方 `0401e38d` 节与 `541bf6` 中间产物均为历史，不得混用哈希。
 

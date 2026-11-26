@@ -1,8 +1,8 @@
 package com.core.games;
 
+import android.app.Dialog;
 import android.graphics.Bitmap;
 import android.graphics.Color;
-import android.content.pm.ActivityInfo;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -21,13 +21,13 @@ import android.widget.Toast;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.Nullable;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
+import com.core.engine.EnginePlayerOrientation;
 import com.core.engine.EngineUiText;
 import com.core.engine.EngineStartupOverlay;
 import com.core.engine.LaunchContract;
@@ -35,6 +35,7 @@ import com.core.engine.R;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import org.tvp.kirikiri2.KrDialogStyle;
 
 /**
  * 软件渲染引擎（RealLive / AVG32 / UK2）宿主 Activity。
@@ -50,7 +51,7 @@ public final class FramebufferGameActivity extends AppCompatActivity
 
     @Override
     public void setRequestedOrientation(int requestedOrientation) {
-        super.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        EnginePlayerOrientation.applyWithSuper(this, super::setRequestedOrientation);
     }
 
     private static final String TAG = "FramebufferGame";
@@ -105,6 +106,7 @@ public final class FramebufferGameActivity extends AppCompatActivity
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
+        EnginePlayerOrientation.lockOnCreate(this, savedInstanceState);
         super.onCreate(savedInstanceState);
 
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
@@ -225,12 +227,10 @@ public final class FramebufferGameActivity extends AppCompatActivity
             String message = error[0] != null && !error[0].trim().isEmpty()
                     ? error[0]
                     : uiString(R.string.engine_fb_init_failed);
-            new AlertDialog.Builder(this)
-                    .setTitle(uiString(R.string.engine_launch_failed))
-                    .setMessage(message)
-                    .setPositiveButton(uiString(R.string.engine_ok), (d, w) -> finish())
-                    .setOnCancelListener(d -> finish())
-                    .show();
+            Dialog dialog = KrDialogStyle.createDialog(this, uiString(R.string.engine_launch_failed), message,
+                    null, null, true, true, (d, which) -> finish());
+            dialog.setOnCancelListener(d -> finish());
+            dialog.show();
             return;
         }
         handle = created;
@@ -258,6 +258,7 @@ public final class FramebufferGameActivity extends AppCompatActivity
     @Override
     protected void onResume() {
         super.onResume();
+        EnginePlayerOrientation.applyLocked(this);
         applyImmersive();
         maybeStartFrameLoop();
     }
@@ -313,12 +314,10 @@ public final class FramebufferGameActivity extends AppCompatActivity
     }
 
     private void confirmExit() {
-        new AlertDialog.Builder(this)
-                .setTitle(uiString(R.string.engine_exit_game))
-                .setMessage(uiString(R.string.engine_exit_game_message))
-                .setPositiveButton(uiString(R.string.engine_ok), (d, w) -> finish())
-                .setNegativeButton(uiString(R.string.engine_cancel), null)
-                .show();
+        KrDialogStyle.createDialog(this, uiString(R.string.engine_exit_game),
+                uiString(R.string.engine_exit_game_message), null,
+                new String[]{uiString(R.string.engine_ok), uiString(R.string.engine_cancel)},
+                true, true, (d, which) -> { if (which == 0) finish(); }).show();
     }
 
     // ---------- 帧循环 ----------

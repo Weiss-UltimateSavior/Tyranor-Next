@@ -487,7 +487,29 @@ val vsync = values?.opt("vsync") as? Boolean ?: true
 
 可运行的四类设置与存档示例见 [tools/runtime-module-example](../tools/runtime-module-example/README.md)，不加入主 App 构建。真实模块需自行验收参数效果和存档格式兼容性。
 
-## 12. 参考
+## 12. 游戏目录内文件导入（可选）
+
+在描述文件顶层增加独立的 `fileImports`，与 `scan`、`settings`、`saves` 互不依赖：
+
+```json
+{
+  "fileImports": {
+    "version": 1,
+    "items": [
+      { "key": "patches", "title": "导入补丁", "directory": "data/patches", "multiple": true },
+      { "key": "config", "title": "替换配置", "directory": ".", "fileName": "game.ini" }
+    ]
+  }
+}
+```
+
+- 最多 32 个有效声明项；`key` 格式同设置项，重复时取第一个有效项；`title` 为 1–128 字符。
+- `directory` 是游戏目录内相对目录，`.` 表示游戏根；目录和文件名区分大小写地按声明使用，由底层文件系统决定是否区分大小写。拒绝绝对路径、空段、`..`、反斜杠和符号链接。
+- 无 `fileName` 时使用系统选择器提供的文件名，`multiple` 默认为 false，可设为 true（一次最多 32 个，无重复目标）。提供 `fileName` 时只能是单个文件名，且只允许单选。
+- 用户在游戏抽屉的「引擎设置」选取文件并确认实际新增／覆盖列表。子目录可在确认后创建；游戏目录必须能够映射为本地路径且允许 App 直接写入。每个文件暂存完整后才提交，批量不保证整体回滚。
+- 不随启动 Intent 下发，不影响设置草稿；旧版主 App 忽略该字段。
+
+## 13. 参考
 
 - 内部设计：[第三方APK运行时模块接入方案.md](第三方APK运行时模块接入方案.md)
 - 当前行为边界：[SPEC.md](../SPEC.md)

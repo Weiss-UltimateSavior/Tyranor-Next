@@ -9,15 +9,18 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
 import bridge.PrimaryStorageRoot
+import com.tyranor.next.core.game.launch.LaunchOrientationMonitor
 import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.process.AppProcess
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
 import com.tyranor.next.core.game.playtime.GamePlaytimeRepository
 import com.tyranor.next.core.game.playtime.GamePlaytimeRuntime
+import com.tyranor.next.core.privacy.AppLockController
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.AppIconSwitcher
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.theme.BackgroundImageCache
 import com.tyranor.next.core.settings.PrefsRenameMigration
 import com.tyranor.next.core.updater.BackgroundUpdateWorker
 import com.tyranor.next.core.updater.GitHubUpdateChecker
@@ -30,6 +33,7 @@ import kotlinx.coroutines.launch
 /** 在整个应用进入后台时安排一次静默更新检查。 */
 class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configuration.Provider {
     private var libraryInitialized = false
+    private var mainOrUnknownProcess = false
     private val background = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override val workManagerConfiguration: Configuration
@@ -58,10 +62,16 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
     /** 主线程调用；引导标记落盘失败不阻断应用启动，快照仍用于本次启动判定。 */
     private fun initializeStartup() {
         val mainProcess = AppProcess.isMain(this, unknownIsMainProcess = true)
+        mainOrUnknownProcess = mainProcess
         if (mainProcess) {
+            // 与其余主进程能力同口径安装方向监听（引擎子进程 processName 已知会返回 false；
+            // API 26/27 进程列表不可得时仍按主进程安装，避免反向横屏能力静默失效）。
+            LaunchOrientationMonitor.install(this)
             // commit 失败时 OnboardingPreferences 保留基于旧数据的内存快照：存量用户仍直接进入主界面，
             // 新安装用户仍显示引导；下一次启动或完成引导时会再次尝试落盘。
             AppSettingsStore.initializeOnboarding(this)
+            AppSettingsStore.prepareHomePageEnabled(this)
+            background.launch { AppSettingsStore.initHomePageEnabled(this@TyranorNextApplication) }
             AppSettingsStore.initDefaultThemeParticles(this)
             // 启动器图标别名与设置对齐（升级、清除数据或上次切换失败时兜底）；幂等，无变化不写。
             AppIconSwitcher.apply(this, AppSettingsStore.isClassicIconEnabled(this))
@@ -73,9 +83,31 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         EngineSettingsStore.cleanupLegacyWinlatorKeys(this)
         UpdateNotificationManager.createChannel(this)
         GitHubUpdateChecker.restoreState(this)
-        // 游戏库 Room 迁移检查 + 首页缓存预热在启动阶段触发，避免首帧 SettingsScreen 同步开库。
+        // 游戏库 Room 迁移检查、首页缓存预热与隐私/应用锁按 mainProcess（unknownIsMainProcess = true）
+        // 在启动阶段安装：已确认的引擎子进程返回 false 不安装；API 26/27 无法枚举 PID 时仍按主进程恢复锁。
         if (mainProcess) {
             initializeMainLibrary()
+            // 隐私设置与窗口级效果（FLAG_SECURE / 通知隐藏）在页面创建前就要读到正确值；
+            // 应用锁只装主进程（引擎宿主为独立进程，不在锁定范围）。
+            AppSettingsStore.initPrivacySettings(this)
+            // 自定义背景图（URI/透明度/模糊）要在首帧前就绪，否则冷启动会先画默认背景再淡入
+            AppSettingsStore.initBackgroundImage(this)
+            // 启动即预热背景图：解码完成后所有页面同步可用（冷启动首帧可能早于解码完成，
+            // 此时背景为空、解码完成后自动出现；只有锁门会等待就绪以对齐首帧）
+            val backgroundUri = AppSettingsStore.getBackgroundImageUri(this)
+            if (backgroundUri.isNotBlank()) {
+                background.launch {
+                    try {
+                        BackgroundImageCache.ensureLoaded(applicationContext, backgroundUri)
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        // 取消不是解码失败，必须原样向上传播（取消语义）
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // 解码失败按未就绪处理：进入页面时 ensureLoaded 会再次尝试
+                    }
+                }
+            }
+            AppLockController.install(this)
             // 上次删除游戏/目录或重扫丢弃条目时未完成的副本回收在这里续做；引擎侧不保存这些路径。
             background.launch {
                 try {
@@ -86,8 +118,8 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
                     android.util.Log.w("SystemNNN", "Could not resume copy resource cleanup", failure)
                 }
             }
+            ProcessLifecycleOwner.get().lifecycle.addObserver(this)
         }
-        ProcessLifecycleOwner.get().lifecycle.addObserver(this)
     }
 
     /** 主线程调用；进程内只预热一次。 */
@@ -95,10 +127,17 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         if (libraryInitialized) return
         libraryInitialized = true
         AppSettingsStore.initGameConditions(this)
+        AppSettingsStore.initGameCardColumns(this)
         GameLibraryRepository.init(this)
     }
 
     override fun onStart(owner: LifecycleOwner) {
+        // 防御性冗余（P3-20）：ProcessLifecycleOwner 观察者仅在上面的 mainProcess 分支注册，
+        // 子进程不注册，本守卫理论上恒为真；保留以保证未来注册点移动时前台/后台回调
+        // 仍只作用于主进程或 unknown 进程，不重复执行应用锁与后台任务排程。
+        if (!mainOrUnknownProcess) return
+        // 应用锁：回前台按解锁延迟档位判定是否上锁（未安装的子进程为空操作）
+        AppLockController.onLauncherEntering()
         SaveSyncRuntime.onForeground(this)
         if (AppProcess.isMain(this)) background.launch {
             GamePlaytimeRepository.refresh(this@TyranorNextApplication)
@@ -106,12 +145,22 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
     }
 
     override fun onStop(owner: LifecycleOwner) {
+        // 防御性冗余（P3-20）：同 onStart——观察者仅主进程注册，保留守卫作防御。
+        if (!mainOrUnknownProcess) return
+        // 应用锁：退后台开始离开计时（熄屏由 AppLockController 自注册的广播驱动）
+        AppLockController.onLauncherLeft()
         SaveSyncRuntime.onBackground(this)
         if (!AppSettingsStore.ONBOARDING_FEATURE_ENABLED ||
             AppSettingsStore.isOnboardingCompleted(this)
         ) {
             BackgroundUpdateWorker.enqueue(this)
         }
+    }
+
+    /** 内存紧张时优先释放整屏背景图（与封面缓存相比它只服务一个页面），回到图层时自动重解码。 */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        BackgroundImageCache.onTrimMemory(level)
     }
 
 }

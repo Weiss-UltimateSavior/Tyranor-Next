@@ -12,6 +12,8 @@ class SaveSyncRuntimePolicyTest {
     fun externalExitConfirmationKeepsYurisAndGatesRenPyAtAndroid11() {
         assertTrue(requiresExternalSaveExitConfirmation(EngineType.YURIS, sdkInt = 29))
         assertTrue(requiresExternalSaveExitConfirmation(EngineType.YURIS, sdkInt = 30))
+        assertTrue(requiresExternalSaveExitConfirmation(EngineType.EASYRPG, sdkInt = 29))
+        assertTrue(requiresExternalSaveExitConfirmation(EngineType.EASYRPG, sdkInt = 35))
         assertFalse(requiresExternalSaveExitConfirmation(EngineType.RENPY, sdkInt = 29))
         assertTrue(requiresExternalSaveExitConfirmation(EngineType.RENPY, sdkInt = 30))
         assertFalse(requiresExternalSaveExitConfirmation(EngineType.KIRIKIRI, sdkInt = 35))

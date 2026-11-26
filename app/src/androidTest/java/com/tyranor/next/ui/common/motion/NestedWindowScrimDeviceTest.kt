@@ -62,33 +62,17 @@ class NestedWindowScrimDeviceTest {
 
     @Test fun enhancedBackNeverUncoversTheParentMask() = checkNestedExit(enhanced = true, back = true)
 
-    @Test fun ordinaryCancelNeverUncoversTheParentMask() = checkNestedExit(enhanced = false, back = false)
-
-    @Test fun ordinaryBackNeverUncoversTheParentMask() = checkNestedExit(enhanced = false, back = true)
-
     @Test fun enhancedSheetCancelNeverUncoversTheParentMask() =
         checkNestedExit(enhanced = true, back = false, parentKind = ParentKind.Sheet)
 
     @Test fun enhancedSheetBackNeverUncoversTheParentMask() =
         checkNestedExit(enhanced = true, back = true, parentKind = ParentKind.Sheet)
 
-    @Test fun ordinarySheetCancelNeverUncoversTheParentMask() =
-        checkNestedExit(enhanced = false, back = false, parentKind = ParentKind.Sheet)
-
-    @Test fun ordinarySheetBackNeverUncoversTheParentMask() =
-        checkNestedExit(enhanced = false, back = true, parentKind = ParentKind.Sheet)
-
     @Test fun enhancedSidePanelCancelNeverUncoversTheParentMask() =
         checkNestedExit(enhanced = true, back = false, parentKind = ParentKind.SidePanel)
 
     @Test fun enhancedSidePanelBackNeverUncoversTheParentMask() =
         checkNestedExit(enhanced = true, back = true, parentKind = ParentKind.SidePanel)
-
-    @Test fun ordinarySidePanelCancelNeverUncoversTheParentMask() =
-        checkNestedExit(enhanced = false, back = false, parentKind = ParentKind.SidePanel)
-
-    @Test fun ordinarySidePanelBackNeverUncoversTheParentMask() =
-        checkNestedExit(enhanced = false, back = true, parentKind = ParentKind.SidePanel)
 
     private fun checkNestedExit(enhanced: Boolean, back: Boolean, parentKind: ParentKind = ParentKind.Dialog) {
         MotionDeviceAcceptance.require(enhanced = null)
@@ -268,7 +252,6 @@ class NestedWindowScrimDeviceTest {
 
         try {
             compose.mainClock.autoAdvance = false
-            compose.runOnIdle { MotionMode.sync(enhanced) }
             compose.setContent {
                 MaterialTheme {
                     Box(Modifier.fillMaxSize().background(Color.White)) {
@@ -402,7 +385,6 @@ class NestedWindowScrimDeviceTest {
                 compose.runOnIdle {
                     parentVisible.value = false
                     childVisible.value = false
-                    MotionMode.sync(originalMode)
                 }
                 compose.mainClock.autoAdvance = true
             }

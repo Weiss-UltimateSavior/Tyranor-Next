@@ -14,28 +14,29 @@ enum class OnboardingWriteResult { SAVED, STORAGE_UNAVAILABLE }
  */
 internal class OnboardingPreferences(
     private val settings: SharedPreferences,
-    private val pendingStateFile: File? = null,
+    pendingStateFile: File? = null,
 ) {
+    private val pendingState = InitialBooleanStateFile(pendingStateFile)
     private var pendingInitialValue: Boolean? = null
 
     @Synchronized
     fun initialize(hasExistingData: () -> Boolean): OnboardingWriteResult {
         if (pendingInitialValue == null && settings.contains(AppSettingsStore.KEY_ONBOARDING_COMPLETED)) {
-            clearPendingInitialValue()
+            pendingState.clear()
             return OnboardingWriteResult.SAVED
         }
         if (pendingInitialValue == null) {
-            pendingInitialValue = readPendingInitialValue()
+            pendingInitialValue = pendingState.read()
         }
         val completed = pendingInitialValue ?: hasExistingData().also { pendingInitialValue = it }
         if (!settings.edit().putBoolean(AppSettingsStore.KEY_ONBOARDING_COMPLETED, completed).commit()) {
             // commit 失败也已改写内存；移除未落盘标记，且保留 pending 快照以便重试。
             settings.edit().remove(AppSettingsStore.KEY_ONBOARDING_COMPLETED).apply()
-            persistPendingInitialValue(completed)
+            pendingState.write(completed)
             return OnboardingWriteResult.STORAGE_UNAVAILABLE
         }
         pendingInitialValue = null
-        clearPendingInitialValue()
+        pendingState.clear()
         return OnboardingWriteResult.SAVED
     }
 
@@ -43,11 +44,11 @@ internal class OnboardingPreferences(
     fun isCompleted(): Boolean {
         if (settings.contains(AppSettingsStore.KEY_ONBOARDING_COMPLETED)) {
             pendingInitialValue = null
-            clearPendingInitialValue()
+            pendingState.clear()
             return settings.getBoolean(AppSettingsStore.KEY_ONBOARDING_COMPLETED, false)
         }
         if (pendingInitialValue == null) {
-            pendingInitialValue = readPendingInitialValue()
+            pendingInitialValue = pendingState.read()
         }
         return pendingInitialValue ?: settings.getBoolean(AppSettingsStore.KEY_ONBOARDING_COMPLETED, false)
     }
@@ -55,7 +56,7 @@ internal class OnboardingPreferences(
     @Synchronized
     fun complete(): OnboardingWriteResult {
         if (pendingInitialValue == null) {
-            pendingInitialValue = readPendingInitialValue()
+            pendingInitialValue = pendingState.read()
         }
         if (pendingInitialValue == null &&
             settings.getBoolean(AppSettingsStore.KEY_ONBOARDING_COMPLETED, false)
@@ -68,11 +69,13 @@ internal class OnboardingPreferences(
             return OnboardingWriteResult.STORAGE_UNAVAILABLE
         }
         pendingInitialValue = null
-        clearPendingInitialValue()
+        pendingState.clear()
         return OnboardingWriteResult.SAVED
     }
+}
 
-    private fun readPendingInitialValue(): Boolean? = pendingStateFile?.let { file ->
+internal class InitialBooleanStateFile(private val pendingStateFile: File?) {
+    fun read(): Boolean? = pendingStateFile?.let { file ->
         runCatching {
             if (!file.isFile) return@runCatching null
             when (file.readText(StandardCharsets.UTF_8).trim()) {
@@ -83,7 +86,7 @@ internal class OnboardingPreferences(
         }.getOrNull()
     }
 
-    private fun persistPendingInitialValue(value: Boolean) {
+    fun write(value: Boolean) {
         val file = pendingStateFile ?: return
         runCatching {
             val parent = file.parentFile ?: File(".")
@@ -100,7 +103,7 @@ internal class OnboardingPreferences(
         }
     }
 
-    private fun clearPendingInitialValue() {
+    fun clear() {
         pendingStateFile?.let { file -> runCatching { file.delete() } }
     }
 }

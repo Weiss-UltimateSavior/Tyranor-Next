@@ -1,5 +1,6 @@
 package com.tyranor.next.core.game.shortcut
 
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ShortcutInfo
@@ -10,7 +11,7 @@ import android.graphics.drawable.Icon
 import android.net.Uri
 import com.tyranor.next.R
 import com.tyranor.next.core.game.model.ScanGame
-import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.core.settings.AppIconSwitcher
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -30,6 +31,7 @@ object GameShortcutManager {
         game: ScanGame,
         launchIntent: Intent,
         customIconUri: Uri? = null,
+        pinResultIntent: Intent? = null,
     ): RequestResult {
         val appContext = context.applicationContext
         val shortcutManager = appContext.getSystemService(ShortcutManager::class.java)
@@ -50,7 +52,7 @@ object GameShortcutManager {
             // 没有封面时退回应用图标：跟随应用设置选中的启动器图标（经典 / 新版），与桌面上的应用图标一致
             ?: Icon.createWithResource(
                 appContext,
-                if (AppSettingsStore.isClassicIconEnabled(appContext)) R.mipmap.ic_launcher_classic else R.mipmap.ic_launcher,
+                AppIconSwitcher.iconResource(appContext),
             )
         val label = game.title.trim().ifBlank { appContext.getString(R.string.app_name) }
         val shortcut = ShortcutInfo.Builder(appContext, shortcutId(game.uri))
@@ -73,10 +75,20 @@ object GameShortcutManager {
                 if (!shortcutManager.isRequestPinShortcutSupported) {
                     return@runCatching RequestResult.UNSUPPORTED
                 }
-                if (shortcutManager.requestPinShortcut(shortcut, null)) {
-                    RequestResult.REQUESTED
-                } else {
-                    RequestResult.FAILED
+                val callback = pinResultIntent?.let {
+                    PendingIntent.getBroadcast(
+                        appContext,
+                        0,
+                        it,
+                        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_ONE_SHOT,
+                    )
+                }
+                var accepted = false
+                try {
+                    accepted = shortcutManager.requestPinShortcut(shortcut, callback?.intentSender)
+                    if (accepted) RequestResult.REQUESTED else RequestResult.FAILED
+                } finally {
+                    if (!accepted) callback?.cancel()
                 }
             }.getOrElse { error ->
                 if (error is kotlinx.coroutines.CancellationException) throw error

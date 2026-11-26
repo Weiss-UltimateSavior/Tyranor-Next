@@ -146,7 +146,7 @@ class EngineScannerXs4Test {
 
         val reallive = temporaryFolder.newFolder("RealLive With System40")
         reallive.resolve("Gameexe.ini").writeText("[REGNAME]")
-        reallive.resolve("SEEN.TXT").writeBytes(realliveToc())
+        reallive.resolve("SEEN.TXT").writeBytes(realLiveSeenArchive())
         reallive.resolve("System40.ini").writeText("fake")
         assertEquals(EngineType.REALLIVE, EngineScanner.detectEngine(reallive).engine)
 
@@ -367,20 +367,4 @@ class EngineScannerXs4Test {
     /** 十六进制字节串 → 字节数组（测试字节不依赖平台默认编码）。 */
     private fun hexBytes(text: String): ByteArray =
         ByteArray(text.length / 2) { i -> text.substring(i * 2, i * 2 + 2).toInt(16).toByte() }
-
-    /** 构造 RealLive `SEEN.TXT` 头：首项 offset/length 指向 `0x1d0` 场景头。 */
-    private fun realliveToc(): ByteArray {
-        val bytes = ByteArray(0x100)
-        writeU32(bytes, 0, 0x40)
-        writeU32(bytes, 4, 16)
-        writeU32(bytes, 0x40, 0x1d0)
-        return bytes
-    }
-
-    private fun writeU32(bytes: ByteArray, at: Int, value: Int) {
-        bytes[at] = (value and 0xFF).toByte()
-        bytes[at + 1] = ((value ushr 8) and 0xFF).toByte()
-        bytes[at + 2] = ((value ushr 16) and 0xFF).toByte()
-        bytes[at + 3] = ((value ushr 24) and 0xFF).toByte()
-    }
 }

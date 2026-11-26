@@ -15,7 +15,7 @@ import android.os.Looper;
 import android.util.Log;
 import android.view.Surface;
 
-import com.core.gl.Anime4kPostProcessor;
+import com.core.gl.CnnPipeline;
 import com.core.gl.GraphicsStatus;
 import com.core.gl.ArtemisGraphicsStats;
 import com.core.gl.ArtemisPerformanceOverlay;
@@ -258,7 +258,7 @@ final class SiglusGraphicsProxy implements ArtemisPerformanceOverlay.Source {
         // Reserve the RGBA input plus three producer buffers. This is a texture
         // budget, not a measurement of total driver/engine memory.
         long reserved = Math.multiplyExact(Math.multiplyExact((long) stageWidth, stageHeight), 16L);
-        if (reserved >= Anime4kPostProcessor.TARGET_MEMORY_BUDGET_BYTES)
+        if (reserved >= CnnPipeline.TARGET_MEMORY_BUDGET_BYTES)
             throw new IllegalStateException("Stage exceeds proxy texture budget");
         String extensions = GLES30.glGetString(GLES30.GL_EXTENSIONS);
         if (extensions == null || !extensions.contains("GL_OES_EGL_image_external_essl3"))
@@ -392,7 +392,7 @@ final class SiglusGraphicsProxy implements ArtemisPerformanceOverlay.Source {
         int outWidth = chain.hasActive() ? pipeline.outputWidth() : stageWidth;
         int outHeight = chain.hasActive() ? pipeline.outputHeight() : stageHeight;
         status = pipeline.isFailed() ? GraphicsStatus.FILTER_FAILED
-                : pipeline.bypassReason() != Anime4kPostProcessor.BYPASS_NONE ? GraphicsStatus.SIZE_UNAVAILABLE
+                : pipeline.bypassReason() != CnnPipeline.BYPASS_NONE ? GraphicsStatus.SIZE_UNAVAILABLE
                 : GraphicsStatus.READY;
         GLES30.glBindFramebuffer(GLES30.GL_FRAMEBUFFER, 0);
         setupDraw(v.surfaceWidth, v.surfaceHeight);
@@ -466,10 +466,13 @@ final class SiglusGraphicsProxy implements ArtemisPerformanceOverlay.Source {
     /** Clear only inherited errors at an owned normalize/present boundary.
      * End-of-operation checkGl calls retain all errors generated inside it. */
     private static void beginGlOperations() {
-        for (int i = 0; i < 16; i++) {
-            if (GLES30.glGetError() == GLES30.GL_NO_ERROR) return;
+        int err = com.core.gl.GlErrors.beginGlOperations(GLES30::glGetError);
+        if (err == com.core.gl.GlErrors.GL_CONTEXT_LOST_KHR) {
+            throw new com.core.gl.GlErrors.ContextLostException("Proxy observed GL_CONTEXT_LOST_KHR");
         }
-        throw new IllegalStateException("Proxy GL error state did not clear");
+        if (err != 0) {
+            throw new IllegalStateException("Proxy GL error state did not clear");
+        }
     }
 
     private static void checkGl(String operation) {

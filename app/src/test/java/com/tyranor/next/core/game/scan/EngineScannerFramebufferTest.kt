@@ -6,6 +6,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 /**
  * RealLive / AVG32 / UK2（framebuffer 引擎）识别：
@@ -16,22 +18,6 @@ class EngineScannerFramebufferTest {
 
     @get:Rule
     val temporaryFolder = TemporaryFolder()
-
-    /** 构造 RealLive `SEEN.TXT` 头：首项 offset/length 指向 `0x1d0` 场景头。 */
-    private fun realliveToc(): ByteArray {
-        val bytes = ByteArray(0x100)
-        writeU32(bytes, 0, 0x40)
-        writeU32(bytes, 4, 16)
-        writeU32(bytes, 0x40, 0x1d0)
-        return bytes
-    }
-
-    private fun writeU32(bytes: ByteArray, at: Int, value: Int) {
-        bytes[at] = (value and 0xFF).toByte()
-        bytes[at + 1] = ((value ushr 8) and 0xFF).toByte()
-        bytes[at + 2] = ((value ushr 16) and 0xFF).toByte()
-        bytes[at + 3] = ((value ushr 24) and 0xFF).toByte()
-    }
 
     private fun paclArchive(): ByteArray {
         val out = ByteArrayOutputStream()
@@ -57,7 +43,7 @@ class EngineScannerFramebufferTest {
     fun detectsRealLiveFromTocSeenArchive() {
         val gameRoot = temporaryFolder.newFolder("RealLive Clannad")
         gameRoot.resolve("Gameexe.ini").writeText("[REGNAME]")
-        gameRoot.resolve("SEEN.TXT").writeBytes(realliveToc())
+        gameRoot.resolve("SEEN.TXT").writeBytes(realLiveSeenArchive())
 
         val detection = EngineScanner.detectEngine(gameRoot)
 
@@ -66,12 +52,40 @@ class EngineScannerFramebufferTest {
     }
 
     @Test
+    fun detectsRealLiveWithOnlyAHighNumberedScene() {
+        val gameRoot = temporaryFolder.newFolder("Sparse RealLive")
+        gameRoot.resolve("GAMEEXE.INI").writeText("#REGNAME")
+        gameRoot.resolve("REALLIVE.EXE").createNewFile()
+        gameRoot.resolve("SEEN.TXT").writeBytes(realLiveSeenArchive(sceneNumber = 9_999))
+
+        assertEquals(EngineType.REALLIVE, EngineScanner.detectEngine(gameRoot).engine)
+    }
+
+    @Test
+    fun ignoresTruncatedArchiveAndEmptyLooseScene() {
+        val gameRoot = temporaryFolder.newFolder("Truncated RealLive")
+        gameRoot.resolve("GAMEEXE.INI").writeText("#REGNAME")
+        val archive = realLiveSeenArchive(sceneNumber = 4).dropLast(1).toByteArray()
+        gameRoot.resolve("SEEN.TXT").writeBytes(archive)
+        gameRoot.resolve("SEEN9999.TXT").createNewFile()
+
+        assertEquals(EngineType.SIGLUS, EngineScanner.detectEngine(gameRoot).engine)
+        assertEquals(null, SeenArchiveProbe.detect(size = null) { archive.inputStream() })
+    }
+
+    @Test
+    fun readsArchiveWithUnknownSize() {
+        val archive = realLiveSeenArchive(sceneNumber = 8_000, headerSize = 0x1cc)
+        assertEquals(EngineType.REALLIVE, SeenArchiveProbe.detect(size = null) { archive.inputStream() })
+    }
+
+    @Test
     fun detectsRealLiveFromDatFolderArchive() {
         val gameRoot = temporaryFolder.newFolder("RealLive Dat")
         gameRoot.resolve("Gameexe.ini").writeText("[FOLDNAME.TXT]")
         val dat = gameRoot.resolve("DAT")
         dat.mkdirs()
-        dat.resolve("SEEN.TXT").writeBytes(realliveToc())
+        dat.resolve("SEEN.TXT").writeBytes(realLiveSeenArchive())
 
         val detection = EngineScanner.detectEngine(gameRoot)
 
@@ -122,4 +136,15 @@ class EngineScannerFramebufferTest {
         val gameRoot = temporaryFolder.newFolder("Nothing")
         assertEquals(EngineType.UNKNOWN, EngineScanner.detectEngine(gameRoot).engine)
     }
+}
+
+/** RealLive index and one scene header. Empty slots model a sparse SEEN.TXT. */
+internal fun realLiveSeenArchive(sceneNumber: Int = 0, headerSize: Int = 0x1d0): ByteArray {
+    val tableBytes = 10_000 * 8
+    return ByteBuffer.allocate(tableBytes + headerSize)
+        .order(ByteOrder.LITTLE_ENDIAN)
+        .putInt(sceneNumber * 8, tableBytes)
+        .putInt(sceneNumber * 8 + 4, headerSize)
+        .putInt(tableBytes, headerSize)
+        .array()
 }

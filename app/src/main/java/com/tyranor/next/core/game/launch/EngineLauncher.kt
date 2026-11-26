@@ -5,7 +5,6 @@ import android.app.ActivityManager
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -84,6 +83,8 @@ import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.EngineDetectionRepository
 import com.tyranor.next.core.game.scan.GameDirFingerprint
+import com.tyranor.next.core.settings.AppIconSwitcher
+import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.GraphicsCapabilities
 import com.tyranor.next.core.settings.GraphicsFamily
 import com.tyranor.next.core.settings.GraphicsSettings
@@ -120,10 +121,8 @@ import java.util.concurrent.ConcurrentHashMap
  */
 object EngineLauncher {
     private const val TAG = "EngineLauncher"
-    private const val BUILT_IN_PLAYER_ORIENTATION = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     private const val KR_LEGACY_PATCH_MARKER = "// TYRANOR_NEXT_KRKR_LEGACY_PATCH_V1"
     private const val KR_FBF_STEAM_STUB_MARKER = "// TYRANOR_NEXT_FBF_STEAM_STUB_V1"
-    private const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
 
     /** 承载输入重映射（虚拟按键 + 手柄映射）的 Web 系引擎：旧触屏手柄数据迁移仅对这些引擎触发。 */
     private val WEB_INPUT_ENGINES = setOf(
@@ -164,6 +163,7 @@ object EngineLauncher {
         EngineType.RENPY,
         EngineType.RUFFLE,
         EngineType.IMPACTO,
+        EngineType.EASYRPG,
         // YURIS / CatSystem2 / PC 由外置 Winlator 承载（GAL 分组），引擎页条目点击进入引擎专属弹窗
         EngineType.YURIS,
         EngineType.CATSYSTEM2,
@@ -320,6 +320,8 @@ object EngineLauncher {
         EnginePluginBootstrap.ensureForLaunch(app, EngineType.KIRIKIRI)?.let {
             return@withContext LaunchResult.Failure.PluginBootstrapFailed(it)
         }
+        val playerOrientation = LaunchOrientationMonitor.resolvePlayerOrientation(context)
+        currentCoroutineContext().ensureActive()
         return@withContext try {
             app.startActivity(
                 Intent(app, Kirikiroid139::class.java).apply {
@@ -330,7 +332,7 @@ object EngineLauncher {
                         EngineSettingsStore.getGraphicsSettings(app, GraphicsFamily.KR),
                         GraphicsCapabilities.forRuntime(GraphicsFamily.KR, EngineSettingsStore.KERNEL_KIRIKIRI2),
                     )
-                    putExtra(LaunchContract.ORIENTATION, BUILT_IN_PLAYER_ORIENTATION)
+                    putExtra(LaunchContract.ORIENTATION, playerOrientation)
                     putExtra(LaunchContract.FOCUS, "true")
                 },
             )
@@ -444,7 +446,7 @@ object EngineLauncher {
         // 外置模块先于内置目录解析确定路径：文件型入口（SWF）取所在目录，其余保持目录解析
         val defaultModule = ExternalEngineModuleRegistry.moduleForEngine(game.engine)
         val path = if (defaultModule?.launchEntryIsFile == true) {
-            resolveLaunchEntryDirectory(context, game) ?: return LaunchResult.Failure.GameDirUnresolved
+            resolveLaunchEntryDirectory(context, game)
         } else {
             resolveGameDirectory(context, game)
         }
@@ -458,18 +460,15 @@ object EngineLauncher {
             ) ?: defaultModule
             // 先确认模块已安装，再走目录/权限门禁：否则未安装时会把用户先送去「所有文件访问」，
             // 真正的缺失原因（应安装模块）反而看不到。
-            ExternalEngineLauncher.checkInstallation(context, module)?.let {
+            ExternalEngineLauncher.checkInstallation(context, module, game.launchTarget)?.let {
                 return LaunchResult.Failure.ExternalModuleFailed(it)
             }
-            if (module.requiresGameDirectoryPath && path == null) {
-                return LaunchResult.Failure.GameDirUnresolved
+            if (module.requiresGameDirectoryPath) {
+                requestGameStorageAccess(context, game, path)?.let { return it }
+                if (path == null) return LaunchResult.Failure.GameDirUnresolved
             }
-            // 需要目录解析的外置引擎同样要「所有文件访问」权限才能读取游戏目录（SAF 授权对外置 APK 无效）
-            if (module.requiresGameDirectoryPath && path != null) {
-                requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
-            }
-            // 与内置引擎路径一致：真正拉起外置引擎前确认未取消，避免取消后仍执行启动副作用
-            currentCoroutineContext().ensureActive()
+            val launchContext = currentCoroutineContext()
+            launchContext.ensureActive()
             val result = ExternalEngineLauncher.launch(
                 context,
                 module,
@@ -479,17 +478,17 @@ object EngineLauncher {
                     launchTarget = game.launchTarget,
                     resolvedSettings = settings,
                 ),
+                orientationResolver = { LaunchOrientationMonitor.resolvePlayerOrientation(context) },
+                cancellationCheck = { launchContext.ensureActive() },
             )
             if (result.success) {
                 return completeLaunch(context, game, onDispatched)
             }
             return LaunchResult.Failure.ExternalModuleFailed(result)
         }
-        if (path == null) {
-            return LaunchResult.Failure.GameDirUnresolved
-        }
         // SystemNNN already admitted its selected root; an app-private imported copy needs no broad grant.
-        if (game.engine != EngineType.SYSTEMNNN) requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
+        if (game.engine != EngineType.SYSTEMNNN) requestGameStorageAccess(context, game, path)?.let { return it }
+        if (path == null) return LaunchResult.Failure.GameDirUnresolved
         if (game.engine == EngineType.ETHORNELL) {
             prepareEthornell(context, game, path, settings)?.let { return it }
         }
@@ -584,7 +583,7 @@ object EngineLauncher {
             if (cmvsFont == null) return LaunchResult.Failure.CmvsFontUnavailable
             val token = java.util.UUID.randomUUID().toString()
             cmvsLaunchToken = token
-            if (!CmvsLaunchFiles.write(context, game, File(path), cmvsFont, cmvsFace, token)) {
+            if (!CmvsLaunchFiles.write(context, game, File(path), cmvsFont, cmvsFace, settings.cmvsProfile, token)) {
                 return LaunchResult.Failure.CmvsLaunchConfigUnavailable
             }
         }
@@ -666,6 +665,8 @@ object EngineLauncher {
             completeLaunch(context, game, onDispatched)
         } catch (ce: CancellationException) {
             throw ce // 取消不是启动失败，原样传播给调用方
+        } catch (_: ArtemisSettingsUnavailableException) {
+            LaunchResult.Failure.ArtemisSettingsUnavailable
         } catch (e: Exception) {
             LaunchResult.Failure.StartFailed(e.message)
         }
@@ -733,9 +734,8 @@ object EngineLauncher {
                 return LaunchResult.Failure.SavePreparationFailed(SaveSyncError.SAVE_UNAVAILABLE)
             }
         }
-        // 先做词法映射：模块自己校验目录是否存在/可读，主 App 不要求“所有文件访问”。
-        val path = GamePathUtils.safUriToPath(game.uri)
-            ?: resolveGameDirectory(context, game)
+        // 模块自己校验目录是否存在、可读，主 App 不要求「所有文件访问」。
+        val path = GamePathUtils.resolveLocalPath(context, game.uri)
             ?: return LaunchResult.Failure.RuntimeModuleFailed(RuntimeModuleLaunchResult.PathUnresolved)
         val settingsPayload = try {
             module.settings?.let { spec ->
@@ -1135,6 +1135,26 @@ object EngineLauncher {
         }
     }
 
+    private fun requestGameStorageAccess(context: Context, game: ScanGame, path: String?): LaunchResult.Failure? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return path?.let { requestAllFilesAccessIfNeeded(context, game, it) }
+        }
+        if (path == null && game.engine == EngineType.ETHORNELL) return null
+        // File.isDirectory 和 MediaStore 查询都可能因缺少旧版存储权限而失败。
+        val candidate = path ?: GamePathUtils.safUriToPath(game.uri)
+        if (candidate == null) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+                !GamePathUtils.isMediaStoreDownload(game.uri)
+            ) return null
+        } else {
+            if (!needsAllFilesAccess(candidate)) return null
+            if (game.engine == EngineType.KIRIKIRI && GamePathUtils.isRemovableStoragePath(candidate)) return null
+            val directory = File(candidate)
+            if (directory.isDirectory && directory.canRead() && directory.canWrite()) return null
+        }
+        return requestLegacyStorageAccess(context)
+    }
+
     /** Resuming a verified live player must not re-enter save recovery or start a second Activity. */
     private suspend fun restoreSystemNnn(context: Context, game: ScanGame): LaunchResult? {
         return try {
@@ -1224,6 +1244,10 @@ object EngineLauncher {
     private fun requestSystemNnnStorage(context: Context, game: ScanGame, path: String): LaunchResult.Failure? {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) return requestAllFilesAccessIfNeeded(context, game, path)
         if (!needsAllFilesAccess(path) && !path.startsWith("/storage/")) return null
+        return requestLegacyStorageAccess(context)
+    }
+
+    private fun requestLegacyStorageAccess(context: Context): LaunchResult.Failure? {
         val app = context.applicationContext
         if (app.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
             app.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
@@ -1294,7 +1318,8 @@ object EngineLauncher {
     }
 
     /** 构建引擎 Intent；path 为真实文件路径。
-     *  字体偏好契约：`default_font`（空串=引擎按所有权标记清理残留）与
+     *  字体偏好契约：`default_font`（全局作用域下空串=引擎按所有权标记清理残留；
+     *  游戏作用域下空串=写空 Item 表示内置字体，仅该游戏回落内置）与
      *  `force_default_font`（false 写 "0"）**必须无条件注入**——引擎侧
      *  applyFontPreferences 仅在 hasExtra 时执行写入/清理，缺省会让
      *  引擎配置里的旧值永久残留（issue #74）。 */
@@ -1386,7 +1411,8 @@ object EngineLauncher {
             EngineType.RPGMAKER,
             EngineType.RENPY,
             EngineType.RUFFLE,
-            EngineType.IMPACTO -> error("${engine.displayName} is handled by external engine launcher")
+            EngineType.IMPACTO,
+            EngineType.EASYRPG -> error("${engine.displayName} is handled by external engine launcher")
 
             EngineType.RUNTIME_MODULE -> error("${engine.displayName} is handled by RuntimeModuleLauncher")
 
@@ -1414,7 +1440,11 @@ object EngineLauncher {
             }
         }
         if (!intent.hasExtra(LaunchContract.GRAPHICS_FILTER_CHAIN)) intent.putDisabledGraphicsRequest()
+        intent.putExtra(LaunchContract.ORIENTATION, LaunchOrientationMonitor.resolvePlayerOrientation(context))
         intent.putExtra(LaunchContract.UI_LANGUAGE_TAG, AppLocaleController.engineUiLanguageTag(context))
+        intent.putExtra(LaunchContract.GAMES_TITLE, game.title)
+        game.coverUri?.let { intent.putExtra(LaunchContract.GAME_COVER_URI, it) }
+        intent.putExtra(LaunchContract.STARTUP_APP_ICON, AppIconSwitcher.iconResource(context))
         // 注入 App 统一主题色与深浅色：引擎壳自绘 UI（确认/输入弹窗按钮等）经
         // EngineThemeColors.fromIntent / KrDialogStyle 读取，缺失时回落默认绿。
         // 主题色来自 ui 层写入的纯数据快照（ThemeColorPayloadStore），core 不反向依赖 theme。
@@ -1474,8 +1504,9 @@ object EngineLauncher {
         target: ExternalEmulatorTarget,
         onDispatched: () -> Unit,
     ): LaunchResult {
-        val path = resolveGameDirectory(context, game) ?: return LaunchResult.Failure.GameDirUnresolved
-        requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
+        val path = resolveGameDirectory(context, game)
+        requestGameStorageAccess(context, game, path)?.let { return it }
+        if (path == null) return LaunchResult.Failure.GameDirUnresolved
         val exeName = YurisLaunchFiles.resolveExeName(game, path)
             ?: return LaunchResult.Failure.YurisExeMissing
         currentCoroutineContext().ensureActive()
@@ -1560,7 +1591,6 @@ object EngineLauncher {
         if (nls.isNotBlank() && nls != EngineSettingsStore.FB_NLS_AUTO) {
             putExtra(LaunchContract.GAMES_NLS, nls)
         }
-        putExtra(LaunchContract.GAMES_TITLE, game.title)
     }
 
     /** EngineType → 上游 `game_fb_open` 的 engine id（未知/歧义时交给引擎按内容自动探测）。 */
@@ -1730,8 +1760,6 @@ object EngineLauncher {
             }
             putExtra(LaunchContract.XS35_INTEGER_SCALE, settings.xs35IntegerScale)
             putExtra(LaunchContract.XS35_MUTE_UNFOCUS, settings.xs35MuteUnfocus)
-            // 契约保留（对齐 krkrsdl3）：宿主方向由 Activity 配置固定；该 extra 保持标准横屏值。
-            putExtra(LaunchContract.ORIENTATION, BUILT_IN_PLAYER_ORIENTATION)
         }
     }
 
@@ -1800,8 +1828,6 @@ object EngineLauncher {
             if (settings.xs4MsgskipDelay > 0) {
                 putExtra(LaunchContract.XS4_MSGSKIP_DELAY, settings.xs4MsgskipDelay)
             }
-            // 契约保留（对齐 System35）：宿主方向由 Activity 配置固定；该 extra 保持标准横屏值。
-            putExtra(LaunchContract.ORIENTATION, BUILT_IN_PLAYER_ORIENTATION)
         }
     }
 
@@ -1882,7 +1908,6 @@ object EngineLauncher {
                 putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
                 putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_KRKRSDL3)
                 putExtra(KrkrStartupDialogPolicy.EXTRA_ENABLED, skipStartupDialogs)
-                putExtra(LaunchContract.ORIENTATION, BUILT_IN_PLAYER_ORIENTATION)
                 putExtra(LaunchContract.FOCUS, "true")
             }
         }
@@ -1896,8 +1921,15 @@ object EngineLauncher {
         val actualSaveRoot = safMirror?.let { File(it.mirrorRoot, "savedata") }
             ?: resolveKrSaveDir(context, path, kernel, scoped)
         val effectiveScoped = scoped || safMirror != null
+        // 字体值与其作用域由 EngineSettingsResolver 统一解析（ResolvedEngineSettings），
+        // 启动链只消费结果：覆盖存在→game scope 写游戏目录 XML；跟随全局→不带 scope extra
+        // （无 scope extra=引擎按全局落点，兼容旧版 App）。注意旧版引擎会忽略 scope extra
+        // 仍写全局 XML：新 App + 旧引擎的组合会退化为旧的全局泄漏行为，scope 语义依赖
+        // 引擎与 App 一同更新，注释在此写明以免被读成"双向安全"。
         val defaultFont = settings.krDefaultFont
         val forceFont = settings.krForceDefaultFont
+        val defaultFontGameScope = settings.krDefaultFontGameScope
+        val forceFontGameScope = settings.krForceFontGameScope
         val mirrorOverlayReader = if (settings.krPatchOverlayMode == EngineSettingsStore.KR_PATCH_OVERLAY_OFF) {
             null
         } else {
@@ -1934,7 +1966,6 @@ object EngineLauncher {
                 putExtra(LaunchContract.SAF_MIRROR_FILES, it.fileCount)
                 // 诊断汇总由 engine 侧 prepare 输出一次（审查第十轮 #21），不再重复打印
             }
-            putExtra(LaunchContract.ORIENTATION, BUILT_IN_PLAYER_ORIENTATION)
             putExtra(LaunchContract.SCOPED_SAVE_DIR, effectiveScoped)
             if (effectiveScoped) {
                 putExtra(LaunchContract.SCOPED_SAVE_ROOT, actualSaveRoot.absolutePath)
@@ -1945,12 +1976,26 @@ object EngineLauncher {
                 EngineSettingsStore.KR_134 -> "1.3.4"
                 else -> "1.3.9"
             })
-            // 字体偏好：两个 extra 必须无条件注入。引擎侧 applyFontPreferences 仅在
-            // hasExtra 时执行写入/按所有权标记清理——若仅在非空/为真时注入，用户关闭
-            // 强制或清空字体后引擎 XML 里的旧值会永久残留（issue #74「换字体无法生效」
-            // 的根因：残留的 force_default_font=1 一直压住新设置的字体）。
-            putExtra(LaunchContract.DEFAULT_FONT, defaultFont)
-            putExtra(LaunchContract.FORCE_DEFAULT_FONT, forceFont)
+            // 字体偏好：四个字体 extras（DEFAULT_FONT/FORCE_DEFAULT_FONT 与两个全局参照
+            // FONT_GLOBAL_*）必须无条件注入。引擎侧 applyFontPreferences 仅在 hasExtra 时
+            // 执行写入/按所有权标记清理——若仅在非空/为真时注入，用户关闭强制或清空字体
+            // 后引擎 XML 里的旧值会永久残留（issue #74「换字体无法生效」的根因：残留的
+            // force_default_font=1 一直压住新设置的字体）；全局参照的恒下发同样是引擎侧
+            // hasExtra 回收门控的判据，按需下发会静默破坏升级自愈。
+            // scope：单游戏覆盖（含 ""=内置字体）带 FONT_SCOPE_*="game" 写游戏目录 XML；
+            // 跟随全局不带 scope extra=按全局落点（兼容旧版 App；旧版引擎忽略 scope extra
+            // 会退化重泄漏，见上方说明）。
+            // 装配逻辑抽为纯函数（见 krFontLaunchExtras），JVM 用例锚定 extra 组合与 Boolean 类型。
+            krFontLaunchExtras(defaultFont, defaultFontGameScope, forceFont, forceFontGameScope,
+                settings.krGlobalDefaultFont, settings.krGlobalForceFont)
+                .forEach { (key, value) ->
+                    when (value) {
+                        is Boolean -> putExtra(key, value)
+                        is String -> putExtra(key, value)
+                        // 新增 extra 类型必须同步此分支：静默丢弃会产出类型不匹配的启动契约
+                        else -> error("krFontLaunchExtras: unexpected extra value type for $key")
+                    }
+                }
             putGraphicsSettings(settings.krGraphics, GraphicsCapabilities.forRuntime(GraphicsFamily.KR, kernel, settings.krEngineVersion, settings.krRenderer))
             // 渲染/内存偏好 JSON：单游戏覆盖 与 全局 逐键合并；字段映射由 KrRenderPrefs 单一来源提供
             runCatching {
@@ -2085,6 +2130,8 @@ object EngineLauncher {
      * 自研 clean-room 内核（[EngineSettingsStore.ART_KERNEL_CLEAN]）走独立分支：单库无版本、
      * 不做 PFS/system.ini 补丁、不参与官方回退链（严格自研，失败即退出）。
      */
+    private class ArtemisSettingsUnavailableException : Exception()
+
     private fun buildArtemisIntent(
         context: Context,
         path: String,
@@ -2111,7 +2158,9 @@ object EngineLauncher {
             null -> Unit
         }
         applyArtemisBasePatchIfNeeded(path, autoPatch)
-        ArtemisPfsUnpacker.applyAndroidSettings(path, androidSettings)
+        if (!ArtemisPfsUnpacker.applyAndroidSettings(path, androidSettings)) {
+            throw ArtemisSettingsUnavailableException()
+        }
         // 自动补丁=off 时禁用自动回退；否则 auto 版本启用兼容回退
         val auto = version == EngineSettingsStore.ART_ENGINE_AUTO &&
             autoPatch != EngineSettingsStore.AUTO_PATCH_OFF
@@ -2156,7 +2205,6 @@ object EngineLauncher {
             putExtra(LaunchContract.ROOT_URI, game.uri)
             putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
             putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_ARTEMIS)
-            putExtra(LaunchContract.ORIENTATION, BUILT_IN_PLAYER_ORIENTATION)
             putExtra(LaunchContract.SCOPED_SAVE_DIR, false)
             // 按实际首选库设置门禁，保留原始请求供后续候选重新判定。
             putArtemisGraphicsSettings(settings, version)
@@ -2174,7 +2222,7 @@ object EngineLauncher {
     /**
      * 自研内核启动 Intent：独立 Activity/进程 + `artemis-clean` 库名。
      * 不写 PFS 基础补丁与 system.ini（该内核直接从游戏包内读取配置/资源，散装补丁无意义），
-     * 不传回退链（严格自研）。方向固定为标准横屏。
+     * 不传回退链（严格自研）。方向由统一出口写入主进程判定的具体单向横屏值。
      */
     private fun buildArtemisCleanIntent(
         context: Context,
@@ -2186,7 +2234,6 @@ object EngineLauncher {
         putExtra(LaunchContract.ROOT_URI, game.uri)
         putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
         putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_ARTEMIS)
-        putExtra(LaunchContract.ORIENTATION, BUILT_IN_PLAYER_ORIENTATION)
         putExtra(LaunchContract.SCOPED_SAVE_DIR, false)
         // artemis_loader 按 "lib<engineLibName>.so" 拼路径，需传库名（不带 lib 前缀）
         putExtra(LaunchContract.ENGINE_LIB_NAME, NativePluginConstants.ARTEMIS_CLEAN_ENGINE_LIB_NAME)
@@ -2271,9 +2318,9 @@ object EngineLauncher {
             if (game.engine == EngineType.TYRANO || game.engine == EngineType.WEB_OTHER || game.engine == EngineType.VN) {
                 putExtra(LaunchContract.WEB_SHELL_PORT, settings.webShellPort)
             }
-            putExtra(LaunchContract.ORIENTATION, BUILT_IN_PLAYER_ORIENTATION)
             putExtra(LaunchContract.SCOPED_SAVE_DIR, scoped)
             scopedSaveRoot?.let { putExtra(LaunchContract.SCOPED_SAVE_ROOT, it) }
+            putExtra(LaunchContract.WEB_EXTERNAL_NETWORK, settings.webExternalNetwork)
             putExtra(LaunchContract.RPG_MAKER_MOD_ENABLED, rpgMakerModEnabled)
             putExtra(LaunchContract.RPG_MAKER_MOD_GAME_ID, game.uri)
             if (useRpgMakerRuntime) {
@@ -2332,10 +2379,10 @@ object EngineLauncher {
     ): ArtemisManualPatchResult = withContext(Dispatchers.IO) {
         if (game.engine != EngineType.ARTEMIS) return@withContext ArtemisManualPatchResult.FAILED
         val path = resolveGameDirectory(context, game)
-            ?: return@withContext ArtemisManualPatchResult.GAME_DIR_UNRESOLVED
-        requestAllFilesAccessIfNeeded(context, game, path)?.let {
+        requestGameStorageAccess(context, game, path)?.let {
             return@withContext ArtemisManualPatchResult.PERMISSION_REQUIRED
         }
+        if (path == null) return@withContext ArtemisManualPatchResult.GAME_DIR_UNRESOLVED
         if (action(path)) ArtemisManualPatchResult.SUCCESS else ArtemisManualPatchResult.FAILED
     }
 
@@ -2834,104 +2881,35 @@ object EngineLauncher {
         return v
     }
 
-    /**
-     * 文件型外置入口（SWF）→ 入口所在目录。用于 [ExternalEngineModule.launchEntryIsFile]：
-     * 游戏记录 uri 指向文件本身，插件需要 `folder` 目录 + `execFile` 文件名。
-     *
-     * 路径来源按 provider 区分：
-     * - `com.android.externalstorage.documents`：优先 SAF documentId 映射，失败再用 `_data`；
-     * - 其它 `content://`（Downloads / 媒体库等）：`documentId` 不是真实路径，**禁止**
-     *   经 [GamePathUtils.safUriToPath] 拼成 `/storage/<docid>`，只信任 `_data`；
-     * - `file://` / 绝对路径：直接使用。
-     *
-     * 空白或相对 URI 没有可靠的真实路径语义，直接拒绝。
-     */
+    /** 文件型外置入口使用解析出的文件父目录，包装目录仍使用自身。 */
     private fun resolveLaunchEntryDirectory(context: Context, game: ScanGame): String? {
         val uriText = game.uri.trim()
-        if (uriText.isEmpty()) return null
-        val uri = runCatching { Uri.parse(uriText) }.getOrNull() ?: return null
-        val scheme = uri.scheme?.lowercase(Locale.ROOT)
-        if (scheme == null && !uriText.startsWith('/')) return null
-        val isContent = scheme == "content"
-        val isExternalStorage = isContent && uri.authority == EXTERNAL_STORAGE_AUTHORITY
-        // 只有外部存储 provider 的 documentId 能安全映射为真实路径。
-        val safMapped = if (isExternalStorage) GamePathUtils.safUriToPath(uriText) else null
-        // 其它 provider 或外部存储映射失败时才查 `_data`（provider 自己报告的真实路径）。
-        val dataPath = if (isContent && (safMapped == null || !isExternalStorage)) {
-            queryDocumentDataPath(context, uriText)
-        } else {
-            null
-        }
-        return resolveLaunchEntryPath(uriText, safMapped, dataPath, game.launchTarget)
+        val path = GamePathUtils.resolveLocalPath(context, uriText) ?: return null
+        return resolveLaunchEntryPath(uriText, path, game.launchTarget)
     }
 
-    /**
-     * 入口 URI → 目录的纯决策函数（无 Android 依赖，供 JVM 单测）。
-     *
-     * [safMappedPath] 仅对 `com.android.externalstorage.documents` 有效；[dataPath] 为
-     * provider `_data` 查询结果。两者都不可用或映射结果不是绝对路径时返回 null。
-     */
-    internal fun resolveLaunchEntryPath(
-        uriText: String,
-        safMappedPath: String?,
-        dataPath: String?,
-        launchTarget: String,
-    ): String? {
-        val text = uriText.trim()
-        if (text.isEmpty()) return null
-        val lower = text.lowercase(Locale.ROOT)
-        val mapped = when {
-            text.startsWith('/') -> text
-            lower.startsWith("file:") -> runCatching { java.net.URI(text).path }.getOrNull()
-            lower.startsWith("content://") -> {
-                if (isExternalStorageDocumentUri(text)) safMappedPath ?: dataPath else dataPath
-            }
-            else -> null
-        }?.trim().orEmpty()
-        if (mapped.isEmpty() || !mapped.startsWith('/')) return null
-        val entry = File(mapped)
-        // 纯 tree URI（无 /document/ 段）映射的是目录；带 /document/ 的混合 URI 仍是文件文档，
-        // 不能因为路径里出现过 /tree/ 就当成目录。
-        val isPureTreeUri = text.contains("/tree/") && !text.contains("/document/")
+    /** 将已解析的入口路径转成外置模块所需的目录。 */
+    internal fun resolveLaunchEntryPath(uriText: String, path: String, launchTarget: String): String? {
+        val entry = File(path)
+        if (!entry.isAbsolute) return null
+        // 纯 tree URI 映射的是树根；混合 URI 按实际子文档判断。
+        val isPureTreeUri = uriText.startsWith("content://") && uriText.contains("/tree/") && !uriText.contains("/document/")
         // 包装目录记录（uri=目录、launchTarget=目录内 SWF）与单文件记录（uri=SWF）都会带
         // .swf 的 launchTarget；只有映射路径本身就是该入口文件时才取父目录，否则目录会丢一级。
         val launchName = launchTarget.substringAfterLast('/').trim()
-        val mappedIsEntryFile = mapped.endsWith(".swf", ignoreCase = true) ||
+        val mappedIsEntryFile = path.endsWith(".swf", ignoreCase = true) ||
             (launchName.endsWith(".swf", ignoreCase = true) && entry.name.equals(launchName, ignoreCase = true))
         // 刻意在确认文件存在之前返回目录：缺少「所有文件访问」权限时 File.isDirectory/isFile
-        // 都会失败，若在此提前返回 null，权限门禁（requestAllFilesAccessIfNeeded）就没机会运行。
+        // 都会失败，仍按入口名称判断文件及其父目录。
         return when {
-            isPureTreeUri -> mapped
+            isPureTreeUri -> path
             entry.isDirectory -> entry.absolutePath
             entry.isFile -> entry.parentFile?.absolutePath
             mappedIsEntryFile -> entry.parentFile?.absolutePath
-            else -> mapped
+            else -> path
         }
     }
 
-    private fun isExternalStorageDocumentUri(uriText: String): Boolean =
-        uriText.substringAfter("://", "").substringBefore('/')
-            .equals(EXTERNAL_STORAGE_AUTHORITY, ignoreCase = true)
-
-    /** `_data` 兜底查询（文件型入口用；目录解析仍走 [resolveGameDirectory] 的既有逻辑）。 */
-    private fun queryDocumentDataPath(context: Context, uriText: String): String? {
-        return try {
-            val uri = Uri.parse(uriText) ?: return null
-            context.contentResolver.query(uri, arrayOf("_data"), null, null, null)?.use { cursor ->
-                if (!cursor.moveToFirst()) return@use null
-                val dataIdx = cursor.getColumnIndex("_data")
-                if (dataIdx >= 0) cursor.getString(dataIdx) else null
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    /**
-     * 将游戏 URI 解析为真实文件路径。优先按 SAF documentId 映射（主存储→进程视角挂载根，
-     * 见 [PrimaryStorageRoot]；安全文件夹等隔离 user 下不是 emulated/0），
-     * 映射失败再用 _data 查询兜底（该列在隔离 user 下可能为 null）。引擎 native 需要真实文件路径。
-     */
     private fun resolveGameDirectory(context: Context, game: ScanGame): String? {
         val uriText = game.uri
         if (game.engine == EngineType.SYSTEMNNN) return SystemNnnGameDirectory.accessible(context, uriText)?.absolutePath
@@ -2942,7 +2920,7 @@ object EngineLauncher {
                 val mapped = GamePathUtils.safUriToPath(uriText) ?: return null
                 val file = File(mapped)
                 // Resolve identity/provider/containment first. Actual access is tested only after
-                // requestAllFilesAccessIfNeeded, so an unreadable directory can reach the grant UI.
+                // requestGameStorageAccess, so an unreadable directory can reach the grant UI.
                 if (!file.isAbsolute) return null
                 // Provider/path validation is lexical until the storage permission gate. Canonical
                 // containment and actual readability are checked in prepareEthornell afterwards.
@@ -2960,29 +2938,7 @@ object EngineLauncher {
             }
         }
 
-        // 1) 首选 SAF documentId → 文件路径映射（兼容 child 子目录 document uri）
-        GamePathUtils.safUriToPath(uriText)?.let { mapped ->
-            val f = java.io.File(mapped)
-            if (f.isDirectory) return f.absolutePath
-            if (game.engine == EngineType.KIRIKIRI && GamePathUtils.isRemovableStoragePath(mapped)) {
-                val readableBySaf = runCatching {
-                    DocumentFile.fromTreeUri(context.applicationContext, Uri.parse(uriText))?.isDirectory == true
-                }.getOrDefault(false)
-                if (readableBySaf) return f.absolutePath
-            }
-        }
-
-        val uri = Uri.parse(uriText) ?: return null
-        if (uri.scheme == "file") return uri.path
-
-        // 2) 兜底：尝试 _data 直查
-        return try {
-            val doc = DocumentFile.fromTreeUri(context, uri)
-            if (doc == null || !doc.exists()) return null
-            queryDocumentDataPath(context, uriText)
-        } catch (e: Exception) {
-            null
-        }
+        return GamePathUtils.resolveLocalDirectory(context, uriText, allowSafOnly = game.engine == EngineType.KIRIKIRI)
     }
 }
 
@@ -2997,3 +2953,26 @@ internal fun effectiveRpgMakerModEnabled(
     perGameOverride: Boolean?,
     globalDefault: Boolean,
 ): Boolean = EffectiveEngineSettings.resolveRpgMakerModEnabled(engine, perGameOverride, globalDefault)
+
+/**
+ * 字体 extras 装配（纯函数，JVM 可断言接线）：值来自 ResolvedEngineSettings；scope extra
+ * 仅在游戏作用域出现（缺省=引擎 fontWriteTarget 落全局文件，无回落）。FORCE_DEFAULT_FONT 保持 Boolean
+ * 类型（引擎侧按 getBooleanExtra 读取，字符串化会导致恒读默认 false）。全局参照 extras
+ * 恒下发：GlobalPreference.xml 全仓仅 launcher 一个写入者，引擎在 game scope 写入后据其
+ * 回收与参照不一致的全局陈旧带标记注入项（旧版泄漏自愈判据，见 LaunchContract.FONT_GLOBAL_*）。
+ */
+internal fun krFontLaunchExtras(
+    defaultFont: String,
+    defaultFontGameScope: Boolean,
+    forceFont: Boolean,
+    forceFontGameScope: Boolean,
+    globalDefaultFont: String,
+    globalForceFont: Boolean,
+): List<Pair<String, Any>> = buildList {
+    add(LaunchContract.DEFAULT_FONT to defaultFont)
+    add(LaunchContract.FONT_GLOBAL_DEFAULT to globalDefaultFont)
+    if (defaultFontGameScope) add(LaunchContract.FONT_SCOPE_DEFAULT to LaunchContract.SCOPE_GAME)
+    add(LaunchContract.FORCE_DEFAULT_FONT to forceFont)
+    add(LaunchContract.FONT_GLOBAL_FORCE to globalForceFont)
+    if (forceFontGameScope) add(LaunchContract.FONT_SCOPE_FORCE to LaunchContract.SCOPE_GAME)
+}

@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import androidx.annotation.StringRes
-import androidx.documentfile.provider.DocumentFile
 import com.core.nativeplugin.NativeRuntimePack
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
@@ -418,6 +417,8 @@ class GameSaveManager(private val context: Context) {
                 R.string.save_location_engine_game_dir,
                 true,
             )
+            // EasyRPG：外置宿主 APK 启动前创建 <GAME_DIR>/saves 并以 --save-path 写入，直接纳入统一存档管理
+            EngineType.EASYRPG -> easyRpgSaveLocation(File(root))
             EngineType.SYSTEMNNN -> {
                 val directory = try {
                     SystemNnnHost.saveDirectory(appContext, File(root))
@@ -522,9 +523,9 @@ class GameSaveManager(private val context: Context) {
         return SaveListSnapshot(location, files.size)
     }
 
-    /** Manual Ren'Py operations share launch/sync admission and require confirmed external exit. */
+    /** Manual Ren'Py / EasyRPG / RuntimeModule operations share launch/sync admission and require confirmed external exit. */
     internal suspend fun <T> withManualSaveAccess(game: ScanGame, action: suspend () -> T): T {
-        if (game.engine != EngineType.RENPY && game.engine != EngineType.RUNTIME_MODULE) return action()
+        if (game.engine != EngineType.RENPY && game.engine != EngineType.EASYRPG && game.engine != EngineType.RUNTIME_MODULE) return action()
         val runtimeBefore = if (game.engine == EngineType.RUNTIME_MODULE) {
             runtimeSaveCapability(game).takeIf { it.status == RuntimeSaveCapability.AVAILABLE }
                 ?: throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
@@ -1182,36 +1183,7 @@ class GameSaveManager(private val context: Context) {
 
     private fun resolveGameDirectory(game: ScanGame): String? {
         if (game.engine == EngineType.SYSTEMNNN) return SystemNnnGameDirectory.accessible(appContext, game.uri)?.absolutePath
-        // 与 EngineLauncher.resolveGameDirectory 保持同源：镜像 key 由 (uri, path) 派生，
-        // 两边解析出不同路径会让存档管理/清理指向错误镜像。
-        GamePathUtils.safUriToPath(game.uri)?.let { path ->
-            val f = File(path)
-            if (f.isDirectory) return f.absolutePath
-            // 可移动存储上的 KRKR 允许仅 SAF 可读（启动器将以镜像模式运行），需解析出同一路径
-            if (game.engine == EngineType.KIRIKIRI && GamePathUtils.isRemovableStoragePath(path)) {
-                val readableBySaf = runCatching {
-                    DocumentFile.fromTreeUri(appContext, Uri.parse(game.uri))?.isDirectory == true
-                }.getOrDefault(false)
-                if (readableBySaf) return f.absolutePath
-            }
-        }
-        val uri = runCatching { Uri.parse(game.uri) }.getOrNull()
-        if (uri?.scheme == "file") return uri.path
-        // 兜底：_data 直查（与 EngineLauncher 的第二步一致）
-        return try {
-            val doc = DocumentFile.fromTreeUri(appContext, uri ?: return null)
-            if (doc == null || !doc.exists()) return null
-            appContext.contentResolver.query(uri, arrayOf("_data"), null, null, null)?.use { c ->
-                if (c.moveToFirst()) {
-                    val dataIdx = c.getColumnIndex("_data")
-                    if (dataIdx >= 0) c.getString(dataIdx) else null
-                } else {
-                    null
-                }
-            }
-        } catch (_: Exception) {
-            null
-        }
+        return GamePathUtils.resolveLocalDirectory(appContext, game.uri, allowSafOnly = game.engine == EngineType.KIRIKIRI)
     }
 
     @Throws(IOException::class)
@@ -1334,8 +1306,13 @@ class GameSaveManager(private val context: Context) {
             EngineType.KIRIKIRI, EngineType.ONS, EngineType.TYRANO, EngineType.RPG_MV, EngineType.RPG_MZ,
             EngineType.ARTEMIS, EngineType.SIGLUS, EngineType.REALLIVE, EngineType.AVG32, EngineType.UK2,
             EngineType.FVP, EngineType.XSYS35, EngineType.XSYS4, EngineType.YURIS, EngineType.ETHORNELL,
-            EngineType.CMVS, EngineType.SYSTEMNNN -> true
+            EngineType.CMVS, EngineType.SYSTEMNNN, EngineType.EASYRPG -> true
             else -> false
+        }
+
+        internal fun easyRpgSaveLocation(gameRoot: File?): SaveLocation = when (gameRoot) {
+            null -> SaveLocation(null, R.string.save_error_resolve_game_dir, false)
+            else -> SaveLocation(File(gameRoot, "saves"), R.string.save_location_engine_game_dir, true)
         }
 
         internal fun renpySaveLocation(gameRoot: File?, sdkInt: Int): SaveLocation = when {

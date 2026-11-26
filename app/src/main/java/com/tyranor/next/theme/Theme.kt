@@ -46,6 +46,7 @@ fun TyranorNextTheme(
   MaterialTheme(
     colorScheme = colorScheme,
     typography = Typography,
-    content = content,
-  )
+  ) {
+    WithoutPressIndication(content)
+  }
 }
