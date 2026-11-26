@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -39,6 +40,7 @@ internal fun rememberRuntimeModuleSettingPathPicker(
     var pendingKey by rememberSaveable(gameUri, packageName) { mutableStateOf<String?>(null) }
     var requestGeneration by rememberSaveable(gameUri, packageName) { mutableStateOf(0L) }
     var pendingGeneration by rememberSaveable(gameUri, packageName) { mutableStateOf<Long?>(null) }
+    var resolvingGeneration by remember { mutableStateOf<Long?>(null) }
 
     fun showUnavailable() {
         AppNotice.makeText(context, unavailableMessage, Toast.LENGTH_LONG, AppNotice.Kind.Failure).show()
@@ -46,26 +48,28 @@ internal fun rememberRuntimeModuleSettingPathPicker(
 
     fun complete(uri: Uri?) {
         val key = pendingKey ?: return
-        val generation = pendingGeneration ?: return
-        if (uri == null) {
-            if (pendingGeneration == generation) {
-                pendingKey = null
-                pendingGeneration = null
-            }
+        val generation = pendingGeneration ?: run {
+            pendingKey = null
             return
         }
+        if (pendingGeneration == generation) {
+            pendingKey = null
+            pendingGeneration = null
+        }
+        if (uri == null) {
+            return
+        }
+        if (generation != requestGeneration) return
+        resolvingGeneration = generation
         scope.launch {
             try {
                 val path = withContext(Dispatchers.IO) {
                     GamePathUtils.resolveLocalPath(context, uri.toString())?.takeIf { it.startsWith('/') }
                 }
-                if (generation != requestGeneration) return@launch
+                if (generation != requestGeneration || resolvingGeneration != generation) return@launch
                 if (path == null || !onPathSelected(key, path)) showUnavailable()
             } finally {
-                if (pendingGeneration == generation) {
-                    pendingKey = null
-                    pendingGeneration = null
-                }
+                if (resolvingGeneration == generation) resolvingGeneration = null
             }
         }
     }
@@ -77,10 +81,11 @@ internal fun rememberRuntimeModuleSettingPathPicker(
         requestGeneration += 1
         pendingKey = null
         pendingGeneration = null
+        resolvingGeneration = null
     }
 
     val pick: (RuntimeModuleSettingItemSpec) -> Unit = { item ->
-        if (pendingKey == null && item.type in setOf(Type.FILE, Type.FOLDER)) {
+        if (pendingKey == null && resolvingGeneration == null && item.type in setOf(Type.FILE, Type.FOLDER)) {
             requestGeneration += 1
             val generation = requestGeneration
             pendingKey = item.key

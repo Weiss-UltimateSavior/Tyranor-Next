@@ -39,6 +39,7 @@ import com.tyranor.next.core.engine.runtime.RuntimeModuleRegistry
 import com.tyranor.next.core.engine.runtime.RuntimeModuleSettingItemSpec
 import com.tyranor.next.core.engine.runtime.RuntimeModuleSettingsEntry
 import com.tyranor.next.core.engine.runtime.RuntimeModuleSettingsParser
+import com.tyranor.next.core.engine.runtime.RuntimeModuleSettingsSpec
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.settings.PerGameSettingsStore
@@ -121,6 +122,8 @@ private fun RuntimeModuleSettingsView(
     var saveDescriptorChanged by remember { mutableStateOf(false) }
     var showUnsavedDialog by remember { mutableStateOf(false) }
     var showRestoreDefaultsDialog by remember { mutableStateOf(false) }
+    var discardRequestGeneration by remember { mutableStateOf(0L) }
+    var discardRunning by remember { mutableStateOf(false) }
     var editItem by remember { mutableStateOf<RuntimeModuleSettingItemSpec?>(null) }
     var editText by remember { mutableStateOf("") }
     var inputError by remember { mutableStateOf(false) }
@@ -232,25 +235,52 @@ private fun RuntimeModuleSettingsView(
         PerGameSettingsStore.getRuntimeModuleSettings(context, game.uri, packageName).toString()
     }
 
-    suspend fun discardDraft(): Boolean {
-        val persistedJson = if (saveOutcomeUnknown) {
-            try {
-                readStoredSettingsJson().also {
-                    baselineJson = it
-                    baselineFingerprint = settings?.fingerprint
-                }
+    fun cancelDiscardDraft() {
+        discardRequestGeneration += 1
+        discardRunning = false
+        showUnsavedDialog = false
+    }
+
+    fun requestDiscardDraft(onDiscarded: () -> Unit) {
+        if (discardRunning) return
+        val generation = discardRequestGeneration + 1
+        discardRequestGeneration = generation
+        discardRunning = true
+        scope.launch {
+            val persistedJson = try {
+                if (saveOutcomeUnknown) readStoredSettingsJson() else baselineJson
             } catch (cancelled: CancellationException) {
+                if (discardRequestGeneration == generation) discardRunning = false
                 throw cancelled
             } catch (_: Exception) {
-                return false
+                null
             }
-        } else {
-            baselineJson ?: return false
+            if (discardRequestGeneration != generation) return@launch
+            discardRunning = false
+            if (persistedJson == null) {
+                saveError = true
+                return@launch
+            }
+            if (saveOutcomeUnknown) {
+                baselineJson = persistedJson
+                saveOutcomeUnknown = false
+            }
+            draftJson = persistedJson
+            draftFingerprint = baselineFingerprint
+            onDiscarded()
         }
-        draftJson = persistedJson
-        draftFingerprint = baselineFingerprint
-        saveOutcomeUnknown = false
-        return true
+    }
+
+    suspend fun readPersistedSettingsAfterFailure(spec: RuntimeModuleSettingsSpec) {
+        try {
+            baselineJson = readStoredSettingsJson()
+            baselineFingerprint = spec.fingerprint
+            saveOutcomeUnknown = false
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Keep the draft dirty until persistence can be read or a later save succeeds.
+        }
     }
 
     suspend fun saveDraft() {
@@ -283,15 +313,18 @@ private fun RuntimeModuleSettingsView(
             spec.items.forEach { item ->
                 if (submittedDraft.has(item.key) && item.key !in invalidKeys) json.put(item.key, submittedDraft.opt(item.key))
             }
+            saveOutcomeUnknown = true
             val result = withContext(Dispatchers.IO) {
                 PerGameSettingsStore.saveRuntimeModuleSettings(context, game.uri, packageName, spec, json)
+            }
+            if (result !is PerGameSettingsStore.RuntimeModuleSettingsSaveResult.StorageFailure) {
+                saveOutcomeUnknown = false
             }
             when (result) {
                 is PerGameSettingsStore.RuntimeModuleSettingsSaveResult.Saved -> {
                     val normalized = json.toString()
                     baselineJson = normalized
                     baselineFingerprint = spec.fingerprint
-                    saveOutcomeUnknown = false
                     if (draftJson == submittedDraftJson) {
                         draftJson = normalized
                         draftFingerprint = spec.fingerprint
@@ -313,15 +346,7 @@ private fun RuntimeModuleSettingsView(
                 is PerGameSettingsStore.RuntimeModuleSettingsSaveResult.StorageFailure -> {
                     saveError = true
                     saveOutcomeUnknown = true
-                    try {
-                        baselineJson = readStoredSettingsJson()
-                        baselineFingerprint = spec.fingerprint
-                        saveOutcomeUnknown = false
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        // Keep the draft dirty until persistence can be read or a later save succeeds.
-                    }
+                    readPersistedSettingsAfterFailure(spec)
                 }
                 else -> {
                     saveError = true
@@ -617,26 +642,22 @@ private fun RuntimeModuleSettingsView(
     if (showUnsavedDialog) {
         val unsavedExitHandle = rememberGameDialogExitHandle()
         AppAlertDialog(
-            onDismissRequest = { showUnsavedDialog = false },
+            onDismissRequest = ::cancelDiscardDraft,
             title = { Text(stringResource(R.string.runtime_settings_unsaved_title), style = MaterialTheme.typography.titleMedium) },
             text = { Text(stringResource(R.string.runtime_settings_unsaved_message)) },
             confirmButton = {
                 DialogTextButton(text = stringResource(R.string.common_confirm), onClick = {
-                    scope.launch {
-                        if (discardDraft()) {
-                            unsavedExitHandle.closeThen {
-                                showUnsavedDialog = false
-                                if (inBook) onDismiss() else backRequested = true
-                            }
-                        } else {
-                            saveError = true
+                    requestDiscardDraft {
+                        unsavedExitHandle.closeThen {
+                            showUnsavedDialog = false
+                            if (inBook) onDismiss() else backRequested = true
                         }
                     }
                 })
             },
             dismissButton = {
                 unsavedExitHandle.capture()
-                DialogTextButton(text = stringResource(R.string.common_cancel), onClick = { showUnsavedDialog = false })
+                DialogTextButton(text = stringResource(R.string.common_cancel), onClick = ::cancelDiscardDraft)
             },
         )
     }
