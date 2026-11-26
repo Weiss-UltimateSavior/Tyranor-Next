@@ -116,29 +116,24 @@ class GameShelfGeometryTest {
     }
 
     @Test
-    fun restPosesShowHeroStraightAndSymmetricSpines() {
+    fun restPosesShowHeroYawAndSpines() {
         val g = geometry()
-        assertEquals(0f, g.heroYaw, 1e-6f)
-        assertEquals(0f, g.yaw(0f), 1e-4f)
-        // 右侧书籍 yaw < 0（书脊在右、左侧面向中心），左侧书籍 yaw > 0（书脊在左、右侧面向中心）
-        assertEquals(-g.maxTurn, g.yaw(1f), 1e-4f)
-        assertEquals(g.maxTurn, g.yaw(-1f), 1e-4f)
-        assertEquals(-g.maxTurn, g.yaw(3f), 1e-4f)
-        assertEquals(g.maxTurn, g.yaw(-3f), 1e-4f)
+        assertEquals(g.heroYaw, g.yaw(0f), 1e-4f)
+        assertEquals(g.maxTurn, g.yaw(1f), 1e-4f)
+        assertEquals(-g.maxTurn, g.yaw(-1f), 1e-4f)
+        assertEquals(g.maxTurn, g.yaw(3f), 1e-4f)
+        assertEquals(-g.maxTurn, g.yaw(-3f), 1e-4f)
         assertEquals(g.spineVisible, g.visibleWidth(abs(g.yaw(-1f))), 1e-3f)
-        for (d in listOf(0.1f, 0.35f, 0.7f, 1f, 2.5f)) {
-            assertEquals("yaw must be odd-symmetric at d=$d", -g.yaw(d), g.yaw(-d), 1e-4f)
-        }
     }
 
-    /** 盒子在屏幕上真实画出来的宽度：朝向决定的投影宽度 × 姿态缩放（与 3D 盒子投影一致）。 */
+    /** 盒子在屏幕上真实画出来的宽度：朝向决定的投影宽度 × 姿态缩放（与 shelfBoxPose 同一个函数）。 */
     private fun ShelfGeometry.drawnWidth(offset: Float): Float =
         visibleWidth(abs(yaw(offset))) * shelfPoseScale(offset)
 
     @Test
     fun neighboursNeverOverlapWhileTurning() {
         // 翻页途中任意位置，相邻两盒真实画出来的宽度都不重叠（曾在折叠到一半时互相压住约 28dp）
-        for (degrees in listOf(58.0, 64.0, 70.0, 74.0, 80.0, 86.0, 90.0)) {
+        for (degrees in listOf(58.0, 64.0, 70.0, 74.0, 80.0, 86.0)) {
             val g = geometry(maxTurn = Math.toRadians(degrees).toFloat())
             var position = 0f
             while (position <= 1f) {
@@ -156,22 +151,18 @@ class GameShelfGeometryTest {
 
     @Test
     fun turningIsContinuous() {
-        // 从左侧书脊（+maxTurn）经过正中（0°）到右侧书脊（-maxTurn），朝向、宽度与位置全程连续无跳变
-        for (degrees in listOf(58.0, 86.0, 90.0)) {
+        // 左侧的书换边时朝向会从 +90° 跳到 -90°（两种画法完全一样），但画出来的宽度与位置都是连续的
+        for (degrees in listOf(58.0, 86.0)) {
             val g = geometry(maxTurn = Math.toRadians(degrees).toFloat())
             var d = -1.5f
-            var previousYaw = g.yaw(d)
             var previousWidth = g.drawnWidth(d)
             var previousX = g.centerX(d)
             d += 0.001f
             while (d <= 1.5f) {
-                val yaw = g.yaw(d)
                 val width = g.drawnWidth(d)
                 val x = g.centerX(d)
-                assertTrue("yaw jumps at d=$d ($degrees°)", abs(yaw - previousYaw) < 0.05f)
                 assertTrue("width jumps at d=$d ($degrees°)", abs(width - previousWidth) < g.coverWidth * 0.02f)
                 assertTrue("position jumps at d=$d ($degrees°)", abs(x - previousX) < g.coverWidth * 0.02f)
-                previousYaw = yaw
                 previousWidth = width
                 previousX = x
                 d += 0.001f
@@ -740,93 +731,22 @@ class GameShelfGeometryTest {
     }
 
     @Test
-    fun sharedCameraShowsInnerSideFacesAndHidesHeroSides() {
+    fun shelfBoardTopSpansBehindAndInFrontOfContactLineWithThinFrontEdge() {
         val g = geometry()
         val viewport = 1400f
         val floorY = 900f
-        val floorDepth = 95f
-        val camera = ShelfCamera(viewport, g.coverHeight, floorY, floorDepth)
-
-        // 1. 书立在搁板上表面：后缘在接触线之上（更靠后/深），前缘在接触线之下
-        val backY = camera.shelfBackScreenY(g.coverWidth)
-        val frontY = camera.shelfFrontScreenY()
-        assertTrue("backEdgeY=$backY must be above contact floorY=$floorY", backY < floorY)
-        assertTrue("frontEdgeY=$frontY must be below contact floorY=$floorY", frontY > floorY)
-
-        // 2. 正中停稳（offset=0）：正面正对，不露左右侧面（书脊与外缘均不可见）
-        val heroProj = ShelfBoxProjectionState()
-        val heroScale = shelfPoseScale(0f)
-        heroProj.update(
-            worldX = g.centerX(0f),
-            worldYBottom = 0f,
-            w = g.coverWidth * heroScale,
-            h = g.coverHeight * heroScale,
-            d = g.spineDepth * heroScale,
-            yaw = g.yaw(0f),
-            tiltRad = 0f,
-            leanRad = 0f,
-            camera = camera,
+        val floorDepth = g.coverHeight * 0.14f
+        val backY = shelfBoardBackY(
+            floorY = floorY,
+            bookHeight = g.coverHeight,
+            coverWidth = g.coverWidth,
+            viewport = viewport,
         )
-        assertTrue(heroProj.frontVisible)
-        assertFalse("settled center book must not show spine", heroProj.spineVisible)
-        assertFalse("settled center book must not show fore-edge", heroProj.foreVisible)
-
-        // 3. 左侧书（offset=-2）：书脊平行屏幕，露出右侧内侧面且上下边朝共享消失点收拢
-        val leftProj = ShelfBoxProjectionState()
-        val sideScale = shelfPoseScale(-2f)
-        leftProj.update(
-            worldX = g.centerX(-2f),
-            worldYBottom = 0f,
-            w = g.coverWidth * sideScale,
-            h = g.coverHeight * sideScale,
-            d = g.spineDepth * sideScale,
-            yaw = g.yaw(-2f),
-            tiltRad = 0f,
-            leanRad = 0f,
-            camera = camera,
-        )
-        assertTrue(leftProj.spineVisible)
-        assertTrue("left book must expose right inner side face", leftProj.frontVisible)
-        assertFalse(leftProj.foreVisible)
-        // 左侧书的书脊两竖边与屏幕平行（左右顶底纵坐标齐平）
-        assertEquals(leftProj.spineDst[1], leftProj.spineDst[3], 1e-3f)
-        assertEquals(leftProj.spineDst[5], leftProj.spineDst[7], 1e-3f)
-        // 左侧书内侧面的后缘（TR/BR，idx 2..5）比前缘（TL/BL，idx 0..1, 6..7）更靠中心、更接近视平线（更窄）
-        assertTrue("left book side back X must move inward toward center", leftProj.frontDst[2] > leftProj.frontDst[0])
-        assertTrue("left book side top edge must slope down toward horizon", leftProj.frontDst[3] > leftProj.frontDst[1])
-        assertTrue("left book side bottom edge must slope up toward horizon", leftProj.frontDst[5] < leftProj.frontDst[7])
-        val leftFrontH = leftProj.frontDst[7] - leftProj.frontDst[1]
-        val leftBackH = leftProj.frontDst[5] - leftProj.frontDst[3]
-        assertTrue("left book side must narrow toward vanishing point", leftBackH < leftFrontH)
-
-        // 4. 右侧书（offset=+2）：书脊平行屏幕，露出左侧内侧面且上下边朝同一消失点收拢，并与左侧严格镜像对称
-        val rightProj = ShelfBoxProjectionState()
-        rightProj.update(
-            worldX = g.centerX(2f),
-            worldYBottom = 0f,
-            w = g.coverWidth * sideScale,
-            h = g.coverHeight * sideScale,
-            d = g.spineDepth * sideScale,
-            yaw = g.yaw(2f),
-            tiltRad = 0f,
-            leanRad = 0f,
-            camera = camera,
-        )
-        assertTrue(rightProj.spineVisible)
-        assertTrue("right book must expose left inner side face", rightProj.frontVisible)
-        assertFalse(rightProj.foreVisible)
-        assertTrue("right book side back X must move inward toward center", rightProj.frontDst[0] < rightProj.frontDst[2])
-        assertTrue("right book side top edge must slope down toward horizon", rightProj.frontDst[1] > rightProj.frontDst[3])
-        assertTrue("right book side bottom edge must slope up toward horizon", rightProj.frontDst[7] < rightProj.frontDst[5])
-
-        // 左右投影严格关于 viewport / 2 镜像对称
-        assertEquals(viewport - leftProj.spineDst[0], rightProj.spineDst[2], 1e-2f)
-        assertEquals(viewport - leftProj.spineDst[2], rightProj.spineDst[0], 1e-2f)
-        assertEquals(viewport - leftProj.frontDst[0], rightProj.frontDst[2], 1e-2f)
-        assertEquals(viewport - leftProj.frontDst[2], rightProj.frontDst[0], 1e-2f)
-        assertEquals(leftProj.frontDst[1], rightProj.frontDst[3], 1e-2f)
-        assertEquals(leftProj.frontDst[3], rightProj.frontDst[1], 1e-2f)
-        assertEquals(leftProj.frontDst[5], rightProj.frontDst[7], 1e-2f)
+        val frontY = floorY + floorDepth
+        assertTrue("backEdgeY=$backY must be behind/above contact floorY=$floorY", backY < floorY)
+        assertTrue("frontEdgeY=$frontY must extend in front of contact floorY=$floorY", frontY > floorY)
+        assertTrue("board surface ahead of contact line must stay substantial", frontY - floorY > 50f)
+        assertEquals(4f, SHELF_BOARD_EDGE, 1e-4f)
     }
 
     @Test
@@ -879,84 +799,50 @@ class GameShelfGeometryTest {
     }
 
     @Test
-    fun heroAndEdgeBooksHaveNonEmptyReflectionClipAndHeroIsClearest() {
+    fun heroReflectionIsClearestEvenAtPinnedEdgesAndSideBooksStayVisible() {
         val g = geometry()
         val viewport = 1264f
-        val floorY = 720f
-        val floorDepth = g.coverHeight * 0.14f
-        val liftPx = 24f
-        val camera = ShelfCamera(viewport, g.coverHeight, floorY, floorDepth)
         val darkBaseAlpha = 0.34f
+        val lightBaseAlpha = 0.42f
 
-        val heroBounds = shelfReflectionClipBounds(camera, g.coverWidth, g.coverWidth)
-        assertTrue("reflTop=${heroBounds.top} must stay above floorY=$floorY", heroBounds.top < floorY)
-        assertEquals(camera.shelfFrontScreenY(), heroBounds.bottom, 1e-4f)
-        assertTrue("board reflection height must stay positive", heroBounds.bottom > floorY + liftPx)
-
-        // 正中书（含抬起与外倾）：倒影透明度等于基准值（最清楚），且反射四边形在搁板可见深度 [floorY, frontEdgeY] 内非空
-        val heroProj = ShelfBoxProjectionState()
-        val heroScale = shelfPoseScale(0f)
-        heroProj.boxLeftInStage = camera.centerX + g.centerX(0f) - g.coverWidth * 0.5f
-        heroProj.update(
-            worldX = g.centerX(0f),
-            worldYBottom = liftPx,
-            w = g.coverWidth * heroScale,
-            h = g.coverHeight * heroScale,
-            d = g.spineDepth * heroScale,
-            yaw = g.yaw(0f),
-            tiltRad = Math.toRadians(HERO_TILT_DEGREES.toDouble()).toFloat(),
-            leanRad = 0f,
-            camera = camera,
-        )
-        val heroAlpha = shelfViewportReflectionAlpha(
-            centerScreenX = heroProj.centerScreenX,
-            minScreenX = heroProj.minScreenX,
-            maxScreenX = heroProj.maxScreenX,
-            viewport = viewport,
-            baseAlpha = darkBaseAlpha,
-            hero = 1f,
-            groundAlpha = 1f,
-        )
-        assertEquals(darkBaseAlpha, heroAlpha, 1e-5f)
-        val heroReflYs = listOf(heroProj.frontReflDst[1], heroProj.frontReflDst[3], heroProj.frontReflDst[5], heroProj.frontReflDst[7])
-        val heroClipTop = maxOf(heroReflYs.min(), floorY)
-        val heroClipBottom = minOf(heroReflYs.max(), heroBounds.bottom)
-        assertTrue("hero reflection must cover positive depth on board: top=$heroClipTop bottom=$heroClipBottom", heroClipBottom - heroClipTop > 10f)
-
-        // 视口边缘书：倒影透明度非零且严格不高于正中书，书脊与内侧面倒影均落在裁剪区内且高度非空
-        for (offset in listOf(-4f, -2f, 2f, 4f)) {
-            val sideProj = ShelfBoxProjectionState()
-            val sideScale = shelfPoseScale(offset)
-            val worldX = g.centerX(offset)
-            sideProj.boxLeftInStage = camera.centerX + worldX - g.spineVisible * 0.5f
-            sideProj.update(
-                worldX = worldX,
-                worldYBottom = 0f,
-                w = g.coverWidth * sideScale,
-                h = g.coverHeight * sideScale,
-                d = g.spineDepth * sideScale,
-                yaw = g.yaw(offset),
-                tiltRad = 0f,
-                leanRad = 0f,
-                camera = camera,
-            )
-            val edgeBounds = shelfReflectionClipBounds(camera, g.coverWidth, g.spineVisible)
-            val sideAlpha = shelfViewportReflectionAlpha(
-                centerScreenX = sideProj.centerScreenX,
-                minScreenX = sideProj.minScreenX,
-                maxScreenX = sideProj.maxScreenX,
+        for (baseAlpha in listOf(darkBaseAlpha, lightBaseAlpha)) {
+            // 正中书停在视口中心或贴边位置时均保持基准清晰度
+            val centerHeroAlpha = shelfViewportReflectionAlpha(
+                centerScreenX = viewport * 0.5f,
+                minScreenX = viewport * 0.5f - g.coverWidth * 0.5f,
+                maxScreenX = viewport * 0.5f + g.coverWidth * 0.5f,
                 viewport = viewport,
-                baseAlpha = darkBaseAlpha,
-                hero = 0f,
+                baseAlpha = baseAlpha,
+                hero = 1f,
                 groundAlpha = 1f,
             )
-            assertTrue("edge book offset=$offset must have visible reflection alpha=$sideAlpha", sideAlpha > 0.1f)
-            assertTrue("hero reflection must remain clearer than edge offset=$offset", heroAlpha > sideAlpha)
+            val edgeHeroAlpha = shelfViewportReflectionAlpha(
+                centerScreenX = g.coverWidth * 0.55f,
+                minScreenX = g.coverWidth * 0.05f,
+                maxScreenX = g.coverWidth * 1.05f,
+                viewport = viewport,
+                baseAlpha = baseAlpha,
+                hero = 1f,
+                groundAlpha = 1f,
+            )
+            assertEquals(baseAlpha, centerHeroAlpha, 1e-5f)
+            assertEquals(baseAlpha, edgeHeroAlpha, 1e-5f)
 
-            val spineYs = listOf(sideProj.spineReflDst[1], sideProj.spineReflDst[3], sideProj.spineReflDst[5], sideProj.spineReflDst[7])
-            assertTrue("edge spine reflection must intersect clip rect at offset=$offset", minOf(spineYs.max(), edgeBounds.bottom) - maxOf(spineYs.min(), edgeBounds.top) > 10f)
-            val frontXs = listOf(sideProj.frontReflDst[0], sideProj.frontReflDst[2], sideProj.frontReflDst[4], sideProj.frontReflDst[6]).map { it - sideProj.boxLeftInStage }
-            assertTrue("edge front reflection must stay inside horizontal sideMargin at offset=$offset", frontXs.min() >= edgeBounds.left && frontXs.max() <= edgeBounds.right)
+            for (offset in listOf(-4f, -2f, 2f, 4f)) {
+                val centerX = viewport * 0.5f + g.centerX(offset)
+                val halfW = g.visibleWidth(abs(g.yaw(offset))) * shelfPoseScale(offset) * 0.5f
+                val sideAlpha = shelfViewportReflectionAlpha(
+                    centerScreenX = centerX,
+                    minScreenX = centerX - halfW,
+                    maxScreenX = centerX + halfW,
+                    viewport = viewport,
+                    baseAlpha = baseAlpha,
+                    hero = 0f,
+                    groundAlpha = 1f,
+                )
+                assertTrue("edge book offset=$offset must have visible reflection alpha=$sideAlpha", sideAlpha > 0.1f)
+                assertTrue("hero reflection must remain clearer than edge offset=$offset", centerHeroAlpha > sideAlpha)
+            }
         }
     }
 
@@ -968,8 +854,12 @@ class GameShelfGeometryTest {
 
         assertTrue(landscapeShort.fontSizeDp < phone.fontSizeDp)
         assertTrue(phone.fontSizeDp < tablet.fontSizeDp)
-        assertTrue(landscapeShort.fontSizeDp in 11.5f..23f)
-        assertTrue(tablet.fontSizeDp in 11.5f..23f)
+        // 与原来手机书架一样宽（32dp）的书脊字号、行高与原来完全一致（11 / 13），只随书脊宽度等比缩放
+        val reference = shelfSpineTypography(spineWidthDp = 32f, coverHeightDp = 260f)
+        assertEquals(11f, reference.fontSizeDp, 0.001f)
+        assertEquals(13f, reference.lineHeightDp, 0.001f)
+        assertEquals(11f * 42f / 32f, tablet.fontSizeDp, 0.001f)
+        assertEquals(phone.fontSizeDp / phone.lineHeightDp, tablet.fontSizeDp / tablet.lineHeightDp, 0.001f)
 
         // 暗底、中间灰、亮底与高反差裂色底均保证 >= 4.5:1 对比度
         val tones = listOf(

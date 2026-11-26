@@ -678,14 +678,6 @@ private fun ShelfStage(
         val boardEdgePx = with(density) { (SHELF_BOARD_EDGE.dp * compactScale).toPx() }
         val bookHeightPx = with(density) { coverHeight.toPx() }
         val coverWidthPx = with(density) { coverWidth.toPx() }
-        val camera = remember(viewport, bookHeightPx, floorYPx, floorDepthPx) {
-            ShelfCamera(
-                viewport = viewport,
-                bookHeight = bookHeightPx,
-                floorY = floorYPx,
-                floorDepth = floorDepthPx,
-            )
-        }
         Box(
             modifier = Modifier
                 .padding(bottom = raise)
@@ -703,7 +695,7 @@ private fun ShelfStage(
                         positionProvider = { pagerState.pagePosition() },
                         shiftProvider = rowShift,
                         rail = rail,
-                        camera = camera,
+                        viewport = viewport,
                         coverWidthPx = coverWidthPx,
                         floorY = floorYPx,
                         depth = floorDepthPx,
@@ -732,7 +724,6 @@ private fun ShelfStage(
                     page = page,
                     pagerState = pagerState,
                     geometry = geometry,
-                    camera = camera,
                     slotPitch = dragPitch,
                     viewport = viewport,
                     rowShift = rowShift,
@@ -820,7 +811,6 @@ private fun ShelfBox(
     page: Int,
     pagerState: PagerState,
     geometry: ShelfGeometry,
-    camera: ShelfCamera,
     slotPitch: Float,
     viewport: Float,
     rowShift: () -> Float,
@@ -855,7 +845,7 @@ private fun ShelfBox(
     val anchorPage = remember(batchChangedAt) { pagerState.settledPage }
     val density = LocalDensity.current
     val floorY = with(density) { (dims.topRoom + dims.coverHeight).toPx() }
-    val topRoomPx = with(density) { dims.topRoom.toPx() }
+    val floorDepth = with(density) { dims.floorDepth.toPx() }
     val lift = with(density) { dims.lift.toPx() }
     val engineColor = game.engine.coverColor()
     val reflectionAlpha = ShelfReflectionAlpha
@@ -864,8 +854,7 @@ private fun ShelfBox(
     val chamferLight = ShelfChamferLight
     val chamferDim = ShelfChamferDim
     val fog = ShelfFog
-    val projState = rememberShelfBoxProjectionState()
-    // 活跃局部区隔离：离开正中 > 2.0 本的书脊共用夹断偏移，滑动途中不触发宽度重测与图层/姿态重录
+    // 活跃局部区隔离：离开正中 > 2.0 本的书脊共用夹断偏移，滑动途中不触发宽度重测与倒影/姿态重录
     val localOffset = remember(pagerState, page) {
         derivedStateOf {
             val o = page - pagerState.pagePosition()
@@ -888,7 +877,6 @@ private fun ShelfBox(
         derivedStateOf { shelfCoverMipLevel(geometry.yaw(localOffset.value)) }
     }
     val flatRail = rail.isFlat
-    val foreEdgeTint = coverTints[game.coverUri] ?: engineColor
     Box(
         modifier = Modifier
             .fillMaxHeight()
@@ -896,21 +884,20 @@ private fun ShelfBox(
             .shelfRailPose(pagerState, page, geometry, rowShift, rail, floorY)
             // 首屏入场：离停稳位置越近越先立起来
             .staggeredEntrance(shelfBookEntranceIndex(page, anchorPage), stepMillis = 40L, replay = false)
-            .shelfBox3DWithReflection(
+            .shelfReflection(
                 state = pagerState,
                 page = page,
                 geometry = geometry,
                 rowShift = rowShift,
-                camera = camera,
-                proj = projState,
-                trait = trait,
-                velocity = velocity,
-                topRoomPx = topRoomPx,
+                rail = rail,
+                viewport = viewport,
+                offsetProvider = { localOffset.value },
+                floorY = floorY,
+                bookHeight = geometry.coverHeight,
                 liftPx = lift,
+                reflectionHeight = floorDepth,
                 reflectionAlpha = reflectionAlpha,
                 shadow = ShelfContactShadow,
-                foreEdgeBaseColor = foreEdgeTint,
-                foreEdgeShadeColor = ShelfFaceShade,
                 // 被抽出去翻开时或飞入书架时隐藏书体；背后的悬浮影与玻璃倒影随起落连续渐隐/渐显
                 bodyAlpha = {
                     val ba = if (book != null && book.lentUri == game.uri) book.lentAlpha else 1f
@@ -928,6 +915,7 @@ private fun ShelfBox(
                 },
             )
             .padding(top = dims.topRoom, bottom = dims.floorDepth + dims.belowBoard)
+            .shelfBoxPose(pagerState, { localOffset.value }, lift, velocity, trait)
             .gameRemovalDust(dissolve)
             .shelfBatchArrival(batchChangedAt, kotlin.math.abs(page - anchorPage))
             .pressSquish(scale = PressSquishDefaults.CardScale, charge = true)
@@ -935,11 +923,6 @@ private fun ShelfBox(
             .semantics { contentDescription = game.title }
             .shelfVisibleWidth(geometry) { visibleWidthPx.value },
     ) {
-        Spacer(
-            Modifier
-                .fillMaxSize()
-                .shelfForeEdgeProjection(projState, { pagerState.pagePosition() }, foreEdgeTint, ShelfFaceShade),
-        )
         ShelfSpine(
             game = game,
             shadeOverlay = { Modifier.shelfFaceShade({ localOffset.value }, geometry, spine = true) },
@@ -953,7 +936,7 @@ private fun ShelfBox(
             dims = dims,
             modifier = Modifier
                 .size(dims.spineDepth, dims.coverHeight)
-                .shelfSpineProjection(projState) { pagerState.pagePosition() }
+                .shelfSpineFace({ localOffset.value }, geometry)
                 .shelfBookSpine(book, game.uri)
                 .shelfCatalogSpine(catalog, game.uri)
                 .dissolveTint(dissolve, errorColor),
@@ -999,8 +982,7 @@ private fun ShelfBox(
             spineOnRight = { geometry.yaw(localOffset.value) < 0f },
             modifier = Modifier
                 .size(dims.coverWidth, dims.coverHeight)
-                .shelfFrontHeroAlignment({ localOffset.value }, lift)
-                .shelfFrontProjection(projState, { pagerState.pagePosition() }, { localOffset.value }, shapes, geometry)
+                .shelfFrontFace({ localOffset.value }, geometry, shapes)
                 .shelfBookFront(book, game.uri)
                 .shelfCatalogFront(
                     stage = catalog,
@@ -1514,9 +1496,8 @@ private fun BoxScope.ShelfSpineFaceContentBody(
             androidx.compose.ui.graphics.lerp(ink, ShelfSpineTitleDark, SPINE_FOIL_DARKEN)
         }
     }
-    val typo = remember(spineWidth, coverHeight, title) {
-        val glyphs = title.trim().replace(Regex("\\s+"), " ").let { it.codePointCount(0, it.length) }
-        shelfSpineTypography(spineWidth.value, coverHeight.value, glyphs)
+    val typo = remember(spineWidth, coverHeight) {
+        shelfSpineTypography(spineWidth.value, coverHeight.value)
     }
     val footHeight = coverHeight * SPINE_FOOT_RATIO
     val titleTop = typo.titleTopDp.dp
@@ -1676,28 +1657,17 @@ internal data class ShelfSpineTypography(
     val maxChars: Int,
 )
 
-internal fun shelfSpineTypography(
-    spineWidthDp: Float,
-    coverHeightDp: Float,
-    /** 竖排书名要排的字数（连续空白算一格，与 stackSpineTitle 一致）；> 0 时字号先保证整条书名放得下，放不下才在最小字号下截断。 */
-    titleGlyphs: Int = 0,
-): ShelfSpineTypography {
-    val safeW = spineWidthDp.coerceAtLeast(12f)
+internal fun shelfSpineTypography(spineWidthDp: Float, coverHeightDp: Float): ShelfSpineTypography {
+    // 字号、行高、书名起点、封条都沿用原来手机书架上的尺寸（11 / 13 / 12 / 3），只按书脊宽度相对手机书架书脊等比缩放：
+    // 书变大字跟着变大，书和手机书架一样大时与原来完全一致；书名放不下时照旧截断（不为了排下整条书名另调字号）
+    val scale = (spineWidthDp / SPINE_TEXT_REF_WIDTH_DP).coerceIn(SPINE_TEXT_MIN_SCALE, SPINE_TEXT_MAX_SCALE)
     val safeH = coverHeightDp.coerceAtLeast(48f)
-    val capDp = (safeH * 0.014f).coerceIn(2.5f, 4.5f)
-    val titleTopDp = (safeH * 0.052f).coerceIn(9f, 18f)
+    val fontSizeDp = SPINE_TEXT_BASE_FONT_DP * scale
+    val lineHeightDp = SPINE_TEXT_BASE_LINE_DP * scale
+    val titleTopDp = SPINE_TEXT_BASE_TOP_DP * scale
+    val capDp = SPINE_TEXT_BASE_CAP_DP * scale
     val footDp = safeH * SPINE_FOOT_RATIO
-    val usableLen = (safeH - titleTopDp - footDp - 6f).coerceAtLeast(18f)
-    val widthBound = safeW * 0.62f
-    // 书脊变宽时字跟着放大，但不能大到把短书名也截断（藏书阁里宽书脊上「梦梦的少女」曾被截成「梦梦的…」）
-    val heightBound = if (titleGlyphs > 0) {
-        // 留 2% 余量，免得取整时恰好少排一个字
-        usableLen * 0.98f / (titleGlyphs.coerceAtMost(SPINE_MAX_CHARS) * SPINE_LINE_HEIGHT_RATIO)
-    } else {
-        usableLen / 5.2f
-    }
-    val fontSizeDp = minOf(widthBound, heightBound).coerceIn(SPINE_MIN_FONT_DP, SPINE_MAX_FONT_DP)
-    val lineHeightDp = fontSizeDp * SPINE_LINE_HEIGHT_RATIO
+    val usableLen = (safeH - titleTopDp - footDp - 6f).coerceAtLeast(lineHeightDp)
     val maxChars = (usableLen / lineHeightDp).toInt().coerceIn(1, SPINE_MAX_CHARS)
     return ShelfSpineTypography(
         fontSizeDp = fontSizeDp,
@@ -3351,21 +3321,21 @@ private val PLACEHOLDER_REFERENCE_WIDTH = 150.dp
  */
 private const val FEW_GAMES = 5
 private const val OPEN_TURN_DEGREES = 58.0
-private const val SPINE_TURN_DEGREES = 90.0
+private const val SPINE_TURN_DEGREES = 86.0
 private const val TURN_SEARCH_STEP = 2.0
 private const val FIT_SEARCH_MAX_BOOKS = 16
 
 /** 书脊厚度（封面宽比例）及上下限。 */
 private const val SPINE_RATIO = 0.15f
 private val MIN_SPINE = 22.dp
-private val MAX_SPINE = 42.dp
+private val MAX_SPINE = 36.dp
 
 /** 书脊间缝、停稳时居中盒子两侧的呼吸位。 */
-private val SPINE_GAP = 7.dp
-private val REST_GAP = 14.dp
+private val SPINE_GAP = 3.dp
+private val REST_GAP = 12.dp
 
 /** 被选中的那一盒抬起的高度，以及为它（抬起 + 放大 + 外倾）预留的顶部空间。 */
-private val LIFT = 12.dp
+private val LIFT = 18.dp
 private val LIFT_ROOM = 34.dp
 
 /** 封面越大，抽出放大时冒出去的越多：顶部额外按盒高的这个比例留空间。 */
@@ -3401,9 +3371,15 @@ private const val SUMMARY_MAX_CHARS = 12
 /** CJK 字符区的起点（之前的都算西文）；西文字符占到这个比例的书名整行侧转。 */
 private const val CJK_START = 0x2E80
 private const val LATIN_SHARE = 0.7f
-private const val SPINE_MIN_FONT_DP = 11.5f
-private const val SPINE_MAX_FONT_DP = 23f
-private const val SPINE_LINE_HEIGHT_RATIO = 1.14f
+/** 书脊文字的基准：原来手机书架书脊（约 32dp 宽）上的字号 11、行高 13、书名起点 12、顶上封条 3（dp）。 */
+private const val SPINE_TEXT_REF_WIDTH_DP = 32f
+private const val SPINE_TEXT_BASE_FONT_DP = 11f
+private const val SPINE_TEXT_BASE_LINE_DP = 13f
+private const val SPINE_TEXT_BASE_TOP_DP = 12f
+private const val SPINE_TEXT_BASE_CAP_DP = 3f
+/** 缩放下限 / 上限：再窄的书脊字也不小于原字号的 0.85 倍，再宽的书脊（平板、藏书阁）最多放大到 1.9 倍。 */
+private const val SPINE_TEXT_MIN_SCALE = 0.85f
+private const val SPINE_TEXT_MAX_SCALE = 1.9f
 private const val SPINE_BASE_LIGHTEN = 0.22f
 private const val SPINE_WASH_LIFT_ALPHA = 0.18f
 private const val SPINE_FOOT_RATIO = 0.12f

@@ -1,7 +1,6 @@
 package com.tyranor.next.ui.game
 
 import android.animation.ValueAnimator
-import android.graphics.Matrix
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.animation.core.FloatSpringSpec
 import androidx.compose.animation.core.animateFloatAsState
@@ -21,7 +20,6 @@ import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.rememberOverscrollEffect
 import androidx.compose.foundation.shape.AbsoluteCutCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -61,8 +59,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.layer.GraphicsLayer
-import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -76,7 +72,6 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.ui.node.LayoutModifierNode
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalGraphicsContext
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
@@ -159,6 +154,12 @@ internal class ShelfGeometry(
     private val faceRadius: Float = kotlin.math.hypot(coverWidth, spineDepth)
     private val bevel: Float = kotlin.math.atan2(spineDepth, coverWidth)
 
+    /**
+     * 左侧的书转到正中时书脊要从右侧换到左侧：书脊朝外的角度够深时，先转到书脊正对屏幕（封面侧立成一条线）的那一刻换边，
+     * 再把封面从书脊右侧转出来，与右侧的书对称、宽度一路只收不胀；转得浅（书少、两侧也露封面）时直接经过正对换边更短。
+     */
+    private val leftTurnsViaSpine: Boolean = maxTurn > HALF_PI - heroYaw
+
     /** 转过 [turn] 时盒子在屏幕上的可见宽度（正面投影 + 书脊投影）。 */
     fun visibleWidth(turn: Float): Float = coverWidth * cos(turn) + spineDepth * sin(turn)
 
@@ -175,26 +176,26 @@ internal class ShelfGeometry(
         if (abs(offset) <= 1f) boxWidth(offset) / 2f else spineWidth / 2f
 
     /**
-     * 盒子实际的朝向（弧度，带方向）：正 = 书脊在左、右侧（封面）朝向中心；负 = 书脊在右、左侧（封面）朝向中心。
-     * 正中停稳时为 [heroYaw]（0° 正对屏幕，不露侧面）；一离开正中即向内侧连续转出 90°（或 [maxTurn]），
-     * 左右严格对称（yaw(-d) == -yaw(d)），经过正中时书脊正好侧立隐没，零跳变。
+     * 盒子实际的朝向（弧度，带方向）：正 = 书脊在左。右侧的书由 [boxWidth] 反解，正中是 [heroYaw]（露出左侧书脊）、
+     * 一本以外是 [maxTurn]；左侧的书换边见 [leftTurnsViaSpine]。换边都发生在两种画法看起来完全一样的那一刻
+     * （书脊正对或封面正对），看不到跳变。
      */
     fun yaw(offset: Float): Float {
         val u = min(abs(offset), 1f)
-        val turn = rightYaw(u)
-        return if (offset >= 0f) -turn else turn
+        val right = rightYaw(u)
+        if (offset >= 0f) return right
+        if (leftTurnsViaSpine) {
+            val progress = ((right - heroYaw) / (maxTurn - heroYaw).coerceAtLeast(1e-4f)).coerceIn(0f, 1f)
+            val angle = heroYaw + (PI_F - maxTurn - heroYaw) * progress
+            return if (angle <= HALF_PI) angle else angle - PI_F
+        }
+        return right * (1f - 2f * smoothstep(u / LEFT_FLIP_RANGE))
     }
 
     private fun rightYaw(u: Float): Float {
-        if (u <= 0f) return heroYaw
-        if (u >= 1f) return maxTurn
         val projected = boxWidth(u) / shelfPoseScale(u)
-        val minTurn = maxOf(heroYaw, 2f * bevel).coerceAtMost(maxTurn)
-        val c = (projected / faceRadius.coerceAtLeast(1e-4f)).coerceIn(cos(maxTurn - bevel), cos(minTurn - bevel))
-        val solved = (bevel + kotlin.math.acos(c)).coerceIn(minTurn, maxTurn)
-        if (heroYaw >= 2f * bevel - 1e-4f) return solved
-        val ramp = smoothstep(u / YAW_BEVEL_RAMP_U)
-        return heroYaw + (solved - heroYaw) * ramp
+        val c = (projected / faceRadius.coerceAtLeast(1e-4f)).coerceIn(cos(maxTurn - bevel), cos(heroYaw - bevel))
+        return (bevel + kotlin.math.acos(c)).coerceIn(heroYaw, maxTurn)
     }
 
     /** 偏移 [offset]（本）的盒子中心离书架中心的水平距离。 */
@@ -340,15 +341,14 @@ internal fun Modifier.shelfSlot(
             }
             val shift = screenX - offset * slotPitch
             val x = (slotWidth - placeable.width) / 2f + shift
-            // 越靠近画面中心（相机）越靠前绘制，使内侧书籍稳稳遮挡外侧书籍向深处收拢的侧面
-            val depth = (-abs(railX) / geometry.pitch.coerceAtLeast(1f)).coerceIn(-MAX_Z_DEPTH, 0f)
+            val depth = (-railX / geometry.pitch).coerceIn(-MAX_Z_DEPTH, MAX_Z_DEPTH)
             placeable.place(x.roundToInt(), 0, zIndex = depth + HERO_Z * shelfHeroness(offset))
         }
     }
 
 /**
  * 书架单排活跃局部区范围（单位：本，须严格大于 [HERO_RANGE]、[FRONT_CLIP_RANGE] 与 `1f`）。
- * 远离该范围的远处书脊共用夹断后的偏移量，避免每帧触发无效的宽度重测与图层重录。
+ * 远离该范围的远处书脊共用夹断后的偏移量，避免每帧触发无效的宽度重测与图层/姿态重录。
  */
 internal const val SHELF_ACTIVE_ZONE = 2.0f
 internal const val SHELF_ACTIVE_ZONE_CLAMP = 2.5f
@@ -400,6 +400,41 @@ internal fun shelfBookTrait(uri: String): ShelfBookTrait {
 }
 
 /**
+ * 盒子在书架上的整体姿态（只做二维变换，命中测试随之一起移动）：
+ * 居中的盒子从搁板上微微抬起、扶正；离开中心后落回、略缩小（远一点），并恢复自己的高矮与歪角；
+ * 甩动时整排书顺势向后歪一下，停下回正。
+ */
+internal fun Modifier.shelfBoxPose(
+    state: PagerState,
+    offsetProvider: () -> Float,
+    liftPx: Float,
+    velocity: State<Float>,
+    trait: ShelfBookTrait,
+): Modifier = graphicsLayer {
+    val offset = offsetProvider()
+    val t = shelfSideness(offset)
+    val hero = shelfHeroness(offset)
+    transformOrigin = TransformOrigin(0.5f, 1f)
+    cameraDistance = POSE_CAMERA_DISTANCE * density
+    // 越接近正中越像被从书架上抽出来：抬起、略放大、顶部朝外微倾；离开时原路放回
+    val scale = shelfPoseScale(offset) * (1f - (1f - trait.sizeScale) * t)
+    scaleX = scale
+    scaleY = scale
+    translationY = -liftPx * hero
+    rotationX = HERO_TILT_DEGREES * hero
+    // 甩到头（第一本 / 最后一本）时 Pager 已经停住，速度估计还要衰减一阵：那时不再侧倾，免得书歪着停半秒才回正
+    val v = velocity.value
+    val lean = if (abs(v) > 0.05f && state.isScrollInProgress &&
+        (if (v > 0f) state.canScrollForward else state.canScrollBackward)
+    ) {
+        (v / LEAN_FULL_SPEED).coerceIn(-1f, 1f)
+    } else {
+        0f
+    }
+    rotationZ = lean * LEAN_DEGREES + trait.restLeanDegrees * t
+}
+
+/**
  * 「被选中」程度：正中为 1，离开 [HERO_RANGE] 本后为 0，中间用 smoothstep 缓入缓出——
  * 抽出 / 放回的过程完全跟着手指位置走，不在停稳后另起一段动画。
  */
@@ -413,7 +448,7 @@ internal fun shelfSideness(offset: Float): Float = smoothstep(min(abs(offset), 1
 
 /**
  * 盒子的姿态缩放（不含每本书的高矮差异）：离开正中略缩小（往后退一点），被抽出时略放大。
- * [ShelfGeometry] 与 [shelfBox3DWithReflection] 共用同一函数计算尺寸与位置。
+ * [ShelfGeometry] 按它算盒子在屏幕上的真实宽度，[shelfBoxPose] 按它画，两边必须是同一个函数。
  */
 internal fun shelfPoseScale(offset: Float): Float =
     (1f - SIDE_SHRINK * shelfSideness(offset)) * (1f + HERO_SCALE * shelfHeroness(offset))
@@ -436,265 +471,8 @@ internal fun Modifier.shelfVisibleWidth(
 }
 
 /**
- * 统一单相机透视模型：相机位于搁板中心正前方、略高于搁板平面（[eyeHeight]），沿 +Z 水平平视。
- * 竖直书脊面保持屏幕竖直、搁板前缘保持屏幕水平，所有书的侧面上下边与倒影均朝同一消失点
- * `(centerX, horizonY)` 收拢；接触线位于 `worldZ = focalLength`（透视缩放为 1），
- * 板前缘 `shelfFrontZ < focalLength` 在画面下方留出可见水平板面，板后缘 `shelfBackZ > focalLength` 伸至书背之后。
- */
-@Immutable
-internal class ShelfCamera(
-    val viewport: Float,
-    val bookHeight: Float,
-    val floorY: Float,
-    val floorDepth: Float,
-) {
-    val centerX: Float = viewport * 0.5f
-    val eyeHeight: Float = (bookHeight * CAMERA_EYE_HEIGHT_RATIO).coerceAtLeast(1f)
-    val focalLength: Float = maxOf(
-        bookHeight * CAMERA_FOCAL_HEIGHT_RATIO,
-        viewport * CAMERA_FOCAL_VIEWPORT_RATIO,
-    ).coerceAtLeast(1f)
-    val horizonY: Float = floorY - eyeHeight
-
-    val shelfFrontZ: Float = focalLength / (1f + floorDepth / eyeHeight).coerceAtLeast(1.01f)
-
-    fun shelfBackZ(coverWidth: Float): Float = focalLength + coverWidth * SHELF_BACK_DEPTH_RATIO
-
-    fun projectX(worldX: Float, worldZ: Float): Float {
-        val z = worldZ.coerceAtLeast(1f)
-        return centerX + worldX * (focalLength / z)
-    }
-
-    fun projectY(worldY: Float, worldZ: Float): Float {
-        val z = worldZ.coerceAtLeast(1f)
-        return horizonY + (eyeHeight - worldY) * (focalLength / z)
-    }
-
-    fun shelfBackScreenY(coverWidth: Float): Float = projectY(0f, shelfBackZ(coverWidth))
-
-    fun shelfFrontScreenY(): Float = floorY + floorDepth
-}
-
-/**
- * 单本 3D 书盒的投影缓存状态：在绘制阶段按统一 [ShelfCamera] 算出正面、书脊与外缘侧面的
- * 屏幕四角（及沿搁板 `Y = 0` 镜面反射后的倒影四角），全程零堆分配、零重组。
- */
-@Stable
-internal class ShelfBoxProjectionState {
-    val frontDst = FloatArray(8)
-    val frontReflDst = FloatArray(8)
-    var frontVisible: Boolean = false
-        private set
-
-    val spineDst = FloatArray(8)
-    val spineReflDst = FloatArray(8)
-    var spineVisible: Boolean = false
-        private set
-
-    val foreDst = FloatArray(8)
-    val foreReflDst = FloatArray(8)
-    var foreVisible: Boolean = false
-        private set
-
-    var frontLayer: GraphicsLayer? = null
-    var frontLayerWidth: Float = 0f
-    var frontLayerHeight: Float = 0f
-    var hasRecordedFront: Boolean = false
-
-    var spineLayer: GraphicsLayer? = null
-    var spineLayerWidth: Float = 0f
-    var spineLayerHeight: Float = 0f
-    var hasRecordedSpine: Boolean = false
-
-    var innerOffsetX: Float = 0f
-    var innerOffsetY: Float = 0f
-    var boxLeftInStage: Float = 0f
-    var heroScale: Float = 1f
-    var heroLiftPx: Float = 0f
-    var minScreenX: Float = 0f
-    var maxScreenX: Float = 0f
-    var centerScreenX: Float = 0f
-    var frontBottomInnerX: Float = 0f
-    var frontBottomInnerY: Float = 0f
-    var backBottomInnerX: Float = 0f
-    var backBottomInnerY: Float = 0f
-    var hasSideContact: Boolean = false
-
-    private val cornersX = FloatArray(8)
-    private val cornersY = FloatArray(8)
-    private val cornersReflY = FloatArray(8)
-
-    fun update(
-        worldX: Float,
-        worldYBottom: Float,
-        w: Float,
-        h: Float,
-        d: Float,
-        yaw: Float,
-        tiltRad: Float,
-        leanRad: Float,
-        camera: ShelfCamera,
-    ) {
-        val turn = abs(yaw)
-        val cosTilt = cos(tiltRad)
-        val sinTilt = sin(tiltRad)
-        val cosYaw = cos(yaw)
-        val sinYaw = sin(yaw)
-        val cosLean = cos(leanRad)
-        val sinLean = sin(leanRad)
-        val frontExtent = 0.5f * w * abs(sinYaw) + 0.5f * d * cosYaw.coerceAtLeast(0f)
-        val worldZCenter = camera.focalLength + frontExtent
-
-        val hw = w * 0.5f
-        val hd = d * 0.5f
-        // 0..3 顶面顺时针（前左 C0, 前右 C1, 后右 C2, 后左 C3）；4..7 对应底面
-        projectCorner(0, -hw, h, -hd, worldX, worldYBottom, worldZCenter, cosTilt, sinTilt, cosYaw, sinYaw, cosLean, sinLean, camera)
-        projectCorner(1, hw, h, -hd, worldX, worldYBottom, worldZCenter, cosTilt, sinTilt, cosYaw, sinYaw, cosLean, sinLean, camera)
-        projectCorner(2, hw, h, hd, worldX, worldYBottom, worldZCenter, cosTilt, sinTilt, cosYaw, sinYaw, cosLean, sinLean, camera)
-        projectCorner(3, -hw, h, hd, worldX, worldYBottom, worldZCenter, cosTilt, sinTilt, cosYaw, sinYaw, cosLean, sinLean, camera)
-        projectCorner(4, -hw, 0f, -hd, worldX, worldYBottom, worldZCenter, cosTilt, sinTilt, cosYaw, sinYaw, cosLean, sinLean, camera)
-        projectCorner(5, hw, 0f, -hd, worldX, worldYBottom, worldZCenter, cosTilt, sinTilt, cosYaw, sinYaw, cosLean, sinLean, camera)
-        projectCorner(6, hw, 0f, hd, worldX, worldYBottom, worldZCenter, cosTilt, sinTilt, cosYaw, sinYaw, cosLean, sinLean, camera)
-        projectCorner(7, -hw, 0f, hd, worldX, worldYBottom, worldZCenter, cosTilt, sinTilt, cosYaw, sinYaw, cosLean, sinLean, camera)
-
-        var minX = Float.POSITIVE_INFINITY
-        var maxX = Float.NEGATIVE_INFINITY
-        for (i in 0 until 8) {
-            val sx = cornersX[i]
-            if (sx < minX) minX = sx
-            if (sx > maxX) maxX = sx
-        }
-        minScreenX = minX
-        maxScreenX = maxX
-        centerScreenX = camera.centerX + worldX
-
-        frontVisible = writeFaceIfFront(0, 1, 5, 4, frontDst, frontReflDst)
-        if (yaw >= 0f) {
-            spineVisible = turn >= HIDDEN_SPINE_TURN && writeFaceIfFront(3, 0, 4, 7, spineDst, spineReflDst)
-            foreVisible = writeFaceIfFront(1, 2, 6, 5, foreDst, foreReflDst)
-            hasSideContact = frontVisible && turn > 0.2f
-            if (hasSideContact) {
-                frontBottomInnerX = cornersX[5]
-                frontBottomInnerY = cornersY[5]
-                backBottomInnerX = cornersX[4]
-                backBottomInnerY = cornersY[4]
-            }
-        } else {
-            spineVisible = turn >= HIDDEN_SPINE_TURN && writeFaceIfFront(1, 2, 6, 5, spineDst, spineReflDst)
-            foreVisible = writeFaceIfFront(3, 0, 4, 7, foreDst, foreReflDst)
-            hasSideContact = frontVisible && turn > 0.2f
-            if (hasSideContact) {
-                frontBottomInnerX = cornersX[4]
-                frontBottomInnerY = cornersY[4]
-                backBottomInnerX = cornersX[5]
-                backBottomInnerY = cornersY[5]
-            }
-        }
-    }
-
-    private fun projectCorner(
-        index: Int,
-        lx: Float,
-        ly: Float,
-        lz: Float,
-        worldX: Float,
-        worldYBottom: Float,
-        worldZCenter: Float,
-        cosTilt: Float,
-        sinTilt: Float,
-        cosYaw: Float,
-        sinYaw: Float,
-        cosLean: Float,
-        sinLean: Float,
-        camera: ShelfCamera,
-    ) {
-        val ly1 = ly * cosTilt
-        val lz1 = lz * cosTilt - ly * sinTilt
-        val x2 = lx * cosYaw - lz1 * sinYaw
-        val z2 = lx * sinYaw + lz1 * cosYaw
-        val y2 = ly1
-        val x3 = x2 * cosLean + y2 * sinLean
-        val y3 = -x2 * sinLean + y2 * cosLean
-        val wx = worldX + x3
-        val wy = worldYBottom + y3
-        val wz = (worldZCenter + z2).coerceAtLeast(1f)
-        cornersX[index] = camera.projectX(wx, wz)
-        cornersY[index] = camera.projectY(wy, wz)
-        cornersReflY[index] = camera.projectY(-wy, wz)
-    }
-
-    private fun writeFaceIfFront(
-        tl: Int,
-        tr: Int,
-        br: Int,
-        bl: Int,
-        dst: FloatArray,
-        reflDst: FloatArray,
-    ): Boolean {
-        val x0 = cornersX[tl]
-        val y0 = cornersY[tl]
-        val x1 = cornersX[tr]
-        val y1 = cornersY[tr]
-        val x3 = cornersX[bl]
-        val y3 = cornersY[bl]
-        val cross = (x1 - x0) * (y3 - y0) - (y1 - y0) * (x3 - x0)
-        if (cross <= 1f) return false
-        dst[0] = x0
-        dst[1] = y0
-        dst[2] = x1
-        dst[3] = y1
-        dst[4] = cornersX[br]
-        dst[5] = cornersY[br]
-        dst[6] = x3
-        dst[7] = y3
-        reflDst[0] = x0
-        reflDst[1] = cornersReflY[tl]
-        reflDst[2] = x1
-        reflDst[3] = cornersReflY[tr]
-        reflDst[4] = cornersX[br]
-        reflDst[5] = cornersReflY[br]
-        reflDst[6] = x3
-        reflDst[7] = cornersReflY[bl]
-        return true
-    }
-}
-
-/** 创建并托管单本 3D 书盒的正面与书脊离屏图层，供本体透视与搁板倒影共享且互不污染。 */
-@Composable
-internal fun rememberShelfBoxProjectionState(): ShelfBoxProjectionState {
-    val graphicsContext = LocalGraphicsContext.current
-    val state = remember(graphicsContext) {
-        ShelfBoxProjectionState().apply {
-            frontLayer = graphicsContext.createGraphicsLayer()
-            spineLayer = graphicsContext.createGraphicsLayer()
-        }
-    }
-    DisposableEffect(graphicsContext, state) {
-        onDispose {
-            state.frontLayer?.let { graphicsContext.releaseGraphicsLayer(it) }
-            state.spineLayer?.let { graphicsContext.releaseGraphicsLayer(it) }
-            state.frontLayer = null
-            state.spineLayer = null
-        }
-    }
-    return state
-}
-
-/** 计算单本 3D 倒影的裁剪矩形（本地坐标系）：横向覆盖盒子及侧翼透视余量，纵向严格限制在搁板后缘与前缘之间。 */
-internal fun shelfReflectionClipBounds(
-    camera: ShelfCamera,
-    coverWidth: Float,
-    boxWidth: Float,
-): Rect {
-    val sideMargin = maxOf(coverWidth * 0.55f, boxWidth * 0.5f)
-    val reflTop = minOf(camera.shelfBackScreenY(coverWidth), camera.floorY - 2f)
-    val reflBottom = camera.shelfFrontScreenY()
-    return Rect(-sideMargin, reflTop, boxWidth + sideMargin, reflBottom)
-}
-
-/**
- * 视口内倒影透明度：覆盖视口内所有看得见与部分可见的书，边缘随透视横向距离自然轻衰减，不按固定本数突兀截断；
- * 完全移出视口外缘后返回 0 跳过离屏层。
+ * 视口内倒影透明度：覆盖视口内所有看得见与部分可见的书，边缘随横向距离自然轻衰减但不消失；
+ * 选中（正中）那本始终保持最清楚，完全移出视口外缘后返回 0 跳过离屏层。
  */
 internal fun shelfViewportReflectionAlpha(
     centerScreenX: Float,
@@ -710,195 +488,72 @@ internal fun shelfViewportReflectionAlpha(
     if (maxScreenX < -margin || minScreenX > viewport + margin) return 0f
     val half = viewport * 0.5f
     val distFrac = (abs(centerScreenX - half) / half.coerceAtLeast(1f)).coerceIn(0f, 1f)
-    val edgeFade = 1f - REFLECTION_EDGE_ATTENUATION * distFrac * distFrac
+    val rawEdgeFade = 1f - REFLECTION_EDGE_ATTENUATION * distFrac * distFrac
+    val heroWeight = hero.coerceIn(0f, 1f)
+    val edgeFade = rawEdgeFade + (1f - rawEdgeFade) * heroWeight
     val outFade = when {
         centerScreenX < 0f -> (1f + centerScreenX / margin.coerceAtLeast(1f)).coerceIn(0f, 1f)
         centerScreenX > viewport -> (1f - (centerScreenX - viewport) / margin.coerceAtLeast(1f)).coerceIn(0f, 1f)
         else -> 1f
     }
-    val liftFade = 1f - REFLECTION_LIFT_FADE * hero.coerceIn(0f, 1f)
+    val liftFade = 1f - REFLECTION_LIFT_FADE * heroWeight
     return (baseAlpha * edgeFade * outFade * liftFade * groundAlpha).coerceIn(0f, 1f)
 }
 
-private fun DrawScope.drawProjectedLayer(
-    layer: GraphicsLayer?,
-    w: Float,
-    h: Float,
-    quad: FloatArray,
-    ox: Float,
-    oy: Float,
-    matrix: Matrix,
-    src: FloatArray,
-    dst: FloatArray,
-    heroScale: Float = 1f,
-    heroLiftPx: Float = 0f,
-    fallback: (() -> Unit)? = null,
-) {
-    if (w <= 0f || h <= 0f) return
-    src[0] = 0f
-    src[1] = 0f
-    src[2] = w
-    src[3] = 0f
-    src[4] = w
-    src[5] = h
-    src[6] = 0f
-    src[7] = h
-    val hw = w * 0.5f
-    val invScale = 1f / heroScale.coerceAtLeast(1e-3f)
-    val adjustHero = heroScale != 1f || heroLiftPx != 0f
-    for (i in 0 until 4) {
-        val ix = quad[i * 2] - ox
-        val iy = quad[i * 2 + 1] - oy
-        dst[i * 2] = if (adjustHero) hw + (ix - hw) * invScale else ix
-        dst[i * 2 + 1] = if (adjustHero) h + (iy - h + heroLiftPx) * invScale else iy
-    }
-    if (!matrix.setPolyToPoly(src, 0, dst, 0, 4)) return
-    val nc = drawContext.canvas.nativeCanvas
-    val save = nc.save()
-    nc.concat(matrix)
-    if (layer != null) drawLayer(layer) else fallback?.invoke()
-    nc.restoreToCount(save)
-}
-
-private fun DrawScope.drawProjectedQuadPath(
-    quad: FloatArray,
-    ox: Float,
-    oy: Float,
-    path: Path,
-    color: Color,
-) {
-    path.rewind()
-    path.moveTo(quad[0] - ox, quad[1] - oy)
-    path.lineTo(quad[2] - ox, quad[3] - oy)
-    path.lineTo(quad[4] - ox, quad[5] - oy)
-    path.lineTo(quad[6] - ox, quad[7] - oy)
-    path.close()
-    drawPath(path, color)
-}
-
 /**
- * 书脊面 3D 透视投影：把书脊 `(0..spineDepth, 0..coverHeight)` 录制进离屏图层后，经 `Matrix.setPolyToPoly`
- * 映射到共享相机算出的屏幕四边形；读取 [positionProvider] 使滚动途中外层图层能同步刷新投影，背向相机时跳过绘制。
+ * 书脊面：宽 [ShelfGeometry.spineDepth]，与正面共用一条棱。盒子在右侧时书脊在左（朝向书架中心），反之在右；
+ * 正对时书脊侧立成一条线，直接不画。
+ *
+ * 只改图层属性（位移 / 转角 / 透明度），书脊内容只录制一次；背光压暗另用 [shelfFaceShade] 覆盖层。
+ * 书脊是直角、不裁切：它是这本书的装订边，和封面是一体的，切了角就像两块拼起来的（倒角只在封面开口那一侧）；
+ * 书脊内容也恰好铺满自身，用不着裁切。
  */
-internal fun Modifier.shelfSpineProjection(
-    proj: ShelfBoxProjectionState,
-    positionProvider: () -> Float,
-): Modifier = drawWithCache {
-    val w = size.width
-    val h = size.height
-    if (w <= 0f || h <= 0f) return@drawWithCache onDrawWithContent { }
-    val matrix = Matrix()
-    val src = FloatArray(8)
-    val dst = FloatArray(8)
-    onDrawWithContent {
-        positionProvider()
-        if (!proj.spineVisible) return@onDrawWithContent
-        val layer = proj.spineLayer
-        if (layer != null) {
-            layer.record { this@onDrawWithContent.drawContent() }
-            proj.spineLayerWidth = w
-            proj.spineLayerHeight = h
-            proj.hasRecordedSpine = true
-        }
-        drawProjectedLayer(
-            layer = layer,
-            w = w,
-            h = h,
-            quad = proj.spineDst,
-            ox = proj.boxLeftInStage + proj.innerOffsetX,
-            oy = proj.innerOffsetY,
-            matrix = matrix,
-            src = src,
-            dst = dst,
-            fallback = { drawContent() },
-        )
-    }
-}
-
-/**
- * 封面（正面）起飞坐标对齐层：在 `offset == 0` 停稳时让 `ShelfFront` 的布局坐标与屏幕绘出的正中大封面
- * 严丝合缝（`ShelfBookStage.origin` 直接读取底左角无需改动）；其余偏移的真实透视全部交由 [shelfFrontProjection]。
- */
-internal fun Modifier.shelfFrontHeroAlignment(
+internal fun Modifier.shelfSpineFace(
     offsetProvider: () -> Float,
-    liftPx: Float,
-): Modifier = graphicsLayer {
-    val hero = shelfHeroness(offsetProvider())
-    val s = 1f + (shelfPoseScale(0f) - 1f) * hero
-    transformOrigin = TransformOrigin(0.5f, 1f)
-    scaleX = s
-    scaleY = s
-    translationY = -liftPx * hero
-}
-
-/**
- * 封面（正面）3D 透视投影 + 倒角裁切与玻璃描边：先把倒角裁切后的 2D 封面录制进离屏图层（供本体与倒影共用），
- * 再施加共享相机单点透视并反算抵消 [shelfFrontHeroAlignment] 的局部缩放平移；读取 [positionProvider] 确保滚动途中及时刷新。
- */
-internal fun Modifier.shelfFrontProjection(
-    proj: ShelfBoxProjectionState,
-    positionProvider: () -> Float,
-    offsetProvider: () -> Float,
-    shapes: ShelfBoxShapes,
     geometry: ShelfGeometry,
-): Modifier = drawWithCache {
-    val w = size.width
-    val h = size.height
-    if (w <= 0f || h <= 0f) return@drawWithCache onDrawWithContent { }
-    val matrix = Matrix()
-    val src = FloatArray(8)
-    val dst = FloatArray(8)
-    onDrawWithContent {
-        positionProvider()
-        val layer = proj.frontLayer
-        if (layer != null) {
-            layer.record { this@onDrawWithContent.drawContent() }
-            proj.frontLayerWidth = w
-            proj.frontLayerHeight = h
-            proj.hasRecordedFront = true
-        }
-        if (!proj.frontVisible) return@onDrawWithContent
-        drawProjectedLayer(
-            layer = layer,
-            w = w,
-            h = h,
-            quad = proj.frontDst,
-            ox = proj.boxLeftInStage + proj.innerOffsetX,
-            oy = proj.innerOffsetY,
-            matrix = matrix,
-            src = src,
-            dst = dst,
-            heroScale = proj.heroScale,
-            heroLiftPx = proj.heroLiftPx,
-            fallback = { drawContent() },
-        )
+): Modifier = graphicsLayer {
+    val yaw = geometry.yaw(offsetProvider())
+    val turn = abs(yaw)
+    val edge = sharedEdge(geometry, yaw, turn)
+    // 横向压缩到书脊投影宽度（仿射），不用透视旋转：书脊停稳时几乎正对屏幕，透视看不出来，
+    // 而透视矩阵下的文字没法走字形缓存、要逐字按路径绘制，十几本书脊每帧会把 GPU 拖慢一大截。
+    scaleX = sin(turn)
+    if (yaw >= 0f) {
+        translationX = edge - geometry.spineDepth
+        transformOrigin = TransformOrigin(1f, 0.5f)
+    } else {
+        translationX = edge
+        transformOrigin = TransformOrigin(0f, 0.5f)
     }
-}.graphicsLayer {
+    alpha = if (turn < HIDDEN_SPINE_TURN) 0f else 1f
+}
+
+/**
+ * 正面（封面）：绕与书脊共用的那条棱转开。同样只改图层属性；压暗与反光由覆盖层负责。
+ * 倒角裁切只在接近正对时开启：转开后只露一条封面边，看不出倒角，而 3D 转动下的路径裁切在渲染线程上很贵。
+ */
+internal fun Modifier.shelfFrontFace(
+    offsetProvider: () -> Float,
+    geometry: ShelfGeometry,
+    shapes: ShelfBoxShapes,
+): Modifier = graphicsLayer {
     val offset = offsetProvider()
     val yaw = geometry.yaw(offset)
+    val turn = abs(yaw)
+    val edge = sharedEdge(geometry, yaw, turn)
+    cameraDistance = SHELF_FACE_CAMERA * density
+    // 与书脊相接的那条棱是直角，外侧两角是倒角：封面和书脊是同一个盒子的两个面
     shape = if (yaw >= 0f) shapes.frontWithSpineLeft else shapes.frontWithSpineRight
     clip = abs(offset) < FRONT_CLIP_RANGE
-}
-
-/** 绘制盒子的外缘侧面（远离书脊的那一侧厚度，在靠左排书贴边等视角下自然露出）。 */
-internal fun Modifier.shelfForeEdgeProjection(
-    proj: ShelfBoxProjectionState,
-    positionProvider: () -> Float,
-    baseColor: Color,
-    shadeColor: Color,
-): Modifier = drawWithCache {
-    val path = Path()
-    val shaded = androidx.compose.ui.graphics.lerp(baseColor, shadeColor, FRONT_SHADE)
-    onDrawBehind {
-        positionProvider()
-        if (!proj.foreVisible) return@onDrawBehind
-        drawProjectedQuadPath(
-            quad = proj.foreDst,
-            ox = proj.boxLeftInStage + proj.innerOffsetX,
-            oy = proj.innerOffsetY,
-            path = path,
-            color = shaded,
-        )
+    val degrees = Math.toDegrees(turn.toDouble()).toFloat()
+    if (yaw >= 0f) {
+        translationX = edge
+        transformOrigin = TransformOrigin(0f, 0.5f)
+        rotationY = degrees
+    } else {
+        translationX = edge - geometry.coverWidth
+        transformOrigin = TransformOrigin(1f, 0.5f)
+        rotationY = -degrees
     }
 }
 
@@ -1012,27 +667,35 @@ internal fun DrawScope.drawShelfGloss(gloss: Color) {
     )
 }
 
+/** 正面与书脊共用的那条棱在盒子内部坐标里的横坐标（内部宽 = 封面宽，盒子可见部分居中）。 */
+private fun sharedEdge(geometry: ShelfGeometry, yaw: Float, turn: Float): Float {
+    val center = geometry.coverWidth / 2f
+    val half = geometry.visibleWidth(turn) / 2f
+    val spine = geometry.spineDepth * sin(turn)
+    return if (yaw >= 0f) center - half + spine else center + half - spine
+}
+
 /**
- * 3D 书盒姿态、接触阴影、悬浮投影与视口全覆盖倒影：
- * - 统一以 [camera] 算出 3D 盒子的真实透视投影（含抽出抬升/外倾、甩动侧倾、单本高矮/斜倚）；
- * - 接触阴影沿书底实际立面落点绘在搁板上表面；
- * - 视口内（含部分可见）的每本书都绘制沿 `Y = 0` 镜面反射的 3D 倒影，并裁剪到搁板前后缘之间。
+ * 搁板上的倒影与接触阴影：在盒子下方镜像绘制一份内容并向下淡出；盒子抬起时倒影随之离开搁板。
+ * 放在盒子姿态（抬起 / 缩放）之外，以搁板接触线 [floorY] 为镜面。
+ *
+ * 视口内（含部分可见）的每本书均绘制倒影，透明度按距视口中心横向距离平滑衰减但不消失，
+ * 并裁剪在接触线与搁板前缘之间。
  */
-internal fun Modifier.shelfBox3DWithReflection(
+internal fun Modifier.shelfReflection(
     state: PagerState,
     page: Int,
     geometry: ShelfGeometry,
     rowShift: () -> Float,
-    camera: ShelfCamera,
-    proj: ShelfBoxProjectionState,
-    trait: ShelfBookTrait,
-    velocity: State<Float>,
-    topRoomPx: Float,
+    rail: ShelfRail,
+    viewport: Float,
+    offsetProvider: () -> Float,
+    floorY: Float,
+    bookHeight: Float,
     liftPx: Float,
+    reflectionHeight: Float,
     reflectionAlpha: Float,
     shadow: Color,
-    foreEdgeBaseColor: Color,
-    foreEdgeShadeColor: Color,
     bodyAlpha: () -> Float = { 1f },
     groundAlpha: () -> Float = { 1f },
 ): Modifier = drawWithCache {
@@ -1045,97 +708,54 @@ internal fun Modifier.shelfBox3DWithReflection(
     val bodyPaint = Paint()
     val reflectionPaint = Paint()
     val bodyBounds = Rect(0f, 0f, width, height)
-    val floorY = camera.floorY
-    val fullReflectionBounds = shelfReflectionClipBounds(camera, geometry.coverWidth, width)
-    val reflTop = fullReflectionBounds.top
-    val reflBottom = fullReflectionBounds.bottom
-    val frontEdgeY = reflBottom
-    val reflectionHeight = (frontEdgeY - floorY).coerceAtLeast(1f)
-    val sideMargin = -fullReflectionBounds.left
+    val sideMargin = maxOf(geometry.coverWidth * 0.35f, width * 0.5f)
     val bleed = REFLECTION_MASK_BLEED * density
-    val maskTopLeft = Offset(-sideMargin - bleed, reflTop - bleed)
-    val maskSize = Size(width + (sideMargin + bleed) * 2f, (reflBottom - reflTop) + bleed * 2f)
-    val contactRadiusX = (width * CONTACT_SPREAD / 2f).coerceAtLeast(1f)
-    val contactRadiusY = (reflectionHeight * SHADOW_HEIGHT_RATIO / 2f).coerceAtLeast(1f)
+    val maskStartY = floorY
+    val maskEndY = floorY + reflectionHeight
+    val maskTopLeft = Offset(-sideMargin - bleed, maskStartY - bleed)
+    val maskSize = Size(width + (sideMargin + bleed) * 2f, reflectionHeight + bleed * 2f)
+    val fullReflectionBounds = Rect(-sideMargin, floorY, width + sideMargin, maskEndY)
+    val contactRadiusX = width * CONTACT_SPREAD / 2f
+    val contactRadiusY = reflectionHeight * SHADOW_HEIGHT_RATIO / 2f
     val contactCenter = Offset(width / 2f, floorY)
-    val contactScaleY = contactRadiusY / contactRadiusX
-    val contactBrush = Brush.radialGradient(
-        0f to shadow,
-        0.55f to shadow.copy(alpha = shadow.alpha * 0.6f),
-        1f to Color.Transparent,
-        center = contactCenter,
-        radius = contactRadiusX,
-    )
-    val maskStartFrac = ((floorY - reflTop) / (reflBottom - reflTop).coerceAtLeast(1f)).coerceIn(0f, 0.9f)
-    val maskMidFrac = maskStartFrac + (1f - maskStartFrac) * 0.48f
-    val maskBrush = Brush.verticalGradient(
-        0f to Color.Black,
-        maskStartFrac to Color.Black,
-        maskMidFrac to Color.Black.copy(alpha = 0.56f),
-        1f to Color.Transparent,
-        startY = reflTop,
-        endY = reflBottom,
-    )
-    val reflMatrix = Matrix()
-    val reflSrc = FloatArray(8)
-    val reflDst = FloatArray(8)
-    val reflForePath = Path()
-    val foreShadedColor = androidx.compose.ui.graphics.lerp(foreEdgeBaseColor, foreEdgeShadeColor, FRONT_SHADE)
-    val sideContactStroke = (3.5f * density).coerceAtLeast(1.5f)
-    val sideContactColor = shadow.copy(alpha = shadow.alpha * 0.72f)
+    val contactScaleY = if (contactRadiusX > 0.5f) contactRadiusY / contactRadiusX else 1f
+    val contactBrush = if (contactRadiusX > 0.5f && contactRadiusY > 0.5f && reflectionHeight > 0f) {
+        Brush.radialGradient(
+            0f to shadow,
+            0.55f to shadow.copy(alpha = shadow.alpha * 0.6f),
+            1f to Color.Transparent,
+            center = contactCenter,
+            radius = contactRadiusX,
+        )
+    } else {
+        null
+    }
+    val maskBrush = if (reflectionHeight > 0f) {
+        Brush.verticalGradient(
+            0f to Color.Black,
+            0.48f to Color.Black.copy(alpha = 0.56f),
+            1f to Color.Transparent,
+            startY = maskStartY,
+            endY = maskEndY,
+        )
+    } else {
+        null
+    }
     val blurRadius = ELEVATION_BLUR * density
     val elevShift = ELEVATION_SHIFT * density
     val elevDrop = ELEVATION_DROP * density
-    val elevBaseW = geometry.coverWidth * 0.84f
-    val elevBaseH = geometry.coverHeight * (1f + HERO_SCALE)
+    val elevBaseW = width * 0.84f
+    val elevBaseH = bookHeight * (1f + HERO_SCALE)
 
     onDrawWithContent {
         val bAlpha = bodyAlpha().coerceIn(0f, 1f)
         val gAlpha = groundAlpha().coerceIn(0f, 1f)
-        val offset = state.shelfOffset(page)
-        val worldX = geometry.centerX(offset) + rowShift()
-        val t = shelfSideness(offset)
-        val hero = shelfHeroness(offset)
-        val scale = shelfPoseScale(offset) * (1f - (1f - trait.sizeScale) * t)
-        val yaw = geometry.yaw(offset)
-        val v = velocity.value
-        val flingLean = if (abs(v) > 0.05f && state.isScrollInProgress &&
-            (if (v > 0f) state.canScrollForward else state.canScrollBackward)
-        ) {
-            (v / LEAN_FULL_SPEED).coerceIn(-1f, 1f)
-        } else {
-            0f
-        }
-        val leanDeg = flingLean * LEAN_DEGREES + trait.restLeanDegrees * t
-        val tiltRad = Math.toRadians((HERO_TILT_DEGREES * hero).toDouble()).toFloat()
-        val leanRad = Math.toRadians(leanDeg.toDouble()).toFloat()
-
-        proj.boxLeftInStage = camera.centerX + worldX - width * 0.5f
-        proj.innerOffsetX = ((width - geometry.coverWidth) * 0.5f).roundToInt().toFloat()
-        proj.innerOffsetY = topRoomPx
-        proj.heroScale = 1f + (shelfPoseScale(0f) - 1f) * hero
-        proj.heroLiftPx = liftPx * hero
-        proj.update(
-            worldX = worldX,
-            worldYBottom = liftPx * hero,
-            w = geometry.coverWidth * scale,
-            h = geometry.coverHeight * scale,
-            d = geometry.spineDepth * scale,
-            yaw = yaw,
-            tiltRad = tiltRad,
-            leanRad = leanRad,
-            camera = camera,
-        )
-
         if (bAlpha <= 0.001f && gAlpha <= 0.001f) return@onDrawWithContent
-        val cullMargin = camera.viewport * REFLECTION_VIEWPORT_MARGIN_RATIO
-        if (proj.maxScreenX < -cullMargin || proj.minScreenX > camera.viewport + cullMargin) {
-            return@onDrawWithContent
-        }
-
-        // 被抽出来的那一盒悬在背板前：身后向右下方散开的模糊投影
+        val localOffset = offsetProvider()
+        val hero = shelfHeroness(localOffset)
+        // 被抽出来的那一盒悬在背板前：身后一团向右下方散开的模糊投影，随书离开/落回平滑淡出渐显
         if (hero > 0.02f && gAlpha > 0.005f) {
-            val h = geometry.coverHeight * (1f + HERO_SCALE * hero)
+            val h = bookHeight * (1f + HERO_SCALE * hero)
             val dx = elevShift * hero
             val shadowLeft = width * 0.08f + dx
             val shadowRight = width * 0.92f + dx
@@ -1153,9 +773,9 @@ internal fun Modifier.shelfBox3DWithReflection(
                 )
             }
         }
-        // 接触阴影：立在板面上的书脚压出沿接触线与内侧面底缘的软影
+        // 接触阴影：书脚压在搁板线上的一道软影，渐变按椭圆压扁、边缘完全淡出，看不出轮廓。
         val contact = 1f - hero
-        if (contact > 0.01f && gAlpha > 0.005f) {
+        if (contactBrush != null && contact > 0.01f && gAlpha > 0.005f) {
             withTransform({ scale(1f, contactScaleY, pivot = contactCenter) }) {
                 drawCircle(
                     brush = contactBrush,
@@ -1164,19 +784,7 @@ internal fun Modifier.shelfBox3DWithReflection(
                     alpha = (contact * gAlpha).coerceIn(0f, 1f),
                 )
             }
-            if (proj.hasSideContact) {
-                val ox = proj.boxLeftInStage
-                drawLine(
-                    color = sideContactColor.copy(alpha = sideContactColor.alpha * contact * gAlpha),
-                    start = Offset(proj.frontBottomInnerX - ox, proj.frontBottomInnerY),
-                    end = Offset(proj.backBottomInnerX - ox, proj.backBottomInnerY),
-                    strokeWidth = sideContactStroke,
-                    cap = StrokeCap.Round,
-                )
-            }
         }
-
-        // 书架本体（立在搁板表面之上）；借出隐藏且尚未录过各面图层时，先零透明离屏录制一次供倒影使用
         if (bAlpha >= 0.999f) {
             drawContent()
         } else if (bAlpha > 0.001f) {
@@ -1184,55 +792,27 @@ internal fun Modifier.shelfBox3DWithReflection(
             drawContext.canvas.saveLayer(bodyBounds, bodyPaint)
             drawContent()
             drawContext.canvas.restore()
-        } else if (gAlpha > 0.005f && (!proj.hasRecordedFront || (proj.spineVisible && !proj.hasRecordedSpine))) {
-            bodyPaint.alpha = 0f
-            drawContext.canvas.saveLayer(bodyBounds, bodyPaint)
-            drawContent()
-            drawContext.canvas.restore()
         }
-
-        // 视口内全部书籍的镜面倒影（由预录离屏图层直接投影，避免子层 RenderNode 缓存吞掉倒影或卡死在倒影态）
+        val realOffset = state.shelfOffset(page)
+        val railX = geometry.centerX(realOffset) + rowShift()
+        val centerScreenX = viewport * 0.5f + rail.screenX(railX)
+        val halfW = 0.5f * geometry.visibleWidth(abs(geometry.yaw(realOffset))) *
+            shelfPoseScale(realOffset) * rail.scale(railX)
         val alpha = shelfViewportReflectionAlpha(
-            centerScreenX = proj.centerScreenX,
-            minScreenX = proj.minScreenX,
-            maxScreenX = proj.maxScreenX,
-            viewport = camera.viewport,
+            centerScreenX = centerScreenX,
+            minScreenX = centerScreenX - halfW,
+            maxScreenX = centerScreenX + halfW,
+            viewport = viewport,
             baseAlpha = reflectionAlpha,
             hero = hero,
             groundAlpha = gAlpha,
         )
-        if (alpha <= 0.01f) return@onDrawWithContent
-        clipRect(left = -sideMargin, top = reflTop, right = width + sideMargin, bottom = reflBottom) {
+        if (maskBrush == null || alpha <= 0.01f) return@onDrawWithContent
+        clipRect(left = -sideMargin, top = floorY, right = width + sideMargin, bottom = maskEndY) {
+            // 固定使用完整倒影离屏尺寸，避免每帧动态变更 Bounds 引发 Skia 反复创建与驱逐 Scratch RenderTarget
             drawContext.canvas.saveLayer(fullReflectionBounds, reflectionPaint)
-            val ox = proj.boxLeftInStage
-            if (proj.foreVisible) {
-                drawProjectedQuadPath(proj.foreReflDst, ox, 0f, reflForePath, foreShadedColor)
-            }
-            if (proj.spineVisible) {
-                drawProjectedLayer(
-                    layer = proj.spineLayer,
-                    w = proj.spineLayerWidth,
-                    h = proj.spineLayerHeight,
-                    quad = proj.spineReflDst,
-                    ox = ox,
-                    oy = 0f,
-                    matrix = reflMatrix,
-                    src = reflSrc,
-                    dst = reflDst,
-                )
-            }
-            if (proj.frontVisible) {
-                drawProjectedLayer(
-                    layer = proj.frontLayer,
-                    w = proj.frontLayerWidth,
-                    h = proj.frontLayerHeight,
-                    quad = proj.frontReflDst,
-                    ox = ox,
-                    oy = 0f,
-                    matrix = reflMatrix,
-                    src = reflSrc,
-                    dst = reflDst,
-                )
+            withTransform({ scale(1f, -1f, pivot = contactCenter) }) {
+                this@onDrawWithContent.drawContent()
             }
             drawRect(
                 brush = maskBrush,
@@ -1383,16 +963,33 @@ internal class ShelfCaseColors(
     val glow: Color,
 )
 
+/** 计算水平搁板上表面后缘纵坐标（位于书背之后，让书脚稳稳落在板面接触线上）。 */
+internal fun shelfBoardBackY(
+    floorY: Float,
+    bookHeight: Float,
+    coverWidth: Float,
+    viewport: Float,
+): Float {
+    val safeHeight = bookHeight.coerceAtLeast(1f)
+    val eyeHeight = (safeHeight * BOARD_EYE_HEIGHT_RATIO).coerceAtLeast(1f)
+    val focalLength = maxOf(
+        safeHeight * BOARD_FOCAL_HEIGHT_RATIO,
+        viewport.coerceAtLeast(0f) * BOARD_FOCAL_VIEWPORT_RATIO,
+    ).coerceAtLeast(1f)
+    val backZ = focalLength + coverWidth.coerceAtLeast(0f) * SHELF_BACK_DEPTH_RATIO
+    return floorY - eyeHeight * (1f - focalLength / backZ)
+}
+
 /**
  * 零 per-frame 分配的书柜搁板修饰符（静态路径与 4 枚背景渐变画刷随尺寸/主题预构建，
- * 搁板上表面从后缘 [backEdgeY]（书背之后）延伸到前缘 [frontEdgeY]（接触线 [floorY] 之前），
+ * 搁板上表面从后缘（书背之后）延伸到前缘（接触线 [floorY] 之前），
  * 接触线处仅压一条柔和环境暗带而不画亮白边线，清晰呈现「书立于水平板面上」的空间关系）。
  */
 internal fun Modifier.shelfCase(
     positionProvider: () -> Float,
     shiftProvider: () -> Float,
     rail: ShelfRail,
-    camera: ShelfCamera,
+    viewport: Float,
     coverWidthPx: Float,
     floorY: Float,
     depth: Float,
@@ -1411,7 +1008,7 @@ internal fun Modifier.shelfCase(
     val rightScale = rail.scale(farX)
     val leftX = width / 2f + rail.screenX(-farX)
     val rightX = width / 2f + rail.screenX(farX)
-    val backY = camera.shelfBackScreenY(coverWidthPx)
+    val backY = shelfBoardBackY(floorY, bookHeight, coverWidthPx, viewport)
     val leftBack = backY + rail.lift(-farX)
     val rightBack = backY + rail.lift(farX)
     val leftContact = floorY + rail.lift(-farX)
@@ -3003,19 +2600,19 @@ internal fun rememberTypewriterLength(text: String): Int {
     return length.coerceIn(0, text.length)
 }
 
-/** 书脊朝外时盒子转过的角度：90° 使书脊面完全平行于屏幕，内侧面向共享消失点收拢。 */
-internal val SHELF_SPINE_TURN = HALF_PI
+/** 书脊朝外时盒子转过的角度：留一条封面边，看得出是立体的盒子。 */
+internal val SHELF_SPINE_TURN = Math.toRadians(86.0).toFloat()
 
 /** 转角小于这个值时书脊几乎侧立成一条线，直接不画。 */
 private const val HIDDEN_SPINE_TURN = 0.02f
 
-/** 统一单相机参数：视点高于板面（占盒高比例）、焦距（取盒高与视口宽较大者的倍数）、搁板后缘延深。 */
-private const val CAMERA_EYE_HEIGHT_RATIO = 0.28f
-private const val CAMERA_FOCAL_HEIGHT_RATIO = 3.8f
-private const val CAMERA_FOCAL_VIEWPORT_RATIO = 1.45f
+/** 水平搁板顶面后缘透视延深参数（与盒高、视口宽及封面宽联动）。 */
+private const val BOARD_EYE_HEIGHT_RATIO = 0.28f
+private const val BOARD_FOCAL_HEIGHT_RATIO = 3.8f
+private const val BOARD_FOCAL_VIEWPORT_RATIO = 1.45f
 private const val SHELF_BACK_DEPTH_RATIO = 1.18f
 
-/** 透视相机距离（× density，供翻开的书等共用）。 */
+/** 透视相机距离（× density）：足够远，转动时盒子不夸张变形。 */
 internal const val SHELF_FACE_CAMERA = 28f
 
 /** 离开中心后盒子缩小的比例（往后退一点）。 */
@@ -3047,11 +2644,11 @@ private const val RAIL_FOG = 0.24f
 /** 当前那盒的停靠位置（相对书架中心，× 书架宽；负 = 偏左）。书架放平后停在正中。 */
 internal const val RAIL_ANCHOR = 0f
 
-/** 正中那一盒停稳时完全正对屏幕（0°），不露侧面书脊。 */
-internal const val HERO_YAW = 0f
+/** 正中那一盒侧转露出书脊的角度。 */
+internal val HERO_YAW = Math.toRadians(16.0).toFloat()
 
-/** 离开正中起点处由 0° 平滑接入反解转角的局部过渡范围。 */
-private const val YAW_BEVEL_RAMP_U = 0.16f
+/** 转得浅时左侧的书经过正对换边：在离正中这么多本以内转完（这一段封面几乎正对，宽度变化很小）。 */
+private const val LEFT_FLIP_RANGE = 0.3f
 
 
 /** 悬浮投影：模糊半径、向右偏移、向下错开（dp）与浓度倍数。 */
@@ -3070,8 +2667,8 @@ private const val AO_SQUASH = 0.09f
 private const val BOARD_UNDER_SHADOW = 16f
 
 /** 两侧盒子正面 / 书脊背光时最多压暗多少。 */
-internal const val FRONT_SHADE = 0.34f
-internal const val SPINE_SHADE = 0.36f
+internal const val FRONT_SHADE = 0.42f
+internal const val SPINE_SHADE = 0.5f
 
 /** 反光带：正对时的位置、随转动滑过的距离、宽度与倾斜（均为封面宽 / 高的比例）。 */
 private const val GLOSS_REST = 0.18f
