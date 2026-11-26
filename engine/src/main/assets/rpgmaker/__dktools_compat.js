@@ -5,8 +5,13 @@
         typeof DKTools.IO._loadStamp !== "function" || DKTools.IO.__tyranorStampCompat) return;
     DKTools.IO.__tyranorStampCompat = true;
     var original = DKTools.IO._loadStamp;
+    function isRealNwjs() {
+        return !window.__tyranorNwPolyfill && typeof Utils !== "undefined" &&
+            typeof Utils.isNwjs === "function" && Utils.isNwjs();
+    }
     // DKTools also reads stamp paths directly for directory listings and stats.
     // Keep canonical keys for enumeration, resolving aliases only during reads.
+    var MAX_FUZZY_ENTRIES = 4096;
     function compatibleIndex(index) {
         var views = new WeakMap();
         // Match Kotlin/Java's simple upper-then-lower case comparison. Whole-string
@@ -21,21 +26,23 @@
             }).join("");
         }
         var whitespace = /[\u0009-\u000d\u001c-\u0020\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/g;
-        function whitespaceKey(name) { return name.replace(whitespace, " ").toLowerCase(); }
+        var trailingWhitespace = /[\u0009-\u000d\u001c-\u0020\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/;
+        function whitespaceKey(name) { return caseKey(name.replace(whitespace, " ")); }
         function trailingKey(name) {
             var dot = name.lastIndexOf(".");
-            var trim = /[\u0009-\u000d\u001c-\u0020\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/;
-            return (dot > 0 ? name.substring(0, dot).replace(trim, "") + name.substring(dot) : name.replace(trim, "")).toLowerCase();
+            return caseKey(dot > 0 ? name.substring(0, dot).replace(trailingWhitespace, "") + name.substring(dot) : name.replace(trailingWhitespace, ""));
         }
         function view(node) {
             if (!node || typeof node !== "object" || Array.isArray(node)) return node;
             if (views.has(node)) return views.get(node);
             var names = Object.keys(node);
+            var entryCount = Object.prototype.hasOwnProperty.call(node, "__stats__") ? names.length - 1 : names.length;
+            // Returns matched name, undefined for no match, or null when ambiguous.
             function unique(requested, key) {
                 var target = key(requested), found;
                 for (var i = 0; i < names.length; i++) {
                     if (key(names[i]) !== target) continue;
-                    if (found !== undefined) return undefined;
+                    if (found !== undefined) return null;
                     found = names[i];
                 }
                 return found;
@@ -43,11 +50,15 @@
             var proxy = new Proxy(node, { get: function (target, requested) {
                 if (typeof requested !== "string" || requested === "__proto__" ||
                     requested === "constructor" || requested === "prototype") return undefined;
-                var name = Object.prototype.hasOwnProperty.call(target, requested) ? requested :
-                    unique(requested, caseKey);
-                if (name === undefined) name = unique(requested, whitespaceKey);
-                if (name === undefined) name = unique(requested, trailingKey);
-                return name === undefined ? undefined : view(target[name]);
+                if (Object.prototype.hasOwnProperty.call(target, requested)) return view(target[requested]);
+                var name = unique(requested, caseKey);
+                if (typeof name === "string") return view(target[name]);
+                if (entryCount > MAX_FUZZY_ENTRIES) return undefined;
+                name = unique(requested, whitespaceKey);
+                if (typeof name === "string") return view(target[name]);
+                if (name === null) return undefined;
+                name = unique(requested, trailingKey);
+                return typeof name === "string" ? view(target[name]) : undefined;
             }});
             views.set(node, proxy);
             return proxy;
@@ -62,14 +73,14 @@
     if (mode === undefined && typeof DKToolsParam !== "undefined") {
         mode = DKToolsParam.get("File System", "Mode");
     }
-    if (!Utils.isNwjs() && mode === DKTools.IO.MODE_NWJS_STAMP &&
+    if (!isRealNwjs() && mode === DKTools.IO.MODE_NWJS_STAMP &&
         (!DKTools.IO._stamp || Object.keys(DKTools.IO._stamp).length === 0)) {
         var resolveReady;
         var ready = new Promise(function (resolve) { resolveReady = resolve; });
         function finish(index) { prefetched = index; finished = true; resolveReady(); }
         function requestIndex() {
             var xhr = new XMLHttpRequest();
-            xhr.open("GET", "__tyranor_internal/dktools-index.json", true);
+            xhr.open("GET", "/__tyranor_internal/dktools-index.json", true);
             xhr.overrideMimeType("application/json");
             xhr.timeout = 15000;
             xhr.onload = function () {
@@ -89,14 +100,14 @@
                     finish(null);
                 }
             };
-            xhr.onerror = xhr.ontimeout = function () { finish(null); };
+            xhr.onerror = xhr.ontimeout = xhr.onabort = function () { finish(null); };
             try { xhr.send(); } catch (error) { finish(null); }
         }
         window.__tyranorDkToolsReady = ready;
         requestIndex();
     }
     DKTools.IO._loadStamp = function () {
-        if (Utils.isNwjs() || this.mode !== DKTools.IO.MODE_NWJS_STAMP) return original.apply(this, arguments);
+        if (isRealNwjs() || this.mode !== DKTools.IO.MODE_NWJS_STAMP) return original.apply(this, arguments);
         if (this.__tyranorGeneratedStamp && this._stamp === this.__tyranorGeneratedStamp) return;
         if (this._stamp && Object.keys(this._stamp).length > 0) return original.apply(this, arguments);
         // null keeps original Stamp.json authoritative, including malformed originals.

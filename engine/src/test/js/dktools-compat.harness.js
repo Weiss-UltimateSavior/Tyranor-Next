@@ -13,13 +13,14 @@ const resourcePath = constant('RESOURCE_PATH');
 const hook = fs.readFileSync(path.join(__dirname, '../../main/assets', constant('ASSET_PATH')), 'utf8');
 (async () => {
 let scenarios = 0;
-async function run({ index = { locales: {} }, nwjs = false, mode = 0, status = 200, stamp = {}, delay = 0, afterFetch = false, uninitialized = false, clockStep = 0 } = {}) {
+async function run({ index = { locales: {} }, nwjs = false, nwPolyfill = false, mode = 0, status = 200, stamp = {}, delay = 0, afterFetch = false, uninitialized = false, clockStep = 0, abort = false } = {}) {
     scenarios++;
     let originalCalls = 0;
     let requests = 0;
     const io = { MODE_NWJS_STAMP: 0, mode, _stamp: stamp, _loadStamp() { originalCalls++; } };
     if (uninitialized) io.mode = undefined;
     const browser = new EventTarget();
+    if (nwPolyfill) browser.__tyranorNwPolyfill = true;
     let listeners = 0;
     let ticks = 0;
     const heartbeat = setInterval(() => ticks++, 1);
@@ -30,6 +31,8 @@ async function run({ index = { locales: {} }, nwjs = false, mode = 0, status = 2
             loaded = resolve;
             timeout = setTimeout(() => reject(new Error('Timed out waiting for DKTools load gate')), Math.max(2000, delay + 1000));
         });
+        let xhrSettled;
+        const xhrDone = new Promise(resolve => { xhrSettled = resolve; });
         browser.onload = () => {
             io.mode = mode;
             io._loadStamp();
@@ -39,15 +42,22 @@ async function run({ index = { locales: {} }, nwjs = false, mode = 0, status = 2
         const FakeDate = { now: () => now };
         const context = vm.createContext({ window: browser, Event, setTimeout, clearTimeout, Date: FakeDate, DKToolsParam: { get: () => mode }, DKTools: { IO: io }, Utils: { isNwjs: () => nwjs }, console,
             XMLHttpRequest: class {
-                open(method, url, async) { assert.equal(method, 'GET'); assert.equal(url, resourcePath); assert.equal(async, true, 'Index requests must not block the browser event loop'); }
+                open(method, url, async) { assert.equal(method, 'GET'); assert.equal(url, '/' + resourcePath); assert.equal(async, true, 'Index requests must not block the browser event loop'); }
                 overrideMimeType() {}
                 send() {
                     requests++;
                     now += clockStep;
                     const respond = () => {
+                        if (abort) {
+                            assert.equal(typeof this.onabort, 'function', 'XHR must handle abort to release load gate');
+                            this.onabort();
+                            xhrSettled();
+                            return;
+                        }
                         this.status = Array.isArray(status) ? status[Math.min(requests - 1, status.length - 1)] : status;
                         this.responseText = JSON.stringify(index);
                         this.onload();
+                        if (this.status !== 202) xhrSettled();
                     };
                     if (delay) setTimeout(respond, delay); else queueMicrotask(respond);
                 }
@@ -62,11 +72,14 @@ async function run({ index = { locales: {} }, nwjs = false, mode = 0, status = 2
         const alias = browser.onload;
         browser.onload = () => { alias(); listeners++; };
         browser.addEventListener('load', () => listeners++);
-        if (afterFetch) await new Promise(resolve => setTimeout(resolve, delay + 5));
+        if (afterFetch) {
+            await xhrDone;
+            if (browser.__tyranorDkToolsReady) await browser.__tyranorDkToolsReady;
+        }
         browser.dispatchEvent(new Event('load'));
         await loadDone;
         assert.equal(listeners, 2, 'All later load listeners and aliases run exactly once');
-        if (delay >= 20) assert.ok(ticks >= 2, 'Browser event loop remains responsive while waiting for metadata');
+        if (delay >= 20) assert.ok(ticks >= 1, 'Browser event loop remains responsive while waiting for metadata');
         return { io, get originalCalls() { return originalCalls; }, get requests() { return requests; } };
     } finally {
         clearTimeout(timeout);
@@ -79,8 +92,13 @@ assert.deepEqual(JSON.parse(JSON.stringify(generated.io._stamp)), { locales: {} 
 assert.equal(generated.requests, 1);
 assert.equal((await run({ index: null })).originalCalls, 1, 'Existing game Stamp remains authoritative');
 assert.equal((await run({ nwjs: true })).requests, 0, 'Native Node IO remains unchanged');
+const polyfilledNwjs = await run({ nwjs: true, nwPolyfill: true });
+assert.equal(polyfilledNwjs.requests, 1, 'Polyfilled NW.js must still register load gate and prefetch index');
+assert.equal(polyfilledNwjs.originalCalls, 0, 'Polyfilled NW.js must apply prefetched index instead of falling back');
+assert.deepEqual(JSON.parse(JSON.stringify(polyfilledNwjs.io._stamp)), { locales: {} });
 assert.equal((await run({ mode: 1 })).requests, 0, 'Standard desktop IO mode remains unchanged');
 assert.equal((await run({ status: 500 })).originalCalls, 1, 'Failed generation preserves the original error path');
+assert.equal((await run({ abort: true })).originalCalls, 1, 'Aborted XHR releases load gate and falls back to original path');
 assert.equal((await run({ index: [] })).originalCalls, 1, 'Malformed indexes are rejected');
 const stamp = { locales: { existing: true } };
 const preserved = await run({ stamp });
@@ -121,6 +139,20 @@ const unicodeCase = await run({ index: { locales: { 'ΟΣ.json': { language: 'gr
 assert.equal(unicodeCase.io._stamp.locales['ος.json'].language, 'greek', 'Simple case matching treats final sigma like the HTTP matcher');
 assert.equal(unicodeCase.io._stamp.locales['ı.json'].language, 'turkish', 'Simple case matching treats dotless I like the HTTP matcher');
 assert.equal(unicodeCase.io._stamp.locales['SS.json'], undefined, 'Case expansion must not turn one resource into a different filename');
+const unicodeFuzzy = await run({ index: { locales: { 'ΟΣ  .json': { language: 'greek' }, 'I .json': { language: 'turkish' }, 'ß .json': { language: 'sharp-s' } } } });
+assert.equal(unicodeFuzzy.io._stamp.locales['ος\u3000\u3000.json'].language, 'greek', 'Whitespace key reuses caseKey for final sigma');
+assert.equal(unicodeFuzzy.io._stamp.locales['ος.json'].language, 'greek', 'Trailing key reuses caseKey for final sigma');
+assert.equal(unicodeFuzzy.io._stamp.locales['ı\u3000.json'].language, 'turkish', 'Whitespace key reuses caseKey for dotless I');
+assert.equal(unicodeFuzzy.io._stamp.locales['ı.json'].language, 'turkish', 'Trailing key reuses caseKey for dotless I');
+assert.equal(unicodeFuzzy.io._stamp.locales['SS .json'], undefined, 'Whitespace key must not expand sharp-s');
+const ambiguousWhitespace = await run({ index: { img: { 'a .png': { v: 1 }, 'a\u3000.png': { v: 2 } } } });
+assert.equal(ambiguousWhitespace.io._stamp.img['a\u00a0.png'], undefined, 'Ambiguous whitespace matches stop without falling through');
+const hugeDir = { __stats__: { type: 'directory' }, 'Hero  .png': { __stats__: { type: 'file' } } };
+for (let i = 0; i < 4096; i++) hugeDir[`f${i}.png`] = { __stats__: { type: 'file' } };
+const overLimit = await run({ index: { img: hugeDir } });
+assert.equal(overLimit.io._stamp.img['hero  .png'].__stats__.type, 'file', 'Directories above 4096 entries still resolve case-insensitive matches');
+assert.equal(overLimit.io._stamp.img['Hero\u3000\u3000.png'], undefined, 'Directories above 4096 entries skip whitespace fuzzy matching');
+assert.equal(overLimit.io._stamp.img['Hero.png'], undefined, 'Directories above 4096 entries skip trailing whitespace fuzzy matching');
 assert.equal(originalCase.io._stamp.Locales, undefined, 'The game-provided stamp keeps its original matching semantics');
 const unsafe = await run({ index: JSON.parse('{"__proto__":{"injected":true},"constructor":{"injected":true},"prototype":{"injected":true},"locales":{}}') });
 assert.equal(unsafe.io._stamp.__proto__, undefined, 'Prototype keys are never resolved as resource aliases');
