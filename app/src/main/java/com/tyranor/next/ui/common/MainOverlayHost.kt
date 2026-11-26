@@ -1,5 +1,7 @@
 package com.tyranor.next.ui.common
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -20,6 +22,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.node.PointerInputModifierNode
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.zIndex
 
 @Stable
 internal class MainOverlayEntry(
@@ -60,6 +63,25 @@ internal val LocalMainOverlayHost = staticCompositionLocalOf<MainOverlayHost?> {
 
 /** 覆盖层内容读取自己所在的挂载条目（不经宿主挂载、直接内联组合时为 null）。 */
 private val LocalMainOverlayEntry = compositionLocalOf<MainOverlayEntry?> { null }
+
+/** 在主界面根容器顶层渲染所有已挂载的全屏覆盖层，并在退场期间按 [MainOverlayEntry.sharesTouches] 共享触摸给下层页面。 */
+@Composable
+internal fun MainOverlayLayer(host: MainOverlayHost) {
+    if (!host.active) return
+    host.stack.forEach { entry ->
+        key(entry.id) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .zIndex(10f)
+                    // 覆盖层收场期间把触摸一并交给下面的页面（见 MainOverlayShareTouches）
+                    .then(if (entry.sharesTouches) Modifier.shareTouchesWithSiblings() else Modifier),
+            ) {
+                entry.Content()
+            }
+        }
+    }
+}
 
 /** 将全屏交互覆盖层挂载到主界面根窗口顶层，与底层页面共享同一 Window 与帧时钟。 */
 @Composable

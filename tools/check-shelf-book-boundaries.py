@@ -230,24 +230,92 @@ def strip_outer_parens(expr: str) -> str:
     return s
 
 
+def _has_braceless_control_prefix(before: str) -> bool:
+    """Return True if `before` ends with an unbraced control-flow prefix like `else`, `->`, `if (...)`, `for (...)`, `while (...)`."""
+    trimmed = before.rstrip()
+    if not trimmed:
+        return False
+    if trimmed.endswith("->"):
+        return True
+    if re.search(r"\belse\Z", trimmed):
+        return True
+    if trimmed.endswith(")"):
+        # Match back to the opening `(` of this parenthesized group.
+        depth = 0
+        open_idx = None
+        for idx in range(len(trimmed) - 1, -1, -1):
+            ch = trimmed[idx]
+            if ch == ")":
+                depth += 1
+            elif ch == "(":
+                depth -= 1
+                if depth == 0:
+                    open_idx = idx
+                    break
+        if open_idx is not None:
+            head = trimmed[:open_idx].rstrip()
+            if re.search(r"\b(?:if|for|while|when|catch)\Z", head):
+                return True
+    return False
+
+
+def _is_unconditional_statement_pos(block: str, pos: int) -> bool:
+    """Verify `pos` is at brace/paren depth 0 within `block` and not guarded by an unbraced control prefix."""
+    before = block[:pos]
+    brace_depth = 0
+    paren_depth = 0
+    for ch in before:
+        if ch == "{":
+            brace_depth += 1
+        elif ch == "}":
+            brace_depth -= 1
+        elif ch == "(":
+            paren_depth += 1
+        elif ch == ")":
+            paren_depth -= 1
+        if brace_depth < 0 or paren_depth < 0:
+            return False
+    if brace_depth != 0 or paren_depth != 0:
+        return False
+    return not _has_braceless_control_prefix(before)
+
+
+def _function_body_open(prefix: str) -> int | None:
+    """Locate the opening `{` of the enclosing top-level function body in `prefix`."""
+    sig_paren = prefix.find("(")
+    if sig_paren < 0:
+        return None
+    end_sig = end_of_arguments(prefix, sig_paren)
+    if end_sig is None:
+        return None
+    brace = prefix.find("{", end_sig)
+    return brace if brace >= 0 else None
+
+
 def returns_after_hosted_dialog(prefix: str) -> bool:
-    """Only allow a raw Dialog() fallback after a recognized non-null LocalAppDialogHost takeover + return."""
+    """Only allow a raw Dialog() fallback after a top-level, unconditional non-null LocalAppDialogHost takeover + return."""
     if "LocalAppDialogHost.current" not in prefix:
         return False
+    body_open = _function_body_open(prefix)
+    if body_open is None:
+        return False
+    fn_body = prefix[body_open + 1:]
 
     host_vars = set(
-        re.findall(r"\bval\s+(\w+)\s*(?::[^=\n]+)?=\s*LocalAppDialogHost\.current\b", prefix)
+        re.findall(r"\bval\s+(\w+)\s*(?::[^=\n]+)?=\s*LocalAppDialogHost\.current\b", fn_body)
     )
     host_exprs = [r"LocalAppDialogHost\.current"] + [rf"\b{re.escape(v)}\b" for v in sorted(host_vars)]
     host_union = "(?:" + "|".join(host_exprs) + ")"
 
-    # 识别 `val overlay = if (bookHost == null) <non-null> else null` 或反向写法：
+    # 识别函数体顶层 `val overlay = if (bookHost == null) <non-null> else null` 或反向写法：
     # 仅当宿主非空时该派生变量才为 null。
     null_when_hosted_vars: set[str] = set()
     for m in re.finditer(
         rf"\bval\s+(\w+)\s*(?::[^=\n]+)?=\s*if\s*\(([^)\n]+)\)\s*([^\n]+?)\s+else\s+([^\n;]+)",
-        prefix,
+        fn_body,
     ):
+        if not _is_unconditional_statement_pos(fn_body, m.start()):
+            continue
         var_name, cond_raw, then_branch, else_branch = m.group(1), m.group(2), m.group(3).strip(), m.group(4).strip()
         cond = strip_outer_parens(cond_raw)
         is_host_null = bool(re.fullmatch(rf"(?:{host_union}\s*==\s*null|null\s*==\s*{host_union})", cond))
@@ -269,26 +337,28 @@ def returns_after_hosted_dialog(prefix: str) -> bool:
 
     hosted_call_re = re.compile(rf"(?:{host_union}\??\.Present|\bAppAlertDialog)\s*\(")
 
-    for if_match in re.finditer(r"\bif\s*\(", prefix):
-        cond_end = end_of_arguments(prefix, if_match.end() - 1)
+    for if_match in re.finditer(r"\bif\s*\(", fn_body):
+        # 宿主接管分支必须处于函数体顶层且无外层条件修饰，保证到达 fallback 前必定经过。
+        if not _is_unconditional_statement_pos(fn_body, if_match.start()):
+            continue
+        cond_end = end_of_arguments(fn_body, if_match.end() - 1)
         if cond_end is None:
             continue
-        cond_text = prefix[if_match.end():cond_end - 1]
+        cond_text = fn_body[if_match.end():cond_end - 1]
         if not is_non_null_host_condition(cond_text):
             continue
-        rest = prefix[cond_end:]
+        rest = fn_body[cond_end:]
         brace_match = re.match(r"\s*\{", rest)
         if not brace_match:
             continue
         block_open = cond_end + brace_match.end() - 1
-        block_close = matching_brace_end(prefix, block_open)
+        block_close = matching_brace_end(fn_body, block_open)
         if block_close is None:
             continue
-        block_body = prefix[block_open + 1:block_close]
-        # 确保托管调用及其后的 return 均处于该 if 块的顶层，而非嵌套在局部条件或 lambda 内。
+        block_body = fn_body[block_open + 1:block_close]
+        # 托管调用与块尾 return 均必须无条件执行（排除块内嵌套或无花括号 `if (enabled) host.Present(...)`）。
         for call in hosted_call_re.finditer(block_body):
-            depth_before = block_body[:call.start()].count("{") - block_body[:call.start()].count("}")
-            if depth_before != 0:
+            if not _is_unconditional_statement_pos(block_body, call.start()):
                 continue
             call_end = end_of_arguments(block_body, call.end() - 1)
             if call_end is not None and re.fullmatch(r"\s*;?\s*return\s*;?\s*", block_body[call_end:]):

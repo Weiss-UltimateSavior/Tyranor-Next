@@ -1,6 +1,7 @@
 package com.tyranor.next.ui.runtime
 
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -34,7 +35,13 @@ import com.tyranor.next.ui.common.notice.AppNotice
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun rememberRuntimeModuleFileImport(game: ScanGame): ((RuntimeModuleFileImportSpec) -> Unit)? {
+internal fun rememberRuntimeModuleFileImport(
+    game: ScanGame,
+    prepareImport: suspend (Context, ScanGame, RuntimeModuleFileImportSpec, List<Uri>) -> RuntimeModuleFileImporter.Preparation =
+        RuntimeModuleFileImporter::prepare,
+    writeImport: suspend (Context, ScanGame, RuntimeModuleFileImporter.Preparation.Ready) -> RuntimeModuleFileImporter.Result =
+        RuntimeModuleFileImporter::write,
+): ((RuntimeModuleFileImportSpec) -> Unit)? {
     val context = LocalContext.current
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
@@ -55,7 +62,7 @@ internal fun rememberRuntimeModuleFileImport(game: ScanGame): ((RuntimeModuleFil
         working = true
         scope.launch {
             try {
-                when (val result = RuntimeModuleFileImporter.prepare(context, game, spec, sources)) {
+                when (val result = prepareImport(context, game, spec, sources)) {
                     is RuntimeModuleFileImporter.Preparation.Ready -> pending = result
                     RuntimeModuleFileImporter.Preparation.Unavailable -> showUnavailable()
                 }
@@ -97,7 +104,7 @@ internal fun rememberRuntimeModuleFileImport(game: ScanGame): ((RuntimeModuleFil
                         working = true
                         scope.launch {
                             try {
-                                val (message, kind) = when (val result = RuntimeModuleFileImporter.write(context, game, plan)) {
+                                val (message, kind) = when (val result = writeImport(context, game, plan)) {
                                     RuntimeModuleFileImporter.Result.Success ->
                                         resources.getString(R.string.runtime_file_import_success, plan.entries.size) to AppNotice.Kind.Success
                                     is RuntimeModuleFileImporter.Result.Failed ->

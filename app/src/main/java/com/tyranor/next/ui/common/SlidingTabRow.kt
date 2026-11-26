@@ -205,7 +205,7 @@ fun SlidingTabRow(
     if (tabs.isEmpty()) return
     val safeIndex = selectedIndex.coerceIn(0, tabs.lastIndex)
     if (scrollable) {
-        ScrollableSlidingTabRow(tabs, safeIndex, onTabSelected, modifier, scrollResetKey)
+        ScrollableSlidingTabRow(tabs, safeIndex, onTabSelected, modifier, scrollResetKey, enabled)
     } else {
         FixedSlidingTabRow(tabs, safeIndex, onTabSelected, modifier, pager, enabled)
     }
@@ -444,6 +444,7 @@ private fun ScrollableSlidingTabRow(
     onTabSelected: (Int) -> Unit,
     modifier: Modifier,
     scrollResetKey: Int,
+    enabled: Boolean = true,
 ) {
     val shape = AppComponentShape
     val density = LocalDensity.current
@@ -468,7 +469,7 @@ private fun ScrollableSlidingTabRow(
         positionedOnce = true
     }
     Box(modifier.fillMaxWidth()) {
-        Box(Modifier.fillMaxWidth().horizontalScroll(scrollState)) {
+        Box(Modifier.fillMaxWidth().horizontalScroll(scrollState, enabled = enabled)) {
             // 内容坐标系：指示器与标签行同为一个 Box 的子节点，坐标原点一致
             Box(Modifier.height(SlidingTabHeight)) {
                 geometry[selectedIndex]?.let { target ->
@@ -482,7 +483,7 @@ private fun ScrollableSlidingTabRow(
                     )
                 }
                 Row(
-                    modifier = Modifier.fillMaxHeight().selectableGroup(),
+                    modifier = Modifier.fillMaxHeight().then(if (enabled) Modifier.selectableGroup() else Modifier),
                     horizontalArrangement = Arrangement.spacedBy(ScrollableTabSpacing),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -493,6 +494,7 @@ private fun ScrollableSlidingTabRow(
                             label = label,
                             selected = index == selectedIndex,
                             onClick = { onTabSelected(index) },
+                            enabled = enabled,
                             modifier = Modifier
                                 .fillMaxHeight()
                                 // 记录相对内容坐标系的几何：onGloballyPositioned 放在链首，

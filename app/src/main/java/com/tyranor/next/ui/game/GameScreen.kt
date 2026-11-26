@@ -448,12 +448,12 @@ private fun GameLibraryContent(
     var showFilterSheet by rememberSaveable { mutableStateOf(false) }
     val shelfCatalog = remember { ShelfCatalogStage() }
     val context = LocalContext.current
-    // 藏书阁开合会话：退场期间再长按书架时登记重开、旧覆盖层收尾后立刻换新实例（见 ShelfCatalogSession）
+    // 藏书阁开合会话：统一持有打开态、序号与权威锚点（退场期间登记重开，收尾或宿主重建后自动生效，见 ShelfCatalogSession）
     val catalogSession = rememberShelfCatalogSessionState()
-    var catalogAnchorUri by rememberSaveable { mutableStateOf<String?>(null) }
     var catalogLayoutMode by rememberSaveable { mutableStateOf(ShelfCatalogLayoutMode.SPINES) }
     // 进入藏书阁前书架上显示的那一本：只有它带「选定」效果（之后书架因筛选换了页也不改）
     var catalogSelectedUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var catalogSelectedSequence by rememberSaveable { mutableStateOf(0L) }
     val focusManager = LocalFocusManager.current
     val conditionSelection = AppSettingsStore.gameConditions.collectSettingAsState().value
     val conditions = conditionSelection.conditions
@@ -698,8 +698,8 @@ private fun GameLibraryContent(
                                             // 旧藏书阁还在退场收尾时返回 false：已登记，由旧覆盖层交付收尾（onDismiss）后接着重开。
                                             // 收尾可能正挂着等这根手指抬起（见 dismissWhenShelfReleased）：长按已经成立，不用再等，立刻交付
                                             if (catalogSession.requestOpen(target.uri)) {
-                                                catalogAnchorUri = target.uri
                                                 catalogSelectedUri = shelfCurrentUri.value ?: target.uri
+                                                catalogSelectedSequence = catalogSession.openSequence
                                             } else {
                                                 shelfCatalog.reopenRequested = true
                                                 shelfCatalog.flushDeferredDismiss()
@@ -782,11 +782,17 @@ private fun GameLibraryContent(
     }
 
     if (catalogSession.isOpen && games.isNotEmpty() && cardStyle == AppSettingsStore.GAME_CARD_STYLE_SHELF) {
-        // 打开序号当 key：退场期间再长按登记的重开，在旧覆盖层交付收尾后换成全新的实例（见 ShelfCatalogSession）
+        // 打开序号当 key：退场期间再长按登记的重开，在旧覆盖层交付收尾或宿主重建后换成全新的实例（见 ShelfCatalogSession）
         val openSequence = catalogSession.openSequence
+        val effectiveAnchorUri = catalogSession.anchorUri
+        val effectiveSelectedUri = if (catalogSelectedSequence == openSequence) {
+            catalogSelectedUri
+        } else {
+            shelfCurrentUri.value ?: effectiveAnchorUri
+        }
         key(openSequence) {
-            val anchorGame = remember(games, filteredGames, catalogAnchorUri) {
-                catalogAnchorUri?.let { uri ->
+            val anchorGame = remember(games, filteredGames, effectiveAnchorUri) {
+                effectiveAnchorUri?.let { uri ->
                     filteredGames.firstOrNull { it.uri == uri } ?: games.firstOrNull { it.uri == uri }
                 }
             }
@@ -799,8 +805,8 @@ private fun GameLibraryContent(
                 filteredGames = filteredGames,
                 anchorGame = anchorGame,
                 currentFocusGame = currentFocusGame,
-                selectedGame = remember(filteredGames, catalogSelectedUri) {
-                    catalogSelectedUri?.let { uri -> filteredGames.firstOrNull { it.uri == uri } }
+                selectedGame = remember(filteredGames, effectiveSelectedUri) {
+                    effectiveSelectedUri?.let { uri -> filteredGames.firstOrNull { it.uri == uri } }
                 },
                 layoutMode = catalogLayoutMode,
                 onLayoutModeChange = { catalogLayoutMode = it },
@@ -827,8 +833,8 @@ private fun GameLibraryContent(
                 onDismiss = {
                     // 退场期间用户又长按了书架：收尾后立刻接着开新一轮，锚点与「选定」按此刻书架上的那一本重新取
                     catalogSession.dismiss(openSequence)?.let { reopenAnchorUri ->
-                        catalogAnchorUri = reopenAnchorUri
                         catalogSelectedUri = shelfCurrentUri.value ?: reopenAnchorUri
+                        catalogSelectedSequence = catalogSession.openSequence
                     }
                     shelfCatalog.reopenRequested = false
                 },

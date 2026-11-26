@@ -230,6 +230,72 @@ internal fun GameShortcutCropDialog() {
                 errors = MOD.check_file("ui/game/GameShortcutCropDialog.kt", bad_src)
                 self.assertTrue(any("Dialog()" in message for _, message in errors))
 
+        nested_outer_if = """
+package com.tyranor.next.ui.game
+
+@Composable
+internal fun GameShortcutCropDialog() {
+    val host = LocalAppDialogHost.current
+    if (ready) {
+        if (host != null) {
+            AppAlertDialog(onDismissRequest = {}, title = {}, text = {}, confirmButton = {})
+            return
+        }
+    }
+    Dialog(onDismissRequest = {}) {}
+}
+"""
+        braceless_outer_if = """
+package com.tyranor.next.ui.game
+
+@Composable
+internal fun GameShortcutCropDialog() {
+    val host = LocalAppDialogHost.current
+    if (ready) if (host != null) {
+        host.Present(spec)
+        return
+    }
+    Dialog(onDismissRequest = {}) {}
+}
+"""
+        braceless_inner_call = """
+package com.tyranor.next.ui.game
+
+@Composable
+internal fun GameShortcutCropDialog() {
+    val host = LocalAppDialogHost.current
+    if (host != null) {
+        if (enabled) host.Present(spec)
+        return
+    }
+    Dialog(onDismissRequest = {}) {}
+}
+"""
+        else_if_guard = """
+package com.tyranor.next.ui.game
+
+@Composable
+internal fun GameShortcutCropDialog() {
+    val host = LocalAppDialogHost.current
+    if (skip) {
+        return
+    } else if (host != null) {
+        host.Present(spec)
+        return
+    }
+    Dialog(onDismissRequest = {}) {}
+}
+"""
+        for label, bad_src in (
+            ("nested_outer_if", nested_outer_if),
+            ("braceless_outer_if", braceless_outer_if),
+            ("braceless_inner_call", braceless_inner_call),
+            ("else_if_guard", else_if_guard),
+        ):
+            with self.subTest(label=label):
+                errors = MOD.check_file("ui/game/GameShortcutCropDialog.kt", bad_src)
+                self.assertTrue(any("Dialog()" in message for _, message in errors))
+
     def test_blocks_aliased_activity_launch_and_raw_dialog_imports(self):
         for label, imp, call in (
             (

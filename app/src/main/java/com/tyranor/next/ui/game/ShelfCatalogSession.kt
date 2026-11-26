@@ -25,11 +25,14 @@ import androidx.compose.runtime.setValue
 internal class ShelfCatalogSession(
     initialOpen: Boolean = false,
     initialSequence: Long = if (initialOpen) 1L else 0L,
+    initialAnchorUri: String? = null,
     initialPendingAnchorUri: String? = null,
 ) {
     var isOpen: Boolean = initialOpen
         private set
     var openSequence: Long = initialSequence
+        private set
+    var anchorUri: String? = if (initialOpen) initialAnchorUri else null
         private set
     var pendingAnchorUri: String? = if (initialOpen) initialPendingAnchorUri else null
         private set
@@ -43,6 +46,8 @@ internal class ShelfCatalogSession(
         if (!isOpen) {
             isOpen = true
             openSequence += 1L
+            this.anchorUri = anchorUri
+            pendingAnchorUri = null
             return true
         }
         pendingAnchorUri = anchorUri
@@ -60,8 +65,10 @@ internal class ShelfCatalogSession(
         pendingAnchorUri = null
         if (reopenAnchor == null) {
             isOpen = false
+            anchorUri = null
             return null
         }
+        anchorUri = reopenAnchor
         openSequence += 1L
         return reopenAnchor
     }
@@ -69,29 +76,45 @@ internal class ShelfCatalogSession(
     /** 外部原因（换了卡片风格、游戏库清空）直接关掉，并丢弃登记的重开。@return 是否真的从开着变成关着。 */
     fun closeNow(): Boolean {
         pendingAnchorUri = null
+        anchorUri = null
         if (!isOpen) return false
         isOpen = false
         return true
     }
 }
 
-/** [ShelfCatalogSession] 的 Compose 宿主状态：把 [ShelfCatalogSession.isOpen] / [ShelfCatalogSession.openSequence] 同步成可观察状态，并随界面重建保存。 */
+/**
+ * [ShelfCatalogSession] 的 Compose 宿主状态：把打开态、序号与锚点同步成可观察状态，并随界面重建保存。
+ *
+ * 若退场期间已登记重开锚点（[pendingAnchorUri]）随后发生配置变更或进程重建，旧退场覆盖层已随重建销毁、
+ * 不会再回调 `onDismiss`；因此 [Saver] 恢复时直接把待重开锚点晋升为新一轮打开会话（`openSequence + 1`），
+ * 保证重建后无需手动 `dismiss` 即可自动以新锚点打开。
+ */
 @Stable
 internal class ShelfCatalogSessionState(
     initialOpen: Boolean = false,
     initialSequence: Long = if (initialOpen) 1L else 0L,
+    initialAnchorUri: String? = null,
     initialPendingAnchorUri: String? = null,
 ) {
-    private val session = ShelfCatalogSession(initialOpen, initialSequence, initialPendingAnchorUri)
+    private val session = ShelfCatalogSession(
+        initialOpen = initialOpen,
+        initialSequence = initialSequence,
+        initialAnchorUri = initialAnchorUri,
+        initialPendingAnchorUri = initialPendingAnchorUri,
+    )
     var isOpen by mutableStateOf(session.isOpen)
         private set
     var openSequence by mutableLongStateOf(session.openSequence)
+        private set
+    var anchorUri by mutableStateOf(session.anchorUri)
         private set
     val pendingAnchorUri: String? get() = session.pendingAnchorUri
 
     private fun sync() {
         isOpen = session.isOpen
         openSequence = session.openSequence
+        anchorUri = session.anchorUri
     }
 
     fun requestOpen(anchorUri: String): Boolean = session.requestOpen(anchorUri).also { sync() }
@@ -104,13 +127,28 @@ internal class ShelfCatalogSessionState(
 
     companion object {
         val Saver = listSaver<ShelfCatalogSessionState, Any?>(
-            save = { listOf(it.isOpen, it.openSequence, it.pendingAnchorUri) },
+            save = { listOf(it.isOpen, it.openSequence, it.anchorUri, it.pendingAnchorUri) },
             restore = { saved ->
-                ShelfCatalogSessionState(
-                    initialOpen = saved.getOrNull(0) as? Boolean ?: false,
-                    initialSequence = (saved.getOrNull(1) as? Number)?.toLong() ?: 0L,
-                    initialPendingAnchorUri = saved.getOrNull(2) as? String,
-                )
+                val savedOpen = saved.getOrNull(0) as? Boolean ?: false
+                val savedSequence = (saved.getOrNull(1) as? Number)?.toLong() ?: 0L
+                val savedAnchor = saved.getOrNull(2) as? String
+                val savedPending = saved.getOrNull(3) as? String
+                if (savedOpen && savedPending != null) {
+                    // 旧退场实例已随重建销毁，直接消费待重开锚点晋升为新一轮会话，恢复后即自动以新锚点打开
+                    ShelfCatalogSessionState(
+                        initialOpen = true,
+                        initialSequence = savedSequence + 1L,
+                        initialAnchorUri = savedPending,
+                        initialPendingAnchorUri = null,
+                    )
+                } else {
+                    ShelfCatalogSessionState(
+                        initialOpen = savedOpen,
+                        initialSequence = savedSequence,
+                        initialAnchorUri = savedAnchor,
+                        initialPendingAnchorUri = null,
+                    )
+                }
             },
         )
     }
