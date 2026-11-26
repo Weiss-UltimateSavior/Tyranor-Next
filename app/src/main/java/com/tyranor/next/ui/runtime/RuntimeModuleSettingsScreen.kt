@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +42,8 @@ import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.theme.AppComponentCornerRadius
+import com.tyranor.next.theme.DialogItemSurface
+import com.tyranor.next.theme.LocalAppDialogContent
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.TextColor
@@ -49,6 +52,7 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.LocalDialogExit
 import com.tyranor.next.ui.common.NoRippleTextButton
 import com.tyranor.next.ui.common.OverlayDropdownPreference
 import com.tyranor.next.ui.common.SwitchPreference
@@ -60,12 +64,14 @@ import com.tyranor.next.ui.common.motion.pressSquishGroup
 import com.tyranor.next.ui.common.motion.ProvideEntrance
 import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import com.tyranor.next.ui.common.notice.AppNotice
+import com.tyranor.next.ui.game.rememberGameDialogExitHandle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
+import top.yukonga.miuix.kmp.basic.CardDefaults as MiuixCardDefaults
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import android.widget.Toast
@@ -73,8 +79,27 @@ import android.widget.Toast
 /** Dynamic, per-game settings declared by a bound third-party runtime module. */
 @Composable
 fun RuntimeModuleSettingsScreen(game: ScanGame) {
+    RuntimeModuleSettingsView(game = game, inBook = false)
+}
+
+/**
+ * 「游戏盒」翻开的书里的第三方运行时模块设置：与 [RuntimeModuleSettingsScreen] 共用同一份配置解析、
+ * 草稿编辑与序列化保存逻辑；书内改为翻页弹窗呈现，有未保存改动时返回或点关闭同样翻出确认书页。
+ */
+@Composable
+internal fun RuntimeModuleSettingsDialog(game: ScanGame, onDismiss: () -> Unit) {
+    RuntimeModuleSettingsView(game = game, inBook = true, onDismiss = onDismiss)
+}
+
+@Composable
+private fun RuntimeModuleSettingsView(
+    game: ScanGame,
+    inBook: Boolean,
+    onDismiss: () -> Unit = {},
+) {
     val context = LocalContext.current
-    val backDispatcher = checkNotNull(LocalOnBackPressedDispatcherOwner.current).onBackPressedDispatcher
+    val backDispatcher = if (inBook) null else LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
+    val settingsExitHandle = rememberGameDialogExitHandle()
     val owner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val packageName = game.runtimeModulePackage.orEmpty()
@@ -167,7 +192,7 @@ fun RuntimeModuleSettingsScreen(game: ScanGame) {
     LaunchedEffect(backRequested, dirty) {
         if (backRequested && !dirty) {
             backRequested = false
-            backDispatcher.onBackPressed()
+            backDispatcher?.onBackPressed()
         }
     }
 
@@ -258,122 +283,191 @@ fun RuntimeModuleSettingsScreen(game: ScanGame) {
         }
     }
 
-    MiuixSettingsTheme {
-        val pickFiles = rememberRuntimeModuleFileImport(game)
-        ProvideEntrance {
-            MiuixScaffold(
-                modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
-                containerColor = androidx.compose.ui.graphics.Color.Transparent,
-                contentWindowInsets = WindowInsets(0.dp),
-                topBar = {
-                    AppSecondaryTopBar(
-                        title = stringResource(R.string.runtime_settings_title),
-                        background = androidx.compose.ui.graphics.Color.Transparent,
-                        contentColor = PageTextColor,
-                        trailing = {
-                            if (dirty && bindingValid && descriptorConfirmed && !saveRunning && !descriptionConflict) TopBarIcon(
-                                painter = androidx.compose.ui.res.painterResource(R.drawable.ic_save),
-                                contentDescription = stringResource(R.string.runtime_settings_save),
-                                tint = MiuixTheme.colorScheme.primary,
-                                onClick = { if (!saveRunning && !loading && bindingValid && !descriptionConflict) scope.launch { saveDraft() } },
+    val canSave = dirty && bindingValid && descriptorConfirmed && !saveRunning && !descriptionConflict
+
+    fun saveNow() {
+        if (!saveRunning && !loading && bindingValid && !descriptionConflict) {
+            scope.launch { saveDraft() }
+        }
+    }
+
+    @Composable
+    fun RuntimeSettingsList(
+        pickFiles: ((com.tyranor.next.core.engine.runtime.RuntimeModuleFileImportSpec) -> Unit)?,
+        modifier: Modifier,
+        contentPadding: PaddingValues,
+    ) {
+        val cardSurface = if (LocalAppDialogContent.current) DialogItemSurface else MiuixTheme.colorScheme.surfaceContainer
+        LazyColumn(
+            modifier = modifier,
+            contentPadding = contentPadding,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (screenState != RuntimeSettingsScreenState.Content) item(key = "runtime_settings_state") {
+                Column(Modifier.then(listItemMotion())) {
+                    BlurCrossfade(targetState = screenState, label = "runtimeSettingsState") { state ->
+                        when (state) {
+                            RuntimeSettingsScreenState.Loading -> StatusCard(stringResource(R.string.runtime_settings_loading))
+                            RuntimeSettingsScreenState.Error -> StatusCard(
+                                text = stringResource(
+                                    when {
+                                        !bindingValid -> R.string.runtime_settings_binding_changed
+                                        descriptorConfirmed -> R.string.runtime_settings_unavailable
+                                        else -> R.string.runtime_settings_load_failed
+                                    },
+                                ),
+                                action = stringResource(R.string.runtime_settings_retry),
+                                onAction = { refreshEpoch++ },
                             )
-                        },
-                    )
-                },
-            ) { innerPadding ->
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp).padding(top = innerPadding.calculateTopPadding()),
-                    contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    if (screenState != RuntimeSettingsScreenState.Content) item(key = "runtime_settings_state") {
-                        Column(Modifier.then(listItemMotion())) {
-                            BlurCrossfade(targetState = screenState, label = "runtimeSettingsState") { state ->
-                                when (state) {
-                                    RuntimeSettingsScreenState.Loading -> StatusCard(stringResource(R.string.runtime_settings_loading))
-                                    RuntimeSettingsScreenState.Error -> StatusCard(
-                                        text = stringResource(
-                                            when {
-                                                !bindingValid -> R.string.runtime_settings_binding_changed
-                                                descriptorConfirmed -> R.string.runtime_settings_unavailable
-                                                else -> R.string.runtime_settings_load_failed
-                                            },
-                                        ),
-                                        action = stringResource(R.string.runtime_settings_retry),
-                                        onAction = { refreshEpoch++ },
-                                    )
-                                    RuntimeSettingsScreenState.Empty -> StatusCard(stringResource(R.string.runtime_settings_empty))
-                                    RuntimeSettingsScreenState.Conflict -> StatusCard(
-                                        text = stringResource(R.string.runtime_settings_description_changed),
-                                        action = stringResource(R.string.runtime_settings_discard_draft),
-                                        onAction = {
-                                            draftJson = baselineJson ?: "{}"
-                                            draftFingerprint = baselineFingerprint
-                                            refreshEpoch++
-                                        },
-                                    )
-                                    RuntimeSettingsScreenState.Content -> Unit
-                                }
-                            }
-                        }
-                    }
-                    item(key = "runtime_settings_save_error") {
-                        Column(Modifier.then(listItemMotion())) {
-                            ExpandVisibility(visible = saveError) {
-                                StatusCard(stringResource(if (saveDescriptorChanged) R.string.runtime_settings_descriptor_changed else R.string.runtime_settings_save_failed))
-                            }
-                        }
-                    }
-                    if (settings != null && !descriptionConflict) {
-                        if (settings.items.isNotEmpty()) item {
-                            Column(Modifier.then(listItemMotion())) {
-                                NoRippleTextButton(
-                                    text = stringResource(R.string.runtime_settings_restore_all_defaults),
-                                    enabled = !saveRunning && bindingValid && descriptorConfirmed,
-                                    onClick = ::restoreAllDefaults,
-                                )
-                            }
-                        }
-                        if (settings.items.isNotEmpty() && settings.resolve(draft).invalidOverrideKeys.isNotEmpty()) item {
-                            Column(Modifier.then(listItemMotion())) {
-                                StatusCard(stringResource(R.string.runtime_settings_invalid_overrides))
-                            }
-                        }
-                        items(settings.items, key = { it.key }) { item ->
-                            RuntimeSettingRow(
-                                modifier = Modifier.then(listItemMotion()),
-                                item = item,
-                                value = settings.resolve(draft).values[item.key] ?: item.defaultValue,
-                                overridden = draft.has(item.key),
-                                enabled = !saveRunning && bindingValid && descriptorConfirmed,
-                                onChange = { value -> changeOverride(item, value) },
-                                onEdit = {
-                                    editItem = item
-                                    editText = settings.resolve(draft).values[item.key].toString()
-                                    inputError = false
+                            RuntimeSettingsScreenState.Empty -> StatusCard(stringResource(R.string.runtime_settings_empty))
+                            RuntimeSettingsScreenState.Conflict -> StatusCard(
+                                text = stringResource(R.string.runtime_settings_description_changed),
+                                action = stringResource(R.string.runtime_settings_discard_draft),
+                                onAction = {
+                                    draftJson = baselineJson ?: "{}"
+                                    draftFingerprint = baselineFingerprint
+                                    refreshEpoch++
                                 },
-                                onRestore = { changeOverride(item, null) },
                             )
+                            RuntimeSettingsScreenState.Content -> Unit
                         }
                     }
-                    if (bindingValid && descriptorConfirmed && !loadError) {
-                        items(module?.fileImports.orEmpty(), key = { "runtime_file_import:${it.key}" }) { item ->
-                            val enabled = pickFiles != null && !loading && !saveRunning
-                            MiuixCard(
-                                cornerRadius = AppComponentCornerRadius,
-                                modifier = Modifier.pressSquishGroup().then(listItemMotion()).fillMaxWidth().glassBorder(),
-                            ) {
-                                com.tyranor.next.ui.common.AppNavItem(
-                                    title = item.title,
-                                    summary = stringResource(R.string.runtime_file_import_destination, item.displayPath),
-                                    drawSurface = false,
-                                    showLeadingIcon = false,
-                                    showArrow = false,
-                                    onClick = if (enabled) ({ pickFiles(item) }) else null,
+                }
+            }
+            item(key = "runtime_settings_save_error") {
+                Column(Modifier.then(listItemMotion())) {
+                    ExpandVisibility(visible = saveError) {
+                        StatusCard(stringResource(if (saveDescriptorChanged) R.string.runtime_settings_descriptor_changed else R.string.runtime_settings_save_failed))
+                    }
+                }
+            }
+            if (settings != null && !descriptionConflict) {
+                if (settings.items.isNotEmpty()) item {
+                    Column(Modifier.then(listItemMotion())) {
+                        NoRippleTextButton(
+                            text = stringResource(R.string.runtime_settings_restore_all_defaults),
+                            enabled = !saveRunning && bindingValid && descriptorConfirmed,
+                            onClick = ::restoreAllDefaults,
+                        )
+                    }
+                }
+                if (settings.items.isNotEmpty() && settings.resolve(draft).invalidOverrideKeys.isNotEmpty()) item {
+                    Column(Modifier.then(listItemMotion())) {
+                        StatusCard(stringResource(R.string.runtime_settings_invalid_overrides))
+                    }
+                }
+                items(settings.items, key = { it.key }) { item ->
+                    RuntimeSettingRow(
+                        modifier = Modifier.then(listItemMotion()),
+                        item = item,
+                        value = settings.resolve(draft).values[item.key] ?: item.defaultValue,
+                        overridden = draft.has(item.key),
+                        enabled = !saveRunning && bindingValid && descriptorConfirmed,
+                        onChange = { value -> changeOverride(item, value) },
+                        onEdit = {
+                            editItem = item
+                            editText = settings.resolve(draft).values[item.key].toString()
+                            inputError = false
+                        },
+                        onRestore = { changeOverride(item, null) },
+                    )
+                }
+            }
+            if (bindingValid && descriptorConfirmed && !loadError) {
+                items(module?.fileImports.orEmpty(), key = { "runtime_file_import:${it.key}" }) { item ->
+                    val enabled = pickFiles != null && !loading && !saveRunning
+                    MiuixCard(
+                        cornerRadius = AppComponentCornerRadius,
+                        colors = MiuixCardDefaults.defaultColors(color = cardSurface),
+                        modifier = Modifier.pressSquishGroup().then(listItemMotion()).fillMaxWidth().glassBorder(),
+                    ) {
+                        com.tyranor.next.ui.common.AppNavItem(
+                            title = item.title,
+                            summary = stringResource(R.string.runtime_file_import_destination, item.displayPath),
+                            drawSurface = false,
+                            showLeadingIcon = false,
+                            showArrow = false,
+                            onClick = if (enabled) ({ pickFiles(item) }) else null,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (inBook) {
+        AppAlertDialog(
+            onDismissRequest = {
+                if (!saveRunning) {
+                    if (dirty) showUnsavedDialog = true else onDismiss()
+                }
+            },
+            dismissEnabledNow = { !saveRunning },
+            title = { Text(stringResource(R.string.runtime_settings_title), style = MaterialTheme.typography.titleMedium) },
+            text = {
+                MiuixSettingsTheme {
+                    val pickFiles = rememberRuntimeModuleFileImport(game)
+                    RuntimeSettingsList(
+                        pickFiles = pickFiles,
+                        modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
+                        contentPadding = PaddingValues(bottom = 8.dp),
+                    )
+                }
+            },
+            buttonArrangement = Arrangement.SpaceBetween,
+            dismissButton = {
+                settingsExitHandle.capture()
+                val exit = LocalDialogExit.current
+                CompositionLocalProvider(LocalDialogExit provides null) {
+                    DialogTextButton(text = stringResource(R.string.common_close), enabled = !saveRunning) {
+                        if (saveRunning) return@DialogTextButton
+                        if (dirty) {
+                            showUnsavedDialog = true
+                        } else if (exit != null) {
+                            exit.closeThen(onDismiss)
+                        } else {
+                            onDismiss()
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                DialogTextButton(
+                    text = stringResource(R.string.runtime_settings_save),
+                    enabled = canSave,
+                    onClick = ::saveNow,
+                )
+            },
+        )
+    } else {
+        MiuixSettingsTheme {
+            val pickFiles = rememberRuntimeModuleFileImport(game)
+            ProvideEntrance {
+                MiuixScaffold(
+                    modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
+                    containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                    contentWindowInsets = WindowInsets(0.dp),
+                    topBar = {
+                        AppSecondaryTopBar(
+                            title = stringResource(R.string.runtime_settings_title),
+                            background = androidx.compose.ui.graphics.Color.Transparent,
+                            contentColor = PageTextColor,
+                            trailing = {
+                                if (canSave) TopBarIcon(
+                                    painter = androidx.compose.ui.res.painterResource(R.drawable.ic_save),
+                                    contentDescription = stringResource(R.string.runtime_settings_save),
+                                    tint = MiuixTheme.colorScheme.primary,
+                                    onClick = ::saveNow,
                                 )
-                            }
-                        }
-                    }
+                            },
+                        )
+                    },
+                ) { innerPadding ->
+                    RuntimeSettingsList(
+                        pickFiles = pickFiles,
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp).padding(top = innerPadding.calculateTopPadding()),
+                        contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
+                    )
                 }
             }
         }
@@ -412,18 +506,28 @@ fun RuntimeModuleSettingsScreen(game: ScanGame) {
     }
 
     if (showUnsavedDialog) {
+        val unsavedExitHandle = rememberGameDialogExitHandle()
         AppAlertDialog(
             onDismissRequest = { showUnsavedDialog = false },
             title = { Text(stringResource(R.string.runtime_settings_unsaved_title), style = MaterialTheme.typography.titleMedium) },
             text = { Text(stringResource(R.string.runtime_settings_unsaved_message)) },
             confirmButton = {
                 DialogTextButton(text = stringResource(R.string.common_confirm), onClick = {
-                    showUnsavedDialog = false
-                    draftJson = baselineJson
-                    backRequested = true
+                    unsavedExitHandle.closeThen {
+                        showUnsavedDialog = false
+                        draftJson = baselineJson
+                        if (inBook) {
+                            settingsExitHandle.closeThen(onDismiss)
+                        } else {
+                            backRequested = true
+                        }
+                    }
                 })
             },
-            dismissButton = { DialogTextButton(text = stringResource(R.string.common_cancel), onClick = { showUnsavedDialog = false }) },
+            dismissButton = {
+                unsavedExitHandle.capture()
+                DialogTextButton(text = stringResource(R.string.common_cancel), onClick = { showUnsavedDialog = false })
+            },
         )
     }
 }
@@ -439,7 +543,12 @@ private fun RuntimeSettingRow(
     onEdit: () -> Unit,
     onRestore: () -> Unit,
 ) {
-    MiuixCard(cornerRadius = AppComponentCornerRadius, modifier = modifier.pressSquishGroup().fillMaxWidth().glassBorder()) {
+    val cardSurface = if (LocalAppDialogContent.current) DialogItemSurface else MiuixTheme.colorScheme.surfaceContainer
+    MiuixCard(
+        cornerRadius = AppComponentCornerRadius,
+        colors = MiuixCardDefaults.defaultColors(color = cardSurface),
+        modifier = modifier.pressSquishGroup().fillMaxWidth().glassBorder(),
+    ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
             when (item.type) {
                 RuntimeModuleSettingItemSpec.Type.BOOLEAN -> SwitchPreference(
@@ -485,7 +594,12 @@ private fun RuntimeSettingRow(
 
 @Composable
 private fun StatusCard(text: String, action: String? = null, onAction: (() -> Unit)? = null) {
-    MiuixCard(cornerRadius = AppComponentCornerRadius, modifier = Modifier.fillMaxWidth().glassBorder()) {
+    val cardSurface = if (LocalAppDialogContent.current) DialogItemSurface else MiuixTheme.colorScheme.surfaceContainer
+    MiuixCard(
+        cornerRadius = AppComponentCornerRadius,
+        colors = MiuixCardDefaults.defaultColors(color = cardSurface),
+        modifier = Modifier.fillMaxWidth().glassBorder(),
+    ) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Text(text, style = MaterialTheme.typography.bodyMedium, color = TextColor)
             if (action != null && onAction != null) NoRippleTextButton(text = action, onClick = onAction)

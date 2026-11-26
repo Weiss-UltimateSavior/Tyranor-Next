@@ -200,6 +200,9 @@ import com.tyranor.next.ui.common.motion.pressSquish
 import com.tyranor.next.ui.common.motion.rememberEntranceState
 import com.tyranor.next.ui.common.notice.NoticeHost
 import com.tyranor.next.ui.common.privacy.DismissOnAppLockEffect
+import com.tyranor.next.ui.patch.KrkrOnlinePatchDialog
+import com.tyranor.next.ui.save.SaveManagementDialog
+import com.tyranor.next.ui.settings.PerGameSettingsDialog
 import java.io.File
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
@@ -230,7 +233,6 @@ internal fun ShelfOpenBook(
     onGameRenamed: ((String, String) -> Unit)?,
     onDeleteGame: () -> Unit,
     onQuickLaunchToggle: () -> Boolean,
-    onEngineSettings: () -> Unit,
 ) {
     // 书摊开着（含起飞 / 合上途中）时背后的页面被整本书盖住：不做页面景深（下沉 / 翻折 / 褪色），
     // 书里弹出的弹窗、抽屉、二级页都沿用，不用各自处理（见 SuppressPageDepth）
@@ -245,7 +247,8 @@ internal fun ShelfOpenBook(
     val pages = rememberShelfBookPages()
     val tabMotion = rememberShelfBookTabMotion()
     var spreadLeafSource by rememberSaveable(game.uri) { mutableStateOf(ShelfBookTab.Contents) }
-    val host = remember(motion, owner) { ShelfBookHost(motion, owner) }
+    var activeDetail by rememberSaveable(game.uri) { mutableStateOf<GameDetailDestination?>(null) }
+    val host = remember(motion, owner) { ShelfBookHost(motion, owner) { activeDetail = it } }
     val scrimAlpha = SheetScrimColor.alpha
     val quickActions = rememberGameQuickActionsController(
         game = game,
@@ -271,7 +274,6 @@ internal fun ShelfOpenBook(
             onGameCoverUpdated = onGameCoverUpdated,
             onGameLaunchFileUpdated = onGameLaunchFileUpdated,
             onGameBindingUpdated = onGameBindingUpdated,
-            onEngineSettings = onEngineSettings,
         ) { ui ->
             Dialog(
                 // 返回：翻到了后面的页先翻回来，在主书页时合上书
@@ -294,6 +296,15 @@ internal fun ShelfOpenBook(
                     onLeafSource = { spreadLeafSource = it },
                 )
                 quickActions.HostDialogs()
+                when (activeDetail) {
+                    GameDetailDestination.SaveManagement ->
+                        SaveManagementDialog(game = game, onDismiss = { activeDetail = null })
+                    GameDetailDestination.OnlinePatch ->
+                        KrkrOnlinePatchDialog(game = game, onDismiss = { activeDetail = null })
+                    GameDetailDestination.EngineSettings ->
+                        PerGameSettingsDialog(game = game, onDismiss = { activeDetail = null })
+                    null -> Unit
+                }
             }
         }
     }
@@ -301,25 +312,22 @@ internal fun ShelfOpenBook(
 
 /**
  * 书作为游戏操作的宿主：合上 / 跳转途中拒绝点击；启动成功后等游戏盖上来再收起。
- * 进还没改成书页的二级页面（引擎设置）时书留着、不翻页，直接走全局界面切换动画，回来时仍摊开着目录。
+ * 结构上不提供全局 Activity 跳转入口，所有详情页（存档管理 / 在线补丁 / 引擎设置）都在书内开成书页。
  */
 private class ShelfBookHost(
     private val motion: ShelfBookMotion,
     private val owner: LifecycleOwner,
+    private val onOpenDetail: (GameDetailDestination) -> Unit,
 ) : GameActionsHost {
     override fun interact(): Boolean = motion.interact()
 
     override val leaving: Boolean get() = motion.leaving
 
-    override fun openDetails(ordinaryDismiss: Boolean, open: () -> Unit) {
+    override val presentsDetailsInLeaf: Boolean = true
+
+    override fun openDetail(destination: GameDetailDestination) {
         if (!motion.interact()) return
-        // 还没改成书页的二级界面：书不翻页，直接走全局的界面切换动画（侧推）；书留在原处，回来时仍摊开着目录
-        open()
-        if (motion.enhanced) {
-            motion.stayDuringNavigation(owner)
-        } else if (ordinaryDismiss) {
-            motion.dismissImmediately()
-        }
+        onOpenDetail(destination)
     }
 
     override fun onGameLaunched() = motion.navigateAway(owner)
@@ -2804,13 +2812,14 @@ private fun ShelfBookContentsTab(
                 ShelfBookTocEntry(
                     row = row,
                     height = rowHeight,
+                    detailsInLeaf = currentUi.presentsDetailsInLeaf,
                     onGone = { toc.gone(row.item.key) },
                     onClick = {
                         val actions = currentUi
                         val item = actions.launchFile?.takeIf { it.key == row.item.key }
                             ?: actions.items.firstOrNull { it.key == row.item.key }
                         if (item != null) {
-                            if (item.opensBookLeaf) onOpenLeaf()
+                            if (item.opensBookLeaf(actions.presentsDetailsInLeaf)) onOpenLeaf()
                             actions.perform(item)
                         }
                     },
@@ -3327,6 +3336,7 @@ internal class ShelfBookToc {
 private fun ShelfBookTocEntry(
     row: ShelfBookTocRow,
     height: Dp,
+    detailsInLeaf: Boolean,
     onGone: () -> Unit,
     onClick: () -> Unit,
     tabMotion: ShelfBookTabMotion?,
@@ -3349,6 +3359,7 @@ private fun ShelfBookTocEntry(
             number = row.number,
             item = row.item,
             height = height,
+            detailsInLeaf = detailsInLeaf,
             onClick = { if (present) onClick() },
             tabMotion = tabMotion,
             tabRole = tabRole,
@@ -3363,6 +3374,7 @@ private fun ShelfBookEntry(
     number: Int,
     item: GameActionItem,
     height: Dp,
+    detailsInLeaf: Boolean,
     onClick: () -> Unit,
     tabMotion: ShelfBookTabMotion?,
     tabRole: ShelfBookTabRole,
@@ -3407,7 +3419,7 @@ private fun ShelfBookEntry(
             revealOrder = revealOrder,
             modifier = Modifier.weight(1f),
         )
-        if (item.showArrow) {
+        if (item.showArrow(detailsInLeaf)) {
             ShelfBookChevron(
                 color = chevron,
                 modifier = Modifier

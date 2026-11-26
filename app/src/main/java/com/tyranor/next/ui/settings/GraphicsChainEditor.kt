@@ -31,6 +31,8 @@ import com.tyranor.next.R
 import com.tyranor.next.core.settings.GraphicsFilterCatalog
 import com.tyranor.next.core.settings.GraphicsNode
 import com.tyranor.next.core.settings.GraphicsSettingsCodec
+import com.tyranor.next.theme.DialogItemSurface
+import com.tyranor.next.theme.LocalAppDialogContent
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppThemeColors
@@ -90,6 +92,7 @@ internal fun GraphicsChainEditor(chain: List<GraphicsNode>, enabled: Boolean, on
                 val reveal = remember { BringIntoViewRequester() }
                 val moving = dragging == entry.key
                 val rowMotion = rememberGraphicsChainRowMotion(editorShown[0], moving, scope)
+                val movingSurface = if (LocalAppDialogContent.current) DialogItemSurface else NavWhite
                 Row(
                     modifier = Modifier
                         .then(if (enhanced) Modifier.layoutId(motionKey) else Modifier)
@@ -99,7 +102,7 @@ internal fun GraphicsChainEditor(chain: List<GraphicsNode>, enabled: Boolean, on
                         .zIndex(if (moving) 1f else 0f)
                         .graphicsLayer { translationY = if (moving) offset else 0f }
                         .then(rowMotion?.layer(moving) ?: Modifier)
-                        .then(if (moving) Modifier.clip(AppComponentShape).background(NavWhite).glassBorder() else Modifier)
+                        .then(if (moving) Modifier.clip(AppComponentShape).background(movingSurface).glassBorder() else Modifier)
                         .pointerInput(entry.key, enabled) {
                             if (!enabled) return@pointerInput
                             detectDragGesturesAfterLongPress(
