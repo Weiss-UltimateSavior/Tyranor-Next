@@ -32,7 +32,9 @@ internal fun saveDirectoryScopesOverlap(first: String, second: String): Boolean 
 internal fun requiresExternalSaveExitConfirmation(
     engine: EngineType,
     sdkInt: Int = Build.VERSION.SDK_INT,
-): Boolean = engine == EngineType.YURIS || (engine == EngineType.RENPY && sdkInt >= Build.VERSION_CODES.R)
+): Boolean = engine == EngineType.YURIS ||
+    engine == EngineType.EASYRPG ||
+    (engine == EngineType.RENPY && sdkInt >= Build.VERSION_CODES.R)
 
 /** Launch admission and whole-library sync only manage engines with a usable save interface. */
 internal fun supportsManagedSave(engine: EngineType, sdkInt: Int = Build.VERSION.SDK_INT): Boolean =

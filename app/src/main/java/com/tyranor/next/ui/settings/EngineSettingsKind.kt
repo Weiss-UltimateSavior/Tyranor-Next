@@ -14,6 +14,7 @@ enum class EngineSettingsKind(@param:StringRes val titleRes: Int) {
     RENPY(R.string.engine_settings_renpy_title),
     RUFFLE(R.string.engine_settings_ruffle_title),
     IMPACTO(R.string.engine_settings_impacto_title),
+    EASYRPG(R.string.engine_settings_easyrpg_title),
     SIGLUS(R.string.engine_settings_siglus_title),
     FRAMEBUFFER(R.string.engine_settings_framebuffer_title),
     FVP(R.string.engine_settings_fvp_title),
@@ -39,6 +40,7 @@ internal fun engineSettingsKindOf(engine: EngineType): EngineSettingsKind? = whe
     EngineType.RENPY -> EngineSettingsKind.RENPY
     EngineType.RUFFLE -> EngineSettingsKind.RUFFLE
     EngineType.IMPACTO -> EngineSettingsKind.IMPACTO
+    EngineType.EASYRPG -> EngineSettingsKind.EASYRPG
     EngineType.SIGLUS -> EngineSettingsKind.SIGLUS
     EngineType.REALLIVE, EngineType.AVG32, EngineType.UK2 -> EngineSettingsKind.FRAMEBUFFER
     EngineType.FVP -> EngineSettingsKind.FVP

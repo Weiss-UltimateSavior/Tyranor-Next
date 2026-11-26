@@ -194,6 +194,21 @@ object PerGameSettingsStore {
     const val F_IMPACTO_LOG_LEVEL = "impacto_log_level"
     const val F_IMPACTO_DEBUG_MODE = "impacto_debug_mode"
 
+    // EasyRPG 外置宿主配置覆盖（与全局键同名；null=跟随全局）
+    const val F_EASYRPG_ENCODING = "easyrpg_encoding"
+    const val F_EASYRPG_SCALING = "easyrpg_scaling"
+    const val F_EASYRPG_GAME_RESOLUTION = "easyrpg_game_resolution"
+    const val F_EASYRPG_STRETCH = "easyrpg_stretch"
+    const val F_EASYRPG_VSYNC = "easyrpg_vsync"
+    const val F_EASYRPG_FPS_LIMIT = "easyrpg_fps_limit"
+    const val F_EASYRPG_SHOW_FPS = "easyrpg_show_fps"
+    const val F_EASYRPG_DISABLE_AUDIO = "easyrpg_disable_audio"
+    const val F_EASYRPG_MUSIC_VOLUME = "easyrpg_music_volume"
+    const val F_EASYRPG_SOUND_VOLUME = "easyrpg_sound_volume"
+    const val F_EASYRPG_NO_RTP = "easyrpg_no_rtp"
+    const val F_EASYRPG_PATCH_MODE = "easyrpg_patch_mode"
+    const val F_EASYRPG_TEST_PLAY = "easyrpg_test_play"
+
     // ONS 子对象键
     const val ONS_KEY = "ons"
 
@@ -431,6 +446,36 @@ object PerGameSettingsStore {
             },
         )
         return override.takeIf { it != ImpactoOverride() }
+    }
+
+    /**
+     * EasyRPG 外置宿主覆盖快照 → 类型化模型（缺失字段=跟随全局，
+     * 供 [EffectiveEngineSettings.mergeEasyRpg] 使用）。
+     */
+    fun toEasyRpgOverride(json: JSONObject?): EasyRpgOverride? {
+        if (json == null) return null
+        fun hasValue(key: String): Boolean = json.has(key) && !json.isNull(key)
+        fun boolOrNull(key: String): Boolean? = if (hasValue(key)) json.optBoolean(key) else null
+        fun strLowerOrNull(key: String): String? =
+            if (hasValue(key)) json.optString(key).trim().lowercase(Locale.ROOT) else null
+        fun rawStrOrNull(key: String): String? =
+            if (hasValue(key)) json.optString(key).trim() else null
+        val override = EasyRpgOverride(
+            encoding = strLowerOrNull(F_EASYRPG_ENCODING),
+            scaling = strLowerOrNull(F_EASYRPG_SCALING),
+            gameResolution = strLowerOrNull(F_EASYRPG_GAME_RESOLUTION),
+            stretch = boolOrNull(F_EASYRPG_STRETCH),
+            vsync = boolOrNull(F_EASYRPG_VSYNC),
+            fpsLimit = rawStrOrNull(F_EASYRPG_FPS_LIMIT),
+            showFps = boolOrNull(F_EASYRPG_SHOW_FPS),
+            disableAudio = boolOrNull(F_EASYRPG_DISABLE_AUDIO),
+            musicVolume = rawStrOrNull(F_EASYRPG_MUSIC_VOLUME),
+            soundVolume = rawStrOrNull(F_EASYRPG_SOUND_VOLUME),
+            noRtp = boolOrNull(F_EASYRPG_NO_RTP),
+            patchMode = strLowerOrNull(F_EASYRPG_PATCH_MODE),
+            testPlay = boolOrNull(F_EASYRPG_TEST_PLAY),
+        )
+        return override.takeIf { it != EasyRpgOverride() }
     }
 
     /**

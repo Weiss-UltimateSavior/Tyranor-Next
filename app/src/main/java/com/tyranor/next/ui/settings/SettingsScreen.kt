@@ -897,6 +897,10 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         ImpactoSettingsScreen()
         return
     }
+    if (kind == EngineSettingsKind.EASYRPG) {
+        EasyRpgSettingsScreen()
+        return
+    }
     if (kind == EngineSettingsKind.CMVS) {
         CmvsSettingsScreen()
         return
@@ -1123,7 +1127,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
             EngineSettingsKind.WINLATOR -> EngineSettingsStore.saveWinlator(ctx, winlator)
             EngineSettingsKind.PPSSPP -> EngineSettingsStore.setPpssppVersion(ctx, ppssppVersion)
             EngineSettingsKind.ETHORNELL, EngineSettingsKind.RUFFLE, EngineSettingsKind.IMPACTO,
-            EngineSettingsKind.CMVS, EngineSettingsKind.SYSTEMNNN -> Unit
+            EngineSettingsKind.EASYRPG, EngineSettingsKind.CMVS, EngineSettingsKind.SYSTEMNNN -> Unit
         }
     }
 

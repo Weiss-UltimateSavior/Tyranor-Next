@@ -417,6 +417,8 @@ class GameSaveManager(private val context: Context) {
                 R.string.save_location_engine_game_dir,
                 true,
             )
+            // EasyRPG：外置宿主 APK 启动前创建 <GAME_DIR>/saves 并以 --save-path 写入，直接纳入统一存档管理
+            EngineType.EASYRPG -> easyRpgSaveLocation(File(root))
             EngineType.SYSTEMNNN -> {
                 val directory = try {
                     SystemNnnHost.saveDirectory(appContext, File(root))
@@ -521,9 +523,9 @@ class GameSaveManager(private val context: Context) {
         return SaveListSnapshot(location, files.size)
     }
 
-    /** Manual Ren'Py operations share launch/sync admission and require confirmed external exit. */
+    /** Manual Ren'Py / EasyRPG / RuntimeModule operations share launch/sync admission and require confirmed external exit. */
     internal suspend fun <T> withManualSaveAccess(game: ScanGame, action: suspend () -> T): T {
-        if (game.engine != EngineType.RENPY && game.engine != EngineType.RUNTIME_MODULE) return action()
+        if (game.engine != EngineType.RENPY && game.engine != EngineType.EASYRPG && game.engine != EngineType.RUNTIME_MODULE) return action()
         val runtimeBefore = if (game.engine == EngineType.RUNTIME_MODULE) {
             runtimeSaveCapability(game).takeIf { it.status == RuntimeSaveCapability.AVAILABLE }
                 ?: throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
@@ -1304,8 +1306,13 @@ class GameSaveManager(private val context: Context) {
             EngineType.KIRIKIRI, EngineType.ONS, EngineType.TYRANO, EngineType.RPG_MV, EngineType.RPG_MZ,
             EngineType.ARTEMIS, EngineType.SIGLUS, EngineType.REALLIVE, EngineType.AVG32, EngineType.UK2,
             EngineType.FVP, EngineType.XSYS35, EngineType.XSYS4, EngineType.YURIS, EngineType.ETHORNELL,
-            EngineType.CMVS, EngineType.SYSTEMNNN -> true
+            EngineType.CMVS, EngineType.SYSTEMNNN, EngineType.EASYRPG -> true
             else -> false
+        }
+
+        internal fun easyRpgSaveLocation(gameRoot: File?): SaveLocation = when (gameRoot) {
+            null -> SaveLocation(null, R.string.save_error_resolve_game_dir, false)
+            else -> SaveLocation(File(gameRoot, "saves"), R.string.save_location_engine_game_dir, true)
         }
 
         internal fun renpySaveLocation(gameRoot: File?, sdkInt: Int): SaveLocation = when {
