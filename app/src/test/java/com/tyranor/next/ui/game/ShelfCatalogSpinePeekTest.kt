@@ -1,8 +1,10 @@
 package com.tyranor.next.ui.game
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.cos
@@ -73,11 +75,46 @@ class ShelfCatalogSpinePeekTest {
         // 只有 1 本书时始终返回 0
         assertEquals(0, resolveShelfCatalogPeekBookIndex(-50f, listOf(90), emptyList(), currentIndex = -1, hysteresisPx = hysteresis))
         assertEquals(0, resolveShelfCatalogPeekBookIndex(500f, listOf(90), emptyList(), currentIndex = 0, hysteresisPx = hysteresis))
+    }
 
-        // 长按命中：仅在书排宽度与高度内命中，右侧空位不命中
-        assertEquals(1, hitShelfCatalogSpineIndex(140f, 120f, widths, gaps, tierBookBottomPx = 300f, edgePadPx = 12f))
-        assertEquals(-1, hitShelfCatalogSpineIndex(440f, 120f, widths, gaps, tierBookBottomPx = 300f, edgePadPx = 12f))
-        assertEquals(-1, hitShelfCatalogSpineIndex(140f, 340f, widths, gaps, tierBookBottomPx = 300f, edgePadPx = 12f))
+    @Test
+    fun longPressHitsOnlyTheSelectedBookHeightWhileDraggingCanStartInEmptySpace() {
+        val widths = listOf(90, 96)
+        val gaps = listOf(6)
+        fun hit(fingerX: Float, fingerY: Float) = hitShelfCatalogSpineIndex(
+            fingerX, fingerY, widths, gaps, floatArrayOf(285f, 250f), intArrayOf(0, -6),
+            tierBookBottomPx = 300f, edgePadPx = 12f,
+        )
+
+        assertEquals(0, hit(40f, 30f))
+        assertEquals(-1, hit(140f, 30f))
+        assertEquals(1, hit(140f, 44f))
+        assertEquals(1, hit(140f, 120f))
+        assertEquals(-1, hit(140f, 296f))
+        assertEquals(-1, hit(440f, 120f))
+        assertEquals(-1, hit(140f, 340f))
+        assertEquals(1, resolveShelfCatalogPeekBookIndex(440f, widths, gaps, currentIndex = -1, hysteresisPx = 0f))
+    }
+
+    @Test
+    fun diagonalDragKeepsTrackingAcrossConsumedMovesInEitherDirection() {
+        for (sign in listOf(-1f, 1f)) {
+            val tracker = ShelfCatalogPeekGestureTracker(slop = 10f)
+            assertEquals(ShelfCatalogPeekDirection.UNDECIDED, tracker.move(Offset(sign * 3f, 7f), consumed = true))
+            assertFalse(tracker.canLongPress)
+            assertEquals(ShelfCatalogPeekDirection.UNDECIDED, tracker.move(Offset(sign * 3f, 4f), consumed = false))
+            assertEquals(ShelfCatalogPeekDirection.PEEK, tracker.move(Offset(sign * 3f, 4f), consumed = true))
+        }
+    }
+
+    @Test
+    fun stationaryJitterRemainsEligibleForLongPressButVerticalDriftScrolls() {
+        val tracker = ShelfCatalogPeekGestureTracker(slop = 10f)
+        assertEquals(ShelfCatalogPeekDirection.UNDECIDED, tracker.move(Offset(2f, -4f), consumed = false))
+        assertTrue(tracker.canLongPress)
+        assertEquals(ShelfCatalogPeekDirection.UNDECIDED, tracker.move(Offset(1f, -8f), consumed = false))
+        assertFalse(tracker.canLongPress)
+        assertEquals(ShelfCatalogPeekDirection.SCROLL, tracker.move(Offset(2f, -12f), consumed = true))
     }
 
     @Test

@@ -185,6 +185,7 @@ private fun TickSlider(
     }
     // 绘制的圆点刻度：与 Miuix 一致（自定义刻度点总画；否则仅 showKeyPoints 时画 steps 刻度）
     val drawnFractions = if (keyPoints != null || showKeyPoints) tickFractions else FloatArray(0)
+    val reverseTrack = bookMode && LocalLayoutDirection.current == LayoutDirection.Rtl
 
     /** 返回距离目标比例最近的刻度下标；距离相同时保留排序靠前的刻度。 */
     fun nearestIndex(fraction: Float): Int {
@@ -257,7 +258,7 @@ private fun TickSlider(
         modifier = modifier
             .then(
                 if (enabled) {
-                    Modifier.pointerInput(tickValues, valueRange) {
+                    Modifier.pointerInput(tickValues, valueRange, reverseTrack) {
                         val slop = viewConfiguration.touchSlop
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
@@ -266,7 +267,10 @@ private fun TickSlider(
                             val r = size.height / 2f
                             val avail = (size.width - 2f * r).coerceAtLeast(1f)
                             /** 将指针横坐标换算为行程比例，保留越界量供橡皮筋形变使用。 */
-                            fun fractionAt(x: Float) = (x - r) / avail
+                            fun fractionAt(x: Float): Float {
+                                val raw = (x - r) / avail
+                                return if (reverseTrack) 1f - raw else raw
+                            }
                             interacting = true
                             scope.launch { press.animateTo(1.127f, MotionTokens.press(0.001f)) }
                             // 指针流被异常取消时释放代码跑不到：finally 兜底还原交互状态
@@ -390,7 +394,7 @@ private fun TickSlider(
                             val k = (abs(o) / CONTROL_OVERSHOOT_FRACTION).coerceIn(0f, 1f) * MAX_STRETCH
                             scaleX = 1f + k
                             scaleY = 1f - k * 0.6f
-                            transformOrigin = TransformOrigin(if (o > 0f) 0f else 1f, 0.5f)
+                            transformOrigin = TransformOrigin(if ((o > 0f) != reverseTrack) 0f else 1f, 0.5f)
                         }
                     },
             ) {
@@ -583,7 +587,9 @@ internal fun DrawScope.drawBookSlider(
     val edgeInset = 7.dp.toPx()
     val availableWidth = (size.width - 2f * edgeInset).coerceAtLeast(0f)
     val f = fraction.coerceIn(0f, 1f)
-    val centerX = edgeInset + f * availableWidth
+    val rtl = layoutDirection == LayoutDirection.Rtl
+    fun positionOf(progress: Float) = edgeInset + (if (rtl) 1f - progress else progress) * availableWidth
+    val centerX = positionOf(f)
     val cy = size.height / 2f
     val alphaFactor = lerpAlpha(0.42f, 1f, enabledProgress)
     val trackColor = palette.sliderTrack.copy(alpha = palette.sliderTrack.alpha * alphaFactor)
@@ -596,10 +602,10 @@ internal fun DrawScope.drawBookSlider(
         strokeWidth = 2.6.dp.toPx(),
         cap = StrokeCap.Round,
     )
-    if (centerX > edgeInset) {
+    if (f > 0f && availableWidth > 0f) {
         drawLine(
             color = activeColor,
-            start = Offset(edgeInset, cy),
+            start = Offset(positionOf(0f), cy),
             end = Offset(centerX, cy),
             strokeWidth = 3.2.dp.toPx(),
             cap = StrokeCap.Round,
@@ -609,8 +615,8 @@ internal fun DrawScope.drawBookSlider(
         val dotRadius = 2.dp.toPx()
         val dotColor = palette.inkSecondary.copy(alpha = 0.55f * alphaFactor)
         for (dotF in drawnFractions) {
-            val x = edgeInset + dotF * availableWidth
-            if (x <= centerX) continue
+            if (dotF <= f) continue
+            val x = positionOf(dotF)
             drawCircle(color = dotColor, radius = dotRadius, center = Offset(x, cy))
         }
     }

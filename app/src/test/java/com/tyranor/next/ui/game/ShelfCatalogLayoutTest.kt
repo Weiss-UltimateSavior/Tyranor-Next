@@ -955,21 +955,23 @@ class ShelfCatalogLayoutTest {
 
     @Test
     fun spineTitleLengthDoesNotDependOnBookHeightOrThickness() {
-        val baseWidth = 31.4f
-        val maxHeight = 180f
-        val uris = (0 until 64).map { "content://games/title-$it" }
-        val typographies = uris.map { uri ->
-            val width = (baseWidth * shelfCatalogSpineThicknessFactor(uri)).dp
-            val height = (maxHeight * shelfCatalogSpineHeightFactor(uri)).dp
-            shelfSpineTypography(
-                shelfCatalogSpineTextWidth(uri, width).value,
-                shelfCatalogSpineTextHeight(uri, height).value,
-            )
-        }
-        val first = typographies.first()
-        for (typo in typographies) {
-            assertEquals(first.maxChars, typo.maxChars)
-            assertEquals(first.fontSizeDp, typo.fontSizeDp, 0.01f)
+        val tierHeight = 180.dp
+        val basis = shelfCatalogSpineTextBasis(tierHeight)
+        val expected = shelfSpineTypography(
+            shelfCatalogSpineBaseWidth(tierHeight).value,
+            (tierHeight * SHELF_CATALOG_MIN_SPINE_HEIGHT_FACTOR).value,
+        )
+        val uris = (0 until 9).map { "content://games/title-$it" }
+        with(Density(1.375f)) {
+            for (budgetPx in listOf(320, 480)) {
+                val widths = allocateShelfCatalogSpineWidths(uris, uris.size, basis.width.toPx(), budgetPx, 8)
+                for ((index, uri) in uris.withIndex()) {
+                    val width = widths[index].toDp()
+                    val height = (tierHeight * shelfCatalogSpineHeightFactor(uri)).roundToPx().toDp()
+                    val actual = shelfSpineTypography(width.value, height.value, basis)
+                    assertEquals(expected, actual)
+                }
+            }
         }
     }
 }

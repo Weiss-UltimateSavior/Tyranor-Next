@@ -145,14 +145,8 @@ def code_only(source: str) -> str:
     return "".join(parts) + source[pos:]
 
 
-def function_span(code: str, name: str) -> tuple[int, int] | None:
-    """Find (header_start, body_end) for top-level `fun <name>(...) { ... }`."""
-    match = re.search(rf"(?m)^\s*(?:internal\s+|private\s+|public\s+)?fun\s+{re.escape(name)}\s*\(", code)
-    if not match:
-        return None
-    start = match.end() - 1
+def end_of_arguments(code: str, start: int) -> int | None:
     paren_depth = 1
-    end_sig = -1
     for idx in range(start + 1, len(code)):
         ch = code[idx]
         if ch == "(":
@@ -160,9 +154,17 @@ def function_span(code: str, name: str) -> tuple[int, int] | None:
         elif ch == ")":
             paren_depth -= 1
             if paren_depth == 0:
-                end_sig = idx + 1
-                break
-    if end_sig < 0:
+                return idx + 1
+    return None
+
+
+def function_span(code: str, name: str) -> tuple[int, int] | None:
+    """Find (header_start, body_end) for top-level `fun <name>(...) { ... }`."""
+    match = re.search(rf"(?m)^\s*(?:internal\s+|private\s+|public\s+)?fun\s+{re.escape(name)}\s*\(", code)
+    if not match:
+        return None
+    end_sig = end_of_arguments(code, match.end() - 1)
+    if end_sig is None:
         return None
     brace = re.search(r"\{", code[end_sig:])
     if not brace:
@@ -182,6 +184,16 @@ def function_span(code: str, name: str) -> tuple[int, int] | None:
 
 def line_number(line_ends: list[int], pos: int) -> int:
     return bisect_right(line_ends, pos) + 1
+
+
+def returns_after_hosted_dialog(prefix: str) -> bool:
+    if "LocalAppDialogHost.current" not in prefix:
+        return False
+    for call in re.finditer(r"(?:\.Present|\bAppAlertDialog)\s*\(", prefix):
+        end = end_of_arguments(prefix, call.end() - 1)
+        if end is not None and re.match(r"\s*;?\s*return\s*;?\s*\}", prefix[end:]):
+            return True
+    return False
 
 
 def check_segment(
@@ -210,7 +222,7 @@ def check_segment(
         raw_hits = list(RAW_DIALOG_RE.finditer(fn_code))
         if raw_hits and len(raw_hits) == 1:
             prefix = fn_code[:raw_hits[0].start()]
-            if "LocalAppDialogHost.current" in prefix and (".Present(" in prefix or "AppAlertDialog(" in prefix):
+            if returns_after_hosted_dialog(prefix):
                 allowed_ranges.append((fn_start, fn_end))
                 raw_fallback_ranges.append((fn_start + raw_hits[0].start(), fn_end))
     if check_book_styles:

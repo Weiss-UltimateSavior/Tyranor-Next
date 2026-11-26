@@ -64,6 +64,7 @@ import com.tyranor.next.ui.common.motion.pressSquishGroup
 import com.tyranor.next.ui.common.motion.ProvideEntrance
 import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import com.tyranor.next.ui.common.notice.AppNotice
+import com.tyranor.next.ui.game.ShelfBookLeafBackHandler
 import com.tyranor.next.ui.game.rememberGameDialogExitHandle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -99,7 +100,6 @@ private fun RuntimeModuleSettingsView(
 ) {
     val context = LocalContext.current
     val backDispatcher = if (inBook) null else LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
-    val settingsExitHandle = rememberGameDialogExitHandle()
     val owner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
     val packageName = game.runtimeModulePackage.orEmpty()
@@ -185,10 +185,7 @@ private fun RuntimeModuleSettingsView(
         owner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { reload() }
     }
 
-    fun requestBack() {
-        if (dirty) showUnsavedDialog = true else backRequested = true
-    }
-    BackHandler(enabled = dirty) { requestBack() }
+    if (!inBook) BackHandler(enabled = dirty) { showUnsavedDialog = true }
     LaunchedEffect(backRequested, dirty) {
         if (backRequested && !dirty) {
             backRequested = false
@@ -402,6 +399,7 @@ private fun RuntimeModuleSettingsView(
             dismissEnabledNow = { !saveRunning },
             title = { Text(stringResource(R.string.runtime_settings_title), style = MaterialTheme.typography.titleMedium) },
             text = {
+                ShelfBookLeafBackHandler(enabled = dirty) { showUnsavedDialog = true }
                 MiuixSettingsTheme {
                     val pickFiles = rememberRuntimeModuleFileImport(game)
                     RuntimeSettingsList(
@@ -413,7 +411,6 @@ private fun RuntimeModuleSettingsView(
             },
             buttonArrangement = Arrangement.SpaceBetween,
             dismissButton = {
-                settingsExitHandle.capture()
                 val exit = LocalDialogExit.current
                 CompositionLocalProvider(LocalDialogExit provides null) {
                     DialogTextButton(text = stringResource(R.string.common_close), enabled = !saveRunning) {
@@ -514,7 +511,7 @@ private fun RuntimeModuleSettingsView(
                         showUnsavedDialog = false
                         draftJson = baselineJson
                         if (inBook) {
-                            settingsExitHandle.closeThen(onDismiss)
+                            onDismiss()
                         } else {
                             backRequested = true
                         }

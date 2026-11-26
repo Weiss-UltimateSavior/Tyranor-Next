@@ -1,6 +1,7 @@
 package com.tyranor.next.ui.common
 
 import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -515,9 +516,11 @@ private fun HoldSelectDropdownPopup(
                             val rowEnabled = enabled && item.enabled
                             val isHighlighted = index == highlighted
                             val optionInteraction = remember { MutableInteractionSource() }
+                            val focused by optionInteraction.collectIsFocusedAsState()
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .then(if (focused) Modifier.border(1.dp, palette.foilAccent, RoundedCornerShape(6.dp)) else Modifier)
                                     .shelfBookMarker(optionInteraction, palette.marker)
                                     .clickable(
                                         interactionSource = optionInteraction,

@@ -48,6 +48,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
@@ -59,6 +60,11 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.drawWithContent
@@ -78,6 +84,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
@@ -92,6 +99,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tyranor.next.R
@@ -227,6 +235,10 @@ internal fun ShelfCatalogOverlay(
     val lastPlayedUri = LocalShelfLastPlayedUri.current
 
     MainOverlayPortal {
+        val wallWidth = remember { mutableIntStateOf(0) }
+        val textBasis = with(LocalDensity.current) {
+            shelfCatalogSpineTextBasis(shelfCatalogSpineHeight(wallWidth.intValue.toDp()))
+        }
         CompositionLocalProvider(
             LocalShelfLastPlayedUri provides lastPlayedUri,
             LocalIndication provides NoIndication,
@@ -262,7 +274,7 @@ internal fun ShelfCatalogOverlay(
                         onLayoutSelect = { target ->
                             if (motion.switchLayout(target)) MotionHaptics.perform(MotionHaptics.Kind.Tick)
                         },
-                        onQueryChange = onQueryChange,
+                        onQueryChange = { if (!motion.closing) onQueryChange(it) },
                         onOpenFilter = onOpenFilter,
                         onClose = {
                             focusManager.clearFocus(force = true)
@@ -276,6 +288,7 @@ internal fun ShelfCatalogOverlay(
                         .fillMaxWidth()
                         // 旋转过渡：书柜不逐帧重排（每层放几本由最终宽度定），等比缩放贴进分给它的矩形（见 rotationMorphBlock）
                         .rotationMorphBlock()
+                        .onSizeChanged { wallWidth.intValue = it.width }
                         .shelfCatalogWallPull(motion),
                     contentAlignment = Alignment.Center,
                 ) { empty ->
@@ -318,11 +331,12 @@ internal fun ShelfCatalogOverlay(
                 }
             }
             // 书脊 ↔ 封面逐本变形层：在书柜之上、飞行编队之下
-            ShelfCatalogMorphOverlay(motion = motion, hideTitleTag = hideTitleTag)
+            ShelfCatalogMorphOverlay(motion = motion, hideTitleTag = hideTitleTag, textBasis = textBasis)
             // 全员 3D 飞行编队层：覆盖全屏最顶层，实现单排书架所有可见盒 ↔ 立体藏书柜的无隙同步穿梭
             ShelfCatalogTroupeOverlay(
                 motion = motion,
                 hideTitleTag = hideTitleTag,
+                textBasis = textBasis,
             )
             }
         }
@@ -335,7 +349,7 @@ internal fun ShelfCatalogOverlay(
  * 在图层块里读取，变形途中不重组。
  */
 @Composable
-private fun ShelfCatalogMorphOverlay(motion: ShelfCatalogMotion, hideTitleTag: Boolean) {
+private fun ShelfCatalogMorphOverlay(motion: ShelfCatalogMotion, hideTitleTag: Boolean, textBasis: DpSize) {
     val flights = motion.activeMorph
     if (flights.isEmpty()) return
     val accent = MaterialTheme.colorScheme.primary
@@ -346,8 +360,7 @@ private fun ShelfCatalogMorphOverlay(motion: ShelfCatalogMotion, hideTitleTag: B
     Box(
         Modifier
             .fillMaxSize()
-            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-            // 卡片只在书柜视口里画，单 Pass 绘制并以顶部细条渐变做顶缘渐隐，下方 95% 区域不做 DstIn 过绘
+            // 卡片只在书柜视口里画，顶缘一条细带渐隐；只有这条细带进离屏缓冲（见 drawWithTopFadeBand）
             .drawWithCache {
                 val startPx = WALL_TOP_FADE_START.toPx()
                 val fadeHeight = startPx + WALL_TOP_FADE.toPx()
@@ -357,37 +370,30 @@ private fun ShelfCatalogMorphOverlay(motion: ShelfCatalogMotion, hideTitleTag: B
                     startY = startPx,
                     endY = fadeHeight,
                 )
+                val contentLayer = obtainGraphicsLayer()
                 onDrawWithContent {
                     val viewport = motion.wallViewport
                     val origin = motion.overlayOrigin
                     if (viewport.width <= 0f || viewport.height <= 0f) {
-                        drawContent()
+                        // 视口还没量到：与原先整面离屏一样，只裁到覆盖层自身范围
+                        clipRect { this@onDrawWithContent.drawContent() }
                     } else {
-                        val left = viewport.left - origin.x
-                        val top = viewport.top - origin.y
-                        val right = viewport.right - origin.x
-                        val bottom = viewport.bottom - origin.y
-                        clipRect(left = left, top = top, right = right, bottom = bottom) {
-                            this@onDrawWithContent.drawContent()
-                        }
-                        val bandBottom = (top + fadeHeight).coerceAtMost(bottom)
-                        if (bandBottom > top) {
-                            withTransform({ translate(0f, top) }) {
-                                drawRect(
-                                    brush = fadeBrush,
-                                    topLeft = Offset(left, 0f),
-                                    size = Size(viewport.width, bandBottom - top),
-                                    blendMode = BlendMode.DstIn,
-                                )
-                            }
-                        }
+                        drawWithTopFadeBand(
+                            contentLayer = contentLayer,
+                            left = viewport.left - origin.x,
+                            top = viewport.top - origin.y,
+                            right = viewport.right - origin.x,
+                            bottom = viewport.bottom - origin.y,
+                            fadeHeight = fadeHeight,
+                            fadeBrush = fadeBrush,
+                        ) { this@onDrawWithContent.drawContent() }
                     }
                 }
             },
     ) {
         for (flight in flights) {
             key(flight.game.uri) {
-                ShelfCatalogMorphBook(flight, motion, hideTitleTag, accent, highlightStroke, verticalSpineShape)
+                ShelfCatalogMorphBook(flight, motion, hideTitleTag, accent, highlightStroke, verticalSpineShape, textBasis)
             }
         }
     }
@@ -401,6 +407,7 @@ private fun ShelfCatalogMorphBook(
     accent: Color,
     highlightStroke: Color,
     verticalSpineShape: androidx.compose.ui.graphics.Shape,
+    textBasis: DpSize,
 ) {
     val game = flight.game
     val cover by rememberCoverBitmap(game.coverUri, CoverDecodeTier.GRID)
@@ -419,7 +426,7 @@ private fun ShelfCatalogMorphBook(
         if (mode == ShelfCatalogLayoutMode.SPINES) {
             ShelfCatalogVerticalSpineFace(
                 title = title,
-                uri = game.uri,
+                textBasis = textBasis,
                 spineWidth = width,
                 boxHeight = height,
                 isCurrent = flight.isCurrent,
@@ -657,6 +664,9 @@ private fun ShelfCatalogControlDeck(
         }
     }
 }
+
+internal fun Modifier.catalogBookClick(closing: Boolean, onClick: () -> Unit): Modifier =
+    if (closing) this else clickable(interactionSource = null, indication = null, role = Role.Button, onClick = onClick)
 
 @Composable
 private fun ShelfCatalogEmblem(color: Color, modifier: Modifier = Modifier) {
@@ -1061,32 +1071,75 @@ private val WALL_TOP_FADE_START = 6.dp
 
 /**
  * 在当前图层上缘把内容渐隐掉：[WALL_TOP_FADE_START] 以内全透明，再用 [WALL_TOP_FADE] 的高度渐变到不透明。
- * 单 Pass 绘制后仅对顶部细条施用预缓存的 `DstIn` 渐变，避免两次子树重放导致 RenderThread 翻倍。
+ * 只有顶上这一条进离屏缓冲做 `DstIn`（见 [drawWithTopFadeBand]），下面整面书墙直接画，画面与整面离屏逐像素一致。
  */
 private fun Modifier.shelfCatalogTopFade(): Modifier =
-    graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-        .drawWithCache {
-            val startPx = WALL_TOP_FADE_START.toPx()
-            val fadeHeight = startPx + WALL_TOP_FADE.toPx()
-            val fadeBrush = Brush.verticalGradient(
-                0f to Color.Transparent,
-                1f to Color.Black,
-                startY = startPx,
-                endY = fadeHeight,
-            )
-            onDrawWithContent {
-                drawContent()
-                val bandH = fadeHeight.coerceAtMost(size.height)
-                if (bandH > 0f && size.width > 0f) {
-                    drawRect(
-                        brush = fadeBrush,
-                        topLeft = Offset.Zero,
-                        size = Size(size.width, bandH),
-                        blendMode = BlendMode.DstIn,
-                    )
-                }
-            }
+    drawWithCache {
+        val startPx = WALL_TOP_FADE_START.toPx()
+        val fadeHeight = startPx + WALL_TOP_FADE.toPx()
+        val fadeBrush = Brush.verticalGradient(
+            0f to Color.Transparent,
+            1f to Color.Black,
+            startY = startPx,
+            endY = fadeHeight,
+        )
+        val contentLayer = obtainGraphicsLayer()
+        onDrawWithContent {
+            drawWithTopFadeBand(
+                contentLayer = contentLayer,
+                left = 0f,
+                top = 0f,
+                right = size.width,
+                bottom = size.height,
+                fadeHeight = fadeHeight,
+                fadeBrush = fadeBrush,
+            ) { this@onDrawWithContent.drawContent() }
         }
+    }
+
+/**
+ * 把 [content] 画进矩形 [left]..[right] × [top]..[bottom]（等同于原先整面 `CompositingStrategy.Offscreen` 图层的裁切范围），
+ * 并让矩形顶上 [fadeHeight] 高的一条按 [fadeBrush]（以矩形上缘为 0 的竖向渐变）做 `DstIn` 渐隐。
+ *
+ * 原先整面离屏每帧要把整块书墙先画进一张离屏缓冲再合成（藏书阁滚动、书脊 ↔ 封面变形时渲染线程的大头，模拟器实测
+ * 每帧约 6~10ms）。这里内容只录一次到 [contentLayer]：渐隐带以下直接画到画布上，只有渐隐带那一条（十几 dp 高）
+ * 进离屏缓冲做遮罩。两段的裁切边界相同、遮罩范围相同，合成结果与整面离屏一致。
+ */
+private fun DrawScope.drawWithTopFadeBand(
+    contentLayer: GraphicsLayer,
+    left: Float,
+    top: Float,
+    right: Float,
+    bottom: Float,
+    fadeHeight: Float,
+    fadeBrush: Brush,
+    content: DrawScope.() -> Unit,
+) {
+    if (right <= left || bottom <= top) return
+    contentLayer.record { content() }
+    val bandBottom = (top + fadeHeight).coerceAtMost(bottom)
+    if (bandBottom < bottom) {
+        clipRect(left = left, top = bandBottom, right = right, bottom = bottom) {
+            drawLayer(contentLayer)
+        }
+    }
+    if (bandBottom > top) {
+        val band = Rect(left, top, right, bandBottom)
+        drawContext.canvas.saveLayer(band, Paint())
+        clipRect(left = band.left, top = band.top, right = band.right, bottom = band.bottom) {
+            drawLayer(contentLayer)
+        }
+        withTransform({ translate(0f, top) }) {
+            drawRect(
+                brush = fadeBrush,
+                topLeft = Offset(left, 0f),
+                size = Size(right - left, bandBottom - top),
+                blendMode = BlendMode.DstIn,
+            )
+        }
+        drawContext.canvas.restore()
+    }
+}
 
 internal fun resolveCatalogCenterUri(
     info: androidx.compose.foundation.lazy.LazyListLayoutInfo,
@@ -1262,6 +1315,8 @@ private fun Modifier.shelfCatalogTierScaffold(
     contactColor: Color,
     depthShade: Color,
     accent: Color,
+    peek: ShelfCatalogTierPeekState? = null,
+    focusIndex: Int = -1,
 ): Modifier = drawWithCache {
     val stPx = stileWidth.toPx()
     val floorY = floorYDp.toPx()
@@ -1343,10 +1398,17 @@ private fun Modifier.shelfCatalogTierScaffold(
         drawRect(topBrush, topLeft = Offset(innerLeft, floorY), size = Size(innerRight - innerLeft, depthPx))
         clipRect(left = innerLeft, top = 0f, right = innerRight, bottom = size.height) {
             if (rowSpanW > 0f) {
-                drawRect(contactBrush, topLeft = Offset(booksStartX, contactTopY), size = Size(rowSpanW, contactEndY - contactTopY))
+                val startShift = peek?.bookShiftPx(0) ?: 0f
+                val last = (peek?.bookCount ?: 0) - 1
+                val endShift = if (peek != null && last >= 0) peek.bookShiftPx(last) + peek.extraWidthPx(last) else 0f
+                drawRect(contactBrush, topLeft = Offset(booksStartX + startShift, contactTopY), size = Size(rowSpanW + endShift - startShift, contactEndY - contactTopY))
             }
             if (glowBrushAndTop != null) {
-                drawOval(brush = glowBrushAndTop.first, topLeft = glowBrushAndTop.second, size = glowBrushAndTop.third)
+                val shift = peek?.bookShiftPx(focusIndex) ?: 0f
+                val alpha = (1f - (peek?.progressOf(focusIndex) ?: 0f) * 2.5f).coerceIn(0f, 1f)
+                withTransform({ translate(shift, 0f) }) {
+                    drawOval(brush = glowBrushAndTop.first, topLeft = glowBrushAndTop.second, size = glowBrushAndTop.third, alpha = alpha)
+                }
             }
         }
 
@@ -1465,11 +1527,18 @@ private fun ShelfCatalogVerticalTierRow(
             with(density) { (spineHeight * shelfCatalogSpineHeightFactor(tier.games[idx].uri)).toPx() }
         }
     }
+    val bookBottomOffsetsPx = remember(tier.games, currentFocusUri, density.density) {
+        IntArray(tier.games.size) { index ->
+            val uri = tier.games[index].uri
+            with(density) { (if (uri == currentFocusUri) SPINE_FOCUS_LIFT else (-shelfCatalogSpineRecess(uri).liftDp).dp).roundToPx() }
+        }
+    }
     val peekState = rememberShelfCatalogTierPeekState(
         motion = motion,
         widthsPx = tierWidthsPx,
         gapsPx = tierGapsPx,
         bookHeightsPx = tierHeightsPx,
+        bookBottomOffsetsPx = bookBottomOffsetsPx,
         innerWidthPx = innerWidthPx,
     )
     val canStartPeek by rememberUpdatedState {
@@ -1500,6 +1569,8 @@ private fun ShelfCatalogVerticalTierRow(
                     stileWidth = stileWidth,
                     interiorInset = interiorInset,
                     glowRadiusScale = 1.4f,
+                    peek = peekState,
+                    focusIndex = focusIndex,
                     frameColor = ShelfCatalogCabinetFrame,
                     alcoveShadow = ShelfCatalogAlcoveShadow,
                     boardColor = ShelfLedgeSurface,
@@ -1669,7 +1740,7 @@ private fun ShelfCatalogVerticalSpine(
         ) {
             ShelfCatalogVerticalSpineFace(
                 title = title,
-                uri = game.uri,
+                textBasis = shelfCatalogSpineTextBasis(maxHeight),
                 spineWidth = spineWidth,
                 boxHeight = boxHeight,
                 isCurrent = isCurrent,
@@ -1684,14 +1755,8 @@ private fun ShelfCatalogVerticalSpine(
                 modifier = Modifier
                     .shelfCatalogPeekSpineTurn(peekState, colIndex)
                     // 退场期间触摸是递给下面书架的，书不再按压反馈、也不再响应点选
-                    .pressSquish(enabled = !motion.closing, scale = PressSquishDefaults.CardScale, charge = true)
-                    .clickable(
-                        enabled = !motion.closing,
-                        interactionSource = null,
-                        indication = null,
-                        role = Role.Button,
-                        onClick = onClick,
-                    )
+                    .pressSquish(enabled = !motion.closing && !isFrontMounted, scale = PressSquishDefaults.CardScale, charge = true)
+                    .catalogBookClick(motion.closing, onClick)
                     .semantics(mergeDescendants = true) {
                         contentDescription = if (isCurrent) "$title ($currentLabel)" else title
                     },
@@ -1752,8 +1817,7 @@ private fun ShelfCatalogVerticalSpine(
 @Composable
 private fun ShelfCatalogVerticalSpineFace(
     title: String,
-    /** 用来还原这本书的高矮厚薄系数：排字按「基准厚度 + 最矮高度」算，书的外形差异不影响书名显示多长。 */
-    uri: String,
+    textBasis: DpSize,
     spineWidth: Dp,
     boxHeight: Dp,
     isCurrent: Boolean,
@@ -1780,8 +1844,7 @@ private fun ShelfCatalogVerticalSpineFace(
             engineColor = engineColor,
             lastPlayed = lastPlayed,
             spineWidth = spineWidth,
-            textWidth = shelfCatalogSpineTextWidth(uri, spineWidth),
-            textHeight = shelfCatalogSpineTextHeight(uri, boxHeight),
+            textBasis = textBasis,
         )
         if (!isCurrent && recessShadeAlpha > 0f) {
             Spacer(
@@ -1840,13 +1903,8 @@ private fun ShelfCatalogVerticalSpineFace(
     }
 }
 
-/** 书脊排字用的参照宽：去掉这本书的厚薄系数，同一书柜里的书都按基准厚度排字。 */
-internal fun shelfCatalogSpineTextWidth(uri: String, spineWidth: Dp): Dp =
-    spineWidth / shelfCatalogSpineThicknessFactor(uri)
-
-/** 书脊排字用的参照高：去掉这本书的高矮系数后按最矮的书留空间，高书只是上下多出一截，书名不会因此多排或少排字。 */
-internal fun shelfCatalogSpineTextHeight(uri: String, boxHeight: Dp): Dp =
-    boxHeight / shelfCatalogSpineHeightFactor(uri) * SHELF_CATALOG_MIN_SPINE_HEIGHT_FACTOR
+internal fun shelfCatalogSpineTextBasis(tierHeight: Dp): DpSize =
+    DpSize(shelfCatalogSpineBaseWidth(tierHeight), tierHeight * SHELF_CATALOG_MIN_SPINE_HEIGHT_FACTOR)
 
 /** 藏书阁一层封面陈列书柜格：沿用立柱、凹槽暗影与厚搁板，每盒呈精装切角封面配板下书名。 */
 @Composable
@@ -2109,13 +2167,7 @@ private fun ShelfCatalogCoverBook(
             .shelfCatalogSlotPlaced(motion, game.uri, rowGridIndex, colIndex, ShelfCatalogLayoutMode.COVERS)
             // 退场期间触摸是递给下面书架的，书不再按压反馈、也不再响应点选
             .pressSquish(enabled = !motion.closing, scale = PressSquishDefaults.CardScale)
-            .clickable(
-                enabled = !motion.closing,
-                interactionSource = null,
-                indication = null,
-                role = Role.Button,
-                onClick = onClick,
-            )
+            .catalogBookClick(motion.closing, onClick)
             .semantics(mergeDescendants = true) {
                 contentDescription = if (isCurrent) "$title ($currentLabel)" else title
             },
@@ -2226,6 +2278,7 @@ private fun ShelfCatalogCoverFace(
 private fun ShelfCatalogTroupeOverlay(
     motion: ShelfCatalogMotion,
     hideTitleTag: Boolean,
+    textBasis: DpSize,
 ) {
     val troupe = motion.activeTroupe
     if (troupe.isEmpty()) return
@@ -2243,6 +2296,7 @@ private fun ShelfCatalogTroupeOverlay(
                     motion = motion,
                     originProvider = originProvider,
                     hideTitleTag = hideTitleTag,
+                    textBasis = textBasis,
                 )
             }
         }
@@ -2273,6 +2327,7 @@ private fun ShelfCatalogTroupeBook(
     motion: ShelfCatalogMotion,
     originProvider: () -> Offset,
     hideTitleTag: Boolean,
+    textBasis: DpSize,
 ) {
     val game = flight.game
     val density = LocalDensity.current
@@ -2396,7 +2451,7 @@ private fun ShelfCatalogTroupeBook(
             if (flight.catalogMode == ShelfCatalogLayoutMode.SPINES) {
                 ShelfCatalogVerticalSpineFace(
                     title = spineTitle,
-                    uri = game.uri,
+                    textBasis = textBasis,
                     spineWidth = catW,
                     boxHeight = catH,
                     isCurrent = flight.isCurrentInCatalog,

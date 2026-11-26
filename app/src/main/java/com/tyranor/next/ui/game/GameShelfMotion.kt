@@ -811,7 +811,11 @@ internal fun Modifier.shelfReflection(
         clipRect(left = -sideMargin, top = floorY, right = width + sideMargin, bottom = maskEndY) {
             // 固定使用完整倒影离屏尺寸，避免每帧动态变更 Bounds 引发 Skia 反复创建与驱逐 Scratch RenderTarget
             drawContext.canvas.saveLayer(fullReflectionBounds, reflectionPaint)
-            withTransform({ scale(1f, -1f, pivot = contactCenter) }) {
+            withTransform({
+                val overflow = shelfReflectionOverflow(liftPx * hero, reflectionHeight)
+                if (overflow > 0f) translate(top = -overflow)
+                scale(1f, -1f, pivot = contactCenter)
+            }) {
                 this@onDrawWithContent.drawContent()
             }
             drawRect(
@@ -825,6 +829,8 @@ internal fun Modifier.shelfReflection(
         }
     }
 }
+
+internal fun shelfReflectionOverflow(lift: Float, depth: Float): Float = (lift - depth * 0.8f).coerceAtLeast(0f)
 
 private object ElevationShadowCache {
     private const val SCALE = 0.25f

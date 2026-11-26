@@ -194,6 +194,12 @@ internal fun GameShortcutCropDialog() {
 """
         self.assertEqual(MOD.check_file("ui/game/GameShortcutCropDialog.kt", hosted_alert), [])
 
+        for bad_exit in ("", "if (busy) return", "return@callback"):
+            with self.subTest(bad_exit=bad_exit):
+                source = hosted_alert.replace("        return\n", f"        {bad_exit}\n")
+                errors = MOD.check_file("ui/game/GameShortcutCropDialog.kt", source)
+                self.assertTrue(any("Dialog()" in message for _, message in errors))
+
 
 if __name__ == "__main__":
     unittest.main()

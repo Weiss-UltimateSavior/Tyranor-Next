@@ -68,6 +68,7 @@ import com.tyranor.next.theme.CurrentBookPaperPalette
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.LocalAppDialogContent
 import com.tyranor.next.theme.LocalShelfBookLeaf
+import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.SecondaryTextColor
 import com.tyranor.next.theme.ShelfBookClothWeaveDark
 import com.tyranor.next.theme.ShelfBookClothWeaveLight
@@ -77,7 +78,6 @@ import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.motion.PressSquishDefaults
 import com.tyranor.next.ui.common.motion.pressSquish
 import com.tyranor.next.ui.common.motion.shelfBookMarker
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.math.PI
 import kotlin.math.sin
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
@@ -378,7 +378,7 @@ fun AppSectionCard(
     val surfaceColor = if (useDialogSurfaceOutside && LocalAppDialogContent.current) {
         DialogItemSurface
     } else {
-        MiuixTheme.colorScheme.surfaceContainer
+        NavWhite
     }
     MiuixCard(
         modifier = modifier.fillMaxWidth().then(if (glassBorderOutside) Modifier.glassBorder() else Modifier),

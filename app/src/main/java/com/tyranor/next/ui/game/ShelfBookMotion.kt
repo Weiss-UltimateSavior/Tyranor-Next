@@ -669,6 +669,7 @@ internal fun rememberShelfBookMotion(stage: ShelfBookStage, uri: String, onDismi
 @Stable
 internal class ShelfBookLeaf(spec: AppDialogSpec?) {
     var spec by mutableStateOf(spec)
+    var onBack: (() -> Unit)? = null
 
     /** 这一页被更上一层的页翻过去的程度：0 = 平躺在右边，1 = 翻到书脊左边。 */
     val turn = Animatable(0f)
@@ -963,9 +964,16 @@ internal class ShelfBookPages(
     /** 返回 / 点书外空白：最上面那一页能关就翻回去并交付关闭（翻完时取调用方最新的关闭回调）；不能关（如正在保存）就原地不动。 */
     fun dismissTop(velocity: Float = 0f) {
         val leaf = leaves.lastOrNull() ?: return
+        if (leaf.leaving) return
         val spec = leaf.spec
         if (spec != null && !spec.dismissEnabled) {
             MotionHaptics.perform(MotionHaptics.Kind.Reject)
+            return
+        }
+        leaf.onBack?.let { handle ->
+            val below = turnOf(leaves.lastIndex)
+            if (below.value < 1f) openPage(below)
+            handle()
             return
         }
         closeTop(velocity = velocity) {

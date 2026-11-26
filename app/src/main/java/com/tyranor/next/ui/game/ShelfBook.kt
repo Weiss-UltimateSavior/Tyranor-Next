@@ -56,6 +56,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -1347,6 +1348,18 @@ private fun shelfPaperGrain(dark: Boolean): ImageBitmap {
     return android.graphics.Bitmap.createBitmap(pixels, size, size, android.graphics.Bitmap.Config.ARGB_8888).asImageBitmap()
 }
 
+private val LocalShelfBookBackTarget = compositionLocalOf<ShelfBookLeaf?> { null }
+
+@Composable
+internal fun ShelfBookLeafBackHandler(enabled: Boolean, onBack: () -> Unit) {
+    val leaf = LocalShelfBookBackTarget.current ?: return
+    val handle by rememberUpdatedState(onBack)
+    if (enabled) DisposableEffect(leaf) {
+        leaf.onBack = { handle() }
+        onDispose { leaf.onBack = null }
+    }
+}
+
 /**
  * 翻到的一页：左上角「‹ 目录」翻回上一页；章节扉页（进二级页面时）只有章号与标题；
  * 选项弹出的二级弹窗照书页排版——标题像章节名、下面一道双线、正文、页脚是按钮。
@@ -1381,13 +1394,14 @@ private fun ShelfBookLeafPage(
     ) {
         ShelfBookBackLink(
             label = backLabel,
+            enabled = pages.leaves.lastOrNull() === leaf && !leaf.leaving,
             onClick = { if (back != null) back.onBackPressed() else pages.dismissTop() },
         )
         if (spec != null) {
             // 书页宿主统一提供纸墨主题与 LocalShelfBookLeaf = true：公共设置行、下拉、开关、滑条、输入框与按钮会自动切到纸墨样式，
             // 入场节拍不重播（翻页就是这一页的进场），也不挂到主页面的入场上
             ShelfBookLeafTheme {
-                CompositionLocalProvider(LocalIndication provides NoIndication) {
+                CompositionLocalProvider(LocalIndication provides NoIndication, LocalShelfBookBackTarget provides leaf) {
                     ProvideEntrance(rememberEntranceState(playOnStart = false)) {
                         Box(Modifier.fillMaxWidth().padding(top = 10.dp)) {
                             Box(Modifier.fillMaxWidth().padding(top = spec.topOverhangHeight)) {
@@ -1441,13 +1455,13 @@ private fun ShelfBookLeafPage(
 
 /** 翻回上一页的「‹ 目录 / ‹ 管理」（更深的页只有 ‹）。 */
 @Composable
-private fun ShelfBookBackLink(label: String?, onClick: () -> Unit) {
+private fun ShelfBookBackLink(label: String?, enabled: Boolean, onClick: () -> Unit) {
     val ink = SecondaryTextColor
     val back = stringResource(R.string.common_back)
     Row(
         Modifier
             .heightIn(min = BOOK_BACK_HEIGHT)
-            .clickable(interactionSource = null, indication = null, role = Role.Button, onClick = onClick)
+            .clickable(interactionSource = null, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics(mergeDescendants = true) { contentDescription = back },
         verticalAlignment = Alignment.CenterVertically,
     ) {

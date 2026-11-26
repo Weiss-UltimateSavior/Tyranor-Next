@@ -7,6 +7,7 @@ import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -50,6 +51,20 @@ class GameShelfGeometryTest {
         assertTrue(regular.infoHeight >= 150.dp)
         assertEquals(0.dp, shelfChromeForHeight(510.dp, fontScale = 2f, multipleGames = true).infoHeight)
         assertFalse(shelfChromeForHeight(510.dp, fontScale = 1f, multipleGames = false).showScrubber)
+    }
+
+    @Test
+    fun liftedHeroRetainsReflectionAtMinimumStageWithoutMovingNormalReflections() {
+        val depth = 128f * 0.14f
+        for (scale in listOf(0.5f, 1f)) {
+            val frontEdge = depth * scale
+            val lift = 18f * scale
+            val reflectedFoot = lift - shelfReflectionOverflow(lift, frontEdge)
+            assertEquals(3.584f * scale, frontEdge - reflectedFoot, 0.001f)
+            assertEquals(0f, shelfReflectionOverflow(0f, frontEdge), 0f)
+        }
+        assertEquals(0f, shelfReflectionOverflow(18f, 22.5f), 0f)
+        assertEquals(0f, shelfReflectionOverflow(18f, 260f * 0.14f), 0f)
     }
 
     private fun geometry(maxTurn: Float = SHELF_SPINE_TURN) = ShelfGeometry(
@@ -858,6 +873,7 @@ class GameShelfGeometryTest {
         val reference = shelfSpineTypography(spineWidthDp = 32f, coverHeightDp = 260f)
         assertEquals(11f, reference.fontSizeDp, 0.001f)
         assertEquals(13f, reference.lineHeightDp, 0.001f)
+        assertEquals(210.8f, reference.latinLengthDp, 0.001f)
         assertEquals(11f * 42f / 32f, tablet.fontSizeDp, 0.001f)
         assertEquals(phone.fontSizeDp / phone.lineHeightDp, tablet.fontSizeDp / tablet.lineHeightDp, 0.001f)
 
@@ -877,5 +893,19 @@ class GameShelfGeometryTest {
         }
         assertTrue(resolveShelfSpineTitleAppearance(tones[0]).isLightText)
         assertFalse(resolveShelfSpineTitleAppearance(tones[2]).isLightText)
+    }
+
+    @Test
+    fun darkSpineOnlyStrengthensTheVeilForFailingHighlights() {
+        val stillReadable = resolveShelfSpineTitleAppearance(SpineToneMetrics(0.08f, 0.02f, 0.73f))
+        assertEquals(Color.Black.copy(alpha = 0.52f), stillReadable.veilColor)
+        assertTrue(stillReadable.effectiveContrast >= 4.5f)
+        for (peak in listOf(0.78f, 0.95f, 1f)) {
+            val appearance = resolveShelfSpineTitleAppearance(SpineToneMetrics(0.08f, 0.02f, peak))
+            assertTrue(appearance.isLightText)
+            assertTrue(appearance.needsStroke)
+            assertTrue(appearance.effectiveContrast >= 4.5f)
+            assertTrue(appearance.veilColor.alpha > stillReadable.veilColor.alpha)
+        }
     }
 }

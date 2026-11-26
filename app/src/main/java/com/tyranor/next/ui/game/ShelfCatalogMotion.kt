@@ -3081,12 +3081,36 @@ private const val MORPH_VANISH_SPAN = 0.45f
 internal val SHELF_CATALOG_PEEK_YAW_DEGREES: Float = HERO_YAW_DEGREES
 
 private const val PEEK_HYSTERESIS_DP = 4f
-private const val PEEK_HORIZONTAL_LOCK_RATIO = 1.25f
+private const val PEEK_MIN_LATERAL_RATIO = 0.5f
 private val PEEK_LONG_PRESS_EDGE_PAD = 4.dp
 private const val PEEK_FRONT_FADE_START_DEG = 89.8f
 private const val PEEK_FRONT_FADE_SPAN_DEG = 3.5f
-private const val PEEK_GESTURE_DRAG = 1
-private const val PEEK_GESTURE_ABORT = 2
+
+internal enum class ShelfCatalogPeekDirection { UNDECIDED, PEEK, SCROLL }
+
+internal class ShelfCatalogPeekGestureTracker(private val slop: Float) {
+    private var travel = Offset.Zero
+    var canLongPress = true
+        private set
+
+    fun cancelLongPress() {
+        canLongPress = false
+    }
+
+    fun move(delta: Offset, consumed: Boolean): ShelfCatalogPeekDirection {
+        travel += delta
+        if (consumed) cancelLongPress()
+        if (travel.getDistance() <= slop) return ShelfCatalogPeekDirection.UNDECIDED
+        cancelLongPress()
+        val horizontal = abs(travel.x)
+        val vertical = abs(travel.y)
+        return when {
+            horizontal >= slop * 0.75f && horizontal >= vertical * PEEK_MIN_LATERAL_RATIO -> ShelfCatalogPeekDirection.PEEK
+            vertical >= slop * 2f && horizontal < vertical * PEEK_MIN_LATERAL_RATIO -> ShelfCatalogPeekDirection.SCROLL
+            else -> ShelfCatalogPeekDirection.UNDECIDED
+        }
+    }
+}
 
 /** 按书高复用主书架封面宽高比（[SHELF_COVER_ASPECT_RATIO]）换算翻开后的封面宽度。 */
 internal fun shelfCatalogPeekCoverWidthPx(bookHeightPx: Float): Float =
@@ -3237,6 +3261,8 @@ internal fun hitShelfCatalogSpineIndex(
     fingerY: Float,
     widthsPx: List<Int>,
     gapsPx: List<Int>,
+    bookHeightsPx: FloatArray,
+    bookBottomOffsetsPx: IntArray,
     tierBookBottomPx: Float,
     edgePadPx: Float = 0f,
 ): Int {
@@ -3248,13 +3274,16 @@ internal fun hitShelfCatalogSpineIndex(
         if (i < n - 1 && i < gapsPx.size) totalWidth += gapsPx[i].toFloat().coerceAtLeast(0f)
     }
     if (fingerX < -edgePadPx || fingerX > totalWidth + edgePadPx) return -1
-    return resolveShelfCatalogPeekBookIndex(
+    val index = resolveShelfCatalogPeekBookIndex(
         fingerX = fingerX,
         widthsPx = widthsPx,
         gapsPx = gapsPx,
         currentIndex = -1,
         hysteresisPx = 0f,
     )
+    val bottom = tierBookBottomPx + bookBottomOffsetsPx[index]
+    val top = bottom - bookHeightsPx[index].roundToInt()
+    return if (fingerY in top..bottom) index else -1
 }
 
 @Stable
@@ -3264,6 +3293,7 @@ internal class ShelfCatalogTierPeekState(
     private val widthsPx: List<Int>,
     private val gapsPx: List<Int>,
     private val bookHeightsPx: FloatArray,
+    private val bookBottomOffsetsPx: IntArray,
     private val innerWidthPx: Int,
     private val hysteresisPx: Float,
 ) {
@@ -3293,6 +3323,12 @@ internal class ShelfCatalogTierPeekState(
     fun bookShiftPx(col: Int): Float {
         if (openAnims.isEmpty() || col !in widthsPx.indices) return 0f
         return currentLayout().bookShiftsPx[col]
+    }
+
+    fun extraWidthPx(col: Int): Float {
+        val progress = progressOf(col)
+        if (progress <= 0f) return 0f
+        return shelfCatalogPeekExtraWidthPx(widthsPx[col].toFloat(), shelfCatalogPeekCoverWidthPx(bookHeightsPx[col]), progress)
     }
 
     private fun currentLayout(): ShelfCatalogPeekLayout {
@@ -3328,6 +3364,8 @@ internal class ShelfCatalogTierPeekState(
             fingerY = fingerY,
             widthsPx = widthsPx,
             gapsPx = gapsPx,
+            bookHeightsPx = bookHeightsPx,
+            bookBottomOffsetsPx = bookBottomOffsetsPx,
             tierBookBottomPx = tierBookBottomPx,
             edgePadPx = edgePadPx,
         )
@@ -3432,17 +3470,19 @@ internal fun rememberShelfCatalogTierPeekState(
     widthsPx: List<Int>,
     gapsPx: List<Int>,
     bookHeightsPx: FloatArray,
+    bookBottomOffsetsPx: IntArray,
     innerWidthPx: Int,
 ): ShelfCatalogTierPeekState {
     val scope = rememberCoroutineScope()
     val hysteresisPx = with(LocalDensity.current) { PEEK_HYSTERESIS_DP.dp.toPx() }
-    val state = remember(motion, widthsPx, gapsPx, bookHeightsPx, innerWidthPx, hysteresisPx) {
+    val state = remember(motion, widthsPx, gapsPx, bookHeightsPx, bookBottomOffsetsPx, innerWidthPx, hysteresisPx) {
         ShelfCatalogTierPeekState(
             scope = scope,
             motion = motion,
             widthsPx = widthsPx,
             gapsPx = gapsPx,
             bookHeightsPx = bookHeightsPx,
+            bookBottomOffsetsPx = bookBottomOffsetsPx,
             innerWidthPx = innerWidthPx,
             hysteresisPx = hysteresisPx,
         )
@@ -3460,7 +3500,7 @@ internal fun rememberShelfCatalogTierPeekState(
 /**
  * 藏书阁竖排书脊层的翻看手势：
  * - 长按某本书脊成立后立即翻开并消费后续所有触摸（不松手竖向滑动也不再滚动列表）；
- * - 横向拖动超过 touch slop 且横向明显大于竖向时立即锁定翻看（竖向拖动仍交由 LazyColumn 滚动）；
+ * - 整层横拖或有明显横移的斜拖均可翻看；近竖直拖动仍交由 LazyColumn 滚动；
  * - 松手或取消时立刻全部合回且不触发点选。
  */
 internal fun Modifier.shelfCatalogVerticalTierPeekGesture(
@@ -3471,52 +3511,44 @@ internal fun Modifier.shelfCatalogVerticalTierPeekGesture(
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
         MotionIntent.noteTouch()
-        if (!canStart() || down.isConsumed) return@awaitEachGesture
-        val slop = viewConfiguration.touchSlop
+        if (!canStart()) return@awaitEachGesture
+        val tracker = ShelfCatalogPeekGestureTracker(viewConfiguration.touchSlop)
+        val pressedIndex = peekState.hitSpineIndex(down.position.x, down.position.y, size.height.toFloat(), edgePadPx)
+        if (pressedIndex < 0 || down.isConsumed) tracker.cancelLongPress()
         val longPressTimeout = viewConfiguration.longPressTimeoutMillis
+        var remaining = longPressTimeout
         var lastPos = down.position
-
-        val verdict = withTimeoutOrNull(longPressTimeout) {
-            while (true) {
-                val mainEvent = awaitPointerEvent(PointerEventPass.Main)
-                val mainChange = mainEvent.changes.firstOrNull { it.id == down.id }
-                if (mainEvent.changes.count { it.pressed } > 1 ||
-                    mainChange == null ||
-                    !mainChange.pressed ||
-                    (mainChange.isConsumed && mainChange.uptimeMillis != down.uptimeMillis)
-                ) {
-                    return@withTimeoutOrNull PEEK_GESTURE_ABORT
+        var lockedByDrag = false
+        while (true) {
+            val event = if (tracker.canLongPress) {
+                withTimeoutOrNull(remaining) { awaitPointerEvent(PointerEventPass.Initial) } ?: break
+            } else {
+                awaitPointerEvent(PointerEventPass.Initial)
+            }
+            val change = event.changes.firstOrNull { it.id == down.id } ?: return@awaitEachGesture
+            if (!change.pressed || event.changes.count { it.pressed } > 1) return@awaitEachGesture
+            lastPos = change.position
+            when (tracker.move(change.position - change.previousPosition, change.isConsumed)) {
+                ShelfCatalogPeekDirection.PEEK -> {
+                    change.consume()
+                    lockedByDrag = true
+                    break
                 }
-                lastPos = mainChange.position
-                val delta = mainChange.position - down.position
-                if (delta.getDistance() > slop) {
-                    return@withTimeoutOrNull if (
-                        abs(delta.x) > slop * 0.75f &&
-                        abs(delta.x) > abs(delta.y) * PEEK_HORIZONTAL_LOCK_RATIO
-                    ) {
-                        mainChange.consume()
-                        PEEK_GESTURE_DRAG
-                    } else {
-                        PEEK_GESTURE_ABORT
-                    }
-                }
+                ShelfCatalogPeekDirection.SCROLL -> return@awaitEachGesture
+                ShelfCatalogPeekDirection.UNDECIDED -> Unit
+            }
+            if (tracker.canLongPress) {
                 val finalEvent = awaitPointerEvent(PointerEventPass.Final)
-                val finalChange = finalEvent.changes.firstOrNull { it.id == down.id }
-                if (finalChange == null ||
-                    !finalChange.pressed ||
-                    (finalChange.isConsumed && finalChange.uptimeMillis != down.uptimeMillis)
-                ) {
-                    return@withTimeoutOrNull PEEK_GESTURE_ABORT
-                }
+                if (finalEvent.changes.firstOrNull { it.id == down.id }?.isConsumed == true) tracker.cancelLongPress()
+                remaining = longPressTimeout - (change.uptimeMillis - down.uptimeMillis)
             }
         }
 
-        if (verdict == PEEK_GESTURE_ABORT || !canStart()) return@awaitEachGesture
-        val lockedByDrag = verdict == PEEK_GESTURE_DRAG
+        if (!canStart()) return@awaitEachGesture
         val initialIndex = if (lockedByDrag) {
             peekState.resolveInitialIndex(lastPos.x)
         } else {
-            peekState.hitSpineIndex(down.position.x, down.position.y, size.height.toFloat(), edgePadPx)
+            pressedIndex
         }
         if (initialIndex < 0) return@awaitEachGesture
 

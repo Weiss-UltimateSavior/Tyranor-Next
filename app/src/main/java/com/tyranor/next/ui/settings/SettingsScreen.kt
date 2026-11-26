@@ -1932,6 +1932,7 @@ internal fun WinlatorGlobalSettingsDialog(
                 WinlatorGlobalSettingsCard(winlator = winlator, onWinlator = { winlator = it })
             }
         },
+        textScrollEnabled = true,
         buttonArrangement = Arrangement.SpaceBetween,
         dismissButton = {
             DialogTextButton(text = stringResource(R.string.common_close), onClick = onDismiss)
