@@ -768,4 +768,107 @@ class ShelfBookLayoutTest {
             }
         }
     }
+
+    @Test
+    fun actionItemArrowAndBookLeafBehaviorAreDerivedByHostKind() {
+        val dialogItem = GameActionItem(
+            key = "search_cover",
+            title = "Search",
+            icon = 0,
+            kind = GameActionKind.Dialog,
+            onClick = {},
+        )
+        val detailItem = GameActionItem(
+            key = "engine_settings",
+            title = "Settings",
+            icon = 0,
+            kind = GameActionKind.Detail,
+            onClick = {},
+        )
+        val inlineItem = GameActionItem(
+            key = "runtime_refresh",
+            title = "Refresh",
+            icon = 0,
+            kind = GameActionKind.Inline,
+            onClick = {},
+        )
+
+        // 书内宿主（detailsInLeaf = true）：详情条自动隐藏箭头并在书页翻开；弹窗条保持翻页；就地条两者皆无。
+        assertFalse(detailItem.showArrow(detailsInLeaf = true))
+        assertTrue(detailItem.opensBookLeaf(detailsInLeaf = true))
+        assertFalse(dialogItem.showArrow(detailsInLeaf = true))
+        assertTrue(dialogItem.opensBookLeaf(detailsInLeaf = true))
+        assertFalse(inlineItem.showArrow(detailsInLeaf = true))
+        assertFalse(inlineItem.opensBookLeaf(detailsInLeaf = true))
+
+        // 抽屉宿主（detailsInLeaf = false）：只有详情条显示跳转箭头。
+        assertTrue(detailItem.showArrow(detailsInLeaf = false))
+        assertFalse(detailItem.opensBookLeaf(detailsInLeaf = false))
+        assertFalse(dialogItem.showArrow(detailsInLeaf = false))
+        assertFalse(inlineItem.showArrow(detailsInLeaf = false))
+        assertEquals(
+            setOf(
+                GameDetailDestination.SaveManagement,
+                GameDetailDestination.OnlinePatch,
+                GameDetailDestination.EngineSettings,
+            ),
+            GameDetailDestination.entries.toSet(),
+        )
+    }
+
+    @Test
+    fun draggingLeafPastThresholdClosesWithVelocityAndFreesPage() = runTest {
+        val pages = ShelfBookPages(withBookFrameClock(), enhanced = true) { true }
+        var dismissed = 0
+        val leaf = ShelfBookLeaf(
+            com.tyranor.next.ui.common.AppDialogSpec(
+                onDismissRequest = {
+                    dismissed++
+                    pages.remove(pages.leaves.last())
+                },
+                title = {},
+                text = {},
+                confirmButton = {},
+                dismissButton = null,
+                buttonArrangement = androidx.compose.foundation.layout.Arrangement.End,
+                textScrollEnabled = false,
+                dismissEnabled = true,
+                showButtonRow = false,
+            ),
+        )
+        pages.push(leaf)
+        advanceUntilIdle()
+        assertEquals(1f, pages.toc.value, 0f)
+
+        pages.dragStart()
+        pages.dragBy(delta = 60f, span = 100f)
+        assertEquals(0.4f, pages.toc.value, 1e-4f)
+
+        pages.dragEnd(velocity = 900f, span = 100f)
+        advanceUntilIdle()
+
+        assertEquals(1, dismissed)
+        assertTrue(pages.leaves.isEmpty())
+        assertEquals(0f, pages.toc.value, 0f)
+    }
+
+    @Test
+    fun pushingConfirmationLeafDuringCloseImmediatelyRestoresParentLeaf() = runTest {
+        val pages = ShelfBookPages(withBookFrameClock(), enhanced = true) { true }
+        val parent = ShelfBookLeaf(null)
+        val confirm = ShelfBookLeaf(null)
+        pages.push(parent)
+        advanceUntilIdle()
+
+        pages.closeTop {
+            // 模拟运行时模块设置脏草稿返回时：外层没关掉，立刻往书页栈压入未保存确认页
+            pages.push(confirm)
+        }
+        advanceUntilIdle()
+
+        assertFalse(parent.leaving)
+        assertEquals(listOf(parent, confirm), pages.leaves)
+        assertEquals(1f, pages.toc.value, 0f)
+        assertEquals(1f, parent.turn.value, 0f)
+    }
 }
