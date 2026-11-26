@@ -92,9 +92,17 @@ internal class RpgMakerLocalHttpServer(
     private val authCookieName = "${AUTH_COOKIE_NAME}_${authToken}"
     private val pluginIndexEnabled = this.scriptAppends.containsKey(DkToolsCompat.SCRIPT_PATH)
     private val pluginFileIndex = PluginFileIndexCache(build = { focused ->
-        val original = resolveRequestedFile("data/Stamp.json")
-        val hasOriginal = original.file != null || original.data != null || original.stream != null
-        original.stream?.close()
+        val hasOriginal = canonicalIfValid("data/Stamp.json") != null ||
+            DkToolsResourceResolver.resolve(
+                root = this.root,
+                uri = "data/Stamp.json",
+                archivePrefix = asarRootPrefix,
+                archiveChildren = { this.asar?.children(it).orEmpty() },
+                archiveIsFile = { this.asar?.entrySize(it) != null },
+                archiveDirectChildren = { this.asar?.directChildren(it).orEmpty() },
+                diskChildren = { dirIndex.children(it).orEmpty() },
+                archiveIsDirectory = { this.asar?.isDirectoryOrImplicit(it) == true },
+            ) != null
         if (hasOriginal) return@PluginFileIndexCache "null".toByteArray(Charsets.UTF_8)
         val started = System.nanoTime()
         RpgMakerFileIndex(this.root, this.asar, asarRootPrefix, isCancelled = { !running || Thread.currentThread().isInterrupted })
@@ -403,16 +411,24 @@ internal class RpgMakerLocalHttpServer(
         }
 
         if (uri == RpgMakerFileIndex.RESOURCE_PATH) {
+            if (!pluginIndexEnabled) {
+                sendText(socket, 404, "Not Found", "not found", headOnly)
+                return false
+            }
             val bytes = try {
-                if (DkToolsCompat.hasExactOriginalStamp(root, asarRootPrefix) {
-                    asar?.entrySize(it) != null
-                }) "null".toByteArray(Charsets.UTF_8) else pluginFileIndex.request(indexExecutor)
+                if (DkToolsCompat.hasExactOriginalStamp(root, asarRootPrefix,
+                    archiveIsDirectory = { asar?.isDirectoryOrImplicit(it) == true },
+                    archiveIsFile = { asar?.entrySize(it) != null },
+                )) "null".toByteArray(Charsets.UTF_8) else pluginFileIndex.request(indexExecutor)
             } catch (_: java.io.IOException) {
-                sendText(socket, 500, "Internal Server Error", "plugin file index failed")
+                sendText(socket, 500, "Internal Server Error", "plugin file index failed", headOnly)
+                return false
+            } catch (_: java.util.concurrent.RejectedExecutionException) {
+                sendText(socket, 500, "Internal Server Error", "plugin file index unavailable", headOnly)
                 return false
             }
             if (bytes == null) {
-                sendText(socket, 202, "Accepted", "plugin file index pending")
+                sendText(socket, 202, "Accepted", "plugin file index pending", headOnly)
                 return false
             }
             sendBytes(socket, bytes, uri, headOnly, keepAlive, "no-cache", null)
@@ -718,9 +734,9 @@ internal class RpgMakerLocalHttpServer(
     }
 
     /**
-     * 文件名回退解析。[allowWhitespaceTolerance] 为真（仅 v2 会话）时在大小写不敏感
-     * 之外再启用空白类别/尾随空白容忍，修「素材文件名被规范化后与 data 引用不一致」
-     * 导致的整批 404（见 [RpgMakerNameMatcher]）；为假时保持 v0/v1 的历史语义。
+     * 文件名回退解析。[allowWhitespaceTolerance] 为真时在大小写不敏感之外再启用
+     * 空白类别/尾随空白容忍，修「素材文件名被规范化后与 data 引用不一致」导致的整批 404
+     * （见 [RpgMakerNameMatcher]）；为假时回退为精确命中或大小写不敏感首项匹配。
      *
      * 目录枚举走 [dirIndex]（按「目录 + mtime」缓存）：旧实现每次 miss 都对每一级
      * `listFiles()` 并构造 `File` 列表，素材名被规范化时会在同一目录上反复扫描。
@@ -795,7 +811,7 @@ internal class RpgMakerLocalHttpServer(
 
     // 引导入口响应附带 Set-Cookie：后续同源资源请求由 WebView 自动携带
     private fun authCookieHeader(): String =
-        "Set-Cookie: $authCookieName=$authToken; Path=/; HttpOnly\r\n"
+        "Set-Cookie: $authCookieName=$authToken; Path=/; HttpOnly; SameSite=Strict\r\n"
 
     private fun hasValidAuth(headers: Map<String, String>): Boolean =
         headers["cookie"].orEmpty().split(';').any { it.trim() == "$authCookieName=$authToken" }
@@ -987,11 +1003,11 @@ internal class RpgMakerLocalHttpServer(
         if (!headOnly) raw.write(data)
         raw.flush()
     }
-    private fun sendText(socket: Socket, code: Int, reason: String, body: String) {
+    private fun sendText(socket: Socket, code: Int, reason: String, body: String, headOnly: Boolean = false) {
         val data = body.toByteArray(StandardCharsets.UTF_8)
         val out = BufferedOutputStream(socket.getOutputStream())
         out.write(("HTTP/1.1 $code $reason\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${data.size}\r\nConnection: close\r\n\r\n").toByteArray(StandardCharsets.UTF_8))
-        out.write(data)
+        if (!headOnly) out.write(data)
         out.flush()
     }
 

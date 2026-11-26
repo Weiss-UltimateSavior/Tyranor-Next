@@ -24,11 +24,17 @@ internal object DkToolsCompat {
     window.addEventListener("load", waitForIndex, true);
 })();"""
 
+    private val HTML_COMMENT_REGEX = Regex("<!--([\\s\\S]*?)-->|<!--[\\s\\S]*$")
+    private val HEAD_OPEN_REGEX = Regex("<head(?:\\s[^>]*)?>", RegexOption.IGNORE_CASE)
+    private val DOCTYPE_REGEX = Regex("<!doctype\\s[^>]*>", RegexOption.IGNORE_CASE)
+    private val SCRIPT_OPEN_REGEX = Regex("<script(?:\\s|>)", RegexOption.IGNORE_CASE)
+    private val STAMP_PARTS = listOf("data", "Stamp.json")
+
     fun injectBootstrap(html: String): String {
-        val uncommented = Regex("<!--([\\s\\S]*?)-->|<!--[\\s\\S]*$").replace(html) { " ".repeat(it.value.length) }
-        val headEnd = Regex("<head(?:\\s[^>]*)?>", RegexOption.IGNORE_CASE).find(uncommented)?.range?.last?.plus(1)
-        val doctypeEnd = Regex("<!doctype\\s[^>]*>", RegexOption.IGNORE_CASE).find(uncommented)?.range?.last?.plus(1)
-        val firstScript = Regex("<script(?:\\s|>)", RegexOption.IGNORE_CASE).find(uncommented)?.range?.first
+        val uncommented = HTML_COMMENT_REGEX.replace(html) { " ".repeat(it.value.length) }
+        val headEnd = HEAD_OPEN_REGEX.find(uncommented)?.range?.last?.plus(1)
+        val doctypeEnd = DOCTYPE_REGEX.find(uncommented)?.range?.last?.plus(1)
+        val firstScript = SCRIPT_OPEN_REGEX.find(uncommented)?.range?.first
         // For fragments, place the bootstrap before body onload attributes as well.
         val position = minOf(headEnd ?: doctypeEnd ?: 0, firstScript ?: html.length)
         val script = "\n<script type='text/javascript'>\n$BOOTSTRAP_SCRIPT\n</script>\n"
@@ -36,11 +42,16 @@ internal object DkToolsCompat {
     }
 
     /** Fast request-path probe: never constructs optional archive directory metadata. */
-    fun hasExactOriginalStamp(root: File, archivePrefix: String, archiveIsFile: (String) -> Boolean): Boolean {
+    fun hasExactOriginalStamp(
+        root: File,
+        archivePrefix: String,
+        archiveIsDirectory: (String) -> Boolean = { false },
+        archiveIsFile: (String) -> Boolean,
+    ): Boolean {
         try {
             val canonicalRoot = root.canonicalFile
             var disk = canonicalRoot
-            for ((index, part) in listOf("data", "Stamp.json").withIndex()) {
+            for ((index, part) in STAMP_PARTS.withIndex()) {
                 disk = File(disk, part).canonicalFile
                 if (!disk.path.startsWith(canonicalRoot.path + File.separator)) return false
                 if (disk.exists()) {
@@ -50,7 +61,8 @@ internal object DkToolsCompat {
             }
         } catch (_: IOException) { return false }
           catch (_: SecurityException) { return false }
-        return archiveIsFile(archivePrefix + "data/Stamp.json") ||
-            (archivePrefix.isNotEmpty() && archiveIsFile("data/Stamp.json"))
+        return DkToolsResourceResolver.resolveExactArchivePath(
+            STAMP_PARTS, archivePrefix, archiveIsFile, archiveIsDirectory,
+        ) != null
     }
 }

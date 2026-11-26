@@ -3,6 +3,7 @@ package com.core.web
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.nio.file.DirectoryIteratorException
+import java.util.concurrent.CancellationException
 import java.util.concurrent.Executor
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -85,7 +86,11 @@ internal class PluginFileIndexCache(
     private fun invokeBuild(focused: Boolean): ByteArray = try {
         build(focused)
     } catch (error: DirectoryIteratorException) {
-        throw (error.cause ?: error)
+        throw (error.cause ?: IOException("Plugin file index directory iteration failed", error))
+    } catch (error: RuntimeException) {
+        checkActive()
+        if (error is CancellationException) throw error
+        throw IOException("Plugin file index failed: ${error.javaClass.simpleName}", error)
     }
 
     private fun publishTransientOrTerminal(error: IOException) {

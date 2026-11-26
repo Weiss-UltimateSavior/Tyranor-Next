@@ -51,7 +51,7 @@ class DkToolsBootstrapTest {
         val root = temporary.newFolder()
         val checked = mutableListOf<String>()
         assertTrue(DkToolsCompat.hasExactOriginalStamp(root, "www/") { checked.add(it); it == "data/Stamp.json" })
-        assertEquals(listOf("www/data/Stamp.json", "data/Stamp.json"), checked)
+        assertEquals(listOf("www/data/Stamp.json", "www/data", "data/Stamp.json"), checked)
         File(root, "data").mkdir()
         val stamp = File(root, "data/Stamp.json").apply { writeText("{}") }
         assertTrue(DkToolsCompat.hasExactOriginalStamp(root, "www/") { error("Disk original must win") })

@@ -8,6 +8,25 @@ import java.io.IOException
 internal object DkToolsResourceResolver {
     data class Resource(val file: File? = null, val archivePath: String? = null)
 
+    fun resolveExactArchivePath(
+        parts: List<String>,
+        archivePrefix: String,
+        archiveIsFile: (String) -> Boolean,
+        archiveIsDirectory: (String) -> Boolean = { false },
+    ): String? {
+        val normalizedPath = parts.joinToString("/")
+        if (archivePrefix.isEmpty()) return normalizedPath.takeIf(archiveIsFile)
+        val prefixed = archivePrefix + normalizedPath
+        return when {
+            archiveIsFile(prefixed) -> prefixed
+            archiveIsDirectory(prefixed) -> null
+            (1 until parts.size).any { len ->
+                archiveIsFile(archivePrefix + parts.take(len).joinToString("/"))
+            } -> null
+            else -> normalizedPath.takeIf(archiveIsFile)
+        }
+    }
+
     fun resolve(
         root: File,
         uri: String,
@@ -18,39 +37,29 @@ internal object DkToolsResourceResolver {
         diskChildren: (File) -> List<String> = { it.list()?.toList().orEmpty() },
         archiveIsDirectory: (String) -> Boolean = { false },
     ): Resource? {
+        val canonicalRoot = try { root.canonicalFile }
+            catch (_: IOException) { return null }
+            catch (_: SecurityException) { return null }
         val parts = uri.replace('\\', '/').split('/').filter { it.isNotEmpty() && it != "." }
         if (parts.isEmpty() || parts.any { it == ".." || it.any(Char::isISOControl) }) return null
-        val normalizedPath = parts.joinToString("/")
         // Preserve the hosts' exact lookup order: web-root prefix, then archive root.
         // Root fallback deliberately does not apply loose/case-insensitive matching,
         // and a prefixed directory or ancestor file shadows any root-level fallback.
-        val exactArchivePath = if (archivePrefix.isEmpty()) {
-            normalizedPath.takeIf(archiveIsFile)
-        } else {
-            val prefixed = archivePrefix + normalizedPath
-            when {
-                archiveIsFile(prefixed) -> prefixed
-                archiveIsDirectory(prefixed) -> null
-                (1 until parts.size).any { len ->
-                    archiveIsFile(archivePrefix + parts.take(len).joinToString("/"))
-                } -> null
-                else -> normalizedPath.takeIf(archiveIsFile)
-            }
-        }
+        val exactArchivePath = resolveExactArchivePath(parts, archivePrefix, archiveIsFile, archiveIsDirectory)
         if (exactArchivePath != null) {
             // Most packaged resource requests are already exact. They must not construct
             // the optional directory tree (which can exceed its separate metadata budget).
-            var candidate = root
+            var candidate = canonicalRoot
             for ((index, part) in parts.withIndex()) {
                 candidate = try { File(candidate, part).canonicalFile } catch (_: IOException) { return null }
                     catch (_: SecurityException) { return null }
-                if (candidate != root && !candidate.path.startsWith(root.path + File.separator)) return null
+                if (candidate != canonicalRoot && !candidate.path.startsWith(canonicalRoot.path + File.separator)) return null
                 if (candidate.exists() && !candidate.isDirectory && index != parts.lastIndex) return null
             }
             if (candidate.exists()) return candidate.takeIf { it.isFile }?.let { Resource(file = it) }
             return Resource(archivePath = exactArchivePath)
         }
-        var disk: File? = root
+        var disk: File? = canonicalRoot
         var archivePath = archivePrefix.trimEnd('/')
         for ((index, part) in parts.withIndex()) {
             val diskNames = disk?.takeIf { it.isDirectory }?.let(diskChildren).orEmpty()
@@ -68,7 +77,7 @@ internal object DkToolsResourceResolver {
             disk = if (disk != null) {
                 val canonical = try { File(disk, matched).canonicalFile } catch (_: IOException) { return null }
                     catch (_: SecurityException) { return null }
-                if (canonical != root && !canonical.path.startsWith(root.path + File.separator)) return null
+                if (canonical != canonicalRoot && !canonical.path.startsWith(canonicalRoot.path + File.separator)) return null
                 canonical.takeIf { it.exists() }
             } else null
             archivePath = if (archivePath.isEmpty()) matched else "$archivePath/$matched"

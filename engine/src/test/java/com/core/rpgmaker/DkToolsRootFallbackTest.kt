@@ -15,6 +15,84 @@ import org.junit.rules.TemporaryFolder
 class DkToolsRootFallbackTest {
     @get:Rule val temporary = TemporaryFolder()
 
+    @Test fun nonCanonicalRootPathStillResolvesDiskAndArchiveResources() {
+        val realRoot = temporary.newFolder("non-canonical-root")
+        File(realRoot, "sub").mkdir()
+        val nonCanonicalRoot = File(realRoot, "sub/..")
+        val diskFile = File(realRoot, "locales/Message　Name .json").apply {
+            parentFile.mkdirs()
+            writeText("disk")
+        }
+        val exact = DkToolsResourceResolver.resolve(
+            nonCanonicalRoot,
+            "js/shared.js",
+            "www/",
+            { emptyList() },
+            { it == "js/shared.js" },
+        )
+        assertEquals("js/shared.js", exact?.archivePath)
+        val loose = DkToolsResourceResolver.resolve(
+            nonCanonicalRoot,
+            "locales/message Name .json",
+            "www/",
+            { emptyList() },
+            { false },
+        )
+        assertEquals(diskFile.canonicalFile, loose?.file)
+    }
+
+    @Test fun hasExactOriginalStampRespectsPrefixedShadowing() {
+        val root = temporary.newFolder("stamp-shadow")
+        assertFalse(
+            DkToolsCompat.hasExactOriginalStamp(
+                root = root,
+                archivePrefix = "www/",
+                archiveIsFile = { it == "data/Stamp.json" },
+                archiveIsDirectory = { it == "www/data/Stamp.json" },
+            ),
+        )
+        assertFalse(
+            DkToolsCompat.hasExactOriginalStamp(
+                root = root,
+                archivePrefix = "www/",
+                archiveIsFile = { it == "www/data" || it == "data/Stamp.json" },
+                archiveIsDirectory = { false },
+            ),
+        )
+        assertTrue(
+            DkToolsCompat.hasExactOriginalStamp(
+                root = root,
+                archivePrefix = "www/",
+                archiveIsFile = { it == "data/Stamp.json" },
+                archiveIsDirectory = { false },
+            ),
+        )
+    }
+
+    @Test fun asarHeaderDepthExceedingLimitThrowsIoException() {
+        val file = temporary.newFile("deep-header.asar")
+        var node = org.json.JSONObject().put("size", 0).put("offset", "0")
+        repeat(130) {
+            node = org.json.JSONObject().put("files", org.json.JSONObject().put("d", node))
+        }
+        val json = node.toString().toByteArray(Charsets.UTF_8)
+        val headerSize = ((8 + json.size + 3) / 4) * 4
+        java.io.DataOutputStream(file.outputStream()).use { out ->
+            fun little(value: Int) { repeat(4) { out.write(value ushr (8 * it) and 255) } }
+            little(4); little(headerSize); little(4); little(json.size)
+            out.write(json)
+            repeat(8 + headerSize - 16 - json.size) { out.write(0) }
+        }
+        try {
+            AsarArchive(file).close()
+            fail("modern AsarArchive must reject deep header")
+        } catch (_: java.io.IOException) { }
+        try {
+            com.core.tyrano.AsarArchive(file).close()
+            fail("legacy AsarArchive must reject deep header")
+        } catch (_: java.io.IOException) { }
+    }
+
     @Test fun exactRootArchiveResourceDoesNotRequireDirectoryMetadata() {
         val root = temporary.newFolder("root-resource")
         val resource = DkToolsResourceResolver.resolve(root, "js/shared.js", "www/",

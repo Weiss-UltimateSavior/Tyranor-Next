@@ -139,6 +139,38 @@ class PluginFileIndexCacheTest {
         assertEquals(4, calls)
     }
 
+    @Test fun securityExceptionBecomesTerminalIoFailureAndBacksOff() {
+        var now = 0L
+        var calls = 0
+        val cache = PluginFileIndexCache(build = {
+            calls++
+            throw SecurityException("root access denied")
+        }, isLimitFailure = { it is RpgMakerFileIndex.LimitExceeded }, nanoTime = { now }, retryNanos = 10)
+        repeat(3) {
+            try {
+                cache.get()
+                fail("attempt ${it + 1} must fail")
+            } catch (error: IOException) {
+                assertTrue(error.cause is SecurityException)
+            }
+        }
+        assertEquals(3, calls)
+        try { cache.get(); fail("terminal failure must be cached during backoff") } catch (_: IOException) { }
+        assertEquals(3, calls)
+        now = 11L
+        try { cache.get(); fail("backoff expiry allows a fresh retry") } catch (_: IOException) { }
+        assertEquals(4, calls)
+    }
+
+    @Test(expected = java.util.concurrent.CancellationException::class)
+    fun cancellationExceptionIsNotSwallowed() {
+        val cache = PluginFileIndexCache(
+            build = { throw java.util.concurrent.CancellationException("cancelled") },
+            isLimitFailure = { false },
+        )
+        cache.get()
+    }
+
     @Test(expected = InterruptedIOException::class) fun stoppedSessionDoesNotBuildOrServeCachedIndex() {
         val cache = PluginFileIndexCache(build = { byteArrayOf(1) }, isLimitFailure = { false })
         cache.get()

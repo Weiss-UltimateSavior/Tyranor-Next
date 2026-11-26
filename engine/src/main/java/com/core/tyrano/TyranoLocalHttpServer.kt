@@ -161,33 +161,42 @@ internal class TyranoLocalHttpServer(
             uri = URLDecoder.decode(uri, StandardCharsets.UTF_8.name())
             if (uri == "/") uri = "/index.html"
             while (uri.startsWith("/")) uri = uri.substring(1)
+            val headOnly = method.equals("HEAD", true)
             if (uri == RpgMakerFileIndex.RESOURCE_PATH) {
                 if (!pluginIndexEnabled) {
-                    sendText(socket, 404, "Not Found", "not found")
+                    sendText(socket, 404, "Not Found", "not found", headOnly)
                     return
                 }
                 val authorized = headers["cookie"].orEmpty().split(';').any {
                     it.trim() == "$pluginIndexCookieName=$pluginIndexToken"
                 }
                 if (!authorized) {
-                    sendText(socket, 403, "Forbidden", "forbidden")
+                    sendText(socket, 403, "Forbidden", "forbidden", headOnly)
                     return
                 }
-                val bytes = if (DkToolsCompat.hasExactOriginalStamp(root, asarRootPrefix) {
-                    asar?.fileSize(it) != null
-                }) "null".toByteArray(Charsets.UTF_8) else pluginFileIndex.request(indexExecutor)
+                val bytes = try {
+                    if (DkToolsCompat.hasExactOriginalStamp(root, asarRootPrefix,
+                        archiveIsDirectory = { asar?.isDirectoryOrImplicit(it) == true },
+                        archiveIsFile = { asar?.fileSize(it) != null },
+                    )) "null".toByteArray(Charsets.UTF_8) else pluginFileIndex.request(indexExecutor)
+                } catch (_: java.io.IOException) {
+                    sendText(socket, 500, "Internal Server Error", "plugin file index failed", headOnly)
+                    return
+                } catch (_: java.util.concurrent.RejectedExecutionException) {
+                    sendText(socket, 500, "Internal Server Error", "plugin file index unavailable", headOnly)
+                    return
+                }
                 if (bytes == null) {
-                    sendText(socket, 202, "Accepted", "plugin file index pending")
+                    sendText(socket, 202, "Accepted", "plugin file index pending", headOnly)
                     return
                 }
-                sendBytes(socket, bytes, uri, method.equals("HEAD", true))
+                sendBytes(socket, bytes, uri, headOnly)
                 return
             }
             internalResources[uri.lowercase(Locale.ROOT)]?.let { resource ->
-                sendBytes(socket, resource, uri, method.equals("HEAD", true))
+                sendBytes(socket, resource, uri, headOnly)
                 return
             }
-            val headOnly = method.equals("HEAD", true)
             val resolved = resolveRequestedFile(uri)
             val asarEntry = resolved.asarPath
             if (asarEntry != null) {
@@ -485,11 +494,11 @@ internal class TyranoLocalHttpServer(
         raw.flush()
     }
 
-    private fun sendText(socket: Socket, code: Int, reason: String, body: String) {
+    private fun sendText(socket: Socket, code: Int, reason: String, body: String, headOnly: Boolean = false) {
         val data = body.toByteArray(StandardCharsets.UTF_8)
         val out = BufferedOutputStream(socket.getOutputStream())
         out.write(("HTTP/1.1 $code $reason\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${data.size}\r\nConnection: close\r\n\r\n").toByteArray(StandardCharsets.UTF_8))
-        out.write(data)
+        if (!headOnly) out.write(data)
         out.flush()
     }
 

@@ -243,7 +243,10 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
     }
 
     @Throws(Exception::class)
-    private fun parseNode(prefix: String, node: JSONObject) {
+    private fun parseNode(prefix: String, node: JSONObject, depth: Int = 0) {
+        if (depth > MAX_HEADER_DEPTH) {
+            throw IOException("asar header depth exceeds limit: $MAX_HEADER_DEPTH")
+        }
         val files = node.optJSONObject("files")
         if (files == null) {
             if (prefix.isNotEmpty()) {
@@ -262,7 +265,7 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
             val name = keys.next()
             val child = files.optJSONObject(name) ?: continue
             val next = if (prefix.isEmpty()) name else "$prefix/$name"
-            parseNode(next, child)
+            parseNode(next, child, depth + 1)
         }
     }
 
@@ -277,6 +280,7 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
         private const val TAG = "YukiAsar"
         private const val MAX_HEADER_BYTES = 16L * 1024L * 1024L
         private const val MAX_ENTRY_BYTES = 256L * 1024L * 1024L
+        private const val MAX_HEADER_DEPTH = 128
 
         private fun logInfo(message: String) {
             try { Log.i(TAG, message) } catch (_: RuntimeException) {

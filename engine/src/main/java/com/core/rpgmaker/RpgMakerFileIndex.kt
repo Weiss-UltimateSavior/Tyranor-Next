@@ -26,6 +26,7 @@ internal class RpgMakerFileIndex(
     private val isCancelled: () -> Boolean = { Thread.currentThread().isInterrupted },
     private val nanoTime: () -> Long = System::nanoTime,
     private val maxDurationNanos: Long = 5_000_000_000L,
+    private val maxDirectories: Int = 2_048,
 ) {
     private val root = root.canonicalFile
     private fun archiveHas(path: String) = asar?.has(path) ?: (legacyArchive?.has(path) == true)
@@ -44,6 +45,9 @@ internal class RpgMakerFileIndex(
         checkActive()
         val prefixPath = asarPrefix.trimEnd('/')
         val hasRootFallback = asarPrefix.isNotEmpty() && (asar != null || legacyArchive != null)
+        val allowedRoots = onlyRoots?.mapTo(hashSetOf()) { it.lowercase(Locale.ROOT) }
+        val container = asar?.getArchiveFile() ?: legacyArchive?.getArchiveFile()
+        val containerUnpacked = container?.let { File(it.path + ".unpacked") }
         val focusedArchive = if (onlyRoots == null) null else try {
             asar?.focusedChildrenIndex(asarPrefix, onlyRoots)
                 ?: legacyArchive?.focusedChildrenIndex(asarPrefix, onlyRoots)
@@ -98,17 +102,16 @@ internal class RpgMakerFileIndex(
                 .put("size", size)
                 .put("mtimeMs", disk?.lastModified() ?: 0L))
             if (directory) {
-                if (++directories > 2_048) throw LimitExceeded("directory")
+                if (++directories > maxDirectories) throw LimitExceeded("directory")
                 val names = linkedSetOf<String>()
                 fun addName(name: String) {
                     checkActive()
                     if (name.isEmpty() || name in RESERVED_NAMES || name.any { it == '/' || it == '\\' || it.isISOControl() }) return
                     val lowerName = name.lowercase(Locale.ROOT)
                     if (lowerName in EXCLUDED_NAMES || (relative.isEmpty() && lowerName in PRIVATE_ROOTS)) return
-                    if (relative.isEmpty() && onlyRoots != null && lowerName !in onlyRoots) return
-                    val container = asar?.getArchiveFile() ?: legacyArchive?.getArchiveFile()
+                    if (relative.isEmpty() && allowedRoots != null && lowerName !in allowedRoots) return
                     val child = File(logical, name).absoluteFile
-                    if (container != null && (child == container || child == File(container.path + ".unpacked"))) return
+                    if (container != null && (child == container || child == containerUnpacked)) return
                     names.add(name)
                     if (names.size > maxEntries - entries) throw LimitExceeded("entry")
                 }
