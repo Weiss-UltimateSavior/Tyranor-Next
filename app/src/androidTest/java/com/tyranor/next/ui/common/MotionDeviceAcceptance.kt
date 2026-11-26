@@ -26,6 +26,5 @@ internal object MotionDeviceAcceptance {
             "Motion target mismatch: expected '$expectedPackage' from $TARGET_PACKAGE_ARGUMENT, actual '$actualPackage'. " +
                 "Build and install both APKs with TYRANOR_APPLICATION_ID=$expectedPackage; no motion checks were run."
         }
-        if (enhanced != null) instrumentation.runOnMainSync { MotionMode.sync(enhanced) }
     }
 }

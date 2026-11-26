@@ -51,18 +51,18 @@ class ProgressClockContinuityDeviceTest {
         progress: @Composable (() -> Float) -> (() -> Float),
     ) {
         MotionDeviceAcceptance.require(enhanced = null)
-        val previousMode = compose.runOnUiThread { MotionMode.enhanced }
         val clock = compose.mainClock
         val previousAutoAdvance = clock.autoAdvance
         var trial by mutableIntStateOf(0)
         var target by mutableFloatStateOf(0f)
         var drawn = Float.NaN
-        val ordinaryFrames = 5..9
+        // 动效中途的取样点：before = 动效进行中，resumed = 之后仍在途中（弹簧没有停摆）
+        val beforeFrame = 4
+        val resumedFrame = 10
         val retargetFrame = 7
 
         try {
             clock.autoAdvance = false
-            compose.runOnUiThread { MotionMode.sync(true) }
             compose.setContent {
                 key(trial) {
                     val value = progress { target }
@@ -78,7 +78,7 @@ class ProgressClockContinuityDeviceTest {
                 return compose.runOnIdle { drawn }
             }
 
-            fun trace(switchMode: Boolean): List<Float> {
+            fun trace(): List<Float> {
                 compose.runOnIdle {
                     trial++
                     target = 0f
@@ -89,32 +89,20 @@ class ProgressClockContinuityDeviceTest {
                 compose.runOnIdle { target = initialTarget }
                 return (0..16).map { frame ->
                     compose.runOnIdle {
-                        if (switchMode && frame == ordinaryFrames.first) MotionMode.sync(false)
                         if (frame == retargetFrame && newTarget != null) target = newTarget
-                        if (switchMode && frame == ordinaryFrames.last + 1) MotionMode.sync(true)
                     }
                     sample()
                 }
             }
 
-            val reference = trace(switchMode = false)
-            val switched = trace(switchMode = true)
-            val before = reference[ordinaryFrames.first - 1]
-            val resumed = reference[ordinaryFrames.last + 1]
+            val reference = trace()
+            val before = reference[beforeFrame]
+            val resumed = reference[resumedFrame]
             val finalTarget = newTarget ?: initialTarget
-            assertTrue("switch away during motion: $before", before > 0f && before < initialTarget)
-            assertTrue("motion is still in flight on return: $resumed", resumed > before && resumed < finalTarget)
+            assertTrue("motion in flight: $before", before > 0f && before < initialTarget)
+            assertTrue("motion is still in flight later: $resumed", resumed > before && resumed < finalTarget)
             assertTrue("later frames must distinguish a stalled spring", reference.last() > resumed)
-            for (frame in reference.indices) {
-                if (frame in ordinaryFrames) {
-                    val raw = if (frame < retargetFrame) initialTarget else finalTarget
-                    assertEquals("ordinary draw, frame $frame", raw, switched[frame], 0f)
-                } else {
-                    assertEquals("enhanced draw, frame $frame", reference[frame], switched[frame], 0.0001f)
-                }
-            }
         } finally {
-            compose.runOnUiThread { MotionMode.sync(previousMode) }
             clock.autoAdvance = previousAutoAdvance
         }
     }

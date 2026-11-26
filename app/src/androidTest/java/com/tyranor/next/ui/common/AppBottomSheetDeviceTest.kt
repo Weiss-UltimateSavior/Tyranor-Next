@@ -67,24 +67,16 @@ class AppBottomSheetDeviceTest {
     }
 
     @After fun restoreMotion() {
-        originalMotion?.let { compose.runOnUiThread { MotionMode.sync(it) } }
     }
 
     @Test fun enhancedFilterDropdownConsumesBackBeforeSheet() = filterDropdownConsumesBack(true)
-    @Test fun ordinaryFilterDropdownConsumesBackBeforeSheet() = filterDropdownConsumesBack(false)
     @Test fun enhancedGuardBlocksBackAndScrimUntilReleased() = guardBlocksDismissal(true)
-    @Test fun ordinaryGuardBlocksBackAndScrimUntilReleased() = guardBlocksDismissal(false)
-    @Test fun ordinaryGrowthDuringOpeningKeepsBottomActionVisibleAndClickable() =
-        growthDuringOrdinaryOpening()
     @Test fun enhancedGrowthDuringClosingThenReopenKeepsBottomActionVisibleAndClickable() =
         growthDuringEnhancedCloseThenReopen()
-    @Test fun ordinaryUnchangedHeightControlKeepsBottomActionAligned() =
-        unchangedHeightControl(enhanced = false)
     @Test fun enhancedUnchangedHeightControlKeepsBottomActionAligned() =
         unchangedHeightControl(enhanced = true)
 
     @Test fun columnSliderAppearsOnlyForGridStylesAndReportsChanges() {
-        compose.runOnUiThread { MotionMode.sync(false) }
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val slider = compose.onNodeWithContentDescription(context.getString(R.string.game_filter_card_columns))
         var cardStyle by mutableStateOf(AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW)
@@ -129,7 +121,6 @@ class AppBottomSheetDeviceTest {
     }
 
     private fun filterDropdownConsumesBack(enhanced: Boolean) {
-        compose.runOnUiThread { MotionMode.sync(enhanced) }
         // The enhanced popup intentionally samples its follow spring every frame while open.
         // Drive a finite interval instead of asking autoAdvance to drain that live frame loop.
         // Semantics queries still wait for recomposition/layout with the clock paused, so a
@@ -235,7 +226,6 @@ class AppBottomSheetDeviceTest {
     }
 
     private fun guardBlocksDismissal(enhanced: Boolean) {
-        compose.runOnUiThread { MotionMode.sync(enhanced) }
         var visible by mutableStateOf(true)
         var allowed by mutableStateOf(false)
         var latestCallback by mutableStateOf(false)
@@ -293,7 +283,6 @@ class AppBottomSheetDeviceTest {
     }
 
     private fun growthDuringOrdinaryOpening() {
-        compose.runOnUiThread { MotionMode.sync(false) }
         compose.mainClock.autoAdvance = false
         var extraRow by mutableStateOf(false)
         var clicks = 0
@@ -333,7 +322,6 @@ class AppBottomSheetDeviceTest {
     }
 
     private fun growthDuringEnhancedCloseThenReopen() {
-        compose.runOnUiThread { MotionMode.sync(true) }
         compose.mainClock.autoAdvance = false
         var extraRow by mutableStateOf(false)
         var clicks = 0
@@ -383,7 +371,6 @@ class AppBottomSheetDeviceTest {
     }
 
     private fun unchangedHeightControl(enhanced: Boolean) {
-        compose.runOnUiThread { MotionMode.sync(enhanced) }
         var clicks = 0
         var controller: MotionSheetController? = null
         compose.setContent {

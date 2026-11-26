@@ -58,7 +58,6 @@ class MotionHomeRestorationDeviceTest {
         val previousCard = compose.onNode(hasContentDescription(previousLeading.title) and inPager)
         val newCard = compose.onNode(hasContentDescription(newlyPlayed.title) and inPager)
         instrumentation.runOnMainSync {
-            MotionMode.sync(false)
             AppSettingsStore.homeStyleState.value = AppSettingsStore.HOME_STYLE_NATIVE
         }
         try {
@@ -85,7 +84,6 @@ class MotionHomeRestorationDeviceTest {
             previousCard.assertIsSelected()
         } finally {
             instrumentation.runOnMainSync {
-                MotionMode.sync(previousMotion)
                 AppSettingsStore.homeStyleState.value = previousHomeStyle
             }
         }
@@ -113,7 +111,6 @@ class MotionHomeRestorationDeviceTest {
         val secondCard = compose.onNode(hasContentDescription(second.title) and selected)
         val restoration = StateRestorationTester(compose)
         instrumentation.runOnMainSync {
-            MotionMode.sync(false)
             AppSettingsStore.homeStyleState.value = AppSettingsStore.HOME_STYLE_NATIVE
         }
         try {
@@ -169,7 +166,6 @@ class MotionHomeRestorationDeviceTest {
             compose.onNode(hasText(first.title) and hasAnyAncestor(isDialog())).assertIsDisplayed()
         } finally {
             instrumentation.runOnMainSync {
-                MotionMode.sync(previousMotion)
                 AppSettingsStore.homeStyleState.value = previousHomeStyle
             }
         }

@@ -61,11 +61,14 @@ internal fun DialogWindowScrim(
     dismissEnabled: Boolean = true,
     /** 手指在弹窗窗口任意位置完成一次点击（未移动、未长按、单指）时的按下位置（弹窗根坐标）；不消费事件。退场期间据此把这次点击转交给下层页面。 */
     onScrimTap: ((Offset) -> Unit)? = null,
+    /** 为 true 时整个遮罩由窗口自己绘制，不启用平台 `FLAG_DIM_BEHIND`（供退场即放行触摸的弹窗使用）。 */
+    drawnOnly: Boolean = false,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val window = syncDialogWindow(
         baseDimOverride = if (enhanced) DIALOG_SCRIM_ALPHA else null,
         scrimAlpha = if (enhanced) 0f else DIALOG_SCRIM_ALPHA,
+        drawnOnly = drawnOnly,
         dimProgress = progress,
     )
     SideEffect { onWindow(window) }
@@ -93,34 +96,81 @@ internal fun DialogWindowScrim(
                 if (!hasScrimTap) Modifier else Modifier.pointerInput(Unit) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                        // 只有一次真正的点击才转交：移动超过触摸容差、按住超过长按时长、多指都说明用户在滑动 / 长按，
-                        // 若无条件回放一次「按下 + 抬起」，下层的行会被当成点击打开，而不是滚动。
-                        var isTap = true
+                        val tracker = ExitScrimTapTracker(
+                            downPosition = down.position,
+                            downUptimeMillis = down.uptimeMillis,
+                            tapSlopPx = tapSlop,
+                            longPressMillis = longPressMillis,
+                        )
+                        var cancelled = false
                         try {
                             while (true) {
                                 val event = awaitPointerEvent(PointerEventPass.Initial)
                                 val change = event.changes.firstOrNull { it.id == down.id }
-                                if (change == null) {
-                                    isTap = false
-                                    break
-                                }
-                                if (event.changes.size > 1) isTap = false
-                                if ((change.position - down.position).getDistance() > tapSlop) isTap = false
-                                if (change.uptimeMillis - down.uptimeMillis > longPressMillis) isTap = false
-                                if (!change.pressed) break
+                                val keepGoing = tracker.onPointerEvent(
+                                    pointerCount = event.changes.size,
+                                    targetPosition = change?.position,
+                                    targetPressed = change?.pressed == true,
+                                    eventUptimeMillis = change?.uptimeMillis ?: down.uptimeMillis,
+                                    // 窗口退场末段改成不拦触摸 / 被移除时，系统给这个手势发 ACTION_CANCEL，Compose 把它合成为一个
+                                    // 「pressed = false」的普通事件，这种合成事件没有对应的 MotionEvent；真实抬手一定带着 ACTION_UP。
+                                    genuineRelease = event.motionEvent?.actionMasked.let {
+                                        it == MotionEvent.ACTION_UP || it == MotionEvent.ACTION_POINTER_UP
+                                    },
+                                )
+                                if (!keepGoing) break
                             }
-                        } catch (cancelled: CancellationException) {
-                            // 手势进行中弹窗窗口被移除（按下落在窗口消失前的最后几帧）：抬起事件到不了任何窗口，这次点击会整个丢掉。
-                            // 到目前为止仍是一次可能的点击，就按点击处理（弹窗已不在，补发给下层页面）。
-                            if (isTap) latestScrimTap?.invoke(down.position)
-                            throw cancelled
+                        } catch (error: CancellationException) {
+                            cancelled = true
+                            throw error
+                        } finally {
+                            if (tracker.shouldReplayTap(cancelled = cancelled)) {
+                                latestScrimTap?.invoke(down.position)
+                            }
                         }
-                        if (isTap) latestScrimTap?.invoke(down.position)
                     }
                 },
             ),
         content = content,
     )
+}
+
+/**
+ * 弹窗退场期间遮罩手势判定器：只有「单指、位移未超容差、未超时长按且真实抬手（ACTION_UP）」才视为可补发的单击。
+ * 手指尚按住时窗口移除（手势被取消）不得补发单击，防止把退场尾段或收起刚结束时的再次长按误判为单击。
+ */
+internal class ExitScrimTapTracker(
+    private val downPosition: Offset,
+    private val downUptimeMillis: Long,
+    private val tapSlopPx: Float,
+    private val longPressMillis: Long,
+) {
+    private var possibleTap = true
+    private var lifted = false
+
+    fun onPointerEvent(
+        pointerCount: Int,
+        targetPosition: Offset?,
+        targetPressed: Boolean,
+        eventUptimeMillis: Long,
+        /** 这次「没有按下」是真实的手指抬起（ACTION_UP）；false 表示是系统取消手势后合成出来的，不能当成抬手。 */
+        genuineRelease: Boolean,
+    ): Boolean {
+        if (targetPosition == null) {
+            possibleTap = false
+            return false
+        }
+        if (pointerCount > 1) possibleTap = false
+        if ((targetPosition - downPosition).getDistance() > tapSlopPx) possibleTap = false
+        if (eventUptimeMillis - downUptimeMillis > longPressMillis) possibleTap = false
+        if (!targetPressed) {
+            if (genuineRelease) lifted = true else possibleTap = false
+            return false
+        }
+        return true
+    }
+
+    fun shouldReplayTap(cancelled: Boolean): Boolean = !cancelled && lifted && possibleTap
 }
 
 /**
@@ -320,6 +370,8 @@ private object DialogWindowDims {
 
     fun beginExit(window: Window) { bindings[window]?.beginExit() }
 
+    fun markExiting(window: Window) { bindings[window]?.markExiting() }
+
     fun restore(window: Window) { bindings[window]?.restore() }
 
     fun scrimAlpha(window: Window?): Float = bindings[window]?.appliedScrim ?: 0f
@@ -342,6 +394,7 @@ private object DialogWindowDims {
         }
         private var disposed = false
         private var released = false
+        private var exiting = false
         var registered = false
             private set
         var appliedScrim by mutableFloatStateOf(0f)
@@ -366,10 +419,16 @@ private object DialogWindowDims {
             registered = true
             // Commit the inherited floor before this Window can replace the parent's dim in WMS.
             stack.register(owner, window, dim, enabled, baseDim, scrim, baseScrim, released)
+            if (exiting && !released) stack.markExiting(window)
         }
 
         fun beginExit() {
             if (registered && stack.beginExit(window)) released = true
+        }
+
+        fun markExiting() {
+            exiting = true
+            if (registered) stack.markExiting(window)
         }
 
         fun release() {
@@ -379,6 +438,7 @@ private object DialogWindowDims {
 
         fun restore() {
             released = false
+            exiting = false
             if (registered) stack.restore(window)
         }
 
@@ -440,6 +500,11 @@ fun Window?.releaseDialogDim() {
 /** An accepted nested close yields the mask while allowing the surface to finish moving. */
 internal fun Window?.beginDialogDimExit() {
     if (this != null) DialogWindowDims.beginExit(this)
+}
+
+/** 退场一开始即放行触摸的弹窗：交出叠层/底色资格，单窗口时自身遮罩仍随退场渐隐。 */
+internal fun Window?.markDialogDimExiting() {
+    if (this != null) DialogWindowDims.markExiting(this)
 }
 
 /** Explicit reopening only; resource cleanup must leave a closing window released. */

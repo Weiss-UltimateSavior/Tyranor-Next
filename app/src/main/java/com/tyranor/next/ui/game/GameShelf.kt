@@ -221,7 +221,8 @@ internal fun GameShelf(
     onSettledGameChanged: ((String) -> Unit)? = null,
 ) {
     val hideTitleTag by AppSettingsStore.gameCardTitleTagState.collectSettingAsState()
-    val latestGames by rememberUpdatedState(games)
+    val latestGamesState = rememberUpdatedState(games)
+    val latestGames by latestGamesState
     val pagerState = remember { PagerState(currentPage = shelfFocusPage(games, initialUri()), pageCount = { latestGames.size }) }
     val scope = rememberCoroutineScope()
     val knobSeek = rememberShelfKnobSeek()
@@ -233,16 +234,21 @@ internal fun GameShelf(
     val pendingUri = catalog?.pendingFocusUri
     val focusToken = catalog?.focusRequestToken
     val interactive = isInteractive()
-    val adjustment = remember(pagerState, games) {
-        Snapshot.withoutReadObservation {
-            val uri = pagerState.currentShelfPageKey() ?: return@withoutReadObservation null
+    val adjustmentGuard = remember(pagerState, games) {
+        val adjustment = Snapshot.withoutReadObservation {
+            val uri = pagerState.currentShelfPageKey()
             val page = shelfPageAdjustment(games, pagerState.currentPage, uri) ?: return@withoutReadObservation null
-            page to if (games[page].uri == uri) pagerState.currentPageOffsetFraction else 0f
+            page to if (uri != null && games.getOrNull(page)?.uri == uri) pagerState.currentPageOffsetFraction else 0f
         }
+        ShelfPageAdjustmentGuard(adjustment)
     }
-    LaunchedEffect(pagerState, games) {
-        if (adjustment != null && latestInteractive() && catalog?.pendingFocusUri == null) {
-            pagerState.requestScrollToPage(adjustment.first, adjustment.second)
+    LaunchedEffect(pagerState, games, catalog, interactive, pendingUri, focusToken) {
+        val target = adjustmentGuard.consumeIfReady(
+            interactive = latestInteractive(),
+            hasPendingFocus = catalog?.pendingFocusUri != null,
+        )
+        if (target != null) {
+            pagerState.requestScrollToPage(target.first, target.second)
         }
     }
     LaunchedEffect(pagerState, games, catalog, focusToken, pendingUri, interactive) {
@@ -335,6 +341,7 @@ internal fun GameShelf(
             Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
                 ShelfStage(
                     games = games,
+                    latestGamesState = latestGamesState,
                     pagerState = pagerState,
                     hideTitleTag = hideTitleTag,
                     batchChangedAt = listChangedAt,
@@ -409,8 +416,51 @@ internal fun shelfFocusPage(games: List<ScanGame>, uri: String?): Int =
         ?: games.indices.maxByOrNull { games[it].openTime }?.takeIf { games[it].openTime > 0L }
         ?: 0
 
-internal fun shelfPageAdjustment(games: List<ScanGame>, page: Int, measuredUri: String): Int? =
-    if (games.isEmpty() || games.getOrNull(page)?.uri == measuredUri) null else shelfFocusPage(games, measuredUri)
+internal fun shelfPageKey(games: List<ScanGame>, page: Int): Any =
+    games.getOrNull(page)?.uri ?: page
+
+internal fun shelfPageAdjustment(games: List<ScanGame>, page: Int, measuredUri: String?): Int? {
+    if (games.isEmpty()) return null
+    if (measuredUri != null) {
+        return if (games.getOrNull(page)?.uri == measuredUri) null else shelfFocusPage(games, measuredUri)
+    }
+    return if (page in games.indices) null else page.coerceIn(0, games.lastIndex)
+}
+
+/**
+ * 单份 `games` 列表对应的书架页调整一次性守卫：
+ * 在 `games` 变化的那次组合中基于当时的测量键算好目标页与偏移，仅允许应用一次；
+ * 仅因不可交互延后时在恢复交互后补应用一次，若曾被藏书阁聚焦请求延后则在聚焦结束后作废，
+ * 不再应用；已应用后即使再次经历 `interactive` 的 `false -> true` 也不会重放，避免覆盖用户之后的翻页。
+ */
+internal class ShelfPageAdjustmentGuard(
+    val adjustment: Pair<Int, Float>?,
+) {
+    var applied: Boolean = false
+        private set
+    var deferredByFocus: Boolean = false
+        private set
+    var dropped: Boolean = false
+        private set
+
+    fun consumeIfReady(
+        interactive: Boolean,
+        hasPendingFocus: Boolean,
+    ): Pair<Int, Float>? {
+        if (applied || dropped || adjustment == null) return null
+        if (hasPendingFocus) {
+            deferredByFocus = true
+            return null
+        }
+        if (deferredByFocus) {
+            dropped = true
+            return null
+        }
+        if (!interactive) return null
+        applied = true
+        return adjustment
+    }
+}
 
 private fun PagerState.currentShelfPageKey(): String? =
     layoutInfo.visiblePagesInfo.firstOrNull { it.index == currentPage }?.key as? String
@@ -423,6 +473,7 @@ private fun PagerState.isShelfPageCentered(page: Int, uri: String): Boolean =
 @Composable
 private fun ShelfStage(
     games: List<ScanGame>,
+    latestGamesState: State<List<ScanGame>>,
     pagerState: PagerState,
     hideTitleTag: Boolean,
     batchChangedAt: Long,
@@ -600,11 +651,15 @@ private fun ShelfStage(
         // 正中那一盒脚下与身后的光：封面的主色（还没解出来时用引擎色），翻页途中在相邻两本之间实时过渡
         val glowAt: (Float) -> Color = remember(games, coverTints) {
             { position ->
-                val base = kotlin.math.floor(position).toInt().coerceIn(0, games.lastIndex)
-                val next = (base + 1).coerceAtMost(games.lastIndex)
-                val fraction = (position - base).coerceIn(0f, 1f)
-                fun tintOf(page: Int): Color = games[page].let { coverTints[it.coverUri] ?: it.engine.coverColor() }
-                androidx.compose.ui.graphics.lerp(tintOf(base), tintOf(next), fraction).copy(alpha = LEDGE_GLOW_ALPHA)
+                if (games.isEmpty()) {
+                    caseColors.glow
+                } else {
+                    val base = kotlin.math.floor(position).toInt().coerceIn(0, games.lastIndex)
+                    val next = (base + 1).coerceAtMost(games.lastIndex)
+                    val fraction = (position - base).coerceIn(0f, 1f)
+                    fun tintOf(page: Int): Color = games[page].let { coverTints[it.coverUri] ?: it.engine.coverColor() }
+                    androidx.compose.ui.graphics.lerp(tintOf(base), tintOf(next), fraction).copy(alpha = LEDGE_GLOW_ALPHA)
+                }
             }
         }
         val floorYPx = with(density) { (topRoom + coverHeight).toPx() }
@@ -638,7 +693,7 @@ private fun ShelfStage(
             )
             HorizontalPager(
                 state = pagerState,
-                key = { games[it].uri },
+                key = { shelfPageKey(latestGamesState.value, it) },
                 userScrollEnabled = isInteractive(),
                 modifier = Modifier.fillMaxSize(),
                 pageSize = PageSize.Fixed(dragPitchDp),
@@ -1823,6 +1878,49 @@ private fun rememberBackdropWashResult(
     return valid
 }
 
+private const val BACKDROP_STATIC_THRESHOLD = 0.002f
+
+internal enum class ShelfBackdropDrawMode {
+    BaseStatic,
+    NextStatic,
+    Blend,
+}
+
+internal data class ShelfBackdropBlendSample(
+    val mode: ShelfBackdropDrawMode,
+    val fraction: Float,
+)
+
+/** 计算背景色晕基准页索引，钳制在有效书籍范围内，避免负偏移落到 -1。 */
+internal fun shelfBackdropBaseIndex(position: Float, gameCount: Int): Int {
+    if (gameCount <= 0 || !position.isFinite()) return 0
+    return kotlin.math.floor(position).toInt().coerceIn(0, gameCount - 1)
+}
+
+/** 根据「与本轮已解析色晕绑定的基准页 [composedBase]」计算混合比例，避免跨整页瞬间读写脱节。 */
+internal fun shelfBackdropFraction(
+    position: Float,
+    composedBase: Int,
+    hasNext: Boolean,
+): Float {
+    if (!hasNext || !position.isFinite()) return 0f
+    return (position - composedBase).coerceIn(0f, 1f)
+}
+
+internal fun shelfBackdropBlendSample(
+    position: Float,
+    composedBase: Int,
+    hasNext: Boolean,
+): ShelfBackdropBlendSample {
+    val fraction = shelfBackdropFraction(position, composedBase, hasNext)
+    val mode = when {
+        !hasNext || fraction <= BACKDROP_STATIC_THRESHOLD -> ShelfBackdropDrawMode.BaseStatic
+        fraction >= 1f - BACKDROP_STATIC_THRESHOLD -> ShelfBackdropDrawMode.NextStatic
+        else -> ShelfBackdropDrawMode.Blend
+    }
+    return ShelfBackdropBlendSample(mode = mode, fraction = fraction)
+}
+
 /**
  * 背景色晕：当前游戏封面的柔焦大图铺满书架区，上下淡出到页面背景。
  *
@@ -1838,29 +1936,36 @@ private fun ShelfBackdrop(
     modifier: Modifier = Modifier,
 ) {
     val alpha = ShelfBackdropAlpha
+    val gameCount = games.size
     // 只在跨过整本时重组（换一对相邻的色晕）；混合比例在绘制/图层阶段读取，滑动途中不重组
-    val base by remember(pagerState) { derivedStateOf { kotlin.math.floor(pagerState.pagePosition()).toInt() } }
+    val baseState = remember(pagerState, gameCount) {
+        derivedStateOf { shelfBackdropBaseIndex(pagerState.pagePosition(), gameCount) }
+    }
+    // 必须按值快照到本次组合的 Int，不能把 State 委托直接捕获进 draw/layer 闭包：
+    // 否则布局阶段跨过整页但尚未重组的那一帧，base 会先跳 +1 而 baseBmp/nextBmp 还是旧一对，
+    // 算出的 fraction 骤降到 0，从而单帧闪回上一本封面色晕。
+    val base = baseState.value
     val baseGame = games.getOrNull(base)
     val nextGame = games.getOrNull(base + 1)
     val baseResolved = rememberBackdropWashResult(baseGame, tints)
     val nextResolved = rememberBackdropWashResult(nextGame, tints)
     val baseWash = baseResolved?.wash
     val nextWash = nextResolved?.wash
+    val ring = remember { BackdropRingBuffer(BACKDROP_WASH_WIDTH, BACKDROP_MASK_HEIGHT) }
+    val maskAlpha = remember {
+        IntArray(BACKDROP_MASK_HEIGHT) { y ->
+            val t = (y + 0.5f) / BACKDROP_MASK_HEIGHT
+            val a = when {
+                t <= 0.22f -> t / 0.22f
+                t <= 0.62f -> 1f
+                else -> (1f - t) / (1f - 0.62f)
+            }
+            (a.coerceIn(0f, 1f) * 255f).roundToInt()
+        }
+    }
     if (baseWash != null && (nextGame == null || nextWash != null)) {
         val baseBmp = baseWash.asAndroidBitmap()
         val nextBmp = nextWash?.asAndroidBitmap()
-        val ring = remember { BackdropRingBuffer(BACKDROP_WASH_WIDTH, BACKDROP_MASK_HEIGHT) }
-        val maskAlpha = remember {
-            IntArray(BACKDROP_MASK_HEIGHT) { y ->
-                val t = (y + 0.5f) / BACKDROP_MASK_HEIGHT
-                val a = when {
-                    t <= 0.22f -> t / 0.22f
-                    t <= 0.62f -> 1f
-                    else -> (1f - t) / (1f - 0.62f)
-                }
-                (a.coerceIn(0f, 1f) * 255f).roundToInt()
-            }
-        }
         Spacer(
             modifier
                 .sinkBleedX()
@@ -1878,17 +1983,16 @@ private fun ShelfBackdrop(
                     }
                     onDrawBehind {
                         if (baseBmp.isRecycled) return@onDrawBehind
-                        val position = pagerState.pagePosition()
-                        val fraction = if (nextBmp != null && !nextBmp.isRecycled) {
-                            (position - base).coerceIn(0f, 1f)
-                        } else {
-                            0f
-                        }
-                        val drawBmp = if (fraction <= 0.002f || nextBmp == null || nextBmp.isRecycled || fraction >= 0.998f) {
-                            val activeBmp = if (fraction >= 0.998f && nextBmp != null && !nextBmp.isRecycled) nextBmp else baseBmp
-                            ring.staticBitmap(activeBmp, maskAlpha, width, height)
-                        } else {
-                            ring.blendedBitmap(baseBmp, nextBmp, fraction, maskAlpha, width, height)
+                        val validNext = nextBmp?.takeUnless { it.isRecycled }
+                        val sample = shelfBackdropBlendSample(
+                            position = pagerState.pagePosition(),
+                            composedBase = base,
+                            hasNext = validNext != null,
+                        )
+                        val drawBmp = when (sample.mode) {
+                            ShelfBackdropDrawMode.BaseStatic -> ring.staticBitmap(baseBmp, maskAlpha, width, height)
+                            ShelfBackdropDrawMode.NextStatic -> ring.staticBitmap(validNext ?: baseBmp, maskAlpha, width, height)
+                            ShelfBackdropDrawMode.Blend -> ring.blendedBitmap(baseBmp, validNext ?: baseBmp, sample.fraction, maskAlpha, width, height)
                         }
                         drawContext.canvas.nativeCanvas.drawBitmap(drawBmp, null, dstRect, paint)
                     }
@@ -1935,8 +2039,11 @@ private fun ShelfBackdrop(
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            val position = pagerState.pagePosition()
-                            this.alpha = (1f - ((base + 1) - position)).coerceIn(0f, 1f)
+                            this.alpha = shelfBackdropFraction(
+                                position = pagerState.pagePosition(),
+                                composedBase = base,
+                                hasNext = true,
+                            )
                         },
                 )
             }
@@ -2335,7 +2442,12 @@ private fun ShelfAdvWindow(
                 .padding(start = 18.dp, end = 16.dp, top = 20.dp, bottom = 12.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                BlurCrossfade(title, modifier = Modifier.weight(1f)) { text ->
+                BlurCrossfade(
+                    title,
+                    modifier = Modifier.weight(1f),
+                    swapInMillis = SHELF_INFO_SWAP_IN_MILLIS,
+                    swapOutMillis = SHELF_INFO_SWAP_OUT_MILLIS,
+                ) { text ->
                     Text(
                         text,
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
@@ -2393,7 +2505,12 @@ private fun ShelfLine(game: ScanGame, stats: GamePlaytimeStats?, modifier: Modif
         game.openTime > 0L -> stringResource(R.string.game_shelf_continue)
         else -> stringResource(R.string.game_shelf_unplayed)
     }
-    BlurCrossfade(line, modifier = modifier.clearAndSetSemantics { contentDescription = line }) { text ->
+    BlurCrossfade(
+        line,
+        modifier = modifier.clearAndSetSemantics { contentDescription = line },
+        swapInMillis = SHELF_INFO_SWAP_IN_MILLIS,
+        swapOutMillis = SHELF_INFO_SWAP_OUT_MILLIS,
+    ) { text ->
         val shown = rememberTypewriterLength(text)
         Text(
             text = text.take(shown),

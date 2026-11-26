@@ -56,19 +56,12 @@ class MotionNoticeActivityDeviceTest {
             ::settings.isInitialized && activity.taskId == settings.taskId
         ) about = activity
     }
-    private var savedPreference: Boolean? = null
-    private var savedMode = false
-    private var savedFlow = false
+    private var opened = false
 
     @Before fun openSettings() {
         MotionDeviceAcceptance.require(enhanced = null)
         onMain {
-            savedMode = MotionMode.enhanced
-            savedFlow = AppSettingsStore.motionEnhancedState.value
-            savedPreference = AppSettingsStore.isMotionEnhanced(context)
-            // An absent preference already means enhanced. Do not turn it into an explicit setting.
-            if (savedPreference == false) AppSettingsStore.setMotionEnhanced(context, true)
-            MotionMode.sync(true)
+            opened = true
             ActivityLifecycleMonitorRegistry.getInstance().addLifecycleCallback(childLifecycle)
         }
         scenario = ActivityScenario.launch<AppSettingsActivity>(AppSettingsActivity.createIntent(context))
@@ -76,8 +69,8 @@ class MotionNoticeActivityDeviceTest {
         awaitPage { settings }
     }
 
-    @After fun closePagesAndRestoreMode() {
-        val previous = savedPreference ?: return // Includes the package/argument assumption failing.
+    @After fun closePages() {
+        if (!opened) return // Includes the package/argument assumption failing.
         try {
             // Even a failed timing assertion can return before the requested child reaches CREATED.
             val child = if (onMain { pushRequested }) await("requested About created") { about } else null
@@ -90,9 +83,6 @@ class MotionNoticeActivityDeviceTest {
                 onMain {
                     ActivityLifecycleMonitorRegistry.getInstance().removeLifecycleCallback(childLifecycle)
                     if (NoticeCenter.displayed?.text?.startsWith(PREFIX) == true) NoticeCenter.clear()
-                    if (!previous) AppSettingsStore.setMotionEnhanced(context, false)
-                    AppSettingsStore.motionEnhancedState.value = savedFlow
-                    MotionMode.sync(savedMode)
                 }
             }
         }

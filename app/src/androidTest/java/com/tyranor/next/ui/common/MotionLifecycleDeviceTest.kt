@@ -74,68 +74,6 @@ class MotionLifecycleDeviceTest {
         }
     }
 
-    /** Checks the original immediate-close behavior and ensures a later pause does not duplicate it. */
-    @Test
-    fun ordinaryModeClosesImmediatelyWithoutWaitingForPause() {
-        MotionDeviceAcceptance.require()
-        val owner = resumedOwner()
-        val closes = AtomicInteger()
-        lateinit var afterPush: (() -> Unit) -> Unit
-        InstrumentationRegistry.getInstrumentation().runOnMainSync { MotionMode.sync(false) }
-        try {
-            compose.setContent {
-                CompositionLocalProvider(LocalLifecycleOwner provides owner) {
-                    val deferred = rememberAfterPushStarts()
-                    SideEffect { afterPush = deferred }
-                }
-            }
-            compose.runOnIdle {
-                afterPush { closes.incrementAndGet() }
-                assertEquals("Ordinary mode must preserve the original immediate close", 1, closes.get())
-                assertEquals(Lifecycle.State.RESUMED, owner.lifecycle.currentState)
-                owner.event(Lifecycle.Event.ON_PAUSE)
-                assertEquals(1, closes.get())
-            }
-        } finally {
-            InstrumentationRegistry.getInstrumentation().runOnMainSync { MotionMode.sync(true) }
-        }
-    }
-
-    /** Keeps upstream's shorter ordinary onboarding transition without shortening normal tab changes. */
-    @Test
-    fun ordinaryOnboardingKeepsItsShortTransitionWhileNormalTabsKeepTheirDuration() {
-        MotionDeviceAcceptance.require(enhanced = false)
-        var selectedPage by mutableIntStateOf(0)
-        var onboarding by mutableStateOf(true)
-        lateinit var tabMotions: List<MainTabMotion>
-        compose.setContent {
-            val transition = updateTransition(selectedPage, label = "ordinaryCoachTabs")
-            val motions = rememberMainTabMotion(transition, pageCount = 2, onboarding = onboarding)
-            SideEffect { tabMotions = motions }
-        }
-        compose.mainClock.autoAdvance = false
-        try {
-            compose.runOnIdle { selectedPage = 1 }
-            compose.mainClock.advanceTimeBy(512)
-            compose.runOnIdle {
-                assertEquals("Onboarding must settle within the upstream short transition", 0f, tabMotions[1].offset.value, 0f)
-                assertEquals(1f, tabMotions[1].alpha.value, 0f)
-                onboarding = false
-            }
-            compose.mainClock.advanceTimeByFrame()
-            compose.runOnIdle { selectedPage = 0 }
-            compose.mainClock.advanceTimeBy(512)
-            compose.runOnIdle {
-                assertTrue("Normal ordinary tabs must still be moving at the same observation time", abs(tabMotions[0].offset.value) > 0f)
-            }
-            compose.mainClock.advanceTimeBy(1_500)
-            compose.runOnIdle { assertEquals(0f, tabMotions[0].offset.value, 0f) }
-        } finally {
-            compose.mainClock.autoAdvance = true
-            InstrumentationRegistry.getInstrumentation().runOnMainSync { MotionMode.sync(true) }
-        }
-    }
-
     /** Exercises slow tab motion so reselecting a still-visible page cannot restart its entrance. */
     @Test
     fun tabEntranceReplaysOnlyAfterTheLeavingPageIsActuallyHidden() {

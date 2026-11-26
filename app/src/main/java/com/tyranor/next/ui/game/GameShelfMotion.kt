@@ -1604,6 +1604,8 @@ internal class ShelfKnobSeek {
 internal enum class ShelfInfoUpdateMode {
     Seek,
     Dragging,
+    /** 惯性滑行 / Q 弹回位途中：手已经松开，书还在动，信息行照样跟着当前正中的那一本走。 */
+    Gliding,
     Settled,
 }
 
@@ -1613,7 +1615,8 @@ internal data class ShelfInfoResolution(
 )
 
 /**
- * 信息行（ADV）的候选页：点轨道预览目标页；手指拖动或停稳时考虑当前页；惯性和 Q 弹途中没有候选页。
+ * 信息行（ADV）的候选页：点轨道预览目标页；其余时候（手指拖动、惯性滑行、Q 弹、停稳）都跟着当前正中的那一本走，
+ * 不再等到停稳才换——书在眼前翻过去、下面的卡片却停在旧的一本上，是「不跟手」。换页的节奏由 [ShelfInfoPage.follow] 限速。
  */
 internal fun resolveShelfInfoPage(
     currentPage: Int,
@@ -1626,15 +1629,23 @@ internal fun resolveShelfInfoPage(
     return when {
         seekTarget != null -> ShelfInfoResolution(seekTarget.coerceIn(0, last), ShelfInfoUpdateMode.Seek)
         isDragged -> ShelfInfoResolution(currentPage.coerceIn(0, last), ShelfInfoUpdateMode.Dragging)
-        isScrollInProgress -> null
+        isScrollInProgress -> ShelfInfoResolution(currentPage.coerceIn(0, last), ShelfInfoUpdateMode.Gliding)
         else -> ShelfInfoResolution(currentPage.coerceIn(0, last), ShelfInfoUpdateMode.Settled)
     }
 }
 
-private const val INFO_DRAG_DWELL_MILLIS = 150L
-private const val INFO_MIN_UPDATE_INTERVAL_MILLIS = 120L
+/** 两次换页的最短间隔：快速翻过很多本时信息行最多每秒换十来次，显式跳转（点轨道）不受限。 */
+private const val INFO_MIN_UPDATE_INTERVAL_MILLIS = 80L
 
-/** 只在候选页或阶段变化时重置等待；停稳与拖动共用最短间隔，显式跳转可立即预览。 */
+/** 信息行里书名 / 台词的模糊替换：比通用的更短，书翻得快时不拖在上一本上。 */
+internal const val SHELF_INFO_SWAP_IN_MILLIS = 140
+internal const val SHELF_INFO_SWAP_OUT_MILLIS = 90
+
+/**
+ * 信息行当前显示哪一页：跟着候选页走，但两次换页至少隔 [INFO_MIN_UPDATE_INTERVAL_MILLIS]，显式跳转（点轨道）立即预览。
+ * 等待时长按「距上一次换页还差多久」算（不是每次候选页变化都重新等一整段），所以候选页每几十毫秒就变一次
+ * （快速滑行）时，到点照样换到最新的一本，不会因为一直在变而永远换不了。
+ */
 internal class ShelfInfoPage(initialPage: Int) {
     var shown by mutableIntStateOf(initialPage)
         private set
@@ -1647,9 +1658,8 @@ internal class ShelfInfoPage(initialPage: Int) {
         snapshotFlow(candidate).collectLatest { next ->
             if (next == null || next.page == shown) return@collectLatest
             if (next.mode != ShelfInfoUpdateMode.Seek) {
-                val dwell = if (next.mode == ShelfInfoUpdateMode.Dragging) INFO_DRAG_DWELL_MILLIS else 0L
                 val remaining = lastUpdateAt?.let { INFO_MIN_UPDATE_INTERVAL_MILLIS - (nowMillis() - it) } ?: 0L
-                delay(maxOf(dwell, remaining))
+                if (remaining > 0L) delay(remaining)
             }
             if (candidate() != next) return@collectLatest
             shown = next.page

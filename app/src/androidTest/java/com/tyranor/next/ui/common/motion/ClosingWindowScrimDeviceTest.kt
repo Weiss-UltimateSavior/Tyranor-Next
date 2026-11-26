@@ -58,11 +58,7 @@ class ClosingWindowScrimDeviceTest {
 
     @Test fun enhancedClosingWindowBrightensItsParentWithoutUncoveringTheRoot() = checkClosingWindow(true)
 
-    @Test fun ordinaryClosingWindowBrightensItsParentWithoutUncoveringTheRoot() = checkClosingWindow(false)
-
     @Test fun enhancedDialogDimsTheRealSheetAndReturnsItsMaskOnClose() = checkClosingWindow(true, sheetParent = true)
-
-    @Test fun ordinaryDialogDimsTheRealSheetAndReturnsItsMaskOnClose() = checkClosingWindow(false, sheetParent = true)
 
     private fun checkClosingWindow(enhanced: Boolean, sheetParent: Boolean = false) {
         MotionDeviceAcceptance.require(enhanced = null)
@@ -161,7 +157,6 @@ class ClosingWindowScrimDeviceTest {
 
         try {
             compose.mainClock.autoAdvance = false
-            compose.runOnIdle { MotionMode.sync(enhanced) }
             compose.setContent {
                 MaterialTheme {
                     Box(Modifier.fillMaxSize().background(Color.White)) {
@@ -286,7 +281,6 @@ class ClosingWindowScrimDeviceTest {
                     }
                 } finally {
                     try {
-                        compose.runOnIdle { MotionMode.sync(originalMode) }
                     } finally {
                         compose.mainClock.autoAdvance = originalAutoAdvance
                     }

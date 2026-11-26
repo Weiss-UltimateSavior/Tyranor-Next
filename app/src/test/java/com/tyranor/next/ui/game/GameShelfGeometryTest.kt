@@ -537,8 +537,9 @@ class GameShelfGeometryTest {
             ShelfInfoResolution(4, ShelfInfoUpdateMode.Dragging),
             resolveShelfInfoPage(currentPage = 4, seekTarget = null, pageCount = 10, isScrollInProgress = true, isDragged = true),
         )
+        // 手松开后惯性滑行 / Q 弹途中也跟着当前页走（不再等到停稳）
         assertEquals(
-            null,
+            ShelfInfoResolution(4, ShelfInfoUpdateMode.Gliding),
             resolveShelfInfoPage(currentPage = 4, seekTarget = null, pageCount = 10, isScrollInProgress = true, isDragged = false),
         )
         // 越界夹紧
@@ -558,7 +559,7 @@ class GameShelfGeometryTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun infoPageRequiresContinuousDragDwellAndFreezesThroughFlingAndBounce() = runTest {
+    fun infoPageFollowsDragAndGlideInsteadOfWaitingForTheShelfToSettle() = runTest {
         val candidate = mutableStateOf<ShelfInfoResolution?>(null)
         val info = ShelfInfoPage(initialPage = 0)
         backgroundScope.launch { info.follow({ testScheduler.currentTime }) { candidate.value } }
@@ -568,29 +569,51 @@ class GameShelfGeometryTest {
             runCurrent()
         }
 
+        // 手指拖着书架：第一次变化立刻跟上（不用先停够一段时间）
         update(page = 1, dragging = true)
-        advanceTimeBy(149L)
-        assertEquals(0, info.shown)
+        assertEquals(1, info.shown)
+        // 间隔不到最短间隔时先不换，到点换成「最新」的一本，不是排队里的旧页
         update(page = 2, dragging = true)
-        advanceTimeBy(149L)
+        update(page = 3, dragging = true)
+        advanceTimeBy(79L)
         runCurrent()
-        assertEquals(0, info.shown)
+        assertEquals(1, info.shown)
         advanceTimeBy(1L)
         runCurrent()
-        assertEquals(2, info.shown)
+        assertEquals(3, info.shown)
 
-        update(page = 3, dragging = true)
-        advanceTimeBy(149L)
-        update(page = 3, dragging = false)
-        advanceTimeBy(500L)
+        // 手松开后惯性滑行 / 回弹途中同样跟着走，不冻结到停稳
+        update(page = 6, dragging = false, scrolling = true)
+        advanceTimeBy(80L)
         runCurrent()
-        assertEquals(2, info.shown)
-        update(page = 6, dragging = false)
-        advanceTimeBy(500L)
-        runCurrent()
-        assertEquals(2, info.shown)
+        assertEquals(6, info.shown)
         update(page = 6, dragging = false, scrolling = false)
         assertEquals(6, info.shown)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun infoPageKeepsUpEvenWhenThePageChangesFasterThanTheMinimumInterval() = runTest {
+        val candidate = mutableStateOf<ShelfInfoResolution?>(null)
+        val info = ShelfInfoPage(initialPage = 0)
+        backgroundScope.launch { info.follow({ testScheduler.currentTime }) { candidate.value } }
+        fun update(page: Int) {
+            candidate.value = resolveShelfInfoPage(page, null, 20, isScrollInProgress = true, isDragged = false)
+            Snapshot.sendApplyNotifications()
+            runCurrent()
+        }
+        // 快速甩过去：每 30ms 换一本。限速不能是「消抖」——一直在变就永远不更新
+        var page = 0
+        val shownPages = mutableListOf<Int>()
+        repeat(20) {
+            page++
+            update(page)
+            advanceTimeBy(30L)
+            runCurrent()
+            if (shownPages.lastOrNull() != info.shown) shownPages += info.shown
+        }
+        assertTrue("信息行在快速滑行期间应该多次更新，实际只显示了 $shownPages", shownPages.size >= 4)
+        assertTrue("信息行不应落后当前页太多：shown=${info.shown}", page - info.shown <= 3)
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -608,7 +631,7 @@ class GameShelfGeometryTest {
         update(page = 1)
         assertEquals(1, info.shown)
         update(page = 2)
-        advanceTimeBy(119L)
+        advanceTimeBy(79L)
         runCurrent()
         assertEquals(1, info.shown)
         advanceTimeBy(1L)
@@ -621,7 +644,7 @@ class GameShelfGeometryTest {
         update(page = 4, seekTarget = 8, scrolling = true)
         assertEquals(8, info.shown)
         update(page = 8)
-        advanceTimeBy(120L)
+        advanceTimeBy(80L)
         runCurrent()
         assertEquals(8, info.shown)
     }

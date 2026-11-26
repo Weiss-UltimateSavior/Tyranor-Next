@@ -285,7 +285,8 @@ fun EngineScreen(
         // 每个分页各自的引擎列表（页面切换时新旧两页同时存在，所以按页取，不再共用一个）
         val enginesFor: (Int) -> List<EngineType> = { tab ->
             (if (categorizeEngines && tab >= 0) {
-                engines.filter { engineTabOf(it) == EngineTab.entries[tab] }
+                val targetTab = EngineTab.entries.getOrNull(tab)
+                if (targetTab != null) engines.filter { engineTabOf(it) == targetTab } else emptyList()
             } else {
                 engines
             }).distinctBy { engineDisplayName(it) }

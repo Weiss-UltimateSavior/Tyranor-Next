@@ -34,10 +34,6 @@ import org.junit.Test
 class MotionCropDialogDeviceTest {
     @get:Rule val compose = createComposeRule()
 
-    /** Verifies the ordinary crop window retains its platform fade while clearing dim and touch on close. */
-    @Test
-    fun ordinaryCropPreservesPlatformExitAndClearsDimBeforeDismiss() = verifyCropDismiss(enhanced = false)
-
     /** Verifies the enhanced crop window retains its existing animation policy and clears dim and touch. */
     @Test
     fun enhancedCropRetainsItsExistingWindowPolicyAndClearsDimBeforeDismiss() = verifyCropDismiss(enhanced = true)
@@ -47,7 +43,6 @@ class MotionCropDialogDeviceTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         MotionDeviceAcceptance.require(enhanced = null)
         assumeTrue(android.os.Build.VERSION.SDK_INT >= 29)
-        instrumentation.runOnMainSync { MotionMode.sync(enhanced) }
         var reference by mutableStateOf(true)
         var visible by mutableStateOf(true)
         var referenceWindow: Window? = null

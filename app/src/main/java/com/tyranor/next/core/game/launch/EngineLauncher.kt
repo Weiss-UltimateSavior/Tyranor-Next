@@ -1443,7 +1443,6 @@ object EngineLauncher {
         intent.putExtra(LaunchContract.GAMES_TITLE, game.title)
         game.coverUri?.let { intent.putExtra(LaunchContract.GAME_COVER_URI, it) }
         intent.putExtra(LaunchContract.STARTUP_APP_ICON, AppIconSwitcher.iconResource(context))
-        intent.putExtra(LaunchContract.STARTUP_ENHANCED_MOTION, AppSettingsStore.isMotionEnhanced(context))
         // 注入 App 统一主题色与深浅色：引擎壳自绘 UI（确认/输入弹窗按钮等）经
         // EngineThemeColors.fromIntent / KrDialogStyle 读取，缺失时回落默认绿。
         // 主题色来自 ui 层写入的纯数据快照（ThemeColorPayloadStore），core 不反向依赖 theme。

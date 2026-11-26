@@ -38,8 +38,6 @@ class HomePlaytimeActivationDeviceTest {
 
     @Test fun nativeHomeImportsOnSelectionAndReentryInEnhancedMode() = verifyActivation(enhanced = true)
 
-    @Test fun nativeHomeImportsOnSelectionAndReentryInOrdinaryMode() = verifyActivation(enhanced = false)
-
     private fun verifyActivation(enhanced: Boolean) {
         MotionDeviceAcceptance.require(enhanced = null)
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -65,7 +63,6 @@ class HomePlaytimeActivationDeviceTest {
 
         try {
             compose.runOnUiThread {
-                MotionMode.sync(enhanced)
                 AppSettingsStore.homeStyleState.value = AppSettingsStore.HOME_STYLE_NATIVE
             }
             compose.setContent {
@@ -136,7 +133,6 @@ class HomePlaytimeActivationDeviceTest {
                 arrayOf(uri),
             )
             compose.runOnUiThread {
-                MotionMode.sync(oldMode)
                 AppSettingsStore.homeStyleState.value = oldStyle
             }
         }

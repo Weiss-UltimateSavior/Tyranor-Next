@@ -178,7 +178,7 @@ internal fun AppSettingsScreen() {
 
     // 进场分帧组合：第一帧只组合骨架与最上面几项，其余每帧补一组（见 StagedCompose）
     // 分组数与最大 stagedItem 序号一致（新增设置卡片时必须同步递增，否则布局阶段越界崩溃）
-    val staged = rememberStagedCompose(last = 10)
+    val staged = rememberStagedCompose(last = 9)
 
     MiuixSettingsTheme {
       ProvideEntrance {
@@ -264,26 +264,7 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 stagedItem(2, staged) {
-                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(2).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
-                        Column(Modifier.padding(vertical = 4.dp)) {
-                            // 界面动效：增强（新动效，默认）/ 普通（原版动效），切换即时全 App 生效并持久化
-                            val motionEnhanced by AppSettingsStore.motionEnhancedState.collectSettingAsState()
-                            OverlayDropdownPreference(
-                                title = stringResource(R.string.settings_motion_mode),
-                                items = listOf(
-                                    stringResource(R.string.settings_motion_enhanced),
-                                    stringResource(R.string.settings_motion_normal),
-                                ),
-                                selectedIndex = if (motionEnhanced) 0 else 1,
-                                onSelectedIndexChange = { index ->
-                                    AppSettingsStore.setMotionEnhanced(ctx, index == 0)
-                                },
-                            )
-                        }
-                    }
-                }
-                stagedItem(3, staged) {
-                    MiuixCard(modifier = Modifier.staggeredEntrance(3).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.staggeredEntrance(2).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 应用圆角调整：默认外观与复古玻璃共用同一数值；拖动即时生效并逐档落盘
                             val radiusSteps = AppSettingsStore.APP_CORNER_RADIUS_STEPS
@@ -377,8 +358,8 @@ internal fun AppSettingsScreen() {
                         }
                     }
                 }
-                stagedItem(4, staged) {
-                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(4).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                stagedItem(3, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(3).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 自定义背景图：铺在页面背景之上、主题色粒子之下
                             val backgroundPicker = rememberLauncherForActivityResult(
@@ -528,8 +509,8 @@ internal fun AppSettingsScreen() {
                         }
                     }
                 }
-                stagedItem(5, staged) {
-                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(5).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                stagedItem(4, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(4).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 三个外观主题在未显式选择时统一使用液态玻璃 · 经典。
                             // 「透镜」档需要 Android 13+ 的 RuntimeShader，低版本不提供该选项（列表里不出现）。
@@ -599,8 +580,8 @@ internal fun AppSettingsScreen() {
                         }
                     }
                 }
-                stagedItem(6, staged) {
-                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(6).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                stagedItem(5, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(5).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 显示首页：关闭后首页与导航栏首页入口隐藏，游戏页成为第一页
                             SwitchPreference(
@@ -650,8 +631,8 @@ internal fun AppSettingsScreen() {
                         }
                     }
                 }
-                stagedItem(7, staged) {
-                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(7).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                stagedItem(6, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(6).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 经典应用图标：开启后启用旧图标别名，关闭恢复当前新图标（默认关）
                             SwitchPreference(
@@ -666,8 +647,8 @@ internal fun AppSettingsScreen() {
                         }
                     }
                 }
-                stagedItem(8, staged) {
-                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(8).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                stagedItem(7, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(7).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 平板侧边栏：开启时平板/大窗口下导航移到侧边，关闭则保持底部导航
                             SwitchPreference(
@@ -681,8 +662,8 @@ internal fun AppSettingsScreen() {
                         }
                     }
                 }
-                stagedItem(9, staged) {
-                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(9).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                stagedItem(8, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(8).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             SwitchPreference(
                                 title = stringResource(R.string.settings_engine_tabs),
@@ -701,8 +682,8 @@ internal fun AppSettingsScreen() {
                         }
                     }
                 }
-                stagedItem(10, staged) {
-                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(10).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                stagedItem(9, staged) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(9).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 游戏页卡片风格：瀑布（默认）/ 网格 / 列表（封面流）/ 书架
                             val cardStyleModes = listOf(

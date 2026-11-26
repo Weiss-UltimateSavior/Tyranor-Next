@@ -549,6 +549,43 @@ class DialogDimStackTest {
         assertEquals(0.3f, window.applied, 0f)
     }
 
+    @Test fun passThroughExitingStandaloneDialogKeepsOwnFadeWithoutPollutingNewUpperSheet() {
+        val stack = stack()
+        val owner = Any()
+        val dialog = Window()
+        val sheet = Window()
+        stack.register(owner, dialog, 0f, false, scrim = 0.5f)
+
+        stack.markExiting(dialog)
+        stack.update(dialog, 0f, false, scrim = 0.25f, baseScrim = 0.5f)
+        assertEquals(0.25f, dialog.scrim, 0.0001f)
+
+        // 退场中用户在下层卡片打开了操作抽屉：已退场的弹窗不再把自己的 0.5 底色遗传给新抽屉，也不再被压暗
+        stack.register(owner, sheet, 0f, false, scrim = 0.32f)
+        assertEquals(0.32f, sheet.scrim, 0.0001f)
+        assertEquals(0.25f, dialog.scrim, 0.0001f)
+        assertEquals(0f, dialog.panelDim, 0f)
+
+        stack.remove(dialog)
+        assertEquals(0.32f, sheet.scrim, 0.0001f)
+    }
+
+    @Test fun markExitingYieldsNestedDimImmediatelyAndRestoreClearsExitingFlag() {
+        val stack = stack()
+        val owner = Any()
+        val parent = Window()
+        val child = Window()
+        stack.register(owner, parent, 0f, false, scrim = 0.5f)
+        stack.register(owner, child, 0f, false, scrim = 0.5f)
+
+        stack.markExiting(child)
+        assertEquals(0f, child.scrim, 0f)
+        assertEquals(0.5f, parent.scrim, 0f)
+
+        stack.restore(child)
+        assertEquals(0.5f, parent.panelDim, 0.0001f)
+    }
+
     /** WMS uses the highest eligible native layer; panel-local drawing never changes the root. */
     private fun rootMask(vararg windows: Window): Float {
         var alpha = windows.lastOrNull { it.visible && it.nativeEnabled }?.applied ?: 0f

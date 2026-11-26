@@ -53,17 +53,9 @@ import org.junit.Test
 class MotionCoverSearchDialogDeviceTest {
     @get:Rule val compose = createComposeRule()
 
-    /** Ordinary mode keeps the matching platform window policy and clears dim on close and disposal. */
-    @Test
-    fun ordinarySearchPreservesPlatformExitAndClearsWindowOnEveryRemoval() = verifyWindow(enhanced = false)
-
     /** Enhanced mode keeps its existing zero-animation policy and performs the same ownership cleanup. */
     @Test
     fun enhancedSearchRetainsWindowPolicyAndClearsWindowOnEveryRemoval() = verifyWindow(enhanced = true)
-
-    /** A successful ordinary-mode binding releases its live window before the update callback runs. */
-    @Test
-    fun ordinarySuccessfulBindingReleasesWindowBeforeDeliveringUpdate() = verifySuccessfulBinding(enhanced = false)
 
     /** Enhanced mode follows the same binding callback order without changing its window policy. */
     @Test
@@ -116,7 +108,6 @@ class MotionCoverSearchDialogDeviceTest {
             }
             assertTrue(cacheFile.isFile && cacheFile.length() > 0)
             instrumentation.runOnMainSync {
-                MotionMode.sync(enhanced)
                 if (!sourceEnabled) AppSettingsStore.setCoverScraperSourceEnabled(context, source, true)
             }
             contentInstalled = true
@@ -208,7 +199,6 @@ class MotionCoverSearchDialogDeviceTest {
                         try {
                             if (!sourceEnabled) AppSettingsStore.setCoverScraperSourceEnabled(context, source, false)
                         } finally {
-                            MotionMode.sync(previousMode)
                         }
                     }
                 } finally {
@@ -236,7 +226,6 @@ class MotionCoverSearchDialogDeviceTest {
         try {
             instrumentation.runOnMainSync {
                 previousMode = MotionMode.enhanced
-                MotionMode.sync(enhanced)
                 AppSettingsStore.setCoverScraperSourceEnabled(context, source, true)
             }
             compose.setContent {
@@ -292,7 +281,6 @@ class MotionCoverSearchDialogDeviceTest {
         } finally {
             instrumentation.runOnMainSync {
                 AppSettingsStore.setCoverScraperSourceEnabled(context, source, sourceEnabled)
-                MotionMode.sync(previousMode)
             }
         }
     }

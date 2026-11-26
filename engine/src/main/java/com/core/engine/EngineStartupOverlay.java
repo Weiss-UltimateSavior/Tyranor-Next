@@ -39,7 +39,6 @@ public final class EngineStartupOverlay extends FrameLayout {
     private static final String TAG = "EngineStartup";
     private static final int COVER_SIZE_DP = 64;
     private static final long PAGE_TURN_MS = 420L;
-    private static final long FADE_MS = 150L;
     private static final PathInterpolator PAGE_TURN_EASING = new PathInterpolator(0.4f, 0f, 0.2f, 1f);
     private static final ExecutorService COVER_LOADER = Executors.newSingleThreadExecutor();
     private final Activity activity;
@@ -50,7 +49,6 @@ public final class EngineStartupOverlay extends FrameLayout {
     private final TextView failureHint;
     private final StartupSpectrumView spectrum;
     private final boolean animateSpectrum;
-    private final boolean turnPage;
     private final ImageView cover;
     private final Uri coverUri;
     private final int appIcon;
@@ -83,7 +81,6 @@ public final class EngineStartupOverlay extends FrameLayout {
         Intent intent = activity.getIntent();
         EngineThemeColors.Palette palette = EngineThemeColors.fromIntent(intent);
         animateSpectrum = ValueAnimator.areAnimatorsEnabled();
-        turnPage = intent == null || intent.getBooleanExtra(LaunchContract.STARTUP_ENHANCED_MOTION, true);
         spectrum = new StartupSpectrumView(activity, palette.getPrimary(), animateSpectrum, this::scheduleReveal);
         coverUri = readCoverUri(intent);
         cover = new ImageView(activity);
@@ -334,15 +331,11 @@ public final class EngineStartupOverlay extends FrameLayout {
             finishReveal();
             return;
         }
-        if (turnPage) {
-            page.setPivotX(0f);
-            page.setPivotY(page.getHeight() * 0.5f);
-            page.setCameraDistance(page.getWidth() * 3f);
-            page.animate().rotationY(90f).setDuration(PAGE_TURN_MS)
-                    .setInterpolator(PAGE_TURN_EASING).withEndAction(this::finishReveal).start();
-        } else {
-            page.animate().alpha(0f).setDuration(FADE_MS).withEndAction(this::finishReveal).start();
-        }
+        page.setPivotX(0f);
+        page.setPivotY(page.getHeight() * 0.5f);
+        page.setCameraDistance(page.getWidth() * 3f);
+        page.animate().rotationY(90f).setDuration(PAGE_TURN_MS)
+                .setInterpolator(PAGE_TURN_EASING).withEndAction(this::finishReveal).start();
     }
 
     private void finishReveal() {

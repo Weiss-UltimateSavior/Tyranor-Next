@@ -66,7 +66,6 @@ class MainTabPixelParityDeviceTest {
         var wide by mutableStateOf(true)
         var showActual by mutableStateOf(true)
         try {
-            compose.runOnUiThread { MotionMode.sync(true) }
             compose.mainClock.autoAdvance = false
             compose.setContent {
                 val overlay = rememberSheetBackdrop()
@@ -170,7 +169,6 @@ class MainTabPixelParityDeviceTest {
             }
         } finally {
             compose.mainClock.autoAdvance = true
-            compose.runOnUiThread { MotionMode.sync(previous) }
         }
     }
 
