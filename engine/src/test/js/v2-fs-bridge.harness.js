@@ -100,6 +100,29 @@ const check = (name, cond, extra) => {
     else { failed++; console.log('  FAIL  ' + name + (extra !== undefined ? '  -> ' + extra : '')); }
 };
 
+console.log('\n== NW.js 全局垫片不能被 UMD 库误判成 CommonJS ==');
+// 真实回归：PixiApngAndGif.js（ApngPicture.js 的依赖库）的 UMD 头是
+//   "object"==typeof exports&&"undefined"!=typeof module?module.exports=t():...:e.PixiApngAndGif=t()
+// 兼容层过去把 module.exports 建成对象，库于是把导出写进 module.exports，全局名永不出现，
+// 进战斗/显示 APNG 时抛 ReferenceError: PixiApngAndGif is not defined。
+// 同一原因还会吞掉 jQuery 的 window.jQuery/$（它只判断 typeof module.exports === "object"）
+// 与 lodash 的 window._（插件拿到的是兼容层替身而不是真 lodash）。
+// 探针用间接 eval 跑在全局作用域，与 WebView 里 <script> 的可见性一致（typeof module 看到的就是垫片）。
+const UMD_GLOBAL_PROBE =
+    '(function (e, t) { "object" == typeof exports && "undefined" != typeof module ? module.exports = t() : "function" == typeof define && define.amd ? define(t) : e.TyranorUmdProbe = t(); })(this, function () { return "ok"; });';
+const JQUERY_STYLE_PROBE =
+    '(function (global, factory) { if ("object" === typeof module && "object" === typeof module.exports) { module.exports = factory(global, true); } else { factory(global); } })(this, function (w, noGlobal) { if (!noGlobal) { w.TyranorJqueryProbe = "ok"; } return "commonjs"; });';
+
+// 先定型垫片本身，再跑探针：探针一旦被误判就会写 module.exports，之后的状态不再代表初始形态
+check('垫片的 exports 保持函数形态', typeof global.exports === 'function', typeof global.exports);
+check('垫片的 module.exports 初始未定义', typeof global.module.exports === 'undefined', typeof global.module.exports);
+
+// jQuery 式判定必须先跑：旧垫片下它会先写 module.exports，后面的探针才能看到「已被污染」的状态
+(0, eval)(JQUERY_STYLE_PROBE);
+check('jQuery 式判定（typeof module.exports === "object"）不吞掉全局名', global.TyranorJqueryProbe === 'ok', typeof global.TyranorJqueryProbe);
+(0, eval)(UMD_GLOBAL_PROBE);
+check('UMD 库（typeof exports === "object" 分支）落到全局名', global.TyranorUmdProbe === 'ok', typeof global.TyranorUmdProbe);
+
 console.log('\n== fs 真读写 ==');
 const fsMod = window.require('fs');
 check('existsSync(存在) === true', fsMod.existsSync('data/table.json') === true);

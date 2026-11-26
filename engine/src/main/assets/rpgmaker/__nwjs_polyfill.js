@@ -280,8 +280,18 @@
     }
     if (typeof window.require.resolve !== "function") window.require.resolve = function (x) { return x; };
     if (typeof window.require.cache === "undefined") window.require.cache = {};
-    if (typeof window.module === "undefined") window.module = { exports: {} };
-    if (typeof window.exports === "undefined") window.exports = window.module.exports;
+    // 这两个 NW.js 垫片必须保持「exports 是函数、module.exports 初始未定义」，不能建成普通对象：
+    // UMD 库在加载时按 `typeof exports === "object" && typeof module !== "undefined"`（或
+    // `typeof module.exports === "object"`、`module.exports` 真值）判断是否导出到 CommonJS，
+    // 一旦成立就把结果写进 module.exports，浏览器全局名永远不会出现：
+    //   - PixiApngAndGif.js → ApngPicture.js 抛 ReferenceError: PixiApngAndGif is not defined
+    //   - jQuery 3 → 走 noGlobal 分支，window.jQuery / window.$ 不设置
+    //   - lodash → 不挂 window._，插件拿到的是本兼容层的极简替身
+    // v0 宿主（Tyranor-2.3.4）不注入本兼容层，所以同款游戏在 v0 下正常，问题只出现在 v1/v2。
+    // 函数形态不会让三种判定成立，同时 `module.exports = x` / `exports.foo = x` 仍然可用；
+    // 代价是 exports 与 module.exports 初始不再互为别名（同一脚本同时使用两者的写法极少）。
+    if (typeof window.module === "undefined") window.module = { exports: undefined };
+    if (typeof window.exports === "undefined") window.exports = function () {};
     if (typeof window.nw === "undefined") window.nw = nwGuiStub;
     if (typeof window.gui === "undefined") window.gui = nwGuiStub;
     try { if (typeof globalThis !== "undefined" && !globalThis.require) globalThis.require = window.require; } catch (e) {}

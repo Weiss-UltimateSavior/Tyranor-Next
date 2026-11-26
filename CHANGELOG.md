@@ -2,6 +2,8 @@
 
 ## 未发布
 
+- 修复 RPG Maker MV/MZ（TynMV-0.1 / TynMV-0.2）里依赖 UMD 全局名的库在 v1/v2 会话下不可用：作为 NW.js 垫片的 `window.module` / `window.exports` 被建成普通对象，UMD 库因此走 CommonJS 分支，只把导出写进 `module.exports`（`PixiApngAndGif` 的 `ReferenceError: PixiApngAndGif is not defined`、jQuery 不设置 `window.jQuery`/`$`、lodash 不设置 `window._` 都属于这一类；v0 宿主不注入兼容层，所以同款游戏在 Tyranor-2.3.4 下正常）。垫片改为 `exports` 为函数、`module.exports` 初始未定义，三种常见 UMD 判定都会落到全局分支，`module.exports = x` / `exports.foo = x` 仍然可用；v2 harness 增加对应回归探针。
+
 - 应用设置新增「默认主题粒子样式」，可在「气泡上升」与手柄按键图形沿弧线摇摆下落的「按键瀑布」之间切换。
 
 - 应用设置新增「默认主题粒子」开关，默认开启。关闭后默认外观只绘制纯色背景。
