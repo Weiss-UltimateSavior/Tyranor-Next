@@ -118,20 +118,99 @@ class GameShelfPageGuardTest {
     fun shelfPageAdjustmentGuardDefersWhileNonInteractiveThenAppliesOnce() {
         val guard = ShelfPageAdjustmentGuard(1 to 0f)
 
-        // 重排发生时处于不可交互（如抽屉/藏书阁遮挡）：暂不应用也不消耗机会。
+        // 重排发生时仅因不可交互延后（无聚焦请求）：暂不应用也不消耗机会。
+        assertNull(guard.consumeIfReady(interactive = false, hasPendingFocus = false))
         assertNull(guard.consumeIfReady(interactive = false, hasPendingFocus = false))
         assertFalse(guard.applied)
-        // 存在 pendingFocusUri 时同样暂不应用。
-        assertNull(guard.consumeIfReady(interactive = true, hasPendingFocus = true))
-        assertFalse(guard.applied)
+        assertFalse(guard.deferredByFocus)
+        assertFalse(guard.dropped)
 
-        // 恢复交互且无聚焦请求时应用一次。
+        // 恢复交互且无聚焦请求时补应用一次。
         assertEquals(1 to 0f, guard.consumeIfReady(interactive = true, hasPendingFocus = false))
         assertTrue(guard.applied)
+        assertFalse(guard.dropped)
 
         // 用户翻页后再经历 interactive false -> true，不再重放旧调整。
         assertNull(guard.consumeIfReady(interactive = false, hasPendingFocus = false))
         assertNull(guard.consumeIfReady(interactive = true, hasPendingFocus = false))
+    }
+
+    @Test
+    fun shelfPageAdjustmentGuardDropsAdjustmentAfterPendingFocusClears() {
+        val guard = ShelfPageAdjustmentGuard(2 to 0.25f)
+
+        // 聚焦待处理（即使此时不可交互）必须记录已被聚焦延后。
+        assertNull(guard.consumeIfReady(interactive = false, hasPendingFocus = true))
+        assertTrue(guard.deferredByFocus)
+        assertFalse(guard.applied)
+        assertFalse(guard.dropped)
+
+        // 聚焦结束后即使仍未恢复交互也作废，之后再恢复交互不再应用旧调整。
+        assertNull(guard.consumeIfReady(interactive = false, hasPendingFocus = false))
+        assertTrue(guard.dropped)
+        assertFalse(guard.applied)
+        assertNull(guard.consumeIfReady(interactive = true, hasPendingFocus = false))
+        assertFalse(guard.applied)
+
+        // 先因不可交互延后，恢复前又收到聚焦请求：聚焦结束后同样作废。
+        val deferredFirstGuard = ShelfPageAdjustmentGuard(4 to 0f)
+        assertNull(deferredFirstGuard.consumeIfReady(interactive = false, hasPendingFocus = false))
+        assertFalse(deferredFirstGuard.deferredByFocus)
+        assertNull(deferredFirstGuard.consumeIfReady(interactive = false, hasPendingFocus = true))
+        assertTrue(deferredFirstGuard.deferredByFocus)
+        assertNull(deferredFirstGuard.consumeIfReady(interactive = true, hasPendingFocus = false))
+        assertTrue(deferredFirstGuard.dropped)
+        assertFalse(deferredFirstGuard.applied)
+        assertNull(deferredFirstGuard.consumeIfReady(interactive = true, hasPendingFocus = false))
+    }
+
+    @Test
+    fun shelfPageAdjustmentGuardDropsAfterMultipleInteractiveCallsDuringPendingFocus() {
+        val guard = ShelfPageAdjustmentGuard(3 to 0f)
+
+        repeat(3) {
+            assertNull(guard.consumeIfReady(interactive = true, hasPendingFocus = true))
+            assertTrue(guard.deferredByFocus)
+            assertFalse(guard.applied)
+            assertFalse(guard.dropped)
+        }
+
+        // 聚焦结束后直接丢弃，后续再次交互也不再返回。
+        assertNull(guard.consumeIfReady(interactive = true, hasPendingFocus = false))
+        assertTrue(guard.dropped)
+        assertFalse(guard.applied)
+        assertNull(guard.consumeIfReady(interactive = false, hasPendingFocus = false))
+        assertNull(guard.consumeIfReady(interactive = true, hasPendingFocus = false))
+    }
+
+    @Test
+    fun shelfPageAdjustmentGuardIgnoresSubsequentFocusAfterAlreadyApplied() {
+        val guard = ShelfPageAdjustmentGuard(3 to 0.5f)
+
+        assertEquals(3 to 0.5f, guard.consumeIfReady(interactive = true, hasPendingFocus = false))
+        assertTrue(guard.applied)
+        assertFalse(guard.deferredByFocus)
+        assertFalse(guard.dropped)
+
+        // 已应用后再出现并结束聚焦请求，不再返回且不改变已应用态。
+        assertNull(guard.consumeIfReady(interactive = true, hasPendingFocus = true))
+        assertFalse(guard.deferredByFocus)
+        assertFalse(guard.dropped)
+        assertNull(guard.consumeIfReady(interactive = true, hasPendingFocus = false))
+        assertTrue(guard.applied)
+    }
+
+    @Test
+    fun shelfPageAdjustmentGuardAlwaysReturnsNullWhenAdjustmentIsNull() {
+        val guard = ShelfPageAdjustmentGuard(null)
+
+        assertNull(guard.consumeIfReady(interactive = false, hasPendingFocus = false))
+        assertNull(guard.consumeIfReady(interactive = false, hasPendingFocus = true))
+        assertNull(guard.consumeIfReady(interactive = true, hasPendingFocus = true))
+        assertNull(guard.consumeIfReady(interactive = true, hasPendingFocus = false))
+        assertFalse(guard.applied)
+        assertFalse(guard.deferredByFocus)
+        assertFalse(guard.dropped)
     }
 
     @Test

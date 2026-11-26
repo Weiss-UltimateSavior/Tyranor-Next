@@ -242,7 +242,7 @@ internal fun GameShelf(
         }
         ShelfPageAdjustmentGuard(adjustment)
     }
-    LaunchedEffect(pagerState, games, interactive) {
+    LaunchedEffect(pagerState, games, catalog, interactive, pendingUri, focusToken) {
         val target = adjustmentGuard.consumeIfReady(
             interactive = latestInteractive(),
             hasPendingFocus = catalog?.pendingFocusUri != null,
@@ -430,20 +430,33 @@ internal fun shelfPageAdjustment(games: List<ScanGame>, page: Int, measuredUri: 
 /**
  * 单份 `games` 列表对应的书架页调整一次性守卫：
  * 在 `games` 变化的那次组合中基于当时的测量键算好目标页与偏移，仅允许应用一次；
- * 不可交互或存在藏书阁聚焦请求时暂不消耗，恢复后补应用一次；已应用后即使再次经历
- * `interactive` 的 `false -> true` 也不会重放，避免覆盖用户之后的翻页。
+ * 仅因不可交互延后时在恢复交互后补应用一次，若曾被藏书阁聚焦请求延后则在聚焦结束后作废，
+ * 不再应用；已应用后即使再次经历 `interactive` 的 `false -> true` 也不会重放，避免覆盖用户之后的翻页。
  */
 internal class ShelfPageAdjustmentGuard(
     val adjustment: Pair<Int, Float>?,
 ) {
     var applied: Boolean = false
         private set
+    var deferredByFocus: Boolean = false
+        private set
+    var dropped: Boolean = false
+        private set
 
     fun consumeIfReady(
         interactive: Boolean,
         hasPendingFocus: Boolean,
     ): Pair<Int, Float>? {
-        if (applied || adjustment == null || !interactive || hasPendingFocus) return null
+        if (applied || dropped || adjustment == null) return null
+        if (hasPendingFocus) {
+            deferredByFocus = true
+            return null
+        }
+        if (deferredByFocus) {
+            dropped = true
+            return null
+        }
+        if (!interactive) return null
         applied = true
         return adjustment
     }
