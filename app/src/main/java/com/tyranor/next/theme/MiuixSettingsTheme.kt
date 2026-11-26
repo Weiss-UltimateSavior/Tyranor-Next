@@ -114,27 +114,61 @@ fun MiuixSettingsTheme(
         )
         else -> baseColors
     }
+    val inBookLeaf = LocalShelfBookLeaf.current
+    val bookPalette = if (inBookLeaf) CurrentBookPaperPalette else null
+    val effectiveTextStyles = if (inBookLeaf && textStyles === TyranorMiuixTextStyles) {
+        bookMiuixTextStyles(BookSerif, BookSerifBold)
+    } else {
+        textStyles
+    }
     // 只在弹窗内映射反色条目；普通页面保留 Miuix 的输入框底色和图标色。
-    // 玻璃页面沿用上面的玻璃色板，弹窗由 DialogItemSurface 选择对应条目色。
-    val dialogColors = if (LocalAppDialogContent.current) {
-        colors.copy(
+    // 玻璃页面沿用上面的玻璃色板，弹窗由 DialogItemSurface 选择对应条目色；
+    // 位于翻开的书页内时自动切换为纸墨色板（透明页面底 + 纸面浮层 + 墨色文字 + 烫金强调）。
+    val dialogColors = when {
+        bookPalette != null -> colors.copy(
+            primary = bookPalette.foilAccent,
+            onPrimary = bookPalette.paperSurface,
+            background = Color.Transparent,
+            surface = Color.Transparent,
+            surfaceContainer = bookPalette.popupSurface,
+            surfaceContainerHigh = bookPalette.washSubtle,
+            surfaceContainerHighest = bookPalette.popupSurface,
+            secondaryContainer = bookPalette.washSubtle,
+            onBackground = bookPalette.ink,
+            onSurface = bookPalette.ink,
+            onSurfaceContainer = bookPalette.ink,
+            onSurfaceContainerHigh = bookPalette.ink,
+            onSurfaceContainerHighest = bookPalette.ink,
+            onSecondaryContainer = bookPalette.ink,
+            onSurfaceContainerVariant = bookPalette.inkSecondary,
+            onBackgroundVariant = bookPalette.inkSecondary,
+            onSurfaceSecondary = bookPalette.inkSecondary,
+            onSurfaceVariantSummary = bookPalette.inkSecondary,
+            onSurfaceVariantActions = bookPalette.inkSecondary,
+            outline = bookPalette.popupBorder,
+            dividerLine = bookPalette.rule,
+            disabledOnSecondary = bookPalette.inkMuted,
+            disabledOnSecondaryVariant = bookPalette.inkMuted,
+            disabledOnSurface = bookPalette.inkMuted,
+        )
+        LocalAppDialogContent.current -> colors.copy(
             surfaceContainerHigh = DialogItemSurface,
             surfaceContainerHighest = DialogItemSurface,
             onSurfaceContainerHigh = TextColor,
             onSurfaceContainerHighest = TextColor,
         )
-    } else {
-        colors
+        else -> colors
     }
+    val effectiveContentColor = bookPalette?.ink ?: TextColor
     MiuixTheme(
         colors = dialogColors,
-        textStyles = textStyles,
+        textStyles = effectiveTextStyles,
     ) {
         // Miuix 的 Card 只提供 Miuix 自己的 LocalContentColor；页面里混用的 Material Text
         // 读的是 material3.LocalContentColor，若不覆盖会继续取根部 onBackground（白雾玻璃下
         // 为近白），于是卡片标题/“扫描深度”等出现白字。Miuix 页的内容底色是亮面条目，
-        // 这里统一把 Material 默认内容色也指向 TextColor；顶栏等页面级文字仍显式用 PageTextColor。
-        CompositionLocalProvider(MaterialLocalContentColor provides TextColor) {
+        // 这里统一把 Material 默认内容色也指向 TextColor（书页内为纸墨色）；顶栏等页面级文字仍显式用 PageTextColor。
+        CompositionLocalProvider(MaterialLocalContentColor provides effectiveContentColor) {
             WithoutPressIndication(content)
         }
     }

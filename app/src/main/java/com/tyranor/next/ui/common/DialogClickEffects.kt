@@ -10,6 +10,8 @@ import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.ui.node.DrawModifierNode
 import androidx.compose.ui.unit.dp
+import com.tyranor.next.theme.CurrentBookPaperPalette
+import com.tyranor.next.theme.LocalShelfBookLeaf
 import com.tyranor.next.theme.TextColor
 
 /** 无涟漪/按压反馈占位：容器内组件的点击效果统一失效。 */
@@ -39,6 +41,8 @@ fun DialogTextButton(
     val dialogExit = LocalDialogExit.current
     val targetColor = if (enabled) {
         contentColor
+    } else if (LocalShelfBookLeaf.current) {
+        CurrentBookPaperPalette.inkMuted
     } else {
         TextColor.copy(alpha = 0.38f)
     }

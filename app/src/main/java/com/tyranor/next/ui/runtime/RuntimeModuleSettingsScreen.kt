@@ -297,7 +297,6 @@ private fun RuntimeModuleSettingsView(
         modifier: Modifier,
         contentPadding: PaddingValues,
     ) {
-        val cardSurface = if (LocalAppDialogContent.current) DialogItemSurface else MiuixTheme.colorScheme.surfaceContainer
         LazyColumn(
             modifier = modifier,
             contentPadding = contentPadding,
@@ -376,10 +375,8 @@ private fun RuntimeModuleSettingsView(
             if (bindingValid && descriptorConfirmed && !loadError) {
                 items(module?.fileImports.orEmpty(), key = { "runtime_file_import:${it.key}" }) { item ->
                     val enabled = pickFiles != null && !loading && !saveRunning
-                    MiuixCard(
-                        cornerRadius = AppComponentCornerRadius,
-                        colors = MiuixCardDefaults.defaultColors(color = cardSurface),
-                        modifier = Modifier.pressSquishGroup().then(listItemMotion()).fillMaxWidth().glassBorder(),
+                    com.tyranor.next.ui.common.AppSectionCard(
+                        modifier = Modifier.pressSquishGroup().then(listItemMotion()),
                     ) {
                         com.tyranor.next.ui.common.AppNavItem(
                             title = item.title,
@@ -543,13 +540,12 @@ private fun RuntimeSettingRow(
     onEdit: () -> Unit,
     onRestore: () -> Unit,
 ) {
-    val cardSurface = if (LocalAppDialogContent.current) DialogItemSurface else MiuixTheme.colorScheme.surfaceContainer
-    MiuixCard(
-        cornerRadius = AppComponentCornerRadius,
-        colors = MiuixCardDefaults.defaultColors(color = cardSurface),
-        modifier = modifier.pressSquishGroup().fillMaxWidth().glassBorder(),
+    com.tyranor.next.ui.common.AppSectionCard(
+        modifier = modifier.pressSquishGroup(),
     ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+        val inBook = com.tyranor.next.theme.LocalShelfBookLeaf.current
+        val bodyPad = if (inBook) Modifier.fillMaxWidth().padding(vertical = 4.dp) else Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
+        Column(bodyPad) {
             when (item.type) {
                 RuntimeModuleSettingItemSpec.Type.BOOLEAN -> SwitchPreference(
                     checked = value as Boolean,
@@ -594,14 +590,14 @@ private fun RuntimeSettingRow(
 
 @Composable
 private fun StatusCard(text: String, action: String? = null, onAction: (() -> Unit)? = null) {
-    val cardSurface = if (LocalAppDialogContent.current) DialogItemSurface else MiuixTheme.colorScheme.surfaceContainer
-    MiuixCard(
-        cornerRadius = AppComponentCornerRadius,
-        colors = MiuixCardDefaults.defaultColors(color = cardSurface),
-        modifier = Modifier.fillMaxWidth().glassBorder(),
-    ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            Text(text, style = MaterialTheme.typography.bodyMedium, color = TextColor)
+    val inBook = com.tyranor.next.theme.LocalShelfBookLeaf.current
+    com.tyranor.next.ui.common.AppSectionCard {
+        Column(Modifier.fillMaxWidth().padding(if (inBook) 4.dp else 16.dp)) {
+            Text(
+                text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (inBook) com.tyranor.next.theme.CurrentBookPaperPalette.ink else TextColor,
+            )
             if (action != null && onAction != null) NoRippleTextButton(text = action, onClick = onAction)
         }
     }

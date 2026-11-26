@@ -1765,8 +1765,6 @@ private fun CoverSourcePickerDialog(
                         leadingIcon = R.drawable.ic_cover_source,
                         // 弹窗条目自足禁用按压反馈（AGENTS.md 弹窗点击反馈统一规范）
                         indication = null,
-                        // 弹窗内条目必须与亮面板形成反差（AGENTS.md 弹窗条目约定）
-                        containerColor = DialogItemSurface,
                     )
                 }
             }
@@ -2134,7 +2132,7 @@ internal fun CoverSearchDialog(
                 text = {
                     // 书页在书的窗口里：二级（作品多封面）的返回键「先回一级」注册在那个窗口上
                     BackHandler(enabled = drillDown != null && !binding) { leaveDrillDown() }
-                    CompositionLocalProvider(LocalContentColor provides TextColor, LocalIndication provides NoIndication) {
+                    CompositionLocalProvider(LocalIndication provides NoIndication) {
                         Column(Modifier.fillMaxSize()) {
                             inputs(Modifier.fillMaxWidth())
                             results(Modifier.fillMaxWidth().weight(1f).padding(top = 12.dp), GridCells.Fixed(CoverSearchBookColumns))
@@ -2301,8 +2299,8 @@ private fun CoverCandidateCard(
                 .fillMaxWidth()
                 .aspectRatio(3f / 4f)
                 .clip(AppComponentShape)
-                // 占位底色：默认风格 PageGrey，玻璃风格亮玻璃面（避免透明占位不可见）
-                .background(DialogItemSurface)
+                // 占位底色：书外 PageGrey / 亮玻璃面，书页内纸墨淡底
+                .background(com.tyranor.next.ui.common.appDialogSurfaceColor())
                 // 预览图下载中：占位块上扫过一道流光；到达 / 失败即停止（只画在加载中的少量候选上）
                 .shimmerSweep(active = previewState is CoverPreviewState.Loading),
             contentAlignment = Alignment.Center,
@@ -2460,35 +2458,12 @@ private fun LaunchFileDialog(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         lazyItemsIndexed(files) { index, name ->
-                            Row(
-                                modifier = Modifier
-                                    // 列表在弹窗入场窗口内到达时逐行错峰升起（行程短于正文块）
-                                    .staggeredEntrance(1 + index, distance = 8.dp, stepMillis = 40L)
-                                    .pressSquish(scale = PressSquishDefaults.RowScale)
-                                    .fillMaxWidth()
-                                    .clip(AppComponentShape)
-                                    // 弹窗内条目底色：默认风格 PageGrey，玻璃风格亮玻璃面
-                                    .background(DialogItemSurface)
-                                    // 弹窗点击反馈规范：条目禁用涟漪（indication = null）
-                                    .clickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null,
-                                    ) { selected = name }
-                                    .padding(horizontal = 12.dp, vertical = 9.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    name,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                RadioButton(
-                                    selected = selected == name,
-                                    onClick = { selected = name },
-                                )
-                            }
+                            com.tyranor.next.ui.common.AppRadioRow(
+                                selected = selected == name,
+                                label = name,
+                                onClick = { selected = name },
+                                modifier = Modifier.staggeredEntrance(1 + index, distance = 8.dp, stepMillis = 40L),
+                            )
                         }
                     }
                 }

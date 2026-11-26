@@ -894,7 +894,6 @@ private fun PerGameSettingsView(
         modifier: Modifier,
         contentPadding: PaddingValues,
     ) {
-        val actionCardSurface = if (LocalAppDialogContent.current) DialogItemSurface else NavWhite
         LazyColumn(
             modifier = modifier,
             contentPadding = contentPadding,
@@ -1109,7 +1108,6 @@ private fun PerGameSettingsView(
                                     title = stringResource(R.string.engine_settings_artemis_add_base_patch),
                                     summary = if (artPatchRunning) patchRunningSummary else stringResource(R.string.engine_settings_artemis_add_base_patch_summary),
                                     leadingIcon = R.drawable.ic_artemis_patch,
-                                    containerColor = actionCardSurface,
                                     verticalPadding = 17.dp,
                                     onClick = if (artPatchRunning) null else {
                                         {
@@ -1128,7 +1126,6 @@ private fun PerGameSettingsView(
                                     title = stringResource(R.string.engine_settings_artemis_add_windows_env_patch),
                                     summary = if (artPatchRunning) patchRunningSummary else stringResource(R.string.engine_settings_artemis_add_windows_env_patch_summary),
                                     leadingIcon = R.drawable.ic_artemis_patch,
-                                    containerColor = actionCardSurface,
                                     verticalPadding = 17.dp,
                                     onClick = if (artPatchRunning) null else {
                                         {
@@ -2049,20 +2046,13 @@ private const val DIALOG_ITEM_STEP_MILLIS = 45L
 /** 为单游戏覆盖分组分配稳定入场次序，复用卡片材质并让组内按压统一作用于整张卡片。 */
 @Composable
 private fun SectionCard(title: String, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    // 入场次序：按首次组合顺序取号（超过 10 的由 staggeredEntrance 自行封顶）
+    // 入场次序：按首次组合顺序取号（超过 10 的由 staggeredEntrance 自行封顶）；书页内由 AppSectionCard 自动切为细墨线与衬线小标题
     val order = rememberEntranceOrder()
-    val surfaceColor = if (LocalAppDialogContent.current) DialogItemSurface else MiuixTheme.colorScheme.surfaceContainer
-    MiuixCard(
-        modifier = modifier.pressSquishGroup().staggeredEntrance(order).fillMaxWidth().glassBorder(),
-        cornerRadius = AppComponentCornerRadius,
-        colors = MiuixCardDefaults.defaultColors(color = surfaceColor),
+    com.tyranor.next.ui.common.AppSectionCard(
+        modifier = modifier.pressSquishGroup().staggeredEntrance(order),
+        title = title,
     ) {
-        Column(Modifier.padding(vertical = 6.dp)) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-            }
-            content()
-        }
+        content()
     }
 }
 
@@ -2258,7 +2248,6 @@ private fun OverrideFontPreference(
                         modifier = Modifier.staggeredEntrance(1, distance = DIALOG_ITEM_RISE, stepMillis = DIALOG_ITEM_STEP_MILLIS),
                         title = stringResource(R.string.engine_settings_follow_global_with_value, globalLabel),
                         leadingIcon = R.drawable.ic_font_bookmark,
-                        containerColor = DialogItemSurface,
                         indication = null,
                     ) {
                         onSet(null)
@@ -2268,7 +2257,6 @@ private fun OverrideFontPreference(
                         modifier = Modifier.staggeredEntrance(2, distance = DIALOG_ITEM_RISE, stepMillis = DIALOG_ITEM_STEP_MILLIS),
                         title = followGameDefaultLabel,
                         leadingIcon = R.drawable.ic_font_bookmark,
-                        containerColor = DialogItemSurface,
                         indication = null,
                     ) {
                         onSet("")
@@ -2278,7 +2266,6 @@ private fun OverrideFontPreference(
                         modifier = Modifier.staggeredEntrance(3, distance = DIALOG_ITEM_RISE, stepMillis = DIALOG_ITEM_STEP_MILLIS),
                         title = stringResource(R.string.engine_settings_select_font_file),
                         leadingIcon = R.drawable.ic_font_bookmark,
-                        containerColor = DialogItemSurface,
                         indication = null,
                     ) {
                         open = false

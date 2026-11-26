@@ -20,20 +20,28 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
+import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppThemeColors
+import com.tyranor.next.theme.BookSerif
+import com.tyranor.next.theme.CurrentBookPaperPalette
+import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.ItemChevronColor
+import com.tyranor.next.theme.LocalAppDialogContent
+import com.tyranor.next.theme.LocalShelfBookLeaf
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
-import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.motion.pressSquish
 import com.tyranor.next.ui.common.motion.PressSquishDefaults
 import androidx.compose.animation.core.animateFloatAsState
@@ -43,6 +51,7 @@ import com.tyranor.next.ui.common.motion.ExpandVisibility
 import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.MotionTokens
 import com.tyranor.next.ui.common.motion.rememberLastNonNull
+import com.tyranor.next.ui.common.motion.shelfBookMarker
 
 /**
  * 功能跳转条目统一组件：左侧图标 + 标题/摘要 + 右侧指示箭头。
@@ -84,17 +93,19 @@ fun AppNavItem(
     trailingText: String? = null,
     @DrawableRes leadingIcon: Int? = null,
     showLeadingIcon: Boolean = true,
-    containerColor: Color = NavWhite,
+    containerColor: Color = if (LocalAppDialogContent.current) DialogItemSurface else NavWhite,
     verticalPadding: Dp = 12.dp,
     showArrow: Boolean = true,
     leadingIconTint: Color? = null,
     titleColor: Color? = null,
     titleMaxLines: Int = 1,
     summaryMaxLines: Int = 2,
-    indication: Indication? = LocalIndication.current,
+    indication: Indication? = if (LocalAppDialogContent.current) null else LocalIndication.current,
     drawSurface: Boolean = true,
     onClick: (() -> Unit)? = null,
 ) {
+    val inBook = LocalShelfBookLeaf.current
+    val bookPalette = CurrentBookPaperPalette
     val enabled = onClick != null
     val targetContentAlpha = if (enabled) 1f else 0.4f
     // 可用 ↔ 不可用：「增强」档内容透明度弹簧过渡（标题 / 图标 / 箭头一起淡入淡出），「普通」档直接切换
@@ -107,10 +118,37 @@ fun AppNavItem(
     val shownSummary = rememberLastNonNull(summary?.takeIf { it.isNotBlank() })
     val shownTrailing = rememberLastNonNull(trailingText?.takeIf { it.isNotBlank() })
     val interactionSource = remember { MutableInteractionSource() }
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            // Q 弹按压：有底卡时整卡形变，卡内平面条目缩得更少
+    val resolvedTitleColor = (titleColor ?: if (inBook) bookPalette.ink else TextColor).copy(alpha = contentAlpha)
+    val resolvedSecondaryColor = if (inBook) {
+        bookPalette.inkSecondary.copy(alpha = contentAlpha)
+    } else {
+        TextColor.copy(alpha = 0.55f * contentAlpha)
+    }
+    val rowSurfaceModifier = when {
+        inBook -> Modifier
+            .pressSquish(enabled = enabled, scale = PressSquishDefaults.RowScale, refuse = true)
+            .shelfBookMarker(interactionSource, bookPalette.marker)
+            .then(
+                if (drawSurface) {
+                    Modifier.drawBehind {
+                        drawLine(
+                            color = bookPalette.ruleSubtle,
+                            start = Offset(0f, size.height),
+                            end = Offset(size.width, size.height),
+                            strokeWidth = 0.6.dp.toPx(),
+                        )
+                    }
+                } else {
+                    Modifier
+                },
+            )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                enabled = enabled,
+                onClick = { onClick?.invoke() },
+            )
+        else -> Modifier
             .pressSquish(
                 enabled = enabled,
                 scale = if (drawSurface) PressSquishDefaults.CardScale else PressSquishDefaults.RowScale,
@@ -126,17 +164,23 @@ fun AppNavItem(
             .let { rowModifier ->
                 if (drawSurface) rowModifier.background(containerColor).glassBorder() else rowModifier
             }
-            .padding(horizontal = 16.dp, vertical = verticalPadding),
+    }
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(rowSurfaceModifier)
+            .padding(horizontal = if (inBook) 4.dp else 16.dp, vertical = verticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (showLeadingIcon) {
             Image(
                 painter = painterResource(leadingIcon ?: DEFAULT_LEADING_ICON),
                 contentDescription = null,
-                modifier = Modifier.size(24.dp),
-                // 显式 tint 优先；否则深色模式下染白，保持低亮度背景上的可读性
+                modifier = Modifier.size(if (inBook) 20.dp else 24.dp),
+                // 显式 tint 优先；书页内默认改染次墨色，书外深色模式下染白
                 colorFilter = when {
                     leadingIconTint != null -> ColorFilter.tint(leadingIconTint.copy(alpha = contentAlpha))
+                    inBook -> ColorFilter.tint(bookPalette.inkSecondary.copy(alpha = contentAlpha))
                     AppThemeColors.isDark -> ColorFilter.tint(Color.White.copy(alpha = contentAlpha))
                     else -> null
                 },
@@ -148,8 +192,12 @@ fun AppNavItem(
         ) {
             Text(
                 title,
-                style = MaterialTheme.typography.bodyMedium,
-                color = (titleColor ?: TextColor).copy(alpha = contentAlpha),
+                style = if (inBook) {
+                    MaterialTheme.typography.bodyMedium.copy(fontFamily = BookSerif, fontWeight = FontWeight.Medium)
+                } else {
+                    MaterialTheme.typography.bodyMedium
+                },
+                color = resolvedTitleColor,
                 maxLines = titleMaxLines,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -158,8 +206,12 @@ fun AppNavItem(
                 BlurCrossfade(targetState = shownSummary.orEmpty(), label = "navItemSummaryText") { text ->
                     Text(
                         text,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextColor.copy(alpha = 0.55f * contentAlpha),
+                        style = if (inBook) {
+                            MaterialTheme.typography.bodySmall.copy(fontFamily = BookSerif)
+                        } else {
+                            MaterialTheme.typography.bodySmall
+                        },
+                        color = resolvedSecondaryColor,
                         maxLines = summaryMaxLines,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -197,18 +249,29 @@ fun AppNavItem(
             ) { text ->
                 Text(
                     text,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextColor.copy(alpha = 0.55f * contentAlpha),
+                    style = if (inBook) {
+                        MaterialTheme.typography.bodySmall.copy(fontFamily = BookSerif)
+                    } else {
+                        MaterialTheme.typography.bodySmall
+                    },
+                    color = resolvedSecondaryColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
         }
         if (showArrow) {
-            BoldChevronRight(
-                color = ItemChevronColor.copy(alpha = ItemChevronColor.alpha * contentAlpha),
-                modifier = Modifier.padding(start = 12.dp),
-            )
+            if (inBook) {
+                BookInkChevron(
+                    color = bookPalette.inkSecondary.copy(alpha = contentAlpha),
+                    modifier = Modifier.padding(start = 12.dp),
+                )
+            } else {
+                BoldChevronRight(
+                    color = ItemChevronColor.copy(alpha = ItemChevronColor.alpha * contentAlpha),
+                    modifier = Modifier.padding(start = 12.dp),
+                )
+            }
         }
     }
 }

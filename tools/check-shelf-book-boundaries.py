@@ -31,26 +31,60 @@ BOOK_SHARED_FUNCTIONS = {
         "LaunchFileDialog",
         "CoverSourcePickerDialog",
         "CoverSearchDialog",
+        "CoverCandidateCard",
     ),
     "ui/save/SaveManagementActivity.kt": (
         "SaveManagementDialog",
         "SaveManagementContent",
     ),
+    "ui/save/SaveVersionsPanel.kt": (
+        "SaveVersionsPanel",
+        "SaveCloudVersionsPanel",
+        "SaveSelectionRecoveryPanel",
+    ),
     "ui/patch/KrkrOnlinePatchActivity.kt": (
         "KrkrOnlinePatchDialog",
         "KrkrOnlinePatchContent",
+        "PatchEntryCard",
     ),
     "ui/settings/PerGameSettingsScreen.kt": (
         "PerGameSettingsDialog",
         "PerGameSettingsView",
+        "SectionCard",
+        "OverrideFontPreference",
     ),
     "ui/settings/SettingsScreen.kt": (
         "WinlatorGlobalSettingsDialog",
         "WinlatorGlobalSettingsCard",
+        "EngineCard",
+    ),
+    "ui/settings/FontSettings.kt": (
+        "FontPreference",
+    ),
+    "ui/settings/GraphicsFilterPicker.kt": (
+        "GraphicsFilterPicker",
+        "FilterCategories",
+        "FilterPresets",
+    ),
+    "ui/settings/GraphicsChainEditor.kt": (
+        "GraphicsChainEditor",
+        "GraphicsNodeAction",
+    ),
+    "ui/settings/GraphicsNodeParameters.kt": (
+        "GraphicsNodeScale",
+        "GraphicsNodeParameters",
+    ),
+    "ui/settings/GraphicsSettingsEditor.kt": (
+        "PerGameGraphicsSettings",
+    ),
+    "ui/settings/SystemNnnSettingsScreen.kt": (
+        "SystemNnnSaveLayoutSettings",
     ),
     "ui/runtime/RuntimeModuleSettingsScreen.kt": (
         "RuntimeModuleSettingsDialog",
         "RuntimeModuleSettingsView",
+        "RuntimeSettingRow",
+        "StatusCard",
     ),
 }
 
@@ -60,11 +94,29 @@ HOSTED_RAW_DIALOG_FALLBACKS = {
     ("ui/game/GameShortcutCropDialog.kt", "GameShortcutCropDialog"),
 }
 
+# 仅服务书外独立窗体 / 非书页形态的局部辅助函数，豁免书内纸墨样式约束（仍受跳转与窗口守卫检查）。
+BOOK_STYLE_EXEMPT_FUNCTIONS = {
+    ("ui/game/GameShortcutCropDialog.kt", "CropDialogCard"),
+    ("ui/game/GameQuickActionsDialog.kt", "GameQuickActionsDialog"),
+    ("ui/game/GameQuickActionsDialog.kt", "QuickActionItem"),
+    ("ui/game/GameQuickActionsDialog.kt", "QuickActionDeleteButton"),
+}
+
 # 禁止在书内及共用正文中出现的全局跳转与全局窗口调用。
 FORBIDDEN_GLOBAL_UI = (
     (re.compile(r"\bstartActivityWithPageTransition\s*[({]"), "书内条目不得调用 startActivityWithPageTransition，请走 GameActionsHost.openDetail 或 AppAlertDialog"),
     (re.compile(r"\bstartActivity\s*[({]"), "书内条目不得直接调用 startActivity，请留在书页内实现"),
     (re.compile(r"\b(?:AppBottomSheet|ModalBottomSheet)\s*[({]"), "书内条目不得拉起全局底部抽屉（AppBottomSheet / ModalBottomSheet）"),
+)
+
+# 禁止在书内与书内共用组件路径里写死全局卡片底色、Material/Miuix 卡片块或全局按钮。
+FORBIDDEN_BOOK_GLOBAL_STYLES = (
+    (re.compile(r"\bDialogItemSurface\b"), "书页或共用正文中不得写死 DialogItemSurface，请改用自动适配 LocalShelfBookLeaf 的 AppSectionCard / AppNavItem / appDialogSurfaceColor"),
+    (re.compile(r"\bNavWhite\b"), "书页或共用正文中不得写死 NavWhite，请改用 AppSectionCard / AppNavItem / appDialogSurfaceColor"),
+    (re.compile(r"\b(?:MiuixCard|MiuixCardDefaults|CardDefaults)\b"), "书页或共用正文中不得直接构造 MiuixCard/Card，请改用会自动切为纸墨分隔的 AppSectionCard"),
+    (re.compile(r"(?<![.\w])Card\s*[({]"), "书页或共用正文中不得直接绘制 Material Card() 色块，请改用 AppSectionCard"),
+    (re.compile(r"\bMiuixTheme\.colorScheme\.surfaceContainer\w*"), "书页或共用正文中不得直接引用 Miuix surfaceContainer 底色作卡片块，请改用 AppSectionCard"),
+    (re.compile(r"(?<![.\w])(?:TextButton|OutlinedButton|FilledTonalButton|ElevatedButton|Button)\s*[({]"), "书页或共用正文中不得使用全局 Material 按钮，请改用会自动适配书卷样式的 NoRippleButton / DialogTextButton / NoRippleTextButton"),
 )
 RAW_DIALOG_RE = re.compile(r"(?<![.\w])Dialog\s*[({]")
 
@@ -140,25 +192,42 @@ def check_segment(
     line_ends: list[int],
     allow_root_dialog: bool = False,
     allow_hosted_fallback_dialogs: tuple[str, ...] = (),
+    check_book_styles: bool = True,
 ) -> list[tuple[int, str]]:
     errors: list[tuple[int, str]] = []
     segment = code[start:end]
     for pattern, message in FORBIDDEN_GLOBAL_UI:
         for hit in pattern.finditer(segment):
             errors.append((line_number(line_ends, start + hit.start()), f"{rel_path}: {message}"))
+    raw_fallback_ranges: list[tuple[int, int]] = []
+    allowed_ranges: list[tuple[int, int]] = []
+    for fn_name in allow_hosted_fallback_dialogs:
+        span = function_span(code, fn_name)
+        if not span:
+            continue
+        fn_start, fn_end = span
+        fn_code = code[fn_start:fn_end]
+        raw_hits = list(RAW_DIALOG_RE.finditer(fn_code))
+        if raw_hits and len(raw_hits) == 1:
+            prefix = fn_code[:raw_hits[0].start()]
+            if "LocalAppDialogHost.current" in prefix and (".Present(" in prefix or "AppAlertDialog(" in prefix):
+                allowed_ranges.append((fn_start, fn_end))
+                raw_fallback_ranges.append((fn_start + raw_hits[0].start(), fn_end))
+    if check_book_styles:
+        exempt_style_ranges = raw_fallback_ranges + [
+            span
+            for file_key, fn_name in BOOK_STYLE_EXEMPT_FUNCTIONS
+            if file_key == rel_path
+            for span in (function_span(code, fn_name),)
+            if span is not None
+        ]
+        for pattern, message in FORBIDDEN_BOOK_GLOBAL_STYLES:
+            for hit in pattern.finditer(segment):
+                abs_pos = start + hit.start()
+                if any(lo <= abs_pos < hi for lo, hi in exempt_style_ranges):
+                    continue
+                errors.append((line_number(line_ends, abs_pos), f"{rel_path}: {message}"))
     if not allow_root_dialog:
-        allowed_ranges: list[tuple[int, int]] = []
-        for fn_name in allow_hosted_fallback_dialogs:
-            span = function_span(code, fn_name)
-            if not span:
-                continue
-            fn_start, fn_end = span
-            fn_code = code[fn_start:fn_end]
-            raw_hits = list(RAW_DIALOG_RE.finditer(fn_code))
-            if raw_hits and len(raw_hits) == 1:
-                prefix = fn_code[:raw_hits[0].start()]
-                if "LocalAppDialogHost.current" in prefix and (".Present(" in prefix or "AppAlertDialog(" in prefix):
-                    allowed_ranges.append((fn_start, fn_end))
         for hit in RAW_DIALOG_RE.finditer(segment):
             abs_pos = start + hit.start()
             if any(lo <= abs_pos < hi for lo, hi in allowed_ranges):

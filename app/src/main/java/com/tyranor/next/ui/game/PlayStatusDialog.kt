@@ -819,7 +819,6 @@ private fun PlaySourceRow(
         // 弹窗条目自足禁用按压反馈（AGENTS.md 弹窗条目约定）
         indication = null,
         showArrow = true,
-        containerColor = DialogItemSurface,
     )
 }
 
@@ -1021,7 +1020,6 @@ private fun PlayStatusPickDialog(
                             indication = null,
                             // 点选即写入的「执行动作」条目：隐藏跳转箭头（AGENTS.md 功能跳转条目规范）
                             showArrow = false,
-                            containerColor = DialogItemSurface,
                         )
                     }
                 }
@@ -1242,7 +1240,6 @@ private fun SubjectBindDialog(
                                         indication = null,
                                         // 点选即绑定的「执行动作」条目：隐藏跳转箭头（AGENTS.md 功能跳转条目规范）
                                         showArrow = false,
-                                        containerColor = DialogItemSurface,
                                     )
                                 }
                             }

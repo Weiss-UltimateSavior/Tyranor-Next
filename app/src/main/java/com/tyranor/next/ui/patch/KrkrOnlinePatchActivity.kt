@@ -392,14 +392,11 @@ private fun PatchEntryCard(
         if (!installing) installStartedHere = false
     }
 
-    Card(
-        modifier = modifier.pressSquishGroup().fillMaxWidth().then(if (inBook) Modifier else Modifier.glassBorder()),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        // 书页上的条目用弹窗条目色（与书页形成反差，书页本身不带卡片底）
-        colors = CardDefaults.cardColors(containerColor = if (inBook) DialogItemSurface else NavWhite, contentColor = TextColor),
-        shape = AppComponentShape,
+    com.tyranor.next.ui.common.AppSectionCard(
+        modifier = modifier.pressSquishGroup(),
     ) {
-        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+        val secondaryInk = if (inBook) com.tyranor.next.theme.CurrentBookPaperPalette.inkSecondary else SecondaryTextColor
+        Column(Modifier.fillMaxWidth().padding(if (inBook) 4.dp else 14.dp)) {
             Text(
                 entry.name,
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
@@ -409,7 +406,7 @@ private fun PatchEntryCard(
             Text(
                 listOf(entry.brand, TimeFormats.formatDate(entry.timestamp)).filter { it.isNotBlank() }.joinToString(" · "),
                 style = MaterialTheme.typography.bodyMedium,
-                color = SecondaryTextColor,
+                color = secondaryInk,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 4.dp),
@@ -417,7 +414,7 @@ private fun PatchEntryCard(
             Text(
                 entry.path,
                 style = MaterialTheme.typography.bodyMedium,
-                color = SecondaryTextColor,
+                color = secondaryInk,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 2.dp),
@@ -451,7 +448,7 @@ private fun PatchEntryCard(
                             .then(rowToggle),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Checkbox(
+                        com.tyranor.next.ui.common.AppCheckbox(
                             checked = isChecked,
                             onCheckedChange = if (inBook) null else { value -> checked[url] = value },
                             modifier = if (inBook) Modifier.minimumInteractiveComponentSize() else Modifier,

@@ -1,16 +1,20 @@
 package com.tyranor.next.ui.game
 
+import androidx.compose.material3.Typography
 import androidx.compose.runtime.MonotonicFrameClock
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.theme.Amber40
 import com.tyranor.next.theme.Blue40
 import com.tyranor.next.theme.Teal40
+import com.tyranor.next.theme.bookPaperPalette
+import com.tyranor.next.theme.bookTypography
 import com.tyranor.next.theme.shelfBookDeleteStyle
 import com.tyranor.next.theme.shelfBookLaunchStyle
 import com.tyranor.next.theme.shelfBookPaperSurface
@@ -870,5 +874,67 @@ class ShelfBookLayoutTest {
         assertEquals(listOf(parent, confirm), pages.leaves)
         assertEquals(1f, pages.toc.value, 0f)
         assertEquals(1f, parent.turn.value, 0f)
+    }
+
+    @Test
+    fun bookPaperPaletteMaintainsReadableContrastAcrossAllFourThemes() {
+        val themes = listOf(
+            Triple(false, false, false), // 默认浅色
+            Triple(false, false, true),  // 默认深色
+            Triple(true, false, true),   // 复古玻璃
+            Triple(false, true, false),  // 白雾玻璃
+        )
+        fun contrast(fg: Color, bg: Color): Float {
+            val l1 = fg.compositeOver(bg).luminance()
+            val l2 = bg.luminance()
+            return (maxOf(l1, l2) + 0.05f) / (minOf(l1, l2) + 0.05f)
+        }
+        themes.forEach { (isGlass, isMilkGlass, isDark) ->
+            val palette = bookPaperPalette(isGlass = isGlass, isMilkGlass = isMilkGlass, isDark = isDark)
+            val darkBackdrop = Color(0xFF141418)
+            val lightBackdrop = Color(0xFFF6F2EA)
+            val effectivePaper = palette.paperSurface.compositeOver(if (palette.isDarkPaper) darkBackdrop else lightBackdrop)
+            val effectivePopup = palette.popupSurface.compositeOver(if (palette.isDarkPaper) darkBackdrop else lightBackdrop)
+            assertTrue(
+                "primary ink contrast low for ($isGlass,$isMilkGlass,$isDark)",
+                contrast(palette.ink, effectivePaper) >= 7.0f,
+            )
+            assertTrue(
+                "secondary ink contrast low for ($isGlass,$isMilkGlass,$isDark)",
+                contrast(palette.inkSecondary, effectivePaper) >= 4.5f,
+            )
+            assertTrue(
+                "foil accent contrast low for ($isGlass,$isMilkGlass,$isDark)",
+                contrast(palette.foilAccent, effectivePaper) >= 4.0f,
+            )
+            assertTrue(
+                "danger ink contrast low for ($isGlass,$isMilkGlass,$isDark)",
+                contrast(palette.dangerInk, effectivePaper) >= 4.0f,
+            )
+            assertTrue(
+                "popup ink contrast low for ($isGlass,$isMilkGlass,$isDark)",
+                contrast(palette.ink, effectivePopup) >= 7.0f,
+            )
+            assertTrue(
+                "popup foil accent contrast low for ($isGlass,$isMilkGlass,$isDark)",
+                contrast(palette.foilAccent, effectivePopup) >= 4.0f,
+            )
+        }
+    }
+
+    @Test
+    fun bookTypographyPreservesTwoTierFontSizesAndSwitchesToSerif() {
+        val base = Typography()
+        val regular = FontFamily.Serif
+        val bold = FontFamily.Serif
+        val resolved = bookTypography(base, regular, bold)
+        assertEquals(base.titleMedium.fontSize, resolved.titleMedium.fontSize)
+        assertEquals(base.titleMedium.lineHeight, resolved.titleMedium.lineHeight)
+        assertEquals(base.bodyMedium.fontSize, resolved.bodyMedium.fontSize)
+        assertEquals(base.bodyMedium.lineHeight, resolved.bodyMedium.lineHeight)
+        assertEquals(bold, resolved.titleMedium.fontFamily)
+        assertEquals(regular, resolved.bodyMedium.fontFamily)
+        assertEquals(bold, resolved.titleLarge.fontFamily)
+        assertEquals(regular, resolved.labelMedium.fontFamily)
     }
 }

@@ -1893,11 +1893,16 @@ internal fun WinlatorGlobalSettingsCard(
             checked = winlator.save,
             onCheckedChange = { onWinlator(winlator.copy(save = it)) },
         )
+        val noteColor = if (com.tyranor.next.theme.LocalShelfBookLeaf.current) {
+            com.tyranor.next.theme.CurrentBookPaperPalette.inkSecondary
+        } else {
+            MiuixTheme.colorScheme.onBackground
+        }
         Text(
             stringResource(R.string.engine_settings_winlator_note),
             style = MaterialTheme.typography.bodyMedium,
-            color = MiuixTheme.colorScheme.onBackground,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            color = noteColor,
+            modifier = Modifier.padding(horizontal = com.tyranor.next.ui.common.appRowHorizontalPadding(), vertical = 8.dp),
         )
     }
 }
@@ -1947,20 +1952,11 @@ internal fun WinlatorGlobalSettingsDialog(
  */
 @Composable
 internal fun EngineCard(header: String, pressGroup: Boolean = true, content: @Composable () -> Unit) {
-    val surfaceColor = if (LocalAppDialogContent.current) DialogItemSurface else MiuixTheme.colorScheme.surfaceContainer
-    MiuixCard(
-        modifier = Modifier.pressSquishGroup(enabled = pressGroup).fillMaxWidth().glassBorder(),
-        cornerRadius = AppComponentCornerRadius,
-        colors = MiuixCardDefaults.defaultColors(color = surfaceColor),
+    com.tyranor.next.ui.common.AppSectionCard(
+        modifier = Modifier.pressSquishGroup(enabled = pressGroup),
+        title = header,
     ) {
-        Column(Modifier.padding(vertical = 6.dp)) {
-            Text(
-                header,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-            )
-            content()
-        }
+        content()
     }
 }
 

@@ -1347,57 +1347,6 @@ internal fun Modifier.shelfBookInk(motion: ShelfBookMotion, order: Int): Modifie
         translationX = (1f - t) * BOOK_INK_SHIFT.toPx()
     }
 
-/** 目录行的按压：一道荧光笔从左往右划过这一行；松手后等这一笔划完再淡掉，轻点也看得到完整的一笔。 */
-@Composable
-internal fun Modifier.shelfBookMarker(interaction: InteractionSource, color: Color): Modifier {
-    val enhanced = MotionMode.enhanced
-    val sweep = remember { Animatable(0f) }
-    val ink = remember { Animatable(0f) }
-    LaunchedEffect(interaction, enhanced) {
-        var stroke: Job? = null
-        var generation = 0
-        interaction.interactions.collect { event ->
-            when (event) {
-                is PressInteraction.Press -> {
-                    generation++
-                    stroke?.cancel()
-                    stroke = launch {
-                        ink.snapTo(1f)
-                        if (enhanced) {
-                            sweep.snapTo(0f)
-                            sweep.animateTo(1f, BOOK_MARKER_SWEEP)
-                        } else {
-                            sweep.snapTo(1f)
-                        }
-                    }
-                }
-                is PressInteraction.Release, is PressInteraction.Cancel -> {
-                    val drawing = stroke
-                    val mine = generation
-                    launch {
-                        if (enhanced) drawing?.join()
-                        if (mine != generation) return@launch
-                        if (enhanced) ink.animateTo(0f, MotionTokens.fadeOut(0.002f)) else ink.snapTo(0f)
-                    }
-                }
-            }
-        }
-    }
-    return drawBehind {
-        val a = ink.value
-        val w = size.width * sweep.value
-        if (a <= 0.003f || w <= 0f) return@drawBehind
-        val top = size.height * BOOK_MARKER_TOP
-        val bottom = size.height * BOOK_MARKER_BOTTOM
-        drawRoundRect(
-            color = color.copy(alpha = color.alpha * a),
-            topLeft = Offset(0f, top),
-            size = Size(w, bottom - top),
-            cornerRadius = CornerRadius(BOOK_MARKER_CORNER.toPx()),
-        )
-    }
-}
-
 /** 书里翻页：翻过去、翻回来（稍慢一点、接近无过冲的高阻尼，并预热 2 帧避开首帧组合卡顿）。 */
 private val BOOK_PAGE_TURN = MotionSprings.response<Float>(0.56f, 0.92f, 0.0008f)
 private val BOOK_PAGE_TURN_BACK = MotionSprings.response<Float>(0.48f, 0.94f, 0.001f)
@@ -1458,12 +1407,6 @@ private const val BOOK_SPREAD_LEFT_START = 0.60f
 /** 往右拖合书：封面合过这一点（剩余开度）就合上；或往右甩得够快（每秒多少个「全开」）。 */
 private const val BOOK_DRAG_CLOSE_AT = 0.62f
 private const val BOOK_DRAG_CLOSE_SPEED = 1.4f
-
-/** 荧光笔：划过一行的弹簧；笔迹的上下边（占行高的比例）与圆角。 */
-private val BOOK_MARKER_SWEEP = MotionSprings.response<Float>(0.24f, 1f, 0.002f)
-private const val BOOK_MARKER_TOP = 0.18f
-private const val BOOK_MARKER_BOTTOM = 0.86f
-private val BOOK_MARKER_CORNER = 4.dp
 
 /** 展开书籍右页的两栏切换：目录（游戏抽屉操作）与管理（原长按游戏菜单）。 */
 internal enum class ShelfBookTab { Contents, Manage }

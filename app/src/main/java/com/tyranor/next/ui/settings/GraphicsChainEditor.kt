@@ -92,7 +92,9 @@ internal fun GraphicsChainEditor(chain: List<GraphicsNode>, enabled: Boolean, on
                 val reveal = remember { BringIntoViewRequester() }
                 val moving = dragging == entry.key
                 val rowMotion = rememberGraphicsChainRowMotion(editorShown[0], moving, scope)
-                val movingSurface = if (LocalAppDialogContent.current) DialogItemSurface else NavWhite
+                val movingSurface = com.tyranor.next.ui.common.appDialogSurfaceColor()
+                val inBook = com.tyranor.next.theme.LocalShelfBookLeaf.current
+                val movingShape = if (inBook) androidx.compose.foundation.shape.RoundedCornerShape(4.dp) else AppComponentShape
                 Row(
                     modifier = Modifier
                         .then(if (enhanced) Modifier.layoutId(motionKey) else Modifier)
@@ -102,7 +104,16 @@ internal fun GraphicsChainEditor(chain: List<GraphicsNode>, enabled: Boolean, on
                         .zIndex(if (moving) 1f else 0f)
                         .graphicsLayer { translationY = if (moving) offset else 0f }
                         .then(rowMotion?.layer(moving) ?: Modifier)
-                        .then(if (moving) Modifier.clip(AppComponentShape).background(movingSurface).glassBorder() else Modifier)
+                        .then(
+                            if (moving) {
+                                Modifier.clip(movingShape).background(movingSurface).let {
+                                    if (inBook) it.border(0.8.dp, com.tyranor.next.theme.CurrentBookPaperPalette.popupBorder, movingShape)
+                                    else it.glassBorder()
+                                }
+                            } else {
+                                Modifier
+                            },
+                        )
                         .pointerInput(entry.key, enabled) {
                             if (!enabled) return@pointerInput
                             detectDragGesturesAfterLongPress(
@@ -229,18 +240,23 @@ private fun GraphicsNodeAction(icon: Int, label: Int, enabled: Boolean, onClick:
     val description = stringResource(label)
     // 可用 ↔ 不可用（拖拽开始 / 结束、移到首尾、切换继承）：描边与图标透明度弹簧渐变，「普通」档直接切换
     val alpha = graphicsChainActionAlpha(enabled)
+    val inBook = com.tyranor.next.theme.LocalShelfBookLeaf.current
+    val bookPalette = com.tyranor.next.theme.CurrentBookPaperPalette
+    val actionShape = if (inBook) androidx.compose.foundation.shape.RoundedCornerShape(4.dp) else AppComponentShape
+    val strokeColor = if (inBook) bookPalette.ink.copy(alpha = alpha.line) else TextColor.copy(alpha = alpha.line)
+    val iconTint = if (inBook) bookPalette.ink.copy(alpha = alpha.icon) else TextColor.copy(alpha = alpha.icon)
     Box(
         modifier = Modifier
             .pressSquish(enabled = enabled)
             .size(40.dp)
-            .clip(AppComponentShape)
-            // 默认风格描边取动态常量 TextColor（符合 AGENTS 规范，使用 Color.kt 动态常量）；
-            // 玻璃风格的 0.5dp 发丝描边由 glassBorder 负责，两种风格不叠加。
+            .clip(actionShape)
             .then(
-                if (AppThemeColors.isGlass) Modifier
-                else Modifier.border(1.dp, TextColor.copy(alpha = alpha.line), AppComponentShape)
+                when {
+                    inBook -> Modifier.border(0.85.dp, strokeColor, actionShape)
+                    AppThemeColors.isGlass -> Modifier.glassBorder(actionShape)
+                    else -> Modifier.border(1.dp, strokeColor, actionShape).glassBorder(actionShape)
+                },
             )
-            .glassBorder(AppComponentShape)
             .clickable(
                 enabled = enabled,
                 interactionSource = remember { MutableInteractionSource() },
@@ -253,7 +269,7 @@ private fun GraphicsNodeAction(icon: Int, label: Int, enabled: Boolean, onClick:
             painterResource(icon),
             contentDescription = description,
             modifier = Modifier.size(22.dp),
-            tint = TextColor.copy(alpha = alpha.icon)
+            tint = iconTint,
         )
     }
 }
