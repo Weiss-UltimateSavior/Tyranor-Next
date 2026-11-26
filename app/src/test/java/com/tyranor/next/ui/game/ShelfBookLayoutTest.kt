@@ -877,6 +877,61 @@ class ShelfBookLayoutTest {
     }
 
     @Test
+    fun replacingParentBeforeInitialWarmupStillOpensTocForSurvivingChild() = runTest {
+        val pages = ShelfBookPages(withBookFrameClock(), enhanced = true) { true }
+        val parent = ShelfBookLeaf(null)
+        val child = ShelfBookLeaf(null)
+
+        // 首次预热结束前连续推入父页、子页并移除父页（同帧换页）
+        pages.push(parent)
+        pages.push(child)
+        pages.remove(parent)
+        advanceUntilIdle()
+
+        assertEquals(listOf(child), pages.leaves)
+        assertEquals(null, pages.departure)
+        assertEquals(1f, pages.toc.value, 0f)
+        assertEquals(1f, pages.coverOf(child), 0f)
+    }
+
+    @Test
+    fun replacingSettledParentPreservesDepartureAndKeepsChildVisible() = runTest {
+        val pages = ShelfBookPages(withBookFrameClock(), enhanced = true) { true }
+        val parent = ShelfBookLeaf(null)
+        val child = ShelfBookLeaf(null)
+
+        pages.push(parent)
+        advanceUntilIdle()
+        assertEquals(1f, pages.toc.value, 0f)
+
+        pages.push(child)
+        pages.remove(parent)
+        assertEquals(parent, pages.departure?.leaf)
+        advanceUntilIdle()
+
+        assertEquals(listOf(child), pages.leaves)
+        assertEquals(null, pages.departure)
+        assertEquals(1f, pages.toc.value, 0f)
+        assertEquals(1f, pages.coverOf(child), 0f)
+    }
+
+    @Test
+    fun removingSurvivingChildBeforeWarmupStillPreventsStaleTocOpen() = runTest {
+        val pages = ShelfBookPages(withBookFrameClock(), enhanced = true) { true }
+        val parent = ShelfBookLeaf(null)
+        val child = ShelfBookLeaf(null)
+
+        pages.push(parent)
+        pages.push(child)
+        pages.remove(parent)
+        pages.remove(child)
+        advanceUntilIdle()
+
+        assertTrue(pages.leaves.isEmpty())
+        assertEquals(0f, pages.toc.value, 0f)
+    }
+
+    @Test
     fun bookPaperPaletteMaintainsReadableContrastAcrossAllFourThemes() {
         val themes = listOf(
             Triple(false, false, false), // 默认浅色

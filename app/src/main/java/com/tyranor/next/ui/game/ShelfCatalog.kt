@@ -87,6 +87,7 @@ import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -100,6 +101,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tyranor.next.R
@@ -244,6 +246,9 @@ internal fun ShelfCatalogOverlay(
             LocalIndication provides NoIndication,
         ) {
             LaunchedEffect(motion) { motion.enter() }
+            LaunchedEffect(motion.closing) {
+                if (motion.closing) focusManager.clearFocus(force = true)
+            }
             // 退场（合上 / 点选）期间不再挡触摸：手指直接落到下面的书架上，想切页、想点另一个游戏、想再长按进藏书阁都不用等动画放完
             // （书架被碰到时由 interruptExit 把退场收尾）。覆盖层里的控件在 closing 期间自己不响应（见下面各处的 enabled 判断）
             MainOverlayShareTouches(motion.closing)
@@ -294,6 +299,7 @@ internal fun ShelfCatalogOverlay(
                 ) { empty ->
                     if (empty) {
                         ShelfCatalogEmptyState(
+                            enabled = !motion.closing,
                             onReset = {
                                 if (motion.closing) return@ShelfCatalogEmptyState
                                 MotionHaptics.perform(MotionHaptics.Kind.Tick)
@@ -559,13 +565,14 @@ private fun ShelfCatalogControlDeck(
     )
     val filterActive = conditions.isActive
 
+    val interactive = !motion.closing
     CompositionLocalProvider(LocalSlidingTabLightPanel provides true) {
         Column(
         modifier = Modifier
             .fillMaxWidth()
             .shelfCatalogHeaderEntrance(motion)
             .padding(horizontal = DECK_OUTER_H_PAD, vertical = DECK_OUTER_V_PAD)
-            .then(pullGesture)
+            .then(if (interactive) pullGesture else Modifier)
             .clip(AppComponentShape)
             .background(headerSurface, AppComponentShape)
             .glassEdgeStroke(AppComponentShape, width = 0.85.dp)
@@ -616,6 +623,7 @@ private fun ShelfCatalogControlDeck(
                 SlidingTabRow(
                     tabs = layoutLabels,
                     selectedIndex = if (motion.requestedLayout == ShelfCatalogLayoutMode.SPINES) 0 else 1,
+                    enabled = interactive,
                     onTabSelected = { index ->
                         // 退场期间触摸是递给下面书架的，这里不响应
                         if (!motion.closing) {
@@ -625,11 +633,14 @@ private fun ShelfCatalogControlDeck(
                 )
             }
             Spacer(Modifier.width(6.dp))
-            ShelfCatalogCloseButton(onClick = {
-                if (motion.closing) return@ShelfCatalogCloseButton
-                MotionHaptics.perform(MotionHaptics.Kind.Tick)
-                onClose()
-            })
+            ShelfCatalogCloseButton(
+                enabled = interactive,
+                onClick = {
+                    if (motion.closing) return@ShelfCatalogCloseButton
+                    MotionHaptics.perform(MotionHaptics.Kind.Tick)
+                    onClose()
+                },
+            )
         }
 
         Spacer(Modifier.height(6.dp))
@@ -643,6 +654,7 @@ private fun ShelfCatalogControlDeck(
             AppSearchField(
                 query = query,
                 onQueryChange = onQueryChange,
+                enabled = interactive,
                 // 搜索条自带左右各 12dp 的外边距：向两侧撑回去，让药丸左缘与标题星芒、右缘与图标 / 关闭钮对齐
                 modifier = Modifier
                     .weight(1f)
@@ -654,7 +666,7 @@ private fun ShelfCatalogControlDeck(
                     },
             )
             // 与游戏页搜索栏右侧同款的「筛选与排序」图标：打开全局「筛选与排序」抽屉（引擎 / 排序方式 / 游玩状态都在抽屉里）
-            GameFilterActionIcon(isActive = filterActive) {
+            GameFilterActionIcon(isActive = filterActive, enabled = interactive) {
                 if (motion.closing) return@GameFilterActionIcon
                 MotionHaptics.perform(MotionHaptics.Kind.Tick)
                 focusManager.clearFocus(force = true)
@@ -711,7 +723,10 @@ private fun ShelfCatalogCountBadge(
 }
 
 @Composable
-private fun ShelfCatalogCloseButton(onClick: () -> Unit) {
+private fun ShelfCatalogCloseButton(
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
     val description = stringResource(R.string.game_shelf_catalog_close)
     val iconColor = TextColor
     val bg = ShelfCatalogChipSurface
@@ -722,15 +737,22 @@ private fun ShelfCatalogCloseButton(onClick: () -> Unit) {
             .clip(CircleShape)
             .background(bg, CircleShape)
             .border(0.8.dp, stroke, CircleShape)
-            .pressSquish(scale = PressSquishDefaults.Scale, follow = 0.dp)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                role = Role.Button,
-                onClickLabel = description,
-                onClick = onClick,
-            )
-            .semantics { contentDescription = description },
+            .then(
+                if (enabled) {
+                    Modifier
+                        .pressSquish(scale = PressSquishDefaults.Scale, follow = 0.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            role = Role.Button,
+                            onClickLabel = description,
+                            onClick = onClick,
+                        )
+                        .semantics { contentDescription = description }
+                } else {
+                    Modifier.clearAndSetSemantics { }
+                },
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.size(12.dp)) {
@@ -743,6 +765,7 @@ private fun ShelfCatalogCloseButton(onClick: () -> Unit) {
 
 @Composable
 private fun ShelfCatalogEmptyState(
+    enabled: Boolean = true,
     onReset: () -> Unit,
 ) {
     BlurVisibility(visible = true) {
@@ -770,6 +793,8 @@ private fun ShelfCatalogEmptyState(
             Spacer(Modifier.height(14.dp))
             NoRippleButton(
                 text = stringResource(R.string.game_shelf_catalog_empty_action),
+                enabled = enabled,
+                modifier = if (enabled) Modifier else Modifier.clearAndSetSemantics { },
                 onClick = onReset,
             )
         }
@@ -1550,6 +1575,8 @@ private fun ShelfCatalogVerticalTierRow(
             tier.games.isNotEmpty()
     }
 
+    // 书柜书格局部固定为物理从左到右：保证 RTL 环境下书本排布、接触影、选中光晕、离屏外推与长按/横拖翻看命中共享同一坐标系。
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -1645,6 +1672,7 @@ private fun ShelfCatalogVerticalTierRow(
                 .align(Alignment.BottomStart)
                 .padding(start = stileWidth + interiorInset, bottom = 2.dp),
         )
+    }
     }
 }
 
@@ -1950,6 +1978,8 @@ private fun ShelfCatalogCoverTierRow(
         formatShelfCatalogRangeText(tier.startIndex, tier.games.size)
     }
 
+    // 封面陈列书格与书脊立排保持相同的物理从左到右坐标系，确保 RTL 下光晕、接触影与离屏外推坐标一致。
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -2082,6 +2112,7 @@ private fun ShelfCatalogCoverTierRow(
                 }
             }
         }
+    }
     }
 }
 

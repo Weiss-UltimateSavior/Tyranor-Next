@@ -200,6 +200,92 @@ internal fun GameShortcutCropDialog() {
                 errors = MOD.check_file("ui/game/GameShortcutCropDialog.kt", source)
                 self.assertTrue(any("Dialog()" in message for _, message in errors))
 
+        inverted_var = """
+package com.tyranor.next.ui.game
+
+@Composable
+internal fun GameShortcutCropDialog() {
+    val host = LocalAppDialogHost.current
+    if (host == null) {
+        AppAlertDialog(onDismissRequest = {}, title = {}, text = {}, confirmButton = {})
+        return
+    }
+    Dialog(onDismissRequest = {}) {}
+}
+"""
+        inverted_direct = """
+package com.tyranor.next.ui.game
+
+@Composable
+internal fun GameShortcutCropDialog() {
+    if (LocalAppDialogHost.current == null) {
+        AppAlertDialog(onDismissRequest = {}, title = {}, text = {}, confirmButton = {})
+        return
+    }
+    Dialog(onDismissRequest = {}) {}
+}
+"""
+        for label, bad_src in (("inverted_var", inverted_var), ("inverted_direct", inverted_direct)):
+            with self.subTest(label=label):
+                errors = MOD.check_file("ui/game/GameShortcutCropDialog.kt", bad_src)
+                self.assertTrue(any("Dialog()" in message for _, message in errors))
+
+    def test_blocks_aliased_activity_launch_and_raw_dialog_imports(self):
+        for label, imp, call in (
+            (
+                "original_transition",
+                "import com.tyranor.next.ui.common.motion.startActivityWithPageTransition",
+                "startActivityWithPageTransition(ctx, Intent())",
+            ),
+            (
+                "aliased_transition",
+                "import com.tyranor.next.ui.common.motion.startActivityWithPageTransition as pushPage",
+                "pushPage(ctx, Intent())",
+            ),
+        ):
+            with self.subTest(label=label):
+                src = f"""
+package com.tyranor.next.ui.settings
+
+{imp}
+
+@Composable
+private fun PerGameSettingsDialog(game: ScanGame, onDismiss: () -> Unit) {{}}
+
+@Composable
+private fun PerGameSettingsView(game: ScanGame, inBook: Boolean) {{
+    {call}
+}}
+
+@Composable
+private fun SectionCard(title: String) {{}}
+
+@Composable
+private fun OverrideFontPreference() {{}}
+"""
+                errors = MOD.check_file("ui/settings/PerGameSettingsScreen.kt", src)
+                self.assertEqual(len(errors), 1)
+                self.assertIn("startActivityWithPageTransition", errors[0][1])
+
+        for label, imp, call in (
+            ("original_dialog", "import androidx.compose.ui.window.Dialog", "Dialog(onDismissRequest = {}) {}"),
+            ("aliased_dialog", "import androidx.compose.ui.window.Dialog as RawPopupDialog", "RawPopupDialog(onDismissRequest = {}) {}"),
+        ):
+            with self.subTest(label=label):
+                src = f"""
+package com.tyranor.next.ui.game
+
+{imp}
+
+@Composable
+internal fun PlayStatusDialog() {{
+    {call}
+}}
+"""
+                errors = MOD.check_file("ui/game/PlayStatusDialog.kt", src)
+                self.assertEqual(len(errors), 1)
+                self.assertIn("Dialog()", errors[0][1])
+
 
 if __name__ == "__main__":
     unittest.main()

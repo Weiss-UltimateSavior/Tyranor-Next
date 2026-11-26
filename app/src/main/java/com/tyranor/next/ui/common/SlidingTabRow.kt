@@ -200,13 +200,14 @@ fun SlidingTabRow(
      */
     pager: TabPagerState? = null,
     scrollResetKey: Int = 0,
+    enabled: Boolean = true,
 ) {
     if (tabs.isEmpty()) return
     val safeIndex = selectedIndex.coerceIn(0, tabs.lastIndex)
     if (scrollable) {
         ScrollableSlidingTabRow(tabs, safeIndex, onTabSelected, modifier, scrollResetKey)
     } else {
-        FixedSlidingTabRow(tabs, safeIndex, onTabSelected, modifier, pager)
+        FixedSlidingTabRow(tabs, safeIndex, onTabSelected, modifier, pager, enabled)
     }
 }
 
@@ -218,6 +219,7 @@ private fun FixedSlidingTabRow(
     onTabSelected: (Int) -> Unit,
     modifier: Modifier,
     pager: TabPagerState? = null,
+    enabled: Boolean = true,
 ) {
     val shape = AppComponentShape
     val density = LocalDensity.current
@@ -258,7 +260,7 @@ private fun FixedSlidingTabRow(
             }
         }
         Row(
-            modifier = Modifier.fillMaxWidth().fillMaxHeight().selectableGroup(),
+            modifier = Modifier.fillMaxWidth().fillMaxHeight().then(if (enabled) Modifier.selectableGroup() else Modifier),
             horizontalArrangement = Arrangement.spacedBy(FixedTabSpacing),
         ) {
             tabs.forEachIndexed { index, label ->
@@ -267,6 +269,7 @@ private fun FixedSlidingTabRow(
                     selected = index == highlighted,
                     onClick = { onTabSelected(index) },
                     modifier = Modifier.weight(1f).fillMaxHeight(),
+                    enabled = enabled,
                 )
             }
         }
@@ -555,24 +558,31 @@ private fun TabLabel(
     modifier: Modifier = Modifier,
     /** 被透镜盖住的程度（0..1），文字按它淡出；在图层阶段读取。 */
     hide: () -> Float = NoHide,
+    enabled: Boolean = true,
 ) {
     Box(
         modifier = modifier
             // 按压只做以中心为轴的轻微缩放：不跟手偏移、不被扯动（follow = 0），文字始终钉在指示器正中，
             // 不会随手指落点滑到选框的上下半边
-            .pressSquish(scale = 0.92f, follow = 0.dp)
+            .pressSquish(enabled = enabled, scale = 0.92f, follow = 0.dp)
             .clip(AppComponentShape)
             // 既有标签继承主题反馈；藏书阁有形变时不叠高亮，否则用涟漪保留按压反馈。
-            .selectable(
-                selected = selected,
-                interactionSource = null,
-                indication = when {
-                    !LocalSlidingTabLightPanel.current -> LocalIndication.current
-                    MotionMode.enhanced && ValueAnimator.areAnimatorsEnabled() -> null
-                    else -> ripple()
+            .then(
+                if (enabled) {
+                    Modifier.selectable(
+                        selected = selected,
+                        interactionSource = null,
+                        indication = when {
+                            !LocalSlidingTabLightPanel.current -> LocalIndication.current
+                            MotionMode.enhanced && ValueAnimator.areAnimatorsEnabled() -> null
+                            else -> ripple()
+                        },
+                        role = Role.Tab,
+                        onClick = onClick,
+                    )
+                } else {
+                    Modifier.clearAndSetSemantics { }
                 },
-                role = Role.Tab,
-                onClick = onClick,
             )
             .padding(horizontal = TabLabelHorizontalPadding),
         contentAlignment = Alignment.Center,

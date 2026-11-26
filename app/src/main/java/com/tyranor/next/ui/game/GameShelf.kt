@@ -82,6 +82,7 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.nativeCanvas
@@ -1699,6 +1700,7 @@ internal data class SpineToneMetrics(
     val avgLuminance: Float,
     val minLuminance: Float,
     val maxLuminance: Float,
+    val darkestColor: Color? = null,
 )
 
 @Immutable
@@ -1717,6 +1719,17 @@ internal fun wcagContrastRatio(lumA: Float, lumB: Float): Float {
     return (l1 + 0.05f) / (l2 + 0.05f)
 }
 
+/** 将线性相对亮度转换为等价的 sRGB 编码灰阶分量（IEC 61966-2-1）。 */
+internal fun linearLuminanceToSrgbGray(luminance: Float): Color {
+    val clamped = luminance.coerceIn(0f, 1f)
+    val encoded = if (clamped <= 0.0031308f) {
+        clamped * 12.92f
+    } else {
+        (1.055 * Math.pow(clamped.toDouble(), 1.0 / 2.4) - 0.055).toFloat().coerceIn(0f, 1f)
+    }
+    return Color(encoded, encoded, encoded, 1f)
+}
+
 internal fun brightenSpineColor(color: Color, whiteShare: Float = SPINE_BASE_LIGHTEN): Color =
     androidx.compose.ui.graphics.lerp(color, Color.White, whiteShare)
 
@@ -1727,10 +1740,16 @@ internal fun shelfSpineToneFromColor(baseColor: Color): SpineToneMetrics {
     val lTop = top.luminance()
     val lMid = lifted.luminance()
     val lBot = bottom.luminance()
+    val darkest = when (minOf(lTop, lMid, lBot)) {
+        lBot -> bottom
+        lMid -> lifted
+        else -> top
+    }
     return SpineToneMetrics(
         avgLuminance = (lTop + lMid * 2f + lBot) * 0.25f,
         minLuminance = minOf(lTop, lMid, lBot),
         maxLuminance = maxOf(lTop, lMid, lBot),
+        darkestColor = darkest,
     )
 }
 
@@ -1749,9 +1768,9 @@ internal fun computeSpineWashTone(wash: ImageBitmap): SpineToneMetrics {
     var count = 0
     var minL = 1f
     var maxL = 0f
+    var darkest: Color? = null
     for (y in startY..endY) {
         val t = y.toFloat() / (h - 1).coerceAtLeast(1)
-        var rowSum = 0f
         for (x in 0 until w) {
             val raw = Color(pixels[y * w + x])
             val lifted = androidx.compose.ui.graphics.lerp(raw, Color.White, SPINE_WASH_LIFT_ALPHA)
@@ -1760,16 +1779,18 @@ internal fun computeSpineWashTone(wash: ImageBitmap): SpineToneMetrics {
                 Color.Black,
                 ShelfSpineScrimBottom.alpha * t,
             )
-            rowSum += afterScrim.luminance()
+            val lum = afterScrim.luminance()
+            sum += lum
+            count++
+            if (lum < minL) {
+                minL = lum
+                darkest = afterScrim
+            }
+            if (lum > maxL) maxL = lum
         }
-        val rowLum = rowSum / w
-        sum += rowLum
-        count++
-        if (rowLum < minL) minL = rowLum
-        if (rowLum > maxL) maxL = rowLum
     }
     val avg = if (count > 0) sum / count else 0.18f
-    return SpineToneMetrics(avgLuminance = avg, minLuminance = minL, maxLuminance = maxL)
+    return SpineToneMetrics(avgLuminance = avg, minLuminance = minL, maxLuminance = maxL, darkestColor = darkest)
 }
 
 internal fun resolveShelfSpineTitleAppearance(tone: SpineToneMetrics): ShelfSpineTitleAppearance {
@@ -1805,10 +1826,26 @@ internal fun resolveShelfSpineTitleAppearance(tone: SpineToneMetrics): ShelfSpin
         veilColor = Color.Black.copy(alpha = alpha)
         effectiveWorstLum = worstBg * (1f - alpha) * (1f - alpha)
     } else {
-        // 保证最暗区域经亮纱提亮后对黑字对比度 ≥ 4.5:1（目标 L ≥ 0.23）
-        val alpha = ((0.24f - worstBg) / (1f - worstBg).coerceAtLeast(0.01f)).coerceIn(0.14f, 0.54f)
+        // 按绘制链相同的编码 sRGB SrcOver（Color.compositeOver）求亮纱最小 alpha，
+        // 确保最暗区域叠亮纱后对深色书名的真实 WCAG 对比度 ≥ 4.5:1。
+        val darkestBg = tone.darkestColor ?: linearLuminanceToSrgbGray(worstBg)
+        var lo = 0.14f
+        var hi = 1f
+        if (wcagContrastRatio(textLum, Color.White.copy(alpha = lo).compositeOver(darkestBg).luminance()) < 4.5f) {
+            repeat(18) {
+                val mid = (lo + hi) * 0.5f
+                val lum = Color.White.copy(alpha = mid).compositeOver(darkestBg).luminance()
+                if (wcagContrastRatio(textLum, lum) >= 4.52f) {
+                    hi = mid
+                } else {
+                    lo = mid
+                }
+            }
+            lo = hi
+        }
+        val alpha = lo.coerceIn(0.14f, 1f)
         veilColor = Color.White.copy(alpha = alpha)
-        effectiveWorstLum = worstBg + (1f - worstBg) * alpha
+        effectiveWorstLum = veilColor.compositeOver(darkestBg).luminance()
     }
     val halo = if (useLight) Color(0xD90C0E13) else Color(0xD9FFFDF7)
     return ShelfSpineTitleAppearance(

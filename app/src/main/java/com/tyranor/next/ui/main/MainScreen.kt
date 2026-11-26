@@ -336,8 +336,12 @@ fun MainScreen(
     if (index != selectedIndex) changeSelectedPage(selectedIndex, index)
   }
 
+  val mainOverlayHost = remember { MainOverlayHost() }
+
   /** Validates tab requests, preserves ordinary-mode guards, and replays entrance only for hidden pages. */
   fun selectPage(index: Int) {
+    // 全屏覆盖层（如藏书阁，含退场共享触摸期间）活跃时，触摸只交给下层页面交互，不响应主导航切页。
+    if (mainOverlayHost.active) return
     // 索引保护：宿主可能收到越界请求（例如 items 变化后的晚到回调）；
     // 关闭首页时首页下标同样不可达
     if (visibleTabEntries.none { it.first == index }) return
@@ -361,7 +365,6 @@ fun MainScreen(
   // 透明、零 inset 的最外层 Miuix Scaffold 只用来托管浮层：各标签页里的下拉菜单等 Miuix 浮层默认渲染到最外层 Scaffold，
   // 放在这里后浮层与其背景变暗盖住整个屏幕（含底部导航栏），而不是夹在页面与底栏之间、让底栏单独亮着。
   // 浮层内容在这里组合，故宿主套同一个 MiuixSettingsTheme，配色与原先在设置页内渲染时一致。
-  val mainOverlayHost = remember { MainOverlayHost() }
   CompositionLocalProvider(LocalMainOverlayHost provides mainOverlayHost) {
   MiuixScaffold(
     modifier = Modifier.fillMaxSize(),

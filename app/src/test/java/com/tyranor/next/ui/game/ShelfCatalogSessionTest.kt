@@ -114,4 +114,26 @@ class ShelfCatalogSessionTest {
         assertNull(session.dismiss(5L))
         assertFalse(session.isOpen)
     }
+
+    @Test fun saverPreservesPendingReopenAnchorAcrossRecreation() {
+        val original = ShelfCatalogSessionState()
+        assertTrue(original.requestOpen("game://alpha"))
+        val firstSequence = original.openSequence
+        assertFalse(original.requestOpen("game://beta"))
+        assertEquals("game://beta", original.pendingAnchorUri)
+
+        val saved = with(ShelfCatalogSessionState.Saver) {
+            androidx.compose.runtime.saveable.SaverScope { true }.save(original)
+        }
+        val restored = ShelfCatalogSessionState.Saver.restore(saved!!)!!
+        assertTrue(restored.isOpen)
+        assertEquals(firstSequence, restored.openSequence)
+        assertEquals("game://beta", restored.pendingAnchorUri)
+
+        // 重建后旧覆盖层交付收尾时，已登记的重开锚点 B 仍会生效，且序号继续递增
+        assertEquals("game://beta", restored.dismiss(firstSequence))
+        assertTrue(restored.isOpen)
+        assertEquals(firstSequence + 1L, restored.openSequence)
+        assertNull(restored.pendingAnchorUri)
+    }
 }

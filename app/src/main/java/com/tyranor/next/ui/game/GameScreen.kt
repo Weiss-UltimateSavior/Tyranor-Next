@@ -840,6 +840,7 @@ private fun GameLibraryContent(
 @Composable
 internal fun GameFilterActionIcon(
     isActive: Boolean,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     Box(contentAlignment = Alignment.TopEnd) {
@@ -848,6 +849,7 @@ internal fun GameFilterActionIcon(
             stringResource(R.string.game_filter_content_description),
             MaterialTheme.colorScheme.primary,
             stateDescription = if (isActive) stringResource(R.string.game_filter_state_active) else null,
+            enabled = enabled,
             onClick = onClick,
         )
         if (isActive) {

@@ -25,12 +25,14 @@ import androidx.compose.runtime.setValue
 internal class ShelfCatalogSession(
     initialOpen: Boolean = false,
     initialSequence: Long = if (initialOpen) 1L else 0L,
+    initialPendingAnchorUri: String? = null,
 ) {
     var isOpen: Boolean = initialOpen
         private set
     var openSequence: Long = initialSequence
         private set
-    private var pendingAnchorUri: String? = null
+    var pendingAnchorUri: String? = if (initialOpen) initialPendingAnchorUri else null
+        private set
 
     /**
      * 书架上的长按要进藏书阁。
@@ -78,12 +80,14 @@ internal class ShelfCatalogSession(
 internal class ShelfCatalogSessionState(
     initialOpen: Boolean = false,
     initialSequence: Long = if (initialOpen) 1L else 0L,
+    initialPendingAnchorUri: String? = null,
 ) {
-    private val session = ShelfCatalogSession(initialOpen, initialSequence)
+    private val session = ShelfCatalogSession(initialOpen, initialSequence, initialPendingAnchorUri)
     var isOpen by mutableStateOf(session.isOpen)
         private set
     var openSequence by mutableLongStateOf(session.openSequence)
         private set
+    val pendingAnchorUri: String? get() = session.pendingAnchorUri
 
     private fun sync() {
         isOpen = session.isOpen
@@ -100,11 +104,12 @@ internal class ShelfCatalogSessionState(
 
     companion object {
         val Saver = listSaver<ShelfCatalogSessionState, Any?>(
-            save = { listOf(it.isOpen, it.openSequence) },
+            save = { listOf(it.isOpen, it.openSequence, it.pendingAnchorUri) },
             restore = { saved ->
                 ShelfCatalogSessionState(
                     initialOpen = saved.getOrNull(0) as? Boolean ?: false,
                     initialSequence = (saved.getOrNull(1) as? Number)?.toLong() ?: 0L,
+                    initialPendingAnchorUri = saved.getOrNull(2) as? String,
                 )
             },
         )

@@ -8,6 +8,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -877,12 +879,18 @@ class GameShelfGeometryTest {
         assertEquals(11f * 42f / 32f, tablet.fontSizeDp, 0.001f)
         assertEquals(phone.fontSizeDp / phone.lineHeightDp, tablet.fontSizeDp / tablet.lineHeightDp, 0.001f)
 
-        // 暗底、中间灰、亮底与高反差裂色底均保证 >= 4.5:1 对比度
+        // 暗底、中间灰、亮底与高反差裂色底均保证 >= 4.5:1 对比度（同时按实际 sRGB 合成独立校验）
         val tones = listOf(
             SpineToneMetrics(avgLuminance = 0.05f, minLuminance = 0.02f, maxLuminance = 0.09f),
             SpineToneMetrics(avgLuminance = 0.19f, minLuminance = 0.18f, maxLuminance = 0.21f),
             SpineToneMetrics(avgLuminance = 0.68f, minLuminance = 0.55f, maxLuminance = 0.85f),
             SpineToneMetrics(avgLuminance = 0.38f, minLuminance = 0.06f, maxLuminance = 0.82f),
+            SpineToneMetrics(
+                avgLuminance = 0.38f,
+                minLuminance = 0.06f,
+                maxLuminance = 0.82f,
+                darkestColor = Color(0f, 0f, 0.92f, 1f),
+            ),
         )
         for (tone in tones) {
             val appearance = resolveShelfSpineTitleAppearance(tone)
@@ -890,9 +898,22 @@ class GameShelfGeometryTest {
                 "contrast ${appearance.effectiveContrast} must be >= 4.5 for $tone",
                 appearance.effectiveContrast >= 4.5f,
             )
+            // 独立检验：按 ShelfSpineBase 的真实编码 sRGB SrcOver（compositeOver）合成最坏背景区域
+            val worstBgColor = if (appearance.isLightText) {
+                linearLuminanceToSrgbGray(tone.maxLuminance)
+            } else {
+                tone.darkestColor ?: linearLuminanceToSrgbGray(tone.minLuminance)
+            }
+            val compositedBg = appearance.veilColor.compositeOver(worstBgColor)
+            val actualContrast = wcagContrastRatio(appearance.textColor.luminance(), compositedBg.luminance())
+            assertTrue(
+                "actual sRGB composited contrast $actualContrast must be >= 4.5 for $tone (veil=${appearance.veilColor})",
+                actualContrast >= 4.5f,
+            )
         }
         assertTrue(resolveShelfSpineTitleAppearance(tones[0]).isLightText)
         assertFalse(resolveShelfSpineTitleAppearance(tones[2]).isLightText)
+        assertFalse(resolveShelfSpineTitleAppearance(tones[3]).isLightText)
     }
 
     @Test

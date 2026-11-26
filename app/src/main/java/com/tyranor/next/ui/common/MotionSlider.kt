@@ -248,6 +248,7 @@ private fun TickSlider(
             else -> lerp(disabledColor, enabledColor, e)
         }
     }
+    val bookInsetPx = with(LocalDensity.current) { BOOK_SLIDER_EDGE_INSET.toPx() }
     val dragShade by animateFloatAsState(
         targetValue = if (dragging) 0.044f else 0f,
         animationSpec = if (dragging) MotionTokens.fadeIn(0.001f) else MotionTokens.fadeOut(0.001f),
@@ -258,19 +259,16 @@ private fun TickSlider(
         modifier = modifier
             .then(
                 if (enabled) {
-                    Modifier.pointerInput(tickValues, valueRange, reverseTrack) {
+                    Modifier.pointerInput(tickValues, valueRange, reverseTrack, bookMode, bookInsetPx) {
                         val slop = viewConfiguration.touchSlop
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
                             val generation = ++interaction.generation
                             interaction.settleJob?.cancel()
-                            val r = size.height / 2f
-                            val avail = (size.width - 2f * r).coerceAtLeast(1f)
+                            val r = if (bookMode) bookInsetPx else size.height / 2f
                             /** 将指针横坐标换算为行程比例，保留越界量供橡皮筋形变使用。 */
-                            fun fractionAt(x: Float): Float {
-                                val raw = (x - r) / avail
-                                return if (reverseTrack) 1f - raw else raw
-                            }
+                            fun fractionAt(x: Float): Float =
+                                sliderFractionFromPosition(x, size.width.toFloat(), r, reverseTrack)
                             interacting = true
                             scope.launch { press.animateTo(1.127f, MotionTokens.press(0.001f)) }
                             // 指针流被异常取消时释放代码跑不到：finally 兜底还原交互状态
@@ -481,7 +479,7 @@ private fun BookContinuousSlider(
     val onFinished by rememberUpdatedState(onValueChangeFinished)
     val currentCoerced by rememberUpdatedState(coerced)
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
-    val thumbInsetPx = with(LocalDensity.current) { 7.dp.toPx() }
+    val thumbInsetPx = with(LocalDensity.current) { BOOK_SLIDER_EDGE_INSET.toPx() }
     var width by remember { mutableIntStateOf(0) }
     var dragging by remember { mutableStateOf(false) }
     val enabledProgress = rememberControlEnabledProgress(enabled)
@@ -493,9 +491,8 @@ private fun BookContinuousSlider(
     }
 
     fun fromPosition(x: Float) {
-        val usable = (width - 2f * thumbInsetPx).takeIf { it > 0f } ?: return
-        val raw = ((x - thumbInsetPx) / usable).coerceIn(0f, 1f)
-        emitFraction(if (rtl) 1f - raw else raw)
+        if (width <= 2f * thumbInsetPx) return
+        emitFraction(sliderFractionFromPosition(x, width.toFloat(), thumbInsetPx, rtl).coerceIn(0f, 1f))
     }
 
     Box(
@@ -533,13 +530,13 @@ private fun BookContinuousSlider(
             .then(
                 if (enabled) {
                     Modifier
-                        .pointerInput(rtl, thumbInsetPx) {
+                        .pointerInput(rtl, thumbInsetPx, valueRange) {
                             detectTapGestures { pos ->
                                 fromPosition(pos.x)
                                 onFinished?.invoke()
                             }
                         }
-                        .pointerInput(rtl, thumbInsetPx) {
+                        .pointerInput(rtl, thumbInsetPx, valueRange) {
                             detectHorizontalDragGestures(
                                 onDragStart = { pos ->
                                     dragging = true
@@ -575,6 +572,21 @@ private fun BookContinuousSlider(
     }
 }
 
+/** 书页内滑动条轨道两端内缩（绘制与触摸命中共用）。 */
+internal val BOOK_SLIDER_EDGE_INSET = 7.dp
+
+/** 将水平坐标换算为滑动条行程比例（保留越界量，调用方按需夹取）。 */
+internal fun sliderFractionFromPosition(
+    x: Float,
+    width: Float,
+    insetPx: Float,
+    reverse: Boolean,
+): Float {
+    val usable = (width - 2f * insetPx).coerceAtLeast(1f)
+    val raw = (x - insetPx) / usable
+    return if (reverse) 1f - raw else raw
+}
+
 /** 书页内细墨轨 + 烫金滑动条统一绘制（离散刻度、连续滑条与 DialogMiuixSlider 共用）。 */
 internal fun DrawScope.drawBookSlider(
     fraction: Float,
@@ -584,7 +596,7 @@ internal fun DrawScope.drawBookSlider(
     drawnFractions: FloatArray = FloatArray(0),
 ) {
     val thumbRadius = 6.5.dp.toPx() * pressScale
-    val edgeInset = 7.dp.toPx()
+    val edgeInset = BOOK_SLIDER_EDGE_INSET.toPx()
     val availableWidth = (size.width - 2f * edgeInset).coerceAtLeast(0f)
     val f = fraction.coerceIn(0f, 1f)
     val rtl = layoutDirection == LayoutDirection.Rtl

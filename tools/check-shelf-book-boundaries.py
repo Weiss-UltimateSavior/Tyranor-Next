@@ -11,6 +11,7 @@ SRC_MAIN = Path("app/src/main/java/com/tyranor/next")
 
 MASK = re.compile(r'''//[^\n]*|/\*|"""[\s\S]*?(?:"""|\Z)|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*' ''', re.X)
 IMPORT = re.compile(r"(?m)^[ \t]*import[ \t]+[\w.*]+(?:[ \t]+as[ \t]+\w+)?[ \t]*;?")
+IMPORT_ALIAS = re.compile(r"(?m)^[ \t]*import[ \t]+([\w.]+)[ \t]+as[ \t]+(\w+)[ \t]*;?")
 
 # 受「翻开的书」书页约束的文件：全文件范围内禁止拉起全局 Activity、全局弹窗或底部抽屉。
 BOOK_ONLY_FILES = (
@@ -102,12 +103,15 @@ BOOK_STYLE_EXEMPT_FUNCTIONS = {
     ("ui/game/GameQuickActionsDialog.kt", "QuickActionDeleteButton"),
 }
 
-# 禁止在书内及共用正文中出现的全局跳转与全局窗口调用。
-FORBIDDEN_GLOBAL_UI = (
-    (re.compile(r"\bstartActivityWithPageTransition\s*[({]"), "书内条目不得调用 startActivityWithPageTransition，请走 GameActionsHost.openDetail 或 AppAlertDialog"),
-    (re.compile(r"\bstartActivity\s*[({]"), "书内条目不得直接调用 startActivity，请留在书页内实现"),
-    (re.compile(r"\b(?:AppBottomSheet|ModalBottomSheet)\s*[({]"), "书内条目不得拉起全局底部抽屉（AppBottomSheet / ModalBottomSheet）"),
+# 禁止在书内及共用正文中出现的全局跳转与全局窗口调用（支持 import as 别名同步拦截）。
+FORBIDDEN_GLOBAL_UI_SPECS = (
+    (("startActivityWithPageTransition",), "书内条目不得调用 startActivityWithPageTransition，请走 GameActionsHost.openDetail 或 AppAlertDialog"),
+    (("startActivity",), "书内条目不得直接调用 startActivity，请留在书页内实现"),
+    (("AppBottomSheet", "ModalBottomSheet"), "书内条目不得拉起全局底部抽屉（AppBottomSheet / ModalBottomSheet）"),
 )
+TRACKED_IMPORT_SYMBOLS = frozenset(
+    sym for syms, _ in FORBIDDEN_GLOBAL_UI_SPECS for sym in syms
+) | frozenset(("Dialog",))
 
 # 禁止在书内与书内共用组件路径里写死全局卡片底色、Material/Miuix 卡片块或全局按钮。
 FORBIDDEN_BOOK_GLOBAL_STYLES = (
@@ -118,7 +122,23 @@ FORBIDDEN_BOOK_GLOBAL_STYLES = (
     (re.compile(r"\bMiuixTheme\.colorScheme\.surfaceContainer\w*"), "书页或共用正文中不得直接引用 Miuix surfaceContainer 底色作卡片块，请改用 AppSectionCard"),
     (re.compile(r"(?<![.\w])(?:TextButton|OutlinedButton|FilledTonalButton|ElevatedButton|Button)\s*[({]"), "书页或共用正文中不得使用全局 Material 按钮，请改用会自动适配书卷样式的 NoRippleButton / DialogTextButton / NoRippleTextButton"),
 )
-RAW_DIALOG_RE = re.compile(r"(?<![.\w])Dialog\s*[({]")
+
+
+def extract_symbol_aliases(stripped_source: str) -> dict[str, set[str]]:
+    """Extract explicit `import ...Symbol as alias` mappings before import statements are blanked."""
+    aliases: dict[str, set[str]] = {sym: set() for sym in TRACKED_IMPORT_SYMBOLS}
+    for match in IMPORT_ALIAS.finditer(stripped_source):
+        symbol = match.group(1).rsplit(".", 1)[-1]
+        if symbol in aliases:
+            aliases[symbol].add(match.group(2))
+    return aliases
+
+
+def build_call_regex(names: tuple[str, ...], aliases: dict[str, set[str]], no_member_prefix: bool = False) -> re.Pattern[str]:
+    all_names = sorted({n for n in names} | {alias for n in names for alias in aliases.get(n, ())})
+    joined = "|".join(re.escape(name) for name in all_names)
+    prefix = r"(?<![.\w])" if no_member_prefix else r"\b"
+    return re.compile(rf"{prefix}(?:{joined})\s*[({{]")
 
 
 def blank(text: str) -> str:
@@ -186,13 +206,93 @@ def line_number(line_ends: list[int], pos: int) -> int:
     return bisect_right(line_ends, pos) + 1
 
 
+def matching_brace_end(code: str, open_pos: int) -> int | None:
+    brace_depth = 1
+    for idx in range(open_pos + 1, len(code)):
+        ch = code[idx]
+        if ch == "{":
+            brace_depth += 1
+        elif ch == "}":
+            brace_depth -= 1
+            if brace_depth == 0:
+                return idx
+    return None
+
+
+def strip_outer_parens(expr: str) -> str:
+    s = expr.strip()
+    while s.startswith("(") and s.endswith(")"):
+        end = end_of_arguments(s, 0)
+        if end == len(s):
+            s = s[1:-1].strip()
+        else:
+            break
+    return s
+
+
 def returns_after_hosted_dialog(prefix: str) -> bool:
+    """Only allow a raw Dialog() fallback after a recognized non-null LocalAppDialogHost takeover + return."""
     if "LocalAppDialogHost.current" not in prefix:
         return False
-    for call in re.finditer(r"(?:\.Present|\bAppAlertDialog)\s*\(", prefix):
-        end = end_of_arguments(prefix, call.end() - 1)
-        if end is not None and re.match(r"\s*;?\s*return\s*;?\s*\}", prefix[end:]):
+
+    host_vars = set(
+        re.findall(r"\bval\s+(\w+)\s*(?::[^=\n]+)?=\s*LocalAppDialogHost\.current\b", prefix)
+    )
+    host_exprs = [r"LocalAppDialogHost\.current"] + [rf"\b{re.escape(v)}\b" for v in sorted(host_vars)]
+    host_union = "(?:" + "|".join(host_exprs) + ")"
+
+    # 识别 `val overlay = if (bookHost == null) <non-null> else null` 或反向写法：
+    # 仅当宿主非空时该派生变量才为 null。
+    null_when_hosted_vars: set[str] = set()
+    for m in re.finditer(
+        rf"\bval\s+(\w+)\s*(?::[^=\n]+)?=\s*if\s*\(([^)\n]+)\)\s*([^\n]+?)\s+else\s+([^\n;]+)",
+        prefix,
+    ):
+        var_name, cond_raw, then_branch, else_branch = m.group(1), m.group(2), m.group(3).strip(), m.group(4).strip()
+        cond = strip_outer_parens(cond_raw)
+        is_host_null = bool(re.fullmatch(rf"(?:{host_union}\s*==\s*null|null\s*==\s*{host_union})", cond))
+        is_host_non_null = bool(re.fullmatch(rf"(?:{host_union}\s*!=\s*null|null\s*!=\s*{host_union})", cond))
+        if (is_host_null and else_branch == "null" and then_branch != "null") or (
+            is_host_non_null and then_branch == "null" and else_branch != "null"
+        ):
+            null_when_hosted_vars.add(var_name)
+
+    def is_non_null_host_condition(cond_raw: str) -> bool:
+        cond = strip_outer_parens(cond_raw)
+        if re.fullmatch(rf"(?:{host_union}\s*!=\s*null|null\s*!=\s*{host_union})", cond):
             return True
+        if null_when_hosted_vars:
+            null_union = "(?:" + "|".join(rf"\b{re.escape(v)}\b" for v in sorted(null_when_hosted_vars)) + ")"
+            if re.fullmatch(rf"(?:{null_union}\s*==\s*null|null\s*==\s*{null_union})", cond):
+                return True
+        return False
+
+    hosted_call_re = re.compile(rf"(?:{host_union}\??\.Present|\bAppAlertDialog)\s*\(")
+
+    for if_match in re.finditer(r"\bif\s*\(", prefix):
+        cond_end = end_of_arguments(prefix, if_match.end() - 1)
+        if cond_end is None:
+            continue
+        cond_text = prefix[if_match.end():cond_end - 1]
+        if not is_non_null_host_condition(cond_text):
+            continue
+        rest = prefix[cond_end:]
+        brace_match = re.match(r"\s*\{", rest)
+        if not brace_match:
+            continue
+        block_open = cond_end + brace_match.end() - 1
+        block_close = matching_brace_end(prefix, block_open)
+        if block_close is None:
+            continue
+        block_body = prefix[block_open + 1:block_close]
+        # 确保托管调用及其后的 return 均处于该 if 块的顶层，而非嵌套在局部条件或 lambda 内。
+        for call in hosted_call_re.finditer(block_body):
+            depth_before = block_body[:call.start()].count("{") - block_body[:call.start()].count("}")
+            if depth_before != 0:
+                continue
+            call_end = end_of_arguments(block_body, call.end() - 1)
+            if call_end is not None and re.fullmatch(r"\s*;?\s*return\s*;?\s*", block_body[call_end:]):
+                return True
     return False
 
 
@@ -202,13 +302,15 @@ def check_segment(
     start: int,
     end: int,
     line_ends: list[int],
+    forbidden_global_ui: tuple[tuple[re.Pattern[str], str], ...],
+    raw_dialog_re: re.Pattern[str],
     allow_root_dialog: bool = False,
     allow_hosted_fallback_dialogs: tuple[str, ...] = (),
     check_book_styles: bool = True,
 ) -> list[tuple[int, str]]:
     errors: list[tuple[int, str]] = []
     segment = code[start:end]
-    for pattern, message in FORBIDDEN_GLOBAL_UI:
+    for pattern, message in forbidden_global_ui:
         for hit in pattern.finditer(segment):
             errors.append((line_number(line_ends, start + hit.start()), f"{rel_path}: {message}"))
     raw_fallback_ranges: list[tuple[int, int]] = []
@@ -219,7 +321,7 @@ def check_segment(
             continue
         fn_start, fn_end = span
         fn_code = code[fn_start:fn_end]
-        raw_hits = list(RAW_DIALOG_RE.finditer(fn_code))
+        raw_hits = list(raw_dialog_re.finditer(fn_code))
         if raw_hits and len(raw_hits) == 1:
             prefix = fn_code[:raw_hits[0].start()]
             if returns_after_hosted_dialog(prefix):
@@ -240,7 +342,7 @@ def check_segment(
                     continue
                 errors.append((line_number(line_ends, abs_pos), f"{rel_path}: {message}"))
     if not allow_root_dialog:
-        for hit in RAW_DIALOG_RE.finditer(segment):
+        for hit in raw_dialog_re.finditer(segment):
             abs_pos = start + hit.start()
             if any(lo <= abs_pos < hi for lo, hi in allowed_ranges):
                 continue
@@ -252,7 +354,14 @@ def check_segment(
 
 
 def check_file(rel_path: str, source: str) -> list[tuple[int, str]]:
-    code = IMPORT.sub(lambda m: blank(m[0]), code_only(source))
+    stripped = code_only(source)
+    aliases = extract_symbol_aliases(stripped)
+    forbidden_global_ui = tuple(
+        (build_call_regex(names, aliases), message)
+        for names, message in FORBIDDEN_GLOBAL_UI_SPECS
+    )
+    raw_dialog_re = build_call_regex(("Dialog",), aliases, no_member_prefix=True)
+    code = IMPORT.sub(lambda m: blank(m[0]), stripped)
     line_ends = [m.start() for m in re.finditer("\n", code)]
     errors: list[tuple[int, str]] = []
 
@@ -268,12 +377,14 @@ def check_file(rel_path: str, source: str) -> list[tuple[int, str]]:
                 0,
                 len(code),
                 line_ends,
+                forbidden_global_ui=forbidden_global_ui,
+                raw_dialog_re=raw_dialog_re,
                 allow_root_dialog=allow_root_dialog,
                 allow_hosted_fallback_dialogs=hosted_fallbacks,
             )
         )
         if rel_path == "ui/game/ShelfBook.kt":
-            raw_dialogs = list(RAW_DIALOG_RE.finditer(code))
+            raw_dialogs = list(raw_dialog_re.finditer(code))
             open_book_span = function_span(code, "ShelfOpenBook")
             for hit in raw_dialogs:
                 if not open_book_span or not (open_book_span[0] <= hit.start() < open_book_span[1]):
@@ -310,6 +421,8 @@ def check_file(rel_path: str, source: str) -> list[tuple[int, str]]:
                     start,
                     end,
                     line_ends,
+                    forbidden_global_ui=forbidden_global_ui,
+                    raw_dialog_re=raw_dialog_re,
                     allow_hosted_fallback_dialogs=hosted_fallbacks,
                 )
             )

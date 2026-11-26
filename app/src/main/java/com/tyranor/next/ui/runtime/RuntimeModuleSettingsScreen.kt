@@ -121,6 +121,9 @@ private fun RuntimeModuleSettingsView(
     var editText by remember { mutableStateOf("") }
     var inputError by remember { mutableStateOf(false) }
     var backRequested by remember { mutableStateOf(false) }
+    // 提升到书页 key(leaf) 之外的稳定组合路径，确保文件选择器返回前宿主重建时
+    // rememberSaveable(picking) 与 ActivityResultLauncher 都能恢复并只交付一次。
+    val pickFiles = rememberRuntimeModuleFileImport(game)
     val settings = module?.settings
     val draft = remember(draftJson) { parseObject(draftJson) }
     val dirty = baselineJson != null && draftJson != baselineJson
@@ -401,7 +404,6 @@ private fun RuntimeModuleSettingsView(
             text = {
                 ShelfBookLeafBackHandler(enabled = dirty) { showUnsavedDialog = true }
                 MiuixSettingsTheme {
-                    val pickFiles = rememberRuntimeModuleFileImport(game)
                     RuntimeSettingsList(
                         pickFiles = pickFiles,
                         modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
@@ -435,7 +437,6 @@ private fun RuntimeModuleSettingsView(
         )
     } else {
         MiuixSettingsTheme {
-            val pickFiles = rememberRuntimeModuleFileImport(game)
             ProvideEntrance {
                 MiuixScaffold(
                     modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),

@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.contentType
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.SolidColor
@@ -41,6 +42,7 @@ import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.password
 import androidx.compose.ui.semantics.semantics
@@ -101,9 +103,11 @@ fun AppSearchField(
     imeAction: ImeAction = ImeAction.Search,
     autofillContentType: ContentType? = null,
     keyboardType: KeyboardType = KeyboardType.Text,
+    enabled: Boolean = true,
 ) {
-    // Miuix InputField 无法表达文本变换、IME、键盘类型与 autofill；这些场景统一走内嵌实现。
-    val needsEmbeddedInput = visualTransformation != VisualTransformation.None ||
+    // Miuix InputField 无法表达文本变换、IME、键盘类型与 autofill，也无法在退场时彻底禁用触摸/焦点/无障碍；这些场景统一走内嵌实现。
+    val needsEmbeddedInput = !enabled ||
+        visualTransformation != VisualTransformation.None ||
         Build.VERSION.SDK_INT in Build.VERSION_CODES.O..Build.VERSION_CODES.O_MR1 ||
         imeAction != ImeAction.Search ||
         autofillContentType != null ||
@@ -132,28 +136,39 @@ fun AppSearchField(
         BasicTextField(
             value = query,
             onValueChange = onQueryChange,
+            enabled = enabled,
+            readOnly = !enabled,
             modifier = modifier
                 .fillMaxWidth()
-                .onFocusChanged { state ->
-                    val now = state.hasFocus
-                    if (now && !focused) iconPulse++
-                    focused = now
-                }
-                .then(autofillContentType?.let { Modifier.contentType(it) } ?: Modifier)
                 .then(
-                    if (autofillContentType == ContentType.Password || keyboardType == KeyboardType.Password) {
-                        Modifier.semantics { password() }
+                    if (enabled) {
+                        Modifier
+                            .onFocusChanged { state ->
+                                val now = state.hasFocus
+                                if (now && !focused) iconPulse++
+                                focused = now
+                            }
+                            .then(autofillContentType?.let { Modifier.contentType(it) } ?: Modifier)
+                            .then(
+                                if (autofillContentType == ContentType.Password || keyboardType == KeyboardType.Password) {
+                                    Modifier.semantics { password() }
+                                } else {
+                                    Modifier
+                                },
+                            )
+                            .semantics { contentDescription = resolvedInputLabel }
                     } else {
                         Modifier
+                            .focusProperties { canFocus = false }
+                            .clearAndSetSemantics { }
                     },
-                )
-                .semantics { contentDescription = resolvedInputLabel },
+                ),
             singleLine = true,
             textStyle = resolvedTextStyle,
             cursorBrush = SolidColor(palette.foilAccent),
             visualTransformation = visualTransformation,
             keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
-            keyboardActions = KeyboardActions(onSearch = { submit() }, onDone = { submit() }),
+            keyboardActions = KeyboardActions(onSearch = { if (enabled) submit() }, onDone = { if (enabled) submit() }),
             decorationBox = { innerTextField ->
                 Row(
                     modifier = Modifier
@@ -196,17 +211,24 @@ fun AppSearchField(
                         ) {
                             Icon(
                                 modifier = Modifier
-                                    .pressSquish()
-                                    .clip(CircleShape)
-                                    .clickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null,
-                                        onClick = { onQueryChange("") },
+                                    .then(
+                                        if (enabled) {
+                                            Modifier
+                                                .pressSquish()
+                                                .clip(CircleShape)
+                                                .clickable(
+                                                    interactionSource = remember { MutableInteractionSource() },
+                                                    indication = null,
+                                                    onClick = { onQueryChange("") },
+                                                )
+                                        } else {
+                                            Modifier.clip(CircleShape).clearAndSetSemantics { }
+                                        },
                                     )
                                     .size(18.dp),
                                 imageVector = MiuixIcons.Basic.SearchCleanup,
                                 tint = palette.inkSecondary,
-                                contentDescription = stringResource(R.string.common_clear_input_content_description),
+                                contentDescription = if (enabled) stringResource(R.string.common_clear_input_content_description) else null,
                             )
                         }
                     }
@@ -224,13 +246,23 @@ fun AppSearchField(
                 inputField = {
                     val fieldModifier = Modifier
                         .fillMaxWidth()
-                        .onFocusChanged { state ->
-                            val now = state.hasFocus
-                            if (now && !focused) iconPulse++
-                            focused = now
-                        }
-                        .glassBorder(CircleShape)
-                        .semantics { contentDescription = resolvedInputLabel }
+                        .then(
+                            if (enabled) {
+                                Modifier
+                                    .onFocusChanged { state ->
+                                        val now = state.hasFocus
+                                        if (now && !focused) iconPulse++
+                                        focused = now
+                                    }
+                                    .glassBorder(CircleShape)
+                                    .semantics { contentDescription = resolvedInputLabel }
+                            } else {
+                                Modifier
+                                    .focusProperties { canFocus = false }
+                                    .glassBorder(CircleShape)
+                                    .clearAndSetSemantics { }
+                            },
+                        )
                     val fieldLeadingIcon: @Composable () -> Unit = {
                         Icon(
                             modifier = Modifier
@@ -256,6 +288,7 @@ fun AppSearchField(
                             keyboardType = keyboardType,
                             imeAction = imeAction,
                             autofillContentType = autofillContentType,
+                            enabled = enabled,
                         )
                     } else {
                         InputField(

@@ -868,13 +868,27 @@ internal class ShelfBookPages(
         val above = leaves.getOrNull(index + 1)
         val turningAway = canAnimate() && !leaf.leaving && index == leaves.lastIndex - 1 && above != null && above === justPushed
         leaves.removeAt(index)
-        if (turningAway && above != null) {
+        val below = turnOf(index)
+        val newBelowLeaf = if (index > 0) leaves[index - 1] else null
+        if (turningAway) {
             depart(leaf, above)
+            // 父页在首次预热尚未翻到位时就被换页移除：原打开任务会因父页离栈而退出，
+            // 需为当前存活的替代页重新建立下层打开任务，避免换页动画结束后底下的 toc/下层仍停在 0。
+            if (!above.leaving && below.value < 1f) {
+                openPage(below, warmUp = true, guardLeaf = above, guardBelowLeaf = newBelowLeaf)
+            }
             return
         }
-        val below = turnOf(index)
-        if (!top || !canAnimate() || leaf.leaving || below.value <= 0.001f) {
-            if (top) scope.launch { below.snapTo(0f) }
+        if (!top) {
+            val promoted = leaves.getOrNull(index)
+            if (promoted != null && !promoted.leaving && below.value < 1f) {
+                openPage(below, warmUp = false, guardLeaf = promoted, guardBelowLeaf = newBelowLeaf)
+            }
+            leaf.release()
+            return
+        }
+        if (!canAnimate() || leaf.leaving || below.value <= 0.001f) {
+            scope.launch { below.snapTo(0f) }
             leaf.release()
             return
         }

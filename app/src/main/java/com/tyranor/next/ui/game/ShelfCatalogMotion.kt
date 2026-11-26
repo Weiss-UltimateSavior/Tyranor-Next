@@ -1200,7 +1200,7 @@ private class CatalogSlotPlacement(
     val leanDegrees: Float,
 )
 
-private class CatalogSlotSnapshot(
+internal class CatalogSlotSnapshot(
     val rect: Rect,
     val layoutMode: ShelfCatalogLayoutMode,
     val rowGridIndex: Int,
@@ -1324,8 +1324,15 @@ internal class ShelfCatalogMotion(
     }
 
     fun syncCatalogGames(filtered: List<ScanGame>, all: List<ScanGame>) {
+        val batchChanged = filteredGamesSnapshot.isNotEmpty() && (
+            filtered.size != filteredGamesSnapshot.size ||
+                filtered.indices.any { filtered[it].uri != filteredGamesSnapshot[it].uri }
+            )
         if (filteredGamesSnapshot.isNotEmpty() && filtered != filteredGamesSnapshot) {
             resetSpinePeekImmediately()
+        }
+        if (batchChanged && morphing) {
+            finishMorphNow()
         }
         filteredGamesSnapshot = filtered
         allGamesSnapshot = all
@@ -1479,11 +1486,12 @@ internal class ShelfCatalogMotion(
      * （书脊立排会还原该层的归一化宽度分配与每本高度、末本斜倚，确保与实际书格位置零偏差）。
      * 按引擎分架（有章节横梁，行高不规则）或没有参照时给不出来，返回 null。
      */
-    private fun extrapolateRect(
+    internal fun extrapolateRect(
         measured: Map<String, CatalogSlotSnapshot>,
         mode: ShelfCatalogLayoutMode,
         index: Int,
         indexMap: Map<String, Int> = indexLookup,
+        games: List<ScanGame> = filteredGamesSnapshot,
     ): Rect? {
         val grid = gridMetrics[mode] ?: return null
         if (grid.grouped || grid.columns <= 0 || index < 0) return null
@@ -1504,8 +1512,7 @@ internal class ShelfCatalogMotion(
             }
         }
         val anchor = ref ?: return null
-        val games = filteredGamesSnapshot
-        if (grid.maxBookHeightPx <= 0f || index >= games.size || refIndex >= games.size) {
+        if (grid.maxBookHeightPx <= 0f || index >= games.size || refIndex >= games.size || games[refIndex].uri != refUri) {
             return anchor.rect.translate(
                 (col - refIndex % grid.columns) * grid.pitchX,
                 (row - refIndex / grid.columns) * grid.pitchY,
@@ -1630,14 +1637,14 @@ internal class ShelfCatalogMotion(
         val anchor = from.entries.minByOrNull { (_, slot) ->
             distanceToCenter(slot.rect) + if (slot.rect.top >= viewport.top && slot.rect.bottom <= viewport.bottom) 0.0 else 1.0e6
         } ?: return
-        val games = filteredGamesSnapshot
+        val games = filteredGamesSnapshot.toList()
         val indexByUri = HashMap<String, Int>(games.size).apply {
             games.forEachIndexed { idx, g -> put(g.uri, idx) }
         }
         // 旧陈列里每本书的起点：测得的位置，没组合出来的按网格外推；只留与视口有交叠的
         val sources = HashMap<String, Rect>()
         for ((i, game) in games.withIndex()) {
-            val rect = from[game.uri]?.rect ?: extrapolateRect(from, fromMode, i, indexByUri) ?: continue
+            val rect = from[game.uri]?.rect ?: extrapolateRect(from, fromMode, i, indexByUri, games) ?: continue
             if (viewport.width <= 0f || rect.overlaps(viewport)) sources[game.uri] = rect
         }
         if (sources.isEmpty()) {
@@ -1685,7 +1692,7 @@ internal class ShelfCatalogMotion(
                 val to = snapshotVisibleSlots(mode = target, includePartial = true, viewport = targetViewport)
                 for (flight in flights) {
                     val index = indexByUri[flight.game.uri] ?: -1
-                    val dst = to[flight.game.uri]?.rect ?: extrapolateRect(to, target, index, indexByUri)
+                    val dst = to[flight.game.uri]?.rect ?: extrapolateRect(to, target, index, indexByUri, games)
                     if (dst != null) flight.toRect = dst else flight.vanish = true
                 }
                 // 旧陈列里看不见、新陈列里看得见的书：从旧陈列外推的位置飞进来；外推不出来的就在自己的落点上浮现
@@ -1693,13 +1700,13 @@ internal class ShelfCatalogMotion(
                 val arrivalRects = HashMap<String, Rect>()
                 for ((i, game) in games.withIndex()) {
                     if (game.uri in sources) continue
-                    val dst = to[game.uri]?.rect ?: extrapolateRect(to, target, i, indexByUri) ?: continue
+                    val dst = to[game.uri]?.rect ?: extrapolateRect(to, target, i, indexByUri, games) ?: continue
                     if (targetViewport.width > 0f && !dst.overlaps(targetViewport)) continue
                     arrivalRects[game.uri] = dst
                 }
                 arrivalRects.entries.sortedBy { (_, rect) -> distanceToCenter(rect) }.forEachIndexed { rank, (uri, dst) ->
                     val game = byUri[uri] ?: return@forEachIndexed
-                    val src = extrapolateRect(from, fromMode, indexByUri[uri] ?: -1, indexByUri)
+                    val src = extrapolateRect(from, fromMode, indexByUri[uri] ?: -1, indexByUri, games)
                     arrivals += ShelfCatalogMorphFlight(
                         generation = generation,
                         game = game,
