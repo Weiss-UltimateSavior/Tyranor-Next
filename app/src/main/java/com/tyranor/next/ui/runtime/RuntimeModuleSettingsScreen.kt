@@ -209,7 +209,7 @@ private fun RuntimeModuleSettingsView(
         saveError = false
     }
 
-    val pickSettingPath = rememberRuntimeModuleSettingPathPicker(game.uri, packageName) { key, path ->
+    val settingPathPicker = rememberRuntimeModuleSettingPathPicker(game.uri, packageName) { key, path ->
         val item = settings?.items?.firstOrNull { it.key == key }
         if (item == null || !RuntimeModuleSettingsParser.isValidValue(item, path)) {
             false
@@ -218,8 +218,10 @@ private fun RuntimeModuleSettingsView(
             true
         }
     }
+    val pickSettingPath = settingPathPicker.pick
 
     fun restoreAllDefaults() {
+        settingPathPicker.invalidatePendingRequests()
         draftJson = JSONObject().toString()
         draftFingerprint = settings?.fingerprint
         saveError = false

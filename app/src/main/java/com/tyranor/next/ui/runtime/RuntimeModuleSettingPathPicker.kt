@@ -22,16 +22,23 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+internal data class RuntimeModuleSettingPathPickerActions(
+    val pick: (RuntimeModuleSettingItemSpec) -> Unit,
+    val invalidatePendingRequests: () -> Unit,
+)
+
 @Composable
 internal fun rememberRuntimeModuleSettingPathPicker(
     gameUri: String,
     packageName: String,
     onPathSelected: (key: String, path: String) -> Boolean,
-): (RuntimeModuleSettingItemSpec) -> Unit {
+): RuntimeModuleSettingPathPickerActions {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val unavailableMessage = stringResource(R.string.runtime_settings_path_unavailable)
     var pendingKey by rememberSaveable(gameUri, packageName) { mutableStateOf<String?>(null) }
+    var requestGeneration by rememberSaveable(gameUri, packageName) { mutableStateOf(0L) }
+    var pendingGeneration by rememberSaveable(gameUri, packageName) { mutableStateOf<Long?>(null) }
 
     fun showUnavailable() {
         AppNotice.makeText(context, unavailableMessage, Toast.LENGTH_LONG, AppNotice.Kind.Failure).show()
@@ -39,8 +46,12 @@ internal fun rememberRuntimeModuleSettingPathPicker(
 
     fun complete(uri: Uri?) {
         val key = pendingKey ?: return
+        val generation = pendingGeneration ?: return
         if (uri == null) {
-            pendingKey = null
+            if (pendingGeneration == generation) {
+                pendingKey = null
+                pendingGeneration = null
+            }
             return
         }
         scope.launch {
@@ -48,9 +59,13 @@ internal fun rememberRuntimeModuleSettingPathPicker(
                 val path = withContext(Dispatchers.IO) {
                     GamePathUtils.resolveLocalPath(context, uri.toString())?.takeIf { it.startsWith('/') }
                 }
+                if (generation != requestGeneration) return@launch
                 if (path == null || !onPathSelected(key, path)) showUnavailable()
             } finally {
-                if (pendingKey == key) pendingKey = null
+                if (pendingGeneration == generation) {
+                    pendingKey = null
+                    pendingGeneration = null
+                }
             }
         }
     }
@@ -58,15 +73,29 @@ internal fun rememberRuntimeModuleSettingPathPicker(
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> complete(uri) }
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> complete(uri) }
 
-    return { item ->
+    fun invalidatePendingRequests() {
+        requestGeneration += 1
+        pendingKey = null
+        pendingGeneration = null
+    }
+
+    val pick: (RuntimeModuleSettingItemSpec) -> Unit = { item ->
         if (pendingKey == null && item.type in setOf(Type.FILE, Type.FOLDER)) {
+            requestGeneration += 1
+            val generation = requestGeneration
             pendingKey = item.key
+            pendingGeneration = generation
             try {
                 if (item.type == Type.FILE) filePicker.launch(arrayOf("*/*")) else folderPicker.launch(null)
             } catch (_: ActivityNotFoundException) {
-                pendingKey = null
+                if (pendingGeneration == generation) {
+                    pendingKey = null
+                    pendingGeneration = null
+                }
                 showUnavailable()
             }
         }
     }
+
+    return RuntimeModuleSettingPathPickerActions(pick, ::invalidatePendingRequests)
 }
