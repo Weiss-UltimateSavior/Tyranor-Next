@@ -767,10 +767,11 @@ Room schema 变更须提交 `app/schemas/` 并添加显式 `Migration`；仅既�
 | `python tools/check-motion-boundaries.py` | 检查业务页面是否绕开具名动效入口 |
 | `./gradlew -p buildSrc graphicsResourcesRegression --no-daemon` | 验证图形资源归属与校验逻辑 |
 | `./gradlew :engine:jsHarness --no-daemon` | 用本地 Node.js 验证 Web v2 桥；也接入 `:engine:check`（本地/人工门禁） |
+| `./gradlew :engine:jsSaveIdentityHarness --no-daemon` | 用本地 Node.js 验证 MV v1/v2 存档身份判定；也接入 `:engine:check`（本地/人工门禁，与 `jsHarness` 同受 `-PskipJsHarness` 控制） |
 | `cargo test --manifest-path engine/rust/Cargo.toml --locked` | 修改 XP3 Rust 时运行宿主测试（本地/人工门禁） |
 | `./gradlew :app:printAppVersion --no-daemon` | 输出版本名与自动推导的 versionCode |
 
-`:engine:jsHarness` 与 `cargo test` 目前是本地/人工门禁，Android CI 不自动执行；PR 必须记录实际执行结果（未执行时说明原因），不得用 JVM 回归或构建成功替代。
+`:engine:jsHarness`、`:engine:jsSaveIdentityHarness` 与 `cargo test` 目前是本地/人工门禁，Android CI 不自动执行；PR 必须记录实际执行结果（未执行时说明原因），不得用 JVM 回归或构建成功替代。
 
 Windows PowerShell 使用 `./gradlew.bat`；Linux/macOS 使用 `./gradlew`。Python、Node、Rust 按相关任务安装；普通 Gradle 构建不运行 Rust 重编。执行 `check` 时仅在明确缺 Node 的场景可用 `-PskipJsHarness` 跳过，并在验证记录中说明。
 

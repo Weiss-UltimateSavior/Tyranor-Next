@@ -174,6 +174,7 @@
 
 - 修复 Web 系引擎的单游戏外部网络设置未传入宿主的问题。全局引擎设置只保存当前分类，单游戏覆盖并发更新时保留其他字段。
 - RPG Maker RGSS 同步已有配置文件的受管设置。Ruffle 共享文件冲突或 Artemis 官方内核无法更新 `system.ini` 时给出具体的启动错误。
+- 修复 RPG Maker MV 会话（TynMV-0.1 / TynMV-0.2）中，把 `info.title` 复用作章节名的插件（如 `BB_CustomSaveWindow`）导致合法存档被判成「不是本作」的问题：`DataManager.loadGame()` 可以正常读档，标题页「继续游戏」在依赖该判定时不再变灰。`DataManager.isThisGameFile` 在 Web 存档模式改为只比 `globalId`（保留原实现的字段类型前置），本地模式保持原实现；已存在的存档无需转化。Tyranor-2.3.4（v0）与 MZ 会话沿用原判定，本次未修复。
 - 修复 Ren’Py 单游戏保存时异步旧记录回填导致覆盖丢失的问题，同时校正全局与单游戏设置中「禁用模型渲染（GL2）」的开关方向。
 - 修复 Ethornell 升级后《巧克甜恋》启动时因 Graph91:00 未识别而退出，恢复该 ABI 的旧版兼容行为。
 - 更新 Ethornell 运行库至上游 `7cfc2fba`，保留游戏目录存档和公共存储锁补丁；虚拟路径读取改用上游实现。
