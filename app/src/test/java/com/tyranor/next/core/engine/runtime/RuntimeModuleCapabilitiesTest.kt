@@ -108,6 +108,23 @@ class RuntimeModuleCapabilitiesTest {
     }
 
     @Test
+    fun steppedSliderSupportDoesNotDependOnAbsoluteFloatTicks() {
+        val collapsedFloatRange = RuntimeModuleSettingsParser.parseItem(JSONObject(
+            """{"key":"scale","type":"slider","title":"Scale","default":16777219,"min":16777219,"max":16777220,"step":0.5}""",
+        ))
+        val collapsedIntermediateTicks = RuntimeModuleSettingsParser.parseItem(JSONObject(
+            """{"key":"scale","type":"slider","title":"Scale","default":16777218,"min":16777218,"max":16777224,"step":1}""",
+        ))
+        val unsupportedContinuousRange = RuntimeModuleSettingsParser.parseItem(JSONObject(
+            """{"key":"scale","type":"slider","title":"Scale","default":16777219,"min":16777219,"max":16777220}""",
+        ))
+
+        assertTrue(collapsedFloatRange != null)
+        assertTrue(collapsedIntermediateTicks != null)
+        assertNull(unsupportedContinuousRange)
+    }
+
+    @Test
     fun invalidCapabilitiesFailIndependently() {
         val manifest = requireNotNull(RuntimeModuleManifestParser.parse(
             """{"scan":{"markers":["game.dat"]},"settings":{"version":7,"items":[]},

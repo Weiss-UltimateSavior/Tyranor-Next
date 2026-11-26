@@ -270,9 +270,11 @@ internal object RuntimeModuleSettingsParser {
                 val parsedDefault = strictDouble(default) ?: return null
                 val parsedStep = if (obj.has("step")) strictDouble(obj.opt("step")) ?: return null else null
                 if (parsedMin >= parsedMax || parsedDefault !in parsedMin..parsedMax || parsedStep?.let { it <= 0.0 } == true) return null
-                if (!parsedMin.toFloat().isFinite() || !parsedMax.toFloat().isFinite() || parsedMin.toFloat() >= parsedMax.toFloat()) return null
+                if (parsedStep == null &&
+                    (!parsedMin.toFloat().isFinite() || !parsedMax.toFloat().isFinite() || parsedMin.toFloat() >= parsedMax.toFloat())
+                ) return null
                 if (parsedStep != null && !validSliderStep(parsedDefault, parsedMin, parsedMax, parsedStep)) return null
-                if (!isSliderRangeSupportedByFloatUi(parsedMin, parsedMax, parsedDefault, parsedStep)) return null
+                if (!isSliderRangeSupportedByFloatUi(parsedMin, parsedMax, parsedStep)) return null
                 min = null; max = null; maxLength = null
                 sliderMin = parsedMin; sliderMax = parsedMax; sliderStep = parsedStep
                 normalizedDefault = parsedDefault
@@ -336,35 +338,12 @@ internal object RuntimeModuleSettingsParser {
         return kotlin.math.abs(position - kotlin.math.round(position)) <= 1e-6 * maxOf(1.0, kotlin.math.abs(position))
     }
 
-    private fun isSliderRangeSupportedByFloatUi(min: Double, max: Double, default: Double, step: Double?): Boolean {
+    private fun isSliderRangeSupportedByFloatUi(min: Double, max: Double, step: Double?): Boolean {
+        if (step != null) return true
         val floatMin = min.toFloat()
         val floatMax = max.toFloat()
         val floatSpan = floatMax - floatMin
-        if (!floatSpan.isFinite() || floatSpan <= 0f) return false
-        if (step == null) return true
-
-        val intervalCount = kotlin.math.round((max - min) / step).toInt()
-        val defaultIndex = kotlin.math.round((default - min) / step).toInt()
-        val defaultFloat = default.toFloat()
-        var closestIndex = 0
-        var closestDistance = kotlin.math.abs(defaultFloat - floatMin)
-        var previousTick = floatMin
-        for (index in 1..intervalCount) {
-            val tick = if (index == intervalCount) {
-                floatMax
-            } else {
-                // Match the Float interpolation used by MotionSlider's discrete tick positions.
-                floatMin + floatSpan * index / intervalCount
-            }
-            if (!tick.isFinite() || tick <= previousTick) return false
-            val distance = kotlin.math.abs(defaultFloat - tick)
-            if (distance < closestDistance) {
-                closestDistance = distance
-                closestIndex = index
-            }
-            previousTick = tick
-        }
-        return closestIndex == defaultIndex
+        return floatSpan.isFinite() && floatSpan > 0f
     }
 
     private fun strictDouble(value: Any?): Double? = (value as? Number)?.toDouble()?.takeIf { it.isFinite() }

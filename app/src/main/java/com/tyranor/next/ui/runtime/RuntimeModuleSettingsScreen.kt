@@ -117,6 +117,7 @@ private fun RuntimeModuleSettingsView(
     var baselineFingerprint by rememberSaveable(game.uri, packageName) { mutableStateOf<String?>(null) }
     var saveRunning by remember { mutableStateOf(false) }
     var saveError by remember { mutableStateOf(false) }
+    var saveOutcomeUnknown by rememberSaveable(game.uri, packageName) { mutableStateOf(false) }
     var saveDescriptorChanged by remember { mutableStateOf(false) }
     var showUnsavedDialog by remember { mutableStateOf(false) }
     var showRestoreDefaultsDialog by remember { mutableStateOf(false) }
@@ -130,7 +131,7 @@ private fun RuntimeModuleSettingsView(
     val settings = module?.settings
     val draft = remember(draftJson) { parseObject(draftJson) }
     val effectiveSettings = remember(settings, draftJson) { settings?.resolve(draft) }
-    val dirty = baselineJson != null && draftJson != baselineJson
+    val dirty = (baselineJson != null && draftJson != baselineJson) || saveOutcomeUnknown
     val descriptionConflict = settings != null && draftFingerprint != null &&
         draftFingerprint != settings.fingerprint && dirty
     val screenState = when {
@@ -227,9 +228,36 @@ private fun RuntimeModuleSettingsView(
         saveError = false
     }
 
+    suspend fun readStoredSettingsJson(): String = withContext(Dispatchers.IO) {
+        PerGameSettingsStore.getRuntimeModuleSettings(context, game.uri, packageName).toString()
+    }
+
+    suspend fun discardDraft(): Boolean {
+        val persistedJson = if (saveOutcomeUnknown) {
+            try {
+                readStoredSettingsJson().also {
+                    baselineJson = it
+                    baselineFingerprint = settings?.fingerprint
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                return false
+            }
+        } else {
+            baselineJson ?: return false
+        }
+        draftJson = persistedJson
+        draftFingerprint = baselineFingerprint
+        saveOutcomeUnknown = false
+        return true
+    }
+
     suspend fun saveDraft() {
         val spec = settings ?: return
         if (saveRunning || !bindingValid || !descriptorConfirmed || descriptionConflict || draftFingerprint != spec.fingerprint) return
+        val submittedDraftJson = draftJson ?: return
+        val submittedDraft = parseObject(submittedDraftJson)
         saveRunning = true
         saveError = false
         saveDescriptorChanged = false
@@ -250,10 +278,10 @@ private fun RuntimeModuleSettingsView(
                 loadError = !bindingValid || !descriptorConfirmed || current?.settings?.items.isNullOrEmpty()
                 return
             }
-            val invalidKeys = spec.resolve(draft).invalidOverrideKeys
+            val invalidKeys = spec.resolve(submittedDraft).invalidOverrideKeys
             val json = JSONObject()
             spec.items.forEach { item ->
-                if (draft.has(item.key) && item.key !in invalidKeys) json.put(item.key, draft.opt(item.key))
+                if (submittedDraft.has(item.key) && item.key !in invalidKeys) json.put(item.key, submittedDraft.opt(item.key))
             }
             val result = withContext(Dispatchers.IO) {
                 PerGameSettingsStore.saveRuntimeModuleSettings(context, game.uri, packageName, spec, json)
@@ -262,9 +290,12 @@ private fun RuntimeModuleSettingsView(
                 is PerGameSettingsStore.RuntimeModuleSettingsSaveResult.Saved -> {
                     val normalized = json.toString()
                     baselineJson = normalized
-                    draftJson = normalized
                     baselineFingerprint = spec.fingerprint
-                    draftFingerprint = spec.fingerprint
+                    saveOutcomeUnknown = false
+                    if (draftJson == submittedDraftJson) {
+                        draftJson = normalized
+                        draftFingerprint = spec.fingerprint
+                    }
                     AppNotice.makeText(context, R.string.runtime_settings_saved, Toast.LENGTH_SHORT, AppNotice.Kind.Success).show()
                 }
                 PerGameSettingsStore.RuntimeModuleSettingsSaveResult.DescriptorChanged -> {
@@ -278,6 +309,19 @@ private fun RuntimeModuleSettingsView(
                     saveDescriptorChanged = true
                     saveError = true
                     if (!descriptorConfirmed || current?.settings == null) loadError = true
+                }
+                is PerGameSettingsStore.RuntimeModuleSettingsSaveResult.StorageFailure -> {
+                    saveError = true
+                    saveOutcomeUnknown = true
+                    try {
+                        baselineJson = readStoredSettingsJson()
+                        baselineFingerprint = spec.fingerprint
+                        saveOutcomeUnknown = false
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // Keep the draft dirty until persistence can be read or a later save succeeds.
+                    }
                 }
                 else -> {
                     saveError = true
@@ -578,13 +622,14 @@ private fun RuntimeModuleSettingsView(
             text = { Text(stringResource(R.string.runtime_settings_unsaved_message)) },
             confirmButton = {
                 DialogTextButton(text = stringResource(R.string.common_confirm), onClick = {
-                    unsavedExitHandle.closeThen {
-                        showUnsavedDialog = false
-                        draftJson = baselineJson
-                        if (inBook) {
-                            onDismiss()
+                    scope.launch {
+                        if (discardDraft()) {
+                            unsavedExitHandle.closeThen {
+                                showUnsavedDialog = false
+                                if (inBook) onDismiss() else backRequested = true
+                            }
                         } else {
-                            backRequested = true
+                            saveError = true
                         }
                     }
                 })
