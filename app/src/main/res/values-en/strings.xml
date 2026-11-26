@@ -1224,7 +1224,11 @@
     <string name="engine_module_management_title">Engine modules</string>
     <string name="engine_module_management_refresh">Refresh module list</string>
     <string name="engine_module_management_empty">No modules found</string>
-    <string name="engine_module_management_summary">%1$s · %2$s · Protocol %3$d · %4$s · %5$d games</string>
+    <string name="engine_module_management_card_title">%1$s · %2$s</string>
+    <string name="engine_module_management_unnamed">Unnamed module</string>
+    <string name="engine_module_management_uninstall">Uninstall module</string>
+    <string name="engine_module_management_uninstall_failed">Could not open the system uninstall screen</string>
+    <string name="engine_module_management_summary">%1$s · Protocol %2$d · %3$d games</string>
     <string name="engine_module_management_scan_supported">Scan supported</string>
     <string name="engine_module_management_scan_unsupported">No scan signature declared</string>
     <string name="engine_module_management_enabled_toast">Enabled. Return to the games page and scan again</string>

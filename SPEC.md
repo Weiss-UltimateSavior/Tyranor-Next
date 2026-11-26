@@ -165,6 +165,8 @@ MAGES. 引擎（经开源重新实现项目 impacto）由外置 Impacto 宿主 A
 
 来源：`core/engine/runtime/`、`ui/runtime/`。
 
+- **管理页卡片**：名称后显示扫描状态，下一行显示版本、协议和绑定游戏数。缺少可用名称时显示「未命名模块」。右侧为启用开关。
+- **卸载入口**：长按模块卡片打开对应应用的系统卸载确认，返回管理页时刷新模块和游戏绑定。
 - **发现**：Manifest `<queries>` 声明 `com.tyranor.runtime.action.LAUNCH`（含 `CATEGORY_DEFAULT`），主 App 按 action 查询可见应用并只保留包名前缀 `com.tyranor.runtime.`；不申请 `QUERY_ALL_PACKAGES`，也不校验签名、版本或包内容。一个包只取一个入口 Activity：优先带 `com.tyranor.runtime.MANIFEST` meta-data 的，否则按 Activity 名排序取第一个。
 - **启用默认关**：发现结果只用于「工具 → 引擎模块管理」列表与模块名展示，不写入扫描索引或游戏库；开关默认关闭。游戏库卡片对这类游戏统一显示「Plugin」，不显示模块名。启用只把包名写入 `AppSettingsStore.KEY_RUNTIME_MODULE_ENABLED`（StringSet，默认空集），不触发扫描、不立即写库。同包名更新/重装保留开关；包名变更视为新模块，默认关闭。
 - **扫描描述**：模块可选提供 `res/raw/tyranor_runtime.json`，声明 `extensions` / `markers` / `match`（`any` 或 `all`）；这是自动扫描的唯一特征来源，主 App 不根据包名、应用名、图标或内置第三方特征库猜测，也不执行模块代码；扩展名只匹配目录直接子文件，marker 支持直接子项与单层路径（如 `data/*.pak`），不递归。描述缺失、读取/解析失败或没有有效模式时只关闭该模块的自动扫描能力，模块仍可被发现、启用和启动。

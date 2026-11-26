@@ -1224,7 +1224,11 @@
     <string name="engine_module_management_title">引擎模块管理</string>
     <string name="engine_module_management_refresh">刷新模块列表</string>
     <string name="engine_module_management_empty">未发现模块</string>
-    <string name="engine_module_management_summary">%1$s · %2$s · 协议 %3$d · %4$s · %5$d 个游戏</string>
+    <string name="engine_module_management_card_title">%1$s · %2$s</string>
+    <string name="engine_module_management_unnamed">未命名模块</string>
+    <string name="engine_module_management_uninstall">卸载模块</string>
+    <string name="engine_module_management_uninstall_failed">无法打开系统卸载界面</string>
+    <string name="engine_module_management_summary">%1$s · 协议 %2$d · %3$d 个游戏</string>
     <string name="engine_module_management_scan_supported">支持扫描</string>
     <string name="engine_module_management_scan_unsupported">未声明扫描特征</string>
     <string name="engine_module_management_enabled_toast">已启用，请回游戏页重新扫描</string>
