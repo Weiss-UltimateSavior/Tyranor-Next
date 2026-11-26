@@ -102,7 +102,7 @@ class RpgMakerActivity : Activity() {
     @Volatile
     private var v12Session = false
 
-    /** 仅 v2 会话启用：真文件系统桥 + 素材文件名宽松匹配。v0/v1 行为不变。 */
+    /** 仅 TynMV-0.2 / TynMZ 会话启用真文件系统桥；HTTP 侧严格资源名匹配已覆盖全量 MV/MZ 会话。 */
     @Volatile
     private var v2Session = false
     private val processExitScheduled = AtomicBoolean(false)

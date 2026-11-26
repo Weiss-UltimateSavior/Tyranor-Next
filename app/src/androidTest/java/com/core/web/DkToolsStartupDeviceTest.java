@@ -15,6 +15,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
+import com.core.rpgmaker.RpgMakerDirIndex;
 import com.core.rpgmaker.RpgMakerLocalHttpServer;
 import com.core.tyrano.TyranoLocalHttpServer;
 import java.io.ByteArrayOutputStream;
@@ -56,51 +57,53 @@ public final class DkToolsStartupDeviceTest {
                 "true".equals(InstrumentationRegistry.getArguments().getString("rpgmaker_compat")));
 
         File root = new File(context.getCacheDir(), "dktools-startup-" + UUID.randomUUID());
-        assertTrue(root.mkdirs());
-        File scripts = new File(root, "js/plugins");
-        assertTrue(scripts.mkdirs());
-        Files.write(new File(root, "index.html").toPath(), HTML.getBytes(StandardCharsets.UTF_8));
-        Files.write(new File(scripts, "DKTools.js").toPath(), PLUGIN.getBytes(StandardCharsets.UTF_8));
-        byte[] hook;
-        try (InputStream input = context.getAssets().open(DkToolsCompat.ASSET_PATH);
-             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            byte[] buffer = new byte[8192];
-            int size;
-            while ((size = input.read(buffer)) != -1) output.write(buffer, 0, size);
-            hook = output.toByteArray();
-        }
-        Map<String, byte[]> appends = Collections.singletonMap(DkToolsCompat.SCRIPT_PATH, hook);
-        RpgMakerLocalHttpServer modern = legacy ? null : new RpgMakerLocalHttpServer(root,
-                (com.core.rpgmaker.AsarArchive) null, null, false, appends, "",
-                Collections.emptyMap(), null, true, false, 0);
-        TyranoLocalHttpServer old = legacy ? new TyranoLocalHttpServer(root,
-                (com.core.tyrano.AsarArchive) null, null, false, appends, "",
-                Collections.emptyMap(), 0) : null;
-        Object server = legacy ? old : modern;
-        CountDownLatch scanStarted = new CountDownLatch(1);
+        RpgMakerLocalHttpServer modern = null;
+        TyranoLocalHttpServer old = null;
         CountDownLatch releaseScan = new CountDownLatch(1);
-        AtomicReference<String> workerName = new AtomicReference<>();
-        PluginFileIndexCache cache = new PluginFileIndexCache(focused -> {
-            workerName.set(Thread.currentThread().getName());
-            scanStarted.countDown();
-            try {
-                if (!releaseScan.await(12, TimeUnit.SECONDS)) throw new AssertionError("Scan was not released");
-            } catch (InterruptedException error) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException("Synthetic slow scan interrupted", error);
-            }
-            return "{\"locales\":{\"en.json\":{\"__stats__\":{\"type\":\"file\",\"size\":2}}}}"
-                    .getBytes(StandardCharsets.UTF_8);
-        }, error -> false, System::nanoTime, 5_000_000_000L, error -> Unit.INSTANCE);
-        // Replace only the slow-I/O boundary, using the real cache, executor and HTTP protocol.
-        Field cacheField = server.getClass().getDeclaredField("pluginFileIndex");
-        cacheField.setAccessible(true);
-        cacheField.set(server, cache);
-        Bridge probe = new Bridge();
         AtomicReference<WebView> browser = new AtomicReference<>();
-        if (legacy) old.start(); else modern.start();
-        int port = legacy ? old.getPort() : modern.getPort();
         try {
+            assertTrue(root.mkdirs());
+            File scripts = new File(root, "js/plugins");
+            assertTrue(scripts.mkdirs());
+            Files.write(new File(root, "index.html").toPath(), HTML.getBytes(StandardCharsets.UTF_8));
+            Files.write(new File(scripts, "DKTools.js").toPath(), PLUGIN.getBytes(StandardCharsets.UTF_8));
+            byte[] hook;
+            try (InputStream input = context.getAssets().open(DkToolsCompat.ASSET_PATH);
+                 ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                byte[] buffer = new byte[8192];
+                int size;
+                while ((size = input.read(buffer)) != -1) output.write(buffer, 0, size);
+                hook = output.toByteArray();
+            }
+            Map<String, byte[]> appends = Collections.singletonMap(DkToolsCompat.SCRIPT_PATH, hook);
+            modern = legacy ? null : new RpgMakerLocalHttpServer(root,
+                    (com.core.rpgmaker.AsarArchive) null, null, false, appends, "",
+                    Collections.emptyMap(), null, true, false, 0, "", new RpgMakerDirIndex());
+            old = legacy ? new TyranoLocalHttpServer(root,
+                    (com.core.tyrano.AsarArchive) null, null, false, appends, "",
+                    Collections.emptyMap(), 0) : null;
+            Object server = legacy ? old : modern;
+            CountDownLatch scanStarted = new CountDownLatch(1);
+            AtomicReference<String> workerName = new AtomicReference<>();
+            PluginFileIndexCache cache = new PluginFileIndexCache(focused -> {
+                workerName.set(Thread.currentThread().getName());
+                scanStarted.countDown();
+                try {
+                    if (!releaseScan.await(12, TimeUnit.SECONDS)) throw new AssertionError("Scan was not released");
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("Synthetic slow scan interrupted", error);
+                }
+                return "{\"locales\":{\"en.json\":{\"__stats__\":{\"type\":\"file\",\"size\":2}}}}"
+                        .getBytes(StandardCharsets.UTF_8);
+            }, error -> false, System::nanoTime, 5_000_000_000L, 3, error -> Unit.INSTANCE);
+            // Replace only the slow-I/O boundary, using the real cache, executor and HTTP protocol.
+            Field cacheField = server.getClass().getDeclaredField("pluginFileIndex");
+            cacheField.setAccessible(true);
+            cacheField.set(server, cache);
+            Bridge probe = new Bridge();
+            if (legacy) old.start(); else modern.start();
+            int port = legacy ? old.getPort() : modern.getPort();
             InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
                 WebView view = new WebView(context);
                 browser.set(view);
@@ -140,15 +143,30 @@ public final class DkToolsStartupDeviceTest {
             Log.i(TAG, "PASS legacy=" + legacy + " result=" + result + " fixture=" + root);
         } finally {
             releaseScan.countDown();
-            if (legacy) old.stop(); else modern.stop();
-            InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
-                WebView view = browser.get();
-                if (view != null) {
-                    view.stopLoading();
-                    view.removeJavascriptInterface("DeviceProbe");
-                    view.destroy();
-                }
-            });
+            if (old != null) old.stop();
+            if (modern != null) modern.stop();
+            if (browser.get() != null) {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
+                    WebView view = browser.get();
+                    if (view != null) {
+                        view.stopLoading();
+                        view.removeJavascriptInterface("DeviceProbe");
+                        view.destroy();
+                    }
+                });
+            }
+            deleteRecursively(root);
+        }
+    }
+
+    private static void deleteRecursively(File target) {
+        if (target == null || !target.exists()) return;
+        File[] children = target.listFiles();
+        if (children != null) {
+            for (File child : children) deleteRecursively(child);
+        }
+        if (!target.delete()) {
+            Log.w(TAG, "Failed to delete temporary fixture path: " + target);
         }
     }
 

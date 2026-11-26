@@ -40,8 +40,6 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
   <img src="https://contrib.rocks/image?repo=Weiss-UltimateSavior/Tyranor-Next" />
 </a>
 
-RPG Maker MV/MZ 的 DKTools 浏览器文件索引缺失时，可由宿主提供会话内只读索引，支持目录及 ASAR 游戏，并优先保留游戏已有索引。索引排除已知存档/备份目录，支持资源名大小写与空白差异；超限时尝试仅提供语言和数据目录。扫描在独立线程完成，启动通过异步等待索引就绪，避免同步扫描阻塞页面。适用模式见 [SPEC 第 4 节](SPEC.md#4-引擎识别与运行路线)，验证边界见 [第 10 节](SPEC.md#10-实验能力与证据边界)。
-
 ## 支持范围
 
 ### 引擎与游戏类型
@@ -78,6 +76,8 @@ RPG Maker MV/MZ 的 DKTools 浏览器文件索引缺失时，可由宿主提供�
 | MAGES.（impacto）    | 按精确大小写识别 profile，规则优先取自已安装的宿主：上游 profile 看根目录条目（如 `mo6tw` 的 `SYSTEM.CPK`、`SCRIPT.cls`），Windows／Steam 版《秋之回忆6》看根目录 `game.exe` 与 `data/` 里的 `script.cpk`、`mes00.cpk`，Steam 版 STEINS;GATE 看 `Game.exe` 与 `USRDIR/` 里的 `script.mpk`、`system.mpk`；像 MAGES. 但没有 profile 的目录列为「暂不支持」，可尝试运行 | 外置 [Impacto 宿主 APK](https://github.com/SIRENA-Core/Tyranor-Next-MAGES/releases)（引擎页点击跳转下载；Windows／Steam 版需宿主 0.2.0、STEINS;GATE 需 0.3.0 及以上） |
 | PSP                  | `.pbp`、`.cso`、`.iso`、`.chd`                                         | 外置 PPSSPP 模拟器                 |
 | Nintendo Switch      | `.nsp`、`.xci`、`.nca`、`.nro`                                         | 外置 Eden 模拟器                   |
+
+RPG Maker MV/MZ 的 DKTools 浏览器文件索引缺失时，可由宿主提供会话内只读索引，支持目录及 ASAR 游戏，并优先保留游戏已有索引。索引排除已知存档/备份目录，支持资源名大小写与空白差异；超限时尝试仅提供语言和数据目录。扫描在独立线程完成，启动通过异步等待索引就绪，避免同步扫描阻塞页面。适用模式见 [SPEC 第 4 节](SPEC.md#4-引擎识别与运行路线)，验证边界见 [第 10 节](SPEC.md#10-实验能力与证据边界)。
 
 ### 平台与文件要求
 
