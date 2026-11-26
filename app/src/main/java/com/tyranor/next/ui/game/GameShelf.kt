@@ -330,7 +330,14 @@ internal fun GameShelf(
         snapshotFlow { pagerState.isScrollInProgress }.collect { scrolling -> if (scrolling) book.interruptClosing() }
     }
 
-    Box(Modifier.fillMaxSize().shelfTouchIntent { if (isInteractive()) catalog?.interruptExit() }) {
+    // 手指是否按在书架上告诉藏书阁舞台：退场收尾要等手指抬起再交付，否则覆盖层离开组合会取消这次触摸（见 dismissWhenShelfReleased）
+    DisposableEffect(catalog) { onDispose { catalog?.onShelfTouch(false) } }
+    Box(
+        Modifier.fillMaxSize().shelfTouchIntent(
+            onTouchDown = { if (isInteractive()) catalog?.interruptExit() },
+            onTouchingChanged = { touching -> catalog?.onShelfTouch(touching) },
+        ),
+    ) {
         ShelfBackdrop(pagerState, games, coverTints, Modifier.fillMaxSize())
         BoxWithConstraints(
             modifier = Modifier

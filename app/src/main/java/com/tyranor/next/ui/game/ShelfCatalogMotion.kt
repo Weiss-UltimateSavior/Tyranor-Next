@@ -482,6 +482,38 @@ internal class ShelfCatalogStage {
         exitInterrupt?.invoke()
     }
 
+    /** 书架上此刻有手指按着（书架根节点在初始阶段登记，只观察、不消费）。 */
+    private var shelfTouching = false
+
+    /** 书架上的长按已成立、在等旧覆盖层收尾后重开（见 `ShelfCatalogSession`）：这时收尾不必再等手指抬起。由宿主置位、重开后复位。 */
+    var reopenRequested = false
+
+    private var deferredDismiss: (() -> Unit)? = null
+
+    /**
+     * 覆盖层收场结束，要交付收尾（把它从组合里拿掉）。
+     *
+     * 退场期间触摸已经递给下面的书架，覆盖层节点也在这次触摸的命中路径里：此刻手指还按在书架上就把覆盖层拿掉，
+     * Compose 会因为路径里有节点离开组合而取消整条路径——长按攒不到成立、横向拖动半路断掉。所以手指还按着就先挂起，
+     * 抬手后再交付；长按已成立、正等着重开（[reopenRequested]）时不用等——这次手势的长按已经触发过了，取消无妨。
+     */
+    fun dismissWhenShelfReleased(dismiss: () -> Unit) {
+        if (shelfTouching && !reopenRequested) deferredDismiss = dismiss else dismiss()
+    }
+
+    /** 书架根节点上报手指按下 / 抬起；抬起时交付被挂起的收尾。 */
+    fun onShelfTouch(pressed: Boolean) {
+        shelfTouching = pressed
+        if (!pressed) flushDeferredDismiss()
+    }
+
+    /** 交付被挂起的收尾（没有挂起则什么也不做）。 */
+    fun flushDeferredDismiss() {
+        val dismiss = deferredDismiss ?: return
+        deferredDismiss = null
+        dismiss()
+    }
+
     var focusRequestToken by mutableIntStateOf(0)
         private set
 
@@ -1316,20 +1348,7 @@ internal class ShelfCatalogMotion(
 
     private fun beginSwitch(target: ShelfCatalogLayoutMode) {
         if (!enhanced || !hasEntered || closing || !ValueAnimator.areAnimatorsEnabled()) {
-            if (!closing && !hasEntered) {
-                transitionJob?.cancel()
-                transitionJob = null
-                activeTroupe = emptyList()
-                hiddenSlotUris = emptySet()
-                stage.lentUris = emptySet()
-                stage.lentAlpha = 1f
-                hasEntered = true
-                scope.launch(start = CoroutineStart.UNDISPATCHED) {
-                    progress.snapTo(1f)
-                    stage.recedeProgress = 1f
-                    troupePresence.snapTo(0f)
-                }
-            }
+            settleEntryNow()
             changeLayout(target)
             return
         }
@@ -1462,6 +1481,34 @@ internal class ShelfCatalogMotion(
         layoutMode = target
     }
 
+    /**
+     * 入场还没放完（书还在空中飞、或交接淡出还没完）就被别的操作打断：不再等动画，立刻收敛到入场完成的样子
+     * （飞行编队撤掉、书柜各层显现、书架退到位），之后的操作都在稳定的书柜上进行。
+     * 切换陈列和开始滑动书墙都走这里；已经入场完、或正在退场时什么也不做。
+     */
+    private fun settleEntryNow() {
+        if (closing || hasEntered) return
+        transitionJob?.cancel()
+        transitionJob = null
+        activeTroupe = emptyList()
+        hiddenSlotUris = emptySet()
+        stage.lentUris = emptySet()
+        stage.lentAlpha = 1f
+        hasEntered = true
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            progress.snapTo(1f)
+            stage.recedeProgress = 1f
+            troupePresence.snapTo(0f)
+        }
+    }
+
+    /**
+     * 入场途中用户开始拖动书墙。飞行编队的落点是进场那一刻量好的屏幕位置，书墙一滚动，真正的书就不在那里了：
+     * 编队落在旧位置、被藏起的真书却已滚走，封面会悬在错位的地方、与滚动中的书叠在一起。
+     * 所以不等动画，直接收敛入场（与入场未完成时切换陈列同一做法）。
+     */
+    internal fun settleEntryForScroll() = settleEntryNow()
+
     /** 某一本变形卡片此刻的位置、大小与自己的进度 t（相对覆盖层左上角；终点还没摆好时停在起点）。 */
     internal fun morphPoseOf(flight: ShelfCatalogMorphFlight): ShelfCatalogMorphPose {
         // 接力切换时 morphProgress 在新一轮开头同步归零，但组合要下一帧才跟上：这一帧里上一轮的卡片还在画，
@@ -1560,7 +1607,8 @@ internal class ShelfCatalogMotion(
         withTimeoutOrNull(ENTER_WAIT_SLOT_MS) {
             snapshotFlow { isEnterSlotReady(heroUri) }.first { it }
         }
-        if (closing) return
+        // 等书格就位的这段里已经被收敛过（用户一进来就拖动书墙、或切换陈列）：不再起飞行编队
+        if (closing || hasEntered) return
 
         val visibleSlots = snapshotVisibleSlots()
         val heroSlot = heroUri?.let { visibleSlots[it] }
@@ -1913,22 +1961,35 @@ internal class ShelfCatalogMotion(
     fun dismissImmediately() {
         closing = true
         transitionJob?.cancel()
-        deliver()
+        deliver(immediate = true)
     }
 
     internal fun releaseIfLeaving(event: Lifecycle.Event) {
         if ((event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) && closing) {
-            deliver()
+            deliver(immediate = true)
         }
     }
 
-    private fun deliver() {
-        if (delivered) return
+    /**
+     * 退场收尾：清掉舞台上的借出状态，并把覆盖层交还给宿主拿掉。
+     *
+     * 默认等书架上的手指抬起再交付（见 [ShelfCatalogStage.dismissWhenShelfReleased]）；应用锁、进后台这类强制关闭
+     * 传 [immediate]，不等手指（连已经挂起的收尾也立刻交付）。
+     */
+    private fun deliver(immediate: Boolean = false) {
+        if (delivered) {
+            if (immediate) stage.flushDeferredDismiss()
+            return
+        }
         delivered = true
         exitFocusToken?.let(stage::clearPendingFocus)
         stage.exitInterrupt = null
         stage.release()
-        dismissAction?.invoke()
+        if (immediate) {
+            dismissAction?.invoke()
+        } else {
+            stage.dismissWhenShelfReleased { dismissAction?.invoke() }
+        }
     }
 
     internal fun currentBookPose(flight: ShelfCatalogBookFlight): ShelfCatalogBookPose {
@@ -2514,7 +2575,12 @@ private val MORPH_SPRING = MotionSprings.response<Float>(0.72f, 0.92f, 0.0005f)
 private val CATALOG_INTERRUPT_SPRING = MotionSprings.response<Float>(0.16f, 1f, 0.0005f)
 private const val CATALOG_INTERRUPT_HANDOFF_MS = 40
 
-/** [disabled] 时把这一层的布局大小报成 0（内容照常按原约束测量、摆在原位、照常绘制，只是命中测试落空），触摸穿透到下层。 */
+/**
+ * [disabled] 时把这一层的布局大小报成 0（内容照常按原约束测量、摆在原位、照常绘制）。
+ *
+ * 只改布局尺寸，**不能**让触摸穿透：命中测试只按「带触摸输入的节点」自己的范围判断，零尺寸的父节点拦不住（也放不过）子孙节点，
+ * 里面的可点 / 可滚动控件照样被命中。要让下层页面收到触摸，用 `MainOverlayShareTouches`，并让这一层里的控件自己停止响应。
+ */
 internal fun Modifier.noHitWhile(disabled: Boolean): Modifier = if (!disabled) this else layout { measurable, constraints ->
     val placeable = measurable.measure(constraints)
     layout(0, 0) { placeable.place(0, 0) }

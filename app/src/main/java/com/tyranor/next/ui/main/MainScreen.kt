@@ -75,6 +75,7 @@ import com.tyranor.next.theme.glassPageBackground
 import com.tyranor.next.ui.common.LiquidGlassNavItem
 import com.tyranor.next.ui.common.LocalMainOverlayHost
 import com.tyranor.next.ui.common.MainOverlayHost
+import com.tyranor.next.ui.common.shareTouchesWithSiblings
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavigationRail
 import com.tyranor.next.ui.common.DialogTextButton
@@ -586,7 +587,11 @@ fun MainScreen(
     if (mainOverlayHost.active) {
       mainOverlayHost.stack.forEach { entry ->
         key(entry.id) {
-          Box(Modifier.fillMaxSize().zIndex(10f)) {
+          Box(
+            Modifier.fillMaxSize().zIndex(10f)
+              // 覆盖层收场期间把触摸一并交给下面的页面（见 MainOverlayShareTouches）
+              .then(if (entry.sharesTouches) Modifier.shareTouchesWithSiblings() else Modifier),
+          ) {
             entry.Content()
           }
         }

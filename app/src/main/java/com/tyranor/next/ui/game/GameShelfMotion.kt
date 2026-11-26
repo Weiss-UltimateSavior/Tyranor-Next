@@ -2395,12 +2395,22 @@ internal class ShelfRubberBand(private val maxPull: Float, private val scope: Co
  * 按住进度轨道（或在书架上慢慢拖）超过 1.5 秒后，越过每一本的轻点都会被当成「不是手指引起的」而丢掉。
  * 这里在按住期间的每个指针事件上续一次（只观察、不消费）。
  */
-internal fun Modifier.shelfTouchIntent(onTouchDown: () -> Unit = {}): Modifier = pointerInput(Unit) {
+internal fun Modifier.shelfTouchIntent(
+    onTouchDown: () -> Unit = {},
+    /** 书架上有没有手指按着变了（任一指针按下 / 全部抬起或被取消）。 */
+    onTouchingChanged: (touching: Boolean) -> Unit = {},
+): Modifier = pointerInput(Unit) {
     awaitPointerEventScope {
+        var touching = false
         while (true) {
             val event = awaitPointerEvent(PointerEventPass.Initial)
             if (event.changes.any { it.changedToDown() }) onTouchDown()
-            if (event.changes.any { it.pressed }) MotionIntent.noteTouch()
+            val pressed = event.changes.any { it.pressed }
+            if (pressed) MotionIntent.noteTouch()
+            if (pressed != touching) {
+                touching = pressed
+                onTouchingChanged(pressed)
+            }
         }
     }
 }

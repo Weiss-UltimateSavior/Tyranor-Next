@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.stopScroll
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -142,6 +143,7 @@ import com.tyranor.next.theme.shelfCatalogSelectedChipText
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.LocalSlidingTabLightPanel
 import com.tyranor.next.ui.common.MainOverlayPortal
+import com.tyranor.next.ui.common.MainOverlayShareTouches
 import com.tyranor.next.ui.common.NoIndication
 import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.collectSettingAsState
@@ -167,6 +169,7 @@ import com.tyranor.next.ui.common.motion.scrollJelly
 import com.tyranor.next.ui.common.motion.scrollJellyHost
 import com.tyranor.next.ui.common.privacy.DismissOnAppLockEffect
 import java.util.Locale
+import kotlinx.coroutines.flow.first
 
 /**
  * 书架布局「藏书阁」全员合卷入柜全景模式：
@@ -224,6 +227,9 @@ internal fun ShelfCatalogOverlay(
             LocalIndication provides NoIndication,
         ) {
             LaunchedEffect(motion) { motion.enter() }
+            // 退场（合上 / 点选）期间不再挡触摸：手指直接落到下面的书架上，想切页、想点另一个游戏、想再长按进藏书阁都不用等动画放完
+            // （书架被碰到时由 interruptExit 把退场收尾）。覆盖层里的控件在 closing 期间自己不响应（见下面各处的 enabled 判断）
+            MainOverlayShareTouches(motion.closing)
             BackHandler(enabled = !motion.closing) {
                 focusManager.clearFocus(force = true)
                 motion.close(closeAnchor)
@@ -237,9 +243,6 @@ internal fun ShelfCatalogOverlay(
                 ShelfCatalogBackground(motion = motion, modifier = Modifier.fillMaxSize())
                 Column(
                     modifier = Modifier
-                        // 退场（合上 / 点选）期间不再接触摸：交互层报 0 大小（照常绘制），手指直接落到下面的书架上，
-                        // 想切页、想点另一个游戏不用等动画放完（书架被碰到时由 interruptExit 把退场收尾）
-                        .noHitWhile(motion.closing)
                         .fillMaxSize()
                         .statusBarsPadding()
                         .imePadding(),
@@ -274,6 +277,7 @@ internal fun ShelfCatalogOverlay(
                     if (empty) {
                         ShelfCatalogEmptyState(
                             onReset = {
+                                if (motion.closing) return@ShelfCatalogEmptyState
                                 MotionHaptics.perform(MotionHaptics.Kind.Tick)
                                 onResetAll()
                             },
@@ -466,12 +470,10 @@ private fun ShelfCatalogBackground(
     val backdrop = ShelfCatalogBackdrop
     val closing = motion.closing
     Box(
-        // noHitWhile 必须在 modifier（fillMaxSize）之前：它把布局大小报成 0，放在铺满的紧约束里面，
-        // 约束会把 0 抬回满尺寸、内容反被居中偏移半个屏幕——退场第一帧背景整块挪到屏幕正中，只剩右下 1/4 盖着淡蓝底色，其余露出主界面
-        (if (closing) Modifier.noHitWhile(true) else Modifier)
-            .then(modifier)
+        modifier
             .shelfCatalogBackdropAlpha(motion)
             .then(
+                // 退场期间不再吞触摸：没有触摸输入的节点不会被命中，手指穿过背景落到下面的页面（覆盖层本身另有共享触摸，见 MainOverlayShareTouches）
                 if (closing) {
                     Modifier
                 } else {
@@ -591,12 +593,16 @@ private fun ShelfCatalogControlDeck(
                     tabs = layoutLabels,
                     selectedIndex = if (motion.requestedLayout == ShelfCatalogLayoutMode.SPINES) 0 else 1,
                     onTabSelected = { index ->
-                        onLayoutSelect(if (index == 0) ShelfCatalogLayoutMode.SPINES else ShelfCatalogLayoutMode.COVERS)
+                        // 退场期间触摸是递给下面书架的，这里不响应
+                        if (!motion.closing) {
+                            onLayoutSelect(if (index == 0) ShelfCatalogLayoutMode.SPINES else ShelfCatalogLayoutMode.COVERS)
+                        }
                     },
                 )
             }
             Spacer(Modifier.width(6.dp))
             ShelfCatalogCloseButton(onClick = {
+                if (motion.closing) return@ShelfCatalogCloseButton
                 MotionHaptics.perform(MotionHaptics.Kind.Tick)
                 onClose()
             })
@@ -625,6 +631,7 @@ private fun ShelfCatalogControlDeck(
             )
             // 与游戏页搜索栏右侧同款的「筛选与排序」图标：打开全局「筛选与排序」抽屉（引擎 / 排序方式 / 游玩状态都在抽屉里）
             GameFilterActionIcon(isActive = filterActive) {
+                if (motion.closing) return@GameFilterActionIcon
                 MotionHaptics.perform(MotionHaptics.Kind.Tick)
                 focusManager.clearFocus(force = true)
                 onOpenFilter()
@@ -816,6 +823,7 @@ private fun ShelfCatalogWall(
             }
             val listState = rememberLazyListState(aligned?.first ?: initialRow, aligned?.second ?: 0)
             StopLeavingWallScroll(listState, isLeaving)
+            SettleEntryOnWallDrag(listState, motion)
             val keepAnchor = rememberCatalogAnchorOnReflow(listState, rows, columns, visibleTiersHint, conditions)
             val jelly = rememberScrollJellyState()
 
@@ -827,7 +835,7 @@ private fun ShelfCatalogWall(
                     .shelfCatalogTopFade()
                     .scrollJellyHost(jelly),
                 contentPadding = PaddingValues(top = WALL_TOP_FADE_START, bottom = 28.dp),
-                userScrollEnabled = !motion.morphing,
+                userScrollEnabled = !motion.morphing && !motion.closing,
             ) {
                 items(
                     items = rows,
@@ -923,6 +931,7 @@ private fun ShelfCatalogWall(
             }
             val listState = rememberLazyListState(aligned?.first ?: initialRow, aligned?.second ?: 0)
             StopLeavingWallScroll(listState, isLeaving)
+            SettleEntryOnWallDrag(listState, motion)
             val keepAnchor = rememberCatalogAnchorOnReflow(listState, rows, columns, visibleTiersHint, conditions)
             val jelly = rememberScrollJellyState()
 
@@ -934,7 +943,7 @@ private fun ShelfCatalogWall(
                     .shelfCatalogTopFade()
                     .scrollJellyHost(jelly),
                 contentPadding = PaddingValues(top = WALL_TOP_FADE_START, bottom = 28.dp),
-                userScrollEnabled = !motion.morphing,
+                userScrollEnabled = !motion.morphing && !motion.closing,
             ) {
                 items(
                     items = rows,
@@ -1051,6 +1060,20 @@ internal fun resolveCatalogCenterUri(
 private fun StopLeavingWallScroll(listState: LazyListState, isLeaving: Boolean) {
     LaunchedEffect(listState, isLeaving) {
         if (isLeaving && listState.isScrollInProgress) listState.stopScroll(MutatePriority.PreventUserInput)
+    }
+}
+
+/**
+ * 入场还没放完就用手指拖动书墙：飞行编队的落点是进场那一刻量好的屏幕位置，书墙一滚动，被藏起的真书就不在那里了，
+ * 编队封面会落在旧位置、与滚动中的书叠在一起（「封面位置异常」）。所以第一次手指拖动就把入场收敛到终态，不再等动画。
+ * 只看手指拖动（[DragInteraction.Start]）：程序化的滚动（筛选回顶等）不算。
+ */
+@Composable
+private fun SettleEntryOnWallDrag(listState: LazyListState, motion: ShelfCatalogMotion) {
+    if (motion.hasEntered || motion.closing) return
+    LaunchedEffect(listState, motion) {
+        listState.interactionSource.interactions.first { it is DragInteraction.Start }
+        motion.settleEntryForScroll()
     }
 }
 
@@ -1503,8 +1526,10 @@ private fun ShelfCatalogVerticalSpine(
                 .shelfCatalogSlotPlaced(motion, game.uri, rowGridIndex, colIndex, ShelfCatalogLayoutMode.SPINES, leanDegrees)
                 .shelfCatalogBookLean(leanDegrees)
                 .shelfCatalogSlotVisible(motion, game.uri)
-                .pressSquish(scale = PressSquishDefaults.CardScale)
+                // 退场期间触摸是递给下面书架的，书不再按压反馈、也不再响应点选
+                .pressSquish(enabled = !motion.closing, scale = PressSquishDefaults.CardScale)
                 .clickable(
+                    enabled = !motion.closing,
                     interactionSource = null,
                     indication = null,
                     role = Role.Button,
@@ -1813,8 +1838,10 @@ private fun ShelfCatalogCoverBook(
             .then(if (isCurrent) Modifier.offset(y = COVER_FOCUS_LIFT) else Modifier)
             .shelfCatalogSlotVisible(motion, game.uri)
             .shelfCatalogSlotPlaced(motion, game.uri, rowGridIndex, colIndex, ShelfCatalogLayoutMode.COVERS)
-            .pressSquish(scale = PressSquishDefaults.CardScale)
+            // 退场期间触摸是递给下面书架的，书不再按压反馈、也不再响应点选
+            .pressSquish(enabled = !motion.closing, scale = PressSquishDefaults.CardScale)
             .clickable(
+                enabled = !motion.closing,
                 interactionSource = null,
                 indication = null,
                 role = Role.Button,
