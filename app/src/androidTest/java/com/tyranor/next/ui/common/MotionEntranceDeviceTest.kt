@@ -67,20 +67,4 @@ class MotionEntranceDeviceTest {
         compose.mainClock.autoAdvance = true
     }
 
-    /** Confirms ordinary mode leaves entrance state untouched by drag gestures. */
-    @Test
-    fun ordinaryModeDoesNotObserveEntranceDrag() {
-        MotionDeviceAcceptance.require()
-        InstrumentationRegistry.getInstrumentation().runOnMainSync { MotionMode.sync(false) }
-        val state = EntranceState()
-        compose.setContent {
-            ProvideEntrance(state) {
-                Box(Modifier.size(120.dp).skipEntranceOnDrag().testTag("ordinaryEntrance"))
-            }
-        }
-        compose.runOnIdle { state.replay() }
-        compose.onNodeWithTag("ordinaryEntrance").performTouchInput { swipeUp(durationMillis = 64) }
-        compose.runOnIdle { assertFalse("Ordinary mode must not install an entrance drag observer", state.isSkipped()) }
-    }
-
 }

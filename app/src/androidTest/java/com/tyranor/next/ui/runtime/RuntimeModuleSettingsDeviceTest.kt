@@ -66,7 +66,6 @@ class RuntimeModuleSettingsDeviceTest {
         val originalLanguage = AppSettingsStore.getLanguage(context)
         val originalStyle = AppSettingsStore.getAppearanceStyle(context)
         val originalTheme = AppSettingsStore.getThemeMode(context)
-        val originalMotion = AppSettingsStore.isMotionEnhanced(context)
         val parent = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "TyranorRuntimeExample")
         check(parent.isDirectory || parent.mkdirs())
         val roots = List(2) { index -> File(parent, "settings-ui-${UUID.randomUUID()}-$index").apply { check(mkdir()) } }
@@ -94,9 +93,6 @@ class RuntimeModuleSettingsDeviceTest {
             arguments.getString("runtime_theme")?.let { value ->
                 check(value in setOf(AppSettingsStore.THEME_MODE_LIGHT, AppSettingsStore.THEME_MODE_DARK))
                 AppSettingsStore.setThemeMode(context, value)
-            }
-            arguments.getString("runtime_motion")?.let { value ->
-                AppSettingsStore.setMotionEnhanced(context, value.toBooleanStrict())
             }
             instrumentation.runOnMainSync { AppThemeColors.refresh(context) }
             AppSettingsStore.setRuntimeModuleEnabled(context, modulePackage, true)
@@ -200,7 +196,6 @@ class RuntimeModuleSettingsDeviceTest {
             AppSettingsStore.setLanguage(context, originalLanguage)
             AppSettingsStore.setAppearanceStyle(context, originalStyle)
             AppSettingsStore.setThemeMode(context, originalTheme)
-            AppSettingsStore.setMotionEnhanced(context, originalMotion)
             instrumentation.runOnMainSync { AppThemeColors.refresh(context) }
         }
     }

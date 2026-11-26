@@ -41,6 +41,7 @@ class EngineTypeAbbrTest {
         assertEquals("RPY", EngineType.RENPY.abbr)
         assertEquals("SWF", EngineType.RUFFLE.abbr)
         assertEquals("YR", EngineType.YURIS.abbr)
+        assertEquals("ERP", EngineType.EASYRPG.abbr)
         assertEquals("PC", EngineType.PC.abbr)
         assertEquals("UNK", EngineType.UNKNOWN.abbr)
     }

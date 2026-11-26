@@ -40,13 +40,13 @@ flowchart TD
 
 ### 界面动效与窗口交接
 
-页面提供状态、稳定身份和业务动作。共享效果由 `ui/common/motion/` 或公共控件实现；只有单一领域理解的效果由该领域持有，例如引擎容量环和归档步骤。动效档位持久化于 `AppSettingsStore`，Activity 根部通过 `ProvideMotionEnvironment` 同步 `MotionMode`。普通档回退由每个效果决定，不另建普通版页面。
+页面提供状态、稳定身份和业务动作。共享效果由 `ui/common/motion/` 或公共控件实现；只有单一领域理解的效果由该领域持有，例如引擎容量环和归档步骤。动效只有一套，没有档位设置；Activity 根部通过 `ProvideMotionEnvironment` 提供越界回弹、触觉与提示条宿主。系统关闭动画时由每个效果自己瞬间完成，不另建简化版页面。
 
 - 常驻主标签与引擎分类共享 `TabPageMotion` 规格和 `tabPageTransform`；各自保留交互时钟。整页位移、缩放和翻折在绘制阶段应用，显隐、命中测试与无障碍由页面宿主控制。独立 Activity 的窗口转场由 `PageTransitions` 和 `AppScreenActivity` 管理，Compose 只处理内容层的景深与遮罩。
 - `MotionSheetController` 管理抽屉的拖动、收起与重入；`SheetBackdrop` 汇总浮层进度，多个来源不在页面上反复叠加缩放。稳定 key 的懒列表、网格和瀑布流共享 `listItemMotion`，逐项入场、删除消散和滚动形变仍是独立效果。
 - `AppNotice` 是提示入口。`NoticeCenter` 持有身份、队列和驻留截止时间；各窗口的 `NoticeHost` 按生命周期登记，由当前绘制者更新动画进度。旧窗口的动画完成回调不能关掉或改写新提示；抽屉等没有可绘制宿主的场景保留 Toast 回退。
 
-具体入口、普通档例外和评审规则见 [AGENTS.md](AGENTS.md#动效与视觉反馈的实现边界强制)，离线检查的覆盖边界见[门禁说明](tools/motion-boundaries.md)。
+具体入口、例外和评审规则见 [AGENTS.md](AGENTS.md#动效与视觉反馈的实现边界强制)，离线检查的覆盖边界见[门禁说明](tools/motion-boundaries.md)。
 
 ## 3. 游戏库与持久化
 
@@ -75,6 +75,8 @@ Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并�
 `app/src/main/baseline-prof.txt` 是从历史设备运行涉及的类扩展得到的 HSP 类级通配规则，不是逐方法采样原件，也不能证明当前版本的性能收益。原始采集命令、APK 哈希与设备构建指纹未随首次文件保留，现已明确这一来源缺口；不得把后续设备或构建身份补写成历史采集身份。
 
 下次获得设备验证授权后，重新采集应同时保存 Git SHA、APK SHA-256、`adb shell getprop ro.build.fingerprint`、系统版本、包名与实际操作路线。运行目标路线后，可用 Android 的 `adb shell cmd package dump-profiles --dump-classes-and-methods <隔离包名>` 导出方法列表（设备须支持此命令并允许读取输出的 `/data/misc/profman/` 文件）；保留原件，再将类描述符去重、排序并生成类级规则，分别记录两份文件的哈希。不得在尚未执行采集时写成已经生成。
+
+书架路径补充了手工指定的类级规则：单排书架入口纳入启动预编译，翻开的书和藏书阁作为启动后的交互路径。规则不是设备采集的结果，不代表已测得首帧或滚动性能收益。
 
 修改或删除类时同步清理失效规则。本轮移除了已删除 `MiuixPopupMotion` 的规则，并在 Android CI 增加 `:app:compileReleaseArtProfile`，让 AGP 结合 release/R8 的实际产物扩展和编译规则。此检查验证构建可用性，不替代真实操作覆盖和性能对照。
 
@@ -121,9 +123,10 @@ RPG Maker v2 的插件 `localStorage` 由兼容层调用 [RpgMakerFsBridge](engi
 以 [engine Manifest](engine/src/main/AndroidManifest.xml) 为准，内置宿主均为 `exported=false`，主要分为 `:kirikiri2`、`:krkrsdl3`、`:ons`、多档 `:artemis*`、`:siglus`、`:fbgames`、`:fvp`、`:ethornell`、`:cmvs`、`:systemnnn`、`:xsys35`、`:xsys4`、`:tyrano`、`:rpgmaker`。进程隔离用于控制原生库、全局状态与符号冲突；不提供通用跨引擎热切换保证。第三方 APK 运行时模块运行在用户安装的独立 APK 进程中，不属于上述宿主，也不由 App 建立 JNI 会话。
 
 - FVP、Framebuffer 及 Siglus 关闭滤镜的路径仍由主线程 `Choreographer` 同步驱动原生调用。
+- Kirikiroid2 由 [KR2Activity](engine/src/main/java/org/tvp/kirikiri2/KR2Activity.java) 根据 Activity、真实窗口焦点和锁屏状态控制 [原生音频桥](engine/src/main/cpp/krkr_audio_bridge.cpp)。桥接层按随包库的 Build ID 核对内存入口。1.3.9 的 Oboe 回调在暂停时输出静音并保留游戏 PCM，两个内核的 OpenAL 路径通过设备暂停和恢复控制输出，后台新建的 OpenAL 设备也受控制。Cocos 渲染的焦点兼容逻辑另受 Activity 恢复状态约束。
 - Siglus 有效滤镜链才启用专用 engine owner 与 GLES consumer；关闭、空链或无效链沿用 SurfaceView 原路径。两种路径共享原生实例准入，不能同时启动第二个 owner。
-- Ethornell 由专用 owner 线程管理 JNI 会话，Surface 世代、会话 token、退出 ACK 与存档操作门禁独立约束。宿主使用 ABI v1 接口面：15 个导出（含 `request_payload`）、Event kind 5 输入对话框与 JSON 回答；kind 5 的 payload 只在 owner 线程两段式读取，UI 线程只持有已解析字符串。随包库的来源与本地补丁清单以 provenance 为准（收敛启动期双重 `bgi-resource` 前缀，并放行顶层 `BGI.gdb` / `BGI####.cad` 到 user-root；provenance `dirty=true`）；`--local-static` 通过，严格来源审计要求 clean/已发布源码，见 §6。`EthornellPauseDeviceTest` 已重写为多 stage/step 模型并 3/3 通过；暂停/恢复与 Surface 通过，但精确 guest tick/held 序列不在该夹具覆盖范围。
-- Ethornell 上游实现虚拟根和用户存档读取映射；本地补丁 0001–0003 维护游戏目录存档策略和公共存储写锁，0005 限定 Amachoco ABI 恢复旧版 Graph91:00 空操作兼容行为。Sys80 与 Sys81 设备夹具覆盖读取路径，真实游戏兼容性仍需单独验收。
+- Ethornell 由专用 owner 线程管理 JNI 会话，Surface 世代、会话 token、退出 ACK 与存档操作门禁独立约束。ABI v1 提供 15 个导出（含 `request_payload`）。Kind 5 输入对话框的 JSON payload 由 owner 线程两段式读取，UI 线程只持有已解析字符串。宿主独立跟踪 Activity、窗口焦点、音频焦点和弹窗暂停，系统要求降低音量时也置位音频暂停。移动端音频路由恢复由运行库负责。
+- Ethornell 上游实现虚拟根、用户存档读取映射和 Amachoco ABI 使用的 Graph91:00 强制呈现。本地补丁 0001–0003 维护游戏目录存档策略和公共存储写锁。Sys80 与 Sys81 设备夹具覆盖读取路径，真实游戏兼容性仍需单独验收。
 - `Surface` 消失、Activity `finish()`、原生销毁完成与进程退出是不同事件。修改宿主必须维护线程归属、资源租约、回调世代和释放时序，不能用强杀结果冒充正常退出。
 - SystemNNN 的播放器在最终存档写入和目录锁释放后撤销任务记录。相同游戏快速重开时，工作线程有界等待上一会话释放存档。只读校验服务运行在单独的 `:systemnnn_validator`，不登记播放器会话。
 
@@ -161,7 +164,7 @@ DKTools 注入只在适用 MV/MZ 会话启用，原 `Stamp.json` 优先。HTML �
 - 旧版 APK 在 Android 11（API 30）`sdk_gphone_x86_64` 模拟器上通过 ARM64 转译运行《死终Ω神盾》简体版。TYN 从游戏库扫描并启动，读取独立版的自动档，推进一条台词、写入同目录的快存并返回标题。临时用普通文件占用 `sav` 路径时，TYN 在启动播放器前显示写入失败。
 - 同一模拟器验证了独立版的全局进度主备恢复。有效主档配损坏备份时隔离备份，损坏主档配有效备份时恢复进度并保留原文件。两次检查都保留扩展和剧情存档。用游戏原片头临时开启不可跳过，切后台暂停，回前台恢复音频焦点并在播放完成后进入标题。
 - Android 8、Android 10、ARM64 真机和真实 WebDAV 服务的设备验收待执行。存档替换与锁冲突另有 JVM 回归。
-- Ethornell `.so`、provenance JSON 与 ABI header 必须成套核对。运行库基线 revision、补丁及最终库哈希以 provenance 为准；补丁链包含虚拟用户路径别名、游戏目录内 `savedata` user-root、共享存储 OFD 写锁，以及 VM 虚拟根识别和受限运行时用户文件读/查/通用加载别名（`0004` 修改 `crates/ethornell-vm/src/resource_io.rs` 与 `crates/ethornell-app/src/lib.rs`）。`savedata` 仅作为固定直接子目录放行，并排除于普通资源读取和遍历。带本地补丁的 `dirty=true` 产物不能通过要求 clean/已发布源码的严格来源审计（`release_ready=false`）；本地静态校验也不等于游戏兼容性或可复现构建验收。
+- Ethornell `.so`、provenance JSON 与 ABI header 必须成套核对。运行库基线 revision、补丁及最终库哈希以 provenance 为准。当前补丁链收敛一层重复的 `bgi-resource`，将 `UserData/**`、`BGI.gdb` 和 `BGI####.cad` 路由至 user-root，并在共享存储上提供 OFD 写锁回退。`savedata` 仅作为固定直接子目录放行，并排除于普通资源读取和遍历。带本地补丁的产物标记为 `dirty=true` 和 `release_ready=false`。严格来源审计要求已发布的干净源码。
 
 预编译源码归属决策见 [ADR 0002](docs/adr/0002-prebuilt-engine-libs-source-in-fork.md)。所有生成目录禁止手工维护；共享字体保持不压缩，并兼顾 System35、System4 与 ONS。
 

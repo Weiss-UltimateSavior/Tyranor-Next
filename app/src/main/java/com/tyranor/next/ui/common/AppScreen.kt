@@ -42,6 +42,7 @@ import com.tyranor.next.ui.common.motion.PageTransitions
 import com.tyranor.next.ui.common.motion.PushStartLead
 import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.ProvideMotionEnvironment
+import com.tyranor.next.ui.common.motion.ScreenRotationSync
 import com.tyranor.next.ui.common.motion.SystemThemeSync
 import com.tyranor.next.ui.common.motion.EntranceGate
 import com.tyranor.next.ui.common.motion.LocalEntranceGate
@@ -167,6 +168,9 @@ abstract class AppScreenActivity : FragmentActivity() {
     /** 系统深浅色变化时的自动换皮过渡（页面原地接收 uiMode 变化，不再被销毁重建）。 */
     private lateinit var systemThemeSync: SystemThemeSync
 
+    /** 平板横竖屏切换的转动过渡：页面自己处理方向变化（不重建），旋转的那一刻截下旧画面。 */
+    private lateinit var screenRotationSync: ScreenRotationSync
+
     /**
      * 本页自己进出的入场翻折进度（见 [PageEnter]）：进场由 [AppScreenScaffold] 在第一帧启动，退出在 [finish] 里倒放。
      * 被系统重建（旋转 / 折叠屏 / 字体变化 / 进程恢复）时没有窗口侧推，直接从「已就位」开始，不重播。
@@ -177,6 +181,7 @@ abstract class AppScreenActivity : FragmentActivity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         // 先保持旧主题并截下旧画面，再让 Compose 接收新配置
         systemThemeSync.onConfigurationChanged(newConfig)
+        screenRotationSync.onConfigurationChanged(newConfig)
         super.onConfigurationChanged(newConfig)
     }
 
@@ -184,9 +189,8 @@ abstract class AppScreenActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         systemThemeSync = SystemThemeSync(this)
+        screenRotationSync = ScreenRotationSync(this)
         // 子类可能因参数无效而在 setContent 前 finish；返回动画同样必须使用持久化档位。
-        AppSettingsStore.initMotionEnhanced(this)
-        MotionMode.sync(AppSettingsStore.motionEnhancedState.value)
         syncCloseTransition(MotionMode.enhanced)
         PageTransitions.bindPushOwner(this)
         // 先于子类添加：子类里后加的返回处理（弹窗、未保存确认等）优先级更高，不受影响

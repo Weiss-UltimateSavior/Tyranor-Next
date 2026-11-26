@@ -98,7 +98,6 @@ class DialogWindowDimDeviceTest {
             originalChild.restoreInteraction()
             // Change the requested base dim as the same live Window switches motion mode.
             // The dim host must update rather than disposing/re-registering it in a new order.
-            MotionMode.sync(true)
             child.dim.floatValue = 0.1f
             parent.dim.floatValue = 0.6f
         }
@@ -194,7 +193,6 @@ class DialogWindowDimDeviceTest {
         val originalMode = compose.runOnIdle { MotionMode.enhanced }
         try {
             compose.mainClock.autoAdvance = false
-            compose.runOnIdle { MotionMode.sync(enhanced) }
             test()
         } finally {
             // Dispose every Dialog even on a failed assertion before restoring the shared mode.
@@ -203,7 +201,6 @@ class DialogWindowDimDeviceTest {
                 compose.mainClock.advanceTimeBy(32)
                 compose.waitForIdle()
             } finally {
-                compose.runOnIdle { MotionMode.sync(originalMode) }
                 compose.mainClock.autoAdvance = true
             }
         }

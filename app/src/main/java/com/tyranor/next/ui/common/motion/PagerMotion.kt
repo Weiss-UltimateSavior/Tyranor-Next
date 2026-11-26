@@ -1,11 +1,15 @@
 package com.tyranor.next.ui.common.motion
 
+import androidx.compose.animation.core.SpringSpec
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.TargetedFlingBehavior
 import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.PagerSnapDistance
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import kotlin.math.abs
@@ -103,26 +107,50 @@ private const val VELOCITY_JUMP_PAGES = 1.5f
 
 /**
  * 翻页吸附手感：增强档用与封面流一致的布局弹簧（带一点回弹地吸附），普通档保持 Pager 默认。
+ * [maxFlingPages] 是一次甩动最多越过的页数：默认 1（整页卡片）；书架这类窄条目传更大的值，甩一下能翻过一串。
+ * [bouncy] 为 true 时（增强档）吸附用明显回弹的弹簧（[pagerBouncySnap]）：松手后冲过一点再弹回停位，翻页手感更「Q」。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun rememberPagerSnapFling(state: PagerState): TargetedFlingBehavior =
-    if (MotionMode.enhanced) {
-        PagerDefaults.flingBehavior(state = state, snapAnimationSpec = MotionTokens.layout(0.5f))
+fun rememberPagerSnapFling(state: PagerState, maxFlingPages: Int = 1, bouncy: Boolean = false): TargetedFlingBehavior {
+    val snapDistance = PagerSnapDistance.atMost(maxFlingPages)
+    return if (MotionMode.enhanced) {
+        PagerDefaults.flingBehavior(
+            state = state,
+            pagerSnapDistance = snapDistance,
+            snapAnimationSpec = if (bouncy) pagerBouncySnap(0.5f) else MotionTokens.layout(0.5f),
+        )
     } else {
-        PagerDefaults.flingBehavior(state = state)
+        PagerDefaults.flingBehavior(state = state, pagerSnapDistance = snapDistance)
     }
+}
+
+/**
+ * Q 弹翻页的吸附弹簧：松手后明显冲过一截再弹回停位（[rememberPagerSnapFling] 的 bouncy、书架的程序化跳转与
+ * 两头橡皮筋的弹回共用）。
+ */
+fun <T> pagerBouncySnap(visibilityThreshold: T? = null): SpringSpec<T> =
+    MotionSprings.spring(BOUNCY_SNAP_MILLIS, BOUNCY_SNAP_BOUNCE, visibilityThreshold)
+
+/**
+ * Q 弹吸附：响应时长与回弹量（0.3 ≈ 阻尼比 0.7：冲过停位约 5% 再顺势回来，没有可见的回摆）。
+ * 真机录屏逐帧量过：0.5 会来回摆两三次，像在抽搐；0.42 只弹一下但用户觉得回弹太大，按要求调小。
+ */
+private const val BOUNCY_SNAP_MILLIS = 600
+private const val BOUNCY_SNAP_BOUNCE = 0.3f
 
 /**
  * 翻页触觉：手指拖动 / 甩动使当前页发生变化时轻点一下（「嗒」）。程序化滚动、首次组合、
- * 手指之外的变化不震（门面按「最近有触摸」门控）。边缘越界不震。
+ * 手指之外的变化不震（门面按「最近有触摸」门控）。边缘越界不震。[muted] 为 true 期间不震
+ * （例如书架进度轨道点按跳转：只在点按时震一次，途经的页不再逐页震）。
  */
 @Composable
-fun PagerTickHaptics(state: PagerState) {
+fun PagerTickHaptics(state: PagerState, muted: () -> Boolean = { false }) {
+    val isMuted by rememberUpdatedState(muted)
     LaunchedEffect(state) {
         var last = state.currentPage
         snapshotFlow { state.currentPage }.collect { page ->
-            if (page != last && state.isScrollInProgress) {
+            if (page != last && state.isScrollInProgress && !isMuted()) {
                 MotionHaptics.perform(MotionHaptics.Kind.Tick)
             }
             last = page

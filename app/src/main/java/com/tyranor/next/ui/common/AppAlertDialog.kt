@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
@@ -38,6 +39,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.tyranor.next.ui.common.motion.nestedPanelContentDim
@@ -64,6 +66,7 @@ import com.tyranor.next.theme.MilkGlassPanelBackground
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.LocalAppDialogContent
+import com.tyranor.next.theme.WithoutPressIndication
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.core.privacy.AppLockController
@@ -75,6 +78,9 @@ import com.tyranor.next.ui.common.motion.MotionSprings
 import com.tyranor.next.ui.common.motion.ExitTapReplay
 import com.tyranor.next.ui.common.motion.PageTransitions
 import com.tyranor.next.ui.common.motion.beginDialogDimExit
+import com.tyranor.next.ui.common.motion.markDialogDimExiting
+import com.tyranor.next.ui.common.motion.passTouchesThrough
+import com.tyranor.next.ui.common.motion.releaseFocusForExit
 import com.tyranor.next.ui.common.motion.restoreInteraction
 import com.tyranor.next.ui.common.motion.DialogWindowScrim
 import com.tyranor.next.ui.common.motion.nestedPanelDim
@@ -88,6 +94,7 @@ import com.tyranor.next.ui.common.motion.animateContentSizeSpring
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -105,9 +112,56 @@ internal val AppDialogContentHorizontalPadding = 18.dp
 internal val AppDialogContentVerticalPadding = 16.dp
 
 /**
+ * [AppAlertDialog] 的一次调用（标题 / 正文 / 按钮与关闭语义），交给 [AppDialogHost] 摆放时使用。
+ * 宿主按与弹窗相同的约定提供 [LocalDialogExit] / [LocalDialogBodyExit]，并在自己的关闭动画结束后交付 [onDismissRequest]。
+ */
+internal class AppDialogSpec(
+    val onDismissRequest: () -> Unit,
+    val title: @Composable () -> Unit,
+    val text: @Composable () -> Unit,
+    val confirmButton: @Composable () -> Unit,
+    val dismissButton: (@Composable () -> Unit)?,
+    val buttonArrangement: Arrangement.Horizontal,
+    val textScrollEnabled: Boolean,
+    dismissEnabled: Boolean,
+    val showButtonRow: Boolean,
+    private val dismissEnabledNow: (() -> Boolean)? = null,
+    val topOverhang: (@Composable () -> Unit)? = null,
+    val topOverhangHeight: Dp = 0.dp,
+) {
+    private val fallbackDismissEnabled = dismissEnabled
+    val dismissEnabled: Boolean get() = dismissEnabledNow?.invoke() ?: fallbackDismissEnabled
+}
+
+/**
+ * 弹窗的替代宿主：组合树里提供了它时，[AppAlertDialog] 不另开窗口，把同一份标题 / 正文 / 按钮交给宿主摆放。
+ * 目前只有「游戏盒」风格翻开的书（`ui/game/ShelfBook.kt`）提供：书里的选项弹出的二级弹窗翻到书的下一页上。
+ */
+internal interface AppDialogHost {
+    @Composable
+    fun Present(dialog: AppDialogSpec)
+}
+
+internal val LocalAppDialogHost = staticCompositionLocalOf<AppDialogHost?> { null }
+
+/**
+ * 弹窗正文里列表的高度：窗口版按 [windowMax] 封顶（窗口高度有限）；翻开的书里书页大得多，列表不设上限，
+ * 有多高占多高（受页上剩下的高度约束），不留一大块空白。
+ */
+@Composable
+internal fun Modifier.dialogListHeight(windowMax: Dp): Modifier =
+    if (LocalAppDialogHost.current != null) this else heightIn(max = windowMax)
+
+/** 同上，窗口版是固定高度 [windowHeight]；书里占满页上剩下的高度。 */
+@Composable
+internal fun Modifier.dialogListFixedHeight(windowHeight: Dp): Modifier =
+    if (LocalAppDialogHost.current != null) fillMaxSize() else height(windowHeight)
+
+/**
  * Miuix 风格弹窗：小屏底部弹入 + 窗口变暗 + 标题居中。
  * 面板和圆角跟随动态主题，动画节奏复刻 miuix OverlayDialog。
- * dismissEnabled 在退场前阻止关闭；已接受的退场始终交付 onDismissRequest。
+ * [dismissEnabledNow] 若提供则覆盖 [dismissEnabled]，在处理关闭时读取实时状态，无需等待重组。
+ * 门禁只影响是否接受关闭，不拦截已接受退场的回调或应用锁的强制关闭。
  */
 @Composable
 internal fun AppAlertDialog(
@@ -135,6 +189,12 @@ internal fun AppAlertDialog(
      * （如归档进度弹窗），必须传入不经过该守卫的收尾动作，否则独立窗口会留在锁门之上。
      */
     onLockDismiss: (() -> Unit)? = null,
+    dismissEnabledNow: (() -> Boolean)? = null,
+    /**
+     * 退场一开始即让窗口放行触摸与焦点，遮罩改由窗口自绘（不启系统 `FLAG_DIM_BEHIND`），也不走 [ExitTapReplay] 补发点击。
+     * 默认 false（保持其余所有弹窗原有行为）；仅供需要下层页面立刻响应长按/点击的弹窗使用（如长按快捷操作弹窗）。
+     */
+    passTouchesDuringExit: Boolean = false,
 ) {
     // 应用锁生效时**退出组合**而不是只请求关闭：弹窗是独立窗口，层级在锁门之上；
     // 调用方若在 onDismissRequest 里有「运行中只能重建」等守卫，只发回调会让窗口留在门上方。
@@ -143,6 +203,26 @@ internal fun AppAlertDialog(
     if (locked) {
         val currentClose by rememberUpdatedState(onLockDismiss ?: onDismissRequest)
         LaunchedEffect(Unit) { currentClose() }
+        return
+    }
+    // 有替代宿主（游戏盒里翻开的书）时交给它摆放，不另开窗口
+    LocalAppDialogHost.current?.let { host ->
+        host.Present(
+            AppDialogSpec(
+                onDismissRequest = onDismissRequest,
+                title = title,
+                text = text,
+                confirmButton = confirmButton,
+                dismissButton = dismissButton,
+                buttonArrangement = buttonArrangement,
+                textScrollEnabled = textScrollEnabled,
+                dismissEnabled = dismissEnabled,
+                showButtonRow = showButtonRow,
+                dismissEnabledNow = dismissEnabledNow,
+                topOverhang = topOverhang,
+                topOverhangHeight = topOverhangHeight,
+            ),
+        )
         return
     }
     val scope = rememberCoroutineScope()
@@ -171,6 +251,9 @@ internal fun AppAlertDialog(
     val pendingExitDelivered = remember { mutableStateOf(false) }
     val currentOnDismiss by rememberUpdatedState(onDismissRequest)
     val currentDismissEnabled by rememberUpdatedState(dismissEnabled)
+    val currentDismissEnabledNow by rememberUpdatedState(dismissEnabledNow)
+    fun canDismiss(): Boolean = currentDismissEnabledNow?.invoke() ?: currentDismissEnabled
+
     val focusManager = LocalFocusManager.current
     val lifecycleOwner = LocalLifecycleOwner.current
     // Dialog 内容是独立的 Compose 根，自带一个焦点管理器；这里拿到的 focusManager 只管页面层。
@@ -184,8 +267,15 @@ internal fun AppAlertDialog(
     /** 退场动画：遮罩淡出与面板下沉；返回时动画已结束或被 [scrimTapDuringExit] 中止（中止不是协程取消，不会抛出）。 */
     suspend fun playExit(dimSpec: AnimationSpec<Float>, slideSpec: AnimationSpec<Float>) = coroutineScope {
         val job = launch {
-            launch { dimAlpha.animateTo(0f, dimSpec) }
-            slideFraction.animateTo(1f, slideSpec)
+            val dim = launch { dimAlpha.animateTo(0f, dimSpec) }
+            val slide = launch { slideFraction.animateTo(1f, slideSpec) }
+            // 弹簧尾段在卡片已离屏、遮罩肉眼不可见后仍会延续百余毫秒；视觉退场到位即收尾，
+            // 避免不可见的弹窗窗口继续拦住下层卡片的长按与滑动。
+            snapshotFlow {
+                dimAlpha.value <= EXIT_DIM_SETTLED && slideFraction.value >= EXIT_SLIDE_SETTLED
+            }.first { it }
+            dim.cancel()
+            slide.cancel()
         }
         exitAnimation[0] = job
         job.join()
@@ -281,7 +371,7 @@ internal fun AppAlertDialog(
 
     // 取消类按钮：先播放退场再执行按钮动作（按钮通常直接把弹窗从组合里移除，来不及播放退场）。
     // 动作执行后弹窗若仍在（例如校验未通过），再弹回来，不会卡在隐藏状态。
-    val exitController = remember(enhanced, focusManager, lifecycleOwner) {
+    val exitController = remember(enhanced, focusManager, lifecycleOwner, passTouchesDuringExit) {
         DialogExitController { action ->
             if (dismissing.value) return@DialogExitController
             // 若调用本身正处于 ON_PAUSE（例如嵌套弹窗连锁关闭），直接同步交付以避免错失保存窗口
@@ -300,7 +390,13 @@ internal fun AppAlertDialog(
             pendingExitAction.value = action
             pendingExitDelivered.value = false
             releaseInputFocus()
-            dialogWindow[0].beginDialogDimExit()
+            if (passTouchesDuringExit) {
+                dialogWindow[0].markDialogDimExiting()
+                dialogWindow[0].passTouchesThrough()
+                dialogWindow[0].releaseFocusForExit()
+            } else {
+                dialogWindow[0].beginDialogDimExit()
+            }
             var restored = false
             scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 runDialogExitAction(
@@ -326,7 +422,19 @@ internal fun AppAlertDialog(
                     onFailure = { actionFailed(it) },
                     cleanup = {
                         try {
-                            dialogWindow[0]?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                            if (restored) {
+                                dialogWindow[0]?.clearFlags(
+                                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                                )
+                            } else if (pendingExitDelivered.value) {
+                                dialogWindow[0].passTouchesThrough()
+                            } else if (passTouchesDuringExit) {
+                                dialogWindow[0]?.clearFlags(
+                                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                                )
+                            }
                         } finally {
                             pendingExitAction.value = null
                             // 只有真正交付了关闭才进入「退场尾段」；动作没关弹窗、已恢复显示的，不能再按尾段处理遮罩按下与关闭请求
@@ -341,13 +449,19 @@ internal fun AppAlertDialog(
 
     /** 接受一次允许的关闭请求，先释放触摸并同步退场，再交付最新关闭回调。 */
     fun dismiss() {
-        if (!currentDismissEnabled || dismissing.value || inTail()) return
+        if (!canDismiss() || dismissing.value || inTail()) return
         dismissing.value = true
         pendingExitIsDismiss.value = true
         pendingExitAction.value = { currentOnDismiss() }
         pendingExitDelivered.value = false
         releaseInputFocus()
-        dialogWindow[0].beginDialogDimExit()
+        if (passTouchesDuringExit) {
+            dialogWindow[0].markDialogDimExiting()
+            dialogWindow[0].passTouchesThrough()
+            dialogWindow[0].releaseFocusForExit()
+        } else {
+            dialogWindow[0].beginDialogDimExit()
+        }
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             runDialogExitAction(
                 animateExit = {
@@ -362,7 +476,17 @@ internal fun AppAlertDialog(
                 onFailure = { Log.e("AppAlertDialog", "Dialog dismissal failed", it) },
                 cleanup = {
                     try {
-                        dialogWindow[0]?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+                        if (pendingExitDelivered.value) {
+                            dialogWindow[0].passTouchesThrough()
+                        } else {
+                            val clearFlags = if (passTouchesDuringExit) {
+                                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                            } else {
+                                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                            }
+                            dialogWindow[0]?.clearFlags(clearFlags)
+                        }
                     } finally {
                         pendingExitAction.value = null
                         deliveredAt[0] = android.os.SystemClock.uptimeMillis()
@@ -379,7 +503,7 @@ internal fun AppAlertDialog(
         // 弹窗窗口避让到键盘之上，Compose 仍上报完整 IME inset，imePadding 会再抬一次（离键盘过远）。
         properties = DialogProperties(usePlatformDefaultWidth = false,
             decorFitsSystemWindows = false,
-            dismissOnBackPress = currentDismissEnabled, dismissOnClickOutside = currentDismissEnabled),
+            dismissOnBackPress = canDismiss(), dismissOnClickOutside = canDismiss()),
     ) {
         dialogFocus[0] = LocalFocusManager.current
         dialogView[0] = LocalView.current
@@ -388,8 +512,9 @@ internal fun AppAlertDialog(
             progress = { dimAlpha.value },
             onWindow = { dialogWindow[0] = it },
             onDismissRequest = { dismiss() },
-            dismissEnabled = currentDismissEnabled,
-            onScrimTap = { scrimTapDuringExit(it) },
+            dismissEnabled = canDismiss() && !(passTouchesDuringExit && dismissing.value),
+            onScrimTap = if (passTouchesDuringExit) null else { { scrimTapDuringExit(it) } },
+            drawnOnly = passTouchesDuringExit,
         ) {
             // 弹窗整体（卡片 + 可选的超框内容）：底部对齐，从屏底弹入
             Box(
@@ -447,6 +572,7 @@ internal fun AppAlertDialog(
                         // 仅为弹窗子组件提供取色上下文，使输入框与标签指示器和面板形成反差；
                         // 不把弹窗条目色扩展到页内组件，也不由页面调用方覆盖公共组件颜色。
                         CompositionLocalProvider(LocalAppDialogContent provides true) {
+                            WithoutPressIndication {
                             ProvideEntrance(entrance) {
                                 Column(
                                     Modifier
@@ -525,6 +651,7 @@ internal fun AppAlertDialog(
                                     }
                                 }
                             }
+                            }
                         }
                     }
                 }
@@ -542,7 +669,7 @@ internal fun AppAlertDialog(
                     }
                 }
             }
-            if (dismissing.value) {
+            if (dismissing.value && !passTouchesDuringExit) {
                 Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { } })
             }
             // 提示条槽位：弹窗打开时提示条画在弹窗窗口里（遮罩之上），不会被遮罩盖住
@@ -580,6 +707,10 @@ private const val PendingExitTapMaxAgeMillis = 600L
 
 /** 关闭回调交付后，窗口还可能多留一两帧：这段时间内的按下仍按「退场中」转交给下层页面。 */
 private const val ExitTailMillis = 250L
+
+/** 退场动画视觉到位阈值：遮罩透明度低于 0.01 且面板滑出超过 92% 时已不可见，立即结束等待。 */
+private const val EXIT_DIM_SETTLED = 0.01f
+private const val EXIT_SLIDE_SETTLED = 0.92f
 
 /** 弹窗入场时从底边略微放大的幅度（停稳时缩放为 1）。 */
 private const val DialogEnterScaleDelta = 0.06f

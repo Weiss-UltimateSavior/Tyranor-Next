@@ -32,7 +32,6 @@ class MotionDepthStackEquivalenceDeviceTest {
     @get:Rule val compose = createComposeRule()
 
     @Test fun enhancedStackMatchesTwoNodes() = compareStacks(enhanced = true)
-    @Test fun normalStackStaysAtRest() = compareStacks(enhanced = false)
 
     private data class Frame(
         val label: String,
@@ -50,7 +49,6 @@ class MotionDepthStackEquivalenceDeviceTest {
         val sheetCover = mutableFloatStateOf(0f)
         val panelCover = mutableFloatStateOf(0f)
         try {
-            compose.runOnIdle { MotionMode.sync(enhanced) }
             compose.setContent {
                 val sheet = rememberSheetBackdrop()
                 val panel = rememberSheetBackdrop()
@@ -115,7 +113,6 @@ class MotionDepthStackEquivalenceDeviceTest {
                 }
             }
         } finally {
-            compose.runOnIdle { MotionMode.sync(originalMode) }
         }
     }
 

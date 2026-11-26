@@ -1,9 +1,11 @@
 package com.tyranor.next.core.settings
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.os.Build
 import androidx.annotation.VisibleForTesting
+import androidx.annotation.WorkerThread
 import androidx.core.content.edit
 import com.tyranor.next.core.game.model.GameFilterOptions
 import com.tyranor.next.core.game.model.GameLibraryConditions
@@ -40,6 +42,7 @@ object AppSettingsStore {
     const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
 
     private const val ONBOARDING_PENDING_INITIAL_STATE_FILE = "onboarding_initial_state"
+    private const val HOME_PAGE_PENDING_INITIAL_STATE_FILE = "home_page_initial_state"
 
     private var onboardingPreferences: OnboardingPreferences? = null
 
@@ -54,19 +57,20 @@ object AppSettingsStore {
     fun initializeOnboarding(context: Context): OnboardingWriteResult {
         val settings = prefs(context)
         return onboarding(context).initialize {
-            hasExistingOnboardingData(
-                appSettingsHasData = settings.all.isNotEmpty(),
-                legacyPreferencesHaveData = listOf(
-                    AppStorageNames.ENGINE_PREFS,
-                    AppStorageNames.LEGACY_ENGINE_PREFS,
-                    AppStorageNames.GAME_SCANNER_PREFS,
-                ).any { name ->
-                    context.getSharedPreferences(name, Context.MODE_PRIVATE).all.isNotEmpty()
-                },
-                gameLibraryExists = context.getDatabasePath(AppStorageNames.GAME_LIBRARY_DATABASE).exists(),
-            )
+            hasExistingInstallData(context, appSettingsHasData = settings.all.isNotEmpty())
         }
     }
+
+    private fun hasExistingInstallData(context: Context, appSettingsHasData: Boolean): Boolean =
+        hasExistingOnboardingData(
+            appSettingsHasData = appSettingsHasData,
+            legacyPreferencesHaveData = listOf(
+                AppStorageNames.ENGINE_PREFS,
+                AppStorageNames.LEGACY_ENGINE_PREFS,
+                AppStorageNames.GAME_SCANNER_PREFS,
+            ).any { name -> context.getSharedPreferences(name, Context.MODE_PRIVATE).all.isNotEmpty() },
+            gameLibraryExists = context.getDatabasePath(AppStorageNames.GAME_LIBRARY_DATABASE).exists(),
+        )
 
     /**
      * Centralizes the legacy-install evidence used by [initializeOnboarding]. Keeping this
@@ -109,6 +113,9 @@ object AppSettingsStore {
     /** 游戏页游玩状态筛选（[GAME_FILTER_PLAYED_ALL] / [GAME_FILTER_PLAYED_ONLY] / [GAME_FILTER_PLAYED_NONE]）。 */
     const val KEY_GAME_FILTER_PLAYED = "game_filter_played"
 
+    /** 书架风格停留的那一本书（游戏 uri）：退出 / 清后台后再进来还停在这本上。 */
+    const val KEY_GAME_SHELF_FOCUS_URI = "game_shelf_focus_uri"
+
     /** 已启用的第三方 APK 运行时模块包名集合；默认空集（新发现模块默认关闭）。 */
     const val KEY_RUNTIME_MODULE_ENABLED = "runtime_module_enabled"
 
@@ -118,7 +125,7 @@ object AppSettingsStore {
     /** 首页样式：原生（最近打开/快捷启动）/ 网页。 */
     const val KEY_HOME_STYLE = "home_style"
 
-    /** 显示首页：关闭后首页与导航栏首页入口隐藏，游戏页作为第一页；默认开。 */
+    /** 显示首页：关闭后首页与导航栏首页入口隐藏，游戏页作为第一页；默认关（全新安装生效，老用户升级保留开启）。 */
     const val KEY_HOME_PAGE_ENABLED = "home_page_enabled"
 
     /** 经典应用图标：开启后启动器显示旧版图标；默认关。 */
@@ -130,7 +137,7 @@ object AppSettingsStore {
     /** 游戏页卡片隐藏名称标签（【】/[]）；默认开。 */
     const val KEY_GAME_CARD_HIDE_TITLE_TAG = "game_card_hide_title_tag"
 
-    /** 游戏页卡片风格：瀑布（默认）/ 网格 / 列表（封面流）。 */
+    /** 游戏页卡片风格：瀑布（默认）/ 网格 / 封面流 / 书架。 */
     const val KEY_GAME_CARD_STYLE = "game_card_style"
 
     private const val KEY_GAME_CARD_COLUMNS_NARROW = "game_card_columns_narrow"
@@ -164,9 +171,6 @@ object AppSettingsStore {
 
     const val KEY_SIDE_RAIL = "side_rail"
 
-    /** 界面动效档位：true = 增强（默认），false = 普通。 */
-    const val KEY_MOTION_ENHANCED = "motion_enhanced"
-    const val DEFAULT_MOTION_ENHANCED = true
     const val KEY_COVER_SCRAPER_ONLY_MISSING = "cover_scraper_only_missing"
     const val KEY_COVER_SCRAPER_SOURCE_ORDER = "cover_scraper_source_order"
     private const val KEY_COVER_SCRAPER_SOURCE_ENABLED_PREFIX = "cover_scraper_source_enabled_"
@@ -292,6 +296,8 @@ object AppSettingsStore {
     /** 列表：封面流横向轮播。 */
     const val GAME_CARD_STYLE_COVER_FLOW = "cover_flow"
 
+    /** 书架：游戏盒立在搁板上，居中的一盒正面朝外，其余侧转露出书脊，下方刻度尺可拖动快速翻找。 */
+    const val GAME_CARD_STYLE_SHELF = "shelf"
 
     /** 卡片风格默认值：瀑布。 */
     const val DEFAULT_GAME_CARD_STYLE = GAME_CARD_STYLE_WATERFALL
@@ -332,8 +338,8 @@ object AppSettingsStore {
     /** 首页样式默认值：原生。 */
     const val DEFAULT_HOME_STYLE = HOME_STYLE_NATIVE
 
-    /** 显示首页默认值：开。 */
-    const val DEFAULT_HOME_PAGE_ENABLED = true
+    /** 显示首页默认值：关（全新安装生效，老用户升级与已有显式设置保持开启）。 */
+    const val DEFAULT_HOME_PAGE_ENABLED = false
 
     /** 经典应用图标默认值：关（使用当前新图标）。 */
     const val DEFAULT_CLASSIC_ICON = false
@@ -370,9 +376,6 @@ object AppSettingsStore {
     /** 平板侧边栏内存态：设置页切换后主界面即时重组（平板判定 + 本开关决定是否用侧栏）。 */
     val sideRailState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_SIDE_RAIL_ENABLED)
 
-    /** 界面动效档位内存态：应用设置切换后全局即时生效。 */
-    val motionEnhancedState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_MOTION_ENHANCED)
-
     /** 引擎页分类显示内存态：设置页切换后引擎页即时重组。 */
     val engineTabsState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_ENGINE_TABS_ENABLED)
 
@@ -391,8 +394,10 @@ object AppSettingsStore {
     val backgroundImageBlurState: MutableStateFlow<Int> =
         MutableStateFlow(DEFAULT_BACKGROUND_IMAGE_BLUR)
 
+    internal data class GameConditionSelection(val conditions: GameLibraryConditions, val revision: Long = 0)
+
     private val gameConditionsLock = Any()
-    private val mutableGameConditions = MutableStateFlow(GameLibraryConditions())
+    private val mutableGameConditions = MutableStateFlow(GameConditionSelection(GameLibraryConditions()))
 
     /** 游戏页抽屉与设置页共用的排序和筛选快照，重置时一次发布。 */
     internal val gameConditions = mutableGameConditions.asStateFlow()
@@ -461,6 +466,9 @@ object AppSettingsStore {
     /** 首页样式读写的串行锁：init 的异步加载与用户写入必须互斥（同 [navStyleLock] 的理由）。 */
     private val homeStyleLock = Any()
 
+    /** 「显示首页」初始化迁移与读写的串行锁：首次判定落盘与用户手动切换必须互斥。 */
+    private val homePageLock = Any()
+
     /**
      * 隐私设置读写的串行锁：[initPrivacySettings] 可能在 IO 线程执行，与用户在同一时刻
      * 拨动的开关必须互斥——否则 init 读到旧值、在用户写入之后才回填 StateFlow，
@@ -509,7 +517,7 @@ object AppSettingsStore {
     /** 主进程在 Application 启动阶段调用，恢复条件后页面才会创建。 */
     internal fun initGameConditions(c: Context) {
         synchronized(gameConditionsLock) {
-            mutableGameConditions.value = decodeGameConditions(prefs(c).all)
+            mutableGameConditions.value = GameConditionSelection(decodeGameConditions(prefs(c).all))
         }
     }
 
@@ -580,10 +588,6 @@ object AppSettingsStore {
     /** 从持久化加载平板侧边栏开关到内存态（幂等）；主界面在首帧前调用。 */
     fun initSideRail(c: Context) {
         sideRailState.value = isSideRailEnabled(c)
-    }
-
-    fun initMotionEnhanced(c: Context) {
-        motionEnhancedState.value = isMotionEnhanced(c)
     }
 
     private fun prefs(context: Context) =
@@ -786,9 +790,84 @@ object AppSettingsStore {
         }
     }
 
-    /** 首次组合时从持久化加载首页显示开关到内存态（幂等）。 */
+    /**
+     * 解析尚未持久化 `KEY_HOME_PAGE_ENABLED` 时的初始「显示首页」状态：
+     * 已检测到既有安装数据时为老用户升级保留开启（`true`），否则使用全新安装默认值（`false`）。
+     */
+    internal fun resolveInitialHomePageEnabled(
+        storedValue: Boolean?,
+        existingInstallDetected: Boolean,
+    ): Boolean = storedValue ?: if (existingInstallDetected) true else DEFAULT_HOME_PAGE_ENABLED
+
+    /**
+     * 判定升级迁移前的历史安装痕迹：忽略首次引导初始化写入的 `KEY_ONBOARDING_COMPLETED=false` 及本键自身，
+     * 仅当已完成过引导、存在其它应用设置项、旧版偏好非空或游戏库文件已存在时视为老用户。
+     */
+    internal fun hasAppSettingsForHomePageMigration(
+        onboardingCompleted: Boolean,
+        appSettingsKeys: Set<String>,
+    ): Boolean = onboardingCompleted || appSettingsKeys.any {
+        it != KEY_ONBOARDING_COMPLETED && it != KEY_HOME_PAGE_ENABLED
+    }
+
+    private var homePagePending: Boolean? = null
+
+    private fun homePagePendingFile(c: Context) =
+        InitialBooleanStateFile(File(c.applicationContext.filesDir, HOME_PAGE_PENDING_INITIAL_STATE_FILE))
+
+    private fun persistHomePageMigration(settings: SharedPreferences, pendingFile: InitialBooleanStateFile, enabled: Boolean) {
+        if (settings.edit().putBoolean(KEY_HOME_PAGE_ENABLED, enabled).commit()) {
+            homePagePending = null
+            pendingFile.clear()
+        } else {
+            homePagePending = enabled
+            pendingFile.write(enabled)
+        }
+    }
+
+    @VisibleForTesting
+    internal fun resetHomePageMigrationForTests() = synchronized(homePageLock) { homePagePending = null }
+
+    private fun resolveHomePageEnabledLocked(c: Context): Boolean {
+        val settings = prefs(c)
+        // commit 失败也可能改写 SharedPreferences 内存；有 pending 时必须使用首次判定重试。
+        val pendingFile = homePagePendingFile(c)
+        if (homePagePending == null && settings.contains(KEY_HOME_PAGE_ENABLED)) {
+            return settings.getBoolean(KEY_HOME_PAGE_ENABLED, DEFAULT_HOME_PAGE_ENABLED)
+        }
+        val pending = homePagePending ?: pendingFile.read()
+        val resolved = pending ?: resolveInitialHomePageEnabled(
+            storedValue = null,
+            existingInstallDetected = hasExistingInstallData(
+                c,
+                appSettingsHasData = hasAppSettingsForHomePageMigration(
+                    onboardingCompleted = settings.getBoolean(KEY_ONBOARDING_COMPLETED, false),
+                    appSettingsKeys = settings.all.keys,
+                ),
+            ),
+        )
+        homePagePending = resolved
+        return resolved
+    }
+
+    /** 首帧前锁定安装判定；只在迁移未完成时保留原判定，防止进程退出后把新建的游戏库识别为旧安装。 */
+    internal fun prepareHomePageEnabled(c: Context) = synchronized(homePageLock) {
+        val enabled = resolveHomePageEnabledLocked(c)
+        if (homePagePending != null) homePagePendingFile(c).write(enabled)
+        homePageEnabledState.value = enabled
+    }
+
+    private fun resolveAndPersistHomePageEnabledLocked(c: Context): Boolean =
+        resolveHomePageEnabledLocked(c).also { enabled ->
+            if (homePagePending != null) persistHomePageMigration(prefs(c), homePagePendingFile(c), enabled)
+        }
+
+    /** IO 线程调用；将首次安装判定落盘，失败时保留原判定以便重试。 */
+    @WorkerThread
     fun initHomePageEnabled(c: Context) {
-        homePageEnabledState.value = isHomePageEnabled(c)
+        synchronized(homePageLock) {
+            homePageEnabledState.value = resolveAndPersistHomePageEnabledLocked(c)
+        }
     }
 
     /** 启动/设置页读取时把经典应用图标开关同步到内存态（幂等）。 */
@@ -816,13 +895,25 @@ object AppSettingsStore {
         }
     }
 
-    /** 是否显示首页（关闭后首页不参与主导航）。 */
+    @VisibleForTesting
+    @WorkerThread
     fun isHomePageEnabled(c: Context): Boolean =
-        prefs(c).getBoolean(KEY_HOME_PAGE_ENABLED, DEFAULT_HOME_PAGE_ENABLED)
+        synchronized(homePageLock) {
+            resolveAndPersistHomePageEnabledLocked(c)
+        }
 
+    @WorkerThread
     fun setHomePageEnabled(c: Context, enabled: Boolean) {
-        prefs(c).edit().putBoolean(KEY_HOME_PAGE_ENABLED, enabled).apply()
-        homePageEnabledState.value = enabled
+        synchronized(homePageLock) {
+            val pendingFile = homePagePendingFile(c)
+            val settings = prefs(c)
+            if (homePagePending != null || !settings.contains(KEY_HOME_PAGE_ENABLED)) {
+                persistHomePageMigration(settings, pendingFile, enabled)
+            } else {
+                settings.edit { putBoolean(KEY_HOME_PAGE_ENABLED, enabled) }
+            }
+            homePageEnabledState.value = enabled
+        }
     }
 
     internal fun initDefaultThemeParticles(c: Context) {
@@ -883,11 +974,12 @@ object AppSettingsStore {
     fun getGameCardStyle(c: Context): String =
         normalizeGameCardStyle(prefs(c).getString(KEY_GAME_CARD_STYLE, DEFAULT_GAME_CARD_STYLE))
 
-    /** 卡片风格归一：仅接受 waterfall / uniform_grid / cover_flow；历史值 grid 与空值回退瀑布。 */
+    /** 卡片风格归一：仅接受 waterfall / uniform_grid / cover_flow / shelf；历史值 grid 与空值回退瀑布。 */
     fun normalizeGameCardStyle(style: String?): String =
         when (style?.trim()?.lowercase()) {
             GAME_CARD_STYLE_GRID -> GAME_CARD_STYLE_GRID
             GAME_CARD_STYLE_COVER_FLOW -> GAME_CARD_STYLE_COVER_FLOW
+            GAME_CARD_STYLE_SHELF -> GAME_CARD_STYLE_SHELF
             // 历史值 "grid"（当时渲染瀑布流）与空值/未知值统一归一到瀑布，避免升级后样式跳变
             else -> GAME_CARD_STYLE_WATERFALL
         }
@@ -933,19 +1025,36 @@ object AppSettingsStore {
         updateGameConditions(c) { it.copy(playedFilter = normalizeGameFilterPlayed(played)) }
     }
 
+    /** 书架上最后停留的那本书的 uri；没记过为 null。 */
+    fun gameShelfFocusUri(c: Context): String? =
+        prefs(c).getString(KEY_GAME_SHELF_FOCUS_URI, null)?.takeIf { it.isNotEmpty() }
+
+    internal fun setGameShelfFocusUri(c: Context, uri: String, selection: GameConditionSelection) {
+        synchronized(gameConditionsLock) {
+            if (selection != mutableGameConditions.value) return
+            val p = prefs(c)
+            if (p.getString(KEY_GAME_SHELF_FOCUS_URI, null) != uri) {
+                p.edit().putString(KEY_GAME_SHELF_FOCUS_URI, uri).apply()
+            }
+        }
+    }
+
     fun resetGameConditions(c: Context) {
         updateGameConditions(c) { GameLibraryConditions() }
     }
 
     private fun updateGameConditions(c: Context, transform: (GameLibraryConditions) -> GameLibraryConditions) {
         synchronized(gameConditionsLock) {
-            val next = transform(mutableGameConditions.value)
+            val previous = mutableGameConditions.value
+            val next = transform(previous.conditions)
+            val changed = next != previous.conditions
             prefs(c).edit()
                 .putString(KEY_GAME_SORT, next.sortMode)
                 .putString(KEY_GAME_FILTER_ENGINE, next.engineFilter)
                 .putString(KEY_GAME_FILTER_PLAYED, next.playedFilter)
+                .apply { if (changed) remove(KEY_GAME_SHELF_FOCUS_URI) }
                 .apply()
-            mutableGameConditions.value = next
+            if (changed) mutableGameConditions.value = GameConditionSelection(next, previous.revision + 1)
         }
     }
 
@@ -990,14 +1099,6 @@ object AppSettingsStore {
     fun setSideRailEnabled(c: Context, enabled: Boolean) {
         prefs(c).edit().putBoolean(KEY_SIDE_RAIL, enabled).apply()
         sideRailState.value = enabled
-    }
-
-    fun isMotionEnhanced(c: Context): Boolean =
-        prefs(c).getBoolean(KEY_MOTION_ENHANCED, DEFAULT_MOTION_ENHANCED)
-
-    fun setMotionEnhanced(c: Context, enhanced: Boolean) {
-        prefs(c).edit().putBoolean(KEY_MOTION_ENHANCED, enhanced).apply()
-        motionEnhancedState.value = enhanced
     }
 
     // ---- 隐私设置：Application 启动阶段经 [initPrivacySettings] 一次加载，读写即写即广播 ----

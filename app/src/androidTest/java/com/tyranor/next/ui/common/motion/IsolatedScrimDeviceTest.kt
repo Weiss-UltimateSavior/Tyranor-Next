@@ -119,7 +119,6 @@ class IsolatedScrimDeviceTest {
         try {
             compose.mainClock.autoAdvance = false
             theme(AppearanceStyle.RETRO_GLASS, AppSettingsStore.THEME_MODE_DARK)
-            compose.runOnIdle { MotionMode.sync(true) }
             compose.setContent {
                 MaterialTheme(colorScheme = if (AppThemeColors.isDark) darkColorScheme() else lightColorScheme()) {
                     val density = LocalDensity.current
@@ -205,11 +204,9 @@ class IsolatedScrimDeviceTest {
             compose.onNodeWithTag("page-2").assertHasClickAction().performTouchInput { click() }
             compose.runOnIdle { assertEquals("tap passes through the empty overlay", 1, taps.get()) }
             val atRest = snap(0f)
-            compose.runOnIdle { MotionMode.sync(false) }
             assertArrayEquals("ordinary mode at rest", atRest, pixels())
         } finally {
             theme(originalStyle, originalTheme)
-            compose.runOnIdle { MotionMode.sync(originalMotion) }
             compose.mainClock.autoAdvance = true
         }
     }

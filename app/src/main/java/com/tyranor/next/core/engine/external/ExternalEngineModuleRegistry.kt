@@ -13,6 +13,7 @@ object ExternalEngineModuleRegistry {
         RpgMakerExternalEngineModule,
         RuffleExternalEngineModule,
         ImpactoExternalEngineModule,
+        EasyRpgExternalEngineModule,
     )
 
     fun moduleForEngine(engine: EngineType): ExternalEngineModule? =

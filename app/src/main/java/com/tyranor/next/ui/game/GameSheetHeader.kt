@@ -27,8 +27,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tyranor.next.R
@@ -45,6 +47,7 @@ import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.TimeFormats
 import com.tyranor.next.ui.common.formatPlaytimeHours
 import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.ContentBlurRadius
 import com.tyranor.next.ui.common.motion.CoverSurface
 import com.tyranor.next.ui.common.motion.rememberCoverReveal
 
@@ -60,6 +63,14 @@ internal fun ShelfStatsStrip(
     game: ScanGame,
     stats: GamePlaytimeStats?,
     modifier: Modifier = Modifier,
+    divider: Boolean = true,
+    /** 标签与数值的字体；null 时用界面字体。 */
+    labelFont: FontFamily? = null,
+    valueFont: FontFamily? = null,
+    /** 数值替换时的模糊半径；书架高速翻页时传 0.dp，兼顾即时更新与帧率。 */
+    blur: Dp = ContentBlurRadius,
+    /** 书页内用于分栏切页错峰显隐的三格修饰符（默认无修饰）。 */
+    cellModifier: (Int) -> Modifier = { Modifier },
 ) {
     val displayGame = remember(game) { RuntimeModuleBindings.builtInSystemNnn(game) }
     val none = stringResource(R.string.game_shelf_stat_none)
@@ -76,7 +87,7 @@ internal fun ShelfStatsStrip(
             .fillMaxWidth()
             .drawBehind {
                 // 档案卡式的虚线分隔
-                drawLine(
+                if (divider) drawLine(
                     dividerColor,
                     androidx.compose.ui.geometry.Offset(0f, 0f),
                     androidx.compose.ui.geometry.Offset(size.width, 0f),
@@ -84,24 +95,27 @@ internal fun ShelfStatsStrip(
                     pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f * density, 4f * density)),
                 )
             }
-            .padding(top = 10.dp),
+            .padding(top = if (divider) 10.dp else 0.dp),
     ) {
-        BlurCrossfade(tracked, Modifier.fillMaxWidth()) { isTracked ->
+        BlurCrossfade(tracked, Modifier.fillMaxWidth(), blur = blur) { isTracked ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 if (isTracked) {
-                    ShelfStatCell(stringResource(R.string.game_shelf_stat_total), total, Modifier.weight(1f))
-                    ShelfStatCell(stringResource(R.string.game_shelf_stat_last), last, Modifier.weight(1f))
-                    ShelfStatCell(stringResource(R.string.game_shelf_stat_session), session, Modifier.weight(1f))
+                    ShelfStatCell(stringResource(R.string.game_shelf_stat_total), total, labelFont, valueFont, blur, Modifier.weight(1f).then(cellModifier(0)))
+                    ShelfStatCell(stringResource(R.string.game_shelf_stat_last), last, labelFont, valueFont, blur, Modifier.weight(1f).then(cellModifier(1)))
+                    ShelfStatCell(stringResource(R.string.game_shelf_stat_session), session, labelFont, valueFont, blur, Modifier.weight(1f).then(cellModifier(2)))
                 } else {
-                    ShelfStatCell(stringResource(R.string.game_shelf_stat_last), last, Modifier.weight(1f))
+                    ShelfStatCell(stringResource(R.string.game_shelf_stat_last), last, labelFont, valueFont, blur, Modifier.weight(1f).then(cellModifier(0)))
                     // 说明而不是数据：同一字号（整排高度不变）、不加粗、次要色
                     ShelfStatCell(
                         stringResource(R.string.game_shelf_stat_total),
                         untracked,
-                        Modifier.weight(2f),
+                        labelFont,
+                        labelFont,
+                        blur,
+                        Modifier.weight(2f).then(cellModifier(1)),
                         note = true,
                     )
                 }
@@ -114,21 +128,26 @@ internal fun ShelfStatsStrip(
 private fun ShelfStatCell(
     label: String,
     value: String,
+    labelFont: FontFamily?,
+    valueFont: FontFamily?,
+    blur: Dp,
     modifier: Modifier = Modifier,
     note: Boolean = false,
 ) {
     Column(modifier.semantics(mergeDescendants = true) { }) {
         Text(
             label,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyMedium.let { if (labelFont != null) it.copy(fontFamily = labelFont) else it },
             color = SecondaryTextColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        BlurCrossfade(value) { text ->
+        BlurCrossfade(value, blur = blur) { text ->
             Text(
                 text,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = if (note) FontWeight.Normal else FontWeight.Bold),
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = if (note) FontWeight.Normal else FontWeight.Bold).let {
+                    if (valueFont != null) it.copy(fontFamily = valueFont) else it
+                },
                 color = if (note) SecondaryTextColor else TextColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

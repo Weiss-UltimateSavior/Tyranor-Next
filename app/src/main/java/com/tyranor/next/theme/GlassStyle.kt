@@ -135,10 +135,13 @@ private fun MilkGlassPageBackgroundLayer() {
  * 与页面 70% 条目（L≈211）对齐；面板与条目都使用深色正文。
  */
 @Composable
-fun MilkGlassPanelBackground(modifier: Modifier = Modifier) {
+fun MilkGlassPanelBackground(
+    modifier: Modifier = Modifier,
+    veilColor: Color = Color.White.copy(alpha = 0.50f),
+) {
     Box(modifier) {
         MilkGlassBackdrop(Modifier.fillMaxSize(), blurRadius = 40.dp)
-        Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.50f)))
+        Box(Modifier.fillMaxSize().background(veilColor))
     }
 }
 

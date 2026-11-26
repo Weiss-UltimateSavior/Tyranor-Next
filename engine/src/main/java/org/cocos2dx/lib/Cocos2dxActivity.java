@@ -27,6 +27,8 @@ public abstract class Cocos2dxActivity extends Activity implements Cocos2dxHelpe
     public int[] mGLContextAttrs = null;
     private Cocos2dxHandler mHandler = null;
     private boolean hasFocus = false;
+    private boolean activityResumed;
+    private boolean cocosResumed;
     public ResizeLayout mFrameLayout = null;
 
     public static Context getContext() {
@@ -45,8 +47,11 @@ public abstract class Cocos2dxActivity extends Activity implements Cocos2dxHelpe
         return emulator;
     }
 
-    private void resumeIfHasFocus() {
-        if (this.hasFocus) {
+    protected boolean canResumeCocos() { return true; }
+
+    protected final void resumeIfHasFocus() {
+        if (activityResumed && hasFocus && !cocosResumed && canResumeCocos()) {
+            cocosResumed = true;
             Cocos2dxHelper.onResume();
             if (this.mGLSurfaceView != null) this.mGLSurfaceView.onResume();
         }
@@ -148,6 +153,8 @@ public abstract class Cocos2dxActivity extends Activity implements Cocos2dxHelpe
     @Override
     public void onPause() {
         Log.d(TAG, "onPause()");
+        activityResumed = false;
+        cocosResumed = false;
         super.onPause();
         Cocos2dxHelper.onPause();
         if (this.mGLSurfaceView != null) this.mGLSurfaceView.onPause();
@@ -157,6 +164,7 @@ public abstract class Cocos2dxActivity extends Activity implements Cocos2dxHelpe
     public void onResume() {
         Log.d(TAG, "onResume()");
         super.onResume();
+        activityResumed = true;
         resumeIfHasFocus();
     }
 

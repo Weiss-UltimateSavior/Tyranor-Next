@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.RenderEffect
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import com.tyranor.next.ui.common.notice.NoticeHost
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -359,15 +360,19 @@ fun Modifier.depthFoldStack(
     // 最内层：抽屉 / 弹窗升起时页面「下沉」——整页以正中为枢轴均匀缩小一点、正着往里沉，
     // 浮层收起 / 被下拉时同步升回。不翻折（用户明确要求去掉上下翻折，改成这个下沉上升），进度跟浮层的展开走
     val sink = LayerSource { p, density ->
+        // 页面登记了「不要景深」（见 SuppressPageDepth）：整条景深链都不做
+        if (overlay?.depthSuppressed == true) return@LayerSource
         // 进度已按浮层的体量加权（SheetBackdrop.sink）；宽屏（平板 / 横屏）上限制两侧收进去的绝对距离，免得按比例缩得过头
         p.applySheetSink(overlay?.sink ?: 0f, density)
     }
     // 中层：侧栏（绕右缘）的翻折
     val side = LayerSource { p, density ->
+        if (overlay?.depthSuppressed == true || panel?.depthSuppressed == true) return@LayerSource
         p.depthFold(panel?.cover ?: 0f, FoldAxis.Right, density)
     }
     // 外层：页面推入的翻折（绕左缘）+ 整体褪色
     val depth = LayerSource { p, density ->
+        if (overlay?.depthSuppressed == true) return@LayerSource
         val c = push?.progress?.value ?: 0f
         val e = maxOf(c, overlay?.cover ?: 0f, panel?.cover ?: 0f)
         p.depthFold(c, FoldAxis.Left, density)
@@ -490,11 +495,37 @@ private const val SinkSteps = 64f
 
 private fun quantizeSink(p: Float): Float = kotlin.math.round(p.coerceIn(0f, 1f) * SinkSteps) / SinkSteps
 
+/**
+ * 页面此刻的下沉缩放（1 = 没有下沉）：[sink] 是浮层进度（[SheetBackdrop.sink]），[width] 是页面绘制宽度（px）；
+ * 宽屏按实际宽度限制两边的缩进（每侧最多 20dp）。下沉图层与页面里需要抵消下沉的通栏背景（[sinkBleedX]）共用这一个算法。
+ */
+internal fun sheetSinkScale(sink: Float, width: Float, density: Float): Float {
+    if (sink <= 0.005f) return 1f
+    val maxShrink = if (width > 0f) minOf(SinkShrink, 2f * SinkMaxInsetDp * density / width) else SinkShrink
+    return 1f - maxShrink * quantizeSink(sink)
+}
+
+/**
+ * 通栏的背景 / 搁板这类「本来就铺到屏幕左右两缘」的光效：页面下沉时整页以正中为轴缩小，两缘会露出页面后面的底色，
+ * 光效在那里断开、出现一道明显的竖直空隙。这里按下沉量反向横向放大，正好抵消页面的缩小——下沉全程它们仍铺到屏幕两缘，
+ * 其余内容（书、卡片、文字）照常随页面下沉。没有下沉 / 页面登记了不要景深（[SuppressPageDepth]）时恒等。
+ * 只放大横向：纵向上这些背景本来就在上下两端淡出或收在页面里。
+ */
+@Composable
+internal fun Modifier.sinkBleedX(): Modifier {
+    val backdrop = LocalSheetBackdrop.current ?: return this
+    if (!MotionMode.enhanced) return this
+    return this.graphicsLayer {
+        if (backdrop.depthSuppressed) return@graphicsLayer
+        val s = sheetSinkScale(backdrop.sink, size.width, density)
+        if (s < 1f) scaleX = 1f / s
+    }
+}
+
 /** 在下沉图层上应用浮层进度；宽屏按实际绘制宽度限制两边的缩进（每侧最多 20dp）。 */
 internal fun LayerParams.applySheetSink(sink: Float, density: Float) {
     if (sink > 0.005f) {
-        val maxShrink = if (width > 0f) minOf(SinkShrink, 2f * SinkMaxInsetDp * density / width) else SinkShrink
-        val scale = 1f - maxShrink * quantizeSink(sink)
+        val scale = sheetSinkScale(sink, width, density)
         scaleX = scale
         scaleY = scale
         pivotFracX = 0.5f
@@ -543,32 +574,21 @@ private fun LayerParams.depthFold(p: Float, axis: FoldAxis, density: Float) {
  */
 @Composable
 fun ProvideMotionEnvironment(content: @Composable () -> Unit) {
-    val context = LocalContext.current
-    // 首帧前同步读取动效档位，避免「普通」档用户启动时先闪一帧增强动效
-    val motionState = remember(context) {
-        AppSettingsStore.initMotionEnhanced(context)
-        AppSettingsStore.motionEnhancedState
-    }
-    val enhanced by motionState.collectAsState()
-    MotionMode.sync(enhanced)
-    if (enhanced) {
-        // 翻折景深的褪色效果表提前建好，不落在第一次抽屉 / 弹窗升起的那一帧里
-        LaunchedEffect(Unit) { prewarmDepthEffects() }
-    }
+    // 翻折景深的褪色效果表提前建好，不落在第一次抽屉 / 弹窗升起的那一帧里
+    LaunchedEffect(Unit) { prewarmDepthEffects() }
     // 触觉门面绑定到本页的触觉宿主（见 MotionHaptics）
     val haptic = LocalHapticFeedback.current
     DisposableEffect(haptic) {
         MotionHaptics.bind(haptic)
         onDispose { MotionHaptics.unbind(haptic) }
     }
-    // 「普通」档保持系统默认的越界效果；始终保留同一个 Provider，切换档位不重建页面
-    val overscroll = if (enhanced) MiuixOverscrollFactory else LocalOverscrollFactory.current
-    CompositionLocalProvider(LocalOverscrollFactory provides overscroll) {
+    CompositionLocalProvider(LocalOverscrollFactory provides MiuixOverscrollFactory) {
         // 主题揭开宿主：切换深浅色 / 外观主题时的整屏过渡（见 ThemeReveal.kt）；不改布局
         // 提示条槽位（页面根）：与主题揭开宿主叠放，提示条只在自己的矩形内拦截触摸
-        Box(propagateMinConstraints = true) {
-            ThemeRevealHost(content)
-            NoticeHost(Modifier.matchParentSize())
+        val rotation = remember { ScreenRotationState() }
+        Box(Modifier.blockRotationTouches(rotation), propagateMinConstraints = true) {
+            ScreenRotationHost(rotation) { ThemeRevealHost(content) }
+            NoticeHost(Modifier.matchParentSize().handoffRotationNotice(rotation))
         }
     }
 }

@@ -22,6 +22,7 @@ internal class DialogDimStack<W : Any>(
         var scrim: Float,
         var baseScrim: Float,
         var released: Boolean = false,
+        var exiting: Boolean = false,
     )
     private class Mask(val dim: Float, val scrim: Float, val fullAlpha: Float)
     private class Resolved<W>(
@@ -99,11 +100,24 @@ internal class DialogDimStack<W : Any>(
         refresh()
     }
 
+    /**
+     * 退场期间即放行触摸的弹窗：若下方仍有可见遮罩则立即交还；若当前是最底层弹窗，
+     * 则保留自身遮罩的渐隐动画，但不再作为新开浮层的「下层底色」，也不再接受上层回补的面板压暗。
+     */
+    fun markExiting(window: W) {
+        if (beginExit(window)) return
+        val request = requests.firstOrNull { it.window === window } ?: return
+        if (request.exiting) return
+        request.exiting = true
+        refresh()
+    }
+
     /** Reopening uses the latest raw request without changing actual attachment order. */
     fun restore(window: W) {
         val request = requests.firstOrNull { it.window === window } ?: return
-        if (!request.released) return
+        if (!request.released && !request.exiting) return
         request.released = false
+        request.exiting = false
         refresh()
     }
 
@@ -150,12 +164,12 @@ internal class DialogDimStack<W : Any>(
         for (current in resolved.asReversed()) {
             val request = current.request
             val upper = upperMasks.getOrPut(request.owner) { UpperMask() }
-            val alpha = if (current.visible && upper.hasSource) {
+            val alpha = if (current.visible && !request.exiting && upper.hasSource) {
                 val external = combine(upper.nativeDim ?: 0f, upper.scrim)
                 missingAlpha(highest[request.owner]?.target ?: 0f, external)
             } else 0f
             applyPanelDim(request.window, alpha)
-            if (current.visible && !request.released) {
+            if (current.visible && !request.released && !request.exiting) {
                 // Descending order selects only the highest actual native request.
                 if (request.enabled && upper.nativeDim == null) upper.nativeDim = current.dim
                 upper.scrim = combine(upper.scrim, current.scrim)
@@ -165,7 +179,7 @@ internal class DialogDimStack<W : Any>(
     }
 
     private fun contributesFloor(request: Request<W>): Boolean =
-        !request.released && (request.enabled || request.baseScrim > 0f) && isVisible(request.window)
+        !request.released && !request.exiting && (request.enabled || request.baseScrim > 0f) && isVisible(request.window)
 
     private fun combine(first: Float, second: Float): Float = 1f - (1f - first) * (1f - second)
 

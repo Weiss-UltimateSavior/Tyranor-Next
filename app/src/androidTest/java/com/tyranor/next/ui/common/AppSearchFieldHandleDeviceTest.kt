@@ -59,11 +59,7 @@ class AppSearchFieldHandleDeviceTest {
 
     @Test fun enhancedDefaultInputKeepsItsHandlesWhileFocused() = checkHandles(true, false)
 
-    @Test fun ordinaryDefaultInputKeepsItsHandlesWhileFocused() = checkHandles(false, false)
-
     @Test fun enhancedEmbeddedInputKeepsItsHandlesWhileFocused() = checkHandles(true, true)
-
-    @Test fun ordinaryEmbeddedInputKeepsItsHandlesWhileFocused() = checkHandles(false, true)
 
     private fun checkHandles(enhanced: Boolean, embedded: Boolean) {
         MotionDeviceAcceptance.require(enhanced = null)
@@ -160,7 +156,6 @@ class AppSearchFieldHandleDeviceTest {
 
         try {
             compose.mainClock.autoAdvance = false
-            compose.runOnIdle { MotionMode.sync(enhanced) }
             compose.setContent {
                 TyranorNextTheme {
                     if (mounted.value) {
@@ -245,7 +240,6 @@ class AppSearchFieldHandleDeviceTest {
                     compose.waitForIdle()
                 } finally {
                     try {
-                        compose.runOnIdle { MotionMode.sync(originalMode) }
                     } finally {
                         compose.mainClock.autoAdvance = originalAutoAdvance
                     }

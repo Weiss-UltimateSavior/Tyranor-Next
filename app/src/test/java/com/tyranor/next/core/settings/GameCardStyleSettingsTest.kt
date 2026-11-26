@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * 游戏卡片风格归一：接受 waterfall / uniform_grid / cover_flow；
+ * 游戏卡片风格归一：接受 waterfall / uniform_grid / cover_flow / shelf；
  * 历史值 grid（当时渲染瀑布流）、空值、未知值与大小写/空白差异按默认瀑布处理。
  */
 class GameCardStyleSettingsTest {
@@ -26,6 +26,14 @@ class GameCardStyleSettingsTest {
         assertEquals(
             AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW,
             AppSettingsStore.normalizeGameCardStyle(" COVER_FLOW "),
+        )
+        assertEquals(
+            AppSettingsStore.GAME_CARD_STYLE_SHELF,
+            AppSettingsStore.normalizeGameCardStyle("shelf"),
+        )
+        assertEquals(
+            AppSettingsStore.GAME_CARD_STYLE_SHELF,
+            AppSettingsStore.normalizeGameCardStyle(" Shelf "),
         )
     }
 
