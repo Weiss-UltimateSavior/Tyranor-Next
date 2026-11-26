@@ -73,7 +73,6 @@ internal fun RpgSaveFormatDialog(
                     modifier = Modifier.staggeredEntrance(0),
                     title = stringResource(R.string.save_format_convert_confirm),
                     leadingIcon = R.drawable.ic_sheet_saves,
-                    containerColor = DialogItemSurface,
                     showArrow = false,
                     leadingIconTint = MaterialTheme.colorScheme.primary,
                     // 弹窗内只保留 Q 弹按压（AGENTS.md「弹窗点击反馈统一规范」）
@@ -84,7 +83,6 @@ internal fun RpgSaveFormatDialog(
                     modifier = Modifier.staggeredEntrance(1),
                     title = stringResource(R.string.save_format_convert_keep),
                     leadingIcon = R.drawable.ic_sheet_launch,
-                    containerColor = DialogItemSurface,
                     showArrow = false,
                     indication = null,
                     onClick = { exitHandle.closeThen { onChoice(false) } },

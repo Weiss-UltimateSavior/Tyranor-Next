@@ -29,7 +29,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.Dispatchers
-import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.ArrowPreference
@@ -131,7 +130,6 @@ internal fun FontPreference(
                         modifier = Modifier.staggeredEntrance(0),
                         title = followLabel,
                         leadingIcon = R.drawable.ic_font_bookmark,
-                        containerColor = DialogItemSurface,
                         indication = null,
                     ) {
                         onFollow()
@@ -142,7 +140,6 @@ internal fun FontPreference(
                             modifier = Modifier.staggeredEntrance(1),
                             title = stringResource(R.string.engine_settings_builtin_font),
                             leadingIcon = R.drawable.ic_font_bookmark,
-                            containerColor = DialogItemSurface,
                             indication = null,
                         ) {
                             onBuiltIn()
@@ -153,7 +150,6 @@ internal fun FontPreference(
                         modifier = Modifier.staggeredEntrance(if (onBuiltIn != null) 2 else 1),
                         title = stringResource(R.string.engine_settings_select_font_file),
                         leadingIcon = R.drawable.ic_font_bookmark,
-                        containerColor = DialogItemSurface,
                         indication = null,
                     ) {
                         open = false

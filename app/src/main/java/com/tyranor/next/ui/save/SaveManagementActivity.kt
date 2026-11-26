@@ -360,7 +360,6 @@ private fun SaveManagementContent(
         }
     }
 
-    val cardSurface = if (inBook) DialogItemSurface else NavWhite
     @Composable
     fun ListBody(listModifier: Modifier, listPadding: PaddingValues) {
             LazyColumn(
@@ -369,27 +368,25 @@ private fun SaveManagementContent(
                 verticalArrangement = Arrangement.spacedBy(if (inBook) 10.dp else 12.dp),
             ) {
                 item {
-                    Card(
-                        modifier = Modifier.staggeredEntrance(0).fillMaxWidth().glassBorder(),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                        colors = CardDefaults.cardColors(containerColor = cardSurface, contentColor = TextColor),
-                        shape = AppComponentShape,
+                    com.tyranor.next.ui.common.AppSectionCard(
+                        modifier = Modifier.staggeredEntrance(0),
                     ) {
-                        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(if (inBook) 4.dp else 16.dp)) {
                             Text(game.title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             BlurCrossfade(targetState = location) { loadedLocation ->
+                                val noteInk = if (inBook) com.tyranor.next.theme.CurrentBookPaperPalette.inkSecondary else SecondaryTextColor
                                 if (loadedLocation != null) Column {
                                     Text(
                                         loadedLocation.description(game.engine.displayName),
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = SecondaryTextColor,
+                                        color = noteInk,
                                         modifier = Modifier.padding(top = 8.dp),
                                     )
                                     if (loadedLocation.mirrorForced) {
                                         Text(
                                             stringResource(R.string.krkr_mirror_save_import_hint),
                                             style = MaterialTheme.typography.bodyMedium,
-                                            color = SecondaryTextColor,
+                                            color = noteInk,
                                             modifier = Modifier.padding(top = 4.dp),
                                         )
                                     }
@@ -398,14 +395,14 @@ private fun SaveManagementContent(
                                         RollingNumberText(
                                             stringResource(R.string.save_file_count, fileCount),
                                             style = MaterialTheme.typography.bodyMedium,
-                                            color = SecondaryTextColor,
+                                            color = noteInk,
                                             modifier = Modifier.padding(top = 4.dp),
                                         )
                                     } else {
                                         Text(
                                             stringResource(R.string.save_unmanageable),
                                             style = MaterialTheme.typography.bodyMedium,
-                                            color = SecondaryTextColor,
+                                            color = noteInk,
                                             modifier = Modifier.padding(top = 4.dp),
                                         )
                                     }
@@ -459,10 +456,8 @@ private fun SaveManagementContent(
                 }
 
                 item {
-                    MiuixCard(
-                        modifier = Modifier.pressSquishGroup().staggeredEntrance(1).fillMaxWidth().glassBorder(),
-                        cornerRadius = AppComponentCornerRadius,
-                        colors = top.yukonga.miuix.kmp.basic.CardDefaults.defaultColors(color = cardSurface),
+                    com.tyranor.next.ui.common.AppSectionCard(
+                        modifier = Modifier.pressSquishGroup().staggeredEntrance(1),
                     ) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             runtimeIdentityChange?.let { change ->
@@ -685,7 +680,6 @@ private fun SaveManagementContent(
                         modifier = Modifier.staggeredEntrance(2, distance = 10.dp, stepMillis = 45L),
                         summary = stringResource(R.string.save_export_format_standard_summary),
                         leadingIcon = R.drawable.ic_save_export_format,
-                        containerColor = DialogItemSurface,
                         showArrow = false,
                         indication = null,
                         onClick = {
@@ -698,7 +692,6 @@ private fun SaveManagementContent(
                         modifier = Modifier.staggeredEntrance(3, distance = 10.dp, stepMillis = 45L),
                         summary = stringResource(R.string.save_export_format_tyranor_summary),
                         leadingIcon = R.drawable.ic_save_export_format,
-                        containerColor = DialogItemSurface,
                         showArrow = false,
                         indication = null,
                         onClick = {

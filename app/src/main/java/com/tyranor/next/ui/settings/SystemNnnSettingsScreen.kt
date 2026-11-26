@@ -129,7 +129,7 @@ internal fun SystemNnnSaveLayoutSettings(gameUri: String) {
     LaunchedEffect(gameUri) { result = SystemNnnSaveLayout.load(context, gameUri, regenerate = false) }
 
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = com.tyranor.next.ui.common.appRowHorizontalPadding(), vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(stringResource(R.string.engine_settings_systemnnn_layout), style = MaterialTheme.typography.titleMedium)

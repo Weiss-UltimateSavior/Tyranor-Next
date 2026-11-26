@@ -149,8 +149,6 @@ import com.tyranor.next.theme.LocalAppDialogContent
 import com.tyranor.next.theme.MilkGlassPanelBackground
 import com.tyranor.next.theme.SecondaryTextColor
 import com.tyranor.next.theme.SheetScrimColor
-import com.tyranor.next.theme.ShelfBookClothWeaveDark
-import com.tyranor.next.theme.ShelfBookClothWeaveLight
 import com.tyranor.next.theme.ShelfBookDeleteStyle
 import com.tyranor.next.theme.ShelfBookEndpaperBase
 import com.tyranor.next.theme.ShelfBookFoilAccent
@@ -161,6 +159,7 @@ import com.tyranor.next.theme.ShelfBookGlassSpecular
 import com.tyranor.next.theme.ShelfBookGlowAlpha
 import com.tyranor.next.theme.ShelfBookHeadbandBase
 import com.tyranor.next.theme.ShelfBookHeadbandStripe
+import com.tyranor.next.theme.ShelfBookLeafTheme
 import com.tyranor.next.theme.ShelfBookLight
 import com.tyranor.next.theme.shelfBookLaunchStyle
 import com.tyranor.next.theme.ShelfBookMarker
@@ -184,6 +183,8 @@ import com.tyranor.next.theme.ShelfGloss
 import com.tyranor.next.theme.ShelfSpineText
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
+import com.tyranor.next.theme.warmBookSerif
+import com.tyranor.next.ui.common.BookScrollClaspButton
 import com.tyranor.next.ui.common.LocalAppDialogHost
 import com.tyranor.next.ui.common.LocalDialogBodyExit
 import com.tyranor.next.ui.common.LocalDialogExit
@@ -191,6 +192,8 @@ import com.tyranor.next.ui.common.NoIndication
 import com.tyranor.next.ui.common.SplitEndsActionRow
 import com.tyranor.next.ui.common.collectSettingAsState
 import com.tyranor.next.ui.common.isTabletScreen
+import com.tyranor.next.ui.common.shelfBookClothGrainBrush
+import com.tyranor.next.ui.common.shelfBookClothGrainImage
 import com.tyranor.next.ui.common.motion.SuppressPageDepth
 import com.tyranor.next.ui.common.motion.BlurCrossfade
 import com.tyranor.next.ui.common.motion.ExpandVisibility
@@ -198,8 +201,12 @@ import com.tyranor.next.ui.common.motion.ProvideEntrance
 import com.tyranor.next.ui.common.motion.nestedPanelContentDim
 import com.tyranor.next.ui.common.motion.pressSquish
 import com.tyranor.next.ui.common.motion.rememberEntranceState
+import com.tyranor.next.ui.common.motion.shelfBookMarker
 import com.tyranor.next.ui.common.notice.NoticeHost
 import com.tyranor.next.ui.common.privacy.DismissOnAppLockEffect
+import com.tyranor.next.ui.patch.KrkrOnlinePatchDialog
+import com.tyranor.next.ui.save.SaveManagementDialog
+import com.tyranor.next.ui.settings.PerGameSettingsDialog
 import java.io.File
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
@@ -230,7 +237,6 @@ internal fun ShelfOpenBook(
     onGameRenamed: ((String, String) -> Unit)?,
     onDeleteGame: () -> Unit,
     onQuickLaunchToggle: () -> Boolean,
-    onEngineSettings: () -> Unit,
 ) {
     // 书摊开着（含起飞 / 合上途中）时背后的页面被整本书盖住：不做页面景深（下沉 / 翻折 / 褪色），
     // 书里弹出的弹窗、抽屉、二级页都沿用，不用各自处理（见 SuppressPageDepth）
@@ -245,7 +251,8 @@ internal fun ShelfOpenBook(
     val pages = rememberShelfBookPages()
     val tabMotion = rememberShelfBookTabMotion()
     var spreadLeafSource by rememberSaveable(game.uri) { mutableStateOf(ShelfBookTab.Contents) }
-    val host = remember(motion, owner) { ShelfBookHost(motion, owner) }
+    var activeDetail by rememberSaveable(game.uri) { mutableStateOf<GameDetailDestination?>(null) }
+    val host = remember(motion, owner) { ShelfBookHost(motion, owner) { activeDetail = it } }
     val scrimAlpha = SheetScrimColor.alpha
     val quickActions = rememberGameQuickActionsController(
         game = game,
@@ -271,7 +278,6 @@ internal fun ShelfOpenBook(
             onGameCoverUpdated = onGameCoverUpdated,
             onGameLaunchFileUpdated = onGameLaunchFileUpdated,
             onGameBindingUpdated = onGameBindingUpdated,
-            onEngineSettings = onEngineSettings,
         ) { ui ->
             Dialog(
                 // 返回：翻到了后面的页先翻回来，在主书页时合上书
@@ -294,6 +300,15 @@ internal fun ShelfOpenBook(
                     onLeafSource = { spreadLeafSource = it },
                 )
                 quickActions.HostDialogs()
+                when (activeDetail) {
+                    GameDetailDestination.SaveManagement ->
+                        SaveManagementDialog(game = game, onDismiss = { activeDetail = null })
+                    GameDetailDestination.OnlinePatch ->
+                        KrkrOnlinePatchDialog(game = game, onDismiss = { activeDetail = null })
+                    GameDetailDestination.EngineSettings ->
+                        PerGameSettingsDialog(game = game, onDismiss = { activeDetail = null })
+                    null -> Unit
+                }
             }
         }
     }
@@ -301,25 +316,22 @@ internal fun ShelfOpenBook(
 
 /**
  * 书作为游戏操作的宿主：合上 / 跳转途中拒绝点击；启动成功后等游戏盖上来再收起。
- * 进还没改成书页的二级页面（引擎设置）时书留着、不翻页，直接走全局界面切换动画，回来时仍摊开着目录。
+ * 结构上不提供全局 Activity 跳转入口，所有详情页（存档管理 / 在线补丁 / 引擎设置）都在书内开成书页。
  */
 private class ShelfBookHost(
     private val motion: ShelfBookMotion,
     private val owner: LifecycleOwner,
+    private val onOpenDetail: (GameDetailDestination) -> Unit,
 ) : GameActionsHost {
     override fun interact(): Boolean = motion.interact()
 
     override val leaving: Boolean get() = motion.leaving
 
-    override fun openDetails(ordinaryDismiss: Boolean, open: () -> Unit) {
+    override val presentsDetailsInLeaf: Boolean = true
+
+    override fun openDetail(destination: GameDetailDestination) {
         if (!motion.interact()) return
-        // 还没改成书页的二级界面：书不翻页，直接走全局的界面切换动画（侧推）；书留在原处，回来时仍摊开着目录
-        open()
-        if (motion.enhanced) {
-            motion.stayDuringNavigation(owner)
-        } else if (ordinaryDismiss) {
-            motion.dismissImmediately()
-        }
+        onOpenDetail(destination)
     }
 
     override fun onGameLaunched() = motion.navigateAway(owner)
@@ -1372,61 +1384,51 @@ private fun ShelfBookLeafPage(
             onClick = { if (back != null) back.onBackPressed() else pages.dismissTop() },
         )
         if (spec != null) {
-            // 窗口版弹窗的卡片提供正文色与自己的入场节拍；书页照样提供：正文色取条目正文色（白雾玻璃下根部的页面字色是近白），
+            // 书页宿主统一提供纸墨主题与 LocalShelfBookLeaf = true：公共设置行、下拉、开关、滑条、输入框与按钮会自动切到纸墨样式，
             // 入场节拍不重播（翻页就是这一页的进场），也不挂到主页面的入场上
-            CompositionLocalProvider(
-                LocalAppDialogContent provides true,
-                LocalContentColor provides TextColor,
-                LocalIndication provides NoIndication,
-            ) {
-                ProvideEntrance(rememberEntranceState(playOnStart = false)) {
-                    // 弹窗标题当章名：用书里的宋体（只换这一格的 titleMedium 字体，字号与调用方的写法不变）
-                    val typography = MaterialTheme.typography
-                    val chapterFont = BookSerifBold
-                    val chapterTypography = remember(typography, chapterFont) {
-                        typography.copy(titleMedium = typography.titleMedium.copy(fontFamily = chapterFont))
-                    }
-                    Box(Modifier.fillMaxWidth().padding(top = 10.dp)) {
-                        Box(Modifier.fillMaxWidth().padding(top = spec.topOverhangHeight)) {
-                            MaterialTheme(colorScheme = MaterialTheme.colorScheme, typography = chapterTypography, shapes = MaterialTheme.shapes) {
+            ShelfBookLeafTheme {
+                CompositionLocalProvider(LocalIndication provides NoIndication) {
+                    ProvideEntrance(rememberEntranceState(playOnStart = false)) {
+                        Box(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                            Box(Modifier.fillMaxWidth().padding(top = spec.topOverhangHeight)) {
                                 spec.title()
                             }
+                            spec.topOverhang?.invoke()
                         }
-                        spec.topOverhang?.invoke()
-                    }
-                    ShelfBookDoubleRule(Modifier.padding(top = 8.dp))
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .padding(top = 12.dp)
-                            .then(if (spec.textScrollEnabled) Modifier.verticalScroll(rememberScrollState()) else Modifier),
-                    ) {
+                        ShelfBookDoubleRule(Modifier.padding(top = 8.dp))
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .padding(top = 12.dp)
+                                .then(if (spec.textScrollEnabled) Modifier.verticalScroll(rememberScrollState()) else Modifier),
+                        ) {
+                            if (spec.showButtonRow) {
+                                CompositionLocalProvider(LocalDialogBodyExit provides pages.exit) { spec.text() }
+                            } else {
+                                CompositionLocalProvider(LocalDialogExit provides pages.exit, LocalDialogBodyExit provides pages.exit) { spec.text() }
+                            }
+                        }
                         if (spec.showButtonRow) {
-                            CompositionLocalProvider(LocalDialogBodyExit provides pages.exit) { spec.text() }
-                        } else {
-                            CompositionLocalProvider(LocalDialogExit provides pages.exit, LocalDialogBodyExit provides pages.exit) { spec.text() }
-                        }
-                    }
-                    if (spec.showButtonRow) {
-                        val dismissButton = spec.dismissButton
-                        val actions = Modifier.fillMaxWidth().padding(top = 10.dp)
-                        if (spec.buttonArrangement == Arrangement.SpaceBetween && dismissButton != null) {
-                            SplitEndsActionRow(
-                                modifier = actions,
-                                leading = { CompositionLocalProvider(LocalDialogExit provides pages.exit) { dismissButton() } },
-                                trailing = { CompositionLocalProvider(LocalDialogExit provides null) { spec.confirmButton() } },
-                            )
-                        } else {
-                            FlowRow(
-                                modifier = actions,
-                                horizontalArrangement = spec.buttonArrangement,
-                                verticalArrangement = Arrangement.spacedBy(4.dp),
-                                itemVerticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                CompositionLocalProvider(LocalDialogExit provides pages.exit) { dismissButton?.invoke() }
-                                CompositionLocalProvider(LocalDialogExit provides if (dismissButton == null) pages.exit else null) {
-                                    spec.confirmButton()
+                            val dismissButton = spec.dismissButton
+                            val actions = Modifier.fillMaxWidth().padding(top = 10.dp)
+                            if (spec.buttonArrangement == Arrangement.SpaceBetween && dismissButton != null) {
+                                SplitEndsActionRow(
+                                    modifier = actions,
+                                    leading = { CompositionLocalProvider(LocalDialogExit provides pages.exit) { dismissButton() } },
+                                    trailing = { CompositionLocalProvider(LocalDialogExit provides null) { spec.confirmButton() } },
+                                )
+                            } else {
+                                FlowRow(
+                                    modifier = actions,
+                                    horizontalArrangement = spec.buttonArrangement,
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                    itemVerticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    CompositionLocalProvider(LocalDialogExit provides pages.exit) { dismissButton?.invoke() }
+                                    CompositionLocalProvider(LocalDialogExit provides if (dismissButton == null) pages.exit else null) {
+                                        spec.confirmButton()
+                                    }
                                 }
                             }
                         }
@@ -2804,13 +2806,14 @@ private fun ShelfBookContentsTab(
                 ShelfBookTocEntry(
                     row = row,
                     height = rowHeight,
+                    detailsInLeaf = currentUi.presentsDetailsInLeaf,
                     onGone = { toc.gone(row.item.key) },
                     onClick = {
                         val actions = currentUi
                         val item = actions.launchFile?.takeIf { it.key == row.item.key }
                             ?: actions.items.firstOrNull { it.key == row.item.key }
                         if (item != null) {
-                            if (item.opensBookLeaf) onOpenLeaf()
+                            if (item.opensBookLeaf(actions.presentsDetailsInLeaf)) onOpenLeaf()
                             actions.perform(item)
                         }
                     },
@@ -3327,6 +3330,7 @@ internal class ShelfBookToc {
 private fun ShelfBookTocEntry(
     row: ShelfBookTocRow,
     height: Dp,
+    detailsInLeaf: Boolean,
     onGone: () -> Unit,
     onClick: () -> Unit,
     tabMotion: ShelfBookTabMotion?,
@@ -3349,6 +3353,7 @@ private fun ShelfBookTocEntry(
             number = row.number,
             item = row.item,
             height = height,
+            detailsInLeaf = detailsInLeaf,
             onClick = { if (present) onClick() },
             tabMotion = tabMotion,
             tabRole = tabRole,
@@ -3363,6 +3368,7 @@ private fun ShelfBookEntry(
     number: Int,
     item: GameActionItem,
     height: Dp,
+    detailsInLeaf: Boolean,
     onClick: () -> Unit,
     tabMotion: ShelfBookTabMotion?,
     tabRole: ShelfBookTabRole,
@@ -3407,7 +3413,7 @@ private fun ShelfBookEntry(
             revealOrder = revealOrder,
             modifier = Modifier.weight(1f),
         )
-        if (item.showArrow) {
+        if (item.showArrow(detailsInLeaf)) {
             ShelfBookChevron(
                 color = chevron,
                 modifier = Modifier
@@ -3532,30 +3538,8 @@ private fun ShelfBookLeaderLine(
     }
 }
 
-/** 生成以 [inset] 内缩、外侧倒角为 [cut] 的对称 45° 斜切八边形路径。 */
-private fun shelfBookChamferRectPath(width: Float, height: Float, inset: Float, cut: Float): Path {
-    val l = inset
-    val t = inset
-    val r = (width - inset).coerceAtLeast(l + 2f)
-    val b = (height - inset).coerceAtLeast(t + 2f)
-    val c = cut.coerceAtMost(minOf(r - l, b - t) * 0.35f)
-    return Path().apply {
-        moveTo(l + c, t)
-        lineTo(r - c, t)
-        lineTo(r, t + c)
-        lineTo(r, b - c)
-        lineTo(r - c, b)
-        lineTo(l + c, b)
-        lineTo(l, b - c)
-        lineTo(l, t + c)
-        close()
-    }
-}
-
 /**
- * 书页页脚精装宝石釉书扣按钮共用样式（启动游戏 / 删除游戏）：
- * 45° 斜切八边形 + 贴身软影微晕 + 精装亚麻布纹与中央径向缎面微光 + 单层克制外细框与极细顶缘发丝光 +
- * 紧凑居中图标与粗宋体标题。
+ * 书页页脚精装宝石釉书扣按钮共用样式（启动游戏 / 删除游戏）：委托 [BookScrollClaspButton]。
  */
 @Composable
 private fun ShelfBookPrimaryFooterButton(
@@ -3571,135 +3555,47 @@ private fun ShelfBookPrimaryFooterButton(
     revealOrder: Int = 0,
     leadingIcon: @Composable BoxScope.() -> Unit,
 ) {
-    val cut = minOf(8.dp, height * 0.18f)
-    val buttonShape = remember(cut) { AbsoluteCutCornerShape(cut) }
-    Box(
-        modifier
-            .fillMaxWidth()
-            .height(height)
-            .then(if (enabled) Modifier.pressSquish() else Modifier)
-            .drawBehind {
-                val cutPx = cut.toPx().coerceAtMost(minOf(size.width, size.height) * 0.35f)
-                val shadowDy1 = 1.dp.toPx()
-                val shadowDy2 = 2.2.dp.toPx()
-                if (style.ambientGlow.alpha > 0.005f && size.width > cutPx * 2f + 1f) {
-                    val glowY = size.height + 0.8.dp.toPx()
-                    drawLine(
-                        brush = Brush.horizontalGradient(
-                            0f to Color.Transparent,
-                            0.25f to style.ambientGlow,
-                            0.75f to style.ambientGlow,
-                            1f to Color.Transparent,
-                            startX = cutPx,
-                            endX = size.width - cutPx,
-                        ),
-                        start = Offset(cutPx, glowY),
-                        end = Offset(size.width - cutPx, glowY),
-                        strokeWidth = 3.2.dp.toPx(),
-                    )
-                }
-                if (style.shadowAlpha > 0.005f) {
-                    val shadowPath = shelfBookChamferRectPath(size.width, size.height, inset = 0f, cut = cutPx)
-                    withTransform({ translate(top = shadowDy2) }) {
-                        drawPath(shadowPath, ShelfBookShade.copy(alpha = style.shadowAlpha * 0.45f))
-                    }
-                    withTransform({ translate(top = shadowDy1) }) {
-                        drawPath(shadowPath, ShelfBookShade.copy(alpha = style.shadowAlpha * 0.72f))
-                    }
-                }
-            }
-            .clip(buttonShape)
-            .drawWithCache {
-                val cutPx = cut.toPx().coerceAtMost(minOf(size.width, size.height) * 0.35f)
-                val fillBrush = Brush.verticalGradient(0f to style.fillTop, 1f to style.fillBottom)
-                val clothBrush = if (cloth != null && style.clothAlpha > 0.005f) {
-                    if (cloth === shelfBookClothGrainImage) shelfBookClothGrainBrush
-                    else ShaderBrush(ImageShader(cloth, TileMode.Repeated, TileMode.Repeated))
-                } else {
-                    null
-                }
-                val sheenCenter = Offset(size.width * 0.5f, size.height * 0.08f)
-                val sheenRadius = maxOf(size.width * 0.60f, size.height * 2.2f, 1f)
-                val sheenBrush = Brush.radialGradient(
-                    colors = listOf(style.radialSheen, Color.Transparent),
-                    center = sheenCenter,
-                    radius = sheenRadius,
-                )
-                val outerPath = shelfBookChamferRectPath(size.width, size.height, inset = 0.42.dp.toPx(), cut = cutPx)
-                val outerStroke = Stroke(width = 0.85.dp.toPx())
-                val specY = 0.75.dp.toPx()
-                val specStroke = 0.8.dp.toPx()
-                val hasSpan = size.width > cutPx * 2f + 1f
-                val specBrush = if (hasSpan) {
-                    Brush.horizontalGradient(
-                        0f to Color.Transparent,
-                        0.16f to style.topSpecular,
-                        0.84f to style.topSpecular,
-                        1f to Color.Transparent,
-                        startX = cutPx,
-                        endX = size.width - cutPx,
-                    )
-                } else {
-                    null
-                }
-                onDrawBehind {
-                    drawRect(fillBrush)
-                    if (clothBrush != null) drawRect(clothBrush, alpha = style.clothAlpha)
-                    drawRect(sheenBrush)
-                    if (specBrush != null) {
-                        drawLine(
-                            brush = specBrush,
-                            start = Offset(cutPx, specY),
-                            end = Offset(size.width - cutPx, specY),
-                            strokeWidth = specStroke,
-                        )
-                    }
-                    drawPath(outerPath, color = style.outerBorder, style = outerStroke)
-                }
-            }
-            .clickable(interactionSource = null, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
-            .semantics(mergeDescendants = true) { contentDescription = label },
-        contentAlignment = Alignment.Center,
+    BookScrollClaspButton(
+        style = style,
+        onClick = onClick,
+        height = height,
+        modifier = modifier,
+        cloth = cloth,
+        enabled = enabled,
+        fillMaxWidth = true,
+        contentDescriptionLabel = label,
+        leadingIcon = leadingIcon,
     ) {
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .clearAndSetSemantics { },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Box(Modifier.size(16.dp), contentAlignment = Alignment.Center, content = leadingIcon)
-            val labelStyle = MaterialTheme.typography.titleMedium.copy(
-                fontFamily = BookSerifBold,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 1.sp,
+        val labelStyle = MaterialTheme.typography.titleMedium.copy(
+            fontFamily = BookSerifBold,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.sp,
+        )
+        val labelModifier = Modifier.weight(1f, fill = false).clearAndSetSemantics { }
+        if (tabMotion != null && tabRole == ShelfBookTabRole.Entering) {
+            ShelfBookInkText(
+                text = label,
+                style = labelStyle,
+                color = style.content,
+                tabMotion = tabMotion,
+                tabRole = tabRole,
+                order = revealOrder,
+                subDelay = 0.04f,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = labelModifier,
             )
-            val labelModifier = Modifier.weight(1f, fill = false)
-            if (tabMotion != null && tabRole == ShelfBookTabRole.Entering) {
-                ShelfBookInkText(
-                    text = label,
-                    style = labelStyle,
-                    color = style.content,
-                    tabMotion = tabMotion,
-                    tabRole = tabRole,
-                    order = revealOrder,
-                    subDelay = 0.04f,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                    modifier = labelModifier,
-                )
-            } else {
-                Text(
-                    label,
-                    style = labelStyle,
-                    color = style.content,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = labelModifier,
-                )
-            }
+        } else {
+            Text(
+                label,
+                style = labelStyle,
+                color = style.content,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = labelModifier,
+            )
         }
     }
 }
@@ -3832,48 +3728,11 @@ private fun Modifier.shelfBookScrollFade(scroll: ScrollState): Modifier =
         }
     }
 
-private val shelfBookClothGrainImage: ImageBitmap by lazy { shelfBookClothGrain() }
-private val shelfBookClothGrainBrush: ShaderBrush by lazy {
-    ShaderBrush(ImageShader(shelfBookClothGrainImage, TileMode.Repeated, TileMode.Repeated))
-}
-
 /**
- * 精装布纹硬壳纹理（64×64 周期无缝）：正交经纬织线叠加微纤维颗粒，
- * 让封板与内折飘口呈现出有触感的亚麻/布面硬壳，而非单调纯色块。
+ * 精装布纹硬壳纹理（共享实例，来自 `BookPaperControls.kt`）。
  */
 @Composable
 private fun rememberShelfBookClothGrain(): ImageBitmap = shelfBookClothGrainImage
-
-private fun shelfBookClothGrain(): ImageBitmap {
-    val size = BOOK_CLOTH_GRAIN_SIZE
-    val random = java.util.Random(BOOK_CLOTH_SEED)
-    val lightBase = ShelfBookClothWeaveLight.toArgb()
-    val darkBase = ShelfBookClothWeaveDark.toArgb()
-    val lightR = (lightBase shr 16) and 0xFF
-    val lightG = (lightBase shr 8) and 0xFF
-    val lightB = lightBase and 0xFF
-    val darkR = (darkBase shr 16) and 0xFF
-    val darkG = (darkBase shr 8) and 0xFF
-    val darkB = darkBase and 0xFF
-    val pixels = IntArray(size * size)
-    for (y in 0 until size) {
-        val wy = sin(y * 2.0 * PI / 4.0).toFloat()
-        for (x in 0 until size) {
-            val wx = sin(x * 2.0 * PI / 4.0).toFloat()
-            val weave = (wx * 0.55f + wy * 0.45f) * 0.5f + ((x xor y) and 1) * 0.14f - 0.07f
-            val grit = (random.nextFloat() - 0.5f) * 0.36f
-            val v = (weave + grit).coerceIn(-1f, 1f)
-            if (v >= 0f) {
-                val a = (v * 20f).toInt().coerceIn(0, 255)
-                pixels[y * size + x] = (a shl 24) or (lightR shl 16) or (lightG shl 8) or lightB
-            } else {
-                val a = ((-v) * 28f).toInt().coerceIn(0, 255)
-                pixels[y * size + x] = (a shl 24) or (darkR shl 16) or (darkG shl 8) or darkB
-            }
-        }
-    }
-    return android.graphics.Bitmap.createBitmap(pixels, size, size, android.graphics.Bitmap.Config.ARGB_8888).asImageBitmap()
-}
 
 /**
  * 精装硬壳封板质感：布纹平铺 + 外缘立体斜切边（上/外迎光、底缘背光）+
@@ -4360,68 +4219,23 @@ private const val BOOK_TRAILING_SHARE = 0.42f
 private val BOOK_BACK_HEIGHT = 28.dp
 
 /**
- * 书里印出来的字用宋体（衬线体）：目录、章名、题签、章节扉页——一眼是印在纸上的字，而不是界面文字。字号仍只用
- * titleMedium / bodyMedium 两档；二级页里调用方传进来的弹窗内容（标题、正文、按钮）保持界面字体。
- * 有的系统（如荣耀）把通用的 serif 也换成了自家的无衬线主题字体，所以直接载入系统自带的 Noto Serif CJK
- * （按界面语言取简 / 繁 / 日 / 韩字形，与系统字体配置里的序号一致）；没有这个文件时退回 [FontFamily.Serif]。
+ * 书里印出来的字用宋体（衬线体）：委托 `theme/BookPaperStyle.kt` 统一解析，供书内主页、书页及二级页共享。
  */
 internal val BookSerif: FontFamily
     @Composable
     @ReadOnlyComposable
-    get() = bookSerif(LocalLocale.current.platformLocale, bold = false)
+    get() = com.tyranor.next.theme.BookSerif
 
-/** 加粗的宋体（书名、章名、数据）：系统只带常规字重，由系统合成粗体。 */
+/** 加粗的宋体（书名、章名、数据）。 */
 internal val BookSerifBold: FontFamily
     @Composable
     @ReadOnlyComposable
-    get() = bookSerif(LocalLocale.current.platformLocale, bold = true)
-
-private fun bookSerif(locale: Locale, bold: Boolean): FontFamily {
-    val index = bookSerifIndex(locale)
-    return bookSerifFamilies.computeIfAbsent(index * 2 + if (bold) 1 else 0) {
-        // 粗体由同一份常规字面派生，不再读第二次文件
-        val regular = bookSerifTypeface(index)
-        val typeface = if (bold && regular != null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) Typeface.create(regular, BOOK_SERIF_BOLD_WEIGHT, false) else Typeface.create(regular, Typeface.BOLD)
-        } else {
-            regular
-        }
-        typeface?.let { FontFamily(it) } ?: FontFamily.Serif
-    }
-}
-
-/** 按界面语言取 Noto Serif CJK 集合里的字形：日 0、韩 1、简 2、繁 3（与系统字体配置的序号一致）。 */
-private fun bookSerifIndex(locale: Locale): Int = when {
-    locale.language == "ja" -> 0
-    locale.language == "ko" -> 1
-    locale.language == "zh" && (locale.script == "Hant" || locale.country in BOOK_SERIF_HANT_REGIONS) -> 3
-    else -> 2
-}
-
-/** 读一次系统的 Noto Serif CJK（这一字形的常规字面）；没有这个文件或读不出来时为 null。 */
-private fun bookSerifTypeface(index: Int): Typeface? = bookSerifTypefaces.computeIfAbsent(index) {
-    val file = File(BOOK_SERIF_FILE)
-    val typeface = if (file.isFile) runCatching { Typeface.Builder(file).setTtcIndex(index).build() }.getOrNull() else null
-    typeface ?: BOOK_SERIF_MISSING
-}.takeIf { it !== BOOK_SERIF_MISSING }
+    get() = com.tyranor.next.theme.BookSerifBold
 
 /**
  * 提前在后台读好宋体：读系统字体集合要几毫秒，放在书第一次组合里会落在起飞的第一帧上。「游戏盒」书架出现时调用
  * （任何线程都可以；只读文件、不碰界面）。
  */
 internal fun warmShelfBookSerif(locale: Locale) {
-    bookSerif(locale, bold = false)
-    bookSerif(locale, bold = true)
+    warmBookSerif(locale)
 }
-
-/** 载入过的宋体（按字形序号与粗细）与读过的字面（按字形序号），只载一次。 */
-private val bookSerifFamilies = ConcurrentHashMap<Int, FontFamily>()
-private val bookSerifTypefaces = ConcurrentHashMap<Int, Typeface>()
-
-/** 读不到字体文件时记下的占位（ConcurrentHashMap 不收 null）；用到时才取，不在类加载时碰系统字体。 */
-private val BOOK_SERIF_MISSING: Typeface by lazy { Typeface.DEFAULT }
-
-/** 系统自带的 Noto Serif CJK（AOSP 标准位置）与用繁体字形的地区。 */
-private const val BOOK_SERIF_FILE = "/system/fonts/NotoSerifCJK-Regular.ttc"
-private val BOOK_SERIF_HANT_REGIONS = setOf("TW", "HK", "MO")
-private const val BOOK_SERIF_BOLD_WEIGHT = 700

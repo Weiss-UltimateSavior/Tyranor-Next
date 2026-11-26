@@ -1,5 +1,7 @@
 package com.tyranor.next.ui.common
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -21,8 +23,9 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.tyranor.next.theme.CurrentBookPaperPalette
 import com.tyranor.next.theme.DialogItemSurface
-import androidx.compose.animation.core.Animatable
+import com.tyranor.next.theme.LocalShelfBookLeaf
 import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.MotionTokens
 import top.yukonga.miuix.kmp.basic.Slider
@@ -97,18 +100,30 @@ internal fun DialogMiuixSlider(value: Float, onValueChange: (Float) -> Unit, mod
             },
         contentAlignment = Alignment.Center,
     ) {
-        Slider(
-            value = displayValue,
-            onValueChange = {},
-            enabled = false,
-            valueRange = 0f..1f,
-            hapticEffect = SliderDefaults.SliderHapticEffect.None,
-            colors = SliderDefaults.sliderColors(
-                disabledForegroundColor = MiuixTheme.colorScheme.primary,
-                disabledBackgroundColor = DialogItemSurface,
-                disabledThumbColor = Color.White,
-            ),
-            modifier = Modifier.fillMaxWidth().height(28.dp),
-        )
+        if (LocalShelfBookLeaf.current) {
+            val bookPalette = CurrentBookPaperPalette
+            Canvas(Modifier.fillMaxWidth().height(28.dp)) {
+                drawBookSlider(
+                    fraction = displayValue,
+                    palette = bookPalette,
+                    enabledProgress = 1f,
+                    pressScale = if (dragging) 1.15f else 1f,
+                )
+            }
+        } else {
+            Slider(
+                value = displayValue,
+                onValueChange = {},
+                enabled = false,
+                valueRange = 0f..1f,
+                hapticEffect = SliderDefaults.SliderHapticEffect.None,
+                colors = SliderDefaults.sliderColors(
+                    disabledForegroundColor = MiuixTheme.colorScheme.primary,
+                    disabledBackgroundColor = DialogItemSurface,
+                    disabledThumbColor = Color.White,
+                ),
+                modifier = Modifier.fillMaxWidth().height(28.dp),
+            )
+        }
     }
 }

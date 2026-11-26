@@ -5,7 +5,6 @@ import com.tyranor.next.ui.common.motion.CoverReveal
 import com.tyranor.next.ui.common.motion.listItemMotion
 import com.tyranor.next.ui.common.motion.ListItemPlacement
 import com.tyranor.next.ui.common.motion.rememberCoverReveal
-import com.tyranor.next.ui.common.motion.startActivityWithPageTransition
 import com.tyranor.next.ui.common.motion.rememberMotionSheetController
 import com.tyranor.next.ui.common.motion.BlurCrossfade
 import com.tyranor.next.ui.common.motion.BlurVisibility
@@ -193,8 +192,6 @@ import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
 import com.tyranor.next.ui.common.AppDialogSpec
 import com.tyranor.next.ui.common.LocalAppDialogHost
-import com.tyranor.next.ui.patch.KrkrOnlinePatchDialog
-import com.tyranor.next.ui.save.SaveManagementDialog
 import com.tyranor.next.ui.common.dialogListFixedHeight
 import com.tyranor.next.ui.common.dialogListHeight
 import com.tyranor.next.ui.common.LocalDialogExit
@@ -210,8 +207,6 @@ import com.tyranor.next.ui.common.toErrorState
 import com.tyranor.next.ui.cover.coverErrorMessage
 import com.tyranor.next.ui.cover.coverSourceTitle
 import com.tyranor.next.ui.main.MainLibraryUiState
-import com.tyranor.next.ui.patch.KrkrOnlinePatchActivity
-import com.tyranor.next.ui.save.SaveManagementActivity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -383,7 +378,6 @@ fun GameScreen(
                         onGameRenamed = onGameRenamed,
                         onDeleteGame = { deleteGame(game) },
                         onQuickLaunchToggle = { onQuickLaunchToggle(game) },
-                        onEngineSettings = { openPerGameSettingsFromSheet(context, game) {} },
                     )
                 } else {
                     GameActionsSheet(
@@ -911,9 +905,21 @@ private enum class AddGameStep { CHOICE, PC, ANDROID }
 private enum class LibraryPane { Loading, Empty, NoMatch, Content }
 
 /**
+ * 游戏操作条目的交互种类：决定在抽屉与「翻开的书」两种宿主中的呈现形态。
+ * - [Dialog]：原本即以弹窗/书页呈现（例如启动文件、搜索封面、游玩状态）。
+ * - [Detail]：二级详情界面，经 [GameActionsHost.openDetail] 路由——在抽屉内跳转独立 Activity 并显示箭头，
+ *   在「翻开的书」内自动翻开书页（[ShelfBookLeaf]）且隐藏箭头，无需条目各自判断当前宿主。
+ * - [Inline]：就地动作或外部链接（例如引擎模块下载、运行时刷新）。
+ */
+internal enum class GameActionKind {
+    Dialog,
+    Detail,
+    Inline,
+}
+
+/**
  * 游戏操作条目描述（操作抽屉与书架翻开的书共用）；[key] 供列表 item key 使用。
- * [showArrow] 仅在跳转独立 Activity 时为 true，抽屉内弹窗及纯动作条目隐藏箭头。
- * [opensBookLeaf] 表示该条目在书内打开操作子页；点击时先记录翻页起点，再执行条目动作。
+ * 箭头与书内翻页行为由 [kind] 与宿主是否「页内呈现详情」统一派生：书内 [Detail] 条目自动隐藏箭头并翻开书页。
  * [abandonsLaunch]：点这一条是否放弃还在等待的 SystemNNN 启动结果（启动文件选择不放弃）。
  */
 internal data class GameActionItem(
@@ -921,36 +927,42 @@ internal data class GameActionItem(
     val title: String,
     val summary: String? = null,
     val icon: Int,
-    val showArrow: Boolean = false,
-    val opensBookLeaf: Boolean = false,
+    val kind: GameActionKind = GameActionKind.Inline,
     val iconTint: Color? = null,
     /** 行尾内联文本：与标题同行右对齐单行显示（不新增条目高度）。 */
     val trailingText: String? = null,
     val abandonsLaunch: Boolean = true,
     val onClick: () -> Unit,
-)
+) {
+    fun showArrow(detailsInLeaf: Boolean): Boolean = kind == GameActionKind.Detail && !detailsInLeaf
+
+    fun opensBookLeaf(detailsInLeaf: Boolean): Boolean =
+        kind == GameActionKind.Dialog || (kind == GameActionKind.Detail && detailsInLeaf)
+}
 
 /**
  * 一位游戏的全部操作，交给宿主（操作抽屉 / 书架翻开的书）去摆：[launchFile] 是启动文件条目（只有 KRKR 与
- * Winlator 系引擎有），[items] 是其余条目，[launch] 发起启动，[perform] 执行某一条（宿主正在离开时被拒绝）。
+ * Winlator 系引擎有），[items] 是其余条目，[presentsDetailsInLeaf] 指示宿主是否将详情页留在书内，
+ * [launch] 发起启动，[perform] 执行某一条（宿主正在离开时被拒绝）。
  */
 internal class GameActionsUi(
     val launchFile: GameActionItem?,
     val items: List<GameActionItem>,
+    val presentsDetailsInLeaf: Boolean,
     val launch: () -> Unit,
     val perform: (GameActionItem) -> Unit,
 )
 
 /**
  * 承载游戏操作的界面（操作抽屉、书架翻开的书）。业务逻辑只经这几个口子与宿主打交道：
- * 点击前问 [interact]（离开途中拒绝）；[leaving] 时迟到的启动结果不再导航；进二级页、启动成功、关闭各走一个入口。
+ * 点击前问 [interact]（离开途中拒绝）；[leaving] 时迟到的启动结果不再导航；二级详情统一经 [openDetail] 路由，
+ * 书内宿主结构上不开放全局 Activity 跳转入口，确保未来新增详情默认适配书页。
  */
 internal interface GameActionsHost {
     fun interact(): Boolean
     val leaving: Boolean
-
-    /** 打开二级页面；[ordinaryDismiss] 为 false 时「普通」档不由宿主关闭（调用方自己清选中）。 */
-    fun openDetails(ordinaryDismiss: Boolean = true, open: () -> Unit)
+    val presentsDetailsInLeaf: Boolean
+    fun openDetail(destination: GameDetailDestination)
     fun onGameLaunched()
     fun close()
 }
@@ -1007,7 +1019,8 @@ internal fun GameActionsSheet(
         systemNnnRequest.leave()
         onDismiss()
     }
-    val navigation = GameSheetNavigation(sheetMotion, LocalLifecycleOwner.current, ::dismissSheet)
+    val context = LocalContext.current
+    val navigation = GameSheetNavigation(sheetMotion, LocalLifecycleOwner.current, context, game, ::dismissSheet, onEngineSettings)
     // 抽屉条目遵循页面灰底取色；白雾玻璃面板内改用与页面条目同亮度的面板条目色。
     val drawerItemSurface = when {
         AppThemeColors.isMilkGlass -> DialogItemSurface
@@ -1024,7 +1037,6 @@ internal fun GameActionsSheet(
         onGameCoverUpdated = onGameCoverUpdated,
         onGameLaunchFileUpdated = onGameLaunchFileUpdated,
         onGameBindingUpdated = onGameBindingUpdated,
-        onEngineSettings = onEngineSettings,
     ) { ui ->
         AppBottomSheet(
             onDismissRequest = ::dismissSheet,
@@ -1067,7 +1079,7 @@ internal fun GameActionsSheet(
                             leadingIcon = action.icon,
                             containerColor = drawerItemSurface,
                             verticalPadding = 17.dp,
-                            showArrow = action.showArrow,
+                            showArrow = action.showArrow(ui.presentsDetailsInLeaf),
                             leadingIconTint = action.iconTint,
                             indication = null,
                             onClick = { ui.perform(action) },
@@ -1094,7 +1106,6 @@ internal fun GameActions(
     onGameCoverUpdated: (String?, ScanGame) -> Unit,
     onGameLaunchFileUpdated: ((String, String?) -> Unit)?,
     onGameBindingUpdated: (String, ScanGame) -> Unit,
-    onEngineSettings: () -> Unit,
     content: @Composable (GameActionsUi) -> Unit,
 ) {
     val context = LocalContext.current
@@ -1158,8 +1169,6 @@ internal fun GameActions(
     var showLaunchFilePicker by rememberSaveable(game.uri) { mutableStateOf(false) }
     var showPatchConfirm by rememberSaveable(game.uri) { mutableStateOf(false) }
     var showPlayStatusDialog by rememberSaveable(game.uri) { mutableStateOf(false) }
-    var showOnlinePatchPage by rememberSaveable(game.uri) { mutableStateOf(false) }
-    var showSaveManagementPage by rememberSaveable(game.uri) { mutableStateOf(false) }
     // 游玩状态抽屉副文本：逐源授权门——已绑定但未授权的来源不发起回读、不产出文案行；
     // TTL 缓存 5 分钟只存全部来源回读成功的汇总（失败文案即时展示、不入缓存），写后失效
     val bangumiSessionEpoch by BangumiAuthStore.sessionEpoch.collectAsStateWithLifecycle()
@@ -1438,7 +1447,7 @@ internal fun GameActions(
             title = launchFileTitle,
             summary = game.launchFile ?: launchFileAutoSummary,
             icon = R.drawable.ic_sheet_launch_file,
-            opensBookLeaf = true,
+            kind = GameActionKind.Dialog,
             iconTint = launchTint,
             abandonsLaunch = false,
             onClick = { showLaunchFilePicker = true },
@@ -1475,7 +1484,7 @@ internal fun GameActions(
                 key = "search_cover",
                 title = drawerSearchCoverTitle,
                 icon = R.drawable.ic_sheet_search_cover,
-                opensBookLeaf = true,
+                kind = GameActionKind.Dialog,
                 iconTint = drawerPrimaryColor,
                 onClick = { if (!isBatchScrapingActive()) showCoverSourcePicker = true },
             ),
@@ -1485,7 +1494,7 @@ internal fun GameActions(
                 key = "play_status",
                 title = drawerPlayStatusTitle,
                 icon = R.drawable.ic_sheet_play_status_entry,
-                opensBookLeaf = true,
+                kind = GameActionKind.Dialog,
                 iconTint = drawerPrimaryColor,
                 trailingText = playStatusSummary,
                 onClick = { showPlayStatusDialog = true },
@@ -1493,26 +1502,15 @@ internal fun GameActions(
         )
         val hasRuntimeSaves = game.engine == EngineType.RUNTIME_MODULE &&
             runtimeModule?.enabled == true && runtimeModule.saves != null
-        // 翻开的书里存档页就翻在书上（不带箭头）；操作抽屉里仍是二级页面
-        val saveInBook = LocalAppDialogHost.current != null
         if (hasRuntimeSaves || shouldShowSaveManagement(game)) {
             add(
                 GameActionItem(
                     key = "save_management",
                     title = drawerSaveManagementTitle,
                     icon = R.drawable.ic_sheet_saves,
-                    showArrow = !saveInBook,
-                    opensBookLeaf = saveInBook,
+                    kind = GameActionKind.Detail,
                     iconTint = drawerPrimaryColor,
-                    onClick = {
-                        if (saveInBook) {
-                            showSaveManagementPage = true
-                        } else {
-                            navigation.openDetails {
-                                startActivityWithPageTransition(context, SaveManagementActivity.createIntent(context, game))
-                            }
-                        }
-                    },
+                    onClick = { navigation.openDetail(GameDetailDestination.SaveManagement) },
                 ),
             )
         }
@@ -1522,18 +1520,9 @@ internal fun GameActions(
                     key = "confirm_external_exit",
                     title = drawerExternalExitTitle,
                     icon = R.drawable.ic_sheet_saves,
-                    showArrow = !saveInBook,
-                    opensBookLeaf = saveInBook,
+                    kind = GameActionKind.Detail,
                     iconTint = drawerPrimaryColor,
-                    onClick = {
-                        if (saveInBook) {
-                            showSaveManagementPage = true
-                        } else {
-                            navigation.openDetails {
-                                startActivityWithPageTransition(context, SaveManagementActivity.createIntent(context, game))
-                            }
-                        }
-                    },
+                    onClick = { navigation.openDetail(GameDetailDestination.SaveManagement) },
                 ),
             )
         }
@@ -1565,25 +1554,14 @@ internal fun GameActions(
             )
         }
         if (game.engine == EngineType.KIRIKIRI) {
-            // 翻开的书里补丁页就翻在书上（不带箭头）；操作抽屉里仍是二级页面
-            val patchInBook = LocalAppDialogHost.current != null
             add(
                 GameActionItem(
                     key = "online_patch",
                     title = drawerOnlinePatchTitle,
                     icon = R.drawable.ic_sheet_patch,
-                    showArrow = !patchInBook,
-                    opensBookLeaf = patchInBook,
+                    kind = GameActionKind.Detail,
                     iconTint = drawerPrimaryColor,
-                    onClick = {
-                        if (patchInBook) {
-                            showOnlinePatchPage = true
-                        } else {
-                            navigation.openDetails {
-                                startActivityWithPageTransition(context, KrkrOnlinePatchActivity.createIntent(context, game))
-                            }
-                        }
-                    },
+                    onClick = { navigation.openDetail(GameDetailDestination.OnlinePatch) },
                 ),
             )
         }
@@ -1596,12 +1574,9 @@ internal fun GameActions(
                     key = "engine_settings",
                     title = drawerEngineSettingsTitle,
                     icon = R.drawable.ic_sheet_settings,
-                    showArrow = true,
+                    kind = GameActionKind.Detail,
                     iconTint = drawerPrimaryColor,
-                    onClick = {
-                        // The caller clears selection in ordinary mode.
-                        navigation.openDetails(ordinaryDismiss = false, open = onEngineSettings)
-                    },
+                    onClick = { navigation.openDetail(GameDetailDestination.EngineSettings) },
                 ),
             )
         }
@@ -1610,6 +1585,7 @@ internal fun GameActions(
         GameActionsUi(
             launchFile = launchFileRow,
             items = drawerActions,
+            presentsDetailsInLeaf = host.presentsDetailsInLeaf,
             launch = {
                 if (!(systemNnnLaunch.activeUri != null && RuntimeModuleBindings.builtInSystemNnn(game).engine == EngineType.SYSTEMNNN)
                     && host.interact()
@@ -1730,14 +1706,6 @@ internal fun GameActions(
         LaunchErrorDialog(state = state, onDismiss = { launchError = null })
     }
 
-    if (showOnlinePatchPage) {
-        KrkrOnlinePatchDialog(game = game, onDismiss = { showOnlinePatchPage = false })
-    }
-
-    if (showSaveManagementPage) {
-        SaveManagementDialog(game = game, onDismiss = { showSaveManagementPage = false })
-    }
-
     if (showPlayStatusDialog) {
         PlayStatusDialog(
             game = game,
@@ -1816,8 +1784,6 @@ private fun CoverSourcePickerDialog(
                         leadingIcon = R.drawable.ic_cover_source,
                         // 弹窗条目自足禁用按压反馈（AGENTS.md 弹窗点击反馈统一规范）
                         indication = null,
-                        // 弹窗内条目必须与亮面板形成反差（AGENTS.md 弹窗条目约定）
-                        containerColor = DialogItemSurface,
                     )
                 }
             }
@@ -2185,7 +2151,7 @@ internal fun CoverSearchDialog(
                 text = {
                     // 书页在书的窗口里：二级（作品多封面）的返回键「先回一级」注册在那个窗口上
                     BackHandler(enabled = drillDown != null && !binding) { leaveDrillDown() }
-                    CompositionLocalProvider(LocalContentColor provides TextColor, LocalIndication provides NoIndication) {
+                    CompositionLocalProvider(LocalIndication provides NoIndication) {
                         Column(Modifier.fillMaxSize()) {
                             inputs(Modifier.fillMaxWidth())
                             results(Modifier.fillMaxWidth().weight(1f).padding(top = 12.dp), GridCells.Fixed(CoverSearchBookColumns))
@@ -2352,8 +2318,8 @@ private fun CoverCandidateCard(
                 .fillMaxWidth()
                 .aspectRatio(3f / 4f)
                 .clip(AppComponentShape)
-                // 占位底色：默认风格 PageGrey，玻璃风格亮玻璃面（避免透明占位不可见）
-                .background(DialogItemSurface)
+                // 占位底色：书外 PageGrey / 亮玻璃面，书页内纸墨淡底
+                .background(com.tyranor.next.ui.common.appDialogSurfaceColor())
                 // 预览图下载中：占位块上扫过一道流光；到达 / 失败即停止（只画在加载中的少量候选上）
                 .shimmerSweep(active = previewState is CoverPreviewState.Loading),
             contentAlignment = Alignment.Center,
@@ -2511,35 +2477,12 @@ private fun LaunchFileDialog(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         lazyItemsIndexed(files) { index, name ->
-                            Row(
-                                modifier = Modifier
-                                    // 列表在弹窗入场窗口内到达时逐行错峰升起（行程短于正文块）
-                                    .staggeredEntrance(1 + index, distance = 8.dp, stepMillis = 40L)
-                                    .pressSquish(scale = PressSquishDefaults.RowScale)
-                                    .fillMaxWidth()
-                                    .clip(AppComponentShape)
-                                    // 弹窗内条目底色：默认风格 PageGrey，玻璃风格亮玻璃面
-                                    .background(DialogItemSurface)
-                                    // 弹窗点击反馈规范：条目禁用涟漪（indication = null）
-                                    .clickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null,
-                                    ) { selected = name }
-                                    .padding(horizontal = 12.dp, vertical = 9.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    name,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                RadioButton(
-                                    selected = selected == name,
-                                    onClick = { selected = name },
-                                )
-                            }
+                            com.tyranor.next.ui.common.AppRadioRow(
+                                selected = selected == name,
+                                label = name,
+                                onClick = { selected = name },
+                                modifier = Modifier.staggeredEntrance(1 + index, distance = 8.dp, stepMillis = 40L),
+                            )
                         }
                     }
                 }

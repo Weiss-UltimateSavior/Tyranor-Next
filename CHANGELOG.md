@@ -16,6 +16,11 @@
 
 - 修复藏书阁入场还没放完就拖动书墙，飞行中的封面悬在旧位置、与滚动中的书叠在一起（封面位置异常）的问题：飞行编队的落点是进场那一刻量好的屏幕位置，书墙一滚动，被藏起的真书就不在那里了。现在入场途中手指一开始拖动书墙，就把入场收敛到终态（与入场未完成时切换陈列同一做法），程序化的滚动不触发。
 
+- 完善游戏页「书架 · 翻开的书」全部二级界面适配、结构防退化约束与翻页手感：
+  - 将「引擎设置」完全接入书内书页（含内置引擎单游戏配置 `PerGameSettingsDialog`、Winlator 模式内嵌「查看/修改 Winlator 全局设置」书页 `WinlatorGlobalSettingsDialog`，以及第三方运行时模块设置 `RuntimeModuleSettingsDialog` 及其文件导入/未保存确认弹窗），目录与管理分栏所有可达条目现均留在书页内，不再拉起全局 Activity、全局弹窗窗口或底部抽屉；目录行隐藏跳转箭头。
+  - 建立结构性约束：以 `GameActionKind` 与枚举路由 `GameDetailDestination` + `GameActionsHost.openDetail` 取代各条目手工 `LocalAppDialogHost` 分支及无约束 `openDetails` 回调，使 `ShelfBookHost` 在编译期即强制将详情目标开成书页；新增 `tools/check-shelf-book-boundaries.py` 静态边界检查与单测并接入 Android CI，同步写入 `AGENTS.md`。
+  - 优化 `ShelfBookMotion.kt` 翻页动效：略微放慢翻过去与翻回来的弹簧节奏并提高阻尼以减少回晃，新推入与换页离开前等待 2 帧组合预热消除首帧掉帧，拖动松手承接手势初速度并立即中断旧弹簧，以及关闭时若压入未保存确认页则即时恢复下层书页，使翻页更流畅丝滑。
+
 - 修复网格/瀑布卡片风格（及首页快捷卡片）下收起长按操作浮窗后约 0.05~0.3 秒内再次长按游戏卡片时，因退场中的弹窗窗口仍拦截触摸与使用系统 dim 层而吞掉长按手势的问题：长按浮窗（`GameQuickActionsDialog`）退场伊始即通过窗口自绘遮罩与放行触摸/焦点（`passTouchesDuringExit`）把后续手势直接交给下层卡片（单点其它卡片正常打开抽屉且不重复补发），并通过单调递增的打开序号与 `key(...)` 隔离旧实例的过期关闭回调。
 
 - 修复在「书架」卡片风格下删除游戏（如第三方模块游戏）后刷新/扫描游戏库时可能因 `HorizontalPager` 键解析读取旧列表快照而触发 `ArrayIndexOutOfBoundsException` 闪退的问题，并同步加固了书架页码收敛与筛选抽屉引擎标签索引边界。

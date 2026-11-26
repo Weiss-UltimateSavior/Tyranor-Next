@@ -593,7 +593,9 @@ internal class ShelfBookMotion(
         if (cover.value < BOOK_DRAG_CLOSE_AT || coverVelocity < -BOOK_DRAG_CLOSE_SPEED) {
             close(coverVelocity)
         } else {
-            scope.launch { cover.animateTo(1f, BOOK_COVER_OPEN, initialVelocity = coverVelocity) }
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                cover.animateTo(1f, BOOK_COVER_OPEN, initialVelocity = coverVelocity)
+            }
         }
     }
 
@@ -762,7 +764,7 @@ internal class ShelfBookPages(
     fun turnOf(level: Int): Animatable<Float, AnimationVector1D> = if (level <= 0) toc else leaves[level - 1].turn
 
     /** 按 [com.tyranor.next.ui.common.AppAlertDialog] 的约定给翻开的这一页提供的退场控制器：先翻回再执行。 */
-    val exit = DialogExitController { action -> closeTop(action) }
+    val exit = DialogExitController { action -> closeTop(action = action) }
 
     @Composable
     override fun Present(dialog: AppDialogSpec) {
@@ -777,6 +779,7 @@ internal class ShelfBookPages(
     internal fun push(leaf: ShelfBookLeaf) {
         dragCancel()
         val turn = turnOf(leaves.size)
+        val belowLeaf = leaves.lastOrNull()
         val replaced = ghost?.takeIf { ghostPending }
         if (replaced != null) {
             // 同一帧里先撤掉了上一页：不再把它翻回来盖住，改成它往前翻过去
@@ -787,7 +790,7 @@ internal class ShelfBookPages(
             ghost = null
             leaves.add(leaf)
             depart(replaced, above = leaf)
-            if (turn.value != 1f) openPage(turn)
+            if (turn.value != 1f) openPage(turn, warmUp = true, guardLeaf = leaf, guardBelowLeaf = belowLeaf)
             return
         }
         leaves.add(leaf)
@@ -800,12 +803,25 @@ internal class ShelfBookPages(
             withFrameNanos { }
             if (justPushed === leaf) justPushed = null
         }
-        openPage(turn)
+        openPage(turn, warmUp = true, guardLeaf = leaf, guardBelowLeaf = belowLeaf)
     }
 
-    private fun openPage(turn: Animatable<Float, AnimationVector1D>, velocity: Float = 0f) {
-        val start = if (canAnimate()) CoroutineStart.DEFAULT else CoroutineStart.UNDISPATCHED
+    private fun openPage(
+        turn: Animatable<Float, AnimationVector1D>,
+        velocity: Float = 0f,
+        warmUp: Boolean = false,
+        guardLeaf: ShelfBookLeaf? = null,
+        guardBelowLeaf: ShelfBookLeaf? = null,
+    ) {
+        val animated = canAnimate()
+        // 关动画时立刻 UNDISPATCHED snapTo；拖手松开（无需预热）立即可用 UNDISPATCHED 衔接初速度；新推入页先让出 2 帧等待复杂内容组合测量完毕再起飞，避免首帧抽帧
+        val start = if (!animated || !warmUp) CoroutineStart.UNDISPATCHED else CoroutineStart.DEFAULT
         scope.launch(start = start) {
+            if (warmUp && canAnimate()) {
+                repeat(BOOK_PAGE_TURN_WARMUP_FRAMES) { withFrameNanos { } }
+            }
+            if (guardLeaf != null && (guardLeaf !in leaves || guardLeaf.leaving)) return@launch
+            if (guardBelowLeaf != null && guardBelowLeaf !in leaves) return@launch
             if (canAnimate()) turn.animateTo(1f, BOOK_PAGE_TURN, initialVelocity = velocity) else turn.snapTo(1f)
         }
     }
@@ -821,6 +837,8 @@ internal class ShelfBookPages(
         departure = departing
         scope.launch {
             try {
+                repeat(BOOK_PAGE_TURN_WARMUP_FRAMES) { withFrameNanos { } }
+                if (departure !== departing || above !in leaves || above.leaving) return@launch
                 leaf.turn.animateTo(1f, BOOK_PAGE_TURN)
             } finally {
                 if (departure === departing) departure = null
@@ -884,7 +902,7 @@ internal class ShelfBookPages(
      * 动作执行后这一页还在（调用方没有关掉它，或晚几帧才关）就稍等一下，仍在才再翻开。宿主不在前台、
      * 或翻回途中宿主暂停（见 [deliverPending]）时立即交付，不让已经接受的关闭停在半路。
      */
-    fun closeTop(action: () -> Unit) {
+    fun closeTop(velocity: Float = 0f, action: () -> Unit) {
         val leaf = leaves.lastOrNull()
         if (leaf == null) {
             action()
@@ -901,9 +919,9 @@ internal class ShelfBookPages(
             finishClose(pending)
             return
         }
-        scope.launch {
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
-                below.animateTo(0f, BOOK_PAGE_TURN_BACK)
+                below.animateTo(0f, BOOK_PAGE_TURN_BACK, initialVelocity = velocity)
             } finally {
                 finishClose(pending)
             }
@@ -917,6 +935,14 @@ internal class ShelfBookPages(
         pending.action()
         val leaf = pending.leaf
         if (leaf !in leaves) return
+        // 若关闭回调立刻往它上面压了一张子页（例如未保存更改确认页），立即解冻当前页并翻开回来
+        if (leaves.lastOrNull() !== leaf) {
+            leaf.leaving = false
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                if (canAnimate()) pending.below.animateTo(1f, BOOK_PAGE_TURN) else pending.below.snapTo(1f)
+            }
+            return
+        }
         scope.launch {
             // 调用方可能晚几帧才撤掉这一页：等一小会儿，确实还在才翻开回来
             withTimeoutOrNull(BOOK_CLOSE_GRACE_MILLIS) { snapshotFlow { leaf in leaves }.first { !it } }
@@ -935,14 +961,14 @@ internal class ShelfBookPages(
     }
 
     /** 返回 / 点书外空白：最上面那一页能关就翻回去并交付关闭（翻完时取调用方最新的关闭回调）；不能关（如正在保存）就原地不动。 */
-    fun dismissTop() {
+    fun dismissTop(velocity: Float = 0f) {
         val leaf = leaves.lastOrNull() ?: return
         val spec = leaf.spec
         if (spec != null && !spec.dismissEnabled) {
             MotionHaptics.perform(MotionHaptics.Kind.Reject)
             return
         }
-        closeTop {
+        closeTop(velocity = velocity) {
             val latest = leaf.spec
             if (latest != null) latest.onDismissRequest() else remove(leaf)
         }
@@ -951,7 +977,10 @@ internal class ShelfBookPages(
     fun dragStart() {
         if (!canAnimate()) return
         val leaf = leaves.lastOrNull() ?: return
-        if (!leaf.leaving) drag = PageDrag(leaf, turnOf(leaves.lastIndex))
+        if (leaf.leaving) return
+        val below = turnOf(leaves.lastIndex)
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { below.stop() }
+        drag = PageDrag(leaf, below)
     }
 
     /** 往右拖：最上面那一页下面的那一页跟着手指翻回来，拖过 [span] 像素翻到底。 */
@@ -967,7 +996,7 @@ internal class ShelfBookPages(
         }
     }
 
-    /** 松手：翻回过半或往右甩得够快就关闭这一页，否则弹回翻开。 */
+    /** 松手：翻回过半或往右甩得够快就关闭这一页（带手势末速度衔接），否则弹回翻开。 */
     fun dragEnd(velocity: Float, span: Float) {
         val current = drag ?: return
         drag = null
@@ -980,7 +1009,7 @@ internal class ShelfBookPages(
         if (current.leaf.spec?.dismissEnabled != false &&
             (current.below.value < BOOK_DRAG_CLOSE_AT || turnVelocity < -BOOK_DRAG_CLOSE_SPEED)
         ) {
-            dismissTop()
+            dismissTop(turnVelocity)
         } else {
             openPage(current.below, turnVelocity)
         }
@@ -1323,60 +1352,10 @@ internal fun Modifier.shelfBookInk(motion: ShelfBookMotion, order: Int): Modifie
         translationX = (1f - t) * BOOK_INK_SHIFT.toPx()
     }
 
-/** 目录行的按压：一道荧光笔从左往右划过这一行；松手后等这一笔划完再淡掉，轻点也看得到完整的一笔。 */
-@Composable
-internal fun Modifier.shelfBookMarker(interaction: InteractionSource, color: Color): Modifier {
-    val enhanced = MotionMode.enhanced
-    val sweep = remember { Animatable(0f) }
-    val ink = remember { Animatable(0f) }
-    LaunchedEffect(interaction, enhanced) {
-        var stroke: Job? = null
-        var generation = 0
-        interaction.interactions.collect { event ->
-            when (event) {
-                is PressInteraction.Press -> {
-                    generation++
-                    stroke?.cancel()
-                    stroke = launch {
-                        ink.snapTo(1f)
-                        if (enhanced) {
-                            sweep.snapTo(0f)
-                            sweep.animateTo(1f, BOOK_MARKER_SWEEP)
-                        } else {
-                            sweep.snapTo(1f)
-                        }
-                    }
-                }
-                is PressInteraction.Release, is PressInteraction.Cancel -> {
-                    val drawing = stroke
-                    val mine = generation
-                    launch {
-                        if (enhanced) drawing?.join()
-                        if (mine != generation) return@launch
-                        if (enhanced) ink.animateTo(0f, MotionTokens.fadeOut(0.002f)) else ink.snapTo(0f)
-                    }
-                }
-            }
-        }
-    }
-    return drawBehind {
-        val a = ink.value
-        val w = size.width * sweep.value
-        if (a <= 0.003f || w <= 0f) return@drawBehind
-        val top = size.height * BOOK_MARKER_TOP
-        val bottom = size.height * BOOK_MARKER_BOTTOM
-        drawRoundRect(
-            color = color.copy(alpha = color.alpha * a),
-            topLeft = Offset(0f, top),
-            size = Size(w, bottom - top),
-            cornerRadius = CornerRadius(BOOK_MARKER_CORNER.toPx()),
-        )
-    }
-}
-
-/** 书里翻页：翻过去、翻回来。 */
-private val BOOK_PAGE_TURN = MotionSprings.response<Float>(0.5f, 0.84f, 0.0008f)
-private val BOOK_PAGE_TURN_BACK = MotionSprings.response<Float>(0.42f, 0.9f, 0.001f)
+/** 书里翻页：翻过去、翻回来（稍慢一点、接近无过冲的高阻尼，并预热 2 帧避开首帧组合卡顿）。 */
+private val BOOK_PAGE_TURN = MotionSprings.response<Float>(0.56f, 0.92f, 0.0008f)
+private val BOOK_PAGE_TURN_BACK = MotionSprings.response<Float>(0.48f, 0.94f, 0.001f)
+private const val BOOK_PAGE_TURN_WARMUP_FRAMES = 2
 
 /** 翻开 / 合上：书离开书架、封面掀开与盖回的弹簧；封面晚书一拍起翻，盖到一半时书开始往回飞；落稳后交接淡出。 */
 private val BOOK_FLIGHT_OPEN = MotionSprings.response<Float>(0.5f, 0.86f, 0.0005f)
@@ -1433,12 +1412,6 @@ private const val BOOK_SPREAD_LEFT_START = 0.60f
 /** 往右拖合书：封面合过这一点（剩余开度）就合上；或往右甩得够快（每秒多少个「全开」）。 */
 private const val BOOK_DRAG_CLOSE_AT = 0.62f
 private const val BOOK_DRAG_CLOSE_SPEED = 1.4f
-
-/** 荧光笔：划过一行的弹簧；笔迹的上下边（占行高的比例）与圆角。 */
-private val BOOK_MARKER_SWEEP = MotionSprings.response<Float>(0.24f, 1f, 0.002f)
-private const val BOOK_MARKER_TOP = 0.18f
-private const val BOOK_MARKER_BOTTOM = 0.86f
-private val BOOK_MARKER_CORNER = 4.dp
 
 /** 展开书籍右页的两栏切换：目录（游戏抽屉操作）与管理（原长按游戏菜单）。 */
 internal enum class ShelfBookTab { Contents, Manage }

@@ -85,6 +85,7 @@ import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.PageSecondaryTextColor
 import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.DialogItemSurface
+import com.tyranor.next.theme.LocalAppDialogContent
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
@@ -141,6 +142,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
+import top.yukonga.miuix.kmp.basic.CardDefaults as MiuixCardDefaults
 import com.tyranor.next.ui.common.MotionLinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import com.tyranor.next.ui.common.Slider
@@ -1717,66 +1719,7 @@ private fun LazyListPlaceholder(
         }
 
         if (kind == EngineSettingsKind.WINLATOR) cardItem {
-            EngineCard("Winlator") {
-                WinlatorValueRow(
-                    label = stringResource(R.string.engine_settings_winlator_container_id_title),
-                    summaryHint = stringResource(R.string.engine_settings_winlator_container_id_summary),
-                    value = if (winlator.containerId > 0) winlator.containerId.toString() else "",
-                    sanitize = { it.filter { ch -> ch.isDigit() }.take(6) },
-                    keyboardType = KeyboardType.Number,
-                    onValueChange = { text ->
-                        onWinlator(winlator.copy(containerId = text.toIntOrNull()?.coerceAtLeast(0) ?: 0))
-                    },
-                )
-                WinlatorValueRow(
-                    label = stringResource(R.string.engine_settings_winlator_container_name_title),
-                    summaryHint = stringResource(R.string.engine_settings_winlator_container_name_summary),
-                    value = winlator.containerName,
-                    onValueChange = { onWinlator(winlator.copy(containerName = it)) },
-                )
-                DropdownRow(
-                    stringResource(R.string.engine_settings_winlator_graphics_driver_title),
-                    winlatorGraphicsDriverOptions(),
-                    winlator.graphicsDriver,
-                ) { onWinlator(winlator.copy(graphicsDriver = it)) }
-                DropdownRow(
-                    stringResource(R.string.engine_settings_winlator_dxwrapper_title),
-                    winlatorDxWrapperOptions(),
-                    winlator.dxwrapper,
-                ) { onWinlator(winlator.copy(dxwrapper = it)) }
-                DropdownRow(
-                    stringResource(R.string.engine_settings_winlator_screen_size_title),
-                    winlatorScreenSizeOptions(),
-                    winlator.screenSize,
-                ) { onWinlator(winlator.copy(screenSize = it)) }
-                DropdownRow(
-                    stringResource(R.string.engine_settings_winlator_lc_all_title),
-                    winlatorLcAllOptions(),
-                    winlator.lcAll,
-                ) { onWinlator(winlator.copy(lcAll = it)) }
-                DropdownRow(
-                    stringResource(R.string.engine_settings_winlator_tz_title),
-                    winlatorTimezoneOptions(),
-                    winlator.tz,
-                ) { onWinlator(winlator.copy(tz = it)) }
-                DropdownRow(
-                    stringResource(R.string.engine_settings_winlator_box64_preset_title),
-                    winlatorBox64PresetOptions(),
-                    winlator.box64Preset,
-                ) { onWinlator(winlator.copy(box64Preset = it)) }
-                SwitchPreference(
-                    title = stringResource(R.string.engine_settings_winlator_save_title),
-                    summary = stringResource(R.string.engine_settings_winlator_save_summary),
-                    checked = winlator.save,
-                    onCheckedChange = { onWinlator(winlator.copy(save = it)) },
-                )
-                Text(
-                    stringResource(R.string.engine_settings_winlator_note),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MiuixTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
+            WinlatorGlobalSettingsCard(winlator = winlator, onWinlator = onWinlator)
         }
 
         if (kind.graphicsFamily() != null) cardItem { graphicsContent() }
@@ -1891,21 +1834,129 @@ private fun WinlatorValueDialog(
 }
 
 
+/** Winlator 全局设置卡片：同时供全局设置页与「翻开的书」Winlator 全局设置书页复用。 */
+@Composable
+internal fun WinlatorGlobalSettingsCard(
+    winlator: EngineSettingsStore.Winlator,
+    onWinlator: (EngineSettingsStore.Winlator) -> Unit,
+) {
+    EngineCard("Winlator") {
+        WinlatorValueRow(
+            label = stringResource(R.string.engine_settings_winlator_container_id_title),
+            summaryHint = stringResource(R.string.engine_settings_winlator_container_id_summary),
+            value = if (winlator.containerId > 0) winlator.containerId.toString() else "",
+            sanitize = { it.filter { ch -> ch.isDigit() }.take(6) },
+            keyboardType = KeyboardType.Number,
+            onValueChange = { text ->
+                onWinlator(winlator.copy(containerId = text.toIntOrNull()?.coerceAtLeast(0) ?: 0))
+            },
+        )
+        WinlatorValueRow(
+            label = stringResource(R.string.engine_settings_winlator_container_name_title),
+            summaryHint = stringResource(R.string.engine_settings_winlator_container_name_summary),
+            value = winlator.containerName,
+            onValueChange = { onWinlator(winlator.copy(containerName = it)) },
+        )
+        DropdownRow(
+            stringResource(R.string.engine_settings_winlator_graphics_driver_title),
+            winlatorGraphicsDriverOptions(),
+            winlator.graphicsDriver,
+        ) { onWinlator(winlator.copy(graphicsDriver = it)) }
+        DropdownRow(
+            stringResource(R.string.engine_settings_winlator_dxwrapper_title),
+            winlatorDxWrapperOptions(),
+            winlator.dxwrapper,
+        ) { onWinlator(winlator.copy(dxwrapper = it)) }
+        DropdownRow(
+            stringResource(R.string.engine_settings_winlator_screen_size_title),
+            winlatorScreenSizeOptions(),
+            winlator.screenSize,
+        ) { onWinlator(winlator.copy(screenSize = it)) }
+        DropdownRow(
+            stringResource(R.string.engine_settings_winlator_lc_all_title),
+            winlatorLcAllOptions(),
+            winlator.lcAll,
+        ) { onWinlator(winlator.copy(lcAll = it)) }
+        DropdownRow(
+            stringResource(R.string.engine_settings_winlator_tz_title),
+            winlatorTimezoneOptions(),
+            winlator.tz,
+        ) { onWinlator(winlator.copy(tz = it)) }
+        DropdownRow(
+            stringResource(R.string.engine_settings_winlator_box64_preset_title),
+            winlatorBox64PresetOptions(),
+            winlator.box64Preset,
+        ) { onWinlator(winlator.copy(box64Preset = it)) }
+        SwitchPreference(
+            title = stringResource(R.string.engine_settings_winlator_save_title),
+            summary = stringResource(R.string.engine_settings_winlator_save_summary),
+            checked = winlator.save,
+            onCheckedChange = { onWinlator(winlator.copy(save = it)) },
+        )
+        val noteColor = if (com.tyranor.next.theme.LocalShelfBookLeaf.current) {
+            com.tyranor.next.theme.CurrentBookPaperPalette.inkSecondary
+        } else {
+            MiuixTheme.colorScheme.onBackground
+        }
+        Text(
+            stringResource(R.string.engine_settings_winlator_note),
+            style = MaterialTheme.typography.bodyMedium,
+            color = noteColor,
+            modifier = Modifier.padding(horizontal = com.tyranor.next.ui.common.appRowHorizontalPadding(), vertical = 8.dp),
+        )
+    }
+}
+
+/**
+ * 「翻开的书」单游戏 Winlator 设置中的全局参数直达页：复用 [WinlatorGlobalSettingsCard]，
+ * 通过 [AppAlertDialog] 在书页内翻开并在保存后回刷上层单游戏页的「跟随全局」摘要。
+ */
+@Composable
+internal fun WinlatorGlobalSettingsDialog(
+    onDismiss: () -> Unit,
+    onSaved: () -> Unit = {},
+) {
+    val ctx = LocalContext.current
+    var winlator by remember { mutableStateOf(EngineSettingsStore.loadWinlator(ctx)) }
+    val savedMessage = stringResource(R.string.engine_settings_saved)
+    AppAlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                stringResource(R.string.engine_settings_winlator_title),
+                style = MaterialTheme.typography.titleMedium,
+            )
+        },
+        text = {
+            Column(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                WinlatorGlobalSettingsCard(winlator = winlator, onWinlator = { winlator = it })
+            }
+        },
+        buttonArrangement = Arrangement.SpaceBetween,
+        dismissButton = {
+            DialogTextButton(text = stringResource(R.string.common_close), onClick = onDismiss)
+        },
+        confirmButton = {
+            DialogTextButton(text = stringResource(R.string.common_save)) {
+                EngineSettingsStore.saveWinlator(ctx, winlator)
+                onSaved()
+                AppNotice.makeText(ctx, savedMessage, Toast.LENGTH_SHORT, AppNotice.Kind.Success).show()
+            }
+        },
+    )
+}
+
 /**
  * 统一引擎设置分组的标题、间距与材质；含独立拖拽控件的分组可关闭整卡按压传递。
  * [pressGroup] 仅控制按压反馈，不改变静止布局或内部设置的保存方式。
  */
 @Composable
 internal fun EngineCard(header: String, pressGroup: Boolean = true, content: @Composable () -> Unit) {
-    MiuixCard(modifier = Modifier.pressSquishGroup(enabled = pressGroup).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
-        Column(Modifier.padding(vertical = 6.dp)) {
-            Text(
-                header,
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-            )
-            content()
-        }
+    com.tyranor.next.ui.common.AppSectionCard(
+        modifier = Modifier.pressSquishGroup(enabled = pressGroup),
+        title = header,
+    ) {
+        content()
     }
 }
 

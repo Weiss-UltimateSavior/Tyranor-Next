@@ -343,12 +343,12 @@ Column(fillMaxSize)                                // 页面根
 
 游戏的操作（启动文件、搜索封面、游玩状态、存档管理、在线补丁、引擎设置……与「启动游戏」）有两个宿主：其它卡片风格与首页用底部操作抽屉（`GameActionsSheet`），「游戏盒」风格轻点正中那一盒时书从书架上飞出、翻开，书页就是操作面板（`ui/game/ShelfBook.kt` 的 `ShelfOpenBook`，运动在 `ShelfBookMotion.kt`）。两者是同一套操作的两种摆法，约束如下：
 
-- **操作只定义一处**：条目、显示条件、弹窗、跳转与启动流程全部写在 `GameScreen.kt` 的 `GameActions` 里（`GameActionItem` + `GameActionsUi`），抽屉与书只负责摆放。**新增 / 修改选项只改 `GameActions`**（加一条稳定 `key` 的 `GameActionItem`；「进入下一级页面」的条目 `showArrow = true`），书和抽屉自动同时生效；不得在 `ShelfBook.kt` 或抽屉里单独加条目、复制点击逻辑或另写显示条件。宿主差异只经 `GameActionsHost`（`interact` / `leaving` / `openDetails` / `onGameLaunched` / `close`）表达。
-- **选项打开的下一级界面必须接入书**（书打开期间不得出现另开的窗口）：
-  - 弹窗一律用 `AppAlertDialog`：书经 `LocalAppDialogHost` 接管，弹窗自动成为书的下一页（目录翻过去露出它；返回键、点书外空白、往右拖都先翻回来再交付 `onDismissRequest`；按钮照 `LocalDialogExit` 约定「先翻回再执行」）。选项流程里不得直接开 `Dialog` / `Popup` 窗口或 `ModalBottomSheet`。
-  - 必须自绘窗口的界面（目前是 `CoverSearchDialog`）自己检查 `LocalAppDialogHost`：有宿主时把标题 / 正文 / 按钮交给 `AppDialogSpec`，窗口版与书页版共用同一份标题、正文、按钮组合（不复制两份 UI）；只有关闭类按钮随 `LocalDialogExit` 退场（搜索、返回上一级等用 `LocalDialogExit provides null` 剥离），等待中不可关闭用 `dismissEnabled = false`，书页里的「二级先回一级」用 `BackHandler` 注册在书的窗口里，正文需要占满剩余高度时 `textScrollEnabled = false`。照此接入后，书页上的标题格自动换成书里的宋体，正文与按钮保持界面字体。
-  - **能改成书页的二级界面就改成书页**：目前存档管理（`SaveManagementDialog`）与 Kirikiri 的在线补丁（`KrkrOnlinePatchDialog`）已改成书页——内容与二级页面是同一份（`SaveManagementContent` / `KrkrOnlinePatchContent`，`inBook` 区分顶栏、边距与条目底色），书里用 `AppAlertDialog` 承载（章名 + 内容 + 页脚「关闭」，其中的确认弹窗继续往后翻），条目在 `LocalAppDialogHost != null` 时 `showArrow = false`。新增同类页面照此接入，不要再为书另做一套。
-  - 还没改成书页的二级页面（目前只有引擎设置）进二级页面（Activity）一律经 `GameActionsHost.openDetails`，并且在条目的 `onClick` 里同步调用：书**不翻页**，直接走全局界面切换动画（侧推），书留在原处、回来时仍摊开着目录；只有这些条目带 `showArrow = true`（目录行尾 › 箭头；管理分栏的行与已改成书页的章都没有箭头）。不要在条目里直接 `startActivity` 绕过宿主，也不要先异步再调 `openDetails`。
+- **操作只定义一处，详情路由结构化进书**：条目、显示条件、弹窗与启动流程全部写在 `GameScreen.kt` 的 `GameActions` 里（`GameActionItem` + `GameActionsUi`），抽屉与书只负责摆放。**新增 / 修改选项只改 `GameActions`**，书和抽屉自动同时生效；不得在 `ShelfBook.kt` 或抽屉里单独加条目、复制点击逻辑或另写显示条件。宿主差异经 `GameActionsHost`（`interact` / `leaving` / `presentsDetailsInLeaf` / `openDetail` / `onGameLaunched` / `close`）表达；`GameActionItem` 以 `kind`（`Dialog` / `Detail` / `Inline`）声明交互类型，不再在各个条目里各自写 `LocalAppDialogHost` 分支或传开放式 `openDetails(() -> Unit)`。
+- **翻开的书里所有界面都必须开成书页（默认约束，不复用全局 Activity/弹窗/抽屉）**：
+  - 弹窗一律用 `AppAlertDialog`：书经 `LocalAppDialogHost` 接管，自动成为书的下一页（目录翻过去露出它；返回键、点书外空白、往右拖都先翻回来再交付 `onDismissRequest`；按钮照 `LocalDialogExit` 约定「先翻回再执行」）。选项与确认流程（含删除确认、未保存确认）不得直接开原始 `Dialog` / `Popup` 窗口或 `ModalBottomSheet` / `AppBottomSheet`。
+  - 需要展开的二级界面（存档管理 `SaveManagementDialog`、Kirikiri 在线补丁 `KrkrOnlinePatchDialog`、单游戏与运行时模块引擎设置 `PerGameSettingsDialog` / `RuntimeModuleSettingsDialog` 及嵌套的 Winlator 全局设置 `WinlatorGlobalSettingsDialog` 等）全部枚举进 `GameDetailDestination`，并走 `host.openDetail(destination)`。在书的宿主 `ShelfBookHost` 中，所有 `GameDetailDestination` **结构性强制打开为书页**（`ShelfBookLeaf`），目录隐藏行尾箭头（`showArrow(detailsInLeaf = true)` 为 `false`），书打开期间禁止拉起全局 `Activity` 或 `startActivityWithPageTransition`；只有操作抽屉宿主 `GameSheetNavigation` 才映射为全局 Activity。
+  - 若未来新增需要在书内进入的新详情/选项界面：在 `GameDetailDestination` 增加枚举项，编译器即要求 `ShelfBookHost` / `ShelfOpenBook` 补全书页分支（以 `AppAlertDialog` + 复用 core 层逻辑的书页内容承载）；不要在页面里写死全局 `DialogItemSurface` / `NavWhite` / `MiuixCard` / `Card` / Material 按钮。书页宿主 `ShelfBookLeafPage` 已通过 `ShelfBookLeafTheme` 提供 `LocalShelfBookLeaf = true`、宋体排版与 `MiuixSettingsTheme` 纸墨色板覆盖，页面直接使用公共组件（`AppSectionCard`、`AppNavItem`、`ArrowPreference`、`OverlayDropdownPreference`、`SwitchPreference` / `Switch`、`Slider` / `DialogMiuixSlider`、`AppSearchField`、`NoRippleButton`、`DialogTextButton`、`NoRippleTextButton`、`AppCheckbox`、`AppRadioRow`、`SlidingTabRow`、`appDialogSurfaceColor`）即可自动适配书内纸墨外观；`tools/check-shelf-book-boundaries.py` 也会在离线检查与 CI 中拦下 `startActivity*`、`AppBottomSheet`、原始 `Dialog()`、手写 `LocalAppDialogHost` 分支，以及直接写死全局卡片底色或全局按钮的做法。
+  - 必须自绘窗口适配的界面（目前是 `CoverSearchDialog`）自己检查 `LocalAppDialogHost`：有宿主时把标题 / 正文 / 按钮交给 `AppDialogSpec`，窗口版与书页版共用同一份逻辑；只有关闭类按钮随 `LocalDialogExit` 退场（搜索、返回上一级等用 `LocalDialogExit provides null` 剥离），等待中不可关闭用 `dismissEnabled = false`，书页里的「二级先回一级」或「未保存关闭确认」注册在 `BackHandler` 与 `onDismissRequest`，正文需要占满剩余高度时 `textScrollEnabled = false`。
   - 撤掉一页的同时打开新的一页（如选好封面来源 → 搜索封面）由书自动处理成「往前翻页」，调用方照常改状态即可。
   - 提示一律 `AppNotice`（书的窗口里有 `NoticeHost`，提示画在书上面）。
 - **条目随时可能增删**：异步状态（外部引擎退出待确认、运行模块能力刷新、模块设置加载……）会在书翻开时插入或撤掉条目。书的目录按 `key` 原位展开 / 收起、章号与当前值模糊替换，行高按一页六章均分（30–42dp），超出时滚动并在被截住的一边淡出；新增条目不用为此另做处理，但 `key` 必须稳定且唯一，不要用下标或会随状态变化的值。
@@ -765,6 +765,7 @@ Room schema 变更须提交 `app/schemas/` 并添加显式 `Migration`；仅既�
 | `./gradlew :app:lintDebug :engine:lintDebug --no-daemon` | 执行两模块 Android lint |
 | `python tools/check-hardcoded-ui-strings.py` | 离线检查三语言字符串键与 Kotlin CJK 字面量 |
 | `python tools/check-motion-boundaries.py` | 检查业务页面是否绕开具名动效入口 |
+| `python tools/check-shelf-book-boundaries.py` | 检查「翻开的书」书页边界与禁止全局跳转约束 |
 | `./gradlew -p buildSrc graphicsResourcesRegression --no-daemon` | 验证图形资源归属与校验逻辑 |
 | `./gradlew :engine:jsHarness --no-daemon` | 用本地 Node.js 验证 Web v2 桥；也接入 `:engine:check`（本地/人工门禁） |
 | `cargo test --manifest-path engine/rust/Cargo.toml --locked` | 修改 XP3 Rust 时运行宿主测试（本地/人工门禁） |

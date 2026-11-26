@@ -1,12 +1,17 @@
 package com.tyranor.next.ui.common
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -17,8 +22,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -37,10 +45,20 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.tyranor.next.theme.BookSerif
+import com.tyranor.next.theme.BookSerifBold
+import com.tyranor.next.theme.CurrentBookPaperPalette
+import com.tyranor.next.theme.LocalShelfBookLeaf
 import com.tyranor.next.ui.common.motion.BlurTextWith
+import com.tyranor.next.ui.common.motion.shelfBookMarker
 import com.tyranor.next.ui.common.motion.withRowPressSquish
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.BasicComponentColors
@@ -212,23 +230,127 @@ fun OverlayDropdownPreference(
         }
     }
 
-    BasicComponent(
-        modifier = modifier.withRowPressSquish(enabled = actualEnabled)
-            .onGloballyPositioned { slide.rowCoords = it }
-            .pointerInput(slide, longPressMillis) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                    if (!currentEnabled || expanded.value || down.isConsumed) return@awaitEachGesture
-                    if (!awaitDropdownHold(down, longPressMillis)) return@awaitEachGesture
-                    val session = slide.beginGesture(currentEntry.items.indexOfFirst { it.selected })
-                    setExpanded(true)
-                    try {
-                        trackDropdownHold(down.id, { slide.rowCoords }, slide, session, currentPreview, currentHit, currentPick)
-                    } finally {
-                        slide.cancelGesture(session)
+    val rowGestureModifier = modifier.withRowPressSquish(enabled = actualEnabled)
+        .onGloballyPositioned { slide.rowCoords = it }
+        .pointerInput(slide, longPressMillis) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                if (!currentEnabled || expanded.value || down.isConsumed) return@awaitEachGesture
+                if (!awaitDropdownHold(down, longPressMillis)) return@awaitEachGesture
+                val session = slide.beginGesture(currentEntry.items.indexOfFirst { it.selected })
+                setExpanded(true)
+                try {
+                    trackDropdownHold(down.id, { slide.rowCoords }, slide, session, currentPreview, currentHit, currentPick)
+                } finally {
+                    slide.cancelGesture(session)
+                }
+            }
+        }
+    if (LocalShelfBookLeaf.current) {
+        val palette = CurrentBookPaperPalette
+        val selectedText = if (showValue && entry.items.isNotEmpty()) entry.items.firstOrNull { it.selected }?.text else null
+        val underlineColor = if (actualEnabled) palette.foilAccent.copy(alpha = 0.78f) else palette.ruleSubtle
+        Column(
+            modifier = rowGestureModifier
+                .fillMaxWidth()
+                .shelfBookMarker(interactionSource, palette.marker)
+                .drawBehind {
+                    drawLine(
+                        color = palette.ruleSubtle,
+                        start = Offset(0f, size.height),
+                        end = Offset(size.width, size.height),
+                        strokeWidth = 0.6.dp.toPx(),
+                    )
+                }
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    enabled = actualEnabled,
+                    role = Role.DropdownList,
+                    onClick = { if (currentEnabled) setExpanded(!expanded.value) },
+                )
+                .padding(horizontal = 4.dp, vertical = 12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (startAction != null) {
+                    Box(Modifier.padding(end = 10.dp), contentAlignment = Alignment.Center) { startAction() }
+                }
+                Column(Modifier.weight(1f)) {
+                    androidx.compose.material3.Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontFamily = BookSerifBold,
+                            fontWeight = FontWeight.Medium,
+                        ),
+                        color = if (actualEnabled) palette.ink else palette.inkMuted,
+                    )
+                    if (!summary.isNullOrEmpty()) {
+                        androidx.compose.material3.Text(
+                            text = summary,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = BookSerif),
+                            color = if (actualEnabled) palette.inkSecondary else palette.inkMuted,
+                        )
                     }
                 }
-            },
+                if (!selectedText.isNullOrEmpty()) {
+                    BlurTextWith(
+                        text = selectedText,
+                        modifier = Modifier
+                            .padding(start = 10.dp)
+                            .align(Alignment.CenterVertically)
+                            .weight(1f, fill = false),
+                        animateOnLocaleChange = true,
+                        partial = false,
+                    ) { value, valueModifier ->
+                        androidx.compose.material3.Text(
+                            text = value,
+                            modifier = valueModifier.drawBehind {
+                                val y = size.height - 1.dp.toPx()
+                                drawLine(underlineColor, Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
+                            },
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontFamily = BookSerifBold,
+                                fontWeight = FontWeight.Medium,
+                            ),
+                            color = if (actualEnabled) palette.ink else palette.inkMuted,
+                            textAlign = TextAlign.End,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                if (entry.items.isNotEmpty()) key(slide) {
+                    HoldSelectDropdownPopup(
+                        entry = entry,
+                        enabled = actualEnabled,
+                        show = expanded.value,
+                        slide = slide,
+                        onPreview = preview,
+                        onHit = hit,
+                        onPick = pick,
+                        onDismiss = { slide.resetGesture(); setExpanded(false) },
+                        onDismissFinished = { holdDown.value = false; slide.reset() },
+                        maxHeight = maxHeight,
+                        dropdownColors = dropdownColors,
+                        renderInRootScaffold = renderInRootScaffold,
+                        onLockDismiss = onLockDismiss,
+                    )
+                }
+            }
+            if (bottomAction != null) {
+                Box(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    bottomAction()
+                }
+            }
+        }
+        return
+    }
+
+    BasicComponent(
+        modifier = rowGestureModifier,
         interactionSource = interactionSource,
         insideMargin = insideMargin,
         title = title,
@@ -334,6 +456,7 @@ private fun HoldSelectDropdownPopup(
     val currentSelected by rememberUpdatedState(entry.items.indexOfFirst { it.selected })
     val longPressMillis = LocalViewConfiguration.current.longPressTimeoutMillis
     val highlighted = slide.highlightedIndex(entry.items.indexOfFirst { it.selected })
+    val inBook = LocalShelfBookLeaf.current
     DropdownListPopup(
         show = show,
         onDismissRequest = onDismiss,
@@ -342,64 +465,112 @@ private fun HoldSelectDropdownPopup(
         renderInRootScaffold = renderInRootScaffold,
         onLockDismiss = onLockDismiss,
     ) {
-        ListPopupColumn {
-            entry.items.forEachIndexed { index, item ->
-                val coordinates = remember { arrayOfNulls<LayoutCoordinates>(1) }
-                val textColor = if (index == highlighted) MiuixTheme.colorScheme.primary else dropdownColors.contentColor
-                Box(
-                    Modifier.fillMaxWidth()
-                        .onGloballyPositioned {
-                            coordinates[0] = it
-                            // Use clipped bounds so offscreen rows in a scrolling menu cannot win.
-                            val bounds = it.boundsInWindow()
-                            val origin = it.localToScreen(Offset.Zero) - it.localToWindow(Offset.Zero)
-                            slide.itemBounds[index] = bounds.translate(origin)
-                            slide.rowClipped[index] = bounds.isEmpty || bounds.height < it.size.height - 1f
-                        }
-                        .pointerInput(slide, index, longPressMillis) {
-                            awaitEachGesture {
-                                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                                if (!currentEnabled || slide.closing || down.isConsumed) return@awaitEachGesture
-                                // A list that fits has nothing to scroll: the touch itself is the selection, with
-                                // no timing. Only a scrolling list keeps the long-press guard that protects it.
-                                val fits = slide.allRowsVisible(entry.items.size)
-                                val started = if (fits) {
-                                    currentEvent.changes.count { it.pressed } == 1
-                                } else {
-                                    awaitDropdownHold(down, longPressMillis)
+        val listModifier = if (inBook) {
+            Modifier.border(0.8.dp, CurrentBookPaperPalette.popupBorder, RoundedCornerShape(10.dp))
+        } else {
+            Modifier
+        }
+        Box(listModifier) {
+            ListPopupColumn {
+                entry.items.forEachIndexed { index, item ->
+                    val coordinates = remember { arrayOfNulls<LayoutCoordinates>(1) }
+                    val textColor = if (index == highlighted) MiuixTheme.colorScheme.primary else dropdownColors.contentColor
+                    Box(
+                        Modifier.fillMaxWidth()
+                            .onGloballyPositioned {
+                                coordinates[0] = it
+                                // Use clipped bounds so offscreen rows in a scrolling menu cannot win.
+                                val bounds = it.boundsInWindow()
+                                val origin = it.localToScreen(Offset.Zero) - it.localToWindow(Offset.Zero)
+                                slide.itemBounds[index] = bounds.translate(origin)
+                                slide.rowClipped[index] = bounds.isEmpty || bounds.height < it.size.height - 1f
+                            }
+                            .pointerInput(slide, index, longPressMillis) {
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                                    if (!currentEnabled || slide.closing || down.isConsumed) return@awaitEachGesture
+                                    // A list that fits has nothing to scroll: the touch itself is the selection, with
+                                    // no timing. Only a scrolling list keeps the long-press guard that protects it.
+                                    val fits = slide.allRowsVisible(entry.items.size)
+                                    val started = if (fits) {
+                                        currentEvent.changes.count { it.pressed } == 1
+                                    } else {
+                                        awaitDropdownHold(down, longPressMillis)
+                                    }
+                                    if (!started) return@awaitEachGesture
+                                    // The touched row is the candidate at once; Miuix's own press state stays out.
+                                    if (fits) down.consume()
+                                    val session = slide.beginGesture(currentSelected)
+                                    try {
+                                        trackDropdownHold(down.id, { coordinates[0] }, slide, session, currentPreview, currentHit, currentPick)
+                                    } finally {
+                                        slide.cancelGesture(session)
+                                    }
                                 }
-                                if (!started) return@awaitEachGesture
-                                // The touched row is the candidate at once; Miuix's own press state stays out.
-                                if (fits) down.consume()
-                                val session = slide.beginGesture(currentSelected)
-                                try {
-                                    trackDropdownHold(down.id, { coordinates[0] }, slide, session, currentPreview, currentHit, currentPick)
-                                } finally {
-                                    slide.cancelGesture(session)
+                            },
+                        propagateMinConstraints = true,
+                    ) {
+                        if (inBook) {
+                            val palette = CurrentBookPaperPalette
+                            val rowEnabled = enabled && item.enabled
+                            val isHighlighted = index == highlighted
+                            val optionInteraction = remember { MutableInteractionSource() }
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .shelfBookMarker(optionInteraction, palette.marker)
+                                    .clickable(
+                                        interactionSource = optionInteraction,
+                                        indication = null,
+                                        enabled = rowEnabled,
+                                        onClick = { currentPick(index) },
+                                    )
+                                    .semantics {
+                                        selected = item.selected
+                                        role = Role.DropdownList
+                                    }
+                                    .alpha(if (rowEnabled) 1f else 0.42f)
+                                    .padding(horizontal = 16.dp, vertical = 11.dp),
+                            ) {
+                                androidx.compose.material3.Text(
+                                    text = item.text,
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontFamily = if (isHighlighted) BookSerifBold else BookSerif,
+                                        fontWeight = if (isHighlighted) FontWeight.SemiBold else FontWeight.Normal,
+                                    ),
+                                    color = if (isHighlighted) palette.foilAccent else palette.ink,
+                                )
+                                item.summary?.takeIf { it.isNotEmpty() }?.let { itemSummary ->
+                                    androidx.compose.material3.Text(
+                                        text = itemSummary,
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontFamily = BookSerif),
+                                        color = palette.inkSecondary,
+                                        modifier = Modifier.padding(top = 2.dp),
+                                    )
                                 }
                             }
-                        },
-                    propagateMinConstraints = true,
-                ) {
-                    DropdownImpl(
-                        item = item,
-                        optionSize = entry.items.size,
-                        isSelected = item.selected,
-                        index = index,
-                        dropdownColors = dropdownColors.copy(
-                            contentColor = textColor,
-                            selectedContentColor = textColor,
-                            selectedSummaryColor = dropdownColors.summaryColor,
-                            selectedContainerColor = dropdownColors.containerColor,
-                            selectedIndicatorColor = Color.Transparent,
-                        ),
-                        enabled = enabled && item.enabled,
-                        dialogMode = false,
-                        hasSubmenu = false,
-                        isFirst = index == 0,
-                        isLast = index == entry.items.lastIndex,
-                        onSelectedIndexChange = { currentPick(index) },
-                    )
+                        } else {
+                            DropdownImpl(
+                                item = item,
+                                optionSize = entry.items.size,
+                                isSelected = item.selected,
+                                index = index,
+                                dropdownColors = dropdownColors.copy(
+                                    contentColor = textColor,
+                                    selectedContentColor = textColor,
+                                    selectedSummaryColor = dropdownColors.summaryColor,
+                                    selectedContainerColor = dropdownColors.containerColor,
+                                    selectedIndicatorColor = Color.Transparent,
+                                ),
+                                enabled = enabled && item.enabled,
+                                dialogMode = false,
+                                hasSubmenu = false,
+                                isFirst = index == 0,
+                                isLast = index == entry.items.lastIndex,
+                                onSelectedIndexChange = { currentPick(index) },
+                            )
+                        }
+                    }
                 }
             }
         }
