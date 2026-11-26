@@ -205,6 +205,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
         AudioAttributes attributes = new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME)
                 .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build();
         focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).setAudioAttributes(attributes)
+                .setWillPauseWhenDucked(true)
                 .setOnAudioFocusChangeListener(change -> {
                     if (session != null && !destroyed) session.pause(EthornellSession.PAUSE_AUDIO, change != AudioManager.AUDIOFOCUS_GAIN);
                 }, ui).build();

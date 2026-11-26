@@ -18,11 +18,10 @@ removing a library entry retains game-local saves.
 
 Upstream runtime implements hosted virtual roots and user-data read aliases, including
 Sys81 generic Header loading. Local patches 0001–0003 retain the game-local
-save policy and shared-storage writer lock. Patch 0005 retains the previously
-tolerated Graph91:00 no-op only for the identified Amachoco ABI; the native
-operation remains unaudited. Commercial-game slot save/readback and format compatibility remain experimental
-and require separate acceptance; this is a runtime patch, not a host `openat`
-shim.
+save policy and shared-storage writer lock. The upstream Graph91:00
+implementation sets the forced presentation flag for the Amachoco ABI.
+Commercial-game slot save/readback and format compatibility require separate
+acceptance.
 
 `LaunchContract.ETHORNELL_DISPATCH_TOKEN` is a required one-shot random launch token.
 `EthornellDispatchRegistry` persists ISSUED/CLAIMED/TERMINAL/REVOKED under the same JVM
@@ -52,8 +51,9 @@ empty `:ethornell` process from leaving the launcher's conservative guard perman
 This terminal policy is never triggered directly by request_close/WM_CLOSE.
 
 Activity, focus, audio and dialog suspension are independent mask bits. Runtime
-Surface/request suspension remains independent. Audio focus loss (including duck)
-really suspends; unplug/noisy suspends until focus is requested on foreground resume.
+Surface/request suspension remains independent. The audio focus request opts in
+to pause callbacks when the system requests ducking. Unplug/noisy suspends until
+focus is requested on foreground resume. The runtime owns audio output route recovery.
 There is no background audio service, IME implementation, file picker or shell intent.
 
 `surfaceDestroyed` closes its generation and blocks until native detach/destroy ACK.
