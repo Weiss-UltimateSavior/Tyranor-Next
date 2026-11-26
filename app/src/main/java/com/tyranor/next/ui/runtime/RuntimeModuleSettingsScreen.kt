@@ -559,7 +559,7 @@ private fun RuntimeModuleSettingsView(
                             background = androidx.compose.ui.graphics.Color.Transparent,
                             contentColor = PageTextColor,
                             trailing = {
-                                if (canSave) TopBarIcon(
+                                if (settings?.items?.isNotEmpty() == true) TopBarIcon(
                                     painter = androidx.compose.ui.res.painterResource(R.drawable.ic_save),
                                     contentDescription = stringResource(R.string.runtime_settings_save),
                                     tint = MiuixTheme.colorScheme.primary,
