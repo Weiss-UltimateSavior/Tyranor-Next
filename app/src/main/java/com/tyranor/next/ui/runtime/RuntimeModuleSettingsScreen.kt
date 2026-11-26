@@ -555,7 +555,7 @@ private fun RuntimeModuleSettingsView(
                     contentWindowInsets = WindowInsets(0.dp),
                     topBar = {
                         AppSecondaryTopBar(
-                            title = stringResource(R.string.runtime_settings_title),
+                            title = game.title,
                             background = androidx.compose.ui.graphics.Color.Transparent,
                             contentColor = PageTextColor,
                             trailing = {
