@@ -3187,6 +3187,7 @@ internal fun EngineType.coverColor(): Color = when (this) {
     EngineType.RENPY -> Color(0xFFE35B84)
     EngineType.RUFFLE -> Color(0xFFC62828)
     EngineType.IMPACTO -> Color(0xFFB3123A)
+    EngineType.EASYRPG -> Color(0xFF1B7A43)
     EngineType.RUNTIME_MODULE -> Color(0xFF5C6BC0)
     EngineType.PSP -> Color(0xFF6D4C9F)
     EngineType.NINTENDO_SWITCH -> Color(0xFFD32F2F)
@@ -3194,9 +3195,10 @@ internal fun EngineType.coverColor(): Color = when (this) {
 }
 
 internal fun shouldShowSaveManagement(engine: EngineType, sdkInt: Int = Build.VERSION.SDK_INT): Boolean =
-    // YU-RIS 虽经外置 Winlator 启动，但存档落在游戏目录 save/，纳入统一存档管理；
+    // YU-RIS / EasyRPG 虽经外置应用启动，但存档落在游戏目录（save/ 或 saves/），纳入统一存档管理；
     // 手动添加的类型（PC / 安卓游戏）无统一存档接口，显式排除。
     engine == EngineType.YURIS ||
+        engine == EngineType.EASYRPG ||
         (engine == EngineType.RENPY &&
             com.tyranor.next.core.game.save.GameSaveManager.supportsFileSaves(engine, sdkInt)) ||
         (!engine.isManual &&

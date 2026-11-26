@@ -1032,6 +1032,7 @@ private fun engineIconRes(engine: EngineType): Int = when (engine) {
     EngineType.RENPY -> R.drawable.ic_engine_card_renpy
     EngineType.RUFFLE -> R.drawable.ic_engine_card_ruffle
     EngineType.IMPACTO -> R.drawable.ic_engine_card_impacto
+    EngineType.EASYRPG -> R.drawable.ic_engine_card_easyrpg
     EngineType.YURIS -> R.drawable.ic_engine_card_yuris
     EngineType.CATSYSTEM2 -> R.drawable.ic_engine_card_catsystem2
     EngineType.PC -> R.drawable.ic_engine_card_pc
@@ -1100,7 +1101,7 @@ internal fun EnginePageHost(
 private enum class EngineTab { GAL, RPGM, CONSOLE, WEB }
 
 private fun engineTabOf(engine: EngineType): EngineTab = when (engine) {
-    EngineType.RPGMAKER, EngineType.RPG_MV, EngineType.RPG_MZ -> EngineTab.RPGM
+    EngineType.RPGMAKER, EngineType.RPG_MV, EngineType.RPG_MZ, EngineType.EASYRPG -> EngineTab.RPGM
     EngineType.KIRIKIRI, EngineType.ONS, EngineType.ARTEMIS, EngineType.SIGLUS,
     EngineType.REALLIVE, EngineType.AVG32, EngineType.XSYS35, EngineType.XSYS4, EngineType.UK2, EngineType.FVP,
     EngineType.ETHORNELL, EngineType.CMVS, EngineType.SYSTEMNNN,

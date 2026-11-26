@@ -34,4 +34,9 @@ class ExternalEngineManifestQueriesTest {
     fun impactoHostPackageIsDeclared() {
         assertTrue(ImpactoHostContract.PACKAGE in declaredQueryPackages())
     }
+
+    @Test
+    fun easyRpgHostPackageIsDeclared() {
+        assertTrue(EasyRpgHostContract.PACKAGE in declaredQueryPackages())
+    }
 }

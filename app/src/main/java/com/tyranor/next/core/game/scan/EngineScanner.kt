@@ -806,6 +806,9 @@ object EngineScanner {
     /** 与 `ImpactoExternalEngineModule.defaultAlias` 同值，理由同上。 */
     private const val IMPACTO_MODULE_ALIAS = "internal.impacto"
 
+    /** 与 `EasyRpgExternalEngineModule.defaultAlias` 同值，理由同上。 */
+    private const val EASYRPG_MODULE_ALIAS = "internal.easyrpg"
+
     private fun detectRenpyVersionIfNeeded(
         detection: Detection,
         children: List<SafNode>,
@@ -1200,6 +1203,10 @@ object EngineScanner {
         var cmvsStartCount = 0
         var hasCmvsStartHeader = false
         var hasCmvsExe = false
+        var hasRpgRtLdb = false
+        var hasRpgRtLmt = false
+        var hasEasyRtEdb = false
+        var hasEasyRtEmt = false
         // Impacto 按精确大小写匹配条目名（上游 Android 路径区分大小写），故另存原名：根目录条目名，
         // 以及识别规则里出现的子目录（如 Windows／Steam 版的 `data/`、`USRDIR/`）里的文件，记为 `目录名/文件名`
         val impactoEntries = HashSet<String>()
@@ -1400,6 +1407,11 @@ object EngineScanner {
                 rel.isEmpty() && lower == XS4_SYSTEM40_INI -> system40IniNode = entry
                 rel.isEmpty() && lower == XS4_ALICESTART_INI -> aliceStartIniNode = entry
                 rel.isEmpty() && lower.endsWith(XS4_AIN_EXTENSION) && lower !in XS35_SUPPORT_EXACT_NAMES -> hasAin = true
+                // RPG Maker 2000/2003 / EasyRPG：根目录直接子文件存在数据库与地图树（大小写不敏感）
+                rel.isEmpty() && lower == "rpg_rt.ldb" -> hasRpgRtLdb = true
+                rel.isEmpty() && lower == "rpg_rt.lmt" -> hasRpgRtLmt = true
+                rel.isEmpty() && lower == "easy_rt.edb" -> hasEasyRtEdb = true
+                rel.isEmpty() && lower == "easy_rt.emt" -> hasEasyRtEmt = true
             }
         }
         children.forEach { collect(it, "") }
@@ -1573,6 +1585,9 @@ object EngineScanner {
             !hasOnsScript && !hasOnsArchive && !isSystem4 && !hasConsoleRomChild
         ) {
             return Detection(EngineType.RUFFLE, 88, ruffleSwf, RUFFLE_MODULE_ALIAS)
+        }
+        if ((hasRpgRtLdb && hasRpgRtLmt) || (hasEasyRtEdb && hasEasyRtEmt)) {
+            return Detection(EngineType.EASYRPG, 95, LAUNCH_TARGET_GAME_DIR, EASYRPG_MODULE_ALIAS)
         }
         if (hasIndex && !hasSystemNnnEntry) {
             return Detection(EngineType.WEB_OTHER, 70, LAUNCH_TARGET_GAME_DIR)

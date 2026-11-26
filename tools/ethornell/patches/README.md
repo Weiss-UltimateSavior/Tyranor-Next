@@ -1,28 +1,28 @@
 # Ethornell 本地兼容补丁
 
-补丁必须按下列顺序应用到 provenance 中固定的 `source_revision`；当前基线为 `7cfc2fba8261e59c68095ab1ddc4f1f3534c27d8`。库、ABI header、来源 inventory 与补丁哈希以 `engine/src/main/jniLibs/arm64-v8a/libethornell.provenance.json` 为准，不能把本地补丁产物描述为干净的上游发布版本。
+补丁必须按下列顺序应用到 provenance 中固定的 `source_revision`，当前基线为 `2ccc6c7df11d80fd7343c99a3c4a86be6e7425f3`。库、ABI header、来源 inventory 与补丁哈希以 `engine/src/main/jniLibs/arm64-v8a/libethornell.provenance.json` 为准。
 
 ## 补丁顺序与边界
 
 1. `0001-user-data-double-bgi-resource.patch`：收敛一层重复 `bgi-resource` 前缀，将 `UserData/**`、顶层 `BGI.gdb` 和精确四位数字 `BGI####.cad` 路由到 `bgi-user/`；其它资源写入与路径逃逸仍拒绝。
 2. `0002-game-local-savedata.patch`：允许经过文件描述符与 inode 校验的 `<resource>/savedata` 直接子目录作为 user-root；该子树不参与普通资源读取、存在性检查、枚举和资源扫描。其它重叠根及符号链接仍拒绝，分离的 user-root 继续供 JNI 回归夹具使用。
 3. `0003-public-storage-ofd-writer-lock.patch`：当 `flock(LOCK_EX | LOCK_NB)` 仅返回 `ENOSYS`、`EOPNOTSUPP` 或 `ENOTSUP` 时，在 Android/Linux 尝试全文件非阻塞 `F_OFD_SETLK` 写锁。忙锁、权限错误与其他失败原样拒绝；OFD 失败也拒绝。OFD 锁随宿主持有的文件描述符关闭而释放。
-4. `0005-amachoco-graph-startup-compat.patch`：仅对经资源指纹识别的 Amachoco ABI 恢复 `Graph91:00` 旧版空操作行为，避免启动时因上游未知调用处理收紧而退出；该原生调用的完整语义仍未核实。
+4. `0006-graph-text-integer-arguments.patch`：图形文本参数允许整数形式的有效内存地址，按当前编码读取该地址或已记录的字符串。越界整数保持原值。
 
-历史补丁 `0004-virtual-user-file-reads.patch` 仅用于旧基线；新版上游已实现虚拟根与存档读取映射，不再应用该补丁。
+历史补丁 `0004-virtual-user-file-reads.patch` 和 `0005-amachoco-graph-startup-compat.patch` 仅用于旧基线。当前基线自带虚拟根、存档读取映射和 Graph91:00 强制呈现实现。
 
 ```bash
 cd /path/to/ethornell-rs
-git checkout --detach 7cfc2fba8261e59c68095ab1ddc4f1f3534c27d8
+git checkout --detach 2ccc6c7df11d80fd7343c99a3c4a86be6e7425f3
 git apply /path/to/TyranorNext/tools/ethornell/patches/0001-user-data-double-bgi-resource.patch
 git apply /path/to/TyranorNext/tools/ethornell/patches/0002-game-local-savedata.patch
 git apply /path/to/TyranorNext/tools/ethornell/patches/0003-public-storage-ofd-writer-lock.patch
-git apply /path/to/TyranorNext/tools/ethornell/patches/0005-amachoco-graph-startup-compat.patch
+git apply /path/to/TyranorNext/tools/ethornell/patches/0006-graph-text-integer-arguments.patch
 cargo test -p ethornell-app --locked
 cargo test -p ethornell-vm --locked
 ```
 
-补丁顺序必须与 provenance 的 `local_patches` 一致；每份补丁后的源码哈希应与下一份补丁的输入对应。当前本地补丁变更 `file_policy.rs` 与 VM `lib.rs`，source inventory 必须覆盖所有构建输入，不能只用 `file_policy.rs` 单文件哈希代表整条补丁链。
+补丁顺序必须与 provenance 的 `local_patches` 一致，每份补丁后记录所修改文件的哈希。当前本地补丁修改 `file_policy.rs` 与 VM 的 `lib.rs`，source inventory 覆盖所有构建输入。
 
 锁回归应分别覆盖不支持操作与锁占用错误、同进程独立文件描述符及跨进程互斥、关闭和进程异常退出后的释放；公共共享存储必须单独测试，不能以应用专属外部目录替代。
 

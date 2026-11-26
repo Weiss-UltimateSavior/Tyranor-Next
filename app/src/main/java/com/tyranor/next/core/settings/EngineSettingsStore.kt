@@ -137,6 +137,22 @@ object EngineSettingsStore {
     const val KEY_IMPACTO_LOG_LEVEL = "impacto_log_level"
     const val KEY_IMPACTO_DEBUG_MODE = "impacto_debug_mode"
 
+    // EasyRPG 外置宿主的 App prefs 键；与 PerGameSettingsStore.F_EASYRPG_*、
+    // GameOverridePartitions.KEY_EASYRPG_* 字面量锚定（由 EasyRpgSettingsKeysTest 约束）
+    const val KEY_EASYRPG_ENCODING = "easyrpg_encoding"
+    const val KEY_EASYRPG_SCALING = "easyrpg_scaling"
+    const val KEY_EASYRPG_GAME_RESOLUTION = "easyrpg_game_resolution"
+    const val KEY_EASYRPG_STRETCH = "easyrpg_stretch"
+    const val KEY_EASYRPG_VSYNC = "easyrpg_vsync"
+    const val KEY_EASYRPG_FPS_LIMIT = "easyrpg_fps_limit"
+    const val KEY_EASYRPG_SHOW_FPS = "easyrpg_show_fps"
+    const val KEY_EASYRPG_DISABLE_AUDIO = "easyrpg_disable_audio"
+    const val KEY_EASYRPG_MUSIC_VOLUME = "easyrpg_music_volume"
+    const val KEY_EASYRPG_SOUND_VOLUME = "easyrpg_sound_volume"
+    const val KEY_EASYRPG_NO_RTP = "easyrpg_no_rtp"
+    const val KEY_EASYRPG_PATCH_MODE = "easyrpg_patch_mode"
+    const val KEY_EASYRPG_TEST_PLAY = "easyrpg_test_play"
+
     // Tyrano 与 RPG Maker Web 共用同一套 WebView 宿主设置；启动链路按同一键读取。
     const val KEY_TYRANO_EXTERNAL_NETWORK = "tyrano_external_network"
     const val KEY_TYRANO_SCOPED_SAVE_DIR = "tyrano_scoped_save_dir"
@@ -324,6 +340,26 @@ object EngineSettingsStore {
     // “两个都关”没有引擎读得回的写法，所以只提供三档：全部 / 仅翻译 / 仅卡拉 OK。
     const val IMPACTO_SUBTITLES_ALL = "all"
     val IMPACTO_SUBTITLES: Set<String> = linkedSetOf(IMPACTO_SUBTITLES_ALL, "translation", "karaoke")
+
+    // EasyRPG 宿主设置取值域（与宿主 EasyRpgSettingsMapper 白名单严格同步）
+    const val EASYRPG_ENCODING_AUTO = "auto"
+    val EASYRPG_ENCODINGS: Set<String> =
+        linkedSetOf(EASYRPG_ENCODING_AUTO, "932", "936", "950", "949", "1252", "1251", "65001")
+
+    const val EASYRPG_SCALING_BILINEAR = "bilinear"
+    val EASYRPG_SCALINGS: Set<String> = linkedSetOf("nearest", "integer", EASYRPG_SCALING_BILINEAR)
+
+    const val EASYRPG_RESOLUTION_ORIGINAL = "original"
+    val EASYRPG_RESOLUTIONS: Set<String> = linkedSetOf(EASYRPG_RESOLUTION_ORIGINAL, "widescreen", "ultrawide")
+
+    const val EASYRPG_FPS_LIMIT_DEFAULT = 60
+    val EASYRPG_FPS_LIMIT_RANGE: IntRange = 0..240
+
+    const val EASYRPG_VOLUME_DEFAULT = 100
+    val EASYRPG_VOLUME_RANGE: IntRange = 0..100
+
+    const val EASYRPG_PATCH_MODE_AUTO = "auto"
+    val EASYRPG_PATCH_MODES: Set<String> = linkedSetOf(EASYRPG_PATCH_MODE_AUTO, "none", "easyrpg", "maniac", "dynrpg")
 
     // Siglus 语言取值常量（auto 不设置 SIGLUS_LANGUAGE，保持引擎默认 JP）
     const val SIGLUS_LANGUAGE_AUTO = "auto"
@@ -1405,4 +1441,104 @@ object EngineSettingsStore {
 
     fun normalizeImpactoSubtitles(v: String?): String =
         v?.trim()?.lowercase(java.util.Locale.ROOT)?.takeIf { it in IMPACTO_SUBTITLES } ?: IMPACTO_SUBTITLES_ALL
+
+    // ---------- EasyRPG 外置宿主 ----------
+
+    /** EasyRPG 外置宿主配置节（13 项，与宿主 EXTRA_SETTINGS JSON 键一一对应）。 */
+    data class EasyRpg(
+        var encoding: String = EASYRPG_ENCODING_AUTO,
+        var scaling: String = EASYRPG_SCALING_BILINEAR,
+        var gameResolution: String = EASYRPG_RESOLUTION_ORIGINAL,
+        var stretch: Boolean = false,
+        var vsync: Boolean = true,
+        var fpsLimit: Int = EASYRPG_FPS_LIMIT_DEFAULT,
+        var showFps: Boolean = false,
+        var disableAudio: Boolean = false,
+        var musicVolume: Int = EASYRPG_VOLUME_DEFAULT,
+        var soundVolume: Int = EASYRPG_VOLUME_DEFAULT,
+        var noRtp: Boolean = false,
+        var patchMode: String = EASYRPG_PATCH_MODE_AUTO,
+        var testPlay: Boolean = false,
+    )
+
+    private val EASYRPG_BOOL_KEYS = listOf(
+        KEY_EASYRPG_STRETCH, KEY_EASYRPG_VSYNC, KEY_EASYRPG_SHOW_FPS,
+        KEY_EASYRPG_DISABLE_AUDIO, KEY_EASYRPG_NO_RTP, KEY_EASYRPG_TEST_PLAY,
+    )
+
+    private val EASYRPG_INT_KEYS = listOf(
+        KEY_EASYRPG_FPS_LIMIT, KEY_EASYRPG_MUSIC_VOLUME, KEY_EASYRPG_SOUND_VOLUME,
+    )
+
+    private val EASYRPG_STRING_KEYS = listOf(
+        KEY_EASYRPG_ENCODING, KEY_EASYRPG_SCALING, KEY_EASYRPG_GAME_RESOLUTION, KEY_EASYRPG_PATCH_MODE,
+    )
+
+    fun loadEasyRpg(c: Context): EasyRpg {
+        val p = prefs(c)
+        val d = EasyRpg()
+        return EasyRpg(
+            encoding = normalizeEasyRpgEncoding(p.getString(KEY_EASYRPG_ENCODING, null)),
+            scaling = normalizeEasyRpgScaling(p.getString(KEY_EASYRPG_SCALING, null)),
+            gameResolution = normalizeEasyRpgGameResolution(p.getString(KEY_EASYRPG_GAME_RESOLUTION, null)),
+            stretch = p.getBoolean(KEY_EASYRPG_STRETCH, d.stretch),
+            vsync = p.getBoolean(KEY_EASYRPG_VSYNC, d.vsync),
+            fpsLimit = normalizeEasyRpgFpsLimit(p.getInt(KEY_EASYRPG_FPS_LIMIT, d.fpsLimit)),
+            showFps = p.getBoolean(KEY_EASYRPG_SHOW_FPS, d.showFps),
+            disableAudio = p.getBoolean(KEY_EASYRPG_DISABLE_AUDIO, d.disableAudio),
+            musicVolume = normalizeEasyRpgVolume(p.getInt(KEY_EASYRPG_MUSIC_VOLUME, d.musicVolume)),
+            soundVolume = normalizeEasyRpgVolume(p.getInt(KEY_EASYRPG_SOUND_VOLUME, d.soundVolume)),
+            noRtp = p.getBoolean(KEY_EASYRPG_NO_RTP, d.noRtp),
+            patchMode = normalizeEasyRpgPatchMode(p.getString(KEY_EASYRPG_PATCH_MODE, null)),
+            testPlay = p.getBoolean(KEY_EASYRPG_TEST_PLAY, d.testPlay),
+        )
+    }
+
+    fun saveEasyRpg(c: Context, s: EasyRpg) {
+        prefs(c).edit().apply {
+            putString(KEY_EASYRPG_ENCODING, normalizeEasyRpgEncoding(s.encoding))
+            putString(KEY_EASYRPG_SCALING, normalizeEasyRpgScaling(s.scaling))
+            putString(KEY_EASYRPG_GAME_RESOLUTION, normalizeEasyRpgGameResolution(s.gameResolution))
+            putBoolean(KEY_EASYRPG_STRETCH, s.stretch)
+            putBoolean(KEY_EASYRPG_VSYNC, s.vsync)
+            putInt(KEY_EASYRPG_FPS_LIMIT, normalizeEasyRpgFpsLimit(s.fpsLimit))
+            putBoolean(KEY_EASYRPG_SHOW_FPS, s.showFps)
+            putBoolean(KEY_EASYRPG_DISABLE_AUDIO, s.disableAudio)
+            putInt(KEY_EASYRPG_MUSIC_VOLUME, normalizeEasyRpgVolume(s.musicVolume))
+            putInt(KEY_EASYRPG_SOUND_VOLUME, normalizeEasyRpgVolume(s.soundVolume))
+            putBoolean(KEY_EASYRPG_NO_RTP, s.noRtp)
+            putString(KEY_EASYRPG_PATCH_MODE, normalizeEasyRpgPatchMode(s.patchMode))
+            putBoolean(KEY_EASYRPG_TEST_PLAY, s.testPlay)
+        }.apply()
+    }
+
+    /** 仅重置 easyRpg 节，其余引擎设置不动。 */
+    fun resetEasyRpg(c: Context) {
+        val editor = prefs(c).edit()
+        EASYRPG_BOOL_KEYS.forEach(editor::remove)
+        EASYRPG_INT_KEYS.forEach(editor::remove)
+        EASYRPG_STRING_KEYS.forEach(editor::remove)
+        editor.apply()
+    }
+
+    fun normalizeEasyRpgEncoding(v: String?): String =
+        normalizeAllowed(v, EASYRPG_ENCODINGS, EASYRPG_ENCODING_AUTO)
+
+    fun normalizeEasyRpgScaling(v: String?): String =
+        normalizeAllowed(v, EASYRPG_SCALINGS, EASYRPG_SCALING_BILINEAR)
+
+    fun normalizeEasyRpgGameResolution(v: String?): String =
+        normalizeAllowed(v, EASYRPG_RESOLUTIONS, EASYRPG_RESOLUTION_ORIGINAL)
+
+    fun normalizeEasyRpgPatchMode(v: String?): String =
+        normalizeAllowed(v, EASYRPG_PATCH_MODES, EASYRPG_PATCH_MODE_AUTO)
+
+    fun normalizeEasyRpgFpsLimit(v: Int?): Int =
+        v?.takeIf { it in EASYRPG_FPS_LIMIT_RANGE } ?: EASYRPG_FPS_LIMIT_DEFAULT
+
+    fun normalizeEasyRpgVolume(v: Int?): Int =
+        v?.takeIf { it in EASYRPG_VOLUME_RANGE } ?: EASYRPG_VOLUME_DEFAULT
+
+    private fun normalizeAllowed(v: String?, allowed: Set<String>, fallback: String): String =
+        v?.trim()?.lowercase(java.util.Locale.ROOT)?.takeIf { it in allowed } ?: fallback
 }

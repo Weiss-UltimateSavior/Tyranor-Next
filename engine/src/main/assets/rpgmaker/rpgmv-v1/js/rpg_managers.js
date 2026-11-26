@@ -281,11 +281,12 @@ DataManager.isThisGameFile = function(savefileId) {
     var globalInfo = this.loadGlobalInfo();
     var slot = globalInfo && globalInfo[savefileId];
     if (!slot || typeof slot !== "object") return false;
+    if (typeof slot.globalId !== "string" || typeof slot.title !== "string") return false;
     if (StorageManager.isLocalMode()) {
-        return typeof slot.globalId === "string" && typeof slot.title === "string";
+        return true;
     } else {
-        // Web save directories are already isolated per game; ignore $dataSystem.gameTitle mismatches.
-        return typeof slot.globalId === "string" && slot.globalId === this._globalId;
+        return (slot.globalId === this._globalId &&
+                slot.title === ($dataSystem && $dataSystem.gameTitle));
     }
 };
 

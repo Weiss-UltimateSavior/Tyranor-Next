@@ -125,8 +125,8 @@ RPG Maker v2 的插件 `localStorage` 由兼容层调用 [RpgMakerFsBridge](engi
 - FVP、Framebuffer 及 Siglus 关闭滤镜的路径仍由主线程 `Choreographer` 同步驱动原生调用。
 - Kirikiroid2 由 [KR2Activity](engine/src/main/java/org/tvp/kirikiri2/KR2Activity.java) 根据 Activity、真实窗口焦点和锁屏状态控制 [原生音频桥](engine/src/main/cpp/krkr_audio_bridge.cpp)。桥接层按随包库的 Build ID 核对内存入口。1.3.9 的 Oboe 回调在暂停时输出静音并保留游戏 PCM，两个内核的 OpenAL 路径通过设备暂停和恢复控制输出，后台新建的 OpenAL 设备也受控制。Cocos 渲染的焦点兼容逻辑另受 Activity 恢复状态约束。
 - Siglus 有效滤镜链才启用专用 engine owner 与 GLES consumer；关闭、空链或无效链沿用 SurfaceView 原路径。两种路径共享原生实例准入，不能同时启动第二个 owner。
-- Ethornell 由专用 owner 线程管理 JNI 会话，Surface 世代、会话 token、退出 ACK 与存档操作门禁独立约束。宿主使用 ABI v1 接口面：15 个导出（含 `request_payload`）、Event kind 5 输入对话框与 JSON 回答；kind 5 的 payload 只在 owner 线程两段式读取，UI 线程只持有已解析字符串。随包库的来源与本地补丁清单以 provenance 为准（收敛启动期双重 `bgi-resource` 前缀，并放行顶层 `BGI.gdb` / `BGI####.cad` 到 user-root；provenance `dirty=true`）；`--local-static` 通过，严格来源审计要求 clean/已发布源码，见 §6。`EthornellPauseDeviceTest` 已重写为多 stage/step 模型并 3/3 通过；暂停/恢复与 Surface 通过，但精确 guest tick/held 序列不在该夹具覆盖范围。
-- Ethornell 上游实现虚拟根和用户存档读取映射；本地补丁 0001–0003 维护游戏目录存档策略和公共存储写锁，0005 限定 Amachoco ABI 恢复旧版 Graph91:00 空操作兼容行为。Sys80 与 Sys81 设备夹具覆盖读取路径，真实游戏兼容性仍需单独验收。
+- Ethornell 由专用 owner 线程管理 JNI 会话，Surface 世代、会话 token、退出 ACK 与存档操作门禁独立约束。ABI v1 提供 15 个导出（含 `request_payload`）。Kind 5 输入对话框的 JSON payload 由 owner 线程两段式读取，UI 线程只持有已解析字符串。宿主独立跟踪 Activity、窗口焦点、音频焦点和弹窗暂停，系统要求降低音量时也置位音频暂停。移动端音频路由恢复由运行库负责。
+- Ethornell 上游实现虚拟根、用户存档读取映射和 Amachoco ABI 使用的 Graph91:00 强制呈现。本地补丁 0001–0003 维护游戏目录存档策略和公共存储写锁。Sys80 与 Sys81 设备夹具覆盖读取路径，真实游戏兼容性仍需单独验收。
 - `Surface` 消失、Activity `finish()`、原生销毁完成与进程退出是不同事件。修改宿主必须维护线程归属、资源租约、回调世代和释放时序，不能用强杀结果冒充正常退出。
 - SystemNNN 的播放器在最终存档写入和目录锁释放后撤销任务记录。相同游戏快速重开时，工作线程有界等待上一会话释放存档。只读校验服务运行在单独的 `:systemnnn_validator`，不登记播放器会话。
 
@@ -160,7 +160,7 @@ WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano
 - 旧版 APK 在 Android 11（API 30）`sdk_gphone_x86_64` 模拟器上通过 ARM64 转译运行《死终Ω神盾》简体版。TYN 从游戏库扫描并启动，读取独立版的自动档，推进一条台词、写入同目录的快存并返回标题。临时用普通文件占用 `sav` 路径时，TYN 在启动播放器前显示写入失败。
 - 同一模拟器验证了独立版的全局进度主备恢复。有效主档配损坏备份时隔离备份，损坏主档配有效备份时恢复进度并保留原文件。两次检查都保留扩展和剧情存档。用游戏原片头临时开启不可跳过，切后台暂停，回前台恢复音频焦点并在播放完成后进入标题。
 - Android 8、Android 10、ARM64 真机和真实 WebDAV 服务的设备验收待执行。存档替换与锁冲突另有 JVM 回归。
-- Ethornell `.so`、provenance JSON 与 ABI header 必须成套核对。运行库基线 revision、补丁及最终库哈希以 provenance 为准；补丁链包含虚拟用户路径别名、游戏目录内 `savedata` user-root、共享存储 OFD 写锁，以及 VM 虚拟根识别和受限运行时用户文件读/查/通用加载别名（`0004` 修改 `crates/ethornell-vm/src/resource_io.rs` 与 `crates/ethornell-app/src/lib.rs`）。`savedata` 仅作为固定直接子目录放行，并排除于普通资源读取和遍历。带本地补丁的 `dirty=true` 产物不能通过要求 clean/已发布源码的严格来源审计（`release_ready=false`）；本地静态校验也不等于游戏兼容性或可复现构建验收。
+- Ethornell `.so`、provenance JSON 与 ABI header 必须成套核对。运行库基线 revision、补丁及最终库哈希以 provenance 为准。当前补丁链收敛一层重复的 `bgi-resource`，将 `UserData/**`、`BGI.gdb` 和 `BGI####.cad` 路由至 user-root，并在共享存储上提供 OFD 写锁回退。`savedata` 仅作为固定直接子目录放行，并排除于普通资源读取和遍历。带本地补丁的产物标记为 `dirty=true` 和 `release_ready=false`。严格来源审计要求已发布的干净源码。
 
 预编译源码归属决策见 [ADR 0002](docs/adr/0002-prebuilt-engine-libs-source-in-fork.md)。所有生成目录禁止手工维护；共享字体保持不压缩，并兼顾 System35、System4 与 ONS。
 

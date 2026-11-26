@@ -1,7 +1,7 @@
 package com.tyranor.next.ui.common
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -114,6 +114,8 @@ fun SwitchPreference(
     insideMargin: PaddingValues = BasicComponentDefaults.InsideMargin,
     holdDownState: Boolean = false,
     enabled: Boolean = true,
+    onLongClickLabel: String? = null,
+    onLongClick: (() -> Unit)? = null,
 ) {
     val inBook = LocalShelfBookLeaf.current
     if (inBook) {
@@ -133,11 +135,13 @@ fun SwitchPreference(
                         strokeWidth = 0.6.dp.toPx(),
                     )
                 }
-                .clickable(
+                .combinedClickable(
                     interactionSource = interaction,
                     indication = null,
                     enabled = enabled,
                     role = Role.Switch,
+                    onLongClickLabel = onLongClickLabel,
+                    onLongClick = onLongClick,
                     onClick = { currentOnCheckedChange.takeIf { enabled }?.invoke(!checked) },
                 )
                 .padding(horizontal = 4.dp, vertical = 12.dp),
@@ -180,6 +184,7 @@ fun SwitchPreference(
                     onCheckedChange = currentOnCheckedChange,
                     enabled = enabled,
                     bookMode = true,
+                    consumeDown = onLongClick != null,
                 )
             }
             if (bottomAction != null) {
@@ -190,7 +195,7 @@ fun SwitchPreference(
         }
         return
     }
-    if (!MotionMode.enhanced) {
+    if (!MotionMode.enhanced && onLongClick == null) {
         MiuixSwitchPreference(
             checked = checked,
             onCheckedChange = onCheckedChange,
@@ -209,9 +214,23 @@ fun SwitchPreference(
         return
     }
     val currentOnCheckedChange by rememberUpdatedState(onCheckedChange)
+    val toggle = { currentOnCheckedChange(!checked) }
+    // 行点击和长按由同一个手势入口裁决，长按成立后松手不会切换开关。
+    val rowModifier = modifier.withRowPressSquish(enabled = enabled)
+    val rowClickModifier = if (onLongClick == null) {
+        rowModifier
+    } else {
+        rowModifier.combinedClickable(
+            enabled = enabled,
+            role = Role.Switch,
+            onClick = toggle,
+            onLongClickLabel = onLongClickLabel,
+            onLongClick = onLongClick,
+        )
+    }
     BasicComponent(
         // 行级按压反馈内置在组件里（调用处不用再写）：单控件卡片整卡反馈、多控件卡片只有被按的这一行形变
-        modifier = modifier.withRowPressSquish(enabled = enabled),
+        modifier = rowClickModifier,
         insideMargin = insideMargin,
         title = title,
         titleColor = titleColor,
@@ -232,12 +251,11 @@ fun SwitchPreference(
                 onCheckedChange = currentOnCheckedChange,
                 enabled = enabled,
                 bookMode = false,
+                consumeDown = onLongClick != null,
             )
         },
         bottomAction = bottomAction,
-        onClick = {
-            currentOnCheckedChange.takeIf { enabled }?.invoke(!checked)
-        },
+        onClick = toggle.takeIf { enabled && onLongClick == null },
         role = Role.Switch,
         holdDownState = holdDownState,
         enabled = enabled,
@@ -268,6 +286,7 @@ private fun JellySwitch(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     bookMode: Boolean = false,
+    consumeDown: Boolean = false,
 ) {
     val colors = jellySwitchColors(enabled, bookMode = bookMode)
     val enabledColors = if (enabled) colors else jellySwitchColors(enabled = true, bookMode = bookMode)
@@ -351,12 +370,14 @@ private fun JellySwitch(
                 }
             }
             .onGloballyPositioned { trackCoords[0] = it }
-            .pointerInput(interactive, trackW, thumbOffX, thumbOnX) {
+            .pointerInput(interactive, trackW, thumbOffX, thumbOnX, consumeDown) {
                 if (!interactive) return@pointerInput
                 val travel = (thumbOnX - thumbOffX).dp.toPx()
                 val slop = viewConfiguration.touchSlop
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
+                    // 带行长按时，开关上的按压只交给开关识别，纵向移动仍可由列表接手。
+                    if (consumeDown) down.consume()
                     // 指针流被异常取消时释放代码跑不到：finally 兜底回到当前状态
                     var finished = false
                     try {

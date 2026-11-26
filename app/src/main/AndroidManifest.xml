@@ -9,6 +9,8 @@
     <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT" />
     <!-- 应用内下载更新后调起系统安装器所需（canRequestPackageInstalls 判断依据） -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 引擎模块管理页发起由系统确认的卸载请求 -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
     <queries>
         <package android:name="cyou.joiplay.runtime.rpgmaker" />
@@ -17,6 +19,8 @@
         <package android:name="cyou.joiplay.runtime.ruffle" />
         <!-- Impacto 外置宿主 APK（安装探测 + 显式组件启动；Android 11+ 不声明则看不到该包） -->
         <package android:name="com.tyranor.next.impacto" />
+        <!-- EasyRPG 外置宿主 APK（安装探测 + 显式组件启动；Android 11+ 不声明则看不到该包） -->
+        <package android:name="com.tyranor.next.easyrpg" />
         <!-- 外置主机模拟器跳转目标（安装探测 + 显式组件启动） -->
         <package android:name="org.ppsspp.ppsspp" />
         <package android:name="dev.eden.eden_emulator" />

@@ -165,6 +165,8 @@ MAGES. 引擎（经开源重新实现项目 impacto）由外置 Impacto 宿主 A
 
 来源：`core/engine/runtime/`、`ui/runtime/`。
 
+- **管理页卡片**：名称后显示扫描状态，下一行显示版本、协议和绑定游戏数。缺少可用名称时显示「未命名模块」。右侧为启用开关。
+- **卸载入口**：长按模块卡片打开对应应用的系统卸载确认，返回管理页时刷新模块和游戏绑定。
 - **发现**：Manifest `<queries>` 声明 `com.tyranor.runtime.action.LAUNCH`（含 `CATEGORY_DEFAULT`），主 App 按 action 查询可见应用并只保留包名前缀 `com.tyranor.runtime.`；不申请 `QUERY_ALL_PACKAGES`，也不校验签名、版本或包内容。一个包只取一个入口 Activity：优先带 `com.tyranor.runtime.MANIFEST` meta-data 的，否则按 Activity 名排序取第一个。
 - **启用默认关**：发现结果只用于「工具 → 引擎模块管理」列表与模块名展示，不写入扫描索引或游戏库；开关默认关闭。游戏库卡片对这类游戏统一显示「Plugin」，不显示模块名。启用只把包名写入 `AppSettingsStore.KEY_RUNTIME_MODULE_ENABLED`（StringSet，默认空集），不触发扫描、不立即写库。同包名更新/重装保留开关；包名变更视为新模块，默认关闭。
 - **扫描描述**：模块可选提供 `res/raw/tyranor_runtime.json`，声明 `extensions` / `markers` / `match`（`any` 或 `all`）；这是自动扫描的唯一特征来源，主 App 不根据包名、应用名、图标或内置第三方特征库猜测，也不执行模块代码；扩展名只匹配目录直接子文件，marker 支持直接子项与单层路径（如 `data/*.pak`），不递归。描述缺失、读取/解析失败或没有有效模式时只关闭该模块的自动扫描能力，模块仍可被发现、启用和启动。
@@ -278,7 +280,6 @@ MAGES. 引擎（经开源重新实现项目 impacto）由外置 Impacto 宿主 A
 - ZIP 导入检查路径安全，最多 **20,000 个条目（含目录）**、展开内容 **1 GiB**；MV/MZ 可剥除最多 **3 层**单目录包装。适用的会话/操作门禁阻止运行中冲突。
 - **外置游戏的文件存档管理**：YU-RIS 管理游戏根 `save/`；Ren’Py 在 Android 11（API 30）及以上管理游戏根 `saves/`，第三方 APK 运行时模块按有效 saves 声明管理独立游戏内子目录；覆盖手动导入、导出、删除、版本管理与 WebDAV 同步。Ren’Py 在 Android 10 及以下不开放入口、不解析目录或纳入整库同步，也不访问模块专属存档。外置游戏的手动操作与启动/同步共用目录门禁，运行标记未确认退出时拒绝操作。PSP、Switch、CatSystem2、PC、安卓游戏、RPG Maker RGSS、Ruffle、无有效 saves 的第三方模块、VN 与 WebOther 当前不提供该统一文件存档接口。
 - MV/MZ 标准格式与 Tyranor 格式仅作文件名映射，不重新编码内容；MV 支持哈希名及历史键名，MZ 使用 `fileN.bin` 等 ASCII 键名。
-- RPG Maker MV 在 Web 存档模式（`StorageManager.isLocalMode()` 为 `false`）下，`Tyranor-2.3.4`、`TynMV-0.1` 与 `TynMV-0.2` 均已按游戏隔离存档目录，故 `DataManager.isThisGameFile` 忽略 `global.title` 与 `$dataSystem.gameTitle` 的字面对比，仅校验 `slot.globalId === this._globalId`（含 `load` 事件防插件覆写的幂等重挂）；`isLocalMode()` 仍保持 `false`，当处于本地模式时委托原实现，RPG Maker MZ 不受影响。
 - 启动时发现适用标准存档可询问转化，已有目标不覆盖，原件留在 `original/`。
 - MV/MZ 存档互通默认关闭，支持全局/单游戏设置；开启后启动前与回前台进行双向同步，并等待引擎会话结束。按槽位比较时间与哈希；删除副本隔离到 `deleted/`，同步清单损坏时中止文件修改。
 - Ethornell 的 App 存档管理已开放，生效目录为 `<游戏根>/savedata`，提供备份/恢复/删除；运行时的 `UserData/**`、`BGI.gdb` 和 `BGI####.cad` 相对路径位于该目录中，不自动导入资源根原有的 `UserData`，不承诺 PC 存档格式互通。旧私有数据在启动或存档操作前一次性迁入，不覆盖目标同名文件，完成后删档不会再次恢复旧数据；旧源保留以防迁移冲突。游戏目录不可用或不可写时失败，不回退私有目录；移除游戏库条目不删除游戏目录内的存档。
@@ -354,7 +355,7 @@ Ethornell 已接入扫描、设置与内置宿主，仍属于实验运行时。�
 
 App 存档管理与 native 共用 `<游戏根>/savedata` user-root。宿主和 native 仅为这个固定子目录放行资源根与用户根的包含关系；其它重叠根、符号链接、资源写入和路径逃逸仍拒绝。共享存储不支持 `flock` 时，Android/Linux 宿主改用 OFD 非阻塞文件锁；锁被占用、权限错误或 OFD 同样不可用时仍拒绝启动，不跳过写入者排他保护。虚拟用户路径映射不等于 PC 存档格式转换，商业游戏内槽位保存/读回、字体、电影和长稳需分别验收。历史私有 user-root 的设备结果不代表新存储位置或当前产物已通过同样验收。
 
-识别为 Amachoco ABI 的游戏暂时沿用 Graph91:00 的旧版空操作兼容行为，该调用的原生语义仍待核实。上游内核支持虚拟根及用户存档读取映射；受限模式的用户存档缺失时不回退到原始资源文件，命名归档使用其原有读取路径。游戏槽位格式和读档行为仍需按具体作品验证。
+上游运行库提供较新 BGI 脚本、文字排版与 MP4 播放支持。Amachoco ABI 的 Graph91:00 由上游处理，取一个整数参数设置强制呈现标志。系统请求降低音量时，宿主按音频焦点暂停会话。上游内核支持虚拟根及用户存档读取映射，受限模式的用户存档缺失时不回退到原始资源文件，命名归档使用其原有读取路径。游戏槽位格式和读档行为仍需按具体作品验证。
 
 游戏目录 `savedata/` user-root、文件白名单与回退行为仍按 native FilePolicy 约束。通过别名查找的用户槽位若在 `savedata` 中缺失，不会回退读取资源中的同名槽位；普通资源及命名归档继续走原路径。验收范围包括槽位保存、界面识别、立即读回与退出后重开读回；宿主文件打开钩子不是此修复的一部分。
 

@@ -1,6 +1,11 @@
 package com.tyranor.next.ui.runtime
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -72,7 +77,7 @@ import com.tyranor.next.ui.common.motion.DelayedProgress
 /**
  * 引擎模块管理页：展示已发现的第三方运行时模块（包名前缀 + LAUNCH action），并维护启用开关。
  *
- * 页面只负责「发现 + 启用状态」：启用/禁用只写开关并刷新快照，不触发游戏库扫描、不写库；
+ * 启用/禁用只写开关并刷新快照，不触发游戏库扫描；
  * 扫描仍由游戏页的现有入口发起。禁用有绑定游戏的模块前先确认，确认后由 core 完成降级。
  * 空列表不提供下载/安装入口，只说明协议要求后提示点右上角刷新。
  */
@@ -81,6 +86,8 @@ internal fun EngineModuleManagementScreen() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snapshot by RuntimeModuleRegistry.state.collectAsStateWithLifecycle()
+    // 由系统确认并完成卸载，恢复前台时统一刷新模块和绑定状态。
+    val uninstallLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
     // 预先解析带数量的 Toast 格式串，避免在点击回调里用 LocalContext 查资源（Compose lint）。
     val disabledToastPattern = stringResource(R.string.engine_module_management_disabled_toast)
 
@@ -101,6 +108,27 @@ internal fun EngineModuleManagementScreen() {
     var manualRefreshDone by remember { mutableIntStateOf(0) }
     var loadFailures by remember { mutableIntStateOf(0) }
     var toggleFailures by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
+
+    fun requestUninstall(module: RuntimeModuleDescriptor) {
+        val intent = Intent(Intent.ACTION_DELETE, Uri.fromParts("package", module.packageName, null))
+            .putExtra(Intent.EXTRA_RETURN_RESULT, true)
+        val launched = try {
+            uninstallLauncher.launch(intent)
+            true
+        } catch (_: ActivityNotFoundException) {
+            false
+        } catch (_: SecurityException) {
+            false
+        }
+        if (!launched) {
+            AppNotice.makeText(
+                context,
+                R.string.engine_module_management_uninstall_failed,
+                Toast.LENGTH_SHORT,
+                AppNotice.Kind.Failure,
+            ).show()
+        }
+    }
 
     suspend fun loadGameCounts() {
         val counts = withContext(Dispatchers.IO) {
@@ -351,6 +379,7 @@ internal fun EngineModuleManagementScreen() {
                         toggleEnabled = module.packageName !in togglingPackages,
                         toggleFailures = toggleFailures[module.packageName] ?: 0,
                         onEnabledChange = { enabled -> requestEnabledChange(module, enabled) },
+                        onUninstall = { requestUninstall(module) },
                     )
                 }
             }
@@ -393,13 +422,14 @@ internal fun EngineModuleManagementScreen() {
     }
 }
 
-/** 单个模块卡片：label + 包名/版本/协议/扫描能力/绑定数量，右侧启用开关。 */
+/** 模块名称后显示扫描状态，摘要列出版本、协议和绑定游戏数。 */
 @Composable
 private fun EngineModuleCard(
     module: RuntimeModuleDescriptor,
     gameCount: Int,
     toggleEnabled: Boolean,
     onEnabledChange: (Boolean) -> Unit,
+    onUninstall: () -> Unit,
     modifier: Modifier = Modifier,
     toggleFailures: Int = 0,
 ) {
@@ -414,18 +444,20 @@ private fun EngineModuleCard(
             R.string.engine_module_management_scan_unsupported
         },
     )
+    val name = module.label.takeIf {
+        it.isNotBlank() && it != module.packageName && it != module.activityName
+    } ?: stringResource(R.string.engine_module_management_unnamed)
+    val title = stringResource(R.string.engine_module_management_card_title, name, scanText)
     val summary = stringResource(
         R.string.engine_module_management_summary,
-        module.packageName,
         version,
         module.protocol,
-        scanText,
         gameCount,
     )
 
     MiuixCard(
         modifier = modifier
-            .pressSquishGroup()
+            .pressSquishGroup(charge = toggleEnabled)
             // 开关提交失败（开关随快照退回原位）：整张卡片水平抖一下
             .shakeOnTrigger(toggleFailures)
             // 绑定数量等摘要变化导致换行数改变时，卡片高度弹簧过渡而不是跳变
@@ -436,11 +468,13 @@ private fun EngineModuleCard(
     ) {
         Column(Modifier.padding(vertical = 4.dp)) {
             SwitchPreference(
-                title = module.label.ifBlank { module.packageName },
+                title = title,
                 summary = summary,
                 checked = module.enabled,
                 enabled = toggleEnabled,
                 onCheckedChange = onEnabledChange,
+                onLongClickLabel = stringResource(R.string.engine_module_management_uninstall),
+                onLongClick = onUninstall,
             )
         }
     }

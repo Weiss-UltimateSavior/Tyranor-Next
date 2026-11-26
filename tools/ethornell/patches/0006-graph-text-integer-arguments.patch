@@ -1,0 +1,25 @@
+diff --git a/crates/ethornell-vm/src/lib.rs b/crates/ethornell-vm/src/lib.rs
+index 4ac2d97..c841e45 100644
+--- a/crates/ethornell-vm/src/lib.rs
++++ b/crates/ethornell-vm/src/lib.rs
+@@ -12188,10 +12188,16 @@ impl Vm {
+                     self.value_as_string_with_encoding(original.clone(), encoding)?
+                 }
+                 Value::Int(ptr) if ptr != 0 && text_slot => {
+-                    // Pointer arithmetic and indirect DWORD loads do not
+-                    // retain Value::Ptr. Native text slots still hold char*,
+-                    // including control-only strings; never scan neighbours.
+-                    self.value_as_string_with_encoding(original.clone(), encoding)?
++                    // Computed addresses may be stored as integers. Decode
++                    // text at a valid address without scanning its neighbours.
++                    let address = ptr as u32;
++                    if let Some(Value::Str(text)) = self.mem_values.get(&self.value_key(address)) {
++                        text.clone()
++                    } else if let Ok(text) = self.read_c_string_with_encoding(address, encoding) {
++                        text
++                    } else {
++                        continue;
++                    }
+                 }
+                 Value::Ptr(ptr) if ptr != 0 => {
+                     let direct = self.value_as_string_with_encoding(original.clone(), encoding)?;
