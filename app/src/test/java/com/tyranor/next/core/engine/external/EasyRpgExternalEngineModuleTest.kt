@@ -33,11 +33,11 @@ class EasyRpgExternalEngineModuleTest {
         assertEquals(1, EasyRpgHostContract.VERSION_CODE)
         assertEquals(1L, EasyRpgExternalEngineModule.minimumVersionCode)
         assertEquals(
-            ExternalEngineReleaseSource("Weiss-UltimateSavior/Tyranor-Next-EasyRPG", "easyrpg-host-"),
+            ExternalEngineReleaseSource("SIRENA-Core/Tyranor-Next-EasyRPG", "easyrpg-host-"),
             EasyRpgExternalEngineModule.updateSource,
         )
         assertEquals(
-            "https://github.com/Weiss-UltimateSavior/Tyranor-Next-EasyRPG/releases/latest/download/Tyranor-Next-EasyRPG.apk",
+            "https://github.com/SIRENA-Core/Tyranor-Next-EasyRPG/releases/latest/download/Tyranor-Next-EasyRPG.apk",
             EasyRpgExternalEngineModule.installUrl,
         )
         listOf(
