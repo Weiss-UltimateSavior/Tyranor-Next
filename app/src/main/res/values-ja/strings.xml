@@ -485,10 +485,6 @@
     <string name="engine_settings_disable_video">動画を無効化</string>
     <string name="engine_settings_sharpness">画面シャープ化</string>
     <string name="engine_settings_sharpness_strength">シャープ化強度</string>
-    <string name="engine_settings_ons_sharpness_mutex_summary">「画面超解像」と排他です。有効にするとフィルターチェーンがオフになります</string>
-    <string name="graphics_settings_ons_filter_mutex_summary">「画面シャープ化」と排他です。有効にするとエンジン側のシャープ化がオフになります</string>
-    <string name="engine_settings_ons_disabled_filter_notice">画面シャープ化と排他のため、画面超解像をオフにしました</string>
-    <string name="engine_settings_ons_disabled_sharpness_notice">画面超解像と排他のため、画面シャープ化をオフにしました</string>
     <string name="engine_settings_text_encoding">テキストエンコード</string>
     <string name="engine_settings_auto_patch">自動パッチ</string>
     <string name="engine_settings_artemis_resolution">ステージ解像度</string>

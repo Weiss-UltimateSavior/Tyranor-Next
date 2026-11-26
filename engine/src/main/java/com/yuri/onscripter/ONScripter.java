@@ -192,15 +192,6 @@ public class ONScripter extends SDLActivity implements OnsSurface.SurfaceProvide
             OnsScriptResolution scriptRes = OnsScriptResolution.detect(gameRoot);
             detectedStageWidth = scriptRes.width;
             detectedStageHeight = scriptRes.height;
-            // 滤镜与 --sharpness 互斥：app 侧已过滤，buildArgs 兜底路径在此再兜一次。
-            if (onsArgs != null) {
-                for (int i = onsArgs.size() - 2; i >= 0; i--) {
-                    if ("--sharpness".equals(onsArgs.get(i))) {
-                        onsArgs.remove(i + 1);
-                        onsArgs.remove(i);
-                    }
-                }
-            }
             try {
                 graphicsProxy = new OnsGraphicsProxy(this, requestedChain, analyzerRequested, this);
             } catch (RuntimeException | LinkageError | OutOfMemoryError t) {

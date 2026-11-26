@@ -1360,14 +1360,7 @@ object EngineLauncher {
                 args.add("--save-dir")
                 args.add(saveDir.absolutePath)
                 Log.i(TAG, "ONS launch scopedSaveDir=${ons.scopedSaveDir} saveDir=${saveDir.absolutePath} ready=$saveDirReady")
-                val onsGraphics = settings.onsGraphics
-                // 与 Intent 协议共享同一判定结果：链路有效性 / 能力判定不过时保留 --sharpness。
-                val onsGraphicsExtras = GraphicsLaunchPolicy.extras(
-                    onsGraphics,
-                    GraphicsCapabilities.forRuntime(GraphicsFamily.ONS),
-                )
-                val onsGraphicsActive = onsGraphicsExtras[LaunchContract.GRAPHICS_FILTER_ENABLED] == true
-                if (ons.sharpness && !onsGraphicsActive) {
+                if (ons.sharpness) {
                     args.add("--sharpness")
                     args.add(safeSharpnessValue(ons.sharpnessValue))
                 }
@@ -1380,7 +1373,7 @@ object EngineLauncher {
                     putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
                     putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_ONS)
                     putExtra(LaunchContract.IGNORE_CUTOUT, ons.ignoreCutout)
-                    putGraphicsExtras(onsGraphicsExtras)
+                    putGraphicsSettings(settings.onsGraphics, GraphicsCapabilities.forRuntime(GraphicsFamily.ONS))
                 }
             }
 

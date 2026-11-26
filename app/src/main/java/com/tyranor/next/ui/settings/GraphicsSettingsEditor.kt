@@ -29,7 +29,6 @@ import com.tyranor.next.ui.common.SwitchPreference
 internal fun GlobalGraphicsSettings(
     settings: GraphicsSettings,
     capability: GraphicsCapabilities,
-    enabledSummary: String? = null,
     onChange: (GraphicsSettings) -> Unit,
 ) {
     EngineCard(stringResource(R.string.graphics_settings_title)) {
@@ -41,7 +40,6 @@ internal fun GlobalGraphicsSettings(
         SwitchPreference(
             modifier = Modifier.pressSquish(enabled = capability.supported, scale = PressSquishDefaults.RowScale),
             title = stringResource(R.string.graphics_settings_enabled),
-            summary = enabledSummary,
             checked = settings.enabled,
             enabled = capability.supported,
             onCheckedChange = { onChange(settings.copy(enabled = it)) },
@@ -82,7 +80,6 @@ internal fun PerGameGraphicsSettings(
     global: GraphicsSettings,
     override: GraphicsOverride,
     capability: GraphicsCapabilities,
-    enabledSummary: String? = null,
     onChange: (GraphicsOverride) -> Unit,
 ) {
     val resolved = GraphicsSettingsCodec.resolve(global, override)
@@ -94,7 +91,6 @@ internal fun PerGameGraphicsSettings(
         }
         OverrideSwitch(
             stringResource(R.string.graphics_settings_enabled), global.enabled, override.enabled,
-            summary = enabledSummary,
             enabled = capability.supported,
         ) { onChange(override.copy(enabled = it)) }
         OverlayDropdownPreference(
