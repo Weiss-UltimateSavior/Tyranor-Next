@@ -2,7 +2,7 @@
 
 ## 未发布
 
-- 修复 RPG Maker MV/MZ（TynMV-0.1 / TynMV-0.2）里依赖 UMD 全局名的库在 v1/v2 会话下不可用：作为 NW.js 垫片的 `window.module` / `window.exports` 被建成普通对象，UMD 库因此走 CommonJS 分支，只把导出写进 `module.exports`（`PixiApngAndGif` 的 `ReferenceError: PixiApngAndGif is not defined`、jQuery 不设置 `window.jQuery`/`$`、lodash 不设置 `window._` 都属于这一类；v0 宿主不注入兼容层，所以同款游戏在 Tyranor-2.3.4 下正常）。垫片改为 `exports` 为函数、`module.exports` 初始未定义，三种常见 UMD 判定都会落到全局分支，`module.exports = x` / `exports.foo = x` 仍然可用；v2 harness 增加对应回归探针。
+- 修复 RPG Maker MV/MZ（TynMV-0.1 / TynMV-0.2 / TynMZ-0.1）中依赖 UMD 全局名的库在 TynMV / TynMZ 会话下不可用：作为 NW.js 垫片的 `window.module` / `window.exports` 被建成普通对象，UMD 库因此走 CommonJS 分支，只把导出写进 `module.exports`（`PixiApngAndGif` 的 `ReferenceError: PixiApngAndGif is not defined`、jQuery 不设置 `window.jQuery`/`$`、真 lodash 不挂 `window._` 都属于这一类；Tyranor-2.3.4 宿主不注入兼容层，所以同款游戏在那里正常）。垫片改为 `exports` 为函数、`module.exports` 初始未定义，三种常见 UMD 判定都会落到全局分支，`module.exports = x` / `exports.foo = x` 仍然可用；v2 harness 增加对应回归探针。
 - 更新 Ethornell / BGI 运行库到 `2ccc6c7`，合入较新 BGI 脚本、文字排版、MP4 播放和移动端音频恢复改进。保留游戏目录存档与共享存储锁补丁，Graph91:00 改用上游实现。修复新版将图形文本参数里的越界整数转为十六进制字符串的回归。宿主沿用 ABI v1，并在系统要求降低音量时暂停会话。
 
 - 引擎模块管理支持长按模块卡片打开对应应用的系统卸载确认。

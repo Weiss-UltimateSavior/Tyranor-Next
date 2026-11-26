@@ -1,6 +1,7 @@
 // 用 Node 仿真 WebView 环境，把 v2 兼容层真跑一遍，验证：
 //   1) fs 真读游戏目录  2) require 能加载游戏自己的模块  3) __dirname/dataPath 正确
 //   4) path 语义修正  5) 越界路径被拒绝
+//   6) NW.js 垫片不污染 UMD 全局导出（PixiApngAndGif / jQuery / lodash 三类谓词）
 // 说明：window 指向 global，与 WebView 里「全局即 window」的形态一致；
 // Buffer 先置空，让基础层的桩被安装（与 WebView 无原生 Buffer 的真实情形一致）。
 const nodeRequire = require;
@@ -161,15 +162,27 @@ const UMD_GLOBAL_PROBE =
 const JQUERY_STYLE_PROBE =
     '(function (global, factory) { if ("object" === typeof module && "object" === typeof module.exports) { module.exports = factory(global, true); } else { factory(global); } })(this, function (w, noGlobal) { if (!noGlobal) { w.TyranorJqueryProbe = "ok"; } return "commonjs"; });';
 
-// 先定型垫片本身，再跑探针：探针一旦被误判就会写 module.exports，之后的状态不再代表初始形态
+// 先定型垫片本身，再跑行为探针：行为探针一旦被误判就会写 module.exports，之后的状态不再代表初始形态
 check('垫片的 exports 保持函数形态', typeof global.exports === 'function', typeof global.exports);
-check('垫片的 module.exports 初始未定义', typeof global.module.exports === 'undefined', typeof global.module.exports);
+check('垫片的 module.exports 初始未定义', !!(global.module && typeof global.module.exports === 'undefined'), global.module && typeof global.module.exports);
 
-// jQuery 式判定必须先跑：旧垫片下它会先写 module.exports，后面的探针才能看到「已被污染」的状态
+// jQuery 式判定必须先跑：旧垫片下先跑 UMD 探针会把 module.exports 写成字符串，
+// jQuery 式判定就偶然不成立、测不出问题。
 (0, eval)(JQUERY_STYLE_PROBE);
 check('jQuery 式判定（typeof module.exports === "object"）不吞掉全局名', global.TyranorJqueryProbe === 'ok', typeof global.TyranorJqueryProbe);
 (0, eval)(UMD_GLOBAL_PROBE);
 check('UMD 库（typeof exports === "object" 分支）落到全局名', global.TyranorUmdProbe === 'ok', typeof global.TyranorUmdProbe);
+
+// 契约的另一半：NW.js 插件仍要能写 module.exports / exports.foo（本次改动的卖点不是只让 UMD 走全局）。
+// 放在行为探针之后执行，并恢复初始形态：旧垫片下这里把 module.exports 复位成 undefined 会让后面的
+// jQuery 式探针偶然通过，必须等所有行为探针跑完再验证写入能力。
+const initialModuleExports = global.module.exports;
+(0, eval)('module.exports = "assigned";');
+check('module.exports = x 仍可用', global.module.exports === 'assigned', typeof global.module.exports);
+global.module.exports = initialModuleExports;
+(0, eval)('exports.__probe = 1;');
+check('exports.foo = x 仍可用', global.exports.__probe === 1, global.exports.__probe);
+check('exports 与 module.exports 不再互为别名', global.exports !== global.module.exports, typeof global.exports);
 
 console.log('\n== fs 真读写 ==');
 const fsMod = window.require('fs');
