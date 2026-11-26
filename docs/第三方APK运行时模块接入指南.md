@@ -456,7 +456,7 @@ Intent("com.tyranor.runtime.action.LAUNCH").apply {
 - 每个设置项必需 `title`（1–128）和合法的 `default`，可选 `description`（最多 512）。TYN 自动统一设置项与卡片标题（15sp）、说明与值（14sp）的排版，模块声明不包含字体或字号字段。
 - 布尔必须是 JSON 布尔，`default: false` 表示开关默认关闭；枚举最多 32 个选项，value 长度 1–64 且唯一，default 须在选项中。
 - 整数须声明 Int 范围内的 min/max/default；不接受字符串或小数作整数。
-- `slider` 的 min/max/default 是有限数字，min 必须小于 max。带 `step` 时，step 必须大于 0、范围须包含整数个步进间隔（最多 10,000 个），default 须落在步进网格上；滑条按刻度索引映射，原始值仍以 Double 校验并作为 JSON 数字传递，不受绝对值的 Float 精度限制。未声明 `step` 时按连续 Float 范围映射，min/max 必须能形成有限且大于 0 的 Float 跨度，否则该项会被丢弃。
+- `slider` 的 min/max/default 是有限数字，min 必须小于 max。带 `step` 时，step 必须大于 0、范围须包含整数个步进间隔（最多 10,000 个），default 须落在步进网格上；滑条按刻度索引映射，原始值仍以 Double 校验并作为 JSON 数字传递，因此不受绝对值的 Float 精度限制。每个刻度转成 Double 后仍须落在原步进网格并映回同一索引；Double 范围计算溢出、刻度无法区分或转换后偏离网格时，该项会被丢弃。未声明 `step` 时按连续 Float 范围映射，min/max 必须能形成有限且大于 0 的 Float 跨度，否则该项会被丢弃。
 - `file` / `folder` 的 default 是空字符串或绝对文件路径；选择器只接受 TYN 能映射为本地路径的 SAF 文件/目录，最大路径长度默认 1024，可用 `maxLength` 调整到 1–4096。主 App 不传 SAF URI 授权，模块仍须自行具备访问该路径的存储权限；不能映射为本地路径的云盘等 provider 不可用。
 - 文本为单行合法 Unicode，maxLength 为 1–1024，缺省 256；保留首尾空格，拒绝 C0/C1、U+2028/U+2029 和孤立代理项。长度以 UTF-16 code unit 计算。
 - 配置 JSON 上限 48 KiB；解析时按各项允许值的序列化上界累计预算，超限关闭设置能力，不影响合法 scan/saves。描述文件整体仍受 64 KiB 限制。

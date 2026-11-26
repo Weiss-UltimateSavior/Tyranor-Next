@@ -53,6 +53,28 @@ class RuntimeModuleSettingsSliderTest {
         assertEquals(null, RuntimeModuleSettingsParser.parseItem(JSONObject(
             """{"key":"scale","type":"slider","title":"Scale","default":1000000000,"min":1000000000,"max":1000000001,"step":0.0003}""",
         )))
+
+        for (index in 0..runtimeModuleSliderIntervalCount(slider)!!) {
+            val tick = runtimeModuleSliderValueAtIndex(slider, index)
+            assertTrue("generated tick $index must remain valid", RuntimeModuleSettingsParser.isValidValue(slider, tick))
+        }
+    }
+
+    @Test
+    fun steppedSliderRejectsDoubleTicksThatCannotRoundTripThroughUiMath() {
+        val duplicateTicks = RuntimeModuleSettingsParser.parseItem(JSONObject(
+            """{"key":"scale","type":"slider","title":"Scale","default":10000000000000000,"min":10000000000000000,"max":10000000000000010,"step":0.1}""",
+        ))
+        val overflowingRange = RuntimeModuleSettingsParser.parseItem(JSONObject(
+            """{"key":"scale","type":"slider","title":"Scale","default":-1e308,"min":-1e308,"max":1e308,"step":2e304}""",
+        ))
+        val generatedTicksOffGridAfterDoubleConversion = RuntimeModuleSettingsParser.parseItem(JSONObject(
+            """{"key":"scale","type":"slider","title":"Scale","default":10000000000000000,"min":10000000000000000,"max":10000000000000012,"step":3}""",
+        ))
+
+        assertEquals(null, duplicateTicks)
+        assertEquals(null, overflowingRange)
+        assertEquals(null, generatedTicksOffGridAfterDoubleConversion)
     }
 
     private fun assertTickRoundTrip(min: Double, max: Double, step: Double) {

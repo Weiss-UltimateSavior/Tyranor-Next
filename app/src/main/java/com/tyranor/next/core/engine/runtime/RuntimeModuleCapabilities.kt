@@ -274,7 +274,11 @@ internal object RuntimeModuleSettingsParser {
                 if (parsedStep == null &&
                     (!parsedMin.toFloat().isFinite() || !parsedMax.toFloat().isFinite() || parsedMin.toFloat() >= parsedMax.toFloat())
                 ) return null
-                if (parsedStep != null && !validSliderStep(parsedDefault, parsedMin, parsedMax, parsedStep)) return null
+                if (parsedStep != null && (
+                        !validSliderStep(parsedDefault, parsedMin, parsedMax, parsedStep) ||
+                            !hasRoundTrippableSliderTicks(parsedMin, parsedMax, parsedStep)
+                        )
+                ) return null
                 if (!isSliderRangeSupportedByFloatUi(parsedMin, parsedMax, parsedStep)) return null
                 min = null; max = null; maxLength = null
                 sliderMin = parsedMin; sliderMax = parsedMax; sliderStep = parsedStep
@@ -340,10 +344,29 @@ internal object RuntimeModuleSettingsParser {
             intervals < BigDecimal.ONE || intervals > BigDecimal.valueOf(MAX_SLIDER_INTERVALS.toLong())
         ) return false
 
-        val valueDecimal = BigDecimal.valueOf(value)
-        val offset = valueDecimal.subtract(minDecimal)
-        return offset.signum() >= 0 && offset <= range &&
-            offset.remainder(stepDecimal).compareTo(BigDecimal.ZERO) == 0
+        return isSliderTickOnGrid(value, minDecimal, range, stepDecimal)
+    }
+
+    private fun isSliderTickOnGrid(value: Double, min: BigDecimal, range: BigDecimal, step: BigDecimal): Boolean {
+        val offset = BigDecimal.valueOf(value).subtract(min)
+        return offset.signum() >= 0 && offset <= range && offset.remainder(step).compareTo(BigDecimal.ZERO) == 0
+    }
+
+    private fun hasRoundTrippableSliderTicks(min: Double, max: Double, step: Double): Boolean {
+        val minDecimal = BigDecimal.valueOf(min)
+        val maxDecimal = BigDecimal.valueOf(max)
+        val stepDecimal = BigDecimal.valueOf(step)
+        val range = maxDecimal.subtract(minDecimal)
+        val exactIntervals = range.divideToIntegralValue(stepDecimal).toInt()
+        val doubleIntervals = (max - min) / step
+        if (!doubleIntervals.isFinite() || kotlin.math.round(doubleIntervals).toInt() != exactIntervals) return false
+
+        for (index in 0..exactIntervals) {
+            val tick = minDecimal.add(stepDecimal.multiply(BigDecimal.valueOf(index.toLong()))).toDouble()
+            val mappedIndex = kotlin.math.round((tick - min) / step).toInt()
+            if (!tick.isFinite() || mappedIndex != index || !isSliderTickOnGrid(tick, minDecimal, range, stepDecimal)) return false
+        }
+        return true
     }
 
     private fun isSliderRangeSupportedByFloatUi(min: Double, max: Double, step: Double?): Boolean {
