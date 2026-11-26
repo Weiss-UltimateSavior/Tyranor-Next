@@ -27,6 +27,7 @@ import com.tyranor.next.ui.common.SwitchPreference
 import com.tyranor.next.ui.common.motion.pressSquishGroup
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import java.math.BigDecimal
+import java.math.RoundingMode
 import kotlin.math.round
 import kotlin.math.roundToInt
 
@@ -230,14 +231,17 @@ internal fun runtimeModuleSliderIntervalCount(item: RuntimeModuleSettingItemSpec
     val step = item.sliderStep ?: return null
     val min = checkNotNull(item.sliderMin)
     val max = checkNotNull(item.sliderMax)
-    return round((max - min) / step).toInt()
+    val range = BigDecimal.valueOf(max).subtract(BigDecimal.valueOf(min))
+    return range.divide(BigDecimal.valueOf(step)).intValueExact()
 }
 
 internal fun runtimeModuleSliderIndex(item: RuntimeModuleSettingItemSpec, value: Double): Int {
     val min = checkNotNull(item.sliderMin)
     val step = checkNotNull(item.sliderStep)
     val intervalCount = checkNotNull(runtimeModuleSliderIntervalCount(item))
-    return round((value - min) / step).toInt().coerceIn(0, intervalCount)
+    val offset = BigDecimal.valueOf(value).subtract(BigDecimal.valueOf(min))
+    val index = offset.divide(BigDecimal.valueOf(step), 0, RoundingMode.HALF_EVEN).intValueExact()
+    return index.coerceIn(0, intervalCount)
 }
 
 internal fun runtimeModuleSliderValueAtIndex(item: RuntimeModuleSettingItemSpec, index: Int): Double {

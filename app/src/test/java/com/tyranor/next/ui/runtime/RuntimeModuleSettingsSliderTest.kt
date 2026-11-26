@@ -25,6 +25,7 @@ class RuntimeModuleSettingsSliderTest {
 
         val selectedValue = runtimeModuleSliderValueAtIndex(item, 7)
 
+        assertEquals(15, runtimeModuleSliderIntervalCount(item))
         assertEquals(1.2, selectedValue, 0.0)
         assertEquals("1.2", formatRuntimeModuleSliderValue(item, 1.2000000000000002))
     }
@@ -61,20 +62,23 @@ class RuntimeModuleSettingsSliderTest {
     }
 
     @Test
-    fun steppedSliderRejectsDoubleTicksThatCannotRoundTripThroughUiMath() {
+    fun steppedSliderUsesDecimalMathForWideRangesAndRejectsUnroundtrippableTicks() {
         val duplicateTicks = RuntimeModuleSettingsParser.parseItem(JSONObject(
             """{"key":"scale","type":"slider","title":"Scale","default":10000000000000000,"min":10000000000000000,"max":10000000000000010,"step":0.1}""",
-        ))
-        val overflowingRange = RuntimeModuleSettingsParser.parseItem(JSONObject(
-            """{"key":"scale","type":"slider","title":"Scale","default":-1e308,"min":-1e308,"max":1e308,"step":2e304}""",
         ))
         val generatedTicksOffGridAfterDoubleConversion = RuntimeModuleSettingsParser.parseItem(JSONObject(
             """{"key":"scale","type":"slider","title":"Scale","default":10000000000000000,"min":10000000000000000,"max":10000000000000012,"step":3}""",
         ))
+        val rangeWhoseDoubleSpanOverflows = requireNotNull(RuntimeModuleSettingsParser.parseItem(JSONObject(
+            """{"key":"scale","type":"slider","title":"Scale","default":-1e308,"min":-1e308,"max":1e308,"step":1e308}""",
+        )))
 
         assertEquals(null, duplicateTicks)
-        assertEquals(null, overflowingRange)
         assertEquals(null, generatedTicksOffGridAfterDoubleConversion)
+        assertEquals(2, runtimeModuleSliderIntervalCount(rangeWhoseDoubleSpanOverflows))
+        assertEquals(-1e308, runtimeModuleSliderValueAtIndex(rangeWhoseDoubleSpanOverflows, 0), 0.0)
+        assertEquals(0.0, runtimeModuleSliderValueAtIndex(rangeWhoseDoubleSpanOverflows, 1), 0.0)
+        assertEquals(1e308, runtimeModuleSliderValueAtIndex(rangeWhoseDoubleSpanOverflows, 2), 0.0)
     }
 
     private fun assertTickRoundTrip(min: Double, max: Double, step: Double) {

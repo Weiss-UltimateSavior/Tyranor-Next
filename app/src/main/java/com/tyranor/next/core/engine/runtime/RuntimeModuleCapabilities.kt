@@ -3,6 +3,7 @@ package com.tyranor.next.core.engine.runtime
 import org.json.JSONArray
 import org.json.JSONObject
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.security.MessageDigest
 
 /** One validated runtime-module setting declaration. Values are JSON primitives only. */
@@ -274,10 +275,9 @@ internal object RuntimeModuleSettingsParser {
                 if (parsedStep == null &&
                     (!parsedMin.toFloat().isFinite() || !parsedMax.toFloat().isFinite() || parsedMin.toFloat() >= parsedMax.toFloat())
                 ) return null
-                if (parsedStep != null && (
-                        !validSliderStep(parsedDefault, parsedMin, parsedMax, parsedStep) ||
-                            !hasRoundTrippableSliderTicks(parsedMin, parsedMax, parsedStep)
-                        )
+                if (parsedStep != null &&
+                    (!validSliderStep(parsedDefault, parsedMin, parsedMax, parsedStep) ||
+                        !hasRoundTrippableSliderTicks(parsedMin, parsedMax, parsedStep))
                 ) return null
                 if (!isSliderRangeSupportedByFloatUi(parsedMin, parsedMax, parsedStep)) return null
                 min = null; max = null; maxLength = null
@@ -358,13 +358,15 @@ internal object RuntimeModuleSettingsParser {
         val stepDecimal = BigDecimal.valueOf(step)
         val range = maxDecimal.subtract(minDecimal)
         val exactIntervals = range.divideToIntegralValue(stepDecimal).toInt()
-        val doubleIntervals = (max - min) / step
-        if (!doubleIntervals.isFinite() || kotlin.math.round(doubleIntervals).toInt() != exactIntervals) return false
 
         for (index in 0..exactIntervals) {
             val tick = minDecimal.add(stepDecimal.multiply(BigDecimal.valueOf(index.toLong()))).toDouble()
-            val mappedIndex = kotlin.math.round((tick - min) / step).toInt()
-            if (!tick.isFinite() || mappedIndex != index || !isSliderTickOnGrid(tick, minDecimal, range, stepDecimal)) return false
+            if (!tick.isFinite()) return false
+            val mappedIndex = BigDecimal.valueOf(tick)
+                .subtract(minDecimal)
+                .divide(stepDecimal, 0, RoundingMode.HALF_EVEN)
+                .intValueExact()
+            if (mappedIndex != index || !isSliderTickOnGrid(tick, minDecimal, range, stepDecimal)) return false
         }
         return true
     }
