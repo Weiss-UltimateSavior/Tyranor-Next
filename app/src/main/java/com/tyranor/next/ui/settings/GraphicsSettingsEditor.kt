@@ -135,14 +135,17 @@ internal fun PerGameGraphicsSettings(
 internal fun EngineSettingsKind.graphicsFamily(): GraphicsFamily? = when (this) {
     EngineSettingsKind.KRKR -> GraphicsFamily.KR
     EngineSettingsKind.ARTEMIS -> GraphicsFamily.ARTEMIS
-    EngineSettingsKind.SIGLUS -> GraphicsFamily.SIGLUS
+    // RealLive / AVG32 / UK2 与 Siglus 共用 libsiglus.so 运行库，滤镜设置共用。
+    EngineSettingsKind.SIGLUS, EngineSettingsKind.FRAMEBUFFER -> GraphicsFamily.SIGLUS
+    EngineSettingsKind.ONS -> GraphicsFamily.ONS
     else -> null
 }
 
 internal fun EngineType.graphicsFamily(): GraphicsFamily? = when (this) {
     EngineType.KIRIKIRI -> GraphicsFamily.KR
     EngineType.ARTEMIS -> GraphicsFamily.ARTEMIS
-    EngineType.SIGLUS -> GraphicsFamily.SIGLUS
+    EngineType.SIGLUS, EngineType.REALLIVE, EngineType.AVG32, EngineType.UK2 -> GraphicsFamily.SIGLUS
+    EngineType.ONS -> GraphicsFamily.ONS
     else -> null
 }
 

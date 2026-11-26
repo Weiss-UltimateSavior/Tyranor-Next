@@ -16,6 +16,7 @@ import android.util.Log;
 import android.view.Surface;
 
 import com.core.gl.CnnPipeline;
+import com.core.gl.EglTeardown;
 import com.core.gl.GraphicsStatus;
 import com.core.gl.ArtemisGraphicsStats;
 import com.core.gl.ArtemisPerformanceOverlay;
@@ -47,7 +48,10 @@ final class SiglusGraphicsProxy implements ArtemisPerformanceOverlay.Source {
     private static final int MAX_RELEASE_ATTEMPTS = 5;
     // Permanent driver failures retain only resources until process exit, never
     // the proxy's Listener (which can own an Activity) or its worker thread.
-    // Admission slots bound active, closing and retained owners together; never evict one.
+    // Admission slots bound active, closing and retained owners together; never evict one,
+    // so the retained list is inherently bounded by GraphicsProxyResourceSlots' capacity.
+    // Extra retention caps would force dropping a live handle to free a slot — exactly the
+    // cross-thread destruction this retention exists to prevent.
     private static final List<HandleOwner> RETAINED_HANDLES = new ArrayList<>();
     private static final class HandleOwner {
         final EGLDisplay display;
@@ -235,8 +239,10 @@ final class SiglusGraphicsProxy implements ArtemisPerformanceOverlay.Source {
         if (stageWidth <= 0 || stageHeight <= 0) throw new IllegalArgumentException("Invalid stage size");
         display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY);
         int[] versions = new int[2];
-        if (display == EGL14.EGL_NO_DISPLAY || !EGL14.eglInitialize(display, versions, 0, versions, 1))
+        if (display == EGL14.EGL_NO_DISPLAY || !EGL14.eglInitialize(display, versions, 0, versions, 1)) {
+            display = EGL14.EGL_NO_DISPLAY;
             throw new IllegalStateException("EGL display unavailable");
+        }
         initialized = true;
         int[] attributes = {EGL14.EGL_RENDERABLE_TYPE, 0x40,
                 EGL14.EGL_SURFACE_TYPE, EGL14.EGL_WINDOW_BIT | EGL14.EGL_PBUFFER_BIT,
@@ -520,7 +526,7 @@ final class SiglusGraphicsProxy implements ArtemisPerformanceOverlay.Source {
             thread.quitSafely();
         } else {
             if (releaseAttempts == 1) Log.w(TAG, "EGL cleanup deferred; retrying with bounded backoff");
-            worker.postDelayed(this::finishRelease, RELEASE_RETRY_MS << (releaseAttempts - 1));
+            worker.postDelayed(this::finishRelease, EglTeardown.retryDelayMs(RELEASE_RETRY_MS, releaseAttempts));
         }
     }
 
@@ -549,27 +555,19 @@ final class SiglusGraphicsProxy implements ArtemisPerformanceOverlay.Source {
         boolean current = display != EGL14.EGL_NO_DISPLAY && makeCurrent(parking);
         if (current) deleteGlResources();
         if (display != EGL14.EGL_NO_DISPLAY) {
-            boolean unbound = EGL14.eglMakeCurrent(display, EGL14.EGL_NO_SURFACE,
-                    EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT);
-            boolean released = EGL14.eglReleaseThread();
-            if (!unbound && !released) return false;
+            if (!EglTeardown.unbind(display)) return false;
             // The display lease outlives the TextureView callback until EGL
             // proves that its native window reference has disconnected.
-            if (output != EGL14.EGL_NO_SURFACE && EGL14.eglDestroySurface(display, output))
-                output = EGL14.EGL_NO_SURFACE;
-            if (parking != EGL14.EGL_NO_SURFACE && EGL14.eglDestroySurface(display, parking))
-                parking = EGL14.EGL_NO_SURFACE;
-            if (eglContext != EGL14.EGL_NO_CONTEXT && EGL14.eglDestroyContext(display, eglContext)) {
-                eglContext = EGL14.EGL_NO_CONTEXT;
-                contextDestroyed();
-            }
+            output = EglTeardown.destroySurface(display, output);
+            parking = EglTeardown.destroySurface(display, parking);
+            eglContext = EglTeardown.destroyContext(display, eglContext, this::contextDestroyed);
             boolean handlesGone = output == EGL14.EGL_NO_SURFACE && parking == EGL14.EGL_NO_SURFACE
                     && eglContext == EGL14.EGL_NO_CONTEXT;
             if (!handlesGone) return false;
             if (outputLease != null) { outputLease.release(); outputLease = null; }
             // The default EGLDisplay can have other initialize references. A
             // successful terminate does not prove our failed destroys completed.
-            if (initialized && !EGL14.eglTerminate(display)) return false;
+            if (!EglTeardown.terminate(display, initialized)) return false;
             initialized = false;
             display = EGL14.EGL_NO_DISPLAY;
         } else contextDestroyed();

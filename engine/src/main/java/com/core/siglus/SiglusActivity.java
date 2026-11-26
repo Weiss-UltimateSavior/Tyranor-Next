@@ -44,6 +44,7 @@ import com.core.engine.R;
 import com.core.engine.EngineUiText;
 import com.core.engine.LaunchContract;
 import com.core.gl.GraphicsFilterChain;
+import com.core.gl.GraphicsFilterGate;
 import com.core.gl.ArtemisPerformanceOverlay;
 
 import java.io.File;
@@ -133,7 +134,7 @@ public final class SiglusActivity extends AppCompatActivity implements
         EnginePlayerOrientation.lockOnCreate(this, savedInstanceState);
         super.onCreate(savedInstanceState);
 
-        requestedChain = SiglusHostPolicy.requestedChain(
+        requestedChain = GraphicsFilterGate.requestedChain(
                 getIntent().getBooleanExtra(LaunchContract.GRAPHICS_FILTER_ENABLED, false),
                 getIntent().getStringExtra(LaunchContract.GRAPHICS_FILTER_CHAIN));
         filterMode = requestedChain != null;

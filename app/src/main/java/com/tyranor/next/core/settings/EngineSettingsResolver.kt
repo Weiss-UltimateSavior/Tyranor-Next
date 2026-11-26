@@ -78,6 +78,10 @@ object EngineSettingsResolver {
                 EngineSettingsStore.getGraphicsSettings(app, GraphicsFamily.SIGLUS),
                 GraphicsSettingsCodec.readOverride(override, GraphicsFamily.SIGLUS),
             ),
+            onsGraphics = GraphicsSettingsCodec.resolve(
+                EngineSettingsStore.getGraphicsSettings(app, GraphicsFamily.ONS),
+                GraphicsSettingsCodec.readOverride(override, GraphicsFamily.ONS),
+            ),
             krEngineVersion = EffectiveEngineSettings.resolveKrVersion(
                 str(PerGameSettingsStore.F_ENGINE_VERSION),
                 EngineSettingsStore.getKrEngineVersion(app),
@@ -368,7 +372,10 @@ data class ResolvedEngineSettings(
     val ons: EngineSettingsStore.Ons,
     val krGraphics: GraphicsSettings = GraphicsSettings.defaults(GraphicsFamily.KR),
     val artGraphics: GraphicsSettings = GraphicsSettings.defaults(GraphicsFamily.ARTEMIS),
+    /** 共用滤镜链生效值；Siglus 本体与 RealLive / AVG32 / UK2 一同消费。 */
     val siglusGraphics: GraphicsSettings = GraphicsSettings.defaults(GraphicsFamily.SIGLUS),
+    /** ONScripter 共用滤镜链生效值（经 vendored SDL2 胶水代理消费）。 */
+    val onsGraphics: GraphicsSettings = GraphicsSettings.defaults(GraphicsFamily.ONS),
     val krEngineVersion: String,
     val krKernel: String,
     val krScopedSaveDir: Boolean,

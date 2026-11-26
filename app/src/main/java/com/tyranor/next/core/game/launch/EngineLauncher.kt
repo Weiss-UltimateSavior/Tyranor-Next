@@ -1374,6 +1374,7 @@ object EngineLauncher {
                     putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
                     putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_ONS)
                     putExtra(LaunchContract.IGNORE_CUTOUT, ons.ignoreCutout)
+                    putGraphicsSettings(settings.onsGraphics, GraphicsCapabilities.forRuntime(GraphicsFamily.ONS))
                 }
             }
 
@@ -1579,6 +1580,9 @@ object EngineLauncher {
         game: ScanGame,
         settings: ResolvedEngineSettings,
     ): Intent = Intent(context, FramebufferGameActivity::class.java).apply {
+        // RealLive / AVG32 / UK2 与 Siglus 共用同一 libsiglus.so 运行库并走 CPU 帧缓冲 ABI，
+        // 滤镜设置与单游戏覆盖键沿用 Siglus，不另立偏好键。
+        putGraphicsSettings(settings.siglusGraphics, GraphicsCapabilities.forRuntime(GraphicsFamily.SIGLUS))
         putExtra(LaunchContract.PATH, path)
         putExtra(LaunchContract.GAME_PATH, path)
         putExtra(LaunchContract.PROJECT_ROOT, path)

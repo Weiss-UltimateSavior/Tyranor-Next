@@ -48,6 +48,34 @@ class GraphicsLaunchPolicyTest {
         assertEquals(false, disabled[LaunchContract.GRAPHICS_FILTER_ANALYZER])
     }
 
+    @Test fun framebufferModesShareTheSiglusFamilyChain() {
+        // RealLive / AVG32 / UK2 与 Siglus 共用 libsiglus.so，滤镜设置同属 SIGLUS 族：
+        // 不新增加载族，启动仍走 siglusGraphics 解析值。
+        val capability = GraphicsCapabilities.forRuntime(GraphicsFamily.SIGLUS)
+        val extras = GraphicsLaunchPolicy.extras(saved, capability)
+        assertTrue(capability.supported)
+        assertFalse(capability.runtimeDependent)
+        assertEquals("v1:m,!deblur,lanczos", extras[LaunchContract.GRAPHICS_FILTER_CHAIN])
+        assertEquals(true, extras[LaunchContract.GRAPHICS_FILTER_ENABLED])
+        assertEquals(true, extras[LaunchContract.GRAPHICS_FILTER_ANALYZER])
+        val disabled = GraphicsLaunchPolicy.extras(saved.copy(enabled = false), capability)
+        assertEquals(false, disabled[LaunchContract.GRAPHICS_FILTER_ENABLED])
+        assertEquals(false, disabled[LaunchContract.GRAPHICS_FILTER_ANALYZER])
+    }
+
+    @Test fun onsEngineSharesTheOrderedChainWithoutRuntimeGating() {
+        val capability = GraphicsCapabilities.forRuntime(GraphicsFamily.ONS)
+        val extras = GraphicsLaunchPolicy.extras(saved, capability)
+        assertTrue(capability.supported)
+        assertFalse(capability.runtimeDependent)
+        assertEquals("v1:m,!deblur,lanczos", extras[LaunchContract.GRAPHICS_FILTER_CHAIN])
+        assertEquals(true, extras[LaunchContract.GRAPHICS_FILTER_ENABLED])
+        assertEquals(true, extras[LaunchContract.GRAPHICS_FILTER_ANALYZER])
+        val disabled = GraphicsLaunchPolicy.extras(saved.copy(enabled = false), capability)
+        assertEquals(false, disabled[LaunchContract.GRAPHICS_FILTER_ENABLED])
+        assertEquals(false, disabled[LaunchContract.GRAPHICS_FILTER_ANALYZER])
+    }
+
     @Test fun masterOffEmptyPausedAndInvalidChainsNeverRequestAnalyzer() {
         val capability = GraphicsCapabilities.forRuntime(GraphicsFamily.KR, EngineSettingsStore.KERNEL_KIRIKIRI2)
         for (settings in listOf(saved.copy(enabled = false), saved.copy(chain = emptyList()),
