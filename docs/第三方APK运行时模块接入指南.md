@@ -481,7 +481,7 @@ Intent("com.tyranor.runtime.action.LAUNCH").apply {
 
 卡片标题和说明只用于 TYN 设置页，不会出现在启动载荷中；卡片内的字段仍按 key 平铺。`file` / `folder` 的值是绝对路径字符串，`slider` 的值是数字。
 
-模块读取新值时仍从同一个 `values` 对象按原始 JSON 类型取值，例如 `optDouble("render_scale", 1.0)`、`optString("config_file", "")`。路径选择只保存路径，不会把 SAF URI 授权转交给模块。
+模块读取新值时仍从同一个 `values` 对象读取，并先检查原始 JSON 类型，例如 `(values?.opt("render_scale") as? Number)?.toDouble() ?: 1.0` 和 `values?.opt("config_file") as? String ?: ""`。类型不符时使用模块声明的默认值。路径选择只保存路径，不会把 SAF URI 授权转交给模块。
 
 接收示意：
 

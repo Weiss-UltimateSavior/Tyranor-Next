@@ -2,6 +2,7 @@ package com.tyranor.next.core.engine.runtime
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.math.BigDecimal
 import java.security.MessageDigest
 
 /** One validated runtime-module setting declaration. Values are JSON primitives only. */
@@ -330,12 +331,19 @@ internal object RuntimeModuleSettingsParser {
 
     private fun validSliderStep(value: Double, min: Double, max: Double, step: Double): Boolean {
         if (!step.isFinite() || step <= 0.0) return false
-        val intervals = (max - min) / step
-        if (!intervals.isFinite() || intervals < 1.0 || intervals > MAX_SLIDER_INTERVALS) return false
-        val roundedIntervals = kotlin.math.round(intervals)
-        if (kotlin.math.abs(intervals - roundedIntervals) > 1e-6 * maxOf(1.0, kotlin.math.abs(intervals))) return false
-        val position = (value - min) / step
-        return kotlin.math.abs(position - kotlin.math.round(position)) <= 1e-6 * maxOf(1.0, kotlin.math.abs(position))
+        val minDecimal = BigDecimal.valueOf(min)
+        val maxDecimal = BigDecimal.valueOf(max)
+        val stepDecimal = BigDecimal.valueOf(step)
+        val range = maxDecimal.subtract(minDecimal)
+        val (intervals, rangeRemainder) = range.divideAndRemainder(stepDecimal)
+        if (rangeRemainder.compareTo(BigDecimal.ZERO) != 0 ||
+            intervals < BigDecimal.ONE || intervals > BigDecimal.valueOf(MAX_SLIDER_INTERVALS.toLong())
+        ) return false
+
+        val valueDecimal = BigDecimal.valueOf(value)
+        val offset = valueDecimal.subtract(minDecimal)
+        return offset.signum() >= 0 && offset <= range &&
+            offset.remainder(stepDecimal).compareTo(BigDecimal.ZERO) == 0
     }
 
     private fun isSliderRangeSupportedByFloatUi(min: Double, max: Double, step: Double?): Boolean {

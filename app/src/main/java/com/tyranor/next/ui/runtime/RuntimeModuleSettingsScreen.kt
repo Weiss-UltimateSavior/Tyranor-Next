@@ -42,6 +42,7 @@ import com.tyranor.next.core.engine.runtime.RuntimeModuleSettingsParser
 import com.tyranor.next.core.engine.runtime.RuntimeModuleSettingsSpec
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.storage.GameLibraryFacade
+import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.DialogItemSurface
@@ -232,6 +233,9 @@ private fun RuntimeModuleSettingsView(
     }
 
     suspend fun readStoredSettingsJson(): String = withContext(Dispatchers.IO) {
+        // A commit-started awaited write can outlive its cancelled caller. Drain the writer queue
+        // before reading the cached Room row, or the read can clear saveOutcomeUnknown too early.
+        GameLibraryRepository.awaitPendingWrites()
         PerGameSettingsStore.getRuntimeModuleSettings(context, game.uri, packageName).toString()
     }
 
@@ -265,6 +269,7 @@ private fun RuntimeModuleSettingsView(
                 baselineJson = persistedJson
                 saveOutcomeUnknown = false
             }
+            settingPathPicker.invalidatePendingRequests()
             draftJson = persistedJson
             draftFingerprint = baselineFingerprint
             onDiscarded()
@@ -317,7 +322,7 @@ private fun RuntimeModuleSettingsView(
             val result = withContext(Dispatchers.IO) {
                 PerGameSettingsStore.saveRuntimeModuleSettings(context, game.uri, packageName, spec, json)
             }
-            if (result !is PerGameSettingsStore.RuntimeModuleSettingsSaveResult.StorageFailure) {
+            if (result is PerGameSettingsStore.RuntimeModuleSettingsSaveResult.Saved) {
                 saveOutcomeUnknown = false
             }
             when (result) {
