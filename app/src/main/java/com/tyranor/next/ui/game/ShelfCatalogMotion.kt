@@ -3,10 +3,13 @@ package com.tyranor.next.ui.game
 import android.animation.ValueAnimator
 import android.util.Log
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -15,6 +18,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -31,6 +35,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -47,6 +52,7 @@ import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.GameLibraryConditions
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.ui.common.motion.MotionHaptics
+import com.tyranor.next.ui.common.motion.MotionIntent
 import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.MotionSprings
 import com.tyranor.next.ui.common.motion.MotionTokens
@@ -1273,6 +1279,41 @@ internal class ShelfCatalogMotion(
     private var slotPlacementVersion by mutableIntStateOf(0)
     private val tierPlacements = HashMap<Pair<ShelfCatalogLayoutMode, Int>, LayoutCoordinates>()
     private val indexLookup = HashMap<String, Int>()
+    private val registeredTierPeeks = HashSet<ShelfCatalogTierPeekState>()
+    private var activePeekingTier: ShelfCatalogTierPeekState? = null
+
+    internal val isSpinePeeking: Boolean
+        get() = activePeekingTier != null
+
+    internal fun registerTierPeek(state: ShelfCatalogTierPeekState) {
+        registeredTierPeeks.add(state)
+    }
+
+    internal fun unregisterTierPeek(state: ShelfCatalogTierPeekState) {
+        registeredTierPeeks.remove(state)
+        if (activePeekingTier === state) activePeekingTier = null
+    }
+
+    internal fun notifyTierPeekActive(state: ShelfCatalogTierPeekState, active: Boolean) {
+        if (active) {
+            val previous = activePeekingTier
+            if (previous != null && previous !== state) {
+                previous.resetImmediately()
+            }
+            activePeekingTier = state
+        } else if (activePeekingTier === state) {
+            activePeekingTier = null
+        }
+    }
+
+    /** 立即无动画复位所有层上的书脊翻看状态（关藏书阁 / 切换陈列 / 列表滚动 / 筛选变化前调用）。 */
+    internal fun resetSpinePeekImmediately() {
+        activePeekingTier = null
+        if (registeredTierPeeks.isEmpty()) return
+        for (state in registeredTierPeeks.toList()) {
+            state.resetImmediately()
+        }
+    }
 
     fun interact(): Boolean {
         if (closing) {
@@ -1283,6 +1324,9 @@ internal class ShelfCatalogMotion(
     }
 
     fun syncCatalogGames(filtered: List<ScanGame>, all: List<ScanGame>) {
+        if (filteredGamesSnapshot.isNotEmpty() && filtered != filteredGamesSnapshot) {
+            resetSpinePeekImmediately()
+        }
         filteredGamesSnapshot = filtered
         allGamesSnapshot = all
         indexLookup.clear()
@@ -1555,6 +1599,7 @@ internal class ShelfCatalogMotion(
      */
     fun switchLayout(target: ShelfCatalogLayoutMode): Boolean {
         if (target == requestedLayout) return false
+        resetSpinePeekImmediately()
         if (morphing) {
             pendingLayout = target.takeIf { it != layoutMode }
             return true
@@ -1916,6 +1961,7 @@ internal class ShelfCatalogMotion(
 
     fun pickAndClose(game: ScanGame, onFocusGame: (ScanGame) -> Int) {
         if (closing) return
+        resetSpinePeekImmediately()
         if (morphing) finishMorphNow()
         closing = true
         if (game.uri !in indexLookup) {
@@ -2050,6 +2096,7 @@ internal class ShelfCatalogMotion(
 
     fun close(anchorGame: ScanGame?) {
         if (closing) return
+        resetSpinePeekImmediately()
         if (morphing) finishMorphNow()
         closing = true
         if (!enhanced || !ValueAnimator.areAnimatorsEnabled()) {
@@ -2176,6 +2223,7 @@ internal class ShelfCatalogMotion(
     }
 
     fun dismissImmediately() {
+        resetSpinePeekImmediately()
         closing = true
         transitionJob?.cancel()
         deliver(immediate = true)
@@ -3024,3 +3072,534 @@ internal fun Modifier.morphCard(
 private const val MORPH_MIX_START = 0.22f
 private const val MORPH_MIX_SPAN = 0.5f
 private const val MORPH_VANISH_SPAN = 0.45f
+
+// ---------------------------------------------------------------------------------------------
+// 书脊模式「翻看」：长按或横向拖动翻开指下书盒，右侧邻书顺滑让位、整排左移不越界
+// ---------------------------------------------------------------------------------------------
+
+/** 藏书阁书脊翻看最终侧转角度（与主书架 hero 侧转角 [HERO_YAW_DEGREES] 一致）。 */
+internal val SHELF_CATALOG_PEEK_YAW_DEGREES: Float = HERO_YAW_DEGREES
+
+private const val PEEK_HYSTERESIS_DP = 4f
+private const val PEEK_HORIZONTAL_LOCK_RATIO = 1.25f
+private val PEEK_LONG_PRESS_EDGE_PAD = 4.dp
+private const val PEEK_FRONT_FADE_START_DEG = 89.8f
+private const val PEEK_FRONT_FADE_SPAN_DEG = 3.5f
+private const val PEEK_GESTURE_DRAG = 1
+private const val PEEK_GESTURE_ABORT = 2
+
+/** 按书高复用主书架封面宽高比（[SHELF_COVER_ASPECT_RATIO]）换算翻开后的封面宽度。 */
+internal fun shelfCatalogPeekCoverWidthPx(bookHeightPx: Float): Float =
+    (bookHeightPx * SHELF_COVER_ASPECT_RATIO).coerceAtLeast(1f)
+
+/** 翻看开合进度 `openProgress`（0 = 书脊朝前，1 = 翻开至 [SHELF_CATALOG_PEEK_YAW_DEGREES]）对应的盒面转角（度）。 */
+internal fun shelfCatalogPeekYawDegrees(openProgress: Float): Float =
+    (90f + (SHELF_CATALOG_PEEK_YAW_DEGREES - 90f) * openProgress.coerceAtLeast(0f)).coerceIn(0f, 90f)
+
+/** 翻看时单本书在当前进度下的总水平投影宽度（书脊投影 + 封面投影）。 */
+internal fun shelfCatalogPeekProjectedWidthPx(
+    spineWidthPx: Float,
+    coverWidthPx: Float,
+    openProgress: Float,
+): Float {
+    val safeSpine = spineWidthPx.coerceAtLeast(0f)
+    if (openProgress <= 0f) return safeSpine
+    val yawRad = Math.toRadians(shelfCatalogPeekYawDegrees(openProgress).toDouble()).toFloat()
+    return (safeSpine * sin(yawRad) + coverWidthPx.coerceAtLeast(0f) * cos(yawRad)).coerceAtLeast(safeSpine)
+}
+
+/** 翻看时单本书相对静止书脊宽度多占出的水平空间（供右侧邻书右移）。 */
+internal fun shelfCatalogPeekExtraWidthPx(
+    spineWidthPx: Float,
+    coverWidthPx: Float,
+    openProgress: Float,
+): Float = (shelfCatalogPeekProjectedWidthPx(spineWidthPx, coverWidthPx, openProgress) - spineWidthPx).coerceAtLeast(0f)
+
+/** 翻看时封面正面随转角渐退的背光压暗透明度。 */
+internal fun shelfCatalogPeekFrontShade(openProgress: Float): Float {
+    val p = openProgress.coerceIn(0f, 1f)
+    if (p <= 0f) return 0f
+    return FRONT_SHADE * (shelfCatalogPeekYawDegrees(p) / 90f).coerceIn(0f, 1f)
+}
+
+/** 翻看时书脊随侧转away渐增的背光压暗透明度。 */
+internal fun shelfCatalogPeekSpineShade(openProgress: Float): Float {
+    val p = openProgress.coerceIn(0f, 1f)
+    if (p <= 0f) return 0f
+    return SPINE_SHADE * (1f - (shelfCatalogPeekYawDegrees(p) / 90f).coerceIn(0f, 1f))
+}
+
+internal class ShelfCatalogPeekLayout(
+    val bookShiftsPx: FloatArray,
+    val rowShiftPx: Float,
+)
+
+/**
+ * 计算一层书脊翻看时各本书的横向位移与整排左移量：
+ * - 右侧邻书整体右移左侧展开书多占出的「投影宽度 − 书脊宽度」；
+ * - 整排整体左移，保证展开后的封面右缘不超过柜内右边界 [innerWidthPx]。
+ */
+internal fun computeShelfCatalogPeekLayout(
+    widthsPx: List<Int>,
+    gapsPx: List<Int>,
+    bookHeightsPx: FloatArray,
+    openProgresses: FloatArray,
+    innerWidthPx: Int,
+): ShelfCatalogPeekLayout {
+    val n = widthsPx.size
+    if (n == 0) return ShelfCatalogPeekLayout(FloatArray(0), 0f)
+    val staticRight = FloatArray(n)
+    val fullExtras = FloatArray(n)
+    val extras = FloatArray(n)
+    val cumExtraBefore = FloatArray(n)
+    var cursor = 0f
+    var runningExtra = 0f
+    for (i in 0 until n) {
+        val w = widthsPx[i].toFloat().coerceAtLeast(0f)
+        staticRight[i] = cursor + w
+        val h = bookHeightsPx.getOrElse(i) { 0f }
+        val coverW = shelfCatalogPeekCoverWidthPx(h)
+        val full = shelfCatalogPeekExtraWidthPx(w, coverW, 1f)
+        val p = openProgresses.getOrElse(i) { 0f }
+        val extra = if (p > 0f) shelfCatalogPeekExtraWidthPx(w, coverW, p) else 0f
+        fullExtras[i] = full
+        extras[i] = extra
+        cumExtraBefore[i] = runningExtra
+        runningExtra += extra
+        cursor += w + if (i < gapsPx.size) gapsPx[i].toFloat().coerceAtLeast(0f) else 0f
+    }
+    var fSum = 0f
+    var weightedOverflow = 0f
+    val budget = innerWidthPx.toFloat().coerceAtLeast(0f)
+    for (i in 0 until n) {
+        val full = fullExtras[i]
+        val extra = extras[i]
+        if (full <= 0f || extra <= 0f) continue
+        val f = (extra / full).coerceIn(0f, 1f)
+        val needed = (staticRight[i] + cumExtraBefore[i] + full - budget).coerceAtLeast(0f)
+        fSum += f
+        weightedOverflow += f * needed
+    }
+    val rowShiftPx = if (fSum > 0f) -(weightedOverflow / maxOf(1f, fSum)) else 0f
+    val shifts = FloatArray(n) { i -> rowShiftPx + cumExtraBefore[i] }
+    return ShelfCatalogPeekLayout(bookShiftsPx = shifts, rowShiftPx = rowShiftPx)
+}
+
+/**
+ * 根据「静止排布」中的书格位置把层内横坐标 [fingerX]（相对首本左缘）映射为翻看的书序号；
+ * 已经选中 [currentIndex] 时在相邻书格交界处应用 [hysteresisPx] 滞回，滑出左右两端时停在端点那本。
+ */
+internal fun resolveShelfCatalogPeekBookIndex(
+    fingerX: Float,
+    widthsPx: List<Int>,
+    gapsPx: List<Int>,
+    currentIndex: Int,
+    hysteresisPx: Float,
+): Int {
+    val n = widthsPx.size
+    if (n <= 0) return -1
+    if (n == 1) return 0
+    val lefts = FloatArray(n)
+    val rights = FloatArray(n)
+    var x = 0f
+    for (i in 0 until n) {
+        lefts[i] = x
+        val w = widthsPx[i].toFloat().coerceAtLeast(0f)
+        rights[i] = x + w
+        x = rights[i] + if (i < gapsPx.size) gapsPx[i].toFloat().coerceAtLeast(0f) else 0f
+    }
+    fun boundary(i: Int): Float = 0.5f * (rights[i] + lefts[i + 1])
+    fun margin(i: Int): Float {
+        val minW = minOf(widthsPx[i].toFloat(), widthsPx[i + 1].toFloat()).coerceAtLeast(0f)
+        return hysteresisPx.coerceIn(0f, minW * 0.35f)
+    }
+    if (currentIndex !in 0 until n) {
+        for (i in 0 until n - 1) {
+            if (fingerX <= boundary(i)) return i
+        }
+        return n - 1
+    }
+    if (fingerX <= lefts[0]) return 0
+    if (fingerX >= rights[n - 1]) return n - 1
+    var idx = currentIndex
+    while (idx < n - 1 && fingerX > boundary(idx) + margin(idx)) {
+        idx++
+    }
+    while (idx > 0 && fingerX < boundary(idx - 1) - margin(idx - 1)) {
+        idx--
+    }
+    return idx
+}
+
+/** 长按命中判定：只有按在书排范围（不含未满层右侧大块留白）内才触发长按翻看。 */
+internal fun hitShelfCatalogSpineIndex(
+    fingerX: Float,
+    fingerY: Float,
+    widthsPx: List<Int>,
+    gapsPx: List<Int>,
+    tierBookBottomPx: Float,
+    edgePadPx: Float = 0f,
+): Int {
+    val n = widthsPx.size
+    if (n <= 0 || fingerY < 0f || fingerY > tierBookBottomPx) return -1
+    var totalWidth = 0f
+    for (i in 0 until n) {
+        totalWidth += widthsPx[i].toFloat().coerceAtLeast(0f)
+        if (i < n - 1 && i < gapsPx.size) totalWidth += gapsPx[i].toFloat().coerceAtLeast(0f)
+    }
+    if (fingerX < -edgePadPx || fingerX > totalWidth + edgePadPx) return -1
+    return resolveShelfCatalogPeekBookIndex(
+        fingerX = fingerX,
+        widthsPx = widthsPx,
+        gapsPx = gapsPx,
+        currentIndex = -1,
+        hysteresisPx = 0f,
+    )
+}
+
+@Stable
+internal class ShelfCatalogTierPeekState(
+    private val scope: CoroutineScope,
+    private val motion: ShelfCatalogMotion,
+    private val widthsPx: List<Int>,
+    private val gapsPx: List<Int>,
+    private val bookHeightsPx: FloatArray,
+    private val innerWidthPx: Int,
+    private val hysteresisPx: Float,
+) {
+    val bookCount: Int get() = widthsPx.size
+
+    private val openAnims = mutableStateMapOf<Int, Animatable<Float, AnimationVector1D>>()
+    private val animJobs = HashMap<Int, Job>()
+
+    var activeIndex by mutableIntStateOf(-1)
+        private set
+
+    var isPeeking by mutableStateOf(false)
+        private set
+
+    private var sessionId by mutableIntStateOf(0)
+
+    private val progressScratch = FloatArray(widthsPx.size)
+    private val lastProgresses = FloatArray(widthsPx.size) { Float.NaN }
+    private var cachedLayout: ShelfCatalogPeekLayout? = null
+
+    fun isSessionActive(session: Int): Boolean = isPeeking && session == sessionId
+
+    fun isBookMounted(col: Int): Boolean = col in openAnims
+
+    fun progressOf(col: Int): Float = openAnims[col]?.value ?: 0f
+
+    fun bookShiftPx(col: Int): Float {
+        if (openAnims.isEmpty() || col !in widthsPx.indices) return 0f
+        return currentLayout().bookShiftsPx[col]
+    }
+
+    private fun currentLayout(): ShelfCatalogPeekLayout {
+        val n = widthsPx.size
+        var dirty = cachedLayout == null
+        for (i in 0 until n) {
+            val v = openAnims[i]?.value ?: 0f
+            progressScratch[i] = v
+            if (v != lastProgresses[i]) dirty = true
+        }
+        if (!dirty) return cachedLayout!!
+        for (i in 0 until n) lastProgresses[i] = progressScratch[i]
+        return computeShelfCatalogPeekLayout(
+            widthsPx = widthsPx,
+            gapsPx = gapsPx,
+            bookHeightsPx = bookHeightsPx,
+            openProgresses = progressScratch,
+            innerWidthPx = innerWidthPx,
+        ).also { cachedLayout = it }
+    }
+
+    fun resolveInitialIndex(fingerX: Float): Int = resolveShelfCatalogPeekBookIndex(
+        fingerX = fingerX,
+        widthsPx = widthsPx,
+        gapsPx = gapsPx,
+        currentIndex = -1,
+        hysteresisPx = hysteresisPx,
+    )
+
+    fun hitSpineIndex(fingerX: Float, fingerY: Float, tierBookBottomPx: Float, edgePadPx: Float): Int =
+        hitShelfCatalogSpineIndex(
+            fingerX = fingerX,
+            fingerY = fingerY,
+            widthsPx = widthsPx,
+            gapsPx = gapsPx,
+            tierBookBottomPx = tierBookBottomPx,
+            edgePadPx = edgePadPx,
+        )
+
+    fun beginPeek(index: Int): Int {
+        if (index !in widthsPx.indices) return -1
+        sessionId++
+        isPeeking = true
+        motion.notifyTierPeekActive(this, true)
+        switchTarget(index, haptic = false)
+        return sessionId
+    }
+
+    fun updateFingerX(fingerX: Float, session: Int) {
+        if (!isSessionActive(session)) return
+        val next = resolveShelfCatalogPeekBookIndex(
+            fingerX = fingerX,
+            widthsPx = widthsPx,
+            gapsPx = gapsPx,
+            currentIndex = activeIndex,
+            hysteresisPx = hysteresisPx,
+        )
+        if (next in widthsPx.indices && next != activeIndex) {
+            switchTarget(next, haptic = true)
+        }
+    }
+
+    fun endPeek(session: Int) {
+        if (session != sessionId || !isPeeking) return
+        isPeeking = false
+        motion.notifyTierPeekActive(this, false)
+        activeIndex = -1
+        val instant = !motion.enhanced || !ValueAnimator.areAnimatorsEnabled()
+        for (idx in openAnims.keys.toList()) {
+            animateBookTo(idx, 0f, instant)
+        }
+    }
+
+    fun resetImmediately() {
+        sessionId++
+        isPeeking = false
+        activeIndex = -1
+        motion.notifyTierPeekActive(this, false)
+        for (job in animJobs.values) job.cancel()
+        animJobs.clear()
+        openAnims.clear()
+        cachedLayout = null
+        for (i in lastProgresses.indices) lastProgresses[i] = Float.NaN
+    }
+
+    private fun switchTarget(target: Int, haptic: Boolean) {
+        val prev = activeIndex
+        if (target == prev) return
+        activeIndex = target
+        if (haptic) MotionHaptics.perform(MotionHaptics.Kind.Tick)
+        val instant = !motion.enhanced || !ValueAnimator.areAnimatorsEnabled()
+        if (prev in widthsPx.indices) {
+            animateBookTo(prev, 0f, instant)
+        }
+        for (existing in openAnims.keys.toList()) {
+            if (existing != target && existing != prev) {
+                animateBookTo(existing, 0f, instant)
+            }
+        }
+        if (target in widthsPx.indices) {
+            animateBookTo(target, 1f, instant)
+        }
+    }
+
+    private fun animateBookTo(index: Int, target: Float, instant: Boolean) {
+        animJobs.remove(index)?.cancel()
+        val existing = openAnims[index]
+        if (target == 0f && existing == null) return
+        val anim = existing ?: Animatable(0f).also { openAnims[index] = it }
+        if (instant) {
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                anim.snapTo(target)
+                if (target == 0f && activeIndex != index) {
+                    openAnims.remove(index)
+                }
+            }
+            return
+        }
+        val spec = if (target > 0.5f) {
+            MotionTokens.content(0.0005f)
+        } else {
+            MotionTokens.contentExit(0.0005f)
+        }
+        animJobs[index] = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            anim.animateTo(target, spec)
+            animJobs.remove(index)
+            if (target == 0f && activeIndex != index) {
+                openAnims.remove(index)
+            }
+        }
+    }
+}
+
+@Composable
+internal fun rememberShelfCatalogTierPeekState(
+    motion: ShelfCatalogMotion,
+    widthsPx: List<Int>,
+    gapsPx: List<Int>,
+    bookHeightsPx: FloatArray,
+    innerWidthPx: Int,
+): ShelfCatalogTierPeekState {
+    val scope = rememberCoroutineScope()
+    val hysteresisPx = with(LocalDensity.current) { PEEK_HYSTERESIS_DP.dp.toPx() }
+    val state = remember(motion, widthsPx, gapsPx, bookHeightsPx, innerWidthPx, hysteresisPx) {
+        ShelfCatalogTierPeekState(
+            scope = scope,
+            motion = motion,
+            widthsPx = widthsPx,
+            gapsPx = gapsPx,
+            bookHeightsPx = bookHeightsPx,
+            innerWidthPx = innerWidthPx,
+            hysteresisPx = hysteresisPx,
+        )
+    }
+    DisposableEffect(motion, state) {
+        motion.registerTierPeek(state)
+        onDispose {
+            state.resetImmediately()
+            motion.unregisterTierPeek(state)
+        }
+    }
+    return state
+}
+
+/**
+ * 藏书阁竖排书脊层的翻看手势：
+ * - 长按某本书脊成立后立即翻开并消费后续所有触摸（不松手竖向滑动也不再滚动列表）；
+ * - 横向拖动超过 touch slop 且横向明显大于竖向时立即锁定翻看（竖向拖动仍交由 LazyColumn 滚动）；
+ * - 松手或取消时立刻全部合回且不触发点选。
+ */
+internal fun Modifier.shelfCatalogVerticalTierPeekGesture(
+    peekState: ShelfCatalogTierPeekState,
+    canStart: () -> Boolean,
+): Modifier = pointerInput(peekState) {
+    val edgePadPx = PEEK_LONG_PRESS_EDGE_PAD.toPx()
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        MotionIntent.noteTouch()
+        if (!canStart() || down.isConsumed) return@awaitEachGesture
+        val slop = viewConfiguration.touchSlop
+        val longPressTimeout = viewConfiguration.longPressTimeoutMillis
+        var lastPos = down.position
+
+        val verdict = withTimeoutOrNull(longPressTimeout) {
+            while (true) {
+                val mainEvent = awaitPointerEvent(PointerEventPass.Main)
+                val mainChange = mainEvent.changes.firstOrNull { it.id == down.id }
+                if (mainEvent.changes.count { it.pressed } > 1 ||
+                    mainChange == null ||
+                    !mainChange.pressed ||
+                    (mainChange.isConsumed && mainChange.uptimeMillis != down.uptimeMillis)
+                ) {
+                    return@withTimeoutOrNull PEEK_GESTURE_ABORT
+                }
+                lastPos = mainChange.position
+                val delta = mainChange.position - down.position
+                if (delta.getDistance() > slop) {
+                    return@withTimeoutOrNull if (
+                        abs(delta.x) > slop * 0.75f &&
+                        abs(delta.x) > abs(delta.y) * PEEK_HORIZONTAL_LOCK_RATIO
+                    ) {
+                        mainChange.consume()
+                        PEEK_GESTURE_DRAG
+                    } else {
+                        PEEK_GESTURE_ABORT
+                    }
+                }
+                val finalEvent = awaitPointerEvent(PointerEventPass.Final)
+                val finalChange = finalEvent.changes.firstOrNull { it.id == down.id }
+                if (finalChange == null ||
+                    !finalChange.pressed ||
+                    (finalChange.isConsumed && finalChange.uptimeMillis != down.uptimeMillis)
+                ) {
+                    return@withTimeoutOrNull PEEK_GESTURE_ABORT
+                }
+            }
+        }
+
+        if (verdict == PEEK_GESTURE_ABORT || !canStart()) return@awaitEachGesture
+        val lockedByDrag = verdict == PEEK_GESTURE_DRAG
+        val initialIndex = if (lockedByDrag) {
+            peekState.resolveInitialIndex(lastPos.x)
+        } else {
+            peekState.hitSpineIndex(down.position.x, down.position.y, size.height.toFloat(), edgePadPx)
+        }
+        if (initialIndex < 0) return@awaitEachGesture
+
+        MotionIntent.noteTouch()
+        if (!lockedByDrag) {
+            MotionHaptics.perform(MotionHaptics.Kind.LongPress)
+        }
+        val session = peekState.beginPeek(initialIndex)
+        if (session < 0) return@awaitEachGesture
+
+        try {
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                change.consume()
+                if (!change.pressed) break
+                if (peekState.isSessionActive(session)) {
+                    MotionIntent.noteTouch()
+                    peekState.updateFingerX(change.position.x, session)
+                }
+            }
+        } finally {
+            peekState.endPeek(session)
+        }
+    }
+}
+
+/** 翻看中单本立脊容器的水平让位、消除斜倚与消除内收抬升（在放置锚点内侧生效，绝不污染 [shelfCatalogSlotPlaced]）。 */
+internal fun Modifier.shelfCatalogPeekBookTransform(
+    peekState: ShelfCatalogTierPeekState,
+    colIndex: Int,
+    leanDegrees: Float,
+    leanShiftPx: Float,
+    recessLiftPx: Float,
+): Modifier = graphicsLayer {
+    val p = peekState.progressOf(colIndex)
+    val pClamped = p.coerceIn(0f, 1f)
+    val shiftX = peekState.bookShiftPx(colIndex) - leanShiftPx * pClamped
+    if (shiftX != 0f) translationX = shiftX
+    if (recessLiftPx != 0f && pClamped > 0f) translationY = recessLiftPx * pClamped
+    val currentLean = leanDegrees * (1f - pClamped)
+    if (abs(currentLean) >= 0.05f) {
+        transformOrigin = TransformOrigin(0f, 1f)
+        rotationZ = currentLean
+    }
+}
+
+/** 翻看中书脊面绕左缘转开时的水平压窄（`sin(yaw)` 仿射投影，保持文字清晰）。 */
+internal fun Modifier.shelfCatalogPeekSpineTurn(
+    peekState: ShelfCatalogTierPeekState,
+    colIndex: Int,
+): Modifier = graphicsLayer {
+    val p = peekState.progressOf(colIndex)
+    if (p <= 0f) return@graphicsLayer
+    val sinTurn = sin(Math.toRadians(shelfCatalogPeekYawDegrees(p).toDouble())).toFloat()
+    transformOrigin = TransformOrigin(0f, 0.5f)
+    scaleX = sinTurn
+}
+
+/** 翻看中封面正面绕书脊右缘转出（与书脊同源拼盒 + [SHELF_FACE_CAMERA] 透视）。 */
+internal fun Modifier.shelfCatalogPeekFrontTurn(
+    peekState: ShelfCatalogTierPeekState,
+    colIndex: Int,
+    spineWidthPx: Float,
+    frontShape: Shape,
+): Modifier = graphicsLayer {
+    val p = peekState.progressOf(colIndex)
+    if (p <= 0.001f) {
+        alpha = 0f
+        return@graphicsLayer
+    }
+    val yawDeg = shelfCatalogPeekYawDegrees(p)
+    val frontAlpha = ((PEEK_FRONT_FADE_START_DEG - yawDeg) / PEEK_FRONT_FADE_SPAN_DEG).coerceIn(0f, 1f)
+    if (frontAlpha <= 0.005f) {
+        alpha = 0f
+        return@graphicsLayer
+    }
+    val sinTurn = sin(Math.toRadians(yawDeg.toDouble())).toFloat()
+    alpha = frontAlpha
+    cameraDistance = SHELF_FACE_CAMERA * density
+    shape = frontShape
+    clip = true
+    transformOrigin = TransformOrigin(0f, 0.5f)
+    translationX = spineWidthPx * sinTurn
+    rotationY = yawDeg
+}

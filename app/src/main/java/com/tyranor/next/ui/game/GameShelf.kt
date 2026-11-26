@@ -420,7 +420,7 @@ internal fun shelfStageScale(heightBudget: Dp): Float = (heightBudget / MIN_STAG
 
 internal fun shelfCoverWidthForHeight(heightBudget: Dp): Dp =
     MIN_COVER_WIDTH * shelfStageScale(heightBudget) +
-        ((heightBudget - MIN_STAGE_HEIGHT) * (0.75f / (1f + FLOOR_RATIO + LIFT_ROOM_RATIO))).coerceAtLeast(0.dp)
+        ((heightBudget - MIN_STAGE_HEIGHT) * (SHELF_COVER_ASPECT_RATIO / (1f + FLOOR_RATIO + LIFT_ROOM_RATIO))).coerceAtLeast(0.dp)
 
 internal fun shelfFocusPage(games: List<ScanGame>, uri: String?): Int =
     games.indexOfFirst { it.uri == uri }.takeIf { it >= 0 }
@@ -520,7 +520,7 @@ private fun ShelfStage(
             maxWidth * widthRatio,
             shelfCoverWidthForHeight(heightBudget),
         )
-        val coverHeight = coverWidth * 4f / 3f
+        val coverHeight = coverWidth / SHELF_COVER_ASPECT_RATIO
         val floorDepth = coverHeight * FLOOR_RATIO
         val topRoom = LIFT_ROOM * compactScale + coverHeight * LIFT_ROOM_RATIO
         // 多出来的高度按比例分给搁板下面（抬高底板）与书顶上面：不再整块堆在上面
@@ -976,7 +976,7 @@ private fun ShelfBox(
             heroCover = heroCover,
             reveal = reveal,
             engineColor = engineColor,
-            dims = dims,
+            coverWidth = dims.coverWidth,
             mipLevel = mipLevel,
             borderShapes = shapes,
             spineOnRight = { geometry.yaw(localOffset.value) < 0f },
@@ -1110,14 +1110,14 @@ internal fun ShelfCoverPlaceholder(engineName: String, coverWidth: Dp, modifier:
 
 /** 正面：封面（无封面时引擎色 + 引擎名占位）；玩过的游戏封面上挂一根主题色书签丝带。 */
 @Composable
-private fun ShelfFront(
+internal fun ShelfFront(
     game: ScanGame,
     overlays: @Composable () -> Unit,
     cover: ImageBitmap?,
     heroCover: ImageBitmap?,
-    reveal: CoverReveal,
+    reveal: CoverReveal?,
     engineColor: Color,
-    dims: ShelfDims,
+    coverWidth: Dp,
     modifier: Modifier = Modifier,
     /** 书架上的这一盒正面转得有多侧（见 [shelfCoverMipLevel]）：给了就按它换水平预缩的封面，不给就一直用原图。 */
     mipLevel: State<Int>? = null,
@@ -1141,13 +1141,13 @@ private fun ShelfFront(
     ) {
         // 占位文字只在没有封面时组合：被封面盖住也照样会画，而且在透视下要逐字按路径绘制
         if (safeCover == null && safeHero == null) {
-            ShelfCoverPlaceholder(game.engine.displayName, dims.coverWidth, Modifier.clearAndSetSemantics { })
+            ShelfCoverPlaceholder(game.engine.displayName, coverWidth, Modifier.clearAndSetSemantics { })
         }
         safeCover?.let { bitmap ->
             val mips = if (mipLevel != null) rememberShelfCoverMips(bitmap) else null
             Spacer(
                 Modifier
-                    .then(reveal.image(Modifier.fillMaxSize()))
+                    .then(reveal?.image(Modifier.fillMaxSize()) ?: Modifier.fillMaxSize())
                     .shelfCoverMipped(bitmap, mips, mipLevel),
             )
         }
@@ -1160,7 +1160,7 @@ private fun ShelfFront(
                 modifier = Modifier.fillMaxSize().shelfHeroCoverFade(safeHero, startOpaque = safeCover == null),
             )
         }
-        if (isShelfLastPlayed(game)) ShelfCoverRibbon(dims.coverWidth, ribbon)
+        if (isShelfLastPlayed(game)) ShelfCoverRibbon(coverWidth, ribbon)
         overlays()
     }
 }
@@ -3309,7 +3309,8 @@ private fun shelfSpeedLabel(speed: Float): String = when {
     else -> "1/10"
 }
 
-/** 封面宽度上限（容器宽度比例；游戏很少时更大）与下限。 */
+/** 封面宽高比（宽 / 高 = 3 / 4）与宽度上限（容器宽度比例；游戏很少时更大）与下限。 */
+internal const val SHELF_COVER_ASPECT_RATIO = 0.75f
 private const val COVER_WIDTH_RATIO = 0.5f
 private const val COVER_WIDTH_RATIO_FEW = 0.5f
 private val MIN_COVER_WIDTH = 96.dp
@@ -3359,7 +3360,7 @@ private val STAGE_TOP_ROOM = 8.dp
 /** 搁板（倒影区）深度占盒子高度的比例。 */
 private const val FLOOR_RATIO = 0.14f
 private val MIN_STAGE_HEIGHT = LIFT_ROOM + STAGE_TOP_ROOM + SHELF_BELOW_BOARD.dp +
-    MIN_COVER_WIDTH * (4f / 3f * (1f + FLOOR_RATIO + LIFT_ROOM_RATIO))
+    MIN_COVER_WIDTH * ((1f / SHELF_COVER_ASPECT_RATIO) * (1f + FLOOR_RATIO + LIFT_ROOM_RATIO))
 
 /** 居中盒子脚下与身后那团光（封面主色）的透明度。 */
 private const val LEDGE_GLOW_ALPHA = 0.42f

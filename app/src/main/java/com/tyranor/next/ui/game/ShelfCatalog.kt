@@ -46,8 +46,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -859,6 +862,14 @@ private fun ShelfCatalogWall(
             val listState = rememberLazyListState(aligned?.first ?: initialRow, aligned?.second ?: 0)
             StopLeavingWallScroll(listState, isLeaving)
             SettleEntryOnWallDrag(listState, motion)
+            LaunchedEffect(listState, motion) {
+                snapshotFlow { listState.isScrollInProgress }.collect { scrolling ->
+                    if (scrolling) motion.resetSpinePeekImmediately()
+                }
+            }
+            LaunchedEffect(rows, columns, motion) {
+                motion.resetSpinePeekImmediately()
+            }
             val keepAnchor = rememberCatalogAnchorOnReflow(listState, rows, columns, visibleTiersHint, conditions)
             val jelly = rememberScrollJellyState()
 
@@ -931,7 +942,7 @@ private fun ShelfCatalogWall(
             }
             val coverGap = cells.gap
             val coverWidth = cells.cellWidth
-            val coverHeight = (coverWidth / COVER_ASPECT_RATIO).coerceIn(100.dp, 196.dp)
+            val coverHeight = (coverWidth / SHELF_COVER_ASPECT_RATIO).coerceIn(100.dp, 196.dp)
             val sharedCoverChamfer = remember(coverWidth) { shelfChamfer(coverWidth) }
             val sharedCoverBoxShape = remember(sharedCoverChamfer) {
                 ShelfBoxShapes(sharedCoverChamfer).frontWithSpineLeft
@@ -1448,6 +1459,27 @@ private fun ShelfCatalogVerticalTierRow(
     val rangeText = remember(tier.startIndex, tier.games.size) {
         formatShelfCatalogRangeText(tier.startIndex, tier.games.size)
     }
+    val isLeaving = LocalShelfCatalogLeavingWall.current
+    val tierHeightsPx = remember(tier.games, spineHeight, density.density) {
+        FloatArray(tier.games.size) { idx ->
+            with(density) { (spineHeight * shelfCatalogSpineHeightFactor(tier.games[idx].uri)).toPx() }
+        }
+    }
+    val peekState = rememberShelfCatalogTierPeekState(
+        motion = motion,
+        widthsPx = tierWidthsPx,
+        gapsPx = tierGapsPx,
+        bookHeightsPx = tierHeightsPx,
+        innerWidthPx = innerWidthPx,
+    )
+    val canStartPeek by rememberUpdatedState {
+        !isLeaving &&
+            motion.hasEntered &&
+            !motion.morphing &&
+            !motion.closing &&
+            !motion.isSpinePeeking &&
+            tier.games.isNotEmpty()
+    }
 
     Box(
         modifier = modifier
@@ -1482,7 +1514,16 @@ private fun ShelfCatalogVerticalTierRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = stileWidth + interiorInset, end = stileWidth + interiorInset),
+                .padding(start = stileWidth + interiorInset, end = stileWidth + interiorInset)
+                .drawWithCache {
+                    val extraBottom = TIER_LEDGE_DEPTH.toPx()
+                    onDrawWithContent {
+                        clipRect(left = 0f, top = 0f, right = size.width, bottom = size.height + extraBottom) {
+                            this@onDrawWithContent.drawContent()
+                        }
+                    }
+                }
+                .shelfCatalogVerticalTierPeekGesture(peekState) { canStartPeek() },
             horizontalArrangement = Arrangement.Start,
             verticalAlignment = Alignment.Bottom,
         ) {
@@ -1513,6 +1554,7 @@ private fun ShelfCatalogVerticalTierRow(
                         spineShape = verticalSpineShape,
                         currentLabel = currentLabel,
                         motion = motion,
+                        peekState = peekState,
                         batchChangedAt = batchChangedAt,
                         onClick = { onPickGame(game) },
                     )
@@ -1535,7 +1577,7 @@ private fun ShelfCatalogVerticalTierRow(
     }
 }
 
-/** 竖排单本立脊：复用 [ShelfCatalogVerticalSpineFace] 精装立体外观并接入编队测量与整层波纹进场。 */
+/** 竖排单本立脊：复用 [ShelfCatalogVerticalSpineFace] 精装立体外观并接入编队测量、翻看与整层波纹进场。 */
 @Composable
 private fun ShelfCatalogVerticalSpine(
     game: ScanGame,
@@ -1553,6 +1595,7 @@ private fun ShelfCatalogVerticalSpine(
     spineShape: androidx.compose.ui.graphics.Shape,
     currentLabel: String,
     motion: ShelfCatalogMotion,
+    peekState: ShelfCatalogTierPeekState,
     batchChangedAt: Long,
     onClick: () -> Unit,
 ) {
@@ -1580,45 +1623,125 @@ private fun ShelfCatalogVerticalSpine(
             ).toDp()
         }
     }
+    val spineWidthPx = with(density) { spineWidth.toPx() }
+    val coverWidth = (boxHeight * SHELF_COVER_ASPECT_RATIO).coerceAtLeast(1.dp)
+    val coverWidthPx = with(density) { coverWidth.roundToPx().coerceAtLeast(1) }
+    val coverHeightPx = with(density) { boxHeight.roundToPx().coerceAtLeast(1) }
+    val chamfer = remember(coverWidth) { shelfChamfer(coverWidth) }
+    val coverShapes = remember(chamfer) { ShelfBoxShapes(chamfer) }
+    val leanShiftPx = with(density) { leanShiftX.toPx() }
+    val recessLiftPx = if (isCurrent) 0f else with(density) { recess.liftDp.dp.toPx() }
+    val isFrontMounted by remember(peekState, colIndex) {
+        derivedStateOf { peekState.isBookMounted(colIndex) }
+    }
     val title = remember(game.title, hideTitleTag) {
         if (hideTitleTag) GameTitleTags.stripAll(game.title) else game.title
     }
 
     Column(
-        modifier = Modifier.width(spineWidth).shelfBatchArrival(batchChangedAt, colIndex),
+        modifier = Modifier
+            .width(spineWidth)
+            .layout { measurable, constraints ->
+                val placeable = measurable.measure(constraints)
+                layout(placeable.width, placeable.height) {
+                    val z = if (peekState.isBookMounted(colIndex)) 10f + peekState.progressOf(colIndex) else 0f
+                    placeable.place(0, 0, zIndex = z)
+                }
+            }
+            .shelfBatchArrival(batchChangedAt, colIndex),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.height(topRoom + (maxHeight - boxHeight)))
-        ShelfCatalogVerticalSpineFace(
-            title = title,
-            uri = game.uri,
-            spineWidth = spineWidth,
-            boxHeight = boxHeight,
-            isCurrent = isCurrent,
-            lastPlayed = isShelfLastPlayed(game),
-            engineColor = engineColor,
-            wash = wash,
-            spineShape = spineShape,
-            recessShadeAlpha = recess.shadeAlpha,
+        Box(
             modifier = Modifier
+                .size(spineWidth, boxHeight)
                 .then(if (verticalOffsetDp != 0.dp) Modifier.offset(y = verticalOffsetDp) else Modifier)
                 .then(if (leanShiftX > 0.dp) Modifier.offset(x = leanShiftX) else Modifier)
                 .shelfCatalogSlotPlaced(motion, game.uri, rowGridIndex, colIndex, ShelfCatalogLayoutMode.SPINES, leanDegrees)
-                .shelfCatalogBookLean(leanDegrees)
                 .shelfCatalogSlotVisible(motion, game.uri)
-                // 退场期间触摸是递给下面书架的，书不再按压反馈、也不再响应点选
-                .pressSquish(enabled = !motion.closing, scale = PressSquishDefaults.CardScale)
-                .clickable(
-                    enabled = !motion.closing,
-                    interactionSource = null,
-                    indication = null,
-                    role = Role.Button,
-                    onClick = onClick,
-                )
-                .semantics(mergeDescendants = true) {
-                    contentDescription = if (isCurrent) "$title ($currentLabel)" else title
-                },
-        )
+                .shelfCatalogPeekBookTransform(
+                    peekState = peekState,
+                    colIndex = colIndex,
+                    leanDegrees = leanDegrees,
+                    leanShiftPx = leanShiftPx,
+                    recessLiftPx = recessLiftPx,
+                ),
+        ) {
+            ShelfCatalogVerticalSpineFace(
+                title = title,
+                uri = game.uri,
+                spineWidth = spineWidth,
+                boxHeight = boxHeight,
+                isCurrent = isCurrent,
+                lastPlayed = isShelfLastPlayed(game),
+                engineColor = engineColor,
+                wash = wash,
+                spineShape = spineShape,
+                recessShadeAlpha = recess.shadeAlpha,
+                recessFadeProvider = { 1f - peekState.progressOf(colIndex).coerceIn(0f, 1f) },
+                giltAlphaProvider = { (1f - peekState.progressOf(colIndex).coerceIn(0f, 1f) * 2.5f).coerceIn(0f, 1f) },
+                turnShadeProvider = { shelfCatalogPeekSpineShade(peekState.progressOf(colIndex)) },
+                modifier = Modifier
+                    .shelfCatalogPeekSpineTurn(peekState, colIndex)
+                    // 退场期间触摸是递给下面书架的，书不再按压反馈、也不再响应点选
+                    .pressSquish(enabled = !motion.closing, scale = PressSquishDefaults.CardScale, charge = true)
+                    .clickable(
+                        enabled = !motion.closing,
+                        interactionSource = null,
+                        indication = null,
+                        role = Role.Button,
+                        onClick = onClick,
+                    )
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = if (isCurrent) "$title ($currentLabel)" else title
+                    },
+            )
+            if (isFrontMounted) {
+                Box(
+                    modifier = Modifier
+                        .layout { measurable, _ ->
+                            val placeable = measurable.measure(Constraints.fixed(coverWidthPx, coverHeightPx))
+                            layout(0, 0) { placeable.place(0, 0) }
+                        }
+                        .shelfCatalogPeekFrontTurn(
+                            peekState = peekState,
+                            colIndex = colIndex,
+                            spineWidthPx = spineWidthPx,
+                            frontShape = coverShapes.frontWithSpineLeft,
+                        ),
+                ) {
+                    ShelfFront(
+                        game = game,
+                        overlays = {
+                            Box(Modifier.fillMaxSize().shelfBevelOverlay(ShelfGloss, ShelfDepthShade))
+                            Box(Modifier.fillMaxSize().shelfGlossOverlay(ShelfGloss))
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .shelfChamferGlintsOverlay(chamfer, { false }, ShelfChamferLight, ShelfChamferDim),
+                            )
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        alpha = shelfCatalogPeekFrontShade(peekState.progressOf(colIndex))
+                                        compositingStrategy = CompositingStrategy.ModulateAlpha
+                                    }
+                                    .background(ShelfFaceShade),
+                            )
+                        },
+                        cover = cover,
+                        heroCover = null,
+                        reveal = null,
+                        engineColor = engineColor,
+                        coverWidth = coverWidth,
+                        borderShapes = coverShapes,
+                        spineOnRight = { false },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -1639,6 +1762,9 @@ private fun ShelfCatalogVerticalSpineFace(
     wash: ImageBitmap?,
     spineShape: androidx.compose.ui.graphics.Shape,
     recessShadeAlpha: Float = 0f,
+    recessFadeProvider: (() -> Float)? = null,
+    giltAlphaProvider: (() -> Float)? = null,
+    turnShadeProvider: (() -> Float)? = null,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -1661,24 +1787,55 @@ private fun ShelfCatalogVerticalSpineFace(
             Spacer(
                 Modifier
                     .fillMaxSize()
-                    .background(ShelfFaceShade.copy(alpha = recessShadeAlpha)),
+                    .graphicsLayer {
+                        val fade = recessFadeProvider?.invoke() ?: 1f
+                        alpha = (recessShadeAlpha * fade).coerceIn(0f, 1f)
+                        compositingStrategy = CompositingStrategy.ModulateAlpha
+                    }
+                    .background(ShelfFaceShade),
+            )
+        }
+        if (turnShadeProvider != null) {
+            Spacer(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        alpha = turnShadeProvider().coerceIn(0f, 1f)
+                        compositingStrategy = CompositingStrategy.ModulateAlpha
+                    }
+                    .background(ShelfFaceShade),
             )
         }
         if (isCurrent) {
             val gilt = ShelfSelectedGilt
-            Spacer(
+            Box(
                 Modifier
                     .fillMaxSize()
-                    .drawWithCache {
-                        val brush = Brush.verticalGradient(
-                            0f to gilt.copy(alpha = 0.2f),
-                            0.32f to Color.Transparent,
-                            endY = size.height * 0.45f,
-                        )
-                        onDrawBehind { drawRect(brush) }
-                    },
-            )
-            ShelfCatalogSelectedFrame(spineShape)
+                    .then(
+                        if (giltAlphaProvider != null) {
+                            Modifier.graphicsLayer {
+                                alpha = giltAlphaProvider().coerceIn(0f, 1f)
+                                compositingStrategy = CompositingStrategy.ModulateAlpha
+                            }
+                        } else {
+                            Modifier
+                        },
+                    ),
+            ) {
+                Spacer(
+                    Modifier
+                        .fillMaxSize()
+                        .drawWithCache {
+                            val brush = Brush.verticalGradient(
+                                0f to gilt.copy(alpha = 0.2f),
+                                0.32f to Color.Transparent,
+                                endY = size.height * 0.45f,
+                            )
+                            onDrawBehind { drawRect(brush) }
+                        },
+                )
+                ShelfCatalogSelectedFrame(spineShape)
+            }
         }
     }
 }
@@ -2363,7 +2520,6 @@ private val COVER_TIER_TOP_ROOM = 24.dp
 private val COVER_TIER_GAP_COMPACT = 8.dp
 private val COVER_TIER_GAP_WIDE = 10.dp
 private val COVER_TITLE_BAND_HEIGHT = 42.dp
-private const val COVER_ASPECT_RATIO = 0.75f
 private val TIER_LEDGE_DEPTH = 6.dp
 private val TIER_BOARD_EDGE = 3.dp
 private val TIER_UNDER_SHADOW = 10.dp
