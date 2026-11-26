@@ -1448,12 +1448,20 @@ internal fun BoxScope.ShelfSpineFaceContent(
     lastPlayed: Boolean = false,
     /** 已知书脊宽度时直接传入，避免额外子组合；藏书阁/翻开的书未传时由约束自动读取。 */
     spineWidth: Dp = Dp.Unspecified,
+    /**
+     * 排字用的参照书脊宽 / 高（未指定时取这本书自己的宽高）：同一书柜里高矮厚薄不同的书传同一组基准值，
+     * 字号与能排下的字数就都一样，书的外形差异不影响书名显示多长。
+     */
+    textWidth: Dp = Dp.Unspecified,
+    textHeight: Dp = Dp.Unspecified,
 ) {
     if (spineWidth != Dp.Unspecified) {
         ShelfSpineFaceContentBody(
             title = title,
             spineWidth = spineWidth,
             coverHeight = coverHeight,
+            textWidth = textWidth,
+            textHeight = textHeight,
             wash = wash,
             engineColor = engineColor,
             imageModifier = imageModifier,
@@ -1465,6 +1473,8 @@ internal fun BoxScope.ShelfSpineFaceContent(
                 title = title,
                 spineWidth = maxWidth,
                 coverHeight = coverHeight,
+                textWidth = textWidth,
+                textHeight = textHeight,
                 wash = wash,
                 engineColor = engineColor,
                 imageModifier = imageModifier,
@@ -1479,6 +1489,8 @@ private fun BoxScope.ShelfSpineFaceContentBody(
     title: String,
     spineWidth: Dp,
     coverHeight: Dp,
+    textWidth: Dp,
+    textHeight: Dp,
     wash: ImageBitmap?,
     engineColor: Color,
     imageModifier: Modifier,
@@ -1496,8 +1508,10 @@ private fun BoxScope.ShelfSpineFaceContentBody(
             androidx.compose.ui.graphics.lerp(ink, ShelfSpineTitleDark, SPINE_FOIL_DARKEN)
         }
     }
-    val typo = remember(spineWidth, coverHeight) {
-        shelfSpineTypography(spineWidth.value, coverHeight.value)
+    val typoWidth = if (textWidth != Dp.Unspecified) textWidth else spineWidth
+    val typoHeight = if (textHeight != Dp.Unspecified) minOf(textHeight, coverHeight) else coverHeight
+    val typo = remember(typoWidth, typoHeight) {
+        shelfSpineTypography(typoWidth.value, typoHeight.value)
     }
     val footHeight = coverHeight * SPINE_FOOT_RATIO
     val titleTop = typo.titleTopDp.dp

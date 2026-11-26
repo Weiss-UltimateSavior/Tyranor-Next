@@ -86,6 +86,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -169,6 +170,7 @@ import com.tyranor.next.ui.common.motion.scrollJelly
 import com.tyranor.next.ui.common.motion.scrollJellyHost
 import com.tyranor.next.ui.common.privacy.DismissOnAppLockEffect
 import java.util.Locale
+import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.first
 
 /**
@@ -414,6 +416,7 @@ private fun ShelfCatalogMorphBook(
         if (mode == ShelfCatalogLayoutMode.SPINES) {
             ShelfCatalogVerticalSpineFace(
                 title = title,
+                uri = game.uri,
                 spineWidth = width,
                 boxHeight = height,
                 isCurrent = flight.isCurrent,
@@ -421,6 +424,7 @@ private fun ShelfCatalogMorphBook(
                 engineColor = engineColor,
                 wash = wash,
                 spineShape = verticalSpineShape,
+                recessShadeAlpha = if (flight.isCurrent) 0f else shelfCatalogSpineRecess(game.uri).shadeAlpha,
                 modifier = modifier,
             )
         } else {
@@ -586,7 +590,17 @@ private fun ShelfCatalogControlDeck(
                 shown = shownCount,
                 total = totalCount,
                 color = SecondaryTextColor,
-                modifier = Modifier.weight(1f).padding(end = 4.dp),
+                // 极窄屏放不下整串「共 N 部」时整块不画，免得被挤成一字一行的竖排
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 4.dp)
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(constraints.copy(minWidth = 0, maxWidth = Constraints.Infinity))
+                        val fits = placeable.width <= constraints.maxWidth
+                        layout(constraints.maxWidth, if (fits) placeable.height else 0) {
+                            if (fits) placeable.placeRelative(0, 0)
+                        }
+                    },
             )
             GameFilterTabTrack(Modifier.width(DECK_LAYOUT_TABS_WIDTH)) {
                 SlidingTabRow(
@@ -790,12 +804,8 @@ private fun ShelfCatalogWall(
             val rows = remember(games, columns, groupByEngine) {
                 buildShelfCatalogVerticalRows(games, columns, groupByEngine)
             }
-            val spineGap = cells.gap
             val spineWidth = cells.cellWidth
-            val spineHeight = (spineWidth * 4.25f).coerceIn(156.dp, 192.dp)
-            val gapPx = with(wallDensity) { spineGap.roundToPx() }
-            val maxCellPx = with(wallDensity) { SPINE_MAX_CELL_WIDTH.roundToPx() }
-            val fullRowBooksWidthPx = (innerWidthPx - gapPx * (columns - 1)).coerceIn(0, columns * maxCellPx)
+            val spineHeight = shelfCatalogSpineHeight(maxWidth)
             val baseCellWidthPx = with(wallDensity) { spineWidth.toPx() }
             val maxBookHeightPx = with(wallDensity) { spineHeight.toPx() }
             val trailingLeanReservePx = shelfCatalogEndBookLeanShiftPx(
@@ -809,7 +819,7 @@ private fun ShelfCatalogWall(
             val initialRow = remember(rows, initialAnchorUri, visibleTiersHint) {
                 shelfCatalogInitialRow(rows, initialAnchorUri, visibleTiersHint)
             }
-            // 网格几何报给变形：看不见的书按它外推位置（含同层宽度归一化与每本高度）
+            // 网格几何报给变形：看不见的书按它外推位置（含自然厚度、随机缝宽、内收微抬与每本高度）
             SideEffect {
                 motion.reportGrid(
                     ShelfCatalogLayoutMode.SPINES,
@@ -818,11 +828,11 @@ private fun ShelfCatalogWall(
                         pitchX = cells.pitchPx.toFloat(),
                         pitchY = with(wallDensity) { tierEstimate.toPx() },
                         grouped = groupByEngine,
-                        spineGapPx = gapPx.toFloat(),
+                        density = wallDensity.density,
                         baseCellWidthPx = baseCellWidthPx,
-                        fullRowBooksWidthPx = fullRowBooksWidthPx,
+                        innerWidthPx = innerWidthPx,
                         maxBookHeightPx = maxBookHeightPx,
-                        focusLiftPx = with(wallDensity) { SPINE_FOCUS_LIFT.toPx() },
+                        focusLiftPx = with(wallDensity) { SPINE_FOCUS_LIFT.roundToPx().toFloat() },
                         trailingLeanReservePx = trailingLeanReservePx,
                     ),
                 )
@@ -830,13 +840,18 @@ private fun ShelfCatalogWall(
             // 从另一种陈列切过来：让锚点书落在旧陈列里的同一高度（能落的话），不整排上蹿下跳
             val aligned = remember(rows, anchorUri, anchorY, spineHeight, currentFocusUri, wallDensity) {
                 val bookHeight = spineHeight * (anchorUri?.let(::shelfCatalogSpineHeightFactor) ?: 1f)
+                val verticalOffset = when {
+                    anchorUri == null -> 0.dp
+                    anchorUri == currentFocusUri -> SPINE_FOCUS_LIFT
+                    else -> (-shelfCatalogSpineRecess(anchorUri).liftDp).dp
+                }
                 with(wallDensity) {
                     shelfCatalogAlignedScroll(
                         rows = rows,
                         anchorUri = anchorUri,
                         anchorY = anchorY,
                         cellCenterPx = (VERTICAL_TIER_TOP_ROOM + (spineHeight - bookHeight)).roundToPx() +
-                            bookHeight.roundToPx() / 2f + (if (anchorUri == currentFocusUri) SPINE_FOCUS_LIFT else 0.dp).roundToPx(),
+                            bookHeight.roundToPx() / 2f + verticalOffset.roundToPx(),
                         topPaddingPx = WALL_TOP_FADE_START.roundToPx(),
                     )
                 }
@@ -886,9 +901,8 @@ private fun ShelfCatalogWall(
                             cabinetInset = cabinetOuterInset,
                             stileWidth = stileWidth,
                             interiorInset = interiorInset,
-                            spineGap = spineGap,
                             baseCellWidthPx = baseCellWidthPx,
-                            fullRowBooksWidthPx = fullRowBooksWidthPx,
+                            innerWidthPx = innerWidthPx,
                             trailingLeanReservePx = trailingLeanReservePx,
                             spineHeight = spineHeight,
                             currentFocusUri = currentFocusUri,
@@ -1366,7 +1380,7 @@ private fun ShelfCatalogRangePlaque(
 }
 
 /**
- * 藏书阁一层竖排立脊书柜格（与封面陈列统一铭牌布局与精良搁板深度，各本书脊按厚度归一化铺满层宽）。
+ * 藏书阁一层竖排立脊书柜格（各本书脊按自然厚薄靠左依次排布、层末空位自然留白，相邻缝宽随 uri 轻微变化）。
  */
 @Composable
 private fun ShelfCatalogVerticalTierRow(
@@ -1375,9 +1389,8 @@ private fun ShelfCatalogVerticalTierRow(
     cabinetInset: Dp,
     stileWidth: Dp,
     interiorInset: Dp,
-    spineGap: Dp,
     baseCellWidthPx: Float,
-    fullRowBooksWidthPx: Int,
+    innerWidthPx: Int,
     trailingLeanReservePx: Float,
     spineHeight: Dp,
     currentFocusUri: String?,
@@ -1394,36 +1407,40 @@ private fun ShelfCatalogVerticalTierRow(
     val density = LocalDensity.current
     val topRoom = VERTICAL_TIER_TOP_ROOM
     val shelfStackHeight = TIER_LEDGE_DEPTH + TIER_BOARD_EDGE + TIER_UNDER_SHADOW
+    val tierGapsPx = remember(tier.games, density.density) {
+        allocateShelfCatalogSpineGapsPx(tier.games.map { it.uri }, density.density)
+    }
     val tierWidthsPx = remember(
         tier.games,
         columns,
         baseCellWidthPx,
-        fullRowBooksWidthPx,
+        innerWidthPx,
+        tierGapsPx,
         trailingLeanReservePx,
     ) {
         allocateShelfCatalogSpineWidths(
             uris = tier.games.map { it.uri },
             maxColumns = columns,
             baseCellWidthPx = baseCellWidthPx,
-            fullRowBooksWidthPx = fullRowBooksWidthPx,
+            innerWidthPx = innerWidthPx,
+            gapsSumPx = tierGapsPx.sum(),
             trailingLeanReservePx = trailingLeanReservePx,
         )
     }
     val focusIndex = remember(tier.games, currentFocusUri) {
         if (currentFocusUri == null) -1 else tier.games.indexOfFirst { it.uri == currentFocusUri }
     }
-    val rowBooksSpan = remember(tierWidthsPx, spineGap, density) {
-        val sumPx = tierWidthsPx.sum()
-        val gapSum = if (tierWidthsPx.size > 1) spineGap * (tierWidthsPx.size - 1) else 0.dp
-        with(density) { sumPx.toDp() } + gapSum
+    val rowBooksSpan = remember(tierWidthsPx, tierGapsPx, density) {
+        val sumPx = tierWidthsPx.sum() + tierGapsPx.sum()
+        with(density) { sumPx.toDp() }
     }
-    val focusLayout = remember(tierWidthsPx, focusIndex, spineGap, density) {
+    val focusLayout = remember(tierWidthsPx, tierGapsPx, focusIndex, density) {
         if (focusIndex !in tierWidthsPx.indices) {
             null
         } else {
             var offsetPx = 0
-            for (i in 0 until focusIndex) offsetPx += tierWidthsPx[i]
-            val centerDp = with(density) { (offsetPx + tierWidthsPx[focusIndex] * 0.5f).toDp() } + spineGap * focusIndex
+            for (i in 0 until focusIndex) offsetPx += tierWidthsPx[i] + tierGapsPx[i]
+            val centerDp = with(density) { (offsetPx + tierWidthsPx[focusIndex] * 0.5f).toDp() }
             val widthDp = with(density) { tierWidthsPx[focusIndex].toDp() }
             centerDp to widthDp
         }
@@ -1466,7 +1483,7 @@ private fun ShelfCatalogVerticalTierRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = stileWidth + interiorInset, end = stileWidth + interiorInset),
-            horizontalArrangement = Arrangement.spacedBy(spineGap),
+            horizontalArrangement = Arrangement.Start,
             verticalAlignment = Alignment.Bottom,
         ) {
             tier.games.forEachIndexed { col, game ->
@@ -1499,6 +1516,9 @@ private fun ShelfCatalogVerticalTierRow(
                         batchChangedAt = batchChangedAt,
                         onClick = { onPickGame(game) },
                     )
+                }
+                if (col < tier.games.lastIndex) {
+                    Spacer(Modifier.width(with(density) { tierGapsPx[col].toDp() }))
                 }
             }
         }
@@ -1544,6 +1564,12 @@ private fun ShelfCatalogVerticalSpine(
     val wash = rememberShelfSpineWash(cover)
     val engineColor = game.engine.coverColor()
     val heightFactor = remember(game.uri) { shelfCatalogSpineHeightFactor(game.uri) }
+    val recess = if (isCurrent) {
+        ShelfCatalogSpineRecess.None
+    } else {
+        remember(game.uri) { shelfCatalogSpineRecess(game.uri) }
+    }
+    val verticalOffsetDp = if (isCurrent) SPINE_FOCUS_LIFT else (-recess.liftDp).dp
     val boxHeight = maxHeight * heightFactor
     val leanShiftX = remember(leanDegrees, boxHeight, spineWidth, density) {
         with(density) {
@@ -1565,6 +1591,7 @@ private fun ShelfCatalogVerticalSpine(
         Spacer(Modifier.height(topRoom + (maxHeight - boxHeight)))
         ShelfCatalogVerticalSpineFace(
             title = title,
+            uri = game.uri,
             spineWidth = spineWidth,
             boxHeight = boxHeight,
             isCurrent = isCurrent,
@@ -1572,8 +1599,9 @@ private fun ShelfCatalogVerticalSpine(
             engineColor = engineColor,
             wash = wash,
             spineShape = spineShape,
+            recessShadeAlpha = recess.shadeAlpha,
             modifier = Modifier
-                .then(if (isCurrent) Modifier.offset(y = SPINE_FOCUS_LIFT) else Modifier)
+                .then(if (verticalOffsetDp != 0.dp) Modifier.offset(y = verticalOffsetDp) else Modifier)
                 .then(if (leanShiftX > 0.dp) Modifier.offset(x = leanShiftX) else Modifier)
                 .shelfCatalogSlotPlaced(motion, game.uri, rowGridIndex, colIndex, ShelfCatalogLayoutMode.SPINES, leanDegrees)
                 .shelfCatalogBookLean(leanDegrees)
@@ -1601,6 +1629,8 @@ private fun ShelfCatalogVerticalSpine(
 @Composable
 private fun ShelfCatalogVerticalSpineFace(
     title: String,
+    /** 用来还原这本书的高矮厚薄系数：排字按「基准厚度 + 最矮高度」算，书的外形差异不影响书名显示多长。 */
+    uri: String,
     spineWidth: Dp,
     boxHeight: Dp,
     isCurrent: Boolean,
@@ -1608,6 +1638,7 @@ private fun ShelfCatalogVerticalSpineFace(
     engineColor: Color,
     wash: ImageBitmap?,
     spineShape: androidx.compose.ui.graphics.Shape,
+    recessShadeAlpha: Float = 0f,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -1623,7 +1654,16 @@ private fun ShelfCatalogVerticalSpineFace(
             engineColor = engineColor,
             lastPlayed = lastPlayed,
             spineWidth = spineWidth,
+            textWidth = shelfCatalogSpineTextWidth(uri, spineWidth),
+            textHeight = shelfCatalogSpineTextHeight(uri, boxHeight),
         )
+        if (!isCurrent && recessShadeAlpha > 0f) {
+            Spacer(
+                Modifier
+                    .fillMaxSize()
+                    .background(ShelfFaceShade.copy(alpha = recessShadeAlpha)),
+            )
+        }
         if (isCurrent) {
             val gilt = ShelfSelectedGilt
             Spacer(
@@ -1642,6 +1682,14 @@ private fun ShelfCatalogVerticalSpineFace(
         }
     }
 }
+
+/** 书脊排字用的参照宽：去掉这本书的厚薄系数，同一书柜里的书都按基准厚度排字。 */
+internal fun shelfCatalogSpineTextWidth(uri: String, spineWidth: Dp): Dp =
+    spineWidth / shelfCatalogSpineThicknessFactor(uri)
+
+/** 书脊排字用的参照高：去掉这本书的高矮系数后按最矮的书留空间，高书只是上下多出一截，书名不会因此多排或少排字。 */
+internal fun shelfCatalogSpineTextHeight(uri: String, boxHeight: Dp): Dp =
+    boxHeight / shelfCatalogSpineHeightFactor(uri) * SHELF_CATALOG_MIN_SPINE_HEIGHT_FACTOR
 
 /** 藏书阁一层封面陈列书柜格：沿用立柱、凹槽暗影与厚搁板，每盒呈精装切角封面配板下书名。 */
 @Composable
@@ -2191,6 +2239,7 @@ private fun ShelfCatalogTroupeBook(
             if (flight.catalogMode == ShelfCatalogLayoutMode.SPINES) {
                 ShelfCatalogVerticalSpineFace(
                     title = spineTitle,
+                    uri = game.uri,
                     spineWidth = catW,
                     boxHeight = catH,
                     isCurrent = flight.isCurrentInCatalog,
@@ -2198,6 +2247,7 @@ private fun ShelfCatalogTroupeBook(
                     engineColor = engineColor,
                     wash = wash,
                     spineShape = verticalSpineShape,
+                    recessShadeAlpha = if (flight.isCurrentInCatalog) 0f else shelfCatalogSpineRecess(game.uri).shadeAlpha,
                     modifier = Modifier.shelfCatalogTroupeCatalogVertical(
                         poseProvider = poseProvider,
                         catWidthPx = catRectW,
@@ -2305,9 +2355,6 @@ private val DECK_INNER_V_PAD = 8.dp
 /** `AppSearchField`（Miuix SearchBar）自带的左右外边距。 */
 private val SEARCH_FIELD_SIDE_INSET = 12.dp
 private val DECK_LAYOUT_TABS_WIDTH = 138.dp
-private val CABINET_STILE_WIDTH = 3.dp
-private val CABINET_INTERIOR_INSET = 10.dp
-private val VERTICAL_SPINE_GAP = 2.5.dp
 private val VERTICAL_TIER_TOP_ROOM = 10.dp
 private val VERTICAL_TIER_PLAQUE_EXTRA = 12.dp
 private val SPINE_FOCUS_LIFT = (-3).dp
@@ -2321,8 +2368,6 @@ private val TIER_LEDGE_DEPTH = 6.dp
 private val TIER_BOARD_EDGE = 3.dp
 private val TIER_UNDER_SHADOW = 10.dp
 
-private val SPINE_MAX_CELL_WIDTH = 48.dp
-
 internal data class ShelfCatalogGridCells(
     val columns: Int,
     val cabinetInset: Dp,
@@ -2333,17 +2378,28 @@ internal data class ShelfCatalogGridCells(
 
 internal fun Density.shelfCatalogGridCells(width: Dp, mode: ShelfCatalogLayoutMode): ShelfCatalogGridCells {
     val compact = width < 460.dp
-    val cabinetInset = if (compact) 10.dp else 14.dp
+    val cabinetInset = shelfCatalogCabinetInset(width)
     val cabinetWidth = (width.roundToPx() - 2 * cabinetInset.roundToPx()).coerceAtLeast(0)
     val innerWidth = (cabinetWidth - 2 * (CABINET_STILE_WIDTH + CABINET_INTERIOR_INSET).roundToPx())
         .coerceAtLeast(0)
-    val spines = mode == ShelfCatalogLayoutMode.SPINES
-    val gap = if (spines) VERTICAL_SPINE_GAP else if (compact) COVER_TIER_GAP_COMPACT else COVER_TIER_GAP_WIDE
+    if (mode == ShelfCatalogLayoutMode.SPINES) {
+        val spineHeight = shelfCatalogSpineHeight(width)
+        val baseWidth = shelfCatalogSpineBaseWidth(spineHeight)
+        val gap = VERTICAL_SPINE_NOMINAL_GAP
+        val columns = shelfCatalogVerticalColumns(width)
+        return ShelfCatalogGridCells(
+            columns = columns,
+            cabinetInset = cabinetInset,
+            cellWidth = baseWidth,
+            gap = gap,
+            pitchPx = (baseWidth.toPx() + gap.toPx()).roundToInt(),
+        )
+    }
+    val gap = if (compact) COVER_TIER_GAP_COMPACT else COVER_TIER_GAP_WIDE
     val gapPx = gap.roundToPx()
-    val minWidth = if (spines) 30.dp else 74.dp
-    val maxWidth = if (spines) SPINE_MAX_CELL_WIDTH else 146.dp
-    val preferredColumns = if (spines) shelfCatalogVerticalColumns(cabinetWidth.toDp())
-        else shelfCatalogCoverColumns(cabinetWidth.toDp())
+    val minWidth = 74.dp
+    val maxWidth = 146.dp
+    val preferredColumns = shelfCatalogCoverColumns(cabinetWidth.toDp())
     val columns = ((innerWidth + gapPx) / (minWidth.roundToPx().coerceAtLeast(1) + gapPx))
         .coerceIn(1, preferredColumns)
     val cellWidth = ((innerWidth - gapPx * (columns - 1)) / columns).toDp().coerceAtMost(maxWidth)
