@@ -174,6 +174,28 @@ class RuntimeModuleCapabilitiesTest {
     }
 
     @Test
+    fun sliderOverridesRejectNumbersThatLosePrecisionWhenConvertedToDouble() {
+        val spec = requireNotNull(RuntimeModuleManifestParser.parse(
+            """{"settings":{"version":1,"items":[{"key":"scale","type":"slider","title":"Scale","default":9007199254740992,"min":9007199254740992,"max":9007199254740996,"step":2}]}}""",
+        )?.settings)
+
+        val invalid = spec.resolve(JSONObject().put("scale", 9007199254740993L))
+        assertEquals(setOf("scale"), invalid.invalidOverrideKeys)
+        assertEquals(9007199254740992.0, (invalid.values.getValue("scale") as Number).toDouble(), 0.0)
+        assertEquals(
+            9007199254740992.0,
+            JSONObject(requireNotNull(spec.encode(invalid))).getJSONObject("values").getDouble("scale"),
+            0.0,
+        )
+
+        listOf(9007199254740992L, 9007199254740994L, 9007199254740996L).forEach { tick ->
+            val valid = spec.resolve(JSONObject().put("scale", tick))
+            assertTrue(valid.invalidOverrideKeys.isEmpty())
+            assertEquals(tick, valid.values.getValue("scale"))
+        }
+    }
+
+    @Test
     fun saveDirectoryRejectsTraversalAndAcceptsNestedRelativeDirectory() {
         listOf("", ".", "..", "a/../b", "/save", "C:/save", "content://provider", "a\\b", "a//b", "a/")
             .forEach { path -> assertNull(RuntimeModuleManifestParser.parse("""{"saves":{"version":1,"directory":"$path"}}""")?.saves) }

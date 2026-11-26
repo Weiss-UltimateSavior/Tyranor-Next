@@ -452,7 +452,7 @@ Intent("com.tyranor.runtime.action.LAUNCH").apply {
 声明约束：
 
 - `version` 必须为整数 1；最多 32 项，key 为 `[A-Za-z][A-Za-z0-9_]{0,63}`，同名采用第一个合法项。
-- 顶层 `items` 可混合设置项与 `type: "card"` 容器；卡片使用 `key`、`title`、可选 `description` 和子 `items`。卡片不嵌套，最多 16 张；设置项总数（含卡片内子项）最多 32。旧版平铺 `items` 仍可用。
+- 顶层 `items` 可混合设置项与 `type: "card"` 容器；卡片使用 `key`、`title`、可选 `description` 和子 `items`。卡片不嵌套，最多 16 张；设置项总数（含卡片内子项）最多 32。旧版平铺 `items` 仍可用。旧版 TYN 不认识 `card`，会跳过整个卡片及其中所有子项；也会跳过新增的 `slider`、`file` 和 `folder` 类型，不显示或下发这些值。模块若需兼容旧版 TYN，应将已有字段（例如 `vsync`）保留为顶层设置项，不要移入卡片。
 - 每个设置项必需 `title`（1–128）和合法的 `default`，可选 `description`（最多 512）。TYN 自动统一设置项与卡片标题（15sp）、说明与值（14sp）的排版，模块声明不包含字体或字号字段。
 - 布尔必须是 JSON 布尔，`default: false` 表示开关默认关闭；枚举最多 32 个选项，value 长度 1–64 且唯一，default 须在选项中。
 - 整数须声明 Int 范围内的 min/max/default；不接受字符串或小数作整数。

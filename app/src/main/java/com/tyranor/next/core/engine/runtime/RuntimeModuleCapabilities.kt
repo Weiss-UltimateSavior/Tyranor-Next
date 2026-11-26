@@ -379,7 +379,16 @@ internal object RuntimeModuleSettingsParser {
         return floatSpan.isFinite() && floatSpan > 0f
     }
 
-    private fun strictDouble(value: Any?): Double? = (value as? Number)?.toDouble()?.takeIf { it.isFinite() }
+    private fun strictDouble(value: Any?): Double? {
+        val number = value as? Number ?: return null
+        val parsed = number.toDouble().takeIf { it.isFinite() } ?: return null
+        val original = when (number) {
+            is Double -> BigDecimal.valueOf(number)
+            is Float -> BigDecimal.valueOf(number.toDouble())
+            else -> number.toString().toBigDecimalOrNull() ?: return null
+        }
+        return parsed.takeIf { original.compareTo(BigDecimal.valueOf(it)) == 0 }
+    }
 
     private fun validPath(value: String, maxLength: Int): Boolean {
         if (value.isEmpty()) return true

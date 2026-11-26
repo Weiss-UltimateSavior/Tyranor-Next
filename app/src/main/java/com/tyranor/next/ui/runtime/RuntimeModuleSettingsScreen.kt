@@ -135,7 +135,8 @@ private fun RuntimeModuleSettingsView(
     val settings = module?.settings
     val draft = remember(draftJson) { parseObject(draftJson) }
     val effectiveSettings = remember(settings, draftJson) { settings?.resolve(draft) }
-    val dirty = (baselineJson != null && draftJson != baselineJson) || saveOutcomeUnknown
+    fun isDirty() = (baselineJson != null && draftJson != baselineJson) || saveOutcomeUnknown
+    val dirty = isDirty()
     val descriptionConflict = settings != null && draftFingerprint != null &&
         draftFingerprint != settings.fingerprint && dirty
     val screenState = when {
@@ -177,7 +178,7 @@ private fun RuntimeModuleSettingsView(
                 // SavedState draft wins over disk after rotation/process recreation.
                 baselineJson = baselineJson ?: storedJson
                 baselineFingerprint = baselineFingerprint ?: spec.fingerprint
-            } else if (!dirty) {
+            } else if (!isDirty()) {
                 baselineJson = storedJson
                 draftJson = storedJson
                 baselineFingerprint = spec.fingerprint
