@@ -1514,8 +1514,9 @@ private fun BoxScope.ShelfSpineFaceContentBody(
             androidx.compose.ui.graphics.lerp(ink, ShelfSpineTitleDark, SPINE_FOIL_DARKEN)
         }
     }
-    val typo = remember(spineWidth, coverHeight) {
-        shelfSpineTypography(spineWidth.value, coverHeight.value)
+    val typo = remember(spineWidth, coverHeight, title) {
+        val glyphs = title.trim().replace(Regex("\\s+"), " ").let { it.codePointCount(0, it.length) }
+        shelfSpineTypography(spineWidth.value, coverHeight.value, glyphs)
     }
     val footHeight = coverHeight * SPINE_FOOT_RATIO
     val titleTop = typo.titleTopDp.dp
@@ -1675,7 +1676,12 @@ internal data class ShelfSpineTypography(
     val maxChars: Int,
 )
 
-internal fun shelfSpineTypography(spineWidthDp: Float, coverHeightDp: Float): ShelfSpineTypography {
+internal fun shelfSpineTypography(
+    spineWidthDp: Float,
+    coverHeightDp: Float,
+    /** 竖排书名要排的字数（连续空白算一格，与 stackSpineTitle 一致）；> 0 时字号先保证整条书名放得下，放不下才在最小字号下截断。 */
+    titleGlyphs: Int = 0,
+): ShelfSpineTypography {
     val safeW = spineWidthDp.coerceAtLeast(12f)
     val safeH = coverHeightDp.coerceAtLeast(48f)
     val capDp = (safeH * 0.014f).coerceIn(2.5f, 4.5f)
@@ -1683,7 +1689,13 @@ internal fun shelfSpineTypography(spineWidthDp: Float, coverHeightDp: Float): Sh
     val footDp = safeH * SPINE_FOOT_RATIO
     val usableLen = (safeH - titleTopDp - footDp - 6f).coerceAtLeast(18f)
     val widthBound = safeW * 0.62f
-    val heightBound = usableLen / 5.2f
+    // 书脊变宽时字跟着放大，但不能大到把短书名也截断（藏书阁里宽书脊上「梦梦的少女」曾被截成「梦梦的…」）
+    val heightBound = if (titleGlyphs > 0) {
+        // 留 2% 余量，免得取整时恰好少排一个字
+        usableLen * 0.98f / (titleGlyphs.coerceAtMost(SPINE_MAX_CHARS) * SPINE_LINE_HEIGHT_RATIO)
+    } else {
+        usableLen / 5.2f
+    }
     val fontSizeDp = minOf(widthBound, heightBound).coerceIn(SPINE_MIN_FONT_DP, SPINE_MAX_FONT_DP)
     val lineHeightDp = fontSizeDp * SPINE_LINE_HEIGHT_RATIO
     val maxChars = (usableLen / lineHeightDp).toInt().coerceIn(1, SPINE_MAX_CHARS)

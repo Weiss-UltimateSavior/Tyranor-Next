@@ -304,11 +304,131 @@ internal fun shelfCatalogCascadeProgress(master: Float, gridDistance: Float): Fl
     return t * t * (3f - 2f * t)
 }
 
-/** 竖排每本书高矮起伏比例。 */
+/** 竖排每本书高矮起伏比例：与书架主视图 [shelfBookTrait] 同源派生，高矮倾向一致但起伏更鲜明。 */
 internal fun shelfCatalogSpineHeightFactor(uri: String): Float {
     val trait = shelfBookTrait(uri)
-    val t = ((1f - trait.sizeScale) / 0.065f).coerceIn(0f, 1f)
-    return 1f - t * 0.11f
+    val t = ((1f - trait.sizeScale) / MAIN_SHELF_SIZE_VARIANCE).coerceIn(0f, 1f)
+    return 1f - t * SPINE_HEIGHT_VARIANCE
+}
+
+/** 竖排每本书书脊厚薄系数（按 uri 确定性派生，与高度独立混洗）。 */
+internal fun shelfCatalogSpineThicknessFactor(uri: String): Float {
+    var h = FNV1A_OFFSET_BASIS
+    for (i in 0 until uri.length) {
+        h = (h xor uri[i].code) * FNV1A_PRIME
+    }
+    h = h xor (h ushr 16)
+    h *= MURMUR_C1
+    h = h xor (h ushr 13)
+    h *= MURMUR_C2
+    h = h xor (h ushr 16)
+    val u = ((h ushr 16) and 0xffff) / 65535f
+    return SPINE_MIN_THICKNESS_FACTOR + u * (SPINE_MAX_THICKNESS_FACTOR - SPINE_MIN_THICKNESS_FACTOR)
+}
+
+/** 封面陈列轻微的高矮差异（与书架主视图同一高矮倾向，幅度克制以保持网格整齐）。 */
+internal fun shelfCatalogCoverHeightFactor(uri: String): Float {
+    val trait = shelfBookTrait(uri)
+    val t = ((1f - trait.sizeScale) / MAIN_SHELF_SIZE_VARIANCE).coerceIn(0f, 1f)
+    return 1f - t * COVER_HEIGHT_VARIANCE
+}
+
+/**
+ * 将一组书的厚度系数按带上下界的水位线算法归一化，使总和精确等于书本数（均值 1.0）
+ * 且任意单本系数不低于 [minRatio]、不高于 [maxRatio]。
+ */
+internal fun normalizeShelfCatalogSpineThicknessFactors(
+    uris: List<String>,
+    minRatio: Float = SPINE_NORMALIZED_MIN_RATIO,
+    maxRatio: Float = SPINE_NORMALIZED_MAX_RATIO,
+): List<Float> {
+    val n = uris.size
+    if (n == 0) return emptyList()
+    if (n == 1) return listOf(1f)
+    val raw = FloatArray(n) { shelfCatalogSpineThicknessFactor(uris[it]).coerceAtLeast(0.01f) }
+    val result = FloatArray(n)
+    val fixed = BooleanArray(n)
+    var remaining = n.toFloat()
+    repeat(n) {
+        var unfixedSum = 0f
+        for (i in 0 until n) {
+            if (!fixed[i]) unfixedSum += raw[i]
+        }
+        if (unfixedSum <= 0f) return@repeat
+        val scale = remaining / unfixedSum
+        var anyClamped = false
+        for (i in 0 until n) {
+            if (fixed[i]) continue
+            val scaled = raw[i] * scale
+            if (scaled < minRatio || scaled > maxRatio) {
+                val clamped = scaled.coerceIn(minRatio, maxRatio)
+                result[i] = clamped
+                fixed[i] = true
+                remaining -= clamped
+                anyClamped = true
+            } else {
+                result[i] = scaled
+            }
+        }
+        if (!anyClamped) return result.toList()
+    }
+    return result.toList()
+}
+
+/**
+ * 为藏书阁「书脊立排」单层分配各本的像素宽度：
+ * - 满层（`uris.size >= maxColumns`）：按归一化厚度分配，使各本宽度之和精确等于 [fullRowBooksWidthPx]；
+ * - 末尾未满层（`uris.size < maxColumns`）：保留各自自然厚度（`baseCellWidthPx * factor`），仅当总宽叠加
+ *   末本斜倚补偿 [trailingLeanReservePx] 超出 [fullRowBooksWidthPx] 时才整体收束，防止越出柜柱。
+ */
+internal fun allocateShelfCatalogSpineWidths(
+    uris: List<String>,
+    maxColumns: Int,
+    baseCellWidthPx: Float,
+    fullRowBooksWidthPx: Int,
+    trailingLeanReservePx: Float = 0f,
+): List<Int> {
+    val n = uris.size
+    if (n == 0) return emptyList()
+    if (maxColumns <= 0 || fullRowBooksWidthPx <= 0 || baseCellWidthPx <= 0f) {
+        return List(n) { 0 }
+    }
+    fun roundWidthsExact(floatWidths: FloatArray, targetSum: Int): List<Int> {
+        if (targetSum <= 0) return List(n) { 0 }
+        val minPerItem = if (targetSum >= n) 1 else 0
+        val out = IntArray(n)
+        var cumFloat = 0f
+        var cumInt = 0
+        for (i in 0 until n) {
+            cumFloat += floatWidths[i]
+            val desiredCum = if (i == n - 1) targetSum else cumFloat.roundToInt().coerceAtMost(targetSum - minPerItem * (n - 1 - i))
+            val w = (desiredCum - cumInt).coerceAtLeast(minPerItem)
+            out[i] = w
+            cumInt += w
+        }
+        return out.toList()
+    }
+    if (n >= maxColumns) {
+        val factors = normalizeShelfCatalogSpineThicknessFactors(uris)
+        val unitPx = fullRowBooksWidthPx.toFloat() / n
+        val floatWidths = FloatArray(n) { factors[it] * unitPx }
+        return roundWidthsExact(floatWidths, fullRowBooksWidthPx)
+    }
+    val rawWidths = FloatArray(n) { baseCellWidthPx * shelfCatalogSpineThicknessFactor(uris[it]) }
+    val rawSum = rawWidths.sum()
+    val reserve = if (n >= 2) trailingLeanReservePx.coerceAtLeast(0f) else 0f
+    val budget = (fullRowBooksWidthPx.toFloat() - reserve).coerceAtLeast(n.toFloat())
+    if (rawSum <= budget) {
+        val targetSum = rawSum.roundToInt().coerceIn(n, budget.toInt().coerceAtLeast(n))
+        val scale = if (rawSum > 0f) targetSum / rawSum else 1f
+        val scaled = FloatArray(n) { rawWidths[it] * scale }
+        return roundWidthsExact(scaled, targetSum)
+    }
+    val factors = normalizeShelfCatalogSpineThicknessFactors(uris)
+    val targetSum = budget.toInt().coerceAtLeast(n)
+    val unitPx = targetSum.toFloat() / n
+    val floatWidths = FloatArray(n) { factors[it] * unitPx }
+    return roundWidthsExact(floatWidths, targetSum)
 }
 
 /** 竖排未满层末尾那本书自然向左靠在前一本肩上的斜倚角度（度），右下角微抬不刺穿搁板。 */
@@ -320,6 +440,17 @@ internal fun shelfCatalogEndBookLeanDegrees(
 ): Float {
     if (isCurrent || tierCount <= 1 || tierCount >= maxColumns || colIndex != tierCount - 1) return 0f
     return -6.5f
+}
+
+/** 竖排末本斜倚时底部中心向右微移的像素量，使书脊顶部刚好轻靠在前一本肩上而底角不插进邻书。 */
+internal fun shelfCatalogEndBookLeanShiftPx(
+    leanDegrees: Float,
+    bookHeightPx: Float,
+    bookWidthPx: Float,
+): Float {
+    if (leanDegrees >= -0.05f || bookHeightPx <= 0f || bookWidthPx <= 0f) return 0f
+    val rad = Math.toRadians(abs(leanDegrees).toDouble())
+    return (bookHeightPx * sin(rad).toFloat() * 0.72f).coerceAtMost(bookWidthPx * 0.42f)
 }
 
 /**
@@ -1292,7 +1423,8 @@ internal class ShelfCatalogMotion(
     }
 
     /**
-     * 看不见的书在 [mode] 陈列里的位置：按网格规则（第 i 本在第 i / 列数 行、第 i % 列数 列），从最近一行里测得的一本平移推出来。
+     * 看不见的书在 [mode] 陈列里的位置：按网格规则（第 i 本在第 i / 列数 行、第 i % 列数 列），从最近一行里测得的一本推导出来
+     * （书脊立排会还原该层的归一化宽度分配与每本高度、末本斜倚，确保与实际书格位置零偏差）。
      * 按引擎分架（有章节横梁，行高不规则）或没有参照时给不出来，返回 null。
      */
     private fun extrapolateRect(
@@ -1306,22 +1438,90 @@ internal class ShelfCatalogMotion(
         val row = index / grid.columns
         val col = index % grid.columns
         var ref: CatalogSlotSnapshot? = null
+        var refUri = ""
         var refIndex = 0
         var best = Int.MAX_VALUE
         for ((uri, slot) in measured) {
             val i = indexMap[uri] ?: continue
-            val distance = kotlin.math.abs(i / grid.columns - row)
+            val distance = abs(i / grid.columns - row)
             if (distance < best) {
                 best = distance
                 ref = slot
+                refUri = uri
                 refIndex = i
             }
         }
         val anchor = ref ?: return null
-        return anchor.rect.translate(
-            (col - refIndex % grid.columns) * grid.pitchX,
-            (row - refIndex / grid.columns) * grid.pitchY,
+        val games = filteredGamesSnapshot
+        if (grid.maxBookHeightPx <= 0f || index >= games.size || refIndex >= games.size) {
+            return anchor.rect.translate(
+                (col - refIndex % grid.columns) * grid.pitchX,
+                (row - refIndex / grid.columns) * grid.pitchY,
+            )
+        }
+        val refRow = refIndex / grid.columns
+        val refCol = refIndex % grid.columns
+        val refBottomFloor = anchor.rect.bottom - (if (refUri == currentFocusUri) grid.focusLiftPx else 0f)
+        val targetUri = games[index].uri
+        val targetBottom = refBottomFloor + (row - refRow) * grid.pitchY +
+            (if (targetUri == currentFocusUri) grid.focusLiftPx else 0f)
+        if (mode == ShelfCatalogLayoutMode.COVERS) {
+            val targetH = (grid.maxBookHeightPx * shelfCatalogCoverHeightFactor(targetUri)).coerceAtLeast(1f)
+            val left = anchor.rect.left + (col - refCol) * grid.pitchX
+            return Rect(left, targetBottom - targetH, left + anchor.rect.width, targetBottom)
+        }
+        if (grid.fullRowBooksWidthPx <= 0 || grid.baseCellWidthPx <= 0f) {
+            return anchor.rect.translate(
+                (col - refCol) * grid.pitchX,
+                (row - refRow) * grid.pitchY,
+            )
+        }
+        val refStart = refRow * grid.columns
+        val refEnd = (refStart + grid.columns).coerceAtMost(games.size)
+        val refUris = games.subList(refStart, refEnd).map { it.uri }
+        val refWidths = allocateShelfCatalogSpineWidths(
+            uris = refUris,
+            maxColumns = grid.columns,
+            baseCellWidthPx = grid.baseCellWidthPx,
+            fullRowBooksWidthPx = grid.fullRowBooksWidthPx,
+            trailingLeanReservePx = grid.trailingLeanReservePx,
         )
+        var refOffsetX = 0f
+        for (c in 0 until refCol) {
+            refOffsetX += refWidths[c] + grid.spineGapPx
+        }
+        val refLeanShift = shelfCatalogEndBookLeanShiftPx(
+            leanDegrees = anchor.leanDegrees,
+            bookHeightPx = anchor.rect.height,
+            bookWidthPx = anchor.rect.width,
+        )
+        val booksStartX = anchor.rect.left - refLeanShift - refOffsetX
+
+        val targetStart = row * grid.columns
+        val targetEnd = (targetStart + grid.columns).coerceAtMost(games.size)
+        val targetUris = games.subList(targetStart, targetEnd).map { it.uri }
+        val targetWidths = allocateShelfCatalogSpineWidths(
+            uris = targetUris,
+            maxColumns = grid.columns,
+            baseCellWidthPx = grid.baseCellWidthPx,
+            fullRowBooksWidthPx = grid.fullRowBooksWidthPx,
+            trailingLeanReservePx = grid.trailingLeanReservePx,
+        )
+        var targetOffsetX = 0f
+        for (c in 0 until col) {
+            targetOffsetX += targetWidths[c] + grid.spineGapPx
+        }
+        val targetW = targetWidths[col].toFloat().coerceAtLeast(1f)
+        val targetH = (grid.maxBookHeightPx * shelfCatalogSpineHeightFactor(targetUri)).coerceAtLeast(1f)
+        val targetLean = shelfCatalogEndBookLeanDegrees(
+            colIndex = col,
+            tierCount = targetUris.size,
+            maxColumns = grid.columns,
+            isCurrent = targetUri == currentFocusUri,
+        )
+        val targetLeanShift = shelfCatalogEndBookLeanShiftPx(targetLean, targetH, targetW)
+        val targetLeft = booksStartX + targetOffsetX + targetLeanShift
+        return Rect(targetLeft, targetBottom - targetH, targetLeft + targetW, targetBottom)
     }
 
     /**
@@ -2575,6 +2775,19 @@ private val MORPH_SPRING = MotionSprings.response<Float>(0.72f, 0.92f, 0.0005f)
 private val CATALOG_INTERRUPT_SPRING = MotionSprings.response<Float>(0.16f, 1f, 0.0005f)
 private const val CATALOG_INTERRUPT_HANDOFF_MS = 40
 
+/** 与 `GameShelfMotion.SIZE_VARIANCE` 同步，保持书架主视图与藏书阁同一本书的高矮倾向一致。 */
+private const val MAIN_SHELF_SIZE_VARIANCE = 0.045f
+private const val SPINE_HEIGHT_VARIANCE = 0.22f
+private const val COVER_HEIGHT_VARIANCE = 0.055f
+internal const val SPINE_MIN_THICKNESS_FACTOR = 0.72f
+internal const val SPINE_MAX_THICKNESS_FACTOR = 1.35f
+private const val SPINE_NORMALIZED_MIN_RATIO = 0.66f
+private const val SPINE_NORMALIZED_MAX_RATIO = 1.48f
+private const val FNV1A_OFFSET_BASIS = -2128831035
+private const val FNV1A_PRIME = 16777619
+private const val MURMUR_C1 = -2048144789
+private const val MURMUR_C2 = -1028477387
+
 /**
  * [disabled] 时把这一层的布局大小报成 0（内容照常按原约束测量、摆在原位、照常绘制）。
  *
@@ -2705,7 +2918,8 @@ internal class ShelfCatalogMorphFlight(
 }
 
 /**
- * 一种陈列的网格几何（px）：每行的列数、相邻两格的水平间距（格宽 + 缝）与相邻两行的垂直间距（一层的高度）。
+ * 一种陈列的网格几何（px）：每行的列数、相邻两格的水平基准间距（格宽 + 缝）与相邻两行的垂直间距（一层的高度），
+ * 以及「书脊立排」逐层宽度归一化所需参数，供离屏外推与实际书格位置严丝合缝对齐。
  * [grouped] 为真（按引擎分架，章节横梁让行高不规则）时不能按规则外推。
  */
 internal class ShelfCatalogGridMetrics(
@@ -2713,6 +2927,12 @@ internal class ShelfCatalogGridMetrics(
     val pitchX: Float,
     val pitchY: Float,
     val grouped: Boolean,
+    val spineGapPx: Float = 0f,
+    val baseCellWidthPx: Float = 0f,
+    val fullRowBooksWidthPx: Int = 0,
+    val maxBookHeightPx: Float = 0f,
+    val focusLiftPx: Float = 0f,
+    val trailingLeanReservePx: Float = 0f,
 )
 
 /**
