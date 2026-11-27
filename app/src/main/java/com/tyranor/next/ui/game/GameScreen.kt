@@ -3196,6 +3196,7 @@ internal fun EngineType.coverColor(): Color = when (this) {
     EngineType.RUFFLE -> Color(0xFFC62828)
     EngineType.IMPACTO -> Color(0xFFB3123A)
     EngineType.EASYRPG -> Color(0xFF1B7A43)
+    EngineType.SHIINARIO -> Color(0xFF5E477E)
     EngineType.RUNTIME_MODULE -> Color(0xFF5C6BC0)
     EngineType.PSP -> Color(0xFF6D4C9F)
     EngineType.NINTENDO_SWITCH -> Color(0xFFD32F2F)

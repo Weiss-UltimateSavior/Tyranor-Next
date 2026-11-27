@@ -339,6 +339,11 @@ object EngineSettingsResolver {
                 EngineSettingsStore.loadImpacto(app),
                 PerGameSettingsStore.toImpactoOverride(override),
             ),
+            shiinaRio = if (game.engine == EngineType.SHIINARIO) {
+                PerGameSettingsStore.toShiinaRioOverride(override).withFallback(EngineSettingsStore.loadShiinaRio(app))
+            } else {
+                ShiinaRioSettings.Defaults
+            },
             easyRpg = EffectiveEngineSettings.mergeEasyRpg(
                 EngineSettingsStore.loadEasyRpg(app),
                 PerGameSettingsStore.toEasyRpgOverride(override),
@@ -465,6 +470,7 @@ data class ResolvedEngineSettings(
     val systemNnnReadingSize: Int = SystemNnnHost.DEFAULT_READING_SIZE,
     val systemNnnExeAnalysis: Boolean = SystemNnnHost.DEFAULT_EXE_ANALYSIS,
     val systemNnnDebugMode: Boolean = SystemNnnHost.DEFAULT_DEBUG_MODE,
+    val shiinaRio: ShiinaRioSettings = ShiinaRioSettings.Defaults,
 )
 
 /**

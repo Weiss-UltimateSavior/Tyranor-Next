@@ -1372,6 +1372,16 @@ object EngineSettingsStore {
     private fun normalizeRuffleAllowed(v: String?, allowed: Set<String>, fallback: String): String =
         v?.trim()?.lowercase(java.util.Locale.ROOT)?.takeIf { it in allowed } ?: fallback
 
+    private const val KEY_SHIINARIO_SETTINGS = "shiinario_settings"
+
+    fun loadShiinaRio(context: Context): ShiinaRioSettings =
+        ShiinaRioSettings.fromStoredJson(prefs(context).getString(KEY_SHIINARIO_SETTINGS, null))
+            .withFallback(ShiinaRioSettings.Defaults)
+
+    fun saveShiinaRio(context: Context, settings: ShiinaRioSettings) {
+        prefs(context).edit().putString(KEY_SHIINARIO_SETTINGS, settings.toJson().toString()).apply()
+    }
+
     // ---------- MAGES.（impacto）外置宿主 ----------
 
     /**

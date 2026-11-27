@@ -66,6 +66,7 @@ import com.tyranor.next.core.input.InputRemapRepository
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.EffectiveEngineSettings
 import com.tyranor.next.core.settings.PerGameSettingsStore
+import com.tyranor.next.core.settings.ShiinaRioSettings
 import com.tyranor.next.core.game.scan.ImpactoGameCatalog
 import com.tyranor.next.core.settings.EasyRpgOverride
 import com.tyranor.next.core.settings.ImpactoOverride
@@ -290,6 +291,15 @@ private fun PerGameSettingsView(
         )
     }
     val easyRpg = easyRpgOverride ?: EasyRpgOverride()
+    var shiinaRio by remember(gid, game.engine) {
+        mutableStateOf(
+            if (game.engine == EngineType.SHIINARIO) {
+                PerGameSettingsStore.toShiinaRioOverride(PerGameSettingsStore.load(ctx, gid))
+            } else {
+                ShiinaRioSettings()
+            },
+        )
+    }
 
     val onsOverride = remember { mutableStateOf(PerGameSettingsStore.loadOnsOverride(ctx, gid) ?: JSONObject()) }
     var onsScoped by remember { mutableStateOf(onsBool(onsOverride.value, "scopedsavedir")) }
@@ -869,6 +879,9 @@ private fun PerGameSettingsView(
                 PerGameSettingsStore.F_IMPACTO_LOG_LEVEL,
                 impacto.logLevel?.takeIf { it in EngineSettingsStore.IMPACTO_LOG_LEVELS },
             )
+        }
+        if (game.engine == EngineType.SHIINARIO) {
+            PerGameSettingsStore.setShiinaRioOverride(ctx, gid, shiinaRio)
         }
         // EasyRPG 覆盖只写 EasyRPG 游戏，避免 easyrpg_* 键进入其它游戏的覆盖 blob。
         if (game.engine == EngineType.EASYRPG) {
@@ -1831,6 +1844,12 @@ private fun PerGameSettingsView(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
                             )
+                        }
+                    }
+                    EngineType.SHIINARIO -> item {
+                        val global = remember { EngineSettingsStore.loadShiinaRio(ctx) }
+                        SectionCard(stringResource(R.string.engine_settings_shiinario_title)) {
+                            ShiinaRioSettingsRows(shiinaRio, global) { shiinaRio = it }
                         }
                     }
                     EngineType.EASYRPG -> item {

@@ -21,6 +21,7 @@
         <package android:name="com.tyranor.next.impacto" />
         <!-- EasyRPG 外置宿主 APK（安装探测 + 显式组件启动；Android 11+ 不声明则看不到该包） -->
         <package android:name="com.tyranor.next.easyrpg" />
+        <package android:name="com.tyranor.next.shiinario" />
         <!-- 外置主机模拟器跳转目标（安装探测 + 显式组件启动） -->
         <package android:name="org.ppsspp.ppsspp" />
         <package android:name="dev.eden.eden_emulator" />

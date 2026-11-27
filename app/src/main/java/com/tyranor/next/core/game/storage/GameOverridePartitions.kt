@@ -135,6 +135,7 @@ internal object GameOverridePartitions {
     const val KEY_IMPACTO_DELUSION_MOUSE = "impacto_delusion_mouse"
     const val KEY_IMPACTO_LOG_LEVEL = "impacto_log_level"
     const val KEY_IMPACTO_DEBUG_MODE = "impacto_debug_mode"
+    const val KEY_SHIINARIO_SETTINGS = "shiinario_settings"
     // EasyRPG 外置宿主配置覆盖键（与 PerGameSettingsStore.F_EASYRPG_*、EngineSettingsStore.KEY_EASYRPG_* 字面量锚定）
     const val KEY_EASYRPG_ENCODING = "easyrpg_encoding"
     const val KEY_EASYRPG_SCALING = "easyrpg_scaling"
@@ -206,6 +207,7 @@ internal object GameOverridePartitions {
         KEY_IMPACTO_SUBTITLES,
         KEY_IMPACTO_CLOSE_BACKLOG_AT_END, KEY_IMPACTO_DELUSION_MOUSE, KEY_IMPACTO_LOG_LEVEL,
         KEY_IMPACTO_DEBUG_MODE,
+        KEY_SHIINARIO_SETTINGS,
         KEY_EASYRPG_ENCODING, KEY_EASYRPG_SCALING, KEY_EASYRPG_GAME_RESOLUTION,
         KEY_EASYRPG_STRETCH, KEY_EASYRPG_VSYNC, KEY_EASYRPG_FPS_LIMIT, KEY_EASYRPG_SHOW_FPS,
         KEY_EASYRPG_DISABLE_AUDIO, KEY_EASYRPG_MUSIC_VOLUME, KEY_EASYRPG_SOUND_VOLUME,

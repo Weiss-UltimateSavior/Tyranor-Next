@@ -58,6 +58,10 @@ _Avoid_: 把内置目录表当作唯一来源
 目录布局像 MAGES. 游戏、但没有任何 profile 全部命中的游戏库条目；照常入库，以识别规则指定的 profile 尝试运行，不代表能运行。
 _Avoid_: 未识别游戏、未知引擎游戏
 
+**ShiinaRio 引擎（EngineType.SHIINARIO）**:
+使用 WARC 封包的视觉小说引擎，由独立的 OpenShiina 宿主 APK 在 Tyranor Next 中承载。
+_Avoid_: 把 OpenShiina 当作引擎名
+
 **第三方 APK 运行时模块（Third-party APK Runtime Module）**:
 用户自行安装、以 `com.tyranor.runtime.` 包名前缀并声明 `com.tyranor.runtime.action.LAUNCH` 的独立 APK，接收游戏文件夹路径自行运行游戏。主 App 负责发现、启用、扫描与交棒，并按模块可选声明提供单游戏配置及游戏目录内的统一存档管理。
 _Avoid_: 插件、外置引擎（指 JoiPlay 时）、外置 APK 引擎模块（指 JoiPlay 注册表体系时）

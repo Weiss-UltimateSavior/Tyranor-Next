@@ -60,7 +60,7 @@ object EasyRpgExternalEngineModule : ExternalEngineModule {
     internal fun resolveLaunchTitle(request: ExternalEngineLaunchRequest, folder: String = resolveLaunchFolder(request)): String =
         request.game.title.ifBlank { File(folder).name.ifBlank { displayName } }
 
-    override fun buildLaunchIntent(request: ExternalEngineLaunchRequest): Intent {
+    override fun buildLaunchIntent(context: Context, request: ExternalEngineLaunchRequest): Intent {
         val folder = resolveLaunchFolder(request)
         val title = resolveLaunchTitle(request, folder)
         return Intent(action).setPackage(packageName).apply {

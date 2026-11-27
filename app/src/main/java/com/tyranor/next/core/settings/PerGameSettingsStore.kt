@@ -237,6 +237,16 @@ object PerGameSettingsStore {
         return runCatching { GameOverridePartitions.assemble(row) }.getOrDefault(JSONObject())
     }
 
+    fun toShiinaRioOverride(blob: JSONObject?): ShiinaRioSettings =
+        ShiinaRioSettings.fromJson(blob?.optJSONObject(GameOverridePartitions.KEY_SHIINARIO_SETTINGS))
+
+    fun setShiinaRioOverride(context: Context, gameId: String, settings: ShiinaRioSettings) {
+        val values = settings.toJson()
+        update(context, gameId) {
+            put(GameOverridePartitions.KEY_SHIINARIO_SETTINGS, values.takeIf { it.length() > 0 })
+        }
+    }
+
     /** Read the current module's isolated overrides (never returns module defaults). */
     fun getRuntimeModuleSettings(context: Context, gameUri: String, packageName: String): JSONObject {
         if (gameUri.isBlank() || packageName.isBlank()) return JSONObject()

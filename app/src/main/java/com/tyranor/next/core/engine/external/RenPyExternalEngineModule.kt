@@ -44,7 +44,7 @@ abstract class RenPyRuntimeModule(
         return null
     }
 
-    override fun buildLaunchIntent(request: ExternalEngineLaunchRequest): Intent =
+    override fun buildLaunchIntent(context: Context, request: ExternalEngineLaunchRequest): Intent =
         Intent(action).setPackage(packageName).apply {
             putExtra(ExternalEngineContract.GAME, buildGameJson(request))
             putExtra(

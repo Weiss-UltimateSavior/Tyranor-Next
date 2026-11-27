@@ -111,6 +111,7 @@
 | Ren'Py | `.rpa`、`.rpy/.rpyc` 等组合 | 外置 Ren'Py APK；自动或指定 8.5.0 / 8.5.3 / 7.7.1 |
 | Ruffle / Flash | 顶层 `.swf`；根 `index.html/index.htm` + 唯一 SWF 的叶子目录 | 外置 Ruffle APK；一 SWF 一条记录 |
 | MAGES.（impacto） | 按精确大小写的条目命中 profile，恰好一个（或同一语言变体族）全命中才识别；规则优先从已安装的宿主读取（`tyn/profiles.json`），否则用内置目录表：上游 profile（`chlcc`、`cclcc`、`cclcc-switch`、`mo6tw`、`dash`、`rne`；其中 `mo6tw` 是 PS3 版数据、`cclcc` 是 PS4 版、`cclcc-switch` 是 Switch 版）看根目录条目名；Windows／Steam 版《秋之回忆6》（`mo6tw-pc*`）为根目录 `game.exe` + `data/` 内的 `script.cpk`、`mes00.cpk`；Steam 版 STEINS;GATE（`sg-pc`）为 `Game.exe` + `USRDIR/` 内的 `script.mpk`、`system.mpk`，且没有 `USRDIR/mpk_bg.lst`；Steam 版 STEINS;GATE 0（`sg0-pc`）在此基础上有 `USRDIR/mpk_bg.lst`。像 MAGES. 但没有 profile 的目录列为「暂不支持」，可尝试运行 | 外置 Impacto 宿主 APK（宿主仓库固定上游 impacto 并应用其补丁系列；`mo6tw-pc*` 需宿主 0.2.0、`sg-pc` 需 0.3.0 及以上、`sg0-pc` 需 versionCode 11 及以上） |
+| ShiinaRio | 根目录 `RIO.INI` + 至少一个有 WARC 1.0–1.7 文件头的 `.war`，文件名不区分大小写 | 外置 OpenShiina 宿主 APK，Android 11+ |
 | 第三方运行时模块 | 已安装的 `com.tyranor.runtime.*` APK + 模块 `res/raw` 扫描描述 | 显式组件交棒游戏文件夹，模块自行运行 |
 | YU-RIS / CatSystem2 | YPF/DLL/配置或 INT/CST/HG3 等组合 | 外置 Winlator |
 | PC / 安卓游戏 | 手动添加目录+exe / 应用包名 | 外置 Winlator / 直接启动应用 |
@@ -160,6 +161,12 @@ MAGES. 引擎（经开源重新实现项目 impacto）由外置 Impacto 宿主 A
   - 宿主侧（宿主仓库 PR #1 的记录，补丁系列的 dev 构建，一台荣耀 PPG-AN00 / Android 17）：Windows／Steam 版数据用 `mo6tw-pc-zhs` 进到标题画面、新游戏第一章对白（背景、名牌、简体中文正文、语音）和存读档。繁体与日文变体、非对话菜单（坐标为近似）、附加内容、输入与性能、其他游戏均未验证；Windows 构建与非 ASCII 存档路径未验证。
   - 主 App 的识别（荣耀 PPG-AN00 / Android 17，真实 Steam 数据，详见 `docs/impacto-upstream-only.md` 的 2026-11-18 记录）：添加含 `memo06-pc/` 的目录后识别为「Memories Off 6 ~T-Wave~ (PC)」，简体界面得到 `mo6tw-pc-zhs`；切换界面语言后的全量重扫沿用已入库的 profile，移除后重扫按当时的界面语言重新选（日文界面得到 `mo6tw-pc`，简体界面得到 `mo6tw-pc-zhs`，两个方向都观察过）；宿主 0.1.2 上启动得到「模块版本过旧」提示，且测试包当时没有「所有文件访问」授权却没有被先送去授权页，说明版本检查先于授权门禁。**没有**在真机上完成「主 App 启动 → 宿主 0.2.0 进入游戏」整条链路。
   - 识别规则、变体选择与沿用（`EngineScanner.selectLaunchTarget`）、界面语言到文本语言的映射、版本门槛的判定由 JVM 单测覆盖；「版本检查先于授权门禁」的先后只有上面的真机记录，没有单测；扫描入口把界面语言与库记录交给 `selectLaunchTarget` 的那一小段需要 Context，同样只有真机记录。这不是游戏兼容性验收；上游 profile 对应的游戏没有真实数据进到画面。
+
+### ShiinaRio 外置 APK 引擎模块
+
+- 根目录需要 `RIO.INI` 和至少一个匹配 WARC 1.0–1.7 文件头的 `.war` 文件。安装宿主后，扫描从其 APK 资产 `tyn/games.json` 读取已登记的入口映射，唯一方案命中时优先记录对应的 `.exe`，其次记录 `.war`。未安装、目录表不可用或命中多个方案时，仍按游戏目录入库，由宿主解析方案。启动目录型记录时重新读取宿主目录表，可补上安装前未解析的入口。
+- 引擎页 GAL 分类提供宿主下载和正式版本更新提示。使用 `com.tyranor.next.action.LAUNCH_SHIINARIO` 显式启动 `com.tyranor.next.shiinario.ShiinaRioLaunchActivity`，下发协议版本 1、游戏绝对路径、标题、应用语言及生效设置，需要对应应用取得共享存储访问权限。宿主最低版本为 0.1.1（versionCode 2），该版本修复了旧宿主的 AppCompat 启动崩溃。
+- 全局设置与单游戏覆盖影响渲染后端、缩放滤镜、FSR 锐化、帧节奏、文件缓存、x86 指令转译、后台暂停、手柄与触控输入、帧率显示、主题及播放器语言。启动时以 `SETTINGS_JSON` 交给宿主。宿主按方案与目录生成游戏键，在其专属目录内管理设置与存档，主 App 不提供 ShiinaRio 的文件存档管理或 WebDAV 同步。
 
 ### 第三方 APK 运行时模块
 
@@ -380,6 +387,7 @@ App 存档管理与 native 共用 `<游戏根>/savedata` user-root。宿主和 n
 | Winlator 图形加速 | GL/GDI 第一配置槽映射、旧 WineD3D 保留容器渲染器、Box64 合并、全局/单游戏继承与空值、备份往返、save 开关及 GDI 游戏实机验证 |
 | Ruffle / SWF | 一 SWF 一条与包装目录边界（根 index、唯一 SWF、无子目录、既有引擎信号优先）、文件 URI→父目录、`game`/`settings` 契约与类型包装、模块未安装/入口缺失、全局与单游戏覆盖、`configuration.json` 只同步不创建、无存档入口与横屏限制；设备/插件验证待执行 |
 | MAGES.（impacto） | 上游布局按精确大小写的根目录条目识别、`darling` 与全小写 `mo6tw` 不识别；Windows／Steam 版 `game.exe` + `data/` 识别，大小写不符、缺 `game.exe` / `script.cpk` / `mes00.cpk`、档案平铺在根目录、与上游布局同时出现均不识别；语言变体按界面语言（含「跟随系统」的繁体）选择、重扫只在候选仍存在时沿用、候选缺失时回落；有宿主规则时按宿主规则识别（含 `USRDIR/` 子目录）、规则缺失或不合格式时回落内置目录表；未支持布局入库为「暂不支持」并以 `tryProfile` 启动，有歧义的布局仍不列出；`mo6tw-pc*` 的宿主版本提示出现在「所有文件访问」授权之前，其余 profile 不受影响；宿主缺失 / 过期引导；`SETTINGS` 下发；不能以识别通过代替宿主里的游戏运行验收 |
+| ShiinaRio | 宿主缺失仍可扫描；目录文件名忽略大小写；排除普通 WAR、不符或截断的文件头、嵌套封包；核对已安装宿主目录表、无目标记录补查、安装和更新提示、显式组件与设置 JSON、私有存档边界 |
 | 第三方运行时模块 | 原发现/扫描/绑定行为保持；scan/settings/saves 独立容错、四类单游戏配置隔离与传参、游戏内存档目录事务、WebDAV关闭时退出保护、旧会话确认、模块命名空间与目录变化保护；无全局设置与按键映射入口 |
 | 宿主/JNI | 暂停恢复、Surface 重挂/旧世代、正常退出 ACK 后重入、owner 线程与资源释放 |
 | RPG Maker MV/MZ 网页宿主（v1/v2，v0 走 Tyrano 宿主、不受本行约束） | 兼容层以 `/__tyranor__/nwjs_polyfill*.js` 外链注入、顺序 base→v1→v2 且先于 `</head>` 之后的脚本；base 缺失时放弃整组并记错误日志（不拼半套）；keep-alive 下 ≥6 条并发连接不在队列里等到空闲超时；缓存按**目录优先**判定——`data/`、`save/` 一律 `no-cache`（含其中的图片，插件会改写截图/头像），其余仅纯素材扩展名（图片/音频/字体/视频）`max-age=3600` + `ETag`/304，脚本与 HTML/CSS/JSON/无扩展名一律 `no-cache`；磁盘可改写路径不发 ETag（避免同 mtime 同长度改写被 304 钉死），内存内容与 ≤256 KiB 的 ASAR 条目用内容哈希 ETag（无 mtime 粒度问题），更大的 ASAR 条目走流式、不带 ETag；0 字节文件发 `Content-Length: 0`；HEAD 与 Range(206) 之后同一连接仍可用；宽松素材名匹配与 fs 桥共用同一索引与同一上限（单目录 >4096 条目时只保留精确/大小写不敏感，索引项 30s 年龄上限兜外部写入），桥写入会同时失效两侧缓存；`AppData/Local Storage` 的 `setItem`/`removeItem`/`clear` 在返回前通过 `commitStorageMutation` 同步持久接收，接收失败抛 `QuotaExceededError` 且不改 JS 镜像；`.dat` 保留 200ms 合并物化（每批 ≤32 键，非最终 flush 预算 800ms），物化与匹配条目的确认在同一目录锁内完成，缺失或内容不匹配的旧定时器空操作；恢复队列 `.tyranor-pending.json` 与崩溃遗留 `.tyranor-pending.claim` 按会话版本合并，真实修改更新版本，旧 stage 重试保留首次指纹，旧进程期号按最旧处理；新接收条目持有权威意图，legacy 条目仍按存在/大小/mtime/CRC32 识别外部修改；`clear` 在原生目录锁内登记磁盘、队列及 claim 中的全部适用键（含哈希名）的删除意图；目录锁贯穿接收、重放、物化与确认，两个 bridge 不会争用同一 claim；页面兼容层在游戏脚本前重放并读取 JSON 报告：单条无法物化只把该键列入失败名单（删除意图的键读回 null、写入意图的键报 `InvalidStateError` 可重试），队列本身不可读或写不回去才算整体失败；不可解析的队列改名 `.corrupt.<时间戳>` 留证后按空队列继续，避免一次损坏让 Storage 永久不可用；队列限制 4096 项、单值 5Mi 字符（UTF-8 最坏 15MiB，仍在 16MiB 写入上限内）、总值 12Mi 字符及序列化 36MiB，任一超限整份拒绝；`pagehide`/`beforeunload`/NW 重载/宿主最终钩子只报告交接状态，不再负责入队或大批 I/O，因此无事件导航和 Activity 重建不依赖旧文档定时器；2500ms 看门狗与 3000ms 进程退出延迟只管资源收尾，不再是数据提交预算；接收后立即尝试物化，正常路径队列保持为空（每次修改 = 一次 journal 写 + 一次 `.dat` 写），设备耗时与游戏兼容性尚待验收；写入/删除/目录清除账本期号单调，旧会话的待写/待删操作让位于新会话；`textureGC` 回收策略按会话归属：MV v1 用 PIXI 默认值，MV v2 由游戏自带 core 决定（注入脚本把 `Graphics._createRenderer` 交还原实现）；MZ 的 hook 不含该补丁。Tyrano 壳的传输层本轮未同步（仍 `Connection: close` + 一律 `no-cache`）；版本缺失时的 v0 兜底会话仍走本宿主与同一传输层（只是不注入兼容层、`fuzzyNames=false`），与 Tyrano 宿主的 v0 无关 |

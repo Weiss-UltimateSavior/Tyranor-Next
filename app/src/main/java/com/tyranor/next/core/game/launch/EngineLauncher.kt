@@ -164,6 +164,7 @@ object EngineLauncher {
         EngineType.RUFFLE,
         EngineType.IMPACTO,
         EngineType.EASYRPG,
+        EngineType.SHIINARIO,
         // YURIS / CatSystem2 / PC 由外置 Winlator 承载（GAL 分组），引擎页条目点击进入引擎专属弹窗
         EngineType.YURIS,
         EngineType.CATSYSTEM2,
@@ -1412,7 +1413,8 @@ object EngineLauncher {
             EngineType.RENPY,
             EngineType.RUFFLE,
             EngineType.IMPACTO,
-            EngineType.EASYRPG -> error("${engine.displayName} is handled by external engine launcher")
+            EngineType.EASYRPG,
+            EngineType.SHIINARIO -> error("${engine.displayName} is handled by external engine launcher")
 
             EngineType.RUNTIME_MODULE -> error("${engine.displayName} is handled by RuntimeModuleLauncher")
 
