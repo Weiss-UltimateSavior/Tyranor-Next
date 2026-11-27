@@ -1033,7 +1033,7 @@ private fun engineIconRes(engine: EngineType): Int = when (engine) {
     EngineType.RUFFLE -> R.drawable.ic_engine_card_ruffle
     EngineType.IMPACTO -> R.drawable.ic_engine_card_impacto
     EngineType.EASYRPG -> R.drawable.ic_engine_card_easyrpg
-    EngineType.SHIINARIO -> R.drawable.ic_engine_icon
+    EngineType.SHIINARIO -> R.drawable.ic_engine_card_shiinario
     EngineType.YURIS -> R.drawable.ic_engine_card_yuris
     EngineType.CATSYSTEM2 -> R.drawable.ic_engine_card_catsystem2
     EngineType.PC -> R.drawable.ic_engine_card_pc
