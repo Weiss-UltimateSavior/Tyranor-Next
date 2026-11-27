@@ -14,6 +14,7 @@ object ExternalEngineModuleRegistry {
         RuffleExternalEngineModule,
         ImpactoExternalEngineModule,
         EasyRpgExternalEngineModule,
+        ShiinaRioExternalEngineModule,
     )
 
     fun moduleForEngine(engine: EngineType): ExternalEngineModule? =

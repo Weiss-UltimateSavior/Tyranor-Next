@@ -33,6 +33,7 @@ enum class EngineType(val displayName: String, val abbr: String, val isManual: B
     CATSYSTEM2("CatSystem2", "CS2"),
     IMPACTO("MAGES.", "MGS"),
     EASYRPG("EasyRPG", "ERP"),
+    SHIINARIO("ShiinaRio", "RIO"),
     PC("PC", "PC", isManual = true),
     ANDROID_APP("Android", "APP", isManual = true),
     PSP("PSP", "PSP"),

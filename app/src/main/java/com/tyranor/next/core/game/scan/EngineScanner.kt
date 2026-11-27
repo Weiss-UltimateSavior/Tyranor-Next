@@ -88,6 +88,7 @@ object EngineScanner {
         val runtimeModules = RuntimeModuleRegistry.scanIndex(context.applicationContext)
         // MAGES. 识别规则同样在开始时从已安装的宿主读取一次。
         ImpactoGameCatalog.refresh(context)
+        val shiinaRioCatalog = ShiinaRioGameCatalog.load(context)
         // 多个存储卷可以并行扫描，但限制为 2，避免同时向 DocumentsProvider 发起过多查询。
         val gate = Semaphore(2)
         val all = coroutineScope {
@@ -95,7 +96,7 @@ object EngineScanner {
                 async {
                     gate.withPermit {
                         runInterruptible {
-                            scanRootInternal(context.applicationContext, root, maxDepth, runtimeModules)
+                            scanRootInternal(context.applicationContext, root, maxDepth, runtimeModules, shiinaRioCatalog)
                         }
                     }
                 }
@@ -304,6 +305,7 @@ object EngineScanner {
         val runtimeModules = RuntimeModuleRegistry.scanIndex(context.applicationContext)
         return runInterruptible(Dispatchers.IO) {
             ImpactoGameCatalog.refresh(context)
+            val shiinaRioCatalog = ShiinaRioGameCatalog.load(context)
             val existing = GameLibraryFacade.loadGames(context)
             val known = existing.mapTo(HashSet()) { it.uri }
             val seen = HashSet<String>()
@@ -312,7 +314,7 @@ object EngineScanner {
             GameLibraryFacade.loadRoots(context).forEach { root ->
                 val beforeCount = found.size
                 val rootUri = Uri.parse(root)
-                val safSession = SafScanSession(context.applicationContext, rootUri)
+                val safSession = SafScanSession(context.applicationContext, rootUri, shiinaRioCatalog)
                 val safRoot = safSession.root()
                 safRoot?.let { rootNode ->
                     scanRootIncremental(context, safSession, rootNode, 0, maxDepth, known, found, runtimeModules)
@@ -321,7 +323,7 @@ object EngineScanner {
                 if (found.size == beforeCount && (safRoot == null || safSession.queryFailed)) {
                     GamePathUtils.safUriToPath(root)?.let { path ->
                         scanRootIncrementalFile(
-                            context, FileScanSession(), File(path), 0, maxDepth, known, found, runtimeModules,
+                            context, FileScanSession(shiinaRioCatalog), File(path), 0, maxDepth, known, found, runtimeModules,
                         )
                     }
                 }
@@ -383,7 +385,9 @@ object EngineScanner {
         val runtimeModules = RuntimeModuleRegistry.scanIndex(context.applicationContext)
         return runInterruptible(Dispatchers.IO) {
             ImpactoGameCatalog.refresh(context)
-            scanRootInternal(context.applicationContext, rootUriStr, maxDepth, runtimeModules)
+            scanRootInternal(
+                context.applicationContext, rootUriStr, maxDepth, runtimeModules, ShiinaRioGameCatalog.load(context),
+            )
         }
     }
 
@@ -391,11 +395,12 @@ object EngineScanner {
         context: Context,
         rootUriStr: String,
         maxDepth: Int,
-        runtimeModules: RuntimeModuleIndex = RuntimeModuleIndex.EMPTY,
+        runtimeModules: RuntimeModuleIndex,
+        shiinaRioCatalog: ShiinaRioGameCatalog,
     ): List<ScanGame> {
         val rootUri = Uri.parse(rootUriStr)
         val results = mutableListOf<ScanGame>()
-        val safSession = SafScanSession(context, rootUri)
+        val safSession = SafScanSession(context, rootUri, shiinaRioCatalog)
         val safRoot = safSession.root()
         safRoot?.let { root ->
             traverseDirectories(context, safSession, root, 0, maxDepth, results, runtimeModules)
@@ -404,7 +409,7 @@ object EngineScanner {
         // 查询异常/权限失效时仍保留 SD 卡真实路径兼容兜底。
         if (results.isEmpty() && (safRoot == null || safSession.queryFailed)) {
             GamePathUtils.safUriToPath(rootUriStr)?.let { path ->
-                traverseFileDirectories(context, FileScanSession(), File(path), 0, maxDepth, results, runtimeModules)
+                traverseFileDirectories(context, FileScanSession(shiinaRioCatalog), File(path), 0, maxDepth, results, runtimeModules)
             }
         }
         val seen = HashSet<String>()
@@ -464,7 +469,11 @@ object EngineScanner {
      * 一次 ContentResolver.query 取得一个目录的全部子项名称和类型。
      * 相比 DocumentFile.listFiles 后逐个读取 name/isDirectory，可显著减少 SAF Binder 往返。
      */
-    private class SafScanSession(private val context: Context, private val treeUri: Uri) {
+    private class SafScanSession(
+        private val context: Context,
+        private val treeUri: Uri,
+        val shiinaRioCatalog: ShiinaRioGameCatalog = ShiinaRioGameCatalog.EMPTY,
+    ) {
         private val resolver = context.contentResolver
         private val childrenCache = HashMap<String, List<SafNode>>()
         var queryFailed: Boolean = false
@@ -809,6 +818,9 @@ object EngineScanner {
     /** 与 `EasyRpgExternalEngineModule.defaultAlias` 同值，理由同上。 */
     private const val EASYRPG_MODULE_ALIAS = "internal.easyrpg"
 
+    /** 与 ShiinaRioExternalEngineModule.defaultAlias 同值。 */
+    private const val SHIINARIO_MODULE_ALIAS = "internal.shiinario"
+
     private fun detectRenpyVersionIfNeeded(
         detection: Detection,
         children: List<SafNode>,
@@ -834,7 +846,9 @@ object EngineScanner {
         return RenPyVersionDetector.detect(dir)
     }
 
-    private class FileScanSession {
+    private class FileScanSession(
+        val shiinaRioCatalog: ShiinaRioGameCatalog = ShiinaRioGameCatalog.EMPTY,
+    ) {
         private val childrenCache = HashMap<String, Array<File>>()
         private val headCache = HashMap<String, ByteArray?>()
 
@@ -1032,6 +1046,7 @@ object EngineScanner {
                     context.contentResolver.openInputStream(file.uri)
                 }
             },
+            shiinaRioCatalog = ShiinaRioGameCatalog.load(context),
         )
     }
 
@@ -1065,6 +1080,7 @@ object EngineScanner {
             headOf = { session.readHead(it) },
             sizeOf = { it.length() },
             seenArchiveKind = { file -> SeenArchiveProbe.detect(file.length(), file::inputStream) },
+            shiinaRioCatalog = session.shiinaRioCatalog,
         )
     }
 
@@ -1091,6 +1107,7 @@ object EngineScanner {
             headOf = session::readHead,
             sizeOf = { it.size },
             seenArchiveKind = session::detectSeenArchive,
+            shiinaRioCatalog = session.shiinaRioCatalog,
         )
     }
 
@@ -1123,6 +1140,7 @@ object EngineScanner {
         headOf: (T) -> ByteArray? = { null },
         sizeOf: (T) -> Long? = { null },
         seenArchiveKind: (T) -> EngineType? = { null },
+        shiinaRioCatalog: ShiinaRioGameCatalog = ShiinaRioGameCatalog.EMPTY,
     ): Detection {
 
         val xp3Files = mutableListOf<String>()
@@ -1207,6 +1225,9 @@ object EngineScanner {
         var hasRpgRtLmt = false
         var hasEasyRtEdb = false
         var hasEasyRtEmt = false
+        var hasRioIni = false
+        val shiinaRioArchives = mutableListOf<T>()
+        val shiinaRioTargetNames = mutableListOf<String>()
         // Impacto 按精确大小写匹配条目名（上游 Android 路径区分大小写），故另存原名：根目录条目名，
         // 以及识别规则里出现的子目录（如 Windows／Steam 版的 `data/`、`USRDIR/`）里的文件，记为 `目录名/文件名`
         val impactoEntries = HashSet<String>()
@@ -1302,6 +1323,11 @@ object EngineScanner {
                     childrenOf(entry).forEach { collect(it, childRel) }
                 }
                 return
+            }
+            if (rel.isEmpty()) {
+                if (lower == "rio.ini") hasRioIni = true
+                if (lower.endsWith(".war")) shiinaRioArchives.add(entry)
+                if (ShiinaRioGameCatalog.isLaunchTarget(nameOf(entry))) shiinaRioTargetNames.add(nameOf(entry))
             }
             when {
                 rel.isEmpty() && lower in setOf("cmvs.exe", "cmvs32.exe", "cmvs64.exe", "cvns.exe") -> {
@@ -1588,6 +1614,11 @@ object EngineScanner {
         }
         if ((hasRpgRtLdb && hasRpgRtLmt) || (hasEasyRtEdb && hasEasyRtEmt)) {
             return Detection(EngineType.EASYRPG, 95, LAUNCH_TARGET_GAME_DIR, EASYRPG_MODULE_ALIAS)
+        }
+        // OpenShiina opens top-level WARC archives and requires a loose RIO.INI.
+        if (hasRioIni && shiinaRioArchives.any { ShiinaRioGameCatalog.hasWarcHeader(headOf(it)) }) {
+            val launchTarget = shiinaRioCatalog.launchTargetFor(shiinaRioTargetNames) ?: LAUNCH_TARGET_GAME_DIR
+            return Detection(EngineType.SHIINARIO, 95, launchTarget, SHIINARIO_MODULE_ALIAS)
         }
         if (hasIndex && !hasSystemNnnEntry) {
             return Detection(EngineType.WEB_OTHER, 70, LAUNCH_TARGET_GAME_DIR)

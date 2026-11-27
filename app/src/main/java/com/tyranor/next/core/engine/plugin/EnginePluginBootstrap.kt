@@ -108,6 +108,7 @@ object EnginePluginBootstrap {
             EngineType.RUFFLE,
             EngineType.IMPACTO,
             EngineType.EASYRPG,
+            EngineType.SHIINARIO,
             EngineType.PSP,
             EngineType.NINTENDO_SWITCH,
             EngineType.RUNTIME_MODULE,

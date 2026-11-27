@@ -306,39 +306,41 @@ val ShelfGloss = Color(0x2EFFFFFF)
 val ShelfChamferLight = Color(0xB8FFFFFF)
 val ShelfChamferDim = Color(0x52FFFFFF)
 
-/** 书脊上压在封面图上的暗纱：上浅下深，保证竖排白字可读。 */
-val ShelfSpineScrimTop = Color(0x26000000)
-val ShelfSpineScrimBottom = Color(0xA6000000)
+/** 书脊上压在封面图上的轻透柔光纱：顶部微提亮、底部轻压收住脚部，保持书脊色彩明亮。 */
+val ShelfSpineScrimTop = Color(0x28FFFFFF)
+val ShelfSpineScrimBottom = Color(0x24000000)
 
 /** 书脊文字（压在暗纱 / 引擎色上）。 */
 val ShelfSpineText = Color.White
 
-/** 搁板板面：与卡片同一层级的面色，向下淡出。 */
+/** 搁板板面：与卡片同一层级的水平面色，在深浅色与玻璃外观下都透出层次与倒影。 */
 val ShelfLedgeSurface: Color
     get() = when {
         AppThemeColors.isMilkGlass -> MilkSurface
-        AppThemeColors.isGlass -> GlassSurface.copy(alpha = 0.7f)
+        AppThemeColors.isGlass -> GlassSurface.copy(alpha = 0.68f)
         AppThemeColors.isDark -> LighterDark.copy(alpha = 0.85f)
-        else -> WhiteLight.copy(alpha = 0.95f)
+        else -> WhiteLight.copy(alpha = 0.88f)
     }
 
-/** 搁板板沿的发丝高光。 */
+/** 搁板前沿的发丝高光。 */
 val ShelfLedgeRim: Color
     get() = when {
-        AppThemeColors.isGlass || AppThemeColors.isDark -> Color(0x40FFFFFF)
+        AppThemeColors.isGlass || AppThemeColors.isDark -> Color(0x4DFFFFFF)
         else -> Color(0xFFFFFFFF)
     }
 
-/** 倒影起始透明度：深色背景上倒影更显眼，取低一点（两档都比早先加强，玻璃板上的倒影要看得出封面的颜色）。 */
+/** 倒影起始透明度：深色/复古玻璃板面上取适中偏清亮，浅色/白雾玻璃取略高，保证四套外观与视口内每本书都有可辨认倒影。 */
 val ShelfReflectionAlpha: Float
-    get() = if (AppThemeColors.isDark || AppThemeColors.isGlass) 0.26f else 0.36f
+    get() = if (AppThemeColors.isDark || AppThemeColors.isGlass) 0.34f else 0.42f
 
 /**
- * 书架书脊的烫印：书名象牙白（固定配色）；烫线、小菱饰与顶上的封条取这本书的封面主色（见 rememberShelfSpineInk）；以及书背的圆弧明暗（左缘受光、右缘背光）。
+ * 书架书脊的文字与圆弧明暗：深底用象牙白，亮底用炭墨黑（由书脊局部亮度自动选色并保证 4.5:1 以上对比度）；
+ * 烫线、小菱饰与顶上的封条取这本书的封面主色。
  */
-val ShelfSpineTitle = Color(0xF5FFF6E2)
-val ShelfSpineRoundLight = Color(0x24FFFFFF)
-val ShelfSpineRoundShade = Color(0x38000000)
+val ShelfSpineTitle = Color(0xFFFFFBF2)
+val ShelfSpineTitleDark = Color(0xFF14161B)
+val ShelfSpineRoundLight = Color(0x2EFFFFFF)
+val ShelfSpineRoundShade = Color(0x1C000000)
 
 /**
  * 藏书阁里「选定」（进入书架前显示的那一本）的效果：暖金色，不用主题色——细金线双框、书柜板上一汪淡淡的暖光、
@@ -362,13 +364,13 @@ val ShelfWallSurface: Color
 /** 书柜里的暗角与板下软影（背板与搁板相接处、搁板下方、书投在背板上的侧影）。 */
 val ShelfDepthShade = Color(0x29000000)
 
-/** 搁板前沿（有厚度的那条边）。 */
+/** 搁板前沿（很薄的一条前端厚度，与水平顶面拉出明暗层次）。 */
 val ShelfBoardEdge: Color
     get() = when {
-        AppThemeColors.isMilkGlass -> MilkSurfaceStrong
-        AppThemeColors.isGlass -> Color(0xFF2C2F35)
-        AppThemeColors.isDark -> Color(0xFF2E3136)
-        else -> Color(0xFFE3E6EC)
+        AppThemeColors.isMilkGlass -> Color(0xFFD9DCE4)
+        AppThemeColors.isGlass -> Color(0xCC121418)
+        AppThemeColors.isDark -> Color(0xFF17191E)
+        else -> Color(0xFFCED4DF)
     }
 
 /** 空气透视：远处的书蒙上的一层与页面背景同色的雾。 */

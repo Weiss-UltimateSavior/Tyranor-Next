@@ -27,6 +27,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.runtime.setValue
@@ -43,6 +45,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TileMode
@@ -562,4 +568,60 @@ fun DelayedProgress(
         shown = true
     }
     BlurVisibility(visible = shown, modifier = modifier, label = "DelayedProgress") { content() }
+}
+
+private val BOOK_MARKER_SWEEP = MotionSprings.response<Float>(0.24f, 1f, 0.002f)
+private const val BOOK_MARKER_TOP = 0.18f
+private const val BOOK_MARKER_BOTTOM = 0.86f
+private val BOOK_MARKER_CORNER = 4.dp
+
+/** 书内条目的按压反馈：一道淡墨/荧光笔从左往右划过这一行，松手后等这一笔划完再淡出。 */
+@Composable
+fun Modifier.shelfBookMarker(interaction: InteractionSource, color: Color): Modifier {
+    val enhanced = MotionMode.enhanced
+    val sweep = remember { Animatable(0f) }
+    val ink = remember { Animatable(0f) }
+    LaunchedEffect(interaction, enhanced) {
+        var stroke: Job? = null
+        var generation = 0
+        interaction.interactions.collect { event ->
+            when (event) {
+                is PressInteraction.Press -> {
+                    generation++
+                    stroke?.cancel()
+                    stroke = launch {
+                        ink.snapTo(1f)
+                        if (enhanced) {
+                            sweep.snapTo(0f)
+                            sweep.animateTo(1f, BOOK_MARKER_SWEEP)
+                        } else {
+                            sweep.snapTo(1f)
+                        }
+                    }
+                }
+                is PressInteraction.Release, is PressInteraction.Cancel -> {
+                    val drawing = stroke
+                    val mine = generation
+                    launch {
+                        if (enhanced) drawing?.join()
+                        if (mine != generation) return@launch
+                        if (enhanced) ink.animateTo(0f, MotionTokens.fadeOut(0.002f)) else ink.snapTo(0f)
+                    }
+                }
+            }
+        }
+    }
+    return drawBehind {
+        val a = ink.value
+        val w = size.width * sweep.value
+        if (a <= 0.003f || w <= 0f) return@drawBehind
+        val top = size.height * BOOK_MARKER_TOP
+        val bottom = size.height * BOOK_MARKER_BOTTOM
+        drawRoundRect(
+            color = color.copy(alpha = color.alpha * a),
+            topLeft = Offset(0f, top),
+            size = Size(w, bottom - top),
+            cornerRadius = CornerRadius(BOOK_MARKER_CORNER.toPx()),
+        )
+    }
 }

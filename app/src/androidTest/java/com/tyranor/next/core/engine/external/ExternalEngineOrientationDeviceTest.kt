@@ -33,12 +33,15 @@ class ExternalEngineOrientationDeviceTest {
         try {
             val defaultCases = listOf(
                 RuffleExternalEngineModule.buildLaunchIntent(
+                    context,
                     request(EngineType.RUFFLE, fixture, "game.swf", "external.flash"),
                 ),
                 RpgMakerExternalEngineModule.buildLaunchIntent(
+                    context,
                     request(EngineType.RPGMAKER, fixture, "[游戏目录]", "internal.rpgmvxace"),
                 ),
                 RenPyExternalEngineModule.buildLaunchIntent(
+                    context,
                     request(EngineType.RENPY, fixture, "[游戏目录]", "internal.renpy"),
                 ),
             )
@@ -52,6 +55,7 @@ class ExternalEngineOrientationDeviceTest {
 
             val reverseCases = listOf(
                 RuffleExternalEngineModule.buildLaunchIntent(
+                    context,
                     request(
                         EngineType.RUFFLE,
                         fixture,
@@ -61,6 +65,7 @@ class ExternalEngineOrientationDeviceTest {
                     ),
                 ),
                 RpgMakerExternalEngineModule.buildLaunchIntent(
+                    context,
                     request(
                         EngineType.RPGMAKER,
                         fixture,
@@ -70,6 +75,7 @@ class ExternalEngineOrientationDeviceTest {
                     ),
                 ),
                 RenPyExternalEngineModule.buildLaunchIntent(
+                    context,
                     request(
                         EngineType.RENPY,
                         fixture,

@@ -98,8 +98,8 @@ object ExternalEngineLauncher {
      *
      * @param orientationResolver 可选启动朝向解析回调；在 [ExternalEngineModule.prepareForLaunch]
      *   成功完成后、`startActivity` 之前执行，异常（除 [CancellationException]）回落 [request] 原方向。
-     * @param cancellationCheck 可重入取消检查点（生产为 `launchContext.ensureActive()`），将在
-     *   准备完成后与方向解析完成后各触发一次，确保已取消的启动不会继续拉起宿主。
+     * @param cancellationCheck 可重入取消检查点（生产为 `launchContext.ensureActive()`），在准备、方向解析、
+     *   Intent 构造后检查。部分模块构造 Intent 时需要读取游戏目录或宿主资源。
      */
     fun launch(
         context: Context,
@@ -126,12 +126,13 @@ object ExternalEngineLauncher {
             is PreparedLaunchRequest.Ready -> prepared.request
         }
 
-        val intent = module.buildLaunchIntent(resolvedRequest).addFlags(
+        val intent = module.buildLaunchIntent(context, resolvedRequest).addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or
                 Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
         )
         intent.putDisabledGraphicsRequest(onlyMissing = true)
+        cancellationCheck?.invoke()
         return try {
             context.applicationContext.startActivity(intent)
             ExternalEngineLaunchResult.success()

@@ -4,6 +4,7 @@ import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.LazyListLayoutInfo
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.GameFilterOptions
@@ -31,13 +32,34 @@ class ShelfCatalogLayoutTest {
 
     @Test
     fun verticalColumnCountAdaptsAcrossViewportWidths() {
-        assertEquals(6, shelfCatalogVerticalColumns(320.dp))
-        assertEquals(8, shelfCatalogVerticalColumns(390.dp))
-        assertEquals(10, shelfCatalogVerticalColumns(480.dp))
-        assertEquals(12, shelfCatalogVerticalColumns(620.dp))
-        assertEquals(15, shelfCatalogVerticalColumns(840.dp))
-        assertEquals(18, shelfCatalogVerticalColumns(1080.dp))
-        assertEquals(21, shelfCatalogVerticalColumns(1280.dp))
+        val widths = listOf(320.dp, 360.dp, 390.dp, 412.dp, 480.dp, 620.dp, 840.dp, 1080.dp, 1280.dp)
+        val density = Density(3f)
+        var prevCols = 0
+        for (w in widths) {
+            val spineH = shelfCatalogSpineHeight(w)
+            val baseW = shelfCatalogSpineBaseWidth(spineH)
+            assertTrue("spineHeight $spineH out of 156..192dp at $w", spineH.value in 156f..192f)
+            assertEquals(SPINE_WIDTH_TO_HEIGHT_RATIO, baseW.value / spineH.value, 1e-4f)
+            assertTrue("baseW $baseW out of ~27.5..34.5dp at $w", baseW.value in 27.5f..34.5f)
+
+            val cols = shelfCatalogVerticalColumns(w)
+            assertTrue("expected monotonic columns at $w: $cols >= $prevCols", cols >= prevCols)
+            prevCols = cols
+
+            val cells = with(density) { shelfCatalogGridCells(w, ShelfCatalogLayoutMode.SPINES) }
+            assertEquals(cols, cells.columns)
+            assertEquals(baseW.value, cells.cellWidth.value, 1e-4f)
+        }
+        assertTrue("390dp phone should fit more than 8 spines", shelfCatalogVerticalColumns(390.dp) > 8)
+        assertTrue("tablet 840dp should fit far more spines than phone", shelfCatalogVerticalColumns(840.dp) >= 20)
+
+        // 最窄书脊（320dp 屏 × 0.88 厚度，0.88 高度）字号不小于公共函数下限且能排下
+        val minWidthDp = shelfCatalogSpineBaseWidth(shelfCatalogSpineHeight(320.dp)).value * SPINE_MIN_THICKNESS_FACTOR
+        val minHeightDp = shelfCatalogSpineHeight(320.dp).value * 0.88f
+        val typo = shelfSpineTypography(minWidthDp, minHeightDp)
+        assertTrue("fontSizeDp ${typo.fontSizeDp} below floor", typo.fontSizeDp >= 11f * 0.85f - 1e-4f)
+        assertTrue("text width ${typo.fontSizeDp} should fit inside $minWidthDp", typo.fontSizeDp < minWidthDp * 0.5f)
+        assertTrue(typo.maxChars >= 6)
     }
 
     @Test
@@ -464,12 +486,139 @@ class ShelfCatalogLayoutTest {
     }
 
     @Test
-    fun spineHeightIsStableAndBounded() {
-        for (i in 0 until 100) {
+    fun spineHeightIsStableBoundedAndMatchesMainShelfTendency() {
+        var minFactor = Float.MAX_VALUE
+        var maxFactor = Float.MIN_VALUE
+        val samples = (0 until 200).map { i ->
             val uri = "content://games/catalog/$i"
             val factor = shelfCatalogSpineHeightFactor(uri)
             assertEquals(factor, shelfCatalogSpineHeightFactor(uri), 0f)
             assertTrue("factor $factor out of range", factor in 0.88f..1f)
+            minFactor = minOf(minFactor, factor)
+            maxFactor = maxOf(maxFactor, factor)
+            uri to factor
+        }
+        assertTrue("expected noticeable height variation, got $minFactor..$maxFactor", maxFactor - minFactor > 0.09f)
+
+        // 与书架主视图同一高矮倾向：主视图更高的书在藏书阁中也更高
+        for (a in 0 until 40) {
+            for (b in a + 1 until 40) {
+                val (uriA, catA) = samples[a]
+                val (uriB, catB) = samples[b]
+                val mainA = shelfBookTrait(uriA).sizeScale
+                val mainB = shelfBookTrait(uriB).sizeScale
+                if (mainA > mainB + 1e-5f) assertTrue(catA >= catB - 1e-5f)
+                if (mainA < mainB - 1e-5f) assertTrue(catA <= catB + 1e-5f)
+                val covA = shelfCatalogCoverHeightFactor(uriA)
+                val covB = shelfCatalogCoverHeightFactor(uriB)
+                assertTrue("cover factor $covA out of range", covA in 0.945f..1f)
+                if (mainA > mainB + 1e-5f) assertTrue(covA >= covB - 1e-5f)
+            }
+        }
+    }
+
+    @Test
+    fun spineThicknessGapRecessAreBoundedAndBooksAreNotStretched() {
+        var minThick = Float.MAX_VALUE
+        var maxThick = Float.MIN_VALUE
+        var minGap = Float.MAX_VALUE
+        var maxGap = Float.MIN_VALUE
+        var recessedCount = 0
+        val uris = (0 until 200).map { i ->
+            val uri = "content://games/thickness/$i"
+            val t = shelfCatalogSpineThicknessFactor(uri)
+            assertEquals(t, shelfCatalogSpineThicknessFactor(uri), 0f)
+            assertTrue("thickness $t out of range", t in 0.88f..1.12f)
+            minThick = minOf(minThick, t)
+            maxThick = maxOf(maxThick, t)
+
+            val nextUri = "content://games/thickness/${i + 1}"
+            val gap = shelfCatalogSpineGapDp(uri, nextUri)
+            assertEquals(gap, shelfCatalogSpineGapDp(uri, nextUri), 0f)
+            assertTrue("gap $gap out of range", gap in 1f..4f)
+            minGap = minOf(minGap, gap)
+            maxGap = maxOf(maxGap, gap)
+
+            val recess = shelfCatalogSpineRecess(uri)
+            assertEquals(recess, shelfCatalogSpineRecess(uri))
+            if (recess != ShelfCatalogSpineRecess.None) {
+                recessedCount++
+                assertTrue("liftDp ${recess.liftDp} out of range", recess.liftDp in 1.2f..2.4f)
+                assertTrue("shadeAlpha ${recess.shadeAlpha} out of range", recess.shadeAlpha in 0.06f..0.10f)
+            } else {
+                assertEquals(0f, recess.liftDp, 0f)
+                assertEquals(0f, recess.shadeAlpha, 0f)
+            }
+            uri
+        }
+        assertTrue("expected thickness variation, got $minThick..$maxThick", maxThick - minThick > 0.18f)
+        assertTrue("expected gap variation, got $minGap..$maxGap", maxGap - minGap > 2.0f)
+        assertTrue("expected ~1/5 recessed books, got $recessedCount/200", recessedCount in 20..65)
+
+        // 不为了铺满层宽把书拉宽：即使整层放满，各本保留自然厚度且层末留出自然空隙（或极少数超预算时仅微收）
+        val density = 3f
+        val baseCellPx = 94f
+        val innerWidthPx = 1032
+        val cols = 10
+        val sampleRow = uris.take(cols)
+        val sampleGaps = allocateShelfCatalogSpineGapsPx(sampleRow, density)
+        assertEquals(cols - 1, sampleGaps.size)
+        val widths = allocateShelfCatalogSpineWidths(
+            uris = sampleRow,
+            maxColumns = cols,
+            baseCellWidthPx = baseCellPx,
+            innerWidthPx = innerWidthPx,
+            gapsSumPx = sampleGaps.sum(),
+            trailingLeanReservePx = 42f,
+        )
+        assertEquals(cols, widths.size)
+        assertTrue("books must not exceed innerWidth", widths.sum() + sampleGaps.sum() <= innerWidthPx)
+        // 验证未被拉伸：如果预算充裕，每本书严格等于自身自然厚度
+        val thinnestUri = uris.minBy { shelfCatalogSpineThicknessFactor(it) }
+        val thinPair = listOf(thinnestUri, uris[1])
+        val thinGaps = allocateShelfCatalogSpineGapsPx(thinPair, density)
+        val thinWidths = allocateShelfCatalogSpineWidths(
+            uris = thinPair,
+            maxColumns = cols,
+            baseCellWidthPx = baseCellPx,
+            innerWidthPx = innerWidthPx,
+            gapsSumPx = thinGaps.sum(),
+            trailingLeanReservePx = 42f,
+        )
+        assertEquals(
+            kotlin.math.round(baseCellPx * shelfCatalogSpineThicknessFactor(thinnestUri)).toInt(),
+            thinWidths[0],
+        )
+        assertTrue("short row must leave shelf empty at end", thinWidths.sum() + thinGaps.sum() < innerWidthPx / 2)
+
+        // 即使全是最厚书 + 最大缝，也绝不超出层宽与末本斜倚余量
+        val thickestUri = uris.maxBy { shelfCatalogSpineThicknessFactor(it) }
+        val crowdedTail = List(cols - 1) { thickestUri }
+        val crowdedGaps = List(cols - 2) { (4f * density).toInt() }
+        val reserve = 42f
+        val crowdedWidths = allocateShelfCatalogSpineWidths(
+            uris = crowdedTail,
+            maxColumns = cols,
+            baseCellWidthPx = baseCellPx,
+            innerWidthPx = innerWidthPx,
+            gapsSumPx = crowdedGaps.sum(),
+            trailingLeanReservePx = reserve,
+        )
+        assertEquals(cols - 1, crowdedWidths.size)
+        assertTrue(
+            "crowded unfilled tier must leave lean room",
+            crowdedWidths.sum() + crowdedGaps.sum() <= innerWidthPx - reserve.toInt() + 1,
+        )
+    }
+
+    @Test
+    fun variableSpineWidthsKeepRowAndColumnIndexingIntact() {
+        val games = (0 until 37).map { fakeGame(it) }
+        val columns = shelfCatalogVerticalColumns(390.dp)
+        val rows = buildShelfCatalogVerticalRows(games, columns = columns, groupByEngine = false)
+        for (i in games.indices) {
+            val coord = findShelfCatalogGridCoord(rows, games[i].uri)
+            assertEquals(i / columns to i % columns, coord)
         }
     }
 
@@ -802,5 +951,27 @@ class ShelfCatalogLayoutTest {
         )
         val expectedSideShift = shelfPoseScale(2f) * trait.sizeScale * (overflowPx * 0.5f)
         assertEquals(expectedSideShift, clampedSide.spineRect.bottom - normalSide.spineRect.bottom, 1e-2f)
+    }
+
+    @Test
+    fun spineTitleLengthDoesNotDependOnBookHeightOrThickness() {
+        val tierHeight = 180.dp
+        val basis = shelfCatalogSpineTextBasis(tierHeight)
+        val expected = shelfSpineTypography(
+            shelfCatalogSpineBaseWidth(tierHeight).value,
+            (tierHeight * SHELF_CATALOG_MIN_SPINE_HEIGHT_FACTOR).value,
+        )
+        val uris = (0 until 9).map { "content://games/title-$it" }
+        with(Density(1.375f)) {
+            for (budgetPx in listOf(320, 480)) {
+                val widths = allocateShelfCatalogSpineWidths(uris, uris.size, basis.width.toPx(), budgetPx, 8)
+                for ((index, uri) in uris.withIndex()) {
+                    val width = widths[index].toDp()
+                    val height = (tierHeight * shelfCatalogSpineHeightFactor(uri)).roundToPx().toDp()
+                    val actual = shelfSpineTypography(width.value, height.value, basis)
+                    assertEquals(expected, actual)
+                }
+            }
+        }
     }
 }

@@ -84,7 +84,7 @@ object RpgMakerExternalEngineModule : ExternalEngineModule {
         return null
     }
 
-    override fun buildLaunchIntent(request: ExternalEngineLaunchRequest): Intent {
+    override fun buildLaunchIntent(context: Context, request: ExternalEngineLaunchRequest): Intent {
         val gameType = resolveGameType(request)
         return Intent(actionForGameType(gameType)).setPackage(packageName).apply {
             putExtra(ExternalEngineContract.GAME, buildGameJson(request))

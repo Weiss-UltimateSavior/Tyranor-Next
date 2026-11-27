@@ -265,22 +265,20 @@ private fun SaveCloudVersionsPanel(
         }
         val panelTaskInfo = taskInfo?.takeIf { pendingVersion == null && editedIdentity == null }
         val shownPanelTaskInfo = rememberLastNonNull(panelTaskInfo)
+        val noteInk = if (inBook) com.tyranor.next.theme.CurrentBookPaperPalette.inkSecondary else MaterialTheme.colorScheme.onSurfaceVariant
         ExpandVisibility(visible = panelTaskInfo != null, label = "saveVersionsTaskInfo") {
             shownPanelTaskInfo?.let { info ->
                 Text(
                     info,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (inBook) SecondaryTextColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = noteInk,
                     modifier = Modifier.padding(horizontal = 4.dp),
                 )
             }
         }
-        val cardColors = if (inBook) CardDefaults.defaultColors(color = DialogItemSurface) else CardDefaults.defaultColors()
         ExpandVisibility(visible = loadError == null, label = "saveVersionsCard") {
-            MiuixCard(
-                modifier = Modifier.pressSquishGroup().fillMaxWidth().glassBorder(),
-                cornerRadius = AppComponentCornerRadius,
-                colors = cardColors,
+            com.tyranor.next.ui.common.AppSectionCard(
+                modifier = Modifier.pressSquishGroup(),
             ) {
                 Column(Modifier.padding(vertical = 4.dp)) {
                     BlurCrossfade(targetState = if (loading) 0 else if (versions.isEmpty()) 1 else 2) { stateKey ->
@@ -289,14 +287,14 @@ private fun SaveCloudVersionsPanel(
                             0 -> Text(
                                 stringResource(R.string.common_loading),
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = SecondaryTextColor,
-                                modifier = Modifier.breathing().padding(horizontal = 16.dp, vertical = 12.dp),
+                                color = noteInk,
+                                modifier = Modifier.breathing().padding(horizontal = com.tyranor.next.ui.common.appRowHorizontalPadding(), vertical = 12.dp),
                             )
                             1 -> Text(
                                 stringResource(R.string.save_versions_none),
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = SecondaryTextColor,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                color = noteInk,
+                                modifier = Modifier.padding(horizontal = com.tyranor.next.ui.common.appRowHorizontalPadding(), vertical = 12.dp),
                             )
                             else -> Column {
                                 OverlayDropdownPreference(
@@ -348,11 +346,9 @@ private fun SaveCloudVersionsPanel(
                 }
             }
         }
-        // 「立即同步 / 云端标识」卡片
-        MiuixCard(
-            modifier = Modifier.pressSquishGroup().fillMaxWidth().glassBorder(),
-            cornerRadius = AppComponentCornerRadius,
-            colors = cardColors,
+        // 「立即同步 / 云端标识」分组（书外卡片，书页内渐隐墨线分组）
+        com.tyranor.next.ui.common.AppSectionCard(
+            modifier = Modifier.pressSquishGroup(),
         ) {
             Column(Modifier.padding(vertical = 4.dp)) {
                 AppNavItem(
@@ -509,10 +505,8 @@ private fun SaveSelectionRecoveryPanel(
     }
     // 需要恢复时入口卡片原位展开；恢复完成后原路收回（原先为提前 return，瞬间出现 / 消失）
     ExpandVisibility(visible = needed, label = "saveSelectionRecovery") {
-        MiuixCard(
-            modifier = Modifier.pressSquishGroup().fillMaxWidth().padding(bottom = 12.dp).glassBorder(),
-            cornerRadius = AppComponentCornerRadius,
-            colors = if (inBook) CardDefaults.defaultColors(color = DialogItemSurface) else CardDefaults.defaultColors(),
+        com.tyranor.next.ui.common.AppSectionCard(
+            modifier = Modifier.pressSquishGroup().padding(bottom = 12.dp),
         ) {
             AppNavItem(
                 title = stringResource(R.string.save_version_recover),

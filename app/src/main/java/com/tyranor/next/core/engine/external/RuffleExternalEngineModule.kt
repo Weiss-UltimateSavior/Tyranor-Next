@@ -72,7 +72,7 @@ object RuffleExternalEngineModule : ExternalEngineModule {
         return null
     }
 
-    override fun buildLaunchIntent(request: ExternalEngineLaunchRequest): Intent {
+    override fun buildLaunchIntent(context: Context, request: ExternalEngineLaunchRequest): Intent {
         val execFile = resolveExecFile(request).orEmpty()
         return Intent(action).setPackage(packageName).apply {
             putExtra(ExternalEngineContract.GAME, buildGameJson(request))
