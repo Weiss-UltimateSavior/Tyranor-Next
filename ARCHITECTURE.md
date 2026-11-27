@@ -156,6 +156,7 @@ WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano
 - XP3 源码与固定依赖在 [engine/rust](engine/rust/Cargo.toml)；`build-archives.sh` 先运行宿主测试，再用 cargo-ndk 生成 `libarchive_xp3_core.so`。JNI panic 防护依赖 unwind，不改为 `panic=abort`。
 - System35/4 的固定来源构建脚本位于 `engine/xsystem35/scripts/`、`engine/xsystem4/scripts/`；共享 `libSDL2x.so` / `org.libsdl.app32`，与 ONS 的 `libSDL2.so` / `org.libsdl.app` 分开维护。
 - Siglus 与 Framebuffer 宿主共用由 `siglus_rs` 的 `game_launcher` 构建的 `libsiglus.so`。Gradle 校验固定库哈希和运行库包暂存容器中的两组必需动态导出。来源、构建参数与许可见 [运行库说明](engine/patches/siglus/README.md)。普通构建与 CI 使用预编译库。
+- FVP 宿主通过 `librfvp_bridge.so` 调用 rfvp 的 Android C ABI。运行库来源、构建参数及 SHA-256 随 APK 分发，见 [FVP 运行库来源](engine/src/main/assets/licenses/fvp/upstream-source.txt)。
 - SystemNNN 从 `assets/engine-runtime/systemnnn.zip.xz` 解压运行库。播放器和校验进程各自核对当前 APK 标记，再按绝对路径调用 `System.load`。CI 核对固定来源、大小、SHA-256、JNI 导出及实际 APK 的分包。Emberfall 自行生成默认碎裂网格，自有代码按 GPL-2.0-only 分发。 [运行库来源](engine/src/main/assets/licenses/systemnnn/ffmpeg-source.txt) · [归属与许可](engine/src/main/assets/licenses/systemnnn/upstream-source.txt)
 - Emberfall `2150bab` 的分包曾在 Android 11（API 30）`sdk_gphone_x86_64` 模拟器通过 ARM64 转译运行《死终Ω神盾》简体版开场并进入标题。该版设备 ZIP 测试确认有效全局进度可导入，损坏包被拒绝且原存档字节保持一致，主进程没有加载 SystemNNN 原生库。
 - Emberfall `d017074` 的独立版与 TYN 测试包均在 Android 11 ARM64 转译模拟器安装成功。TYN 在设备解压后的运行库与 APK 分包一致。新默认网格的全屏转场与图层碎裂在 Host 上通过 800×600 和 1280×720 的渲染检查。

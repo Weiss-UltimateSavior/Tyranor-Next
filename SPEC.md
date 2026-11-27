@@ -100,7 +100,7 @@
 | Artemis | `system.ini`、`.pfs` 等组合 | 内置多版本宿主与补丁策略 |
 | Siglus | `Gameexe.dat/ini`、`Scene.pck` | 内置 Siglus |
 | RealLive / AVG32 / UK2 | RealLive 的 `SEEN.TXT` 完整目录表及有效场景头，或 `Gameexe.ini` 与非空 `SEEN####.TXT`。AVG32 的 `PACL` 场景档或三位数散装场景。UK2 的 `UK2.CFG` 与 `.MES` 等 | 内置 game_launcher + Framebuffer 宿主 |
-| FVP | `.hcb/.bch` 脚本与资源包 | 内置 rfvp |
+| FVP | `.hcb/.bch` 脚本与资源包 | 内置 rfvp。优先运行 `.bch`，其次 `.hcb`。运行库扫描脚本和 `.bin` 资源包时跳过 macOS 生成的 `._` 元数据文件。 |
 | CMVS | `data/pack/script.cpz` + 唯一 `start.ps3/ps2/pss`；单游戏引擎设置可选择全部登记作品，直接按所选配置启动并跳过识别哈希 | 内置 cmvs-rs（NativeActivity + loader），需 Vulkan，支持游戏内存档备注输入 |
 | System35 / System4 | ALD、System39 特征 / `System40.ini`、`AliceStart.ini` | 内置 xsystem35 / xsystem4，两类独立识别 |
 | SystemNNN | 游戏根目录下的 `spt/sys.spt`，不区分大小写 | 内置 SystemNNN-Emberfall。TYN 提供全局和单游戏显示设置 |

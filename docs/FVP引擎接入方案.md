@@ -375,6 +375,9 @@ void rfvp_android_set_system_font(void* handle, int32_t enabled);
 
 ### 6.5 构建与署名
 
+- 当前 APK 随附的 FVP 运行库来自 rfvp fork `1f0c279`。固定源码、工具链、命令与 SHA-256 见[随包来源说明](../engine/src/main/assets/licenses/fvp/upstream-source.txt)，MPL-2.0 文本见[随包许可证](../engine/src/main/assets/licenses/fvp/MPL-2.0.txt)。
+- 以 2026-10-30 本地 rfvp 检出 `bca050d` 为对照核对源码。`android_host.rs`、Android 启动器和打包脚本均未改动。实际新旧运行库的 12 个 `rfvp_android_*` 导出均与 `rfvp_bridge.cpp` 一致，动态依赖保持为同一组 Android 系统库。`FvpActivity` 和 JNI 桥沿用原有的 Surface、按键、编码和字体契约。
+- 旧 fork 的 Unicode 文件名修复由 `cbaabbf` 保留。新版脚本和资源扫描会跳过 `._` 元数据文件，`.bch` 仍优先于 `.hcb`。新版 WMV 音频流式播放走引擎内部音频后端。
 - 记录构建基线 commit 到 TyranorNext `README.md` 与本文档；
 - MPL-2.0：保留上游 `LICENSE` 与文件头；TyranorNext README 注明「引擎运行库来自 rfvp（MPL-2.0），源码见上游/fork 仓库」；
 - 桥接 shim 与宿主代码自研，不直接复制上游文件，规避许可混入争议。
@@ -438,15 +441,18 @@ void rfvp_android_set_system_font(void* handle, int32_t enabled);
 
 ### 8.1 构建引擎库（一次性/每次更新）
 
+在[随包来源说明](../engine/src/main/assets/licenses/fvp/upstream-source.txt)指定的源码检出中执行，`ANDROID_NDK_HOME` 指向该说明的 NDK 版本。以下以 macOS 为例。
+
 ```bash
-cd "/Users/weiss/github- engine/rfvp"
-export ANDROID_NDK_HOME="$HOME/Library/Android/sdk/ndk/28.0.13004108"
-CARGO_NDK_PLATFORM=26 cargo ndk -t arm64-v8a -o /tmp/rfvp-android build --release -p rfvp --lib
+CARGO_NDK_PLATFORM=26 cargo ndk -t arm64-v8a build --locked --release -p rfvp --lib
 "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-strip" \
-  --strip-unneeded /tmp/rfvp-android/arm64-v8a/librfvp.so
-cp /tmp/rfvp-android/arm64-v8a/librfvp.so \
-   /Users/weiss/opencode/rma/TyranorNext/engine/src/main/jniLibs/arm64-v8a/
+  --strip-unneeded target/aarch64-linux-android/release/librfvp.so
+shasum -a 256 target/aarch64-linux-android/release/librfvp.so
+cp target/aarch64-linux-android/release/librfvp.so \
+   "$TYRANOR_NEXT_DIR/engine/src/main/jniLibs/arm64-v8a/"
 ```
+
+`TYRANOR_NEXT_DIR` 指向 TyranorNext 仓库。Gradle 从该路径下的 `engine/src/main/jniLibs/arm64-v8a/` 取库并生成 APK 内的 `assets/engine-runtime/fvp.zip.xz`。
 
 实测：构建约 1.5–3 分钟；API 26/28 均可（与 `minSdk 26` 对齐）。
 
@@ -462,7 +468,7 @@ git diff --check
 ### 8.3 CI 影响
 
 - 无 Rust 工具链需求（.so 入库）；
-- APK 体积 +38.7 MiB（arm64），`jniLibs` 总量由约 68.8 MiB → 约 107.5 MiB；
+- `1f0c279` 的 arm64 运行库约 39.7 MiB，APK 中的 `fvp.zip.xz` 约 12.0 MiB；
 - nativeplugin 打包任务不受影响。
 
 ---
@@ -490,6 +496,12 @@ git diff --check
 8. 后台/回前台、旋转（sensorLandscape 内）、多任务切换无崩溃；
 9. 大体积游戏（graph.bin >1GB）加载与播放流畅，内存与首帧耗时记录；
 10. 存档镜像：导出 zip → 清档 → 导入 → 读档恢复。
+
+**`1f0c279` 验收（2026-11-27）**
+
+- 联想小新 Pad Pro 12.7（TB375FC，Android 16 / API 36，arm64）使用隔离 Debug 包，从游戏库扫描并启动《樱花、萌放。》汉化版副本。含中文文件名、`._Sakura.hcb` 和 `._graph.bin` 的目录可正常进入标题与正文。将副本里的真实脚本改为 `.bch` 并保留空的 `.hcb`、`._Sakura.bch`，再次启动可显示游戏开场，验证 `.bch` 优先级。
+- 宿主日志确认 12 个 C ABI 符号可解析，Shift-JIS、系统回退、HiDPI 和导入的 OTF 已传入。实测触摸推进、快速保存与读取、切到桌面后在同一进程重建 Surface 并继续推进、双击返回退出。设备私有目录解压的库与 APK 分片、源码目录三处 SHA-256 一致。
+- `:app:assembleDebug`、`:app:testDebugUnitTest` 和 rfvp 的 VFS（10 项）、PCM 流（5 项）专项通过。rfvp 全量库测试缺少上游 `testcase` 样本，9 项失败。`:engine:testDebugUnitTest` 的 RPG Maker 存档锁用例 `twoBridgeReplaysShareTheStoreLock` 失败。真机流程未覆盖 WMV 影片音轨播放。
 
 ### 9.3 回滚
 

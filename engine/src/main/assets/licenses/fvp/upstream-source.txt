@@ -1,0 +1,15 @@
+FVP runtime (librfvp.so), rfvp 0.7.0
+
+Upstream: https://github.com/xmoezzz/rfvp
+Source: https://github.com/Weiss-UltimateSavior/rfvp/tree/1f0c2795f26e3a7d705980f7de2a8891a513281c
+Revision: 1f0c2795f26e3a7d705980f7de2a8891a513281c (clean checkout, no local patches)
+License: Mozilla Public License 2.0 (MPL-2.0), see MPL-2.0.txt
+
+Build: Rust/Cargo 1.96.0, cargo-ndk 4.1.2, Android NDK 28.0.13004108
+Target: arm64-v8a (aarch64-linux-android), Android API 26, 16 KiB ELF load alignment
+Command: CARGO_NDK_PLATFORM=26 cargo ndk -t arm64-v8a build --locked --release -p rfvp --lib
+Post-processing: NDK llvm-strip --strip-unneeded target/aarch64-linux-android/release/librfvp.so
+
+Artifact: librfvp.so
+Size: 41632336 bytes
+SHA-256: e0bddbbb447e286b8f4f035a6e08b6f93a9838163aeffaaeafe834e34e8349b6
