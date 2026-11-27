@@ -44,13 +44,12 @@ import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.settings.PerGameSettingsStore
-import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.TextColor
-import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
+import com.tyranor.next.ui.common.AppSectionCard
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.DialogTextButton
@@ -71,7 +70,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import android.widget.Toast
@@ -429,9 +427,8 @@ private fun RuntimeModuleSettingsView(
             if (settings != null && !descriptionConflict) {
                 if (settings.items.isNotEmpty()) item(key = "runtime_settings_restore_all_defaults") {
                     val restoreEnabled = bindingValid && descriptorConfirmed && !loadError
-                    MiuixCard(
-                        cornerRadius = AppComponentCornerRadius,
-                        modifier = Modifier.then(listItemMotion()).pressSquishGroup().fillMaxWidth().glassBorder(),
+                    AppSectionCard(
+                        modifier = Modifier.then(listItemMotion()).pressSquishGroup(),
                     ) {
                         AppNavItem(
                             title = stringResource(R.string.runtime_settings_restore_all_title),
@@ -454,7 +451,7 @@ private fun RuntimeModuleSettingsView(
                         is RuntimeModuleSettingsEntry.Item -> {
                             val item = entry.spec
                             val value = effectiveSettings?.values?.get(item.key) ?: item.defaultValue
-                            RuntimeSettingItemCard(
+                            RuntimeSettingRow(
                                 modifier = Modifier.then(listItemMotion()),
                                 item = item,
                                 value = value,
@@ -662,6 +659,27 @@ private fun RuntimeModuleSettingsView(
             },
         )
     }
+}
+
+@Composable
+private fun RuntimeSettingRow(
+    modifier: Modifier = Modifier,
+    item: RuntimeModuleSettingItemSpec,
+    value: Any,
+    enabled: Boolean,
+    onChange: (Any) -> Unit,
+    onEdit: () -> Unit,
+    onPickPath: () -> Unit,
+) {
+    RuntimeSettingItemCard(
+        modifier = modifier,
+        item = item,
+        value = value,
+        enabled = enabled,
+        onChange = onChange,
+        onEdit = onEdit,
+        onPickPath = onPickPath,
+    )
 }
 
 @Composable

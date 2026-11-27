@@ -2,6 +2,7 @@ package com.tyranor.next.ui.runtime
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,15 +18,16 @@ import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.runtime.RuntimeModuleSettingCardSpec
 import com.tyranor.next.core.engine.runtime.RuntimeModuleSettingItemSpec
-import com.tyranor.next.theme.AppComponentCornerRadius
-import com.tyranor.next.theme.TextColor
-import com.tyranor.next.theme.glassBorder
+import com.tyranor.next.theme.BookSerif
+import com.tyranor.next.theme.BookSerifBold
+import com.tyranor.next.theme.CurrentBookPaperPalette
+import com.tyranor.next.theme.LocalShelfBookLeaf
+import com.tyranor.next.ui.common.AppSectionCard
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.OverlayDropdownPreference
 import com.tyranor.next.ui.common.Slider as MotionSlider
 import com.tyranor.next.ui.common.SwitchPreference
 import com.tyranor.next.ui.common.motion.pressSquishGroup
-import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import java.math.BigDecimal
 import java.math.RoundingMode
 import kotlin.math.round
@@ -41,20 +43,18 @@ internal fun RuntimeSettingItemCard(
     onEdit: () -> Unit,
     onPickPath: () -> Unit,
 ) {
-    MiuixCard(
-        cornerRadius = AppComponentCornerRadius,
-        modifier = modifier.pressSquishGroup().fillMaxWidth().glassBorder(),
+    AppSectionCard(
+        modifier = modifier.pressSquishGroup(),
+        insidePadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
     ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-            RuntimeSettingContent(
-                item = item,
-                value = value,
-                enabled = enabled,
-                onChange = onChange,
-                onEdit = onEdit,
-                onPickPath = onPickPath,
-            )
-        }
+        RuntimeSettingContent(
+            item = item,
+            value = value,
+            enabled = enabled,
+            onChange = onChange,
+            onEdit = onEdit,
+            onPickPath = onPickPath,
+        )
     }
 }
 
@@ -68,26 +68,21 @@ internal fun RuntimeSettingsGroupCard(
     onEdit: (RuntimeModuleSettingItemSpec) -> Unit,
     onPickPath: (RuntimeModuleSettingItemSpec) -> Unit,
 ) {
-    MiuixCard(
-        cornerRadius = AppComponentCornerRadius,
-        modifier = modifier.pressSquishGroup().fillMaxWidth().glassBorder(),
+    val inBook = LocalShelfBookLeaf.current
+    AppSectionCard(
+        modifier = modifier.pressSquishGroup(),
+        title = spec.title,
+        insidePadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
-                spec.title,
-                style = MaterialTheme.typography.titleMedium,
-                color = TextColor,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-            )
             spec.description?.let {
                 Text(
                     it,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp),
+                    style = if (inBook) MaterialTheme.typography.bodyMedium.copy(fontFamily = BookSerif) else MaterialTheme.typography.bodyMedium,
+                    color = if (inBook) CurrentBookPaperPalette.inkSecondary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             spec.items.forEach { item ->
@@ -113,8 +108,17 @@ private fun RuntimeSettingContent(
     onEdit: () -> Unit,
     onPickPath: () -> Unit,
 ) {
-    val titleTextStyle = MaterialTheme.typography.titleMedium
-    val valueTextStyle = MaterialTheme.typography.bodyMedium
+    val inBook = LocalShelfBookLeaf.current
+    val titleTextStyle = if (inBook) {
+        MaterialTheme.typography.titleMedium.copy(fontFamily = BookSerifBold)
+    } else {
+        MaterialTheme.typography.titleMedium
+    }
+    val valueTextStyle = if (inBook) {
+        MaterialTheme.typography.bodyMedium.copy(fontFamily = BookSerif)
+    } else {
+        MaterialTheme.typography.bodyMedium
+    }
     Column(Modifier.fillMaxWidth()) {
         when (item.type) {
             RuntimeModuleSettingItemSpec.Type.BOOLEAN -> SwitchPreference(
@@ -183,11 +187,16 @@ private fun RuntimeSettingContent(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(item.title, modifier = Modifier.weight(1f), style = titleTextStyle, color = TextColor)
+                    Text(
+                        item.title,
+                        modifier = Modifier.weight(1f),
+                        style = titleTextStyle,
+                        color = if (inBook) CurrentBookPaperPalette.ink else MaterialTheme.colorScheme.onSurface,
+                    )
                     Text(
                         formatRuntimeModuleSliderValue(item, current),
                         style = valueTextStyle,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (inBook) CurrentBookPaperPalette.inkSecondary else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 MotionSlider(
@@ -220,7 +229,7 @@ private fun RuntimeSettingContent(
             Text(
                 description,
                 style = valueTextStyle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (inBook) CurrentBookPaperPalette.inkSecondary else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             )
         }
