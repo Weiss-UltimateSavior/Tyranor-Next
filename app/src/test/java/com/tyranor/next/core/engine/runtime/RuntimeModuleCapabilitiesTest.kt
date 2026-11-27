@@ -108,6 +108,62 @@ class RuntimeModuleCapabilitiesTest {
     }
 
     @Test
+    fun emptyAndNestedCardsAreDroppedAndDescriptorCapsAreEnforced() {
+        val cards = requireNotNull(RuntimeModuleManifestParser.parse(
+            """{"settings":{"version":1,"items":[
+                {"key":"empty","type":"card","title":"Empty","items":[]},
+                {"key":"nested","type":"card","title":"Nested","items":[
+                  {"key":"inner","type":"card","title":"Inner","items":[
+                    {"key":"hidden","type":"boolean","title":"Hidden","default":true}]}
+                ]},
+                {"key":"valid","type":"boolean","title":"Valid","default":true}
+            ]}}""",
+        )?.settings)
+        assertEquals(listOf("valid"), cards.items.map { it.key })
+        assertEquals(1, cards.entries.size)
+
+        val manyCards = (0 until 17).joinToString(",") { index ->
+            """{"key":"card$index","type":"card","title":"Card $index","items":[{"key":"item$index","type":"boolean","title":"Item","default":false}]}"""
+        }
+        val cappedCards = requireNotNull(RuntimeModuleManifestParser.parse(
+            """{"settings":{"version":1,"items":[$manyCards]}}""",
+        )?.settings)
+        assertEquals(16, cappedCards.entries.size)
+        assertEquals(16, cappedCards.items.size)
+
+        val manyItems = (0 until 40).joinToString(",") { index ->
+            """{"key":"item$index","type":"boolean","title":"Item","default":false}"""
+        }
+        val cappedItems = requireNotNull(RuntimeModuleManifestParser.parse(
+            """{"settings":{"version":1,"items":[$manyItems]}}""",
+        )?.settings)
+        assertEquals(32, cappedItems.items.size)
+    }
+
+    @Test
+    fun sliderAndPathLengthBoundariesAreValidated() {
+        assertNull(RuntimeModuleSettingsParser.parseItem(JSONObject(
+            """{"key":"scale","type":"slider","title":"Scale","default":0,"min":0,"max":1,"step":0}""",
+        )))
+        assertNull(RuntimeModuleSettingsParser.parseItem(JSONObject(
+            """{"key":"scale","type":"slider","title":"Scale","default":0,"min":0,"max":1,"step":-0.1}""",
+        )))
+
+        val negativeRange = requireNotNull(RuntimeModuleSettingsParser.parseItem(JSONObject(
+            """{"key":"scale","type":"slider","title":"Scale","default":-0.5,"min":-1,"max":1,"step":0.5}""",
+        )))
+        assertTrue(RuntimeModuleSettingsParser.isValidValue(negativeRange, -1.0))
+        assertTrue(RuntimeModuleSettingsParser.isValidValue(negativeRange, 0.5))
+        assertFalse(RuntimeModuleSettingsParser.isValidValue(negativeRange, 0.25))
+
+        val shortPath = requireNotNull(RuntimeModuleSettingsParser.parseItem(JSONObject(
+            """{"key":"config","type":"file","title":"Config","default":"","maxLength":4}""",
+        )))
+        assertTrue(RuntimeModuleSettingsParser.isValidValue(shortPath, "/abc"))
+        assertFalse(RuntimeModuleSettingsParser.isValidValue(shortPath, "/abcd"))
+    }
+
+    @Test
     fun steppedSliderSupportDoesNotDependOnAbsoluteFloatTicks() {
         val collapsedFloatRange = RuntimeModuleSettingsParser.parseItem(JSONObject(
             """{"key":"scale","type":"slider","title":"Scale","default":16777219,"min":16777219,"max":16777220,"step":0.5}""",

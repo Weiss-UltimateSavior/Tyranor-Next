@@ -24,7 +24,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
   <img src="screenshots/index4.png" alt="Tyranor Next" width="900" />
 </p>
 
-更多拓展功能（部分展示，第三方插件支持见 [docs/第三方APK运行时模块接入指南.md](docs/第三方APK运行时模块接入指南.md)）
+更多拓展功能（部分展示。第三方 APK 运行时模块可声明按游戏保存的设置，支持卡片分组、滑条和文件/目录选择；详见[接入指南](docs/第三方APK运行时模块接入指南.md)）
 <p align="center">
   <img src="screenshots/index5.png" alt="Tyranor Next" width="900" />
 </p>

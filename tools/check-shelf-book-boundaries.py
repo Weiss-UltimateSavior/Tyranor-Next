@@ -84,8 +84,15 @@ BOOK_SHARED_FUNCTIONS = {
     "ui/runtime/RuntimeModuleSettingsScreen.kt": (
         "RuntimeModuleSettingsDialog",
         "RuntimeModuleSettingsView",
-        "RuntimeSettingRow",
         "StatusCard",
+    ),
+    "ui/runtime/RuntimeModuleSettingControls.kt": (
+        "RuntimeSettingItemCard",
+        "RuntimeSettingsGroupCard",
+        "RuntimeSettingContent",
+    ),
+    "ui/runtime/RuntimeModuleSettingPathPicker.kt": (
+        "rememberRuntimeModuleSettingPathPicker",
     ),
 }
 

@@ -4,6 +4,7 @@ import android.content.Context
 import com.core.engine.EnginePrefs
 import com.tyranor.next.core.game.storage.GameOverridePartitions
 import com.tyranor.next.core.game.storage.GameOverridesRepository
+import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.engine.runtime.RuntimeModuleSettingsSpec
 import org.json.JSONObject
 import java.util.Locale
@@ -255,6 +256,16 @@ object PerGameSettingsStore {
             ?.optJSONObject(packageName)
             ?.let { JSONObject(it.toString()) }
             ?: JSONObject()
+    }
+
+    /** Await queued Room writes before reading the cached runtime-module settings snapshot. */
+    suspend fun getRuntimeModuleSettingsAfterPendingWrites(
+        context: Context,
+        gameUri: String,
+        packageName: String,
+    ): JSONObject {
+        GameLibraryRepository.awaitPendingWrites()
+        return getRuntimeModuleSettings(context, gameUri, packageName)
     }
 
     /** Persist a validated module-only override object and await both prefs mirror and Room write. */

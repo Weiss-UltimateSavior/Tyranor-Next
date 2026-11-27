@@ -42,7 +42,6 @@ import com.tyranor.next.core.engine.runtime.RuntimeModuleSettingsParser
 import com.tyranor.next.core.engine.runtime.RuntimeModuleSettingsSpec
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.storage.GameLibraryFacade
-import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.PageTextColor
@@ -191,7 +190,9 @@ private fun RuntimeModuleSettingsView(
         owner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { reload() }
     }
 
-    if (!inBook) BackHandler(enabled = dirty) { showUnsavedDialog = true }
+    if (!inBook) BackHandler(enabled = dirty || saveRunning) {
+        if (!saveRunning) showUnsavedDialog = true
+    }
     LaunchedEffect(backRequested, dirty) {
         if (backRequested && !dirty) {
             backRequested = false
@@ -203,14 +204,21 @@ private fun RuntimeModuleSettingsView(
         val changed = parseObject(draftJson)
         if (value == null) changed.remove(item.key) else changed.put(item.key, value)
         draftJson = changed.toString()
-        draftFingerprint = settings?.fingerprint
         saveDescriptorChanged = false
         saveError = false
     }
 
-    val settingPathPicker = rememberRuntimeModuleSettingPathPicker(game.uri, packageName) { key, path ->
+    val settingPathPicker = rememberRuntimeModuleSettingPathPicker(
+        game.uri,
+        packageName,
+        settingsReady = !loading,
+        descriptorFingerprint = settings?.fingerprint,
+    ) { key, path, requestFingerprint, requestType ->
         val item = settings?.items?.firstOrNull { it.key == key }
-        if (item == null || !RuntimeModuleSettingsParser.isValidValue(item, path)) {
+        if (item == null ||
+            !isRuntimeModuleSettingPathRequestCompatible(requestFingerprint, requestType, settings.fingerprint, item.type) ||
+            !RuntimeModuleSettingsParser.isValidValue(item, path)
+        ) {
             false
         } else {
             changeOverride(item, path)
@@ -224,13 +232,13 @@ private fun RuntimeModuleSettingsView(
         draftJson = JSONObject().toString()
         draftFingerprint = settings?.fingerprint
         saveError = false
+        saveDescriptorChanged = false
     }
 
     suspend fun readStoredSettingsJson(): String = withContext(Dispatchers.IO) {
         // A commit-started awaited write can outlive its cancelled caller. Drain the writer queue
         // before reading the cached Room row, or the read can clear saveOutcomeUnknown too early.
-        GameLibraryRepository.awaitPendingWrites()
-        PerGameSettingsStore.getRuntimeModuleSettings(context, game.uri, packageName).toString()
+        PerGameSettingsStore.getRuntimeModuleSettingsAfterPendingWrites(context, game.uri, packageName).toString()
     }
 
     fun cancelDiscardDraft() {
@@ -257,6 +265,7 @@ private fun RuntimeModuleSettingsView(
             discardRunning = false
             if (persistedJson == null) {
                 saveError = true
+                showUnsavedDialog = false
                 return@launch
             }
             if (saveOutcomeUnknown) {
@@ -316,9 +325,7 @@ private fun RuntimeModuleSettingsView(
             val result = withContext(Dispatchers.IO) {
                 PerGameSettingsStore.saveRuntimeModuleSettings(context, game.uri, packageName, spec, json)
             }
-            if (result is PerGameSettingsStore.RuntimeModuleSettingsSaveResult.Saved) {
-                saveOutcomeUnknown = false
-            }
+            saveOutcomeUnknown = result is PerGameSettingsStore.RuntimeModuleSettingsSaveResult.StorageFailure
             when (result) {
                 is PerGameSettingsStore.RuntimeModuleSettingsSaveResult.Saved -> {
                     val normalized = json.toString()
@@ -367,10 +374,8 @@ private fun RuntimeModuleSettingsView(
         }
     }
 
-    val canSave = dirty && bindingValid && descriptorConfirmed && !saveRunning && !descriptionConflict
-
     fun saveNow() {
-        if (!saveRunning && !loading && bindingValid && !descriptionConflict) {
+        if (!loading && !saveRunning) {
             scope.launch { saveDraft() }
         }
     }
@@ -386,7 +391,7 @@ private fun RuntimeModuleSettingsView(
             contentPadding = contentPadding,
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (screenState != RuntimeSettingsScreenState.Content) item(key = "runtime_settings_state") {
+            if (screenState != RuntimeSettingsScreenState.Content) item(key = runtimeSettingsHostLazyKey("state")) {
                 Column(Modifier.then(listItemMotion())) {
                     BlurCrossfade(targetState = screenState, label = "runtimeSettingsState") { state ->
                         when (state) {
@@ -407,9 +412,11 @@ private fun RuntimeModuleSettingsView(
                                 text = stringResource(R.string.runtime_settings_description_changed),
                                 action = stringResource(R.string.runtime_settings_discard_draft),
                                 onAction = {
-                                    draftJson = baselineJson ?: "{}"
-                                    draftFingerprint = baselineFingerprint
-                                    refreshEpoch++
+                                    requestDiscardDraft {
+                                        saveError = false
+                                        saveDescriptorChanged = false
+                                        refreshEpoch++
+                                    }
                                 },
                             )
                             RuntimeSettingsScreenState.Content -> Unit
@@ -417,7 +424,7 @@ private fun RuntimeModuleSettingsView(
                     }
                 }
             }
-            item(key = "runtime_settings_save_error") {
+            item(key = runtimeSettingsHostLazyKey("save_error")) {
                 Column(Modifier.then(listItemMotion())) {
                     ExpandVisibility(visible = saveError) {
                         StatusCard(stringResource(if (saveDescriptorChanged) R.string.runtime_settings_descriptor_changed else R.string.runtime_settings_save_failed))
@@ -425,18 +432,18 @@ private fun RuntimeModuleSettingsView(
                 }
             }
             if (settings != null && !descriptionConflict) {
-                if (settings.items.isNotEmpty() && effectiveSettings?.invalidOverrideKeys?.isNotEmpty() == true) item {
+                if (settings.items.isNotEmpty() && effectiveSettings?.invalidOverrideKeys?.isNotEmpty() == true) item(key = runtimeSettingsHostLazyKey("invalid_overrides")) {
                     Column(Modifier.then(listItemMotion())) {
                         StatusCard(stringResource(R.string.runtime_settings_invalid_overrides))
                     }
                 }
-                items(settings.entries, key = { it.key }) { entry ->
+                items(settings.entries, key = { runtimeModuleSettingLazyKey(it.key) }) { entry ->
                     val enabled = bindingValid && descriptorConfirmed
                     when (entry) {
                         is RuntimeModuleSettingsEntry.Item -> {
                             val item = entry.spec
                             val value = effectiveSettings?.values?.get(item.key) ?: item.defaultValue
-                            RuntimeSettingRow(
+                            RuntimeSettingItemCard(
                                 modifier = Modifier.then(listItemMotion()),
                                 item = item,
                                 value = value,
@@ -467,10 +474,10 @@ private fun RuntimeModuleSettingsView(
                 }
             }
             if (bindingValid && descriptorConfirmed && !loadError) {
-                items(module?.fileImports.orEmpty(), key = { "runtime_file_import:${it.key}" }) { item ->
+                items(module?.fileImports.orEmpty(), key = { runtimeSettingsHostLazyKey("file_import:${it.key}") }) { item ->
                     val enabled = pickFiles != null && !loading && !saveRunning
                     com.tyranor.next.ui.common.AppSectionCard(
-                        modifier = Modifier.pressSquishGroup().then(listItemMotion()),
+                        modifier = Modifier.pressSquishGroup(enabled = enabled).then(listItemMotion()),
                     ) {
                         com.tyranor.next.ui.common.AppNavItem(
                             title = item.title,
@@ -484,17 +491,17 @@ private fun RuntimeModuleSettingsView(
                 }
             }
             if (settings?.items?.isNotEmpty() == true && !descriptionConflict) {
-                item(key = "runtime_settings_restore_all_defaults") {
-                    val restoreEnabled = bindingValid && descriptorConfirmed && !loadError
+                item(key = runtimeSettingsHostLazyKey("restore_all_defaults")) {
+                    val restoreEnabled = bindingValid && descriptorConfirmed && !loading && !saveRunning && !loadError
                     AppSectionCard(
-                        modifier = Modifier.then(listItemMotion()).pressSquishGroup(),
+                        modifier = Modifier.then(listItemMotion()).pressSquishGroup(enabled = restoreEnabled),
                     ) {
                         AppNavItem(
                             title = stringResource(R.string.runtime_settings_restore_all_title),
                             titleTextStyle = MaterialTheme.typography.titleMedium,
                             drawSurface = false,
                             showLeadingIcon = false,
-                            showArrow = true,
+                            showArrow = false,
                             onClick = if (restoreEnabled) ({ showRestoreDefaultsDialog = true }) else null,
                         )
                     }
@@ -513,14 +520,14 @@ private fun RuntimeModuleSettingsView(
             dismissEnabledNow = { !saveRunning },
             title = { Text(stringResource(R.string.runtime_settings_title), style = MaterialTheme.typography.titleMedium) },
             text = {
-                ShelfBookLeafBackHandler(enabled = dirty) { showUnsavedDialog = true }
-                MiuixSettingsTheme {
-                    RuntimeSettingsList(
-                        pickFiles = pickFiles,
-                        modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
-                        contentPadding = PaddingValues(bottom = 8.dp),
-                    )
+                ShelfBookLeafBackHandler(enabled = dirty || saveRunning) {
+                    if (!saveRunning) showUnsavedDialog = true
                 }
+                RuntimeSettingsList(
+                    pickFiles = pickFiles,
+                    modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
+                    contentPadding = PaddingValues(bottom = 8.dp),
+                )
             },
             buttonArrangement = Arrangement.SpaceBetween,
             dismissButton = {
@@ -539,11 +546,12 @@ private fun RuntimeModuleSettingsView(
                 }
             },
             confirmButton = {
-                DialogTextButton(
-                    text = stringResource(R.string.runtime_settings_save),
-                    enabled = canSave,
-                    onClick = ::saveNow,
-                )
+                if (settings?.items?.isNotEmpty() == true) {
+                    DialogTextButton(
+                        text = stringResource(R.string.runtime_settings_save),
+                        onClick = ::saveNow,
+                    )
+                }
             },
         )
     } else {
@@ -590,12 +598,21 @@ private fun RuntimeModuleSettingsView(
                         query = editText,
                         onQueryChange = { editText = it; inputError = false },
                         imeAction = ImeAction.Done,
+                        leadingIcon = androidx.compose.ui.res.painterResource(R.drawable.ic_sheet_rename),
+                        iconContentDescription = item.title,
+                        textStyle = MaterialTheme.typography.bodyMedium,
                         keyboardType = if (item.type == RuntimeModuleSettingItemSpec.Type.INTEGER && (item.min ?: 0) >= 0) {
                             KeyboardType.Number
                         } else KeyboardType.Text,
                         onSearch = { },
                     )
-                    if (inputError) Text(stringResource(R.string.runtime_settings_input_invalid), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                    ExpandVisibility(visible = inputError) {
+                        Text(
+                            stringResource(R.string.runtime_settings_input_invalid),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -624,7 +641,7 @@ private fun RuntimeModuleSettingsView(
             confirmButton = {
                 DialogTextButton(
                     text = stringResource(R.string.common_confirm),
-                    enabled = !saveRunning && bindingValid && descriptorConfirmed,
+                    enabled = !loading && !loadError && !saveRunning && bindingValid && descriptorConfirmed,
                     onClick = {
                         restoreAllDefaults()
                         showRestoreDefaultsDialog = false
@@ -644,9 +661,9 @@ private fun RuntimeModuleSettingsView(
         AppAlertDialog(
             onDismissRequest = ::cancelDiscardDraft,
             title = { Text(stringResource(R.string.runtime_settings_unsaved_title), style = MaterialTheme.typography.titleMedium) },
-            text = { Text(stringResource(R.string.runtime_settings_unsaved_message)) },
+            text = { Text(stringResource(R.string.runtime_settings_unsaved_message), style = MaterialTheme.typography.bodyMedium) },
             confirmButton = {
-                DialogTextButton(text = stringResource(R.string.common_confirm), onClick = {
+                DialogTextButton(text = stringResource(R.string.common_confirm), enabled = !discardRunning, onClick = {
                     requestDiscardDraft {
                         unsavedExitHandle.closeThen {
                             showUnsavedDialog = false
@@ -661,27 +678,6 @@ private fun RuntimeModuleSettingsView(
             },
         )
     }
-}
-
-@Composable
-private fun RuntimeSettingRow(
-    modifier: Modifier = Modifier,
-    item: RuntimeModuleSettingItemSpec,
-    value: Any,
-    enabled: Boolean,
-    onChange: (Any) -> Unit,
-    onEdit: () -> Unit,
-    onPickPath: () -> Unit,
-) {
-    RuntimeSettingItemCard(
-        modifier = modifier,
-        item = item,
-        value = value,
-        enabled = enabled,
-        onChange = onChange,
-        onEdit = onEdit,
-        onPickPath = onPickPath,
-    )
 }
 
 @Composable
@@ -716,3 +712,7 @@ internal fun parseRuntimeSettingInput(item: RuntimeModuleSettingItemSpec, raw: S
     RuntimeModuleSettingItemSpec.Type.FILE,
     RuntimeModuleSettingItemSpec.Type.FOLDER -> null
 }
+
+internal fun runtimeModuleSettingLazyKey(key: String): String = "module:$key"
+
+internal fun runtimeSettingsHostLazyKey(key: String): String = "host:$key"

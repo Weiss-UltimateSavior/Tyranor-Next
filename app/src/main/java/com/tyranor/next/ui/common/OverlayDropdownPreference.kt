@@ -25,7 +25,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text as MaterialText
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -52,7 +51,6 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -107,8 +105,6 @@ fun OverlayDropdownPreference(
     enabled: Boolean = true,
     showValue: Boolean = true,
     renderInRootScaffold: Boolean = true,
-    titleTextStyle: TextStyle? = null,
-    valueTextStyle: TextStyle? = null,
     onExpandedChange: ((Boolean) -> Unit)? = null,
     onSelectedIndexChange: ((Int) -> Unit)? = null,
     /** 应用锁生效时的强制清理路径；默认走内部收起回调。带业务守卫的调用方可传真正清状态的路径。 */
@@ -140,8 +136,6 @@ fun OverlayDropdownPreference(
         enabled = enabled,
         showValue = showValue,
         renderInRootScaffold = renderInRootScaffold,
-        titleTextStyle = titleTextStyle,
-        valueTextStyle = valueTextStyle,
         collapseOnSelection = true,
         onExpandedChange = onExpandedChange,
         onLockDismiss = onLockDismiss,
@@ -165,8 +159,6 @@ fun OverlayDropdownPreference(
     enabled: Boolean = true,
     showValue: Boolean = true,
     renderInRootScaffold: Boolean = true,
-    titleTextStyle: TextStyle? = null,
-    valueTextStyle: TextStyle? = null,
     collapseOnSelection: Boolean = true,
     onExpandedChange: ((Boolean) -> Unit)? = null,
     /** 应用锁生效时的强制清理路径；默认走内部收起回调。带业务守卫的调用方可传真正清状态的路径。 */
@@ -369,23 +361,13 @@ fun OverlayDropdownPreference(
                     animateOnLocaleChange = true,
                     partial = false,
                 ) { value, valueModifier ->
-                    if (valueTextStyle == null) {
-                        Text(
-                            value,
-                            modifier = valueModifier,
-                            fontSize = MiuixTheme.textStyles.body2.fontSize,
-                            color = actionColor,
-                            textAlign = TextAlign.End,
-                        )
-                    } else {
-                        MaterialText(
-                            value,
-                            modifier = valueModifier,
-                            style = valueTextStyle,
-                            color = actionColor,
-                            textAlign = TextAlign.End,
-                        )
-                    }
+                    Text(
+                        value,
+                        modifier = valueModifier,
+                        fontSize = MiuixTheme.textStyles.body2.fontSize,
+                        color = actionColor,
+                        textAlign = TextAlign.End,
+                    )
                 }
             }
         }
@@ -408,50 +390,22 @@ fun OverlayDropdownPreference(
             )
         }
     }
-    if (titleTextStyle == null) {
-        BasicComponent(
-            modifier = rowGestureModifier,
-            interactionSource = interactionSource,
-            insideMargin = insideMargin,
-            title = title,
-            titleColor = titleColor,
-            summary = summary,
-            summaryColor = summaryColor,
-            startAction = startAction,
-            bottomAction = bottomAction,
-            onClick = { if (currentEnabled) setExpanded(!expanded.value) },
-            role = Role.DropdownList,
-            holdDownState = holdDown.value,
-            enabled = actualEnabled,
-            endActions = rowEndActions,
-        )
-    } else {
-        BasicComponent(
-            modifier = rowGestureModifier,
-            interactionSource = interactionSource,
-            insideMargin = insideMargin,
-            startAction = startAction,
-            bottomAction = bottomAction,
-            onClick = { if (currentEnabled) setExpanded(!expanded.value) },
-            role = Role.DropdownList,
-            holdDownState = holdDown.value,
-            enabled = actualEnabled,
-            endActions = rowEndActions,
-        ) {
-            MaterialText(
-                text = title,
-                style = titleTextStyle,
-                color = if (actualEnabled) titleColor.color else titleColor.disabledColor,
-            )
-            summary?.let {
-                MaterialText(
-                    text = it,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (actualEnabled) summaryColor.color else summaryColor.disabledColor,
-                )
-            }
-        }
-    }
+    BasicComponent(
+        modifier = rowGestureModifier,
+        interactionSource = interactionSource,
+        insideMargin = insideMargin,
+        title = title,
+        titleColor = titleColor,
+        summary = summary,
+        summaryColor = summaryColor,
+        startAction = startAction,
+        bottomAction = bottomAction,
+        onClick = { if (currentEnabled) setExpanded(!expanded.value) },
+        role = Role.DropdownList,
+        holdDownState = holdDown.value,
+        enabled = actualEnabled,
+        endActions = rowEndActions,
+    )
 }
 
 /** Keep the original popup host, including the independent Window used by a sheet or dialog/book. */

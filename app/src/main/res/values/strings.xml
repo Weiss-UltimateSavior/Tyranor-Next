@@ -1333,7 +1333,6 @@
     <string name="runtime_settings_saved">设置已保存</string>
     <string name="runtime_settings_save_failed">保存失败，修改仍保留</string>
     <string name="runtime_settings_descriptor_changed">模块设置在保存前已更新。草稿仍保留，请核对新设置后再保存</string>
-    <string name="runtime_settings_restore_all_defaults">恢复默认设置</string>
     <string name="runtime_settings_restore_all_title">恢复默认设置</string>
     <string name="runtime_settings_restore_all_message">仅将当前游戏的设置恢复为默认值，保存后生效。</string>
     <string name="runtime_settings_default_value">默认值</string>

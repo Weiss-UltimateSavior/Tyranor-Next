@@ -78,7 +78,7 @@ class ShelfBookRuntimeSettingsDeviceTest {
             val chapter = context.getString(R.string.settings_engine_settings)
             waitForText(chapter)
             compose.onNodeWithText(chapter).performScrollTo().performClick()
-            waitForText(context.getString(R.string.runtime_settings_restore_all_defaults))
+            scrollToRestoreDefaults()
             openRow(textTitle)
             compose.onNode(hasSetTextAction()).performTextReplacement(draft)
             button(R.string.common_confirm).performClick()
@@ -112,7 +112,7 @@ class ShelfBookRuntimeSettingsDeviceTest {
             button(R.string.runtime_settings_unsaved_title).assertDoesNotExist()
             button(R.string.runtime_settings_title).assertDoesNotExist()
             compose.onNodeWithText(chapter).performScrollTo().performClick()
-            waitForText(context.getString(R.string.runtime_settings_restore_all_defaults))
+            scrollToRestoreDefaults()
             openRow(textTitle)
             compose.onNode(hasSetTextAction() and hasText("")).assertExists()
             assertEquals(0, PerGameSettingsStore.getRuntimeModuleSettings(context, game.uri, module).length())
@@ -130,6 +130,12 @@ class ShelfBookRuntimeSettingsDeviceTest {
     private fun openRow(title: String) {
         compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(title))
         compose.onNodeWithText(title).performClick()
+    }
+
+    private fun scrollToRestoreDefaults() {
+        val title = context.getString(R.string.runtime_settings_restore_all_title)
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(title))
+        waitForText(title)
     }
 
     private fun swipeBack() = compose.onNode(isDialog()).performTouchInput {

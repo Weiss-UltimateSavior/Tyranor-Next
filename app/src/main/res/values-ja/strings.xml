@@ -1333,7 +1333,6 @@
     <string name="runtime_settings_saved">設定を保存しました</string>
     <string name="runtime_settings_save_failed">保存に失敗しました。変更は保持されています</string>
     <string name="runtime_settings_descriptor_changed">保存前にモジュール設定が更新されました。草稿は保持されています。新しい設定を確認してから再度保存してください</string>
-    <string name="runtime_settings_restore_all_defaults">デフォルト設定に戻す</string>
     <string name="runtime_settings_restore_all_title">デフォルト設定に戻す</string>
     <string name="runtime_settings_restore_all_message">現在のゲームの設定のみをデフォルトに戻します。保存後に反映されます。</string>
     <string name="runtime_settings_default_value">デフォルト</string>

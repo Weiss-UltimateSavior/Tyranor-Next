@@ -6,6 +6,7 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -23,11 +24,36 @@ class RuntimeModuleSettingsSliderTest {
             sliderStep = 0.1,
         )
 
-        val selectedValue = runtimeModuleSliderValueAtIndex(item, 7)
+        val selectedValue = item.sliderValueAtIndex(7)
 
-        assertEquals(15, runtimeModuleSliderIntervalCount(item))
+        assertEquals(15, item.sliderIntervalCount())
         assertEquals(1.2, selectedValue, 0.0)
         assertEquals("1.2", formatRuntimeModuleSliderValue(item, 1.2000000000000002))
+    }
+
+    @Test
+    fun oneIntervalStepUsesTwoDiscreteEndpoints() {
+        val item = requireNotNull(RuntimeModuleSettingsParser.parseItem(JSONObject(
+            """{"key":"scale","type":"slider","title":"Scale","default":0,"min":0,"max":1,"step":1}""",
+        )))
+
+        assertEquals(1, item.sliderIntervalCount())
+        assertEquals(0, item.sliderIndex(0.0))
+        assertEquals(1, item.sliderIndex(1.0))
+        assertEquals(0.0, item.sliderValueAtIndex(0), 0.0)
+        assertEquals(1.0, item.sliderValueAtIndex(1), 0.0)
+    }
+
+    @Test
+    fun continuousProgressKeepsFloatDecimalAndRejectsNonFiniteValues() {
+        val item = requireNotNull(RuntimeModuleSettingsParser.parseItem(JSONObject(
+            """{"key":"scale","type":"slider","title":"Scale","default":0.3,"min":0,"max":1}""",
+        )))
+
+        assertEquals(0.3, requireNotNull(runtimeModuleSliderValueFromProgress(item, 0.3f)), 0.0)
+        assertEquals("0.3", formatRuntimeModuleSliderValue(item, requireNotNull(runtimeModuleSliderValueFromProgress(item, 0.3f))))
+        assertNull(runtimeModuleSliderValueFromProgress(item, Float.NaN))
+        assertNull(runtimeModuleSliderValueFromProgress(item, Float.POSITIVE_INFINITY))
     }
 
     @Test
@@ -43,7 +69,7 @@ class RuntimeModuleSettingsSliderTest {
         ))
         assertNotNull(item)
         val slider = requireNotNull(item)
-        val selectedValue = runtimeModuleSliderValueAtIndex(slider, 1)
+        val selectedValue = slider.sliderValueAtIndex(1)
 
         assertEquals(1_000_000_000.001, selectedValue, 0.0)
         assertTrue(RuntimeModuleSettingsParser.isValidValue(slider, selectedValue))
@@ -55,8 +81,8 @@ class RuntimeModuleSettingsSliderTest {
             """{"key":"scale","type":"slider","title":"Scale","default":1000000000,"min":1000000000,"max":1000000001,"step":0.0003}""",
         )))
 
-        for (index in 0..runtimeModuleSliderIntervalCount(slider)!!) {
-            val tick = runtimeModuleSliderValueAtIndex(slider, index)
+        for (index in 0..slider.sliderIntervalCount()!!) {
+            val tick = slider.sliderValueAtIndex(index)
             assertTrue("generated tick $index must remain valid", RuntimeModuleSettingsParser.isValidValue(slider, tick))
         }
     }
@@ -75,10 +101,10 @@ class RuntimeModuleSettingsSliderTest {
 
         assertEquals(null, duplicateTicks)
         assertEquals(null, generatedTicksOffGridAfterDoubleConversion)
-        assertEquals(2, runtimeModuleSliderIntervalCount(rangeWhoseDoubleSpanOverflows))
-        assertEquals(-1e308, runtimeModuleSliderValueAtIndex(rangeWhoseDoubleSpanOverflows, 0), 0.0)
-        assertEquals(0.0, runtimeModuleSliderValueAtIndex(rangeWhoseDoubleSpanOverflows, 1), 0.0)
-        assertEquals(1e308, runtimeModuleSliderValueAtIndex(rangeWhoseDoubleSpanOverflows, 2), 0.0)
+        assertEquals(2, rangeWhoseDoubleSpanOverflows.sliderIntervalCount())
+        assertEquals(-1e308, rangeWhoseDoubleSpanOverflows.sliderValueAtIndex(0), 0.0)
+        assertEquals(0.0, rangeWhoseDoubleSpanOverflows.sliderValueAtIndex(1), 0.0)
+        assertEquals(1e308, rangeWhoseDoubleSpanOverflows.sliderValueAtIndex(2), 0.0)
     }
 
     private fun assertTickRoundTrip(min: Double, max: Double, step: Double) {
@@ -93,12 +119,12 @@ class RuntimeModuleSettingsSliderTest {
         )
         val intervalCount = (max - min).div(step).toInt()
 
-        assertEquals(intervalCount, runtimeModuleSliderIntervalCount(item))
+        assertEquals(intervalCount, item.sliderIntervalCount())
         for (index in 0..intervalCount) {
             val expectedValue = min + index * step
-            val value = runtimeModuleSliderValueAtIndex(item, index)
+            val value = item.sliderValueAtIndex(index)
             assertEquals(expectedValue, value, 0.0)
-            assertEquals(index, runtimeModuleSliderIndex(item, value))
+            assertEquals(index, item.sliderIndex(value))
         }
     }
 }

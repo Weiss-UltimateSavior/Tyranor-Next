@@ -64,6 +64,7 @@ import kotlinx.coroutines.Job
 import top.yukonga.miuix.kmp.basic.SliderDefaults
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.math.abs
+import kotlin.math.ceil
 import top.yukonga.miuix.kmp.basic.Slider as MiuixSlider
 import kotlinx.coroutines.CoroutineStart
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -155,6 +156,7 @@ fun Slider(
 
 /** 拖出两端时整条最多拉伸的比例。 */
 private const val MAX_STRETCH = 0.035f
+private const val MAX_DRAWN_UNIFORM_SLIDER_TICKS = 128
 
 /**
  * 增强档离散滑条：手势期间连续跟手、按最近刻度回调数值，释放或取消后恢复到实际状态。
@@ -176,23 +178,41 @@ private fun TickSlider(
     bookMode: Boolean = false,
 ) {
     val span = (valueRange.endInclusive - valueRange.start).takeIf { it > 0f } ?: 1f
-    // 全部刻度（值 + 位置比例）：自定义刻度点，或 steps 均分（含两端）
-    val tickValues: List<Float> = remember(keyPoints, steps, valueRange) {
-        keyPoints?.sorted() ?: List(steps + 2) { i -> valueRange.start + span * i / (steps + 1) }
+    // 均匀刻度用公式计算，避免大量 steps 分配列表并在每次拖动时线性扫描。
+    val customTickValues = remember(keyPoints) { keyPoints?.sorted() }
+    val customTickFractions = remember(customTickValues, valueRange) {
+        customTickValues?.let { values ->
+            FloatArray(values.size) { ((values[it] - valueRange.start) / span).coerceIn(0f, 1f) }
+        }
     }
-    val tickFractions = remember(tickValues, valueRange) {
-        FloatArray(tickValues.size) { ((tickValues[it] - valueRange.start) / span).coerceIn(0f, 1f) }
+    val tickCount = customTickValues?.size ?: (steps + 2)
+    val divisions = (steps + 1).coerceAtLeast(1)
+    val drawnFractions = when {
+        customTickFractions != null -> customTickFractions
+        !showKeyPoints -> FloatArray(0)
+        else -> {
+            val count = tickCount.coerceAtMost(MAX_DRAWN_UNIFORM_SLIDER_TICKS)
+            FloatArray(count) { index -> if (count == 1) 0f else index.toFloat() / (count - 1) }
+        }
     }
-    // 绘制的圆点刻度：与 Miuix 一致（自定义刻度点总画；否则仅 showKeyPoints 时画 steps 刻度）
-    val drawnFractions = if (keyPoints != null || showKeyPoints) tickFractions else FloatArray(0)
     val reverseTrack = bookMode && LocalLayoutDirection.current == LayoutDirection.Rtl
+
+    fun tickValue(index: Int): Float = customTickValues?.get(index)
+        ?: valueRange.start + span * index / divisions
+
+    fun tickFraction(index: Int): Float = customTickFractions?.get(index)
+        ?: index.toFloat() / divisions
 
     /** 返回距离目标比例最近的刻度下标；距离相同时保留排序靠前的刻度。 */
     fun nearestIndex(fraction: Float): Int {
+        if (customTickFractions == null) {
+            // Preserve the previous scan's tie behavior: an exact midpoint stays on the lower tick.
+            return ceil(fraction * divisions - 0.5f).toInt().coerceIn(0, tickCount - 1)
+        }
         var best = 0
         var bestD = Float.MAX_VALUE
-        for (i in tickFractions.indices) {
-            val d = abs(tickFractions[i] - fraction)
+        for (i in customTickFractions.indices) {
+            val d = abs(customTickFractions[i] - fraction)
             if (d < bestD) {
                 bestD = d
                 best = i
@@ -259,7 +279,7 @@ private fun TickSlider(
         modifier = modifier
             .then(
                 if (enabled) {
-                    Modifier.pointerInput(tickValues, valueRange, reverseTrack, bookMode, bookInsetPx) {
+                    Modifier.pointerInput(customTickValues, steps, valueRange, reverseTrack, bookMode, bookInsetPx) {
                         val slop = viewConfiguration.touchSlop
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
@@ -319,7 +339,7 @@ private fun TickSlider(
                                         val next = nearestIndex(clamped)
                                         if (next != index) {
                                             index = next
-                                            onChange(tickValues[next])
+                                            onChange(tickValue(next))
                                             if (haptics) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
                                         }
                                     }
@@ -329,11 +349,11 @@ private fun TickSlider(
                                     val next = nearestIndex(fractionAt(lastX).coerceIn(0f, 1f))
                                     if (next != index) {
                                         index = next
-                                        onChange(tickValues[next])
+                                        onChange(tickValue(next))
                                     }
                                     if (haptics) haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
                                 }
-                                val target = if (cancelled) currentValueFraction else tickFractions[index]
+                                val target = if (cancelled) currentValueFraction else tickFraction(index)
                                 dragging = false
                                 // 拖动松手：带着手指速度吸附到刻度
                                 val releaseVelocity = if (moved) tracker.calculateVelocity().x.coerceIn(-6f, 6f) else 0f
@@ -371,8 +391,9 @@ private fun TickSlider(
                     disabled()
                 } else {
                     setProgress { target ->
+                        if (!target.isFinite()) return@setProgress false
                         val i = nearestIndex(((target - valueRange.start) / span).coerceIn(0f, 1f))
-                        onChange(tickValues[i])
+                        onChange(tickValue(i))
                         onFinished?.invoke()
                         true
                     }

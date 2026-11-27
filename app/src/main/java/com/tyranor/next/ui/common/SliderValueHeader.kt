@@ -6,6 +6,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import com.tyranor.next.ui.common.motion.BlurText
 
 /**
@@ -21,17 +23,22 @@ fun SliderValueHeader(
     title: String,
     value: String,
     modifier: Modifier = Modifier,
+    titleStyle: TextStyle? = null,
+    valueStyle: TextStyle? = null,
+    titleColor: Color = Color.Unspecified,
+    valueColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
 ) {
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         Text(
             title,
-            style = MaterialTheme.typography.titleMedium,
+            style = titleStyle ?: MaterialTheme.typography.titleMedium,
+            color = titleColor,
             modifier = Modifier.weight(1f),
         )
         BlurText(
             value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = valueStyle ?: MaterialTheme.typography.bodyMedium,
+            color = valueColor,
         )
     }
 }

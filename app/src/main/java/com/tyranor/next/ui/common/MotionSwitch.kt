@@ -49,7 +49,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.theme.BookSerif
 import com.tyranor.next.theme.BookSerifBold
@@ -115,7 +114,6 @@ fun SwitchPreference(
     insideMargin: PaddingValues = BasicComponentDefaults.InsideMargin,
     holdDownState: Boolean = false,
     enabled: Boolean = true,
-    titleTextStyle: TextStyle? = null,
     onLongClickLabel: String? = null,
     onLongClick: (() -> Unit)? = null,
 ) {
@@ -197,7 +195,7 @@ fun SwitchPreference(
         }
         return
     }
-    if (titleTextStyle == null && !MotionMode.enhanced && onLongClick == null) {
+    if (!MotionMode.enhanced && onLongClick == null) {
         MiuixSwitchPreference(
             checked = checked,
             onCheckedChange = onCheckedChange,
@@ -230,57 +228,6 @@ fun SwitchPreference(
             onLongClickLabel = onLongClickLabel,
             onLongClick = onLongClick,
         )
-    }
-
-    if (titleTextStyle != null) {
-        BasicComponent(
-            modifier = rowClickModifier,
-            insideMargin = insideMargin,
-            startAction = startAction,
-            endActions = {
-                Row(
-                    modifier = Modifier
-                        .padding(end = 8.dp)
-                        .align(Alignment.CenterVertically)
-                        .weight(1f, fill = false),
-                ) {
-                    endActions()
-                }
-                if (onLongClick == null) {
-                    Switch(
-                        checked = checked,
-                        onCheckedChange = currentOnCheckedChange,
-                        enabled = enabled,
-                    )
-                } else {
-                    JellySwitch(
-                        checked = checked,
-                        onCheckedChange = currentOnCheckedChange,
-                        enabled = enabled,
-                        consumeDown = true,
-                    )
-                }
-            },
-            bottomAction = bottomAction,
-            onClick = toggle.takeIf { enabled && onLongClick == null },
-            role = Role.Switch,
-            holdDownState = holdDownState,
-            enabled = enabled,
-        ) {
-            Text(
-                text = title,
-                style = titleTextStyle,
-                color = if (enabled) titleColor.color else titleColor.disabledColor,
-            )
-            summary?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (enabled) summaryColor.color else summaryColor.disabledColor,
-                )
-            }
-        }
-        return
     }
 
     BasicComponent(

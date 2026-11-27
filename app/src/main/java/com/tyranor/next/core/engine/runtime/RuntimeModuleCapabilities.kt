@@ -22,6 +22,37 @@ data class RuntimeModuleSettingItemSpec(
     val sliderStep: Double? = null,
 ) {
     enum class Type { BOOLEAN, ENUM, TEXT, INTEGER, SLIDER, FILE, FOLDER }
+
+    /** Return the declared number of equal slider intervals, or null for a continuous slider. */
+    fun sliderIntervalCount(): Int? {
+        val step = sliderStep ?: return null
+        val range = BigDecimal.valueOf(checkNotNull(sliderMax))
+            .subtract(BigDecimal.valueOf(checkNotNull(sliderMin)))
+        return range.divide(BigDecimal.valueOf(step)).intValueExact()
+    }
+
+    /** Map a declared slider value to its nearest validated tick index. */
+    fun sliderIndex(value: Double): Int {
+        val min = checkNotNull(sliderMin)
+        val step = checkNotNull(sliderStep)
+        val intervalCount = checkNotNull(sliderIntervalCount())
+        val offset = BigDecimal.valueOf(value).subtract(BigDecimal.valueOf(min))
+        val index = offset.divide(BigDecimal.valueOf(step), 0, RoundingMode.HALF_EVEN).intValueExact()
+        return index.coerceIn(0, intervalCount)
+    }
+
+    /** Return the declared value at a slider tick without binary floating-point accumulation. */
+    fun sliderValueAtIndex(index: Int): Double {
+        val min = BigDecimal.valueOf(checkNotNull(sliderMin))
+        val max = BigDecimal.valueOf(checkNotNull(sliderMax))
+        val step = BigDecimal.valueOf(checkNotNull(sliderStep))
+        val intervalCount = checkNotNull(sliderIntervalCount())
+        return min.add(step.multiply(BigDecimal.valueOf(index.coerceIn(0, intervalCount).toLong())))
+            .max(min)
+            .min(max)
+            .stripTrailingZeros()
+            .toDouble()
+    }
 }
 
 data class RuntimeModuleSettingOption(val value: String, val title: String)
@@ -272,9 +303,6 @@ internal object RuntimeModuleSettingsParser {
                 val parsedDefault = strictDouble(default) ?: return null
                 val parsedStep = if (obj.has("step")) strictDouble(obj.opt("step")) ?: return null else null
                 if (parsedMin >= parsedMax || parsedDefault !in parsedMin..parsedMax || parsedStep?.let { it <= 0.0 } == true) return null
-                if (parsedStep == null &&
-                    (!parsedMin.toFloat().isFinite() || !parsedMax.toFloat().isFinite() || parsedMin.toFloat() >= parsedMax.toFloat())
-                ) return null
                 if (parsedStep != null &&
                     (!validSliderStep(parsedDefault, parsedMin, parsedMax, parsedStep) ||
                         !hasRoundTrippableSliderTicks(parsedMin, parsedMax, parsedStep))

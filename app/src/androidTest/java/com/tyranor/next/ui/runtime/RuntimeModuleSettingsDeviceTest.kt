@@ -101,7 +101,10 @@ class RuntimeModuleSettingsDeviceTest {
                 "Install the standalone runtime example APK first"
             }
             val spec = requireNotNull(descriptor.settings)
-            assertEquals(setOf("vsync", "renderer", "player_name", "fps_limit"), spec.items.map { it.key }.toSet())
+            assertEquals(
+                setOf("vsync", "render_scale", "renderer", "config_file", "data_folder", "player_name", "fps_limit"),
+                spec.items.map { it.key }.toSet(),
+            )
 
             GameLibraryFacade.registerGames(context) { existing -> existing + games }
             GameLibraryRepository.awaitPendingWrites()
@@ -163,8 +166,9 @@ class RuntimeModuleSettingsDeviceTest {
                 },
             )
 
-            compose.onNode(hasScrollToIndexAction()).performScrollToIndex(0)
-            waitForNode(hasText(AppLocaleController.wrap(context).getString(R.string.runtime_settings_restore_all_defaults)) and isEnabled())
+            val restoreTitle = AppLocaleController.wrap(context).getString(R.string.runtime_settings_restore_all_title)
+            compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(restoreTitle))
+            waitForNode(hasText(restoreTitle) and isEnabled())
             val screenshot = requireNotNull(instrumentation.uiAutomation.takeScreenshot()) {
                 "UiAutomation.takeScreenshot returned null"
             }
@@ -173,8 +177,9 @@ class RuntimeModuleSettingsDeviceTest {
             }
             screenshot.recycle()
 
-            val restoreAll = AppLocaleController.wrap(context).getString(R.string.runtime_settings_restore_all_defaults)
-            compose.onNodeWithText(restoreAll).performClick()
+            compose.onNodeWithText(restoreTitle).performClick()
+            waitForText(AppLocaleController.wrap(context).getString(R.string.runtime_settings_restore_all_message))
+            compose.onNodeWithText(confirm).performClick()
             waitForNode(androidx.compose.ui.test.hasContentDescription(saveDescription))
             compose.onNodeWithContentDescription(saveDescription).performClick()
             compose.waitUntil(15_000) {
