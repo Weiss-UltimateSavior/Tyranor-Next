@@ -18,9 +18,6 @@ import java.net.URL
 import java.nio.charset.StandardCharsets
 
 object GitHubUpdateChecker {
-    private const val RELEASES_API =
-        "https://api.github.com/repos/Weiss-UltimateSavior/Tyranor-Next/releases"
-
     /** 更新弹窗列表最多展示的版本数。 */
     private const val MAX_CANDIDATES = 3
 
@@ -138,7 +135,7 @@ object GitHubUpdateChecker {
     }
 
     private fun fetchReleases(context: Context): JSONArray {
-        val connection = (URL(RELEASES_API).openConnection() as HttpURLConnection).apply {
+        val connection = (URL(AppGitHubRepository.RELEASES_API).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 10_000
             readTimeout = 10_000

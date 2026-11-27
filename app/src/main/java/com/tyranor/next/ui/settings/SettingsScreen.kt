@@ -126,6 +126,7 @@ import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.common.formatUiDecimal
 import com.tyranor.next.ui.common.glassNavBottomInset
+import com.tyranor.next.core.updater.AppGitHubRepository
 import com.tyranor.next.core.updater.GitHubUpdateChecker
 import com.tyranor.next.core.updater.UpdateApkDownloader
 import com.tyranor.next.core.updater.UpdateCandidate
@@ -772,7 +773,7 @@ fun SettingsScreen(
                                         ctx.startActivity(
                                             Intent(
                                                 Intent.ACTION_VIEW,
-                                                Uri.parse("https://github.com/Weiss-UltimateSavior/Tyranor-Next/releases"),
+                                                Uri.parse(AppGitHubRepository.RELEASES_URL),
                                             ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                                         )
                                     }

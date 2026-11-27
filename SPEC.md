@@ -354,7 +354,9 @@ MAGES. 引擎（经开源重新实现项目 impacto）由外置 Impacto 宿主 A
 
 ## 9. 授权与应用更新
 
-Hikarinagi 与 Bangumi OAuth 经 AppAuth 完成网页授权、回调校验及令牌刷新（Bangumi 另支持个人访问令牌）；未萌 NextMoe 采用 Public Client + 强制 PKCE S256 与 `127.0.0.1` 环回回调；VNDB 支持个人访问令牌校验与权限检查。四源凭据均使用 AndroidKeyStore 加密存储并排除备份。应用检查 GitHub Releases，提供正式/预发布候选、下载与系统安装器跳转；后台任务在应用进入后台时安排，并受网络和系统调度限制，不保证固定时间完成。通知及未知来源安装受系统授权控制；失败不应阻断离线游戏库功能。
+Hikarinagi 与 Bangumi OAuth 经 AppAuth 完成网页授权、回调校验及令牌刷新（Bangumi 另支持个人访问令牌）；未萌 NextMoe 采用 Public Client + 强制 PKCE S256 与 `127.0.0.1` 环回回调；VNDB 支持个人访问令牌校验与权限检查。四源凭据均使用 AndroidKeyStore 加密存储并排除备份。
+
+「关于应用」的项目地址打开 [SIRENA-Core/Tyranor-Next](https://github.com/SIRENA-Core/Tyranor-Next)。手动和后台更新检查共用该仓库的 GitHub Releases API，提供正式版和预发布版候选、下载与系统安装器跳转。更新弹窗可打开该仓库的 [GitHub Releases 页面](https://github.com/SIRENA-Core/Tyranor-Next/releases)。后台任务在应用进入后台时安排，完成时间取决于网络和系统调度。通知及未知来源安装受系统授权控制。更新检查失败时仍可使用离线游戏库。
 
 ## 10. 实验能力与证据边界
 

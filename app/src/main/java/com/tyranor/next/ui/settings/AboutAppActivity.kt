@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.tyranor.next.BuildConfig
 import com.tyranor.next.R
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.core.updater.AppGitHubRepository
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.ui.common.AppAlertDialog
@@ -48,9 +49,6 @@ import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.motion.ProvideEntrance
 import com.tyranor.next.ui.common.motion.staggeredEntrance
-
-/** 项目仓库地址：关于应用页「项目地址」条目打开的系统浏览器目标。 */
-private const val PROJECT_URL = "https://github.com/Weiss-UltimateSavior/Tyranor-Next"
 
 /** 关于应用二级页：应用图标 + 版本号 + 项目地址 / 致谢说明 / 免责声明。 */
 class AboutAppActivity : AppScreenActivity() {
@@ -135,7 +133,7 @@ internal fun AboutAppScreen() {
                         onClick = {
                             // 交给系统浏览器打开项目仓库；无可用浏览器时静默失败
                             runCatching {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PROJECT_URL)))
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AppGitHubRepository.PROJECT_URL)))
                             }
                         },
                     )

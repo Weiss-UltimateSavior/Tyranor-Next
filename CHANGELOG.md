@@ -2,6 +2,8 @@
 
 ## 未发布
 
+- 项目地址、更新检查和发布列表已切换到 GitHub 组织仓库 `SIRENA-Core/Tyranor-Next`。
+
 - 更新引擎页的 ShiinaRio 卡片图标。
 
 - 更新 FVP 内置运行库至 rfvp `1f0c279`，同步 WMV 影片音频流式播放与资源扫描改进。脚本选择跳过 macOS `._` 元数据文件，保留 `.bch` 优先级与 Unicode 文件名兼容。
