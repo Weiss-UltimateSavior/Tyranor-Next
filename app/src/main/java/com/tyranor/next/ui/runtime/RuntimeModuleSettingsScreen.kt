@@ -45,8 +45,6 @@ import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.theme.AppComponentCornerRadius
-import com.tyranor.next.theme.DialogItemSurface
-import com.tyranor.next.theme.LocalAppDialogContent
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.TextColor
@@ -58,8 +56,6 @@ import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.LocalDialogExit
 import com.tyranor.next.ui.common.NoRippleTextButton
-import com.tyranor.next.ui.common.OverlayDropdownPreference
-import com.tyranor.next.ui.common.SwitchPreference
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.motion.BlurCrossfade
 import com.tyranor.next.ui.common.motion.ExpandVisibility
@@ -76,7 +72,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
-import top.yukonga.miuix.kmp.basic.CardDefaults as MiuixCardDefaults
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import android.widget.Toast
@@ -666,65 +661,6 @@ private fun RuntimeModuleSettingsView(
                 DialogTextButton(text = stringResource(R.string.common_cancel), onClick = ::cancelDiscardDraft)
             },
         )
-    }
-}
-
-@Composable
-private fun RuntimeSettingRow(
-    modifier: Modifier = Modifier,
-    item: RuntimeModuleSettingItemSpec,
-    value: Any,
-    overridden: Boolean,
-    enabled: Boolean,
-    onChange: (Any) -> Unit,
-    onEdit: () -> Unit,
-    onRestore: () -> Unit,
-) {
-    com.tyranor.next.ui.common.AppSectionCard(
-        modifier = modifier.pressSquishGroup(),
-    ) {
-        val inBook = com.tyranor.next.theme.LocalShelfBookLeaf.current
-        val bodyPad = if (inBook) Modifier.fillMaxWidth().padding(vertical = 4.dp) else Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
-        Column(bodyPad) {
-            when (item.type) {
-                RuntimeModuleSettingItemSpec.Type.BOOLEAN -> SwitchPreference(
-                    checked = value as Boolean,
-                    onCheckedChange = onChange,
-                    title = item.title,
-                    summary = item.description,
-                    enabled = enabled,
-                )
-                RuntimeModuleSettingItemSpec.Type.ENUM -> {
-                    val selected = item.options.indexOfFirst { it.value == value }.coerceAtLeast(0)
-                    OverlayDropdownPreference(
-                        items = item.options.map { it.title },
-                        selectedIndex = selected,
-                        title = item.title,
-                        summary = item.description,
-                        enabled = enabled,
-                        onSelectedIndexChange = { index -> item.options.getOrNull(index)?.let { onChange(it.value) } },
-                    )
-                }
-                RuntimeModuleSettingItemSpec.Type.TEXT, RuntimeModuleSettingItemSpec.Type.INTEGER -> {
-                    com.tyranor.next.ui.common.AppNavItem(
-                        title = item.title,
-                        summary = value.toString(),
-                        drawSurface = false,
-                        showLeadingIcon = false,
-                        showArrow = enabled,
-                        onClick = if (enabled) onEdit else null,
-                    )
-                }
-            }
-            item.description?.takeIf { item.type != RuntimeModuleSettingItemSpec.Type.BOOLEAN && item.type != RuntimeModuleSettingItemSpec.Type.ENUM }?.let {
-                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
-            }
-            if (overridden) NoRippleTextButton(
-                text = stringResource(R.string.runtime_settings_restore_default),
-                enabled = enabled,
-                onClick = onRestore,
-            )
-        }
     }
 }
 
