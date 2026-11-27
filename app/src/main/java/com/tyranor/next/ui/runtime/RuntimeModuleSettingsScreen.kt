@@ -200,7 +200,7 @@ private fun RuntimeModuleSettingsView(
     }
 
     fun changeOverride(item: RuntimeModuleSettingItemSpec, value: Any?) {
-        val changed = JSONObject(draft.toString())
+        val changed = parseObject(draftJson)
         if (value == null) changed.remove(item.key) else changed.put(item.key, value)
         draftJson = changed.toString()
         draftFingerprint = settings?.fingerprint
