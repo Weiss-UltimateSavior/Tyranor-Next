@@ -2,6 +2,8 @@
 
 ## 未发布
 
+- 修复 RPG Maker MV/MZ（TynMV-0.1 / TynMV-0.2 / TynMZ-0.1）中依赖 UMD 全局名的库在 TynMV / TynMZ 会话下不可用：作为 NW.js 垫片的 `window.module` / `window.exports` 被建成普通对象，UMD 库因此走 CommonJS 分支，只把导出写进 `module.exports`（`PixiApngAndGif` 的 `ReferenceError: PixiApngAndGif is not defined`、jQuery 不设置 `window.jQuery`/`$`、真 lodash 不挂 `window._` 都属于这一类；Tyranor-2.3.4 宿主不注入兼容层，所以同款游戏在那里正常）。垫片改为 `exports` 为函数、`module.exports` 初始未定义，三种常见 UMD 判定都会落到全局分支，`module.exports = x` / `exports.foo = x` 仍然可用；v2 harness 增加对应回归探针。
+
 - 新增 ShiinaRio 外置 APK 引擎模块。游戏库通过根目录的 `RIO.INI` 和 WARC 封包识别作品，引擎页提供宿主下载与更新提示，支持全局和单游戏播放器设置。ShiinaRio 宿主要求 Android 11 及以上。
 
 - 调整游戏页「书架」藏书阁「书脊立排」的书本比例与轻微错落排布：
