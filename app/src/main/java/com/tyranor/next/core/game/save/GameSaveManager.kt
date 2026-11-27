@@ -215,8 +215,8 @@ class GameSaveManager(private val context: Context) {
         }
         // Ruffle 的 SWF 记录指向文件本身，且外置模块没有 App 可管理的文件存档接口；
         // 先于目录解析返回，避免 SWF 文件 URI 落到「无法解析游戏目录」的误导文案。
-        // Impacto 同理：存档在外置宿主 APK 的私有目录内
-        if (game.engine == EngineType.RUFFLE || game.engine == EngineType.IMPACTO) {
+        // MAGES. 与 ShiinaRio 的存档由各自宿主管理，位于宿主专属目录。
+        if (game.engine == EngineType.RUFFLE || game.engine == EngineType.IMPACTO || game.engine == EngineType.SHIINARIO) {
             return SaveLocation(
                 null,
                 R.string.save_location_engine_no_file_interface,
@@ -341,6 +341,7 @@ class GameSaveManager(private val context: Context) {
             EngineType.ETHORNELL,
             // IMPACTO 的存档在外置宿主 APK 的私有外部目录内，本 App 无法读写，因此不提供文件存档管理
             EngineType.IMPACTO,
+            EngineType.SHIINARIO,
             EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.CATSYSTEM2, EngineType.PC,
             // ANDROID_APP 在函数开头已提前返回（无文件存档接口），此分支仅为 when 完备性
             EngineType.ANDROID_APP ->

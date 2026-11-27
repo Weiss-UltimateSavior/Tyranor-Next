@@ -72,40 +72,54 @@ dependencies {
 }
 
 /**
- * v2 兼容层的 JS 端到端检查（engine/src/test/js/v2-fs-bridge.harness.js）。
+ * Web 兼容层的 JS 检查，全部用 Node 仿真 WebView，接入 check 生命周期，避免随代码
+ * 演进而静默失效。通过 -PskipJsHarness 可跳过（例如本机无 Node 的纯 Android 构建环境）。
  *
- * 该 harness 用 Node 仿真 WebView，跑真实注入链路（基础层 + v2 层 + 桥仿真），
- * 覆盖 fs/crypto/zlib/Buffer/localStorage 等行为并与 Node 真值逐项对照。
- * 接入 check 生命周期，避免它随代码演进而静默失效。
- *
- * 通过 -PskipJsHarness 可跳过（例如本机无 Node 的纯 Android 构建环境）。
+ * - `v2-fs-bridge.harness.js`：跑真实注入链路（基础层 + v2 层 + 桥仿真），覆盖
+ *   fs/crypto/zlib/Buffer/localStorage 等行为并与 Node 真值逐项对照。基础层由 v1/v2 共用，
+ *   fs 桥只在 v2 会话（MV v2 与 MZ）注册；动作名沿用历史的 `jsHarness`。
+ * - `rpg-save-identity.harness.js`：加载仓库真实打包的 MV core 与 `__rpg_v12.js`，
+ *   回归「插件改写 info.title 后存档被判成他作」的读档失效。
  */
 def skipJsHarness = providers.gradleProperty('skipJsHarness').isPresent()
 
-tasks.register('jsHarness', Exec) {
-    description = 'Runs the v2 compatibility-layer JS harness (requires Node.js).'
-    group = 'verification'
-    workingDir = layout.projectDirectory.dir('src/test/js')
-    commandLine 'node', 'v2-fs-bridge.harness.js'
-    // 只有在显式传 -PskipJsHarness 时才跳过；其余情况一律执行
-    onlyIf { !skipJsHarness }
-    // 无 Node 时 Exec 默认只报「系统找不到指定的文件」，看不出是缺依赖还是脚本挂了。
-    // 这里改用「忽略退出码 + 事后检查」，避免在 doFirst 里 exec（配置缓存下不可用）。
-    ignoreExitValue = true
-    doLast {
-        if (executionResult.get().exitValue != 0) {
-            def detail = executionResult.get().failure?.message ?: '未知错误'
-            throw new GradleException(
-                'jsHarness 执行失败（需要 Node.js）。' +
-                ' 若因缺少 node：安装 Node 后重试，或用 ./gradlew check -PskipJsHarness 跳过；' +
-                ' 若为用例失败请查看上方输出。原始错误：' + detail
-            )
+def registerNodeHarness = { String taskName, String script, String descriptionText ->
+    tasks.register(taskName, Exec) {
+        description = descriptionText
+        group = 'verification'
+        workingDir = layout.projectDirectory.dir('src/test/js')
+        commandLine 'node', script
+        // 只有在显式传 -PskipJsHarness 时才跳过；其余情况一律执行
+        onlyIf { !skipJsHarness }
+        // 无 Node 时 Exec 默认只报「系统找不到指定的文件」，看不出是缺依赖还是脚本挂了。
+        // 这里改用「忽略退出码 + 事后检查」，避免在 doFirst 里 exec（配置缓存下不可用）。
+        ignoreExitValue = true
+        doLast {
+            if (executionResult.get().exitValue != 0) {
+                def detail = executionResult.get().failure?.message ?: '未知错误'
+                throw new GradleException(
+                    taskName + ' 执行失败（需要 Node.js）。' +
+                    ' 若因缺少 node：安装 Node 后重试，或用 ./gradlew check -PskipJsHarness 跳过；' +
+                    ' 若为用例失败请查看上方输出。原始错误：' + detail
+                )
+            }
         }
     }
 }
 
+registerNodeHarness(
+    'jsHarness',
+    'v2-fs-bridge.harness.js',
+    'Runs the v2 compatibility-layer JS harness (requires Node.js).'
+)
+registerNodeHarness(
+    'jsSaveIdentityHarness',
+    'rpg-save-identity.harness.js',
+    'Runs the MV save-identity JS harness (requires Node.js).'
+)
+
 tasks.named('check') {
-    dependsOn 'jsHarness'
+    dependsOn 'jsHarness', 'jsSaveIdentityHarness'
 }
 
 // Each filter family owns its registration and assets; no optional filter IDs in shared code.

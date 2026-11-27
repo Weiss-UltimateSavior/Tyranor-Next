@@ -656,7 +656,6 @@ private fun QuickActionItem(
         modifier = modifier,
         title = title,
         leadingIcon = leadingIcon,
-        containerColor = DialogItemSurface,
         leadingIconTint = MaterialTheme.colorScheme.primary,
         indication = null,
         onClick = onClick,

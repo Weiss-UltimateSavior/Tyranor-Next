@@ -2,6 +2,10 @@
 
 本文件记录代码/资产级第三方声明；引擎运行库与静态依赖的完整许可文本见 [README](README.md) 许可证表及各 `engine/*/licenses/` 目录。
 
+## FVP / rfvp
+
+随包的 `librfvp.so` 以 rfvp fork `1f0c279` 的干净源码构建，适用 MPL-2.0。[固定源码与校验值](engine/src/main/assets/licenses/fvp/upstream-source.txt) · [许可文本](engine/src/main/assets/licenses/fvp/MPL-2.0.txt)
+
 ## Ethornell / BGI
 
 随包的 `libethornell.so` 以 ethornell-rs 为基础构建。源码基线、本地补丁及新增 MP4 解码依赖的许可见 [随包归属声明](engine/src/main/assets/licenses/ethornell/upstream-source.txt)。

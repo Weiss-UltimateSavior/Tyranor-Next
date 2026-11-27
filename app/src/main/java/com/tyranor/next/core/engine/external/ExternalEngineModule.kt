@@ -46,7 +46,7 @@ interface ExternalEngineModule {
 
     fun prepareForLaunch(context: Context, request: ExternalEngineLaunchRequest): ExternalEngineLaunchResult? = null
 
-    fun buildLaunchIntent(request: ExternalEngineLaunchRequest): Intent
+    fun buildLaunchIntent(context: Context, request: ExternalEngineLaunchRequest): Intent
 
     fun displayName(context: Context): String =
         displayNameRes?.let { context.getString(it) } ?: displayName

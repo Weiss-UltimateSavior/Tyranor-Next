@@ -1,5 +1,5 @@
 // NW.js / Node 兼容层 — 让 MV/MZ 在 WebView 下完整模拟环境
-// v0/v1 均在 earlyHook 阶段注入到 </head> 前
+// 在 TynMV / TynMZ 会话的 earlyHook 阶段注入到 </head> 前（v0 兜底会话不注入）
 (function () {
     "use strict";
     if (window.__tyranorNwPolyfill) return;
@@ -280,8 +280,26 @@
     }
     if (typeof window.require.resolve !== "function") window.require.resolve = function (x) { return x; };
     if (typeof window.require.cache === "undefined") window.require.cache = {};
-    if (typeof window.module === "undefined") window.module = { exports: {} };
-    if (typeof window.exports === "undefined") window.exports = window.module.exports;
+    // 这两个 NW.js 垫片必须保持「exports 是函数、module.exports 初始未定义」，不能建成普通对象：
+    // UMD 库在加载时按 `typeof exports === "object" && typeof module !== "undefined"`（或
+    // `typeof module.exports === "object"`、`module.exports` 真值）判断是否导出到 CommonJS，
+    // 一旦成立就把结果写进 module.exports，浏览器全局名永远不会出现：
+    //   - PixiApngAndGif.js → ApngPicture.js 抛 ReferenceError: PixiApngAndGif is not defined
+    //   - jQuery 3 → 走 noGlobal 分支，window.jQuery / window.$ 不设置
+    //   - lodash → 不挂 window._，插件拿到的是本兼容层的极简替身
+    // Tyranor-2.3.4 宿主不注入本兼容层，所以同款游戏在那里正常，问题只出现在 TynMV / TynMZ 会话。
+    // 函数形态不会让三种判定成立，同时 `module.exports = x` / `exports.foo = x` 仍然可用；
+    // 代价是 exports 与 module.exports 初始不再互为别名（同一脚本同时使用两者的写法极少）。
+    // 已知边界（记录在案，不为此再改垫片形态）：
+    //   - jQuery 式判定依赖「此前没有脚本写过 module.exports」；若上游插件先把全局 module.exports
+    //     赋成对象，之后加载的 UMD 库仍可能走 CommonJS。PixiApngAndGif 式谓词不受影响，它的第一条件
+    //     是 typeof exports === "object"，而 exports 始终是函数。
+    //   - 只判断 typeof module !== "undefined" / typeof exports !== "undefined" 的包装仍会落到
+    //     CommonJS 分支；这是「全局垫片」方案固有的边界，除非按脚本作用域分别传 module。
+    //   - module.exports.foo = …（未先赋值）现在抛 TypeError，旧实现会静默写到临时对象；
+    //     这与真实 NW.js 窗口语义一致（那里本来没有 module）。
+    if (typeof window.module === "undefined") window.module = { exports: undefined };
+    if (typeof window.exports === "undefined") window.exports = function () {};
     if (typeof window.nw === "undefined") window.nw = nwGuiStub;
     if (typeof window.gui === "undefined") window.gui = nwGuiStub;
     try { if (typeof globalThis !== "undefined" && !globalThis.require) globalThis.require = window.require; } catch (e) {}

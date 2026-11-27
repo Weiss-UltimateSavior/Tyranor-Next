@@ -16,6 +16,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
@@ -47,6 +48,7 @@ fun TopBarIcon(
     stateDescription: String? = null,
     /** 刷新类图标传 true：点击时图标转一圈（带一点回弹，连点每次再转一圈、从当前角度续上），到位后与原样一致。「普通」档不转。 */
     spin: Boolean = false,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     val spinAngle = remember { Animatable(0f) }
@@ -59,30 +61,39 @@ fun TopBarIcon(
     }
     Image(
         painter = painter,
-        contentDescription = contentDescription,
+        contentDescription = if (enabled) contentDescription else null,
         colorFilter = ColorFilter.tint(shownTint),
         modifier = Modifier
             .then(
-                if (stateDescription != null) Modifier.semantics { this.stateDescription = stateDescription }
-                else Modifier,
+                when {
+                    !enabled -> Modifier.clearAndSetSemantics { }
+                    stateDescription != null -> Modifier.semantics { this.stateDescription = stateDescription }
+                    else -> Modifier
+                },
             )
             .padding(start = 2.dp)
             // 页面入场：紧随标题之后从下方轻轻弹入（仅在页面提供了入场节拍时生效；停稳与原样一致）
             .staggeredEntrance(TOP_BAR_ICON_ENTRANCE_INDEX, distance = TopBarEntranceDistance)
             // Q 弹按压：只改绘制图层，静止时与原样一致
-            .pressSquish()
+            .pressSquish(enabled = enabled)
             .size(34.dp)
             .clip(RoundedCornerShape(6.dp))
-            .clickable(
-                onClick = {
-                    if (spin && MotionMode.enhanced) {
-                        // 目标始终是 360° 的整数倍：每次点击再转一圈；转完无声归零（整圈角度视觉一致，不会跳）
-                        spinScope.launch {
-                            spinAngle.animateTo(spinAngle.targetValue + 360f, MotionTokens.layout(0.5f))
-                            spinAngle.snapTo(0f)
-                        }
-                    }
-                    onClick()
+            .then(
+                if (enabled) {
+                    Modifier.clickable(
+                        onClick = {
+                            if (spin && MotionMode.enhanced) {
+                                // 目标始终是 360° 的整数倍：每次点击再转一圈；转完无声归零（整圈角度视觉一致，不会跳）
+                                spinScope.launch {
+                                    spinAngle.animateTo(spinAngle.targetValue + 360f, MotionTokens.layout(0.5f))
+                                    spinAngle.snapTo(0f)
+                                }
+                            }
+                            onClick()
+                        },
+                    )
+                } else {
+                    Modifier
                 },
             )
             .padding(4.dp)

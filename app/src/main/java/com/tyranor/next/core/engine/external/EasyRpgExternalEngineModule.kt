@@ -12,7 +12,7 @@ import java.io.File
  * EasyRPG 外置 APK 引擎模块。
  *
  * 上游 EasyRPG/Player Android 端依赖 SDL3（`org.libsdl.app`），与主 APK 内置的 SDL2 同名 Java 类冲突，
- * 且遵循 GPLv3 隔离边界，因此以独立宿主 APK（`Weiss-UltimateSavior/Tyranor-Next-EasyRPG`）承载。
+ * 且遵循 GPLv3 隔离边界，因此以独立宿主 APK（`SIRENA-Core/Tyranor-Next-EasyRPG`）承载。
  * 启动协议集中在本文件和 [EasyRpgHostContract] 内，扫描器 / UI 不散落 package/action/extra 字符串。
  */
 object EasyRpgExternalEngineModule : ExternalEngineModule {
@@ -25,7 +25,7 @@ object EasyRpgExternalEngineModule : ExternalEngineModule {
     override val defaultAlias: String = "internal.easyrpg"
     override val supportedAliases: Set<String> = setOf("external.easyrpg")
 
-    override val updateSource = ExternalEngineReleaseSource("Weiss-UltimateSavior/Tyranor-Next-EasyRPG", "easyrpg-host-")
+    override val updateSource = ExternalEngineReleaseSource("SIRENA-Core/Tyranor-Next-EasyRPG", "easyrpg-host-")
 
     /** 宿主仓库最新发布的 APK 直链（资产名固定）；宿主每发布新版本，这里自动指向它，无需改动本 App。 */
     override val installUrl: String =
@@ -60,7 +60,7 @@ object EasyRpgExternalEngineModule : ExternalEngineModule {
     internal fun resolveLaunchTitle(request: ExternalEngineLaunchRequest, folder: String = resolveLaunchFolder(request)): String =
         request.game.title.ifBlank { File(folder).name.ifBlank { displayName } }
 
-    override fun buildLaunchIntent(request: ExternalEngineLaunchRequest): Intent {
+    override fun buildLaunchIntent(context: Context, request: ExternalEngineLaunchRequest): Intent {
         val folder = resolveLaunchFolder(request)
         val title = resolveLaunchTitle(request, folder)
         return Intent(action).setPackage(packageName).apply {
@@ -97,7 +97,7 @@ object EasyRpgExternalEngineModule : ExternalEngineModule {
     }
 }
 
-/** EasyRPG 宿主 APK 的 Intent 协议键；两端（本 App 与宿主仓库 Weiss-UltimateSavior/Tyranor-Next-EasyRPG）各持一份常量，改动须同步。 */
+/** EasyRPG 宿主 APK 的 Intent 协议键；两端（本 App 与宿主仓库 SIRENA-Core/Tyranor-Next-EasyRPG）各持一份常量，改动须同步。 */
 object EasyRpgHostContract {
     const val PACKAGE = "com.tyranor.next.easyrpg"
     const val VERSION_CODE = 1

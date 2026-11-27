@@ -68,7 +68,7 @@ object ImpactoExternalEngineModule : ExternalEngineModule {
         return null
     }
 
-    override fun buildLaunchIntent(request: ExternalEngineLaunchRequest): Intent {
+    override fun buildLaunchIntent(context: Context, request: ExternalEngineLaunchRequest): Intent {
         val folder = request.gameDirectoryPath.trim().trimEnd('/')
         return Intent(action).setPackage(packageName).apply {
             putExtra(ImpactoHostContract.EXTRA_GAME_DIR, folder)

@@ -63,6 +63,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | CatSystem2           | `config/startup.xml`、`*.int`、`*.cst`、`*.hg3`、`*.kcs` 等组合         | 外置 Winlator（winlator-cn）        |
 | PC（手动添加）        | 游戏页顶栏「添加 PC 游戏」选择目录并指定启动 exe                          | 外置 Winlator（winlator-cn）        |
 | TyranoBuilder        | `index.html`、`tyrano/`                                              | 内置 Tyrano Web 运行环境           |
+| EasyRPG              | RPG Maker 2000／2003 的 `RPG_RT.ldb` + `RPG_RT.lmt`，或 EasyRPG 格式的 `Easy_RT.edb` + `Easy_RT.emt`（同一根目录，文件名不区分大小写） | 外置 [EasyRPG 宿主 APK](https://github.com/SIRENA-Core/Tyranor-Next-EasyRPG/releases)（从引擎页下载） |
 | RPG Maker XP         | `.rgssad`、`Game.ini` + `Data/*.rxdata`                              | 外置 RPGM APK 模块               |
 | RPG Maker VX         | `.rgss2a`、`Game.ini` + `Data/*.rvdata`                              | 外置 RPGM APK 模块               |
 | RPG Maker VX Ace     | `.rgss3a`、`Game.ini` + `Data/*.rvdata2`                             | 外置 RPGM APK 模块               |
@@ -74,6 +75,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | Ren'Py               | `.rpa`、`game/script.rpy`、`game/options.rpy`、`renpy/` + `.rpy/.rpyc` | 外置 RenPy APK 模块（8.5.0 / 8.5.3 / 7.7.1；8.5.0 与 8.5.3 同包名，按所选版本下载安装） |
 | Ruffle / Flash       | 顶层 `.swf`；根 `index.html/index.htm` + 唯一 SWF 的叶子目录                   | 外置 Ruffle APK 模块              |
 | MAGES.（impacto）    | 按精确大小写识别 profile，规则优先取自已安装的宿主：上游 profile 看根目录条目（如 `mo6tw` 的 `SYSTEM.CPK`、`SCRIPT.cls`），Windows／Steam 版《秋之回忆6》看根目录 `game.exe` 与 `data/` 里的 `script.cpk`、`mes00.cpk`，Steam 版 STEINS;GATE 看 `Game.exe` 与 `USRDIR/` 里的 `script.mpk`、`system.mpk`；像 MAGES. 但没有 profile 的目录列为「暂不支持」，可尝试运行 | 外置 [Impacto 宿主 APK](https://github.com/SIRENA-Core/Tyranor-Next-MAGES/releases)（引擎页点击跳转下载；Windows／Steam 版需宿主 0.2.0、STEINS;GATE 需 0.3.0 及以上） |
+| ShiinaRio            | 根目录同时有 `RIO.INI` 和 WARC 1.0–1.7 的 `.war` 封包（文件名不区分大小写） | 外置 [ShiinaRio 宿主 APK](https://github.com/SIRENA-Core/Tyranor-Next-ShiinaRio/releases)（Android 11+、宿主 0.1.1+，从引擎页下载） |
 | PSP                  | `.pbp`、`.cso`、`.iso`、`.chd`                                         | 外置 PPSSPP 模拟器                 |
 | Nintendo Switch      | `.nsp`、`.xci`、`.nca`、`.nro`                                         | 外置 Eden 模拟器                   |
 
@@ -163,7 +165,7 @@ docs/、.archify/                     专题方案、审查记录与可视化
 | 运行库 | 上游 | 许可证 | 溯源与许可文本 |
 | --- | --- | --- | --- |
 | Siglus / RealLive / AVG32 / UK2 | [siglus_rs](https://github.com/xmoezzz/siglus_rs) | MPL-2.0 | 上游仓库 |
-| FVP | [rfvp](https://github.com/xmoezzz/rfvp) | MPL-2.0 | 上游仓库 |
+| FVP | [rfvp](https://github.com/xmoezzz/rfvp) | MPL-2.0 | [`1f0c279` 构建来源与校验值](engine/src/main/assets/licenses/fvp/upstream-source.txt)、[许可文本](engine/src/main/assets/licenses/fvp/MPL-2.0.txt) |
 | Ethornell / BGI | [ethornell-rs](https://github.com/xmoezzz/ethornell-rs) | MPL-2.0 | [源码来源及许可](engine/src/main/assets/licenses/ethornell/upstream-source.txt)、[本地补丁](tools/ethornell/patches/README.md) |
 | CMVS | [cmvs-rs](https://github.com/Weiss-UltimateSavior/cmvs-rs) | MIT OR Apache-2.0 | `tools/cmvs/` |
 | SystemNNN | [SystemNNN-Emberfall](https://github.com/PorisRora/SystemNNN-Emberfall)（原版 SystemNNN 由 tinyan 开发） | GPL-2.0-only | [对应源码及构建记录](engine/src/main/assets/licenses/systemnnn/ffmpeg-source.txt)、[归属与许可](engine/src/main/assets/licenses/systemnnn/upstream-source.txt) |
