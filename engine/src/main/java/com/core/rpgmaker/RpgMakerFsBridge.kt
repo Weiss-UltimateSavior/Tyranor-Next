@@ -2,6 +2,7 @@ package com.core.rpgmaker
 
 import android.util.Log
 import android.webkit.JavascriptInterface
+import com.core.web.AsarChildrenIndex
 import com.core.web.AsarWebRoot
 import java.io.File
 import java.io.IOException
@@ -667,8 +668,21 @@ internal class RpgMakerFsBridge(
         asarKey(path?.let { relativeFor(it) })?.let { key ->
             val archive = asar
             if (archive != null && archive.has(key) && archive.isDirectory(key)) {
+                val children = try {
+                    archive.children(key)
+                } catch (_: AsarChildrenIndex.LimitExceeded) {
+                    try {
+                        archive.directChildren(key)
+                    } catch (error: IOException) {
+                        Log.w(TAG, "fs readdir failed (asar): $key", error)
+                        return ""
+                    }
+                } catch (error: IOException) {
+                    Log.w(TAG, "fs readdir failed (asar): $key", error)
+                    return ""
+                }
                 val array = JSONArray()
-                archive.children(key).forEach { array.put(it.first) }
+                children.forEach { array.put(it.first) }
                 return array.toString()
             }
         }

@@ -16,6 +16,9 @@ import java.net.SocketException
 import java.nio.charset.StandardCharsets
 import java.util.HashMap
 import com.core.web.AsarWebRoot
+import com.core.web.DkToolsCompat
+import com.core.web.PluginFileIndexCache
+import com.core.web.DkToolsResourceResolver
 import java.util.Locale
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ConcurrentHashMap
@@ -86,6 +89,28 @@ internal class RpgMakerLocalHttpServer(
     // 游戏目录内文件（含存档，PR review 意见）。index 页为引导入口无条件下发
     // Set-Cookie，其余请求必须携带匹配 token 的 Cookie，否则 403。
     private val authToken: String = newAuthToken()
+    private val authCookieName = "${AUTH_COOKIE_NAME}_${authToken}"
+    private val pluginIndexEnabled = this.scriptAppends.containsKey(DkToolsCompat.SCRIPT_PATH)
+    private val pluginFileIndex = PluginFileIndexCache(build = { focused ->
+        val hasOriginal = canonicalIfValid("data/Stamp.json") != null ||
+            DkToolsResourceResolver.resolve(
+                root = this.root,
+                uri = "data/Stamp.json",
+                archivePrefix = asarRootPrefix,
+                archiveChildren = { this.asar?.children(it).orEmpty() },
+                archiveIsFile = { this.asar?.entrySize(it) != null },
+                archiveDirectChildren = { this.asar?.directChildren(it).orEmpty() },
+                diskChildren = { dirIndex.children(it).orEmpty() },
+                archiveIsDirectory = { this.asar?.isDirectoryOrImplicit(it) == true },
+            ) != null
+        if (hasOriginal) return@PluginFileIndexCache "null".toByteArray(Charsets.UTF_8)
+        val started = System.nanoTime()
+        RpgMakerFileIndex(this.root, this.asar, asarRootPrefix, isCancelled = { !running || Thread.currentThread().isInterrupted })
+            .build(if (focused) setOf("locales", "data") else null).also {
+                Log.i(TAG, "plugin file index ready focused=$focused bytes=${it.size} elapsedMs=${(System.nanoTime() - started) / 1_000_000}")
+            }
+    }, isLimitFailure = { it is RpgMakerFileIndex.LimitExceeded },
+        onDegraded = { Log.w(TAG, "plugin file index limited; retrying locales/data: ${it.message}") })
 
     init {
         this.root = root.canonicalFile
@@ -125,9 +150,15 @@ internal class RpgMakerLocalHttpServer(
     ) : this(root, null, tyranoHook, injectBeforeBody, scriptAppends, injectedHtml, internalResources, earlyHook, v12Compat, fuzzyNames, preferredPort, earlyHtml, dirIndex)
 
     fun start() { thread.start() }
+
+    private val indexExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "TyranorPluginIndex").apply { isDaemon = true }
+    }
     val port: Int get() = serverSocket.localPort
     fun stop() {
         running = false
+        pluginFileIndex.stop()
+        indexExecutor.shutdownNow()
         try { serverSocket.close() } catch (_: Throwable) {}
         // 关闭所有已接受/排队中的连接：shutdownNow 只中断 worker，阻塞在 socket 读上的
         // 线程与尚未开始的任务都还握着 FD，必须显式 close 才能立刻回收
@@ -379,6 +410,31 @@ internal class RpgMakerLocalHttpServer(
             return keepAlive
         }
 
+        if (uri == RpgMakerFileIndex.RESOURCE_PATH) {
+            if (!pluginIndexEnabled) {
+                sendText(socket, 404, "Not Found", "not found", headOnly)
+                return false
+            }
+            val bytes = try {
+                if (DkToolsCompat.hasExactOriginalStamp(root, asarRootPrefix,
+                    archiveIsDirectory = { asar?.isDirectoryOrImplicit(it) == true },
+                    archiveIsFile = { asar?.entrySize(it) != null },
+                )) "null".toByteArray(Charsets.UTF_8) else pluginFileIndex.request(indexExecutor)
+            } catch (_: java.io.IOException) {
+                sendText(socket, 500, "Internal Server Error", "plugin file index failed", headOnly)
+                return false
+            } catch (_: java.util.concurrent.RejectedExecutionException) {
+                sendText(socket, 500, "Internal Server Error", "plugin file index unavailable", headOnly)
+                return false
+            }
+            if (bytes == null) {
+                sendText(socket, 202, "Accepted", "plugin file index pending", headOnly)
+                return false
+            }
+            sendBytes(socket, bytes, uri, headOnly, keepAlive, "no-cache", null)
+            return keepAlive
+        }
+
         val resolved = resolveRequestedFile(uri)
         // ASAR 大条目（>256KiB，媒体为主）流式分支必须在 404 判空之前：
         // 流式结果 file/data 均为 null，放在后面会被判 404 且泄漏已打开的文件句柄
@@ -419,13 +475,17 @@ internal class RpgMakerLocalHttpServer(
             return keepAlive
         }
         if (file != null && hasScriptAppend(uri)) {
-            val original = file.readBytes()
-            val patched = appendedBytes(original, uri)
-            val etag = contentEtag(patched)
-            Log.i(TAG, "served patched script uri=$uri original=${original.size} append=${patched.size - original.size}")
-            if (matchesEtag(ifNoneMatch, etag)) sendNotModified(socket, etag, cacheControl, keepAlive)
-            else sendBytes(socket, patched, uri, headOnly, keepAlive, cacheControl, etag)
-            return keepAlive
+            if (uri.equals(DkToolsCompat.SCRIPT_PATH, true) && file.length() > DkToolsCompat.MAX_SCRIPT_BYTES) {
+                Log.w(TAG, "DKTools hook skipped: script exceeds 8 MiB")
+            } else {
+                val original = file.readBytes()
+                val patched = appendedBytes(original, uri)
+                val etag = contentEtag(patched)
+                Log.i(TAG, "served patched script uri=$uri original=${original.size} append=${patched.size - original.size}")
+                if (matchesEtag(ifNoneMatch, etag)) sendNotModified(socket, etag, cacheControl, keepAlive)
+                else sendBytes(socket, patched, uri, headOnly, keepAlive, cacheControl, etag)
+                return keepAlive
+            }
         }
         if (file == null) {
             sendText(socket, 404, "Not Found", "file missing")
@@ -561,6 +621,28 @@ internal class RpgMakerLocalHttpServer(
     private fun resolveRequestedFile(uri: String): ResolvedFile {
         var target = canonicalIfValid(uri)
         if (target != null) return ResolvedFile(target, null)
+        if (pluginIndexEnabled) {
+            val resource = DkToolsResourceResolver.resolve(root, uri, asarRootPrefix,
+                { asar?.children(it).orEmpty() }, { asar?.entrySize(it) != null },
+                { asar?.directChildren(it).orEmpty() },
+                { dirIndex.children(it).orEmpty() },
+                { asar?.isDirectoryOrImplicit(it) == true })
+            if (resource?.file != null) return ResolvedFile(resource.file, null)
+            resource?.archivePath?.let { path ->
+                val streamed = asar?.openStream(path) ?: return ResolvedFile(null, null)
+                if (hasScriptAppend(uri) && streamed.second <= DkToolsCompat.MAX_SCRIPT_BYTES) {
+                    return ResolvedFile(null, streamed.first.use { it.readBytes() })
+                }
+                if (hasScriptAppend(uri) && uri.equals(DkToolsCompat.SCRIPT_PATH, true) &&
+                    streamed.second > DkToolsCompat.MAX_SCRIPT_BYTES) {
+                    Log.w(TAG, "DKTools hook skipped: script exceeds 8 MiB")
+                }
+                if (streamed.second >= ASAR_STREAM_THRESHOLD) {
+                    return ResolvedFile(null, null, streamed.first, streamed.second)
+                }
+                return ResolvedFile(null, streamed.first.use { it.readBytes() })
+            }
+        }
         val lower = uri.lowercase(Locale.ROOT)
         if (lower.endsWith(".m4a")) {
             val alt = replaceSuffix(uri, ".m4a", ".ogg")
@@ -595,12 +677,32 @@ internal class RpgMakerLocalHttpServer(
                 if (target != null) { Log.i(TAG, "resource fallback ogg->rpgmvo $uri -> $alt"); return ResolvedFile(target, null) }
             }
         }
+        // Do not let legacy first-match/lowercase fallbacks undo an ambiguous index lookup,
+        // while preserving entry-page candidate fallback for index.html / index.htm.
+        if (pluginIndexEnabled) {
+            if (asar != null && (uri.equals("index.html", true) || uri.equals("index.htm", true))) {
+                for (candidate in listOf("index.html", "www/index.html", "app/index.html", "resources/app/index.html")) {
+                    val data = asar.read(candidate)
+                    if (data != null) return ResolvedFile(null, data)
+                }
+            }
+            return ResolvedFile(null, null)
+        }
         if (asar != null) {
             val normalizedUri = uri.replace(DOT_SEGMENT, "/").replace(DOUBLE_SLASH, "/")
             // 大条目优先流式：媒体需要 Range/seek，整段 ByteArray 有 OOM 风险（PR review 意见）
             for (p in listOf(asarRootPrefix + normalizedUri, normalizedUri,
                     asarRootPrefix + normalizedUri.lowercase(Locale.ROOT), normalizedUri.lowercase(Locale.ROOT))) {
                 val streamed = asar.openStream(p) ?: continue
+                // Plugin hooks also apply to packaged scripts, which often exceed the
+                // media streaming threshold. Keep this buffering explicitly bounded.
+                if (hasScriptAppend(uri) && streamed.second <= DkToolsCompat.MAX_SCRIPT_BYTES) {
+                    return ResolvedFile(null, streamed.first.use { it.readBytes() })
+                }
+                if (hasScriptAppend(uri) && uri.equals(DkToolsCompat.SCRIPT_PATH, true) &&
+                    streamed.second > DkToolsCompat.MAX_SCRIPT_BYTES) {
+                    Log.w(TAG, "DKTools hook skipped: script exceeds 8 MiB")
+                }
                 if (streamed.second >= ASAR_STREAM_THRESHOLD) {
                     return ResolvedFile(null, null, streamed.first, streamed.second)
                 }
@@ -632,9 +734,9 @@ internal class RpgMakerLocalHttpServer(
     }
 
     /**
-     * 文件名回退解析。[allowWhitespaceTolerance] 为真（仅 v2 会话）时在大小写不敏感
-     * 之外再启用空白类别/尾随空白容忍，修「素材文件名被规范化后与 data 引用不一致」
-     * 导致的整批 404（见 [RpgMakerNameMatcher]）；为假时保持 v0/v1 的历史语义。
+     * 文件名回退解析。[allowWhitespaceTolerance] 为真时在大小写不敏感之外再启用
+     * 空白类别/尾随空白容忍，修「素材文件名被规范化后与 data 引用不一致」导致的整批 404
+     * （见 [RpgMakerNameMatcher]）；为假时回退为精确命中或大小写不敏感首项匹配。
      *
      * 目录枚举走 [dirIndex]（按「目录 + mtime」缓存）：旧实现每次 miss 都对每一级
      * `listFiles()` 并构造 `File` 列表，素材名被规范化时会在同一目录上反复扫描。
@@ -709,20 +811,22 @@ internal class RpgMakerLocalHttpServer(
 
     // 引导入口响应附带 Set-Cookie：后续同源资源请求由 WebView 自动携带
     private fun authCookieHeader(): String =
-        "Set-Cookie: $AUTH_COOKIE_NAME=$authToken; Path=/; HttpOnly\r\n"
+        "Set-Cookie: $authCookieName=$authToken; Path=/; HttpOnly; SameSite=Strict\r\n"
 
     private fun hasValidAuth(headers: Map<String, String>): Boolean =
-        headers["cookie"]?.contains("$AUTH_COOKIE_NAME=$authToken") == true
+        headers["cookie"].orEmpty().split(';').any { it.trim() == "$authCookieName=$authToken" }
 
     private fun sendInjectedIndex(socket: Socket, html: String?, headOnly: Boolean, keepAlive: Boolean) {
         val hasEarly = earlyHtml.isNotBlank() || (earlyHook != null && earlyHook.isNotEmpty())
-        val data = if (hasEarly) {
+        val injected = if (hasEarly) {
             buildInjectedHtmlTwoPhase(
                 html.orEmpty(), earlyHook ?: ByteArray(0), tyranoHook, injectedHtml, earlyHtml,
             )
         } else {
             buildInjectedHtml(html.orEmpty(), tyranoHook, injectedHtml, injectBeforeBody)
         }
+        val data = if (pluginIndexEnabled) DkToolsCompat.injectBootstrap(String(injected, StandardCharsets.UTF_8))
+            .toByteArray(StandardCharsets.UTF_8) else injected
         Log.i(TAG, "served injected index bytes=${data.size} hook=${tyranoHook.size} earlyHtml=${earlyHtml.length}")
         val out = BufferedOutputStream(socket.getOutputStream())
         out.write(
@@ -899,11 +1003,11 @@ internal class RpgMakerLocalHttpServer(
         if (!headOnly) raw.write(data)
         raw.flush()
     }
-    private fun sendText(socket: Socket, code: Int, reason: String, body: String) {
+    private fun sendText(socket: Socket, code: Int, reason: String, body: String, headOnly: Boolean = false) {
         val data = body.toByteArray(StandardCharsets.UTF_8)
         val out = BufferedOutputStream(socket.getOutputStream())
         out.write(("HTTP/1.1 $code $reason\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${data.size}\r\nConnection: close\r\n\r\n").toByteArray(StandardCharsets.UTF_8))
-        out.write(data)
+        if (!headOnly) out.write(data)
         out.flush()
     }
 

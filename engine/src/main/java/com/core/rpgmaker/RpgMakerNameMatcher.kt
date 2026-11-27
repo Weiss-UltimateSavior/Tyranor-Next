@@ -3,7 +3,7 @@ package com.core.rpgmaker
 import java.util.Locale
 
 /**
- * 请求名与磁盘名的宽松匹配（仅 v2 会话启用）。
+ * 请求名与磁盘名的逐层匹配（所有 RPG Maker MV/MZ 宿主会话的 HTTP 资源解析与 TynMV-0.2 / TynMZ 的 fs 桥共用）。
  *
  * 真实案例（ホムンクルスの研究記録）：游戏 data 引用
  * `img/pictures/イースウェン　街並み  .png`（分隔符是 U+3000 全角空格），

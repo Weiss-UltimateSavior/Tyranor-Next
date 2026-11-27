@@ -1,6 +1,7 @@
 package com.core.tyrano
 
 import android.util.Log
+import com.core.web.AsarChildrenIndex
 import org.json.JSONObject
 import java.io.Closeable
 import java.io.EOFException
@@ -26,6 +27,15 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
     private val raf: RandomAccessFile
     private val dataOffset: Long
     private val entries = HashMap<String, Entry>()
+    private val childrenIndexResult by lazy {
+        try {
+            Result.success(AsarChildrenIndex(entries.asSequence().map { it.key to it.value.directory }.asIterable(), includeEmptyNames = true))
+        } catch (error: AsarChildrenIndex.LimitExceeded) {
+            // 归档元数据在会话中不变；只缓存确定的预算失败，中断仍允许重试。
+            Result.failure(error)
+        }
+    }
+    private val childrenIndex get() = childrenIndexResult.getOrThrow()
 
     init {
         archiveFile = file?.canonicalFile
@@ -76,10 +86,46 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
         return e != null && e.directory
     }
 
+    /** True for explicit directories and implicit parent prefixes, without building the global tree. */
+    internal fun isDirectoryOrImplicit(path: String): Boolean {
+        val key = normalize(path).trimEnd('/')
+        if (key.isEmpty()) return true
+        if (entries[key]?.directory == true) return true
+        val prefix = "$key/"
+        return entries.keys.any { it.startsWith(prefix) }
+    }
+
+    /** Direct child metadata for browser plugin indexes; file contents remain in the archive. */
+    fun children(path: String): List<Pair<String, Boolean>> {
+        return childrenIndex.children(normalize(path).trimEnd('/'))
+    }
+
+    /** Direct-child fallback used when an unrelated subtree exceeds the archive-wide node limit. */
+    internal fun directChildren(path: String): List<Pair<String, Boolean>> =
+        AsarChildrenIndex.directChildren(
+            entries.asSequence().map { it.key to it.value.directory }.asIterable(),
+            normalize(path).trimEnd('/'),
+            includeEmptyNames = true,
+        )
+
+    /** Independent metadata view for budget fallback; never consults the archive-wide cache. */
+    internal fun focusedChildrenIndex(prefix: String, roots: Set<String>): AsarChildrenIndex =
+        AsarChildrenIndex.focused(entries.asSequence().map { it.key to it.value.directory }.asIterable(),
+            prefix, roots, includeEmptyNames = true)
+
     fun read(path: String): ByteArray? {
         return try {
-            val e = entries[normalize(path)] ?: return null
+            val key = normalize(path)
+            val e = entries[key] ?: return null
             if (e.directory) return null
+            if (e.unpacked) {
+                val file = resolveUnpackedFile(key) ?: return null
+                return RandomAccessFile(file, "r").use { source ->
+                    val length = source.length()
+                    if (length > MAX_ENTRY_BYTES || length > Int.MAX_VALUE) return null
+                    ByteArray(length.toInt()).also { source.readFully(it) }
+                }
+            }
             val data = ByteArray(e.size.toInt())
             synchronized(raf) {
                 raf.seek(dataOffset + e.offset)
@@ -94,8 +140,10 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
 
     /** 条目字节大小；目录或不存在返回 null。用于流式响应前判定与 Range 计算，避免整体读入内存。 */
     fun fileSize(path: String): Long? {
-        val e = entries[normalize(path)] ?: return null
-        return if (e.directory) null else e.size
+        val key = normalize(path)
+        val e = entries[key] ?: return null
+        if (e.directory) return null
+        return if (e.unpacked) resolveUnpackedFile(key)?.length() else e.size
     }
 
     /**
@@ -103,29 +151,65 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
      * 不整体读入内存）。返回是否成功；越界或读取失败返回 false。
      */
     fun writeRange(path: String, start: Long, length: Long, out: OutputStream): Boolean {
-        val e = entries[normalize(path)] ?: return false
-        if (e.directory || start < 0L || length < 0L || start + length > e.size) return false
-        if (length == 0L) return true
+        val key = normalize(path)
+        val e = entries[key] ?: return false
+        if (e.directory || start < 0L || length < 0L) return false
         return try {
-            val buffer = ByteArray(64 * 1024)
-            var position = start
-            var left = length
-            while (left > 0L) {
-                val chunk = Math.min(buffer.size.toLong(), left).toInt()
-                // 锁内只做 seek+读块，写出放在锁外，避免慢客户端长时间占住归档文件指针
-                val read = synchronized(raf) {
-                    raf.seek(dataOffset + e.offset + position)
-                    raf.read(buffer, 0, chunk)
+            if (e.unpacked) {
+                val file = resolveUnpackedFile(key) ?: return false
+                RandomAccessFile(file, "r").use { source ->
+                    copyRange(source, 0L, source.length(), start, length, out)
                 }
-                if (read <= 0) return false
-                out.write(buffer, 0, read)
-                position += read
-                left -= read
+            } else {
+                copyRange(raf, dataOffset + e.offset, e.size, start, length, out)
             }
-            true
         } catch (t: Throwable) {
             Log.w(TAG, "writeRange failed path=$path start=$start length=$length", t)
             false
+        }
+    }
+
+    private fun copyRange(
+        source: RandomAccessFile,
+        offset: Long,
+        size: Long,
+        start: Long,
+        length: Long,
+        out: OutputStream,
+    ): Boolean {
+        // 用减法验证范围，避免 start + length 溢出后绕过边界。
+        if (start > size || length > size - start) return false
+        if (length == 0L) return true
+        val buffer = ByteArray(64 * 1024)
+        var position = start
+        var left = length
+        while (left > 0L) {
+            val chunk = minOf(buffer.size.toLong(), left).toInt()
+            // 归档句柄共用；锁外写客户端，避免慢连接长期占用归档指针。
+            val read = synchronized(source) {
+                source.seek(offset + position)
+                source.read(buffer, 0, chunk)
+            }
+            if (read <= 0) return false
+            out.write(buffer, 0, read)
+            position += read
+            left -= read
+        }
+        return true
+    }
+
+    private fun resolveUnpackedFile(key: String): File? {
+        val archive = archiveFile ?: return null
+        val unpackedRoot = File(archive.parentFile, archive.name + ".unpacked")
+        return try {
+            val rootPath = unpackedRoot.canonicalFile.path
+            File(unpackedRoot, key).canonicalFile.takeIf {
+                it.path.startsWith(rootPath + File.separator) && it.isFile
+            }
+        } catch (_: IOException) {
+            null
+        } catch (_: SecurityException) {
+            null
         }
     }
 
@@ -140,10 +224,13 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
         return archiveFile?.name ?: ""
     }
 
+    fun getArchiveFile(): File = requireNotNull(archiveFile)
+
     @Throws(IOException::class)
     private fun validateEntries(archiveLength: Long, parsedDataOffset: Long) {
         for ((key, entry) in entries) {
             if (entry.directory) continue
+            if (entry.unpacked) continue
             if (entry.size < 0L || entry.size > MAX_ENTRY_BYTES || entry.size > Int.MAX_VALUE) {
                 throw IOException("invalid asar entry size: $key")
             }
@@ -156,13 +243,17 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
     }
 
     @Throws(Exception::class)
-    private fun parseNode(prefix: String, node: JSONObject) {
+    private fun parseNode(prefix: String, node: JSONObject, depth: Int = 0) {
+        if (depth > MAX_HEADER_DEPTH) {
+            throw IOException("asar header depth exceeds limit: $MAX_HEADER_DEPTH")
+        }
         val files = node.optJSONObject("files")
         if (files == null) {
             if (prefix.isNotEmpty()) {
                 val size = parseLong(node.optString("size", "0"))
-                val offset = parseLong(node.optString("offset", "0"))
-                entries[normalize(prefix)] = Entry(directory = false, size = size, offset = offset)
+                val unpacked = node.optBoolean("unpacked", false)
+                val offset = if (unpacked) 0L else parseLong(node.optString("offset", "0"))
+                entries[normalize(prefix)] = Entry(directory = false, size = size, offset = offset, unpacked = unpacked)
             }
             return
         }
@@ -174,20 +265,22 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
             val name = keys.next()
             val child = files.optJSONObject(name) ?: continue
             val next = if (prefix.isEmpty()) name else "$prefix/$name"
-            parseNode(next, child)
+            parseNode(next, child, depth + 1)
         }
     }
 
     private data class Entry(
         val directory: Boolean,
         val size: Long,
-        val offset: Long
+        val offset: Long,
+        val unpacked: Boolean = false,
     )
 
     companion object {
         private const val TAG = "YukiAsar"
         private const val MAX_HEADER_BYTES = 16L * 1024L * 1024L
         private const val MAX_ENTRY_BYTES = 256L * 1024L * 1024L
+        private const val MAX_HEADER_DEPTH = 128
 
         private fun logInfo(message: String) {
             try { Log.i(TAG, message) } catch (_: RuntimeException) {

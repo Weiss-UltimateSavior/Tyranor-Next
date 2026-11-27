@@ -1,5 +1,7 @@
 package com.core.tyrano
 
+import com.core.web.DkToolsCompat
+
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -206,6 +208,9 @@ class TyranoActivity : Activity() {
             }
             val hook = hookAsset?.let { assets.open(it).buffered().use { input -> input.readBytes() } } ?: ByteArray(0)
             val scriptAppends = mutableMapOf<String, ByteArray>()
+            if (webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ) {
+                scriptAppends[DkToolsCompat.SCRIPT_PATH] = loadAsset(DkToolsCompat.ASSET_PATH)
+            }
             if (webGameType == WebGameType.RPG_MZ) {
                 scriptAppends["js/rmmz_core.js"] = loadAsset(RPG_MZ_CORE_HOOK_ASSET)
                 scriptAppends["js/rmmz_managers.js"] = loadAsset(RPG_MZ_MANAGERS_HOOK_ASSET)

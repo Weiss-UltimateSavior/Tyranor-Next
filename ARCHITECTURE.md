@@ -140,6 +140,10 @@ RPG Maker v2 的插件 `localStorage` 由兼容层调用 [RpgMakerFsBridge](engi
 
 WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano` 保留历史默认目录，`:rpgmaker` 自设后缀。更改 profile 或本地 HTTP 端口会影响历史网页存储作用域，须同时评估存档兼容。
 
+MV/MZ 的 Tyranor-2.3.4 仍由 `TyranoActivity` 承载，TynMV / TynMZ 由 `RpgMakerActivity` 承载。两者复用 `com.core.web` 的 ASAR 子项索引、DKTools 脚本/端点契约、索引缓存与资源名解析辅助；目录元数据构建器 `com.core.rpgmaker.RpgMakerFileIndex` 暂由两套服务器共用，并适配各自的 ASAR 读取器。因此包边界并非完全无引用，职责仍限制在 engine 内的只读资源服务，不依赖 app/UI。ASAR 子项树按需建立，避免未使用目录枚举的会话承担该树的构建开销。
+
+DKTools 注入只在适用 MV/MZ 会话启用，原 `Stamp.json` 优先。HTML 中最早的加载门禁与 DKTools 追加脚本协作：脚本异步请求索引，HTTP 只读取快照（扫描中返回 202），就绪后恢复窗口加载事件，保留插件同步初始化契约。HTTP 请求处理器先做精确原 Stamp 探测，完整原 Stamp 判定与扫描在专用、可中断的执行器完成，原 Stamp 存在时不扫描，无 DKTools 请求的会话不构建索引。完整成功按会话缓存；扫描预算超限时独立构造 `locales`/`data` 子集并短时退避重试，临时 I/O 失败不进入退避，服务器关闭时协作取消。原始资源经 HTTP 提供，索引只提供经过过滤的元数据，不写游戏文件。会话 cookie 隔离同主机不同端口的请求归属，但入口页可下发 cookie，不能据此宣称对其他本机应用的鉴权；目录过滤、符号链接及降级范围见 [SPEC 第 4 节](SPEC.md#4-引擎识别与运行路线)。
+
 ## 6. 资源与原生构建链
 
 | 源头 | 生成/消费方式 |

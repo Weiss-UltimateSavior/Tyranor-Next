@@ -100,6 +100,8 @@ android --sdk=/tmp/androidsdk install --device='adb-AUUEUT3C22008394-f7wkhv._adb
 
 **先核对 APK applicationId 确为 `com.tyranor.next.ethornelltest`，不要覆盖正式 `com.tyranor.next`。** 两个 APK 属于不同包，必须分两次 install；逗号传入一次会被当作同一包 split，出现 `Split null` 重复错误。测试库只提供 arm64-v8a；真实 API 36 / 4KB 设备与 API35 arm64 模拟器可执行，但不等于 API26 / 16KB 验证。
 
+启动器别名以 `${applicationId}.LauncherDefault` / `${applicationId}.LauncherClassic` 声明，匹配图标切换器使用的实际包名；目标 Activity 仍为命名空间下的 `com.tyranor.next.MainActivity`。
+
 ## 自动合成夹具测试
 
 ```bash
@@ -278,3 +280,19 @@ failed identity_sha256=<64hex> token=<session token>
 BGI 游戏目录存档回归使用 `EthornellSaveDeviceTest`（旧私有数据迁入共享存储、ZIP、回滚、限额与门禁）、`EthornellDispatchDeviceTest`、`EthornellStartupActivityTest`，以及 `EthornellDeviceTest#vmWritesAndReopensGameLocalSaveOnSharedStorage`（真实 VM 在外部存储的游戏 `savedata` 写入和重开读取）。该 VM 用例与启动 Activity 用例要求隔离包 `com.tyranor.next.startuptest` 及 `-e startup_test true`。在隔离包的新安装或清理数据后执行；保留的播放器任务会按设计阻止存档管理。设备结果不能代替商业游戏槽位兼容性验收。
 
 公共共享存储的 BGI 写入锁回归包括 `EthornellDeviceTest#publicSharedStorageSupportsExclusiveOpenFileDescriptionLocks`（独立文件描述符互斥与关闭释放）和 `EthornellDeviceTest#vmWritesAndReopensGameLocalSaveOnPublicSharedStorage`（Download 中真实 VM 写入与重开）。二者使用隔离包和 `startup_test=true`，并需为隔离包允许“所有文件访问”；仅创建和删除 UUID 命名的自有夹具。应用专属 `externalFilesDir` 不能替代此公共目录用例，因为两者可能支持不同的锁操作。
+
+## DKTools 异步启动边界
+
+`com.core.web.DkToolsStartupDeviceTest` 在真实 Android WebView 中运行两套生产 HTTP 宿主与实际兼容脚本，使用原创脚本和受控的慢索引任务。它验证等待期间 JS 心跳和 HTTP 202 轮询继续、索引就绪后同步初始化、早晚 load 监听器及 onload 别名链各执行一次。该测试不包含商业游戏资产，不证明真实游戏、慢速共享存储或所有 DKTools 版本的兼容性。
+
+仅在 `TYRANOR_APPLICATION_ID=com.tyranor.next.ethornelltest` 下构建并安装 target/test APK，随后运行：
+
+```bash
+adb shell am instrument -w -r -e rpgmaker_compat true \
+  -e class com.core.web.DkToolsStartupDeviceTest \
+  com.tyranor.next.ethornelltest.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+测试源码直接访问 engine 仅用于仪器边界验证。临时文件只位于隔离应用 cache，测试结束后可卸载该隔离包清理，不操作正式安装或游戏目录。
+
+2026-11-16：SM-X810 / Android 16 / API 36，隔离包 1.66，以上两个用例 2/2 通过（0.932 秒）。仅为上述 WebView/HTTP 启动边界证据；测试后卸载隔离 target/test 包，正式应用未改动。
