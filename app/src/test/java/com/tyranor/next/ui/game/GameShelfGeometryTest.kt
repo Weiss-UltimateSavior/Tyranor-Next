@@ -7,6 +7,9 @@ import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -50,6 +53,20 @@ class GameShelfGeometryTest {
         assertTrue(regular.infoHeight >= 150.dp)
         assertEquals(0.dp, shelfChromeForHeight(510.dp, fontScale = 2f, multipleGames = true).infoHeight)
         assertFalse(shelfChromeForHeight(510.dp, fontScale = 1f, multipleGames = false).showScrubber)
+    }
+
+    @Test
+    fun liftedHeroRetainsReflectionAtMinimumStageWithoutMovingNormalReflections() {
+        val depth = 128f * 0.14f
+        for (scale in listOf(0.5f, 1f)) {
+            val frontEdge = depth * scale
+            val lift = 18f * scale
+            val reflectedFoot = lift - shelfReflectionOverflow(lift, frontEdge)
+            assertEquals(3.584f * scale, frontEdge - reflectedFoot, 0.001f)
+            assertEquals(0f, shelfReflectionOverflow(0f, frontEdge), 0f)
+        }
+        assertEquals(0f, shelfReflectionOverflow(18f, 22.5f), 0f)
+        assertEquals(0f, shelfReflectionOverflow(18f, 260f * 0.14f), 0f)
     }
 
     private fun geometry(maxTurn: Float = SHELF_SPINE_TURN) = ShelfGeometry(
@@ -727,6 +744,189 @@ class GameShelfGeometryTest {
             assertTrue("screenX not finite at $x", rail.screenX(x).isFinite())
             assertTrue("lift not finite at $x", rail.lift(x).isFinite())
             assertTrue("railX not finite at $x", rail.railX(x).isFinite())
+        }
+    }
+
+    @Test
+    fun shelfBoardTopSpansBehindAndInFrontOfContactLineWithThinFrontEdge() {
+        val g = geometry()
+        val viewport = 1400f
+        val floorY = 900f
+        val floorDepth = g.coverHeight * 0.14f
+        val backY = shelfBoardBackY(
+            floorY = floorY,
+            bookHeight = g.coverHeight,
+            coverWidth = g.coverWidth,
+            viewport = viewport,
+        )
+        val frontY = floorY + floorDepth
+        assertTrue("backEdgeY=$backY must be behind/above contact floorY=$floorY", backY < floorY)
+        assertTrue("frontEdgeY=$frontY must extend in front of contact floorY=$floorY", frontY > floorY)
+        assertTrue("board surface ahead of contact line must stay substantial", frontY - floorY > 50f)
+        assertEquals(4f, SHELF_BOARD_EDGE, 1e-4f)
+    }
+
+    @Test
+    fun viewportReflectionCoversAllVisibleBooksWithoutThreeBookCutoff() {
+        val phoneViewport = 1080f
+        val tabletViewport = 2560f
+        // 不论手机还是平板宽屏，只要书在视口内（含远处第 5、第 8 本及边缘部分可见书）都有倒影且平滑衰减
+        for (vp in listOf(phoneViewport, tabletViewport)) {
+            val prevAlphas = mutableListOf<Float>()
+            for (step in 0..8) {
+                val center = vp * 0.5f + step * (vp * 0.06f)
+                val alpha = shelfViewportReflectionAlpha(
+                    centerScreenX = center,
+                    minScreenX = center - 40f,
+                    maxScreenX = center + 40f,
+                    viewport = vp,
+                    baseAlpha = 0.36f,
+                    hero = if (step == 0) 1f else 0f,
+                    groundAlpha = 1f,
+                )
+                assertTrue("visible book at center=$center in vp=$vp must have reflection", alpha > 0.15f)
+                if (step >= 1 && prevAlphas.size >= 2) {
+                    assertTrue("edge attenuation must be smooth and non-increasing", alpha <= prevAlphas.last() + 1e-5f)
+                }
+                prevAlphas += alpha
+            }
+            // 部分露在视口右缘内（maxScreenX > vp 但 minScreenX < vp）依然有倒影
+            val partialAlpha = shelfViewportReflectionAlpha(
+                centerScreenX = vp + 10f,
+                minScreenX = vp - 25f,
+                maxScreenX = vp + 45f,
+                viewport = vp,
+                baseAlpha = 0.36f,
+                hero = 0f,
+                groundAlpha = 1f,
+            )
+            assertTrue("partially visible edge book must keep reflection", partialAlpha > 0.05f)
+            // 完全离开视口外缘后停止绘制倒影
+            val outsideAlpha = shelfViewportReflectionAlpha(
+                centerScreenX = vp + 500f,
+                minScreenX = vp + 460f,
+                maxScreenX = vp + 540f,
+                viewport = vp,
+                baseAlpha = 0.36f,
+                hero = 0f,
+                groundAlpha = 1f,
+            )
+            assertEquals(0f, outsideAlpha, 0f)
+        }
+    }
+
+    @Test
+    fun heroReflectionIsClearestEvenAtPinnedEdgesAndSideBooksStayVisible() {
+        val g = geometry()
+        val viewport = 1264f
+        val darkBaseAlpha = 0.34f
+        val lightBaseAlpha = 0.42f
+
+        for (baseAlpha in listOf(darkBaseAlpha, lightBaseAlpha)) {
+            // 正中书停在视口中心或贴边位置时均保持基准清晰度
+            val centerHeroAlpha = shelfViewportReflectionAlpha(
+                centerScreenX = viewport * 0.5f,
+                minScreenX = viewport * 0.5f - g.coverWidth * 0.5f,
+                maxScreenX = viewport * 0.5f + g.coverWidth * 0.5f,
+                viewport = viewport,
+                baseAlpha = baseAlpha,
+                hero = 1f,
+                groundAlpha = 1f,
+            )
+            val edgeHeroAlpha = shelfViewportReflectionAlpha(
+                centerScreenX = g.coverWidth * 0.55f,
+                minScreenX = g.coverWidth * 0.05f,
+                maxScreenX = g.coverWidth * 1.05f,
+                viewport = viewport,
+                baseAlpha = baseAlpha,
+                hero = 1f,
+                groundAlpha = 1f,
+            )
+            assertEquals(baseAlpha, centerHeroAlpha, 1e-5f)
+            assertEquals(baseAlpha, edgeHeroAlpha, 1e-5f)
+
+            for (offset in listOf(-4f, -2f, 2f, 4f)) {
+                val centerX = viewport * 0.5f + g.centerX(offset)
+                val halfW = g.visibleWidth(abs(g.yaw(offset))) * shelfPoseScale(offset) * 0.5f
+                val sideAlpha = shelfViewportReflectionAlpha(
+                    centerScreenX = centerX,
+                    minScreenX = centerX - halfW,
+                    maxScreenX = centerX + halfW,
+                    viewport = viewport,
+                    baseAlpha = baseAlpha,
+                    hero = 0f,
+                    groundAlpha = 1f,
+                )
+                assertTrue("edge book offset=$offset must have visible reflection alpha=$sideAlpha", sideAlpha > 0.1f)
+                assertTrue("hero reflection must remain clearer than edge offset=$offset", centerHeroAlpha > sideAlpha)
+            }
+        }
+    }
+
+    @Test
+    fun spineTypographyScalesWithSizeAndMaintainsContrast() {
+        val landscapeShort = shelfSpineTypography(spineWidthDp = 22f, coverHeightDp = 128f)
+        val phone = shelfSpineTypography(spineWidthDp = 29f, coverHeightDp = 260f)
+        val tablet = shelfSpineTypography(spineWidthDp = 42f, coverHeightDp = 550f)
+
+        assertTrue(landscapeShort.fontSizeDp < phone.fontSizeDp)
+        assertTrue(phone.fontSizeDp < tablet.fontSizeDp)
+        // 与原来手机书架一样宽（32dp）的书脊字号、行高与原来完全一致（11 / 13），只随书脊宽度等比缩放
+        val reference = shelfSpineTypography(spineWidthDp = 32f, coverHeightDp = 260f)
+        assertEquals(11f, reference.fontSizeDp, 0.001f)
+        assertEquals(13f, reference.lineHeightDp, 0.001f)
+        assertEquals(210.8f, reference.latinLengthDp, 0.001f)
+        assertEquals(11f * 42f / 32f, tablet.fontSizeDp, 0.001f)
+        assertEquals(phone.fontSizeDp / phone.lineHeightDp, tablet.fontSizeDp / tablet.lineHeightDp, 0.001f)
+
+        // 暗底、中间灰、亮底与高反差裂色底均保证 >= 4.5:1 对比度（同时按实际 sRGB 合成独立校验）
+        val tones = listOf(
+            SpineToneMetrics(avgLuminance = 0.05f, minLuminance = 0.02f, maxLuminance = 0.09f),
+            SpineToneMetrics(avgLuminance = 0.19f, minLuminance = 0.18f, maxLuminance = 0.21f),
+            SpineToneMetrics(avgLuminance = 0.68f, minLuminance = 0.55f, maxLuminance = 0.85f),
+            SpineToneMetrics(avgLuminance = 0.38f, minLuminance = 0.06f, maxLuminance = 0.82f),
+            SpineToneMetrics(
+                avgLuminance = 0.38f,
+                minLuminance = 0.06f,
+                maxLuminance = 0.82f,
+                darkestColor = Color(0f, 0f, 0.92f, 1f),
+            ),
+        )
+        for (tone in tones) {
+            val appearance = resolveShelfSpineTitleAppearance(tone)
+            assertTrue(
+                "contrast ${appearance.effectiveContrast} must be >= 4.5 for $tone",
+                appearance.effectiveContrast >= 4.5f,
+            )
+            // 独立检验：按 ShelfSpineBase 的真实编码 sRGB SrcOver（compositeOver）合成最坏背景区域
+            val worstBgColor = if (appearance.isLightText) {
+                linearLuminanceToSrgbGray(tone.maxLuminance)
+            } else {
+                tone.darkestColor ?: linearLuminanceToSrgbGray(tone.minLuminance)
+            }
+            val compositedBg = appearance.veilColor.compositeOver(worstBgColor)
+            val actualContrast = wcagContrastRatio(appearance.textColor.luminance(), compositedBg.luminance())
+            assertTrue(
+                "actual sRGB composited contrast $actualContrast must be >= 4.5 for $tone (veil=${appearance.veilColor})",
+                actualContrast >= 4.5f,
+            )
+        }
+        assertTrue(resolveShelfSpineTitleAppearance(tones[0]).isLightText)
+        assertFalse(resolveShelfSpineTitleAppearance(tones[2]).isLightText)
+        assertFalse(resolveShelfSpineTitleAppearance(tones[3]).isLightText)
+    }
+
+    @Test
+    fun darkSpineOnlyStrengthensTheVeilForFailingHighlights() {
+        val stillReadable = resolveShelfSpineTitleAppearance(SpineToneMetrics(0.08f, 0.02f, 0.73f))
+        assertEquals(Color.Black.copy(alpha = 0.52f), stillReadable.veilColor)
+        assertTrue(stillReadable.effectiveContrast >= 4.5f)
+        for (peak in listOf(0.78f, 0.95f, 1f)) {
+            val appearance = resolveShelfSpineTitleAppearance(SpineToneMetrics(0.08f, 0.02f, peak))
+            assertTrue(appearance.isLightText)
+            assertTrue(appearance.needsStroke)
+            assertTrue(appearance.effectiveContrast >= 4.5f)
+            assertTrue(appearance.veilColor.alpha > stillReadable.veilColor.alpha)
         }
     }
 }

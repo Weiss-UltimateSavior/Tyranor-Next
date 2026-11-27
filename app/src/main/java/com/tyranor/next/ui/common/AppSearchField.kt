@@ -1,11 +1,23 @@
 package com.tyranor.next.ui.common
 
 import android.os.Build
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -14,13 +26,25 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.autofill.contentType
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.SolidColor
+import com.tyranor.next.ui.common.motion.BlurVisibility
 import com.tyranor.next.ui.common.motion.bounceOnChange
+import com.tyranor.next.ui.common.motion.pressSquish
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.password
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
@@ -28,11 +52,16 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
+import com.tyranor.next.theme.BookSerif
+import com.tyranor.next.theme.CurrentBookPaperPalette
+import com.tyranor.next.theme.LocalShelfBookLeaf
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.glassBorder
 import top.yukonga.miuix.kmp.basic.InputField
 import top.yukonga.miuix.kmp.basic.SearchBar
 import top.yukonga.miuix.kmp.basic.SearchBarDefaults
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.basic.SearchCleanup
 import top.yukonga.miuix.kmp.theme.LocalContentColor
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -74,9 +103,11 @@ fun AppSearchField(
     imeAction: ImeAction = ImeAction.Search,
     autofillContentType: ContentType? = null,
     keyboardType: KeyboardType = KeyboardType.Text,
+    enabled: Boolean = true,
 ) {
-    // Miuix InputField 无法表达文本变换、IME、键盘类型与 autofill；这些场景统一走内嵌实现。
-    val needsEmbeddedInput = visualTransformation != VisualTransformation.None ||
+    // Miuix InputField 无法表达文本变换、IME、键盘类型与 autofill，也无法在退场时彻底禁用触摸/焦点/无障碍；这些场景统一走内嵌实现。
+    val needsEmbeddedInput = !enabled ||
+        visualTransformation != VisualTransformation.None ||
         Build.VERSION.SDK_INT in Build.VERSION_CODES.O..Build.VERSION_CODES.O_MR1 ||
         imeAction != ImeAction.Search ||
         autofillContentType != null ||
@@ -95,6 +126,117 @@ fun AppSearchField(
             currentOnSearch()
         }
     }
+    if (LocalShelfBookLeaf.current) {
+        val palette = CurrentBookPaperPalette
+        val bookShape = remember { RoundedCornerShape(4.dp) }
+        val resolvedTextStyle = (textStyle ?: MaterialTheme.typography.bodyMedium).copy(
+            fontFamily = BookSerif,
+            color = palette.ink,
+        )
+        BasicTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            enabled = enabled,
+            readOnly = !enabled,
+            modifier = modifier
+                .fillMaxWidth()
+                .then(
+                    if (enabled) {
+                        Modifier
+                            .onFocusChanged { state ->
+                                val now = state.hasFocus
+                                if (now && !focused) iconPulse++
+                                focused = now
+                            }
+                            .then(autofillContentType?.let { Modifier.contentType(it) } ?: Modifier)
+                            .then(
+                                if (autofillContentType == ContentType.Password || keyboardType == KeyboardType.Password) {
+                                    Modifier.semantics { password() }
+                                } else {
+                                    Modifier
+                                },
+                            )
+                            .semantics { contentDescription = resolvedInputLabel }
+                    } else {
+                        Modifier
+                            .focusProperties { canFocus = false }
+                            .clearAndSetSemantics { }
+                    },
+                ),
+            singleLine = true,
+            textStyle = resolvedTextStyle,
+            cursorBrush = SolidColor(palette.foilAccent),
+            visualTransformation = visualTransformation,
+            keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
+            keyboardActions = KeyboardActions(onSearch = { if (enabled) submit() }, onDone = { if (enabled) submit() }),
+            decorationBox = { innerTextField ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 42.dp)
+                        .background(palette.washSubtle, bookShape)
+                        .border(0.6.dp, palette.ruleSubtle, bookShape)
+                        .drawBehind {
+                            val strokeWidth = if (focused) 1.5.dp.toPx() else 0.9.dp.toPx()
+                            val y = size.height - strokeWidth / 2f
+                            drawLine(
+                                color = if (focused) palette.foilAccent else palette.ruleStrong,
+                                start = Offset(0f, y),
+                                end = Offset(size.width, y),
+                                strokeWidth = strokeWidth,
+                            )
+                        }
+                        .padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .bounceOnChange(iconPulse, depth = 0.22f)
+                            .size(20.dp),
+                        painter = leadingIcon ?: painterResource(R.drawable.ic_game_search),
+                        tint = if (focused) palette.foilAccent else palette.inkSecondary,
+                        contentDescription = null,
+                    )
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        innerTextField()
+                    }
+                    BlurVisibility(visible = query.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier.padding(start = 6.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                modifier = Modifier
+                                    .then(
+                                        if (enabled) {
+                                            Modifier
+                                                .pressSquish()
+                                                .clip(CircleShape)
+                                                .clickable(
+                                                    interactionSource = remember { MutableInteractionSource() },
+                                                    indication = null,
+                                                    onClick = { onQueryChange("") },
+                                                )
+                                        } else {
+                                            Modifier.clip(CircleShape).clearAndSetSemantics { }
+                                        },
+                                    )
+                                    .size(18.dp),
+                                imageVector = MiuixIcons.Basic.SearchCleanup,
+                                tint = palette.inkSecondary,
+                                contentDescription = if (enabled) stringResource(R.string.common_clear_input_content_description) else null,
+                            )
+                        }
+                    }
+                }
+            },
+        )
+        return
+    }
     MiuixSettingsTheme {
         // miuix 无 controller 的 MiuixTheme 重载不提供 LocalContentColor（默认黑色），
         // InputField 内部强制以 LocalContentColor.current 作为输入文字颜色，
@@ -104,13 +246,23 @@ fun AppSearchField(
                 inputField = {
                     val fieldModifier = Modifier
                         .fillMaxWidth()
-                        .onFocusChanged { state ->
-                            val now = state.hasFocus
-                            if (now && !focused) iconPulse++
-                            focused = now
-                        }
-                        .glassBorder(CircleShape)
-                        .semantics { contentDescription = resolvedInputLabel }
+                        .then(
+                            if (enabled) {
+                                Modifier
+                                    .onFocusChanged { state ->
+                                        val now = state.hasFocus
+                                        if (now && !focused) iconPulse++
+                                        focused = now
+                                    }
+                                    .glassBorder(CircleShape)
+                                    .semantics { contentDescription = resolvedInputLabel }
+                            } else {
+                                Modifier
+                                    .focusProperties { canFocus = false }
+                                    .glassBorder(CircleShape)
+                                    .clearAndSetSemantics { }
+                            },
+                        )
                     val fieldLeadingIcon: @Composable () -> Unit = {
                         Icon(
                             modifier = Modifier
@@ -136,6 +288,7 @@ fun AppSearchField(
                             keyboardType = keyboardType,
                             imeAction = imeAction,
                             autofillContentType = autofillContentType,
+                            enabled = enabled,
                         )
                     } else {
                         InputField(

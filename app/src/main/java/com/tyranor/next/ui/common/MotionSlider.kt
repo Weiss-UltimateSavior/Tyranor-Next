@@ -4,8 +4,11 @@ import androidx.annotation.IntRange
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -13,6 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -26,18 +30,33 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import com.tyranor.next.theme.BookPaperPalette
+import com.tyranor.next.theme.CurrentBookPaperPalette
+import com.tyranor.next.theme.LocalShelfBookLeaf
 import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.MotionTokens
 import kotlinx.coroutines.launch
@@ -77,7 +96,8 @@ fun Slider(
     // 空自定义刻度等同未提供：有 steps 时使用均分刻度，否则走原有连续滑条。
     val effectiveKeyPoints = keyPoints?.takeIf { it.isNotEmpty() }
     val discrete = effectiveKeyPoints != null || steps > 0
-    if (!MotionMode.enhanced || !discrete) {
+    val inBook = LocalShelfBookLeaf.current
+    if (!inBook && (!MotionMode.enhanced || !discrete)) {
         // 用户明确保留本批滑条外观：已覆盖区域的刻度与进度条同色，见 PR #162。
         val coveredDotColor = if (enabled) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.disabledPrimarySlider
         MiuixSlider(
@@ -105,6 +125,18 @@ fun Slider(
         )
         return
     }
+    if (inBook && !discrete) {
+        BookContinuousSlider(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = modifier,
+            enabled = enabled,
+            valueRange = valueRange,
+            onValueChangeFinished = onValueChangeFinished,
+            height = height,
+        )
+        return
+    }
     TickSlider(
         value = value,
         onValueChange = onValueChange,
@@ -117,6 +149,7 @@ fun Slider(
         haptics = hapticEffect != SliderDefaults.SliderHapticEffect.None,
         showKeyPoints = showKeyPoints,
         keyPoints = effectiveKeyPoints,
+        bookMode = inBook,
     )
 }
 
@@ -140,6 +173,7 @@ private fun TickSlider(
     haptics: Boolean,
     showKeyPoints: Boolean,
     keyPoints: List<Float>?,
+    bookMode: Boolean = false,
 ) {
     val span = (valueRange.endInclusive - valueRange.start).takeIf { it > 0f } ?: 1f
     // 全部刻度（值 + 位置比例）：自定义刻度点，或 steps 均分（含两端）
@@ -151,6 +185,7 @@ private fun TickSlider(
     }
     // 绘制的圆点刻度：与 Miuix 一致（自定义刻度点总画；否则仅 showKeyPoints 时画 steps 刻度）
     val drawnFractions = if (keyPoints != null || showKeyPoints) tickFractions else FloatArray(0)
+    val reverseTrack = bookMode && LocalLayoutDirection.current == LayoutDirection.Rtl
 
     /** 返回距离目标比例最近的刻度下标；距离相同时保留排序靠前的刻度。 */
     fun nearestIndex(fraction: Float): Int {
@@ -213,6 +248,7 @@ private fun TickSlider(
             else -> lerp(disabledColor, enabledColor, e)
         }
     }
+    val bookInsetPx = with(LocalDensity.current) { BOOK_SLIDER_EDGE_INSET.toPx() }
     val dragShade by animateFloatAsState(
         targetValue = if (dragging) 0.044f else 0f,
         animationSpec = if (dragging) MotionTokens.fadeIn(0.001f) else MotionTokens.fadeOut(0.001f),
@@ -223,16 +259,16 @@ private fun TickSlider(
         modifier = modifier
             .then(
                 if (enabled) {
-                    Modifier.pointerInput(tickValues, valueRange) {
+                    Modifier.pointerInput(tickValues, valueRange, reverseTrack, bookMode, bookInsetPx) {
                         val slop = viewConfiguration.touchSlop
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
                             val generation = ++interaction.generation
                             interaction.settleJob?.cancel()
-                            val r = size.height / 2f
-                            val avail = (size.width - 2f * r).coerceAtLeast(1f)
+                            val r = if (bookMode) bookInsetPx else size.height / 2f
                             /** 将指针横坐标换算为行程比例，保留越界量供橡皮筋形变使用。 */
-                            fun fractionAt(x: Float) = (x - r) / avail
+                            fun fractionAt(x: Float): Float =
+                                sliderFractionFromPosition(x, size.width.toFloat(), r, reverseTrack)
                             interacting = true
                             scope.launch { press.animateTo(1.127f, MotionTokens.press(0.001f)) }
                             // 指针流被异常取消时释放代码跑不到：finally 兜底还原交互状态
@@ -344,60 +380,273 @@ private fun TickSlider(
             },
         contentAlignment = Alignment.CenterStart,
     ) {
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(height)
-                .graphicsLayer {
-                    // 拖出两端：整条朝拖动方向轻微拉长、略变细（停稳为 1，外观不变）
-                    val o = overshoot.value
-                    if (o != 0f) {
-                        val k = (abs(o) / CONTROL_OVERSHOOT_FRACTION).coerceIn(0f, 1f) * MAX_STRETCH
-                        scaleX = 1f + k
-                        scaleY = 1f - k * 0.6f
-                        transformOrigin = TransformOrigin(if (o > 0f) 0f else 1f, 0.5f)
+        if (bookMode) {
+            val bookPalette = CurrentBookPaperPalette
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(height)
+                    .graphicsLayer {
+                        val o = overshoot.value
+                        if (o != 0f) {
+                            val k = (abs(o) / CONTROL_OVERSHOOT_FRACTION).coerceIn(0f, 1f) * MAX_STRETCH
+                            scaleX = 1f + k
+                            scaleY = 1f - k * 0.6f
+                            transformOrigin = TransformOrigin(if ((o > 0f) != reverseTrack) 0f else 1f, 0.5f)
+                        }
+                    },
+            ) {
+                drawBookSlider(
+                    fraction = pos.value.coerceIn(0f, 1f),
+                    palette = bookPalette,
+                    enabledProgress = enabledProgress.value,
+                    pressScale = 1f + (1f - press.value) * 0.45f,
+                    drawnFractions = drawnFractions,
+                )
+            }
+        } else {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(height)
+                    .graphicsLayer {
+                        // 拖出两端：整条朝拖动方向轻微拉长、略变细（停稳为 1，外观不变）
+                        val o = overshoot.value
+                        if (o != 0f) {
+                            val k = (abs(o) / CONTROL_OVERSHOOT_FRACTION).coerceIn(0f, 1f) * MAX_STRETCH
+                            scaleX = 1f + k
+                            scaleY = 1f - k * 0.6f
+                            transformOrigin = TransformOrigin(if (o > 0f) 0f else 1f, 0.5f)
+                        }
+                    }
+                    .clip(CircleShape)
+                    .drawBehind {
+                        drawRect(blend(disabledBackground, enabledBackground))
+                        drawRect(Color.Black, alpha = dragShade)
+                    },
+            ) {
+                val barHeight = size.height
+                val barWidth = size.width
+                val thumbRadius = barHeight / 2f
+                val availableWidth = (barWidth - 2f * thumbRadius).coerceAtLeast(0f)
+                val fraction = pos.value.coerceIn(0f, 1f)
+                val centerX = thumbRadius + fraction * availableWidth
+                drawLine(
+                    color = blend(disabledForeground, enabledForeground),
+                    start = Offset(0f, barHeight / 2f),
+                    end = Offset(centerX, barHeight / 2f),
+                    strokeWidth = barHeight,
+                    cap = StrokeCap.Round,
+                )
+                if (drawnFractions.isNotEmpty()) {
+                    val keyPointRadius = barHeight / 7.5f
+                    for (f in drawnFractions) {
+                        val x = thumbRadius + f * availableWidth
+                        // 用户明确保留只显示未覆盖刻度的外观。
+                        if (x <= centerX) continue
+                        drawCircle(
+                            color = keyPointColor,
+                            radius = keyPointRadius,
+                            center = Offset(x, barHeight / 2f),
+                        )
                     }
                 }
-                .clip(CircleShape)
-                .drawBehind {
-                    drawRect(blend(disabledBackground, enabledBackground))
-                    drawRect(Color.Black, alpha = dragShade)
-                },
-        ) {
-            val barHeight = size.height
-            val barWidth = size.width
-            val thumbRadius = barHeight / 2f
-            val availableWidth = (barWidth - 2f * thumbRadius).coerceAtLeast(0f)
-            val fraction = pos.value.coerceIn(0f, 1f)
-            val centerX = thumbRadius + fraction * availableWidth
-            drawLine(
-                color = blend(disabledForeground, enabledForeground),
-                start = Offset(0f, barHeight / 2f),
-                end = Offset(centerX, barHeight / 2f),
-                strokeWidth = barHeight,
-                cap = StrokeCap.Round,
-            )
-            if (drawnFractions.isNotEmpty()) {
-                val keyPointRadius = barHeight / 7.5f
-                for (f in drawnFractions) {
-                    val x = thumbRadius + f * availableWidth
-                    // 用户明确保留只显示未覆盖刻度的外观。
-                    if (x <= centerX) continue
-                    drawCircle(
-                        color = keyPointColor,
-                        radius = keyPointRadius,
-                        center = Offset(x, barHeight / 2f),
-                    )
+                drawCircle(
+                    color = blend(disabledThumb, enabledThumb),
+                    radius = thumbRadius * 0.72f * press.value,
+                    center = Offset(centerX, barHeight / 2f),
+                )
+            }
+        }
+    }
+}
+
+/** 书页内连续滑动条：手势/无障碍交互同原生，视觉为纸上细墨轨与烫金圆钮。 */
+@Composable
+private fun BookContinuousSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    modifier: Modifier,
+    enabled: Boolean,
+    valueRange: ClosedFloatingPointRange<Float>,
+    onValueChangeFinished: (() -> Unit)?,
+    height: Dp,
+) {
+    val span = (valueRange.endInclusive - valueRange.start).takeIf { it > 0f } ?: 1f
+    val coerced = value.coerceIn(valueRange.start, valueRange.endInclusive)
+    val fraction = ((coerced - valueRange.start) / span).coerceIn(0f, 1f)
+    val onChange by rememberUpdatedState(onValueChange)
+    val onFinished by rememberUpdatedState(onValueChangeFinished)
+    val currentCoerced by rememberUpdatedState(coerced)
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val thumbInsetPx = with(LocalDensity.current) { BOOK_SLIDER_EDGE_INSET.toPx() }
+    var width by remember { mutableIntStateOf(0) }
+    var dragging by remember { mutableStateOf(false) }
+    val enabledProgress = rememberControlEnabledProgress(enabled)
+    val bookPalette = CurrentBookPaperPalette
+
+    fun emitFraction(rawFraction: Float) {
+        val next = valueRange.start + rawFraction.coerceIn(0f, 1f) * span
+        if (next != currentCoerced) onChange(next)
+    }
+
+    fun fromPosition(x: Float) {
+        if (width <= 2f * thumbInsetPx) return
+        emitFraction(sliderFractionFromPosition(x, width.toFloat(), thumbInsetPx, rtl).coerceIn(0f, 1f))
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(maxOf(height, 36.dp))
+            .onSizeChanged { width = it.width }
+            .semantics {
+                progressBarRangeInfo = ProgressBarRangeInfo(currentCoerced, valueRange.start..valueRange.endInclusive, 0)
+                if (!enabled) {
+                    disabled()
+                } else {
+                    setProgress { target ->
+                        onChange(target.coerceIn(valueRange.start, valueRange.endInclusive))
+                        onFinished?.invoke()
+                        true
+                    }
                 }
             }
-            drawCircle(
-                color = blend(disabledThumb, enabledThumb),
-                radius = thumbRadius * 0.72f * press.value,
-                center = Offset(centerX, barHeight / 2f),
+            .onKeyEvent { event ->
+                if (!enabled || event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                val delta = span * 0.02f
+                val next = when (event.key) {
+                    Key.DirectionRight -> currentCoerced + if (rtl) -delta else delta
+                    Key.DirectionLeft -> currentCoerced + if (rtl) delta else -delta
+                    Key.DirectionUp -> currentCoerced + delta
+                    Key.DirectionDown -> currentCoerced - delta
+                    else -> return@onKeyEvent false
+                }.coerceIn(valueRange.start, valueRange.endInclusive)
+                onChange(next)
+                onFinished?.invoke()
+                true
+            }
+            .focusable(enabled)
+            .then(
+                if (enabled) {
+                    Modifier
+                        .pointerInput(rtl, thumbInsetPx, valueRange) {
+                            detectTapGestures { pos ->
+                                fromPosition(pos.x)
+                                onFinished?.invoke()
+                            }
+                        }
+                        .pointerInput(rtl, thumbInsetPx, valueRange) {
+                            detectHorizontalDragGestures(
+                                onDragStart = { pos ->
+                                    dragging = true
+                                    fromPosition(pos.x)
+                                },
+                                onDragEnd = {
+                                    dragging = false
+                                    onFinished?.invoke()
+                                },
+                                onDragCancel = {
+                                    dragging = false
+                                },
+                                onHorizontalDrag = { change, _ ->
+                                    change.consume()
+                                    fromPosition(change.position.x)
+                                },
+                            )
+                        }
+                } else {
+                    Modifier
+                },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.fillMaxWidth().height(height)) {
+            drawBookSlider(
+                fraction = fraction,
+                palette = bookPalette,
+                enabledProgress = enabledProgress.value,
+                pressScale = if (dragging) 1.15f else 1f,
             )
         }
     }
 }
+
+/** 书页内滑动条轨道两端内缩（绘制与触摸命中共用）。 */
+internal val BOOK_SLIDER_EDGE_INSET = 7.dp
+
+/** 将水平坐标换算为滑动条行程比例（保留越界量，调用方按需夹取）。 */
+internal fun sliderFractionFromPosition(
+    x: Float,
+    width: Float,
+    insetPx: Float,
+    reverse: Boolean,
+): Float {
+    val usable = (width - 2f * insetPx).coerceAtLeast(1f)
+    val raw = (x - insetPx) / usable
+    return if (reverse) 1f - raw else raw
+}
+
+/** 书页内细墨轨 + 烫金滑动条统一绘制（离散刻度、连续滑条与 DialogMiuixSlider 共用）。 */
+internal fun DrawScope.drawBookSlider(
+    fraction: Float,
+    palette: BookPaperPalette,
+    enabledProgress: Float = 1f,
+    pressScale: Float = 1f,
+    drawnFractions: FloatArray = FloatArray(0),
+) {
+    val thumbRadius = 6.5.dp.toPx() * pressScale
+    val edgeInset = BOOK_SLIDER_EDGE_INSET.toPx()
+    val availableWidth = (size.width - 2f * edgeInset).coerceAtLeast(0f)
+    val f = fraction.coerceIn(0f, 1f)
+    val rtl = layoutDirection == LayoutDirection.Rtl
+    fun positionOf(progress: Float) = edgeInset + (if (rtl) 1f - progress else progress) * availableWidth
+    val centerX = positionOf(f)
+    val cy = size.height / 2f
+    val alphaFactor = lerpAlpha(0.42f, 1f, enabledProgress)
+    val trackColor = palette.sliderTrack.copy(alpha = palette.sliderTrack.alpha * alphaFactor)
+    val activeColor = lerp(palette.inkMuted, palette.sliderActive, enabledProgress)
+    val thumbColor = lerp(palette.inkMuted, palette.sliderThumb, enabledProgress)
+    drawLine(
+        color = trackColor,
+        start = Offset(edgeInset, cy),
+        end = Offset(edgeInset + availableWidth, cy),
+        strokeWidth = 2.6.dp.toPx(),
+        cap = StrokeCap.Round,
+    )
+    if (f > 0f && availableWidth > 0f) {
+        drawLine(
+            color = activeColor,
+            start = Offset(positionOf(0f), cy),
+            end = Offset(centerX, cy),
+            strokeWidth = 3.2.dp.toPx(),
+            cap = StrokeCap.Round,
+        )
+    }
+    if (drawnFractions.isNotEmpty()) {
+        val dotRadius = 2.dp.toPx()
+        val dotColor = palette.inkSecondary.copy(alpha = 0.55f * alphaFactor)
+        for (dotF in drawnFractions) {
+            if (dotF <= f) continue
+            val x = positionOf(dotF)
+            drawCircle(color = dotColor, radius = dotRadius, center = Offset(x, cy))
+        }
+    }
+    drawCircle(
+        color = thumbColor,
+        radius = thumbRadius,
+        center = Offset(centerX, cy),
+    )
+    drawCircle(
+        color = palette.sliderThumbRim,
+        radius = thumbRadius + 0.8.dp.toPx(),
+        center = Offset(centerX, cy),
+        style = Stroke(width = 1.4.dp.toPx()),
+    )
+}
+
+private fun lerpAlpha(start: Float, stop: Float, fraction: Float): Float =
+    start + (stop - start) * fraction.coerceIn(0f, 1f)
 
 private class SliderInteraction {
     var generation = 0

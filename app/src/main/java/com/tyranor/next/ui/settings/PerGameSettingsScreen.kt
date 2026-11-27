@@ -34,6 +34,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,6 +77,7 @@ import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.DialogItemSurface
+import com.tyranor.next.theme.LocalAppDialogContent
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.ui.save.description
@@ -89,6 +91,7 @@ import com.tyranor.next.ui.common.motion.startActivityWithPageTransition
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppSecondaryTopBar
 import com.tyranor.next.ui.common.TopBarIcon
+import com.tyranor.next.ui.runtime.RuntimeModuleSettingsDialog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -96,6 +99,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runInterruptible
 import org.json.JSONObject
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
+import top.yukonga.miuix.kmp.basic.CardDefaults as MiuixCardDefaults
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import com.tyranor.next.ui.common.ArrowPreference
 import com.tyranor.next.ui.common.OverlayDropdownPreference
@@ -117,6 +121,55 @@ import com.tyranor.next.ui.common.notice.AppNotice
  */
 @Composable
 fun PerGameSettingsScreen(game: ScanGame) {
+    val ctx = LocalContext.current
+    PerGameSettingsView(
+        game = game,
+        inBook = false,
+        onOpenGlobalWinlator = {
+            startActivityWithPageTransition(
+                ctx,
+                EngineSettingsActivity.createIntent(ctx, EngineSettingsKind.WINLATOR),
+            )
+        },
+    )
+}
+
+/**
+ * 「游戏盒」翻开的书里的单游戏引擎设置：第三方运行时模块交由 [RuntimeModuleSettingsDialog]，
+ * 内置引擎展示 [PerGameSettingsView] 的书页模式；其中 Winlator 全局设置跳转会继续往后翻出一张书页，
+ * 保存后刷新上层的「跟随全局」摘要，全程停留在同一本书内。
+ */
+@Composable
+internal fun PerGameSettingsDialog(game: ScanGame, onDismiss: () -> Unit) {
+    if (game.engine == EngineType.RUNTIME_MODULE) {
+        RuntimeModuleSettingsDialog(game = game, onDismiss = onDismiss)
+        return
+    }
+    var showGlobalWinlator by rememberSaveable(game.uri) { mutableStateOf(false) }
+    var globalWinlatorRevision by remember { mutableIntStateOf(0) }
+    PerGameSettingsView(
+        game = game,
+        inBook = true,
+        externalGlobalRefresh = globalWinlatorRevision,
+        onDismiss = onDismiss,
+        onOpenGlobalWinlator = { showGlobalWinlator = true },
+    )
+    if (showGlobalWinlator) {
+        WinlatorGlobalSettingsDialog(
+            onDismiss = { showGlobalWinlator = false },
+            onSaved = { globalWinlatorRevision++ },
+        )
+    }
+}
+
+@Composable
+private fun PerGameSettingsView(
+    game: ScanGame,
+    inBook: Boolean,
+    externalGlobalRefresh: Int = 0,
+    onDismiss: () -> Unit = {},
+    onOpenGlobalWinlator: () -> Unit,
+) {
     val ctx = LocalContext.current
     val gid = game.uri
     val systemNnn = game.engine == EngineType.SYSTEMNNN
@@ -494,7 +547,9 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalXs4Msgskip = EngineSettingsStore.getXs4MsgskipDelay(ctx)
     // 从「Winlator 全局设置」返回时重新读取：否则自定义模式的「跟随全局」摘要会停在进入前的旧值。
     var globalWinlatorRevision by remember { mutableIntStateOf(0) }
-    val globalWinlator = remember(globalWinlatorRevision) { EngineSettingsStore.loadWinlator(ctx) }
+    val globalWinlator = remember(globalWinlatorRevision, externalGlobalRefresh) {
+        EngineSettingsStore.loadWinlator(ctx)
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -877,59 +932,44 @@ fun PerGameSettingsScreen(game: ScanGame) {
     // 保存的落点反馈：每次保存 +1，顶栏保存图标「弹一下」
     var saveTick by remember { mutableIntStateOf(0) }
 
-    MiuixSettingsTheme {
-        MiuixScaffold(
-            modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
-            containerColor = ComposeColor.Transparent,
-            contentWindowInsets = WindowInsets(0.dp),
-            topBar = {
-                AppSecondaryTopBar(
-                    title = game.title,
-                    background = ComposeColor.Transparent,
-                    contentColor = PageTextColor,
-                    trailing = {
-                        // 外包一层只为挂「弹一下」：Box 贴合图标尺寸，排版与原样一致
-                        Box(Modifier.bounceOnChange(saveTick, depth = 0.1f)) {
-                        TopBarIcon(painterResource(R.drawable.ic_save), stringResource(R.string.common_save), MiuixTheme.colorScheme.primary) {
-                            save()
-                            saveTick++
-                            // 存档路径展示与实际生效设置同源：保存后按新值重解一次（磁盘 + DB 读，走 IO）。
-                            // KRKR 同样重解：解析失败提示（loadFailed）在用户改回设置并保存后应当立即
-                            // 解除，而不是滞留到重进页面（本地审计 84e1d22，P3-5 第三轮裁决）
-                            if (game.engine == EngineType.XSYS35 || game.engine == EngineType.XSYS4 || game.engine == EngineType.KIRIKIRI) {
-                                scope.launch {
-                                    try {
-                                        val loaded = withContext(Dispatchers.IO) {
-                                            GameSaveManager(ctx).resolveSaveLocation(game)
-                                        }
-                                        saveLocation = loaded
-                                        saveLocationLoadFailed = loaded.directory == null || !loaded.available
-                                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                                        throw cancelled
-                                    } catch (t: Throwable) {
-                                        // 对齐入口 (:256-257) 与 SaveManagementActivity.refresh
-                                        // 的兄弟模式：重解失败同样置失败态，不静默滞留旧快照
-                                        // （审计 of fe3d057, FA1）
-                                        saveLocationLoadFailed = true
-                                        Log.w("PerGameSettings", "resolve save location failed gid=$gid", t)
-                                    }
-                                }
-                            }
-                            AppNotice.makeText(ctx, perGameSettingsSavedMessage, android.widget.Toast.LENGTH_SHORT, AppNotice.Kind.Success).show()
-                        }
-                        }
-                    },
-                )
-            },
-        ) { innerPadding ->
-            LazyColumn(
-                // 顶栏透明：列表整体垫在顶栏下方（持久 padding），避免滚动时内容穿过顶栏
-                modifier = Modifier.fillMaxSize()
-                    .padding(horizontal = 12.dp)
-                    .padding(top = innerPadding.calculateTopPadding()),
-                contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
+    fun commitPerGameSettings() {
+        save()
+        saveTick++
+        // 存档路径展示与实际生效设置同源：保存后按新值重解一次（磁盘 + DB 读，走 IO）。
+        // KRKR 同样重解：解析失败提示（loadFailed）在用户改回设置并保存后应当立即
+        // 解除，而不是滞留到重进页面（本地审计 84e1d22，P3-5 第三轮裁决）
+        if (game.engine == EngineType.XSYS35 || game.engine == EngineType.XSYS4 || game.engine == EngineType.KIRIKIRI) {
+            scope.launch {
+                try {
+                    val loaded = withContext(Dispatchers.IO) {
+                        GameSaveManager(ctx).resolveSaveLocation(game)
+                    }
+                    saveLocation = loaded
+                    saveLocationLoadFailed = loaded.directory == null || !loaded.available
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (t: Throwable) {
+                    // 对齐入口 (:256-257) 与 SaveManagementActivity.refresh
+                    // 的兄弟模式：重解失败同样置失败态，不静默滞留旧快照
+                    // （审计 of fe3d057, FA1）
+                    saveLocationLoadFailed = true
+                    Log.w("PerGameSettings", "resolve save location failed gid=$gid", t)
+                }
+            }
+        }
+        AppNotice.makeText(ctx, perGameSettingsSavedMessage, android.widget.Toast.LENGTH_SHORT, AppNotice.Kind.Success).show()
+    }
+
+    @Composable
+    fun SettingsContent(
+        modifier: Modifier,
+        contentPadding: PaddingValues,
+    ) {
+        LazyColumn(
+            modifier = modifier,
+            contentPadding = contentPadding,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
                 when (game.engine) {
 	                    EngineType.KIRIKIRI -> {
                         // SD 卡镜像强制接管存档路径：独立存档开关不生效，置灰并显示引导；
@@ -1139,7 +1179,6 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                     title = stringResource(R.string.engine_settings_artemis_add_base_patch),
                                     summary = if (artPatchRunning) patchRunningSummary else stringResource(R.string.engine_settings_artemis_add_base_patch_summary),
                                     leadingIcon = R.drawable.ic_artemis_patch,
-                                    containerColor = NavWhite,
                                     verticalPadding = 17.dp,
                                     onClick = if (artPatchRunning) null else {
                                         {
@@ -1158,7 +1197,6 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                     title = stringResource(R.string.engine_settings_artemis_add_windows_env_patch),
                                     summary = if (artPatchRunning) patchRunningSummary else stringResource(R.string.engine_settings_artemis_add_windows_env_patch_summary),
                                     leadingIcon = R.drawable.ic_artemis_patch,
-                                    containerColor = NavWhite,
                                     verticalPadding = 17.dp,
                                     onClick = if (artPatchRunning) null else {
                                         {
@@ -1991,12 +2029,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                 summary = stringResource(R.string.engine_settings_winlator_global_entry_summary),
                                 // 已在 SectionCard（MiuixCard）内：卡内平面样式，避免卡片套卡片
                                 drawSurface = false,
-                                onClick = {
-                                    startActivityWithPageTransition(
-                                        ctx,
-                                        EngineSettingsActivity.createIntent(ctx, EngineSettingsKind.WINLATOR),
-                                    )
-                                },
+                                onClick = onOpenGlobalWinlator,
                             )
                         }
                     }
@@ -2087,9 +2120,71 @@ fun PerGameSettingsScreen(game: ScanGame) {
                     }
                 }
 
-                item(key = if (motionEnhanced) "bottomSpacer" else null) {
-                    Box(listItemMotion(enabled = motionEnhanced).fillMaxWidth().navigationBarsPadding().height(12.dp))
+                if (!inBook) {
+                    item(key = if (motionEnhanced) "bottomSpacer" else null) {
+                        Box(listItemMotion(enabled = motionEnhanced).fillMaxWidth().navigationBarsPadding().height(12.dp))
+                    }
                 }
+            }
+    }
+
+    if (inBook) {
+        AppAlertDialog(
+            onDismissRequest = onDismiss,
+            title = {
+                Text(
+                    stringResource(R.string.settings_engine_settings),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            },
+            text = {
+                MiuixSettingsTheme {
+                    SettingsContent(
+                        modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
+                        contentPadding = PaddingValues(bottom = 8.dp),
+                    )
+                }
+            },
+            buttonArrangement = Arrangement.SpaceBetween,
+            dismissButton = {
+                DialogTextButton(text = stringResource(R.string.common_close), onClick = onDismiss)
+            },
+            confirmButton = {
+                DialogTextButton(text = stringResource(R.string.common_save), onClick = ::commitPerGameSettings)
+            },
+        )
+    } else {
+        MiuixSettingsTheme {
+            MiuixScaffold(
+                modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
+                containerColor = ComposeColor.Transparent,
+                contentWindowInsets = WindowInsets(0.dp),
+                topBar = {
+                    AppSecondaryTopBar(
+                        title = game.title,
+                        background = ComposeColor.Transparent,
+                        contentColor = PageTextColor,
+                        trailing = {
+                            // 外包一层只为挂「弹一下」：Box 贴合图标尺寸，排版与原样一致
+                            Box(Modifier.bounceOnChange(saveTick, depth = 0.1f)) {
+                                TopBarIcon(
+                                    painterResource(R.drawable.ic_save),
+                                    stringResource(R.string.common_save),
+                                    MiuixTheme.colorScheme.primary,
+                                    onClick = ::commitPerGameSettings,
+                                )
+                            }
+                        },
+                    )
+                },
+            ) { innerPadding ->
+                // 顶栏透明：列表整体垫在顶栏下方（持久 padding），避免滚动时内容穿过顶栏
+                SettingsContent(
+                    modifier = Modifier.fillMaxSize()
+                        .padding(horizontal = 12.dp)
+                        .padding(top = innerPadding.calculateTopPadding()),
+                    contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
+                )
             }
         }
     }
@@ -2138,18 +2233,13 @@ private const val DIALOG_ITEM_STEP_MILLIS = 45L
 /** 为单游戏覆盖分组分配稳定入场次序，复用卡片材质并让组内按压统一作用于整张卡片。 */
 @Composable
 private fun SectionCard(title: String, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    // 入场次序：按首次组合顺序取号（超过 10 的由 staggeredEntrance 自行封顶）
+    // 入场次序：按首次组合顺序取号（超过 10 的由 staggeredEntrance 自行封顶）；书页内由 AppSectionCard 自动切为细墨线与衬线小标题
     val order = rememberEntranceOrder()
-    MiuixCard(
-        modifier = modifier.pressSquishGroup().staggeredEntrance(order).fillMaxWidth().glassBorder(),
-        cornerRadius = AppComponentCornerRadius,
+    com.tyranor.next.ui.common.AppSectionCard(
+        modifier = modifier.pressSquishGroup().staggeredEntrance(order),
+        title = title,
     ) {
-        Column(Modifier.padding(vertical = 6.dp)) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-            }
-            content()
-        }
+        content()
     }
 }
 
@@ -2345,7 +2435,6 @@ private fun OverrideFontPreference(
                         modifier = Modifier.staggeredEntrance(1, distance = DIALOG_ITEM_RISE, stepMillis = DIALOG_ITEM_STEP_MILLIS),
                         title = stringResource(R.string.engine_settings_follow_global_with_value, globalLabel),
                         leadingIcon = R.drawable.ic_font_bookmark,
-                        containerColor = DialogItemSurface,
                         indication = null,
                     ) {
                         onSet(null)
@@ -2355,7 +2444,6 @@ private fun OverrideFontPreference(
                         modifier = Modifier.staggeredEntrance(2, distance = DIALOG_ITEM_RISE, stepMillis = DIALOG_ITEM_STEP_MILLIS),
                         title = followGameDefaultLabel,
                         leadingIcon = R.drawable.ic_font_bookmark,
-                        containerColor = DialogItemSurface,
                         indication = null,
                     ) {
                         onSet("")
@@ -2365,7 +2453,6 @@ private fun OverrideFontPreference(
                         modifier = Modifier.staggeredEntrance(3, distance = DIALOG_ITEM_RISE, stepMillis = DIALOG_ITEM_STEP_MILLIS),
                         title = stringResource(R.string.engine_settings_select_font_file),
                         leadingIcon = R.drawable.ic_font_bookmark,
-                        containerColor = DialogItemSurface,
                         indication = null,
                     ) {
                         open = false

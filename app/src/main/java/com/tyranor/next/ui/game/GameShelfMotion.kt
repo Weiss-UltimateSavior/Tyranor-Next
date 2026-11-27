@@ -347,8 +347,8 @@ internal fun Modifier.shelfSlot(
     }
 
 /**
- * 书架单排活跃局部区范围（单位：本，须严格大于 [REFLECTION_RANGE]、[HERO_RANGE]、[FRONT_CLIP_RANGE] 与 `1f`）。
- * 远离该范围的远处书脊共用夹断后的偏移量，避免每帧触发无效的宽度重测与图层/倒影重录。
+ * 书架单排活跃局部区范围（单位：本，须严格大于 [HERO_RANGE]、[FRONT_CLIP_RANGE] 与 `1f`）。
+ * 远离该范围的远处书脊共用夹断后的偏移量，避免每帧触发无效的宽度重测与图层/姿态重录。
  */
 internal const val SHELF_ACTIVE_ZONE = 2.0f
 internal const val SHELF_ACTIVE_ZONE_CLAMP = 2.5f
@@ -468,6 +468,36 @@ internal fun Modifier.shelfVisibleWidth(
     layout(visible, height) {
         placeable.place(((visible - width) / 2f).roundToInt(), 0)
     }
+}
+
+/**
+ * 视口内倒影透明度：覆盖视口内所有看得见与部分可见的书，边缘随横向距离自然轻衰减但不消失；
+ * 选中（正中）那本始终保持最清楚，完全移出视口外缘后返回 0 跳过离屏层。
+ */
+internal fun shelfViewportReflectionAlpha(
+    centerScreenX: Float,
+    minScreenX: Float,
+    maxScreenX: Float,
+    viewport: Float,
+    baseAlpha: Float,
+    hero: Float,
+    groundAlpha: Float,
+): Float {
+    if (viewport <= 0f || baseAlpha <= 0f || groundAlpha <= 0f) return 0f
+    val margin = viewport * REFLECTION_VIEWPORT_MARGIN_RATIO
+    if (maxScreenX < -margin || minScreenX > viewport + margin) return 0f
+    val half = viewport * 0.5f
+    val distFrac = (abs(centerScreenX - half) / half.coerceAtLeast(1f)).coerceIn(0f, 1f)
+    val rawEdgeFade = 1f - REFLECTION_EDGE_ATTENUATION * distFrac * distFrac
+    val heroWeight = hero.coerceIn(0f, 1f)
+    val edgeFade = rawEdgeFade + (1f - rawEdgeFade) * heroWeight
+    val outFade = when {
+        centerScreenX < 0f -> (1f + centerScreenX / margin.coerceAtLeast(1f)).coerceIn(0f, 1f)
+        centerScreenX > viewport -> (1f - (centerScreenX - viewport) / margin.coerceAtLeast(1f)).coerceIn(0f, 1f)
+        else -> 1f
+    }
+    val liftFade = 1f - REFLECTION_LIFT_FADE * heroWeight
+    return (baseAlpha * edgeFade * outFade * liftFade * groundAlpha).coerceIn(0f, 1f)
 }
 
 /**
@@ -647,12 +677,18 @@ private fun sharedEdge(geometry: ShelfGeometry, yaw: Float, turn: Float): Float 
 
 /**
  * 搁板上的倒影与接触阴影：在盒子下方镜像绘制一份内容并向下淡出；盒子抬起时倒影随之离开搁板。
- * 放在盒子姿态（抬起 / 缩放）之外，以搁板线 [floorY] 为镜面。
+ * 放在盒子姿态（抬起 / 缩放）之外，以搁板接触线 [floorY] 为镜面。
  *
- * 倒影要一个离屏层做渐隐遮罩，只给当前那盒和左右相邻的书画（离开 [REFLECTION_RANGE] 本以外的书脊倒影
- * 本来就细得看不出，逐本开离屏层会让渲染线程每帧多花好几毫秒），并随距离淡出，不会突然消失。
+ * 视口内（含部分可见）的每本书均绘制倒影，透明度按距视口中心横向距离平滑衰减但不消失，
+ * 并裁剪在接触线与搁板前缘之间。
  */
 internal fun Modifier.shelfReflection(
+    state: PagerState,
+    page: Int,
+    geometry: ShelfGeometry,
+    rowShift: () -> Float,
+    rail: ShelfRail,
+    viewport: Float,
     offsetProvider: () -> Float,
     floorY: Float,
     bookHeight: Float,
@@ -672,12 +708,13 @@ internal fun Modifier.shelfReflection(
     val bodyPaint = Paint()
     val reflectionPaint = Paint()
     val bodyBounds = Rect(0f, 0f, width, height)
+    val sideMargin = maxOf(geometry.coverWidth * 0.35f, width * 0.5f)
     val bleed = REFLECTION_MASK_BLEED * density
     val maskStartY = floorY
     val maskEndY = floorY + reflectionHeight
-    val maskTopLeft = Offset(-bleed, maskStartY - bleed)
-    val maskSize = Size(width + bleed * 2f, reflectionHeight + bleed * 2f)
-    val fullReflectionBounds = Rect(0f, floorY, width, maskEndY)
+    val maskTopLeft = Offset(-sideMargin - bleed, maskStartY - bleed)
+    val maskSize = Size(width + (sideMargin + bleed) * 2f, reflectionHeight + bleed * 2f)
+    val fullReflectionBounds = Rect(-sideMargin, floorY, width + sideMargin, maskEndY)
     val contactRadiusX = width * CONTACT_SPREAD / 2f
     val contactRadiusY = reflectionHeight * SHADOW_HEIGHT_RATIO / 2f
     val contactCenter = Offset(width / 2f, floorY)
@@ -696,6 +733,7 @@ internal fun Modifier.shelfReflection(
     val maskBrush = if (reflectionHeight > 0f) {
         Brush.verticalGradient(
             0f to Color.Black,
+            0.48f to Color.Black.copy(alpha = 0.56f),
             1f to Color.Transparent,
             startY = maskStartY,
             endY = maskEndY,
@@ -713,8 +751,8 @@ internal fun Modifier.shelfReflection(
         val bAlpha = bodyAlpha().coerceIn(0f, 1f)
         val gAlpha = groundAlpha().coerceIn(0f, 1f)
         if (bAlpha <= 0.001f && gAlpha <= 0.001f) return@onDrawWithContent
-        val offset = offsetProvider()
-        val hero = shelfHeroness(offset)
+        val localOffset = offsetProvider()
+        val hero = shelfHeroness(localOffset)
         // 被抽出来的那一盒悬在背板前：身后一团向右下方散开的模糊投影，随书离开/落回平滑淡出渐显
         if (hero > 0.02f && gAlpha > 0.005f) {
             val h = bookHeight * (1f + HERO_SCALE * hero)
@@ -755,24 +793,44 @@ internal fun Modifier.shelfReflection(
             drawContent()
             drawContext.canvas.restore()
         }
-        val nearness = (1f - (abs(offset) - 1f) / (REFLECTION_RANGE - 1f)).coerceIn(0f, 1f)
-        val alpha = reflectionAlpha * nearness * gAlpha
-        if (maskBrush == null || alpha <= 0.01f) return@onDrawWithContent
-        // 固定使用完整倒影离屏尺寸，避免每帧动态变更 Bounds 引发 Skia 反复创建与驱逐 Scratch RenderTarget
-        drawContext.canvas.saveLayer(fullReflectionBounds, reflectionPaint)
-        withTransform({ scale(1f, -1f, pivot = contactCenter) }) {
-            this@onDrawWithContent.drawContent()
-        }
-        drawRect(
-            brush = maskBrush,
-            topLeft = maskTopLeft,
-            size = maskSize,
-            alpha = alpha.coerceIn(0f, 1f),
-            blendMode = BlendMode.DstIn,
+        val realOffset = state.shelfOffset(page)
+        val railX = geometry.centerX(realOffset) + rowShift()
+        val centerScreenX = viewport * 0.5f + rail.screenX(railX)
+        val halfW = 0.5f * geometry.visibleWidth(abs(geometry.yaw(realOffset))) *
+            shelfPoseScale(realOffset) * rail.scale(railX)
+        val alpha = shelfViewportReflectionAlpha(
+            centerScreenX = centerScreenX,
+            minScreenX = centerScreenX - halfW,
+            maxScreenX = centerScreenX + halfW,
+            viewport = viewport,
+            baseAlpha = reflectionAlpha,
+            hero = hero,
+            groundAlpha = gAlpha,
         )
-        drawContext.canvas.restore()
+        if (maskBrush == null || alpha <= 0.01f) return@onDrawWithContent
+        clipRect(left = -sideMargin, top = floorY, right = width + sideMargin, bottom = maskEndY) {
+            // 固定使用完整倒影离屏尺寸，避免每帧动态变更 Bounds 引发 Skia 反复创建与驱逐 Scratch RenderTarget
+            drawContext.canvas.saveLayer(fullReflectionBounds, reflectionPaint)
+            withTransform({
+                val overflow = shelfReflectionOverflow(liftPx * hero, reflectionHeight)
+                if (overflow > 0f) translate(top = -overflow)
+                scale(1f, -1f, pivot = contactCenter)
+            }) {
+                this@onDrawWithContent.drawContent()
+            }
+            drawRect(
+                brush = maskBrush,
+                topLeft = maskTopLeft,
+                size = maskSize,
+                alpha = alpha,
+                blendMode = BlendMode.DstIn,
+            )
+            drawContext.canvas.restore()
+        }
     }
 }
+
+internal fun shelfReflectionOverflow(lift: Float, depth: Float): Float = (lift - depth * 0.8f).coerceAtLeast(0f)
 
 private object ElevationShadowCache {
     private const val SCALE = 0.25f
@@ -911,14 +969,34 @@ internal class ShelfCaseColors(
     val glow: Color,
 )
 
+/** 计算水平搁板上表面后缘纵坐标（位于书背之后，让书脚稳稳落在板面接触线上）。 */
+internal fun shelfBoardBackY(
+    floorY: Float,
+    bookHeight: Float,
+    coverWidth: Float,
+    viewport: Float,
+): Float {
+    val safeHeight = bookHeight.coerceAtLeast(1f)
+    val eyeHeight = (safeHeight * BOARD_EYE_HEIGHT_RATIO).coerceAtLeast(1f)
+    val focalLength = maxOf(
+        safeHeight * BOARD_FOCAL_HEIGHT_RATIO,
+        viewport.coerceAtLeast(0f) * BOARD_FOCAL_VIEWPORT_RATIO,
+    ).coerceAtLeast(1f)
+    val backZ = focalLength + coverWidth.coerceAtLeast(0f) * SHELF_BACK_DEPTH_RATIO
+    return floorY - eyeHeight * (1f - focalLength / backZ)
+}
+
 /**
  * 零 per-frame 分配的书柜搁板修饰符（静态路径与 4 枚背景渐变画刷随尺寸/主题预构建，
- * 每帧仅偏移预缓存的白光单位着色器并通过 [ColorFilter.tint] 调制发光色）。
+ * 搁板上表面从后缘（书背之后）延伸到前缘（接触线 [floorY] 之前），
+ * 接触线处仅压一条柔和环境暗带而不画亮白边线，清晰呈现「书立于水平板面上」的空间关系）。
  */
 internal fun Modifier.shelfCase(
     positionProvider: () -> Float,
     shiftProvider: () -> Float,
     rail: ShelfRail,
+    viewport: Float,
+    coverWidthPx: Float,
     floorY: Float,
     depth: Float,
     edge: Float,
@@ -936,8 +1014,11 @@ internal fun Modifier.shelfCase(
     val rightScale = rail.scale(farX)
     val leftX = width / 2f + rail.screenX(-farX)
     val rightX = width / 2f + rail.screenX(farX)
-    val leftFloor = floorY + rail.lift(-farX)
-    val rightFloor = floorY + rail.lift(farX)
+    val backY = shelfBoardBackY(floorY, bookHeight, coverWidthPx, viewport)
+    val leftBack = backY + rail.lift(-farX)
+    val rightBack = backY + rail.lift(farX)
+    val leftContact = floorY + rail.lift(-farX)
+    val rightContact = floorY + rail.lift(farX)
     val spanX = rightX - leftX
     val invSpan = if (abs(spanX) < 1e-4f) 0f else 1f / spanX
 
@@ -954,10 +1035,10 @@ internal fun Modifier.shelfCase(
     } else null
 
     val aoCenterX = width / 2f
-    val aoFloor = if (invSpan == 0f) leftFloor else leftFloor + (rightFloor - leftFloor) * ((aoCenterX - leftX) * invSpan)
-    val aoCenter = Offset(aoCenterX, aoFloor)
+    val aoContact = if (invSpan == 0f) leftContact else leftContact + (rightContact - leftContact) * ((aoCenterX - leftX) * invSpan)
+    val aoCenter = Offset(aoCenterX, aoContact)
     val aoRadius = width * AO_RADIUS
-    val slantDegrees = Math.toDegrees(kotlin.math.atan2((rightFloor - leftFloor).toDouble(), spanX.toDouble())).toFloat()
+    val slantDegrees = Math.toDegrees(kotlin.math.atan2((rightContact - leftContact).toDouble(), spanX.toDouble())).toFloat()
     val aoBrush = if (aoRadius > 0.5f) {
         Brush.radialGradient(
             0f to colors.wallShade,
@@ -977,18 +1058,45 @@ internal fun Modifier.shelfCase(
         )
     } else null
 
+    val leftFront = leftContact + depth * leftScale
+    val rightFront = rightContact + depth * rightScale
+    val topMinY = minOf(leftBack, rightBack)
+    val topMaxY = maxOf(leftFront, rightFront)
+    val contactStop = ((floorY - topMinY) / (topMaxY - topMinY).coerceAtLeast(1f)).coerceIn(0.05f, 0.9f)
     val boardTopPath = Path().apply {
-        moveTo(leftX, leftFloor)
-        lineTo(rightX, rightFloor)
-        lineTo(rightX, rightFloor + depth * rightScale)
-        lineTo(leftX, leftFloor + depth * leftScale)
+        moveTo(leftX, leftBack)
+        lineTo(rightX, rightBack)
+        lineTo(rightX, rightFront)
+        lineTo(leftX, leftFront)
         close()
     }
+    // 水平板面纵深渐变：后缘（书背处）略暗，越往板前缘越受光，形成清晰的水平透视平面
+    val boardRearColor = androidx.compose.ui.graphics.lerp(colors.board, colors.wallShade, 0.24f)
+        .copy(alpha = (colors.board.alpha * 0.82f).coerceIn(0f, 1f))
+    val boardContactColor = colors.board.copy(alpha = (colors.board.alpha * 0.92f).coerceIn(0f, 1f))
     val boardTopBrush = Brush.verticalGradient(
-        0f to colors.board.copy(alpha = colors.board.alpha * 0.7f),
+        0f to boardRearColor,
+        contactStop to boardContactColor,
         1f to colors.board,
-        startY = minOf(leftFloor, rightFloor),
-        endY = maxOf(leftFloor + depth * leftScale, rightFloor + depth * rightScale),
+        startY = topMinY,
+        endY = topMaxY,
+    )
+
+    // 接触线柔暗带：把一排书的脚稳稳压在水平板面上（中心沿 floorY，向上下自然淡出，没有生硬水平切线）
+    val contactBandHalf = (bookHeight * 0.032f).coerceIn(6f * density, 18f * density)
+    val contactBandPath = Path().apply {
+        moveTo(leftX, leftContact - contactBandHalf)
+        lineTo(rightX, rightContact - contactBandHalf)
+        lineTo(rightX, rightContact + contactBandHalf)
+        lineTo(leftX, leftContact + contactBandHalf)
+        close()
+    }
+    val contactBandBrush = Brush.verticalGradient(
+        0f to Color.Transparent,
+        0.45f to colors.wallShade.copy(alpha = colors.wallShade.alpha * 0.55f),
+        1f to Color.Transparent,
+        startY = minOf(leftContact, rightContact) - contactBandHalf,
+        endY = maxOf(leftContact, rightContact) + contactBandHalf,
     )
 
     val poolRadius = width * POOL_RADIUS
@@ -1003,8 +1111,6 @@ internal fun Modifier.shelfCase(
         )
     } else null
 
-    val leftFront = leftFloor + depth * leftScale
-    val rightFront = rightFloor + depth * rightScale
     val boardEdgePath = Path().apply {
         moveTo(leftX, leftFront)
         lineTo(rightX, rightFront)
@@ -1027,8 +1133,8 @@ internal fun Modifier.shelfCase(
         endY = maxOf(leftFront, rightFront) + edge + under * leftScale,
     )
     val frontRimStroke = 1.2f * density
-    val backRimColor = colors.rim.copy(alpha = colors.rim.alpha * 0.6f)
-    val backRimStroke = 1f * density
+    val backRimColor = colors.rim.copy(alpha = colors.rim.alpha * 0.25f)
+    val backRimStroke = 0.75f * density
 
     var lastGlowRgb = Int.MIN_VALUE
     var lastGlowFilter: ColorFilter? = null
@@ -1049,17 +1155,9 @@ internal fun Modifier.shelfCase(
                 drawCircle(wallBrush, radius = glowRadius, center = glowCenter)
             }
         }
-        if (aoBrush != null) {
-            withTransform({
-                rotate(slantDegrees, pivot = aoCenter)
-                scale(1f, AO_SQUASH, pivot = aoCenter)
-            }) {
-                drawCircle(aoBrush, radius = aoRadius, center = aoCenter)
-            }
-        }
         val settled = 1f - 2f * abs(position - position.roundToInt())
         val heroX = width / 2f + rail.screenX(shift)
-        val heroFloor = if (invSpan == 0f) leftFloor else leftFloor + (rightFloor - leftFloor) * ((heroX - leftX) * invSpan)
+        val heroFloor = if (invSpan == 0f) leftContact else leftContact + (rightContact - leftContact) * ((heroX - leftX) * invSpan)
         if (haloUnitBrush != null) {
             val haloAlpha = (glow.alpha * 0.55f * settled).coerceIn(0f, 1f)
             if (haloAlpha > 0.002f) {
@@ -1070,6 +1168,15 @@ internal fun Modifier.shelfCase(
             }
         }
         drawPath(boardTopPath, boardTopBrush)
+        drawPath(contactBandPath, contactBandBrush)
+        if (aoBrush != null) {
+            withTransform({
+                rotate(slantDegrees, pivot = aoCenter)
+                scale(1f, AO_SQUASH, pivot = aoCenter)
+            }) {
+                drawCircle(aoBrush, radius = aoRadius, center = aoCenter)
+            }
+        }
         if (poolUnitBrush != null) {
             val poolAlpha = (glow.alpha * POOL_STRENGTH * (0.45f + 0.55f * settled)).coerceIn(0f, 1f)
             if (poolAlpha > 0.002f) {
@@ -1085,7 +1192,7 @@ internal fun Modifier.shelfCase(
         drawPath(boardEdgePath, colors.boardEdge)
         drawLine(colors.rim, Offset(leftX, leftFront), Offset(rightX, rightFront), strokeWidth = frontRimStroke)
         drawPath(underPath, underBrush)
-        drawLine(backRimColor, Offset(leftX, leftFloor), Offset(rightX, rightFloor), strokeWidth = backRimStroke)
+        drawLine(backRimColor, Offset(leftX, leftBack), Offset(rightX, rightBack), strokeWidth = backRimStroke)
     }
 }
 
@@ -1251,7 +1358,7 @@ internal fun DrawScope.drawShelfCase(
 }
 
 /** 搁板前沿以下（前沿厚度 + 板下软影）占用的高度（dp）。 */
-internal const val SHELF_BOARD_EDGE = 5f
+internal const val SHELF_BOARD_EDGE = 4f
 internal const val SHELF_BELOW_BOARD = SHELF_BOARD_EDGE + 16f
 
 /** 底部控制条两端橡皮筋视觉拉出位移（渐近阻力曲线，严格有界于 ±[maxPullPx] 内）。 */
@@ -2395,12 +2502,22 @@ internal class ShelfRubberBand(private val maxPull: Float, private val scope: Co
  * 按住进度轨道（或在书架上慢慢拖）超过 1.5 秒后，越过每一本的轻点都会被当成「不是手指引起的」而丢掉。
  * 这里在按住期间的每个指针事件上续一次（只观察、不消费）。
  */
-internal fun Modifier.shelfTouchIntent(onTouchDown: () -> Unit = {}): Modifier = pointerInput(Unit) {
+internal fun Modifier.shelfTouchIntent(
+    onTouchDown: () -> Unit = {},
+    /** 书架上有没有手指按着变了（任一指针按下 / 全部抬起或被取消）。 */
+    onTouchingChanged: (touching: Boolean) -> Unit = {},
+): Modifier = pointerInput(Unit) {
     awaitPointerEventScope {
+        var touching = false
         while (true) {
             val event = awaitPointerEvent(PointerEventPass.Initial)
             if (event.changes.any { it.changedToDown() }) onTouchDown()
-            if (event.changes.any { it.pressed }) MotionIntent.noteTouch()
+            val pressed = event.changes.any { it.pressed }
+            if (pressed) MotionIntent.noteTouch()
+            if (pressed != touching) {
+                touching = pressed
+                onTouchingChanged(pressed)
+            }
         }
     }
 }
@@ -2495,6 +2612,12 @@ internal val SHELF_SPINE_TURN = Math.toRadians(86.0).toFloat()
 /** 转角小于这个值时书脊几乎侧立成一条线，直接不画。 */
 private const val HIDDEN_SPINE_TURN = 0.02f
 
+/** 水平搁板顶面后缘透视延深参数（与盒高、视口宽及封面宽联动）。 */
+private const val BOARD_EYE_HEIGHT_RATIO = 0.28f
+private const val BOARD_FOCAL_HEIGHT_RATIO = 3.8f
+private const val BOARD_FOCAL_VIEWPORT_RATIO = 1.45f
+private const val SHELF_BACK_DEPTH_RATIO = 1.18f
+
 /** 透视相机距离（× density）：足够远，转动时盒子不夸张变形。 */
 internal const val SHELF_FACE_CAMERA = 28f
 
@@ -2570,8 +2693,10 @@ private const val HERO_Z = 200f
 /** 正面保持倒角裁切的范围（离当前位置多少本以内）。 */
 private const val FRONT_CLIP_RANGE = 0.75f
 
-/** 画倒影的范围（离当前位置多少本以内；1 本以内满强度，之后线性淡出）。 */
-private const val REFLECTION_RANGE = 1.8f
+/** 视口倒影：视口两端边缘衰减比例、抬起时的衰减比例与视口外平滑退场余量（× 视口宽）。 */
+private const val REFLECTION_EDGE_ATTENUATION = 0.45f
+private const val REFLECTION_LIFT_FADE = 0f
+private const val REFLECTION_VIEWPORT_MARGIN_RATIO = 0.15f
 
 /** 倒影遮罩向离屏层外多盖出的宽度（dp）。 */
 private const val REFLECTION_MASK_BLEED = 2f

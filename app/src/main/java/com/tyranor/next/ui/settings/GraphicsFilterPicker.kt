@@ -23,7 +23,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.settings.GraphicsFilterCategory
-import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.DialogTextButton
@@ -125,7 +124,6 @@ private fun FilterCategories(enabled: Boolean, modifier: Modifier, onSelect: (Gr
                 showArrow = category.presetIds.size > 1,
                 titleMaxLines = 2,
                 indication = null,
-                containerColor = DialogItemSurface,
                 onClick = if (enabled) ({ onSelect(category) }) else null,
             )
         }
@@ -153,7 +151,6 @@ private fun FilterPresets(
                 showArrow = false,
                 titleMaxLines = 3,
                 indication = null,
-                containerColor = DialogItemSurface,
                 onClick = if (enabled) ({ onSelect(id) }) else null,
             )
         }

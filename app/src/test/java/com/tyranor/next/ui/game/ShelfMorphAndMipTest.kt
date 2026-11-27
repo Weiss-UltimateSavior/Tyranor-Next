@@ -4,7 +4,11 @@ import com.tyranor.next.core.engine.EngineType
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.ui.common.BOOK_SLIDER_EDGE_INSET
+import com.tyranor.next.ui.common.sliderFractionFromPosition
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -175,6 +179,88 @@ class ShelfMorphAndMipTest {
         val rows = tiers(8, 4)
         assertNull(shelfCatalogAlignedScroll(rows, null, 300f, 60f, 6))
         assertNull(shelfCatalogAlignedScroll(rows, "content://games/4", null, 60f, 6))
+    }
+
+    @Test
+    fun extrapolateRectUsesPassedBatchSnapshotInsteadOfUpdatedFilteredGames() = runTest {
+        val initialBatch = (0 until 12).map(::game)
+        val stage = ShelfCatalogStage()
+        val motion = ShelfCatalogMotion(
+            scope = this,
+            enhanced = true,
+            stage = stage,
+            initialAnchorUri = initialBatch.first().uri,
+            initialLayoutMode = ShelfCatalogLayoutMode.COVERS,
+        )
+        motion.syncCatalogGames(initialBatch, initialBatch)
+        motion.reportGrid(
+            ShelfCatalogLayoutMode.COVERS,
+            ShelfCatalogGridMetrics(
+                columns = 4,
+                pitchX = 100f,
+                pitchY = 200f,
+                grouped = false,
+                maxBookHeightPx = 150f,
+                density = 1f,
+            ),
+        )
+        val indexByUri = initialBatch.withIndex().associate { (i, g) -> g.uri to i }
+        val targetIdx = 8
+        val targetUri = initialBatch[targetIdx].uri
+        val refRect = Rect(0f, 0f, 90f, 150f * shelfCatalogCoverHeightFactor(initialBatch[0].uri))
+        val measured = mapOf(
+            initialBatch[0].uri to CatalogSlotSnapshot(
+                rect = refRect,
+                layoutMode = ShelfCatalogLayoutMode.COVERS,
+                rowGridIndex = 0,
+                colIndex = 0,
+                leanDegrees = 0f,
+            ),
+        )
+
+        val expectedBefore = motion.extrapolateRect(
+            measured = measured,
+            mode = ShelfCatalogLayoutMode.COVERS,
+            index = targetIdx,
+            indexMap = indexByUri,
+            games = initialBatch,
+        )!!
+
+        // 搜索/筛选移除了首项，原第 8 项移动到了新列表的下标 7
+        val shiftedBatch = initialBatch.drop(1)
+        motion.syncCatalogGames(shiftedBatch, initialBatch)
+
+        val afterShift = motion.extrapolateRect(
+            measured = measured,
+            mode = ShelfCatalogLayoutMode.COVERS,
+            index = targetIdx,
+            indexMap = indexByUri,
+            games = initialBatch,
+        )!!
+        assertEquals(expectedBefore, afterShift)
+        assertEquals(150f * shelfCatalogCoverHeightFactor(targetUri), afterShift.height, 1e-3f)
+        assertFalse(motion.morphing)
+    }
+
+    @Test
+    fun bookSliderHitPositionMatchesDrawBookSliderInset() {
+        // 宽度 210dp、书页 7dp 内缩、fraction=0.25 时绘制圆钮中心位于 7 + 0.25 * (210 - 14) = 56dp
+        val inset = BOOK_SLIDER_EDGE_INSET.value
+        val width = 210f
+        val thumbCenterAtQuarter = inset + 0.25f * (width - 2f * inset)
+        assertEquals(56f, thumbCenterAtQuarter, 1e-4f)
+        assertEquals(0.25f, sliderFractionFromPosition(thumbCenterAtQuarter, width, inset, reverse = false), 1e-5f)
+
+        // 书页离散滑条：宽 200dp、steps=19（0.1 刻度在 7 + 0.1 * 186 = 25.6dp）
+        val tickWidth = 200f
+        val tickAtTenth = inset + 0.1f * (tickWidth - 2f * inset)
+        assertEquals(25.6f, tickAtTenth, 1e-4f)
+        assertEquals(0.1f, sliderFractionFromPosition(tickAtTenth, tickWidth, inset, reverse = false), 1e-5f)
+
+        // 书外分支（14dp 半高内缩）保持原有几何
+        val outsideInset = 14f
+        val outsideThumbCenter = outsideInset + 0.25f * (width - 2f * outsideInset)
+        assertEquals(0.25f, sliderFractionFromPosition(outsideThumbCenter, width, outsideInset, reverse = false), 1e-5f)
     }
 
 }

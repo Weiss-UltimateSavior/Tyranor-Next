@@ -82,7 +82,6 @@ class ShelfBookSaveExportDeviceTest {
                             onGameRenamed = null,
                             onDeleteGame = {},
                             onQuickLaunchToggle = { false },
-                            onEngineSettings = {},
                         )
                     }
                 }

@@ -72,6 +72,8 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -80,7 +82,9 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
@@ -106,6 +110,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -150,6 +155,7 @@ import com.tyranor.next.theme.ShelfSpineScrimTop
 import com.tyranor.next.theme.ShelfSpineRoundLight
 import com.tyranor.next.theme.ShelfSpineRoundShade
 import com.tyranor.next.theme.ShelfSpineTitle
+import com.tyranor.next.theme.ShelfSpineTitleDark
 import com.tyranor.next.theme.ShelfSpineText
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
@@ -330,7 +336,14 @@ internal fun GameShelf(
         snapshotFlow { pagerState.isScrollInProgress }.collect { scrolling -> if (scrolling) book.interruptClosing() }
     }
 
-    Box(Modifier.fillMaxSize().shelfTouchIntent { if (isInteractive()) catalog?.interruptExit() }) {
+    // 手指是否按在书架上告诉藏书阁舞台：退场收尾要等手指抬起再交付，否则覆盖层离开组合会取消这次触摸（见 dismissWhenShelfReleased）
+    DisposableEffect(catalog) { onDispose { catalog?.onShelfTouch(false) } }
+    Box(
+        Modifier.fillMaxSize().shelfTouchIntent(
+            onTouchDown = { if (isInteractive()) catalog?.interruptExit() },
+            onTouchingChanged = { touching -> catalog?.onShelfTouch(touching) },
+        ),
+    ) {
         ShelfBackdrop(pagerState, games, coverTints, Modifier.fillMaxSize())
         BoxWithConstraints(
             modifier = Modifier
@@ -409,7 +422,7 @@ internal fun shelfStageScale(heightBudget: Dp): Float = (heightBudget / MIN_STAG
 
 internal fun shelfCoverWidthForHeight(heightBudget: Dp): Dp =
     MIN_COVER_WIDTH * shelfStageScale(heightBudget) +
-        ((heightBudget - MIN_STAGE_HEIGHT) * (0.75f / (1f + FLOOR_RATIO + LIFT_ROOM_RATIO))).coerceAtLeast(0.dp)
+        ((heightBudget - MIN_STAGE_HEIGHT) * (SHELF_COVER_ASPECT_RATIO / (1f + FLOOR_RATIO + LIFT_ROOM_RATIO))).coerceAtLeast(0.dp)
 
 internal fun shelfFocusPage(games: List<ScanGame>, uri: String?): Int =
     games.indexOfFirst { it.uri == uri }.takeIf { it >= 0 }
@@ -509,7 +522,7 @@ private fun ShelfStage(
             maxWidth * widthRatio,
             shelfCoverWidthForHeight(heightBudget),
         )
-        val coverHeight = coverWidth * 4f / 3f
+        val coverHeight = coverWidth / SHELF_COVER_ASPECT_RATIO
         val floorDepth = coverHeight * FLOOR_RATIO
         val topRoom = LIFT_ROOM * compactScale + coverHeight * LIFT_ROOM_RATIO
         // 多出来的高度按比例分给搁板下面（抬高底板）与书顶上面：不再整块堆在上面
@@ -666,6 +679,7 @@ private fun ShelfStage(
         val floorDepthPx = with(density) { floorDepth.toPx() }
         val boardEdgePx = with(density) { (SHELF_BOARD_EDGE.dp * compactScale).toPx() }
         val bookHeightPx = with(density) { coverHeight.toPx() }
+        val coverWidthPx = with(density) { coverWidth.toPx() }
         Box(
             modifier = Modifier
                 .padding(bottom = raise)
@@ -683,6 +697,8 @@ private fun ShelfStage(
                         positionProvider = { pagerState.pagePosition() },
                         shiftProvider = rowShift,
                         rail = rail,
+                        viewport = viewport,
+                        coverWidthPx = coverWidthPx,
                         floorY = floorYPx,
                         depth = floorDepthPx,
                         edge = boardEdgePx,
@@ -871,6 +887,12 @@ private fun ShelfBox(
             // 首屏入场：离停稳位置越近越先立起来
             .staggeredEntrance(shelfBookEntranceIndex(page, anchorPage), stepMillis = 40L, replay = false)
             .shelfReflection(
+                state = pagerState,
+                page = page,
+                geometry = geometry,
+                rowShift = rowShift,
+                rail = rail,
+                viewport = viewport,
                 offsetProvider = { localOffset.value },
                 floorY = floorY,
                 bookHeight = geometry.coverHeight,
@@ -956,7 +978,7 @@ private fun ShelfBox(
             heroCover = heroCover,
             reveal = reveal,
             engineColor = engineColor,
-            dims = dims,
+            coverWidth = dims.coverWidth,
             mipLevel = mipLevel,
             borderShapes = shapes,
             spineOnRight = { geometry.yaw(localOffset.value) < 0f },
@@ -1090,14 +1112,14 @@ internal fun ShelfCoverPlaceholder(engineName: String, coverWidth: Dp, modifier:
 
 /** 正面：封面（无封面时引擎色 + 引擎名占位）；玩过的游戏封面上挂一根主题色书签丝带。 */
 @Composable
-private fun ShelfFront(
+internal fun ShelfFront(
     game: ScanGame,
     overlays: @Composable () -> Unit,
     cover: ImageBitmap?,
     heroCover: ImageBitmap?,
-    reveal: CoverReveal,
+    reveal: CoverReveal?,
     engineColor: Color,
-    dims: ShelfDims,
+    coverWidth: Dp,
     modifier: Modifier = Modifier,
     /** 书架上的这一盒正面转得有多侧（见 [shelfCoverMipLevel]）：给了就按它换水平预缩的封面，不给就一直用原图。 */
     mipLevel: State<Int>? = null,
@@ -1121,13 +1143,13 @@ private fun ShelfFront(
     ) {
         // 占位文字只在没有封面时组合：被封面盖住也照样会画，而且在透视下要逐字按路径绘制
         if (safeCover == null && safeHero == null) {
-            ShelfCoverPlaceholder(game.engine.displayName, dims.coverWidth, Modifier.clearAndSetSemantics { })
+            ShelfCoverPlaceholder(game.engine.displayName, coverWidth, Modifier.clearAndSetSemantics { })
         }
         safeCover?.let { bitmap ->
             val mips = if (mipLevel != null) rememberShelfCoverMips(bitmap) else null
             Spacer(
                 Modifier
-                    .then(reveal.image(Modifier.fillMaxSize()))
+                    .then(reveal?.image(Modifier.fillMaxSize()) ?: Modifier.fillMaxSize())
                     .shelfCoverMipped(bitmap, mips, mipLevel),
             )
         }
@@ -1140,7 +1162,7 @@ private fun ShelfFront(
                 modifier = Modifier.fillMaxSize().shelfHeroCoverFade(safeHero, startOpaque = safeCover == null),
             )
         }
-        if (isShelfLastPlayed(game)) ShelfCoverRibbon(dims.coverWidth, ribbon)
+        if (isShelfLastPlayed(game)) ShelfCoverRibbon(coverWidth, ribbon)
         overlays()
     }
 }
@@ -1413,9 +1435,9 @@ internal fun BoxScope.ShelfCoverRibbon(
 }
 
 /**
- * 书脊正面内容（封面柔焦底、顶部封条与两道烫金细线、竖排/侧转宋体书名、书脚的烫金线与引擎色小菱饰、圆润的明暗、四边棱光）：
- * 书架书脊与翻开的书飞行书脊共用，保证起飞与落回交接逐像素一致。
- * 像一本精装书的书脊：只印书名，不印序号（序号在下方对话框与进度轨道里已经有了，不在每条书脊上重复）。
+ * 书脊正面内容（提亮封面柔焦底、自适应对比度衬底纱、动态缩放宋体书名、顶部封条与两道烫金细线、
+ * 书脚烫金线与引擎/封面主色小菱饰、圆润明暗、四边棱光）：
+ * 书架书脊、藏书阁立脊与翻开的书起飞书脊共用，保证交接逐像素一致。
  */
 @Composable
 internal fun BoxScope.ShelfSpineFaceContent(
@@ -1426,56 +1448,133 @@ internal fun BoxScope.ShelfSpineFaceContent(
     imageModifier: Modifier = Modifier.fillMaxSize(),
     /** 上次游玩的那一本：书脊右上挂一枚小书签（封面色）。 */
     lastPlayed: Boolean = false,
+    /** 已知书脊宽度时直接传入，避免额外子组合；藏书阁/翻开的书未传时由约束自动读取。 */
+    spineWidth: Dp = Dp.Unspecified,
+    /**
+     * 排字用的参照书脊宽 / 高（未指定时取这本书自己的宽高）：同一书柜里高矮厚薄不同的书传同一组基准值，
+     * 字号与能排下的字数就都一样，书的外形差异不影响书名显示多长。
+     */
+    textBasis: DpSize = DpSize.Unspecified,
+) {
+    if (spineWidth != Dp.Unspecified) {
+        ShelfSpineFaceContentBody(
+            title = title,
+            spineWidth = spineWidth,
+            coverHeight = coverHeight,
+            textBasis = textBasis,
+            wash = wash,
+            engineColor = engineColor,
+            imageModifier = imageModifier,
+            lastPlayed = lastPlayed,
+        )
+    } else {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            ShelfSpineFaceContentBody(
+                title = title,
+                spineWidth = maxWidth,
+                coverHeight = coverHeight,
+                textBasis = textBasis,
+                wash = wash,
+                engineColor = engineColor,
+                imageModifier = imageModifier,
+                lastPlayed = lastPlayed,
+            )
+        }
+    }
+}
+
+@Composable
+private fun BoxScope.ShelfSpineFaceContentBody(
+    title: String,
+    spineWidth: Dp,
+    coverHeight: Dp,
+    textBasis: DpSize,
+    wash: ImageBitmap?,
+    engineColor: Color,
+    imageModifier: Modifier,
+    lastPlayed: Boolean,
 ) {
     val density = LocalDensity.current
     // 烫印的线、菱饰与顶上的封条都取这本书封面的主色（没有封面时退回引擎色），不用主题色
     val ink = rememberShelfSpineInk(wash, engineColor)
-    val foil = remember(ink) { androidx.compose.ui.graphics.lerp(ink, Color.White, SPINE_FOIL_LIGHTEN) }
+    val tone = rememberShelfSpineTone(wash, engineColor)
+    val appearance = remember(tone) { resolveShelfSpineTitleAppearance(tone) }
+    val foil = remember(ink, appearance.isLightText) {
+        if (appearance.isLightText) {
+            androidx.compose.ui.graphics.lerp(ink, Color.White, SPINE_FOIL_LIGHTEN)
+        } else {
+            androidx.compose.ui.graphics.lerp(ink, ShelfSpineTitleDark, SPINE_FOIL_DARKEN)
+        }
+    }
+    val typo = remember(spineWidth, coverHeight, textBasis) {
+        shelfSpineTypography(spineWidth.value, coverHeight.value, textBasis)
+    }
     val footHeight = coverHeight * SPINE_FOOT_RATIO
-    val maxChars = with(density) {
-        ((coverHeight - SPINE_TITLE_TOP - footHeight - 6.dp).toPx() / SPINE_LINE_HEIGHT.toPx()).toInt()
-    }.coerceIn(1, SPINE_MAX_CHARS)
-    val stacked = remember(title, maxChars) { stackSpineTitle(title, maxChars) }
+    val titleTop = typo.titleTopDp.dp
+    val stacked = remember(title, typo.maxChars) { stackSpineTitle(title, typo.maxChars) }
     val latinTitle = remember(title) { isMostlyLatin(title) }
-    val spineTextLength = coverHeight - SPINE_TITLE_TOP - footHeight - 6.dp
-    ShelfSpineBase(wash, ink, imageModifier)
-    // 竖排名称属书脊上的小型标注，按页面两档字号会塞不下（见 AGENTS.md 文字尺寸豁免）；用宋体，像书脊上烫印的书名
-    val spineStyle = MaterialTheme.typography.labelSmall.copy(
-        color = ShelfSpineTitle,
+
+    ShelfSpineBase(wash, engineColor, imageModifier, appearance.veilColor, capColor = ink)
+
+    val fontSize = with(density) { typo.fontSizeDp.dp.toSp() }
+    val lineHeight = with(density) { typo.lineHeightDp.dp.toSp() }
+    val shadowBlur = with(density) { (typo.fontSizeDp * 0.16f).coerceIn(1.5f, 4f).dp.toPx() }
+    val shadowOffset = with(density) { 0.6.dp.toPx() }
+    val strokeWidth = with(density) { (typo.fontSizeDp * 0.14f).coerceIn(1.4f, 3.2f).dp.toPx() }
+
+    val baseStyle = MaterialTheme.typography.labelSmall.copy(
         fontFamily = BookSerifBold,
         fontWeight = FontWeight.SemiBold,
-        lineHeight = SPINE_LINE_HEIGHT,
+        fontSize = fontSize,
+        lineHeight = lineHeight,
         textAlign = TextAlign.Center,
     )
-    if (latinTitle) {
-        // 西文书名：像真实书脊那样整行侧转排印（从上往下读），不再把字母一个个竖着堆；最多 [SPINE_MAX_LATIN_CHARS] 个字符
-        Text(
-            text = limitShelfTitle(title, SPINE_MAX_LATIN_CHARS),
-            style = spineStyle,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = SPINE_TITLE_TOP)
-                .heightIn(max = spineTextLength)
-                .spineSideways()
-                .clearAndSetSemantics { },
+    val fillStyle = baseStyle.copy(
+        color = appearance.textColor,
+        shadow = Shadow(
+            color = appearance.haloColor,
+            offset = Offset(0f, shadowOffset),
+            blurRadius = shadowBlur,
+        ),
+    )
+    val strokeStyle = if (appearance.needsStroke) {
+        baseStyle.copy(
+            color = appearance.haloColor,
+            drawStyle = Stroke(width = strokeWidth, join = StrokeJoin.Round),
         )
     } else {
-        Text(
-            text = stacked,
-            style = spineStyle,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = SPINE_TITLE_TOP)
-                .clearAndSetSemantics { },
-        )
+        null
+    }
+
+    if (latinTitle) {
+        // 西文书名：像真实书脊那样整行侧转排印（从上往下读），最多 [SPINE_MAX_LATIN_CHARS] 个字符
+        val shown = limitShelfTitle(title, SPINE_MAX_LATIN_CHARS)
+        val textMod = Modifier
+            .align(Alignment.TopCenter)
+            .padding(top = titleTop)
+            .heightIn(max = typo.latinLengthDp.dp)
+            .spineSideways()
+            .clearAndSetSemantics { }
+        if (strokeStyle != null) {
+            Text(text = shown, style = strokeStyle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = textMod)
+        }
+        Text(text = shown, style = fillStyle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = textMod)
+    } else {
+        val textMod = Modifier
+            .align(Alignment.TopCenter)
+            .padding(top = titleTop)
+            .clearAndSetSemantics { }
+        if (strokeStyle != null) {
+            Text(text = stacked, style = strokeStyle, modifier = textMod)
+        }
+        Text(text = stacked, style = fillStyle, modifier = textMod)
     }
     // 烫金与明暗 + 四边棱边合并于单一 `drawWithCache`，绘制期零分配并省去冗余叠加节点
     val bevelLight = ShelfGloss
     val bevelDark = ShelfDepthShade
     val roundLight = ShelfSpineRoundLight
     val roundShade = ShelfSpineRoundShade
+    val capDp = typo.capDp.dp
     Spacer(
         Modifier
             .fillMaxSize()
@@ -1497,12 +1596,12 @@ internal fun BoxScope.ShelfSpineFaceContent(
                 val thick = 0.9.dp.toPx()
                 val thin = 0.5.dp.toPx()
                 val pair = 2.6.dp.toPx()
-                val topRuleY = SPINE_CAP.toPx() + 4.dp.toPx()
+                val topRuleY = capDp.toPx() + 4.dp.toPx()
                 val footPx = footHeight.toPx()
                 val footTop = h - footPx
-                val foilMain = foil.copy(alpha = 0.66f)
-                val foilSub = foil.copy(alpha = 0.4f)
-                val foilStrokeColor = foil.copy(alpha = 0.7f)
+                val foilMain = foil.copy(alpha = 0.72f)
+                val foilSub = foil.copy(alpha = 0.45f)
+                val foilStrokeColor = foil.copy(alpha = 0.75f)
                 val foilStroke = Stroke(width = 0.6.dp.toPx())
                 val half = minOf(w * 0.17f, 3.6.dp.toPx())
                 val cx = w / 2f
@@ -1534,7 +1633,7 @@ internal fun BoxScope.ShelfSpineFaceContent(
         Spacer(
             Modifier
                 .align(Alignment.TopEnd)
-                .padding(end = 3.dp, top = SPINE_CAP)
+                .padding(end = 3.dp, top = capDp)
                 .size(SPINE_TAG_WIDTH, SPINE_TAG_LENGTH)
                 .drawWithCache {
                     val notch = size.width * 0.5f
@@ -1552,9 +1651,215 @@ internal fun BoxScope.ShelfSpineFaceContent(
     }
 }
 
-private data class SpineWashResult(val wash: ImageBitmap, val ink: Color)
+private data class SpineWashResult(
+    val wash: ImageBitmap,
+    val ink: Color,
+    val tone: SpineToneMetrics,
+)
+
+@Immutable
+internal data class ShelfSpineTypography(
+    val fontSizeDp: Float,
+    val lineHeightDp: Float,
+    val titleTopDp: Float,
+    val capDp: Float,
+    val maxChars: Int,
+    val latinLengthDp: Float,
+)
+
+internal fun shelfSpineTypography(
+    spineWidthDp: Float,
+    coverHeightDp: Float,
+    textBasis: DpSize = DpSize.Unspecified,
+): ShelfSpineTypography {
+    // 字号、行高、书名起点、封条都沿用原来手机书架上的尺寸（11 / 13 / 12 / 3），只按书脊宽度相对手机书架书脊等比缩放：
+    // 书变大字跟着变大，书和手机书架一样大时与原来完全一致；书名放不下时照旧截断（不为了排下整条书名另调字号）
+    val width = if (textBasis == DpSize.Unspecified) spineWidthDp else textBasis.width.value
+    val height = if (textBasis == DpSize.Unspecified) coverHeightDp else textBasis.height.value
+    val scale = (width / SPINE_TEXT_REF_WIDTH_DP).coerceIn(SPINE_TEXT_MIN_SCALE, SPINE_TEXT_MAX_SCALE)
+    val safeH = height.coerceAtLeast(48f)
+    val fontSizeDp = SPINE_TEXT_BASE_FONT_DP * scale
+    val lineHeightDp = SPINE_TEXT_BASE_LINE_DP * scale
+    val titleTopDp = SPINE_TEXT_BASE_TOP_DP * scale
+    val capDp = SPINE_TEXT_BASE_CAP_DP * scale
+    val footDp = safeH * SPINE_FOOT_RATIO
+    val usableLen = (safeH - titleTopDp - footDp - 6f).coerceAtLeast(lineHeightDp)
+    val maxChars = (usableLen / lineHeightDp).toInt().coerceIn(1, SPINE_MAX_CHARS)
+    return ShelfSpineTypography(
+        fontSizeDp = fontSizeDp,
+        lineHeightDp = lineHeightDp,
+        titleTopDp = titleTopDp,
+        capDp = capDp,
+        maxChars = maxChars,
+        latinLengthDp = (height - titleTopDp - height * SPINE_FOOT_RATIO - 6f).coerceAtLeast(16f),
+    )
+}
+
+@Immutable
+internal data class SpineToneMetrics(
+    val avgLuminance: Float,
+    val minLuminance: Float,
+    val maxLuminance: Float,
+    val darkestColor: Color? = null,
+)
+
+@Immutable
+internal data class ShelfSpineTitleAppearance(
+    val textColor: Color,
+    val haloColor: Color,
+    val veilColor: Color,
+    val needsStroke: Boolean,
+    val isLightText: Boolean,
+    val effectiveContrast: Float,
+)
+
+internal fun wcagContrastRatio(lumA: Float, lumB: Float): Float {
+    val l1 = maxOf(lumA, lumB)
+    val l2 = minOf(lumA, lumB)
+    return (l1 + 0.05f) / (l2 + 0.05f)
+}
+
+/** 将线性相对亮度转换为等价的 sRGB 编码灰阶分量（IEC 61966-2-1）。 */
+internal fun linearLuminanceToSrgbGray(luminance: Float): Color {
+    val clamped = luminance.coerceIn(0f, 1f)
+    val encoded = if (clamped <= 0.0031308f) {
+        clamped * 12.92f
+    } else {
+        (1.055 * Math.pow(clamped.toDouble(), 1.0 / 2.4) - 0.055).toFloat().coerceIn(0f, 1f)
+    }
+    return Color(encoded, encoded, encoded, 1f)
+}
+
+internal fun brightenSpineColor(color: Color, whiteShare: Float = SPINE_BASE_LIGHTEN): Color =
+    androidx.compose.ui.graphics.lerp(color, Color.White, whiteShare)
+
+internal fun shelfSpineToneFromColor(baseColor: Color): SpineToneMetrics {
+    val lifted = brightenSpineColor(baseColor)
+    val top = androidx.compose.ui.graphics.lerp(lifted, Color.White, ShelfSpineScrimTop.alpha)
+    val bottom = androidx.compose.ui.graphics.lerp(lifted, Color.Black, ShelfSpineScrimBottom.alpha)
+    val lTop = top.luminance()
+    val lMid = lifted.luminance()
+    val lBot = bottom.luminance()
+    val darkest = when (minOf(lTop, lMid, lBot)) {
+        lBot -> bottom
+        lMid -> lifted
+        else -> top
+    }
+    return SpineToneMetrics(
+        avgLuminance = (lTop + lMid * 2f + lBot) * 0.25f,
+        minLuminance = minOf(lTop, lMid, lBot),
+        maxLuminance = maxOf(lTop, lMid, lBot),
+        darkestColor = darkest,
+    )
+}
+
+internal fun computeSpineWashTone(wash: ImageBitmap): SpineToneMetrics {
+    val bmp = wash.asAndroidBitmap()
+    if (bmp.isRecycled || bmp.width <= 0 || bmp.height <= 0) {
+        return SpineToneMetrics(0.18f, 0.12f, 0.25f)
+    }
+    val w = bmp.width
+    val h = bmp.height
+    val pixels = IntArray(w * h)
+    bmp.getPixels(pixels, 0, w, 0, 0, w, h)
+    val startY = (h * 0.10f).toInt().coerceIn(0, h - 1)
+    val endY = (h * 0.86f).toInt().coerceIn(startY, h - 1)
+    var sum = 0f
+    var count = 0
+    var minL = 1f
+    var maxL = 0f
+    var darkest: Color? = null
+    for (y in startY..endY) {
+        val t = y.toFloat() / (h - 1).coerceAtLeast(1)
+        for (x in 0 until w) {
+            val raw = Color(pixels[y * w + x])
+            val lifted = androidx.compose.ui.graphics.lerp(raw, Color.White, SPINE_WASH_LIFT_ALPHA)
+            val afterScrim = androidx.compose.ui.graphics.lerp(
+                androidx.compose.ui.graphics.lerp(lifted, Color.White, ShelfSpineScrimTop.alpha * (1f - t)),
+                Color.Black,
+                ShelfSpineScrimBottom.alpha * t,
+            )
+            val lum = afterScrim.luminance()
+            sum += lum
+            count++
+            if (lum < minL) {
+                minL = lum
+                darkest = afterScrim
+            }
+            if (lum > maxL) maxL = lum
+        }
+    }
+    val avg = if (count > 0) sum / count else 0.18f
+    return SpineToneMetrics(avgLuminance = avg, minLuminance = minL, maxLuminance = maxL, darkestColor = darkest)
+}
+
+internal fun resolveShelfSpineTitleAppearance(tone: SpineToneMetrics): ShelfSpineTitleAppearance {
+    val lightLum = ShelfSpineTitle.luminance()
+    val darkLum = ShelfSpineTitleDark.luminance()
+    val lightOnAvg = wcagContrastRatio(lightLum, tone.avgLuminance)
+    val darkOnAvg = wcagContrastRatio(darkLum, tone.avgLuminance)
+    val useLight = lightOnAvg >= darkOnAvg
+    val textColor = if (useLight) ShelfSpineTitle else ShelfSpineTitleDark
+    val textLum = if (useLight) lightLum else darkLum
+    val worstBg = if (useLight) tone.maxLuminance else tone.minLuminance
+    val rawWorst = wcagContrastRatio(textLum, worstBg)
+    if (rawWorst >= 4.5f) {
+        val halo = if (useLight) Color(0x520B0D12) else Color(0x66FFFDF7)
+        return ShelfSpineTitleAppearance(
+            textColor = textColor,
+            haloColor = halo,
+            veilColor = Color.Transparent,
+            needsStroke = rawWorst < 5.0f,
+            isLightText = useLight,
+            effectiveContrast = rawWorst,
+        )
+    }
+    val veilColor: Color
+    val effectiveWorstLum: Float
+    if (useLight) {
+        // 保证最亮区域经暗纱压低后对白字对比度 ≥ 4.5:1（目标 L ≤ 0.165）
+        val ratio = (0.165f / worstBg.coerceAtLeast(0.01f)).coerceIn(0f, 1f)
+        val targetAlpha = (1f - kotlin.math.sqrt(ratio)).coerceAtLeast(0.14f)
+        val cappedAlpha = targetAlpha.coerceAtMost(0.52f)
+        val cappedLum = worstBg * (1f - cappedAlpha) * (1f - cappedAlpha)
+        val alpha = if (wcagContrastRatio(textLum, cappedLum) >= 4.5f) cappedAlpha else targetAlpha
+        veilColor = Color.Black.copy(alpha = alpha)
+        effectiveWorstLum = worstBg * (1f - alpha) * (1f - alpha)
+    } else {
+        // 按绘制链相同的编码 sRGB SrcOver（Color.compositeOver）求亮纱最小 alpha，
+        // 确保最暗区域叠亮纱后对深色书名的真实 WCAG 对比度 ≥ 4.5:1。
+        val darkestBg = tone.darkestColor ?: linearLuminanceToSrgbGray(worstBg)
+        var lo = 0.14f
+        var hi = 1f
+        if (wcagContrastRatio(textLum, Color.White.copy(alpha = lo).compositeOver(darkestBg).luminance()) < 4.5f) {
+            repeat(18) {
+                val mid = (lo + hi) * 0.5f
+                val lum = Color.White.copy(alpha = mid).compositeOver(darkestBg).luminance()
+                if (wcagContrastRatio(textLum, lum) >= 4.52f) {
+                    hi = mid
+                } else {
+                    lo = mid
+                }
+            }
+            lo = hi
+        }
+        val alpha = lo.coerceIn(0.14f, 1f)
+        veilColor = Color.White.copy(alpha = alpha)
+        effectiveWorstLum = veilColor.compositeOver(darkestBg).luminance()
+    }
+    val halo = if (useLight) Color(0xD90C0E13) else Color(0xD9FFFDF7)
+    return ShelfSpineTitleAppearance(
+        textColor = textColor,
+        haloColor = halo,
+        veilColor = veilColor,
+        needsStroke = true,
+        isLightText = useLight,
+        effectiveContrast = wcagContrastRatio(textLum, effectiveWorstLum),
+    )
+}
 
 private val spineResultByWash = java.util.WeakHashMap<Bitmap, Color>()
+private val spineToneByWash = java.util.WeakHashMap<Bitmap, SpineToneMetrics>()
 
 /** 书脊烫印用的封面主色：优先复用后台色带计算结果，避免主线程 `getPixels` 阻塞。 */
 @Composable
@@ -1562,14 +1867,27 @@ internal fun rememberShelfSpineInk(wash: ImageBitmap?, engineColor: Color): Colo
     val bmp = wash?.asAndroidBitmap()
     return remember(bmp, engineColor) {
         if (bmp == null || bmp.isRecycled) {
-            engineColor
+            brightenSpineColor(engineColor)
         } else {
             synchronized(spineResultByWash) { spineResultByWash[bmp] } ?: shelfCoverTint(wash)
         }
     }
 }
 
-/** 书脊：封面色调的柔光底，顶部一道引擎色封条与烫金线，竖排宋体书名，书脚一对烫金线夹一枚引擎色小菱饰。 */
+/** 书脊标题区的亮度指标（后台计算随色带一起缓存；无封面时直接由引擎色算出）。 */
+@Composable
+internal fun rememberShelfSpineTone(wash: ImageBitmap?, engineColor: Color): SpineToneMetrics {
+    val bmp = wash?.asAndroidBitmap()
+    return remember(bmp, engineColor) {
+        if (bmp == null || bmp.isRecycled) {
+            shelfSpineToneFromColor(engineColor)
+        } else {
+            synchronized(spineToneByWash) { spineToneByWash[bmp] } ?: computeSpineWashTone(wash)
+        }
+    }
+}
+
+/** 书脊：封面色调的柔光底、同色封条与菱饰、烫金线和竖排宋体书名。 */
 @Composable
 private fun ShelfSpine(
     game: ScanGame,
@@ -1585,7 +1903,7 @@ private fun ShelfSpine(
     val title = if (hideTitleTag) GameTitleTags.stripAll(game.title) else game.title
     // 书脊不直接切封面（会切到封面上的标题字）：缩成一条极小的柔焦色带再拉伸，只保留封面的配色与上下渐变
     val wash = rememberShelfSpineWash(cover)
-    Box(modifier.background(engineColor)) {
+    Box(modifier.background(brightenSpineColor(engineColor))) {
         ShelfSpineFaceContent(
             title = title,
             coverHeight = dims.coverHeight,
@@ -1593,6 +1911,7 @@ private fun ShelfSpine(
             engineColor = engineColor,
             imageModifier = reveal.image(Modifier.fillMaxSize()),
             lastPlayed = isShelfLastPlayed(game),
+            spineWidth = dims.spineDepth,
         )
         // 背光压暗：独立覆盖层，滚动时只改它的透明度
         Box(Modifier.fillMaxSize().then(shadeOverlay()).background(ShelfFaceShade))
@@ -1605,7 +1924,7 @@ private fun ShelfSpine(
 
 private val spineWashCache = BoundedBitmapCache<SpineWashResult>(SPINE_WASH_CACHE_SIZE)
 
-/** 书脊底色用的封面柔焦色带：缓存命中即刻同步返回，未命中于后台一并生成色带与烫印主色。 */
+/** 书脊底色用的封面柔焦色带：缓存命中即刻同步返回，未命中于后台一并生成色带、烫印主色与亮度指标。 */
 @Composable
 internal fun rememberShelfSpineWash(cover: ImageBitmap?): ImageBitmap? {
     val source = cover?.asAndroidBitmap()
@@ -1618,10 +1937,15 @@ internal fun rememberShelfSpineWash(cover: ImageBitmap?): ImageBitmap? {
                 spineWashCache.getOrCompute(source) {
                     coverWash(cover, SPINE_WASH_WIDTH, SPINE_WASH_HEIGHT, 1)?.let { wash ->
                         val ink = shelfCoverTint(wash)
+                        val tone = computeSpineWashTone(wash)
+                        val washBmp = wash.asAndroidBitmap()
                         synchronized(spineResultByWash) {
-                            spineResultByWash[wash.asAndroidBitmap()] = ink
+                            spineResultByWash[washBmp] = ink
                         }
-                        SpineWashResult(wash, ink)
+                        synchronized(spineToneByWash) {
+                            spineToneByWash[washBmp] = tone
+                        }
+                        SpineWashResult(wash, ink, tone)
                     }
                 }?.wash
             }
@@ -1630,11 +1954,19 @@ internal fun rememberShelfSpineWash(cover: ImageBitmap?): ImageBitmap? {
     return computed
 }
 
-/** 书脊的底：封面柔焦色带 + 上浅下深的压暗 + 顶部一道引擎色封条（书架上的书脊与翻开的书起飞时的书脊共用）。 */
+/** 书脊的底：提亮后的封面柔焦色带 / 引擎色 + 轻透上下柔光 + 对比度适配纱 + 顶部封条。 */
 @Composable
-internal fun BoxScope.ShelfSpineBase(wash: ImageBitmap?, engineColor: Color, imageModifier: Modifier = Modifier.fillMaxSize()) {
+internal fun BoxScope.ShelfSpineBase(
+    wash: ImageBitmap?,
+    engineColor: Color,
+    imageModifier: Modifier = Modifier.fillMaxSize(),
+    adaptiveVeil: Color = Color.Transparent,
+    capColor: Color = engineColor,
+) {
     val scrimTop = ShelfSpineScrimTop
     val scrimBottom = ShelfSpineScrimBottom
+    val brightEngine = remember(engineColor) { brightenSpineColor(engineColor) }
+    val hasWash = wash?.takeUnless { it.asAndroidBitmap().isRecycled } != null
     wash?.takeUnless { it.asAndroidBitmap().isRecycled }?.let { bitmap ->
         Image(
             bitmap = bitmap,
@@ -1647,11 +1979,20 @@ internal fun BoxScope.ShelfSpineBase(wash: ImageBitmap?, engineColor: Color, ima
         Modifier
             .fillMaxSize()
             .drawWithCache {
+                val washLift = Color.White.copy(alpha = SPINE_WASH_LIFT_ALPHA)
                 val scrimBrush = Brush.verticalGradient(listOf(scrimTop, scrimBottom))
                 val capSize = androidx.compose.ui.geometry.Size(size.width, SPINE_CAP.toPx())
                 onDrawBehind {
+                    if (hasWash) {
+                        drawRect(washLift)
+                    } else {
+                        drawRect(brightEngine)
+                    }
                     drawRect(scrimBrush)
-                    drawRect(engineColor, topLeft = Offset.Zero, size = capSize)
+                    if (adaptiveVeil.alpha > 0.002f) {
+                        drawRect(adaptiveVeil)
+                    }
+                    drawRect(if (hasWash) capColor else brightEngine, topLeft = Offset.Zero, size = capSize)
                 }
             },
     )
@@ -3011,7 +3352,8 @@ private fun shelfSpeedLabel(speed: Float): String = when {
     else -> "1/10"
 }
 
-/** 封面宽度上限（容器宽度比例；游戏很少时更大）与下限。 */
+/** 封面宽高比（宽 / 高 = 3 / 4）与宽度上限（容器宽度比例；游戏很少时更大）与下限。 */
+internal const val SHELF_COVER_ASPECT_RATIO = 0.75f
 private const val COVER_WIDTH_RATIO = 0.5f
 private const val COVER_WIDTH_RATIO_FEW = 0.5f
 private val MIN_COVER_WIDTH = 96.dp
@@ -3061,7 +3403,7 @@ private val STAGE_TOP_ROOM = 8.dp
 /** 搁板（倒影区）深度占盒子高度的比例。 */
 private const val FLOOR_RATIO = 0.14f
 private val MIN_STAGE_HEIGHT = LIFT_ROOM + STAGE_TOP_ROOM + SHELF_BELOW_BOARD.dp +
-    MIN_COVER_WIDTH * (4f / 3f * (1f + FLOOR_RATIO + LIFT_ROOM_RATIO))
+    MIN_COVER_WIDTH * ((1f / SHELF_COVER_ASPECT_RATIO) * (1f + FLOOR_RATIO + LIFT_ROOM_RATIO))
 
 /** 居中盒子脚下与身后那团光（封面主色）的透明度。 */
 private const val LEDGE_GLOW_ALPHA = 0.42f
@@ -3070,12 +3412,11 @@ private const val LEDGE_GLOW_ALPHA = 0.42f
 private const val MAX_BEYOND_BOOKS = 24
 private val ROW_END_MARGIN = 12.dp
 
-/** 书脊：顶部封条高度、竖排文字起点与行高、书腰高度（占盒子高度）、柔焦色带采样尺寸（像素）。 */
+/** 书脊：顶部封条高度、书脊最多排几个字（中日文竖排 / 西文侧转）、字体动态缩放上下限与提亮参数。 */
 internal val SPINE_CAP = 3.dp
-private val SPINE_TITLE_TOP = 12.dp
 
 /** 书脊上最多排几个字：中日文逐字竖排时、西文整行侧转时。 */
-private const val SPINE_MAX_CHARS = 8
+private const val SPINE_MAX_CHARS = 10
 private const val SPINE_MAX_LATIN_CHARS = 16
 
 /** 拖动进度时气泡里书名最多几个字。 */
@@ -3088,9 +3429,20 @@ private const val SUMMARY_MAX_CHARS = 12
 /** CJK 字符区的起点（之前的都算西文）；西文字符占到这个比例的书名整行侧转。 */
 private const val CJK_START = 0x2E80
 private const val LATIN_SHARE = 0.7f
-private val SPINE_LINE_HEIGHT = 13.sp
+/** 书脊文字的基准：原来手机书架书脊（约 32dp 宽）上的字号 11、行高 13、书名起点 12、顶上封条 3（dp）。 */
+private const val SPINE_TEXT_REF_WIDTH_DP = 32f
+private const val SPINE_TEXT_BASE_FONT_DP = 11f
+private const val SPINE_TEXT_BASE_LINE_DP = 13f
+private const val SPINE_TEXT_BASE_TOP_DP = 12f
+private const val SPINE_TEXT_BASE_CAP_DP = 3f
+/** 缩放下限 / 上限：再窄的书脊字也不小于原字号的 0.85 倍，再宽的书脊（平板、藏书阁）最多放大到 1.9 倍。 */
+private const val SPINE_TEXT_MIN_SCALE = 0.85f
+private const val SPINE_TEXT_MAX_SCALE = 1.9f
+private const val SPINE_BASE_LIGHTEN = 0.22f
+private const val SPINE_WASH_LIFT_ALPHA = 0.18f
 private const val SPINE_FOOT_RATIO = 0.12f
 private const val SPINE_FOIL_LIGHTEN = 0.62f
+private const val SPINE_FOIL_DARKEN = 0.45f
 private val SPINE_TAG_WIDTH = 4.dp
 private val SPINE_TAG_LENGTH = 11.dp
 private const val SPINE_WASH_WIDTH = 4

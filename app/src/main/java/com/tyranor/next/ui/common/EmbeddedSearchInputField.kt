@@ -19,8 +19,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.autofill.contentType
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.password
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -59,17 +61,29 @@ internal fun EmbeddedSearchInputField(
     keyboardType: KeyboardType = KeyboardType.Text,
     imeAction: ImeAction = ImeAction.Search,
     autofillContentType: ContentType? = null,
+    enabled: Boolean = true,
 ) {
     BasicTextField(
         value = query,
         onValueChange = onQueryChange,
+        enabled = enabled,
+        readOnly = !enabled,
         modifier = modifier
-            .then(autofillContentType?.let { Modifier.contentType(it) } ?: Modifier)
             .then(
-                if (autofillContentType == ContentType.Password || keyboardType == KeyboardType.Password) {
-                    Modifier.semantics { password() }
+                if (enabled) {
+                    Modifier
+                        .then(autofillContentType?.let { Modifier.contentType(it) } ?: Modifier)
+                        .then(
+                            if (autofillContentType == ContentType.Password || keyboardType == KeyboardType.Password) {
+                                Modifier.semantics { password() }
+                            } else {
+                                Modifier
+                            },
+                        )
                 } else {
                     Modifier
+                        .focusProperties { canFocus = false }
+                        .clearAndSetSemantics { }
                 },
             ),
         singleLine = true,
@@ -79,7 +93,7 @@ internal fun EmbeddedSearchInputField(
         visualTransformation = visualTransformation,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
         // Done 与 Search 都映射到 onSearch：密码等场景以「完成」键触发确认（见调用方传参）
-        keyboardActions = KeyboardActions(onSearch = { onSearch() }, onDone = { onSearch() }),
+        keyboardActions = KeyboardActions(onSearch = { if (enabled) onSearch() }, onDone = { if (enabled) onSearch() }),
         decorationBox = { innerTextField ->
             Box(
                 modifier = Modifier.background(MiuixTheme.colorScheme.surfaceContainerHigh, CircleShape),
@@ -103,14 +117,18 @@ internal fun EmbeddedSearchInputField(
                             contentAlignment = Alignment.CenterStart,
                         ) {
                             Icon(
-                                modifier = Modifier.pressSquish().clip(CircleShape).clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                    onClick = { onQueryChange("") },
-                                ),
+                                modifier = if (enabled) {
+                                    Modifier.pressSquish().clip(CircleShape).clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                        onClick = { onQueryChange("") },
+                                    )
+                                } else {
+                                    Modifier.clip(CircleShape).clearAndSetSemantics { }
+                                },
                                 imageVector = MiuixIcons.Basic.SearchCleanup,
                                 tint = MiuixTheme.colorScheme.onSurfaceContainerHighest,
-                                contentDescription = stringResource(R.string.common_clear_input_content_description),
+                                contentDescription = if (enabled) stringResource(R.string.common_clear_input_content_description) else null,
                             )
                         }
                     }
