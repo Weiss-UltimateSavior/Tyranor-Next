@@ -613,11 +613,22 @@ internal class RpgMakerLocalHttpServer(
         }
         if (asar != null) {
             val normalizedUri = uri.replace(DOT_SEGMENT, "/").replace(DOUBLE_SLASH, "/")
+            // MZ 混合加密工程的补丁素材在包里是**明文**（不带尾随 `_`），而 MZ 仍按 `_`
+            // 请求；上面的磁盘回退对 asar 会话无效（包内条目不在磁盘上），所以这里必须
+            // 再回退一次。只在直接命中失败后做，带 `_` 的条目仍然优先。
+            val asarCandidates = if (mzSession && normalizedUri.endsWith("_")) {
+                val plain = normalizedUri.dropLast(1)
+                listOf(asarRootPrefix + plain, plain, asarRootPrefix + plain.lowercase(Locale.ROOT), plain.lowercase(Locale.ROOT))
+            } else {
+                emptyList()
+            }
             // 大条目优先流式：媒体需要 Range/seek，整段 ByteArray 有 OOM 风险（PR review 意见）
             for (p in listOf(asarRootPrefix + normalizedUri, normalizedUri,
-                    asarRootPrefix + normalizedUri.lowercase(Locale.ROOT), normalizedUri.lowercase(Locale.ROOT))) {
+                    asarRootPrefix + normalizedUri.lowercase(Locale.ROOT), normalizedUri.lowercase(Locale.ROOT)) +
+                asarCandidates) {
                 val streamed = asar.openStream(p) ?: continue
                 if (streamed.second >= ASAR_STREAM_THRESHOLD) {
+                    if (p in asarCandidates) Log.i(TAG, "resource fallback mz-encrypted->plain(asar) $uri -> $p")
                     return ResolvedFile(null, null, streamed.first, streamed.second)
                 }
                 runCatching { streamed.first.close() }
@@ -625,6 +636,11 @@ internal class RpgMakerLocalHttpServer(
             val data = asar.read(asarRootPrefix + normalizedUri) ?: asar.read(normalizedUri)
                 ?: asar.read(asarRootPrefix + normalizedUri.lowercase(Locale.ROOT)) ?: asar.read(normalizedUri.lowercase(Locale.ROOT))
             if (data != null) return ResolvedFile(null, data)
+            for (p in asarCandidates) {
+                val fallback = asar.read(p) ?: continue
+                Log.i(TAG, "resource fallback mz-encrypted->plain(asar) $uri -> $p")
+                return ResolvedFile(null, fallback)
+            }
             if (uri.equals("index.html", true) || uri.equals("index.htm", true)) {
                 var indexBytes = asar.read("index.html")
                 if (indexBytes == null) indexBytes = asar.read("www/index.html")
