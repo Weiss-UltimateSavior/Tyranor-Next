@@ -1616,7 +1616,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                     rpgEffekseerModeOptions().toMap(),
                                     globalRpgEffekseerMode,
                                     rpgEffekseerMode,
-                                ) { rpgEffekseerMode = it.orEmpty() }
+                                ) { rpgEffekseerMode = it }
                                 OverrideSwitch(
                                     stringResource(R.string.engine_settings_rpg_audio_streaming),
                                     globalRpgAudioStreaming,
