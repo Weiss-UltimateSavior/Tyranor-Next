@@ -562,10 +562,14 @@ async function runTests() {
         const makeMzV2Env = (sessionCfg) => {
             const saveDataManager = createSaveBridgeMock();
             const timers = [];
+            const intervals = [];
             const sandbox = {
                 console,
                 setTimeout: (fn) => { timers.push(fn); return timers.length; },
                 clearTimeout: () => {},
+                // 基础层 polyfill 里 pinIsNwjs 用了 setInterval；缺它会在求值期直接 ReferenceError
+                setInterval: (fn) => { intervals.push(fn); return intervals.length; },
+                clearInterval: () => {},
                 saveDataManager,
                 StorageManager: {
                     objectToJson: (obj) => Promise.resolve(JSON.stringify(obj)),
@@ -577,6 +581,15 @@ async function runTests() {
                 },
                 navigator: { userAgent: 'Mozilla/5.0 (Linux; Android 13) Chrome/124.0.0.0 Mobile' },
             };
+            // 基础层 polyfill 会注册 window/document 事件：订阅表要能接收
+            sandbox.addEventListener = function (type, fn) {
+                (sandbox.__listeners = sandbox.__listeners || {});
+                (sandbox.__listeners[type] = sandbox.__listeners[type] || []).push(fn);
+            };
+            sandbox.removeEventListener = function () {};
+            sandbox.dispatchEvent = function () { return true; };
+            sandbox.document.addEventListener = sandbox.addEventListener;
+            sandbox.document.removeEventListener = sandbox.removeEventListener;
             sandbox.window = sandbox;
             sandbox.globalThis = sandbox;
             if (sessionCfg) sandbox.__tyranorRpg = sessionCfg;
@@ -589,11 +602,19 @@ async function runTests() {
         };
 
         // --- 9a: effekseer:false —— 桩必须拦住库的自我赋值 ---
+        // 注意：桩**不是**让全局变 undefined。MZ 的 main.js 会无判空地调
+        // effekseer.initRuntime(...)，undefined 会在那行抛错、启动断在 SceneManager.run
+        // 之前（详见 9k）。正确形态是「带 initRuntime 的静默桩」。
         const blocked = makeMzV2Env({ engine: 'MZ', version: 'v2', effekseer: false, audioStreaming: true });
         blocked.runCode(RpgEffekseerGateStubSource(), 'earlyHtml-stub.js');
         // effekseer.min.js 求值时的自我赋值（IIFE 形态，挂到全局）
         blocked.runCode('window.effekseer = { createContext: function () { return {}; } };', 'effekseer.min.js');
-        check('9a effekseer:false 时全局仍是 undefined', typeof blocked.sandbox.effekseer === 'undefined');
+        check(
+            '9a effekseer:false 时全局保留静默桩（不被库的自我赋值覆盖）',
+            blocked.sandbox.effekseer &&
+                typeof blocked.sandbox.effekseer.initRuntime === 'function' &&
+                blocked.sandbox.effekseer.createContext() === null,
+        );
 
         // --- 9b: lateHook 在 Graphics 尚未定义时不得抛错，且稍后能装上兜底 ---
         let lateHookThrew = null;
@@ -676,42 +697,182 @@ async function runTests() {
         );
 
         // --- 9h: 桩生效时 MZ 仍必须能启动到 SceneManager.run ---
-        // 桩把 window.effekseer 永久变成 undefined。MZ 的 main.js 在 SceneManager.run
-        // 之前会调 effekseer.initRuntime(wasm)；若那个调用点没有空值保护，装桩就会
-        // 在启动期抛错、SceneManager.run 永不执行——表现为黑屏，而阶段 H 的 15s
-        // 超时会把这种失败伪装成「揭开得慢一点」。
+        // 真实 main.js（MZ 1.9.0）在 SceneManager.run 之前会调
+        // effekseer.initRuntime(wasm, onLoad, onError)，**且没有判空**；
+        // onLoad 是进入 SceneManager.run 的唯一入口。桩必须保留 initRuntime 并
+        // 按成功路径回调，否则启动链断在这行、页面黑屏。
         {
             const boot = makeMzV2Env({ engine: 'MZ', version: 'v2', effekseer: false, audioStreaming: true });
             boot.runCode(RpgEffekseerGateStubSource(), 'earlyHtml-stub.js');
             // effekseer.min.js 求值（IIFE 形态，自我赋值被桩吞掉）
             boot.runCode('window.effekseer = { createContext: function () { return {}; } };', 'effekseer.min.js');
-            // main.js 的 initRuntime：真实 corescript 里这一步在 SceneManager.run 之前
-            // 用 try/catch + 判空写（本用例按此契约模拟），桩生效时它应当什么也不做
             boot.runCode(
                 'window.__bootLog = [];\n' +
-                'window.effekseerRuntimeReady = false;\n' +
-                'var mainInit = function () {\n' +
-                '  try {\n' +
-                '    if (!window.effekseer || typeof window.effekseer.initRuntime !== "function") {\n' +
-                '      window.__bootLog.push("effekseer-skipped");\n' +
-                '      return;\n' +
-                '    }\n' +
-                '    window.effekseer.initRuntime("js/libs/effekseer.wasm");\n' +
-                '    window.effekseerRuntimeReady = true;\n' +
-                '  } catch (e) { window.__bootLog.push("effekseer-threw:" + e.message); }\n' +
-                '};\n' +
-                'window.Graphics = { _createEffekseerContext: function () { this._effekseer = "real"; } };\n' +
+                'window.__sceneRan = false;\n' +
                 'window.SceneManager = { run: function () { window.__sceneRan = true; } };\n' +
-                'mainInit();\n' +
-                'if (!window.effekseerRuntimeReady) window.SceneManager.run();',
+                'try {\n' +
+                '  effekseer.initRuntime("js/libs/effekseer.wasm",\n' +
+                '    function () { window.__bootLog.push("onLoad"); window.SceneManager.run(); },\n' +
+                '    function () { window.__bootLog.push("onError"); });\n' +
+                '} catch (e) { window.__bootLog.push("threw:" + e.message); }',
                 'main.js',
             );
             check(
                 '9h 桩生效时启动链不抛错，SceneManager.run 仍被调用',
                 boot.sandbox.__sceneRan === true &&
                     boot.sandbox.__bootLog.length === 1 &&
-                    boot.sandbox.__bootLog[0] === 'effekseer-skipped',
+                    boot.sandbox.__bootLog[0] === 'onLoad',
                 JSON.stringify(boot.sandbox.__bootLog) + ' sceneRan=' + String(boot.sandbox.__sceneRan),
+            );
+        }
+
+        // --- 9i: MZ 1.2.0 的 main.js 会调 nw.Window.get().on('close', ...) ---
+        // 真机症状：Main.run() 第一句就抛
+        //   TypeError: nw.Window.get(...).on is not a function
+        // 于是 loadMainScripts() 从未执行，rmmz_core.js 一个请求都没发出，页面永远黑屏
+        // （只有阶段 H 的 15s 超时把黑屏揭开）。基础层 nw.gui 的 winStub 缺 .on。
+        {
+            const win = makeMzV2Env({ engine: 'MZ', version: 'v2', effekseer: true, audioStreaming: true });
+            // 只加载基础层 —— 真机上 v2 层虽然也在，但 nw.gui 的 winStub 由基础层创建
+            win.runCode(NWJS_POLYFILL_CODE, '__nwjs_polyfill.js');
+            let stubOk = false;
+            let detail = '';
+            try {
+                const w = win.sandbox.nw.Window.get();
+                stubOk = typeof w.on === 'function' && typeof w.removeListener === 'function';
+                if (!stubOk) {
+                    detail = 'on=' + typeof w.on + ' removeListener=' + typeof w.removeListener;
+                } else {
+                    // NW.js 的语义：on/once/removeListener 都要能链式调用且不抛
+                    let fired = 0;
+                    w.on('close', function () { fired++; });
+                    w.once('close', function () { fired++; });
+                    w.emit('close');
+                    stubOk = fired === 2;
+                    detail = 'close handlers fired=' + fired;
+                }
+            } catch (err) {
+                stubOk = false;
+                detail = String(err && err.message || err);
+            }
+            check(
+                '9i nw.Window.get() 必须提供 on/once/removeListener/emit（MZ 1.2 main.js 的 hookNwjsClose）',
+                stubOk,
+                detail,
+            );
+        }
+
+        // --- 9j: 按 MZ 1.2.0 的 Main.run() 顺序跑一遍，确认能走到脚本加载 ---
+        // 依真机日志回推的调用序：Main.run() → hookNwjsClose()（nw.Window.get().on）
+        // → showLoadingSpinner() → testXhr() → loadMainScripts()。
+        // 任何一步抛错，loadMainScripts 就不会执行，页面永远不会有 rmmz_core.js 请求。
+        {
+            const boot = makeMzV2Env({ engine: 'MZ', version: 'v2', effekseer: true, audioStreaming: true });
+            boot.runCode(NWJS_POLYFILL_CODE, '__nwjs_polyfill.js');
+            const result = boot.runCode(`
+                window.__bootTrace = [];
+                var Main = function () { this.xhrSucceeded = false; this.loadCount = 0; };
+                Main.prototype.run = function () {
+                    this.hookNwjsClose();
+                    this.showLoadingSpinner();
+                    this.testXhr();
+                    this.loadMainScripts();
+                };
+                Main.prototype.hookNwjsClose = function () {
+                    if (typeof nw === "undefined" || !nw.Window) return;
+                    var win = nw.Window.get();
+                    win.on("close", function () { window.__bootTrace.push("close-hook"); });
+                };
+                Main.prototype.showLoadingSpinner = function () { window.__bootTrace.push("spinner"); };
+                Main.prototype.testXhr = function () { window.__bootTrace.push("xhr"); };
+                Main.prototype.loadMainScripts = function () { window.__bootTrace.push("loadScripts"); };
+                try {
+                    new Main().run();
+                    String(window.__bootTrace.join(","));
+                } catch (e) {
+                    "threw:" + e.message;
+                }
+            `, 'main.js');
+            check(
+                '9j MZ 1.2 的 Main.run() 全程不抛错并走到 loadMainScripts',
+                result === 'spinner,xhr,loadScripts',
+                String(result),
+            );
+            // 关闭事件也要能真的派发（用户按返回键时游戏靠它存盘/退出）
+            const emitted = boot.runCode(`
+                (function () {
+                    try { nw.Window.get().emit("close"); } catch (e) { return "emit-threw:" + e.message; }
+                    return String(window.__bootTrace.join(","));
+                })()
+            `, 'close.js');
+            check(
+                '9j nw.Window.get().emit("close") 能派发到已注册的处理器',
+                emitted === 'spinner,xhr,loadScripts,close-hook',
+                String(emitted),
+            );
+        }
+
+        // --- 9k: 按这台设备上真实的 MZ 1.9.0 main.js 跑启动链 ---
+        // 真实 main.js 的两处坑（Huntsman，v1.9.0）：
+        //   :62  nw.Window.get().on("close", ...)     —— 缺 .on 会在 run() 里直接抛
+        //   :145 effekseer.initRuntime(wasm, onLoad, onError) —— **无判空**
+        // 若桩把 window.effekseer 置成 undefined，145 行必抛 → onLoad 不会被调用
+        // → SceneManager.run 永不执行 → 黑屏。所以桩必须是「带 initRuntime 的静默实现」，
+        // 并且要主动回调 onLoad，让游戏照常启动，只是没有粒子。
+        {
+            const boot = makeMzV2Env({ engine: 'MZ', version: 'v2', effekseer: false, audioStreaming: true });
+            boot.runCode(NWJS_POLYFILL_CODE, '__nwjs_polyfill.js');
+            boot.runCode(RpgEffekseerGateStubSource(), 'earlyHtml-stub.js');
+            const trace = boot.runCode(`
+                window.__trace = [];
+                window.SceneManager = { run: function () { window.__trace.push("sceneRun"); } };
+                // 模拟 effekseer.min.js 求值：它会给 window.effekseer 赋值
+                try {
+                    window.effekseer = {
+                        createContext: function () { return { init: function () {}, setRestorationOfStatesFlag: function () {} }; },
+                        initRuntime: function (url, onLoad) {
+                            window.__trace.push("initRuntime:" + url);
+                            if (typeof onLoad === "function") onLoad();
+                        }
+                    };
+                } catch (e) { window.__trace.push("assign-threw:" + e.message); }
+
+                // 真实 MZ 1.9 main.js 的启动链（去掉 DOM 部分）
+                try {
+                    if (typeof nw === "object") {
+                        nw.Window.get().on("close", function () { nw.App.quit(); });
+                        window.__trace.push("closeHook");
+                    }
+                    // :142-146 initEffekseerRuntime —— 无判空
+                    effekseer.initRuntime("js/libs/effekseer.wasm",
+                        function () { window.__trace.push("onLoad"); window.SceneManager.run(); },
+                        function () { window.__trace.push("onError"); });
+                } catch (e) {
+                    window.__trace.push("threw:" + e.message);
+                }
+                String(window.__trace.join(","));
+            `, 'main.js');
+            check(
+                '9k Effekseer 桩生效时 MZ 1.9 的启动链仍走到 SceneManager.run（initRuntime 无判空）',
+                trace.indexOf('closeHook') >= 0 && trace.indexOf('onLoad') >= 0 && trace.indexOf('threw:') < 0,
+                String(trace),
+            );
+            // 桩生效时仍不能真的创建 Effekseer context（那才是会杀进程的 WASM 实例化）
+            const ctx = boot.runCode(`
+                (function () {
+                    try {
+                        var g = window.effekseer;
+                        if (!g) return "no-global";
+                        if (typeof g.createContext !== "function") return "no-createContext";
+                        var c = g.createContext();
+                        return c ? "created" : "null";
+                    } catch (e) { return "threw:" + e.message; }
+                })()
+            `, 'ctx.js');
+            check(
+                '9k 桩生效时不创建 Effekseer context（阻止 WASM 实例化）',
+                ctx === 'null' || ctx === 'no-createContext',
+                String(ctx),
             );
         }
 
@@ -746,10 +907,16 @@ function RpgEffekseerGateStubSource() {
         (function () {
           var cfg = window.__tyranorRpg;
           if (!cfg || cfg.effekseer !== false) return;
+          var silent = {
+            initRuntime: function (url, onLoad) {
+              if (typeof onLoad === "function") onLoad();
+            },
+            createContext: function () { return null; }
+          };
           try {
             Object.defineProperty(window, "effekseer", {
               configurable: true,
-              get: function () { return undefined; },
+              get: function () { return silent; },
               set: function () {}
             });
           } catch (e) {}

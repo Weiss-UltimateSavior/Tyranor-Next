@@ -22,6 +22,14 @@
 
     // Effekseer 闸门的第二道保险。earlyHtml 里的 setter 拦截是主力（必须早于
     // effekseer.min.js），这里兜住「全局已存在且不可重定义」等漏网情况。
+    //
+    // 注意语义：**不是**把 window.effekseer 抹掉。MZ 的 main.js 在
+    // initEffekseerRuntime() 里无判空地调 effekseer.initRuntime(wasm, onLoad, onError)，
+    // 而 onLoad 是进入 SceneManager.run 的唯一入口（实测样本 MZ 1.9.0 main.js:142-151）。
+    // 全局为 undefined 会直接 TypeError、启动断在黑屏。所以桩要保留 initRuntime 并
+    // 回调 onLoad，只让 createContext 返回空——Graphics 对空 context 是容忍的
+    // （Sprite_Animation 直接不播），且不会实例化 WASM。
+    //
     // Graphics 尚未定义时必须有界等待：MZ 的 rmmz_core.js 由 main.js 动态插入，
     // 到这里可能还没求值。
     if (cfg.effekseer === false) {

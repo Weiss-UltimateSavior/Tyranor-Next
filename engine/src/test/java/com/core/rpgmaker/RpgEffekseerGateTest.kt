@@ -1,6 +1,7 @@
 package com.core.rpgmaker
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -102,19 +103,24 @@ class RpgEffekseerGateTest {
     }
 
     /**
-     * 桩必须做成 setter 拦截，而不是置一次 undefined：`effekseer.min.js` 求值时会把
-     * `window.effekseer` 赋成对象，一次性赋值会被库覆盖回去。
+     * 桩必须保留 `initRuntime` 并回调 `onLoad`，**不能**把全局变成 undefined。
+     *
+     * RPG Maker MZ 的 `main.js` 在 `initEffekseerRuntime()` 里无判空地调
+     * `effekseer.initRuntime(wasmUrl, onLoad, onError)`，而 `onLoad` 是
+     * `SceneManager.run(Scene_Boot)` 的唯一入口（实测样本 MZ 1.9.0 `main.js:142-151`）。
+     * 全局为 undefined 会在这行抛 TypeError，启动断在场景之前——页面只是黑着，
+     * 只有启动超时把黑屏揭开，比闪退更难定位。
      */
     @Test
-    fun stubScriptInterceptsAssignmentToTheGlobal() {
+    fun stubScriptKeepsInitRuntimeAndCompletesTheBootCallback() {
         val stub = RpgEffekseerGate.effekseerStubScript()
-        assertTrue(stub, stub.contains("defineProperty"))
-        assertTrue(stub, stub.contains("\"effekseer\""))
-        assertTrue("必须带 setter，否则库的自我赋值会把桩覆盖掉", stub.contains("set:"))
-        // 只有会话标记为 false 时才安装：标记缺失/为真时必须原样放行
-        assertTrue(stub, stub.contains("__tyranorRpg"))
-        assertTrue(stub, stub.contains("cfg.effekseer !== false"))
-        assertTrue("不满足条件要早退，不能继续装桩", stub.contains("return;"))
+        assertTrue("必须有 initRuntime，main.js 会无判空地调用它", stub.contains("initRuntime"))
+        assertTrue("必须按成功路径回调 onLoad，否则 SceneManager.run 永不执行", stub.contains("onLoad"))
+        assertTrue("createContext 必须返回空值，才真的不实例化 WASM", stub.contains("createContext"))
+        assertTrue("必须是 setter 拦截，否则会被库的自我赋值覆盖", stub.contains("set:") && stub.contains("defineProperty"))
+        // 用 setter 吞掉赋值，但 getter 必须返回静默桩而不是 undefined
+        assertFalse("getter 不能返回 undefined（会让 main.js 抛错）", stub.contains("return undefined;"))
+        assertTrue(stub.contains("get: function () { return silent; }"))
     }
 
     /**

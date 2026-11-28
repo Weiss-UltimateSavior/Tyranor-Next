@@ -71,21 +71,40 @@ internal object RpgEffekseerGate {
     /**
      * Effekseer 桩：在 `</head>` 之前安装，必须早于 `js/libs/effekseer.min.js`。
      *
-     * 用 **setter 拦截**而不是置一次 `undefined`：库求值时会把 `window.effekseer`
-     * 赋成对象，一次性赋值会被覆盖回去。若这个库是 UMD 包装，它会走
-     * `module.exports = factory()` 而不碰全局——此时拦截形同虚设，但效果反而更干净
-     * （库根本没挂到全局），两种形态都不需要额外处理。
+     * **不能把 `window.effekseer` 置成 `undefined`**：RPG Maker MZ 的 `main.js`
+     * 在 `initEffekseerRuntime()` 里**无判空地**调用
+     * `effekseer.initRuntime(wasmUrl, onLoad, onError)`，而 `onLoad` 是
+     * `SceneManager.run(Scene_Boot)` 的唯一入口（MZ 1.9.0 `main.js:142-151`，本仓库
+     * 实测样本即此版本）。全局为 undefined 会在这行直接抛 TypeError，启动链断在
+     * `SceneManager.run` 之前——比闪退更难查，因为页面只是黑着。
+     *
+     * 正确形态是**静默桩**：保留一个带 `initRuntime` 的对象，被调用时按成功路径回调
+     * `onLoad`（让游戏照常启动），但 `createContext` 返回 `null`。`Graphics._createEffekseerContext`
+     * 对 `createContext` 返回空值是容忍的（`this._effekseer` 为空时 `Sprite_Animation`
+     * 直接不播），所以代价只是没有粒子，**且真的不会实例化 WASM**——那才是杀进程的根源。
+     *
+     * 用 setter 拦截而不是置一次值：`effekseer.min.js` 求值时会给全局赋值，一次性
+     * 赋值会被覆盖回去。若该库是 UMD 包装而根本不碰全局，本桩同样成立（全局就是桩）。
      */
     fun effekseerStubScript(): String = """
         <script>
         (function () {
           var cfg = window.__tyranorRpg;
           if (!cfg || cfg.effekseer !== false) return;
+          var silent = {
+            initRuntime: function (url, onLoad) {
+              // 不上传 WASM、不建 context；按成功路径回调，让 main.js 继续到 SceneManager.run
+              if (typeof onLoad === "function") {
+                try { onLoad(); } catch (e) { /* 游戏自己的回调异常不吞掉后续 */ throw e; }
+              }
+            },
+            createContext: function () { return null; }
+          };
           try {
             Object.defineProperty(window, "effekseer", {
               configurable: true,
-              get: function () { return undefined; },
-              set: function () { /* 忽略 effekseer.min.js 的自我赋值 */ }
+              get: function () { return silent; },
+              set: function () { /* 忽略 effekseer.min.js 的自我赋值：保留静默桩 */ }
             });
           } catch (e) { /* 已不可配置（脚本已求值过）：交给 lateHook 兜底 */ }
         })();

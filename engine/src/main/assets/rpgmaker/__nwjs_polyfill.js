@@ -231,7 +231,48 @@
         escape: encodeURIComponent, unescape: decodeURIComponent
     };
     var nwGuiStub = (function () {
+        // NW.js 的 Window 是 EventEmitter：on / once / removeListener / emit 都在原型上。
+        // RPG Maker MZ **1.2.0** 的 main.js 在 Main.run() 的第一步就调
+        // `nw.Window.get().on("close", ...)`（hookNwjsClose），缺这几个方法会直接抛
+        // TypeError，loadMainScripts() 一个脚本都不会加载——表现为整页黑屏，
+        // 而只有启动超时把它揭开（真机日志：
+        //   TypeError: nw.Window.get(...).on is not a function @ js/main.js:62:29）。
+        var winListeners = {};
         var winStub = {
+            on: function (type, fn) {
+                (winListeners[type] = winListeners[type] || []).push(fn);
+                return this;
+            },
+            once: function (type, fn) {
+                var self = this;
+                var wrapper = function () {
+                    self.removeListener(type, wrapper);
+                    return fn.apply(self, arguments);
+                };
+                wrapper.__onceFor = fn;
+                return this.on(type, wrapper);
+            },
+            addListener: function (type, fn) { return this.on(type, fn); },
+            removeListener: function (type, fn) {
+                var list = winListeners[type];
+                if (!list) return this;
+                winListeners[type] = list.filter(function (item) {
+                    return item !== fn && item.__onceFor !== fn;
+                });
+                return this;
+            },
+            removeAllListeners: function (type) {
+                if (typeof type === "undefined") winListeners = {};
+                else delete winListeners[type];
+                return this;
+            },
+            emit: function (type) {
+                var args = Array.prototype.slice.call(arguments, 1);
+                (winListeners[type] || []).slice().forEach(function (fn) {
+                    try { fn.apply(winStub, args); } catch (e) {}
+                });
+                return this;
+            },
             close: function () {}, showDevTools: function () {}, focus: function () {}, blur: function () {},
             moveBy: function () {}, resizeBy: function () {}, moveTo: function () {}, resizeTo: function () {},
             setMinimumSize: function () {}, setMaximumSize: function () {}, setResizable: function () {},
