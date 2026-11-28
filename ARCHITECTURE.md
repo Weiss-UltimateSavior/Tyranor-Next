@@ -116,6 +116,8 @@ CMVS 运行库通过 JNI 请求 `CmvsActivity` 打开、读取或关闭存档备
 
 v1/v2 会话的 NW.js 兼容层由本地服务器以 `/__tyranor__/nwjs_polyfill*.js` 外链提供（base→v1→v2 按序、先于 `</head>` 之后的脚本，末尾哨兵校验完整性），首页只保留 `<script src>`；会话版本经 `window.__tyranorRpg` 下发，供渲染器补丁决定归属。
 
+注入资产按会话分家：`assets/` 根只放不分会话的共享脚本（`__rmmz__.js`、`__tyranor_mouse.js` 等），会话专有脚本进 `assets/rpgmaker/`——`rpgmv-v1/` 是 MV v1 的核心覆盖包，`mz/` 是 MZ v2（`TynMZ-0.2`）的 lateHook 与两个 scriptAppends。MZ 的 `main.js` 动态插入 `rmmz_core.js` / `rmmz_managers.js`，而 `</body>` 前的 lateHook 在解析期就同步执行完，所以 MZ 侧任何依赖 `Graphics` / `SceneManager` 的改动都必须走事件或能力探测 + 有界重试，不能写在顶层。Effekseer 桩是唯一例外：它必须早于 `js/libs/effekseer.min.js`，因此由 [RpgEffekseerGate](engine/src/main/java/com/core/rpgmaker/RpgEffekseerGate.kt) 拼进 `earlyHtml`（`</head>` 之前），并以 setter 拦截实现——一次性置 `undefined` 会被库的自我赋值覆盖。
+
 RPG Maker v2 的插件 `localStorage` 由兼容层调用 [RpgMakerFsBridge](engine/src/main/java/com/core/rpgmaker/RpgMakerFsBridge.kt) 同步持久接收；[RpgMakerStoragePendingJournal](engine/src/main/java/com/core/rpgmaker/RpgMakerStoragePendingJournal.kt) 在游戏目录 `AppData/Local Storage` 保存恢复队列。JS 在接收成功后更新镜像，`.dat` 合并写只负责物化。存储目录锁覆盖接收、claim 重放和物化确认，锁序为目录 → 队列/路径；同目录由 `:rpgmaker` 单进程内多个文档共享。页面兼容层在游戏脚本之前完成恢复，失败保留队列并抛 Storage 未就绪错误；Activity 销毁回调与看门狗不再承担数据交接。该通路只处理插件 Storage，正常游戏存档仍走 `saveDataManager`。
 
 游戏时长由 App 的 `core/game/playtime` 独立采集：Application 在每个进程安装生命周期适配，只有携带 `ROOT_URI` 与 `PLAYTIME_SESSION_ID` 的内置宿主白名单参与；辅助视频继承身份，System4 手册和校验进程不参与。`PLAYTIME_SESSION_STARTED_AT` 是主进程持久化分配的递增会话排序键，系统时钟回拨时仍递增，辅助 Activity 继承原值；它不参与时长相减。子进程按单调时钟累计前台区间，将累计检查点以跨进程文件锁与 AtomicFile 写入 `noBackupFilesDir/game_playtime/`，主进程按记录 ID 取最大累计值，幂等导入独立 Room 库 `game_playtime.db`，子进程不开统计数据库。检查点每 15 秒及在暂停时保存，闭合记录入库后才删除，崩溃后不按当前时间补算；该能力与最近打开、存档同步会话互相独立。统计库使用 TRUNCATE 日志，拥有独立 schema 与迁移边界，不受游戏库的破坏性恢复影响；默认进入系统备份候选，实际恢复仍受系统配额和传输策略限制。

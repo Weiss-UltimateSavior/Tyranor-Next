@@ -60,6 +60,8 @@
 ## 工具与构建
 
 - [RPG Maker MV/MZ 游戏修改器实施方案](RPGMaker修改器实施方案.md)
+- [RPG Maker MZ 运行时移植实施方案（TynMZ-0.2）](RPGMaker-MZ-移植实施方案.md)
+- [RPG Maker MZ 移植评估（TynMV-0.2 → MZ 可行性）](RPGMaker-MZ-移植评估.md)
 - [RPG Maker MZ 移植方案审阅意见（评估 + 实施两文档的代码核对）](RPGMaker-MZ-移植方案审阅意见.md)
 - [XP3 拆封包功能方案（解包 / 封包独立工具页）](XP3拆封包功能方案.md)
 - [Native Plugin Release Hardening Plan](native-plugin-release-hardening-plan.md)

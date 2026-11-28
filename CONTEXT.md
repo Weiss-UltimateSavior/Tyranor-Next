@@ -98,7 +98,7 @@ _Avoid_: 外置模块（指 JoiPlay 外置 APK 引擎模块时）、第三方 AP
 _Avoid_: Chrome、NW.js 环境
 
 **TynMV / TynMZ**:
-RPG Maker MV / MZ 在 TyranorNext 中新引入的引擎版本代号（TynMV-0.1/0.2、TynMZ-0.1），区别于原逆向内置的网页壳版本。引擎页弹窗中重实现系列以「TyranorNext-0.1/0.2」合并显示，引擎设置下拉则以 Tyn 命名逐项列出。
+RPG Maker MV / MZ 在 TyranorNext 中新引入的引擎版本代号（TynMV-0.1/0.2、TynMZ-0.1/0.2），区别于原逆向内置的网页壳版本。引擎页弹窗中重实现系列以「TyranorNext-0.1/0.2」合并显示，引擎设置下拉则以 Tyn 命名逐项列出。MZ 的 `0.2` 与 `0.1` 共用存储值 `"v2"`，只是显示名与能力集不同。
 _Avoid_: v0/v1/v2（旧编号）
 
 **引擎内核（Kernel）**:

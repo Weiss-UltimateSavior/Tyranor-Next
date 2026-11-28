@@ -8,8 +8,10 @@
 > MZ corescript 社区镜像 `stak/rmmz-corescript` v1.1.0 逐行比对 + 公开资料交叉验证。
 > 可行性结论与差异取证见 [RPGMaker-MZ-移植评估.md](RPGMaker-MZ-移植评估.md)，本文只讲**怎么做**。
 >
-> 状态：**计划中**（尚未开工）。最后更新 2026-11-28（第 2 版：已按
-> [审阅意见](RPGMaker-MZ-移植方案审阅意见.md) 修正 3 处事实错误、补 6 处方案缺口；改动处标 **〔v2〕**）。
+> 状态：**已落地（A / B / C / D / E / H）**；F（性能补丁）与 G（注入配置数据化）按本文定性为
+> 「可选、可延后」，本期未做。最后更新 2026-11-28（第 3 版：落地情况回写 + 一处事实错误修正）。
+> 真机验收项（加密样本 304、PC 真实存档双向互通、WebView ≥/< 124 对照、长 BGM）
+> 仍需按 §5.3 在设备上执行，不能以 JVM/JS 回归代替。
 
 ---
 
@@ -385,12 +387,14 @@ MZ 的 `Graphics._createEffekseerContext()` 对失败**是容忍的**（`try/cat
     > 而 `Graphics._createEffekseerContext` 在 MZ 1.1.0 由 `Graphics.initialize` 延迟调用（进入
     > 场景前），所以覆写时序成立。**这条要按能力探测写**（`typeof Graphics._createEffekseerContext === "function"`），
     > 与 R2 的原则一致：不要假设版本号。
-5. `__mz_hook.js`（lateHook）里再加一道保险：
-   ```js
-   if (window.__tyranorRpg && window.__tyranorRpg.effekseer === false) {
-       if (window.Graphics) Graphics._createEffekseerContext = function () { this._effekseer = null; };
-   }
-   ```
+    >
+    > **〔v3 修正〕** 上面这段的时序前提是错的：`Graphics` 在 lateHook 求值时**并不存在**。
+    > MZ 的 `index.html` 只直接引用 `js/main.js`，`js/libs/*.js` 与 `rmmz_core.js` 都是 `main.js`
+    > 建 `<script>` 动态插入的（`async=false` 仍要等取回才执行），而 `</body>` 前的内联 lateHook
+    > 在解析期就同步跑完。落地实现改为**能力探测 + `setTimeout` 有界重试等待
+    > `window.Graphics` 出现**，再覆写 `_createEffekseerContext`（见
+    > [`__mz_hook.js`](../engine/src/main/assets/rpgmaker/mz/__mz_hook.js)）。回归由
+    > `RpgMakerMzAssetsTest` 与 JS harness 场景 9b 守住。
 
 **设置项 UI**：`SettingsScreen` 的 RPG Maker MV/MZ 卡片加一个下拉（仅当选中 MZ 时可见，
 或独立一行标注"仅 MZ"）。三语言文案同步。

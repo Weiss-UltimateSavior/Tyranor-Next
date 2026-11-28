@@ -2,6 +2,13 @@
 
 ## 未发布
 
+- 新增 RPG Maker MZ 运行时 `TynMZ-0.2`（原 `TynMZ-0.1`，设置里只是显示名，存储值仍是 `"v2"`，升级无需迁移）：加密素材缓存治理、启动就绪判定、音频流式解码与 Effekseer 闸门四项能力，MV 的三条链路（`Tyranor-2.3.4` / `TynMV-0.1` / `TynMV-0.2`）行为零变化。
+  - **加密素材缓存**：MZ 的加密资源在 URL 末尾追加一个 `_`（`img/a.png_`、`audio/bgm/x.ogg_`），旧实现按最后一个 `.` 取后缀得到 `".png_"`，不在白名单里 → 落到 `no-cache` 且不发 ETag → 每张加密图、每段加密音频每次请求整块重传（切场景明显卡顿）。现在只剥一层尾随 `_` 再按基础扩展名判定（`a.png__` 不是合法加密名，不会被递归剥成 `.png` 放行），MIME 同样按基础名给出；MZ 会话在直接命中失败后回退去掉尾随 `_` 的明文同名文件，混合加密工程的明文补丁素材不再 404。
+  - **启动就绪**：MZ 的 `index.html` 只直接引用 `js/main.js`，其余脚本动态注入，`PluginManager.setup` → `effekseer.initRuntime(wasm)` 之后才 `SceneManager.run`。原来按「首帧可见」揭开启动页，会出现加载条消失但游戏还在黑屏解 wasm；现在轮询 `SceneManager._scene`，就绪即揭开，15s 超时则揭开并记 warn（不卡死）。
+  - **音频流式解码**：MZ 的 `audioFileExt()` 硬编码 `.ogg`、`Html5Audio` 已删除，Android WebView 的 `canPlayType` 通常返回 `"maybe"`，于是走 `decodeAudioData` 整段解码（慢机上长 BGM 要 20s+ 才出声）。新增设置项钉 `WebAudio._shouldUseDecoder` 为真，走游戏自带的 `js/libs/vorbisdecoder.js`；该库缺失时保持原实现，不会把 BGM 钉哑。
+  - **Effekseer 闸门**：Chromium WebView < 124 上 MZ 实例化 Effekseer WASM 会在 10–30s 后确定性杀进程，唯一有效的手段是阻止 WASM 实例化。新增 `auto` / `on` / `off` 设置（默认 `auto` 按 WebView 主版本判定，解析不出主版本走保守侧），桩在 `earlyHtml` 里以 setter 拦截安装（必须早于 `effekseer.min.js`，一次性赋值会被库的自我赋值覆盖），`lateHook` 里再按能力探测兜底。代价是没有粒子特效，`Sprite_Animation` 在 `Graphics._effekseer` 为空时直接不播。
+  - **MZ 会话资产独立**：新增 `engine/src/main/assets/rpgmaker/mz/`（与 `rpgmv-v1/` 并列）承载 MZ v2 的 lateHook 与两个 scriptAppends；v0 的 `__rmmz__.js` / `__hook_rmmz_*.js` 仍被 `TyranoActivity` 使用，保持不动。这两项 MZ 专有设置只在设置页选中 MZ `v2` 时显示，MV 不读它们。
+  - 计划里「lateHook 求值时 `Graphics` 已存在」的说法与代码不符：`</body>` 前的内联脚本在解析期就同步执行完，而 `rmmz_core.js` 由 `main.js` 动态插入——hook 里的相关逻辑一律走事件或能力探测 + 有界重试。
 - 修复 RPG Maker MV/MZ（TynMV-0.1 / TynMV-0.2 / TynMZ-0.1）中依赖 UMD 全局名的库在 TynMV / TynMZ 会话下不可用：作为 NW.js 垫片的 `window.module` / `window.exports` 被建成普通对象，UMD 库因此走 CommonJS 分支，只把导出写进 `module.exports`（`PixiApngAndGif` 的 `ReferenceError: PixiApngAndGif is not defined`、jQuery 不设置 `window.jQuery`/`$`、真 lodash 不挂 `window._` 都属于这一类；Tyranor-2.3.4 宿主不注入兼容层，所以同款游戏在那里正常）。垫片改为 `exports` 为函数、`module.exports` 初始未定义，三种常见 UMD 判定都会落到全局分支，`module.exports = x` / `exports.foo = x` 仍然可用；v2 harness 增加对应回归探针。
 - 更新 Ethornell / BGI 运行库到 `2ccc6c7`，合入较新 BGI 脚本、文字排版、MP4 播放和移动端音频恢复改进。保留游戏目录存档与共享存储锁补丁，Graph91:00 改用上游实现。修复新版将图形文本参数里的越界整数转为十六进制字符串的回归。宿主沿用 ABI v1，并在系统要求降低音量时暂停会话。
 
