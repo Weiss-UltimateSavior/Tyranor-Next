@@ -492,7 +492,10 @@ internal class RpgMakerLocalHttpServer(
         // MZ 加密素材：在原文件名后追加**一个** `_`（`img/a.png_`、`audio/bgm/x.ogg_`），
         // 与 .rpgmvp/.rpgmvo/.rpgmvm 同档的只读素材。只剥一层再按基础扩展名判：
         // `a.png__` 不是合法加密名，递归剥会把两个 `_` 都吃掉、误放行成 `.png`。
-        val base = if (path.endsWith("_")) path.dropLast(1) else path
+        //
+        // 必须按 mzSession 门控：MV / Tyrano-2.3.4 不认识这个约定，那里 `x.png_` 只是
+        // 普通文件，剥 `_` 会改变它的缓存策略（CHANGELOG 的「MV 三条链路零变化」）。
+        val base = if (mzSession && path.endsWith("_")) path.dropLast(1) else path
         val dot = base.lastIndexOf('.')
         if (dot < 0 || dot == base.length - 1) return false
         return when (base.substring(dot)) {
@@ -956,8 +959,9 @@ internal class RpgMakerLocalHttpServer(
     private fun mime(name: String?): String {
         val n = name?.lowercase(Locale.ROOT) ?: ""
         // MZ 加密素材：`a.png_` 的实际内容仍是 PNG，按去掉**一层**尾随 `_` 的基础名判；
-        // 与 isImmutableAsset 同样不递归，`a.png__` 不是合法加密名，落回 octet-stream。
-        if (n.endsWith("_")) return mimeBase(n.dropLast(1))
+        // 与 isImmutableAsset 同样不递归（`a.png__` 不是合法加密名），也同样按 mzSession
+        // 门控——非 MZ 会话里 `x.png_` 就是普通文件，应为 octet-stream。
+        if (mzSession && n.endsWith("_")) return mimeBase(n.dropLast(1))
         return mimeBase(n)
     }
 

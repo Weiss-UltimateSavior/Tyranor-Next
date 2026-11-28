@@ -95,6 +95,9 @@ class RpgMakerActivity : Activity() {
     private var startupNavigationGeneration = 0L
     private var startupVisualRequestId = 0L
 
+    /** MZ 的启动看门狗（见 [armStartupWatchdog]）；每次导航/揭开都要取消，避免跨页误触发。 */
+    private var startupWatchdog: Runnable? = null
+
     /** v1/v2 兼容会话（NW.js polyfill、加密资源回退等）；版本缺失的兜底会话按 v0 资源策略。 */
     @Volatile
     private var v12Session = false
@@ -618,6 +621,12 @@ class RpgMakerActivity : Activity() {
                 if (view !== webView || isFinishing || isDestroyed) return
                 startupNavigationGeneration++
                 Log.i(TAG, "onPageStarted url=$url")
+                // MZ 拒绝 onPageCommitVisible 的抢跑后，onPageFinished 是唯一能启动
+                // SceneManager 轮询的地方；页面加载若根本没完成，它就永远不来。看门狗
+                // 必须在页面开始加载时就布防，否则加载页会永久停住。
+                if (RpgMakerStartupGate.armsWatchdogOnPageStart(webGameType == WebGameType.RPG_MZ)) {
+                    armStartupWatchdog()
+                }
                 // 尽早注入输入接收器（幂等；onPageFinished 会再补一次），
                 // 避免加载期的手柄/按键输入被静默丢弃
                 view?.let { v -> runCatching { v.evaluateJavascript(inputJs, null) } }
@@ -821,8 +830,39 @@ class RpgMakerActivity : Activity() {
      * 过程中任何「会话已不是本次启动」的信号（换页、销毁、新的 HTML 注入请求）
      * 都必须让本轮轮询自行退出，否则旧回调会把新页面的启动页一并揭掉。
      */
+    /**
+     * MZ 的启动看门狗：从页面开始加载起算，[RpgMakerStartupGate.TIMEOUT_MS] 后若仍未揭开
+     * 就直接揭开并记 warn。
+     *
+     * 它兜的是「`onPageFinished` 永远不来」这一类：挂起的子资源、解析期死循环的插件、
+     * 卡住的本地请求。没有它，[awaitMzSceneReady] 根本没机会布防，加载页会永久停住。
+     * 走主线程 Handler 而不是 `view.postDelayed`：Activity 销毁时能统一取消。
+     */
+    private fun armStartupWatchdog() {
+        cancelStartupWatchdog()
+        val generation = startupNavigationGeneration
+        val watchdog = Runnable {
+            startupWatchdog = null
+            if (isFinishing || isDestroyed || !initialMainFramePending) return@Runnable
+            if (startupNavigationGeneration != generation) return@Runnable
+            Log.w(TAG, "page load did not finish within ${RpgMakerStartupGate.TIMEOUT_MS}ms, revealing anyway")
+            initialMainFramePending = false
+            startupOverlay?.reveal()
+        }
+        startupWatchdog = watchdog
+        Handler(Looper.getMainLooper()).postDelayed(watchdog, RpgMakerStartupGate.TIMEOUT_MS)
+    }
+
+    private fun cancelStartupWatchdog() {
+        startupWatchdog?.let { Handler(Looper.getMainLooper()).removeCallbacks(it) }
+        startupWatchdog = null
+    }
+
     private fun awaitMzSceneReady(view: WebView, navigationGeneration: Long) {
-        val startedAt = System.currentTimeMillis()
+        // 磁盘/网络都卡住的页面不可能再进轮询；看门狗已经接管这两个分支
+        cancelStartupWatchdog()
+        // 单调时钟：墙钟在 15s 窗口里被回拨会让 elapsed 变负、decide 永远 CONTINUE
+        val startedAt = android.os.SystemClock.elapsedRealtime()
         val poll = object : Runnable {
             override fun run() {
                 if (view !== webView || isFinishing || isDestroyed || !initialMainFramePending ||
@@ -833,7 +873,9 @@ class RpgMakerActivity : Activity() {
                         if (view !== webView || isFinishing || isDestroyed || !initialMainFramePending ||
                             startupNavigationGeneration != navigationGeneration
                         ) return@evaluateJavascript
-                        val elapsed = System.currentTimeMillis() - startedAt
+                        val elapsed = RpgMakerStartupGate.saturatingElapsed(
+                            startedAt, android.os.SystemClock.elapsedRealtime(),
+                        )
                         when (RpgMakerStartupGate.decide(elapsed, RpgMakerStartupGate.isReady(raw))) {
                             RpgMakerStartupGate.Decision.CONTINUE ->
                                 view.postDelayed(this, RpgMakerStartupGate.POLL_INTERVAL_MS)
@@ -1044,6 +1086,7 @@ class RpgMakerActivity : Activity() {
             EngineSessionRegistry.clear(this, EngineSessionRegistry.HOST_RPGMAKER)
         }
         DoubleBackExit.clear(this)
+        cancelStartupWatchdog()
         startupOverlay?.dispose()
         startupOverlay = null
         runCatching { inputRemap?.onDestroy() }

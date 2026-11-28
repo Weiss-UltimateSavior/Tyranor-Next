@@ -118,25 +118,20 @@ class RpgEffekseerGateTest {
     }
 
     /**
-     * lateHook 的第二道保险：兜住 setter 拦截的漏网。
+     * lateHook 的第二道保险由**资产本身**承担（`rpgmaker/mz/__mz_hook.js`），不是这里。
      *
-     * **不能假设 lateHook 求值时 `Graphics` 已存在**：MZ 的 `index.html` 只直接引用
-     * `js/main.js`，`rmmz_core.js` 是 `main.js` 动态插入的 `<script>`（`async=false`
-     * 仍要等取回才执行），而 `</body>` 前的内联脚本在解析期就同步执行完——那一刻
-     * `Graphics` 还是 `undefined`。所以兜底必须**等到 Graphics 出现**再覆写，并带
-     * 有界的重试（作品把 `Graphics.initialize` 拖很久时不能永久挂一个定时器）。
+     * 曾经在 Kotlin 里也有一份等价实现 `lateHookFallbackScript()`，但它从未被调用——
+     * 两份实现只有一份出货，测试却同时断言两份，制造了虚假覆盖。现在只保留资产那一份，
+     * 它的行为由 `RpgMakerMzAssetsTest`（静态契约）与 JS harness 场景 9b（真执行）覆盖。
      */
     @Test
-    fun lateHookFallbackWaitsForGraphicsInsteadOfAssumingItExists() {
-        val fallback = RpgEffekseerGate.lateHookFallbackScript()
-        assertTrue(fallback, fallback.contains("Graphics"))
-        assertTrue(fallback, fallback.contains("_createEffekseerContext"))
-        assertTrue("必须按能力探测，不能假设版本", fallback.contains("typeof"))
-        assertTrue(fallback, fallback.contains("__tyranorRpg"))
-        assertTrue(fallback, fallback.contains("cfg.effekseer !== false"))
-        assertTrue("覆写后必须把 _effekseer 置空，Sprite_Animation 才不会播", fallback.contains("this._effekseer = null"))
-        // 等待 Graphics：用 setTimeout 重试，而不是一次性读取 window.Graphics
-        assertTrue("必须在 Graphics 未就绪时继续等，而不是直接放弃", fallback.contains("setTimeout"))
-        assertTrue("重试必须有上限", fallback.contains("RpgEffekseerGate.LATE_HOOK_MAX_ATTEMPTS") || fallback.contains("maxAttempts"))
+    fun thereIsExactlyOneLateHookFallbackImplementation() {
+        val source = java.io.File("src/main/java/com/core/rpgmaker/RpgEffekseerGate.kt").readText()
+        // 只检查**代码**，KDoc 里提到该 API 是正当的说明
+        val codeOnly = source.lines().filterNot { it.trimStart().startsWith("*") }.joinToString("\n")
+        assertTrue(
+            "Kotlin 侧不应再有 _createEffekseerContext 的兜底实现（真正的在 __mz_hook.js）",
+            !codeOnly.contains("_createEffekseerContext"),
+        )
     }
 }

@@ -41,6 +41,27 @@ internal object RpgMakerStartupGate {
      */
     fun mayRevealOnCommitVisible(rpgMakerMz: Boolean): Boolean = !rpgMakerMz
 
+    /**
+     * 是否在 `onPageStarted` 就布防超时看门狗。
+     *
+     * MZ 拒绝 `onPageCommitVisible` 的抢跑之后，`onPageFinished` 成了唯一能启动轮询的
+     * 地方；页面加载若根本没完成（挂起的子资源、解析期死循环的插件、卡住的本地请求），
+     * `onPageFinished` 永远不来，[TIMEOUT_MS] 也就永远不开始，加载页会永久停住。
+     * 所以 MZ 必须在页面开始加载时就布防，而不是等 `onPageFinished`。
+     *
+     * 非 MZ 会话保留 `onPageCommitVisible` 的即时揭开，不需要额外看门狗。
+     */
+    fun armsWatchdogOnPageStart(rpgMakerMz: Boolean): Boolean = rpgMakerMz
+
+    /**
+     * 已等待时长（毫秒），对负值截断为 0。
+     *
+     * 调用方必须传单调时钟读数（`SystemClock.elapsedRealtime`）：墙钟在 [TIMEOUT_MS]
+     * 窗口里被回拨会让差值变负，[decide] 于是永远返回 CONTINUE，防卡死的保证静默失效
+     * （仓库里 playtime 也刻意避开墙钟）。截断是对「万一仍拿到倒退读数」的最后一道防线。
+     */
+    fun saturatingElapsed(startedAtMs: Long, nowMs: Long): Long = (nowMs - startedAtMs).coerceAtLeast(0L)
+
     /** 本轮该做什么。就绪优先于时长：超时之后才就绪的作品也应算 REVEAL。 */
     fun decide(elapsedMs: Long, ready: Boolean): Decision = when {
         ready -> Decision.REVEAL

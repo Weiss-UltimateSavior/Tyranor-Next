@@ -62,13 +62,42 @@ class RpgMakerMzAssetsTest {
         assertFalse("不得把桥缓存进闭包", Regex("""var bridge = window\.saveDataManager""").containsMatchIn(hook))
     }
 
-    /** 旧的三件套仍被 v0 路径（TyranoActivity）使用，删了会破坏 Tyranor-2.3.4 的 MZ 支持。 */
+    /**
+     * 旧的三件套仍被 v0 路径（TyranoActivity）使用，删了会破坏 Tyranor-2.3.4 的 MZ 支持。
+     *
+     * 用内容哈希而不是「存在且非空」：v0 的运行时行为要在本次改动后**逐字节不变**，
+     * 一行语义改动同样会破坏这条不变量，只查存在性抓不到。
+     */
     @Test
-    fun legacyV0MzAssetsAreStillPresent() {
-        listOf("__rmmz__.js", "__hook_rmmz_core.js", "__hook_rmmz_managers.js").forEach { name ->
+    fun legacyV0MzAssetsAreUnchanged() {
+        // 内容哈希锁住「逐字节不变」：只查存在性抓不到一行语义改动
+        val expected = mapOf(
+            "__rmmz__.js" to "a9015aa80b6eafbe98296511b713e355e2178a46e3744c2dedd9402d320305bb",
+            "__hook_rmmz_core.js" to "f2fd3cab09262f3222beb430b2f30e040a6f361800fb22b034b34ad92cdc433c",
+            "__hook_rmmz_managers.js" to "a56262fac79a1fb4ffdd3e3e3adef00cf2212dd59e25a29ca473c44b27279171",
+        )
+        for ((name, sha256) in expected) {
             val file = File("src/main/assets/$name")
             assertTrue("$name 仍被 v0 路径引用，不得删除", file.isFile)
-            assertTrue("$name 不应为空", file.length() > 0)
+            assertEquals(
+                "$name 是 v0（Tyranor-2.3.4）的运行时资产，本次改动必须逐字节不变；" +
+                    "若确需修改，要同时在 TyranoActivity 侧验收并更新这里的基准",
+                sha256,
+                sha256Of(file),
+            )
         }
+    }
+
+    private fun sha256Of(file: File): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(8 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read <= 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 }

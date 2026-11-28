@@ -82,6 +82,39 @@ class RpgMakerStartupGateTest {
         assertEquals(false, RpgMakerStartupGate.mayRevealOnCommitVisible(rpgMakerMz = true))
     }
 
+    /**
+     * 拒绝抢跑后，`onPageFinished` 成了 MZ **唯一**的揭开触发点。若页面加载根本没完成
+     * （挂起的子资源、解析期死循环的插件、卡住的本地请求），`onPageFinished` 永远不来，
+     * 15s 超时也就永远不开始——加载页会永久停住，正是这道闸门要避免的失败模式。
+     *
+     * 因此超时看门狗必须从**页面开始加载**就布防，而不是只在 `onPageFinished` 里布防。
+     */
+    @Test
+    fun watchdogIsArmedFromPageStartNotOnlyFromPageFinished() {
+        assertTrue(
+            "MZ 的看门狗必须在 onPageStarted 就布防",
+            RpgMakerStartupGate.armsWatchdogOnPageStart(rpgMakerMz = true),
+        )
+        assertEquals(
+            "非 MZ 会话保留 onPageCommitVisible 的即时揭开，不需要额外看门狗",
+            false,
+            RpgMakerStartupGate.armsWatchdogOnPageStart(rpgMakerMz = false),
+        )
+    }
+
+    /**
+     * 超时用单调时钟：墙钟在 15s 窗口里被回拨会让 elapsed 变负，`decide` 一直返回
+     * CONTINUE，防卡死的保证静默失效（仓库里 playtime 也刻意避开墙钟）。
+     */
+    @Test
+    fun timeoutUsesAMonotonicClockContract() {
+        // 单调时钟单调不减：回拨场景下 elapsed 不会变负
+        assertEquals(0L, RpgMakerStartupGate.saturatingElapsed(startedAtMs = 1_000L, nowMs = 1_000L))
+        assertEquals(5_000L, RpgMakerStartupGate.saturatingElapsed(startedAtMs = 1_000L, nowMs = 6_000L))
+        // 即便真的拿到「倒退」的读数，也不能让剩余时间变多
+        assertEquals(0L, RpgMakerStartupGate.saturatingElapsed(startedAtMs = 6_000L, nowMs = 1_000L))
+    }
+
     @Test
     fun pollIntervalIsMuchShorterThanTheTimeout() {
         assertTrue(

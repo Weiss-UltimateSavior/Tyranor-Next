@@ -297,6 +297,19 @@ class GameOverridePartitionsTest {
         assertEquals(PerGameSettingsStore.F_RPG_SAVE_INTEROP, GameOverridePartitions.KEY_RPG_SAVE_INTEROP)
         assertEquals(PerGameSettingsStore.F_RPG_MV_VERSION, GameOverridePartitions.KEY_RPG_MV_VERSION)
         assertEquals(PerGameSettingsStore.F_RPG_MZ_VERSION, GameOverridePartitions.KEY_RPG_MZ_VERSION)
+        // MZ v0.2 专有键：除了三处字面量一致，还必须真的进 TYRANO_KEYS 分区，
+        // 否则覆盖值只能靠「未识别键兜底归入 tyrano」的 else 路径蒙混，
+        // 未来收紧分区时会静默丢失。
+        assertEquals(PerGameSettingsStore.F_RPG_EFFEKSEER_MODE, GameOverridePartitions.KEY_RPG_EFFEKSEER_MODE)
+        assertEquals(PerGameSettingsStore.F_RPG_AUDIO_STREAMING, GameOverridePartitions.KEY_RPG_AUDIO_STREAMING)
+        assertTrue(
+            "KEY_RPG_EFFEKSEER_MODE 必须显式登记在 TYRANO_KEYS",
+            GameOverridePartitions.KEY_RPG_EFFEKSEER_MODE in GameOverridePartitions.TYRANO_KEYS,
+        )
+        assertTrue(
+            "KEY_RPG_AUDIO_STREAMING 必须显式登记在 TYRANO_KEYS",
+            GameOverridePartitions.KEY_RPG_AUDIO_STREAMING in GameOverridePartitions.TYRANO_KEYS,
+        )
         // 输入重映射键：app 分区常量 ↔ settings 常量 ↔ engine InputConfigStore 常量三处锚定
         assertEquals(PerGameSettingsStore.F_INPUT_PAD_ENABLED, GameOverridePartitions.KEY_INPUT_PAD_ENABLED)
         assertEquals(PerGameSettingsStore.F_INPUT_GAMEPAD_ENABLED, GameOverridePartitions.KEY_INPUT_GAMEPAD_ENABLED)

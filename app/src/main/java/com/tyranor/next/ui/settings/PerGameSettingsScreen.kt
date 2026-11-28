@@ -1599,6 +1599,10 @@ fun PerGameSettingsScreen(game: ScanGame) {
                         val versionMap = if (isMv) rpgMvVersionOptionsMap() else rpgMzVersionOptionsMap()
                         val globalVersion = if (isMv) globalRpgMvVersion else globalRpgMzVersion
                         val overrideVersion = if (isMv) rpgMvVersion else rpgMzVersion
+                        // MZ 专有行的可见性按**生效**版本判：覆盖为 null 时跟随全局，
+                        // 只判断 raw override 会让「全局 v2、本游戏没设覆盖」的游戏看不到
+                        // 这两行——而它实际上就是按 v2 启动、这两项也确实生效。
+                        val effectiveVersion = overrideVersion ?: globalVersion
                         SectionCard(game.engine.displayName) {
                             OverrideChoice(stringResource(R.string.engine_settings_engine_version), versionMap, globalVersion, overrideVersion) { v ->
                                 if (isMv) rpgMvVersion = v else rpgMzVersion = v
@@ -1610,7 +1614,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             OverrideSwitch(stringResource(R.string.engine_settings_save_interop), globalRpgSaveInterop, rpgSaveInterop) { rpgSaveInterop = it }
                             // TynMZ-0.2 专有：只有 MZ v2 会话读这两项（MV 的三条链路
                             // 不看它们），所以只在选中 v2 时出现，避免对着 v0 调半天没反应。
-                            if (!isMv && overrideVersion == EngineSettingsStore.RPG_MZ_V2) {
+                            if (!isMv && effectiveVersion == EngineSettingsStore.RPG_MZ_V2) {
                                 OverrideChoice(
                                     stringResource(R.string.engine_settings_rpg_effekseer_mode),
                                     rpgEffekseerModeOptions().toMap(),

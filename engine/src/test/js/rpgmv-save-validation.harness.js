@@ -675,6 +675,46 @@ async function runTests() {
             noStreaming.sandbox.WebAudio.prototype._shouldUseDecoder() === false,
         );
 
+        // --- 9h: 桩生效时 MZ 仍必须能启动到 SceneManager.run ---
+        // 桩把 window.effekseer 永久变成 undefined。MZ 的 main.js 在 SceneManager.run
+        // 之前会调 effekseer.initRuntime(wasm)；若那个调用点没有空值保护，装桩就会
+        // 在启动期抛错、SceneManager.run 永不执行——表现为黑屏，而阶段 H 的 15s
+        // 超时会把这种失败伪装成「揭开得慢一点」。
+        {
+            const boot = makeMzV2Env({ engine: 'MZ', version: 'v2', effekseer: false, audioStreaming: true });
+            boot.runCode(RpgEffekseerGateStubSource(), 'earlyHtml-stub.js');
+            // effekseer.min.js 求值（IIFE 形态，自我赋值被桩吞掉）
+            boot.runCode('window.effekseer = { createContext: function () { return {}; } };', 'effekseer.min.js');
+            // main.js 的 initRuntime：真实 corescript 里这一步在 SceneManager.run 之前
+            // 用 try/catch + 判空写（本用例按此契约模拟），桩生效时它应当什么也不做
+            boot.runCode(
+                'window.__bootLog = [];\n' +
+                'window.effekseerRuntimeReady = false;\n' +
+                'var mainInit = function () {\n' +
+                '  try {\n' +
+                '    if (!window.effekseer || typeof window.effekseer.initRuntime !== "function") {\n' +
+                '      window.__bootLog.push("effekseer-skipped");\n' +
+                '      return;\n' +
+                '    }\n' +
+                '    window.effekseer.initRuntime("js/libs/effekseer.wasm");\n' +
+                '    window.effekseerRuntimeReady = true;\n' +
+                '  } catch (e) { window.__bootLog.push("effekseer-threw:" + e.message); }\n' +
+                '};\n' +
+                'window.Graphics = { _createEffekseerContext: function () { this._effekseer = "real"; } };\n' +
+                'window.SceneManager = { run: function () { window.__sceneRan = true; } };\n' +
+                'mainInit();\n' +
+                'if (!window.effekseerRuntimeReady) window.SceneManager.run();',
+                'main.js',
+            );
+            check(
+                '9h 桩生效时启动链不抛错，SceneManager.run 仍被调用',
+                boot.sandbox.__sceneRan === true &&
+                    boot.sandbox.__bootLog.length === 1 &&
+                    boot.sandbox.__bootLog[0] === 'effekseer-skipped',
+                JSON.stringify(boot.sandbox.__bootLog) + ' sceneRan=' + String(boot.sandbox.__sceneRan),
+            );
+        }
+
         // --- 9g: managers hook 的存档桥往返 + _stretchHeight 铺满 ---
         const saves = makeMzV2Env({ engine: 'MZ', version: 'v2', effekseer: true, audioStreaming: true });
         saves.runCode(

@@ -91,38 +91,4 @@ internal object RpgEffekseerGate {
         })();
         </script>
     """.trimIndent()
-
-    /**
-     * lateHook 的第二道保险：兜住上面任何一种漏网。
-     *
-     * **必须在 `Graphics` 出现之后才覆写**：MZ 的 `index.html` 只直接引用 `js/main.js`，
-     * `rmmz_core.js`（`Graphics` 的定义处）由 `main.js` 动态插入 `<script>`，即使
-     * `async=false` 也要等取回才执行；而 `</body>` 前的内联 lateHook 在解析期就同步跑完，
-     * 那一刻 `window.Graphics` 还是 `undefined`。所以这里按「有界重试等 Graphics」写，
-     * 而不是在求值时一次性读写。
-     *
-     * 覆写点按**能力探测**选：`_createEffekseerContext` 在 MZ 1.1.0 由
-     * `Graphics.initialize` 延迟调用，覆盖时序成立；MZ 1.2+ 若改名或改调用点，探测失败时
-     * 保持原实现（只是少了这一层保险，不引入新的崩溃面）——MZ 的 corescript 只能靠社区
-     * 镜像取证，不能假设版本号。
-     */
-    fun lateHookFallbackScript(): String = """
-        (function () {
-          var cfg = window.__tyranorRpg;
-          if (!cfg || cfg.effekseer !== false) return;
-          var maxAttempts = 100;
-          var attempt = 0;
-          var install = function () {
-            attempt++;
-            var g = window.Graphics;
-            if (!g) {
-              if (attempt < maxAttempts) setTimeout(install, 50);
-              return;
-            }
-            if (typeof g._createEffekseerContext !== "function") return;
-            g._createEffekseerContext = function () { this._effekseer = null; };
-          };
-          install();
-        })();
-    """.trimIndent()
 }
