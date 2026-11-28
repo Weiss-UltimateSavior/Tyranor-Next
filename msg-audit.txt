@@ -1,0 +1,21 @@
+test(rpgmaker): 用真实样本锁定插件 playtest 探测与 __dirname 契约
+
+排查"还有没有同类接口面缺口"时，把这台设备上的真实 MZ 1.9.0 源码逐个对了一遍
+NW.js / Node 调用面（rmmz_core / managers / objects / scenes / sprites / windows
+与 16 个插件），只剩两处值得守住：
+
+- 插件 mz3d.js:6986 用
+  `typeof process === 'object' && Object.prototype.toString.call(process) === '[object process]'`
+  判断 playtest；为真时走 fs.promises.writeFile 往 global.__dirname 写调试数据。
+  垫片的 process 是普通对象 → "[object Object]" → false，写盘分支不会进。
+  这是有意的（不往游戏目录写调试文件，只读场景下也不报错），加断言防止将来
+  有人为了让某个插件"看起来更像 Node"而改成 [object process]。
+- `global.__dirname` 必须是可用字符串：mz3d 的 path.resolve(global.__dirname, …)
+  依赖它。垫片把 __dirname 挂在 window 上，而 global === window，所以成立。
+
+已核对为**无需处理**的调用面：
+- rmmz_core:231 / managers:2013 / managers:2062（nw.App.argv、nw.App.quit、
+  showDevTools）全部被 Utils.isNwjs() 门控，宿主钉 false 后不可达；
+- chrome.runtime.reload()（managers:2005）同理；
+- process.mainModule.filename（main.js:138、managers:764）垫片已提供；
+- Hendrix / VisuMZ 的 "nw." 命中是混淆器字符串数组，属正则误报。

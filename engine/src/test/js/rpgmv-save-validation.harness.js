@@ -876,6 +876,32 @@ async function runTests() {
             );
         }
 
+        // --- 9l: 插件的 playtest 探测必须为 false ---
+        // 真实样本（Huntsman，插件 mz3d.js:6986）用
+        //   typeof process === 'object' && Object.prototype.toString.call(process) === '[object process]'
+        // 判断是否处在 NW.js playtest：为真时会走 fs.promises.writeFile 往
+        // global.__dirname 写文件（save/load 的调试数据）。垫片的 process 是普通对象，
+        // 得到 "[object Object]" → false，写盘分支不会被走到。
+        // 这是**有意**的：既避免往游戏目录写调试文件，也让这类插件的写路径在只读场景下不报错。
+        {
+            const env = makeMzV2Env({ engine: 'MZ', version: 'v2', effekseer: true, audioStreaming: true });
+            env.runCode(NWJS_POLYFILL_CODE, '__nwjs_polyfill.js');
+            const probe = env.runCode(`
+                String(
+                    typeof process === 'object' &&
+                    Object.prototype.toString.call(process) === '[object process]'
+                )
+            `, 'playtest-probe.js');
+            check(
+                '9l 插件用 [object process] 探测 playtest 时必须判为 false（否则会往游戏目录写调试文件）',
+                probe === 'false',
+                String(probe),
+            );
+            // 顺带确认 global.__dirname 存在：mz3d 的 path.resolve(global.__dirname, ...) 依赖它
+            const hasDirname = env.runCode('String(typeof global.__dirname === "string" && global.__dirname.length > 0)', 'dirname.js');
+            check('9l global.__dirname 必须是可用的字符串路径', hasDirname === 'true', String(hasDirname));
+        }
+
         // --- 9g: managers hook 的存档桥往返 + _stretchHeight 铺满 ---
         const saves = makeMzV2Env({ engine: 'MZ', version: 'v2', effekseer: true, audioStreaming: true });
         saves.runCode(
