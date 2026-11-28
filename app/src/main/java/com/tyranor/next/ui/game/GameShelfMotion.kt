@@ -155,10 +155,10 @@ internal class ShelfGeometry(
     private val bevel: Float = kotlin.math.atan2(spineDepth, coverWidth)
 
     /**
-     * 左侧的书转到正中时书脊要从右侧换到左侧：书脊朝外的角度够深时，先转到书脊正对屏幕（封面侧立成一条线）的那一刻换边，
-     * 再把封面从书脊右侧转出来，与右侧的书对称、宽度一路只收不胀；转得浅（书少、两侧也露封面）时直接经过正对换边更短。
+     * 右侧的书转到正中时书脊要从右侧换到左侧：书脊朝外的角度够深时，先转到书脊正对屏幕（封面侧立成一条线）的那一刻换边，
+     * 再把封面从书脊右侧转出来，与左侧的书对称、宽度一路只收不胀；转得浅（书少、两侧也露封面）时直接经过正对换边更短。
      */
-    private val leftTurnsViaSpine: Boolean = maxTurn > HALF_PI - heroYaw
+    private val rightTurnsViaSpine: Boolean = maxTurn > HALF_PI - heroYaw
 
     /** 转过 [turn] 时盒子在屏幕上的可见宽度（正面投影 + 书脊投影）。 */
     fun visibleWidth(turn: Float): Float = coverWidth * cos(turn) + spineDepth * sin(turn)
@@ -176,23 +176,24 @@ internal class ShelfGeometry(
         if (abs(offset) <= 1f) boxWidth(offset) / 2f else spineWidth / 2f
 
     /**
-     * 盒子实际的朝向（弧度，带方向）：正 = 书脊在左。右侧的书由 [boxWidth] 反解，正中是 [heroYaw]（露出左侧书脊）、
-     * 一本以外是 [maxTurn]；左侧的书换边见 [leftTurnsViaSpine]。换边都发生在两种画法看起来完全一样的那一刻
-     * （书脊正对或封面正对），看不到跳变。
+     * 盒子实际的朝向（弧度，带方向）：正 = 书脊在左、封面朝右，负 = 书脊在右、封面朝左。
+     * 两侧的书封面均朝向画面中心（单点透视向中心收拢）：左侧由 [boxWidth] 反解，正中是 [heroYaw]（露出左侧书脊）、
+     * 一本以外是 +[maxTurn]；右侧一本以外是 -[maxTurn]，换边见 [rightTurnsViaSpine]。换边都发生在两种画法
+     * 看起来完全一样的那一刻（书脊正对或封面正对），看不到跳变。
      */
     fun yaw(offset: Float): Float {
         val u = min(abs(offset), 1f)
-        val right = rightYaw(u)
-        if (offset >= 0f) return right
-        if (leftTurnsViaSpine) {
-            val progress = ((right - heroYaw) / (maxTurn - heroYaw).coerceAtLeast(1e-4f)).coerceIn(0f, 1f)
+        val direct = directYaw(u)
+        if (offset <= 0f) return direct
+        if (rightTurnsViaSpine) {
+            val progress = ((direct - heroYaw) / (maxTurn - heroYaw).coerceAtLeast(1e-4f)).coerceIn(0f, 1f)
             val angle = heroYaw + (PI_F - maxTurn - heroYaw) * progress
             return if (angle <= HALF_PI) angle else angle - PI_F
         }
-        return right * (1f - 2f * smoothstep(u / LEFT_FLIP_RANGE))
+        return direct * (1f - 2f * smoothstep(u / RIGHT_FLIP_RANGE))
     }
 
-    private fun rightYaw(u: Float): Float {
+    private fun directYaw(u: Float): Float {
         val projected = boxWidth(u) / shelfPoseScale(u)
         val c = (projected / faceRadius.coerceAtLeast(1e-4f)).coerceIn(cos(maxTurn - bevel), cos(heroYaw - bevel))
         return (bevel + kotlin.math.acos(c)).coerceIn(heroYaw, maxTurn)
@@ -341,7 +342,11 @@ internal fun Modifier.shelfSlot(
             }
             val shift = screenX - offset * slotPitch
             val x = (slotWidth - placeable.width) / 2f + shift
-            val depth = (-railX / geometry.pitch).coerceIn(-MAX_Z_DEPTH, MAX_Z_DEPTH)
+            val depth = if (rail.isFlat) {
+                (-abs(offset)).coerceIn(-MAX_Z_DEPTH, 0f)
+            } else {
+                (-railX / geometry.pitch).coerceIn(-MAX_Z_DEPTH, MAX_Z_DEPTH)
+            }
             placeable.place(x.roundToInt(), 0, zIndex = depth + HERO_Z * shelfHeroness(offset))
         }
     }
@@ -501,8 +506,8 @@ internal fun shelfViewportReflectionAlpha(
 }
 
 /**
- * 书脊面：宽 [ShelfGeometry.spineDepth]，与正面共用一条棱。盒子在右侧时书脊在左（朝向书架中心），反之在右；
- * 正对时书脊侧立成一条线，直接不画。
+ * 书脊面：宽 [ShelfGeometry.spineDepth]，与正面共用一条棱。盒子在左侧时书脊在左、封面朝向书架中心，在右侧时书脊在右、
+ * 封面朝向书架中心；正对时书脊侧立成一条线，直接不画。
  *
  * 只改图层属性（位移 / 转角 / 透明度），书脊内容只录制一次；背光压暗另用 [shelfFaceShade] 覆盖层。
  * 书脊是直角、不裁切：它是这本书的装订边，和封面是一体的，切了角就像两块拼起来的（倒角只在封面开口那一侧）；
@@ -621,7 +626,7 @@ internal fun Modifier.shelfFaceShade(
 
 /**
  * 偏移 [offset] 的盒子正面 / 书脊背光压暗的浓度：正面转得越侧越暗，书脊越朝外越亮。
- * 左侧的书换边时会转过书脊朝外的角度、直到书脊正对，按书脊朝外算。翻开的书起飞时照着它画。
+ * 右侧的书换边时会转过书脊朝外的角度、直到书脊正对，按书脊朝外算。翻开的书起飞时照着它画。
  */
 internal fun ShelfGeometry.faceShade(offset: Float, spine: Boolean): Float {
     val t = (abs(yaw(offset)) / maxTurn).coerceAtMost(1f)
@@ -1808,7 +1813,7 @@ internal suspend fun PagerState.settleScrub(page: Int) {
 
 /**
  * 底部滚动控制条的 Q 弹控制器：
- * - 旋钮一动（拖动、点按、跟着书架滑行），轨道上的线与刻度在它附近弹起一个小丘，高度由一根欠阻尼弹簧
+ * - 拖动轨道或点按轨道跳转时，轨道上的线与刻度在旋钮附近弹起一个小丘，高度由一根欠阻尼弹簧
  *   （[railBounce]）驱动：越快越高，停下后还会反向晃一两下再落定；旋钮自己随同一个量上下浮一点，线头始终接在旋钮上；
  * - 两端橡皮筋拉出与松手 Q 弹回位；
  * - 拖动气泡随水平速度柔和微倾。
@@ -1820,6 +1825,11 @@ internal class ShelfScrubberMotion(private val scope: CoroutineScope) {
     private val railBounceState = mutableFloatStateOf(0f)
     private val rubberState = mutableFloatStateOf(0f)
     private val bubbleTiltState = mutableFloatStateOf(0f)
+
+    private val railWakeSignal = Channel<Unit>(Channel.CONFLATED)
+    private var lastRailMoveNanos = 0L
+    private var railTarget = 0f
+    private var railAnimating = false
 
     private var rubberJob: Job? = null
     private var tiltJob: Job? = null
@@ -1834,33 +1844,31 @@ internal class ShelfScrubberMotion(private val scope: CoroutineScope) {
      * 单协程驱动旋钮移动引起的轨道 Q 弹（零每帧协程取消与重建，闲置时零功耗挂起）：
      * 与旧 `Animatable(RAIL_SPRING)` + `delay(70ms)` 回零行为数值同源。
      */
-    suspend fun trackKnob(pagerState: PagerState, knobSeek: ShelfKnobSeek, count: Int) {
-        if (!MotionMode.enhanced || !ValueAnimator.areAnimatorsEnabled()) {
+    suspend fun animateRail(pagerState: PagerState, knobSeek: ShelfKnobSeek, count: Int) {
+        try {
+            if (!MotionMode.enhanced || !ValueAnimator.areAnimatorsEnabled()) return
+            runRailSpring(pagerState, knobSeek, count)
+        } finally {
             railBounceState.floatValue = 0f
-            return
+            railAnimating = false
+            railWakeSignal.tryReceive()
         }
-        val spec = FloatSpringSpec(dampingRatio = 0.34f, stiffness = 380f)
-        val wakeSignal = Channel<Unit>(Channel.CONFLATED)
-        var lastMoveEventNanos = 0L
-        var pendingTarget = 0f
-        var active = false
+    }
 
+    private suspend fun runRailSpring(pagerState: PagerState, knobSeek: ShelfKnobSeek, count: Int) {
+        val spec = FloatSpringSpec(dampingRatio = 0.34f, stiffness = 380f)
         coroutineScope {
             launch {
-                var lastPos = Float.NaN
+                var lastPos: Float? = null
                 var lastSampleNanos = 0L
-                snapshotFlow { knobSeek.position(pagerState.pagePosition()) }.collect { position ->
+                // 只在轨道点按跳转时采样 Pager；拖动轨道的位移由手势直接提交。
+                snapshotFlow {
+                    if (knobSeek.active) knobSeek.position(pagerState.pagePosition()) else null
+                }.collect { position ->
                     val now = System.nanoTime()
-                    if (!lastPos.isNaN() && count > 1) {
-                        val seconds = ((now - lastSampleNanos) / 1e9f).coerceIn(0.004f, 0.12f)
-                        val fps = (position - lastPos) / (count - 1) / seconds
-                        val fraction = (abs(fps) / RAIL_FULL_SPEED).coerceIn(0f, 1f)
-                        pendingTarget = fraction * RAIL_MAX_BOUNCE
-                        lastMoveEventNanos = now
-                        if (!active) {
-                            active = true
-                            wakeSignal.trySend(Unit)
-                        }
+                    val previous = lastPos
+                    if (position != null && previous != null) {
+                        onRailMove(position - previous, count, (now - lastSampleNanos) / 1e9f, RAIL_MAX_BOUNCE)
                     }
                     lastPos = position
                     lastSampleNanos = now
@@ -1868,10 +1876,10 @@ internal class ShelfScrubberMotion(private val scope: CoroutineScope) {
             }
 
             while (true) {
-                wakeSignal.receive()
+                railWakeSignal.receive()
                 var animVal = railBounceState.floatValue
                 var animVel = 0f
-                var segTarget = pendingTarget
+                var segTarget = railTarget
                 var segInitVal = animVal
                 var segInitVel = animVel
                 var segStartNanos = withFrameNanos { it }
@@ -1880,13 +1888,13 @@ internal class ShelfScrubberMotion(private val scope: CoroutineScope) {
                 while (true) {
                     val frameNanos = withFrameNanos { it }
                     val wallNow = System.nanoTime()
-                    val idleNanos = wallNow - lastMoveEventNanos
+                    val idleNanos = wallNow - lastRailMoveNanos
                     val wantTarget = if (idleNanos >= RAIL_REST_MILLIS * 1_000_000L) {
                         resting = true
                         0f
                     } else {
                         resting = false
-                        pendingTarget
+                        railTarget
                     }
                     val playNanos = (frameNanos - segStartNanos).coerceAtLeast(0L)
                     animVal = spec.getValueFromNanos(playNanos, segInitVal, segTarget, segInitVel)
@@ -1900,12 +1908,27 @@ internal class ShelfScrubberMotion(private val scope: CoroutineScope) {
                         segDurationNanos = if (wantTarget == 0f) spec.getDurationNanos(segInitVal, 0f, segInitVel) else Long.MAX_VALUE
                     } else if (resting && segTarget == 0f && playNanos >= segDurationNanos) {
                         railBounceState.floatValue = 0f
-                        active = false
+                        railAnimating = false
                         break
                     }
                     railBounceState.floatValue = animVal
                 }
             }
+        }
+    }
+
+    fun onRailDrag(pageDelta: Float, count: Int, dtSeconds: Float) {
+        onRailMove(pageDelta, count, dtSeconds, RAIL_DRAG_MAX_BOUNCE)
+    }
+
+    private fun onRailMove(pageDelta: Float, count: Int, dtSeconds: Float, maxBounce: Float) {
+        if (pageDelta == 0f || count <= 1 || !ValueAnimator.areAnimatorsEnabled()) return
+        val speed = abs(pageDelta) / (count - 1) / dtSeconds.coerceIn(0.004f, 0.12f)
+        railTarget = (speed / RAIL_FULL_SPEED).coerceIn(0f, 1f) * maxBounce
+        lastRailMoveNanos = System.nanoTime()
+        if (!railAnimating) {
+            railAnimating = true
+            railWakeSignal.trySend(Unit)
         }
     }
 
@@ -2653,8 +2676,8 @@ internal const val RAIL_ANCHOR = 0f
 /** 正中那一盒侧转露出书脊的角度。 */
 internal val HERO_YAW = Math.toRadians(16.0).toFloat()
 
-/** 转得浅时左侧的书经过正对换边：在离正中这么多本以内转完（这一段封面几乎正对，宽度变化很小）。 */
-private const val LEFT_FLIP_RANGE = 0.3f
+/** 转得浅时右侧的书经过正对换边：在离正中这么多本以内转完（这一段封面几乎正对，宽度变化很小）。 */
+private const val RIGHT_FLIP_RANGE = 0.3f
 
 
 /** 悬浮投影：模糊半径、向右偏移、向下错开（dp）与浓度倍数。 */
@@ -2749,6 +2772,7 @@ private const val TRACK_BOUNCE_REACH = 58f
 private const val TRACK_BOUNCE_STEP = 5f
 private const val RAIL_FULL_SPEED = 1.1f
 private const val RAIL_MAX_BOUNCE = 6f
+private const val RAIL_DRAG_MAX_BOUNCE = 4f
 private const val SCRUBBER_DRAG_IDLE_MILLIS = 50L
 
 /**

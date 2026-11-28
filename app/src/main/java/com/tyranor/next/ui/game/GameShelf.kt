@@ -2996,9 +2996,8 @@ private fun ShelfScrubber(
     val glide = rememberShelfGlide(pagerState)
     val interactive = isInteractive()
     val canSeek by rememberUpdatedState(isInteractive)
-    // 旋钮一动轨道就跟着 Q 弹：单协程连续驱动弹簧，滑动期间零协程取消与重建
     LaunchedEffect(pagerState, knobSeek, scrubberMotion, count) {
-        scrubberMotion.trackKnob(pagerState, knobSeek, count)
+        scrubberMotion.animateRail(pagerState, knobSeek, count)
     }
     val scrubChannel = remember(pagerState) { Channel<Float>(Channel.CONFLATED) }
     LaunchedEffect(pagerState, scrubChannel) {
@@ -3050,9 +3049,11 @@ private fun ShelfScrubber(
                         val booksPerPx = (count - 1) / (width - 2f * inset).coerceAtLeast(1f)
                         var last = pagerState.pagePosition().roundToInt()
                         var target = pagerState.pagePosition()
-                        fun seekTo(rawPosition: Float) {
+                        fun seekTo(rawPosition: Float, dtSeconds: Float) {
                             val lastIndex = (count - 1).toFloat().coerceAtLeast(0f)
+                            val previous = target
                             target = rawPosition.coerceIn(0f, lastIndex)
+                            scrubberMotion.onRailDrag(target - previous, count, dtSeconds)
                             val overPx = (rawPosition - target) / booksPerPx.coerceAtLeast(1e-6f)
                             scrubberMotion.onEdgeOverpull(overPx, overpullLimit)
                             val nearest = target.roundToInt()
@@ -3083,7 +3084,7 @@ private fun ShelfScrubber(
                             val drag = awaitShelfTrackTapOrDrag(down) ?: return@awaitEachGesture
                             if (!canSeek()) return@awaitEachGesture
                             if (!drag.pressed) {
-                                // 轻点轨道：只在这一下震一次，旋钮带着 Q 弹果冻拉伸飞到手指下，书架跟着翻到那一本
+                                // 轻点轨道：只在这一下震一次，旋钮随书架连续滑到目标
                                 val tapped = shelfRulerPosition(down.position.x, count, width, inset).roundToInt()
                                 scrubberMotion.onTapSeek()
                                 MotionHaptics.perform(MotionHaptics.Kind.Tick)
@@ -3093,7 +3094,10 @@ private fun ShelfScrubber(
                             knobSeek.cancel()
                             scrubberMotion.onDragStart()
                             scrubbing = true
-                            seekTo(shelfRulerPosition(drag.position.x, count, width, inset))
+                            seekTo(
+                                shelfRulerPosition(drag.position.x, count, width, inset),
+                                (drag.uptimeMillis - down.uptimeMillis) / 1000f,
+                            )
                             anchorX = drag.position.x
                             anchorPosition = target
                             lastX = drag.position.x
@@ -3114,7 +3118,7 @@ private fun ShelfScrubber(
                                     anchorX = change.position.x
                                     anchorPosition = target
                                 }
-                                seekTo(anchorPosition + (change.position.x - anchorX) * booksPerPx * speed)
+                                seekTo(anchorPosition + (change.position.x - anchorX) * booksPerPx * speed, dt)
                                 scrubberMotion.onDragMotion(dx, dt, density)
                                 change.consume()
                             }

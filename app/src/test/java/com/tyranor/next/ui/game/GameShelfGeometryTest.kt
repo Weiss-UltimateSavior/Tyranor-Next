@@ -136,11 +136,13 @@ class GameShelfGeometryTest {
     fun restPosesShowHeroYawAndSpines() {
         val g = geometry()
         assertEquals(g.heroYaw, g.yaw(0f), 1e-4f)
-        assertEquals(g.maxTurn, g.yaw(1f), 1e-4f)
-        assertEquals(-g.maxTurn, g.yaw(-1f), 1e-4f)
-        assertEquals(g.maxTurn, g.yaw(3f), 1e-4f)
-        assertEquals(-g.maxTurn, g.yaw(-3f), 1e-4f)
+        // 单点透视向中心收拢：右侧书书脊在右（yaw < 0），左侧书书脊在左（yaw > 0）
+        assertEquals(-g.maxTurn, g.yaw(1f), 1e-4f)
+        assertEquals(g.maxTurn, g.yaw(-1f), 1e-4f)
+        assertEquals(-g.maxTurn, g.yaw(3f), 1e-4f)
+        assertEquals(g.maxTurn, g.yaw(-3f), 1e-4f)
         assertEquals(g.spineVisible, g.visibleWidth(abs(g.yaw(-1f))), 1e-3f)
+        assertEquals(g.spineVisible, g.visibleWidth(abs(g.yaw(1f))), 1e-3f)
     }
 
     /** 盒子在屏幕上真实画出来的宽度：朝向决定的投影宽度 × 姿态缩放（与 shelfBoxPose 同一个函数）。 */
@@ -168,7 +170,7 @@ class GameShelfGeometryTest {
 
     @Test
     fun turningIsContinuous() {
-        // 左侧的书换边时朝向会从 +90° 跳到 -90°（两种画法完全一样），但画出来的宽度与位置都是连续的
+        // 右侧的书换边时朝向会从 +90° 跳到 -90°（两种画法完全一样），但画出来的宽度与位置都是连续的
         for (degrees in listOf(58.0, 86.0)) {
             val g = geometry(maxTurn = Math.toRadians(degrees).toFloat())
             var d = -1.5f
