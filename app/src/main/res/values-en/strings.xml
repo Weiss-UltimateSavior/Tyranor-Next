@@ -1194,6 +1194,11 @@
     <string name="ethornell_error_font">Invalid or unreadable font. Import a TTF, TTC, OTF or OTC font again.</string>
     <string name="ethornell_error_userdata">Cannot prepare Ethornell saves in the game directory. Check write permission and available storage space.</string>
     <!-- First-launch quick start -->
+    <string name="storage_access_prompt_title">All files access</string>
+    <string name="storage_access_prompt_message">Some game engines need direct access to game files on your device. Open system settings and turn on “Allow access to manage all files”.</string>
+    <string name="storage_access_prompt_open_settings">Open settings</string>
+    <string name="storage_access_prompt_not_now">Not now</string>
+    <string name="storage_access_settings_unavailable">Couldn’t open the permission page. You can grant all files access under Special app access in system settings.</string>
     <string name="onboarding_title">Quick start</string>
     <string name="onboarding_progress">Page %1$d of %2$d</string>
     <string name="onboarding_next">Next</string>

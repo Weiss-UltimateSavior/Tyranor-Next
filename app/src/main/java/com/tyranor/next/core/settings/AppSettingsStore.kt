@@ -41,6 +41,7 @@ object AppSettingsStore {
 
     const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
 
+    private const val ALL_FILES_PROMPT_HANDLED_FILE = "all_files_prompt_handled"
     private const val ONBOARDING_PENDING_INITIAL_STATE_FILE = "onboarding_initial_state"
     private const val HOME_PAGE_PENDING_INITIAL_STATE_FILE = "home_page_initial_state"
 
@@ -93,6 +94,16 @@ object AppSettingsStore {
     /** IO 线程调用；只有写入成功才能离开引导，失败允许用户重试。 */
     fun setOnboardingCompleted(context: Context): OnboardingWriteResult =
         onboarding(context).complete()
+
+    internal fun hasHandledAllFilesPrompt(context: Context): Boolean =
+        allFilesPromptMarker(context).isFile
+
+    internal fun markAllFilesPromptHandled(context: Context) {
+        runCatching { allFilesPromptMarker(context).createNewFile() }
+    }
+
+    private fun allFilesPromptMarker(context: Context): File =
+        File(context.noBackupFilesDir, ALL_FILES_PROMPT_HANDLED_FILE)
 
     const val KEY_THEME_COLOR = "theme_color"
     const val KEY_NAV_STYLE = "nav_style"

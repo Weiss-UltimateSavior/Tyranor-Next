@@ -1,10 +1,8 @@
 package com.tyranor.next
 
-import android.Manifest
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Bundle
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -23,6 +21,7 @@ import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.OnboardingWriteResult
 import com.tyranor.next.ui.onboarding.CoachOverlayVisibility
 import com.tyranor.next.ui.onboarding.OnboardingCoachOverlay
+import com.tyranor.next.ui.onboarding.StartupPermissions
 import com.tyranor.next.ui.common.CoachAnchor
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -44,7 +43,6 @@ import com.tyranor.next.ui.common.motion.ScreenRotationSync
 import com.tyranor.next.ui.common.motion.SystemThemeSync
 import com.tyranor.next.ui.common.motion.rememberPageDepth
 import com.tyranor.next.theme.TyranorNextTheme
-import com.tyranor.next.core.updater.UpdateNotificationManager
 import com.tyranor.next.ui.common.observeSaveSyncFeedback
 import com.tyranor.next.ui.common.privacy.FlagSecureEffect
 import com.tyranor.next.ui.common.privacy.PrivacyLockGate
@@ -59,9 +57,6 @@ private fun coachPageOf(index: Int): Int = when (index) {
 
 // FragmentActivity（ComponentActivity 的子类）：应用锁 BiometricPrompt 要求宿主提供 FragmentManager
 class MainActivity : FragmentActivity() {
-  private val notificationPermissionLauncher =
-    registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
-
   private lateinit var systemThemeSync: SystemThemeSync
   private lateinit var screenRotationSync: ScreenRotationSync
 
@@ -139,7 +134,7 @@ class MainActivity : FragmentActivity() {
                     // 锁定时拦下会操作页面的按键（Back 放行给锁门，音量 / 媒体等系统键放行）
                     .then(Modifier.blockAppInteractionKeys(locked))
                 ) {
-                  AppEntry()
+                  AppEntry(locked)
                 }
               }
             }
@@ -153,7 +148,7 @@ class MainActivity : FragmentActivity() {
 
 
   @Composable
-  private fun AppEntry() {
+  private fun AppEntry(locked: Boolean) {
     LaunchedEffect(Unit) {
       // 启动初始化后准备插件；失败时由独立快照保护首次安装判定不被基础设施数据改变。
       Thread {
@@ -204,14 +199,6 @@ class MainActivity : FragmentActivity() {
       }
     }
 
-    LaunchedEffect(completed) {
-      if ((!AppSettingsStore.ONBOARDING_FEATURE_ENABLED || completed) &&
-        UpdateNotificationManager.shouldRequestPermission(this@MainActivity)
-      ) {
-        UpdateNotificationManager.markPermissionRequested(this@MainActivity)
-        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-      }
-    }
     val onboardingVisible = AppSettingsStore.ONBOARDING_FEATURE_ENABLED && !completed
     Box(Modifier.fillMaxSize()) {
       MainNavigation(
@@ -238,5 +225,6 @@ class MainActivity : FragmentActivity() {
         )
       }
     }
+    StartupPermissions(locked = locked, canRequestNotifications = !onboardingVisible)
   }
 }

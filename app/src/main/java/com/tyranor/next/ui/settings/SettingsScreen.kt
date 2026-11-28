@@ -2,8 +2,6 @@ package com.tyranor.next.ui.settings
 
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
-import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.widget.Toast
@@ -80,6 +78,7 @@ import com.tyranor.next.core.settings.GraphicsFamily
 import com.tyranor.next.core.settings.GraphicsSettings
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.game.storage.GameLibraryFacade
+import com.tyranor.next.core.game.storage.AllFilesAccess
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.PageSecondaryTextColor
@@ -2123,21 +2122,8 @@ private fun isScanDirValid(context: android.content.Context, uri: String): Boole
  * 尝试打开系统授权页并返回 true（调用方应提示用户并暂不保存），与 EngineLauncher 启动前校验保持一致。
  */
 private fun guideAllFilesAccessIfNeeded(context: android.content.Context, path: String): Boolean {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
-    if (Environment.isExternalStorageManager()) return false
+    if (!AllFilesAccess.isMissing()) return false
     if (!EngineLauncher.needsAllFilesAccess(path)) return false
-    val app = context.applicationContext
-    val packageUri = Uri.parse("package:${app.packageName}")
-    runCatching {
-        app.startActivity(
-            Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, packageUri)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
-    }.recoverCatching {
-        app.startActivity(
-            Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
-    }
+    AllFilesAccess.openSettings(context)
     return true
 }

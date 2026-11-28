@@ -3,10 +3,7 @@ package com.tyranor.next.ui.archive
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.os.Environment
-import android.provider.Settings
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.AnimatedContent
@@ -57,6 +54,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tyranor.next.R
 import com.tyranor.next.core.game.model.GamePathUtils
+import com.tyranor.next.core.game.storage.AllFilesAccess
 import com.tyranor.next.core.unpack.ScannedArchive
 import com.tyranor.next.core.unpack.baseNameWithoutExtension
 import com.tyranor.next.theme.AppComponentShape
@@ -114,27 +112,6 @@ private fun dirLabelOf(uri: Uri): String =
             ?.takeIf { it.isNotBlank() }?.let { "/$it" }
         ?: uri.toString()
 
-/** Android 11+ 需要「所有文件访问」才能 File 直读共享存储；低版本 legacy 存储无需。 */
-private fun isAllFilesAccessGranted(): Boolean =
-    Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
-
-/** 打开系统「所有文件访问」授权页（与 EngineLauncher 启动前校验同一模式）。 */
-private fun launchAllFilesAccessSettings(context: Context) {
-    val app = context.applicationContext
-    val packageUri = Uri.parse("package:${app.packageName}")
-    runCatching {
-        app.startActivity(
-            Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, packageUri)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
-    }.recoverCatching {
-        app.startActivity(
-            Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
-    }
-}
-
 /**
  * 组合权限提示、解包/封包面板与任务弹窗；运行状态和目录授权由现有 ViewModel 与系统入口管理。
  * 增强档为面板切换提供弹簧转场，普通档保留原有水平滑动与淡入淡出。
@@ -150,9 +127,9 @@ private fun ArchiveScreen(vm: ArchiveViewModel = viewModel()) {
 
     // 「所有文件访问」授权状态：从系统设置返回本页即刷新。未授权时扫描只能走
     // SAF 回退（部分目录扫不到、输入需慢速中转），横幅引导授权后走真实路径直读。
-    var allFilesGranted by remember { mutableStateOf(isAllFilesAccessGranted()) }
+    var allFilesGranted by remember { mutableStateOf(!AllFilesAccess.isMissing()) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        allFilesGranted = isAllFilesAccessGranted()
+        allFilesGranted = !AllFilesAccess.isMissing()
     }
 
     // 强制模态锁：运行中系统手势/返回关掉弹窗立即重建，操作结束（完成/取消/失败）后才放行。
@@ -206,7 +183,7 @@ private fun ArchiveScreen(vm: ArchiveViewModel = viewModel()) {
                         text = stringResource(R.string.archive_permission_grant),
                         tonal = true,
                         modifier = Modifier.fillMaxWidth(),
-                        onClick = { launchAllFilesAccessSettings(appContext) },
+                        onClick = { AllFilesAccess.openSettings(appContext) },
                     )
                 }
             }

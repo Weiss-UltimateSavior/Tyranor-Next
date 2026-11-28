@@ -8,7 +8,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.Log
@@ -81,6 +80,7 @@ import com.tyranor.next.core.game.save.sync.SaveSyncError
 import com.tyranor.next.core.game.save.sync.withSaveSyncLaunchAdmission
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.storage.GameLibraryFacade
+import com.tyranor.next.core.game.storage.AllFilesAccess
 import com.tyranor.next.core.game.storage.EngineDetectionRepository
 import com.tyranor.next.core.game.scan.GameDirFingerprint
 import com.tyranor.next.core.settings.AppIconSwitcher
@@ -300,19 +300,8 @@ object EngineLauncher {
     suspend fun launchNativeKirikiroidUi(context: Context): LaunchResult = withContext(Dispatchers.IO) {
         val app = context.applicationContext
         // 原生界面同样需要「所有文件访问」才能浏览共享存储中的游戏目录
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
-            val opened = runCatching {
-                app.startActivity(
-                    Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${app.packageName}"))
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                )
-            }.recoverCatching {
-                app.startActivity(
-                    Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                )
-            }.isSuccess
-            return@withContext if (opened) {
+        if (AllFilesAccess.isMissing()) {
+            return@withContext if (AllFilesAccess.openSettings(app)) {
                 LaunchResult.Failure.AllFilesAccessRequested
             } else {
                 LaunchResult.Failure.AllFilesAccessMissing
@@ -1108,28 +1097,13 @@ object EngineLauncher {
      * Match RinneMobile's requirement: ask the user to enable "Manage all files" before launching.
      */
     private fun requestAllFilesAccessIfNeeded(context: Context, game: ScanGame, path: String): LaunchResult.Failure? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
-        if (Environment.isExternalStorageManager()) return null
+        if (!AllFilesAccess.isMissing()) return null
         // A persisted SAF tree grant is sufficient for the mirror itself. Direct
         // directory/MediaStore supplementation remains best-effort on restricted ROMs.
         if (game.engine == EngineType.KIRIKIRI && GamePathUtils.isRemovableStoragePath(path)) return null
         if (!needsAllFilesAccess(path)) return null
 
-        val app = context.applicationContext
-        val packageUri = Uri.parse("package:${app.packageName}")
-        val opened = runCatching {
-            app.startActivity(
-                Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, packageUri)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
-        }.recoverCatching {
-            app.startActivity(
-                Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
-        }.isSuccess
-
-        return if (opened) {
+        return if (AllFilesAccess.openSettings(context)) {
             LaunchResult.Failure.AllFilesAccessRequested
         } else {
             LaunchResult.Failure.AllFilesAccessMissing

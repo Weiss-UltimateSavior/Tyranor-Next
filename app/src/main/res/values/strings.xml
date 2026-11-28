@@ -1194,6 +1194,11 @@
     <string name="ethornell_error_font">字体无效或不可读取，请重新导入 TTF、TTC、OTF 或 OTC 字体。</string>
     <string name="ethornell_error_userdata">无法准备游戏目录中的 Ethornell 存档，请检查目录写入权限和可用空间。</string>
     <!-- First-launch quick start -->
+    <string name="storage_access_prompt_title">所有文件访问</string>
+    <string name="storage_access_prompt_message">部分游戏引擎需要直接读取设备存储中的游戏文件。你可以前往系统设置，开启「允许访问所有文件」。</string>
+    <string name="storage_access_prompt_open_settings">前往设置</string>
+    <string name="storage_access_prompt_not_now">暂不授权</string>
+    <string name="storage_access_settings_unavailable">无法打开授权页面。你可以在系统设置的「特殊应用权限」中开启「所有文件访问」。</string>
     <string name="onboarding_title">快速入门</string>
     <string name="onboarding_progress">第 %1$d 页，共 %2$d 页</string>
     <string name="onboarding_next">下一步</string>
