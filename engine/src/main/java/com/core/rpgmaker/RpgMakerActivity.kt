@@ -825,17 +825,12 @@ class RpgMakerActivity : Activity() {
     }
 
     /**
-     * MZ 会话的揭开时机：轮询 `SceneManager._scene`，就绪或超时（15s）后揭开。
-     *
-     * 过程中任何「会话已不是本次启动」的信号（换页、销毁、新的 HTML 注入请求）
-     * 都必须让本轮轮询自行退出，否则旧回调会把新页面的启动页一并揭掉。
-     */
-    /**
      * MZ 的启动看门狗：从页面开始加载起算，[RpgMakerStartupGate.TIMEOUT_MS] 后若仍未揭开
      * 就直接揭开并记 warn。
      *
      * 它兜的是「`onPageFinished` 永远不来」这一类：挂起的子资源、解析期死循环的插件、
      * 卡住的本地请求。没有它，[awaitMzSceneReady] 根本没机会布防，加载页会永久停住。
+     * 轮询阶段**同样**依赖它：探针回调本身也可能永远不返回（JS 主线程被占住）。
      * 走主线程 Handler 而不是 `view.postDelayed`：Activity 销毁时能统一取消。
      */
     private fun armStartupWatchdog() {
@@ -846,11 +841,17 @@ class RpgMakerActivity : Activity() {
             if (isFinishing || isDestroyed || !initialMainFramePending) return@Runnable
             if (startupNavigationGeneration != generation) return@Runnable
             Log.w(TAG, "page load did not finish within ${RpgMakerStartupGate.TIMEOUT_MS}ms, revealing anyway")
-            initialMainFramePending = false
-            startupOverlay?.reveal()
+            revealStartup()
         }
         startupWatchdog = watchdog
         Handler(Looper.getMainLooper()).postDelayed(watchdog, RpgMakerStartupGate.TIMEOUT_MS)
+    }
+
+    /** 揭开启动页并收掉看门狗：所有揭开路径都走这里，避免看门狗在揭开后再触发一次。 */
+    private fun revealStartup() {
+        cancelStartupWatchdog()
+        initialMainFramePending = false
+        startupOverlay?.reveal()
     }
 
     private fun cancelStartupWatchdog() {
@@ -858,9 +859,17 @@ class RpgMakerActivity : Activity() {
         startupWatchdog = null
     }
 
+    /**
+     * MZ 会话的揭开时机：轮询就绪探针，就绪或超时（15s）后揭开。
+     *
+     * 过程中任何「会话已不是本次启动」的信号（换页、销毁、新的 HTML 注入请求）
+     * 都必须让本轮轮询自行退出，否则旧回调会把新页面的启动页一并揭掉。
+     */
     private fun awaitMzSceneReady(view: WebView, navigationGeneration: Long) {
-        // 磁盘/网络都卡住的页面不可能再进轮询；看门狗已经接管这两个分支
-        cancelStartupWatchdog()
+        // **不能在这里取消看门狗**：超时判定与下一轮 postDelayed 都写在
+        // evaluateJavascript 的回调里。若 JS 主线程被插件解析期死循环 / 长时间同步
+        // 工作占住，回调永不返回 → 既不 CONTINUE 也不 TIMEOUT_REVEAL，加载页永久停住。
+        // 看门狗从页面开始加载就算好了 TIMEOUT_MS，此时它恰好是这条路径的兜底。
         // 单调时钟：墙钟在 15s 窗口里被回拨会让 elapsed 变负、decide 永远 CONTINUE
         val startedAt = android.os.SystemClock.elapsedRealtime()
         val poll = object : Runnable {
@@ -881,14 +890,12 @@ class RpgMakerActivity : Activity() {
                                 view.postDelayed(this, RpgMakerStartupGate.POLL_INTERVAL_MS)
                             RpgMakerStartupGate.Decision.REVEAL -> {
                                 Log.i(TAG, "mz scene ready after ${elapsed}ms")
-                                initialMainFramePending = false
-                                startupOverlay?.reveal()
+                                revealStartup()
                             }
                             RpgMakerStartupGate.Decision.TIMEOUT_REVEAL -> {
                                 // 不卡死：揭开并留一条可检索的 warn，由日志定位是哪个作品没跑起来
                                 Log.w(TAG, "mz scene not ready after ${elapsed}ms, revealing anyway")
-                                initialMainFramePending = false
-                                startupOverlay?.reveal()
+                                revealStartup()
                             }
                         }
                     }

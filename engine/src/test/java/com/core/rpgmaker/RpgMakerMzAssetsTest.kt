@@ -34,7 +34,13 @@ class RpgMakerMzAssetsTest {
         assertTrue("重试必须有上限", hook.contains("maxAttempts"))
         assertTrue("必须带能力探测", hook.contains("typeof g._createEffekseerContext"))
         assertTrue("必须保留 v0 hook 里的 overflow 处理", hook.contains("overflow"))
-        assertTrue("必须保留 isGameActive 覆写", hook.contains("isGameActive"))
+        // isGameActive 必须在 managers hook 里：lateHook 求值时 SceneManager 还没定义，
+        // 写在这里的分支永远不执行。断言「不得作为可执行赋值出现」能挡住这个错误
+        // （注释里提到它是允许的，那只是说明为什么搬走）。
+        assertFalse(
+            "lateHook 求值时 SceneManager 尚未定义，isGameActive 不能在这里赋值",
+            Regex("""SceneManager\.isGameActive\s*=""").containsMatchIn(hook),
+        )
         // 只在会话明确要求时装桩
         assertTrue(hook.contains("cfg.effekseer === false"))
     }

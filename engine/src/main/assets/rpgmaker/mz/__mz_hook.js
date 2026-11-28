@@ -10,13 +10,10 @@
 
     document.body.parentNode.style.overflow = "hidden";
 
-    // MZ 的 SceneManager.isGameActive 用 window.top.document.hasFocus()；WebView
-    // 里恒为 true，钉死可以避免 iframe 边界下的判定差异。
-    if (window.SceneManager) {
-        SceneManager.isGameActive = function () {
-            return true;
-        };
-    }
+    // 注意：`SceneManager.isGameActive` 的覆写**不在这里**。本文件在 </body> 前求值，
+    // 那时 rmmz_core.js 还没被 main.js 插入、SceneManager 是 undefined，写在这里的
+    // 分支永远不会执行。真正生效的那份在 __mz_managers_hook.js（追加到
+    // rmmz_managers.js 末尾，此时 SceneManager 已存在）。
 
     var cfg = window.__tyranorRpg || {};
 

@@ -9,7 +9,7 @@
 > 可行性结论与差异取证见 [RPGMaker-MZ-移植评估.md](RPGMaker-MZ-移植评估.md)，本文只讲**怎么做**。
 >
 > 状态：**已落地（A / B / C / D / E / H）**；F（性能补丁）与 G（注入配置数据化）按本文定性为
-> 「可选、可延后」，本期未做。最后更新 2026-11-28（第 3 版：落地情况回写 + 一处事实错误修正）。
+> 「可选、可延后」，本期**只落地了 F 里的 `MAX_TEXTURE_SIZE` 降采样**（见 `8c9caff0d`，常开无开关），其余补丁未做。最后更新 2026-11-29（第 4 版：回写 F 的降采样已落地）。
 > 真机验收项（加密样本 304、PC 真实存档双向互通、WebView ≥/< 124 对照、长 BGM）
 > 仍需按 §5.3 在设备上执行，不能以 JVM/JS 回归代替。
 
@@ -437,7 +437,7 @@ MZ 的 `Graphics._createEffekseerContext()` 对失败**是容忍的**（`try/cat
 
 | 补丁 | 来源 | 收益 | 风险 |
 | --- | --- | --- | --- |
-| `MAX_TEXTURE_SIZE` 降采样 + `resolution` 补偿 | JoiMZ / GameNative | 大图（6320px 立绘）不再上传失败变黑 | 缩放插值可能变糊 |
+| `MAX_TEXTURE_SIZE` 降采样 + `resolution` 补偿 | JoiMZ / GameNative | 大图（6320px 立绘）不再上传失败变黑 | 缩放插值可能变糊 | **已落地**（仅降采样，`8c9caff0d`，常开） |
 | tilemap 片元着色器强制 `highp` | GameNative | Mali fp16 精度不足导致的网格接缝 | 低（只是精度声明） |
 | `PIXI.filters.BlurFilter` 的 `blur===0` 换恒等 | GameNative | 省 8 个 RGBA8 pass | 低 |
 | `Tilemap.Renderer._createInternalTextures` 固定 2048 | JoiPlay `PluginOverridesMZ` | tilemap 显存 | 低 |
@@ -557,7 +557,7 @@ MZ 段（`:510-547`）：
 | R4 | **`process` 函数/对象路线互斥** | 混用会导致 YEP 插件初始化崩 或 存档全丢 | **〔v2 修正理由〕** 本仓库 [`__nwjs_polyfill.js:30`](../engine/src/main/assets/rpgmaker/__nwjs_polyfill.js#L30) 写的是 `window.process = {}`（对象），再用 `pinIsNwjs` 强制 `isNwjs()===false`——与 GameNative"让 `process` 是函数"殊途同归。MZ **复用同一份 polyfill** 即可自然一致，这不是需要单独决策的事项；只需在阶段 B 验收里加一条"`typeof process === 'object'` 且 `isNwjs() === false`"的断言，防止有人为 MZ 另起一套 |
 | R5 | `__rmmz__.js` 仍被 v0 路径（`TyranoActivity`）使用 | 误删会破坏 `Tyranor-2.3.4` 的 MZ 支持 | 新建 `mz/` 目录，**保留旧三件套不删** |
 | R6 | GameNative 是 **GPL-3.0** | 拷代码会污染许可 | 只读架构，所有补丁自己重写；补丁来源在注释里写"思路参考"，不复制实现 |
-| R7 | 阶段 F 的性能补丁改变渲染行为 | 可能引入画面回归 | 默认关闭；落地前录屏比对 |
+| R7 | 阶段 F 的性能补丁改变渲染行为 | 可能引入画面回归 | 其余补丁未做；**已落地的 `MAX_TEXTURE_SIZE` 降采样是常开的**，只会让超限大图略糊（未超限不受影响），不再上传失败变黑 |
 
 ---
 

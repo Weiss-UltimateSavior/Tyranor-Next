@@ -80,20 +80,38 @@ class RpgMakerStartupGateTest {
      * 黑屏或残缺画面（まもの博物館，日志 `11_28-19-34-33_667.log`：`mz scene ready
      * after 700ms` 之后一个 data 请求都没有）。
      *
-     * 判定必须等游戏真的开始跑帧：`Graphics._renderer` 已建（`initGraphics` 完成）
-     * 且场景已进入 `start` 之后才谈得上「画面就绪」。
+     * 探针是 JS，真正的行为断言交给 Node harness（场景 9n，用真的 JS 引擎执行）；
+     * 这里只守住它在源码层面的必需成分，避免有人把它简化回去。
      */
     @Test
-    fun probeRequiresMoreThanASceneObject() {
-        assertTrue(
-            "必须同时确认渲染器已建立，不能只判 _scene",
-            RpgMakerStartupGate.READY_PROBE_JS.contains("_renderer"),
-        )
-        assertTrue(
-            "必须确认渲染循环已开始（否则场景只是被 new 出来，create/start 都没跑）",
-            RpgMakerStartupGate.READY_PROBE_JS.contains("_currentTime") ||
-                RpgMakerStartupGate.READY_PROBE_JS.contains("_frameCount") ||
-                RpgMakerStartupGate.READY_PROBE_JS.contains("GameLoop"),
+    fun probeRequiresDatabaseAndRendererNotJustASceneObject() {
+        assertTrue("必须判数据库已加载", RpgMakerStartupGate.READY_PROBE_JS.contains("isDatabaseLoaded"))
+        assertTrue("必须判渲染器", RpgMakerStartupGate.READY_PROBE_JS.contains("Graphics._app"))
+        // 行为层面的真值表在 harness 9n 里逐条执行
+    }
+
+    /**
+     * MZ 的渲染器是 `Graphics._app`（PIXI.Application），**没有** `_renderer`
+     * （那是 MV/PIXI 4 的字段）。探针必须认 `_app`，否则 MZ 永远判不就绪、
+     * 每次启动都被拖到 15s 超时——这正是首版探针的真实缺陷。
+     */
+    @Test
+    fun probeAcceptsTheMzRendererFieldNotOnlyTheMvOne() {
+        assertTrue("必须认 MZ 的 _app", RpgMakerStartupGate.READY_PROBE_JS.contains("Graphics._app"))
+        assertTrue("同时兼容 MV 的 _renderer", RpgMakerStartupGate.READY_PROBE_JS.contains("Graphics._renderer"))
+    }
+
+    /**
+     * **不能**用 `Graphics.frameCount` / `_frameCount` 作判据：MZ 的 `frameCount` 只在
+     * `Graphics.initialize` 置 0、之后从不递增（实测 rmmz_core v1.1.0 全文只有
+     * `this.frameCount = 0`）。拿它作「主循环已跑帧」的判据会恒为 false，
+     * 把每次 MZ 启动都拖到 15s 超时。
+     */
+    @Test
+    fun probeDoesNotDependOnFrameCount() {
+        assertFalse(
+            "探针不得依赖 frameCount（MZ 里它从不递增）",
+            RpgMakerStartupGate.READY_PROBE_JS.contains("frameCount"),
         )
     }
 

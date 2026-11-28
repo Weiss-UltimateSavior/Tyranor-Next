@@ -939,7 +939,7 @@ async function runTests() {
             const env = makeMzV2Env({ engine: 'MZ', version: 'v2', effekseer: true, audioStreaming: true });
             env.runCode(
                 'window.PIXI = { BaseTexture: function (src, opts) { this.source = src; this.width = src.width; this.height = src.height; this.scaleMode = opts && opts.scaleMode; } };\n' +
-                'window.Graphics = { width: 816, height: 624, _renderer: {}, _frameCount: 1, _stretchHeight: function () { return 624; } };\n' +
+                'window.Graphics = { width: 816, height: 624, _app: {}, frameCount: 0, _stretchHeight: function () { return 624; } }; \n' +
                 'window.Bitmap = function () { this._image = null; this._url = ""; };\n' +
                 'Bitmap.prototype._createBaseTexture = function (source) { this._baseTexture = new PIXI.BaseTexture(source); return this._baseTexture; };\n' +
                 'window.Utils = window.Utils || {};\n' +
@@ -1000,7 +1000,7 @@ async function runTests() {
             const frameEnv = makeMzV2Env({ engine: 'MZ', version: 'v2', effekseer: true, audioStreaming: true });
             frameEnv.runCode(
                 'window.PIXI = { BaseTexture: function (src) { this.source = src; this.width = src.width; this.height = src.height; } };\n' +
-                'window.Graphics = { width: 816, height: 624, _renderer: {}, _frameCount: 1 };\n' +
+                'window.Graphics = { width: 816, height: 624, _app: {} };\n' +
                 'window.Bitmap = function () { this._image = null; };\n' +
                 'Bitmap.prototype._createBaseTexture = function (source) { this._baseTexture = new PIXI.BaseTexture(source); this._baseTexture.width = source.width; this._baseTexture.height = source.height; };\n' +
                 'window.Sprite = function () { this._bitmap = null; this._frames = []; };\n' +
@@ -1049,6 +1049,61 @@ async function runTests() {
                 tiling === 'true' || tiling === 'no-tilingsprite',
                 String(tiling),
             );
+        }
+
+        // --- 9n: 就绪探针的真值表（用真的 JS 引擎执行探针本身） ---
+        // 之前探针只判 SceneManager._scene，会在「场景刚 new 出来、数据库一个字节都没加载」
+        // 时就判就绪——真机表现是黑屏（日志 11_28-19-34-33_667.log：mz scene ready
+        // after 700ms 之后一个 data 请求都没有）。
+        //
+        // 同时守住两个**字段名**事实（实测 rmmz_core v1.1.0）：
+        //   - MZ 的渲染器是 Graphics._app，没有 _renderer（那是 MV/PIXI4 的字段）；
+        //   - Graphics.frameCount 只置 0、从不递增，不能作「主循环已跑帧」的判据。
+        // 用错任何一个都会让探针恒 false → 每次启动都拖到 15s 超时。
+        {
+            const probeSrc = fs.readFileSync(
+                path.join(__dirname, '..', '..', 'main', 'java', 'com', 'core', 'rpgmaker', 'RpgMakerStartupGate.kt'),
+                'utf8',
+            );
+            const m = probeSrc.match(/READY_PROBE_JS\s*=\s*((?:"[^"]*"\s*\+?\s*)+)/);
+            if (!m) {
+                check('9n 能从 Kotlin 源码中取出 READY_PROBE_JS', false, '未匹配到定义');
+            } else {
+                const jsProbe = m[1].split('\n')
+                    .map((line) => line.trim())
+                    .filter((line) => line.startsWith('"'))
+                    .map((line) => line.replace(/^"/, '').replace(/"\s*\+?\s*$/, ''))
+                    .join('');
+                const runProbe = (setupJs) => {
+                    const shim = { frameCount: 0 };
+                    shim.window = shim;
+                    shim.globalThis = shim;
+                    const ctx = vm.createContext(shim);
+                    try {
+                        vm.runInContext(setupJs, ctx, { filename: 'ready-setup.js' });
+                        return vm.runInContext(jsProbe, ctx, { filename: 'ready-probe.js' });
+                    } catch (e) {
+                        return 'threw:' + e.message;
+                    }
+                };
+                const cases = [
+                    ['只有 _scene 不够', 'window.SceneManager={_scene:{}};', false],
+                    ['数据库未加载不够', 'window.SceneManager={_scene:{}};window.DataManager={isDatabaseLoaded:function(){return false}};window.Graphics={_app:{}};', false],
+                    ['渲染器未建不够', 'window.SceneManager={_scene:{}};window.DataManager={isDatabaseLoaded:function(){return true}};window.Graphics={};', false],
+                    ['MZ 真实形状（_app）才就绪', 'window.SceneManager={_scene:{}};window.DataManager={isDatabaseLoaded:function(){return true}};window.Graphics={_app:{}};', true],
+                    ['MV 的 _renderer 也兼容', 'window.SceneManager={_scene:{}};window.DataManager={isDatabaseLoaded:function(){return true}};window.Graphics={_renderer:{}};', true],
+                    ['只有 frameCount 不算就绪', 'window.SceneManager={_scene:{}};window.DataManager={isDatabaseLoaded:function(){return true}};window.Graphics={frameCount:99};', false],
+                ];
+                for (const [label, setup, expected] of cases) {
+                    const got = runProbe(setup);
+                    check('9n ' + label, got === expected, '期望 ' + expected + '，实际 ' + String(got));
+                }
+                check(
+                    '9n 探针不得依赖 frameCount（MZ 里它从不递增）',
+                    !jsProbe.includes('frameCount'),
+                    jsProbe,
+                );
+            }
         }
 
         // --- 9g: managers hook 的存档桥往返 + _stretchHeight 铺满 ---

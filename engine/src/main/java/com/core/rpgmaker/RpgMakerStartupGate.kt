@@ -20,24 +20,32 @@ internal object RpgMakerStartupGate {
     /**
      * 就绪探针。
      *
-     * **不能只判 `SceneManager._scene`**：`SceneManager.goto()` 在构造场景时就给它赋值，
-     * 而 `Scene_Boot.create()`（真正发起 data 目录 JSON 请求、加载数据库）在那之后才跑。
-     * 只判 `_scene` 会在数据库还没加载、图片一张都没取时就判「就绪」，把加载页提前揭开
-     * ——真机表现是黑屏或残缺画面（まもの博物館：`mz scene ready after 700ms` 之后
-     * 一个 data 请求都没有，随后图像上传报 `texImage2D: width or height out of range`）。
+     * **必须同时满足三点，只判 `_scene` 会提前揭开**：
+     * `SceneManager.goto()` 在**构造**场景时就给 `_scene` 赋值，而 `Scene_Boot.create()`
+     * （真正发起 data 目录 JSON 请求、加载数据库）在那之后才跑。只判 `_scene` 会在数据库
+     * 一个字节都没加载、图片一张都没取时就判「就绪」——真机表现是黑屏或残缺画面
+     * （まもの博物館：`mz scene ready after 700ms` 之后一个 data 请求都没有，随后
+     * 图像上传报 `texImage2D: width or height out of range`）。
      *
-     * 因此要求三者同时成立：
-     * 1. `SceneManager._scene` 存在（`goto` 已跑）；
-     * 2. `Graphics._renderer` 已建（`initGraphics` 完成，能真的画东西）；
-     * 3. `Graphics._frameCount > 0`（主循环已跑过帧，场景的 `create`/`start` 都已执行）。
+     * 1. `SceneManager._scene` 存在；
+     * 2. `DataManager.isDatabaseLoaded()` 为真——这是**唯一可靠**的「数据库已就绪」信号，
+     *    它逐个检查 `_databaseFiles` 是否已挂到 `window`，正是 `Scene_Boot.create()` 的产物；
+     * 3. 渲染器已建立：MZ 用 `Graphics._app`（`PIXI.Application`），**没有** `_renderer`
+     *    （`_renderer` 是 MV/PIXI 4 的字段）。两者都探测，兼容 MV 侧复用。
+     *
+     * **不能用 `Graphics.frameCount`**：MZ 的 `frameCount` 只在 `Graphics.initialize` 里
+     * 置 0、之后从不递增（实测 rmmz_core.js v1.1.0 只有 `this.frameCount = 0`），拿它
+     * 作「主循环已跑帧」的判据会恒为 false，把每次启动都拖到 15s 超时。
      *
      * 全部按能力探测写，不假设 MZ 版本号。
      */
     const val READY_PROBE_JS =
         "(function(){try{" +
             "if(!window.SceneManager||!SceneManager._scene)return false;" +
-            "if(!window.Graphics||!Graphics._renderer)return false;" +
-            "if(typeof Graphics._frameCount!=='number'||Graphics._frameCount<=0)return false;" +
+            "if(!window.DataManager||typeof DataManager.isDatabaseLoaded!=='function')return false;" +
+            "if(!DataManager.isDatabaseLoaded())return false;" +
+            "if(!window.Graphics)return false;" +
+            "if(!Graphics._app&&!Graphics._renderer)return false;" +
             "return true;" +
             "}catch(e){return false;}})()"
 
