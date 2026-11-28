@@ -419,11 +419,11 @@ MZ 的 `Graphics._createEffekseerContext()` 对失败**是容忍的**（`try/cat
 
 | 项 | 依据 | 做什么 |
 | --- | --- | --- |
-| `Utils.isMobileDevice` | MZ 正则含 `Mobile|Android|iPhone|iPad`，在真机上为 `true` | 钉 `false`。**〔v2 修正〕** 依据只有一条：MZ 的 `Graphics._defaultStretchMode` 是 `isNwjs() \|\| isMobileDevice()`，而 `isNwjs` 已被 polyfill 钉成 `false`，若 `isMobileDevice` 留 `true` 两者取值不同步。**原稿"不显示虚拟按键"的理由不成立**——虚拟按键是 MV 的 `Utils.isMobileDevice` 分支，MZ 核心脚本里没有；"不压缩画面"也只对 MV 的 `_createRenderer` 成立。落地时写成 `Utils.isMobileDevice = function () { return false; }`（MZ 里它是**方法**，不是 MV 的布尔属性） |
-| `Graphics._stretchHeight` | 现有 `__hook_rmmz_core.js` | 保持现有实现（移动端用 `clientHeight`，避免 `0.9` 缩放留黑边） |
-| `document.body.parentNode.style.overflow` | 现有 `__rmmz__.js` | 保留 |
-| `SceneManager.isGameActive` | MZ `window.top.document.hasFocus()` | 保持 `return true`（WebView 里恒为 true，但避免 iframe 边界） |
-| `Graphics._defaultStretchMode` | MZ = `isNwjs() \|\| isMobileDevice()` | 两者都钉成 `false` 后**此函数返回 `false`**——这会让 MZ 在横屏时按 `Graphics.width/height` 原尺寸居中而不拉伸。**〔v2〕** 这与下一行 `_stretchHeight` 的"铺满"目标冲突。正确做法是**整行删掉**（不要碰 `_defaultStretchMode`），只钉 `isMobileDevice`，让 `_stretchHeight` 的现有覆写负责铺满；或者反过来只覆写 `_defaultStretchMode = () => true` 而不钉 `isMobileDevice`。**二选一，不要两个都做**，真机验收以"横屏无黑边"为准 |
+| `Utils.isMobileDevice` | MZ 正则含 `Mobile|Android|iPhone|iPad`，在真机上为 `true` | ~~钉 `false`~~。**〔v3 落地修正：未采纳〕** 原理由（与已被 polyfill 钉成 `false` 的 `isNwjs` 保持同步）不成立：二者语义本就不同，`_defaultStretchMode` 要的正是「移动端拉伸」，把 `isMobileDevice` 钉成 false 会**关掉**它。实际做法是保留 `isMobileDevice` 原样，由下一行的 `_stretchHeight` 覆写负责铺满——这已经消除了 `0.9` 缩放留黑边的原始症状，且不动 `_defaultStretchMode`（该函数继续返回 `true`，横屏按视口拉伸） |
+| `Graphics._stretchHeight` | 现有 `__hook_rmmz_core.js` | 已落地：`__mz_core_hook.js` 改为直接返回 `document.documentElement.clientHeight`（MZ 原实现会乘 `Utils.isLocal() ? 1.0 : 0.9`） |
+| `document.body.parentNode.style.overflow` | 现有 `__rmmz__.js` | 已落地：保留在 `__mz_hook.js` 的顶层（不依赖任何未定义全局） |
+| `SceneManager.isGameActive` | MZ `window.top.document.hasFocus()` | 已落地：`__mz_managers_hook.js` 里保持 `return true`。**注意求值时机**：必须放在 managers hook（`SceneManager` 已定义），不能放 `__mz_hook.js`——后者求值时 `SceneManager` 还不存在 |
+| `Graphics._defaultStretchMode` | MZ = `isNwjs() \|\| isMobileDevice()` | **〔v3 落地〕不碰**。覆写它会让 MZ 在横屏时按 `Graphics.width/height` 原尺寸居中而不拉伸，与「铺满」目标冲突；铺满由 `_stretchHeight` 单独负责即可 |
 | PC 存档兜底 | `RpgSaveFormat` 的 `fileN.bin` 语义 | `loadObject("file1")` 失败时回退读 `RPG File1` 键（兼容从 MV 工程搬来的存档）—**可选，先不做，避免引入非预期行为** |
 
 **不要**塞进去的：`Decrypter.*`（MZ 无）、`DataManager.isThisGameFile`（MZ 无）、
