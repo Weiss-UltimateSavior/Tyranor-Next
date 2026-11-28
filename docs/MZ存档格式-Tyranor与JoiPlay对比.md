@@ -20,7 +20,9 @@
 
 **一句话**：Tyranor 的 MZ 存档是"自己一套、能读能存、但 PC 版读不出"；JoiPlay 的 MZ 存档是"PC 版原样搬到手机上"。
 
-这也直接印证了 [移植实施方案](RPGMaker-MZ-移植实施方案.md) 阶段 B 的结论——**现状是 B-1 自洽格式，必须改成 B-2 才能互通**。
+> **〔决策更新 2026-11-28〕** 经确认，**引擎侧存档方式保持不动**（继续明文 JSON `.bin`），
+> 互通改由**转换层**在导出/导入时补一次 deflate/inflate。下文 §4、§5 已按此更新；
+> 具体实现与单测见 [实施方案阶段 B](RPGMaker-MZ-移植实施方案.md)。
 
 ---
 
@@ -142,9 +144,9 @@ Tyranor 的 [`RpgSaveKeyMapping.kt:23`](../engine/src/main/java/com/core/rpgmake
 所以「转化是纯改名」这个说法用在 MZ 上是**错的**——把 `file1.bin` 改名成 `file1.rmmzsave` 后，
 PC 版会尝试 inflate 一份明文 JSON，直接失败。
 
-**这正好是 [实施方案阶段 B-2](RPGMaker-MZ-移植实施方案.md) 要修的东西**：
-B-2 落地后（走 deflate），这句注释才对 MZ 也成立。在此之前，它是文档层面的一个坑——
-如果按它去实现"导出标准格式"，MZ 存档导出会是坏的。
+**这正是最终方案在转换层补的那一步**：MZ 导入/导出时多做一次 inflate/deflate
+（`RpgSaveFormat.encodeMzPayload` / `decodeMzPayload`），改名之外补上内容转码。
+该注释本身已同步修正为"MZ 需转码"（见 `needsPayloadTranscode`）。
 
 > 建议：在 B-2 落地前，把该注释限定为「MV 成立；MZ 需 B-2 后成立」，或直接等 B-2 一起改。
 
@@ -152,20 +154,28 @@ B-2 落地后（走 deflate），这句注释才对 MZ 也成立。在此之前�
 
 ## 5. 与现有移植方案的关系
 
-这次对比**验证了实施方案阶段 B 的核心判断**：
+**〔结论更新 2026-11-28〕** 本对比原本用于支撑「必须把引擎侧改成 deflate 落盘（B-2）」。
+最终决策改为**引擎侧存档方式完全不动，互通由转换层在导出/导入时转码**——
+因为转换层本来就是唯一处理「Tyranor 格式 ↔ 标准格式」的地方，在这里补一次压缩/解压，
+不需要动引擎、不需要迁移存量存档、也不改 `RpgMakerStorage` 的 UTF-8 契约。
 
-| 实施方案的说法 | 本次核实 |
+| 本对比的发现 | 对最终方案的意义 |
 | --- | --- |
-| B-1 现状 = 自洽格式，与 `.rmmzsave` 不兼容 | ✅ 确认：明文 JSON vs deflate 二进制 |
-| B-2 需要 `writeBytes` 字节流 | ✅ 确认：`RpgMakerStorage` 现在 UTF-8 读写，会破坏二进制 |
-| 需要旧 `.bin` 嗅探直通 | ✅ 确认：现有存档全是裸 JSON，切格式后必须兼容读 |
-| JoiPlay 是"patch 掉 StorageManager"而非桥接 | ✅ 确认：它**根本不动** MZ 存档，靠真 `fs` |
+| Tyranor 存明文 JSON、PC 存 deflate 流 | **确认必须转码**，但转码点放在转换层而非引擎侧 |
+| `RpgMakerStorage` 是 UTF-8 读写 | 不再需要改（引擎侧不存二进制了）→ `writeBytes` 取消 |
+| 现有存档全是裸 JSON | 不需要迁移：Tyranor 侧格式不变，转码只作用于导出副本 |
+| JoiPlay **完全不动** MZ 存档，靠真 `fs` | 印证"能互通的关键是格式一致"，与用什么机制落盘无关 |
 
 同时补充一条原方案没点明的事实：
 
 **JoiPlay 能互通是"免费的"——因为它让 MZ 以 local 模式原生跑；Tyranor 要互通是"要补的"——因为我们选了 web 模式 + 自建桥。**
 这是两条路线的必然结果，不是实现优劣问题。Tyranor 选 web 模式是为了给 `localStorage` 落盘、`fs` 桥等
-v2 能力留出可控点（见[评估稿 §2.7](RPGMaker-MZ-移植评估.md) 的"互斥路线"讨论），代价就是 MZ 存档要自己做格式对齐。
+v2 能力留出可控点（见[评估稿 §2.7](RPGMaker-MZ-移植评估.md) 的"互斥路线"讨论）。
+代价是 MZ 存档格式与 PC 版不同，但这个代价可以在**转换层**用一次 deflate/inflate 补齐，
+不必改引擎的存储方式。
+
+> 实现与测试见 [实施方案阶段 B](RPGMaker-MZ-移植实施方案.md)（已落地：`RpgSaveFormat.encodeMzPayload` /
+> `decodeMzPayload`、`RpgSaveFormatConverter`、`GameSaveManager.exportPayloadEncoder`）。
 
 ---
 

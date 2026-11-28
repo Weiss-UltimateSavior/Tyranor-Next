@@ -54,14 +54,35 @@ class RpgSaveFormatConverterTest {
     fun convertsMzSaves() {
         val gameRoot = mvGameRoot("Mz Game")
         val savedata = gameRoot.resolve("savedata").apply { mkdirs() }
-        savedata.resolve("global.rmmzsave").writeBytes("G".toByteArray())
-        savedata.resolve("config.rmmzsave").writeBytes("C".toByteArray())
+        // MZ 标准存档是 deflate 二进制流（不是明文），converter 必须解压成引擎可读的 JSON
+        val globalJson = """{"version":1,"title":"MZ Global"}""".toByteArray()
+        val configJson = """{"version":1,"autoSave":false}""".toByteArray()
+        savedata.resolve("global.rmmzsave").writeBytes(RpgSaveFormat.encodeMzPayload(globalJson))
+        savedata.resolve("config.rmmzsave").writeBytes(RpgSaveFormat.encodeMzPayload(configJson))
 
         val result = RpgSaveFormatConverter.convert(gameRoot, EngineType.RPG_MZ)
 
         assertEquals(2, result.converted)
+        assertEquals(0, result.failed)
+        assertArrayEquals(globalJson, savedata.resolve("global.bin").readBytes())
+        assertArrayEquals(configJson, savedata.resolve("config.bin").readBytes())
         assertTrue(savedata.resolve("global.bin").isFile)
-        assertTrue(savedata.resolve("config.bin").isFile)
+    }
+
+    @Test
+    fun rejectsCorruptMzPayloadInsteadOfWritingGarbage() {
+        val gameRoot = mvGameRoot("Mz Corrupt")
+        val savedata = gameRoot.resolve("savedata").apply { mkdirs() }
+        // 既不是明文 JSON（首字节非 '{'）也不是合法 deflate 流
+        savedata.resolve("global.rmmzsave").writeBytes(byteArrayOf(0x01, 0x02, 0x03, 0x04))
+
+        val result = RpgSaveFormatConverter.convert(gameRoot, EngineType.RPG_MZ)
+
+        assertEquals(0, result.converted)
+        assertEquals(1, result.failed)
+        assertFalse(savedata.resolve("global.bin").exists())
+        // 源文件必须留在活动目录，供用户重试/手工处理
+        assertTrue(savedata.resolve("global.rmmzsave").isFile)
     }
 
     @Test

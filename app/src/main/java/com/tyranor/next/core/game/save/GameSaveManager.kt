@@ -610,11 +610,15 @@ class GameSaveManager(private val context: Context) {
         }
         if (!source.isDirectory) throw GameSaveException(SaveErrorCode.NO_EXPORTABLE_FILES)
         val rename = exportRename(game.engine, format)
+        val encodePayload = exportPayloadEncoder(game.engine, format)
         val output = appContext.contentResolver.openOutputStream(destinationUri, "w")
             ?: throw GameSaveException(SaveErrorCode.CREATE_EXPORT_ZIP)
         ZipOutputStream(output).use { zip ->
             val entries = mutableSetOf<String>()
-            val count = writeZipContents(source, source, zip, entries, excludeFor(game.engine), rename, location.mirrorForced, strictPaths)
+            val count = writeZipContents(
+                source, source, zip, entries, excludeFor(game.engine), rename,
+                location.mirrorForced, strictPaths, encodePayload,
+            )
             if (count == 0) throw GameSaveException(SaveErrorCode.NO_EXPORTABLE_FILES)
             return count
         }
@@ -631,6 +635,18 @@ class GameSaveManager(private val context: Context) {
                 ?: RpgSaveFormat.hashedToStandardName(name, engine)
                 ?: name
         }
+    }
+
+    /**
+     * 导出时的载荷转码规则（**仅 MZ**）：引擎侧存的是明文 JSON，标准 `.rmmzsave` 是 deflate 流，
+     * 必须补一次压缩，否则「标准格式」导出到 PC 版会读不出。MV 返回 null（不转码）。
+     *
+     * 只对**会被导出成标准存档名**的条目生效——`RpgSaveFormat.encodeMzPayload` 自身幂等，
+     * 已是压缩流时原样返回，所以这里不再额外判断扩展名。
+     */
+    private fun exportPayloadEncoder(engine: EngineType, format: ExportFormat): ((ByteArray) -> ByteArray)? {
+        if (format != ExportFormat.STANDARD || !RpgSaveFormat.needsPayloadTranscode(engine)) return null
+        return { payload -> RpgSaveFormat.encodeMzPayload(payload) }
     }
 
     @Throws(IOException::class)
@@ -1682,6 +1698,7 @@ class GameSaveManager(private val context: Context) {
             rename: ((String) -> String)? = null,
             mirrorForced: Boolean = false,
             strict: Boolean = false,
+            encodePayload: ((ByteArray) -> ByteArray)? = null,
         ): Int {
             var written = 0
             val children = directory.listFiles()
@@ -1691,7 +1708,7 @@ class GameSaveManager(private val context: Context) {
                 if (strict && Files.isSymbolicLink(child.toPath())) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
                 if (child.isDirectory) {
                     if (strict) SavePathSafety.requireSafeRoot(child)
-                    written += writeZipContents(root, child, zip, entries, exclude, rename, mirrorForced, strict)
+                    written += writeZipContents(root, child, zip, entries, exclude, rename, mirrorForced, strict, encodePayload)
                 } else if (child.isFile && includesSaveFile(child, mirrorForced)) {
                     if (strict) SavePathSafety.requireSafeFile(root, child)
                     val relative = root.toPath().relativize(child.toPath()).toString()
@@ -1704,7 +1721,12 @@ class GameSaveManager(private val context: Context) {
                     val safeName = if (renamedName != null && renamedName !in entries) renamedName else safeZipEntryName(relative)
                     if (!entries.add(safeName)) return@forEach
                     zip.putNextEntry(ZipEntry(safeName).apply { time = child.lastModified() })
-                    FileInputStream(child).use { input -> input.copyTo(zip) }
+                    // 载荷转码只改内容、不改条目名；无转码时保持原来的流式复制（大文件不整读进内存）
+                    if (encodePayload != null) {
+                        zip.write(encodePayload(child.readBytes()))
+                    } else {
+                        FileInputStream(child).use { input -> input.copyTo(zip) }
+                    }
                     zip.closeEntry()
                     written++
                 }

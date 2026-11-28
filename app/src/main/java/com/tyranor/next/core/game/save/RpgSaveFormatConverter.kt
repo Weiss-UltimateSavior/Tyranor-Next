@@ -86,7 +86,7 @@ object RpgSaveFormatConverter {
                     }
                     skipped++
                 } else {
-                    copyAtomically(source, target)
+                    copyAtomically(source, target, engine)
                     copied = true
                     // 留底失败不算转化成功：源文件仍在活动目录，下次检测会再次提示转化
                     if (!moveToOriginal(source)) {
@@ -122,20 +122,32 @@ object RpgSaveFormatConverter {
         }
     }
 
-    /** 目标已存在时由调用方保证不进入；先写同目录临时文件再 rename，避免留下截断文件。 */
+    /**
+     * 目标已存在时由调用方保证不进入；先写同目录临时文件再 rename，避免留下截断文件。
+     *
+     * **载荷转码**：MZ 的标准存档是 deflate 二进制流，而 Tyranor 引擎侧存的是明文 JSON
+     * （hook 跳过了 `jsonToZip`）。这里对 MZ 做一次解压，写出引擎能直接读的 JSON；
+     * 解压失败说明源文件不是合法 `.rmmzsave`，按失败处理而不是写出坏文件。
+     * MV 不转码（两版都是 LZString 文本，逐字节复制即可）。
+     */
     @Throws(IOException::class)
-    private fun copyAtomically(source: File, target: File) {
+    private fun copyAtomically(source: File, target: File, engine: EngineType) {
         val parent = target.parentFile ?: throw IOException("no parent for ${target.absolutePath}")
         if (!parent.isDirectory && !parent.mkdirs() && !parent.isDirectory) {
             throw IOException("cannot create ${parent.absolutePath}")
         }
+        val payload: ByteArray = if (RpgSaveFormat.needsPayloadTranscode(engine)) {
+            val packed = source.readBytes()
+            RpgSaveFormat.decodeMzPayload(packed)
+                ?: throw IOException("not a valid MZ save payload: ${source.absolutePath}")
+        } else {
+            source.readBytes()
+        }
         val tmp = File(parent, target.name + ".fmt_tmp." + System.nanoTime())
         try {
-            source.inputStream().buffered().use { input ->
-                FileOutputStream(tmp).use { out ->
-                    input.copyTo(out)
-                    out.fd.sync()
-                }
+            FileOutputStream(tmp).use { out ->
+                out.write(payload)
+                out.fd.sync()
             }
             if (!tmp.renameTo(target)) {
                 // rename 失败（目标被占用等）只能放弃本文件：直接向最终路径复制不是原子操作，

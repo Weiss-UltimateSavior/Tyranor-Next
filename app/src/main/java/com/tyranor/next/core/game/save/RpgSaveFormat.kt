@@ -2,13 +2,19 @@ package com.tyranor.next.core.game.save
 
 import com.core.rpgmaker.RpgSaveKeyMapping
 import com.tyranor.next.core.engine.EngineType
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.Locale
+import java.util.zip.Deflater
+import java.util.zip.DeflaterOutputStream
+import java.util.zip.Inflater
 
 /**
  * RPG Maker MV/MZ 存档文件名在「Tyranor 格式」与「JoiPlay/PC 标准格式」之间的映射、检测与路径解析。
  *
- * 两种格式内容字节级一致，仅文件名不同；转化是纯改名（不重编码）。
+ * **MV**：两种格式内容字节级一致（都是 `LZString.compressToBase64` 文本），转化是纯改名、不重编码。
+ * **MZ**：文件名映射之外还需**载荷转码**——Tyranor hook 跳过了 `jsonToZip`，落盘是明文 JSON；
+ * PC 版/JoiPlay 落盘是 deflate 流。见 [needsPayloadTranscode] / [encodeMzPayload] / [decodeMzPayload]。
  *
  * 引擎实际读写的存档目录由「独立存档」开关决定（GameSaveManager.resolveSaveLocation /
  * effectiveTyranoFamilySaveDirectory）：关闭时为 `<游戏根>/savedata`，开启时为应用外部目录
@@ -60,6 +66,9 @@ object RpgSaveFormat {
     /** 转化时源文件留底的子目录名（位于源存档目录内，不参与列表/导出/删除）。 */
     const val ORIGINAL_DIR = "original"
 
+    /** 解压 MZ 存档载荷的输出上限（防压缩炸弹；正常 MZ 存档远小于此）。 */
+    private const val MAX_DECODED_PAYLOAD_BYTES = 64 * 1024 * 1024
+
     /** MV 的 Tyranor 文件名：`RPG Global.bin` / `RPG File1bak.bin` 等。 */
     private val MV_TYRANOR_NAME = Regex("^rpg (global|config|file(\\d+))(bak)?\\.bin$", RegexOption.IGNORE_CASE)
 
@@ -90,6 +99,87 @@ object RpgSaveFormat {
 
     /** MV 才有存档备份（MZ 核心不含 backup）。 */
     private fun supportsBackup(engine: EngineType): Boolean = engine == EngineType.RPG_MV
+
+    // ===== 载荷编解码（仅 MZ 需要；MV 两版都是 LZString 文本，纯改名即可）=====
+
+    /**
+     * MZ 存档载荷是否需要转码。MV 不需要（Tyranor 与 PC 版都是 `LZString.compressToBase64` 文本，
+     * 内容字节级一致）；MZ 需要——见 [encodeMzPayload] 的说明。
+     */
+    fun needsPayloadTranscode(engine: EngineType): Boolean = engine == EngineType.RPG_MZ
+
+    /**
+     * 把 Tyranor 侧 MZ 载荷（**未压缩 JSON 文本**）转成 PC 版/JoiPlay 的 `.rmmzsave` 载荷
+     * （**zlib 容器内 deflate 流**）。
+     *
+     * 背景：Tyranor 的 `__hook_rmmz_managers.js` 走 web 模式自建桥，`saveObject` 在
+     * `objectToJson` 之后**跳过了 `jsonToZip`**，落盘的是明文 JSON；而 PC 版经
+     * `jsonToZip`（`pako.deflate(json, {to:"string", level:1})`）落盘的是二进制流。
+     * 互通因此不能只改名，必须在转换层补这一次压缩。
+     *
+     * 幂等：入参若已是 deflate 流（首字节为 zlib 头或非 `{`），原样返回——避免把已经转码过的
+     * 文件再压一层（那会让 PC 版读出「压缩过的 JSON」而解析失败）。
+     *
+     * @return 转码后的字节；入参为空时返回空数组。
+     */
+    fun encodeMzPayload(plainJson: ByteArray): ByteArray {
+        if (plainJson.isEmpty() || !looksLikePlainJson(plainJson)) return plainJson
+        val deflater = Deflater(Deflater.BEST_SPEED) // 对应 pako 的 level:1
+        return try {
+            val out = ByteArrayOutputStream(plainJson.size / 2 + 64)
+            DeflaterOutputStream(out, deflater).use { it.write(plainJson) }
+            out.toByteArray()
+        } catch (error: Throwable) {
+            // 压缩失败不是数据损坏：宁可原样落盘（PC 版读不出但 Tyranor 自己能读），也不产出坏文件
+            plainJson
+        } finally {
+            deflater.end()
+        }
+    }
+
+    /**
+     * 把 PC 版/JoiPlay 的 `.rmmzsave` 载荷（deflate 流）转成 Tyranor 侧可读的未压缩 JSON 文本。
+     *
+     * 幂等：入参若已是明文 JSON，原样返回（用户从旧版 Tyranor 导出的存档、或 B-2 落地前人工
+     * 改名的文件都可能是这种）。
+     *
+     * @return 解压后的 JSON 文本字节；解压失败时返回 null（调用方应保留源文件并计失败）。
+     */
+    fun decodeMzPayload(packed: ByteArray): ByteArray? {
+        if (packed.isEmpty()) return packed
+        if (looksLikePlainJson(packed)) return packed
+        val inflater = Inflater()
+        return try {
+            inflater.setInput(packed)
+            val out = ByteArrayOutputStream(packed.size * 4 + 64)
+            val buffer = ByteArray(16 * 1024)
+            while (!inflater.finished()) {
+                val count = inflater.inflate(buffer)
+                if (count == 0) {
+                    if (inflater.needsInput() || inflater.needsDictionary()) return null
+                    continue
+                }
+                out.write(buffer, 0, count)
+                if (out.size() > MAX_DECODED_PAYLOAD_BYTES) return null
+            }
+            out.toByteArray()
+        } catch (error: Throwable) {
+            null
+        } finally {
+            inflater.end()
+        }
+    }
+
+    /**
+     * 是否为明文 JSON 载荷。
+     *
+     * `JsonEx.stringify`/`objectToJson` 的输出以 `{` 起；zlib 容器的首字节固定是 `0x78`
+     * （CM=8, CINFO=7），raw deflate 的首字节低 3 位为 BFINAL+BTYPE（BTYPE ∈ 00/01/10），
+     * 即首字节模 8 ∈ {0,1,2,4,5,6}，而 `'{'` = 0x7B = 123，123 mod 8 = 3——**不可能** collide。
+     * 因此只判首字节即可，无需尝试解压。
+     */
+    private fun looksLikePlainJson(payload: ByteArray): Boolean =
+        payload.isNotEmpty() && payload[0] == '{'.code.toByte()
 
     // ===== 路径解析 =====
 

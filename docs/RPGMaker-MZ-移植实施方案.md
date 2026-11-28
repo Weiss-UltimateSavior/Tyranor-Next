@@ -98,8 +98,8 @@
 | `rpg_effekseer_mode` | 全局 + 单游戏 | `auto` / `on` / `off` | `auto` | `auto` = WebView 主版本 < 124 时关闭；`off` = 强制 stub |
 | `rpg_audio_streaming` | 全局 + 单游戏 | bool | `true` | 钉 `WebAudio._shouldUseDecoder = true`，长 BGM 流式解码 |
 
-**〔v2〕** 原第 3 项 `rpg_mz_save_native` 已删除：存档格式只有一个实现（deflate 兼容格式 + 旧裸 JSON 嗅探直通），
-没有它要切换的两个目标，开关没有存在意义（见阶段 B）。
+**〔v2/v3〕** 原第 3 项 `rpg_mz_save_native` **永久删除**：存档互通改为在**转换层**做格式转码
+（导出/导入时自动，见阶段 B），引擎侧存档方式不变，用户无需也不应选择格式——因此没有任何开关需要暴露。
 
 **注意**：这两项**只对 MZ 显示**。MV 的 `SettingsScreen` 卡片不动。
 
@@ -183,184 +183,91 @@ engine/src/main/assets/rpgmaker/mz/            # MZ v2 专有注入脚本（新�
 
 ---
 
-### 阶段 B 🔴 存档管线（2 天）
+### 阶段 B 🔴 存档互通（转换层转码，0.5 天）
 
-#### B.0 决策：B-2 兼容格式是**唯一**路径，不再保留开关
+> **〔v3 决策变更〕** 原方案 B-2 要把引擎侧改成 deflate 落盘（`RpgMakerStorage` 加 `writeBytes`、
+> hook 补 `jsonToZip`、桥改 base64）。**现改为：引擎侧存档方式完全不动**，继续存明文 JSON `.bin`；
+> 互通由**转换层**在导出/导入时做一次格式转码。理由见 [MZ存档格式对比](MZ存档格式-Tyranor与JoiPlay对比.md)：
+> Tyranor 与 JoiPlay/PC 的差异在「内容格式」，而转换层本来就是唯一处理「Tyranor 格式 ↔ 标准格式」
+> 的地方（`RpgSaveFormatConverter` / `exportRename`），把转码放这里不需要动引擎、不需要迁移存量存档、
+> 也不需要改 `RpgMakerStorage` 的字符编码契约。
 
-| 方案 | 落盘 | 优点 | 缺点 |
-| --- | --- | --- | --- |
-| ~~B-1 自洽格式~~（现状） | `<name>.bin`，内容 = 未压缩 JSON | 零改动、已验证 | 与原生 `.rmmzsave` **不兼容**；用户手动拷入读不出；存档互通只能走 Tyranor 内部 |
-| **B-2 兼容格式**（采纳） | `<name>.bin`，内容 = **deflate 流**（与 pako 逐字节等价） | 与原生 `.rmmzsave` 内容一致，只差扩展名；`RpgSaveFormat` 的改名映射立刻生效 | 需要 Kotlin 侧 zlib + 字节流改造 |
+#### B.0 现状与目标
 
-**〔v2〕** 原稿把 B-1/B-2 做成 `rpg_mz_save_native` 开关，但 B-1 作为降级路径没有任何触发条件
-（deflate 失败不会「退回裸 JSON」，只会 reject），开关就没有两个可切换的目标。现改为：
-**新写入一律 deflate；读取时按内容嗅探**，旧裸 JSON 文件直接直通。开关删除（§2.2 已同步）。
+| | Tyranor 引擎侧（**不动**） | PC 版 / JoiPlay 标准（导出目标） |
+| --- | --- | --- |
+| 文件名 | `global.bin` / `fileN.bin` | `global.rmmzsave` / `fileN.rmmzsave` |
+| 内容 | **明文 JSON**（hook 跳过 `jsonToZip`） | **zlib 容器 deflate 流**（`pako.deflate` level 1） |
 
-#### B.0′ 开工第一步：核实 `saveToLocalFile` 的落盘字节（**前置，未核实不开工**）
+互通 = 两步：**改名**（已有 `RpgSaveFormat.tyranorToStandard` / `standardToTyranor`）
++ **转码**（本次新增）。改名逻辑早已就位，缺的只是转码。
 
-B-2 的成立依赖一个原稿没给出证据的前提：MZ 原生 `saveToLocalFile` 落盘的**就是** `jsonToZip` 的
-raw 输出，外面没有长度头、没有再包一层。目前「二进制」只是评估稿表格里的一个词。
-
-开工前必须在 MZ corescript 镜像里找到并记录这两行的行号：
-
-- `StorageManager.saveToLocalFile(saveName, zip)` → `fs.writeFileSync(filePath, zip, { encoding: "binary" })`（预期形态）
-- `StorageManager.loadFromLocalFile(saveName)` → `fs.readFileSync(filePath, { encoding: "binary" })`（预期形态）
-
-同时核实 `jsonToZip` 的实现是 `pako.deflate(json, { to: "string", level: 1 })`，
-`zipToJson` 是 `pako.inflate(zip, { to: "string" })`。若实际有任何一层封装（头、校验和、不同 level），
-B.1 的 Kotlin 复刻要跟着改，并把差异写回本节。
-
-> **〔v2〕** 这条比 R3「pako 是 binary string」更上游：R3 关心的是传输编码，
-> 这条关心的是落盘格式本身。证据行号补齐后，把 R3 的缓解措施第一条改为「已核实，见 B.0′」。
-
-#### B.1 桥与存储层一起改字节流（B-2 前提）
-
-现状 [`RpgMakerActivity.kt:1026-1039`](../engine/src/main/java/com/core/rpgmaker/RpgMakerActivity.kt)：
+#### B.1 载荷编解码（`RpgSaveFormat`）— **已实现**
 
 ```kotlin
-inner class RpgMakerSaveBridge(private val saveDirectory: File?) {
-    fun Save(key: String?, base64Data: String?) = RpgMakerStorage.write(..., RPG_MV_SAVE_EXTENSION)
-    fun Load(key: String?): String = RpgMakerStorage.read(...)
-    ...
-}
+fun needsPayloadTranscode(engine: EngineType): Boolean  // 仅 MZ 需要；MV 两版都是 LZString 文本
+fun encodeMzPayload(plainJson: ByteArray): ByteArray    // JSON → deflate 流（导出用）
+fun decodeMzPayload(packed: ByteArray): ByteArray?      // deflate 流 → JSON（导入用，失败返回 null）
 ```
 
-而 [`RpgMakerStorage.write`](../engine/src/main/java/com/core/rpgmaker/RpgMakerStorage.kt) 内部是
-`text.toByteArray(StandardCharsets.UTF_8)`（`:47`），`read` 是 `String(bytes, UTF_8)`（`:27`）。
-**〔v2〕** 这意味着：**只给桥加 base64 入口、不改存储层是不够的**——`SaveBase64` 解出的字节若再塞进
-现有 `write(String)`，会被按 UTF-8 二次编码，deflate 流里的 `0x80–0xFF` 字节会被扩成两字节，存档损坏且
-**只在读档时暴露**。改造必须两层同时做：
+三条硬约束（已由单测守住）：
 
-- `RpgMakerStorage` 新增 `readBytes/writeBytes/existsBytes/removeBytes`：
-  - `writeBytes` 复用现有 `write()` 的**全部**原子性逻辑（预检上限 → tmp → `fd.sync()` → `renameTo`，
-    失败退回直接覆盖），只把「String → UTF-8 bytes」换成「入参就是 bytes」；
-  - `existsBytes` / `removeBytes` 与现有 `exists` / `remove` 完全同语义（同一个文件、同一个
-    `resolveFile`），可以直接委托，**不要**复制一份；
-  - 最好把 `write()` 重构成对 `writeBytes()` 的薄封装（`write(dir, key, value, ext) = writeBytes(dir, key, value.toByteArray(UTF_8), ext)`），
-    避免「原子写」逻辑出现第二份实现。
-- 桥接口改 base64 传输（`@JavascriptInterface` 只能传 String）：
-  ```kotlin
-  @JavascriptInterface fun SaveBase64(key: String?, base64: String?): Boolean
-  @JavascriptInterface fun LoadBase64(key: String?): String
-  ```
-  **保留旧 `Save`/`Load`**（MV 与 v0/v1 路径仍在用），只新增不删除。
-- 上限：MZ 存档 deflate 后通常远小于 8 MiB；`MAX_SAVE_BYTES` 维持 8 MiB 不变（按**解码后的字节数**计），
-  base64 入参膨胀 4/3 → 入参字符串长度上限预检用 `MAX_SAVE_BYTES * 4 / 3`。超限记日志拒绝。
+1. **幂等**：`encodeMzPayload` 对已是 deflate 流的入参原样返回，避免重复压缩成「压缩过的 JSON」；
+   `decodeMzPayload` 对已是明文的入参原样返回（旧版导出、人工改名的文件）。
+2. **判别零歧义**：明文 JSON 以 `{`（`0x7B`）起；zlib 首字节固定 `0x78`，raw deflate 首字节低 3 位为
+   BFINAL+BTYPE，模 8 ∈ {0,1,2,4,5,6}，**不可能**等于 3。所以只判首字节，不需要试探解压。
+3. **坏数据拒绝**：解压失败返回 `null`，调用方计 failed 并**保留源文件**，绝不写出半成品。
 
-#### B.2 JS 侧 hook（`__mz_managers_hook.js`）
+> MV 直接返回 `null`（不转码）——MV 的 `StorageManager.save` 用 `LZString.compressToBase64`，
+> Tyranor 与 PC 版内容本就逐字节相同，纯改名即可。
 
-现状 [`__hook_rmmz_managers.js`](../engine/src/main/assets/__hook_rmmz_managers.js) 22 行，
-把 `saveObject/loadObject` 改成 `window.saveDataManager.Save(name, json)` ——
-**跳过了 `jsonToZip`**，所以存的是裸 JSON。
+#### B.2 导入方向（`RpgSaveFormatConverter`）— **已实现**
 
-新 hook 要按 `isLocalMode()===false`（我们钉死的）走一条**完整复刻**，并带旧格式嗅探：
+`copyAtomically(source, target, engine)` 在写盘前对 MZ 做一次 `decodeMzPayload`，
+写出引擎可直接读的明文 JSON。解压失败按 `failed` 计、源文件留在活动目录、不生成半成品目标。
+MV 走原路径（逐字节复制，保持流式）。
 
-```js
-// 旧版 TynMZ-0.1 写出的 .bin 是裸 JSON（跳过了 jsonToZip）；deflate 流的首字节不可能 是 '{'
-// （zlib 头 0x78 或 raw deflate 的首字节按 BFINAL/BTYPE 取值，低 3 位不会使整字节等于 0x7B）。
-// 详见 B.2′。
-function isLegacyRawJson(zip) {
-    return typeof zip === "string" && zip.length > 0 && zip.charCodeAt(0) === 0x7B;
-}
+#### B.3 导出方向（`GameSaveManager`）— **已实现**
 
-StorageManager.saveObject = function (saveName, object) {
-    return this.objectToJson(object)
-        .then(json => this.jsonToZip(json))          // pako deflate，与原生一致
-        .then(zip => new Promise((resolve, reject) => {
-            const ok = window.saveDataManager.SaveBase64(saveName, btoa(zip));
-            ok ? resolve() : reject(new Error("save failed: " + saveName));
-        }));
-};
-StorageManager.loadObject = function (saveName) {
-    return new Promise((resolve, reject) => {
-        const b64 = window.saveDataManager.LoadBase64(saveName);
-        if (!b64) return reject(new Error("Savefile not found"));
-        resolve(atob(b64));
-    }).then(zip => isLegacyRawJson(zip) ? zip : this.zipToJson(zip))
-      .then(json => this.jsonToObject(json));
-};
-StorageManager.exists = function (saveName) {
-    return window.saveDataManager.Exists(saveName) === true;
-};
-```
+`writeZipContents` 增加可选参数 `encodePayload: ((ByteArray) -> ByteArray)?`：
 
-> **关键**：`pako.deflate(json, {to:"string"})` 产出的是 **binary string**（每字符一个字节），
-> 所以 `btoa(zip)` 正确；Kotlin 侧 base64 解码后**必须按原始字节写**（B.1 的 `writeBytes`），
-> 不能再按 UTF-8 编码。`pako` 的 `to:"string"` 不是 UTF-8 字符串。
-> 嗅探用的是 `charCodeAt(0) === 0x7B`（`'{'`），**不要**用 `zip[0] === "{"` 之外的任何正则——
-> binary string 上跑正则会把 `0x80+` 的字节当成 UTF-16 代理对误判。
+- `exportPayloadEncoder(engine, format)` 仅在 `format == STANDARD && engine == MZ` 时返回转码函数；
+- 无转码时走原来的 `FileInputStream.copyTo`（流式，大文件不整读进内存）；
+- 有转码时才 `readBytes()`（MZ 存档通常几十 KB～几 MB，可接受）。
 
-**`StorageManager.remove`**：**〔v2〕** 原稿漏了。MZ 的 `remove(saveName)` 在 web 模式下调 `localforage.removeItem`，
-`isLocalMode()` 为 false 时我们钉死了 web 模式，但 `localforage` 在本宿主里**根本不存在**（没有注入）。
-现有 `__hook_rmmz_managers.js` 没覆盖它，`DataManager.deleteSavefile` 调用时会抛 `ReferenceError`。
-新 hook 必须补：
-```js
-StorageManager.remove = function (saveName) {
-    return new Promise(resolve => { window.saveDataManager.Remove(saveName); resolve(); });
-};
-```
+#### B.4 不改的东西（明确边界）
 
-**降级策略**：若 `pako` 不存在（极老游戏或裁剪包），`jsonToZip` 自身就会抛，此时回退到裸 JSON
-路径并记一条 warn，不要抛错（否则整个存档链死掉）。回退写出的文件会被 B.2 的嗅探识别为旧格式，
-自洽。
+- `__hook_rmmz_managers.js`：**不动**。继续走 `saveDataManager.Save/Load` 存明文 JSON。
+- `RpgMakerStorage`：**不动**。继续 UTF-8 读写 String，不需要 `writeBytes`。
+- `RpgMakerActivity.RpgMakerSaveBridge`：**不动**。不新增 `SaveBase64`/`LoadBase64`。
+- 存量存档：**不需要迁移**。Tyranor 侧格式不变，升级后照常读写。
 
-**`SceneManager.isGameActive`**：MZ 原生是 `window.top.document.hasFocus()`，
-在 WebView 里恒为 `true`（我们不在 iframe 里），现有 hook 的 `return true` 可以直接保留。
+> 代价（要写进 SPEC）：MZ 存档仍是「Tyranor 私有格式」——只在导出/导入那一刻转成标准格式。
+> `Docs` 里那句「两种格式内容字节级一致」对 MZ 不成立，应限定为 MV（见对比文档 §4）。
 
-#### B.2′ 为什么用「首字节是否 `{`」而不是别的嗅探
+#### B.5 与 `saveToLocalFile` 取证的关系
 
-**〔v2〕** 这个判断成立的前提是可以论证的，不是拍脑袋：
+原 B.0′ 要求核实的「`saveToLocalFile` 是否原样落盘 zip」**不再是阻塞项**——
+我们不再复刻 MZ 的落盘路径，只是在转换层产出「PC 版能 inflate 的流」。
+但仍建议核对一次 `jsonToZip` 是否为 `pako.deflate(json, {to:"string", level:1})`，
+以确认**压缩级别不影响互通**（zlib 流不携带级别，任何级别都能 inflate；级别只影响体积）。
 
-- deflate 流（无论 zlib 封装还是 raw）的**首字节**：
-  - zlib 封装：CMF 字节 = `0x78`（CM=8, CINFO=7），固定；
-  - raw deflate：首字节低 3 位是 BFINAL(1 bit) + BTYPE(2 bit)，BTYPE 只能是 00/01/10，
-    所以首字节模 8 ∈ {0,1,2,4,5,6}，而 `'{' = 0x7B = 123`，123 mod 8 = 3 → **不可能**。
-- JsonEx 的 `makeDeepCopy`/`objectToJson` 输出以 `{` 开头（存档是对象，不是数组）。
-- 空文件、空串：`length === 0` 走 `zipToJson` 会抛，交给 reject 路径（与 MZ 原生「空文件 = 读档失败」一致）。
+#### B.6 已验证
 
-所以 `charCodeAt(0) === 0x7B` 对「裸 JSON vs deflate」是**零误判**的。
+| 项 | 结果 |
+| --- | --- |
+| `encode → decode` 往返 | ✅ `RpgSaveFormatPayloadTest` |
+| 编码幂等 / 解码对明文幂等 | ✅ |
+| 空载荷、损坏载荷（拒绝返回 null） | ✅ |
+| 压缩确实变小（真实量级载荷） | ✅ |
+| 导入：`.rmmzsave` → 引擎可读 `.bin` | ✅ `convertsMzSaves` |
+| 导入：坏载荷不写半成品、源文件保留 | ✅ `rejectsCorruptMzPayloadInsteadOfWritingGarbage` |
+| MV 全部旧用例（纯改名语义）零回归 | ✅ 22 项 `RpgSaveFormatTest` 全过 |
 
-#### B.3 `RpgSaveFormat` 与互通的衔接
-
-`RpgSaveFormat` 已把 `fileN.bin ↔ fileN.rmmzsave` 映射做好
-（[`RpgSaveFormat.kt:285-296`](../app/src/main/java/com/tyranor/next/core/game/save/RpgSaveFormat.kt)）。
-B-2 落地后：
-- 导出「标准格式」→ 直接改名成 `.rmmzsave` 即可被 PC 版读取（内容已一致）；
-- 导入 PC 存档 → 改名成 `.bin` 即可被引擎读取。
-- **无需改 `RpgSaveFormat` 一行**。
-- **〔v2〕** 一个要写进用户文档的边界：B-2 落地**之前**导出的 `.rmmzsave`（内容其实是裸 JSON）
-  PC 版读不出；落地后从 App 重新导出一次即可。`RpgSaveFormat` 本身不用改，但 CHANGELOG 要提。
-
-#### B.4 MZ 的写入中间态
-
-MZ 原生 `saveToLocalFile` 会先 `rename` 到 `filePath + "_"` 作备份、成功再删。
-我们是走桥不是走 `fs`，所以**不经过这段**；但要注意：
-`<name>.bin` 与 `<name>.bin_` 可能同时存在（用户从 PC 拷贝过）。`resolveFile()` 只看 `.bin`，
-不会误读 `.bin_`，**行为正确，无需处理**。
-
-**测试**：
-- JVM：`RpgMakerStorage.writeBytes/readBytes` 往返（含 0 字节、8 MiB 边界、超限拒绝）；
-  **〔v2〕** 加一条「`writeBytes` 写入含 `0x80–0xFF` 的字节序列，`readBytes` 读回逐字节相等」——
-  这是 B.1 那个「二次 UTF-8 编码」坑的回归守卫；再加「`write(String)` 与 `writeBytes(UTF_8)` 落盘字节相同」
-  守卫重构后两条路径不漂移。
-- JS harness：扩展现有 [`rpgmv-save-validation.harness.js`](../engine/src/test/js/rpgmv-save-validation.harness.js)
-  的 MZ 烟测段（`:510-547`）。**〔v2〕** 现有 sandbox 里 `StorageManager` 只 mock 了
-  `objectToJson/jsonToObject`，要补 `jsonToZip/zipToJson`（可直接 require 真实 `pako`，
-  `engine/src/test/js` 下已有 Node 环境）和一个 base64 往返的 `saveDataManager` mock。断言：
-  1. `saveObject → loadObject` 往返后对象相等，且中间产物**不是** UTF-8 可读 JSON（证明走了 deflate）；
-  2. 喂一个首字节为 `{` 的旧裸 JSON 载荷给 `loadObject`，**直通**不报错（嗅探生效）；
-  3. `pako` 缺失时回退裸 JSON 且不抛错；
-  4. `StorageManager.remove` 调到 bridge 的 `Remove`。
-- 兼容：用真实 `.rmmzsave` 文件（PC 版导出）喂给 `loadObject`，确认能读出。
-
-**验收**：
-1. MZ 游戏内存档 → 冷启动读档成功；
-2. **〔v2〕** 用 B-2 落地**前**的 App 存一个档（裸 JSON `file1.bin`），升级后读档成功（嗅探生效）；
-3. 导出 `.rmmzsave` → 拷贝到 PC 版游戏 `save/` 目录 → PC 版能读（**这是"真互通"的判据**）；
-4. 反向同理。
-
-**外部依赖（不是工时）**：验收 3/4 需要 PC 版 MZ 导出的真实 `.rmmzsave`。开工前就备好，别等阶段 B 做完再找。
-
+**仍需真机验证（不能只跑单测）**：
+1. MZ 游戏内存档 → 导出「标准格式」→ 拷到 PC 版 `save/` → PC 版读档成功（**真互通判据**）；
+2. PC 版 `.rmmzsave` → 导入 → 手机读档成功（反向）；
+3. 导出后 Tyranor 自己仍能读（转码只作用于导出副本，不落地回引擎目录）。
 
 ---
 
@@ -580,8 +487,11 @@ private data class RpgSessionProfile(
 | 文件 | 阶段 | 改动 |
 | --- | --- | --- |
 | [`RpgMakerLocalHttpServer.kt`](../engine/src/main/java/com/core/rpgmaker/RpgMakerLocalHttpServer.kt) | A | `isImmutableAsset` / `mime` / `resolveRequestedFile` / 构造参数 `mzSession` |
-| [`RpgMakerActivity.kt`](../engine/src/main/java/com/core/rpgmaker/RpgMakerActivity.kt) | B/D/H | 桥改 base64 **+ 存储层新增 `writeBytes` 字节路径**、`earlyHtml` 加 Effekseer 桩（sessionConfig 与 setter 拦截合并为同一份）、MZ 就绪轮询、hook 资产常量。~~`onPause/onResume` 音频~~已有，不动 |
-| [`RpgMakerStorage.kt`](../engine/src/main/java/com/core/rpgmaker/RpgMakerStorage.kt) | B | 新增 `readBytes/writeBytes/existsBytes/removeBytes`（复用原子写） |
+| [`RpgMakerActivity.kt`](../engine/src/main/java/com/core/rpgmaker/RpgMakerActivity.kt) | D/H | `earlyHtml` 加 Effekseer 桩（sessionConfig 与 setter 拦截合并为同一份）、MZ 就绪轮询、hook 资产常量。~~桥改 base64~~**〔v3〕不动存档桥**；~~`onPause/onResume` 音频~~已有，不动 |
+| [`RpgMakerStorage.kt`](../engine/src/main/java/com/core/rpgmaker/RpgMakerStorage.kt) | — | **〔v3〕不动**。存档方式保持明文 JSON + UTF-8，不新增 `writeBytes` |
+| [`RpgSaveFormat.kt`](../app/src/main/java/com/tyranor/next/core/game/save/RpgSaveFormat.kt) | B | **〔v3〕已实现**：`needsPayloadTranscode` / `encodeMzPayload` / `decodeMzPayload`（幂等 + 坏数据拒绝） |
+| [`RpgSaveFormatConverter.kt`](../app/src/main/java/com/tyranor/next/core/game/save/RpgSaveFormatConverter.kt) | B | **〔v3〕已实现**：导入时对 MZ 解压，失败计 failed 且不写半成品 |
+| [`GameSaveManager.kt`](../app/src/main/java/com/tyranor/next/core/game/save/GameSaveManager.kt) | B | **〔v3〕已实现**：`writeZipContents` 增 `encodePayload` 参数；导出「标准格式」时对 MZ 压缩 |
 | `engine/src/main/assets/mz/*.js` | B/C/D/E/F | 4 个新脚本 |
 | [`EngineSettingsStore.kt`](../app/src/main/java/com/tyranor/next/core/settings/EngineSettingsStore.kt) | C/D | 3 个新键 + 读写 + 归一化 |
 | [`PerGameSettingsStore.kt`](../app/src/main/java/com/tyranor/next/core/settings/PerGameSettingsStore.kt) | C/D | 3 个 `F_*` 覆盖字段 |
@@ -599,7 +509,7 @@ private data class RpgSessionProfile(
 ### 5.1 JVM（`app/src/test`、`engine/src/test`）
 
 - `RpgMakerServerMzAssetTest`：`_` 后缀缓存策略、MIME、反向回退优先级。
-- `RpgMakerStorageBytesTest`：字节流往返、0 字节、8 MiB 边界、超限拒绝、原子写不产生截断文件。
+- `RpgSaveFormatPayloadTest`：**〔v3〕** 编码/解码往返、双向幂等、空载荷、损坏载荷拒绝、压缩确实变小（已实现，8 项）。
 - `RpgEffekseerModeTest`：`Chrome/124.x` / `Chrome/99.x` / 无 Chrome 段 → auto 判定。
 - `RpgVersionSettingsTest`：MZ 版本值仍为 `"v2"`（**不要被"改名"诱导去改值**）。
 
@@ -607,10 +517,11 @@ private data class RpgSessionProfile(
 
 扩展 [`rpgmv-save-validation.harness.js`](../engine/src/test/js/rpgmv-save-validation.harness.js) 的
 MZ 段（`:510-547`）：
-- `saveObject → loadObject` 往返对象相等；
-- 落盘载荷**不是** UTF-8 可读（证明走了 deflate）；
-- `pako` 缺失时回退裸 JSON 且不抛错；
+- `saveObject → loadObject` 往返对象相等（**〔v3〕引擎侧不变**：仍存明文 JSON，断言不受影响）；
 - `VorbisDecoder` 存在/缺失时 `_shouldUseDecoder` 的两种行为。
+
+> **〔v3〕** 原「落盘载荷不是 UTF-8 可读（证明走了 deflate）」与「`pako` 缺失回退」两条**作废**：
+> 引擎侧已确定不改，落盘本来就是可读 JSON。MZ 的格式转码改由 JVM 侧 `RpgSaveFormatPayloadTest` 覆盖（见 5.1）。
 
 ### 5.3 真机（必做，不能只跑单测）
 
@@ -619,9 +530,10 @@ MZ 段（`:510-547`）：
 | 加密 MZ 商业作品 | 图片/BGM/SE 全部正常；第二次请求走 304 |
 | 混合加密（只加密 img/） | 明文补丁素材不 404 |
 | 未加密 MZ 作品 | 无额外 404 噪声 |
-| 存档：新建/读档/删除 | 三条链路通 |
-| 存档：导出 `.rmmzsave` → PC 版读取 | **真互通判据** |
+| 存档：新建/读档/删除 | 三条链路通（**〔v3〕引擎侧格式不变，此为回归项**） |
+| 存档：导出「标准格式」`.rmmzsave` → PC 版读取 | **真互通判据**（转换层转码生效） |
 | 存档：PC 版 `.rmmzsave` → 导入 | 反向互通 |
+| **〔v3〕导出后 Tyranor 自己仍能读** | 转码只作用于导出副本，不落地回引擎目录 |
 | 存档：`typeof process === 'object'` 且 `Utils.isNwjs() === false` | MZ 与 MV 共用同一份 `__nwjs_polyfill.js`，无第二套 polyfill |
 | WebView < 124 + 带 Effekseer 的战斗 | 5 分钟不闪退；`effekseer:on` 对照组应闪退 |
 | ≥5 分钟长 BGM 切场景 | 不卡顿 |
@@ -636,7 +548,7 @@ MZ 段（`:510-547`）：
 | --- | --- | --- | --- |
 | R1 | **Effekseer 阈值 124 未在本仓库设备复现** | 默认 `auto` 可能误关或误开 | 提供 `on/off` 手动口；阶段 D 必须做对照组实验 |
 | R2 | **MZ corescript 只能靠社区镜像取证**（官方仓库不存在，镜像无 LICENSE） | 结论按 v1.1.0，MZ 1.2+ 可能变 | 所有 hook 都做**能力探测**而非版本号判断；不打包镜像代码 |
-| R3 | **pako `to:"string"` 是 binary string 不是 UTF-8** | 写错会产出损坏存档，且**只在读档时暴露** | 阶段 B 的第一条测试就是"载荷不是可读 JSON"；用真实 PC 存档双向验证；B.2 的 `lzvalid` 位级基准是回归守卫 |
+| R3 | **〔v3 重估〕载荷转码写错会产出 PC 版读不出的存档** | 影响**仅限导出副本**——引擎侧存的是明文 JSON，Tyranor 自读不受影响，损坏面从"存档全丢"缩到"导出文件不可用" | 转码只发生在转换层（不碰引擎）；`RpgSaveFormatPayloadTest` 的往返 + 幂等 + 损坏拒绝三组守卫；真机用 PC 真实存档双向验证 |
 | R3b | **〔v2〕WebView 版本号不是 Effekseer 的真实变量** | 阈值 124 可能在某些设备/内核上不准，`auto` 误判 | 提供 `on/off` 手动口；阶段 D 的对照实验按 **SoC/内核**记录而非只记 WebView 版本；日志里打印 `canUseWebAudioAPI()`、`WebGL2` 扩展与 `isMobileDevice` 实际值 |
 | R4 | **`process` 函数/对象路线互斥** | 混用会导致 YEP 插件初始化崩 或 存档全丢 | **〔v2 修正理由〕** 本仓库 [`__nwjs_polyfill.js:30`](../engine/src/main/assets/rpgmaker/__nwjs_polyfill.js#L30) 写的是 `window.process = {}`（对象），再用 `pinIsNwjs` 强制 `isNwjs()===false`——与 GameNative"让 `process` 是函数"殊途同归。MZ **复用同一份 polyfill** 即可自然一致，这不是需要单独决策的事项；只需在阶段 B 验收里加一条"`typeof process === 'object'` 且 `isNwjs() === false`"的断言，防止有人为 MZ 另起一套 |
 | R5 | `__rmmz__.js` 仍被 v0 路径（`TyranoActivity`）使用 | 误删会破坏 `Tyranor-2.3.4` 的 MZ 支持 | 新建 `mz/` 目录，**保留旧三件套不删** |
@@ -650,17 +562,18 @@ MZ 段（`:510-547`）：
 ```
 A 加密素材(0.5d) ──┐
                     ├─→ E hook扩写(1d) ─→ F 性能补丁(1.5d, 可选)
-B 存档(编码1d+验证) ┤
+B 存档互通(0.5d,已实现) ┤
                     ├─→ H 启动就绪(0.5d)
 C 音频(1d) ────────┤
                     └─→ D Effekseer(1.5d) ─→ G 数据化(2d, 可延后)
 ```
 
-- **关键路径**：B（存档）→ 其余。B 的编码可当天完成，但**真互通判据要等 PC 真实存档**（见 B.0），排期时把"等样本"单独留出来。
+- **〔v3〕B 不再是关键路径**：代码已实现（`RpgSaveFormat` 编解码 + converter + export 三处）并单测通过，
+  剩余只有真机互通验证（需 PC 真实存档样本）。
 - A / C / H 互不依赖，可并行。
 - D 与 C **不再有先后依赖**（〔v2〕Effekseer 桩已挪到 `earlyHtml`，先于 `main.js` 执行；C 的 decoder 改写走 `__mz_hook.js` lateHook）。两者都要在 `effekseer.min.js` 之前，但落点不同、互不阻塞。
-- **最小可发布集**：A + B + H（约 2 天编码 + 验证），此时 MZ 的"跑得对、存得住"已经成立。
-- 完整集（含 C/D/E）：约 5 天编码 + 验证。
+- **最小可发布集**：A + B + H（约 1.5 天编码 + 验证），此时 MZ 的"跑得对、存得住、导得出"已经成立。
+- 完整集（含 C/D/E）：约 4.5 天编码 + 验证。
 
 ---
 
@@ -671,6 +584,6 @@ C 音频(1d) ────────┤
 - [ ] 拉一个**未加密** + 一个**加密** + 一个**混合加密**的 MZ 样本各一
 - [ ] **〔v2〕准备 PC 端真实 `.rmmzsave`**：用同一款样本在 PC 版 MZ 运行时新建、保存一份（至少 2 个存档位，含道具/开关/变量），这是阶段 B 的真互通判据；没有它 B 不算完成
 - [ ] 准备一台 WebView ≥ 124 和一台 < 124 的设备
-- [ ] 准备一个 `pako` 缺失的极端样本（可用旧版 MZ 导出验证降级）
+- [ ] ~~准备一个 `pako` 缺失的极端样本~~ **〔v3〕作废**：引擎侧不改存档方式，不依赖 `pako` 是否存在
 - [ ] 读一遍 [AGENTS.md](../AGENTS.md) 的错误处理协议（core→ui 类型化，不把文案塞进 core）
 - [ ] 跑 `python tools/check-hardcoded-ui-strings.py` 确认新增文案进三语言
