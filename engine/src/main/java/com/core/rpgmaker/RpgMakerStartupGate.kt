@@ -17,9 +17,29 @@ internal object RpgMakerStartupGate {
     /** 等待上限。超过就揭开并记 warn（不卡死），由日志定位是哪个作品没跑起来。 */
     const val TIMEOUT_MS = 15_000L
 
-    /** 就绪探针：`SceneManager.run` 之后 `_scene` 才有值。能力探测写法，不假设 MZ 版本。 */
+    /**
+     * 就绪探针。
+     *
+     * **不能只判 `SceneManager._scene`**：`SceneManager.goto()` 在构造场景时就给它赋值，
+     * 而 `Scene_Boot.create()`（真正发起 data 目录 JSON 请求、加载数据库）在那之后才跑。
+     * 只判 `_scene` 会在数据库还没加载、图片一张都没取时就判「就绪」，把加载页提前揭开
+     * ——真机表现是黑屏或残缺画面（まもの博物館：`mz scene ready after 700ms` 之后
+     * 一个 data 请求都没有，随后图像上传报 `texImage2D: width or height out of range`）。
+     *
+     * 因此要求三者同时成立：
+     * 1. `SceneManager._scene` 存在（`goto` 已跑）；
+     * 2. `Graphics._renderer` 已建（`initGraphics` 完成，能真的画东西）；
+     * 3. `Graphics._frameCount > 0`（主循环已跑过帧，场景的 `create`/`start` 都已执行）。
+     *
+     * 全部按能力探测写，不假设 MZ 版本号。
+     */
     const val READY_PROBE_JS =
-        "(function(){try{return !!(window.SceneManager && SceneManager._scene);}catch(e){return false;}})()"
+        "(function(){try{" +
+            "if(!window.SceneManager||!SceneManager._scene)return false;" +
+            "if(!window.Graphics||!Graphics._renderer)return false;" +
+            "if(typeof Graphics._frameCount!=='number'||Graphics._frameCount<=0)return false;" +
+            "return true;" +
+            "}catch(e){return false;}})()"
 
     enum class Decision {
         /** 还没就绪，也未到超时：继续轮询。 */

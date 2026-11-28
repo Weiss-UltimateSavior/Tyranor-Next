@@ -72,6 +72,32 @@ class RpgMakerStartupGateTest {
     }
 
     /**
+     * 探针不能只判 `_scene` 存在。
+     *
+     * `SceneManager.goto()` 在**构造**场景时就给 `_scene` 赋值，而 `Scene_Boot.create()`
+     * （真正发起 data 目录 JSON 请求、加载数据库的地方）在之后才跑。只判 `_scene` 会在
+     * 数据库还没加载、图片一张都没取时就判「就绪」，把加载页提前揭开——真机表现是
+     * 黑屏或残缺画面（まもの博物館，日志 `11_28-19-34-33_667.log`：`mz scene ready
+     * after 700ms` 之后一个 data 请求都没有）。
+     *
+     * 判定必须等游戏真的开始跑帧：`Graphics._renderer` 已建（`initGraphics` 完成）
+     * 且场景已进入 `start` 之后才谈得上「画面就绪」。
+     */
+    @Test
+    fun probeRequiresMoreThanASceneObject() {
+        assertTrue(
+            "必须同时确认渲染器已建立，不能只判 _scene",
+            RpgMakerStartupGate.READY_PROBE_JS.contains("_renderer"),
+        )
+        assertTrue(
+            "必须确认渲染循环已开始（否则场景只是被 new 出来，create/start 都没跑）",
+            RpgMakerStartupGate.READY_PROBE_JS.contains("_currentTime") ||
+                RpgMakerStartupGate.READY_PROBE_JS.contains("_frameCount") ||
+                RpgMakerStartupGate.READY_PROBE_JS.contains("GameLoop"),
+        )
+    }
+
+    /**
      * `onPageCommitVisible` 早于 `onPageFinished`，而它原来无条件揭开加载页。
      * MZ 必须拒绝这次「抢跑」：否则轮询根本没机会开始，阶段 H 等于没做。
      * 非 MZ 会话必须保持原样（那条路径是既有的首帧体验，不能一起改）。

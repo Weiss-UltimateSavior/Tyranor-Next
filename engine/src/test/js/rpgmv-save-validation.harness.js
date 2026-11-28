@@ -578,6 +578,32 @@ async function runTests() {
                 document: {
                     body: { parentNode: { style: {} } },
                     documentElement: { clientHeight: 720, clientWidth: 1280 },
+                    // 降采样路径要建 canvas：给出最小可用实现（只记录尺寸与 drawImage）
+                    createElement: function (tag) {
+                        if (tag !== 'canvas') return { style: {} };
+                        var el = {
+                            width: 0,
+                            height: 0,
+                            __drawn: null,
+                            getContext: function (ctxType) {
+                                if (ctxType === '2d') {
+                                    return {
+                                        imageSmoothingEnabled: false,
+                                        imageSmoothingQuality: 'low',
+                                        drawImage: function (src, dx, dy, dw, dh) {
+                                            el.__drawn = { src: src, dw: dw, dh: dh };
+                                        },
+                                    };
+                                }
+                                // webgl：用于探 MAX_TEXTURE_SIZE
+                                return {
+                                    getParameter: function (p) { return p === 0x0D33 ? 4096 : 0; },
+                                    getExtension: function () { return null; },
+                                };
+                            },
+                        };
+                        return el;
+                    },
                 },
                 navigator: { userAgent: 'Mozilla/5.0 (Linux; Android 13) Chrome/124.0.0.0 Mobile' },
             };
@@ -900,6 +926,129 @@ async function runTests() {
             // 顺带确认 global.__dirname 存在：mz3d 的 path.resolve(global.__dirname, ...) 依赖它
             const hasDirname = env.runCode('String(typeof global.__dirname === "string" && global.__dirname.length > 0)', 'dirname.js');
             check('9l global.__dirname 必须是可用的字符串路径', hasDirname === 'true', String(hasDirname));
+        }
+
+        // --- 9m: 超出 GPU 纹理上限的图必须降采样，而不是上传失败 ---
+        // 真实样本（まもの博物館）：542 张图里 156 张宽度 > 4096、130 张 > 8192，
+        // 最大 15400x1000。WebGL 的 texImage2D 对超过 GL_MAX_TEXTURE_SIZE 的图直接
+        // 报 INVALID_VALUE 并丢弃，表现为「部分画面不显示」（真机日志
+        // 11_28-19-34-33_667.log：「WebGL: INVALID_VALUE: texImage2D: width or height
+        // out of range」）。必须在 _createBaseTexture 阶段按比例缩到上限内，
+        // 并把缩放比记回 Bitmap，让 _createBaseTexture 之后的绘制仍按原尺寸布局。
+        {
+            const env = makeMzV2Env({ engine: 'MZ', version: 'v2', effekseer: true, audioStreaming: true });
+            env.runCode(
+                'window.PIXI = { BaseTexture: function (src, opts) { this.source = src; this.width = src.width; this.height = src.height; this.scaleMode = opts && opts.scaleMode; } };\n' +
+                'window.Graphics = { width: 816, height: 624, _renderer: {}, _frameCount: 1, _stretchHeight: function () { return 624; } };\n' +
+                'window.Bitmap = function () { this._image = null; this._url = ""; };\n' +
+                'Bitmap.prototype._createBaseTexture = function (source) { this._baseTexture = new PIXI.BaseTexture(source); return this._baseTexture; };\n' +
+                'window.Utils = window.Utils || {};\n' +
+                '// 探到 GPU 上限：真机上由 gl.getParameter(gl.MAX_TEXTURE_SIZE) 给出\n' +
+                'window.__tyranorMaxTexture = 4096;',
+                'stubs.js',
+            );
+            env.runCode(MZ_V2_CORE_HOOK_CODE, '__mz_core_hook.js');
+            // 模拟一张 15400x1000 的原图：降采样后必须 <= 上限且保持宽高比
+            const result = env.runCode(`
+                (function () {
+                    var bmp = new Bitmap();
+                    var fakeImage = { width: 15400, height: 1000, naturalWidth: 15400, naturalHeight: 1000 };
+                    bmp._image = fakeImage;
+                    bmp._createBaseTexture(fakeImage);
+                    var bt = bmp._baseTexture;
+                    return JSON.stringify({
+                        w: bt.width, h: bt.height,
+                        ratio: bmp._tyranorTextureScale || 1,
+                        pass: bt.width <= 4096 && bt.height <= 4096
+                    });
+                })()
+            `, 'downscale.js');
+            let parsed = null;
+            try { parsed = JSON.parse(result); } catch (e) { parsed = null; }
+            check(
+                '9m 超出纹理上限的图按比例降采样（15400x1000 → <= 4096）',
+                parsed && parsed.pass === true,
+                String(result),
+            );
+            check(
+                '9m 降采样保持宽高比（15400:1000 → 约 15.4:1）',
+                parsed && Math.abs((parsed.w / parsed.h) - 15.4) < 0.1,
+                parsed ? `${parsed.w}x${parsed.h}` : String(result),
+            );
+            // 未超限的图不能被无谓缩小（会白白损失清晰度）
+            const small = env.runCode(`
+                (function () {
+                    var bmp = new Bitmap();
+                    var fakeImage = { width: 800, height: 600, naturalWidth: 800, naturalHeight: 600 };
+                    bmp._image = fakeImage;
+                    bmp._createBaseTexture(fakeImage);
+                    return JSON.stringify({ w: bmp._baseTexture.width, h: bmp._baseTexture.height, ratio: bmp._tyranorTextureScale || 1 });
+                })()
+            `, 'small.js');
+            check(
+                '9m 未超限的图保持原尺寸（不做无谓降采样）',
+                small.indexOf('"w":800') >= 0 && small.indexOf('"h":600') >= 0,
+                String(small),
+            );
+
+            // 关键回归：PIXI 的 setFrame 在 frame 超出 baseTexture 时会直接抛
+            // "Texture Error: frame does not fit inside the base Texture dimensions"。
+            // MZ 用 bitmap.width（原图）调 setFrame，所以降采样后必须同步折算帧坐标。
+            //
+            // 时序要点：hook 追加在 rmmz_core.js **末尾**，那时 Sprite 已定义，
+            // 打补丁生效。这里先建一个全新的环境与 Sprite，再装 hook，避免被测试桩覆盖。
+            const frameEnv = makeMzV2Env({ engine: 'MZ', version: 'v2', effekseer: true, audioStreaming: true });
+            frameEnv.runCode(
+                'window.PIXI = { BaseTexture: function (src) { this.source = src; this.width = src.width; this.height = src.height; } };\n' +
+                'window.Graphics = { width: 816, height: 624, _renderer: {}, _frameCount: 1 };\n' +
+                'window.Bitmap = function () { this._image = null; };\n' +
+                'Bitmap.prototype._createBaseTexture = function (source) { this._baseTexture = new PIXI.BaseTexture(source); this._baseTexture.width = source.width; this._baseTexture.height = source.height; };\n' +
+                'window.Sprite = function () { this._bitmap = null; this._frames = []; };\n' +
+                'Sprite.prototype.setFrame = function (x, y, w, h) { this._frames.push([x, y, w, h]); };',
+                'stubs.js',
+            );
+            frameEnv.runCode(MZ_V2_CORE_HOOK_CODE, '__mz_core_hook.js');
+            const frameOut = frameEnv.runCode(`
+                (function () {
+                    var fakeImage = { width: 15400, height: 1000, naturalWidth: 15400, naturalHeight: 1000 };
+                    var bmp = new Bitmap();
+                    bmp._image = fakeImage;
+                    Object.defineProperty(bmp, "width", { get: function () { return fakeImage.width; } });
+                    Object.defineProperty(bmp, "height", { get: function () { return fakeImage.height; } });
+                    bmp._createBaseTexture(fakeImage);
+                    var sp = new Sprite();
+                    sp._bitmap = bmp;
+                    sp.setFrame(0, 0, bmp.width, bmp.height);
+                    var bt = bmp._baseTexture;
+                    var c = sp._frames[0];
+                    return JSON.stringify({
+                        frame: c,
+                        texture: [bt.width, bt.height],
+                        fits: c[2] <= bt.width && c[3] <= bt.height,
+                    });
+                })()
+            `, 'frame.js');
+            let f = null;
+            try { f = JSON.parse(frameOut); } catch (e) { f = null; }
+            check(
+                '9m 降采样后帧坐标同步折算，不会触发 PIXI 的 frame 越界抛错',
+                f && f.fits === true,
+                String(frameOut),
+            );
+
+            // TilingSprite 是**另一套** setFrame 实现（图块集走它），超限时同样要折算
+            const tiling = env.runCode(`
+                (function () {
+                    if (typeof TilingSprite === 'undefined') return 'no-tilingsprite';
+                    var patched = TilingSprite.prototype.setFrame && TilingSprite.prototype.setFrame.__tyranorFrameScaled === true;
+                    return String(patched);
+                })()
+            `, 'tiling.js');
+            check(
+                '9m TilingSprite 的 setFrame 也被折算（图块集走这条路径）',
+                tiling === 'true' || tiling === 'no-tilingsprite',
+                String(tiling),
+            );
         }
 
         // --- 9g: managers hook 的存档桥往返 + _stretchHeight 铺满 ---
