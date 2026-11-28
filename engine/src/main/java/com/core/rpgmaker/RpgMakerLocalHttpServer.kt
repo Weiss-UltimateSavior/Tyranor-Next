@@ -50,6 +50,8 @@ internal class RpgMakerLocalHttpServer(
     private val earlyHook: ByteArray? = null,
     private val v12Compat: Boolean = true,
     private val fuzzyNames: Boolean = false,
+    /** MZ 会话：素材按 `<原文件名>_` 请求（加密名），需要专属的 MIME/缓存/明文回退。 */
+    private val mzSession: Boolean = false,
     /** 期望的固定端口（0 = 随机）；被占用时回退随机并由 [usedFallbackPort] 标记。 */
     preferredPort: Int = com.core.web.WebShellServerSocket.RANDOM_PORT,
     /**
@@ -119,10 +121,11 @@ internal class RpgMakerLocalHttpServer(
         earlyHook: ByteArray? = null,
         v12Compat: Boolean = true,
         fuzzyNames: Boolean = false,
+        mzSession: Boolean = false,
         preferredPort: Int = com.core.web.WebShellServerSocket.RANDOM_PORT,
         earlyHtml: String = "",
         dirIndex: RpgMakerDirIndex = RpgMakerDirIndex(),
-    ) : this(root, null, tyranoHook, injectBeforeBody, scriptAppends, injectedHtml, internalResources, earlyHook, v12Compat, fuzzyNames, preferredPort, earlyHtml, dirIndex)
+    ) : this(root, null, tyranoHook, injectBeforeBody, scriptAppends, injectedHtml, internalResources, earlyHook, v12Compat, fuzzyNames, mzSession, preferredPort, earlyHtml, dirIndex)
 
     fun start() { thread.start() }
     val port: Int get() = serverSocket.localPort
@@ -486,9 +489,13 @@ internal class RpgMakerLocalHttpServer(
     }
 
     private fun isImmutableAsset(path: String): Boolean {
-        val dot = path.lastIndexOf('.')
-        if (dot < 0 || dot == path.length - 1) return false
-        return when (path.substring(dot)) {
+        // MZ 加密素材：在原文件名后追加**一个** `_`（`img/a.png_`、`audio/bgm/x.ogg_`），
+        // 与 .rpgmvp/.rpgmvo/.rpgmvm 同档的只读素材。只剥一层再按基础扩展名判：
+        // `a.png__` 不是合法加密名，递归剥会把两个 `_` 都吃掉、误放行成 `.png`。
+        val base = if (path.endsWith("_")) path.dropLast(1) else path
+        val dot = base.lastIndexOf('.')
+        if (dot < 0 || dot == base.length - 1) return false
+        return when (base.substring(dot)) {
             ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp",
             ".ogg", ".m4a", ".mp3", ".wav", ".aac", ".flac",
             ".mp4", ".m4v", ".webm",
@@ -562,6 +569,15 @@ internal class RpgMakerLocalHttpServer(
         var target = canonicalIfValid(uri)
         if (target != null) return ResolvedFile(target, null)
         val lower = uri.lowercase(Locale.ROOT)
+        // MZ 混合加密工程：游戏只加密了部分目录，后加的补丁素材是明文，而 MZ 仍按 `_`
+        // 请求。只在 MZ 会话、且直接命中失败后回退去掉尾随 `_` 的明文同名文件。
+        // 不加正向回退（`.png → .png_`）：MZ 的 `_` 追加在完整 URL 后，请求路径与磁盘
+        // 文件名逐字符相同，正向回退只会制造噪声。
+        if (mzSession && lower.endsWith("_")) {
+            val alt = uri.dropLast(1)
+            target = canonicalIfValid(alt)
+            if (target != null) { Log.i(TAG, "resource fallback mz-encrypted->plain $uri -> $alt"); return ResolvedFile(target, null) }
+        }
         if (lower.endsWith(".m4a")) {
             val alt = replaceSuffix(uri, ".m4a", ".ogg")
             target = canonicalIfValid(alt)
@@ -923,6 +939,13 @@ internal class RpgMakerLocalHttpServer(
 
     private fun mime(name: String?): String {
         val n = name?.lowercase(Locale.ROOT) ?: ""
+        // MZ 加密素材：`a.png_` 的实际内容仍是 PNG，按去掉**一层**尾随 `_` 的基础名判；
+        // 与 isImmutableAsset 同样不递归，`a.png__` 不是合法加密名，落回 octet-stream。
+        if (n.endsWith("_")) return mimeBase(n.dropLast(1))
+        return mimeBase(n)
+    }
+
+    private fun mimeBase(n: String): String {
         if (n.endsWith(".html") || n.endsWith(".htm")) return "text/html; charset=utf-8"
         if (n.endsWith(".js")) return "application/javascript; charset=utf-8"
         if (n.endsWith(".css")) return "text/css; charset=utf-8"

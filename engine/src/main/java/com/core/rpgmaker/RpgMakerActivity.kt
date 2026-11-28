@@ -401,6 +401,7 @@ class RpgMakerActivity : Activity() {
                     bundle.modHtml, bundle.internalResources,
                     // earlyHook 仅保留给历史内联形态；生产路径已改用 earlyHtml 外链
                     earlyHook = null, v12Compat = v12Session, fuzzyNames = v2Session,
+                    mzSession = webGameType == WebGameType.RPG_MZ,
                     earlyHtml = bundle.earlyHtml, dirIndex = rpgDirIndex,
                 )
             } else {
@@ -408,6 +409,7 @@ class RpgMakerActivity : Activity() {
                     bundle.contentRoot, bundle.lateHook, true, bundle.scriptAppends,
                     bundle.modHtml, bundle.internalResources,
                     earlyHook = null, v12Compat = v12Session, fuzzyNames = v2Session,
+                    mzSession = webGameType == WebGameType.RPG_MZ,
                     earlyHtml = bundle.earlyHtml, dirIndex = rpgDirIndex,
                 )
             }.also { it.start() }
@@ -730,6 +732,12 @@ class RpgMakerActivity : Activity() {
         if (view == null || view !== webView || !initialMainFramePending || isFinishing || isDestroyed) return
         val navigationGeneration = startupNavigationGeneration
         val requestId = ++startupVisualRequestId
+        if (webGameType == WebGameType.RPG_MZ) {
+            // MZ 的要等 SceneManager._scene：首帧可见时游戏往往还在解 effekseer wasm，
+            // 提前揭开会让加载页消失后留一段黑屏（见 RpgMakerStartupGate 的说明）。
+            awaitMzSceneReady(view, navigationGeneration)
+            return
+        }
         runCatching {
             view.postVisualStateCallback(requestId, object : WebView.VisualStateCallback() {
                 override fun onComplete(requestId: Long) {
@@ -750,6 +758,55 @@ class RpgMakerActivity : Activity() {
                 startupOverlay?.fail(null)
             }
         }
+    }
+
+    /**
+     * MZ 会话的揭开时机：轮询 `SceneManager._scene`，就绪或超时（15s）后揭开。
+     *
+     * 过程中任何「会话已不是本次启动」的信号（换页、销毁、新的 HTML 注入请求）
+     * 都必须让本轮轮询自行退出，否则旧回调会把新页面的启动页一并揭掉。
+     */
+    private fun awaitMzSceneReady(view: WebView, navigationGeneration: Long) {
+        val startedAt = System.currentTimeMillis()
+        val poll = object : Runnable {
+            override fun run() {
+                if (view !== webView || isFinishing || isDestroyed || !initialMainFramePending ||
+                    startupNavigationGeneration != navigationGeneration
+                ) return
+                runCatching {
+                    view.evaluateJavascript(RpgMakerStartupGate.READY_PROBE_JS) { raw ->
+                        if (view !== webView || isFinishing || isDestroyed || !initialMainFramePending ||
+                            startupNavigationGeneration != navigationGeneration
+                        ) return@evaluateJavascript
+                        val elapsed = System.currentTimeMillis() - startedAt
+                        when (RpgMakerStartupGate.decide(elapsed, RpgMakerStartupGate.isReady(raw))) {
+                            RpgMakerStartupGate.Decision.CONTINUE ->
+                                view.postDelayed(this, RpgMakerStartupGate.POLL_INTERVAL_MS)
+                            RpgMakerStartupGate.Decision.REVEAL -> {
+                                Log.i(TAG, "mz scene ready after ${elapsed}ms")
+                                initialMainFramePending = false
+                                startupOverlay?.reveal()
+                            }
+                            RpgMakerStartupGate.Decision.TIMEOUT_REVEAL -> {
+                                // 不卡死：揭开并留一条可检索的 warn，由日志定位是哪个作品没跑起来
+                                Log.w(TAG, "mz scene not ready after ${elapsed}ms, revealing anyway")
+                                initialMainFramePending = false
+                                startupOverlay?.reveal()
+                            }
+                        }
+                    }
+                }.onFailure { error ->
+                    Log.w(TAG, "mz readiness probe failed", error)
+                    if (view === webView && !isFinishing && !isDestroyed && initialMainFramePending &&
+                        startupNavigationGeneration == navigationGeneration
+                    ) {
+                        initialMainFramePending = false
+                        startupOverlay?.reveal()
+                    }
+                }
+            }
+        }
+        view.post(poll)
     }
 
     private fun isLocalGameUri(uri: Uri?): Boolean {
