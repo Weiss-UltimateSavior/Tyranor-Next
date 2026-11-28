@@ -71,6 +71,17 @@ class RpgMakerStartupGateTest {
         assertTrue(RpgMakerStartupGate.READY_PROBE_JS.contains("_scene"))
     }
 
+    /**
+     * `onPageCommitVisible` 早于 `onPageFinished`，而它原来无条件揭开加载页。
+     * MZ 必须拒绝这次「抢跑」：否则轮询根本没机会开始，阶段 H 等于没做。
+     * 非 MZ 会话必须保持原样（那条路径是既有的首帧体验，不能一起改）。
+     */
+    @Test
+    fun commitVisibleMayRevealImmediatelyOnlyOutsideMzSessions() {
+        assertTrue(RpgMakerStartupGate.mayRevealOnCommitVisible(rpgMakerMz = false))
+        assertEquals(false, RpgMakerStartupGate.mayRevealOnCommitVisible(rpgMakerMz = true))
+    }
+
     @Test
     fun pollIntervalIsMuchShorterThanTheTimeout() {
         assertTrue(

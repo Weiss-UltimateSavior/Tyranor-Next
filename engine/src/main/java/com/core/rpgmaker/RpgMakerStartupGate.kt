@@ -32,6 +32,15 @@ internal object RpgMakerStartupGate {
         TIMEOUT_REVEAL,
     }
 
+    /**
+     * `onPageCommitVisible` 是否可以直接揭开加载页。
+     *
+     * 它**早于** `onPageFinished` 触发，而它原来无条件揭开——MZ 会话必须先拒绝这次抢跑，
+     * 否则轮询根本没机会开始（`initialMainFramePending` 已被置 false），阶段 H 等于没做。
+     * 非 MZ 会话保持原样：那条路径是既有的首帧体验，不能一起改。
+     */
+    fun mayRevealOnCommitVisible(rpgMakerMz: Boolean): Boolean = !rpgMakerMz
+
     /** 本轮该做什么。就绪优先于时长：超时之后才就绪的作品也应算 REVEAL。 */
     fun decide(elapsedMs: Long, ready: Boolean): Decision = when {
         ready -> Decision.REVEAL

@@ -638,6 +638,9 @@ class RpgMakerActivity : Activity() {
 
             override fun onPageCommitVisible(view: WebView?, url: String?) {
                 super.onPageCommitVisible(view, url)
+                // MZ 要等 SceneManager._scene（见 RpgMakerStartupGate）：这里若照旧揭开，
+                // 轮询还没开始就被置成「已揭开」，阶段 H 等于没做。
+                if (!RpgMakerStartupGate.mayRevealOnCommitVisible(webGameType == WebGameType.RPG_MZ)) return
                 if (view === webView && !isFinishing && !isDestroyed && initialMainFramePending) {
                     initialMainFramePending = false
                     startupOverlay?.reveal()
