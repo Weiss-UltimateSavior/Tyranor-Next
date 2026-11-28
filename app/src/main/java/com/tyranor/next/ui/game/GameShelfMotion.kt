@@ -1813,7 +1813,7 @@ internal suspend fun PagerState.settleScrub(page: Int) {
 
 /**
  * 底部滚动控制条的 Q 弹控制器：
- * - 旋钮一动（拖动、点按、跟着书架滑行），轨道上的线与刻度在它附近弹起一个小丘，高度由一根欠阻尼弹簧
+ * - 拖动轨道或点按轨道跳转时，轨道上的线与刻度在旋钮附近弹起一个小丘，高度由一根欠阻尼弹簧
  *   （[railBounce]）驱动：越快越高，停下后还会反向晃一两下再落定；旋钮自己随同一个量上下浮一点，线头始终接在旋钮上；
  * - 两端橡皮筋拉出与松手 Q 弹回位；
  * - 拖动气泡随水平速度柔和微倾。
@@ -1825,6 +1825,11 @@ internal class ShelfScrubberMotion(private val scope: CoroutineScope) {
     private val railBounceState = mutableFloatStateOf(0f)
     private val rubberState = mutableFloatStateOf(0f)
     private val bubbleTiltState = mutableFloatStateOf(0f)
+
+    private val railWakeSignal = Channel<Unit>(Channel.CONFLATED)
+    private var lastRailMoveNanos = 0L
+    private var railTarget = 0f
+    private var railAnimating = false
 
     private var rubberJob: Job? = null
     private var tiltJob: Job? = null
@@ -1839,33 +1844,31 @@ internal class ShelfScrubberMotion(private val scope: CoroutineScope) {
      * 单协程驱动旋钮移动引起的轨道 Q 弹（零每帧协程取消与重建，闲置时零功耗挂起）：
      * 与旧 `Animatable(RAIL_SPRING)` + `delay(70ms)` 回零行为数值同源。
      */
-    suspend fun trackKnob(pagerState: PagerState, knobSeek: ShelfKnobSeek, count: Int) {
-        if (!MotionMode.enhanced || !ValueAnimator.areAnimatorsEnabled()) {
+    suspend fun animateRail(pagerState: PagerState, knobSeek: ShelfKnobSeek, count: Int) {
+        try {
+            if (!MotionMode.enhanced || !ValueAnimator.areAnimatorsEnabled()) return
+            runRailSpring(pagerState, knobSeek, count)
+        } finally {
             railBounceState.floatValue = 0f
-            return
+            railAnimating = false
+            railWakeSignal.tryReceive()
         }
-        val spec = FloatSpringSpec(dampingRatio = 0.34f, stiffness = 380f)
-        val wakeSignal = Channel<Unit>(Channel.CONFLATED)
-        var lastMoveEventNanos = 0L
-        var pendingTarget = 0f
-        var active = false
+    }
 
+    private suspend fun runRailSpring(pagerState: PagerState, knobSeek: ShelfKnobSeek, count: Int) {
+        val spec = FloatSpringSpec(dampingRatio = 0.34f, stiffness = 380f)
         coroutineScope {
             launch {
-                var lastPos = Float.NaN
+                var lastPos: Float? = null
                 var lastSampleNanos = 0L
-                snapshotFlow { knobSeek.position(pagerState.pagePosition()) }.collect { position ->
+                // 只在轨道点按跳转时采样 Pager；拖动轨道的位移由手势直接提交。
+                snapshotFlow {
+                    if (knobSeek.active) knobSeek.position(pagerState.pagePosition()) else null
+                }.collect { position ->
                     val now = System.nanoTime()
-                    if (!lastPos.isNaN() && count > 1) {
-                        val seconds = ((now - lastSampleNanos) / 1e9f).coerceIn(0.004f, 0.12f)
-                        val fps = (position - lastPos) / (count - 1) / seconds
-                        val fraction = (abs(fps) / RAIL_FULL_SPEED).coerceIn(0f, 1f)
-                        pendingTarget = fraction * RAIL_MAX_BOUNCE
-                        lastMoveEventNanos = now
-                        if (!active) {
-                            active = true
-                            wakeSignal.trySend(Unit)
-                        }
+                    val previous = lastPos
+                    if (position != null && previous != null) {
+                        onRailMove(position - previous, count, (now - lastSampleNanos) / 1e9f, RAIL_MAX_BOUNCE)
                     }
                     lastPos = position
                     lastSampleNanos = now
@@ -1873,10 +1876,10 @@ internal class ShelfScrubberMotion(private val scope: CoroutineScope) {
             }
 
             while (true) {
-                wakeSignal.receive()
+                railWakeSignal.receive()
                 var animVal = railBounceState.floatValue
                 var animVel = 0f
-                var segTarget = pendingTarget
+                var segTarget = railTarget
                 var segInitVal = animVal
                 var segInitVel = animVel
                 var segStartNanos = withFrameNanos { it }
@@ -1885,13 +1888,13 @@ internal class ShelfScrubberMotion(private val scope: CoroutineScope) {
                 while (true) {
                     val frameNanos = withFrameNanos { it }
                     val wallNow = System.nanoTime()
-                    val idleNanos = wallNow - lastMoveEventNanos
+                    val idleNanos = wallNow - lastRailMoveNanos
                     val wantTarget = if (idleNanos >= RAIL_REST_MILLIS * 1_000_000L) {
                         resting = true
                         0f
                     } else {
                         resting = false
-                        pendingTarget
+                        railTarget
                     }
                     val playNanos = (frameNanos - segStartNanos).coerceAtLeast(0L)
                     animVal = spec.getValueFromNanos(playNanos, segInitVal, segTarget, segInitVel)
@@ -1905,12 +1908,27 @@ internal class ShelfScrubberMotion(private val scope: CoroutineScope) {
                         segDurationNanos = if (wantTarget == 0f) spec.getDurationNanos(segInitVal, 0f, segInitVel) else Long.MAX_VALUE
                     } else if (resting && segTarget == 0f && playNanos >= segDurationNanos) {
                         railBounceState.floatValue = 0f
-                        active = false
+                        railAnimating = false
                         break
                     }
                     railBounceState.floatValue = animVal
                 }
             }
+        }
+    }
+
+    fun onRailDrag(pageDelta: Float, count: Int, dtSeconds: Float) {
+        onRailMove(pageDelta, count, dtSeconds, RAIL_DRAG_MAX_BOUNCE)
+    }
+
+    private fun onRailMove(pageDelta: Float, count: Int, dtSeconds: Float, maxBounce: Float) {
+        if (pageDelta == 0f || count <= 1 || !ValueAnimator.areAnimatorsEnabled()) return
+        val speed = abs(pageDelta) / (count - 1) / dtSeconds.coerceIn(0.004f, 0.12f)
+        railTarget = (speed / RAIL_FULL_SPEED).coerceIn(0f, 1f) * maxBounce
+        lastRailMoveNanos = System.nanoTime()
+        if (!railAnimating) {
+            railAnimating = true
+            railWakeSignal.trySend(Unit)
         }
     }
 
@@ -2754,6 +2772,7 @@ private const val TRACK_BOUNCE_REACH = 58f
 private const val TRACK_BOUNCE_STEP = 5f
 private const val RAIL_FULL_SPEED = 1.1f
 private const val RAIL_MAX_BOUNCE = 6f
+private const val RAIL_DRAG_MAX_BOUNCE = 4f
 private const val SCRUBBER_DRAG_IDLE_MILLIS = 50L
 
 /**
