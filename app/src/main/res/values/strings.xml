@@ -546,7 +546,12 @@
     <string name="engine_option_rpg_mv_v1">TynMV-0.1</string>
     <string name="engine_option_rpg_mv_v2">TynMV-0.2</string>
     <string name="engine_option_rpg_mz_v0">Tyranor-2.3.4</string>
-    <string name="engine_option_rpg_mz_v2">TynMZ-0.1</string>
+    <string name="engine_option_rpg_mz_v2">TynMZ-0.2</string>
+    <string name="engine_settings_rpg_effekseer_mode">Effekseer 特效（仅 TynMZ）</string>
+    <string name="engine_settings_rpg_effekseer_mode_auto">自动（按 WebView 版本）</string>
+    <string name="engine_settings_rpg_effekseer_mode_on">强制开启</string>
+    <string name="engine_settings_rpg_effekseer_mode_off">强制关闭</string>
+    <string name="engine_settings_rpg_audio_streaming">音频流式解码（仅 TynMZ）</string>
 
     <string name="cover_source_local">本地封面</string>
     <string name="cover_source_custom">自定义封面</string>

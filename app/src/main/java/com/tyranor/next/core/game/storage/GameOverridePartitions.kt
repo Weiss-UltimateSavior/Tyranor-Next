@@ -45,6 +45,9 @@ internal object GameOverridePartitions {
     const val KEY_RPG_SAVE_INTEROP = "rpg_save_interop"
     const val KEY_RPG_MV_VERSION = "rpg_mv_engine_version"
     const val KEY_RPG_MZ_VERSION = "rpg_mz_engine_version"
+    // MZ（TynMZ-0.2）专有：Effekseer 闸门与音频流式解码（与 PerGameSettingsStore.F_RPG_* 字面量锚定）
+    const val KEY_RPG_EFFEKSEER_MODE = "rpg_effekseer_mode"
+    const val KEY_RPG_AUDIO_STREAMING = "rpg_audio_streaming"
     // 输入重映射（虚拟按键 + 手柄映射）单游戏覆盖键；与 engine 侧 InputConfigStore 字面量锚定
     const val KEY_INPUT_PAD_ENABLED = "input_pad_enabled"
     const val KEY_INPUT_GAMEPAD_ENABLED = "input_gamepad_enabled"
@@ -183,6 +186,7 @@ internal object GameOverridePartitions {
         KEY_WINLATOR_LC_ALL, KEY_WINLATOR_TZ, KEY_WINLATOR_BOX64_PRESET, KEY_WINLATOR_SAVE,
         KEY_RPG_MAKER_MOD_ENABLED, KEY_RPG_SAVE_INTEROP,
         KEY_RPG_LEGACY_RENDERER, KEY_RPG_MV_VERSION, KEY_RPG_MZ_VERSION,
+        KEY_RPG_EFFEKSEER_MODE, KEY_RPG_AUDIO_STREAMING,
         KEY_INPUT_PAD_ENABLED, KEY_INPUT_GAMEPAD_ENABLED, KEY_INPUT_PROFILE_ID,
         KEY_INPUT_LEGACY_MIGRATED,
         KEY_RPG_USE_RUBY18, KEY_RPG_DEBUG, KEY_RPG_SMOOTH_SCALING, KEY_RPG_VSYNC,

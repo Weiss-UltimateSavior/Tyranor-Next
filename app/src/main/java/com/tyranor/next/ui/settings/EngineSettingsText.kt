@@ -416,6 +416,14 @@ internal fun rpgMvVersionOptionsMap(): Map<String, String> = rpgMvVersionOptions
 @Composable
 internal fun rpgMzVersionOptionsMap(): Map<String, String> = rpgMzVersionOptions().toMap()
 
+/** MZ 的 Effekseer 闸门模式（TynMZ-0.2 专有）。 */
+@Composable
+internal fun rpgEffekseerModeOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.RPG_EFFEKSEER_AUTO to stringResource(R.string.engine_settings_rpg_effekseer_mode_auto),
+    EngineSettingsStore.RPG_EFFEKSEER_ON to stringResource(R.string.engine_settings_rpg_effekseer_mode_on),
+    EngineSettingsStore.RPG_EFFEKSEER_OFF to stringResource(R.string.engine_settings_rpg_effekseer_mode_off),
+)
+
 @Composable
 internal fun artResolutionOptionsMap(): Map<String, String> = artResolutionOptions().toMap()
 

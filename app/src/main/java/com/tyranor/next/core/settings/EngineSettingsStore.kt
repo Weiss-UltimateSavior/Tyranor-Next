@@ -165,6 +165,10 @@ object EngineSettingsStore {
     const val KEY_RPG_SAVE_INTEROP = "rpg_save_interop"
     const val KEY_RPG_MV_ENGINE_VERSION = "rpg_mv_engine_version"
     const val KEY_RPG_MZ_ENGINE_VERSION = "rpg_mz_engine_version"
+    // MZ（TynMZ-0.2）专有：Effekseer 闸门与音频流式解码。只对 MZ 会话有意义，
+    // MV 的三条链路不读这两项（见 docs/RPGMaker-MZ-移植实施方案.md 阶段 C/D）。
+    const val KEY_RPG_EFFEKSEER_MODE = "rpg_effekseer_mode"
+    const val KEY_RPG_AUDIO_STREAMING = "rpg_audio_streaming"
 
     // RPG Maker RGSS 外置模块（settings extra 的 rpg 节，键名与 RPGM 插件 MKXPConfigurationParser 一致）
     const val KEY_RPG_USE_RUBY18 = "rpg_use_ruby18"
@@ -305,6 +309,19 @@ object EngineSettingsStore {
     const val RPG_MZ_V1 = "v1"
     const val RPG_MV_V2 = "v2"
     const val RPG_MZ_V2 = "v2"
+
+    /**
+     * MZ 的 Effekseer 闸门取值域。`auto` 按 WebView 的 Chromium 主版本判定（< 124 关闭），
+     * `on` / `off` 是手动逃生口——阈值来自单方记录，是本计划最大的不确定项，
+     * 所以必须允许用户绕过自动判定。
+     */
+    const val RPG_EFFEKSEER_AUTO = "auto"
+    const val RPG_EFFEKSEER_ON = "on"
+    const val RPG_EFFEKSEER_OFF = "off"
+    val RPG_EFFEKSEER_MODES = setOf(RPG_EFFEKSEER_AUTO, RPG_EFFEKSEER_ON, RPG_EFFEKSEER_OFF)
+
+    /** MZ 音频流式解码默认开：长 BGM 不走整段 decodeAudioData（慢机上会 20s+ 才出声）。 */
+    const val RPG_AUDIO_STREAMING_DEFAULT = true
     // 与 PerGameSettingsStore.F_RPG_* 同名，分属不同 prefs 文件（yukihub_prefs vs tyranor_game_overrides）
     // Ren'Py 版本取值常量
     const val RENPY_AUTO = "auto"
@@ -1108,6 +1125,16 @@ object EngineSettingsStore {
     fun setRpgMzEngineVersion(c: Context, v: String) =
         prefs(c).edit().putString(KEY_RPG_MZ_ENGINE_VERSION, normalizeRpgMz(v)).apply()
 
+    fun getRpgEffekseerMode(c: Context): String =
+        normalizeRpgEffekseerMode(prefs(c).getString(KEY_RPG_EFFEKSEER_MODE, RPG_EFFEKSEER_AUTO))
+    fun setRpgEffekseerMode(c: Context, v: String) =
+        prefs(c).edit().putString(KEY_RPG_EFFEKSEER_MODE, normalizeRpgEffekseerMode(v)).apply()
+
+    fun isRpgAudioStreaming(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_RPG_AUDIO_STREAMING, RPG_AUDIO_STREAMING_DEFAULT)
+    fun setRpgAudioStreaming(c: Context, b: Boolean) =
+        prefs(c).edit().putBoolean(KEY_RPG_AUDIO_STREAMING, b).apply()
+
     private fun normalizeRpgMv(v: String?): String = when (v?.trim()?.lowercase()) {
         RPG_MV_V1 -> RPG_MV_V1
         RPG_MV_V2 -> RPG_MV_V2
@@ -1120,6 +1147,12 @@ object EngineSettingsStore {
         RPG_MZ_V2 -> RPG_MZ_V2
         RPG_MZ_V0 -> RPG_MZ_V0
         else -> RPG_MZ_V0
+    }
+
+    /** Effekseer 模式：未知值一律归 `auto`，不让下拉之外的脏值一路带到宿主。 */
+    fun normalizeRpgEffekseerMode(v: String?): String {
+        val t = v?.trim()?.lowercase().orEmpty()
+        return if (t in RPG_EFFEKSEER_MODES) t else RPG_EFFEKSEER_AUTO
     }
 
     // ---------- RPG Maker RGSS 外置模块 ----------

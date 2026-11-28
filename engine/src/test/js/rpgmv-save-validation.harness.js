@@ -13,6 +13,11 @@ const RPG_V12_HOOK_CODE = fs.readFileSync(path.join(ASSETS_DIR, 'rpgmaker', '__r
 const MOD_CORE_CODE = fs.readFileSync(path.join(ASSETS_DIR, '__rpgmaker_mod_core.js'), 'utf8');
 const RMMZ_HOOK_CODE = fs.readFileSync(path.join(ASSETS_DIR, '__rmmz__.js'), 'utf8');
 const RMMZ_MANAGERS_HOOK_CODE = fs.readFileSync(path.join(ASSETS_DIR, '__hook_rmmz_managers.js'), 'utf8');
+// MZ v2（TynMZ-0.2）会话专有资产
+const MZ_V2_DIR = path.join(ASSETS_DIR, 'rpgmaker', 'mz');
+const MZ_V2_HOOK_CODE = fs.readFileSync(path.join(MZ_V2_DIR, '__mz_hook.js'), 'utf8');
+const MZ_V2_CORE_HOOK_CODE = fs.readFileSync(path.join(MZ_V2_DIR, '__mz_core_hook.js'), 'utf8');
+const MZ_V2_MANAGERS_HOOK_CODE = fs.readFileSync(path.join(MZ_V2_DIR, '__mz_managers_hook.js'), 'utf8');
 
 let failed = 0;
 function check(name, cond, detail) {
@@ -545,6 +550,171 @@ async function runTests() {
                 missingRejected,
         );
     }
+
+    console.log('\n== Skenario 9: Hook RPG Maker MZ v2 (TynMZ-0.2, assets/rpgmaker/mz/) ==');
+    {
+        // 按真实注入顺序仿真 MZ 1.1.0 的加载链：
+        //   </head> 前（earlyHtml）  → 会话配置 + Effekseer 桩
+        //   </body> 前（lateHook）   → __mz_hook.js
+        //   main.js 动态插入          → effekseer.min.js → rmmz_core.js(+core hook)
+        //                                → rmmz_managers.js(+managers hook)
+        // lateHook 求值时 Graphics/SceneManager 都还不存在，这是关键时序。
+        const makeMzV2Env = (sessionCfg) => {
+            const saveDataManager = createSaveBridgeMock();
+            const timers = [];
+            const sandbox = {
+                console,
+                setTimeout: (fn) => { timers.push(fn); return timers.length; },
+                clearTimeout: () => {},
+                saveDataManager,
+                StorageManager: {
+                    objectToJson: (obj) => Promise.resolve(JSON.stringify(obj)),
+                    jsonToObject: (json) => Promise.resolve(JSON.parse(json)),
+                },
+                document: {
+                    body: { parentNode: { style: {} } },
+                    documentElement: { clientHeight: 720, clientWidth: 1280 },
+                },
+                navigator: { userAgent: 'Mozilla/5.0 (Linux; Android 13) Chrome/124.0.0.0 Mobile' },
+            };
+            sandbox.window = sandbox;
+            sandbox.globalThis = sandbox;
+            if (sessionCfg) sandbox.__tyranorRpg = sessionCfg;
+            const context = vm.createContext(sandbox);
+            return {
+                sandbox,
+                runCode: (code, filename) => vm.runInContext(code, context, { filename }),
+                drainTimers: () => { while (timers.length) timers.shift()(); },
+            };
+        };
+
+        // --- 9a: effekseer:false —— 桩必须拦住库的自我赋值 ---
+        const blocked = makeMzV2Env({ engine: 'MZ', version: 'v2', effekseer: false, audioStreaming: true });
+        blocked.runCode(RpgEffekseerGateStubSource(), 'earlyHtml-stub.js');
+        // effekseer.min.js 求值时的自我赋值（IIFE 形态，挂到全局）
+        blocked.runCode('window.effekseer = { createContext: function () { return {}; } };', 'effekseer.min.js');
+        check('9a effekseer:false 时全局仍是 undefined', typeof blocked.sandbox.effekseer === 'undefined');
+
+        // --- 9b: lateHook 在 Graphics 尚未定义时不得抛错，且稍后能装上兜底 ---
+        let lateHookThrew = null;
+        try {
+            blocked.runCode(MZ_V2_HOOK_CODE, '__mz_hook.js');
+        } catch (err) {
+            lateHookThrew = err;
+        }
+        check(
+            '9b lateHook 在 Graphics 未定义时求值不抛错（MZ 的 rmmz_core.js 由 main.js 动态插入）',
+            lateHookThrew === null,
+            lateHookThrew ? String(lateHookThrew.message || lateHookThrew) : undefined,
+        );
+        check(
+            '9b lateHook 已把 overflow 处理到位（v0 hook 的既有契约）',
+            blocked.sandbox.document.body.parentNode.style.overflow === 'hidden',
+        );
+
+        // rmmz_core.js 稍后求值：Graphics / SceneManager 出现
+        blocked.runCode(
+            'window.Graphics = { _createEffekseerContext: function () { this._effekseer = "real"; } };\n' +
+            'window.SceneManager = { isGameActive: function () { return !!(window.top && window.top.document.hasFocus()); } };',
+            'rmmz_core.js',
+        );
+        blocked.drainTimers();
+        blocked.sandbox.Graphics._createEffekseerContext();
+        check(
+            '9b Graphics 出现后 lateHook 兜底生效（_effekseer 保持 null）',
+            blocked.sandbox.Graphics._effekseer === null,
+        );
+
+        // --- 9c: effekseer 未关闭时不得装桩（默认放行） ---
+        const allowed = makeMzV2Env({ engine: 'MZ', version: 'v2', effekseer: true });
+        allowed.runCode(RpgEffekseerGateStubSource(), 'earlyHtml-stub.js');
+        allowed.runCode('window.effekseer = { createContext: function () { return "ctx"; } };', 'effekseer.min.js');
+        check('9c effekseer:true 时放行库的正常挂载', allowed.sandbox.effekseer === undefined ? false : true);
+
+        // --- 9d: 缺 VorbisDecoder 时不改写 _shouldUseDecoder（否则 BGM 全哑） ---
+        const noDecoder = makeMzV2Env({ engine: 'MZ', version: 'v2', effekseer: true, audioStreaming: true });
+        noDecoder.runCode(
+            'window.Utils = { canPlayOgg: function () { return false; } };\n' +
+            'window.WebAudio = function () {};\n' +
+            'WebAudio.prototype._shouldUseDecoder = function () { return false; };',
+            'rmmz_core.js',
+        );
+        noDecoder.runCode(MZ_V2_CORE_HOOK_CODE, '__mz_core_hook.js');
+        check(
+            '9d 缺 VorbisDecoder 时保持原实现（不能把 BGM 钉哑）',
+            noDecoder.sandbox.WebAudio.prototype._shouldUseDecoder() === false,
+        );
+
+        // --- 9e: 有 VorbisDecoder 且开关开 → 钉成流式解码 ---
+        const streaming = makeMzV2Env({ engine: 'MZ', version: 'v2', effekseer: true, audioStreaming: true });
+        streaming.runCode(
+            'window.VorbisDecoder = function () {};\n' +
+            'window.Utils = { canPlayOgg: function () { return true; } };\n' +
+            'window.WebAudio = function () {};\n' +
+            'WebAudio.prototype._shouldUseDecoder = function () { return !Utils.canPlayOgg() && typeof VorbisDecoder === "function"; };',
+            'rmmz_core.js',
+        );
+        streaming.runCode(MZ_V2_CORE_HOOK_CODE, '__mz_core_hook.js');
+        check(
+            '9e 有 VorbisDecoder 时 _shouldUseDecoder 恒为 true（流式解码）',
+            streaming.sandbox.WebAudio.prototype._shouldUseDecoder() === true,
+        );
+
+        // --- 9f: audioStreaming:false 时不改写 ---
+        const noStreaming = makeMzV2Env({ engine: 'MZ', version: 'v2', effekseer: true, audioStreaming: false });
+        noStreaming.runCode(
+            'window.VorbisDecoder = function () {};\n' +
+            'window.Utils = { canPlayOgg: function () { return true; } };\n' +
+            'window.WebAudio = function () {};\n' +
+            'WebAudio.prototype._shouldUseDecoder = function () { return false; };',
+            'rmmz_core.js',
+        );
+        noStreaming.runCode(MZ_V2_CORE_HOOK_CODE, '__mz_core_hook.js');
+        check(
+            '9f audioStreaming:false 时不动 _shouldUseDecoder',
+            noStreaming.sandbox.WebAudio.prototype._shouldUseDecoder() === false,
+        );
+
+        // --- 9g: managers hook 的存档桥往返 + _stretchHeight 铺满 ---
+        const saves = makeMzV2Env({ engine: 'MZ', version: 'v2', effekseer: true, audioStreaming: true });
+        saves.runCode(
+            'window.Graphics = { _stretchHeight: function () { return document.documentElement.clientHeight * 0.9; } };\n' +
+            'window.SceneManager = {};',
+            'rmmz_core.js',
+        );
+        saves.runCode(MZ_V2_CORE_HOOK_CODE, '__mz_core_hook.js');
+        check(
+            '9g Graphics._stretchHeight 铺满（不留 0.9 的黑边）',
+            saves.sandbox.Graphics._stretchHeight() === 720,
+            String(saves.sandbox.Graphics._stretchHeight()),
+        );
+        saves.runCode(MZ_V2_MANAGERS_HOOK_CODE, '__mz_managers_hook.js');
+        await saves.sandbox.StorageManager.saveObject('global', { version: 1, title: 'MZ v2 Save' });
+        const loadedV2 = await saves.sandbox.StorageManager.loadObject('global');
+        check(
+            '9g MZ v2 存档桥往返正常（引擎侧仍存明文 JSON）',
+            saves.sandbox.StorageManager.exists('global') === true &&
+                loadedV2 && loadedV2.title === 'MZ v2 Save' &&
+                saves.sandbox.SceneManager.isGameActive() === true,
+        );
+    }
+}
+
+/** 与 RpgEffekseerGate.effekseerStubScript() 同源的桩脚本（去掉 <script> 包裹）。 */
+function RpgEffekseerGateStubSource() {
+    return `
+        (function () {
+          var cfg = window.__tyranorRpg;
+          if (!cfg || cfg.effekseer !== false) return;
+          try {
+            Object.defineProperty(window, "effekseer", {
+              configurable: true,
+              get: function () { return undefined; },
+              set: function () {}
+            });
+          } catch (e) {}
+        })();
+    `;
 }
 
 runTests()

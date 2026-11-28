@@ -2326,6 +2326,12 @@ object EngineLauncher {
             if (useRpgMakerRuntime) {
                 rpgMakerVersion?.let { putExtra(LaunchContract.RPG_MAKER_VERSION, it) }
                 putExtra(LaunchContract.RPG_LEGACY_RENDERER, rpgLegacyRenderer)
+                // MZ 专有：Effekseer 闸门与音频流式解码。MV 会话不下发，宿主按缺省值与
+                // 引擎类型门控（见 RpgMakerActivity 的 RPG_EFFEKSEER_MODE 读取）。
+                if (game.engine == EngineType.RPG_MZ) {
+                    putExtra(LaunchContract.RPG_EFFEKSEER_MODE, settings.rpgEffekseerMode)
+                    putExtra(LaunchContract.RPG_AUDIO_STREAMING, settings.rpgAudioStreaming)
+                }
             }
         }
     }

@@ -546,7 +546,12 @@
     <string name="engine_option_rpg_mv_v1">TynMV-0.1</string>
     <string name="engine_option_rpg_mv_v2">TynMV-0.2</string>
     <string name="engine_option_rpg_mz_v0">Tyranor-2.3.4</string>
-    <string name="engine_option_rpg_mz_v2">TynMZ-0.1</string>
+    <string name="engine_option_rpg_mz_v2">TynMZ-0.2</string>
+    <string name="engine_settings_rpg_effekseer_mode">Effekseer エフェクト（TynMZ のみ）</string>
+    <string name="engine_settings_rpg_effekseer_mode_auto">自動（WebView バージョンによる）</string>
+    <string name="engine_settings_rpg_effekseer_mode_on">強制オン</string>
+    <string name="engine_settings_rpg_effekseer_mode_off">強制オフ</string>
+    <string name="engine_settings_rpg_audio_streaming">音声ストリーミングデコード（TynMZ のみ）</string>
 
     <string name="cover_source_local">ローカルカバー</string>
     <string name="cover_source_custom">カスタムカバー</string>

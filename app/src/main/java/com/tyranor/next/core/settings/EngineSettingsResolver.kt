@@ -192,6 +192,16 @@ object EngineSettingsResolver {
                 bool(PerGameSettingsStore.F_RPG_SAVE_INTEROP),
                 EngineSettingsStore.isRpgSaveInterop(app),
             ),
+            rpgEffekseerMode = EffectiveEngineSettings.resolveAllowed(
+                str(PerGameSettingsStore.F_RPG_EFFEKSEER_MODE),
+                EngineSettingsStore.getRpgEffekseerMode(app),
+                EngineSettingsStore.RPG_EFFEKSEER_MODES,
+                EngineSettingsStore.RPG_EFFEKSEER_AUTO,
+            ),
+            rpgAudioStreaming = EffectiveEngineSettings.resolveBool(
+                bool(PerGameSettingsStore.F_RPG_AUDIO_STREAMING),
+                EngineSettingsStore.isRpgAudioStreaming(app),
+            ),
             rpgMvVersion = EffectiveEngineSettings.resolveRpgVersion(
                 str(PerGameSettingsStore.F_RPG_MV_VERSION),
                 EngineSettingsStore.getRpgMvEngineVersion(app),
@@ -402,6 +412,10 @@ data class ResolvedEngineSettings(
     val rpgLegacyRenderer: Boolean,
     /** MV/MZ 存档互通生效值（单游戏覆盖 > 全局）。合并值不区分引擎，消费方须以引擎类型门控。 */
     val rpgSaveInterop: Boolean,
+    /** MZ（TynMZ-0.2）Effekseer 闸门生效值：auto / on / off。消费方须以引擎类型门控。 */
+    val rpgEffekseerMode: String,
+    /** MZ（TynMZ-0.2）音频流式解码生效值。消费方须以引擎类型门控。 */
+    val rpgAudioStreaming: Boolean,
     val rpgMvVersion: String,
     val rpgMzVersion: String,
     val renpyVersion: String,

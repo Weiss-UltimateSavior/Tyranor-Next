@@ -953,6 +953,9 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var rpgSaveInterop by remember { mutableStateOf(EngineSettingsStore.isRpgSaveInterop(ctx)) }
     var rpgMvVersion by remember { mutableStateOf(EngineSettingsStore.getRpgMvEngineVersion(ctx)) }
     var rpgMzVersion by remember { mutableStateOf(EngineSettingsStore.getRpgMzEngineVersion(ctx)) }
+    // MZ（TynMZ-0.2）专有：只在 MZ 版本选中 v2 时可操作（见下方 RPG Maker 卡片的可见性判定）
+    var rpgEffekseerMode by remember { mutableStateOf(EngineSettingsStore.getRpgEffekseerMode(ctx)) }
+    var rpgAudioStreaming by remember { mutableStateOf(EngineSettingsStore.isRpgAudioStreaming(ctx)) }
     var rpg by remember { mutableStateOf(EngineSettingsStore.loadRpgMaker(ctx)) }
     var renpyVersion by remember { mutableStateOf(EngineSettingsStore.getRenpyVersion(ctx)) }
     var renpy by remember { mutableStateOf(EngineSettingsStore.loadRenPy(ctx)) }
@@ -1091,6 +1094,8 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 EngineSettingsStore.setRpgSaveInterop(ctx, rpgSaveInterop)
                 EngineSettingsStore.setRpgMvEngineVersion(ctx, rpgMvVersion)
                 EngineSettingsStore.setRpgMzEngineVersion(ctx, rpgMzVersion)
+                EngineSettingsStore.setRpgEffekseerMode(ctx, rpgEffekseerMode)
+                EngineSettingsStore.setRpgAudioStreaming(ctx, rpgAudioStreaming)
                 EngineSettingsStore.saveRpgMaker(ctx, rpg)
             }
 
@@ -1156,7 +1161,8 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134,
                 krVCursorScale, krMenuOpa, krPatchOverlayMode,
                 ons, artKernel, artVersion, artPatch, artResolution, artSideCut, artSurfaceCache,
-                artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, siglusLanguage, fbNls,
+                artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion,
+                rpgEffekseerMode, rpgAudioStreaming, rpg, renpyVersion, renpy, siglusLanguage, fbNls,
                 fvpNls, fvpSystemFont, fvpTextHidpi, fvpFont,
                 xs35Scoped, xs35Renderer, xs35IntegerScale, xs35MuteUnfocus,
                 xs4Scoped, xs4Encoding, xs4FontGothic, xs4FontMincho, xs4Joypad, xs4MsgskipDelay,
@@ -1204,6 +1210,8 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onRpgSaveInterop = { rpgSaveInterop = it },
                 onRpgMvVersion = { rpgMvVersion = it },
                 onRpgMzVersion = { rpgMzVersion = it },
+                onRpgEffekseerMode = { rpgEffekseerMode = it },
+                onRpgAudioStreaming = { rpgAudioStreaming = it },
                 onRpg = { rpg = it },
                 onRenpyVersion = { renpyVersion = it },
                 onRenpy = { renpy = it },
@@ -1263,6 +1271,7 @@ private fun LazyListPlaceholder(
     artPowerSaving: String,
     tyExternal: Boolean, tyScoped: Boolean, rpgMakerMod: Boolean,
     rpgLegacyRenderer: Boolean, rpgSaveInterop: Boolean, rpgMvVersion: String, rpgMzVersion: String,
+    rpgEffekseerMode: String, rpgAudioStreaming: Boolean,
     rpg: EngineSettingsStore.RpgMaker,
     renpyVersion: String, renpy: EngineSettingsStore.RenPy, siglusLanguage: String,
     fbNls: String,
@@ -1292,6 +1301,7 @@ private fun LazyListPlaceholder(
     onArtPowerSaving: (String) -> Unit,
     onTyExternal: (Boolean) -> Unit, onTyScoped: (Boolean) -> Unit, onRpgMakerMod: (Boolean) -> Unit,
     onRpgLegacyRenderer: (Boolean) -> Unit, onRpgSaveInterop: (Boolean) -> Unit, onRpgMvVersion: (String) -> Unit, onRpgMzVersion: (String) -> Unit,
+    onRpgEffekseerMode: (String) -> Unit, onRpgAudioStreaming: (Boolean) -> Unit,
     onRpg: (EngineSettingsStore.RpgMaker) -> Unit,
     onRenpyVersion: (String) -> Unit,
     onRenpy: (EngineSettingsStore.RenPy) -> Unit,
@@ -1512,6 +1522,21 @@ private fun LazyListPlaceholder(
                 SwitchPreference(title = stringResource(R.string.engine_settings_save_interop), checked = rpgSaveInterop, onCheckedChange = onRpgSaveInterop)
                 DropdownRow(stringResource(R.string.engine_settings_engine_version_mv), rpgMvVersionOptions(), rpgMvVersion, onRpgMvVersion)
                 DropdownRow(stringResource(R.string.engine_settings_engine_version_mz), rpgMzVersionOptions(), rpgMzVersion, onRpgMzVersion)
+                // TynMZ-0.2 专有：两项都只影响 MZ v2 会话，MV 的三条链路不读它们。
+                // 只在选中 MZ v2 时显示——显示在 v0 下面会让人以为对 Tyranor-2.3.4 生效。
+                if (rpgMzVersion == EngineSettingsStore.RPG_MZ_V2) {
+                    DropdownRow(
+                        stringResource(R.string.engine_settings_rpg_effekseer_mode),
+                        rpgEffekseerModeOptions(),
+                        rpgEffekseerMode,
+                        onRpgEffekseerMode,
+                    )
+                    SwitchPreference(
+                        title = stringResource(R.string.engine_settings_rpg_audio_streaming),
+                        checked = rpgAudioStreaming,
+                        onCheckedChange = onRpgAudioStreaming,
+                    )
+                }
             }
         }
 

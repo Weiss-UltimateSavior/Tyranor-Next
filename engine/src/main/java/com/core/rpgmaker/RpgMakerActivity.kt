@@ -307,20 +307,27 @@ class RpgMakerActivity : Activity() {
             // 不再向页面注入 __touch_pad.js；旧布局迁移由 app 侧
             // InputRemapRepository.migrateLegacyIfNeeded 在启动前完成。
             // v1/v2 用带 PC 存档兜底的 MV hook（__rpg_v12.js，本模块资产）；
-            // 版本缺失的兜底会话用 v0 的 __rpg__.js（engine 模块资产，与 v0 宿主一致）
+            // 版本缺失的兜底会话用 v0 的 __rpg__.js（engine 模块资产，与 v0 宿主一致）。
+            // MZ v2（TynMZ-0.2）用 mz/ 下扩写过的 hook；v0 的 __rmmz__.js 仍被
+            // TyranoActivity 使用，两边互不覆盖（见 R5）。
+            val mzV2Session = webGameType == WebGameType.RPG_MZ && isRpgMzV2
             val hookAsset = when {
+                mzV2Session -> MZ_V2_HOOK_ASSET
                 webGameType == WebGameType.RPG_MZ -> RPG_MZ_HOOK_ASSET
                 v12Session -> RPG_MV_V12_HOOK_ASSET
                 else -> RPG_MV_HOOK_ASSET
             }
             val lateHook = loadAssetOrNull(hookAsset) ?: ByteArray(0)
-            val scriptAppends = if (webGameType == WebGameType.RPG_MZ) {
-                mapOf(
+            val scriptAppends = when {
+                mzV2Session -> mapOf(
+                    "js/rmmz_core.js" to loadAsset(MZ_V2_CORE_HOOK_ASSET),
+                    "js/rmmz_managers.js" to loadAsset(MZ_V2_MANAGERS_HOOK_ASSET),
+                )
+                webGameType == WebGameType.RPG_MZ -> mapOf(
                     "js/rmmz_core.js" to loadAsset(RPG_MZ_CORE_HOOK_ASSET),
                     "js/rmmz_managers.js" to loadAsset(RPG_MZ_MANAGERS_HOOK_ASSET),
                 )
-            } else {
-                emptyMap()
+                else -> emptyMap()
             }
             val modResources = if (rpgMakerModEnabled) {
                 mapOf(
@@ -366,15 +373,32 @@ class RpgMakerActivity : Activity() {
             val sentinel = polyfillAssets.joinToString("&&") { it.flag }
             // 会话版本要传给注入脚本：`__rpg_v12.js` 据此决定「v1 用我们的实现、v2 把
             // 渲染器交还游戏 core」——否则一处补丁会盖掉游戏自己的 textureGC 策略。
-            val sessionConfig = "<script>window.__tyranorRpg={engine:'" +
-                (if (webGameType == WebGameType.RPG_MZ) "MZ" else "MV") +
-                "',version:'" + (normalizedVersion ?: "") + "'};</script>"
+            // MZ 额外带 effekseer / audioStreaming 两个字段：Effekseer 桩在 earlyHtml 里
+            // 读它们，字段缺失时桩会静默不生效（表现为「设了 off 还在崩」）。
+            val sessionConfig = if (webGameType == WebGameType.RPG_MZ) {
+                RpgEffekseerGate.sessionConfigScript(
+                    engine = "MZ",
+                    version = normalizedVersion,
+                    effekseer = effekseerEnabledForSession(),
+                    audioStreaming = audioStreamingForSession(),
+                )
+            } else {
+                RpgEffekseerGate.sessionConfigScript(
+                    engine = "MV",
+                    version = normalizedVersion,
+                    effekseer = true,
+                )
+            }
+            // Effekseer 桩（仅 MZ）必须紧跟在 sessionConfig 之后、且早于
+            // js/libs/effekseer.min.js——所以只能放在 earlyHtml（</head> 之前），
+            // 不能放进追加到 rmmz_core.js 尾部的 hook（那时库已求值完）。
+            val effekseerStub = if (webGameType == WebGameType.RPG_MZ) RpgEffekseerGate.effekseerStubScript() else ""
             // 会话配置与会话强相关：即使兼容层资产缺失也要下发，否则 v2 的渲染器
             // 「交还游戏 core」会静默退化成我们的实现，且原因只能从日志间接推断。
             val earlyHtml = if (polyfillAssets.isEmpty()) {
-                if (v12Session) sessionConfig else ""
+                if (v12Session) sessionConfig + effekseerStub else ""
             } else {
-                sessionConfig + polyfillAssets.joinToString(separator = "") { script ->
+                sessionConfig + effekseerStub + polyfillAssets.joinToString(separator = "") { script ->
                     // 键本身已含 `__tyranor__/` 前缀（它同时是 internalResources 的查找键），
                     // 这里只补前导 '/'，否则会拼成 `/__tyranor__/__tyranor__/...` 而 404
                     "<script src='${internalResourceUrl(script.resourceKey)}'></script>"
@@ -505,6 +529,34 @@ class RpgMakerActivity : Activity() {
     }
 
     private fun loadAsset(name: String): ByteArray = assets.open(name).buffered().use { it.readBytes() }
+
+    /**
+     * MZ 会话的 Effekseer 生效值。
+     *
+     * 只有 MZ 消费这两项；MV 会话不下发同名 extra（见 EngineLauncher），这里也按
+     * 能力不适用处理。模式由设置链路（全局 + 单游戏覆盖）给出，未知值已在
+     * EngineSettingsStore 归一成 `auto`，这里再做一次保守兜底。
+     */
+    private fun effekseerEnabledForSession(): Boolean {
+        val mode = intent.getStringExtra(LaunchContract.RPG_EFFEKSEER_MODE)
+        return RpgEffekseerGate.enabled(mode, RpgEffekseerGate.chromiumMajor(webViewChromeUserAgent))
+    }
+
+    /** 音频流式解码：缺省开（与 EngineSettingsStore.RPG_AUDIO_STREAMING_DEFAULT 一致）。 */
+    private fun audioStreamingForSession(): Boolean =
+        intent.getBooleanExtra(LaunchContract.RPG_AUDIO_STREAMING, true)
+
+    /**
+     * 取 WebView 的 UA 用来判定 Chromium 主版本。
+     *
+     * `WebSettings.userAgentString` 在 `configureWebView` 里会被追加 Tyranor 标识，
+     * 但**主版本段不受影响**；这里必须读设置值而不是 `WebView` 已建实例的 UA——
+     * `buildInjectionBundle` 早于 WebView 创建，而会话配置要在那时就定下来。
+     */
+    private val webViewChromeUserAgent: String?
+        get() = runCatching {
+            WebSettings.getDefaultUserAgent(this)
+        }.getOrNull()
 
     private fun loadAssetOrNull(name: String): ByteArray? = try { loadAsset(name) } catch (_: Exception) { null }
 
@@ -1177,6 +1229,10 @@ class RpgMakerActivity : Activity() {
         private const val RPG_MV_HOOK_ASSET = "__rpg__.js"
         private const val RPG_MV_V12_HOOK_ASSET = "rpgmaker/__rpg_v12.js"
         private const val RPG_MZ_HOOK_ASSET = "__rmmz__.js"
+        // MZ v2（TynMZ-0.2）专有资产：与 rpgmv-v1/ 并列，会话专有脚本不进 assets 根
+        private const val MZ_V2_HOOK_ASSET = "rpgmaker/mz/__mz_hook.js"
+        private const val MZ_V2_CORE_HOOK_ASSET = "rpgmaker/mz/__mz_core_hook.js"
+        private const val MZ_V2_MANAGERS_HOOK_ASSET = "rpgmaker/mz/__mz_managers_hook.js"
         private const val NWJS_POLYFILL_ASSET = "rpgmaker/__nwjs_polyfill.js"
         private const val NWJS_POLYFILL_V1_EXTRA_ASSET = "rpgmaker/__nwjs_polyfill_v1.js"
         private const val NWJS_POLYFILL_V2_EXTRA_ASSET = "rpgmaker/__nwjs_polyfill_v2.js"

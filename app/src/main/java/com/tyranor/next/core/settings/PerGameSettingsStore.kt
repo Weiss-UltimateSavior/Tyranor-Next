@@ -75,6 +75,9 @@ object PerGameSettingsStore {
     const val F_RPG_SAVE_INTEROP = "rpg_save_interop"
     const val F_RPG_MV_VERSION = "rpg_mv_engine_version"
     const val F_RPG_MZ_VERSION = "rpg_mz_engine_version"
+    // MZ（TynMZ-0.2）专有；只对 MZ 会话显示与消费
+    const val F_RPG_EFFEKSEER_MODE = "rpg_effekseer_mode"
+    const val F_RPG_AUDIO_STREAMING = "rpg_audio_streaming"
 
     // 输入重映射（虚拟按键 + 手柄映射）单游戏覆盖键（与 engine InputConfigStore 字面量锚定）
     const val F_INPUT_PAD_ENABLED = "input_pad_enabled"

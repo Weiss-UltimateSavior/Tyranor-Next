@@ -266,6 +266,13 @@ fun PerGameSettingsScreen(game: ScanGame) {
     }
     var rpgMvVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RPG_MV_VERSION)) }
     var rpgMzVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RPG_MZ_VERSION)) }
+    // MZ（TynMZ-0.2）专有覆盖：null = 跟随全局
+    var rpgEffekseerMode by remember {
+        mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RPG_EFFEKSEER_MODE))
+    }
+    var rpgAudioStreaming by remember {
+        mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_RPG_AUDIO_STREAMING))
+    }
     // 输入重映射：虚拟按键 / 手柄映射（null=跟随全局）
     var inputPadEnabled by remember {
         mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_INPUT_PAD_ENABLED))
@@ -475,6 +482,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalRpgSaveInterop = EngineSettingsStore.isRpgSaveInterop(ctx)
     val globalRpgMvVersion = EngineSettingsStore.getRpgMvEngineVersion(ctx)
     val globalRpgMzVersion = EngineSettingsStore.getRpgMzEngineVersion(ctx)
+    val globalRpgEffekseerMode = EngineSettingsStore.getRpgEffekseerMode(ctx)
+    val globalRpgAudioStreaming = EngineSettingsStore.isRpgAudioStreaming(ctx)
     val globalRenpyVersion = EngineSettingsStore.getRenpyVersion(ctx)
     val globalSiglusLanguage = EngineSettingsStore.getSiglusLanguage(ctx)
     val globalFbNls = EngineSettingsStore.getFbNls(ctx)
@@ -728,6 +737,9 @@ fun PerGameSettingsScreen(game: ScanGame) {
         )
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_RPG_MV_VERSION, rpgMvVersion)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_RPG_MZ_VERSION, rpgMzVersion)
+        // MZ 专有覆盖：空串 / null 由 setStr 写成 JSON null，即「跟随全局」
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_RPG_EFFEKSEER_MODE, rpgEffekseerMode)
+        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_RPG_AUDIO_STREAMING, rpgAudioStreaming)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_INPUT_PAD_ENABLED, inputPadEnabled)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_INPUT_GAMEPAD_ENABLED, inputGamepadEnabled)
         // 按键方案覆盖只在用户真的改过这一行时落盘（脏标记）。无条件写会把本页的过期快照
@@ -1596,6 +1608,21 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             OverrideSwitch(stringResource(R.string.engine_settings_game_modifier), globalRpgMakerMod, rpgMakerMod) { rpgMakerMod = it }
                             OverrideSwitch(stringResource(R.string.engine_settings_legacy_renderer), globalRpgLegacyRenderer, rpgLegacyRenderer) { rpgLegacyRenderer = it }
                             OverrideSwitch(stringResource(R.string.engine_settings_save_interop), globalRpgSaveInterop, rpgSaveInterop) { rpgSaveInterop = it }
+                            // TynMZ-0.2 专有：只有 MZ v2 会话读这两项（MV 的三条链路
+                            // 不看它们），所以只在选中 v2 时出现，避免对着 v0 调半天没反应。
+                            if (!isMv && overrideVersion == EngineSettingsStore.RPG_MZ_V2) {
+                                OverrideChoice(
+                                    stringResource(R.string.engine_settings_rpg_effekseer_mode),
+                                    rpgEffekseerModeOptions().toMap(),
+                                    globalRpgEffekseerMode,
+                                    rpgEffekseerMode,
+                                ) { rpgEffekseerMode = it.orEmpty() }
+                                OverrideSwitch(
+                                    stringResource(R.string.engine_settings_rpg_audio_streaming),
+                                    globalRpgAudioStreaming,
+                                    rpgAudioStreaming,
+                                ) { rpgAudioStreaming = it }
+                            }
                             // 输入重映射：虚拟按键 + 手柄映射（逐游戏跟随全局或单独开关）
                             OverrideSwitch(
                                 stringResource(R.string.engine_settings_input_pad_title),

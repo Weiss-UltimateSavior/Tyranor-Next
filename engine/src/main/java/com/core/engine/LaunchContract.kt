@@ -133,6 +133,12 @@ object LaunchContract {
     const val RPG_MAKER_VERSION = "rpgMakerVersion"
     const val RPG_LEGACY_RENDERER = "rpgLegacyRenderer"
 
+    /** MZ 专有：Effekseer 闸门模式 `auto` / `on` / `off`（缺省 `auto`，按 WebView 主版本判定）。 */
+    const val RPG_EFFEKSEER_MODE = "rpgEffekseerMode"
+
+    /** MZ 专有：音频流式解码开关（缺省 true）。 */
+    const val RPG_AUDIO_STREAMING = "rpgAudioStreaming"
+
     // ---------- Siglus ----------
 
     /** 游戏语言：引擎 GET_LANGUAGE 返回值（auto 时不传，保持引擎默认 JP）。 */
